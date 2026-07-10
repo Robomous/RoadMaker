@@ -2,6 +2,7 @@ add_library(roadmaker_core STATIC
   src/version.cpp
   src/geometry/reference_line.cpp
   src/road/network.cpp
+  src/xodr/reader.cpp
 )
 add_library(roadmaker::core ALIAS roadmaker_core)
 
@@ -16,7 +17,9 @@ target_link_libraries(roadmaker_core
     Eigen3::Eigen
     fmt::fmt
     spdlog::spdlog
+    tl::expected
   PRIVATE
+    FastFloat::fast_float
     Clothoids::Clothoids
     pugixml::pugixml
     Clipper2::Clipper2

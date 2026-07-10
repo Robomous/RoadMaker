@@ -1,0 +1,152 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- RoadMaker sample: minimal T junction. West/east main road, south
+     branch, two connecting roads (straight-through and a right turn).
+     Hand-authored for the RoadMaker project (MIT license). -->
+<OpenDRIVE>
+  <header revMajor="1" revMinor="7" name="t_junction" vendor="Robomous"/>
+
+  <road name="West Approach" length="50.0" id="1" junction="-1">
+    <link>
+      <successor elementType="junction" elementId="100"/>
+    </link>
+    <planView>
+      <geometry s="0.0" x="-60.0" y="0.0" hdg="0.0" length="50.0">
+        <line/>
+      </geometry>
+    </planView>
+    <lanes>
+      <laneSection s="0.0">
+        <center>
+          <lane id="0" type="none" level="false">
+            <roadMark sOffset="0.0" type="broken" width="0.12"/>
+          </lane>
+        </center>
+        <right>
+          <lane id="-1" type="driving" level="false">
+            <width sOffset="0.0" a="3.5" b="0.0" c="0.0" d="0.0"/>
+            <link>
+              <successor id="-1"/>
+            </link>
+          </lane>
+        </right>
+      </laneSection>
+    </lanes>
+  </road>
+
+  <road name="East Leg" length="50.0" id="2" junction="-1">
+    <link>
+      <predecessor elementType="junction" elementId="100"/>
+    </link>
+    <planView>
+      <geometry s="0.0" x="10.0" y="0.0" hdg="0.0" length="50.0">
+        <line/>
+      </geometry>
+    </planView>
+    <lanes>
+      <laneSection s="0.0">
+        <center>
+          <lane id="0" type="none" level="false"/>
+        </center>
+        <right>
+          <lane id="-1" type="driving" level="false">
+            <width sOffset="0.0" a="3.5" b="0.0" c="0.0" d="0.0"/>
+            <link>
+              <predecessor id="-1"/>
+            </link>
+          </lane>
+        </right>
+      </laneSection>
+    </lanes>
+  </road>
+
+  <road name="South Branch" length="50.0" id="3" junction="-1">
+    <link>
+      <predecessor elementType="junction" elementId="100"/>
+    </link>
+    <planView>
+      <geometry s="0.0" x="0.0" y="-10.0" hdg="-1.5707963268" length="50.0">
+        <line/>
+      </geometry>
+    </planView>
+    <lanes>
+      <laneSection s="0.0">
+        <center>
+          <lane id="0" type="none" level="false"/>
+        </center>
+        <right>
+          <lane id="-1" type="driving" level="false">
+            <width sOffset="0.0" a="3.5" b="0.0" c="0.0" d="0.0"/>
+            <link>
+              <predecessor id="-1"/>
+            </link>
+          </lane>
+        </right>
+      </laneSection>
+    </lanes>
+  </road>
+
+  <road name="Through Connection" length="20.0" id="10" junction="100">
+    <link>
+      <predecessor elementType="road" elementId="1" contactPoint="end"/>
+      <successor elementType="road" elementId="2" contactPoint="start"/>
+    </link>
+    <planView>
+      <geometry s="0.0" x="-10.0" y="0.0" hdg="0.0" length="20.0">
+        <line/>
+      </geometry>
+    </planView>
+    <lanes>
+      <laneSection s="0.0">
+        <center>
+          <lane id="0" type="none" level="false"/>
+        </center>
+        <right>
+          <lane id="-1" type="driving" level="false">
+            <width sOffset="0.0" a="3.5" b="0.0" c="0.0" d="0.0"/>
+            <link>
+              <predecessor id="-1"/>
+              <successor id="-1"/>
+            </link>
+          </lane>
+        </right>
+      </laneSection>
+    </lanes>
+  </road>
+
+  <road name="Right Turn Connection" length="15.7079632679" id="11" junction="100">
+    <link>
+      <predecessor elementType="road" elementId="1" contactPoint="end"/>
+      <successor elementType="road" elementId="3" contactPoint="start"/>
+    </link>
+    <planView>
+      <geometry s="0.0" x="-10.0" y="0.0" hdg="0.0" length="15.7079632679">
+        <arc curvature="-0.1"/>
+      </geometry>
+    </planView>
+    <lanes>
+      <laneSection s="0.0">
+        <center>
+          <lane id="0" type="none" level="false"/>
+        </center>
+        <right>
+          <lane id="-1" type="driving" level="false">
+            <width sOffset="0.0" a="3.5" b="0.0" c="0.0" d="0.0"/>
+            <link>
+              <predecessor id="-1"/>
+              <successor id="-1"/>
+            </link>
+          </lane>
+        </right>
+      </laneSection>
+    </lanes>
+  </road>
+
+  <junction id="100" name="T Junction">
+    <connection id="0" incomingRoad="1" connectingRoad="10" contactPoint="start">
+      <laneLink from="-1" to="-1"/>
+    </connection>
+    <connection id="1" incomingRoad="1" connectingRoad="11" contactPoint="start">
+      <laneLink from="-1" to="-1"/>
+    </connection>
+  </junction>
+</OpenDRIVE>

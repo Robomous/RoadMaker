@@ -18,6 +18,8 @@ BSL-1.0, Unlicense/CC0. License files verified in each upstream archive.
 | Clipper2 | 2.0.1 | BSL-1.0 | https://github.com/AngusJohnson/Clipper2 | 2D polygon offsets/unions for plan-view lane logic |
 | pugixml | 1.16 | MIT | https://github.com/zeux/pugixml | XML parsing/writing for OpenDRIVE |
 | tinygltf | 3.0.0 | MIT | https://github.com/syoyo/tinygltf | glTF 2.0 export (bundles nlohmann/json, MIT; stb, MIT/public-domain) |
+| tl::expected | 1.3.1 | CC0-1.0 | https://github.com/TartanLlama/expected | rm::Expected error returns (std::expected is C++23; kernel is C++20) |
+| fast_float | 8.2.10 | Apache-2.0 OR MIT OR BSL-1.0 | https://github.com/fastfloat/fast_float | Locale-independent number parsing in xodr IO |
 | Catch2 | 3.15.2 | BSL-1.0 | https://github.com/catchorg/Catch2 | Unit tests (test builds only) |
 | {fmt} | 12.2.0 | MIT | https://github.com/fmtlib/fmt | Formatting (kernel-wide, no iostream) |
 | spdlog | 1.17.0 | MIT | https://github.com/gabime/spdlog | Logging (built against external fmt) |

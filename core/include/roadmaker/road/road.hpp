@@ -1,6 +1,7 @@
 #pragma once
 
 #include "roadmaker/geometry/poly3.hpp"
+#include "roadmaker/geometry/reference_line.hpp"
 #include "roadmaker/road/id.hpp"
 
 #include <optional>
@@ -36,6 +37,9 @@ struct Road {
   /// Total reference-line length [m]. Kept consistent with the plan-view
   /// geometry by the authoring API / parser.
   double length = 0.0;
+
+  /// Plan-view reference line (the <planView> geometry records).
+  ReferenceLine plan_view;
 
   /// Set iff this is a connecting road inside a junction.
   JunctionId junction;

@@ -133,6 +133,24 @@ FetchContent_Declare(gencon
 )
 
 # ---------------------------------------------------------------------------
+# tl::expected 1.3.1 (CC0-1.0) — std::expected is C++23; we target C++20
+FetchContent_Declare(tlexpected
+  URL https://github.com/TartanLlama/expected/archive/refs/tags/v1.3.1.tar.gz
+  URL_HASH SHA256=9a04f4f472fbb5c30bf60402f1ca626c4a76987f867978d0b8a35d7ab3fb8fe7
+  SOURCE_SUBDIR cmake-disabled
+)
+
+# ---------------------------------------------------------------------------
+# fast_float 8.2.10 (Apache-2.0 OR MIT OR BSL-1.0) — locale-independent
+# number parsing for xodr IO (std::from_chars for double is not yet
+# universal across our CI stdlibs)
+FetchContent_Declare(fastfloat
+  URL https://github.com/fastfloat/fast_float/archive/refs/tags/v8.2.10.tar.gz
+  URL_HASH SHA256=76f958dd97b1cf4d8862d1f0986a47d4bdfa8845252bae15ef0f40de3b95961f
+  SOURCE_SUBDIR cmake-disabled
+)
+
+# ---------------------------------------------------------------------------
 # Catch2 3.15.2 (BSL-1.0) — tests only
 if(RM_BUILD_TESTS)
   FetchContent_Declare(catch2
@@ -144,7 +162,7 @@ endif()
 # ---------------------------------------------------------------------------
 FetchContent_MakeAvailable(
   fmt spdlog eigen pugixml clipper2 cdt libigl manifold tinygltf
-  clothoids utilslite quartic gencon)
+  clothoids utilslite quartic gencon tlexpected fastfloat)
 if(RM_BUILD_TESTS)
   FetchContent_MakeAvailable(catch2)
   list(APPEND CMAKE_MODULE_PATH ${catch2_SOURCE_DIR}/extras)
@@ -192,6 +210,16 @@ target_link_libraries(rm_igl INTERFACE Eigen3::Eigen)
 add_library(rm_tinygltf INTERFACE)
 add_library(tinygltf::tinygltf ALIAS rm_tinygltf)
 target_include_directories(rm_tinygltf SYSTEM INTERFACE ${tinygltf_SOURCE_DIR})
+
+# tl::expected (header-only)
+add_library(rm_tlexpected INTERFACE)
+add_library(tl::expected ALIAS rm_tlexpected)
+target_include_directories(rm_tlexpected SYSTEM INTERFACE ${tlexpected_SOURCE_DIR}/include)
+
+# fast_float (header-only)
+add_library(rm_fastfloat INTERFACE)
+add_library(FastFloat::fast_float ALIAS rm_fastfloat)
+target_include_directories(rm_fastfloat SYSTEM INTERFACE ${fastfloat_SOURCE_DIR}/include)
 
 # Clothoids + UtilsLite + quarticRootsFlocke + GenericContainer as one
 # static library. UtilsLite embeds fmt 11 in an inline fmt::v11 namespace —

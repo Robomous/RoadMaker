@@ -8,6 +8,7 @@ project(roadmaker
 )
 
 option(RM_BUILD_TESTS "Build unit tests" ON)
+option(RM_BUILD_FUZZERS "Build libFuzzer targets (Clang only)" OFF)
 option(RM_BUILD_PYTHON "Build the Python bindings" OFF)
 option(RM_BUILD_EDITOR "Build the ImGui editor" OFF)
 
