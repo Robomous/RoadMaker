@@ -151,6 +151,26 @@ FetchContent_Declare(fastfloat
 )
 
 # ---------------------------------------------------------------------------
+# Editor-only dependencies (RM_BUILD_EDITOR)
+# GLFW 3.4 (zlib)
+FetchContent_Declare(glfw
+  URL https://github.com/glfw/glfw/archive/refs/tags/3.4.tar.gz
+  URL_HASH SHA256=c038d34200234d071fae9345bc455e4a8f2f544ab60150765d7704e08f3dac01
+)
+set(GLFW_BUILD_DOCS OFF)
+set(GLFW_BUILD_TESTS OFF)
+set(GLFW_BUILD_EXAMPLES OFF)
+set(GLFW_INSTALL OFF)
+
+# Dear ImGui 1.92.8 docking branch (MIT) — no upstream CMake; static target
+# defined below
+FetchContent_Declare(imgui
+  URL https://github.com/ocornut/imgui/archive/refs/tags/v1.92.8-docking.tar.gz
+  URL_HASH SHA256=ca0653454ed371b7a87e9b0bc29a5d15c9be7f7c0fbe778042fc48c71df1d3d8
+  SOURCE_SUBDIR cmake-disabled
+)
+
+# ---------------------------------------------------------------------------
 # Catch2 3.15.2 (BSL-1.0) — tests only
 if(RM_BUILD_TESTS)
   FetchContent_Declare(catch2
@@ -163,6 +183,9 @@ endif()
 FetchContent_MakeAvailable(
   fmt spdlog eigen pugixml clipper2 cdt libigl manifold tinygltf
   clothoids utilslite quartic gencon tlexpected fastfloat)
+if(RM_BUILD_EDITOR)
+  FetchContent_MakeAvailable(glfw imgui)
+endif()
 if(RM_BUILD_TESTS)
   FetchContent_MakeAvailable(catch2)
   list(APPEND CMAKE_MODULE_PATH ${catch2_SOURCE_DIR}/extras)
@@ -178,6 +201,9 @@ if(NOT TARGET manifold::manifold)
 endif()
 
 # Their headers must not surface warnings in RoadMaker TUs (CI uses -Werror).
+# NOTE: fmt/spdlog deliberately stay non-SYSTEM — Apple clang searches
+# /usr/local/include before user -isystem dirs, so SYSTEM-ifying them lets a
+# machine-installed spdlog/fmt shadow our pinned copies (ODR hazard).
 foreach(_dep Clipper2 manifold)
   get_target_property(_dep_inc ${_dep} INTERFACE_INCLUDE_DIRECTORIES)
   if(_dep_inc)
@@ -258,4 +284,26 @@ target_link_libraries(rm_clothoids PUBLIC Threads::Threads)
 # Third-party code is built quietly; our warnings apply to roadmaker targets only.
 if(NOT MSVC)
   target_compile_options(rm_clothoids PRIVATE -w)
+endif()
+
+# Dear ImGui static lib (docking) with the GLFW + OpenGL3 backends.
+if(RM_BUILD_EDITOR)
+  add_library(rm_imgui STATIC
+    ${imgui_SOURCE_DIR}/imgui.cpp
+    ${imgui_SOURCE_DIR}/imgui_draw.cpp
+    ${imgui_SOURCE_DIR}/imgui_tables.cpp
+    ${imgui_SOURCE_DIR}/imgui_widgets.cpp
+    ${imgui_SOURCE_DIR}/backends/imgui_impl_glfw.cpp
+    ${imgui_SOURCE_DIR}/backends/imgui_impl_opengl3.cpp
+  )
+  add_library(imgui::imgui ALIAS rm_imgui)
+  target_include_directories(rm_imgui SYSTEM PUBLIC
+    ${imgui_SOURCE_DIR}
+    ${imgui_SOURCE_DIR}/backends
+  )
+  target_link_libraries(rm_imgui PUBLIC glfw)
+  target_compile_features(rm_imgui PUBLIC cxx_std_17)
+  if(NOT MSVC)
+    target_compile_options(rm_imgui PRIVATE -w)
+  endif()
 endif()

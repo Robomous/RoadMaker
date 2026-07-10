@@ -22,5 +22,7 @@ BSL-1.0, Unlicense/CC0. License files verified in each upstream archive.
 | fast_float | 8.2.10 | Apache-2.0 OR MIT OR BSL-1.0 | https://github.com/fastfloat/fast_float | Locale-independent number parsing in xodr IO |
 | Catch2 | 3.15.2 | BSL-1.0 | https://github.com/catchorg/Catch2 | Unit tests (test builds only) |
 | nanobind | >=2.1 (pip build requirement) | BSD-3-Clause | https://github.com/wjakob/nanobind | Python bindings (build-time; resolved via pyproject.toml) |
+| GLFW | 3.4 | zlib | https://github.com/glfw/glfw | Editor windowing/input (editor builds only) |
+| Dear ImGui | 1.92.8-docking | MIT | https://github.com/ocornut/imgui | Editor UI (editor builds only) |
 | {fmt} | 12.2.0 | MIT | https://github.com/fmtlib/fmt | Formatting (kernel-wide, no iostream) |
 | spdlog | 1.17.0 | MIT | https://github.com/gabime/spdlog | Logging (built against external fmt) |
