@@ -203,11 +203,19 @@ roads that were never node-edited.
 
 ```cpp
 // Document (editor)
-void begin_preview(std::unique_ptr<edit::Command>);   // applies, remeshes dirty
-void update_preview(std::unique_ptr<edit::Command>);  // reverts current, applies new
+using PreviewFactory = std::function<std::unique_ptr<edit::Command>(const RoadNetwork&)>;
+Expected<void> begin_preview(std::unique_ptr<edit::Command>); // applies, remeshes dirty
+Expected<void> update_preview(const PreviewFactory&); // reverts current, builds vs base, applies
 void commit_preview();  // pushes EditorCommand(already_applied=true) onto QUndoStack
 void cancel_preview();  // reverts, discards (Esc)
 ```
+
+`update_preview` takes a factory rather than a ready command because command
+factories snapshot at creation time (§2.3): a command created while the
+previous preview frame was still applied would capture that frame — not the
+base state — as its "before" values, and undo after commit would restore
+mid-drag geometry. Document reverts the current command first and invokes
+the factory against the restored base-state network.
 
 Rationale: `mergeWith` compresses *pushed* commands, so every drag frame would
 enter the stack and signal listeners before merging — wasted work and

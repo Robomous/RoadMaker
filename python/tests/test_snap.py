@@ -74,3 +74,26 @@ def test_nothing_in_range_returns_none(network, options):
 def test_disabled_kinds_are_skipped(network):
     options = rm.edit.SnapOptions(endpoints=False, tangent=False)
     assert rm.edit.snap_point(network, (99.9, 0.1), options) is None
+
+
+def test_excluded_road_contributes_no_candidates(network):
+    dragged = network.find_road("1")
+    rm.author_clothoid_road(
+        network,
+        [(101.0, 5.0), (200.0, 5.0)],
+        rm.LaneProfile.two_lane_default(),
+        "Other",
+        "2",
+    )
+
+    options = rm.edit.SnapOptions(radius=6.0, exclude_road=dragged)
+    result = rm.edit.snap_point(network, (100.0, 0.0), options)
+    assert result is not None
+    assert result.kind == rm.edit.SnapKind.RoadEndpoint
+    assert result.road == network.find_road("2")
+    assert result.position.x == pytest.approx(101.0, abs=1e-4)
+    assert result.position.y == pytest.approx(5.0, abs=1e-4)
+
+    # Without the exclusion the dragged road's own endpoint wins at distance 0.
+    unexcluded = rm.edit.snap_point(network, (100.0, 0.0), rm.edit.SnapOptions(radius=6.0))
+    assert unexcluded.road == dragged

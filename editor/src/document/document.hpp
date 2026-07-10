@@ -14,6 +14,7 @@
 #include <QString>
 #include <QUndoStack>
 #include <filesystem>
+#include <functional>
 #include <memory>
 #include <vector>
 
@@ -57,6 +58,43 @@ public:
   /// the document unchanged, appends a diagnostic, and is NOT pushed.
   [[nodiscard]] Expected<void> push_command(std::unique_ptr<edit::Command> command);
 
+  /// Builds the replacement command for update_preview(). Invoked against
+  /// the BASE-state network (the current preview already reverted) so the
+  /// command's value snapshots capture pre-session values.
+  using PreviewFactory = std::function<std::unique_ptr<edit::Command>(const RoadNetwork&)>;
+
+  // Preview session for drag interactions (docs/design/m2/01_editing_framework.md
+  // §3): the network mutates and re-meshes live on every step, but NOTHING
+  // enters the undo stack until commit_preview() pushes exactly one entry.
+  // push_command() is refused and load() cancels the session while one is
+  // active.
+
+  /// Starts a session by applying `command` (re-meshes through the dirty
+  /// set). Errors — leaving no session and the network untouched: null
+  /// command, a session already active, or a failed apply.
+  [[nodiscard]] Expected<void> begin_preview(std::unique_ptr<edit::Command> command);
+
+  /// Replaces the previewed command: reverts the current one, builds the
+  /// replacement via `factory` against the restored base state, applies it.
+  /// update_preview takes a factory rather than a ready command because
+  /// factories snapshot at creation time — a command created while the
+  /// previous preview frame was still applied would capture that frame as
+  /// its "before" state and undo would restore mid-drag geometry. If the
+  /// replacement fails to apply, the previous command is re-applied and the
+  /// session stays at its last good state.
+  [[nodiscard]] Expected<void> update_preview(const PreviewFactory& factory);
+
+  /// Ends the session pushing the previewed command as the single undo-stack
+  /// entry (already applied — no re-apply, no re-mesh). No-op without a
+  /// session (a click that never became a drag).
+  void commit_preview();
+
+  /// Ends the session reverting the previewed command: write_xodr() is
+  /// byte-identical to the pre-session state. No-op without a session.
+  void cancel_preview();
+
+  [[nodiscard]] bool preview_active() const { return preview_command_ != nullptr; }
+
 signals:
   /// Document replaced wholesale — models must reset; entity IDs from before
   /// this signal are stale even when a lookup appears to succeed.
@@ -88,6 +126,7 @@ private:
   std::vector<Diagnostic> diagnostics_;
   QString file_path_;
   QUndoStack undo_stack_;
+  std::unique_ptr<edit::Command> preview_command_;
 };
 
 } // namespace roadmaker::editor

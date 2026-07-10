@@ -159,6 +159,35 @@ TEST(SnapPoint, DisabledKindsAreSkipped) {
   EXPECT_EQ(tangent_only->kind, SnapKind::TangentContinuation);
 }
 
+TEST(SnapPoint, ExcludedRoadContributesNoCandidates) {
+  RoadNetwork network;
+  const RoadId dragged =
+      make_road(network, {{.x = 0.0, .y = 0.0}, {.x = 100.0, .y = 0.0}}, "dragged");
+  const RoadId other =
+      make_road(network, {{.x = 101.0, .y = 5.0}, {.x = 200.0, .y = 5.0}}, "other");
+
+  // On the dragged road's own endpoint: without the exclusion it snaps to
+  // itself at distance 0 and masks the neighbour.
+  const Waypoint cursor{.x = 100.0, .y = 0.0};
+  const auto self = snap_point(network, cursor, {.radius = 6.0});
+  ASSERT_TRUE(self.has_value());
+  ASSERT_TRUE(self->road.has_value());
+  EXPECT_EQ(*self->road, dragged);
+
+  const auto excluded = snap_point(network, cursor, {.radius = 6.0, .exclude_road = dragged});
+  ASSERT_TRUE(excluded.has_value());
+  EXPECT_EQ(excluded->kind, SnapKind::RoadEndpoint);
+  ASSERT_TRUE(excluded->road.has_value());
+  EXPECT_EQ(*excluded->road, other);
+  EXPECT_NEAR(excluded->position.x, 101.0, tol::kRoundTripPosition);
+  EXPECT_NEAR(excluded->position.y, 5.0, tol::kRoundTripPosition);
+
+  // Excluding the only road in range yields no snap at all.
+  const auto none =
+      snap_point(network, {.x = 150.0, .y = 5.2}, {.radius = 2.0, .exclude_road = other});
+  EXPECT_FALSE(none.has_value());
+}
+
 TEST(SnapPoint, EmptyNetworkWithoutGridReturnsNothing) {
   const RoadNetwork network;
   const auto result = snap_point(network, {.x = 0.0, .y = 0.0}, {.radius = 2.0});
