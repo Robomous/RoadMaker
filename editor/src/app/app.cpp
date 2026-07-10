@@ -243,10 +243,13 @@ void App::draw_menu_bar() {
   if (ImGui::BeginPopupModal("Open OpenDRIVE file", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
     ImGui::TextUnformatted("Path to .xodr:");
     ImGui::InputText("##path", open_path_buffer_.data(), open_path_buffer_.size());
+    const bool path_empty = open_path_buffer_[0] == '\0';
+    ImGui::BeginDisabled(path_empty);
     if (ImGui::Button("Open")) {
       load_file(std::filesystem::path(open_path_buffer_.data()));
       ImGui::CloseCurrentPopup();
     }
+    ImGui::EndDisabled();
     ImGui::SameLine();
     if (ImGui::Button("Cancel")) {
       ImGui::CloseCurrentPopup();
