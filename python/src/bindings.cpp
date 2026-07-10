@@ -56,14 +56,12 @@ void bind_id(nb::module_& m, const char* name) {
       .def(nb::init<>())
       .def_prop_ro("valid", [](Id id) { return id.is_valid(); })
       .def("__bool__", [](Id id) { return id.is_valid(); })
-      .def("__eq__", [](Id a, nb::object b) {
-        return nb::isinstance<Id>(b) && a == nb::cast<Id>(b);
-      })
+      .def("__eq__",
+           [](Id a, nb::object b) { return nb::isinstance<Id>(b) && a == nb::cast<Id>(b); })
       .def("__hash__", [](Id id) { return std::hash<Id>{}(id); })
       .def("__repr__", [name](Id id) {
-        return id.is_valid()
-                   ? std::string(name) + "(" + std::to_string(id.index) + ")"
-                   : std::string(name) + "(invalid)";
+        return id.is_valid() ? std::string(name) + "(" + std::to_string(id.index) + ")"
+                             : std::string(name) + "(invalid)";
       });
 }
 
@@ -166,7 +164,9 @@ NB_MODULE(_roadmaker, m) {
       .def_prop_ro("length", &roadmaker::ReferenceLine::length)
       .def_prop_ro("record_count",
                    [](const roadmaker::ReferenceLine& line) { return line.records().size(); })
-      .def("evaluate", &roadmaker::ReferenceLine::evaluate, "s"_a,
+      .def("evaluate",
+           &roadmaker::ReferenceLine::evaluate,
+           "s"_a,
            "Pose at station s [m], clamped to [0, length].");
 
   nb::class_<roadmaker::RoadMark>(m, "RoadMark")
@@ -200,7 +200,8 @@ NB_MODULE(_roadmaker, m) {
 
   nb::class_<roadmaker::LaneSection>(m, "LaneSection")
       .def_ro("s0", &roadmaker::LaneSection::s0)
-      .def_ro("lanes", &roadmaker::LaneSection::lanes,
+      .def_ro("lanes",
+              &roadmaker::LaneSection::lanes,
               "LaneIds sorted leftmost-first (descending OpenDRIVE lane id).")
       .def("__repr__", [](const roadmaker::LaneSection& section) {
         return "LaneSection(s0=" + std::to_string(section.s0) + ")";
@@ -212,11 +213,12 @@ NB_MODULE(_roadmaker, m) {
       .def_ro("length", &roadmaker::Road::length)
       .def_ro("junction", &roadmaker::Road::junction)
       .def_ro("sections", &roadmaker::Road::sections)
-      .def_prop_ro("plan_view",
-                   [](const roadmaker::Road& road) -> const roadmaker::ReferenceLine& {
-                     return road.plan_view;
-                   },
-                   nb::rv_policy::reference_internal)
+      .def_prop_ro(
+          "plan_view",
+          [](const roadmaker::Road& road) -> const roadmaker::ReferenceLine& {
+            return road.plan_view;
+          },
+          nb::rv_policy::reference_internal)
       .def_ro("elevation", &roadmaker::Road::elevation)
       .def_ro("superelevation", &roadmaker::Road::superelevation)
       .def_ro("lane_offset", &roadmaker::Road::lane_offset)
@@ -236,8 +238,8 @@ NB_MODULE(_roadmaker, m) {
       .def_ro("name", &roadmaker::Junction::name)
       .def_ro("connections", &roadmaker::Junction::connections)
       .def("__repr__", [](const roadmaker::Junction& junction) {
-        return "Junction(odr_id='" + junction.odr_id + "', connections=" +
-               std::to_string(junction.connections.size()) + ")";
+        return "Junction(odr_id='" + junction.odr_id +
+               "', connections=" + std::to_string(junction.connections.size()) + ")";
       });
 
   // --- the network -----------------------------------------------------------
@@ -247,21 +249,26 @@ NB_MODULE(_roadmaker, m) {
       .def("create_road", &roadmaker::RoadNetwork::create_road, "name"_a, "odr_id"_a)
       .def("create_junction", &roadmaker::RoadNetwork::create_junction, "odr_id"_a, "name"_a)
       .def("add_lane_section", &roadmaker::RoadNetwork::add_lane_section, "road"_a, "s0"_a)
-      .def("add_lane", &roadmaker::RoadNetwork::add_lane, "section"_a, "odr_lane_id"_a,
-           "type"_a)
+      .def("add_lane", &roadmaker::RoadNetwork::add_lane, "section"_a, "odr_lane_id"_a, "type"_a)
       .def("erase_road", &roadmaker::RoadNetwork::erase_road, "road"_a)
       .def("erase_junction", &roadmaker::RoadNetwork::erase_junction, "junction"_a)
-      .def("road", nb::overload_cast<roadmaker::RoadId>(&roadmaker::RoadNetwork::road),
-           "id"_a, nb::rv_policy::reference_internal,
+      .def("road",
+           nb::overload_cast<roadmaker::RoadId>(&roadmaker::RoadNetwork::road),
+           "id"_a,
+           nb::rv_policy::reference_internal,
            "Road for id, or None if the id is stale. The reference is valid "
            "only until the network is mutated.")
       .def("lane_section",
            nb::overload_cast<roadmaker::LaneSectionId>(&roadmaker::RoadNetwork::lane_section),
-           "id"_a, nb::rv_policy::reference_internal)
-      .def("lane", nb::overload_cast<roadmaker::LaneId>(&roadmaker::RoadNetwork::lane), "id"_a,
+           "id"_a,
+           nb::rv_policy::reference_internal)
+      .def("lane",
+           nb::overload_cast<roadmaker::LaneId>(&roadmaker::RoadNetwork::lane),
+           "id"_a,
            nb::rv_policy::reference_internal)
       .def("junction",
-           nb::overload_cast<roadmaker::JunctionId>(&roadmaker::RoadNetwork::junction), "id"_a,
+           nb::overload_cast<roadmaker::JunctionId>(&roadmaker::RoadNetwork::junction),
+           "id"_a,
            nb::rv_policy::reference_internal)
       .def("find_road", &roadmaker::RoadNetwork::find_road, "odr_id"_a)
       .def("find_junction", &roadmaker::RoadNetwork::find_junction, "odr_id"_a)
@@ -269,20 +276,17 @@ NB_MODULE(_roadmaker, m) {
                    [](roadmaker::RoadNetwork& network) {
                      std::vector<roadmaker::RoadId> ids;
                      network.for_each_road(
-                         [&](roadmaker::RoadId id, const roadmaker::Road&) {
-                           ids.push_back(id);
-                         });
+                         [&](roadmaker::RoadId id, const roadmaker::Road&) { ids.push_back(id); });
                      return ids;
                    })
-      .def_prop_ro("junction_ids",
-                   [](const roadmaker::RoadNetwork& network) {
-                     std::vector<roadmaker::JunctionId> ids;
-                     network.for_each_junction(
-                         [&](roadmaker::JunctionId id, const roadmaker::Junction&) {
-                           ids.push_back(id);
-                         });
-                     return ids;
-                   })
+      .def_prop_ro(
+          "junction_ids",
+          [](const roadmaker::RoadNetwork& network) {
+            std::vector<roadmaker::JunctionId> ids;
+            network.for_each_junction(
+                [&](roadmaker::JunctionId id, const roadmaker::Junction&) { ids.push_back(id); });
+            return ids;
+          })
       .def_prop_ro("road_count", &roadmaker::RoadNetwork::road_count)
       .def_prop_ro("lane_count", &roadmaker::RoadNetwork::lane_count)
       .def_prop_ro("junction_count", &roadmaker::RoadNetwork::junction_count)
@@ -309,34 +313,43 @@ NB_MODULE(_roadmaker, m) {
         auto result = unwrap(roadmaker::parse_xodr(text));
         return std::make_pair(std::move(result.network), std::move(result.diagnostics));
       },
-      "text"_a, "Parses OpenDRIVE XML from a string. Returns (network, diagnostics).");
+      "text"_a,
+      "Parses OpenDRIVE XML from a string. Returns (network, diagnostics).");
 
   m.def(
       "write_xodr",
       [](const roadmaker::RoadNetwork& network, std::string_view name) {
         return unwrap(roadmaker::write_xodr(network, name));
       },
-      "network"_a, "name"_a = "roadmaker",
+      "network"_a,
+      "name"_a = "roadmaker",
       "Serializes the network as OpenDRIVE 1.7 XML (validates first).");
 
   m.def(
       "save_xodr",
-      [](const roadmaker::RoadNetwork& network, const std::filesystem::path& path,
+      [](const roadmaker::RoadNetwork& network,
+         const std::filesystem::path& path,
          std::string_view name) { unwrap(roadmaker::save_xodr(network, path, name)); },
-      "network"_a, "path"_a, "name"_a = "roadmaker");
+      "network"_a,
+      "path"_a,
+      "name"_a = "roadmaker");
 
   // --- authoring -----------------------------------------------------------------
 
   nb::class_<roadmaker::LaneSpec>(m, "LaneSpec")
       .def(nb::init<>())
-      .def("__init__",
-           [](roadmaker::LaneSpec* self, roadmaker::LaneType type, double width,
-              bool outer_marking) {
-             new (self) roadmaker::LaneSpec{
-                 .type = type, .width = width, .outer_marking = outer_marking};
-           },
-           "type"_a = roadmaker::LaneType::Driving, "width"_a = 3.5,
-           "outer_marking"_a = false)
+      .def(
+          "__init__",
+          [](roadmaker::LaneSpec* self,
+             roadmaker::LaneType type,
+             double width,
+             bool outer_marking) {
+            new (self)
+                roadmaker::LaneSpec{.type = type, .width = width, .outer_marking = outer_marking};
+          },
+          "type"_a = roadmaker::LaneType::Driving,
+          "width"_a = 3.5,
+          "outer_marking"_a = false)
       .def_rw("type", &roadmaker::LaneSpec::type)
       .def_rw("width", &roadmaker::LaneSpec::width)
       .def_rw("outer_marking", &roadmaker::LaneSpec::outer_marking);
@@ -352,16 +365,22 @@ NB_MODULE(_roadmaker, m) {
       "author_clothoid_road",
       [](roadmaker::RoadNetwork& network,
          const std::vector<std::pair<double, double>>& waypoints,
-         const roadmaker::LaneProfile& profile, std::string name, std::string odr_id) {
+         const roadmaker::LaneProfile& profile,
+         std::string name,
+         std::string odr_id) {
         std::vector<roadmaker::Waypoint> points;
         points.reserve(waypoints.size());
         for (const auto& [x, y] : waypoints) {
           points.push_back(roadmaker::Waypoint{.x = x, .y = y});
         }
-        return unwrap(roadmaker::author_clothoid_road(network, points, profile,
-                                                      std::move(name), std::move(odr_id)));
+        return unwrap(roadmaker::author_clothoid_road(
+            network, points, profile, std::move(name), std::move(odr_id)));
       },
-      "network"_a, "waypoints"_a, "profile"_a, "name"_a = "", "odr_id"_a = "",
+      "network"_a,
+      "waypoints"_a,
+      "profile"_a,
+      "name"_a = "",
+      "odr_id"_a = "",
       "Fits a G1 clothoid path through (x, y) waypoints and inserts a road. "
       "Returns its RoadId. Raises ValueError on invalid input.");
 
@@ -379,9 +398,8 @@ NB_MODULE(_roadmaker, m) {
   nb::class_<roadmaker::NetworkMesh>(m, "NetworkMesh")
       .def_prop_ro("road_count",
                    [](const roadmaker::NetworkMesh& mesh) { return mesh.roads.size(); })
-      .def_prop_ro(
-          "junction_floor_count",
-          [](const roadmaker::NetworkMesh& mesh) { return mesh.junction_floors.size(); })
+      .def_prop_ro("junction_floor_count",
+                   [](const roadmaker::NetworkMesh& mesh) { return mesh.junction_floors.size(); })
       .def_prop_ro("vertex_count",
                    [](const roadmaker::NetworkMesh& mesh) {
                      std::size_t count = 0;
@@ -406,7 +424,8 @@ NB_MODULE(_roadmaker, m) {
       [](const roadmaker::RoadNetwork& network, const roadmaker::MeshOptions& options) {
         return roadmaker::build_network_mesh(network, options);
       },
-      "network"_a, "options"_a = roadmaker::MeshOptions{},
+      "network"_a,
+      "options"_a = roadmaker::MeshOptions{},
       "Tessellates the network (kernel frame: Z-up, meters).");
 
   m.def(
@@ -414,5 +433,7 @@ NB_MODULE(_roadmaker, m) {
       [](const roadmaker::NetworkMesh& mesh, const std::filesystem::path& path) {
         unwrap(roadmaker::export_glb(mesh, path));
       },
-      "mesh"_a, "path"_a, "Writes binary glTF 2.0 (Y-up, meters).");
+      "mesh"_a,
+      "path"_a,
+      "Writes binary glTF 2.0 (Y-up, meters).");
 }

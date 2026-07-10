@@ -5,10 +5,15 @@ on:
     branches: [main]
   pull_request:
 
+env:
+  # -Werror / /WX only in CI, never for local development.
+  RM_CI_FLAGS: -DRM_BUILD_TESTS=ON -DRM_BUILD_EDITOR=ON -DRM_WERROR=ON -DCMAKE_BUILD_TYPE=Release
+
 jobs:
   build-test:
-    name: ${{ matrix.os }}
+    name: build+test ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix:
@@ -16,13 +21,22 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install Ninja + ccache
+      - name: Install Ninja + CMake
         uses: lukka/get-cmake@latest
 
-      - name: ccache
+      - name: Linux GL/X11 headers (GLFW)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y xorg-dev libgl1-mesa-dev
+
+      - name: MSVC environment
+        if: runner.os == 'Windows'
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Compiler cache
         uses: hendrikmuhs/ccache-action@v1.2
         with:
           key: ${{ matrix.os }}-build
+          variant: ${{ runner.os == 'Windows' && 'sccache' || 'ccache' }}
 
       - name: Cache FetchContent downloads
         uses: actions/cache@v4
@@ -31,14 +45,103 @@ jobs:
           key: deps-${{ matrix.os }}-${{ hashFiles('cmake/deps.cmake') }}
 
       - name: Configure
-        run: >
-          cmake -B build -G Ninja
-          -DCMAKE_BUILD_TYPE=Release
-          -DRM_BUILD_TESTS=ON
-          -DRM_WERROR=ON
+        run: cmake -B build -G Ninja ${{ env.RM_CI_FLAGS }}
 
       - name: Build
         run: cmake --build build
 
       - name: Test
         run: ctest --test-dir build --output-on-failure
+
+  sanitize:
+    name: ASan+UBSan (Linux clang)
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: lukka/get-cmake@latest
+      - uses: hendrikmuhs/ccache-action@v1.2
+        with:
+          key: sanitize
+      - name: Cache FetchContent downloads
+        uses: actions/cache@v4
+        with:
+          path: build/_deps/*-subbuild/*-populate-prefix/src/*.tar.gz
+          key: deps-sanitize-${{ hashFiles('cmake/deps.cmake') }}
+      - name: Configure
+        run: >
+          cmake -B build -G Ninja
+          -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++
+          -DCMAKE_BUILD_TYPE=RelWithDebInfo
+          -DRM_BUILD_TESTS=ON
+          -DRM_SANITIZE=address,undefined
+      - name: Build
+        run: cmake --build build
+      - name: Test
+        run: ctest --test-dir build --output-on-failure
+        env:
+          ASAN_OPTIONS: detect_leaks=1
+          UBSAN_OPTIONS: halt_on_error=1
+
+  format:
+    name: clang-format
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check formatting
+        run: |
+          sudo apt-get update && sudo apt-get install -y clang-format
+          git ls-files '*.cpp' '*.hpp' | xargs clang-format --dry-run --Werror
+
+  python:
+    name: Python wheel + pytest
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: lukka/get-cmake@latest
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: hendrikmuhs/ccache-action@v1.2
+        with:
+          key: python
+      - name: Build wheel
+        run: pip wheel python/ -w dist -v
+      - name: Install wheel + pytest
+        run: |
+          pip install dist/roadmaker-*.whl pytest
+          pytest python/tests -q
+      - name: Export sample .glb artifacts (visual check)
+        run: |
+          python python/examples/load_and_export.py assets/samples/t_junction.xodr t_junction.glb
+          python python/examples/author_road.py authored.xodr authored.glb
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sample-glb
+          path: |
+            t_junction.glb
+            authored.glb
+            authored.xodr
+
+  fuzz-smoke:
+    name: xodr fuzz smoke (30 s)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: lukka/get-cmake@latest
+      - uses: hendrikmuhs/ccache-action@v1.2
+        with:
+          key: fuzz
+      - name: Configure
+        run: >
+          cmake -B build -G Ninja
+          -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++
+          -DCMAKE_BUILD_TYPE=RelWithDebInfo
+          -DRM_BUILD_TESTS=ON -DRM_BUILD_FUZZERS=ON
+      - name: Build fuzzer
+        run: cmake --build build --target roadmaker_fuzz_xodr
+      - name: Run 30 s smoke
+        run: ./build/core/tests/fuzz/roadmaker_fuzz_xodr core/tests/fuzz/corpus -max_total_time=30 -print_final_stats=1

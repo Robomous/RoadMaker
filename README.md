@@ -33,13 +33,13 @@ other.
 
 ## Milestone 1 status (viewer + kernel)
 
-- [ ] OpenDRIVE 1.6/1.7 reader (line/arc/spiral/paramPoly3, lanes, elevation, junctions) with structured warnings
-- [ ] Curvature-adaptive mesh generation with per-lane materials and lane markings
-- [ ] glTF 2.0 (`.glb`) export
-- [ ] Clothoid authoring API (waypoints → G1 clothoid path → valid OpenDRIVE out)
-- [ ] Python package (`pip install`, pythonic API, runnable examples)
-- [ ] Read-only editor: 3D viewport, scene tree, log panel
-- [ ] CI on macOS / Linux / Windows with sanitizers, format check, fuzzing
+- [x] OpenDRIVE 1.6/1.7 reader (line/arc/spiral/paramPoly3, lanes, elevation, junctions) with structured warnings
+- [x] Curvature-adaptive mesh generation with per-lane materials and lane markings
+- [x] glTF 2.0 (`.glb`) export
+- [x] Clothoid authoring API (waypoints → G1 clothoid path → valid OpenDRIVE out)
+- [x] Python package (`pip install`, pythonic API, runnable examples)
+- [x] Read-only editor: 3D viewport, scene tree, log panel
+- [ ] CI green on macOS / Linux / Windows with sanitizers, format check, fuzzing (workflow ready; pending first push)
 
 ## Quickstart
 
