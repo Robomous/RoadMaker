@@ -1,7 +1,7 @@
 # Asset licenses
 
 Ledger for every binary/media asset in the repository (icons, textures,
-models, fonts, images). Policy — see `docs/m2/05_assets.md`:
+models, fonts, images). Policy — see `docs/design/m2/05_assets.md`:
 
 - Allowed licenses: **CC0, MIT, ISC, Apache-2.0** (public-domain US-federal
   works count as CC0 here).

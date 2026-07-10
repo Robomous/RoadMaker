@@ -4,7 +4,7 @@
 Icons and processed textures are committed to the repository (small,
 license-clean); this script exists to regenerate them, to upgrade upstream
 versions, and to host anything too large to commit later. Policy and workflow:
-docs/m2/05_assets.md. Stdlib only — must run on any CI runner.
+docs/design/m2/05_assets.md. Stdlib only — must run on any CI runner.
 
 Usage:
   python3 scripts/fetch_assets.py            # fetch everything missing
