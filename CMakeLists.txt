@@ -12,6 +12,8 @@ option(RM_BUILD_FUZZERS "Build libFuzzer targets (Clang only)" OFF)
 option(RM_BUILD_PYTHON "Build the Python bindings" OFF)
 option(RM_BUILD_EDITOR "Build the Qt editor" OFF)
 option(RM_BUILD_SHARED "Build roadmaker_core as a shared library" OFF)
+# Stub until M2 phase 5 — the exporter lands per docs/m2/04_usd_export.md.
+option(RM_BUILD_USD "Build the OpenUSD exporter" OFF)
 option(RM_INSTALL "Generate install rules for the kernel" ${PROJECT_IS_TOP_LEVEL})
 
 if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
