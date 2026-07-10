@@ -50,9 +50,19 @@ RenderMeshData to_render_data(const std::vector<double>& positions,
                               const std::vector<double>& normals,
                               const std::vector<std::uint32_t>& indices,
                               const std::array<float, 4>& color) {
+  // Explicit double -> float narrowing: this is the kernel -> render
+  // boundary, the one place precision is deliberately dropped.
+  auto narrow = [](const std::vector<double>& values) {
+    std::vector<float> out;
+    out.reserve(values.size());
+    for (const double v : values) {
+      out.push_back(static_cast<float>(v));
+    }
+    return out;
+  };
   RenderMeshData data;
-  data.positions.assign(positions.begin(), positions.end());
-  data.normals.assign(normals.begin(), normals.end());
+  data.positions = narrow(positions);
+  data.normals = narrow(normals);
   data.indices = indices;
   data.color = color;
   return data;
