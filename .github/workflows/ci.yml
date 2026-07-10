@@ -73,6 +73,54 @@ jobs:
       - name: Test
         run: ctest --preset ${{ matrix.preset }}
 
+  shared-core:
+    name: shared kernel ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: lukka/get-cmake@latest
+      - name: MSVC environment
+        if: runner.os == 'Windows'
+        uses: ilammy/msvc-dev-cmd@v1
+      - uses: hendrikmuhs/ccache-action@v1.2
+        with:
+          key: ${{ matrix.os }}-shared
+          variant: ${{ runner.os == 'Windows' && 'sccache' || 'ccache' }}
+      - name: Cache FetchContent downloads
+        uses: actions/cache@v4
+        with:
+          path: build/_deps/*-subbuild/*-populate-prefix/src/*.tar.gz
+          key: deps-${{ matrix.os }}-${{ hashFiles('cmake/deps.cmake') }}
+      # Hidden visibility + explicit exports: a missed RM_API is a link error
+      # here; the install+consume step proves the CMake package works outside
+      # the build tree.
+      - name: Configure (shared kernel, no editor)
+        run: >
+          cmake -B build -G Ninja
+          -DCMAKE_BUILD_TYPE=Release -DRM_WERROR=ON
+          -DRM_BUILD_SHARED=ON -DRM_BUILD_TESTS=ON -DRM_BUILD_EDITOR=OFF
+      - name: Build
+        run: cmake --build build
+      - name: Test against the shared kernel
+        run: ctest --test-dir build --output-on-failure
+      - name: Install
+        run: cmake --install build --prefix _inst
+      - name: Consume installed package
+        run: >
+          cmake -S tests/consume_installed -B build-consume -G Ninja
+          -DCMAKE_BUILD_TYPE=Release
+          -DCMAKE_PREFIX_PATH=${{ github.workspace }}/_inst
+      - name: Build + run consumer
+        run: |
+          cmake --build build-consume
+          ./build-consume/consume_smoke
+        shell: bash
+
   sanitize:
     name: ASan+UBSan (Linux clang)
     runs-on: ubuntu-latest
@@ -80,6 +128,22 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: lukka/get-cmake@latest
+      - name: Linux Qt runtime deps
+        run: >
+          sudo apt-get update && sudo apt-get install -y
+          libgl1-mesa-dev libegl1 libfontconfig1 libxkbcommon-x11-0
+          libxcb-cursor0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1
+          libxcb-randr0 libxcb-render-util0 libxcb-shape0
+          libxcb-xinerama0 libxcb-xkb1
+      - name: Cache Qt
+        uses: actions/cache@v4
+        with:
+          path: |
+            .qt
+            !.qt/venv
+          key: qt-${{ runner.os }}-${{ hashFiles('cmake/QtVersion.cmake') }}
+      - name: Provision Qt
+        run: python3 scripts/setup_qt.py
       - uses: hendrikmuhs/ccache-action@v1.2
         with:
           key: sanitize
@@ -88,12 +152,13 @@ jobs:
         with:
           path: build/_deps/*-subbuild/*-populate-prefix/src/*.tar.gz
           key: deps-sanitize-${{ hashFiles('cmake/deps.cmake') }}
+      # Editor included: ASan surfaces signal/slot lifetime bugs.
       - name: Configure
         run: >
           cmake -B build -G Ninja
           -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++
           -DCMAKE_BUILD_TYPE=RelWithDebInfo
-          -DRM_BUILD_TESTS=ON
+          -DRM_BUILD_TESTS=ON -DRM_BUILD_EDITOR=ON
           -DRM_SANITIZE=address,undefined
       - name: Build
         run: cmake --build build

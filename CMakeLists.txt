@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.26)
 
 project(roadmaker
-  VERSION 0.1.0
+  VERSION 0.2.0
   DESCRIPTION "Open source road-network authoring toolkit for AV simulation"
   HOMEPAGE_URL "https://github.com/robomous/roadmaker"
   LANGUAGES CXX C
@@ -10,7 +10,9 @@ project(roadmaker
 option(RM_BUILD_TESTS "Build unit tests" ON)
 option(RM_BUILD_FUZZERS "Build libFuzzer targets (Clang only)" OFF)
 option(RM_BUILD_PYTHON "Build the Python bindings" OFF)
-option(RM_BUILD_EDITOR "Build the ImGui editor" OFF)
+option(RM_BUILD_EDITOR "Build the Qt editor" OFF)
+option(RM_BUILD_SHARED "Build roadmaker_core as a shared library" OFF)
+option(RM_INSTALL "Generate install rules for the kernel" ${PROJECT_IS_TOP_LEVEL})
 
 if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
   set(CMAKE_BUILD_TYPE RelWithDebInfo CACHE STRING "Build type" FORCE)

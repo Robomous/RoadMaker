@@ -1,6 +1,7 @@
 #pragma once
 
 #include "roadmaker/error.hpp"
+#include "roadmaker/export.hpp"
 #include "roadmaker/road/network.hpp"
 #include "roadmaker/xodr/diagnostic.hpp"
 
@@ -25,10 +26,10 @@ struct XodrParseResult {
 
 /// Parses OpenDRIVE 1.6/1.7 XML from an in-memory buffer.
 /// `source_name` is used in error contexts only.
-[[nodiscard]] Expected<XodrParseResult> parse_xodr(std::string_view xml_text,
-                                                   std::string_view source_name = "<memory>");
+[[nodiscard]] RM_API Expected<XodrParseResult>
+parse_xodr(std::string_view xml_text, std::string_view source_name = "<memory>");
 
 /// Reads and parses a .xodr file (binary mode; CRLF-safe).
-[[nodiscard]] Expected<XodrParseResult> load_xodr(const std::filesystem::path& path);
+[[nodiscard]] RM_API Expected<XodrParseResult> load_xodr(const std::filesystem::path& path);
 
 } // namespace roadmaker

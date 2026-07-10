@@ -1,11 +1,13 @@
 #pragma once
 
+#include "roadmaker/export.hpp"
+
 #include <string_view>
 
 namespace roadmaker {
 
-/// Semantic version of the RoadMaker kernel, e.g. "0.1.0".
-[[nodiscard]] std::string_view version();
+/// Semantic version of the RoadMaker kernel, e.g. "0.2.0".
+[[nodiscard]] RM_API std::string_view version();
 
 } // namespace roadmaker
 

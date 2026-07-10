@@ -1,6 +1,7 @@
 #pragma once
 
 #include "roadmaker/error.hpp"
+#include "roadmaker/export.hpp"
 #include "roadmaker/road/network.hpp"
 
 #include <filesystem>
@@ -18,12 +19,12 @@ namespace roadmaker {
 ///
 /// Output is deterministic (no timestamps) so round-trip tests and version
 /// control stay stable.
-[[nodiscard]] Expected<std::string> write_xodr(const RoadNetwork& network,
-                                               std::string_view document_name = "roadmaker");
+[[nodiscard]] RM_API Expected<std::string> write_xodr(const RoadNetwork& network,
+                                                      std::string_view document_name = "roadmaker");
 
 /// write_xodr + save to disk (binary mode, '\n' line endings).
-[[nodiscard]] Expected<void> save_xodr(const RoadNetwork& network,
-                                       const std::filesystem::path& path,
-                                       std::string_view document_name = "roadmaker");
+[[nodiscard]] RM_API Expected<void> save_xodr(const RoadNetwork& network,
+                                              const std::filesystem::path& path,
+                                              std::string_view document_name = "roadmaker");
 
 } // namespace roadmaker

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "roadmaker/error.hpp"
+#include "roadmaker/export.hpp"
 #include "roadmaker/road/lane.hpp"
 #include "roadmaker/road/network.hpp"
 
@@ -39,7 +40,7 @@ struct LaneProfile {
   bool center_marking = true;
 
   /// Two-lane rural default: one driving lane each way, edge lines.
-  [[nodiscard]] static LaneProfile two_lane_default();
+  [[nodiscard]] RM_API static LaneProfile two_lane_default();
 };
 
 /// Fits a G1 clothoid path through `waypoints` (headings estimated by the
@@ -49,10 +50,10 @@ struct LaneProfile {
 ///
 /// Errors (InvalidArgument): fewer than 2 waypoints, coincident consecutive
 /// waypoints, an odr_id already in use, or an empty lane profile.
-[[nodiscard]] Expected<RoadId> author_clothoid_road(RoadNetwork& network,
-                                                    std::span<const Waypoint> waypoints,
-                                                    const LaneProfile& profile,
-                                                    std::string name = {},
-                                                    std::string odr_id = {});
+[[nodiscard]] RM_API Expected<RoadId> author_clothoid_road(RoadNetwork& network,
+                                                           std::span<const Waypoint> waypoints,
+                                                           const LaneProfile& profile,
+                                                           std::string name = {},
+                                                           std::string odr_id = {});
 
 } // namespace roadmaker

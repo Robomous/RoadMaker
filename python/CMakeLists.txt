@@ -10,7 +10,13 @@ if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
   set(RM_BUILD_TESTS OFF CACHE BOOL "" FORCE)
   set(RM_BUILD_PYTHON OFF CACHE BOOL "" FORCE) # guard against recursion
   set(RM_BUILD_EDITOR OFF CACHE BOOL "" FORCE)
+  set(RM_BUILD_SHARED OFF CACHE BOOL "" FORCE) # wheels always embed a static kernel
+  set(RM_INSTALL OFF CACHE BOOL "" FORCE)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/.. ${CMAKE_CURRENT_BINARY_DIR}/roadmaker_kernel)
+elseif(RM_BUILD_SHARED)
+  # A module linking the shared kernel would not be relocatable into a wheel.
+  message(FATAL_ERROR
+    "RM_BUILD_PYTHON requires the static kernel; configure with RM_BUILD_SHARED=OFF")
 endif()
 
 find_package(Python 3.9 COMPONENTS Interpreter Development.Module REQUIRED)

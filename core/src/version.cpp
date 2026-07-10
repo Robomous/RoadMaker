@@ -3,7 +3,9 @@
 namespace roadmaker {
 
 std::string_view version() {
-  return "0.1.0";
+  // RM_VERSION_STRING is injected by core/CMakeLists.txt from PROJECT_VERSION
+  // so the kernel, packages, and installers can never disagree.
+  return RM_VERSION_STRING;
 }
 
 } // namespace roadmaker

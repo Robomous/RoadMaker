@@ -1,0 +1,16 @@
+@PACKAGE_INIT@
+
+# roadmaker::core's only interface dependency. Consumers provide the
+# tl-expected package (header-only, CC0) via vcpkg/conan/apt/FetchContent —
+# we deliberately do not vendor its header (silent version divergence). The
+# dependency is attached here rather than baked into the export because the
+# build tree links a pinned FetchContent copy instead of an installed package.
+include(CMakeFindDependencyMacro)
+find_dependency(tl-expected)
+
+include("${CMAKE_CURRENT_LIST_DIR}/roadmakerTargets.cmake")
+
+set_property(TARGET roadmaker::core APPEND PROPERTY
+  INTERFACE_LINK_LIBRARIES tl::expected)
+
+check_required_components(roadmaker)
