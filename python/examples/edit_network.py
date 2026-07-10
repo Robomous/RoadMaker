@@ -59,6 +59,12 @@ def main() -> int:
         stack.redo(network)
     assert network.road(road).name == "Main Street"
 
+    # Snapping queries (kernel-side, pure): interactive tools call this per
+    # cursor move. Near a road end the endpoint outranks tangent and grid.
+    snap = rm.edit.snap_point(network, (161.0, 0.5), rm.edit.SnapOptions(radius=2.0, grid=1.0))
+    assert snap.kind == rm.edit.SnapKind.RoadEndpoint
+    print(f"snap near road end: {snap}")
+
     rm.save_xodr(network, out_path, "edit_network_example")
     print(f"wrote {out_path}")
     return 0
