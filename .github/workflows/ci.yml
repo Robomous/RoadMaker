@@ -26,17 +26,12 @@ jobs:
       - name: Install Ninja + CMake
         uses: lukka/get-cmake@latest
 
-      - name: Linux GL/X11/Wayland headers (GLFW)
-        if: runner.os == 'Linux'
-        run: >
-          sudo apt-get update && sudo apt-get install -y
-          xorg-dev libgl1-mesa-dev
-          libwayland-dev wayland-protocols libxkbcommon-dev
 
       - name: Linux Qt runtime deps
         if: runner.os == 'Linux'
         run: >
-          sudo apt-get install -y
+          sudo apt-get update && sudo apt-get install -y
+          libgl1-mesa-dev
           libegl1 libfontconfig1 libxkbcommon-x11-0
           libxcb-cursor0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1
           libxcb-randr0 libxcb-render-util0 libxcb-shape0
