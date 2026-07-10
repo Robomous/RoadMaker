@@ -3,12 +3,11 @@
 
 #include "roadmaker/version.hpp"
 
-#include <catch2/catch_test_macros.hpp>
-#include <catch2/matchers/catch_matchers_floating_point.hpp>
-
 #include <CDT.h>
 #include <Clothoids.hh>
 #include <Eigen/Dense>
+#include <catch2/catch_test_macros.hpp>
+#include <catch2/matchers/catch_matchers_floating_point.hpp>
 #include <clipper2/clipper.h>
 #include <manifold/manifold.h>
 #include <pugixml.hpp>
@@ -39,8 +38,7 @@ TEST_CASE("Clothoids builds a G1 Hermite fit", "[smoke][deps]") {
 TEST_CASE("Clipper2 unions two squares", "[smoke][deps]") {
   Clipper2Lib::PathsD subject{{{0, 0}, {10, 0}, {10, 10}, {0, 10}}};
   Clipper2Lib::PathsD clip{{{5, 5}, {15, 5}, {15, 15}, {5, 15}}};
-  const auto solution =
-      Clipper2Lib::Union(subject, clip, Clipper2Lib::FillRule::NonZero);
+  const auto solution = Clipper2Lib::Union(subject, clip, Clipper2Lib::FillRule::NonZero);
   REQUIRE(solution.size() == 1);
 }
 
