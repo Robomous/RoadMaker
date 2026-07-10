@@ -1,10 +1,10 @@
 #include "document/editor_command.hpp"
 
-#include "document/document.hpp"
-
 #include <spdlog/spdlog.h>
 
 #include <utility>
+
+#include "document/document.hpp"
 
 namespace roadmaker::editor {
 
@@ -25,11 +25,10 @@ void EditorCommand::undo() {
 
 KernelEditorCommand::KernelEditorCommand(Document& document,
                                          std::unique_ptr<roadmaker::edit::Command> command)
-    : EditorCommand(QString::fromUtf8(command->name().data(),
-                                      static_cast<qsizetype>(command->name().size())),
-                    /*already_applied=*/true),
-      document_(document),
-      command_(std::move(command)) {}
+    : EditorCommand(
+          QString::fromUtf8(command->name().data(), static_cast<qsizetype>(command->name().size())),
+          /*already_applied=*/true),
+      document_(document), command_(std::move(command)) {}
 
 void KernelEditorCommand::apply() {
   // Failures here are broken linear-history invariants, not user errors —

@@ -88,7 +88,9 @@ Expected<RoadId> RoadNetwork::restore_road(RoadId id, Road value) {
   return roads_.restore(id, std::move(value));
 }
 
-Expected<void> RoadNetwork::erase_road_exact(RoadId id) { return roads_.erase_exact(id); }
+Expected<void> RoadNetwork::erase_road_exact(RoadId id) {
+  return roads_.erase_exact(id);
+}
 
 Expected<LaneSectionId> RoadNetwork::restore_lane_section(LaneSectionId id, LaneSection value) {
   return sections_.restore(id, std::move(value));
@@ -102,7 +104,9 @@ Expected<LaneId> RoadNetwork::restore_lane(LaneId id, Lane value) {
   return lanes_.restore(id, std::move(value));
 }
 
-Expected<void> RoadNetwork::erase_lane_exact(LaneId id) { return lanes_.erase_exact(id); }
+Expected<void> RoadNetwork::erase_lane_exact(LaneId id) {
+  return lanes_.erase_exact(id);
+}
 
 Expected<JunctionId> RoadNetwork::restore_junction(JunctionId id, Junction value) {
   return junctions_.restore(id, std::move(value));

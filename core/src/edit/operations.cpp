@@ -275,8 +275,7 @@ std::vector<Waypoint> derive_waypoints(const Road& road) {
 }
 
 std::vector<Waypoint> effective_waypoints(const Road& road) {
-  return road.authoring_waypoints.has_value() ? *road.authoring_waypoints
-                                              : derive_waypoints(road);
+  return road.authoring_waypoints.has_value() ? *road.authoring_waypoints : derive_waypoints(road);
 }
 
 /// Stations of the waypoints along the CURRENT reference line: record starts
@@ -355,8 +354,7 @@ GeometryRecord record_head(const GeometryRecord& record, double ds) {
 
 /// Tail part; the start pose comes from evaluating the owning line.
 GeometryRecord record_tail(const GeometryRecord& record, double ds, const PathPoint& start) {
-  GeometryRecord tail{
-      .x = start.x, .y = start.y, .hdg = start.hdg, .length = record.length - ds};
+  GeometryRecord tail{.x = start.x, .y = start.y, .hdg = start.hdg, .length = record.length - ds};
   if (std::holds_alternative<LineGeom>(record.shape)) {
     tail.shape = LineGeom{};
   } else if (const auto* arc = std::get_if<ArcGeom>(&record.shape)) {
@@ -474,9 +472,9 @@ delete_waypoint(const RoadNetwork& network, RoadId road_id, std::size_t index) {
         Error{.code = ErrorCode::InvalidArgument, .message = "waypoint index out of range"});
   }
   if (waypoints.size() <= 2) {
-    return invalid_command(std::string(kName),
-                           Error{.code = ErrorCode::InvalidArgument,
-                                 .message = "a road needs at least 2 waypoints"});
+    return invalid_command(
+        std::string(kName),
+        Error{.code = ErrorCode::InvalidArgument, .message = "a road needs at least 2 waypoints"});
   }
   waypoints.erase(waypoints.begin() + static_cast<std::ptrdiff_t>(index));
   return refit_command(network, road_id, std::string(kName), std::move(waypoints));
@@ -491,10 +489,9 @@ create_road(std::vector<Waypoint> waypoints, LaneProfile profile, std::string na
     return invalid_command(std::string(kName), fit.error());
   }
   auto command = std::make_unique<GenericCommand>(std::string(kName), DirtySet{.topology = true});
-  command->creator = [waypoints = std::move(waypoints),
-                      profile = std::move(profile),
-                      name = std::move(name)](RoadNetwork& network,
-                                              Values& created) -> Expected<void> {
+  command->creator =
+      [waypoints = std::move(waypoints), profile = std::move(profile), name = std::move(name)](
+          RoadNetwork& network, Values& created) -> Expected<void> {
     // author_clothoid_road validates everything before its first mutation.
     auto road_id = author_clothoid_road(network, waypoints, profile, name);
     if (!road_id.has_value()) {
@@ -536,8 +533,8 @@ std::unique_ptr<Command> delete_road(const RoadNetwork& network, RoadId road_id)
   // Detach every reference into the doomed road: junction connections and
   // other roads' links. Undo restores the exact previous values.
   network.for_each_junction([&](JunctionId junction_id, const Junction& junction) {
-    const bool references = std::ranges::any_of(
-        junction.connections, [road_id](const JunctionConnection& connection) {
+    const bool references =
+        std::ranges::any_of(junction.connections, [road_id](const JunctionConnection& connection) {
           return connection.incoming_road == road_id || connection.connecting_road == road_id;
         });
     if (!references) {
@@ -610,8 +607,7 @@ std::unique_ptr<Command> split_road(const RoadNetwork& network, RoadId road_id, 
   ReferenceLine tail_line;
   if (cut_inside_record) {
     head_line.append(record_head(records[covering], local));
-    tail_line.append(
-        record_tail(records[covering], local, road->plan_view.evaluate(split_s)));
+    tail_line.append(record_tail(records[covering], local, road->plan_view.evaluate(split_s)));
   } else {
     tail_line.append(records[covering]);
   }
@@ -664,6 +660,7 @@ std::unique_ptr<Command> split_road(const RoadNetwork& network, RoadId road_id, 
   struct LaneBlueprint {
     Lane value;
   };
+
   std::vector<LaneBlueprint> duplicated_lanes;
   for (const LaneId lane_id : network.lane_section(*spanning)->lanes) {
     Lane copy = *network.lane(lane_id);
@@ -688,8 +685,8 @@ std::unique_ptr<Command> split_road(const RoadNetwork& network, RoadId road_id, 
     duplicated_lanes.push_back(LaneBlueprint{.value = std::move(copy)});
   }
 
-  auto command = std::make_unique<GenericCommand>(
-      std::string(kName), DirtySet{.roads = {road_id}, .topology = true});
+  auto command = std::make_unique<GenericCommand>(std::string(kName),
+                                                  DirtySet{.roads = {road_id}, .topology = true});
 
   // Touched objects: the original road, every moved section, the spanning
   // section's lanes (their successors become identity links into the
@@ -795,8 +792,7 @@ std::unique_ptr<Command> create_junction(const RoadNetwork& network,
         return fail("duplicate road end");
       }
     }
-    const auto& slot =
-        ends[i].contact == ContactPoint::Start ? road->predecessor : road->successor;
+    const auto& slot = ends[i].contact == ContactPoint::Start ? road->predecessor : road->successor;
     if (slot.has_value()) {
       return fail(fmt::format("road '{}' is already linked at that end", road->odr_id));
     }
@@ -804,18 +800,15 @@ std::unique_ptr<Command> create_junction(const RoadNetwork& network,
 
   auto command = std::make_unique<GenericCommand>(std::string(kName), DirtySet{.topology = true});
   for (const RoadEnd& end : ends) {
-    const bool already_touched =
-        std::ranges::any_of(command->before.roads, [&](const auto& entry) {
-          return entry.first == end.road;
-        });
+    const bool already_touched = std::ranges::any_of(
+        command->before.roads, [&](const auto& entry) { return entry.first == end.road; });
     if (!already_touched) {
       command->before.roads.emplace_back(end.road, *network.road(end.road));
     }
   }
   command->creator = [ends = std::vector<RoadEnd>(ends.begin(), ends.end())](
                          RoadNetwork& network, Values& created) -> Expected<void> {
-    const JunctionId junction_id =
-        network.create_junction(next_free_junction_odr_id(network), "");
+    const JunctionId junction_id = network.create_junction(next_free_junction_odr_id(network), "");
     created.junctions.emplace_back(junction_id, Junction{});
     for (const RoadEnd& end : ends) {
       Road& road = *network.road(end.road);
@@ -977,8 +970,8 @@ std::unique_ptr<Command> set_lane_type(const RoadNetwork& network, LaneId lane_i
   }
   Lane after = context->lane;
   after.type = type;
-  auto command = std::make_unique<GenericCommand>(std::string(kName),
-                                                  DirtySet{.roads = {context->road_id}});
+  auto command =
+      std::make_unique<GenericCommand>(std::string(kName), DirtySet{.roads = {context->road_id}});
   command->before.lanes.emplace_back(lane_id, context->lane);
   command->after.lanes.emplace_back(lane_id, std::move(after));
   return command;
@@ -992,9 +985,9 @@ set_lane_width(const RoadNetwork& network, LaneId lane_id, double width_m) {
     return invalid_command(std::string(kName), context.error());
   }
   if (context->lane.odr_id == 0) {
-    return invalid_command(std::string(kName),
-                           Error{.code = ErrorCode::InvalidArgument,
-                                 .message = "the center lane has no width"});
+    return invalid_command(
+        std::string(kName),
+        Error{.code = ErrorCode::InvalidArgument, .message = "the center lane has no width"});
   }
   if (width_m <= 0.0) {
     return invalid_command(
@@ -1003,8 +996,8 @@ set_lane_width(const RoadNetwork& network, LaneId lane_id, double width_m) {
   }
   Lane after = context->lane;
   after.widths = {Poly3{.a = width_m}};
-  auto command = std::make_unique<GenericCommand>(std::string(kName),
-                                                  DirtySet{.roads = {context->road_id}});
+  auto command =
+      std::make_unique<GenericCommand>(std::string(kName), DirtySet{.roads = {context->road_id}});
   command->before.lanes.emplace_back(lane_id, context->lane);
   command->after.lanes.emplace_back(lane_id, std::move(after));
   return command;
@@ -1023,8 +1016,8 @@ std::unique_ptr<Command> set_road_mark(const RoadNetwork& network, LaneId lane_i
   }
   Lane after = context->lane;
   after.road_marks = {mark};
-  auto command = std::make_unique<GenericCommand>(std::string(kName),
-                                                  DirtySet{.roads = {context->road_id}});
+  auto command =
+      std::make_unique<GenericCommand>(std::string(kName), DirtySet{.roads = {context->road_id}});
   command->before.lanes.emplace_back(lane_id, context->lane);
   command->after.lanes.emplace_back(lane_id, std::move(after));
   return command;
@@ -1061,8 +1054,7 @@ std::unique_ptr<Command> set_node_elevation(const RoadNetwork& network,
 
   Road after = *road;
   after.authoring_waypoints = waypoints;
-  const bool all_zero =
-      std::ranges::all_of(heights, [](double h) { return std::abs(h) < 1e-12; });
+  const bool all_zero = std::ranges::all_of(heights, [](double h) { return std::abs(h) < 1e-12; });
   if (all_zero) {
     after.elevation.clear();
   } else {
@@ -1085,8 +1077,7 @@ std::unique_ptr<Command> set_node_elevation(const RoadNetwork& network,
   return command;
 }
 
-std::unique_ptr<Command>
-rename_road(const RoadNetwork& network, RoadId road_id, std::string name) {
+std::unique_ptr<Command> rename_road(const RoadNetwork& network, RoadId road_id, std::string name) {
   static constexpr std::string_view kName = "Rename Road";
   const Road* road = network.road(road_id);
   if (road == nullptr) {

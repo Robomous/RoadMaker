@@ -208,9 +208,8 @@ private:
   /// codes are reported, never silently dropped; a malformed rm:waypoints
   /// value is diagnosed and ignored (the road still loads, Edit Nodes then
   /// derives waypoints from geometry as for any foreign road).
-  void parse_road_user_data(const pugi::xml_node& road_node,
-                            Road& road,
-                            const std::string& location) {
+  void
+  parse_road_user_data(const pugi::xml_node& road_node, Road& road, const std::string& location) {
     for (const pugi::xml_node node : road_node.children("userData")) {
       const std::string code = node.attribute("code").value();
       if (code != "rm:waypoints") {

@@ -180,14 +180,12 @@ TEST(Network, JunctionsTouchingFindsEveryParticipationKind) {
   network.road(linked)->successor =
       roadmaker::RoadLink{.target = junction, .contact = ContactPoint::Start};
 
-  EXPECT_EQ(roadmaker::junctions_touching(network, incoming),
-            (std::vector<JunctionId>{junction}));
+  EXPECT_EQ(roadmaker::junctions_touching(network, incoming), (std::vector<JunctionId>{junction}));
   // The connecting road participates twice (back-ref + connection) but is
   // reported once.
   EXPECT_EQ(roadmaker::junctions_touching(network, connecting),
             (std::vector<JunctionId>{junction}));
-  EXPECT_EQ(roadmaker::junctions_touching(network, linked),
-            (std::vector<JunctionId>{junction}));
+  EXPECT_EQ(roadmaker::junctions_touching(network, linked), (std::vector<JunctionId>{junction}));
   EXPECT_TRUE(roadmaker::junctions_touching(network, bystander).empty());
   EXPECT_TRUE(roadmaker::junctions_touching(network, RoadId{}).empty());
 }

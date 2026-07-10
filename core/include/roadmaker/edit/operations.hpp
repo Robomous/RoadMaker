@@ -50,9 +50,8 @@ create_road(std::vector<Waypoint> waypoints, LaneProfile profile, std::string na
 /// gets [s, length). Sections, profiles, links and lane links are carried
 /// over. M2 restriction: roads participating in a junction cannot be split,
 /// and the split station must not fall inside a paramPoly3 record.
-[[nodiscard]] RM_API std::unique_ptr<Command> split_road(const RoadNetwork& network,
-                                                         RoadId road,
-                                                         double s);
+[[nodiscard]] RM_API std::unique_ptr<Command>
+split_road(const RoadNetwork& network, RoadId road, double s);
 
 /// Deletes the road with its sections and lanes; junction connections and
 /// road links referencing it are detached. Undo restores every object under
@@ -100,15 +99,12 @@ set_road_mark(const RoadNetwork& network, LaneId lane, RoadMark mark);
 /// Sets the elevation at one authoring waypoint; the road's elevation
 /// profile becomes piecewise-linear through all waypoint elevations (an
 /// all-zero profile is written as no profile).
-[[nodiscard]] RM_API std::unique_ptr<Command> set_node_elevation(const RoadNetwork& network,
-                                                                 RoadId road,
-                                                                 std::size_t waypoint_index,
-                                                                 double z);
+[[nodiscard]] RM_API std::unique_ptr<Command>
+set_node_elevation(const RoadNetwork& network, RoadId road, std::size_t waypoint_index, double z);
 
 // --- document ---------------------------------------------------------------
 
-[[nodiscard]] RM_API std::unique_ptr<Command> rename_road(const RoadNetwork& network,
-                                                          RoadId road,
-                                                          std::string name);
+[[nodiscard]] RM_API std::unique_ptr<Command>
+rename_road(const RoadNetwork& network, RoadId road, std::string name);
 
 } // namespace roadmaker::edit

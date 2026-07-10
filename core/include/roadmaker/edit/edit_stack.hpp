@@ -34,6 +34,7 @@ public:
   [[nodiscard]] Expected<void> redo(RoadNetwork& network);
 
   [[nodiscard]] bool can_undo() const { return cursor_ > 0; }
+
   [[nodiscard]] bool can_redo() const { return cursor_ < commands_.size(); }
 
   /// Recorded commands (applied + redoable).

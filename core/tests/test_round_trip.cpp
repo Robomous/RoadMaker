@@ -4,13 +4,14 @@
 #include "roadmaker/road/authoring.hpp"
 #include "roadmaker/xodr/reader.hpp"
 #include "roadmaker/xodr/writer.hpp"
-#include "support/network_compare.hpp"
 
 #include <gtest/gtest.h>
 
 #include <array>
 #include <filesystem>
 #include <string>
+
+#include "support/network_compare.hpp"
 
 using roadmaker::LaneProfile;
 using roadmaker::RoadId;

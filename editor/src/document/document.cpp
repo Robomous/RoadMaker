@@ -1,7 +1,5 @@
 #include "document/document.hpp"
 
-#include "document/editor_command.hpp"
-
 #include "roadmaker/io/gltf_exporter.hpp"
 #include "roadmaker/mesh/mesh_builder.hpp"
 #include "roadmaker/xodr/reader.hpp"
@@ -9,6 +7,8 @@
 #include <spdlog/spdlog.h>
 
 #include <utility>
+
+#include "document/editor_command.hpp"
 
 namespace roadmaker::editor {
 

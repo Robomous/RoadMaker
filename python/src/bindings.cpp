@@ -454,10 +454,10 @@ NB_MODULE(_roadmaker, m) {
 
   // --- editing (undo/redo parity with the editor) ------------------------------
 
-  nb::module_ edit = m.def_submodule(
-      "edit",
-      "Undoable edit commands (kernel command layer). Create a command with "
-      "a factory, then push it onto an EditStack — pushing applies it.");
+  nb::module_ edit =
+      m.def_submodule("edit",
+                      "Undoable edit commands (kernel command layer). Create a command with "
+                      "a factory, then push it onto an EditStack — pushing applies it.");
 
   nb::class_<roadmaker::edit::DirtySet>(edit, "DirtySet")
       .def_ro("roads", &roadmaker::edit::DirtySet::roads)
@@ -465,10 +465,9 @@ NB_MODULE(_roadmaker, m) {
       .def_ro("topology", &roadmaker::edit::DirtySet::topology);
 
   nb::class_<roadmaker::edit::Command>(edit, "Command")
-      .def_prop_ro("name",
-                   [](const roadmaker::edit::Command& command) {
-                     return std::string(command.name());
-                   })
+      .def_prop_ro(
+          "name",
+          [](const roadmaker::edit::Command& command) { return std::string(command.name()); })
       .def("__repr__", [](const roadmaker::edit::Command& command) {
         return "Command('" + std::string(command.name()) + "')";
       });
@@ -532,11 +531,7 @@ NB_MODULE(_roadmaker, m) {
       "road"_a,
       "index"_a,
       "at"_a);
-  edit.def("delete_waypoint",
-           &roadmaker::edit::delete_waypoint,
-           "network"_a,
-           "road"_a,
-           "index"_a);
+  edit.def("delete_waypoint", &roadmaker::edit::delete_waypoint, "network"_a, "road"_a, "index"_a);
   edit.def(
       "create_road",
       [](const std::vector<std::pair<double, double>>& waypoints,
@@ -566,8 +561,7 @@ NB_MODULE(_roadmaker, m) {
            "side: +1 = left of the reference line, -1 = right.");
   edit.def("remove_lane", &roadmaker::edit::remove_lane, "network"_a, "lane"_a);
   edit.def("set_lane_type", &roadmaker::edit::set_lane_type, "network"_a, "lane"_a, "type"_a);
-  edit.def(
-      "set_lane_width", &roadmaker::edit::set_lane_width, "network"_a, "lane"_a, "width_m"_a);
+  edit.def("set_lane_width", &roadmaker::edit::set_lane_width, "network"_a, "lane"_a, "width_m"_a);
   edit.def("set_road_mark", &roadmaker::edit::set_road_mark, "network"_a, "lane"_a, "mark"_a);
   edit.def("set_node_elevation",
            &roadmaker::edit::set_node_elevation,

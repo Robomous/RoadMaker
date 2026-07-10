@@ -3,7 +3,6 @@
 #include "roadmaker/road/authoring.hpp"
 #include "roadmaker/road/network.hpp"
 #include "roadmaker/tol.hpp"
-#include "support/network_compare.hpp"
 
 #include <gtest/gtest.h>
 
@@ -11,6 +10,8 @@
 #include <memory>
 #include <string>
 #include <vector>
+
+#include "support/network_compare.hpp"
 
 using roadmaker::ContactPoint;
 using roadmaker::JunctionConnection;
@@ -104,17 +105,14 @@ TEST(EditOperations, SetLaneTypeWidthAndMarkRoundTrip) {
   const LaneSectionId section = network.road(road)->sections[0];
   const LaneId outer_right = network.lane_section(section)->lanes.back();
 
-  auto set_type =
-      roadmaker::edit::set_lane_type(network, outer_right, LaneType::Parking);
+  auto set_type = roadmaker::edit::set_lane_type(network, outer_right, LaneType::Parking);
   expect_command_round_trip(network, *set_type);
 
   auto set_width = roadmaker::edit::set_lane_width(network, outer_right, 2.75);
   expect_command_round_trip(network, *set_width);
 
   auto set_mark = roadmaker::edit::set_road_mark(
-      network,
-      outer_right,
-      RoadMark{.s_offset = 0.0, .type = RoadMarkType::Solid, .width = 0.25});
+      network, outer_right, RoadMark{.s_offset = 0.0, .type = RoadMarkType::Solid, .width = 0.25});
   expect_command_round_trip(network, *set_mark);
 
   ASSERT_TRUE(set_width->apply(network).has_value());
@@ -135,7 +133,8 @@ TEST(EditOperations, LaneEditsRejectBadInput) {
   expect_command_rejected(network, roadmaker::edit::set_lane_width(network, center, 3.0));
   const LaneId outer = network.lane_section(section)->lanes.back();
   expect_command_rejected(network, roadmaker::edit::set_lane_width(network, outer, 0.0));
-  expect_command_rejected(network, roadmaker::edit::set_lane_type(network, LaneId{}, LaneType::Driving));
+  expect_command_rejected(network,
+                          roadmaker::edit::set_lane_type(network, LaneId{}, LaneType::Driving));
 }
 
 // --- waypoint edits ------------------------------------------------------------
@@ -145,8 +144,7 @@ TEST(EditOperations, MoveWaypointRefitsAndRoundTrips) {
   const RoadId road = author_default(network, "1");
   const double old_length = network.road(road)->length;
 
-  auto command =
-      roadmaker::edit::move_waypoint(network, road, 1, Waypoint{.x = 60.0, .y = 30.0});
+  auto command = roadmaker::edit::move_waypoint(network, road, 1, Waypoint{.x = 60.0, .y = 30.0});
   expect_command_round_trip(network, *command);
 
   ASSERT_TRUE(command->apply(network).has_value());
@@ -163,8 +161,7 @@ TEST(EditOperations, InsertAndDeleteWaypointRoundTrip) {
   RoadNetwork network;
   const RoadId road = author_default(network, "1");
 
-  auto insert =
-      roadmaker::edit::insert_waypoint(network, road, 1, Waypoint{.x = 30.0, .y = 20.0});
+  auto insert = roadmaker::edit::insert_waypoint(network, road, 1, Waypoint{.x = 30.0, .y = 20.0});
   expect_command_round_trip(network, *insert);
 
   auto erase = roadmaker::edit::delete_waypoint(network, road, 1);
@@ -173,8 +170,8 @@ TEST(EditOperations, InsertAndDeleteWaypointRoundTrip) {
 
 TEST(EditOperations, WaypointEditsRejectBadInput) {
   RoadNetwork network;
-  const RoadId road = author(
-      network, {Waypoint{.x = 0.0, .y = 0.0}, Waypoint{.x = 50.0, .y = 0.0}}, "1");
+  const RoadId road =
+      author(network, {Waypoint{.x = 0.0, .y = 0.0}, Waypoint{.x = 50.0, .y = 0.0}}, "1");
 
   expect_command_rejected(network, roadmaker::edit::move_waypoint(network, road, 5, {}));
   // 2 waypoints is the minimum — deleting one must fail.
@@ -239,10 +236,10 @@ TEST(EditOperations, CreateRoadRoundTripsWithStableIds) {
   RoadNetwork network;
   author_default(network, "1");
 
-  auto command = roadmaker::edit::create_road(
-      {Waypoint{.x = 0.0, .y = 50.0}, Waypoint{.x = 80.0, .y = 60.0}},
-      LaneProfile::two_lane_default(),
-      "Second");
+  auto command =
+      roadmaker::edit::create_road({Waypoint{.x = 0.0, .y = 50.0}, Waypoint{.x = 80.0, .y = 60.0}},
+                                   LaneProfile::two_lane_default(),
+                                   "Second");
   expect_command_round_trip(network, *command);
 
   ASSERT_TRUE(command->apply(network).has_value());
@@ -345,8 +342,7 @@ TEST(EditOperations, SplitRoadRejectsBadStationsAndJunctionRoads) {
   const JunctionId junction = network.create_junction("100", "X");
   network.road(road)->successor =
       roadmaker::RoadLink{.target = junction, .contact = ContactPoint::Start};
-  expect_command_rejected(network,
-                          roadmaker::edit::split_road(network, road, length * 0.5));
+  expect_command_rejected(network, roadmaker::edit::split_road(network, road, length * 0.5));
 }
 
 // --- junctions ---------------------------------------------------------------------
@@ -387,8 +383,7 @@ TEST(EditOperations, CreateJunctionRejectsBadEnds) {
   };
   expect_command_rejected(network, roadmaker::edit::create_junction(network, duplicate));
 
-  network.road(b)->predecessor =
-      roadmaker::RoadLink{.target = a, .contact = ContactPoint::End};
+  network.road(b)->predecessor = roadmaker::RoadLink{.target = a, .contact = ContactPoint::End};
   const std::array<RoadEnd, 2> occupied{
       RoadEnd{.road = a, .contact = ContactPoint::End},
       RoadEnd{.road = b, .contact = ContactPoint::Start},
@@ -431,7 +426,7 @@ TEST(EditOperations, AddLaneAppendsOutermostAndRoundTrips) {
   ASSERT_TRUE(command->apply(network).has_value());
   ASSERT_EQ(network.lane_section(section)->lanes.size(), lanes_before + 1);
   const LaneId added = network.lane_section(section)->lanes.back(); // outermost right
-  EXPECT_EQ(network.lane(added)->odr_id, -3); // default profile has -1, -2
+  EXPECT_EQ(network.lane(added)->odr_id, -3);                       // default profile has -1, -2
   EXPECT_EQ(network.lane(added)->type, LaneType::Biking);
   // Width copied from the previous outermost (shoulder, 1.0 m).
   ASSERT_FALSE(network.lane(added)->widths.empty());
@@ -474,8 +469,8 @@ TEST(EditOperations, EditStackDrivesTopologyCommands) {
                   .has_value());
   const RoadId created = network.find_road("2");
   ASSERT_TRUE(created.is_valid());
-  ASSERT_TRUE(stack.push(network, roadmaker::edit::rename_road(network, created, "Renamed"))
-                  .has_value());
+  ASSERT_TRUE(
+      stack.push(network, roadmaker::edit::rename_road(network, created, "Renamed")).has_value());
   const std::string edited = snapshot_xodr(network);
 
   ASSERT_TRUE(stack.undo(network).has_value());

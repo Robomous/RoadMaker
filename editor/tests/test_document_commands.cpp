@@ -1,15 +1,15 @@
 // Document::push_command bridge: apply-once semantics, undo/redo through
 // the kernel, failed applies never pushed, stack cleared on load.
 
-#include "document/document.hpp"
-
 #include "roadmaker/edit/operations.hpp"
 
-#include <QSignalSpy>
 #include <gtest/gtest.h>
 
+#include <QSignalSpy>
 #include <filesystem>
 #include <string>
+
+#include "document/document.hpp"
 
 using roadmaker::RoadId;
 using roadmaker::editor::Document;
@@ -81,13 +81,13 @@ TEST(DocumentCommands, TopologyChangedFiresOnlyForTopologyEdits) {
           .has_value());
   EXPECT_EQ(topology_spy.count(), 0);
 
-  ASSERT_TRUE(document
-                  .push_command(roadmaker::edit::create_road(
-                      {roadmaker::Waypoint{.x = 500.0, .y = 500.0},
-                       roadmaker::Waypoint{.x = 580.0, .y = 510.0}},
-                      roadmaker::LaneProfile::two_lane_default(),
-                      "New Road"))
-                  .has_value());
+  ASSERT_TRUE(
+      document
+          .push_command(roadmaker::edit::create_road({roadmaker::Waypoint{.x = 500.0, .y = 500.0},
+                                                      roadmaker::Waypoint{.x = 580.0, .y = 510.0}},
+                                                     roadmaker::LaneProfile::two_lane_default(),
+                                                     "New Road"))
+          .has_value());
   EXPECT_EQ(topology_spy.count(), 1);
 
   document.undo_stack()->undo(); // undoing the create is also a topology change
