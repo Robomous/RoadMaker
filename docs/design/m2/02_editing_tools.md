@@ -22,10 +22,15 @@ Conventions for every tool:
 ## 1. Select / Move
 
 **Interaction.** LMB click: pick lane/road (existing picking); modifiers:
-Shift = add, Ctrl/Cmd = toggle. LMB drag on empty space: rubber-band rectangle
-(screen space) → `select_many` of roads whose AABB intersects the frustum slab.
-LMB drag **on a geometry node handle** (visible when a road is selected):
-move node with live clothoid re-fit + re-mesh preview; release commits.
+Shift = add, Ctrl/Cmd = toggle. LMB drag on empty space: rubber-band
+rectangle spanned on the ground plane (z = 0) between the press and cursor
+world positions → `select_many` of roads whose mesh AABB intersects the
+rectangle. (The band is evaluated in world space, not as a screen-space
+frustum slab: tools receive only ground-plane world positions through
+`ToolEvent` (`01` §4), which keeps the interaction fully headless-testable;
+for the editor's near-top-down editing views the two agree.) LMB drag **on a
+geometry node handle** (visible when a road is selected): move node with
+live clothoid re-fit + re-mesh preview; release commits.
 
 **Kernel API.** `pick()`, `compute_road_aabbs()` (existing);
 `edit::move_waypoint`; `edit::snap_point` (node drags snap to grid/endpoints).
