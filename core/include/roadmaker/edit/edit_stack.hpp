@@ -1,0 +1,48 @@
+#pragma once
+
+#include "roadmaker/edit/command.hpp"
+#include "roadmaker/error.hpp"
+#include "roadmaker/export.hpp"
+
+#include <cstddef>
+#include <memory>
+#include <vector>
+
+namespace roadmaker::edit {
+
+/// Headless undo/redo stack over Command (docs/m2/01_editing_framework.md
+/// §1.2). This exists for Python and headless parity ONLY — the editor's
+/// single stack is Qt's QUndoStack; a document must never be driven by both.
+class RM_API EditStack {
+public:
+  /// Applies the command and records it on success; a failed apply returns
+  /// the command's error and records nothing (network unchanged per the
+  /// Command contract). Pushing truncates the redo tail.
+  [[nodiscard]] Expected<void> push(RoadNetwork& network, std::unique_ptr<Command> command);
+
+  [[nodiscard]] Expected<void> undo(RoadNetwork& network);
+  [[nodiscard]] Expected<void> redo(RoadNetwork& network);
+
+  [[nodiscard]] bool can_undo() const { return cursor_ > 0; }
+  [[nodiscard]] bool can_redo() const { return cursor_ < commands_.size(); }
+
+  /// Recorded commands (applied + redoable).
+  [[nodiscard]] std::size_t size() const { return commands_.size(); }
+
+  void clear();
+
+  /// Caps recorded history, dropping oldest entries first (their edits stay
+  /// applied — they just become un-undoable). Clamped to at least 1.
+  void set_depth_limit(std::size_t limit);
+
+  [[nodiscard]] std::size_t depth_limit() const { return depth_limit_; }
+
+private:
+  void enforce_depth_limit();
+
+  std::vector<std::unique_ptr<Command>> commands_;
+  std::size_t cursor_ = 0; // commands_[0, cursor_) are currently applied
+  std::size_t depth_limit_ = 256;
+};
+
+} // namespace roadmaker::edit

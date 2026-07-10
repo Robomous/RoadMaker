@@ -1,0 +1,56 @@
+#pragma once
+
+#include "roadmaker/error.hpp"
+#include "roadmaker/export.hpp"
+#include "roadmaker/road/id.hpp"
+
+#include <string_view>
+#include <vector>
+
+namespace roadmaker {
+class RoadNetwork;
+} // namespace roadmaker
+
+namespace roadmaker::edit {
+
+/// What a command invalidated. The editor maps this to incremental
+/// re-meshing (docs/m2/01_editing_framework.md §5); headless consumers may
+/// ignore it.
+struct DirtySet {
+  /// Roads whose geometry or cross-section changed — need re-mesh.
+  std::vector<RoadId> roads;
+
+  /// Junctions whose incoming roads changed — need surface regeneration.
+  std::vector<JunctionId> junctions;
+
+  /// Roads or junctions were added or removed (drives tree-model resets).
+  bool topology = false;
+};
+
+/// One undoable kernel mutation (docs/m2/01_editing_framework.md §1.1).
+///
+/// Contract: `apply` then `revert` restores the network to a state whose
+/// `write_xodr()` output is byte-identical to the pre-apply output. A failed
+/// `apply` leaves the network unchanged (commands validate first, mutate
+/// after); `apply` after a failed `apply` is undefined. Commands capture
+/// value snapshots — never arena pointers, never UI state.
+class RM_API Command {
+public:
+  Command() = default;
+  Command(const Command&) = delete;
+  Command& operator=(const Command&) = delete;
+  Command(Command&&) = delete;
+  Command& operator=(Command&&) = delete;
+  virtual ~Command() = default;
+
+  [[nodiscard]] virtual Expected<void> apply(RoadNetwork& network) = 0;
+  [[nodiscard]] virtual Expected<void> revert(RoadNetwork& network) = 0;
+
+  /// Human-readable operation name for undo menu text ("Move Waypoint").
+  [[nodiscard]] virtual std::string_view name() const = 0;
+
+  /// Valid after a successful apply() or revert().
+  [[nodiscard]] virtual DirtySet dirty() const = 0;
+};
+
+} // namespace roadmaker::edit
