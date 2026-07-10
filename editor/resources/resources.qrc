@@ -1,0 +1,9 @@
+<!-- Icons are addressed as :/icons/<name>.svg regardless of which set they
+     come from (lucide/tabler/material/custom subdirectories) — the alias
+     flattens the path so Icons::get("name") stays source-agnostic.
+     Every file listed here needs a row in ASSETS_LICENSES.md (CI-enforced). -->
+<RCC>
+  <qresource prefix="/icons">
+    <file alias="clothoid-road.svg">icons/custom/clothoid-road.svg</file>
+  </qresource>
+</RCC>

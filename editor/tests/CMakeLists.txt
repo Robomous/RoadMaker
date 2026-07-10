@@ -9,11 +9,14 @@ add_executable(roadmaker_editor_tests
   test_camera.cpp
   test_diagnostics_model.cpp
   test_document.cpp
+  test_editor_command.cpp
+  test_icons.cpp
   test_panels.cpp
   test_picking.cpp
   test_scene_builder.cpp
   test_scene_tree_model.cpp
   test_selection_model.cpp
+  test_tools.cpp
 )
 
 target_compile_definitions(roadmaker_editor_tests

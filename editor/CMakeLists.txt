@@ -1,7 +1,9 @@
 # Qt is provisioned locally by scripts/setup_qt.py (never FetchContent — too
 # large) and discovered via cmake/QtVersion.cmake. LGPLv3, dynamic linking
 # only, confined to editor targets.
-find_package(Qt6 ${RM_QT_VERSION} QUIET COMPONENTS Widgets OpenGLWidgets)
+# Svg backs the bundled monochrome icon set (Icons::get tinting); it is part
+# of the provisioned tree — scripts/setup_qt.py fetches the qtsvg archive.
+find_package(Qt6 ${RM_QT_VERSION} QUIET COMPONENTS Widgets OpenGLWidgets Svg)
 if(NOT Qt6_FOUND)
   message(FATAL_ERROR
     "Qt ${RM_QT_VERSION} not found. Run `python3 scripts/setup_qt.py` to "
@@ -31,10 +33,12 @@ qt_standard_project_setup()
 # editor tests can link the same objects and run headless (offscreen QPA).
 add_library(roadmaker_editor_lib STATIC
   src/app/actions.cpp
+  src/app/icons.cpp
   src/app/main_window.cpp
   src/app/settings.cpp
   src/document/diagnostics_model.cpp
   src/document/document.cpp
+  src/document/editor_command.cpp
   src/document/scene_tree_model.cpp
   src/document/selection_model.cpp
   src/panels/diagnostics_panel.cpp
@@ -43,12 +47,17 @@ add_library(roadmaker_editor_lib STATIC
   src/render/gl_functions.cpp
   src/render/gl_renderer.cpp
   src/render/scene_builder.cpp
+  src/tools/tool.cpp
+  src/tools/tool_manager.cpp
   src/viewport/camera.cpp
   src/viewport/picking.cpp
   src/viewport/viewport_widget.cpp
+  resources/resources.qrc
 )
 
-set_target_properties(roadmaker_editor_lib PROPERTIES AUTOMOC ON)
+# AUTORCC compiles resources.qrc; the lib is static, so icons.cpp pins the
+# generated resource object with Q_INIT_RESOURCE (see the comment there).
+set_target_properties(roadmaker_editor_lib PROPERTIES AUTOMOC ON AUTORCC ON)
 
 target_include_directories(roadmaker_editor_lib PUBLIC src)
 
@@ -60,6 +69,7 @@ target_link_libraries(roadmaker_editor_lib
     Qt6::Widgets
     Qt6::OpenGLWidgets
   PRIVATE
+    Qt6::Svg
     Eigen3::Eigen
     spdlog::spdlog
 )
