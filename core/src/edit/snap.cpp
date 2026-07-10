@@ -44,6 +44,9 @@ snap_point(const RoadNetwork& network, Waypoint cursor, const SnapOptions& optio
 
   if (options.endpoints || options.tangent) {
     network.for_each_road([&](RoadId id, const Road& road) {
+      if (options.exclude_road && *options.exclude_road == id) {
+        return;
+      }
       const ReferenceLine& line = road.plan_view;
       if (line.length() <= tol::kLength) {
         return;

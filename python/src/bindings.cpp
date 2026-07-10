@@ -594,18 +594,24 @@ NB_MODULE(_roadmaker, m) {
              double radius,
              std::optional<double> grid,
              bool endpoints,
-             bool tangent) {
-            new (self) roadmaker::edit::SnapOptions{
-                .radius = radius, .grid = grid, .endpoints = endpoints, .tangent = tangent};
+             bool tangent,
+             std::optional<roadmaker::RoadId> exclude_road) {
+            new (self) roadmaker::edit::SnapOptions{.radius = radius,
+                                                    .grid = grid,
+                                                    .endpoints = endpoints,
+                                                    .tangent = tangent,
+                                                    .exclude_road = exclude_road};
           },
           "radius"_a = 2.0,
           "grid"_a = nb::none(),
           "endpoints"_a = true,
-          "tangent"_a = true)
+          "tangent"_a = true,
+          "exclude_road"_a = nb::none())
       .def_rw("radius", &roadmaker::edit::SnapOptions::radius)
       .def_rw("grid", &roadmaker::edit::SnapOptions::grid)
       .def_rw("endpoints", &roadmaker::edit::SnapOptions::endpoints)
-      .def_rw("tangent", &roadmaker::edit::SnapOptions::tangent);
+      .def_rw("tangent", &roadmaker::edit::SnapOptions::tangent)
+      .def_rw("exclude_road", &roadmaker::edit::SnapOptions::exclude_road);
 
   nb::class_<roadmaker::edit::SnapResult>(edit, "SnapResult")
       .def_ro("position", &roadmaker::edit::SnapResult::position)

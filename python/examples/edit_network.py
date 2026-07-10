@@ -65,6 +65,11 @@ def main() -> int:
     assert snap.kind == rm.edit.SnapKind.RoadEndpoint
     print(f"snap near road end: {snap}")
 
+    # While dragging a node of `road`, exclude it so its own (moving)
+    # endpoint cannot mask other roads' snap candidates.
+    drag_options = rm.edit.SnapOptions(radius=2.0, grid=1.0, exclude_road=road)
+    assert rm.edit.snap_point(network, (161.0, 0.5), drag_options).kind == rm.edit.SnapKind.Grid
+
     rm.save_xodr(network, out_path, "edit_network_example")
     print(f"wrote {out_path}")
     return 0

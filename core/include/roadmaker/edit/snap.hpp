@@ -33,6 +33,11 @@ struct SnapOptions {
 
   bool endpoints = true;
   bool tangent = true;
+
+  /// Road whose endpoints/tangents are skipped as candidates. Set to the
+  /// dragged road during node drags — its own (moving) endpoint would
+  /// otherwise always be the closest candidate and mask every other snap.
+  std::optional<RoadId> exclude_road;
 };
 
 struct SnapResult {
