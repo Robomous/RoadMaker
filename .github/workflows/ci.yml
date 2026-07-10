@@ -53,6 +53,14 @@ jobs:
       - name: Provision Qt
         run: python3 scripts/setup_qt.py
 
+      # gtest_discover_tests runs the editor test exe during the build; the
+      # dynamically linked Qt DLLs must be loadable. Version comes from the
+      # provisioned tree, not hardcoded (pin lives in cmake/QtVersion.cmake).
+      - name: Qt DLLs on PATH (Windows test discovery)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: Resolve-Path .qt/*/msvc*/bin | ForEach-Object { Add-Content $env:GITHUB_PATH $_.Path }
+
       - name: Compiler cache
         uses: hendrikmuhs/ccache-action@v1.2
         with:
