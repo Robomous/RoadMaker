@@ -38,7 +38,7 @@ include(cmake/deps.cmake)
 
 if(RM_BUILD_TESTS)
   enable_testing()
-  include(Catch)
+  include(GoogleTest)
 endif()
 
 add_subdirectory(core)

@@ -22,12 +22,12 @@ target_link_libraries(roadmaker_core_tests
     manifold::manifold
     pugixml::pugixml
     tinygltf::tinygltf
-    Catch2::Catch2WithMain
+    GTest::gtest_main
 )
 
 rm_apply_warnings(roadmaker_core_tests)
 
-catch_discover_tests(roadmaker_core_tests)
+gtest_discover_tests(roadmaker_core_tests)
 
 if(RM_BUILD_FUZZERS)
   # AppleClang from Command Line Tools does not ship the libFuzzer runtime

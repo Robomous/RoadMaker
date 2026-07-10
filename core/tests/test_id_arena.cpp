@@ -1,7 +1,7 @@
 #include "roadmaker/road/arena.hpp"
 #include "roadmaker/road/id.hpp"
 
-#include <catch2/catch_test_macros.hpp>
+#include <gtest/gtest.h>
 
 #include <string>
 #include <unordered_set>
@@ -20,65 +20,66 @@ using WidgetArena = roadmaker::Arena<Widget, WidgetId>;
 
 } // namespace
 
-TEST_CASE("default-constructed Id is invalid", "[id]") {
-  constexpr WidgetId id;
-  STATIC_REQUIRE(!id.is_valid());
+TEST(Id, DefaultConstructedIsInvalid) {
+  constexpr WidgetId kDefault;
+  static_assert(!kDefault.is_valid());
 }
 
-TEST_CASE("Ids compare by index and generation", "[id]") {
-  constexpr WidgetId a{.index = 1, .gen = 0};
-  constexpr WidgetId b{.index = 1, .gen = 1};
-  constexpr WidgetId c{.index = 1, .gen = 0};
-  STATIC_REQUIRE(a != b);
-  STATIC_REQUIRE(a == c);
+TEST(Id, ComparesByIndexAndGeneration) {
+  constexpr WidgetId kA{.index = 1, .gen = 0};
+  constexpr WidgetId kB{.index = 1, .gen = 1};
+  constexpr WidgetId kC{.index = 1, .gen = 0};
+  static_assert(kA != kB);
+  static_assert(kA == kC);
 }
 
-TEST_CASE("Ids are hashable and distinct", "[id]") {
+TEST(Id, HashableAndDistinct) {
   std::unordered_set<WidgetId> set;
   set.insert(WidgetId{.index = 0, .gen = 0});
   set.insert(WidgetId{.index = 0, .gen = 1});
   set.insert(WidgetId{.index = 1, .gen = 0});
-  REQUIRE(set.size() == 3);
+  EXPECT_EQ(set.size(), 3U);
 }
 
-TEST_CASE("arena emplace and get round-trip", "[arena]") {
+TEST(Arena, EmplaceAndGetRoundTrip) {
   WidgetArena arena;
   const WidgetId id = arena.emplace(Widget{.name = "a"});
-  REQUIRE(id.is_valid());
-  REQUIRE(arena.size() == 1);
-  REQUIRE(arena.get(id) != nullptr);
-  REQUIRE(arena.get(id)->name == "a");
+  EXPECT_TRUE(id.is_valid());
+  EXPECT_EQ(arena.size(), 1U);
+  ASSERT_NE(arena.get(id), nullptr);
+  EXPECT_EQ(arena.get(id)->name, "a");
 }
 
-TEST_CASE("get on invalid or foreign ids returns nullptr", "[arena]") {
+TEST(Arena, GetOnInvalidOrForeignIdsReturnsNull) {
   WidgetArena arena;
-  REQUIRE(arena.get(WidgetId{}) == nullptr);
-  REQUIRE(arena.get(WidgetId{.index = 42, .gen = 0}) == nullptr);
+  EXPECT_EQ(arena.get(WidgetId{}), nullptr);
+  EXPECT_EQ(arena.get(WidgetId{.index = 42, .gen = 0}), nullptr);
 }
 
-TEST_CASE("erase invalidates the handle and frees the slot", "[arena]") {
+TEST(Arena, EraseInvalidatesHandleAndFreesSlot) {
   WidgetArena arena;
   const WidgetId id = arena.emplace(Widget{.name = "doomed"});
-  REQUIRE(arena.erase(id));
-  REQUIRE(arena.get(id) == nullptr);
-  REQUIRE(arena.empty());
-  REQUIRE_FALSE(arena.erase(id)); // double erase is a no-op
+  EXPECT_TRUE(arena.erase(id));
+  EXPECT_EQ(arena.get(id), nullptr);
+  EXPECT_TRUE(arena.empty());
+  EXPECT_FALSE(arena.erase(id)); // double erase is a no-op
 }
 
-TEST_CASE("slot reuse bumps the generation", "[arena]") {
+TEST(Arena, SlotReuseBumpsGeneration) {
   WidgetArena arena;
   const WidgetId old_id = arena.emplace(Widget{.name = "old"});
   arena.erase(old_id);
 
   const WidgetId new_id = arena.emplace(Widget{.name = "new"});
-  REQUIRE(new_id.index == old_id.index); // slot reused
-  REQUIRE(new_id.gen != old_id.gen);
+  EXPECT_EQ(new_id.index, old_id.index); // slot reused
+  EXPECT_NE(new_id.gen, old_id.gen);
 
-  REQUIRE(arena.get(old_id) == nullptr); // stale handle stays dead
-  REQUIRE(arena.get(new_id)->name == "new");
+  EXPECT_EQ(arena.get(old_id), nullptr); // stale handle stays dead
+  ASSERT_NE(arena.get(new_id), nullptr);
+  EXPECT_EQ(arena.get(new_id)->name, "new");
 }
 
-TEST_CASE("for_each visits live elements in slot order", "[arena]") {
+TEST(Arena, ForEachVisitsLiveElementsInSlotOrder) {
   WidgetArena arena;
   const WidgetId a = arena.emplace(Widget{.name = "a"});
   const WidgetId b = arena.emplace(Widget{.name = "b"});
@@ -87,9 +88,10 @@ TEST_CASE("for_each visits live elements in slot order", "[arena]") {
 
   std::vector<std::string> visited;
   arena.for_each([&](WidgetId id, const Widget& widget) {
-    REQUIRE(id.is_valid());
+    EXPECT_TRUE(id.is_valid());
     visited.push_back(widget.name);
   });
-  REQUIRE(visited == std::vector<std::string>{"a", "c"});
-  REQUIRE(arena.get(a)->name == "a");
+  EXPECT_EQ(visited, (std::vector<std::string>{"a", "c"}));
+  ASSERT_NE(arena.get(a), nullptr);
+  EXPECT_EQ(arena.get(a)->name, "a");
 }

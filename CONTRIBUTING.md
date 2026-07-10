@@ -35,7 +35,8 @@ cmake --build build-asan && ctest --test-dir build-asan --output-on-failure
 - No exceptions across the public kernel API — return `rm::Expected`.
 - No iostream in `core/` — use fmt/spdlog.
 - Format with `git clang-format` before committing; CI enforces it.
-- Write Catch2 tests with the code, not after.
+- Write tests with the code, not after: GoogleTest for C++, pytest for
+  Python.
 
 ## Commits & PRs
 

@@ -20,7 +20,7 @@ BSL-1.0, Unlicense/CC0. License files verified in each upstream archive.
 | tinygltf | 3.0.0 | MIT | https://github.com/syoyo/tinygltf | glTF 2.0 export (bundles nlohmann/json, MIT; stb, MIT/public-domain) |
 | tl::expected | 1.3.1 | CC0-1.0 | https://github.com/TartanLlama/expected | rm::Expected error returns (std::expected is C++23; kernel is C++20) |
 | fast_float | 8.2.10 | Apache-2.0 OR MIT OR BSL-1.0 | https://github.com/fastfloat/fast_float | Locale-independent number parsing in xodr IO |
-| Catch2 | 3.15.2 | BSL-1.0 | https://github.com/catchorg/Catch2 | Unit tests (test builds only) |
+| GoogleTest | 1.17.0 | BSD-3-Clause | https://github.com/google/googletest | C++ unit tests (test builds only) |
 | nanobind | >=2.1 (pip build requirement) | BSD-3-Clause | https://github.com/wjakob/nanobind | Python bindings (build-time; resolved via pyproject.toml) |
 | GLFW | 3.4 | zlib | https://github.com/glfw/glfw | Editor windowing/input (editor builds only) |
 | Dear ImGui | 1.92.8-docking | MIT | https://github.com/ocornut/imgui | Editor UI (editor builds only) |

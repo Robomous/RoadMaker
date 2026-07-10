@@ -6,14 +6,14 @@
 #include "roadmaker/xodr/reader.hpp"
 #include "roadmaker/xodr/writer.hpp"
 
-#include <catch2/catch_test_macros.hpp>
-#include <catch2/matchers/catch_matchers_floating_point.hpp>
+#include <gtest/gtest.h>
 
 #include <array>
 #include <cmath>
 #include <filesystem>
+#include <numbers>
+#include <string>
 
-using Catch::Matchers::WithinAbs;
 using roadmaker::LaneProfile;
 using roadmaker::RoadId;
 using roadmaker::RoadNetwork;
@@ -21,151 +21,162 @@ using roadmaker::Waypoint;
 
 namespace {
 
-/// Compares two roads' plan-view geometry by dense sampling.
-void require_same_geometry(const roadmaker::Road& a, const roadmaker::Road& b) {
-  REQUIRE_THAT(a.plan_view.length(),
-               WithinAbs(b.plan_view.length(), roadmaker::tol::kRoundTripPosition));
+/// Compares two roads' plan-view geometry by dense sampling. Non-fatal
+/// expectations so a failure pinpoints every diverging station.
+void expect_same_geometry(const roadmaker::Road& a, const roadmaker::Road& b) {
+  EXPECT_NEAR(a.plan_view.length(), b.plan_view.length(), roadmaker::tol::kRoundTripPosition);
   const double length = a.plan_view.length();
   constexpr int kSamples = 200;
   for (int i = 0; i <= kSamples; ++i) {
     const double s = length * i / kSamples;
+    SCOPED_TRACE("s=" + std::to_string(s));
     const auto pa = a.plan_view.evaluate(s);
     const auto pb = b.plan_view.evaluate(s);
-    CAPTURE(s);
-    REQUIRE_THAT(pa.x, WithinAbs(pb.x, roadmaker::tol::kRoundTripPosition));
-    REQUIRE_THAT(pa.y, WithinAbs(pb.y, roadmaker::tol::kRoundTripPosition));
-    REQUIRE_THAT(std::remainder(pa.hdg - pb.hdg, 2.0 * 3.141592653589793),
-                 WithinAbs(0.0, roadmaker::tol::kRoundTripHeading));
+    EXPECT_NEAR(pa.x, pb.x, roadmaker::tol::kRoundTripPosition);
+    EXPECT_NEAR(pa.y, pb.y, roadmaker::tol::kRoundTripPosition);
+    EXPECT_NEAR(std::remainder(pa.hdg - pb.hdg, 2.0 * std::numbers::pi),
+                0.0,
+                roadmaker::tol::kRoundTripHeading);
   }
 }
 
 } // namespace
 
-TEST_CASE("authored clothoid road is G1 continuous", "[authoring]") {
+TEST(Authoring, ClothoidRoadIsG1Continuous) {
   RoadNetwork network;
   const std::array<Waypoint, 4> waypoints{
-      Waypoint{0.0, 0.0}, Waypoint{50.0, 10.0}, Waypoint{90.0, 50.0}, Waypoint{100.0, 100.0}};
+      Waypoint{.x = 0.0, .y = 0.0},
+      Waypoint{.x = 50.0, .y = 10.0},
+      Waypoint{.x = 90.0, .y = 50.0},
+      Waypoint{.x = 100.0, .y = 100.0},
+  };
   const auto road_id = roadmaker::author_clothoid_road(
       network, waypoints, LaneProfile::two_lane_default(), "Test Road", "1");
-  REQUIRE(road_id.has_value());
+  ASSERT_TRUE(road_id.has_value());
 
   const roadmaker::Road& road = *network.road(*road_id);
-  REQUIRE(road.plan_view.records().size() >= 3);
-  REQUIRE(road.length > 100.0); // longer than the straight-line chain
+  EXPECT_GE(road.plan_view.records().size(), 3U);
+  EXPECT_GT(road.length, 100.0); // longer than the straight-line chain
 
-  // The fitted path passes through every waypoint (record joints).
+  // The fitted path passes through every waypoint (record joints);
   // build_G1 makes one clothoid per waypoint pair.
   const auto& records = road.plan_view.records();
-  REQUIRE(records.size() == waypoints.size() - 1);
+  ASSERT_EQ(records.size(), waypoints.size() - 1);
   for (std::size_t i = 0; i < records.size(); ++i) {
-    REQUIRE_THAT(records[i].x, WithinAbs(waypoints[i].x, 1e-9));
-    REQUIRE_THAT(records[i].y, WithinAbs(waypoints[i].y, 1e-9));
+    EXPECT_NEAR(records[i].x, waypoints.at(i).x, 1e-9);
+    EXPECT_NEAR(records[i].y, waypoints.at(i).y, 1e-9);
   }
   const auto end = road.plan_view.evaluate(road.length);
-  REQUIRE_THAT(end.x, WithinAbs(waypoints.back().x, 1e-6));
-  REQUIRE_THAT(end.y, WithinAbs(waypoints.back().y, 1e-6));
+  EXPECT_NEAR(end.x, waypoints.back().x, 1e-6);
+  EXPECT_NEAR(end.y, waypoints.back().y, 1e-6);
 
   // G1 continuity at every joint.
   for (std::size_t i = 1; i < records.size(); ++i) {
     const auto before = road.plan_view.evaluate(records[i].s - 1e-9);
     const auto after = road.plan_view.evaluate(records[i].s + 1e-9);
-    REQUIRE_THAT(before.x, WithinAbs(after.x, roadmaker::tol::kRoundTripPosition));
-    REQUIRE_THAT(before.y, WithinAbs(after.y, roadmaker::tol::kRoundTripPosition));
-    REQUIRE_THAT(before.hdg, WithinAbs(after.hdg, 1e-6));
+    EXPECT_NEAR(before.x, after.x, roadmaker::tol::kRoundTripPosition);
+    EXPECT_NEAR(before.y, after.y, roadmaker::tol::kRoundTripPosition);
+    EXPECT_NEAR(before.hdg, after.hdg, 1e-6);
   }
 
   // Lane structure per the default profile: 0, +1, -1, -2.
   const roadmaker::LaneSection& section = *network.lane_section(road.sections.at(0));
-  REQUIRE(section.lanes.size() == 4);
+  EXPECT_EQ(section.lanes.size(), 4U);
 }
 
-TEST_CASE("authoring rejects bad input", "[authoring]") {
+TEST(Authoring, RejectsBadInput) {
   RoadNetwork network;
   const LaneProfile profile = LaneProfile::two_lane_default();
 
-  REQUIRE_FALSE(
-      roadmaker::author_clothoid_road(network, std::array<Waypoint, 1>{Waypoint{0, 0}}, profile)
-          .has_value());
-  REQUIRE_FALSE(roadmaker::author_clothoid_road(
-                    network, std::array<Waypoint, 2>{Waypoint{1, 1}, Waypoint{1, 1}}, profile)
-                    .has_value());
-  REQUIRE_FALSE(roadmaker::author_clothoid_road(
-                    network, std::array<Waypoint, 2>{Waypoint{0, 0}, Waypoint{9, 9}}, LaneProfile{})
-                    .has_value());
+  EXPECT_FALSE(roadmaker::author_clothoid_road(
+                   network, std::array<Waypoint, 1>{Waypoint{.x = 0, .y = 0}}, profile)
+                   .has_value());
+  EXPECT_FALSE(roadmaker::author_clothoid_road(
+                   network,
+                   std::array<Waypoint, 2>{Waypoint{.x = 1, .y = 1}, Waypoint{.x = 1, .y = 1}},
+                   profile)
+                   .has_value());
+  EXPECT_FALSE(roadmaker::author_clothoid_road(
+                   network,
+                   std::array<Waypoint, 2>{Waypoint{.x = 0, .y = 0}, Waypoint{.x = 9, .y = 9}},
+                   LaneProfile{})
+                   .has_value());
 }
 
-TEST_CASE("author -> write -> parse round-trips within tolerance", "[roundtrip]") {
+TEST(RoundTrip, AuthorWriteParseWithinTolerance) {
   RoadNetwork authored;
-  const std::array<Waypoint, 5> waypoints{Waypoint{0.0, 0.0},
-                                          Waypoint{40.0, 5.0},
-                                          Waypoint{80.0, 30.0},
-                                          Waypoint{100.0, 70.0},
-                                          Waypoint{90.0, 120.0}};
+  const std::array<Waypoint, 5> waypoints{
+      Waypoint{.x = 0.0, .y = 0.0},
+      Waypoint{.x = 40.0, .y = 5.0},
+      Waypoint{.x = 80.0, .y = 30.0},
+      Waypoint{.x = 100.0, .y = 70.0},
+      Waypoint{.x = 90.0, .y = 120.0},
+  };
   const auto road_id = roadmaker::author_clothoid_road(
       authored, waypoints, LaneProfile::two_lane_default(), "Loop", "7");
-  REQUIRE(road_id.has_value());
+  ASSERT_TRUE(road_id.has_value());
 
   const auto xml = roadmaker::write_xodr(authored, "round_trip");
-  REQUIRE(xml.has_value());
+  ASSERT_TRUE(xml.has_value());
 
   const auto reparsed = roadmaker::parse_xodr(*xml, "round_trip");
-  REQUIRE(reparsed.has_value());
-  REQUIRE(roadmaker::count_errors(reparsed->diagnostics) == 0);
-  REQUIRE(reparsed->network.road_count() == 1);
+  ASSERT_TRUE(reparsed.has_value());
+  EXPECT_EQ(roadmaker::count_errors(reparsed->diagnostics), 0U);
+  ASSERT_EQ(reparsed->network.road_count(), 1U);
 
   const roadmaker::Road& original = *authored.road(*road_id);
   const roadmaker::Road& round = *reparsed->network.road(reparsed->network.find_road("7"));
-  require_same_geometry(original, round);
+  expect_same_geometry(original, round);
 
   // Lane structure survives.
   const auto& section_a = *authored.lane_section(original.sections[0]);
   const auto& section_b = *reparsed->network.lane_section(round.sections[0]);
-  REQUIRE(section_a.lanes.size() == section_b.lanes.size());
+  ASSERT_EQ(section_a.lanes.size(), section_b.lanes.size());
   for (std::size_t i = 0; i < section_a.lanes.size(); ++i) {
     const auto& lane_a = *authored.lane(section_a.lanes[i]);
     const auto& lane_b = *reparsed->network.lane(section_b.lanes[i]);
-    REQUIRE(lane_a.odr_id == lane_b.odr_id);
-    REQUIRE(lane_a.type == lane_b.type);
-    REQUIRE(lane_a.widths.size() == lane_b.widths.size());
-    REQUIRE(lane_a.road_marks.size() == lane_b.road_marks.size());
+    EXPECT_EQ(lane_a.odr_id, lane_b.odr_id);
+    EXPECT_EQ(lane_a.type, lane_b.type);
+    EXPECT_EQ(lane_a.widths.size(), lane_b.widths.size());
+    EXPECT_EQ(lane_a.road_marks.size(), lane_b.road_marks.size());
   }
 }
 
-TEST_CASE("parsed sample -> write -> parse preserves topology and geometry", "[roundtrip]") {
+TEST(RoundTrip, ParsedSampleWriteParsePreservesTopologyAndGeometry) {
   auto first = roadmaker::load_xodr(std::filesystem::path(RM_SAMPLES_DIR) / "t_junction.xodr");
-  REQUIRE(first.has_value());
+  ASSERT_TRUE(first.has_value());
 
   const auto xml = roadmaker::write_xodr(first->network, "t_junction");
-  REQUIRE(xml.has_value());
+  ASSERT_TRUE(xml.has_value());
   const auto second = roadmaker::parse_xodr(*xml, "rewritten");
-  REQUIRE(second.has_value());
-  REQUIRE(roadmaker::count_errors(second->diagnostics) == 0);
+  ASSERT_TRUE(second.has_value());
+  EXPECT_EQ(roadmaker::count_errors(second->diagnostics), 0U);
 
-  REQUIRE(second->network.road_count() == first->network.road_count());
-  REQUIRE(second->network.junction_count() == first->network.junction_count());
+  EXPECT_EQ(second->network.road_count(), first->network.road_count());
+  EXPECT_EQ(second->network.junction_count(), first->network.junction_count());
 
   first->network.for_each_road([&](RoadId, const roadmaker::Road& road) {
     const RoadId other_id = second->network.find_road(road.odr_id);
-    REQUIRE(other_id.is_valid());
-    require_same_geometry(road, *second->network.road(other_id));
+    ASSERT_TRUE(other_id.is_valid());
+    expect_same_geometry(road, *second->network.road(other_id));
   });
 
   // Junction connections survive with lane links.
   const auto j1 = *first->network.junction(first->network.find_junction("100"));
   const auto j2 = *second->network.junction(second->network.find_junction("100"));
-  REQUIRE(j1.connections.size() == j2.connections.size());
-  REQUIRE(j2.connections[0].lane_links == j1.connections[0].lane_links);
+  ASSERT_EQ(j1.connections.size(), j2.connections.size());
+  EXPECT_EQ(j2.connections[0].lane_links, j1.connections[0].lane_links);
 }
 
-TEST_CASE("writer refuses invalid networks", "[writer]") {
+TEST(XodrWriter, RefusesInvalidNetworks) {
   RoadNetwork network;
   network.create_road("empty", "1"); // no geometry, no sections
   const auto result = roadmaker::write_xodr(network);
-  REQUIRE_FALSE(result.has_value());
-  REQUIRE(result.error().code == roadmaker::ErrorCode::InvalidArgument);
+  ASSERT_FALSE(result.has_value());
+  EXPECT_EQ(result.error().code, roadmaker::ErrorCode::InvalidArgument);
 }
 
-TEST_CASE("writer refuses discontinuous geometry", "[writer]") {
+TEST(XodrWriter, RefusesDiscontinuousGeometry) {
   RoadNetwork network;
   const RoadId road_id = network.create_road("broken", "1");
   roadmaker::Road& road = *network.road(road_id);
@@ -176,11 +187,11 @@ TEST_CASE("writer refuses discontinuous geometry", "[writer]") {
   network.add_lane_section(road_id, 0.0);
 
   const auto result = roadmaker::write_xodr(network);
-  REQUIRE_FALSE(result.has_value());
-  REQUIRE(result.error().message.find("discontinuity") != std::string::npos);
+  ASSERT_FALSE(result.has_value());
+  EXPECT_NE(result.error().message.find("discontinuity"), std::string::npos);
 }
 
-TEST_CASE("writer refuses dangling lane links", "[writer]") {
+TEST(XodrWriter, RefusesDanglingLaneLinks) {
   RoadNetwork network;
   const RoadId road_id = network.create_road("links", "1");
   roadmaker::Road& road = *network.road(road_id);
@@ -193,6 +204,6 @@ TEST_CASE("writer refuses dangling lane links", "[writer]") {
   network.lane(lane)->successor = -5; // does not exist in next section
 
   const auto result = roadmaker::write_xodr(network);
-  REQUIRE_FALSE(result.has_value());
-  REQUIRE(result.error().message.find("successor") != std::string::npos);
+  ASSERT_FALSE(result.has_value());
+  EXPECT_NE(result.error().message.find("successor"), std::string::npos);
 }

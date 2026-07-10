@@ -171,12 +171,15 @@ FetchContent_Declare(imgui
 )
 
 # ---------------------------------------------------------------------------
-# Catch2 3.15.2 (BSL-1.0) — tests only
+# GoogleTest 1.17.0 (BSD-3-Clause) — tests only (project testing standard)
 if(RM_BUILD_TESTS)
-  FetchContent_Declare(catch2
-    URL https://github.com/catchorg/Catch2/archive/refs/tags/v3.15.2.tar.gz
-    URL_HASH SHA256=acfae120892c2b67a74142d36d060c0caa96f1c3aaa8aabd96e19961163d0420
+  FetchContent_Declare(googletest
+    URL https://github.com/google/googletest/archive/refs/tags/v1.17.0.tar.gz
+    URL_HASH SHA256=65fab701d9829d38cb77c14acdc431d2108bfdbf8979e40eb8ae567edf10b27c
   )
+  set(BUILD_GMOCK OFF)
+  set(INSTALL_GTEST OFF)
+  set(gtest_force_shared_crt ON CACHE BOOL "" FORCE) # MSVC runtime match
 endif()
 
 # ---------------------------------------------------------------------------
@@ -187,8 +190,7 @@ if(RM_BUILD_EDITOR)
   FetchContent_MakeAvailable(glfw imgui)
 endif()
 if(RM_BUILD_TESTS)
-  FetchContent_MakeAvailable(catch2)
-  list(APPEND CMAKE_MODULE_PATH ${catch2_SOURCE_DIR}/extras)
+  FetchContent_MakeAvailable(googletest)
 endif()
 
 # In-tree upstream targets lack the namespaced aliases their installed
@@ -204,7 +206,11 @@ endif()
 # NOTE: fmt/spdlog deliberately stay non-SYSTEM — Apple clang searches
 # /usr/local/include before user -isystem dirs, so SYSTEM-ifying them lets a
 # machine-installed spdlog/fmt shadow our pinned copies (ODR hazard).
-foreach(_dep Clipper2 manifold)
+set(_rm_system_include_deps Clipper2 manifold)
+if(TARGET gtest)
+  list(APPEND _rm_system_include_deps gtest)
+endif()
+foreach(_dep ${_rm_system_include_deps})
   get_target_property(_dep_inc ${_dep} INTERFACE_INCLUDE_DIRECTORIES)
   if(_dep_inc)
     set_target_properties(${_dep} PROPERTIES
