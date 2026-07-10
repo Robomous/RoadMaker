@@ -70,6 +70,15 @@ private:
   };
 
   void rebuild_scene();
+
+  /// Re-uploads only the pending roads' items (GL context must be current —
+  /// called from paintGL, like rebuild_scene). Camera stays put.
+  void apply_pending_road_updates();
+
+  /// Refreshes the cached AABB slots of `roads` (index-parallel to
+  /// document_.mesh().roads; replaced-in-place roads keep their index).
+  void refresh_road_aabbs(const std::vector<RoadId>& roads);
+
   [[nodiscard]] bool is_highlighted(const UploadedItem& item) const;
   [[nodiscard]] Ray ray_through(const QPointF& pos) const;
   void update_hover(const QPointF& pos);
@@ -86,6 +95,15 @@ private:
 
   bool gl_ready_ = false;
   bool scene_dirty_ = false;
+
+  /// Roads awaiting a partial re-upload on the next paint (deduplicated
+  /// there); ignored while a full rebuild is pending.
+  std::vector<RoadId> pending_roads_;
+
+  /// rebuild_scene() re-frames the camera only after a document load —
+  /// edit-driven rebuilds must not yank the view.
+  bool frame_on_rebuild_ = true;
+
   QPoint press_pos_;
   QPoint last_mouse_pos_;
 };

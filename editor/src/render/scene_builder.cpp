@@ -93,26 +93,30 @@ float SceneBounds::framing_radius() const {
   return std::max({dx, dy, 10.0F}) / 2.0F;
 }
 
+void append_road_items(const RoadMesh& road, Scene& scene) {
+  grow_bounds(scene.bounds, road.positions);
+  for (const RoadMesh::LanePatch& patch : road.lanes) {
+    scene.items.push_back(SceneItem{
+        .data =
+            to_render_data(road.positions, road.normals, patch.indices, lane_color(patch.material)),
+        .road = road.road,
+        .lane = patch.lane,
+    });
+  }
+  for (const SubMesh& marking : road.markings) {
+    scene.items.push_back(SceneItem{
+        .data = to_render_data(
+            marking.positions, marking.normals, marking.indices, {0.92F, 0.92F, 0.87F, 1.0F}),
+        .road = road.road,
+        .lane = {},
+    });
+  }
+}
+
 Scene build_scene(const NetworkMesh& mesh) {
   Scene scene;
   for (const RoadMesh& road : mesh.roads) {
-    grow_bounds(scene.bounds, road.positions);
-    for (const RoadMesh::LanePatch& patch : road.lanes) {
-      scene.items.push_back(SceneItem{
-          .data = to_render_data(
-              road.positions, road.normals, patch.indices, lane_color(patch.material)),
-          .road = road.road,
-          .lane = patch.lane,
-      });
-    }
-    for (const SubMesh& marking : road.markings) {
-      scene.items.push_back(SceneItem{
-          .data = to_render_data(
-              marking.positions, marking.normals, marking.indices, {0.92F, 0.92F, 0.87F, 1.0F}),
-          .road = road.road,
-          .lane = {},
-      });
-    }
+    append_road_items(road, scene);
   }
   for (const JunctionFloor& floor : mesh.junction_floors) {
     scene.items.push_back(SceneItem{

@@ -62,8 +62,11 @@ signals:
   /// this signal are stale even when a lookup appears to succeed.
   void loaded();
 
-  /// Tessellation rebuilt (fires after loaded(); M2 edits reuse it).
-  void mesh_changed();
+  /// Tessellation updated. `roads` lists exactly the roads whose meshes
+  /// changed — the viewport re-uploads only those. An EMPTY list means
+  /// everything changed (load, topology edits, junction-floor updates):
+  /// listeners rebuild wholesale.
+  void mesh_changed(const std::vector<RoadId>& roads);
 
   /// Roads or junctions were added or removed by a command (drives tree
   /// resets); fires after mesh_changed().

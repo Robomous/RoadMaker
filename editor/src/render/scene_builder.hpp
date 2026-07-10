@@ -55,6 +55,10 @@ struct Scene {
   SceneBounds bounds;
 };
 
+/// Appends one road's items (lane patches + markings) to `scene`, growing
+/// its bounds — the unit of work for partial viewport re-uploads.
+void append_road_items(const RoadMesh& road, Scene& scene);
+
 /// Flattens a NetworkMesh into upload-ready items: one per lane patch (with
 /// road+lane ids), one per marking (road id only), one per junction floor.
 [[nodiscard]] Scene build_scene(const NetworkMesh& mesh);

@@ -35,11 +35,15 @@ struct PickHit {
   double distance = 0.0; // along the ray [m]
 };
 
-/// Per-road AABB prefilter; rebuild whenever the mesh changes.
+/// Per-road AABB prefilter; INDEX-PARALLEL to NetworkMesh::roads. Rebuild
+/// whenever the mesh changes (or refresh single slots after an incremental
+/// re-mesh — replaced-in-place roads keep their index).
 struct RoadAabb {
   std::array<double, 3> lo{};
   std::array<double, 3> hi{};
 };
+
+[[nodiscard]] RoadAabb compute_road_aabb(const RoadMesh& road);
 
 [[nodiscard]] std::vector<RoadAabb> compute_road_aabbs(const NetworkMesh& mesh);
 
