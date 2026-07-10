@@ -11,85 +11,9 @@
 #include <string>
 #include <utility>
 
+#include "render/scene_builder.hpp"
+
 namespace roadmaker::editor {
-
-namespace {
-
-/// Same palette as the glTF exporter, kept in the editor so the viewport
-/// matches exported files.
-std::array<float, 4> lane_color(LaneType type) {
-  switch (type) {
-  case LaneType::Driving:
-    return {0.25F, 0.25F, 0.27F, 1.0F};
-  case LaneType::Stop:
-    return {0.45F, 0.22F, 0.20F, 1.0F};
-  case LaneType::Shoulder:
-    return {0.42F, 0.42F, 0.39F, 1.0F};
-  case LaneType::Biking:
-    return {0.55F, 0.28F, 0.24F, 1.0F};
-  case LaneType::Sidewalk:
-    return {0.65F, 0.65F, 0.63F, 1.0F};
-  case LaneType::Border:
-    return {0.50F, 0.50F, 0.50F, 1.0F};
-  case LaneType::Restricted:
-    return {0.50F, 0.40F, 0.30F, 1.0F};
-  case LaneType::Parking:
-    return {0.30F, 0.32F, 0.48F, 1.0F};
-  case LaneType::Median:
-    return {0.30F, 0.45F, 0.30F, 1.0F};
-  case LaneType::Curb:
-    return {0.55F, 0.55F, 0.50F, 1.0F};
-  case LaneType::None:
-  case LaneType::Other:
-    return {0.35F, 0.35F, 0.35F, 1.0F};
-  }
-  return {0.35F, 0.35F, 0.35F, 1.0F};
-}
-
-RenderMeshData to_render_data(const std::vector<double>& positions,
-                              const std::vector<double>& normals,
-                              const std::vector<std::uint32_t>& indices,
-                              const std::array<float, 4>& color) {
-  // Explicit double -> float narrowing: this is the kernel -> render
-  // boundary, the one place precision is deliberately dropped.
-  auto narrow = [](const std::vector<double>& values) {
-    std::vector<float> out;
-    out.reserve(values.size());
-    for (const double v : values) {
-      out.push_back(static_cast<float>(v));
-    }
-    return out;
-  };
-  RenderMeshData data;
-  data.positions = narrow(positions);
-  data.normals = narrow(normals);
-  data.indices = indices;
-  data.color = color;
-  return data;
-}
-
-/// Ground grid: 1 m lines over a 200 m square, thicker style left to color.
-RenderMeshData make_grid() {
-  RenderMeshData data;
-  data.kind = PrimitiveKind::Lines;
-  data.color = {0.28F, 0.29F, 0.31F, 1.0F};
-  constexpr int kHalf = 100;
-  std::uint32_t index = 0;
-  for (int i = -kHalf; i <= kHalf; ++i) {
-    const auto a = static_cast<float>(i);
-    const auto h = static_cast<float>(kHalf);
-    // Line parallel to Y at x=i.
-    data.positions.insert(data.positions.end(), {a, -h, 0.0F, a, h, 0.0F});
-    // Line parallel to X at y=i.
-    data.positions.insert(data.positions.end(), {-h, a, 0.0F, h, a, 0.0F});
-    for (int k = 0; k < 4; ++k) {
-      data.indices.push_back(index++);
-    }
-  }
-  return data;
-}
-
-} // namespace
 
 App::App(std::unique_ptr<Renderer> renderer) : renderer_(std::move(renderer)) {}
 
@@ -133,46 +57,13 @@ void App::rebuild_scene() {
 
   mesh_ = build_network_mesh(network_);
 
-  // Scene bounds for camera framing.
-  std::array<float, 3> lo{1e9F, 1e9F, 1e9F};
-  std::array<float, 3> hi{-1e9F, -1e9F, -1e9F};
-  auto grow = [&](const std::vector<double>& positions) {
-    for (std::size_t i = 0; i + 2 < positions.size(); i += 3) {
-      for (int axis = 0; axis < 3; ++axis) {
-        const auto v = static_cast<float>(positions[i + static_cast<std::size_t>(axis)]);
-        lo[static_cast<std::size_t>(axis)] = std::min(lo[static_cast<std::size_t>(axis)], v);
-        hi[static_cast<std::size_t>(axis)] = std::max(hi[static_cast<std::size_t>(axis)], v);
-      }
-    }
-  };
-
-  for (const RoadMesh& road : mesh_.roads) {
-    grow(road.positions);
-    for (const RoadMesh::LanePatch& patch : road.lanes) {
-      RenderMeshData data =
-          to_render_data(road.positions, road.normals, patch.indices, lane_color(patch.material));
-      scene_.push_back(
-          SceneItem{.handle = renderer_->upload(data), .road = road.road, .lane = patch.lane});
-    }
-    for (const SubMesh& marking : road.markings) {
-      RenderMeshData data = to_render_data(
-          marking.positions, marking.normals, marking.indices, {0.92F, 0.92F, 0.87F, 1.0F});
-      scene_.push_back(SceneItem{.handle = renderer_->upload(data), .road = road.road});
-    }
+  Scene scene = build_scene(mesh_);
+  for (const editor::SceneItem& item : scene.items) {
+    scene_.push_back(App::SceneItem{
+        .handle = renderer_->upload(item.data), .road = item.road, .lane = item.lane});
   }
-  for (const SubMesh& floor : mesh_.junction_floors) {
-    RenderMeshData data =
-        to_render_data(floor.positions, floor.normals, floor.indices, {0.18F, 0.18F, 0.19F, 1.0F});
-    scene_.push_back(SceneItem{.handle = renderer_->upload(data)});
-    grow(floor.positions);
-  }
-
-  if (lo[0] < hi[0]) {
-    const std::array<float, 3> center{
-        (lo[0] + hi[0]) / 2, (lo[1] + hi[1]) / 2, (lo[2] + hi[2]) / 2};
-    const float dx = hi[0] - lo[0];
-    const float dy = hi[1] - lo[1];
-    camera_.frame(center, std::max({dx, dy, 10.0F}) / 2.0F);
+  if (scene.bounds.valid()) {
+    camera_.frame(scene.bounds.center(), scene.bounds.framing_radius());
   }
 }
 
