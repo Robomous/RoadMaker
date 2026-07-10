@@ -63,11 +63,13 @@ struct GeometryRecord {
 /// A road's plan-view reference line: a contiguous sequence of geometry
 /// records. `evaluate(s)` is the single entry point for all downstream
 /// consumers (lanes, meshing, editors) — s in [0, length()], clamped.
-class RM_API ReferenceLine {
+// Exported per-method (like RoadNetwork): a class-level RM_API would demand a
+// DLL interface for the std::vector member on MSVC (C4251).
+class ReferenceLine {
 public:
   /// Appends a record; its `s` is overwritten with the current length so
   /// the sequence stays contiguous. Records with length <= 0 are ignored.
-  void append(GeometryRecord record);
+  RM_API void append(GeometryRecord record);
 
   [[nodiscard]] const std::vector<GeometryRecord>& records() const { return records_; }
 
@@ -76,7 +78,7 @@ public:
   [[nodiscard]] bool empty() const { return records_.empty(); }
 
   /// Pose at station s [m], clamped to [0, length()]. Zero pose if empty.
-  [[nodiscard]] PathPoint evaluate(double s) const;
+  [[nodiscard]] RM_API PathPoint evaluate(double s) const;
 
 private:
   std::vector<GeometryRecord> records_;
