@@ -288,8 +288,12 @@ set_target_properties(rm_clothoids PROPERTIES
 find_package(Threads REQUIRED)
 target_link_libraries(rm_clothoids PUBLIC Threads::Threads)
 # Third-party code is built quietly; our warnings apply to roadmaker targets only.
-if(NOT MSVC)
-  target_compile_options(rm_clothoids PRIVATE -w)
+# Force-include <algorithm>: GenericContainer uses std::copy_n without
+# including it (compiles on libc++ only by transitive luck).
+if(MSVC)
+  target_compile_options(rm_clothoids PRIVATE /FIalgorithm)
+else()
+  target_compile_options(rm_clothoids PRIVATE -w -include algorithm)
 endif()
 
 # Dear ImGui static lib (docking) with the GLFW + OpenGL3 backends.

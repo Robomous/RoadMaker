@@ -25,6 +25,8 @@ set(CMAKE_POSITION_INDEPENDENT_CODE ON) # nanobind module links the kernel
 
 # Windows: keep <windows.h> from defining min/max macros anywhere in the build.
 add_compile_definitions($<$<PLATFORM_ID:Windows>:NOMINMAX>)
+# MSVC: sources and string literals are UTF-8 (fmt refuses to build without).
+add_compile_options("$<$<COMPILE_LANG_AND_ID:CXX,MSVC>:/utf-8>")
 
 find_program(RM_CCACHE ccache)
 if(RM_CCACHE)
