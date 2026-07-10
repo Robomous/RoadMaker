@@ -63,6 +63,15 @@ categories) whose model the M4 browser then subsumes. Cost: earlier
 commitment to the runtime manifest format. The [M3a seed](seeds/m3a.md) and
 [M4 seed](seeds/m4.md) both mark this boundary.
 
+## Tracking
+
+Execution is tracked on the public
+[project board](https://github.com/Robomous/RoadMaker/projects) — the
+project's task manager. GitHub milestones mirror the table above, each
+milestone has an `epic`-labeled issue summarizing its seed, and issues carry
+milestone labels (`m2`, `m3a`, …). The board is where day-to-day status
+lives; this page is the plan the board follows.
+
 ## Acceptance mechanics
 
 - Each milestone's release PR attaches the current render of its golden

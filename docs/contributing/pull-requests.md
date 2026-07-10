@@ -56,17 +56,24 @@ the branch. Before/after pairs are ideal for visual changes.
 - Force-pushing to address review is fine; the merge to `main` is what
   matters.
 
-## Milestones, issues, and labels
+## The project board, milestones, issues, and labels
 
-- Work is tracked in **GitHub issues**, grouped by **GitHub milestones**
-  (M1: viewer + kernel — done; M2: interactive editing, junction blending,
-  USD export — current; M3: GIS/lidar import, OpenSCENARIO).
-- Milestone work carries a matching label (e.g. `m2`) and follows the phase
-  plan in the design docs — one epic issue per phase, with PRs referencing
-  their issue (`Closes #N`). See the
-  [M2 overview](../design/m2/00_overview.md).
+- The public
+  [project board](https://github.com/Robomous/RoadMaker/projects) is the
+  **task manager for RoadMaker**: every tracked issue lives on it, grouped
+  by milestone and status. Start there to see what is in flight and what
+  comes next.
+- Work items are **GitHub issues**, grouped by **GitHub milestones** that
+  mirror the [roadmap](../roadmap/roadmap.md): M2 (editing core — current),
+  M3a (visual & standards completeness), M3b (real-world import), M4
+  (scenario mode), M5 (scenario logic).
+- Each milestone has an `epic`-labeled issue summarizing it (larger
+  milestones also get one epic per phase, as in M2); milestone work carries
+  a matching label (`m2`, `m3a`, …) and PRs reference their issue
+  (`Closes #N`). See the [M2 overview](../design/m2/00_overview.md).
 - Found a bug or want a feature that isn't tracked? Open an issue first for
   anything non-trivial — it is the cheapest place to agree on an approach.
+  New issues get triaged onto the board.
 
 ## After the merge
 
