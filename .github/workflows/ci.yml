@@ -5,10 +5,6 @@ on:
     branches: [main]
   pull_request:
 
-env:
-  # -Werror / /WX only in CI, never for local development.
-  RM_CI_FLAGS: -DRM_BUILD_TESTS=ON -DRM_BUILD_EDITOR=ON -DRM_WERROR=ON -DCMAKE_BUILD_TYPE=Release
-
 jobs:
   build-test:
     name: build+test ${{ matrix.os }}
@@ -17,7 +13,13 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-latest, ubuntu-latest, windows-latest]
+        include:
+          - os: macos-latest
+            preset: ci-macos
+          - os: ubuntu-latest
+            preset: ci-linux
+          - os: windows-latest
+            preset: ci-windows
     steps:
       - uses: actions/checkout@v4
 
@@ -31,9 +33,29 @@ jobs:
           xorg-dev libgl1-mesa-dev
           libwayland-dev wayland-protocols libxkbcommon-dev
 
+      - name: Linux Qt runtime deps
+        if: runner.os == 'Linux'
+        run: >
+          sudo apt-get install -y
+          libegl1 libfontconfig1 libxkbcommon-x11-0
+          libxcb-cursor0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1
+          libxcb-randr0 libxcb-render-util0 libxcb-shape0
+          libxcb-xinerama0 libxcb-xkb1
+
       - name: MSVC environment
         if: runner.os == 'Windows'
         uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Cache Qt
+        uses: actions/cache@v4
+        with:
+          path: |
+            .qt
+            !.qt/venv
+          key: qt-${{ runner.os }}-${{ hashFiles('cmake/QtVersion.cmake') }}
+
+      - name: Provision Qt
+        run: python3 scripts/setup_qt.py
 
       - name: Compiler cache
         uses: hendrikmuhs/ccache-action@v1.2
@@ -44,17 +66,17 @@ jobs:
       - name: Cache FetchContent downloads
         uses: actions/cache@v4
         with:
-          path: build/_deps/*-subbuild/*-populate-prefix/src/*.tar.gz
+          path: build/*/_deps/*-subbuild/*-populate-prefix/src/*.tar.gz
           key: deps-${{ matrix.os }}-${{ hashFiles('cmake/deps.cmake') }}
 
       - name: Configure
-        run: cmake -B build -G Ninja ${{ env.RM_CI_FLAGS }}
+        run: cmake --preset ${{ matrix.preset }}
 
       - name: Build
-        run: cmake --build build
+        run: cmake --build --preset ${{ matrix.preset }}
 
       - name: Test
-        run: ctest --test-dir build --output-on-failure
+        run: ctest --preset ${{ matrix.preset }}
 
   sanitize:
     name: ASan+UBSan (Linux clang)

@@ -50,5 +50,6 @@ if(RM_BUILD_PYTHON AND EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/python/CMakeLists.txt)
 endif()
 
 if(RM_BUILD_EDITOR AND EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/editor/CMakeLists.txt)
+  include(cmake/QtVersion.cmake)
   add_subdirectory(editor)
 endif()

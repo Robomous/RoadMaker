@@ -32,9 +32,19 @@ fuzz-*.log
 # ccache
 .ccache/
 
+# Local Qt SDK provisioned by scripts/setup_qt.py
+.qt/
+aqtinstall.log
+
+# Editor workspace artifacts (legacy ImGui layout file)
+imgui.ini
+
 # Local Claude Code config (never committed)
 CLAUDE.md
 .claude/
+
+# Graphipy
+graphify-out/
 
 # ASAM spec reference texts — regenerate via scripts/fetch_asam_specs.py
 # NOTE: the `.claude/` rule above already excludes everything below it, and

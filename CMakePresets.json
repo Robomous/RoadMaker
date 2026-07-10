@@ -1,0 +1,84 @@
+{
+  "version": 6,
+  "cmakeMinimumRequired": { "major": 3, "minor": 26, "patch": 0 },
+  "configurePresets": [
+    {
+      "name": "base",
+      "hidden": true,
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/${presetName}",
+      "cacheVariables": {
+        "RM_BUILD_TESTS": "ON",
+        "RM_BUILD_EDITOR": "ON"
+      }
+    },
+    {
+      "name": "dev-macos",
+      "displayName": "Dev (macOS)",
+      "inherits": "base",
+      "condition": { "type": "equals", "lhs": "${hostSystemName}", "rhs": "Darwin" },
+      "cacheVariables": { "CMAKE_BUILD_TYPE": "RelWithDebInfo" }
+    },
+    {
+      "name": "dev-linux",
+      "displayName": "Dev (Linux)",
+      "inherits": "base",
+      "condition": { "type": "equals", "lhs": "${hostSystemName}", "rhs": "Linux" },
+      "cacheVariables": { "CMAKE_BUILD_TYPE": "RelWithDebInfo" }
+    },
+    {
+      "name": "dev-windows",
+      "displayName": "Dev (Windows)",
+      "inherits": "base",
+      "condition": { "type": "equals", "lhs": "${hostSystemName}", "rhs": "Windows" },
+      "cacheVariables": { "CMAKE_BUILD_TYPE": "RelWithDebInfo" }
+    },
+    {
+      "name": "ci-base",
+      "hidden": true,
+      "inherits": "base",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "RM_WERROR": "ON"
+      }
+    },
+    { "name": "ci-macos", "inherits": "ci-base" },
+    { "name": "ci-linux", "inherits": "ci-base" },
+    { "name": "ci-windows", "inherits": "ci-base" },
+    {
+      "name": "release-base",
+      "hidden": true,
+      "inherits": "base",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "RM_BUILD_SHARED": "ON",
+        "RM_BUILD_PYTHON": "OFF"
+      }
+    },
+    { "name": "release-macos", "inherits": "release-base" },
+    { "name": "release-linux", "inherits": "release-base" },
+    { "name": "release-windows", "inherits": "release-base" }
+  ],
+  "buildPresets": [
+    { "name": "dev-macos", "configurePreset": "dev-macos" },
+    { "name": "dev-linux", "configurePreset": "dev-linux" },
+    { "name": "dev-windows", "configurePreset": "dev-windows" },
+    { "name": "ci-macos", "configurePreset": "ci-macos" },
+    { "name": "ci-linux", "configurePreset": "ci-linux" },
+    { "name": "ci-windows", "configurePreset": "ci-windows" },
+    { "name": "release-macos", "configurePreset": "release-macos" },
+    { "name": "release-linux", "configurePreset": "release-linux" },
+    { "name": "release-windows", "configurePreset": "release-windows" }
+  ],
+  "testPresets": [
+    { "name": "dev-macos", "configurePreset": "dev-macos", "output": { "outputOnFailure": true } },
+    { "name": "dev-linux", "configurePreset": "dev-linux", "output": { "outputOnFailure": true } },
+    { "name": "dev-windows", "configurePreset": "dev-windows", "output": { "outputOnFailure": true } },
+    { "name": "ci-macos", "configurePreset": "ci-macos", "output": { "outputOnFailure": true } },
+    { "name": "ci-linux", "configurePreset": "ci-linux", "output": { "outputOnFailure": true } },
+    { "name": "ci-windows", "configurePreset": "ci-windows", "output": { "outputOnFailure": true } },
+    { "name": "release-macos", "configurePreset": "release-macos", "output": { "outputOnFailure": true } },
+    { "name": "release-linux", "configurePreset": "release-linux", "output": { "outputOnFailure": true } },
+    { "name": "release-windows", "configurePreset": "release-windows", "output": { "outputOnFailure": true } }
+  ]
+}
