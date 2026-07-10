@@ -114,14 +114,16 @@ Scene build_scene(const NetworkMesh& mesh) {
       });
     }
   }
-  for (const SubMesh& floor : mesh.junction_floors) {
+  for (const JunctionFloor& floor : mesh.junction_floors) {
     scene.items.push_back(SceneItem{
-        .data = to_render_data(
-            floor.positions, floor.normals, floor.indices, {0.18F, 0.18F, 0.19F, 1.0F}),
+        .data = to_render_data(floor.mesh.positions,
+                               floor.mesh.normals,
+                               floor.mesh.indices,
+                               {0.18F, 0.18F, 0.19F, 1.0F}),
         .road = {},
         .lane = {},
     });
-    grow_bounds(scene.bounds, floor.positions);
+    grow_bounds(scene.bounds, floor.mesh.positions);
   }
   return scene;
 }

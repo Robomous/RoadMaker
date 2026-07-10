@@ -5,6 +5,8 @@
 #include "roadmaker/mesh/mesh.hpp"
 #include "roadmaker/road/network.hpp"
 
+#include <span>
+
 namespace roadmaker {
 
 struct MeshOptions {
@@ -22,5 +24,23 @@ struct MeshOptions {
 /// xodr parser already diagnosed them.
 [[nodiscard]] RM_API NetworkMesh build_network_mesh(const RoadNetwork& network,
                                                     const MeshOptions& options = {});
+
+/// Re-tessellates ONLY the listed roads, updating `mesh` in place: existing
+/// entries are replaced, new roads appended, erased or degenerate roads
+/// removed. Untouched roads keep their vertex buffers untouched (the editor
+/// re-uploads only what changed). Meshing stays a pure function of the
+/// network — this is the incremental entry point for the same result
+/// build_network_mesh produces from scratch (docs/m2/01 §5).
+RM_API void remesh_roads(const RoadNetwork& network,
+                         NetworkMesh& mesh,
+                         std::span<const RoadId> roads,
+                         const MeshOptions& options = {});
+
+/// Same contract for junction floors, keyed by JunctionId. With
+/// options.junction_floors off, listed junctions simply lose their floors.
+RM_API void remesh_junctions(const RoadNetwork& network,
+                             NetworkMesh& mesh,
+                             std::span<const JunctionId> junctions,
+                             const MeshOptions& options = {});
 
 } // namespace roadmaker

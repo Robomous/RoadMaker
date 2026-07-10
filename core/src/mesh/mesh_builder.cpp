@@ -255,13 +255,16 @@ void build_markings(const RoadNetwork& network,
   }
 }
 
-void build_road_mesh(const RoadNetwork& network,
-                     RoadId road_id,
-                     const Road& road,
-                     const MeshOptions& options,
-                     NetworkMesh& out) {
+/// One road's tessellation; empty (no lanes, no markings) for degenerate
+/// roads — callers drop empty results.
+RoadMesh build_one_road(const RoadNetwork& network,
+                        RoadId road_id,
+                        const Road& road,
+                        const MeshOptions& options) {
+  RoadMesh mesh;
+  mesh.road = road_id;
   if (road.plan_view.empty() || road.sections.empty()) {
-    return; // parser already diagnosed these
+    return mesh; // parser already diagnosed these
   }
 
   SamplingOptions sampling = options.sampling;
@@ -269,8 +272,6 @@ void build_road_mesh(const RoadNetwork& network,
   sampling.extra_stations.insert(sampling.extra_stations.end(), extra.begin(), extra.end());
   const std::vector<double> stations = sample_stations(road.plan_view, sampling);
 
-  RoadMesh mesh;
-  mesh.road = road_id;
   mesh.name = road.name.empty() ? fmt::format("road {}", road.odr_id) : road.name;
 
   for (std::size_t si = 0; si < road.sections.size(); ++si) {
@@ -358,10 +359,7 @@ void build_road_mesh(const RoadNetwork& network,
   if (options.markings) {
     build_markings(network, road, road_id, stations, mesh);
   }
-
-  if (!mesh.lanes.empty() || !mesh.markings.empty()) {
-    out.roads.push_back(std::move(mesh));
-  }
+  return mesh;
 }
 
 /// Plan-view footprint of a road: left boundary forward, right boundary
@@ -398,16 +396,17 @@ Clipper2Lib::PathD road_footprint(const RoadNetwork& network, const Road& road) 
   return path;
 }
 
-void build_junction_floor(const RoadNetwork& network, const Junction& junction, NetworkMesh& out) {
+/// One junction's floor; empty mesh (no indices) when the junction has no
+/// usable connecting-road footprints — callers drop empty results.
+JunctionFloor
+build_one_junction_floor(const RoadNetwork& network, JunctionId junction_id, const Junction& junction) {
+  JunctionFloor result{.junction = junction_id, .mesh = {}};
   // Union of the connecting roads' plan-view footprints.
   Clipper2Lib::PathsD footprints;
   double z_sum = 0.0;
   std::size_t z_count = 0;
   network.for_each_road([&](RoadId, const Road& road) {
-    if (!road.junction.is_valid() || network.junction(road.junction) == nullptr) {
-      return;
-    }
-    if (&*network.junction(road.junction) != &junction) {
+    if (road.junction != junction_id) {
       return;
     }
     if (road.plan_view.empty() || road.sections.empty()) {
@@ -418,13 +417,13 @@ void build_junction_floor(const RoadNetwork& network, const Junction& junction, 
     ++z_count;
   });
   if (footprints.empty()) {
-    return;
+    return result;
   }
   const double floor_z = (z_count > 0 ? z_sum / static_cast<double>(z_count) : 0.0) - kFloorDrop;
 
   const Clipper2Lib::PathsD merged = Clipper2Lib::Union(footprints, Clipper2Lib::FillRule::NonZero);
   if (merged.empty()) {
-    return;
+    return result;
   }
 
   // Constrained triangulation of the merged outline(s).
@@ -446,10 +445,10 @@ void build_junction_floor(const RoadNetwork& network, const Junction& junction, 
   cdt.insertEdges(edges);
   cdt.eraseOuterTrianglesAndHoles();
   if (cdt.triangles.empty()) {
-    return;
+    return result;
   }
 
-  SubMesh floor;
+  SubMesh& floor = result.mesh;
   floor.material = LaneType::None;
   floor.name = fmt::format("junction {} floor", junction.odr_id);
   floor.positions.reserve(cdt.vertices.size() * 3);
@@ -462,7 +461,11 @@ void build_junction_floor(const RoadNetwork& network, const Junction& junction, 
     floor.indices.insert(floor.indices.end(),
                          {triangle.vertices[0], triangle.vertices[1], triangle.vertices[2]});
   }
-  out.junction_floors.push_back(std::move(floor));
+  return result;
+}
+
+bool road_mesh_is_empty(const RoadMesh& mesh) {
+  return mesh.lanes.empty() && mesh.markings.empty();
 }
 
 } // namespace
@@ -470,14 +473,71 @@ void build_junction_floor(const RoadNetwork& network, const Junction& junction, 
 NetworkMesh build_network_mesh(const RoadNetwork& network, const MeshOptions& options) {
   NetworkMesh result;
   network.for_each_road([&](RoadId road_id, const Road& road) {
-    build_road_mesh(network, road_id, road, options, result);
+    RoadMesh mesh = build_one_road(network, road_id, road, options);
+    if (!road_mesh_is_empty(mesh)) {
+      result.roads.push_back(std::move(mesh));
+    }
   });
   if (options.junction_floors) {
-    network.for_each_junction([&](JunctionId, const Junction& junction) {
-      build_junction_floor(network, junction, result);
+    network.for_each_junction([&](JunctionId junction_id, const Junction& junction) {
+      JunctionFloor floor = build_one_junction_floor(network, junction_id, junction);
+      if (!floor.mesh.indices.empty()) {
+        result.junction_floors.push_back(std::move(floor));
+      }
     });
   }
   return result;
+}
+
+void remesh_roads(const RoadNetwork& network,
+                  NetworkMesh& mesh,
+                  std::span<const RoadId> roads,
+                  const MeshOptions& options) {
+  for (const RoadId road_id : roads) {
+    const auto existing = std::ranges::find(mesh.roads, road_id, &RoadMesh::road);
+    const Road* road = network.road(road_id);
+    RoadMesh rebuilt =
+        road != nullptr ? build_one_road(network, road_id, *road, options) : RoadMesh{};
+    if (road == nullptr || road_mesh_is_empty(rebuilt)) {
+      if (existing != mesh.roads.end()) {
+        // vector::erase move-assigns the tail entries; their heap buffers
+        // are stolen, not copied, so untouched roads keep their data().
+        mesh.roads.erase(existing);
+      }
+      continue;
+    }
+    if (existing != mesh.roads.end()) {
+      *existing = std::move(rebuilt);
+    } else {
+      mesh.roads.push_back(std::move(rebuilt));
+    }
+  }
+}
+
+void remesh_junctions(const RoadNetwork& network,
+                      NetworkMesh& mesh,
+                      std::span<const JunctionId> junctions,
+                      const MeshOptions& options) {
+  for (const JunctionId junction_id : junctions) {
+    const auto existing =
+        std::ranges::find(mesh.junction_floors, junction_id, &JunctionFloor::junction);
+    const Junction* junction =
+        options.junction_floors ? network.junction(junction_id) : nullptr;
+    JunctionFloor rebuilt = junction != nullptr
+                                ? build_one_junction_floor(network, junction_id, *junction)
+                                : JunctionFloor{.junction = junction_id, .mesh = {}};
+    if (rebuilt.mesh.indices.empty()) {
+      if (existing != mesh.junction_floors.end()) {
+        mesh.junction_floors.erase(existing);
+      }
+      continue;
+    }
+    if (existing != mesh.junction_floors.end()) {
+      *existing = std::move(rebuilt);
+    } else {
+      mesh.junction_floors.push_back(std::move(rebuilt));
+    }
+  }
 }
 
 } // namespace roadmaker

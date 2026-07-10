@@ -68,8 +68,8 @@ public:
     for (const RoadMesh& road : mesh.roads) {
       scene.nodes.push_back(add_road_node(road));
     }
-    for (const SubMesh& floor : mesh.junction_floors) {
-      scene.nodes.push_back(add_submesh_node(floor, floor_material()));
+    for (const JunctionFloor& floor : mesh.junction_floors) {
+      scene.nodes.push_back(add_submesh_node(floor.mesh, floor_material()));
     }
     model_.scenes.push_back(std::move(scene));
     model_.defaultScene = 0;

@@ -51,13 +51,20 @@ struct RoadMesh {
   std::vector<SubMesh> markings;
 };
 
+/// One junction's floor, keyed by its id so incremental re-meshing can
+/// replace exactly the affected entry.
+struct JunctionFloor {
+  JunctionId junction;
+  SubMesh mesh;
+};
+
 /// Whole-network tessellation result.
 struct NetworkMesh {
   std::vector<RoadMesh> roads;
 
   /// Plan-view junction floors (Clipper2 union + CDT). Full 3D junction
   /// surface blending is Milestone 2 — this is the explicit M1 seam.
-  std::vector<SubMesh> junction_floors;
+  std::vector<JunctionFloor> junction_floors;
 };
 
 } // namespace roadmaker
