@@ -1,0 +1,32 @@
+[build-system]
+requires = ["scikit-build-core>=0.10", "nanobind>=2.1"]
+build-backend = "scikit_build_core.build"
+
+[project]
+name = "roadmaker"
+version = "0.1.0"
+description = "Road-network authoring toolkit for AV simulation: clothoid geometry, ASAM OpenDRIVE I/O, mesh generation, glTF export"
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "MIT" }
+authors = [{ name = "Robomous", email = "hello@robomous.ai" }]
+keywords = ["opendrive", "autonomous-driving", "simulation", "roads", "clothoid", "gltf"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "License :: OSI Approved :: MIT License",
+  "Programming Language :: C++",
+  "Programming Language :: Python :: 3",
+  "Topic :: Scientific/Engineering",
+]
+
+[project.urls]
+Homepage = "https://github.com/robomous/roadmaker"
+
+[tool.scikit-build]
+minimum-version = "0.10"
+cmake.version = ">=3.26"
+wheel.packages = ["src/roadmaker"]
+build-dir = "build/{wheel_tag}"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
