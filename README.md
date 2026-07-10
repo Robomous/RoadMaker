@@ -39,7 +39,7 @@ other.
 - [x] Clothoid authoring API (waypoints → G1 clothoid path → valid OpenDRIVE out)
 - [x] Python package (`pip install`, pythonic API, runnable examples)
 - [x] Read-only editor: 3D viewport, scene tree, log panel
-- [ ] CI green on macOS / Linux / Windows with sanitizers, format check, fuzzing (workflow ready; pending first push)
+- [x] CI green on macOS / Linux / Windows with sanitizers, format check, fuzzing
 
 ## Quickstart
 
