@@ -47,7 +47,7 @@ add_library(roadmaker_editor_lib STATIC
   src/render/gl_functions.cpp
   src/render/gl_renderer.cpp
   src/render/scene_builder.cpp
-  src/tools/node_drag_tool.cpp
+  src/tools/select_tool.cpp
   src/tools/tool.cpp
   src/tools/tool_manager.cpp
   src/viewport/camera.cpp

@@ -15,6 +15,7 @@
 #include "document/document.hpp"
 #include "document/scene_tree_model.hpp"
 #include "document/selection_model.hpp"
+#include "tools/tool_manager.hpp"
 #include "viewport/viewport_widget.hpp"
 
 namespace roadmaker::editor {
@@ -51,6 +52,7 @@ private:
   SelectionModel selection_;
   SceneTreeModel scene_tree_model_;
   DiagnosticsModel diagnostics_model_;
+  ToolManager tool_manager_; // declared before viewport_, which references it
 
   Actions* actions_;
   Settings settings_;

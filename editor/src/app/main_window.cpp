@@ -19,14 +19,15 @@
 #include "panels/diagnostics_panel.hpp"
 #include "panels/properties_panel.hpp"
 #include "panels/scene_tree_panel.hpp"
+#include "tools/select_tool.hpp"
 
 namespace roadmaker::editor {
 
 MainWindow::MainWindow(QWidget* parent)
     : QMainWindow(parent), selection_(document_), scene_tree_model_(document_),
       diagnostics_model_(document_), actions_(new Actions(*document_.undo_stack(), this)),
-      viewport_(new ViewportWidget(document_, selection_, this)), status_hover_(new QLabel(this)),
-      status_entities_(new QLabel(this)) {
+      viewport_(new ViewportWidget(document_, selection_, tool_manager_, this)),
+      status_hover_(new QLabel(this)), status_entities_(new QLabel(this)) {
   setAcceptDrops(true);
   setCentralWidget(viewport_); // central widget: always visible, never dockable
   resize(1600, 1000);
@@ -51,6 +52,18 @@ MainWindow::MainWindow(QWidget* parent)
     diagnostics_dock_->setVisible(!document_.diagnostics().empty() ||
                                   diagnostics_dock_->isVisible());
   });
+
+  // Editing tools (M2). Select/Move is the default; guidance lands in the
+  // status bar via the tool's status_message.
+  auto select_tool = std::make_unique<SelectTool>(document_, selection_);
+  connect(select_tool.get(), &Tool::status_message, this, [this](const QString& text) {
+    statusBar()->showMessage(text, 5000);
+  });
+  tool_manager_.register_tool(ToolId::Select, std::move(select_tool));
+  connect(actions_->tool_select, &QAction::triggered, this, [this] {
+    tool_manager_.set_active(ToolId::Select);
+  });
+  tool_manager_.set_active(ToolId::Select);
 
   // The freshly-built arrangement is the canonical layout Reset Layout
   // restores; user geometry (if any) is applied on top of it.
@@ -123,6 +136,8 @@ void MainWindow::build_toolbar() {
   toolbar->setMovable(false);
   toolbar->addAction(actions_->open);
   toolbar->addAction(actions_->export_glb);
+  toolbar->addSeparator();
+  toolbar->addAction(actions_->tool_select);
   toolbar->addSeparator();
   toolbar->addAction(actions_->reset_camera);
   toolbar->addAction(actions_->frame_selection);
