@@ -168,6 +168,39 @@ TEST(RoundTrip, ParsedSampleWriteParsePreservesTopologyAndGeometry) {
   EXPECT_EQ(j2.connections[0].lane_links, j1.connections[0].lane_links);
 }
 
+TEST(RoundTrip, AuthoringWaypointsSurviveWriteParse) {
+  RoadNetwork authored;
+  const std::array<Waypoint, 3> waypoints{
+      Waypoint{.x = 0.0, .y = 0.0},
+      Waypoint{.x = 50.5, .y = 10.25},
+      Waypoint{.x = 100.0, .y = -3.125},
+  };
+  const auto road_id = roadmaker::author_clothoid_road(
+      authored, waypoints, LaneProfile::two_lane_default(), "WP", "1");
+  ASSERT_TRUE(road_id.has_value());
+  ASSERT_TRUE(authored.road(*road_id)->authoring_waypoints.has_value());
+
+  const auto xml = roadmaker::write_xodr(authored, "wp");
+  ASSERT_TRUE(xml.has_value());
+  EXPECT_NE(xml->find("rm:waypoints"), std::string::npos);
+
+  const auto reparsed = roadmaker::parse_xodr(*xml, "wp");
+  ASSERT_TRUE(reparsed.has_value());
+  const roadmaker::Road& round = *reparsed->network.road(reparsed->network.find_road("1"));
+  ASSERT_TRUE(round.authoring_waypoints.has_value());
+  // The writer's shortest-round-trip formatting reproduces doubles exactly.
+  EXPECT_EQ(*round.authoring_waypoints,
+            (std::vector<Waypoint>(waypoints.begin(), waypoints.end())));
+}
+
+TEST(RoundTrip, ForeignRoadsLoadWithoutAuthoringWaypoints) {
+  auto loaded = roadmaker::load_xodr(std::filesystem::path(RM_SAMPLES_DIR) / "t_junction.xodr");
+  ASSERT_TRUE(loaded.has_value());
+  loaded->network.for_each_road([](RoadId, const roadmaker::Road& road) {
+    EXPECT_FALSE(road.authoring_waypoints.has_value());
+  });
+}
+
 TEST(XodrWriter, RefusesInvalidNetworks) {
   RoadNetwork network;
   network.create_road("empty", "1"); // no geometry, no sections

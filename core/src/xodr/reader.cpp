@@ -15,8 +15,10 @@
 #include <set>
 #include <sstream>
 #include <string>
+#include <string_view>
 #include <system_error>
 #include <utility>
+#include <vector>
 
 namespace roadmaker {
 
@@ -181,6 +183,7 @@ private:
     parse_elevation(road_node.child("elevationProfile"), road, location);
     parse_lateral_profile(road_node.child("lateralProfile"), road, location);
     parse_lanes(road_node.child("lanes"), road_id, location);
+    parse_road_user_data(road_node, road, location);
 
     // Stash string-typed references for pass 2.
     PendingRoadRefs pending{.road = road_id};
@@ -194,11 +197,57 @@ private:
     for (const pugi::xml_node child : road_node.children()) {
       const std::string name = child.name();
       if (name != "planView" && name != "elevationProfile" && name != "lateralProfile" &&
-          name != "lanes" && name != "link" && name != "type") {
+          name != "lanes" && name != "link" && name != "type" && name != "userData") {
         warn_unsupported(name, location);
       }
     }
     current_road_ = {};
+  }
+
+  /// RoadMaker's own <userData> extensions (OpenDRIVE 1.9.0 §7.2). Unknown
+  /// codes are reported, never silently dropped; a malformed rm:waypoints
+  /// value is diagnosed and ignored (the road still loads, Edit Nodes then
+  /// derives waypoints from geometry as for any foreign road).
+  void parse_road_user_data(const pugi::xml_node& road_node,
+                            Road& road,
+                            const std::string& location) {
+    for (const pugi::xml_node node : road_node.children("userData")) {
+      const std::string code = node.attribute("code").value();
+      if (code != "rm:waypoints") {
+        diag(Severity::Warning,
+             location,
+             fmt::format("userData code '{}' is not understood and was ignored", code));
+        continue;
+      }
+      std::vector<Waypoint> waypoints;
+      bool malformed = false;
+      const std::string value = node.attribute("value").value();
+      for (std::size_t begin = 0; begin <= value.size();) {
+        std::size_t end = value.find(';', begin);
+        if (end == std::string::npos) {
+          end = value.size();
+        }
+        const std::string_view pair = std::string_view(value).substr(begin, end - begin);
+        const std::size_t comma = pair.find(',');
+        std::optional<double> x;
+        std::optional<double> y;
+        if (comma != std::string_view::npos) {
+          x = to_double(pair.substr(0, comma));
+          y = to_double(pair.substr(comma + 1));
+        }
+        if (!x.has_value() || !y.has_value()) {
+          malformed = true;
+          break;
+        }
+        waypoints.push_back(Waypoint{.x = *x, .y = *y});
+        begin = end + 1;
+      }
+      if (malformed || waypoints.size() < 2) {
+        diag(Severity::Warning, location, "malformed rm:waypoints userData ignored");
+        continue;
+      }
+      road.authoring_waypoints = std::move(waypoints);
+    }
   }
 
   void parse_plan_view(const pugi::xml_node& plan_view, Road& road, const std::string& location) {

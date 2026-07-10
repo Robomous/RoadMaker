@@ -24,6 +24,15 @@ struct RoadLink {
   ContactPoint contact = ContactPoint::Start;
 };
 
+/// Plan-view waypoint [m] for clothoid path fitting (authoring API and the
+/// M2 node-editing tools).
+struct Waypoint {
+  double x = 0.0;
+  double y = 0.0;
+
+  friend constexpr bool operator==(const Waypoint&, const Waypoint&) = default;
+};
+
 /// One specific end of a road — how callers name junction arms and
 /// tangent-continuation anchors (docs/m2/01_editing_framework.md §2.3).
 struct RoadEnd {
@@ -70,6 +79,14 @@ struct Road {
 
   std::optional<RoadLink> predecessor;
   std::optional<RoadLink> successor;
+
+  /// The waypoints the reference line was fitted through. Set by the
+  /// authoring API and node-edit commands; persisted in .xodr as
+  /// `<userData code="rm:waypoints">` (spec-sanctioned extension element,
+  /// OpenDRIVE 1.9.0 §7.2) so edit sessions survive save/load. Roads from
+  /// foreign files load without it — Edit Nodes derives waypoints lazily
+  /// (docs/m2/01_editing_framework.md §2.5).
+  std::optional<std::vector<Waypoint>> authoring_waypoints;
 };
 
 } // namespace roadmaker

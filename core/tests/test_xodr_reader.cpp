@@ -179,6 +179,42 @@ TEST(XodrReader, UnsupportedElementsWarnOnceAndAreNeverSilent) {
   EXPECT_EQ(network.lane(section.lanes.back())->type, LaneType::Other);
 }
 
+TEST(XodrReader, UserDataWaypointsParseAndBadOnesAreDiagnosed) {
+  constexpr const char* kXml = R"(<OpenDRIVE>
+  <header revMajor="1" revMinor="7"/>
+  <road id="1" length="10">
+    <planView>
+      <geometry s="0" x="0" y="0" hdg="0" length="10"><line/></geometry>
+    </planView>
+    <lanes><laneSection s="0"><center><lane id="0" type="none"/></center></laneSection></lanes>
+    <userData code="rm:waypoints" value="0,0;10.5,-2.25"/>
+    <userData code="vendor:mystery" value="whatever"/>
+  </road>
+  <road id="2" length="10">
+    <planView>
+      <geometry s="0" x="0" y="20" hdg="0" length="10"><line/></geometry>
+    </planView>
+    <lanes><laneSection s="0"><center><lane id="0" type="none"/></center></laneSection></lanes>
+    <userData code="rm:waypoints" value="0,banana;10,0"/>
+  </road>
+</OpenDRIVE>)";
+  const auto result = roadmaker::parse_xodr(kXml);
+  ASSERT_TRUE(result.has_value());
+
+  const roadmaker::RoadNetwork& network = result->network;
+  const roadmaker::Road& good = *network.road(network.find_road("1"));
+  ASSERT_TRUE(good.authoring_waypoints.has_value());
+  EXPECT_EQ(*good.authoring_waypoints,
+            (std::vector<roadmaker::Waypoint>{{.x = 0.0, .y = 0.0}, {.x = 10.5, .y = -2.25}}));
+  // Unknown codes are reported, never silently dropped.
+  EXPECT_TRUE(has_warning_containing(result->diagnostics, "vendor:mystery"));
+
+  // Malformed values are diagnosed and ignored; the road still loads.
+  const roadmaker::Road& bad = *network.road(network.find_road("2"));
+  EXPECT_FALSE(bad.authoring_waypoints.has_value());
+  EXPECT_TRUE(has_warning_containing(result->diagnostics, "rm:waypoints"));
+}
+
 TEST(XodrReader, BadNumbersFallBackWithADiagnostic) {
   constexpr const char* kXml = R"(<OpenDRIVE>
   <header revMajor="1" revMinor="7"/>

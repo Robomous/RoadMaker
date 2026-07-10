@@ -307,6 +307,24 @@ void write_road(pugi::xml_node root, const RoadNetwork& network, const Road& roa
       }
     }
   }
+
+  // Authoring waypoints round-trip through the spec-sanctioned <userData>
+  // extension (OpenDRIVE 1.9.0 §7.2: code required, value optional free
+  // text). Emitted last so the normative children keep their order.
+  if (road.authoring_waypoints.has_value()) {
+    std::string value;
+    for (const Waypoint& waypoint : *road.authoring_waypoints) {
+      if (!value.empty()) {
+        value += ';';
+      }
+      value += num(waypoint.x);
+      value += ',';
+      value += num(waypoint.y);
+    }
+    pugi::xml_node user_data = road_node.append_child("userData");
+    user_data.append_attribute("code").set_value("rm:waypoints");
+    user_data.append_attribute("value").set_value(value.c_str());
+  }
 }
 
 void write_junction(pugi::xml_node root, const RoadNetwork& network, const Junction& junction) {

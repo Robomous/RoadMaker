@@ -11,12 +11,6 @@
 
 namespace roadmaker {
 
-/// Plan-view waypoint [m] for clothoid path fitting.
-struct Waypoint {
-  double x = 0.0;
-  double y = 0.0;
-};
-
 /// One lane of an authored road's constant-width cross section.
 struct LaneSpec {
   LaneType type = LaneType::Driving;

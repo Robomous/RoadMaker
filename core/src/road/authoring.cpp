@@ -108,6 +108,7 @@ Expected<RoadId> author_clothoid_road(RoadNetwork& network,
     road.plan_view.append(to_record(path.get(i)));
   }
   road.length = road.plan_view.length();
+  road.authoring_waypoints.emplace(waypoints.begin(), waypoints.end());
 
   const LaneSectionId section = network.add_lane_section(road_id, 0.0);
   const LaneId center = network.add_lane(section, 0, LaneType::None);
