@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """CI lint: every repository asset is accounted for in ASSETS_LICENSES.md.
 
-Checks (policy: docs/m2/05_assets.md):
+Checks (policy: docs/design/m2/05_assets.md):
 1. Every file under assets/ and editor/resources/ has a row in
    ASSETS_LICENSES.md naming its repo-relative path.
 2. Every assets/manifest.json entry uses an allowed license.
