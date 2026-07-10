@@ -43,8 +43,7 @@ ViewportWidget::ViewportWidget(Document& document, SelectionModel& selection, QW
     }
     update();
   });
-  connect(
-      &selection_, &SelectionModel::selection_changed, this, [this](RoadId, LaneId) { update(); });
+  connect(&selection_, &SelectionModel::selection_changed, this, [this] { update(); });
 }
 
 ViewportWidget::~ViewportWidget() {
@@ -136,11 +135,10 @@ void ViewportWidget::refresh_road_aabbs(const std::vector<RoadId>& roads) {
 }
 
 bool ViewportWidget::is_highlighted(const UploadedItem& item) const {
-  if (selection_.lane().is_valid()) {
-    return item.lane == selection_.lane();
-  }
-  if (selection_.road().is_valid()) {
-    return item.road == selection_.road();
+  for (const SelectionEntry& entry : selection_.entries()) {
+    if (entry.lane.is_valid() ? item.lane == entry.lane : item.road == entry.road) {
+      return true;
+    }
   }
   return false;
 }
@@ -239,11 +237,14 @@ void ViewportWidget::mouseMoveEvent(QMouseEvent* event) {
 
 void ViewportWidget::mouseReleaseEvent(QMouseEvent* event) {
   // A left click (press+release without a drag) picks; a miss clears.
+  // Ctrl (Cmd on macOS) toggles the hit in and out of the selection.
   if (event->button() == Qt::LeftButton &&
       (event->pos() - press_pos_).manhattanLength() < kClickDragThreshold) {
+    const bool toggle = (event->modifiers() & Qt::ControlModifier) != 0;
     if (const auto hit = pick(document_.mesh(), road_aabbs_, ray_through(event->position()))) {
-      selection_.select_lane(hit->road, hit->lane);
-    } else {
+      selection_.select({.road = hit->road, .lane = hit->lane},
+                        toggle ? SelectMode::Toggle : SelectMode::Replace);
+    } else if (!toggle) {
       selection_.clear();
     }
   }
@@ -276,17 +277,18 @@ void ViewportWidget::frame_selection() {
     return;
   }
 
-  // Bounds of the selected road's (or lane's) uploaded meshes, recomputed
-  // from the kernel mesh — cheap at selection frequency.
-  SceneBounds bounds;
+  // Bounds of every selected road's uploaded meshes, recomputed from the
+  // kernel mesh — cheap at selection frequency.
+  NetworkMesh selected;
   for (const RoadMesh& road : document_.mesh().roads) {
-    if (road.road != selection_.road()) {
-      continue;
+    const auto& entries = selection_.entries();
+    const bool road_selected = std::ranges::any_of(
+        entries, [&](const SelectionEntry& entry) { return entry.road == road.road; });
+    if (road_selected) {
+      selected.roads.push_back(road);
     }
-    Scene road_scene = build_scene(NetworkMesh{.roads = {road}, .junction_floors = {}});
-    bounds = road_scene.bounds;
-    break;
   }
+  const SceneBounds bounds = build_scene(selected).bounds;
   if (bounds.valid()) {
     camera_.frame(bounds.center(), bounds.framing_radius());
     update();

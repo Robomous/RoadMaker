@@ -1,5 +1,7 @@
 #include "document/selection_model.hpp"
 
+#include <algorithm>
+
 namespace roadmaker::editor {
 
 SelectionModel::SelectionModel(const Document& document, QObject* parent)
@@ -7,33 +9,51 @@ SelectionModel::SelectionModel(const Document& document, QObject* parent)
   connect(&document_, &Document::loaded, this, &SelectionModel::clear);
 }
 
-void SelectionModel::select_road(RoadId road) {
-  if (document_.network().road(road) == nullptr) {
-    clear();
-    return;
-  }
-  set(road, {});
+void SelectionModel::select(const SelectionEntry& entry, SelectMode mode) {
+  select_many({&entry, 1}, mode);
 }
 
-void SelectionModel::select_lane(RoadId road, LaneId lane) {
-  if (document_.network().road(road) == nullptr || document_.network().lane(lane) == nullptr) {
-    clear();
-    return;
+void SelectionModel::select_many(std::span<const SelectionEntry> entries, SelectMode mode) {
+  std::vector<SelectionEntry> next =
+      mode == SelectMode::Replace ? std::vector<SelectionEntry>{} : entries_;
+  for (const SelectionEntry& entry : entries) {
+    if (!is_live(entry)) {
+      continue;
+    }
+    const auto present = std::ranges::find(next, entry);
+    if (present != next.end()) {
+      if (mode == SelectMode::Toggle) {
+        next.erase(present);
+        continue;
+      }
+      next.erase(present); // Replace/Add: re-selecting moves it to the back
+    }
+    next.push_back(entry);
   }
-  set(road, lane);
+  set(std::move(next));
 }
 
 void SelectionModel::clear() {
-  set({}, {});
+  set({});
 }
 
-void SelectionModel::set(RoadId road, LaneId lane) {
-  if (road_ == road && lane_ == lane) {
+bool SelectionModel::contains(const SelectionEntry& entry) const {
+  return std::ranges::find(entries_, entry) != entries_.end();
+}
+
+bool SelectionModel::is_live(const SelectionEntry& entry) const {
+  if (document_.network().road(entry.road) == nullptr) {
+    return false;
+  }
+  return !entry.lane.is_valid() || document_.network().lane(entry.lane) != nullptr;
+}
+
+void SelectionModel::set(std::vector<SelectionEntry> entries) {
+  if (entries_ == entries) {
     return;
   }
-  road_ = road;
-  lane_ = lane;
-  emit selection_changed(road_, lane_);
+  entries_ = std::move(entries);
+  emit selection_changed();
 }
 
 } // namespace roadmaker::editor

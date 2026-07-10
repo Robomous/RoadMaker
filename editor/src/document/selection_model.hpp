@@ -7,10 +7,27 @@
 #include "roadmaker/road/id.hpp"
 
 #include <QObject>
+#include <span>
+#include <vector>
 
 #include "document/document.hpp"
 
 namespace roadmaker::editor {
+
+/// One selected entity: a whole road (lane invalid) or a lane on a road.
+struct SelectionEntry {
+  RoadId road;
+  LaneId lane; // invalid = road-level selection
+
+  friend bool operator==(const SelectionEntry&, const SelectionEntry&) = default;
+};
+
+/// How a select() call combines with the existing selection.
+enum class SelectMode {
+  Replace, ///< The entries become the whole selection (plain click).
+  Toggle,  ///< Present entries leave, absent ones join (Ctrl+click).
+  Add,     ///< Absent entries join; present ones become most-recent (Shift).
+};
 
 class SelectionModel : public QObject {
   Q_OBJECT
@@ -21,31 +38,43 @@ public:
   /// an old id can alias a fresh entity, so lookups alone cannot detect it.
   explicit SelectionModel(const Document& document, QObject* parent = nullptr);
 
-  /// Selects a road (no lane). Invalid/stale ids clear the selection.
-  void select_road(RoadId road);
+  /// Applies one entry. Invalid/stale entries are dropped, so a Replace
+  /// select of a stale entry clears the selection.
+  void select(const SelectionEntry& entry, SelectMode mode = SelectMode::Replace);
 
-  /// Selects a lane on a road. Invalid/stale ids clear the selection.
-  void select_lane(RoadId road, LaneId lane);
+  /// Applies a batch (rubber band, tree multi-select) as ONE change: at most
+  /// one selection_changed() fires. Duplicates and stale entries are dropped.
+  void select_many(std::span<const SelectionEntry> entries, SelectMode mode = SelectMode::Replace);
 
   void clear();
 
-  [[nodiscard]] RoadId road() const { return road_; }
+  /// Ordered oldest → most recent; re-selecting an entry moves it to the
+  /// back. No duplicates.
+  [[nodiscard]] const std::vector<SelectionEntry>& entries() const { return entries_; }
 
-  /// Invalid unless a lane is selected.
-  [[nodiscard]] LaneId lane() const { return lane_; }
+  /// The most recently selected entry (drives the Properties panel);
+  /// default-constructed (invalid road) when the selection is empty.
+  [[nodiscard]] SelectionEntry primary() const {
+    return entries_.empty() ? SelectionEntry{} : entries_.back();
+  }
 
-  [[nodiscard]] bool empty() const { return !road_.is_valid(); }
+  [[nodiscard]] bool contains(const SelectionEntry& entry) const;
+
+  [[nodiscard]] bool empty() const { return entries_.empty(); }
 
 signals:
-  /// Emitted only when the selection actually changes.
-  void selection_changed(roadmaker::RoadId road, roadmaker::LaneId lane);
+  /// Emitted only when the selection actually changes. Carries no payload —
+  /// listeners pull entries()/primary().
+  void selection_changed();
 
 private:
-  void set(RoadId road, LaneId lane);
+  /// True for entries whose ids resolve in the current network.
+  [[nodiscard]] bool is_live(const SelectionEntry& entry) const;
+
+  void set(std::vector<SelectionEntry> entries);
 
   const Document& document_;
-  RoadId road_;
-  LaneId lane_;
+  std::vector<SelectionEntry> entries_;
 };
 
 } // namespace roadmaker::editor

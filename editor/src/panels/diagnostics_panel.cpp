@@ -31,11 +31,8 @@ void DiagnosticsPanel::on_double_click(const QModelIndex& index) {
   if (diagnostic == nullptr || document_.network().road(diagnostic->road) == nullptr) {
     return; // no entity attached — navigation is best effort by design
   }
-  if (document_.network().lane(diagnostic->lane) != nullptr) {
-    selection_.select_lane(diagnostic->road, diagnostic->lane);
-  } else {
-    selection_.select_road(diagnostic->road);
-  }
+  const bool lane_live = document_.network().lane(diagnostic->lane) != nullptr;
+  selection_.select({.road = diagnostic->road, .lane = lane_live ? diagnostic->lane : LaneId{}});
 }
 
 } // namespace roadmaker::editor
