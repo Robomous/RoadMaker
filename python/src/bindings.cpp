@@ -5,6 +5,7 @@
 
 #include "roadmaker/edit/edit_stack.hpp"
 #include "roadmaker/edit/operations.hpp"
+#include "roadmaker/edit/snap.hpp"
 #include "roadmaker/error.hpp"
 #include "roadmaker/io/gltf_exporter.hpp"
 #include "roadmaker/mesh/mesh_builder.hpp"
@@ -577,6 +578,62 @@ NB_MODULE(_roadmaker, m) {
       "network"_a,
       "road"_a,
       "name"_a);
+
+  // --- snapping (docs/m2/01_editing_framework.md §6) ---------------------------
+
+  nb::enum_<roadmaker::edit::SnapKind>(edit, "SnapKind")
+      .value("Grid", roadmaker::edit::SnapKind::Grid)
+      .value("RoadEndpoint", roadmaker::edit::SnapKind::RoadEndpoint)
+      .value("TangentContinuation", roadmaker::edit::SnapKind::TangentContinuation);
+
+  nb::class_<roadmaker::edit::SnapOptions>(edit, "SnapOptions")
+      .def(nb::init<>())
+      .def(
+          "__init__",
+          [](roadmaker::edit::SnapOptions* self,
+             double radius,
+             std::optional<double> grid,
+             bool endpoints,
+             bool tangent) {
+            new (self) roadmaker::edit::SnapOptions{
+                .radius = radius, .grid = grid, .endpoints = endpoints, .tangent = tangent};
+          },
+          "radius"_a = 2.0,
+          "grid"_a = nb::none(),
+          "endpoints"_a = true,
+          "tangent"_a = true)
+      .def_rw("radius", &roadmaker::edit::SnapOptions::radius)
+      .def_rw("grid", &roadmaker::edit::SnapOptions::grid)
+      .def_rw("endpoints", &roadmaker::edit::SnapOptions::endpoints)
+      .def_rw("tangent", &roadmaker::edit::SnapOptions::tangent);
+
+  nb::class_<roadmaker::edit::SnapResult>(edit, "SnapResult")
+      .def_ro("position", &roadmaker::edit::SnapResult::position)
+      .def_ro("heading", &roadmaker::edit::SnapResult::heading)
+      .def_ro("kind", &roadmaker::edit::SnapResult::kind)
+      .def_ro("road", &roadmaker::edit::SnapResult::road)
+      .def("__repr__", [](const roadmaker::edit::SnapResult& r) {
+        const char* kind = r.kind == roadmaker::edit::SnapKind::Grid ? "Grid"
+                           : r.kind == roadmaker::edit::SnapKind::RoadEndpoint
+                               ? "RoadEndpoint"
+                               : "TangentContinuation";
+        return "SnapResult(" + std::string(kind) + ", " + std::to_string(r.position.x) + ", " +
+               std::to_string(r.position.y) + ")";
+      });
+
+  edit.def(
+      "snap_point",
+      [](const roadmaker::RoadNetwork& network,
+         std::pair<double, double> cursor,
+         const roadmaker::edit::SnapOptions& options) {
+        return roadmaker::edit::snap_point(
+            network, roadmaker::Waypoint{.x = cursor.first, .y = cursor.second}, options);
+      },
+      "network"_a,
+      "cursor"_a,
+      "options"_a = roadmaker::edit::SnapOptions{},
+      "Best snap candidate for the cursor, or None. Priority: RoadEndpoint > "
+      "TangentContinuation > Grid; closest wins within a kind.");
 
   // --- meshing / export ------------------------------------------------------------
 
