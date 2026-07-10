@@ -16,8 +16,12 @@ function(rm_apply_warnings target)
   else()
     # -Wno-deprecated-declarations: spdlog 1.17 headers trip fmt 12's
     # deprecated string_view conversion; drop when upstream spdlog catches up.
+    # -Wno-missing-field-initializers: partial designated initializers are
+    # project style — every aggregate field has an in-class default (GCC
+    # warns under -Wextra, Clang does not).
     target_compile_options(${target} PRIVATE
-      -Wall -Wextra -Wpedantic -Wconversion -Wshadow -Wno-deprecated-declarations)
+      -Wall -Wextra -Wpedantic -Wconversion -Wshadow
+      -Wno-deprecated-declarations -Wno-missing-field-initializers)
     if(RM_WERROR)
       target_compile_options(${target} PRIVATE -Werror)
     endif()
