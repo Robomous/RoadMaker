@@ -1,8 +1,22 @@
 #include "document/diagnostics_model.hpp"
 
+#include "app/icons.hpp"
+
 namespace roadmaker::editor {
 
 namespace {
+
+QString severity_icon_name(Severity severity) {
+  switch (severity) {
+  case Severity::Info:
+    return QStringLiteral("info");
+  case Severity::Warning:
+    return QStringLiteral("triangle-alert");
+  case Severity::Error:
+    return QStringLiteral("octagon-x");
+  }
+  return {};
+}
 
 QString severity_label(Severity severity) {
   switch (severity) {
@@ -36,7 +50,13 @@ int DiagnosticsModel::columnCount(const QModelIndex& parent) const {
 
 QVariant DiagnosticsModel::data(const QModelIndex& index, int role) const {
   const Diagnostic* diagnostic = diagnostic_at(index.row());
-  if (diagnostic == nullptr || role != Qt::DisplayRole) {
+  if (diagnostic == nullptr) {
+    return {};
+  }
+  if (role == Qt::DecorationRole && index.column() == kSeverity) {
+    return Icons::get(severity_icon_name(diagnostic->severity));
+  }
+  if (role != Qt::DisplayRole) {
     return {};
   }
   switch (index.column()) {

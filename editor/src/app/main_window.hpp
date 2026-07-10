@@ -29,6 +29,7 @@ public:
   void load_file(const std::filesystem::path& path);
 
 protected:
+  void changeEvent(QEvent* event) override;
   void closeEvent(QCloseEvent* event) override;
   void dragEnterEvent(QDragEnterEvent* event) override;
   void dropEvent(QDropEvent* event) override;

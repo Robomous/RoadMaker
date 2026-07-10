@@ -15,6 +15,7 @@
 #include <QToolBar>
 #include <QUrl>
 
+#include "app/icons.hpp"
 #include "panels/diagnostics_panel.hpp"
 #include "panels/properties_panel.hpp"
 #include "panels/scene_tree_panel.hpp"
@@ -230,6 +231,16 @@ void MainWindow::on_hover(const HoverInfo& info) {
                 .arg(info.t, 0, 'f', 2);
   }
   status_hover_->setText(text);
+}
+
+void MainWindow::changeEvent(QEvent* event) {
+  // The tinted icon cache bakes in the palette's WindowText color — rebuild
+  // it when the theme flips (e.g. macOS light/dark) so icons follow.
+  if (event->type() == QEvent::ApplicationPaletteChange) {
+    Icons::clear_cache();
+    actions_->apply_icons();
+  }
+  QMainWindow::changeEvent(event);
 }
 
 void MainWindow::closeEvent(QCloseEvent* event) {

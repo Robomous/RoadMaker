@@ -3,6 +3,7 @@
 #include <gtest/gtest.h>
 
 #include <QAbstractItemModelTester>
+#include <QIcon>
 #include <QTemporaryDir>
 #include <fstream>
 
@@ -60,6 +61,20 @@ TEST(DiagnosticsModel, RowsMirrorDiagnosticsAfterFailedLoad) {
   EXPECT_FALSE(model.index(0, DiagnosticsModel::kMessage).data().toString().isEmpty());
   EXPECT_EQ(model.diagnostic_at(0), &document.diagnostics().front());
   EXPECT_EQ(model.diagnostic_at(7), nullptr);
+}
+
+TEST(DiagnosticsModel, SeverityColumnCarriesADecorationIcon) {
+  Document document;
+  DiagnosticsModel model(document);
+  EXPECT_FALSE(document.load("missing.xodr").has_value());
+  ASSERT_EQ(model.rowCount(), 1);
+
+  const QVariant decoration = model.index(0, DiagnosticsModel::kSeverity).data(Qt::DecorationRole);
+  const QIcon icon = decoration.value<QIcon>();
+  ASSERT_FALSE(icon.isNull());
+  EXPECT_FALSE(icon.pixmap(16).isNull());
+  // Only the severity column decorates.
+  EXPECT_FALSE(model.index(0, DiagnosticsModel::kMessage).data(Qt::DecorationRole).isValid());
 }
 
 TEST(DiagnosticsModel, RuleIdColumnMirrorsKernelRuleIds) {

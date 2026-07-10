@@ -1,5 +1,173 @@
 {
-  "comment": "Fetched-asset manifest consumed by scripts/fetch_assets.py. Each entry: url, sha256 (of the download), license (must be in the allowed set), license_url (page where the license was verified), author, destination (repo-relative), retrieved (YYYY-MM-DD), postprocess (list of documented steps, informational). Assets authored in-repo (e.g. editor/resources/icons/custom/) are NOT listed here — they appear only in ASSETS_LICENSES.md.",
-  "allowed_licenses": ["CC0", "MIT", "ISC", "Apache-2.0"],
-  "assets": []
+  "comment": "Fetched-asset manifest consumed by scripts/fetch_assets.py. Each entry: url, sha256 (of the download), license (must be in the allowed set), license_url (page where the license was verified), author, destination (repo-relative), retrieved (YYYY-MM-DD), postprocess (list of documented steps, informational). Assets authored in-repo (e.g. editor/resources/icons/custom/) are NOT listed here \u2014 they appear only in ASSETS_LICENSES.md.",
+  "allowed_licenses": [
+    "CC0",
+    "MIT",
+    "ISC",
+    "Apache-2.0"
+  ],
+  "assets": [
+    {
+      "url": "https://raw.githubusercontent.com/lucide-icons/lucide/1.24.0/icons/box.svg",
+      "sha256": "511862693d914d2bf1947c9ccc513595f2a256541f5dd4f6f9ac8383cd41ac4f",
+      "license": "ISC",
+      "license_url": "https://github.com/lucide-icons/lucide/blob/1.24.0/LICENSE",
+      "author": "Lucide Contributors",
+      "destination": "editor/resources/icons/lucide/box.svg",
+      "retrieved": "2026-07-10"
+    },
+    {
+      "url": "https://raw.githubusercontent.com/lucide-icons/lucide/1.24.0/icons/circle-plus.svg",
+      "sha256": "6fa978530075df975ad05e2742896a1950b74c2b133a0d208891b038a4a41c17",
+      "license": "ISC",
+      "license_url": "https://github.com/lucide-icons/lucide/blob/1.24.0/LICENSE",
+      "author": "Lucide Contributors",
+      "destination": "editor/resources/icons/lucide/circle-plus.svg",
+      "retrieved": "2026-07-10"
+    },
+    {
+      "url": "https://raw.githubusercontent.com/lucide-icons/lucide/1.24.0/icons/file-output.svg",
+      "sha256": "94a0abe002d76ae0047b9a7e9ec2e2045381c4f4a81372da1d961d6bc14c5868",
+      "license": "ISC",
+      "license_url": "https://github.com/lucide-icons/lucide/blob/1.24.0/LICENSE",
+      "author": "Lucide Contributors",
+      "destination": "editor/resources/icons/lucide/file-output.svg",
+      "retrieved": "2026-07-10"
+    },
+    {
+      "url": "https://raw.githubusercontent.com/lucide-icons/lucide/1.24.0/icons/folder-open.svg",
+      "sha256": "ee57452b40e71df310214091dd9da1941a397c83197b8ff8d7ae66dd4242578b",
+      "license": "ISC",
+      "license_url": "https://github.com/lucide-icons/lucide/blob/1.24.0/LICENSE",
+      "author": "Lucide Contributors",
+      "destination": "editor/resources/icons/lucide/folder-open.svg",
+      "retrieved": "2026-07-10"
+    },
+    {
+      "url": "https://raw.githubusercontent.com/lucide-icons/lucide/1.24.0/icons/info.svg",
+      "sha256": "bc977a64eb96f3e9c1041ffd09a3fceb70e3e65c02b571f76064062ed31f3cb9",
+      "license": "ISC",
+      "license_url": "https://github.com/lucide-icons/lucide/blob/1.24.0/LICENSE",
+      "author": "Lucide Contributors",
+      "destination": "editor/resources/icons/lucide/info.svg",
+      "retrieved": "2026-07-10"
+    },
+    {
+      "url": "https://raw.githubusercontent.com/lucide-icons/lucide/1.24.0/icons/magnet.svg",
+      "sha256": "0e3b38700bd57da6fc5bd4df9f7c96a2bf51785da0600a1da4e6eb4b1dd3b4df",
+      "license": "ISC",
+      "license_url": "https://github.com/lucide-icons/lucide/blob/1.24.0/LICENSE",
+      "author": "Lucide Contributors",
+      "destination": "editor/resources/icons/lucide/magnet.svg",
+      "retrieved": "2026-07-10"
+    },
+    {
+      "url": "https://raw.githubusercontent.com/lucide-icons/lucide/1.24.0/icons/mountain.svg",
+      "sha256": "fced3dd3ffb1472e62a13d92e72633e9c68a4655da3d8aa801bc65a041fe64be",
+      "license": "ISC",
+      "license_url": "https://github.com/lucide-icons/lucide/blob/1.24.0/LICENSE",
+      "author": "Lucide Contributors",
+      "destination": "editor/resources/icons/lucide/mountain.svg",
+      "retrieved": "2026-07-10"
+    },
+    {
+      "url": "https://raw.githubusercontent.com/lucide-icons/lucide/1.24.0/icons/mouse-pointer-2.svg",
+      "sha256": "a87128b1d33024c22ab598d1ce313081ce8942efd1a70274215bcc53421b7c7e",
+      "license": "ISC",
+      "license_url": "https://github.com/lucide-icons/lucide/blob/1.24.0/LICENSE",
+      "author": "Lucide Contributors",
+      "destination": "editor/resources/icons/lucide/mouse-pointer-2.svg",
+      "retrieved": "2026-07-10"
+    },
+    {
+      "url": "https://raw.githubusercontent.com/lucide-icons/lucide/1.24.0/icons/move.svg",
+      "sha256": "915074a1292f72d59165339b8b93f8d440c8d55b7116b52fca240b9ded5af74d",
+      "license": "ISC",
+      "license_url": "https://github.com/lucide-icons/lucide/blob/1.24.0/LICENSE",
+      "author": "Lucide Contributors",
+      "destination": "editor/resources/icons/lucide/move.svg",
+      "retrieved": "2026-07-10"
+    },
+    {
+      "url": "https://raw.githubusercontent.com/lucide-icons/lucide/1.24.0/icons/octagon-x.svg",
+      "sha256": "6ca17c136a1a8ae4c62449cfaf36b432f49f43c57d3f25b8ac61cfc60673c116",
+      "license": "ISC",
+      "license_url": "https://github.com/lucide-icons/lucide/blob/1.24.0/LICENSE",
+      "author": "Lucide Contributors",
+      "destination": "editor/resources/icons/lucide/octagon-x.svg",
+      "retrieved": "2026-07-10"
+    },
+    {
+      "url": "https://raw.githubusercontent.com/lucide-icons/lucide/1.24.0/icons/redo-2.svg",
+      "sha256": "4cbd2cdebc70b6b7979c681ed3f313d9cbb102465dcf7d0d2d6a72c937b344bc",
+      "license": "ISC",
+      "license_url": "https://github.com/lucide-icons/lucide/blob/1.24.0/LICENSE",
+      "author": "Lucide Contributors",
+      "destination": "editor/resources/icons/lucide/redo-2.svg",
+      "retrieved": "2026-07-10"
+    },
+    {
+      "url": "https://raw.githubusercontent.com/lucide-icons/lucide/1.24.0/icons/rotate-ccw.svg",
+      "sha256": "622685386ab4017eabfde01cd74550a20b1924df233b353f73b6b155371f2afd",
+      "license": "ISC",
+      "license_url": "https://github.com/lucide-icons/lucide/blob/1.24.0/LICENSE",
+      "author": "Lucide Contributors",
+      "destination": "editor/resources/icons/lucide/rotate-ccw.svg",
+      "retrieved": "2026-07-10"
+    },
+    {
+      "url": "https://raw.githubusercontent.com/lucide-icons/lucide/1.24.0/icons/save.svg",
+      "sha256": "ee9d56a7fec4b20dd6689546d41f68219ea8cbd67f99bd17a1bdaff5be6edb53",
+      "license": "ISC",
+      "license_url": "https://github.com/lucide-icons/lucide/blob/1.24.0/LICENSE",
+      "author": "Lucide Contributors",
+      "destination": "editor/resources/icons/lucide/save.svg",
+      "retrieved": "2026-07-10"
+    },
+    {
+      "url": "https://raw.githubusercontent.com/lucide-icons/lucide/1.24.0/icons/scan.svg",
+      "sha256": "c77f0e634b2451a14a262a59b61d75bbcea3994b16eeba1f5753e86b33282a4d",
+      "license": "ISC",
+      "license_url": "https://github.com/lucide-icons/lucide/blob/1.24.0/LICENSE",
+      "author": "Lucide Contributors",
+      "destination": "editor/resources/icons/lucide/scan.svg",
+      "retrieved": "2026-07-10"
+    },
+    {
+      "url": "https://raw.githubusercontent.com/lucide-icons/lucide/1.24.0/icons/trash-2.svg",
+      "sha256": "27299f69ad7c6272be64b1b8e2d48cbd6dcf0ef0d4f92827a1affa945c91700e",
+      "license": "ISC",
+      "license_url": "https://github.com/lucide-icons/lucide/blob/1.24.0/LICENSE",
+      "author": "Lucide Contributors",
+      "destination": "editor/resources/icons/lucide/trash-2.svg",
+      "retrieved": "2026-07-10"
+    },
+    {
+      "url": "https://raw.githubusercontent.com/lucide-icons/lucide/1.24.0/icons/triangle-alert.svg",
+      "sha256": "4866f38b8560d410f21e3226413e0b77997b6dfbb6931fadfe0a0d5aef9ffeb4",
+      "license": "ISC",
+      "license_url": "https://github.com/lucide-icons/lucide/blob/1.24.0/LICENSE",
+      "author": "Lucide Contributors",
+      "destination": "editor/resources/icons/lucide/triangle-alert.svg",
+      "retrieved": "2026-07-10"
+    },
+    {
+      "url": "https://raw.githubusercontent.com/lucide-icons/lucide/1.24.0/icons/undo-2.svg",
+      "sha256": "efad2edbbd2be6038cc23fd64df2d012fad5cc6460dfbf227cfa3d990e9e897f",
+      "license": "ISC",
+      "license_url": "https://github.com/lucide-icons/lucide/blob/1.24.0/LICENSE",
+      "author": "Lucide Contributors",
+      "destination": "editor/resources/icons/lucide/undo-2.svg",
+      "retrieved": "2026-07-10"
+    },
+    {
+      "url": "https://raw.githubusercontent.com/lucide-icons/lucide/1.24.0/icons/waypoints.svg",
+      "sha256": "97f4eefc2548f3886749778befcdfb0620c8d9619799cbe3f1d2bb566b67dea9",
+      "license": "ISC",
+      "license_url": "https://github.com/lucide-icons/lucide/blob/1.24.0/LICENSE",
+      "author": "Lucide Contributors",
+      "destination": "editor/resources/icons/lucide/waypoints.svg",
+      "retrieved": "2026-07-10"
+    }
+  ]
 }
