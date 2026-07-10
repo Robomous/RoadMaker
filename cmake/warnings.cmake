@@ -6,7 +6,10 @@ option(RM_WERROR "Treat warnings as errors (CI)" OFF)
 
 function(rm_apply_warnings target)
   if(MSVC)
-    target_compile_options(${target} PRIVATE /W4 /permissive-)
+    # /external:anglebrackets: third-party headers (always included via
+    # <...>) are exempt from /W4//WX; our own "quoted" headers are not.
+    target_compile_options(${target} PRIVATE
+      /W4 /permissive- /external:anglebrackets /external:W0)
     if(RM_WERROR)
       target_compile_options(${target} PRIVATE /WX)
     endif()

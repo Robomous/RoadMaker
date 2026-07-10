@@ -35,3 +35,12 @@ fuzz-*.log
 # Local Claude Code config (never committed)
 CLAUDE.md
 .claude/
+
+# ASAM spec reference texts — regenerate via scripts/fetch_asam_specs.py
+# NOTE: the `.claude/` rule above already excludes everything below it, and
+# git cannot re-include files under an excluded parent directory — so the
+# INDEX whitelist here is inert unless the maintainer relaxes `.claude/`
+# (e.g. to `.claude/*` + explicit re-includes). Kept for documented intent.
+.claude/references/asam/**
+!.claude/references/asam/INDEX.md
+!.claude/references/asam/*/INDEX.md
