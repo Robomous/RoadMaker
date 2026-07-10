@@ -190,6 +190,8 @@ jobs:
         run: |
           sudo apt-get update && sudo apt-get install -y clang-format
           git ls-files '*.cpp' '*.hpp' | xargs clang-format --dry-run --Werror
+      - name: Check asset licenses
+        run: python3 scripts/check_asset_licenses.py
 
   python:
     name: Python wheel + pytest

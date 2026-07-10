@@ -1,0 +1,5 @@
+{
+  "comment": "Fetched-asset manifest consumed by scripts/fetch_assets.py. Each entry: url, sha256 (of the download), license (must be in the allowed set), license_url (page where the license was verified), author, destination (repo-relative), retrieved (YYYY-MM-DD), postprocess (list of documented steps, informational). Assets authored in-repo (e.g. editor/resources/icons/custom/) are NOT listed here — they appear only in ASSETS_LICENSES.md.",
+  "allowed_licenses": ["CC0", "MIT", "ISC", "Apache-2.0"],
+  "assets": []
+}
