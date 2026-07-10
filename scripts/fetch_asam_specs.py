@@ -39,6 +39,9 @@ BASE = "https://publications.pages.asam.net/standards"
 USER_AGENT = "RoadMaker-spec-fetch (github.com/robomous/roadmaker)"
 REQUEST_DELAY_S = 0.5
 MAX_FILE_BYTES = 250 * 1024
+# Packing budget: leave headroom for the file header/title, whose exact size
+# is only known after rendering — keeps every output strictly under the cap.
+PACK_BUDGET_BYTES = MAX_FILE_BYTES - 4096
 TOTAL_SIZE_GUARD_BYTES = 40 * 1024 * 1024
 
 # Entry points. "latest" is resolved to its concrete version at run time and
@@ -270,7 +273,7 @@ def write_chapter(
     size = len(header) + len(title) + 4
     for sec in sections:
         rendered_len = len(sec.render().encode()) + 2
-        if parts[-1] and size + rendered_len > MAX_FILE_BYTES:
+        if parts[-1] and size + rendered_len > PACK_BUDGET_BYTES:
             parts.append([])
             size = len(header)
         parts[-1].append(sec)
@@ -308,7 +311,7 @@ def write_class_groups(out_dir: Path, spec: SpecResult, sections: list[Section])
     size = len(header_probe) + 64
     for sec in sections:
         rendered_len = len(sec.render().encode()) + 2
-        if groups[-1] and size + rendered_len > MAX_FILE_BYTES:
+        if groups[-1] and size + rendered_len > PACK_BUDGET_BYTES:
             groups.append([])
             size = len(header_probe) + 64
         groups[-1].append(sec)
@@ -493,8 +496,22 @@ def crawl_spec(spec_def: dict, out_root: Path) -> SpecResult:
     return spec
 
 
-def write_master_index(out_root: Path, results: list[SpecResult]) -> None:
-    today = datetime.date.today().isoformat()
+def write_master_index(out_root: Path) -> None:
+    """Rebuild the master index from what is on disk, so partial re-runs
+    (--std opendrive only, etc.) never drop the other specs' rows."""
+    rows = []
+    for spec_dir in sorted(p for p in out_root.iterdir() if (p / "INDEX.md").is_file()):
+        idx = (spec_dir / "INDEX.md").read_text(encoding="utf-8")
+        title = re.search(r"^# (.+?) (\d+\.\d+\.\d+) — local reference index", idx, re.M)
+        fetched = re.search(r"^- Fetched: (\S+)", idx, re.M)
+        pages = re.search(r"^- Pages fetched: (\d+)", idx, re.M)
+        size = re.search(r"^- Total size: (\d+) KB", idx, re.M)
+        if not (title and fetched and pages and size):
+            raise RuntimeError(f"unparseable INDEX.md in {spec_dir}")
+        rows.append(
+            f"| `{spec_dir.name}/` | {title.group(1)} | {title.group(2)} "
+            f"| {pages.group(1)} | {size.group(1)} KB | {fetched.group(1)} |"
+        )
     lines = [
         "# ASAM specification references — master index",
         "",
@@ -505,12 +522,8 @@ def write_master_index(out_root: Path, results: list[SpecResult]) -> None:
         "",
         "| Directory | Spec | Version | Pages | Size | Fetched |",
         "|---|---|---|---|---|---|",
+        *rows,
     ]
-    for r in results:
-        lines.append(
-            f"| `{r.dirname}/` | {r.name} | {r.version} | {r.pages_fetched} "
-            f"| {r.total_bytes / 1024:.0f} KB | {today} |"
-        )
     lines += [
         "",
         "Start at each directory's `INDEX.md` (chapter map + topic→file lookup).",
@@ -567,7 +580,7 @@ def main() -> int:
         log(f"WARNING: total fetched size {total / 1024 / 1024:.1f} MB exceeds "
             "40 MB guard — check for over-crawling before trusting this output.")
 
-    write_master_index(args.out, results)
+    write_master_index(args.out)
     for r in results:
         log(f"{r.name} {r.version}: {r.pages_fetched}/{r.pages_discovered} pages, "
             f"{len(r.chapters)} files, {r.total_bytes / 1024:.0f} KB")
