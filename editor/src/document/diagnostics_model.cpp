@@ -1,7 +1,5 @@
 #include "document/diagnostics_model.hpp"
 
-#include "document/diagnostic_locator.hpp"
-
 namespace roadmaker::editor {
 
 namespace {
@@ -44,10 +42,8 @@ QVariant DiagnosticsModel::data(const QModelIndex& index, int role) const {
   switch (index.column()) {
   case kSeverity:
     return severity_label(diagnostic->severity);
-  case kRuleId: {
-    const std::string_view rule = extract_rule_id(diagnostic->message);
-    return QString::fromUtf8(rule.data(), static_cast<qsizetype>(rule.size()));
-  }
+  case kRuleId:
+    return QString::fromStdString(diagnostic->rule_id);
   case kLocation:
     return QString::fromStdString(diagnostic->location);
   case kMessage:

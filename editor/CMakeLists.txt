@@ -33,7 +33,6 @@ add_library(roadmaker_editor_lib STATIC
   src/app/actions.cpp
   src/app/main_window.cpp
   src/app/settings.cpp
-  src/document/diagnostic_locator.cpp
   src/document/diagnostics_model.cpp
   src/document/document.cpp
   src/document/scene_tree_model.cpp

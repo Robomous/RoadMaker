@@ -3,8 +3,6 @@
 #include <QHeaderView>
 #include <QVBoxLayout>
 
-#include "document/diagnostic_locator.hpp"
-
 namespace roadmaker::editor {
 
 DiagnosticsPanel::DiagnosticsPanel(const Document& document,
@@ -30,17 +28,13 @@ DiagnosticsPanel::DiagnosticsPanel(const Document& document,
 
 void DiagnosticsPanel::on_double_click(const QModelIndex& index) {
   const Diagnostic* diagnostic = model_.diagnostic_at(index.row());
-  if (diagnostic == nullptr) {
-    return;
+  if (diagnostic == nullptr || document_.network().road(diagnostic->road) == nullptr) {
+    return; // no entity attached — navigation is best effort by design
   }
-  const auto target = resolve_diagnostic_location(document_.network(), diagnostic->location);
-  if (!target) {
-    return; // unresolvable location — navigation is best effort by design
-  }
-  if (target->lane.is_valid()) {
-    selection_.select_lane(target->road, target->lane);
+  if (document_.network().lane(diagnostic->lane) != nullptr) {
+    selection_.select_lane(diagnostic->road, diagnostic->lane);
   } else {
-    selection_.select_road(target->road);
+    selection_.select_road(diagnostic->road);
   }
 }
 

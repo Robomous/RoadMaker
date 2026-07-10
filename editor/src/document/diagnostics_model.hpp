@@ -1,8 +1,8 @@
 #pragma once
 
 // Table model over the parser/validator diagnostics: severity | rule id |
-// location | message. The rule id is best-effort extracted from the message
-// (the kernel Diagnostic has no rule-id field until M2).
+// location | message. Rule id and entity ids come straight from the kernel
+// Diagnostic (empty rule id = no normative ASAM rule applies).
 
 #include <QAbstractTableModel>
 
