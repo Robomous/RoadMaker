@@ -29,15 +29,16 @@ target_link_libraries(roadmaker_editor_tests PRIVATE
 
 rm_apply_warnings(roadmaker_editor_tests)
 
-if(WIN32)
+if(WIN32 AND RM_BUILD_SHARED)
   # gtest_discover_tests runs the exe at build time and Windows has no rpath:
-  # the runtime DLLs (Qt, plus the kernel when RM_BUILD_SHARED) must sit next
-  # to the test executable.
+  # the shared kernel DLL must sit next to the test executable. Qt DLLs must
+  # NOT be copied here — Qt's prefix is relocatable (resolved relative to
+  # Qt6Core.dll), so a copied Qt6Core would look for the platform plugins in
+  # the build tree and abort; Qt loads from the provisioned tree via PATH.
   add_custom_command(TARGET roadmaker_editor_tests POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
-            $<TARGET_RUNTIME_DLLS:roadmaker_editor_tests>
-            $<TARGET_FILE_DIR:roadmaker_editor_tests>
-    COMMAND_EXPAND_LISTS)
+            $<TARGET_FILE:roadmaker::core>
+            $<TARGET_FILE_DIR:roadmaker_editor_tests>)
 endif()
 
 gtest_discover_tests(roadmaker_editor_tests
