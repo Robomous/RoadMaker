@@ -57,7 +57,9 @@ MainWindow::MainWindow(QWidget* parent)
   connect(actions_->reset_layout, &QAction::triggered, this, [this] {
     restoreState(default_layout_state_);
   });
-  settings_.restore_window(*this);
+  if (!settings_.restore_window(*this)) {
+    // First run (no saved layout): keep the default arrangement built above.
+  }
 
   update_window_title();
   update_status_entities();
