@@ -10,6 +10,7 @@
 
 #include <string>
 #include <string_view>
+#include <vector>
 
 namespace roadmaker {
 
@@ -129,5 +130,13 @@ private:
   Arena<Lane, LaneId> lanes_;
   Arena<Junction, JunctionId> junctions_;
 };
+
+/// Junctions the road participates in: as a connecting road
+/// (Road::junction), through any junction connection (incoming or
+/// connecting side), or via its predecessor/successor links. Deduplicated,
+/// stable order. Linear scan — junction counts stay small at M2 scale; the
+/// edit layer uses this to fill DirtySet::junctions.
+[[nodiscard]] RM_API std::vector<JunctionId> junctions_touching(const RoadNetwork& network,
+                                                                RoadId road);
 
 } // namespace roadmaker

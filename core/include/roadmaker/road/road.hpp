@@ -24,6 +24,15 @@ struct RoadLink {
   ContactPoint contact = ContactPoint::Start;
 };
 
+/// One specific end of a road — how callers name junction arms and
+/// tangent-continuation anchors (docs/m2/01_editing_framework.md §2.3).
+struct RoadEnd {
+  RoadId road;
+  ContactPoint contact = ContactPoint::Start;
+
+  friend constexpr bool operator==(const RoadEnd&, const RoadEnd&) = default;
+};
+
 /// A road: one reference line plus lane sections and vertical profiles.
 ///
 /// All `s` coordinates are arc length along the reference line, in meters,

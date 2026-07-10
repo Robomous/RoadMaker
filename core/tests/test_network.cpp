@@ -162,6 +162,36 @@ TEST(Network, EraseJunctionDetachesConnectingRoads) {
   EXPECT_FALSE(network.road(connecting)->junction.is_valid());
 }
 
+TEST(Network, JunctionsTouchingFindsEveryParticipationKind) {
+  RoadNetwork network;
+  const RoadId incoming = network.create_road("in", "1");
+  const RoadId connecting = network.create_road("conn", "2");
+  const RoadId linked = network.create_road("linked", "3");
+  const RoadId bystander = network.create_road("far", "4");
+
+  const JunctionId junction = network.create_junction("10", "X");
+  network.road(connecting)->junction = junction;
+  network.junction(junction)->connections.push_back(JunctionConnection{
+      .incoming_road = incoming,
+      .connecting_road = connecting,
+      .contact_point = ContactPoint::Start,
+      .lane_links = {{-1, -1}},
+  });
+  network.road(linked)->successor =
+      roadmaker::RoadLink{.target = junction, .contact = ContactPoint::Start};
+
+  EXPECT_EQ(roadmaker::junctions_touching(network, incoming),
+            (std::vector<JunctionId>{junction}));
+  // The connecting road participates twice (back-ref + connection) but is
+  // reported once.
+  EXPECT_EQ(roadmaker::junctions_touching(network, connecting),
+            (std::vector<JunctionId>{junction}));
+  EXPECT_EQ(roadmaker::junctions_touching(network, linked),
+            (std::vector<JunctionId>{junction}));
+  EXPECT_TRUE(roadmaker::junctions_touching(network, bystander).empty());
+  EXPECT_TRUE(roadmaker::junctions_touching(network, RoadId{}).empty());
+}
+
 TEST(Poly3, EvaluatesOpenDriveCubicsWithLocalDs) {
   // width(ds) = 1 + 2·ds + 3·ds² + 4·ds³ starting at s = 10.
   constexpr Poly3 kPoly{.s = 10.0, .a = 1.0, .b = 2.0, .c = 3.0, .d = 4.0};

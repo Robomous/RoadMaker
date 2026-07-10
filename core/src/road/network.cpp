@@ -132,4 +132,36 @@ JunctionId RoadNetwork::find_junction(std::string_view odr_id) const {
   return found;
 }
 
+std::vector<JunctionId> junctions_touching(const RoadNetwork& network, RoadId road_id) {
+  std::vector<JunctionId> touched;
+  const auto note = [&touched](JunctionId id) {
+    if (id.is_valid() && std::ranges::find(touched, id) == touched.end()) {
+      touched.push_back(id);
+    }
+  };
+
+  if (const Road* road = network.road(road_id)) {
+    note(road->junction);
+    const auto note_link = [&note](const std::optional<RoadLink>& link) {
+      if (link.has_value()) {
+        if (const auto* junction = std::get_if<JunctionId>(&link->target)) {
+          note(*junction);
+        }
+      }
+    };
+    note_link(road->predecessor);
+    note_link(road->successor);
+  }
+
+  network.for_each_junction([&](JunctionId id, const Junction& junction) {
+    for (const JunctionConnection& connection : junction.connections) {
+      if (connection.incoming_road == road_id || connection.connecting_road == road_id) {
+        note(id);
+        break;
+      }
+    }
+  });
+  return touched;
+}
+
 } // namespace roadmaker
