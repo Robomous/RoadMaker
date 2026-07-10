@@ -51,9 +51,23 @@ def pinned_version() -> str:
     return match.group(1)
 
 
+# cmake package marker per required aqt archive; an install missing any of
+# these (e.g. a tree provisioned before qtsvg was added) is re-provisioned.
+REQUIRED_MODULE_MARKERS = {
+    "qtbase": "lib/cmake/Qt6/Qt6Config.cmake",
+    "qtsvg": "lib/cmake/Qt6Svg/Qt6SvgConfig.cmake",
+}
+
+
 def existing_prefix(output: Path, version: str) -> Path | None:
     for config in sorted(output.glob(f"{version}/*/lib/cmake/Qt6/Qt6Config.cmake")):
-        return config.parents[3]
+        prefix = config.parents[3]
+        missing = [archive for archive, marker in REQUIRED_MODULE_MARKERS.items()
+                   if not (prefix / marker).is_file()]
+        if missing:
+            log(f"Qt {version} at {prefix} lacks {', '.join(missing)}; reinstalling")
+            return None
+        return prefix
     return None
 
 

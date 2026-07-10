@@ -48,7 +48,7 @@ jobs:
           path: |
             .qt
             !.qt/venv
-          key: qt-${{ runner.os }}-${{ hashFiles('cmake/QtVersion.cmake') }}
+          key: qt-${{ runner.os }}-${{ hashFiles('cmake/QtVersion.cmake', 'scripts/setup_qt.py') }}
 
       - name: Provision Qt
         run: python3 scripts/setup_qt.py
@@ -153,7 +153,7 @@ jobs:
           path: |
             .qt
             !.qt/venv
-          key: qt-${{ runner.os }}-${{ hashFiles('cmake/QtVersion.cmake') }}
+          key: qt-${{ runner.os }}-${{ hashFiles('cmake/QtVersion.cmake', 'scripts/setup_qt.py') }}
       - name: Provision Qt
         run: python3 scripts/setup_qt.py
       - uses: hendrikmuhs/ccache-action@v1.2
