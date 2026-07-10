@@ -47,12 +47,13 @@ void SceneTreeModel::rebuild() {
         continue;
       }
       const int section_node = static_cast<int>(nodes_.size());
-      nodes_.push_back(Node{.kind = Kind::LaneSection,
-                            .parent = road_node,
-                            .row = static_cast<int>(nodes_[road_node].children.size()),
-                            .road = road_id,
-                            .label = tr("section s0=%1 m").arg(section->s0)});
-      nodes_[road_node].children.push_back(section_node);
+      nodes_.push_back(
+          Node{.kind = Kind::LaneSection,
+               .parent = road_node,
+               .row = static_cast<int>(nodes_[static_cast<std::size_t>(road_node)].children.size()),
+               .road = road_id,
+               .label = tr("section s0=%1 m").arg(section->s0)});
+      nodes_[static_cast<std::size_t>(road_node)].children.push_back(section_node);
 
       for (const LaneId lane_id : section->lanes) {
         const Lane* lane = network.lane(lane_id);
@@ -60,13 +61,14 @@ void SceneTreeModel::rebuild() {
           continue;
         }
         const int lane_node = static_cast<int>(nodes_.size());
-        nodes_.push_back(Node{.kind = Kind::Lane,
-                              .parent = section_node,
-                              .row = static_cast<int>(nodes_[section_node].children.size()),
-                              .road = road_id,
-                              .lane = lane_id,
-                              .label = tr("lane %1").arg(lane->odr_id)});
-        nodes_[section_node].children.push_back(lane_node);
+        nodes_.push_back(Node{
+            .kind = Kind::Lane,
+            .parent = section_node,
+            .row = static_cast<int>(nodes_[static_cast<std::size_t>(section_node)].children.size()),
+            .road = road_id,
+            .lane = lane_id,
+            .label = tr("lane %1").arg(lane->odr_id)});
+        nodes_[static_cast<std::size_t>(section_node)].children.push_back(lane_node);
         lane_nodes_.emplace(lane_id, lane_node);
       }
     }
