@@ -12,10 +12,10 @@ add_executable(roadmaker_editor_tests
   test_document_commands.cpp
   test_editor_command.cpp
   test_icons.cpp
-  test_node_drag_tool.cpp
   test_panels.cpp
   test_picking.cpp
   test_preview_session.cpp
+  test_select_tool.cpp
   test_scene_builder.cpp
   test_scene_tree_model.cpp
   test_selection_model.cpp
