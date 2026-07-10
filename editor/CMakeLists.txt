@@ -23,6 +23,10 @@ if(APPLE AND TARGET WrapOpenGL::WrapOpenGL)
   endif()
 endif()
 
+# Sets the deploy-support variables qt_generate_deploy_app_script needs
+# (and directory-scope AUTOMOC, which our targets set explicitly anyway).
+qt_standard_project_setup()
+
 # Everything testable lives in the lib; the executable stays a thin shell so
 # editor tests can link the same objects and run headless (offscreen QPA).
 add_library(roadmaker_editor_lib STATIC
@@ -67,7 +71,75 @@ qt_add_executable(roadmaker-editor src/main.cpp)
 
 target_link_libraries(roadmaker-editor PRIVATE roadmaker_editor_lib)
 
+# GUI app on Windows (no console window) and an .app bundle on macOS — the
+# shapes windeployqt/macdeployqt and the installers expect. The macOS binary
+# lives at roadmaker-editor.app/Contents/MacOS/roadmaker-editor; `--version`
+# smoke tests run that path directly.
+set_target_properties(roadmaker-editor PROPERTIES
+  WIN32_EXECUTABLE TRUE
+  MACOSX_BUNDLE TRUE
+  MACOSX_BUNDLE_BUNDLE_NAME "RoadMaker"
+  MACOSX_BUNDLE_GUI_IDENTIFIER "ai.robomous.roadmaker"
+  MACOSX_BUNDLE_BUNDLE_VERSION ${PROJECT_VERSION}
+  MACOSX_BUNDLE_SHORT_VERSION_STRING ${PROJECT_VERSION_MAJOR}.${PROJECT_VERSION_MINOR}
+)
+
 rm_apply_warnings(roadmaker-editor)
+
+# Install + Qt runtime deployment must live HERE (not in cmake/Packaging.cmake):
+# qt_generate_deploy_app_script reads directory-scoped Qt variables
+# (QT_DEPLOY_SUPPORT, QT6_IS_SHARED_LIBS_BUILD) that only exist where
+# find_package(Qt6) ran. CPack configuration stays in cmake/Packaging.cmake.
+if(RM_INSTALL)
+  include(GNUInstallDirs)
+
+  # Linux archive layout: exe in bin/, shared kernel in lib/. (macdeployqt
+  # rewrites macOS rpaths itself; Windows finds the DLL beside the exe.)
+  if(UNIX AND NOT APPLE)
+    set_target_properties(roadmaker-editor PROPERTIES INSTALL_RPATH "$ORIGIN/../lib")
+  endif()
+
+  install(TARGETS roadmaker-editor
+    BUNDLE DESTINATION .
+    RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+  )
+
+  # macdeployqt deploys Qt only; the shared kernel must be placed into the
+  # bundle ourselves. Install the REAL library renamed to its soname (what
+  # the executable references) — installing the soname path directly would
+  # copy a dangling symlink into the bundle.
+  if(APPLE AND RM_BUILD_SHARED)
+    install(FILES $<TARGET_FILE:roadmaker_core>
+      DESTINATION roadmaker-editor.app/Contents/Frameworks
+      RENAME $<TARGET_SONAME_FILE_NAME:roadmaker_core>)
+  endif()
+
+  # windeployqt / macdeployqt run during `cmake --install` (and CPack
+  # staging), so a local `cpack` produces the same self-contained bundle CI
+  # does. Linux deployment is linuxdeploy in the release workflow instead.
+  if(WIN32 OR APPLE)
+    qt_generate_deploy_app_script(
+      TARGET roadmaker-editor
+      OUTPUT_SCRIPT _rm_deploy_script
+      NO_UNSUPPORTED_PLATFORM_ERROR
+    )
+    install(SCRIPT ${_rm_deploy_script})
+  endif()
+
+  if(APPLE)
+    # Ad-hoc signature (no Developer ID yet): Gatekeeper shows the standard
+    # unidentified-developer flow instead of refusing a broken signature
+    # after macdeployqt rewrites the load commands. Notarization is future.
+    install(CODE [[
+      execute_process(
+        COMMAND codesign --force --deep --sign - "${CMAKE_INSTALL_PREFIX}/roadmaker-editor.app"
+        RESULT_VARIABLE _rm_codesign_result)
+      if(NOT _rm_codesign_result EQUAL 0)
+        message(WARNING "ad-hoc codesign failed (${_rm_codesign_result})")
+      endif()
+    ]])
+  endif()
+endif()
 
 if(RM_BUILD_TESTS)
   add_subdirectory(tests)
