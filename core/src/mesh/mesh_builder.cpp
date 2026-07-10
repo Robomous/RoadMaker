@@ -398,8 +398,9 @@ Clipper2Lib::PathD road_footprint(const RoadNetwork& network, const Road& road) 
 
 /// One junction's floor; empty mesh (no indices) when the junction has no
 /// usable connecting-road footprints — callers drop empty results.
-JunctionFloor
-build_one_junction_floor(const RoadNetwork& network, JunctionId junction_id, const Junction& junction) {
+JunctionFloor build_one_junction_floor(const RoadNetwork& network,
+                                       JunctionId junction_id,
+                                       const Junction& junction) {
   JunctionFloor result{.junction = junction_id, .mesh = {}};
   // Union of the connecting roads' plan-view footprints.
   Clipper2Lib::PathsD footprints;
@@ -521,8 +522,7 @@ void remesh_junctions(const RoadNetwork& network,
   for (const JunctionId junction_id : junctions) {
     const auto existing =
         std::ranges::find(mesh.junction_floors, junction_id, &JunctionFloor::junction);
-    const Junction* junction =
-        options.junction_floors ? network.junction(junction_id) : nullptr;
+    const Junction* junction = options.junction_floors ? network.junction(junction_id) : nullptr;
     JunctionFloor rebuilt = junction != nullptr
                                 ? build_one_junction_floor(network, junction_id, *junction)
                                 : JunctionFloor{.junction = junction_id, .mesh = {}};

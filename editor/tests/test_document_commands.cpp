@@ -99,14 +99,14 @@ TEST(DocumentCommands, GeometryEditsRemeshIncrementallyWithRoadPayload) {
   ASSERT_TRUE(document.load(sample()).has_value());
 
   // A fresh, junction-free road is the deterministic partial-path subject.
-  ASSERT_TRUE(document
-                  .push_command(roadmaker::edit::create_road(
-                      {roadmaker::Waypoint{.x = 400.0, .y = 400.0},
-                       roadmaker::Waypoint{.x = 480.0, .y = 420.0},
-                       roadmaker::Waypoint{.x = 560.0, .y = 400.0}},
-                      roadmaker::LaneProfile::two_lane_default(),
-                      "Editable"))
-                  .has_value());
+  ASSERT_TRUE(
+      document
+          .push_command(roadmaker::edit::create_road({roadmaker::Waypoint{.x = 400.0, .y = 400.0},
+                                                      roadmaker::Waypoint{.x = 480.0, .y = 420.0},
+                                                      roadmaker::Waypoint{.x = 560.0, .y = 400.0}},
+                                                     roadmaker::LaneProfile::two_lane_default(),
+                                                     "Editable"))
+          .has_value());
   RoadId edited;
   document.network().for_each_road([&](RoadId id, const roadmaker::Road& road) {
     if (road.name == "Editable") {
@@ -118,12 +118,11 @@ TEST(DocumentCommands, GeometryEditsRemeshIncrementallyWithRoadPayload) {
   // Capture payloads with a plain lambda (std::vector<RoadId> is not a
   // registered metatype, so QSignalSpy cannot record it).
   std::vector<std::vector<roadmaker::RoadId>> payloads;
-  QObject::connect(&document,
-                   &Document::mesh_changed,
-                   &document,
-                   [&payloads](const std::vector<roadmaker::RoadId>& roads) {
-                     payloads.push_back(roads);
-                   });
+  QObject::connect(
+      &document,
+      &Document::mesh_changed,
+      &document,
+      [&payloads](const std::vector<roadmaker::RoadId>& roads) { payloads.push_back(roads); });
 
   // Untouched roads must keep their exact vertex buffers across the edit.
   std::vector<std::pair<roadmaker::RoadId, const double*>> untouched;

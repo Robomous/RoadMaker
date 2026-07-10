@@ -32,20 +32,17 @@ ViewportWidget::ViewportWidget(Document& document, SelectionModel& selection, QW
   setMinimumSize(320, 240);
 
   connect(&document_, &Document::loaded, this, [this] { frame_on_rebuild_ = true; });
-  connect(&document_,
-          &Document::mesh_changed,
-          this,
-          [this](const std::vector<RoadId>& roads) {
-            if (roads.empty()) { // everything changed — full rebuild
-              scene_dirty_ = true;
-              pending_roads_.clear();
-              road_aabbs_ = compute_road_aabbs(document_.mesh());
-            } else if (!scene_dirty_) { // partial path; a pending full rebuild covers it
-              pending_roads_.insert(pending_roads_.end(), roads.begin(), roads.end());
-              refresh_road_aabbs(roads);
-            }
-            update();
-          });
+  connect(&document_, &Document::mesh_changed, this, [this](const std::vector<RoadId>& roads) {
+    if (roads.empty()) { // everything changed — full rebuild
+      scene_dirty_ = true;
+      pending_roads_.clear();
+      road_aabbs_ = compute_road_aabbs(document_.mesh());
+    } else if (!scene_dirty_) { // partial path; a pending full rebuild covers it
+      pending_roads_.insert(pending_roads_.end(), roads.begin(), roads.end());
+      refresh_road_aabbs(roads);
+    }
+    update();
+  });
   connect(
       &selection_, &SelectionModel::selection_changed, this, [this](RoadId, LaneId) { update(); });
 }
