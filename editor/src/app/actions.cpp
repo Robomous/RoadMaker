@@ -20,6 +20,15 @@ Actions::Actions(QUndoStack& undo_stack, QObject* parent) : QObject(parent) {
   redo = undo_stack.createRedoAction(this, tr("&Redo"));
   redo->setShortcut(QKeySequence::Redo);
 
+  tool_group = new QActionGroup(this);
+  tool_select = new QAction(tr("&Select/Move"), this);
+  tool_select->setCheckable(true);
+  tool_select->setChecked(true); // the default tool
+  tool_select->setShortcut(Qt::Key_V);
+  tool_select->setToolTip(tr("Select/Move — click picks, drag spans a rubber band, "
+                             "drag a node handle moves it (V)"));
+  tool_group->addAction(tool_select);
+
   reset_camera = new QAction(tr("Reset &Camera"), this);
   frame_selection = new QAction(tr("&Frame Selection"), this);
   frame_selection->setShortcut(Qt::Key_F);
@@ -38,6 +47,7 @@ void Actions::apply_icons() {
   export_glb->setIcon(Icons::get(QStringLiteral("box")));
   undo->setIcon(Icons::get(QStringLiteral("undo-2")));
   redo->setIcon(Icons::get(QStringLiteral("redo-2")));
+  tool_select->setIcon(Icons::get(QStringLiteral("mouse-pointer-2")));
   reset_camera->setIcon(Icons::get(QStringLiteral("rotate-ccw")));
   frame_selection->setIcon(Icons::get(QStringLiteral("scan")));
 }

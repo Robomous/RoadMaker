@@ -1,10 +1,13 @@
 #include "viewport/viewport_widget.hpp"
 
+#include <QKeyEvent>
 #include <QMouseEvent>
 #include <QOpenGLContext>
 #include <QWheelEvent>
 #include <algorithm>
+#include <array>
 #include <cmath>
+#include <numeric>
 
 #include "render/gl_functions.hpp"
 #include "render/gl_renderer.hpp"
@@ -20,12 +23,13 @@ void* qt_gl_resolver(const char* name) {
   return context == nullptr ? nullptr : reinterpret_cast<void*>(context->getProcAddress(name));
 }
 
-constexpr int kClickDragThreshold = 3; // manhattan px
-
 } // namespace
 
-ViewportWidget::ViewportWidget(Document& document, SelectionModel& selection, QWidget* parent)
-    : QOpenGLWidget(parent), document_(document), selection_(selection),
+ViewportWidget::ViewportWidget(Document& document,
+                               SelectionModel& selection,
+                               ToolManager& tools,
+                               QWidget* parent)
+    : QOpenGLWidget(parent), document_(document), selection_(selection), tools_(tools),
       renderer_(std::make_unique<GLRenderer>()) {
   setMouseTracking(true); // hover s/t without a pressed button
   setFocusPolicy(Qt::StrongFocus);
@@ -44,6 +48,8 @@ ViewportWidget::ViewportWidget(Document& document, SelectionModel& selection, QW
     update();
   });
   connect(&selection_, &SelectionModel::selection_changed, this, [this] { update(); });
+  connect(&tools_, &ToolManager::active_changed, this, &ViewportWidget::attach_active_tool);
+  attach_active_tool();
 }
 
 ViewportWidget::~ViewportWidget() {
@@ -68,6 +74,7 @@ void ViewportWidget::rebuild_scene() {
   renderer_->clear_meshes();
   items_.clear();
   pending_roads_.clear();
+  preview_handles_.clear(); // clear_meshes() dropped them; re-uploaded this paint
   grid_ = renderer_->upload(make_grid());
 
   Scene scene = build_scene(document_.mesh());
@@ -149,14 +156,18 @@ void ViewportWidget::paintGL() {
   } else if (!pending_roads_.empty()) {
     apply_pending_road_updates();
   }
+  upload_tool_preview();
 
   std::vector<DrawItem> draw_items;
-  draw_items.reserve(items_.size() + 1);
+  draw_items.reserve(items_.size() + preview_handles_.size() + 1);
   if (grid_.valid()) {
     draw_items.push_back(DrawItem{.mesh = grid_});
   }
   for (const UploadedItem& item : items_) {
     draw_items.push_back(DrawItem{.mesh = item.handle, .highlighted = is_highlighted(item)});
+  }
+  for (const RenderMeshHandle handle : preview_handles_) {
+    draw_items.push_back(DrawItem{.mesh = handle});
   }
 
   // Framebuffer pixels, not widget units (HiDPI rule).
@@ -213,9 +224,16 @@ void ViewportWidget::update_hover(const QPointF& pos) {
   emit hover_changed(info);
 }
 
+// M2 button map (docs/design/m2/01_editing_framework.md §4): LMB drives the
+// active tool (click-select, rubber band, node drag live in SelectTool),
+// RMB-drag orbits, MMB-drag pans, wheel zooms.
+
 void ViewportWidget::mousePressEvent(QMouseEvent* event) {
-  press_pos_ = event->pos();
   last_mouse_pos_ = event->pos();
+  if (Tool* tool = tools_.active(); tool != nullptr && event->button() == Qt::LeftButton &&
+                                    tool->mouse_press(make_tool_event(event))) {
+    update();
+  }
   event->accept();
 }
 
@@ -223,10 +241,16 @@ void ViewportWidget::mouseMoveEvent(QMouseEvent* event) {
   const QPoint delta = event->pos() - last_mouse_pos_;
   last_mouse_pos_ = event->pos();
 
-  if ((event->buttons() & Qt::LeftButton) != 0) {
+  if (Tool* tool = tools_.active(); tool != nullptr && tool->mouse_move(make_tool_event(event))) {
+    update();
+    event->accept();
+    return;
+  }
+
+  if ((event->buttons() & Qt::RightButton) != 0) {
     camera_.orbit(static_cast<float>(-delta.x()) * 0.008F, static_cast<float>(delta.y()) * 0.008F);
     update();
-  } else if ((event->buttons() & (Qt::RightButton | Qt::MiddleButton)) != 0) {
+  } else if ((event->buttons() & Qt::MiddleButton) != 0) {
     camera_.pan(static_cast<float>(delta.x()), static_cast<float>(delta.y()));
     update();
   } else {
@@ -236,19 +260,119 @@ void ViewportWidget::mouseMoveEvent(QMouseEvent* event) {
 }
 
 void ViewportWidget::mouseReleaseEvent(QMouseEvent* event) {
-  // A left click (press+release without a drag) picks; a miss clears.
-  // Ctrl (Cmd on macOS) toggles the hit in and out of the selection.
-  if (event->button() == Qt::LeftButton &&
-      (event->pos() - press_pos_).manhattanLength() < kClickDragThreshold) {
-    const bool toggle = (event->modifiers() & Qt::ControlModifier) != 0;
-    if (const auto hit = pick(document_.mesh(), road_aabbs_, ray_through(event->position()))) {
-      selection_.select({.road = hit->road, .lane = hit->lane},
-                        toggle ? SelectMode::Toggle : SelectMode::Replace);
-    } else if (!toggle) {
-      selection_.clear();
-    }
+  if (Tool* tool = tools_.active(); tool != nullptr && event->button() == Qt::LeftButton &&
+                                    tool->mouse_release(make_tool_event(event))) {
+    update();
   }
   event->accept();
+}
+
+void ViewportWidget::keyPressEvent(QKeyEvent* event) {
+  if (Tool* tool = tools_.active();
+      tool != nullptr && tool->key_press(event->key(), event->modifiers())) {
+    update();
+    event->accept();
+    return;
+  }
+  QOpenGLWidget::keyPressEvent(event);
+}
+
+ToolEvent ViewportWidget::make_tool_event(const QMouseEvent* event) const {
+  ToolEvent tool_event;
+  const Ray ray = ray_through(event->position());
+  // Cursor world x/y: ray ∩ ground plane (z = 0), like the hover readout.
+  if (std::abs(ray.direction[2]) > 1e-12) {
+    const double t = -ray.origin[2] / ray.direction[2];
+    if (t >= 0.0) {
+      tool_event.world_x = ray.origin[0] + (ray.direction[0] * t);
+      tool_event.world_y = ray.origin[1] + (ray.direction[1] * t);
+    }
+  }
+  tool_event.pick = pick(document_.mesh(), road_aabbs_, ray);
+  tool_event.buttons = event->buttons(); // press events include their button
+  tool_event.modifiers = event->modifiers();
+  return tool_event;
+}
+
+void ViewportWidget::attach_active_tool() {
+  disconnect(preview_connection_);
+  if (Tool* tool = tools_.active()) {
+    preview_connection_ =
+        connect(tool, &Tool::preview_changed, this, qOverload<>(&QWidget::update));
+  }
+  update();
+}
+
+void ViewportWidget::upload_tool_preview() {
+  for (const RenderMeshHandle handle : preview_handles_) {
+    renderer_->remove(handle);
+  }
+  preview_handles_.clear();
+
+  const Tool* tool = tools_.active();
+  if (tool == nullptr) {
+    return;
+  }
+  const PreviewGeometry geometry = tool->preview();
+  if (geometry.empty()) {
+    return;
+  }
+
+  // Amber overlay, lifted slightly off the ground plane so handles and band
+  // lines never z-fight the road surface.
+  constexpr std::array<float, 4> kOverlayColor{1.0F, 0.62F, 0.13F, 1.0F};
+  constexpr float kOverlayLift = 0.05F;
+
+  if (!geometry.line_positions.empty()) {
+    RenderMeshData lines;
+    lines.kind = PrimitiveKind::Lines;
+    lines.color = kOverlayColor;
+    lines.positions.reserve(geometry.line_positions.size());
+    for (std::size_t i = 0; i < geometry.line_positions.size(); ++i) {
+      const float lift = i % 3 == 2 ? kOverlayLift : 0.0F;
+      lines.positions.push_back(static_cast<float>(geometry.line_positions[i]) + lift);
+    }
+    lines.indices.resize(lines.positions.size() / 3);
+    std::iota(lines.indices.begin(), lines.indices.end(), 0U);
+    preview_handles_.push_back(renderer_->upload(lines));
+  }
+
+  if (!geometry.point_positions.empty()) {
+    // The renderer has no point primitive: draw each point as a 3-axis cross
+    // sized relative to the view distance (~a steady few pixels on screen).
+    const float size = std::max(camera_.distance() * 0.012F, 0.05F);
+    RenderMeshData points;
+    points.kind = PrimitiveKind::Lines;
+    points.color = kOverlayColor;
+    points.positions.reserve(geometry.point_positions.size() * 6);
+    for (std::size_t i = 0; i + 2 < geometry.point_positions.size(); i += 3) {
+      const auto x = static_cast<float>(geometry.point_positions[i]);
+      const auto y = static_cast<float>(geometry.point_positions[i + 1]);
+      const auto z = static_cast<float>(geometry.point_positions[i + 2]) + kOverlayLift;
+      points.positions.insert(points.positions.end(),
+                              {x - size,
+                               y,
+                               z,
+                               x + size,
+                               y,
+                               z, // x arm
+                               x,
+                               y - size,
+                               z,
+                               x,
+                               y + size,
+                               z, // y arm
+                               x,
+                               y,
+                               z - size,
+                               x,
+                               y,
+                               z + size}); // z arm
+    }
+    points.indices.resize(points.positions.size() / 3);
+    std::iota(points.indices.begin(), points.indices.end(), 0U);
+    preview_handles_.push_back(renderer_->upload(points));
+  }
 }
 
 void ViewportWidget::wheelEvent(QWheelEvent* event) {

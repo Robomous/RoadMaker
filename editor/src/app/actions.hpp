@@ -5,6 +5,7 @@
 // QUndoStack (M2 scaffolding — the stack is empty in M1).
 
 #include <QAction>
+#include <QActionGroup>
 #include <QObject>
 #include <QUndoStack>
 
@@ -27,6 +28,11 @@ public:
 
   QAction* undo = nullptr;
   QAction* redo = nullptr;
+
+  /// Editing tools: exclusive, checkable — one active tool at a time (more
+  /// join the group in later M2 phases).
+  QActionGroup* tool_group = nullptr;
+  QAction* tool_select = nullptr;
 
   QAction* reset_camera = nullptr;
   QAction* frame_selection = nullptr;

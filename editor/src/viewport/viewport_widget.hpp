@@ -15,6 +15,7 @@
 #include "document/selection_model.hpp"
 #include "render/renderer.hpp"
 #include "render/scene_builder.hpp"
+#include "tools/tool_manager.hpp"
 #include "viewport/camera.hpp"
 #include "viewport/picking.hpp"
 
@@ -37,7 +38,10 @@ class ViewportWidget : public QOpenGLWidget {
   Q_OBJECT
 
 public:
-  ViewportWidget(Document& document, SelectionModel& selection, QWidget* parent = nullptr);
+  ViewportWidget(Document& document,
+                 SelectionModel& selection,
+                 ToolManager& tools,
+                 QWidget* parent = nullptr);
   ~ViewportWidget() override;
 
   ViewportWidget(const ViewportWidget&) = delete;
@@ -61,6 +65,7 @@ protected:
   void mouseMoveEvent(QMouseEvent* event) override;
   void mouseReleaseEvent(QMouseEvent* event) override;
   void wheelEvent(QWheelEvent* event) override;
+  void keyPressEvent(QKeyEvent* event) override;
 
 private:
   struct UploadedItem {
@@ -83,8 +88,20 @@ private:
   [[nodiscard]] Ray ray_through(const QPointF& pos) const;
   void update_hover(const QPointF& pos);
 
+  /// Translates a Qt mouse event into the tool seam's abstract event:
+  /// ground-plane (z=0) world position, lane-patch pick, buttons, modifiers.
+  [[nodiscard]] ToolEvent make_tool_event(const QMouseEvent* event) const;
+
+  /// Re-subscribes preview_changed to the newly active tool.
+  void attach_active_tool();
+
+  /// Replaces the overlay meshes with the active tool's PreviewGeometry
+  /// (GL context must be current — called from paintGL).
+  void upload_tool_preview();
+
   Document& document_;
   SelectionModel& selection_;
+  ToolManager& tools_;
 
   std::unique_ptr<Renderer> renderer_;
   OrbitCamera camera_;
@@ -104,7 +121,10 @@ private:
   /// edit-driven rebuilds must not yank the view.
   bool frame_on_rebuild_ = true;
 
-  QPoint press_pos_;
+  /// Overlay meshes for the active tool's preview, replaced every paint.
+  std::vector<RenderMeshHandle> preview_handles_;
+  QMetaObject::Connection preview_connection_;
+
   QPoint last_mouse_pos_;
 };
 
