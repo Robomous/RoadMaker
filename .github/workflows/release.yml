@@ -92,9 +92,20 @@ jobs:
           Icon=roadmaker-editor
           Categories=Development;
           EOF
-          # Minimal placeholder icon (single transparent pixel) until branding.
-          printf '\x89PNG\r\n\x1a\n' > /dev/null
-          python3 -c "import base64,pathlib; pathlib.Path('roadmaker-editor.png').write_bytes(base64.b64decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=='))"
+          # Placeholder icon until branding — linuxdeploy requires a standard
+          # resolution (a 1x1 pixel is rejected), so generate a solid 256x256.
+          python3 - <<'PYEOF'
+          import struct, zlib, pathlib
+          def chunk(tag, data):
+              return struct.pack(">I", len(data)) + tag + data + struct.pack(">I", zlib.crc32(tag + data))
+          size = 256
+          row = b"\x00" + b"\x2e\x64\x8e\xff" * size  # filter byte + solid RGBA rows
+          png = (b"\x89PNG\r\n\x1a\n"
+                 + chunk(b"IHDR", struct.pack(">IIBBBBB", size, size, 8, 6, 0, 0, 0))
+                 + chunk(b"IDAT", zlib.compress(row * size))
+                 + chunk(b"IEND", b""))
+          pathlib.Path("roadmaker-editor.png").write_bytes(png)
+          PYEOF
           export QMAKE=${{ github.workspace }}/.qt/6.8.3/gcc_64/bin/qmake
           # linuxdeploy resolves the installed binary's dependencies with ldd,
           # which needs the provisioned Qt libs on the search path.

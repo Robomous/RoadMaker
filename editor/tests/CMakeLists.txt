@@ -29,5 +29,16 @@ target_link_libraries(roadmaker_editor_tests PRIVATE
 
 rm_apply_warnings(roadmaker_editor_tests)
 
+if(WIN32)
+  # gtest_discover_tests runs the exe at build time and Windows has no rpath:
+  # the runtime DLLs (Qt, plus the kernel when RM_BUILD_SHARED) must sit next
+  # to the test executable.
+  add_custom_command(TARGET roadmaker_editor_tests POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            $<TARGET_RUNTIME_DLLS:roadmaker_editor_tests>
+            $<TARGET_FILE_DIR:roadmaker_editor_tests>
+    COMMAND_EXPAND_LISTS)
+endif()
+
 gtest_discover_tests(roadmaker_editor_tests
   PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
