@@ -84,6 +84,34 @@ bool RoadNetwork::erase_junction(JunctionId junction_id) {
   return junctions_.erase(junction_id);
 }
 
+Expected<RoadId> RoadNetwork::restore_road(RoadId id, Road value) {
+  return roads_.restore(id, std::move(value));
+}
+
+Expected<void> RoadNetwork::erase_road_exact(RoadId id) { return roads_.erase_exact(id); }
+
+Expected<LaneSectionId> RoadNetwork::restore_lane_section(LaneSectionId id, LaneSection value) {
+  return sections_.restore(id, std::move(value));
+}
+
+Expected<void> RoadNetwork::erase_lane_section_exact(LaneSectionId id) {
+  return sections_.erase_exact(id);
+}
+
+Expected<LaneId> RoadNetwork::restore_lane(LaneId id, Lane value) {
+  return lanes_.restore(id, std::move(value));
+}
+
+Expected<void> RoadNetwork::erase_lane_exact(LaneId id) { return lanes_.erase_exact(id); }
+
+Expected<JunctionId> RoadNetwork::restore_junction(JunctionId id, Junction value) {
+  return junctions_.restore(id, std::move(value));
+}
+
+Expected<void> RoadNetwork::erase_junction_exact(JunctionId id) {
+  return junctions_.erase_exact(id);
+}
+
 RoadId RoadNetwork::find_road(std::string_view odr_id) const {
   RoadId found;
   roads_.for_each([&](RoadId id, const Road& road) {

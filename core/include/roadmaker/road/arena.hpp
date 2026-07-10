@@ -1,5 +1,6 @@
 #pragma once
 
+#include "roadmaker/error.hpp"
 #include "roadmaker/road/id.hpp"
 
 #include <cstdint>
@@ -62,6 +63,41 @@ public:
     free_.push_back(id.index);
     --alive_;
     return true;
+  }
+
+  /// Erases WITHOUT bumping the generation and WITHOUT recycling the slot,
+  /// so a later `restore(id, ...)` can resurrect the object under its
+  /// original handle while ids held by other domain objects stay valid.
+  /// Command-layer (roadmaker::edit) only — every other caller wants
+  /// `erase`. The slot stays reserved (never reused by `emplace`) until
+  /// restored, so an id freed this way can never alias a new object.
+  Expected<void> erase_exact(IdT id) {
+    if (get(id) == nullptr) {
+      return make_error(ErrorCode::InvalidArgument, "erase_exact: invalid or stale id");
+    }
+    slots_[id.index].value.reset();
+    --alive_;
+    return {};
+  }
+
+  /// Re-occupies the exact slot of `id` with `value`. The slot must have
+  /// been freed by `erase_exact` (same generation, still empty); a slot
+  /// freed by plain `erase` fails the generation check by construction.
+  /// Command-layer (roadmaker::edit) only, paired with `erase_exact`.
+  Expected<IdT> restore(IdT id, T value) {
+    if (id.index >= slots_.size()) {
+      return make_error(ErrorCode::InvalidArgument, "restore: slot was never allocated");
+    }
+    Slot& slot = slots_[id.index];
+    if (slot.gen != id.gen) {
+      return make_error(ErrorCode::InvalidArgument, "restore: generation mismatch");
+    }
+    if (slot.value.has_value()) {
+      return make_error(ErrorCode::InvalidArgument, "restore: slot is occupied");
+    }
+    slot.value.emplace(std::move(value));
+    ++alive_;
+    return id;
   }
 
   [[nodiscard]] std::size_t size() const { return alive_; }
