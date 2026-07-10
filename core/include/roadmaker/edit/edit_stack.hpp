@@ -15,6 +15,16 @@ namespace roadmaker::edit {
 /// single stack is Qt's QUndoStack; a document must never be driven by both.
 class RM_API EditStack {
 public:
+  EditStack() = default;
+  // Not copyable (owns the recorded commands); movable. The explicit
+  // deletion also keeps binding generators from instantiating the
+  // ill-formed vector<unique_ptr> copy.
+  EditStack(const EditStack&) = delete;
+  EditStack& operator=(const EditStack&) = delete;
+  EditStack(EditStack&&) = default;
+  EditStack& operator=(EditStack&&) = default;
+  ~EditStack() = default;
+
   /// Applies the command and records it on success; a failed apply returns
   /// the command's error and records nothing (network unchanged per the
   /// Command contract). Pushing truncates the redo tail.
