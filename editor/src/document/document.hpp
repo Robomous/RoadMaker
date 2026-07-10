@@ -4,6 +4,7 @@
 // parser diagnostics. The ONLY mutator of the network — widgets never touch
 // the kernel except through this class. QtCore-only; testable offscreen.
 
+#include "roadmaker/edit/command.hpp"
 #include "roadmaker/error.hpp"
 #include "roadmaker/mesh/mesh.hpp"
 #include "roadmaker/road/network.hpp"
@@ -13,6 +14,7 @@
 #include <QString>
 #include <QUndoStack>
 #include <filesystem>
+#include <memory>
 #include <vector>
 
 namespace roadmaker::editor {
@@ -43,10 +45,17 @@ public:
 
   [[nodiscard]] bool has_file() const { return !file_path_.isEmpty(); }
 
-  /// M2 scaffolding: editing commands will push here. Empty in M1, but the
-  /// Edit menu binds to it now so undo/redo wiring is structural, not bolted
-  /// on later. Cleared on every load().
+  /// Editing commands push here (via push_command). Cleared on every
+  /// load().
   [[nodiscard]] QUndoStack* undo_stack() { return &undo_stack_; }
+
+  /// The single entry point for kernel mutations
+  /// (docs/m2/01_editing_framework.md §1.3): applies the command, and on
+  /// success pushes it onto the undo stack (already applied — the stack's
+  /// immediate redo is skipped), re-meshes and emits mesh_changed() (and
+  /// topology_changed() when the dirty set says so). A failed apply leaves
+  /// the document unchanged, appends a diagnostic, and is NOT pushed.
+  [[nodiscard]] Expected<void> push_command(std::unique_ptr<edit::Command> command);
 
 signals:
   /// Document replaced wholesale — models must reset; entity IDs from before
@@ -56,9 +65,21 @@ signals:
   /// Tessellation rebuilt (fires after loaded(); M2 edits reuse it).
   void mesh_changed();
 
+  /// Roads or junctions were added or removed by a command (drives tree
+  /// resets); fires after mesh_changed().
+  void topology_changed();
+
   void diagnostics_changed();
 
 private:
+  // The undo-stack bridge mutates the network on redo/undo; it is part of
+  // Document's own mutation machinery, not an outside caller.
+  friend class KernelEditorCommand;
+
+  /// Re-mesh + signals after any kernel mutation (full re-mesh in phase 0;
+  /// incremental re-mesh is issue #4).
+  void after_kernel_mutation(const edit::DirtySet& dirty);
+
   RoadNetwork network_;
   NetworkMesh mesh_;
   std::vector<Diagnostic> diagnostics_;

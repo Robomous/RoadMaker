@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- RoadMaker sample: <userData> parsing seeds — well-formed rm:waypoints,
+     malformed values, unknown codes. Hand-authored (MIT license). -->
+<OpenDRIVE>
+  <header revMajor="1" revMinor="7" name="user_data_waypoints" vendor="Robomous"/>
+  <road name="good" length="10" id="1" junction="-1">
+    <planView>
+      <geometry s="0" x="0" y="0" hdg="0" length="10"><line/></geometry>
+    </planView>
+    <lanes><laneSection s="0"><center><lane id="0" type="none" level="false"/></center></laneSection></lanes>
+    <userData code="rm:waypoints" value="0,0;5.5,-1.25;10,0"/>
+    <userData code="vendor:opaque" value="anything at all"/>
+  </road>
+  <road name="odd" length="10" id="2" junction="-1">
+    <planView>
+      <geometry s="0" x="0" y="30" hdg="0" length="10"><line/></geometry>
+    </planView>
+    <lanes><laneSection s="0"><center><lane id="0" type="none" level="false"/></center></laneSection></lanes>
+    <userData code="rm:waypoints" value=";,;;1e309,nan;0,"/>
+    <userData code="rm:waypoints"/>
+    <userData/>
+  </road>
+</OpenDRIVE>

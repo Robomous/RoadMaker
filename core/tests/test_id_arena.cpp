@@ -79,6 +79,70 @@ TEST(Arena, SlotReuseBumpsGeneration) {
   EXPECT_EQ(arena.get(new_id)->name, "new");
 }
 
+TEST(Arena, EraseExactThenRestoreResurrectsUnderOriginalId) {
+  WidgetArena arena;
+  const WidgetId id = arena.emplace(Widget{.name = "phoenix"});
+
+  ASSERT_TRUE(arena.erase_exact(id).has_value());
+  EXPECT_EQ(arena.get(id), nullptr);
+  EXPECT_TRUE(arena.empty());
+
+  const auto restored = arena.restore(id, Widget{.name = "phoenix"});
+  ASSERT_TRUE(restored.has_value());
+  EXPECT_EQ(*restored, id); // same index AND same generation
+  ASSERT_NE(arena.get(id), nullptr);
+  EXPECT_EQ(arena.get(id)->name, "phoenix");
+  EXPECT_EQ(arena.size(), 1U);
+}
+
+TEST(Arena, EraseExactSlotIsNeverRecycledByEmplace) {
+  WidgetArena arena;
+  const WidgetId reserved = arena.emplace(Widget{.name = "reserved"});
+  ASSERT_TRUE(arena.erase_exact(reserved).has_value());
+
+  // A new emplace must not alias the resurrectable slot.
+  const WidgetId fresh = arena.emplace(Widget{.name = "fresh"});
+  EXPECT_NE(fresh.index, reserved.index);
+  ASSERT_TRUE(arena.restore(reserved, Widget{.name = "reserved"}).has_value());
+  EXPECT_EQ(arena.size(), 2U);
+}
+
+TEST(Arena, EraseExactRejectsInvalidAndStaleIds) {
+  WidgetArena arena;
+  EXPECT_FALSE(arena.erase_exact(WidgetId{}).has_value());
+
+  const WidgetId id = arena.emplace(Widget{.name = "once"});
+  arena.erase(id); // plain erase bumps the generation
+  EXPECT_FALSE(arena.erase_exact(id).has_value());
+}
+
+TEST(Arena, RestoreRejectsOccupiedUnknownAndGenMismatchedSlots) {
+  WidgetArena arena;
+  const WidgetId occupied = arena.emplace(Widget{.name = "here"});
+  EXPECT_FALSE(arena.restore(occupied, Widget{.name = "clone"}).has_value());
+
+  EXPECT_FALSE(arena.restore(WidgetId{.index = 42, .gen = 0}, Widget{}).has_value());
+
+  // A slot freed by plain erase fails the generation check: its slot gen was
+  // bumped, so the old handle can never be restored into it.
+  const WidgetId erased = arena.emplace(Widget{.name = "gone"});
+  arena.erase(erased);
+  EXPECT_FALSE(arena.restore(erased, Widget{.name = "gone"}).has_value());
+}
+
+TEST(Arena, RestoredSlotBehavesNormallyAfterwards) {
+  WidgetArena arena;
+  const WidgetId id = arena.emplace(Widget{.name = "w"});
+  ASSERT_TRUE(arena.erase_exact(id).has_value());
+  ASSERT_TRUE(arena.restore(id, Widget{.name = "w"}).has_value());
+
+  // Plain erase on the restored slot bumps the generation as usual.
+  EXPECT_TRUE(arena.erase(id));
+  const WidgetId reused = arena.emplace(Widget{.name = "next"});
+  EXPECT_EQ(reused.index, id.index);
+  EXPECT_NE(reused.gen, id.gen);
+}
+
 TEST(Arena, ForEachVisitsLiveElementsInSlotOrder) {
   WidgetArena arena;
   const WidgetId a = arena.emplace(Widget{.name = "a"});

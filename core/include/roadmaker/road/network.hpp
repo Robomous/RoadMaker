@@ -10,6 +10,7 @@
 
 #include <string>
 #include <string_view>
+#include <vector>
 
 namespace roadmaker {
 
@@ -52,6 +53,26 @@ public:
   /// Road::junction becomes invalid). Connecting roads themselves survive.
   /// Returns false on a stale id.
   RM_API bool erase_junction(JunctionId junction);
+
+  // --- command-layer restore-in-place (roadmaker::edit only) ---------------
+  //
+  // Exact-slot erase/restore pairs that do NOT bump generations and do NOT
+  // cascade or fix up cross-references: an edit command owns the full value
+  // snapshot of everything it touches and restores each object itself, so
+  // ids held by other domain objects survive undo/redo. Every other caller
+  // wants create_*/add_*/erase_* above.
+
+  RM_API Expected<RoadId> restore_road(RoadId id, Road value);
+  RM_API Expected<void> erase_road_exact(RoadId id);
+
+  RM_API Expected<LaneSectionId> restore_lane_section(LaneSectionId id, LaneSection value);
+  RM_API Expected<void> erase_lane_section_exact(LaneSectionId id);
+
+  RM_API Expected<LaneId> restore_lane(LaneId id, Lane value);
+  RM_API Expected<void> erase_lane_exact(LaneId id);
+
+  RM_API Expected<JunctionId> restore_junction(JunctionId id, Junction value);
+  RM_API Expected<void> erase_junction_exact(JunctionId id);
 
   // --- lookup (nullptr on stale/invalid ids) ------------------------------
 
@@ -109,5 +130,13 @@ private:
   Arena<Lane, LaneId> lanes_;
   Arena<Junction, JunctionId> junctions_;
 };
+
+/// Junctions the road participates in: as a connecting road
+/// (Road::junction), through any junction connection (incoming or
+/// connecting side), or via its predecessor/successor links. Deduplicated,
+/// stable order. Linear scan — junction counts stay small at M2 scale; the
+/// edit layer uses this to fill DirtySet::junctions.
+[[nodiscard]] RM_API std::vector<JunctionId> junctions_touching(const RoadNetwork& network,
+                                                                RoadId road);
 
 } // namespace roadmaker

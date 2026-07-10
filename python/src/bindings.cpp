@@ -3,6 +3,8 @@
 // Expected, __repr__ everywhere. No C++ exception ever crosses this
 // boundary unhandled — rm::Error is translated to Python exceptions.
 
+#include "roadmaker/edit/edit_stack.hpp"
+#include "roadmaker/edit/operations.hpp"
 #include "roadmaker/error.hpp"
 #include "roadmaker/io/gltf_exporter.hpp"
 #include "roadmaker/mesh/mesh_builder.hpp"
@@ -18,6 +20,7 @@
 #include <nanobind/stl/pair.h>
 #include <nanobind/stl/string.h>
 #include <nanobind/stl/string_view.h>
+#include <nanobind/stl/unique_ptr.h>
 #include <nanobind/stl/vector.h>
 
 #include <filesystem>
@@ -30,6 +33,15 @@ namespace nb = nanobind;
 using namespace nb::literals;
 
 namespace {
+
+std::vector<roadmaker::Waypoint> to_waypoints(const std::vector<std::pair<double, double>>& xy) {
+  std::vector<roadmaker::Waypoint> points;
+  points.reserve(xy.size());
+  for (const auto& [x, y] : xy) {
+    points.push_back(roadmaker::Waypoint{.x = x, .y = y});
+  }
+  return points;
+}
 
 /// Carrier for rm::Error through the binding boundary; translated below.
 struct RmException {
@@ -170,9 +182,48 @@ NB_MODULE(_roadmaker, m) {
            "Pose at station s [m], clamped to [0, length].");
 
   nb::class_<roadmaker::RoadMark>(m, "RoadMark")
-      .def_ro("s_offset", &roadmaker::RoadMark::s_offset)
-      .def_ro("type", &roadmaker::RoadMark::type)
-      .def_ro("width", &roadmaker::RoadMark::width);
+      .def(nb::init<>())
+      .def(
+          "__init__",
+          [](roadmaker::RoadMark* self,
+             double s_offset,
+             roadmaker::RoadMarkType type,
+             double width) {
+            new (self) roadmaker::RoadMark{.s_offset = s_offset, .type = type, .width = width};
+          },
+          "s_offset"_a = 0.0,
+          "type"_a = roadmaker::RoadMarkType::None,
+          "width"_a = 0.12)
+      .def_rw("s_offset", &roadmaker::RoadMark::s_offset)
+      .def_rw("type", &roadmaker::RoadMark::type)
+      .def_rw("width", &roadmaker::RoadMark::width);
+
+  nb::class_<roadmaker::Waypoint>(m, "Waypoint")
+      .def(nb::init<>())
+      .def(
+          "__init__",
+          [](roadmaker::Waypoint* self, double x, double y) {
+            new (self) roadmaker::Waypoint{.x = x, .y = y};
+          },
+          "x"_a,
+          "y"_a)
+      .def_rw("x", &roadmaker::Waypoint::x)
+      .def_rw("y", &roadmaker::Waypoint::y)
+      .def("__repr__", [](const roadmaker::Waypoint& p) {
+        return "Waypoint(" + std::to_string(p.x) + ", " + std::to_string(p.y) + ")";
+      });
+
+  nb::class_<roadmaker::RoadEnd>(m, "RoadEnd")
+      .def(nb::init<>())
+      .def(
+          "__init__",
+          [](roadmaker::RoadEnd* self, roadmaker::RoadId road, roadmaker::ContactPoint contact) {
+            new (self) roadmaker::RoadEnd{.road = road, .contact = contact};
+          },
+          "road"_a,
+          "contact"_a)
+      .def_rw("road", &roadmaker::RoadEnd::road)
+      .def_rw("contact", &roadmaker::RoadEnd::contact);
 
   nb::class_<roadmaker::Diagnostic>(m, "Diagnostic")
       .def_ro("severity", &roadmaker::Diagnostic::severity)
@@ -235,6 +286,10 @@ NB_MODULE(_roadmaker, m) {
       .def_ro("elevation", &roadmaker::Road::elevation)
       .def_ro("superelevation", &roadmaker::Road::superelevation)
       .def_ro("lane_offset", &roadmaker::Road::lane_offset)
+      .def_ro("authoring_waypoints",
+              &roadmaker::Road::authoring_waypoints,
+              "Waypoints the reference line was fitted through; None for "
+              "roads loaded without rm:waypoints userData.")
       .def("__repr__", [](const roadmaker::Road& road) {
         return "Road(odr_id='" + road.odr_id + "', name='" + road.name +
                "', length=" + std::to_string(road.length) + ")";
@@ -396,6 +451,132 @@ NB_MODULE(_roadmaker, m) {
       "odr_id"_a = "",
       "Fits a G1 clothoid path through (x, y) waypoints and inserts a road. "
       "Returns its RoadId. Raises ValueError on invalid input.");
+
+  // --- editing (undo/redo parity with the editor) ------------------------------
+
+  nb::module_ edit =
+      m.def_submodule("edit",
+                      "Undoable edit commands (kernel command layer). Create a command with "
+                      "a factory, then push it onto an EditStack — pushing applies it.");
+
+  nb::class_<roadmaker::edit::DirtySet>(edit, "DirtySet")
+      .def_ro("roads", &roadmaker::edit::DirtySet::roads)
+      .def_ro("junctions", &roadmaker::edit::DirtySet::junctions)
+      .def_ro("topology", &roadmaker::edit::DirtySet::topology);
+
+  nb::class_<roadmaker::edit::Command>(edit, "Command")
+      .def_prop_ro(
+          "name",
+          [](const roadmaker::edit::Command& command) { return std::string(command.name()); })
+      .def("__repr__", [](const roadmaker::edit::Command& command) {
+        return "Command('" + std::string(command.name()) + "')";
+      });
+
+  nb::class_<roadmaker::edit::EditStack>(edit, "EditStack")
+      .def(nb::init<>())
+      .def(
+          "push",
+          [](roadmaker::edit::EditStack& stack,
+             roadmaker::RoadNetwork& network,
+             std::unique_ptr<roadmaker::edit::Command> command) {
+            unwrap(stack.push(network, std::move(command)));
+          },
+          "network"_a,
+          "command"_a,
+          "Applies the command and records it. Raises ValueError when the "
+          "apply fails (the network is left unchanged).")
+      .def(
+          "undo",
+          [](roadmaker::edit::EditStack& stack, roadmaker::RoadNetwork& network) {
+            unwrap(stack.undo(network));
+          },
+          "network"_a)
+      .def(
+          "redo",
+          [](roadmaker::edit::EditStack& stack, roadmaker::RoadNetwork& network) {
+            unwrap(stack.redo(network));
+          },
+          "network"_a)
+      .def_prop_ro("can_undo", &roadmaker::edit::EditStack::can_undo)
+      .def_prop_ro("can_redo", &roadmaker::edit::EditStack::can_redo)
+      .def_prop_ro("size", &roadmaker::edit::EditStack::size)
+      .def("clear", &roadmaker::edit::EditStack::clear)
+      .def_prop_rw("depth_limit",
+                   &roadmaker::edit::EditStack::depth_limit,
+                   &roadmaker::edit::EditStack::set_depth_limit);
+
+  edit.def(
+      "move_waypoint",
+      [](const roadmaker::RoadNetwork& network,
+         roadmaker::RoadId road,
+         std::size_t index,
+         std::pair<double, double> to) {
+        return roadmaker::edit::move_waypoint(
+            network, road, index, roadmaker::Waypoint{.x = to.first, .y = to.second});
+      },
+      "network"_a,
+      "road"_a,
+      "index"_a,
+      "to"_a);
+  edit.def(
+      "insert_waypoint",
+      [](const roadmaker::RoadNetwork& network,
+         roadmaker::RoadId road,
+         std::size_t index,
+         std::pair<double, double> at) {
+        return roadmaker::edit::insert_waypoint(
+            network, road, index, roadmaker::Waypoint{.x = at.first, .y = at.second});
+      },
+      "network"_a,
+      "road"_a,
+      "index"_a,
+      "at"_a);
+  edit.def("delete_waypoint", &roadmaker::edit::delete_waypoint, "network"_a, "road"_a, "index"_a);
+  edit.def(
+      "create_road",
+      [](const std::vector<std::pair<double, double>>& waypoints,
+         const roadmaker::LaneProfile& profile,
+         std::string name) {
+        return roadmaker::edit::create_road(to_waypoints(waypoints), profile, std::move(name));
+      },
+      "waypoints"_a,
+      "profile"_a,
+      "name"_a = "");
+  edit.def("split_road", &roadmaker::edit::split_road, "network"_a, "road"_a, "s"_a);
+  edit.def("delete_road", &roadmaker::edit::delete_road, "network"_a, "road"_a);
+  edit.def(
+      "create_junction",
+      [](const roadmaker::RoadNetwork& network, const std::vector<roadmaker::RoadEnd>& ends) {
+        return roadmaker::edit::create_junction(network, ends);
+      },
+      "network"_a,
+      "ends"_a);
+  edit.def("delete_junction", &roadmaker::edit::delete_junction, "network"_a, "junction"_a);
+  edit.def("add_lane",
+           &roadmaker::edit::add_lane,
+           "network"_a,
+           "section"_a,
+           "side"_a,
+           "type"_a,
+           "side: +1 = left of the reference line, -1 = right.");
+  edit.def("remove_lane", &roadmaker::edit::remove_lane, "network"_a, "lane"_a);
+  edit.def("set_lane_type", &roadmaker::edit::set_lane_type, "network"_a, "lane"_a, "type"_a);
+  edit.def("set_lane_width", &roadmaker::edit::set_lane_width, "network"_a, "lane"_a, "width_m"_a);
+  edit.def("set_road_mark", &roadmaker::edit::set_road_mark, "network"_a, "lane"_a, "mark"_a);
+  edit.def("set_node_elevation",
+           &roadmaker::edit::set_node_elevation,
+           "network"_a,
+           "road"_a,
+           "waypoint_index"_a,
+           "z"_a);
+  edit.def(
+      "rename_road",
+      [](const roadmaker::RoadNetwork& network, roadmaker::RoadId road, std::string name) {
+        return roadmaker::edit::rename_road(network, road, std::move(name));
+      },
+      "network"_a,
+      "road"_a,
+      "name"_a);
 
   // --- meshing / export ------------------------------------------------------------
 

@@ -1,5 +1,11 @@
 #include "document/editor_command.hpp"
 
+#include <spdlog/spdlog.h>
+
+#include <utility>
+
+#include "document/document.hpp"
+
 namespace roadmaker::editor {
 
 EditorCommand::EditorCommand(const QString& text, bool already_applied, QUndoCommand* parent)
@@ -15,6 +21,32 @@ void EditorCommand::redo() {
 
 void EditorCommand::undo() {
   revert();
+}
+
+KernelEditorCommand::KernelEditorCommand(Document& document,
+                                         std::unique_ptr<roadmaker::edit::Command> command)
+    : EditorCommand(
+          QString::fromUtf8(command->name().data(), static_cast<qsizetype>(command->name().size())),
+          /*already_applied=*/true),
+      document_(document), command_(std::move(command)) {}
+
+void KernelEditorCommand::apply() {
+  // Failures here are broken linear-history invariants, not user errors —
+  // push_command already vetted the first apply. Log, leave the document
+  // untouched (the kernel guarantees that on failure).
+  if (auto applied = command_->apply(document_.network_); !applied.has_value()) {
+    spdlog::error("redo '{}' failed: {}", command_->name(), applied.error().message);
+    return;
+  }
+  document_.after_kernel_mutation(command_->dirty());
+}
+
+void KernelEditorCommand::revert() {
+  if (auto reverted = command_->revert(document_.network_); !reverted.has_value()) {
+    spdlog::error("undo '{}' failed: {}", command_->name(), reverted.error().message);
+    return;
+  }
+  document_.after_kernel_mutation(command_->dirty());
 }
 
 } // namespace roadmaker::editor

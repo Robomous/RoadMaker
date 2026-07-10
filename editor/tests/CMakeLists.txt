@@ -9,6 +9,7 @@ add_executable(roadmaker_editor_tests
   test_camera.cpp
   test_diagnostics_model.cpp
   test_document.cpp
+  test_document_commands.cpp
   test_editor_command.cpp
   test_icons.cpp
   test_panels.cpp

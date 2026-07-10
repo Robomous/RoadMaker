@@ -84,6 +84,38 @@ bool RoadNetwork::erase_junction(JunctionId junction_id) {
   return junctions_.erase(junction_id);
 }
 
+Expected<RoadId> RoadNetwork::restore_road(RoadId id, Road value) {
+  return roads_.restore(id, std::move(value));
+}
+
+Expected<void> RoadNetwork::erase_road_exact(RoadId id) {
+  return roads_.erase_exact(id);
+}
+
+Expected<LaneSectionId> RoadNetwork::restore_lane_section(LaneSectionId id, LaneSection value) {
+  return sections_.restore(id, std::move(value));
+}
+
+Expected<void> RoadNetwork::erase_lane_section_exact(LaneSectionId id) {
+  return sections_.erase_exact(id);
+}
+
+Expected<LaneId> RoadNetwork::restore_lane(LaneId id, Lane value) {
+  return lanes_.restore(id, std::move(value));
+}
+
+Expected<void> RoadNetwork::erase_lane_exact(LaneId id) {
+  return lanes_.erase_exact(id);
+}
+
+Expected<JunctionId> RoadNetwork::restore_junction(JunctionId id, Junction value) {
+  return junctions_.restore(id, std::move(value));
+}
+
+Expected<void> RoadNetwork::erase_junction_exact(JunctionId id) {
+  return junctions_.erase_exact(id);
+}
+
 RoadId RoadNetwork::find_road(std::string_view odr_id) const {
   RoadId found;
   roads_.for_each([&](RoadId id, const Road& road) {
@@ -102,6 +134,38 @@ JunctionId RoadNetwork::find_junction(std::string_view odr_id) const {
     }
   });
   return found;
+}
+
+std::vector<JunctionId> junctions_touching(const RoadNetwork& network, RoadId road_id) {
+  std::vector<JunctionId> touched;
+  const auto note = [&touched](JunctionId id) {
+    if (id.is_valid() && std::ranges::find(touched, id) == touched.end()) {
+      touched.push_back(id);
+    }
+  };
+
+  if (const Road* road = network.road(road_id)) {
+    note(road->junction);
+    const auto note_link = [&note](const std::optional<RoadLink>& link) {
+      if (link.has_value()) {
+        if (const auto* junction = std::get_if<JunctionId>(&link->target)) {
+          note(*junction);
+        }
+      }
+    };
+    note_link(road->predecessor);
+    note_link(road->successor);
+  }
+
+  network.for_each_junction([&](JunctionId id, const Junction& junction) {
+    for (const JunctionConnection& connection : junction.connections) {
+      if (connection.incoming_road == road_id || connection.connecting_road == road_id) {
+        note(id);
+        break;
+      }
+    }
+  });
+  return touched;
 }
 
 } // namespace roadmaker
