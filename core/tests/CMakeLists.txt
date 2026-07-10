@@ -35,6 +35,16 @@ target_link_libraries(roadmaker_core_tests
 
 rm_apply_warnings(roadmaker_core_tests)
 
+if(WIN32 AND RM_BUILD_SHARED)
+  # gtest_discover_tests runs the exe at build time and Windows has no rpath:
+  # the kernel DLL must sit next to the test executable.
+  add_custom_command(TARGET roadmaker_core_tests POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            $<TARGET_RUNTIME_DLLS:roadmaker_core_tests>
+            $<TARGET_FILE_DIR:roadmaker_core_tests>
+    COMMAND_EXPAND_LISTS)
+endif()
+
 gtest_discover_tests(roadmaker_core_tests)
 
 if(RM_BUILD_FUZZERS)

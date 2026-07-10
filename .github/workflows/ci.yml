@@ -125,9 +125,11 @@ jobs:
           -DCMAKE_BUILD_TYPE=Release
           -DCMAKE_PREFIX_PATH=${{ github.workspace }}/_inst
       - name: Build + run consumer
+        # PATH prepend: on Windows the consumer must find the installed
+        # roadmaker_core.dll in _inst/bin; harmless on Linux/macOS (rpath).
         run: |
           cmake --build build-consume
-          ./build-consume/consume_smoke
+          PATH="$PWD/_inst/bin:$PATH" ./build-consume/consume_smoke
         shell: bash
 
   sanitize:
