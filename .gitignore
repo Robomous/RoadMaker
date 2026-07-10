@@ -1,0 +1,37 @@
+# Build directories
+build*/
+cmake-build-*/
+out/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+.venv/
+venv/
+.pytest_cache/
+python/_skbuild/
+
+# Editors / IDEs
+.vscode/
+.idea/
+*.swp
+.cache/
+compile_commands.json
+
+# macOS
+.DS_Store
+
+# Fuzzing artifacts
+crash-*
+leak-*
+timeout-*
+fuzz-*.log
+
+# ccache
+.ccache/
+
+# Local Claude Code config (never committed)
+CLAUDE.md
+.claude/

@@ -1,0 +1,27 @@
+# RoadMaker C++ formatting — LLVM base, 100 columns.
+BasedOnStyle: LLVM
+Language: Cpp
+Standard: c++20
+ColumnLimit: 100
+IndentWidth: 2
+AccessModifierOffset: -2
+PointerAlignment: Left
+DerivePointerAlignment: false
+AllowShortFunctionsOnASingleLine: Inline
+AllowShortLambdasOnASingleLine: All
+AlwaysBreakTemplateDeclarations: Yes
+BinPackArguments: false
+BinPackParameters: false
+IncludeBlocks: Regroup
+IncludeCategories:
+  # Matching header handled implicitly (priority 0).
+  - Regex: '^"roadmaker/'
+    Priority: 1
+  - Regex: '^<(Eigen|Clothoids|manifold|igl|CDT|clipper2|pugixml|tiny_gltf|catch2|fmt|spdlog|nanobind|GLFW|imgui)'
+    Priority: 2
+  - Regex: '^<.*\.h>'
+    Priority: 3
+  - Regex: '^<'
+    Priority: 4
+SeparateDefinitionBlocks: Always
+InsertNewlineAtEOF: true

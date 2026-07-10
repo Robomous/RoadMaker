@@ -1,0 +1,28 @@
+# RoadMaker clang-tidy configuration.
+Checks: >
+  bugprone-*,
+  performance-*,
+  modernize-*,
+  readability-*,
+  cppcoreguidelines-*,
+  misc-*,
+  -modernize-use-trailing-return-type,
+  -readability-identifier-length,
+  -readability-magic-numbers,
+  -cppcoreguidelines-avoid-magic-numbers,
+  -cppcoreguidelines-pro-bounds-pointer-arithmetic,
+  -cppcoreguidelines-pro-type-reinterpret-cast,
+  -misc-non-private-member-variables-in-classes,
+  -misc-include-cleaner
+WarningsAsErrors: ''
+HeaderFilterRegex: '(core|editor|python)/.*\.(hpp|h)$'
+CheckOptions:
+  readability-identifier-naming.ClassCase: CamelCase
+  readability-identifier-naming.StructCase: CamelCase
+  readability-identifier-naming.EnumCase: CamelCase
+  readability-identifier-naming.FunctionCase: lower_case
+  readability-identifier-naming.VariableCase: lower_case
+  readability-identifier-naming.PrivateMemberSuffix: '_'
+  readability-identifier-naming.ConstexprVariablePrefix: 'k'
+  readability-identifier-naming.ConstexprVariableCase: CamelCase
+  readability-identifier-naming.TemplateParameterCase: CamelCase
