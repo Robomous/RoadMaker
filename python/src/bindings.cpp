@@ -178,11 +178,24 @@ NB_MODULE(_roadmaker, m) {
       .def_ro("severity", &roadmaker::Diagnostic::severity)
       .def_ro("location", &roadmaker::Diagnostic::location)
       .def_ro("message", &roadmaker::Diagnostic::message)
+      .def_ro("rule_id",
+              &roadmaker::Diagnostic::rule_id,
+              "ASAM checker-rule UID; empty when no normative rule applies.")
+      .def_ro("road",
+              &roadmaker::Diagnostic::road,
+              "RoadId the finding concerns; invalid when document-scoped.")
+      .def_ro("lane",
+              &roadmaker::Diagnostic::lane,
+              "LaneId the finding concerns; invalid when not lane-scoped.")
       .def("__repr__", [](const roadmaker::Diagnostic& d) {
         const char* severity = d.severity == roadmaker::Severity::Error     ? "ERROR"
                                : d.severity == roadmaker::Severity::Warning ? "WARNING"
                                                                             : "INFO";
-        return "<" + std::string(severity) + " " + d.location + ": " + d.message + ">";
+        std::string repr = "<" + std::string(severity) + " " + d.location + ": " + d.message;
+        if (!d.rule_id.empty()) {
+          repr += " [" + d.rule_id + "]";
+        }
+        return repr + ">";
       });
 
   // --- domain objects (arena-backed; references tied to the network) -------

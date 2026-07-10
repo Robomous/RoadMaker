@@ -1,5 +1,7 @@
 #pragma once
 
+#include "roadmaker/road/id.hpp"
+
 #include <string>
 #include <vector>
 
@@ -21,6 +23,17 @@ struct Diagnostic {
   std::string location;
 
   std::string message;
+
+  /// ASAM OpenDRIVE checker-rule UID ("asam.net:xodr:<version>:<rule>",
+  /// see roadmaker/xodr/rules.hpp); empty when no normative rule applies
+  /// (tool limitations, schema-level defects).
+  std::string rule_id;
+
+  /// Entities the finding concerns, resolvable via RoadNetwork::road()/
+  /// lane(). Invalid when the entity was never created (e.g. a skipped
+  /// duplicate) or the finding is document-scoped.
+  RoadId road;
+  LaneId lane;
 };
 
 [[nodiscard]] inline std::size_t count_errors(const std::vector<Diagnostic>& diagnostics) {

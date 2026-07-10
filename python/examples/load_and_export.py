@@ -19,6 +19,11 @@ def main() -> int:
     network, diagnostics = rm.load_xodr(xodr_path)
     for diagnostic in diagnostics:
         print(diagnostic)
+        # Findings that violate a normative ASAM rule carry its UID, and
+        # entity ids resolve against the parsed network.
+        if diagnostic.rule_id and diagnostic.road:
+            road = network.road(diagnostic.road)
+            print(f"  -> {diagnostic.rule_id} on road {road.odr_id!r}")
     print(f"loaded {network!r}")
 
     mesh = rm.build_network_mesh(network)

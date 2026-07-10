@@ -55,6 +55,37 @@ def test_junction_topology():
     assert through.junction  # connecting road belongs to the junction
 
 
+DUPLICATE_ROAD_XML = """<OpenDRIVE>
+  <header revMajor="1" revMinor="7"/>
+  <road id="1" length="7">
+    <planView><geometry s="0" x="0" y="0" hdg="0" length="5"><line/></geometry></planView>
+    <lanes><laneSection s="0"><center><lane id="0" type="none"/></center></laneSection></lanes>
+  </road>
+  <road id="1" length="5">
+    <planView><geometry s="0" x="0" y="0" hdg="0" length="5"><line/></geometry></planView>
+    <lanes><laneSection s="0"><center><lane id="0" type="none"/></center></laneSection></lanes>
+  </road>
+</OpenDRIVE>"""
+
+
+def test_diagnostics_carry_rule_ids_and_entity_ids():
+    network, diagnostics = rm.parse_xodr(DUPLICATE_ROAD_XML)
+
+    # The skipped duplicate cites the uniqueness rule and, since the road was
+    # never created, carries no entity id.
+    duplicate = next(d for d in diagnostics if d.severity == rm.Severity.ERROR)
+    assert duplicate.rule_id == "asam.net:xodr:1.4.0:ids.id_unique_in_class"
+    assert not duplicate.road
+    assert duplicate.rule_id in repr(duplicate)
+
+    # The declared-length mismatch on road 1 resolves to the created road.
+    mismatch = next(d for d in diagnostics if "declared length" in d.message)
+    assert mismatch.rule_id == "asam.net:xodr:1.9.0:road.length_sum_geometries"
+    assert mismatch.road
+    assert network.road(mismatch.road).odr_id == "1"
+    assert not mismatch.lane
+
+
 def test_missing_file_raises_file_not_found():
     with pytest.raises(FileNotFoundError):
         rm.load_xodr(SAMPLES / "nope.xodr")

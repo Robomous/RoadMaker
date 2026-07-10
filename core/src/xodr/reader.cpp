@@ -2,6 +2,7 @@
 
 #include "roadmaker/geometry/reference_line.hpp"
 #include "roadmaker/tol.hpp"
+#include "roadmaker/xodr/rules.hpp"
 
 #include <fmt/format.h>
 #include <pugixml.hpp>
@@ -72,9 +73,17 @@ public:
 private:
   // --- diagnostics ---------------------------------------------------------
 
-  void diag(Severity severity, std::string location, std::string message) {
-    result_.diagnostics.push_back(Diagnostic{
-        .severity = severity, .location = std::move(location), .message = std::move(message)});
+  /// `rule` is the ASAM checker-rule UID (roadmaker/xodr/rules.hpp) when a
+  /// normative rule applies; the current road/lane context is stamped on
+  /// every entry so consumers can navigate without parsing `location`.
+  void
+  diag(Severity severity, std::string location, std::string message, std::string_view rule = {}) {
+    result_.diagnostics.push_back(Diagnostic{.severity = severity,
+                                             .location = std::move(location),
+                                             .message = std::move(message),
+                                             .rule_id = std::string(rule),
+                                             .road = current_road_,
+                                             .lane = current_lane_});
   }
 
   /// Unsupported-element warnings are emitted once per element name.
@@ -141,18 +150,23 @@ private:
       return;
     }
     if (network().find_road(odr_id).is_valid()) {
-      diag(Severity::Error, location, fmt::format("duplicate road id '{}' skipped", odr_id));
+      diag(Severity::Error,
+           location,
+           fmt::format("duplicate road id '{}' skipped", odr_id),
+           rules::kIdUniqueInClass);
       return;
     }
     const RoadId road_id =
         network().create_road(road_node.attribute("name").value(), std::move(odr_id));
     Road& road = *network().road(road_id);
+    current_road_ = road_id;
 
     const double declared_length = attr_double(road_node, "length", location);
 
     parse_plan_view(road_node.child("planView"), road, location);
     if (road.plan_view.empty()) {
-      diag(Severity::Error, location, "road has no usable planView geometry");
+      diag(
+          Severity::Error, location, "road has no usable planView geometry", rules::kReflineExists);
     }
     road.length = road.plan_view.length();
     if (std::abs(declared_length - road.length) > tol::kRoundTripPosition) {
@@ -160,7 +174,8 @@ private:
            location,
            fmt::format("declared length {} differs from geometry length {}; using geometry",
                        declared_length,
-                       road.length));
+                       road.length),
+           rules::kRoadLengthSumGeometries);
     }
 
     parse_elevation(road_node.child("elevationProfile"), road, location);
@@ -183,6 +198,7 @@ private:
         warn_unsupported(name, location);
       }
     }
+    current_road_ = {};
   }
 
   void parse_plan_view(const pugi::xml_node& plan_view, Road& road, const std::string& location) {
@@ -231,11 +247,14 @@ private:
         } else {
           const double derived_s = road.plan_view.length();
           if (std::abs(declared_s - derived_s) > tol::kRoundTripPosition) {
+            // Closest normative rule: an s that disagrees with the accumulated
+            // arc length implies a gap or overlap in the reference line.
             diag(Severity::Warning,
                  geo_location,
                  fmt::format("declared s {} differs from accumulated s {}; using accumulated",
                              declared_s,
-                             derived_s));
+                             derived_s),
+                 rules::kReflineNoGaps);
           }
           road.plan_view.append(record);
         }
@@ -283,7 +302,7 @@ private:
 
   void parse_lanes(const pugi::xml_node& lanes_node, RoadId road_id, const std::string& location) {
     if (!lanes_node) {
-      diag(Severity::Warning, location, "road has no <lanes> element");
+      diag(Severity::Warning, location, "road has no <lanes> element", rules::kLaneSectionRequired);
       return;
     }
     Road& road = *network().road(road_id);
@@ -303,7 +322,8 @@ private:
       if (!section_id.is_valid()) {
         diag(Severity::Error,
              section_location,
-             fmt::format("lane section at duplicate s={} skipped", s0));
+             fmt::format("lane section at duplicate s={} skipped", s0),
+             rules::kLaneSectionValidLength);
         ++section_index;
         continue;
       }
@@ -315,7 +335,7 @@ private:
       ++section_index;
     }
     if (network().road(road_id)->sections.empty()) {
-      diag(Severity::Warning, location, "road has no lane sections");
+      diag(Severity::Warning, location, "road has no lane sections", rules::kLaneSectionRequired);
     }
   }
 
@@ -335,10 +355,14 @@ private:
 
     const LaneId lane_id = network().add_lane(section_id, odr_lane_id, type);
     if (!lane_id.is_valid()) {
-      diag(Severity::Error, location, "duplicate lane id within section skipped");
+      diag(Severity::Error,
+           location,
+           "duplicate lane id within section skipped",
+           rules::kIdUniqueInLaneSection);
       return;
     }
     Lane& lane = *network().lane(lane_id);
+    current_lane_ = lane_id;
 
     std::size_t width_index = 0;
     for (const pugi::xml_node width : lane_node.children("width")) {
@@ -350,7 +374,10 @@ private:
       warn_unsupported("border", location);
     }
     if (odr_lane_id != 0 && lane.widths.empty()) {
-      diag(Severity::Warning, location, "non-center lane without <width> records");
+      diag(Severity::Warning,
+           location,
+           "non-center lane without <width> records",
+           rules::kWidthDefinedWholeSection);
     }
 
     for (const pugi::xml_node mark_node : lane_node.children("roadMark")) {
@@ -376,6 +403,7 @@ private:
         lane.successor = succ.attribute("id").as_int();
       }
     }
+    current_lane_ = {};
   }
 
   static LaneType lane_type_from_string(std::string_view name) {
@@ -442,7 +470,8 @@ private:
         diag(Severity::Warning,
              location,
              fmt::format("connection references unknown road '{}'; skipped",
-                         incoming_id.is_valid() ? connecting : incoming));
+                         incoming_id.is_valid() ? connecting : incoming),
+             rules::kOnlyRefDefinedIds);
         continue;
       }
       JunctionConnection result{
@@ -492,18 +521,21 @@ private:
     for (const PendingRoadRefs& pending : pending_refs_) {
       Road& road = *network().road(pending.road);
       const std::string location = fmt::format("road id={}", road.odr_id);
+      current_road_ = pending.road;
 
       if (!pending.junction.empty() && pending.junction != "-1") {
         road.junction = network().find_junction(pending.junction);
         if (!road.junction.is_valid()) {
           diag(Severity::Warning,
                location,
-               fmt::format("unknown junction '{}' referenced", pending.junction));
+               fmt::format("unknown junction '{}' referenced", pending.junction),
+               rules::kOnlyRefDefinedIds);
         }
       }
       road.predecessor = resolve_link(pending.predecessor, location, "predecessor");
       road.successor = resolve_link(pending.successor, location, "successor");
     }
+    current_road_ = {};
   }
 
   std::optional<RoadLink>
@@ -517,7 +549,8 @@ private:
       if (!target.is_valid()) {
         diag(Severity::Warning,
              location,
-             fmt::format("{} references unknown road '{}'", kind, pending.element_id));
+             fmt::format("{} references unknown road '{}'", kind, pending.element_id),
+             rules::kOnlyRefDefinedIds);
         return std::nullopt;
       }
       link.target = target;
@@ -525,21 +558,24 @@ private:
       if (pending.contact_point.empty()) {
         diag(Severity::Warning,
              location,
-             fmt::format("{} road link without contactPoint; assuming 'start'", kind));
+             fmt::format("{} road link without contactPoint; assuming 'start'", kind),
+             rules::kRoadLinkAttributeUsage);
       }
     } else if (pending.element_type == "junction") {
       const JunctionId target = network().find_junction(pending.element_id);
       if (!target.is_valid()) {
         diag(Severity::Warning,
              location,
-             fmt::format("{} references unknown junction '{}'", kind, pending.element_id));
+             fmt::format("{} references unknown junction '{}'", kind, pending.element_id),
+             rules::kOnlyRefDefinedIds);
         return std::nullopt;
       }
       link.target = target;
     } else {
       diag(Severity::Warning,
            location,
-           fmt::format("{} with unknown elementType '{}'", kind, pending.element_type));
+           fmt::format("{} with unknown elementType '{}'", kind, pending.element_type),
+           rules::kRoadLinkAttributeUsage);
       return std::nullopt;
     }
     return link;
@@ -560,6 +596,11 @@ private:
   XodrParseResult result_;
   std::vector<PendingRoadRefs> pending_refs_;
   std::set<std::string> warned_elements_;
+  /// Entity context stamped onto diagnostics by diag(). Set once the entity
+  /// exists in the arena, reset when its scope ends; single-pass parsing
+  /// keeps plain assignment sufficient (no RAII guard needed).
+  RoadId current_road_;
+  LaneId current_lane_;
 };
 
 } // namespace

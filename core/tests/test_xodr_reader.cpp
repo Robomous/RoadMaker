@@ -1,5 +1,6 @@
 #include "roadmaker/road/network.hpp"
 #include "roadmaker/xodr/reader.hpp"
+#include "roadmaker/xodr/rules.hpp"
 
 #include <gtest/gtest.h>
 
@@ -26,6 +27,13 @@ bool has_warning_containing(const std::vector<roadmaker::Diagnostic>& diagnostic
   return std::ranges::any_of(diagnostics, [&](const roadmaker::Diagnostic& d) {
     return d.message.find(needle) != std::string::npos;
   });
+}
+
+const roadmaker::Diagnostic* find_by_rule(const std::vector<roadmaker::Diagnostic>& diagnostics,
+                                          std::string_view rule) {
+  const auto it = std::ranges::find_if(
+      diagnostics, [&](const roadmaker::Diagnostic& d) { return d.rule_id == rule; });
+  return it == diagnostics.end() ? nullptr : &*it;
 }
 
 } // namespace
@@ -218,6 +226,14 @@ TEST(XodrReader, DuplicateRoadIdsAreRejectedWithAnErrorDiagnostic) {
   ASSERT_TRUE(result.has_value());
   EXPECT_EQ(result->network.road_count(), 1U);
   EXPECT_EQ(roadmaker::count_errors(result->diagnostics), 1U);
+
+  // The duplicate cites the uniqueness rule; the skipped road was never
+  // created, so the diagnostic carries no entity id.
+  const auto* d = find_by_rule(result->diagnostics, roadmaker::rules::kIdUniqueInClass);
+  ASSERT_NE(d, nullptr);
+  EXPECT_EQ(d->severity, roadmaker::Severity::Error);
+  EXPECT_FALSE(d->road.is_valid());
+  EXPECT_FALSE(d->lane.is_valid());
 }
 
 TEST(XodrReader, UnresolvableJunctionConnectionRoadsAreSkippedWithWarning) {
@@ -233,4 +249,90 @@ TEST(XodrReader, UnresolvableJunctionConnectionRoadsAreSkippedWithWarning) {
   const auto& junction = *result->network.junction(result->network.find_junction("9"));
   EXPECT_TRUE(junction.connections.empty());
   EXPECT_TRUE(has_warning_containing(result->diagnostics, "unknown road"));
+  const auto* d = find_by_rule(result->diagnostics, roadmaker::rules::kOnlyRefDefinedIds);
+  ASSERT_NE(d, nullptr);
+  EXPECT_FALSE(d->road.is_valid()); // junction scope: no road context
+}
+
+TEST(XodrReader, RuleCitationsCarryResolvableEntityIds) {
+  // Road 1: declared length disagrees with geometry (road-scoped rule), and
+  // lane -1 lacks <width> (lane-scoped rule). Road 2 links to an unknown
+  // road (resolved in pass 2, still road-scoped).
+  constexpr const char* kXml = R"(<OpenDRIVE>
+  <header revMajor="1" revMinor="7"/>
+  <road id="1" length="7">
+    <planView><geometry s="0" x="0" y="0" hdg="0" length="5"><line/></geometry></planView>
+    <lanes><laneSection s="0">
+      <center><lane id="0" type="none"/></center>
+      <right><lane id="-1" type="driving"/></right>
+    </laneSection></lanes>
+  </road>
+  <road id="2" length="5">
+    <link><successor elementType="road" elementId="404" contactPoint="start"/></link>
+    <planView><geometry s="0" x="0" y="0" hdg="0" length="5"><line/></geometry></planView>
+    <lanes><laneSection s="0"><center><lane id="0" type="none"/></center></laneSection></lanes>
+  </road>
+</OpenDRIVE>)";
+  const auto result = roadmaker::parse_xodr(kXml);
+  ASSERT_TRUE(result.has_value());
+  const roadmaker::RoadNetwork& network = result->network;
+
+  const auto* length =
+      find_by_rule(result->diagnostics, roadmaker::rules::kRoadLengthSumGeometries);
+  ASSERT_NE(length, nullptr);
+  ASSERT_NE(network.road(length->road), nullptr);
+  EXPECT_EQ(network.road(length->road)->odr_id, "1");
+  EXPECT_FALSE(length->lane.is_valid());
+
+  const auto* width =
+      find_by_rule(result->diagnostics, roadmaker::rules::kWidthDefinedWholeSection);
+  ASSERT_NE(width, nullptr);
+  EXPECT_EQ(network.road(width->road)->odr_id, "1");
+  ASSERT_NE(network.lane(width->lane), nullptr);
+  EXPECT_EQ(network.lane(width->lane)->odr_id, -1);
+
+  const auto* link = find_by_rule(result->diagnostics, roadmaker::rules::kOnlyRefDefinedIds);
+  ASSERT_NE(link, nullptr);
+  ASSERT_NE(network.road(link->road), nullptr);
+  EXPECT_EQ(network.road(link->road)->odr_id, "2");
+}
+
+TEST(XodrReader, DuplicateLaneIdCitesRuleWithRoadButNoLane) {
+  constexpr const char* kXml = R"(<OpenDRIVE>
+  <header revMajor="1" revMinor="7"/>
+  <road id="1" length="5">
+    <planView><geometry s="0" x="0" y="0" hdg="0" length="5"><line/></geometry></planView>
+    <lanes><laneSection s="0">
+      <center><lane id="0" type="none"/></center>
+      <right>
+        <lane id="-1" type="driving"><width sOffset="0" a="3" b="0" c="0" d="0"/></lane>
+        <lane id="-1" type="driving"><width sOffset="0" a="3" b="0" c="0" d="0"/></lane>
+      </right>
+    </laneSection></lanes>
+  </road>
+</OpenDRIVE>)";
+  const auto result = roadmaker::parse_xodr(kXml);
+  ASSERT_TRUE(result.has_value());
+  const auto* d = find_by_rule(result->diagnostics, roadmaker::rules::kIdUniqueInLaneSection);
+  ASSERT_NE(d, nullptr);
+  EXPECT_EQ(d->severity, roadmaker::Severity::Error);
+  ASSERT_NE(result->network.road(d->road), nullptr);
+  EXPECT_EQ(result->network.road(d->road)->odr_id, "1");
+  EXPECT_FALSE(d->lane.is_valid()); // the duplicate was never created
+}
+
+TEST(XodrReader, ToolLimitationWarningsCarryNoRuleId) {
+  constexpr const char* kXml = R"(<OpenDRIVE>
+  <header revMajor="1" revMinor="7"/>
+  <station/>
+</OpenDRIVE>)";
+  const auto result = roadmaker::parse_xodr(kXml);
+  ASSERT_TRUE(result.has_value());
+  ASSERT_TRUE(has_warning_containing(result->diagnostics, "<station>"));
+  const auto it = std::ranges::find_if(result->diagnostics, [](const roadmaker::Diagnostic& d) {
+    return d.message.find("<station>") != std::string::npos;
+  });
+  EXPECT_TRUE(it->rule_id.empty());
+  EXPECT_FALSE(it->road.is_valid());
+  EXPECT_FALSE(it->lane.is_valid());
 }
