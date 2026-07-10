@@ -52,7 +52,9 @@ records.
 
 ## Roadmap
 
-Summary — the source of truth is [docs/roadmap/roadmap.md](docs/roadmap/roadmap.md):
+Summary — the source of truth is
+[docs/roadmap/roadmap.md](docs/roadmap/roadmap.md); day-to-day status lives
+on the public [project board](https://github.com/Robomous/RoadMaker/projects):
 
 | Milestone | Theme | Golden scene |
 |---|---|---|
