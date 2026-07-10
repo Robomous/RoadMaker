@@ -2,45 +2,21 @@
 // compare within rm::tol (position 1e-4 m, heading 1e-6 rad).
 
 #include "roadmaker/road/authoring.hpp"
-#include "roadmaker/tol.hpp"
 #include "roadmaker/xodr/reader.hpp"
 #include "roadmaker/xodr/writer.hpp"
+#include "support/network_compare.hpp"
 
 #include <gtest/gtest.h>
 
 #include <array>
-#include <cmath>
 #include <filesystem>
-#include <numbers>
 #include <string>
 
 using roadmaker::LaneProfile;
 using roadmaker::RoadId;
 using roadmaker::RoadNetwork;
 using roadmaker::Waypoint;
-
-namespace {
-
-/// Compares two roads' plan-view geometry by dense sampling. Non-fatal
-/// expectations so a failure pinpoints every diverging station.
-void expect_same_geometry(const roadmaker::Road& a, const roadmaker::Road& b) {
-  EXPECT_NEAR(a.plan_view.length(), b.plan_view.length(), roadmaker::tol::kRoundTripPosition);
-  const double length = a.plan_view.length();
-  constexpr int kSamples = 200;
-  for (int i = 0; i <= kSamples; ++i) {
-    const double s = length * i / kSamples;
-    SCOPED_TRACE("s=" + std::to_string(s));
-    const auto pa = a.plan_view.evaluate(s);
-    const auto pb = b.plan_view.evaluate(s);
-    EXPECT_NEAR(pa.x, pb.x, roadmaker::tol::kRoundTripPosition);
-    EXPECT_NEAR(pa.y, pb.y, roadmaker::tol::kRoundTripPosition);
-    EXPECT_NEAR(std::remainder(pa.hdg - pb.hdg, 2.0 * std::numbers::pi),
-                0.0,
-                roadmaker::tol::kRoundTripHeading);
-  }
-}
-
-} // namespace
+using roadmaker::test::expect_same_geometry;
 
 TEST(Authoring, ClothoidRoadIsG1Continuous) {
   RoadNetwork network;
