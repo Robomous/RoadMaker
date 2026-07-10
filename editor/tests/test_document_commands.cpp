@@ -94,6 +94,67 @@ TEST(DocumentCommands, TopologyChangedFiresOnlyForTopologyEdits) {
   EXPECT_EQ(topology_spy.count(), 2);
 }
 
+TEST(DocumentCommands, GeometryEditsRemeshIncrementallyWithRoadPayload) {
+  Document document;
+  ASSERT_TRUE(document.load(sample()).has_value());
+
+  // A fresh, junction-free road is the deterministic partial-path subject.
+  ASSERT_TRUE(
+      document
+          .push_command(roadmaker::edit::create_road({roadmaker::Waypoint{.x = 400.0, .y = 400.0},
+                                                      roadmaker::Waypoint{.x = 480.0, .y = 420.0},
+                                                      roadmaker::Waypoint{.x = 560.0, .y = 400.0}},
+                                                     roadmaker::LaneProfile::two_lane_default(),
+                                                     "Editable"))
+          .has_value());
+  RoadId edited;
+  document.network().for_each_road([&](RoadId id, const roadmaker::Road& road) {
+    if (road.name == "Editable") {
+      edited = id;
+    }
+  });
+  ASSERT_TRUE(edited.is_valid());
+
+  // Capture payloads with a plain lambda (std::vector<RoadId> is not a
+  // registered metatype, so QSignalSpy cannot record it).
+  std::vector<std::vector<roadmaker::RoadId>> payloads;
+  QObject::connect(
+      &document,
+      &Document::mesh_changed,
+      &document,
+      [&payloads](const std::vector<roadmaker::RoadId>& roads) { payloads.push_back(roads); });
+
+  // Untouched roads must keep their exact vertex buffers across the edit.
+  std::vector<std::pair<roadmaker::RoadId, const double*>> untouched;
+  for (const roadmaker::RoadMesh& road : document.mesh().roads) {
+    if (road.road != edited) {
+      untouched.emplace_back(road.road, road.positions.data());
+    }
+  }
+  ASSERT_FALSE(untouched.empty());
+
+  ASSERT_TRUE(document
+                  .push_command(roadmaker::edit::move_waypoint(
+                      document.network(), edited, 1, roadmaker::Waypoint{.x = 480.0, .y = 460.0}))
+                  .has_value());
+
+  // Pure geometry edit on a junction-free road: partial payload.
+  ASSERT_EQ(payloads.size(), 1U);
+  EXPECT_EQ(payloads[0], (std::vector<roadmaker::RoadId>{edited}));
+  for (const auto& [id, data] : untouched) {
+    for (const roadmaker::RoadMesh& road : document.mesh().roads) {
+      if (road.road == id) {
+        EXPECT_EQ(road.positions.data(), data);
+      }
+    }
+  }
+
+  // Undo rides the same incremental path with the same payload.
+  document.undo_stack()->undo();
+  ASSERT_EQ(payloads.size(), 2U);
+  EXPECT_EQ(payloads[1], (std::vector<roadmaker::RoadId>{edited}));
+}
+
 TEST(DocumentCommands, UndoStackClearsOnLoad) {
   Document document;
   ASSERT_TRUE(document.load(sample()).has_value());

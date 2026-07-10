@@ -39,7 +39,7 @@ Expected<void> Document::load(const std::filesystem::path& path) {
                diagnostics_.size());
 
   emit loaded();
-  emit mesh_changed();
+  emit mesh_changed({});
   emit diagnostics_changed();
   return {};
 }
@@ -72,8 +72,12 @@ Expected<void> Document::push_command(std::unique_ptr<edit::Command> command) {
 }
 
 void Document::after_kernel_mutation(const edit::DirtySet& dirty) {
-  mesh_ = build_network_mesh(network_);
-  emit mesh_changed();
+  remesh_roads(network_, mesh_, dirty.roads);
+  remesh_junctions(network_, mesh_, dirty.junctions);
+  // Topology and junction-floor changes reshape the item list wholesale;
+  // only pure road-geometry edits ride the partial-upload path.
+  const bool partial = !dirty.topology && dirty.junctions.empty() && !dirty.roads.empty();
+  emit mesh_changed(partial ? dirty.roads : std::vector<RoadId>{});
   if (dirty.topology) {
     emit topology_changed();
   }

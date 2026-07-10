@@ -8,9 +8,17 @@
 
 #include <algorithm>
 #include <cmath>
+#include <memory>
+#include <optional>
 #include <variant>
+#include <vector>
 
 namespace roadmaker {
+
+/// One prebuilt evaluator per record; only spiral records carry a curve.
+struct SpiralEvalCache {
+  std::vector<std::optional<G2lib::ClothoidCurve>> curves;
+};
 
 namespace {
 
@@ -43,12 +51,17 @@ PathPoint eval_arc(const GeometryRecord& record, const ArcGeom& arc, double ds) 
   return to_inertial(record, u, v, angle, k);
 }
 
-PathPoint eval_spiral(const GeometryRecord& record, const SpiralGeom& spiral, double ds) {
+/// Builds a spiral record's evaluator in the record-local frame (origin,
+/// zero heading) — to_inertial applies the rotation once at evaluation.
+G2lib::ClothoidCurve build_spiral_curve(const GeometryRecord& record, const SpiralGeom& spiral) {
   const double dk = (spiral.curv_end - spiral.curv_start) / record.length;
   G2lib::ClothoidCurve curve("rm_eval");
-  // Evaluate in the record-local frame (origin, zero heading) and rotate
-  // once at the end — keeps the transform in a single place.
   curve.build(0.0, 0.0, 0.0, spiral.curv_start, dk, record.length);
+  return curve;
+}
+
+PathPoint eval_spiral(const GeometryRecord& record, const SpiralGeom& spiral, double ds) {
+  const G2lib::ClothoidCurve curve = build_spiral_curve(record, spiral);
   return to_inertial(record, curve.X(ds), curve.Y(ds), curve.theta(ds), curve.kappa(ds));
 }
 
@@ -96,6 +109,21 @@ void ReferenceLine::append(GeometryRecord record) {
   record.s = length_;
   length_ += record.length;
   records_.push_back(record);
+  spiral_cache_.reset(); // derived from records_; rebuilt lazily
+}
+
+const SpiralEvalCache& ReferenceLine::spiral_cache() const {
+  if (spiral_cache_ == nullptr) {
+    auto cache = std::make_shared<SpiralEvalCache>();
+    cache->curves.resize(records_.size());
+    for (std::size_t i = 0; i < records_.size(); ++i) {
+      if (const auto* spiral = std::get_if<SpiralGeom>(&records_[i].shape)) {
+        cache->curves[i].emplace(build_spiral_curve(records_[i], *spiral));
+      }
+    }
+    spiral_cache_ = std::move(cache);
+  }
+  return *spiral_cache_;
 }
 
 PathPoint ReferenceLine::evaluate(double s) const {
@@ -108,7 +136,15 @@ PathPoint ReferenceLine::evaluate(double s) const {
   if (it != records_.begin()) {
     --it;
   }
-  return eval_record(*it, clamped - it->s);
+  const double ds = clamped - it->s;
+  if (std::holds_alternative<SpiralGeom>(it->shape)) {
+    // Hot path during meshing/drags: reuse the prebuilt Clothoids state
+    // instead of rebuilding Fresnel setup per call.
+    const std::size_t index = static_cast<std::size_t>(it - records_.begin());
+    const G2lib::ClothoidCurve& curve = *spiral_cache().curves[index];
+    return to_inertial(*it, curve.X(ds), curve.Y(ds), curve.theta(ds), curve.kappa(ds));
+  }
+  return eval_record(*it, ds);
 }
 
 std::vector<double> sample_stations(const ReferenceLine& line, const SamplingOptions& options) {

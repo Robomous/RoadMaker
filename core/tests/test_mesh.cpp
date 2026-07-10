@@ -4,6 +4,7 @@
 #include <gtest/gtest.h>
 
 #include <algorithm>
+#include <array>
 #include <filesystem>
 #include <stdexcept>
 
@@ -142,7 +143,8 @@ TEST(Mesh, TJunctionBuildsOneJunctionFloor) {
   EXPECT_EQ(mesh.roads.size(), 5U);
   ASSERT_EQ(mesh.junction_floors.size(), 1U);
 
-  const roadmaker::SubMesh& floor = mesh.junction_floors[0];
+  EXPECT_TRUE(mesh.junction_floors[0].junction.is_valid());
+  const roadmaker::SubMesh& floor = mesh.junction_floors[0].mesh;
   ASSERT_FALSE(floor.indices.empty());
 
   // The floor must cover at least the through-connection footprint
@@ -161,6 +163,87 @@ TEST(Mesh, OptionsCanDisableMarkingsAndFloors) {
   for (const RoadMesh& road : mesh.roads) {
     EXPECT_TRUE(road.markings.empty());
   }
+}
+
+TEST(RemeshRoads, TouchesOnlyListedRoadsAndMatchesFullRebuild) {
+  auto network = load_sample("t_junction.xodr");
+  NetworkMesh mesh = roadmaker::build_network_mesh(network);
+  ASSERT_GE(mesh.roads.size(), 2U);
+
+  const roadmaker::RoadId edited = mesh.roads.front().road;
+  // Untouched roads must keep their exact heap buffers (pointer identity).
+  std::vector<std::pair<roadmaker::RoadId, const double*>> untouched;
+  for (const RoadMesh& road : mesh.roads) {
+    if (road.road != edited) {
+      untouched.emplace_back(road.road, road.positions.data());
+    }
+  }
+
+  network.road(edited)->elevation = {{.s = 0.0, .a = 2.5}};
+  const std::array<roadmaker::RoadId, 1> dirty{edited};
+  roadmaker::remesh_roads(network, mesh, dirty);
+
+  // The edited road was rebuilt with the new elevation...
+  const auto rebuilt = std::ranges::find(mesh.roads, edited, &RoadMesh::road);
+  ASSERT_NE(rebuilt, mesh.roads.end());
+  EXPECT_NEAR(rebuilt->positions[2], 2.5, 1e-9);
+
+  // ...every other road kept its buffers, and the result equals a full
+  // rebuild entry-for-entry.
+  for (const auto& [id, data] : untouched) {
+    const auto road = std::ranges::find(mesh.roads, id, &RoadMesh::road);
+    ASSERT_NE(road, mesh.roads.end());
+    EXPECT_EQ(road->positions.data(), data);
+  }
+  const NetworkMesh full = roadmaker::build_network_mesh(network);
+  ASSERT_EQ(mesh.roads.size(), full.roads.size());
+  for (const RoadMesh& road : full.roads) {
+    const auto incremental = std::ranges::find(mesh.roads, road.road, &RoadMesh::road);
+    ASSERT_NE(incremental, mesh.roads.end());
+    EXPECT_EQ(incremental->positions, road.positions);
+  }
+}
+
+TEST(RemeshRoads, AppendsNewRoadsAndRemovesErasedOnes) {
+  auto network = load_sample("t_junction.xodr");
+  NetworkMesh mesh = roadmaker::build_network_mesh(network);
+  const std::size_t original_count = mesh.roads.size();
+
+  // A road erased from the network disappears from the mesh.
+  const roadmaker::RoadId doomed = mesh.roads.back().road;
+  ASSERT_TRUE(network.erase_road(doomed));
+  const std::array<roadmaker::RoadId, 1> erased{doomed};
+  roadmaker::remesh_roads(network, mesh, erased);
+  EXPECT_EQ(mesh.roads.size(), original_count - 1);
+  EXPECT_EQ(std::ranges::find(mesh.roads, doomed, &RoadMesh::road), mesh.roads.end());
+
+  // A stale id in the dirty set is a no-op, not a crash.
+  roadmaker::remesh_roads(network, mesh, erased);
+  EXPECT_EQ(mesh.roads.size(), original_count - 1);
+}
+
+TEST(RemeshJunctions, RegeneratesAndRemovesFloors) {
+  auto network = load_sample("t_junction.xodr");
+  NetworkMesh mesh = roadmaker::build_network_mesh(network);
+  ASSERT_EQ(mesh.junction_floors.size(), 1U);
+  const roadmaker::JunctionId junction = mesh.junction_floors[0].junction;
+  const double old_z = mesh.junction_floors[0].mesh.positions[2];
+
+  // Raising a connecting road's elevation moves the regenerated floor.
+  network.for_each_road([&](roadmaker::RoadId, roadmaker::Road& road) {
+    if (road.junction == junction) {
+      road.elevation = {{.s = 0.0, .a = 3.0}};
+    }
+  });
+  const std::array<roadmaker::JunctionId, 1> dirty{junction};
+  roadmaker::remesh_junctions(network, mesh, dirty);
+  ASSERT_EQ(mesh.junction_floors.size(), 1U);
+  EXPECT_NEAR(mesh.junction_floors[0].mesh.positions[2], old_z + 3.0, 1e-9);
+
+  // An erased junction loses its floor.
+  ASSERT_TRUE(network.erase_junction(junction));
+  roadmaker::remesh_junctions(network, mesh, dirty);
+  EXPECT_TRUE(mesh.junction_floors.empty());
 }
 
 TEST(Mesh, DegenerateNetworksProduceEmptyMeshes) {

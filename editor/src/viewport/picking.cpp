@@ -115,19 +115,23 @@ Ray make_pick_ray(const CameraMatrices& camera, double px, double py, double wid
   };
 }
 
+RoadAabb compute_road_aabb(const RoadMesh& road) {
+  constexpr double kMax = std::numeric_limits<double>::max();
+  RoadAabb box{.lo = {kMax, kMax, kMax}, .hi = {-kMax, -kMax, -kMax}};
+  for (std::size_t i = 0; i + 2 < road.positions.size(); i += 3) {
+    for (std::size_t axis = 0; axis < 3; ++axis) {
+      box.lo[axis] = std::min(box.lo[axis], road.positions[i + axis]);
+      box.hi[axis] = std::max(box.hi[axis], road.positions[i + axis]);
+    }
+  }
+  return box;
+}
+
 std::vector<RoadAabb> compute_road_aabbs(const NetworkMesh& mesh) {
   std::vector<RoadAabb> boxes;
   boxes.reserve(mesh.roads.size());
-  constexpr double kMax = std::numeric_limits<double>::max();
   for (const RoadMesh& road : mesh.roads) {
-    RoadAabb box{.lo = {kMax, kMax, kMax}, .hi = {-kMax, -kMax, -kMax}};
-    for (std::size_t i = 0; i + 2 < road.positions.size(); i += 3) {
-      for (std::size_t axis = 0; axis < 3; ++axis) {
-        box.lo[axis] = std::min(box.lo[axis], road.positions[i + axis]);
-        box.hi[axis] = std::max(box.hi[axis], road.positions[i + axis]);
-      }
-    }
-    boxes.push_back(box);
+    boxes.push_back(compute_road_aabb(road));
   }
   return boxes;
 }

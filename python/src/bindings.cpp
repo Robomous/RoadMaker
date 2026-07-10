@@ -604,7 +604,7 @@ NB_MODULE(_roadmaker, m) {
                        }
                      }
                      for (const auto& floor : mesh.junction_floors) {
-                       count += floor.positions.size() / 3;
+                       count += floor.mesh.positions.size() / 3;
                      }
                      return count;
                    })

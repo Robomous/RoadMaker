@@ -519,7 +519,10 @@ std::unique_ptr<Command> delete_road(const RoadNetwork& network, RoadId road_id)
 
   auto command = std::make_unique<GenericCommand>(
       std::string(kName),
-      DirtySet{.junctions = junctions_touching(network, road_id), .topology = true});
+      // The doomed road itself is dirty so incremental re-mesh drops (and,
+      // on undo, restores) its mesh entry.
+      DirtySet{
+          .roads = {road_id}, .junctions = junctions_touching(network, road_id), .topology = true});
 
   command->erased.roads.emplace_back(road_id, *road);
   for (const LaneSectionId section_id : road->sections) {
@@ -1086,7 +1089,8 @@ std::unique_ptr<Command> rename_road(const RoadNetwork& network, RoadId road_id,
   }
   Road after = *road;
   after.name = std::move(name);
-  auto command = std::make_unique<GenericCommand>(std::string(kName), DirtySet{});
+  // The name is baked into RoadMesh::name, so a rename IS a mesh change.
+  auto command = std::make_unique<GenericCommand>(std::string(kName), DirtySet{.roads = {road_id}});
   command->before.roads.emplace_back(road_id, *road);
   command->after.roads.emplace_back(road_id, std::move(after));
   return command;

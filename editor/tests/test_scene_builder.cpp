@@ -57,9 +57,11 @@ TEST(BuildScene, FlattensPatchesMarkingsAndFloors) {
                                   .normals = {0, 0, 1, 0, 0, 1, 0, 0, 1},
                                   .indices = {0, 1, 2}});
   mesh.roads.push_back(std::move(road));
-  mesh.junction_floors.push_back(SubMesh{.positions = {-5, -5, -1, 0, -5, -1, 0, 0, -1},
-                                         .normals = {0, 0, 1, 0, 0, 1, 0, 0, 1},
-                                         .indices = {0, 1, 2}});
+  mesh.junction_floors.push_back(
+      JunctionFloor{.junction = {},
+                    .mesh = SubMesh{.positions = {-5, -5, -1, 0, -5, -1, 0, 0, -1},
+                                    .normals = {0, 0, 1, 0, 0, 1, 0, 0, 1},
+                                    .indices = {0, 1, 2}}});
 
   const Scene scene = build_scene(mesh);
   ASSERT_EQ(scene.items.size(), 3U);

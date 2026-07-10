@@ -3,6 +3,7 @@
 #include <QMouseEvent>
 #include <QOpenGLContext>
 #include <QWheelEvent>
+#include <algorithm>
 #include <cmath>
 
 #include "render/gl_functions.hpp"
@@ -30,9 +31,16 @@ ViewportWidget::ViewportWidget(Document& document, SelectionModel& selection, QW
   setFocusPolicy(Qt::StrongFocus);
   setMinimumSize(320, 240);
 
-  connect(&document_, &Document::mesh_changed, this, [this] {
-    scene_dirty_ = true;
-    road_aabbs_ = compute_road_aabbs(document_.mesh());
+  connect(&document_, &Document::loaded, this, [this] { frame_on_rebuild_ = true; });
+  connect(&document_, &Document::mesh_changed, this, [this](const std::vector<RoadId>& roads) {
+    if (roads.empty()) { // everything changed — full rebuild
+      scene_dirty_ = true;
+      pending_roads_.clear();
+      road_aabbs_ = compute_road_aabbs(document_.mesh());
+    } else if (!scene_dirty_) { // partial path; a pending full rebuild covers it
+      pending_roads_.insert(pending_roads_.end(), roads.begin(), roads.end());
+      refresh_road_aabbs(roads);
+    }
     update();
   });
   connect(
@@ -60,6 +68,7 @@ void ViewportWidget::initializeGL() {
 void ViewportWidget::rebuild_scene() {
   renderer_->clear_meshes();
   items_.clear();
+  pending_roads_.clear();
   grid_ = renderer_->upload(make_grid());
 
   Scene scene = build_scene(document_.mesh());
@@ -69,10 +78,61 @@ void ViewportWidget::rebuild_scene() {
         UploadedItem{.handle = renderer_->upload(item.data), .road = item.road, .lane = item.lane});
   }
   scene_bounds_ = scene.bounds;
-  if (scene_bounds_.valid()) {
+  if (scene_bounds_.valid() && frame_on_rebuild_) {
     camera_.frame(scene_bounds_.center(), scene_bounds_.framing_radius());
   }
+  frame_on_rebuild_ = false;
   scene_dirty_ = false;
+}
+
+void ViewportWidget::apply_pending_road_updates() {
+  std::ranges::sort(pending_roads_, [](RoadId a, RoadId b) {
+    return a.index != b.index ? a.index < b.index : a.gen < b.gen;
+  });
+  const auto duplicates = std::ranges::unique(pending_roads_);
+  pending_roads_.erase(duplicates.begin(), duplicates.end());
+
+  for (const RoadId road_id : pending_roads_) {
+    // Drop the road's previous GPU meshes and items...
+    for (auto it = items_.begin(); it != items_.end();) {
+      if (it->road == road_id) {
+        renderer_->remove(it->handle);
+        it = items_.erase(it);
+      } else {
+        ++it;
+      }
+    }
+    // ...and upload its current tessellation (absent = road stayed erased).
+    for (const RoadMesh& road : document_.mesh().roads) {
+      if (road.road != road_id) {
+        continue;
+      }
+      Scene scene;
+      append_road_items(road, scene);
+      for (const SceneItem& item : scene.items) {
+        items_.push_back(UploadedItem{
+            .handle = renderer_->upload(item.data), .road = item.road, .lane = item.lane});
+      }
+      break;
+    }
+  }
+  pending_roads_.clear();
+}
+
+void ViewportWidget::refresh_road_aabbs(const std::vector<RoadId>& roads) {
+  const NetworkMesh& mesh = document_.mesh();
+  if (road_aabbs_.size() != mesh.roads.size()) { // topology drifted — resync
+    road_aabbs_ = compute_road_aabbs(mesh);
+    return;
+  }
+  for (const RoadId road_id : roads) {
+    for (std::size_t i = 0; i < mesh.roads.size(); ++i) {
+      if (mesh.roads[i].road == road_id) {
+        road_aabbs_[i] = compute_road_aabb(mesh.roads[i]);
+        break;
+      }
+    }
+  }
 }
 
 bool ViewportWidget::is_highlighted(const UploadedItem& item) const {
@@ -88,6 +148,8 @@ bool ViewportWidget::is_highlighted(const UploadedItem& item) const {
 void ViewportWidget::paintGL() {
   if (scene_dirty_) {
     rebuild_scene();
+  } else if (!pending_roads_.empty()) {
+    apply_pending_road_updates();
   }
 
   std::vector<DrawItem> draw_items;
