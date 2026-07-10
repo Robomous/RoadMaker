@@ -4,8 +4,10 @@
 
 #include <gtest/gtest.h>
 
+#include <QItemSelectionModel>
 #include <QTemporaryDir>
 #include <fstream>
+#include <vector>
 
 #include "document/diagnostics_model.hpp"
 #include "document/document.hpp"
@@ -50,14 +52,10 @@ struct Harness {
   DiagnosticsModel diagnostics_model{document};
 };
 
-RoadId first_road(const Document& document) {
-  RoadId first;
-  document.network().for_each_road([&](RoadId id, const Road&) {
-    if (!first.is_valid()) {
-      first = id;
-    }
-  });
-  return first;
+std::vector<RoadId> all_roads(const Document& document) {
+  std::vector<RoadId> roads;
+  document.network().for_each_road([&](RoadId id, const Road&) { roads.push_back(id); });
+  return roads;
 }
 
 TEST(SceneTreePanel, ViewClickDrivesSelectionModel) {
@@ -65,13 +63,13 @@ TEST(SceneTreePanel, ViewClickDrivesSelectionModel) {
   ASSERT_TRUE(h.document.load(kSample).has_value());
   SceneTreePanel panel(h.scene_tree_model, h.selection);
 
-  const RoadId road = first_road(h.document);
+  const RoadId road = all_roads(h.document).front();
   const QModelIndex road_index = h.scene_tree_model.index_for_road(road);
   ASSERT_TRUE(road_index.isValid());
 
   panel.view()->setCurrentIndex(road_index);
-  EXPECT_EQ(h.selection.road(), road);
-  EXPECT_FALSE(h.selection.lane().is_valid());
+  EXPECT_EQ(h.selection.primary().road, road);
+  EXPECT_FALSE(h.selection.primary().lane.is_valid());
 }
 
 TEST(SceneTreePanel, SelectionModelDrivesViewCurrentIndex) {
@@ -79,12 +77,51 @@ TEST(SceneTreePanel, SelectionModelDrivesViewCurrentIndex) {
   ASSERT_TRUE(h.document.load(kSample).has_value());
   SceneTreePanel panel(h.scene_tree_model, h.selection);
 
-  const RoadId road = first_road(h.document);
-  h.selection.select_road(road);
+  const RoadId road = all_roads(h.document).front();
+  h.selection.select({.road = road});
   EXPECT_EQ(panel.view()->currentIndex(), h.scene_tree_model.index_for_road(road));
 
   h.selection.clear();
   EXPECT_FALSE(panel.view()->currentIndex().isValid());
+}
+
+TEST(SceneTreePanel, MultiSelectMirrorsIntoTheView) {
+  Harness h;
+  ASSERT_TRUE(h.document.load(kSample).has_value());
+  SceneTreePanel panel(h.scene_tree_model, h.selection);
+
+  const std::vector<RoadId> roads = all_roads(h.document);
+  ASSERT_GE(roads.size(), 2U);
+  h.selection.select_many(std::vector<SelectionEntry>{{.road = roads[0]}, {.road = roads[1]}});
+
+  const QModelIndexList selected = panel.view()->selectionModel()->selectedRows();
+  EXPECT_EQ(selected.size(), 2);
+  EXPECT_TRUE(selected.contains(h.scene_tree_model.index_for_road(roads[0])));
+  EXPECT_TRUE(selected.contains(h.scene_tree_model.index_for_road(roads[1])));
+  // The primary (last-selected) drives the current index.
+  EXPECT_EQ(panel.view()->currentIndex(), h.scene_tree_model.index_for_road(roads[1]));
+}
+
+TEST(SceneTreePanel, ViewMultiSelectDrivesSelectionModel) {
+  Harness h;
+  ASSERT_TRUE(h.document.load(kSample).has_value());
+  SceneTreePanel panel(h.scene_tree_model, h.selection);
+
+  const std::vector<RoadId> roads = all_roads(h.document);
+  ASSERT_GE(roads.size(), 2U);
+  const QModelIndex first = h.scene_tree_model.index_for_road(roads[0]);
+  const QModelIndex second = h.scene_tree_model.index_for_road(roads[1]);
+
+  // Simulate Ctrl+click accumulation in the view.
+  panel.view()->selectionModel()->setCurrentIndex(
+      first, QItemSelectionModel::ClearAndSelect | QItemSelectionModel::Rows);
+  panel.view()->selectionModel()->setCurrentIndex(
+      second, QItemSelectionModel::Select | QItemSelectionModel::Rows);
+
+  EXPECT_EQ(h.selection.entries().size(), 2U);
+  EXPECT_TRUE(h.selection.contains({.road = roads[0]}));
+  EXPECT_TRUE(h.selection.contains({.road = roads[1]}));
+  EXPECT_EQ(h.selection.primary().road, roads[1]);
 }
 
 TEST(PropertiesPanel, ConstructsAndFollowsSelection) {
@@ -92,7 +129,7 @@ TEST(PropertiesPanel, ConstructsAndFollowsSelection) {
   ASSERT_TRUE(h.document.load(kSample).has_value());
   PropertiesPanel panel(h.document, h.selection);
   // No crash on select/clear cycles; content assertions live in the models.
-  h.selection.select_road(first_road(h.document));
+  h.selection.select({.road = all_roads(h.document).front()});
   h.selection.clear();
   ASSERT_TRUE(h.document.load(kSample).has_value()); // reload with panel alive
 }
@@ -123,13 +160,13 @@ TEST(DiagnosticsPanel, DoubleClickResolvableRowSelectsEntity) {
 
   emit panel.view()->doubleClicked(h.diagnostics_model.index(lane_row, 0));
   const auto& lane_diag = diagnostics[static_cast<std::size_t>(lane_row)];
-  EXPECT_EQ(h.selection.road(), lane_diag.road);
-  EXPECT_EQ(h.selection.lane(), lane_diag.lane);
+  EXPECT_EQ(h.selection.primary().road, lane_diag.road);
+  EXPECT_EQ(h.selection.primary().lane, lane_diag.lane);
 
   // Rows without an attached entity leave the selection untouched.
   emit panel.view()->doubleClicked(h.diagnostics_model.index(no_entity_row, 0));
-  EXPECT_EQ(h.selection.road(), lane_diag.road);
-  EXPECT_EQ(h.selection.lane(), lane_diag.lane);
+  EXPECT_EQ(h.selection.primary().road, lane_diag.road);
+  EXPECT_EQ(h.selection.primary().lane, lane_diag.lane);
 }
 
 } // namespace

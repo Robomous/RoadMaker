@@ -21,8 +21,8 @@ public:
   [[nodiscard]] QTreeView* view() { return view_; }
 
 private:
-  void on_view_selection(const QModelIndex& index);
-  void on_model_selection(RoadId road, LaneId lane);
+  void on_view_selection();
+  void on_model_selection();
 
   SceneTreeModel& model_;
   SelectionModel& selection_;

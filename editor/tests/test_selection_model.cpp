@@ -1,6 +1,8 @@
 #include <gtest/gtest.h>
 
 #include <QSignalSpy>
+#include <algorithm>
+#include <vector>
 
 #include "document/document.hpp"
 #include "document/selection_model.hpp"
@@ -10,14 +12,10 @@ namespace {
 
 const std::filesystem::path kSample = std::filesystem::path(RM_SAMPLES_DIR) / "t_junction.xodr";
 
-RoadId first_road(const Document& document) {
-  RoadId first;
-  document.network().for_each_road([&](RoadId id, const Road&) {
-    if (!first.is_valid()) {
-      first = id;
-    }
-  });
-  return first;
+std::vector<RoadId> all_roads(const Document& document) {
+  std::vector<RoadId> roads;
+  document.network().for_each_road([&](RoadId id, const Road&) { roads.push_back(id); });
+  return roads;
 }
 
 LaneId first_lane_of(const Document& document, RoadId road_id) {
@@ -29,42 +27,143 @@ LaneId first_lane_of(const Document& document, RoadId road_id) {
   return (section == nullptr || section->lanes.empty()) ? LaneId{} : section->lanes.front();
 }
 
-TEST(SelectionModel, EmitsOnlyOnActualChange) {
+/// The class-level invariants every test asserts after mutating: no
+/// duplicate entries, and the primary is the last entry when non-empty.
+void expect_invariants(const SelectionModel& selection) {
+  const auto& entries = selection.entries();
+  for (std::size_t i = 0; i < entries.size(); ++i) {
+    for (std::size_t j = i + 1; j < entries.size(); ++j) {
+      EXPECT_FALSE(entries[i] == entries[j]) << "duplicate entry at " << i << " and " << j;
+    }
+  }
+  if (entries.empty()) {
+    EXPECT_TRUE(selection.empty());
+    EXPECT_FALSE(selection.primary().road.is_valid());
+  } else {
+    EXPECT_TRUE(selection.contains(selection.primary()));
+    EXPECT_TRUE(selection.primary() == entries.back());
+  }
+}
+
+TEST(SelectionModel, ReplaceSelectsOneEntryAndEmitsOnlyOnChange) {
   Document document;
   ASSERT_TRUE(document.load(kSample).has_value());
   SelectionModel selection(document);
   QSignalSpy spy(&selection, &SelectionModel::selection_changed);
 
-  const RoadId road = first_road(document);
-  selection.select_road(road);
+  const RoadId road = all_roads(document).front();
+  selection.select({.road = road});
   EXPECT_EQ(spy.count(), 1);
-  selection.select_road(road); // no-op: same selection
+  EXPECT_EQ(selection.entries().size(), 1U);
+  EXPECT_EQ(selection.primary().road, road);
+  EXPECT_FALSE(selection.primary().lane.is_valid());
+
+  selection.select({.road = road}); // no-op: same selection
   EXPECT_EQ(spy.count(), 1);
 
   const LaneId lane = first_lane_of(document, road);
   ASSERT_TRUE(lane.is_valid());
-  selection.select_lane(road, lane);
+  selection.select({.road = road, .lane = lane});
   EXPECT_EQ(spy.count(), 2);
-  EXPECT_EQ(selection.road(), road);
-  EXPECT_EQ(selection.lane(), lane);
+  EXPECT_EQ(selection.entries().size(), 1U);
+  EXPECT_EQ(selection.primary().lane, lane);
 
   selection.clear();
   EXPECT_EQ(spy.count(), 3);
   selection.clear(); // already empty
   EXPECT_EQ(spy.count(), 3);
   EXPECT_TRUE(selection.empty());
+  expect_invariants(selection);
 }
 
-TEST(SelectionModel, InvalidIdsClearSelection) {
+TEST(SelectionModel, AddAccumulatesInSelectionOrder) {
   Document document;
   ASSERT_TRUE(document.load(kSample).has_value());
   SelectionModel selection(document);
 
-  selection.select_road(first_road(document));
+  const std::vector<RoadId> roads = all_roads(document);
+  ASSERT_GE(roads.size(), 2U);
+
+  selection.select({.road = roads[0]});
+  selection.select({.road = roads[1]}, SelectMode::Add);
+  ASSERT_EQ(selection.entries().size(), 2U);
+  EXPECT_EQ(selection.entries()[0].road, roads[0]);
+  EXPECT_EQ(selection.entries()[1].road, roads[1]);
+  EXPECT_EQ(selection.primary().road, roads[1]);
+
+  // Re-adding an existing entry makes it primary instead of duplicating it.
+  selection.select({.road = roads[0]}, SelectMode::Add);
+  ASSERT_EQ(selection.entries().size(), 2U);
+  EXPECT_EQ(selection.primary().road, roads[0]);
+  expect_invariants(selection);
+}
+
+TEST(SelectionModel, ToggleAddsThenRemoves) {
+  Document document;
+  ASSERT_TRUE(document.load(kSample).has_value());
+  SelectionModel selection(document);
+  QSignalSpy spy(&selection, &SelectionModel::selection_changed);
+
+  const std::vector<RoadId> roads = all_roads(document);
+  ASSERT_GE(roads.size(), 2U);
+
+  selection.select({.road = roads[0]});
+  selection.select({.road = roads[1]}, SelectMode::Toggle);
+  EXPECT_EQ(selection.entries().size(), 2U);
+  EXPECT_TRUE(selection.contains({.road = roads[0]}));
+  EXPECT_TRUE(selection.contains({.road = roads[1]}));
+
+  selection.select({.road = roads[0]}, SelectMode::Toggle);
+  EXPECT_EQ(selection.entries().size(), 1U);
+  EXPECT_FALSE(selection.contains({.road = roads[0]}));
+  EXPECT_EQ(selection.primary().road, roads[1]);
+  EXPECT_EQ(spy.count(), 3);
+  expect_invariants(selection);
+}
+
+TEST(SelectionModel, SelectManyIsOneChangeAndDeduplicates) {
+  Document document;
+  ASSERT_TRUE(document.load(kSample).has_value());
+  SelectionModel selection(document);
+  QSignalSpy spy(&selection, &SelectionModel::selection_changed);
+
+  const std::vector<RoadId> roads = all_roads(document);
+  ASSERT_GE(roads.size(), 2U);
+
+  // Rubber band delivering a duplicate: one signal, no duplicate entries.
+  const std::vector<SelectionEntry> band = {
+      {.road = roads[0]}, {.road = roads[1]}, {.road = roads[0]}};
+  selection.select_many(band);
+  EXPECT_EQ(spy.count(), 1);
+  ASSERT_EQ(selection.entries().size(), 2U);
+  EXPECT_EQ(selection.primary().road, roads[0]); // duplicate moved it to the back
+  expect_invariants(selection);
+
+  // Same set re-applied in the same order: no change, no signal.
+  const std::vector<SelectionEntry> same = {{.road = roads[1]}, {.road = roads[0]}};
+  selection.select_many(same);
+  EXPECT_EQ(spy.count(), 1);
+}
+
+TEST(SelectionModel, StaleEntriesAreDropped) {
+  Document document;
+  ASSERT_TRUE(document.load(kSample).has_value());
+  SelectionModel selection(document);
+
+  const RoadId road = all_roads(document).front();
+  selection.select({.road = road});
   EXPECT_FALSE(selection.empty());
 
-  selection.select_road(RoadId{}); // stale/invalid -> clear
+  // Replace-selecting an invalid entry clears (the old single-select rule).
+  selection.select({.road = RoadId{}});
   EXPECT_TRUE(selection.empty());
+
+  // A stale entry inside a batch vanishes; live ones survive.
+  selection.select_many(
+      std::vector<SelectionEntry>{{.road = RoadId{}}, {.road = road, .lane = LaneId{}}});
+  ASSERT_EQ(selection.entries().size(), 1U);
+  EXPECT_EQ(selection.primary().road, road);
+  expect_invariants(selection);
 }
 
 TEST(SelectionModel, ReloadClearsSelectionEvenWhenIdsAlias) {
@@ -72,16 +171,19 @@ TEST(SelectionModel, ReloadClearsSelectionEvenWhenIdsAlias) {
   ASSERT_TRUE(document.load(kSample).has_value());
   SelectionModel selection(document);
 
-  selection.select_road(first_road(document));
+  const std::vector<RoadId> roads = all_roads(document);
+  ASSERT_GE(roads.size(), 2U);
+  selection.select_many(std::vector<SelectionEntry>{{.road = roads[0]}, {.road = roads[1]}});
   ASSERT_FALSE(selection.empty());
 
-  // Reloading rebuilds the arenas from scratch: the old id would alias the
-  // new file's first road, which lookups alone cannot detect. The model must
-  // clear on loaded().
+  // Reloading rebuilds the arenas from scratch: the old ids would alias the
+  // new file's roads, which lookups alone cannot detect. The model must
+  // hard-clear on loaded().
   QSignalSpy spy(&selection, &SelectionModel::selection_changed);
   ASSERT_TRUE(document.load(kSample).has_value());
   EXPECT_TRUE(selection.empty());
   EXPECT_EQ(spy.count(), 1);
+  expect_invariants(selection);
 }
 
 } // namespace

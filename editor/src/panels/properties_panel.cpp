@@ -17,8 +17,7 @@ PropertiesPanel::PropertiesPanel(const Document& document,
   layout->addLayout(form_);
   layout->addStretch();
 
-  connect(
-      &selection_, &SelectionModel::selection_changed, this, [this](RoadId, LaneId) { refresh(); });
+  connect(&selection_, &SelectionModel::selection_changed, this, &PropertiesPanel::refresh);
   connect(&document_, &Document::loaded, this, &PropertiesPanel::refresh);
   refresh();
 }
@@ -26,13 +25,18 @@ PropertiesPanel::PropertiesPanel(const Document& document,
 void PropertiesPanel::refresh() {
   clear_rows();
 
-  const Road* road = document_.network().road(selection_.road());
+  // The primary entry (most recently selected) drives the panel.
+  const SelectionEntry primary = selection_.primary();
+  const Road* road = document_.network().road(primary.road);
   if (road == nullptr) {
     placeholder_->show();
     return;
   }
   placeholder_->hide();
 
+  if (selection_.entries().size() > 1) {
+    add_row(tr("Selection"), tr("%1 items").arg(selection_.entries().size()));
+  }
   add_row(tr("Road"),
           road->name.empty() ? QString::fromStdString(road->odr_id)
                              : QString::fromStdString(road->name));
@@ -41,7 +45,7 @@ void PropertiesPanel::refresh() {
   add_row(tr("Geometry records"), QString::number(road->plan_view.records().size()));
   add_row(tr("Lane sections"), QString::number(road->sections.size()));
 
-  const Lane* lane = document_.network().lane(selection_.lane());
+  const Lane* lane = document_.network().lane(primary.lane);
   if (lane != nullptr) {
     add_row(tr("Lane"), QString::number(lane->odr_id));
     add_row(tr("Width records"), QString::number(lane->widths.size()));
