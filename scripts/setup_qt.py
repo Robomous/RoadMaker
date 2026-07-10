@@ -74,7 +74,10 @@ def ensure_aqt(venv_dir: Path) -> Path:
 
 
 def install_qt(aqt: Path, host: str, version: str, arch: str, output: Path) -> None:
-    archives = ["qtbase", "qttools"]  # qttools ships windeployqt/macdeployqt
+    # qttools ships windeployqt/macdeployqt; qtsvg backs the editor's bundled
+    # SVG icon set (Qt6::Svg). Adding a module here also means updating the
+    # editor find_package() and checking the deploy expectations.
+    archives = ["qtbase", "qttools", "qtsvg"]
     if host == "linux":
         archives.append("icu")  # Qt on Linux links a bundled ICU
     command = [
