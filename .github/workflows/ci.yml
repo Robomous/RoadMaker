@@ -244,3 +244,23 @@ jobs:
         run: cmake --build build --target roadmaker_fuzz_xodr
       - name: Run 30 s smoke
         run: ./build/core/tests/fuzz/roadmaker_fuzz_xodr core/tests/fuzz/corpus -max_total_time=30 -print_final_stats=1
+
+  docs:
+    name: docs link check
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      # Offline mode: verifies every relative link and anchor inside the
+      # repo deterministically; external URLs are deliberately not fetched
+      # so the gate cannot flake on third-party outages.
+      - name: Check Markdown links
+        uses: lycheeverse/lychee-action@v2
+        with:
+          args: >-
+            --offline
+            --include-fragments
+            --no-progress
+            "docs/**/*.md"
+            "*.md"
+          fail: true
