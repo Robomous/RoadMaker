@@ -3,6 +3,8 @@ add_library(roadmaker_core STATIC
   src/geometry/reference_line.cpp
   src/road/network.cpp
   src/xodr/reader.cpp
+  src/mesh/mesh_builder.cpp
+  src/io/gltf_exporter.cpp
 )
 add_library(roadmaker::core ALIAS roadmaker_core)
 

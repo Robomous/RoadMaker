@@ -16,7 +16,6 @@ using roadmaker::JunctionId;
 using roadmaker::LaneType;
 using roadmaker::RoadId;
 using roadmaker::RoadMarkType;
-using roadmaker::Severity;
 
 namespace {
 

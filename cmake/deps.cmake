@@ -210,6 +210,13 @@ target_link_libraries(rm_igl INTERFACE Eigen3::Eigen)
 add_library(rm_tinygltf INTERFACE)
 add_library(tinygltf::tinygltf ALIAS rm_tinygltf)
 target_include_directories(rm_tinygltf SYSTEM INTERFACE ${tinygltf_SOURCE_DIR})
+# These must be identical in every TU that includes tiny_gltf.h, or the
+# implementation TU and consumers disagree about which symbols exist.
+target_compile_definitions(rm_tinygltf INTERFACE
+  TINYGLTF_NO_STB_IMAGE
+  TINYGLTF_NO_STB_IMAGE_WRITE
+  TINYGLTF_NO_EXTERNAL_IMAGE
+)
 
 # tl::expected (header-only)
 add_library(rm_tlexpected INTERFACE)

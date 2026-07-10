@@ -4,6 +4,8 @@ add_executable(roadmaker_core_tests
   test_network.cpp
   test_reference_line.cpp
   test_xodr_reader.cpp
+  test_mesh.cpp
+  test_gltf.cpp
 )
 
 target_compile_definitions(roadmaker_core_tests PRIVATE
