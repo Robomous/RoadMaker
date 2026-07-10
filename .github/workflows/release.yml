@@ -72,6 +72,12 @@ jobs:
       - name: Test
         run: ctest --preset ${{ matrix.preset }}
 
+      # windows-latest runners no longer ship NSIS; CPack's NSIS generator
+      # locates makensis through the registry, which choco sets up.
+      - name: Install NSIS
+        if: runner.os == 'Windows'
+        run: choco install nsis -y --no-progress
+
       - name: Package (CPack)
         run: cpack --config build/${{ matrix.preset }}/CPackConfig.cmake -B ${{ github.workspace }}/dist
 
