@@ -4,6 +4,29 @@
      Every file listed here needs a row in ASSETS_LICENSES.md (CI-enforced). -->
 <RCC>
   <qresource prefix="/icons">
+    <file alias="box.svg">icons/lucide/box.svg</file>
+    <file alias="circle-plus.svg">icons/lucide/circle-plus.svg</file>
+    <file alias="file-output.svg">icons/lucide/file-output.svg</file>
+    <file alias="folder-open.svg">icons/lucide/folder-open.svg</file>
+    <file alias="info.svg">icons/lucide/info.svg</file>
+    <file alias="magnet.svg">icons/lucide/magnet.svg</file>
+    <file alias="mountain.svg">icons/lucide/mountain.svg</file>
+    <file alias="mouse-pointer-2.svg">icons/lucide/mouse-pointer-2.svg</file>
+    <file alias="move.svg">icons/lucide/move.svg</file>
+    <file alias="octagon-x.svg">icons/lucide/octagon-x.svg</file>
+    <file alias="redo-2.svg">icons/lucide/redo-2.svg</file>
+    <file alias="rotate-ccw.svg">icons/lucide/rotate-ccw.svg</file>
+    <file alias="save.svg">icons/lucide/save.svg</file>
+    <file alias="scan.svg">icons/lucide/scan.svg</file>
+    <file alias="trash-2.svg">icons/lucide/trash-2.svg</file>
+    <file alias="triangle-alert.svg">icons/lucide/triangle-alert.svg</file>
+    <file alias="undo-2.svg">icons/lucide/undo-2.svg</file>
+    <file alias="waypoints.svg">icons/lucide/waypoints.svg</file>
     <file alias="clothoid-road.svg">icons/custom/clothoid-road.svg</file>
+    <file alias="junction-connect.svg">icons/custom/junction-connect.svg</file>
+    <file alias="lane-section.svg">icons/custom/lane-section.svg</file>
+    <file alias="template-highway.svg">icons/custom/template-highway.svg</file>
+    <file alias="template-rural.svg">icons/custom/template-rural.svg</file>
+    <file alias="template-urban.svg">icons/custom/template-urban.svg</file>
   </qresource>
 </RCC>
