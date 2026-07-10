@@ -3,6 +3,7 @@
 #include "roadmaker/export.hpp"
 
 #include <cstddef>
+#include <memory>
 #include <variant>
 #include <vector>
 
@@ -60,6 +61,12 @@ struct GeometryRecord {
   std::variant<LineGeom, ArcGeom, SpiralGeom, ParamPoly3Geom> shape;
 };
 
+/// Prebuilt per-record evaluators for spiral records (Clothoids state is
+/// expensive to rebuild per evaluate() call — hot during drag re-meshing).
+/// Implementation detail of ReferenceLine, defined in the .cpp so the
+/// Clothoids dependency never leaks into headers.
+struct SpiralEvalCache;
+
 /// A road's plan-view reference line: a contiguous sequence of geometry
 /// records. `evaluate(s)` is the single entry point for all downstream
 /// consumers (lanes, meshing, editors) — s in [0, length()], clamped.
@@ -81,8 +88,15 @@ public:
   [[nodiscard]] RM_API PathPoint evaluate(double s) const;
 
 private:
+  [[nodiscard]] const SpiralEvalCache& spiral_cache() const;
+
   std::vector<GeometryRecord> records_;
   double length_ = 0.0;
+
+  /// Lazily built on the first spiral evaluation, shared by copies (it is
+  /// a pure function of records_), dropped by append(). Mutation under
+  /// const relies on the kernel's single-threaded-per-network contract.
+  mutable std::shared_ptr<const SpiralEvalCache> spiral_cache_;
 };
 
 /// Options for curvature-adaptive station sampling.
