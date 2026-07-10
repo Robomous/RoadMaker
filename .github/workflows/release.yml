@@ -50,6 +50,13 @@ jobs:
       - name: Provision Qt
         run: python3 scripts/setup_qt.py
 
+      # gtest_discover_tests runs the editor test exe during the build; the
+      # dynamically linked Qt DLLs must be loadable (same fix as ci.yml).
+      - name: Qt DLLs on PATH (Windows test discovery)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: Resolve-Path .qt/*/msvc*/bin | ForEach-Object { Add-Content $env:GITHUB_PATH $_.Path }
+
       - name: Cache FetchContent downloads
         uses: actions/cache@v4
         with:
@@ -89,6 +96,9 @@ jobs:
           printf '\x89PNG\r\n\x1a\n' > /dev/null
           python3 -c "import base64,pathlib; pathlib.Path('roadmaker-editor.png').write_bytes(base64.b64decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=='))"
           export QMAKE=${{ github.workspace }}/.qt/6.8.3/gcc_64/bin/qmake
+          # linuxdeploy resolves the installed binary's dependencies with ldd,
+          # which needs the provisioned Qt libs on the search path.
+          export LD_LIBRARY_PATH=${{ github.workspace }}/.qt/6.8.3/gcc_64/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}
           export QT_QPA_PLATFORM=offscreen
           ./linuxdeploy --appdir appdir \
             --executable appdir/usr/bin/roadmaker-editor \
