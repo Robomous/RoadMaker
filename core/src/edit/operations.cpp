@@ -491,16 +491,16 @@ create_road(std::vector<Waypoint> waypoints, LaneProfile profile, std::string na
   auto command = std::make_unique<GenericCommand>(std::string(kName), DirtySet{.topology = true});
   command->creator =
       [waypoints = std::move(waypoints), profile = std::move(profile), name = std::move(name)](
-          RoadNetwork& network, Values& created) -> Expected<void> {
+          RoadNetwork& target, Values& created) -> Expected<void> {
     // author_clothoid_road validates everything before its first mutation.
-    auto road_id = author_clothoid_road(network, waypoints, profile, name);
+    auto road_id = author_clothoid_road(target, waypoints, profile, name);
     if (!road_id.has_value()) {
       return tl::unexpected<Error>(road_id.error());
     }
     created.roads.emplace_back(*road_id, Road{});
-    for (const LaneSectionId section_id : network.road(*road_id)->sections) {
+    for (const LaneSectionId section_id : target.road(*road_id)->sections) {
       created.sections.emplace_back(section_id, LaneSection{});
-      for (const LaneId lane_id : network.lane_section(section_id)->lanes) {
+      for (const LaneId lane_id : target.lane_section(section_id)->lanes) {
         created.lanes.emplace_back(lane_id, Lane{});
       }
     }
@@ -712,12 +712,12 @@ std::unique_ptr<Command> split_road(const RoadNetwork& network, RoadId road_id, 
                       duplicated_lanes = std::move(duplicated_lanes),
                       moved_sections,
                       split_s,
-                      far_neighbor](RoadNetwork& network, Values& created) -> Expected<void> {
-    const std::string odr_id = next_free_road_odr_id(network);
-    const RoadId tail_id = network.create_road(tail_blueprint.name, odr_id);
+                      far_neighbor](RoadNetwork& target, Values& created) -> Expected<void> {
+    const std::string odr_id = next_free_road_odr_id(target);
+    const RoadId tail_id = target.create_road(tail_blueprint.name, odr_id);
     created.roads.emplace_back(tail_id, Road{});
     {
-      Road& tail = *network.road(tail_id);
+      Road& tail = *target.road(tail_id);
       const std::string keep_odr = tail.odr_id;
       tail = tail_blueprint;
       tail.odr_id = keep_odr;
@@ -725,12 +725,12 @@ std::unique_ptr<Command> split_road(const RoadNetwork& network, RoadId road_id, 
     }
 
     // Boundary duplicate section + lanes (identity odr ids).
-    const LaneSectionId dup_section = network.add_lane_section(tail_id, 0.0);
+    const LaneSectionId dup_section = target.add_lane_section(tail_id, 0.0);
     created.sections.emplace_back(dup_section, LaneSection{});
     for (const LaneBlueprint& blueprint : duplicated_lanes) {
       const LaneId lane_id =
-          network.add_lane(dup_section, blueprint.value.odr_id, blueprint.value.type);
-      Lane& lane = *network.lane(lane_id);
+          target.add_lane(dup_section, blueprint.value.odr_id, blueprint.value.type);
+      Lane& lane = *target.lane(lane_id);
       const LaneSectionId keep_section = lane.section;
       lane = blueprint.value;
       lane.section = keep_section;
@@ -738,27 +738,27 @@ std::unique_ptr<Command> split_road(const RoadNetwork& network, RoadId road_id, 
     }
 
     // Move the tail sections across (same ids — references stay valid).
-    Road& tail = *network.road(tail_id);
+    Road& tail = *target.road(tail_id);
     for (const LaneSectionId section_id : moved_sections) {
-      LaneSection& section = *network.lane_section(section_id);
+      LaneSection& section = *target.lane_section(section_id);
       section.road = tail_id;
       section.s0 -= split_s;
       tail.sections.push_back(section_id);
     }
 
     // Rewrite the original road and stitch the seam.
-    Road& original = *network.road(road_id);
+    Road& original = *target.road(road_id);
     const LaneSectionId spanning_id = original_after.sections.back();
     original = original_after;
     original.successor = RoadLink{.target = tail_id, .contact = ContactPoint::Start};
-    for (const LaneId lane_id : network.lane_section(spanning_id)->lanes) {
-      Lane& lane = *network.lane(lane_id);
+    for (const LaneId lane_id : target.lane_section(spanning_id)->lanes) {
+      Lane& lane = *target.lane(lane_id);
       if (lane.odr_id != 0) {
         lane.successor = lane.odr_id; // identity link into the duplicate
       }
     }
     if (far_neighbor.has_value()) {
-      Road& neighbor = *network.road(*far_neighbor);
+      Road& neighbor = *target.road(*far_neighbor);
       if (links_to_road(neighbor.predecessor, road_id)) {
         neighbor.predecessor->target = tail_id;
       }
@@ -807,11 +807,11 @@ std::unique_ptr<Command> create_junction(const RoadNetwork& network,
     }
   }
   command->creator = [ends = std::vector<RoadEnd>(ends.begin(), ends.end())](
-                         RoadNetwork& network, Values& created) -> Expected<void> {
-    const JunctionId junction_id = network.create_junction(next_free_junction_odr_id(network), "");
+                         RoadNetwork& target, Values& created) -> Expected<void> {
+    const JunctionId junction_id = target.create_junction(next_free_junction_odr_id(target), "");
     created.junctions.emplace_back(junction_id, Junction{});
     for (const RoadEnd& end : ends) {
-      Road& road = *network.road(end.road);
+      Road& road = *target.road(end.road);
       RoadLink link{.target = junction_id, .contact = ContactPoint::Start};
       if (end.contact == ContactPoint::Start) {
         road.predecessor = link;
@@ -892,12 +892,12 @@ add_lane(const RoadNetwork& network, LaneSectionId section_id, int side, LaneTyp
       std::string(kName), DirtySet{.roads = {section->road}, .topology = true});
   command->before.sections.emplace_back(section_id, *section);
   command->creator = [section_id, new_odr_id, type, widths = std::move(widths)](
-                         RoadNetwork& network, Values& created) -> Expected<void> {
-    const LaneId lane_id = network.add_lane(section_id, new_odr_id, type);
+                         RoadNetwork& target, Values& created) -> Expected<void> {
+    const LaneId lane_id = target.add_lane(section_id, new_odr_id, type);
     if (!lane_id.is_valid()) {
       return make_error(ErrorCode::InvalidArgument, "lane id already occupied");
     }
-    network.lane(lane_id)->widths = widths;
+    target.lane(lane_id)->widths = widths;
     created.lanes.emplace_back(lane_id, Lane{});
     return {};
   };
