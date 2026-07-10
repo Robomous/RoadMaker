@@ -2,7 +2,9 @@ add_library(roadmaker_core STATIC
   src/version.cpp
   src/geometry/reference_line.cpp
   src/road/network.cpp
+  src/road/authoring.cpp
   src/xodr/reader.cpp
+  src/xodr/writer.cpp
   src/mesh/mesh_builder.cpp
   src/io/gltf_exporter.cpp
 )

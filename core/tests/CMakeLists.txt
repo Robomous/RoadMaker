@@ -6,6 +6,7 @@ add_executable(roadmaker_core_tests
   test_xodr_reader.cpp
   test_mesh.cpp
   test_gltf.cpp
+  test_round_trip.cpp
 )
 
 target_compile_definitions(roadmaker_core_tests PRIVATE
