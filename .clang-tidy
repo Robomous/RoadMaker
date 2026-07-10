@@ -16,7 +16,10 @@ Checks: >
   -performance-enum-size,
   -cppcoreguidelines-pro-type-reinterpret-cast,
   -misc-non-private-member-variables-in-classes,
-  -misc-include-cleaner
+  -misc-include-cleaner,
+  -misc-use-anonymous-namespace,
+  -cppcoreguidelines-avoid-do-while,
+  -cppcoreguidelines-avoid-non-const-global-variables
 WarningsAsErrors: ''
 HeaderFilterRegex: '(core|editor|python)/.*\.(hpp|h)$'
 CheckOptions:

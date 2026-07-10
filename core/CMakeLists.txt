@@ -1,5 +1,6 @@
 add_library(roadmaker_core STATIC
   src/version.cpp
+  src/geometry/reference_line.cpp
   src/road/network.cpp
 )
 add_library(roadmaker::core ALIAS roadmaker_core)

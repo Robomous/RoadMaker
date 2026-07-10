@@ -2,6 +2,7 @@ add_executable(roadmaker_core_tests
   test_smoke.cpp
   test_id_arena.cpp
   test_network.cpp
+  test_reference_line.cpp
 )
 
 target_link_libraries(roadmaker_core_tests
