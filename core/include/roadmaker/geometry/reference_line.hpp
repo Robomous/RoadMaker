@@ -1,5 +1,7 @@
 #pragma once
 
+#include "roadmaker/export.hpp"
+
 #include <cstddef>
 #include <variant>
 #include <vector>
@@ -61,7 +63,7 @@ struct GeometryRecord {
 /// A road's plan-view reference line: a contiguous sequence of geometry
 /// records. `evaluate(s)` is the single entry point for all downstream
 /// consumers (lanes, meshing, editors) — s in [0, length()], clamped.
-class ReferenceLine {
+class RM_API ReferenceLine {
 public:
   /// Appends a record; its `s` is overwritten with the current length so
   /// the sequence stays contiguous. Records with length <= 0 are ignored.
@@ -99,7 +101,7 @@ struct SamplingOptions {
 /// boundary, every extra station, and curvature-adaptive fill in between
 /// (step = clamp(sqrt(8·tol/|κ|), min, max)). Sorted ascending, deduplicated
 /// within tol::kLength. Empty line yields {}.
-[[nodiscard]] std::vector<double> sample_stations(const ReferenceLine& line,
-                                                  const SamplingOptions& options = {});
+[[nodiscard]] RM_API std::vector<double> sample_stations(const ReferenceLine& line,
+                                                         const SamplingOptions& options = {});
 
 } // namespace roadmaker

@@ -23,13 +23,14 @@ robust — rendering is deliberately the thin part.
 ```mermaid
 graph TD
     P["python/ — nanobind bindings<br/><code>import roadmaker</code>"] --> C
-    E["editor/ — Dear ImGui viewer/editor<br/><code>roadmaker-editor</code>"] --> C
-    C["core/ — C++20 kernel<br/>geometry · road model · OpenDRIVE I/O · meshing · glTF"]
+    E["editor/ — Qt 6 Widgets viewer/editor<br/><code>roadmaker-editor</code>"] --> C
+    C["core/ — C++20 kernel<br/>geometry · road model · OpenDRIVE I/O · meshing · glTF<br/>static or shared (<code>RM_BUILD_SHARED</code>)"]
 ```
 
 Three layers, one strict rule: `core/` has zero UI, GL, or Python
 dependencies; `python/` and `editor/` depend on `core/` and never on each
-other.
+other. Qt (LGPLv3, dynamically linked) is confined to the editor — the
+kernel and Python package stay pure MIT.
 
 ## Milestone 1 status (viewer + kernel)
 
@@ -38,21 +39,38 @@ other.
 - [x] glTF 2.0 (`.glb`) export
 - [x] Clothoid authoring API (waypoints → G1 clothoid path → valid OpenDRIVE out)
 - [x] Python package (`pip install`, pythonic API, runnable examples)
-- [x] Read-only editor: 3D viewport, scene tree, log panel
+- [x] Read-only editor (Qt 6 Widgets): 3D viewport with picking, scene tree, properties, diagnostics panel
+- [x] Shared-library kernel + installable CMake package (`find_package(roadmaker)`)
+- [x] Self-contained installers per OS on release tags
 - [x] CI green on macOS / Linux / Windows with sanitizers, format check, fuzzing
 
-## Quickstart
+## Download
+
+Prebuilt, self-contained editor packages (Qt included — install nothing else)
+are attached to every [GitHub release](https://github.com/robomous/roadmaker/releases):
+a DMG for macOS, an NSIS installer + portable ZIP for Windows, and an
+AppImage + tarball for Linux. Python wheels are published alongside.
+
+## Quickstart (from source)
 
 ```sh
 git clone https://github.com/robomous/roadmaker.git
 cd roadmaker
-cmake -B build -G Ninja -DRM_BUILD_TESTS=ON -DRM_BUILD_EDITOR=ON
-cmake --build build
-ctest --test-dir build --output-on-failure
+python3 scripts/setup_qt.py        # one-time: provisions Qt into ./.qt/
+cmake --preset dev-macos           # or dev-linux / dev-windows
+cmake --build --preset dev-macos
+ctest --preset dev-macos
 
-# open a sample in the viewer
-./build/editor/roadmaker-editor assets/samples/straight_road.xodr
+# open a sample in the editor (plain binary on Linux/Windows,
+# .app bundle on macOS)
+./build/dev-macos/editor/roadmaker-editor.app/Contents/MacOS/roadmaker-editor \
+    assets/samples/straight_road.xodr
 ```
+
+Building only the kernel? Skip `setup_qt.py` and configure with
+`-DRM_BUILD_EDITOR=OFF`. Add `-DRM_BUILD_SHARED=ON` for a shared
+`roadmaker_core` with install rules — third parties can then
+`find_package(roadmaker)` and link `roadmaker::core`.
 
 ### Python
 

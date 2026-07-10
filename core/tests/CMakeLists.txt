@@ -13,9 +13,17 @@ target_compile_definitions(roadmaker_core_tests PRIVATE
   RM_SAMPLES_DIR="${CMAKE_SOURCE_DIR}/assets/samples"
 )
 
+if(RM_BUILD_SHARED)
+  # See the comment in tinygltf_impl.cpp — shared builds hide core's copy.
+  target_sources(roadmaker_core_tests PRIVATE tinygltf_impl.cpp)
+endif()
+
+# Third-party deps are re-listed because core links them PRIVATE — including
+# Eigen/fmt/spdlog, which are no longer part of core's public interface.
 target_link_libraries(roadmaker_core_tests
   PRIVATE
     roadmaker::core
+    Eigen3::Eigen
     Clothoids::Clothoids
     CDT::CDT
     Clipper2::Clipper2

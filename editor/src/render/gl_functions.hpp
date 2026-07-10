@@ -1,12 +1,14 @@
 #pragma once
 
 // Minimal self-contained OpenGL 3.3 core function loader. We deliberately
-// avoid glad/GLEW: the editor needs ~30 entry points, all resolved through
-// glfwGetProcAddress, which works identically on macOS, Linux, and Windows
-// (on Windows, functions beyond GL 1.1 are not exported by opengl32.dll —
-// that is WHY this loader exists).
+// avoid glad/GLEW: the editor needs ~30 entry points, all resolved through a
+// caller-supplied resolver (QOpenGLContext::getProcAddress in the Qt editor),
+// which works identically on macOS, Linux, and Windows (on Windows, functions
+// beyond GL 1.1 are not exported by opengl32.dll — that is WHY this loader
+// exists). Keeping the resolver injected keeps this file toolkit-agnostic.
 //
-// Only editor/src/render/ may include this header (architecture rule).
+// Only editor/src/render/ and the viewport widget may include this header
+// (architecture rule).
 
 #include <cstddef>
 #include <cstdint>
@@ -91,8 +93,12 @@ RM_GL_FUNCTIONS(RM_GL_DECLARE)
 #undef RM_GL_DECLARE
 // NOLINTEND(readability-identifier-naming)
 
-/// Resolves every pointer above via glfwGetProcAddress. Call once with a
-/// current GL context. Returns false if any function is missing.
-[[nodiscard]] bool load_functions();
+/// Resolves a GL entry point by name ("glDrawElements") with a current GL
+/// context, e.g. QOpenGLContext::currentContext()->getProcAddress.
+using ProcResolver = void* (*)(const char* name);
+
+/// Resolves every pointer above through `resolver`. Call once with a current
+/// GL context. Returns false if any function is missing.
+[[nodiscard]] bool load_functions(ProcResolver resolver);
 
 } // namespace roadmaker::editor::gl

@@ -61,10 +61,8 @@ GLRenderer::~GLRenderer() {
 }
 
 bool GLRenderer::init() {
-  if (!gl::load_functions()) {
-    spdlog::error("failed to load OpenGL 3.3 core functions");
-    return false;
-  }
+  // Precondition: gl::load_functions(resolver) succeeded with the current
+  // context — the windowing layer owns the resolver, not the renderer.
   const std::uint32_t vs = compile(gl::kVertexShader, kVertexShader);
   const std::uint32_t fs = compile(gl::kFragmentShader, kFragmentShader);
   if (vs == 0 || fs == 0) {

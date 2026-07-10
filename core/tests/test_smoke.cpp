@@ -12,10 +12,19 @@
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
+#include <cctype>
 #include <numbers>
+#include <string>
 
 TEST(Smoke, KernelReportsItsVersion) {
-  EXPECT_EQ(roadmaker::version(), "0.1.0");
+  // The string comes from PROJECT_VERSION; assert the semver shape rather
+  // than a literal so version bumps cannot silently break the suite.
+  const std::string version(roadmaker::version());
+  EXPECT_EQ(std::count(version.begin(), version.end(), '.'), 2);
+  EXPECT_TRUE(std::all_of(version.begin(), version.end(), [](unsigned char c) {
+    return (std::isdigit(c) != 0) || c == '.';
+  }));
 }
 
 TEST(Smoke, EigenSolvesALinearSystem) {
