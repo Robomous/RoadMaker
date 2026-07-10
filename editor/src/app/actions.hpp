@@ -16,6 +16,11 @@ class Actions : public QObject {
 public:
   explicit Actions(QUndoStack& undo_stack, QObject* parent = nullptr);
 
+  /// (Re)assigns the bundled palette-tinted icons to every action. Called
+  /// from the constructor; call again after Icons::clear_cache() when the
+  /// application palette changes so the tint follows the theme.
+  void apply_icons();
+
   QAction* open = nullptr;
   QAction* export_glb = nullptr;
   QAction* quit = nullptr;

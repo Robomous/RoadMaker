@@ -1,6 +1,9 @@
 #include <gtest/gtest.h>
 
+#include <QGuiApplication>
 #include <QIcon>
+#include <QImage>
+#include <QPalette>
 #include <QPixmap>
 
 #include "app/icons.hpp"
@@ -42,6 +45,81 @@ TEST(Icons, ClearCacheKeepsLookupsWorking) {
   Icons::clear_cache();
   const QIcon icon = Icons::get(QStringLiteral("clothoid-road"));
   EXPECT_FALSE(icon.isNull());
+}
+
+TEST(Icons, EveryMappedIconIsBundled) {
+  // The full docs/design/m2/05_assets.md §1 mapping table. A non-null pixmap
+  // proves the bundled SVG rendered (the fromTheme fallback yields a null
+  // icon on the offscreen platform).
+  const char* const names[] = {// Lucide 1.24.0
+                               "box",
+                               "circle-plus",
+                               "file-output",
+                               "folder-open",
+                               "info",
+                               "magnet",
+                               "mountain",
+                               "mouse-pointer-2",
+                               "move",
+                               "octagon-x",
+                               "redo-2",
+                               "rotate-ccw",
+                               "save",
+                               "scan",
+                               "trash-2",
+                               "triangle-alert",
+                               "undo-2",
+                               "waypoints",
+                               // custom, drawn on the Lucide grid
+                               "clothoid-road",
+                               "junction-connect",
+                               "lane-section",
+                               "template-highway",
+                               "template-rural",
+                               "template-urban"};
+  for (const char* name : names) {
+    SCOPED_TRACE(name);
+    const QIcon icon = Icons::get(QLatin1String(name));
+    ASSERT_FALSE(icon.isNull());
+    EXPECT_FALSE(icon.pixmap(16).isNull());
+  }
+}
+
+/// The tint color of the first fully opaque pixel — CompositionMode_SourceIn
+/// stamps the palette color over the whole alpha mask, so any opaque pixel
+/// carries exactly the tint.
+QColor sampled_tint(const QIcon& icon) {
+  const QImage image = icon.pixmap(32).toImage().convertToFormat(QImage::Format_ARGB32);
+  for (int y = 0; y < image.height(); ++y) {
+    for (int x = 0; x < image.width(); ++x) {
+      const QColor color = image.pixelColor(x, y);
+      if (color.alpha() == 255) {
+        return color;
+      }
+    }
+  }
+  return {};
+}
+
+TEST(Icons, PaletteChangeRetintsAfterCacheClear) {
+  const QPalette original = QGuiApplication::palette();
+
+  QPalette red = original;
+  red.setColor(QPalette::Normal, QPalette::WindowText, QColor(200, 30, 40));
+  QGuiApplication::setPalette(red);
+  Icons::clear_cache();
+  const QColor first = sampled_tint(Icons::get(QStringLiteral("save")));
+  EXPECT_EQ(first, QColor(200, 30, 40));
+
+  QPalette blue = original;
+  blue.setColor(QPalette::Normal, QPalette::WindowText, QColor(30, 60, 220));
+  QGuiApplication::setPalette(blue);
+  Icons::clear_cache();
+  const QColor second = sampled_tint(Icons::get(QStringLiteral("save")));
+  EXPECT_EQ(second, QColor(30, 60, 220));
+
+  QGuiApplication::setPalette(original);
+  Icons::clear_cache();
 }
 
 } // namespace
