@@ -49,11 +49,7 @@ GeometryRecord to_record(const G2lib::ClothoidCurve& segment) {
 
 } // namespace
 
-Expected<RoadId> author_clothoid_road(RoadNetwork& network,
-                                      std::span<const Waypoint> waypoints,
-                                      const LaneProfile& profile,
-                                      std::string name,
-                                      std::string odr_id) {
+Expected<ReferenceLine> fit_clothoid_path(std::span<const Waypoint> waypoints) {
   if (waypoints.size() < 2) {
     return make_error(ErrorCode::InvalidArgument, "need at least 2 waypoints");
   }
@@ -64,6 +60,37 @@ Expected<RoadId> author_clothoid_road(RoadNetwork& network,
       return make_error(
           ErrorCode::InvalidArgument, "coincident consecutive waypoints", std::to_string(i));
     }
+  }
+
+  // G1 clothoid spline through the waypoints; angles are estimated by the
+  // library (never hand-roll Fresnel math).
+  std::vector<double> xs;
+  std::vector<double> ys;
+  xs.reserve(waypoints.size());
+  ys.reserve(waypoints.size());
+  for (const Waypoint& p : waypoints) {
+    xs.push_back(p.x);
+    ys.push_back(p.y);
+  }
+  G2lib::ClothoidList path("rm_author");
+  if (!path.build_G1(static_cast<int>(waypoints.size()), xs.data(), ys.data())) {
+    return make_error(ErrorCode::InvalidArgument, "clothoid G1 fit failed");
+  }
+  ReferenceLine line;
+  for (int i = 0; i < path.num_segments(); ++i) {
+    line.append(to_record(path.get(i)));
+  }
+  return line;
+}
+
+Expected<RoadId> author_clothoid_road(RoadNetwork& network,
+                                      std::span<const Waypoint> waypoints,
+                                      const LaneProfile& profile,
+                                      std::string name,
+                                      std::string odr_id) {
+  auto line = fit_clothoid_path(waypoints);
+  if (!line.has_value()) {
+    return tl::unexpected<Error>(line.error());
   }
   if (profile.left.empty() && profile.right.empty()) {
     return make_error(ErrorCode::InvalidArgument, "lane profile has no lanes");
@@ -87,26 +114,9 @@ Expected<RoadId> author_clothoid_road(RoadNetwork& network,
     return make_error(ErrorCode::InvalidArgument, "road odr_id already in use", odr_id);
   }
 
-  // G1 clothoid spline through the waypoints; angles are estimated by the
-  // library (never hand-roll Fresnel math).
-  std::vector<double> xs;
-  std::vector<double> ys;
-  xs.reserve(waypoints.size());
-  ys.reserve(waypoints.size());
-  for (const Waypoint& p : waypoints) {
-    xs.push_back(p.x);
-    ys.push_back(p.y);
-  }
-  G2lib::ClothoidList path("rm_author");
-  if (!path.build_G1(static_cast<int>(waypoints.size()), xs.data(), ys.data())) {
-    return make_error(ErrorCode::InvalidArgument, "clothoid G1 fit failed");
-  }
-
   const RoadId road_id = network.create_road(std::move(name), std::move(odr_id));
   Road& road = *network.road(road_id);
-  for (int i = 0; i < path.num_segments(); ++i) {
-    road.plan_view.append(to_record(path.get(i)));
-  }
+  road.plan_view = std::move(*line);
   road.length = road.plan_view.length();
   road.authoring_waypoints.emplace(waypoints.begin(), waypoints.end());
 
