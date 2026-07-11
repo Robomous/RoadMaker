@@ -46,6 +46,19 @@ struct LaneProfile {
 /// waypoints, or a failed spline fit.
 [[nodiscard]] RM_API Expected<ReferenceLine> fit_clothoid_path(std::span<const Waypoint> waypoints);
 
+/// Fits a G1 Hermite clothoid path: one clothoid per consecutive waypoint
+/// pair interpolating the given heading [rad] at every waypoint
+/// (headings.size() == waypoints.size()). Sampling a pure line/arc/spiral
+/// chain at its record boundaries and re-fitting with its own headings
+/// reproduces the chain (the G1 Hermite interpolant of each segment's end
+/// poses is unique) — the derivation re-fit of foreign roads (edit
+/// operations, 01 §2.5) relies on this.
+///
+/// Errors (InvalidArgument): the point-only overload's errors, or a heading
+/// count mismatch.
+[[nodiscard]] RM_API Expected<ReferenceLine> fit_clothoid_path(std::span<const Waypoint> waypoints,
+                                                               std::span<const double> headings);
+
 /// Fits a G1 clothoid path through `waypoints`, creates a road with
 /// `profile`, and inserts it into the network. The waypoints are recorded
 /// as Road::authoring_waypoints.

@@ -3,10 +3,15 @@
 #include "roadmaker/road/authoring.hpp"
 #include "roadmaker/road/network.hpp"
 #include "roadmaker/tol.hpp"
+#include "roadmaker/xodr/reader.hpp"
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <array>
+#include <cmath>
+#include <filesystem>
+#include <limits>
 #include <memory>
 #include <string>
 #include <vector>
@@ -205,6 +210,137 @@ TEST(EditOperations, FirstEditOfForeignRoadDerivesWaypoints) {
   EXPECT_EQ(network.road(road)->authoring_waypoints->size(), 3U);
   ASSERT_TRUE(command->revert(network).has_value());
   EXPECT_FALSE(network.road(road)->authoring_waypoints.has_value());
+}
+
+TEST(EditOperations, InsertWaypointOnCurvePreservesEndpoints) {
+  RoadNetwork network;
+  const RoadId road = author_default(network, "1");
+  const roadmaker::PathPoint start = network.road(road)->plan_view.evaluate(0.0);
+  const roadmaker::PathPoint end =
+      network.road(road)->plan_view.evaluate(network.road(road)->length);
+
+  // Insert ON the fitted curve, midway through the first segment — the Edit
+  // Nodes midpoint-marker flow (02 §3). Stations come from the public helper.
+  const auto stations = roadmaker::edit::waypoint_stations(*network.road(road));
+  ASSERT_TRUE(stations.has_value());
+  ASSERT_EQ(stations->size(), 3U);
+  const double mid_s = (stations->at(0) + stations->at(1)) / 2.0;
+  const roadmaker::PathPoint mid = network.road(road)->plan_view.evaluate(mid_s);
+
+  auto command =
+      roadmaker::edit::insert_waypoint(network, road, 1, Waypoint{.x = mid.x, .y = mid.y});
+  ASSERT_TRUE(command->apply(network).has_value());
+  ASSERT_EQ(roadmaker::edit::effective_waypoints(*network.road(road)).size(), 4U);
+
+  const roadmaker::ReferenceLine& line = network.road(road)->plan_view;
+  EXPECT_NEAR(line.evaluate(0.0).x, start.x, roadmaker::tol::kRoundTripPosition);
+  EXPECT_NEAR(line.evaluate(0.0).y, start.y, roadmaker::tol::kRoundTripPosition);
+  EXPECT_NEAR(line.evaluate(line.length()).x, end.x, roadmaker::tol::kRoundTripPosition);
+  EXPECT_NEAR(line.evaluate(line.length()).y, end.y, roadmaker::tol::kRoundTripPosition);
+
+  // The re-fit interpolates the inserted node at its (new) station.
+  const auto refit_stations = roadmaker::edit::waypoint_stations(*network.road(road));
+  ASSERT_TRUE(refit_stations.has_value());
+  ASSERT_EQ(refit_stations->size(), 4U);
+  EXPECT_NEAR(line.evaluate(refit_stations->at(1)).x, mid.x, roadmaker::tol::kRoundTripPosition);
+  EXPECT_NEAR(line.evaluate(refit_stations->at(1)).y, mid.y, roadmaker::tol::kRoundTripPosition);
+}
+
+TEST(EditOperations, ForeignRoadEditGoldenCurvedRoad) {
+  // The issue #10 golden: load the line→spiral→arc→spiral fixture (no
+  // rm:waypoints), edit a node, save — derived-waypoint re-fit and the
+  // written file stay within tolerance of the original geometry.
+  auto loaded = roadmaker::load_xodr(std::filesystem::path(RM_SAMPLES_DIR) / "curved_road.xodr");
+  ASSERT_TRUE(loaded.has_value());
+  RoadNetwork& network = loaded->network;
+  const RoadId road = network.find_road("1");
+  ASSERT_TRUE(network.road(road) != nullptr);
+  ASSERT_FALSE(network.road(road)->authoring_waypoints.has_value());
+
+  // Dense sample of the original curve, the deviation oracle below. The
+  // polyline chord error (~2.5e-5 m sagitta at this density on the R=20 arc)
+  // stays below the tolerance the oracle asserts.
+  const roadmaker::ReferenceLine original = network.road(road)->plan_view;
+  const double original_length = original.length();
+  constexpr int kGoldenSamples = 1600;
+  constexpr int kSamples = 400;
+  std::vector<roadmaker::PathPoint> golden;
+  golden.reserve(kGoldenSamples + 1);
+  for (int i = 0; i <= kGoldenSamples; ++i) {
+    golden.push_back(original.evaluate(original_length * i / kGoldenSamples));
+  }
+
+  // Derived nodes: 4 record starts + endpoint. Insert an on-curve node in
+  // the middle of the arc segment, then apply — the first edit derives
+  // waypoints and re-fits the whole chain.
+  const std::vector<Waypoint> nodes = roadmaker::edit::effective_waypoints(*network.road(road));
+  ASSERT_EQ(nodes.size(), 5U);
+  const auto stations = roadmaker::edit::waypoint_stations(*network.road(road));
+  ASSERT_TRUE(stations.has_value());
+  const double arc_mid_s = (stations->at(2) + stations->at(3)) / 2.0;
+  const roadmaker::PathPoint arc_mid = original.evaluate(arc_mid_s);
+  auto command =
+      roadmaker::edit::insert_waypoint(network, road, 3, Waypoint{.x = arc_mid.x, .y = arc_mid.y});
+  expect_command_round_trip(network, *command);
+  ASSERT_TRUE(command->apply(network).has_value());
+  ASSERT_EQ(network.road(road)->authoring_waypoints->size(), 6U);
+
+  // Every pre-edit node (all of them points of the original curve) is still
+  // interpolated, endpoints included.
+  const roadmaker::ReferenceLine& refit = network.road(road)->plan_view;
+  const auto refit_stations = roadmaker::edit::waypoint_stations(*network.road(road));
+  ASSERT_TRUE(refit_stations.has_value());
+  for (std::size_t i = 0; i < network.road(road)->authoring_waypoints->size(); ++i) {
+    SCOPED_TRACE("node " + std::to_string(i));
+    const Waypoint& node = network.road(road)->authoring_waypoints->at(i);
+    const roadmaker::PathPoint fitted = refit.evaluate(refit_stations->at(i));
+    EXPECT_NEAR(fitted.x, node.x, roadmaker::tol::kRoundTripPosition);
+    EXPECT_NEAR(fitted.y, node.y, roadmaker::tol::kRoundTripPosition);
+  }
+
+  // Shape fidelity, the 01 §2.5 promise: the derivation re-fit interpolates
+  // the chain's headings (G1 Hermite), so this pure line/spiral/arc/spiral
+  // chain — edited with an on-curve node — is reproduced within rm::tol.
+  constexpr double kGoldenShapeTolerance = roadmaker::tol::kRoundTripPosition;
+  const double refit_length = refit.length();
+  EXPECT_NEAR(refit_length, original_length, roadmaker::tol::kRoundTripPosition);
+  const auto distance_to_golden = [&golden](const roadmaker::PathPoint& p) {
+    double nearest = std::numeric_limits<double>::max();
+    for (std::size_t i = 0; i + 1 < golden.size(); ++i) {
+      const double ax = golden[i].x;
+      const double ay = golden[i].y;
+      const double bx = golden[i + 1].x - ax;
+      const double by = golden[i + 1].y - ay;
+      const double t =
+          std::clamp(((p.x - ax) * bx + (p.y - ay) * by) / (bx * bx + by * by), 0.0, 1.0);
+      nearest = std::min(nearest, std::hypot(p.x - (ax + t * bx), p.y - (ay + t * by)));
+    }
+    return nearest;
+  };
+  double max_deviation = 0.0;
+  for (int i = 0; i <= kSamples; ++i) {
+    max_deviation =
+        std::max(max_deviation, distance_to_golden(refit.evaluate(refit_length * i / kSamples)));
+  }
+  EXPECT_LT(max_deviation, kGoldenShapeTolerance);
+
+  // Save → reload: the written file (now carrying rm:waypoints) parses back
+  // to the same geometry.
+  const std::string written = snapshot_xodr(network);
+  auto reparsed = roadmaker::parse_xodr(written);
+  ASSERT_TRUE(reparsed.has_value());
+  const RoadId road2 = reparsed->network.find_road("1");
+  ASSERT_TRUE(reparsed->network.road(road2) != nullptr);
+  ASSERT_TRUE(reparsed->network.road(road2)->authoring_waypoints.has_value());
+  EXPECT_EQ(reparsed->network.road(road2)->authoring_waypoints->size(), 6U);
+  const roadmaker::ReferenceLine& reread = reparsed->network.road(road2)->plan_view;
+  ASSERT_NEAR(reread.length(), refit_length, roadmaker::tol::kRoundTripPosition);
+  for (int i = 0; i <= kSamples; ++i) {
+    const double s = refit_length * i / kSamples;
+    SCOPED_TRACE("station " + std::to_string(s));
+    EXPECT_NEAR(reread.evaluate(s).x, refit.evaluate(s).x, roadmaker::tol::kRoundTripPosition);
+    EXPECT_NEAR(reread.evaluate(s).y, refit.evaluate(s).y, roadmaker::tol::kRoundTripPosition);
+  }
 }
 
 // --- elevation ------------------------------------------------------------------

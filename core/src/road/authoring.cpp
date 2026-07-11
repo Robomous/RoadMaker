@@ -47,9 +47,9 @@ GeometryRecord to_record(const G2lib::ClothoidCurve& segment) {
   return record;
 }
 
-} // namespace
-
-Expected<ReferenceLine> fit_clothoid_path(std::span<const Waypoint> waypoints) {
+/// Shared front half of both fit overloads: validation + coordinate split.
+Expected<std::pair<std::vector<double>, std::vector<double>>>
+waypoint_coordinates(std::span<const Waypoint> waypoints) {
   if (waypoints.size() < 2) {
     return make_error(ErrorCode::InvalidArgument, "need at least 2 waypoints");
   }
@@ -61,9 +61,6 @@ Expected<ReferenceLine> fit_clothoid_path(std::span<const Waypoint> waypoints) {
           ErrorCode::InvalidArgument, "coincident consecutive waypoints", std::to_string(i));
     }
   }
-
-  // G1 clothoid spline through the waypoints; angles are estimated by the
-  // library (never hand-roll Fresnel math).
   std::vector<double> xs;
   std::vector<double> ys;
   xs.reserve(waypoints.size());
@@ -72,15 +69,51 @@ Expected<ReferenceLine> fit_clothoid_path(std::span<const Waypoint> waypoints) {
     xs.push_back(p.x);
     ys.push_back(p.y);
   }
-  G2lib::ClothoidList path("rm_author");
-  if (!path.build_G1(static_cast<int>(waypoints.size()), xs.data(), ys.data())) {
-    return make_error(ErrorCode::InvalidArgument, "clothoid G1 fit failed");
-  }
+  return std::pair{std::move(xs), std::move(ys)};
+}
+
+ReferenceLine to_reference_line(const G2lib::ClothoidList& path) {
   ReferenceLine line;
   for (int i = 0; i < path.num_segments(); ++i) {
     line.append(to_record(path.get(i)));
   }
   return line;
+}
+
+} // namespace
+
+Expected<ReferenceLine> fit_clothoid_path(std::span<const Waypoint> waypoints) {
+  auto coordinates = waypoint_coordinates(waypoints);
+  if (!coordinates.has_value()) {
+    return tl::unexpected<Error>(coordinates.error());
+  }
+  const auto& [xs, ys] = *coordinates;
+
+  // G1 clothoid spline through the waypoints; angles are estimated by the
+  // library (never hand-roll Fresnel math).
+  G2lib::ClothoidList path("rm_author");
+  if (!path.build_G1(static_cast<int>(waypoints.size()), xs.data(), ys.data())) {
+    return make_error(ErrorCode::InvalidArgument, "clothoid G1 fit failed");
+  }
+  return to_reference_line(path);
+}
+
+Expected<ReferenceLine> fit_clothoid_path(std::span<const Waypoint> waypoints,
+                                          std::span<const double> headings) {
+  if (headings.size() != waypoints.size()) {
+    return make_error(ErrorCode::InvalidArgument, "one heading per waypoint required");
+  }
+  auto coordinates = waypoint_coordinates(waypoints);
+  if (!coordinates.has_value()) {
+    return tl::unexpected<Error>(coordinates.error());
+  }
+  const auto& [xs, ys] = *coordinates;
+
+  G2lib::ClothoidList path("rm_author");
+  if (!path.build_G1(static_cast<int>(waypoints.size()), xs.data(), ys.data(), headings.data())) {
+    return make_error(ErrorCode::InvalidArgument, "clothoid G1 Hermite fit failed");
+  }
+  return to_reference_line(path);
 }
 
 Expected<RoadId> author_clothoid_road(RoadNetwork& network,
