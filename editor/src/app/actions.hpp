@@ -36,8 +36,16 @@ public:
   /// join the group in later M2 phases).
   QActionGroup* tool_group = nullptr;
   QAction* tool_select = nullptr;
+  QAction* tool_create_road = nullptr;
   QAction* tool_edit_nodes = nullptr;
   QAction* tool_delete = nullptr;
+
+  /// Create Road cross-section templates (exclusive, one always checked);
+  /// the toolbar presents them as a dropdown next to the tool button.
+  QActionGroup* template_group = nullptr;
+  QAction* template_rural = nullptr;
+  QAction* template_urban = nullptr;
+  QAction* template_highway = nullptr;
 
   QAction* reset_camera = nullptr;
   QAction* frame_selection = nullptr;

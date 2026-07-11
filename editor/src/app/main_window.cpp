@@ -8,17 +8,20 @@
 #include <QDropEvent>
 #include <QFileDialog>
 #include <QFileInfo>
+#include <QMenu>
 #include <QMenuBar>
 #include <QMessageBox>
 #include <QMimeData>
 #include <QStatusBar>
 #include <QToolBar>
+#include <QToolButton>
 #include <QUrl>
 
 #include "app/icons.hpp"
 #include "panels/diagnostics_panel.hpp"
 #include "panels/properties_panel.hpp"
 #include "panels/scene_tree_panel.hpp"
+#include "tools/create_road_tool.hpp"
 #include "tools/delete_tool.hpp"
 #include "tools/edit_nodes_tool.hpp"
 #include "tools/select_tool.hpp"
@@ -73,6 +76,31 @@ MainWindow::MainWindow(QWidget* parent)
   tool_manager_.register_tool(ToolId::Select, std::move(select_tool));
   connect(actions_->tool_select, &QAction::triggered, this, [this] {
     tool_manager_.set_active(ToolId::Select);
+  });
+  auto create_road_tool = std::make_unique<CreateRoadTool>(document_);
+  create_road_tool_ = create_road_tool.get();
+  connect(create_road_tool.get(), &Tool::status_message, this, [this](const QString& text) {
+    statusBar()->showMessage(text, 5000);
+  });
+  tool_manager_.register_tool(ToolId::CreateRoad, std::move(create_road_tool));
+  connect(actions_->tool_create_road, &QAction::triggered, this, [this] {
+    tool_manager_.set_active(ToolId::CreateRoad);
+  });
+  // Picking a template arms the Create Road tool with it and switches to
+  // the tool — choosing a cross section IS the intent to draw one.
+  const auto arm_template = [this](const LaneProfile& profile) {
+    create_road_tool_->set_profile(profile);
+    actions_->tool_create_road->setChecked(true);
+    tool_manager_.set_active(ToolId::CreateRoad);
+  };
+  connect(actions_->template_rural, &QAction::triggered, this, [arm_template] {
+    arm_template(LaneProfile::two_lane_rural());
+  });
+  connect(actions_->template_urban, &QAction::triggered, this, [arm_template] {
+    arm_template(LaneProfile::urban_sidewalk());
+  });
+  connect(actions_->template_highway, &QAction::triggered, this, [arm_template] {
+    arm_template(LaneProfile::highway());
   });
   auto edit_nodes_tool = std::make_unique<EditNodesTool>(document_, selection_);
   connect(edit_nodes_tool.get(), &Tool::status_message, this, [this](const QString& text) {
@@ -171,6 +199,23 @@ void MainWindow::build_toolbar() {
   toolbar->addAction(actions_->export_glb);
   toolbar->addSeparator();
   toolbar->addAction(actions_->tool_select);
+  toolbar->addAction(actions_->tool_create_road);
+  // Template dropdown (02 §2): an instant-popup button whose icon mirrors
+  // the checked template.
+  auto* template_button = new QToolButton(toolbar);
+  template_button->setPopupMode(QToolButton::InstantPopup);
+  template_button->setToolTip(tr("Road template for the Create Road tool"));
+  auto* template_menu = new QMenu(template_button);
+  template_menu->addAction(actions_->template_rural);
+  template_menu->addAction(actions_->template_urban);
+  template_menu->addAction(actions_->template_highway);
+  template_button->setMenu(template_menu);
+  template_button->setIcon(actions_->template_group->checkedAction()->icon());
+  connect(actions_->template_group,
+          &QActionGroup::triggered,
+          template_button,
+          [template_button](QAction* action) { template_button->setIcon(action->icon()); });
+  toolbar->addWidget(template_button);
   toolbar->addAction(actions_->tool_edit_nodes);
   toolbar->addAction(actions_->tool_delete);
   toolbar->addSeparator();

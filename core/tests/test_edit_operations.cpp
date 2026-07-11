@@ -13,6 +13,7 @@
 #include <filesystem>
 #include <limits>
 #include <memory>
+#include <numbers>
 #include <string>
 #include <vector>
 
@@ -395,6 +396,45 @@ TEST(EditOperations, CreateRoadRejectsDegenerateWaypoints) {
       roadmaker::edit::create_road({Waypoint{.x = 1.0, .y = 1.0}, Waypoint{.x = 1.0, .y = 1.0}},
                                    LaneProfile::two_lane_default(),
                                    ""));
+}
+
+TEST(EditOperations, CreateRoadAutoNamesFromTheAssignedOdrId) {
+  RoadNetwork network;
+  author_default(network, "1");
+
+  auto command =
+      roadmaker::edit::create_road({Waypoint{.x = 0.0, .y = 50.0}, Waypoint{.x = 80.0, .y = 60.0}},
+                                   LaneProfile::two_lane_rural(),
+                                   "");
+  ASSERT_TRUE(command->apply(network).has_value());
+  const RoadId created = network.find_road("2");
+  ASSERT_TRUE(created.is_valid());
+  EXPECT_EQ(network.road(created)->name, "Road 2");
+}
+
+// The Create Road tangent-snap chain (02 §2): locking the new road's start
+// heading to the snapped road's continuation heading joins the two G1.
+TEST(EditOperations, CreateRoadLockedStartHeadingChainsG1) {
+  RoadNetwork network;
+  const RoadId first = author_default(network, "1");
+  const roadmaker::Road& source = *network.road(first);
+  const auto end = source.plan_view.evaluate(source.plan_view.length());
+
+  auto command = roadmaker::edit::create_road(
+      {Waypoint{.x = end.x, .y = end.y}, Waypoint{.x = end.x + 70.0, .y = end.y - 25.0}},
+      LaneProfile::two_lane_rural(),
+      "Chained",
+      {.start = end.hdg});
+  expect_command_round_trip(network, *command);
+
+  ASSERT_TRUE(command->apply(network).has_value());
+  const RoadId chained = network.find_road("2");
+  ASSERT_TRUE(chained.is_valid());
+  const auto start = network.road(chained)->plan_view.evaluate(0.0);
+  EXPECT_NEAR(start.x, end.x, roadmaker::tol::kRoundTripPosition);
+  EXPECT_NEAR(start.y, end.y, roadmaker::tol::kRoundTripPosition);
+  EXPECT_NEAR(
+      std::remainder(start.hdg - end.hdg, 2.0 * std::numbers::pi), 0.0, roadmaker::tol::kAngle);
 }
 
 TEST(EditOperations, DeleteRoadDetachesAndUndoResurrectsOriginalIds) {

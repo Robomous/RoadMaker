@@ -13,13 +13,42 @@
 
 namespace roadmaker {
 
-LaneProfile LaneProfile::two_lane_default() {
+LaneProfile LaneProfile::two_lane_rural() {
   return LaneProfile{
       .left = {LaneSpec{.type = LaneType::Driving, .width = 3.5, .outer_marking = true}},
       .right = {LaneSpec{.type = LaneType::Driving, .width = 3.5, .outer_marking = true},
                 LaneSpec{.type = LaneType::Shoulder, .width = 1.0}},
       .center_marking = true,
   };
+}
+
+LaneProfile LaneProfile::urban_sidewalk() {
+  return LaneProfile{
+      .left = {LaneSpec{.type = LaneType::Driving, .width = 3.5, .outer_marking = true},
+               LaneSpec{.type = LaneType::Sidewalk, .width = 2.0}},
+      .right = {LaneSpec{.type = LaneType::Driving, .width = 3.5, .outer_marking = true},
+                LaneSpec{.type = LaneType::Sidewalk, .width = 2.0}},
+      .center_marking = true,
+  };
+}
+
+LaneProfile LaneProfile::highway() {
+  // The inner driving lane has no outer_marking: LaneSpec only paints solid
+  // lines, and the lane-to-lane divider would be broken. Lane dividers
+  // beyond the M2 profile model land with the Lane Profile editor.
+  return LaneProfile{
+      .left = {LaneSpec{.type = LaneType::Driving, .width = 3.75},
+               LaneSpec{.type = LaneType::Driving, .width = 3.75, .outer_marking = true},
+               LaneSpec{.type = LaneType::Shoulder, .width = 2.5}},
+      .right = {LaneSpec{.type = LaneType::Driving, .width = 3.75},
+                LaneSpec{.type = LaneType::Driving, .width = 3.75, .outer_marking = true},
+                LaneSpec{.type = LaneType::Shoulder, .width = 2.5}},
+      .center_marking = false,
+  };
+}
+
+LaneProfile LaneProfile::two_lane_default() {
+  return two_lane_rural();
 }
 
 namespace {
@@ -116,12 +145,36 @@ Expected<ReferenceLine> fit_clothoid_path(std::span<const Waypoint> waypoints,
   return to_reference_line(path);
 }
 
+Expected<ReferenceLine> fit_clothoid_path(std::span<const Waypoint> waypoints,
+                                          const EndpointHeadings& locked) {
+  auto estimated = fit_clothoid_path(waypoints);
+  if (!estimated.has_value() || (!locked.start.has_value() && !locked.end.has_value())) {
+    return estimated;
+  }
+  // The point-only fit yields one clothoid per waypoint pair, so record
+  // starts plus the path end line up with the waypoints one-to-one.
+  std::vector<double> headings;
+  headings.reserve(waypoints.size());
+  for (const GeometryRecord& record : estimated->records()) {
+    headings.push_back(record.hdg);
+  }
+  headings.push_back(estimated->evaluate(estimated->length()).hdg);
+  if (locked.start.has_value()) {
+    headings.front() = *locked.start;
+  }
+  if (locked.end.has_value()) {
+    headings.back() = *locked.end;
+  }
+  return fit_clothoid_path(waypoints, headings);
+}
+
 Expected<RoadId> author_clothoid_road(RoadNetwork& network,
                                       std::span<const Waypoint> waypoints,
                                       const LaneProfile& profile,
                                       std::string name,
-                                      std::string odr_id) {
-  auto line = fit_clothoid_path(waypoints);
+                                      std::string odr_id,
+                                      const EndpointHeadings& locked) {
+  auto line = fit_clothoid_path(waypoints, locked);
   if (!line.has_value()) {
     return tl::unexpected<Error>(line.error());
   }

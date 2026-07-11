@@ -44,9 +44,10 @@ struct SnapResult {
   Waypoint position;
 
   /// Continuation heading [rad], pointing AWAY from the source road — the
-  /// start heading a chained road needs for G1 continuity. Set only for
-  /// TangentContinuation: equal to evaluate(length).hdg at a road's end,
-  /// and to that heading plus pi (wrapped to [-pi, pi]) at its start.
+  /// start heading a chained road needs for G1 continuity. Set for
+  /// RoadEndpoint and TangentContinuation: equal to evaluate(length).hdg at
+  /// a road's end, and to that heading plus pi (wrapped to [-pi, pi]) at
+  /// its start. Grid snaps carry no heading.
   std::optional<double> heading;
 
   SnapKind kind = SnapKind::Grid;

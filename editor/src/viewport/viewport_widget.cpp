@@ -267,6 +267,14 @@ void ViewportWidget::mouseReleaseEvent(QMouseEvent* event) {
   event->accept();
 }
 
+void ViewportWidget::mouseDoubleClickEvent(QMouseEvent* event) {
+  if (Tool* tool = tools_.active(); tool != nullptr && event->button() == Qt::LeftButton &&
+                                    tool->mouse_double_click(make_tool_event(event))) {
+    update();
+  }
+  event->accept();
+}
+
 void ViewportWidget::keyPressEvent(QKeyEvent* event) {
   if (Tool* tool = tools_.active();
       tool != nullptr && tool->key_press(event->key(), event->modifiers())) {
