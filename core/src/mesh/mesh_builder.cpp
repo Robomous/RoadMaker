@@ -3,8 +3,6 @@
 #include "roadmaker/geometry/poly3.hpp"
 #include "roadmaker/tol.hpp"
 
-#include <CDT.h>
-#include <clipper2/clipper.h>
 #include <fmt/format.h>
 
 #include <algorithm>
@@ -14,127 +12,26 @@
 #include <utility>
 #include <vector>
 
+#include "junction_surface.hpp"
+#include "mesh_detail.hpp"
+
 namespace roadmaker {
 
 namespace {
+
+using mesh_detail::boundary_offsets;
+using mesh_detail::lateral_point;
+using mesh_detail::make_frame;
+using mesh_detail::mandatory_stations;
+using mesh_detail::StationFrame;
+using mesh_detail::surface_normal;
 
 // M1 marking pattern for RoadMarkType::Broken: 3 m dash / 6 m gap.
 constexpr double kDashLength = 3.0;
 constexpr double kDashCycle = 9.0;
 
-// Lift markings and drop junction floors slightly to avoid z-fighting.
+// Lift markings slightly above the surface to avoid z-fighting.
 constexpr double kMarkingLift = 0.002;
-constexpr double kFloorDrop = 0.02;
-
-/// Vertical profile values of one road at a station.
-struct StationFrame {
-  double x, y, z;
-  double cos_h, sin_h;
-  double cos_r, sin_r; // superelevation roll
-};
-
-StationFrame make_frame(const Road& road, double s) {
-  const PathPoint pose = road.plan_view.evaluate(s);
-  const double roll = eval_profile(road.superelevation, s);
-  return StationFrame{
-      .x = pose.x,
-      .y = pose.y,
-      .z = eval_profile(road.elevation, s),
-      .cos_h = std::cos(pose.hdg),
-      .sin_h = std::sin(pose.hdg),
-      .cos_r = std::cos(roll),
-      .sin_r = std::sin(roll),
-  };
-}
-
-/// Point at lateral offset t (positive = left) from the reference line,
-/// with superelevation applied as a roll about the (planar) tangent.
-/// M1 approximation: the tangent's dz/ds tilt is ignored in the lateral
-/// direction — documented seam for M2.
-std::array<double, 3> lateral_point(const StationFrame& f, double t) {
-  return {
-      f.x - (t * f.sin_h * f.cos_r),
-      f.y + (t * f.cos_h * f.cos_r),
-      f.z + (t * f.sin_r),
-  };
-}
-
-/// Surface normal at a station (independent of t in this approximation):
-/// normal = cos(roll)·ẑ − sin(roll)·N̂ with N̂ the leftward lateral.
-std::array<double, 3> surface_normal(const StationFrame& f) {
-  return {f.sin_r * f.sin_h, -f.sin_r * f.cos_h, f.cos_r};
-}
-
-/// Lateral boundary offsets (leftmost first) of a section at station s.
-/// Boundary count = lanes-left-of-center + lanes-right-of-center + 1; the
-/// center boundary sits at laneOffset(s).
-std::vector<double> boundary_offsets(const RoadNetwork& network,
-                                     const Road& road,
-                                     const LaneSection& section,
-                                     double s) {
-  const double ds = s - section.s0;
-  const double center = eval_profile(road.lane_offset, s);
-
-  std::vector<double> left; // innermost -> outermost
-  std::vector<double> right;
-  for (const LaneId lane_id : section.lanes) {
-    const Lane& lane = *network.lane(lane_id);
-    if (lane.odr_id == 0) {
-      continue;
-    }
-    const double width = std::max(0.0, eval_profile(lane.widths, ds));
-    if (lane.odr_id > 0) {
-      left.push_back(width);
-    } else {
-      right.push_back(width);
-    }
-  }
-  // section.lanes is sorted leftmost-first, so `left` was collected
-  // outermost-first; accumulate from the center outwards.
-  std::vector<double> offsets;
-  offsets.reserve(left.size() + right.size() + 1);
-
-  double t = center;
-  std::vector<double> left_out(left.size());
-  for (std::size_t i = left.size(); i-- > 0;) { // innermost (+1) first
-    t += left[i];
-    left_out[i] = t;
-  }
-  offsets.insert(offsets.end(), left_out.begin(), left_out.end());
-  offsets.push_back(center);
-  t = center;
-  for (const double width : right) {
-    t -= width;
-    offsets.push_back(t);
-  }
-  return offsets;
-}
-
-/// Stations every profile of this road must sample (record joints are added
-/// by sample_stations itself).
-std::vector<double> mandatory_stations(const RoadNetwork& network, const Road& road) {
-  std::vector<double> stations;
-  auto add_knots = [&stations](const std::vector<Poly3>& profile, double base) {
-    for (const Poly3& poly : profile) {
-      stations.push_back(base + poly.s);
-    }
-  };
-  add_knots(road.lane_offset, 0.0);
-  add_knots(road.elevation, 0.0);
-  add_knots(road.superelevation, 0.0);
-  for (const LaneSectionId section_id : road.sections) {
-    const LaneSection& section = *network.lane_section(section_id);
-    stations.push_back(section.s0);
-    for (const LaneId lane_id : section.lanes) {
-      const Lane& lane = *network.lane(lane_id);
-      add_knots(lane.widths, section.s0);
-      for (const RoadMark& mark : lane.road_marks) {
-        stations.push_back(section.s0 + mark.s_offset);
-      }
-    }
-  }
-  return stations;
-}
 
 /// The outer boundary offset of a lane (its t at the edge away from the
 /// reference line) — where its marking is painted.
@@ -362,107 +259,15 @@ RoadMesh build_one_road(const RoadNetwork& network,
   return mesh;
 }
 
-/// Plan-view footprint of a road: left boundary forward, right boundary
-/// reversed, as a closed Clipper2 path.
-Clipper2Lib::PathD road_footprint(const RoadNetwork& network, const Road& road) {
-  SamplingOptions sampling;
-  sampling.extra_stations = mandatory_stations(network, road);
-  const std::vector<double> stations = sample_stations(road.plan_view, sampling);
-
-  Clipper2Lib::PathD path;
-  auto section_at = [&](double s) -> const LaneSection& {
-    const LaneSection* result = network.lane_section(road.sections.front());
-    for (const LaneSectionId id : road.sections) {
-      const LaneSection& section = *network.lane_section(id);
-      if (section.s0 <= s + tol::kLength) {
-        result = &section;
-      }
-    }
-    return *result;
-  };
-
-  for (const double s : stations) {
-    const StationFrame frame = make_frame(road, s);
-    const auto offsets = boundary_offsets(network, road, section_at(s), s);
-    const auto p = lateral_point(frame, offsets.front());
-    path.emplace_back(p[0], p[1]);
-  }
-  for (auto it = stations.rbegin(); it != stations.rend(); ++it) {
-    const StationFrame frame = make_frame(road, *it);
-    const auto offsets = boundary_offsets(network, road, section_at(*it), *it);
-    const auto p = lateral_point(frame, offsets.back());
-    path.emplace_back(p[0], p[1]);
-  }
-  return path;
-}
-
-/// One junction's floor; empty mesh (no indices) when the junction has no
-/// usable connecting-road footprints — callers drop empty results.
+/// One junction's blended 3D surface, keyed by id; empty mesh (no indices)
+/// when the junction has no usable connecting-road footprints — callers drop
+/// empty results. The pipeline itself lives in junction_surface.cpp.
 JunctionFloor build_one_junction_floor(const RoadNetwork& network,
                                        JunctionId junction_id,
-                                       const Junction& junction) {
-  JunctionFloor result{.junction = junction_id, .mesh = {}};
-  // Union of the connecting roads' plan-view footprints.
-  Clipper2Lib::PathsD footprints;
-  double z_sum = 0.0;
-  std::size_t z_count = 0;
-  network.for_each_road([&](RoadId, const Road& road) {
-    if (road.junction != junction_id) {
-      return;
-    }
-    if (road.plan_view.empty() || road.sections.empty()) {
-      return;
-    }
-    footprints.push_back(road_footprint(network, road));
-    z_sum += eval_profile(road.elevation, 0.0);
-    ++z_count;
-  });
-  if (footprints.empty()) {
-    return result;
-  }
-  const double floor_z = (z_count > 0 ? z_sum / static_cast<double>(z_count) : 0.0) - kFloorDrop;
-
-  const Clipper2Lib::PathsD merged = Clipper2Lib::Union(footprints, Clipper2Lib::FillRule::NonZero);
-  if (merged.empty()) {
-    return result;
-  }
-
-  // Constrained triangulation of the merged outline(s).
-  CDT::Triangulation<double> cdt;
-  std::vector<CDT::V2d<double>> vertices;
-  std::vector<CDT::Edge> edges;
-  for (const Clipper2Lib::PathD& path : merged) {
-    const std::size_t first = vertices.size();
-    for (const Clipper2Lib::PointD& point : path) {
-      vertices.push_back(CDT::V2d<double>{point.x, point.y});
-    }
-    for (std::size_t i = first; i < vertices.size(); ++i) {
-      const std::size_t next = (i + 1 < vertices.size()) ? i + 1 : first;
-      edges.emplace_back(static_cast<CDT::VertInd>(i), static_cast<CDT::VertInd>(next));
-    }
-  }
-  CDT::RemoveDuplicatesAndRemapEdges(vertices, edges);
-  cdt.insertVertices(vertices);
-  cdt.insertEdges(edges);
-  cdt.eraseOuterTrianglesAndHoles();
-  if (cdt.triangles.empty()) {
-    return result;
-  }
-
-  SubMesh& floor = result.mesh;
-  floor.material = LaneType::None;
-  floor.name = fmt::format("junction {} floor", junction.odr_id);
-  floor.positions.reserve(cdt.vertices.size() * 3);
-  for (const auto& vertex : cdt.vertices) {
-    floor.positions.insert(floor.positions.end(), {vertex.x, vertex.y, floor_z});
-    floor.normals.insert(floor.normals.end(), {0.0, 0.0, 1.0});
-  }
-  for (const auto& triangle : cdt.triangles) {
-    // CDT emits CCW triangles; keep them CCW viewed from +Z.
-    floor.indices.insert(floor.indices.end(),
-                         {triangle.vertices[0], triangle.vertices[1], triangle.vertices[2]});
-  }
-  return result;
+                                       const Junction& junction,
+                                       const SamplingOptions& sampling) {
+  return JunctionFloor{.junction = junction_id,
+                       .mesh = build_junction_surface(network, junction, sampling)};
 }
 
 bool road_mesh_is_empty(const RoadMesh& mesh) {
@@ -481,7 +286,8 @@ NetworkMesh build_network_mesh(const RoadNetwork& network, const MeshOptions& op
   });
   if (options.junction_floors) {
     network.for_each_junction([&](JunctionId junction_id, const Junction& junction) {
-      JunctionFloor floor = build_one_junction_floor(network, junction_id, junction);
+      JunctionFloor floor =
+          build_one_junction_floor(network, junction_id, junction, options.sampling);
       if (!floor.mesh.indices.empty()) {
         result.junction_floors.push_back(std::move(floor));
       }
@@ -523,9 +329,10 @@ void remesh_junctions(const RoadNetwork& network,
     const auto existing =
         std::ranges::find(mesh.junction_floors, junction_id, &JunctionFloor::junction);
     const Junction* junction = options.junction_floors ? network.junction(junction_id) : nullptr;
-    JunctionFloor rebuilt = junction != nullptr
-                                ? build_one_junction_floor(network, junction_id, *junction)
-                                : JunctionFloor{.junction = junction_id, .mesh = {}};
+    JunctionFloor rebuilt =
+        junction != nullptr
+            ? build_one_junction_floor(network, junction_id, *junction, options.sampling)
+            : JunctionFloor{.junction = junction_id, .mesh = {}};
     if (rebuilt.mesh.indices.empty()) {
       if (existing != mesh.junction_floors.end()) {
         mesh.junction_floors.erase(existing);
