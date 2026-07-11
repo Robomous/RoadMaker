@@ -3,6 +3,12 @@
 *Scope sketch for M3a. A seed, not a design: the full design docs are
 written when M3a's own planning task runs, after M2 ships.*
 
+> **Planning pass done (2026-07-11).** M2 shipped (v0.3.0); the frozen M3a
+> design now lives in [docs/design/m3a/](../../design/m3a/00_overview.md)
+> (overview → kernel objects/signals → road marks → assets → render →
+> editor/docs). This seed remains the scope sketch and decision record; the
+> design docs are the implementation source of truth.
+
 - **Theme:** authored scenes look and validate like real road scenes.
 - **Golden scene:** [GS-1 "Urban intersection"](../golden_scenes/gs1_urban_intersection.md)
 - **Release target:** v0.4.0
