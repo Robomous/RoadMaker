@@ -4,8 +4,11 @@
 #include <QSurfaceFormat>
 #include <cstdio>
 #include <cstring>
+#include <filesystem>
 #include <string>
 
+#include "app/crash_handler.hpp"
+#include "app/log_setup.hpp"
 #include "app/main_window.hpp"
 
 int main(int argc, char** argv) {
@@ -18,6 +21,18 @@ int main(int argc, char** argv) {
     }
   }
 
+  // Org/app names first: QStandardPaths derives the log and crash-report
+  // locations from them, and crash capture must cover the WHOLE session —
+  // including QApplication construction (the name setters are static, so
+  // they work before the instance exists).
+  QCoreApplication::setOrganizationName(QStringLiteral("Robomous"));
+  QCoreApplication::setApplicationName(QStringLiteral("RoadMaker"));
+  const QString session = roadmaker::editor::logging::make_session_id();
+  const std::filesystem::path log_file =
+      roadmaker::editor::logging::init(roadmaker::editor::logging::default_log_dir(), session);
+  roadmaker::editor::crash::install(
+      roadmaker::editor::crash::default_report_dir(), log_file, session);
+
   // 3.3 core profile must be the app-wide default BEFORE QApplication —
   // macOS creates legacy 2.1 contexts otherwise.
   QSurfaceFormat format;
@@ -27,8 +42,6 @@ int main(int argc, char** argv) {
   QSurfaceFormat::setDefaultFormat(format);
 
   QApplication app(argc, argv);
-  QCoreApplication::setOrganizationName(QStringLiteral("Robomous"));
-  QCoreApplication::setApplicationName(QStringLiteral("RoadMaker"));
   QCoreApplication::setApplicationVersion(QString::fromUtf8(
       roadmaker::version().data(), static_cast<qsizetype>(roadmaker::version().size())));
 

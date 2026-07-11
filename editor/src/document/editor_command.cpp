@@ -38,6 +38,7 @@ void KernelEditorCommand::apply() {
     spdlog::error("redo '{}' failed: {}", command_->name(), applied.error().message);
     return;
   }
+  spdlog::info("redo: {}", command_->name());
   document_.after_kernel_mutation(command_->dirty());
 }
 
@@ -46,6 +47,7 @@ void KernelEditorCommand::revert() {
     spdlog::error("undo '{}' failed: {}", command_->name(), reverted.error().message);
     return;
   }
+  spdlog::info("undo: {}", command_->name());
   document_.after_kernel_mutation(command_->dirty());
 }
 

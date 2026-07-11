@@ -8,6 +8,7 @@ add_executable(roadmaker_editor_tests
   qt_gtest_main.cpp
   test_autosave.cpp
   test_camera.cpp
+  test_crash_handler.cpp
   test_create_junction_tool.cpp
   test_create_road_tool.cpp
   test_delete_tool.cpp

@@ -17,6 +17,27 @@
 
 namespace roadmaker::editor {
 
+namespace {
+
+// The crash-report command trail (#84): every executed command logs its name
+// plus the dirty-set parameters, so a report's session log reconstructs what
+// the user did. Kernel commands expose no richer parameter view than the
+// dirty set — ids are arena indices, stable within a session.
+std::string describe_dirty(const edit::DirtySet& dirty) {
+  std::string text = "roads=[";
+  for (std::size_t i = 0; i < dirty.roads.size(); ++i) {
+    text += (i == 0 ? "" : ",") + std::to_string(dirty.roads[i].index);
+  }
+  text += "] junctions=[";
+  for (std::size_t i = 0; i < dirty.junctions.size(); ++i) {
+    text += (i == 0 ? "" : ",") + std::to_string(dirty.junctions[i].index);
+  }
+  text += dirty.topology ? "] topology" : "]";
+  return text;
+}
+
+} // namespace
+
 Document::Document(QObject* parent) : QObject(parent) {}
 
 Expected<void> Document::load(const std::filesystem::path& path) {
@@ -140,6 +161,7 @@ Expected<void> Document::push_command(std::unique_ptr<edit::Command> command) {
 void Document::push_applied_with_regeneration(std::unique_ptr<edit::Command> command,
                                               bool already_meshed) {
   edit::DirtySet dirty = command->dirty();
+  spdlog::info("command: {} {}", command->name(), describe_dirty(dirty));
 
   // Editing an incoming road (geometry, elevation) regenerates every junction
   // it touches (02 §6): re-run the generator from each junction's recorded
@@ -263,6 +285,7 @@ void Document::cancel_preview() {
     return;
   }
   const edit::DirtySet dirty = preview_command_->dirty();
+  spdlog::info("preview cancelled: {} {}", preview_command_->name(), describe_dirty(dirty));
   if (auto reverted = preview_command_->revert(network_); !reverted.has_value()) {
     spdlog::error("preview cancel failed to revert: {}", reverted.error().message);
   }

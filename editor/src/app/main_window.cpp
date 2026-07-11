@@ -5,6 +5,7 @@
 #include <QApplication>
 #include <QCloseEvent>
 #include <QDateTime>
+#include <QDesktopServices>
 #include <QDragEnterEvent>
 #include <QDropEvent>
 #include <QFileDialog>
@@ -14,6 +15,7 @@
 #include <QMenuBar>
 #include <QMessageBox>
 #include <QMimeData>
+#include <QPushButton>
 #include <QStatusBar>
 #include <QTimer>
 #include <QToolBar>
@@ -21,7 +23,9 @@
 #include <QUrl>
 #include <QUuid>
 
+#include "app/crash_handler.hpp"
 #include "app/icons.hpp"
+#include "app/log_setup.hpp"
 #include "panels/diagnostics_panel.hpp"
 #include "panels/properties_panel.hpp"
 #include "panels/scene_tree_panel.hpp"
@@ -91,7 +95,10 @@ MainWindow::MainWindow(QWidget* parent)
   autosave_timer->setInterval(5'000);
   connect(autosave_timer, &QTimer::timeout, &autosave_, &AutosaveManager::maybe_autosave);
   autosave_timer->start();
-  // After the event loop is up: offer to recover a crashed session's work.
+  // After the event loop is up: surface any crash report from an earlier
+  // session first (context for what follows), then offer to recover that
+  // session's unsaved work.
+  QTimer::singleShot(0, this, &MainWindow::check_crash_reports);
   QTimer::singleShot(0, this, &MainWindow::check_recovery);
 
   // Editing tools (M2). Select/Move is the default; guidance lands in the
@@ -414,6 +421,41 @@ void MainWindow::export_usd_dialog() {
   }
 }
 #endif
+
+void MainWindow::check_crash_reports() {
+  const std::vector<crash::PendingReport> reports =
+      crash::pending_reports(crash::default_report_dir(), crash::current_session());
+  if (reports.empty()) {
+    return;
+  }
+  // The report is half as useful without the command trail — pull the
+  // crashed session's log tail in before the user files it anywhere.
+  const crash::PendingReport& newest = reports.front();
+  crash::append_log_tail(newest.path,
+                         logging::log_file_for(logging::default_log_dir(), newest.session));
+
+  QMessageBox box(this);
+  box.setIcon(QMessageBox::Warning);
+  box.setWindowTitle(tr("Previous session crashed"));
+  box.setText(tr("The previous RoadMaker session ended in a crash."));
+  box.setInformativeText(tr("A crash report was saved to:\n%1\n\n"
+                            "Reports stay on this machine — nothing is uploaded or sent "
+                            "anywhere. If you can, please attach the report to a GitHub issue "
+                            "(the \"crash\" template) so the crash gets fixed.")
+                             .arg(QString::fromStdString(newest.path.string())));
+  QPushButton* open_button = box.addButton(tr("Open Folder"), QMessageBox::ActionRole);
+  box.addButton(QMessageBox::Close);
+  box.exec();
+  if (box.clickedButton() == open_button) {
+    QDesktopServices::openUrl(
+        QUrl::fromLocalFile(QString::fromStdString(newest.path.parent_path().string())));
+  }
+  // Acknowledge them all — each report is offered exactly once; the files
+  // stay on disk for the user.
+  for (const crash::PendingReport& report : reports) {
+    crash::acknowledge(report);
+  }
+}
 
 void MainWindow::check_recovery() {
   const std::vector<RecoverySet> sets = AutosaveManager::pending_recoveries(

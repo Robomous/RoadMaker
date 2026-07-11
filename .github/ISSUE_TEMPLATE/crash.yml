@@ -1,0 +1,64 @@
+name: Crash report
+description: The editor crashed. Attach the crash report the editor saved — it points you at it on the next launch.
+title: "crash: <one-line summary, e.g. use-after-free dragging node of junction connecting road>"
+labels: ["crash"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting a crash — these are the highest-priority bugs.
+        After a crash, the next editor launch shows where the crash report was
+        saved (crash reports never leave your machine; attaching one here is
+        always your choice). The report already contains the version, OS,
+        stack trace, and the command log tail — attaching it fills in most of
+        this form for us.
+  - type: input
+    id: version
+    attributes:
+      label: Version / commit
+      description: From Help → About, `roadmaker-editor --version`, or the "version:" line of the crash report.
+      placeholder: 0.4.0 (commit f8b99c3)
+    validations:
+      required: true
+  - type: input
+    id: os
+    attributes:
+      label: Operating system
+      placeholder: macOS 15.5 (arm64) / Ubuntu 24.04 / Windows 11
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      description: What you did, step by step, up to the crash. "It just crashed" is fine too — the command log tail usually shows the rest.
+      placeholder: |
+        1. Created a road with 4 waypoints
+        2. Created a junction from its end + another road's end
+        3. Dragged a node of the incoming road
+        4. Editor closed
+    validations:
+      required: true
+  - type: input
+    id: soak-seed
+    attributes:
+      label: Soak seed (if applicable)
+      description: Only for crashes found by the soak driver — the seed it printed on failure.
+      placeholder: "421337"
+  - type: textarea
+    id: stack
+    attributes:
+      label: Stack trace
+      description: The "backtrace:" section of the crash report.
+      render: text
+  - type: textarea
+    id: command-log
+    attributes:
+      label: Command log tail
+      description: The "session log tail" section at the end of the crash report (last ~200 log lines).
+      render: text
+  - type: textarea
+    id: report
+    attributes:
+      label: Crash report file
+      description: Drag and drop the crash-<session>.txt file here (rename to .txt if GitHub rejects it).
