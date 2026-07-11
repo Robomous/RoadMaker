@@ -423,10 +423,23 @@ SubMesh build_junction_surface(const RoadNetwork& network,
     }
   }
 
-  CDT::Triangulation<double> cdt;
-  cdt.insertVertices(vertices);
-  cdt.insertEdges(edges);
-  cdt.eraseOuterTrianglesAndHoles();
+  // TryResolve: Clipper2's float output is topologically a union but can
+  // carry constraint edges CDT's exact predicates consider intersecting
+  // (near-degenerate arm geometry after node drags) — the default strategy
+  // THROWS on those, which killed the editor (issue #88, soak seed
+  // 20260711). Resolving splits the offending constraints instead. The
+  // catch is the kernel exception boundary for anything CDT still refuses:
+  // a junction floor that cannot triangulate degrades to no floor, never a
+  // crash (SoakSmoke.FixedSeedRunsClean is the pinned regression).
+  CDT::Triangulation<double> cdt(
+      CDT::VertexInsertionOrder::Auto, CDT::IntersectingConstraintEdges::TryResolve, 0.0);
+  try {
+    cdt.insertVertices(vertices);
+    cdt.insertEdges(edges);
+    cdt.eraseOuterTrianglesAndHoles();
+  } catch (const std::exception&) {
+    return {};
+  }
   if (cdt.triangles.empty()) {
     return {};
   }

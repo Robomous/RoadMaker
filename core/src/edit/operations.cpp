@@ -454,11 +454,22 @@ void capture_deletion(const RoadNetwork& network,
       return contains_road(doomed, connection.incoming_road) ||
              contains_road(doomed, connection.connecting_road);
     };
-    if (!std::ranges::any_of(junction.connections, doomed_connection)) {
+    // Arms are part of the closure too: regeneration re-runs from the
+    // recorded arm list, so an arm surviving its road is a dangling id the
+    // next regeneration (or any arm walker) trips over — found by the soak
+    // driver as issue #89. An arm can be doomed without any connection
+    // being doomed (its turns were all dropped at generation), so the gate
+    // checks both.
+    const auto doomed_arm = [&doomed](const RoadEnd& arm) {
+      return contains_road(doomed, arm.road);
+    };
+    if (!std::ranges::any_of(junction.connections, doomed_connection) &&
+        !std::ranges::any_of(junction.arms, doomed_arm)) {
       return;
     }
     Junction after = junction;
     std::erase_if(after.connections, doomed_connection);
+    std::erase_if(after.arms, doomed_arm);
     command.before.junctions.emplace_back(junction_id, junction);
     command.after.junctions.emplace_back(junction_id, std::move(after));
   });

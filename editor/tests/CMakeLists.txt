@@ -4,6 +4,30 @@
 # discovery invocation on bare CI runners too.
 find_package(Qt6 ${RM_QT_VERSION} REQUIRED COMPONENTS Test)
 
+# Soak driver (hardening sprint §4.3): one library, two consumers — the
+# standalone runner CI soaks under ASan, and the fixed-seed smoke gtest in
+# the normal suite.
+add_library(roadmaker_soak_lib STATIC soak/soak_driver.cpp)
+target_include_directories(roadmaker_soak_lib PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+target_link_libraries(roadmaker_soak_lib
+  PUBLIC roadmaker_editor_lib
+  PRIVATE fmt::fmt
+)
+rm_apply_warnings(roadmaker_soak_lib)
+
+add_executable(roadmaker_soak soak/soak_main.cpp)
+target_link_libraries(roadmaker_soak PRIVATE roadmaker_soak_lib)
+rm_apply_warnings(roadmaker_soak)
+
+if(WIN32 AND RM_BUILD_SHARED)
+  # Same no-rpath story as the test executable below: the shared kernel DLL
+  # must sit next to the runner.
+  add_custom_command(TARGET roadmaker_soak POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            $<TARGET_FILE:roadmaker::core>
+            $<TARGET_FILE_DIR:roadmaker_soak>)
+endif()
+
 add_executable(roadmaker_editor_tests
   qt_gtest_main.cpp
   test_autosave.cpp
@@ -26,6 +50,7 @@ add_executable(roadmaker_editor_tests
   test_scene_builder.cpp
   test_scene_tree_model.cpp
   test_selection_model.cpp
+  test_soak_smoke.cpp
   test_tools.cpp
 )
 
@@ -34,6 +59,7 @@ target_compile_definitions(roadmaker_editor_tests
 
 target_link_libraries(roadmaker_editor_tests PRIVATE
   roadmaker_editor_lib
+  roadmaker_soak_lib
   roadmaker::core
   Qt6::Test
   GTest::gtest

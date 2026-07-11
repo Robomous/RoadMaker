@@ -179,6 +179,16 @@ jobs:
         env:
           ASAN_OPTIONS: detect_leaks=1
           UBSAN_OPTIONS: halt_on_error=1
+      # Interactive soak (hardening sprint §4.3, #86): ~10 minutes of
+      # seeded-random editing ops over the real Document/command stack under
+      # ASan+UBSan. The seed derives from the run id — varied coverage across
+      # runs, and any failure prints its seed for a one-line local repro.
+      - name: Soak (10 min, seeded)
+        run: ./build/editor/tests/roadmaker_soak --minutes 9 --seed $(( ${{ github.run_id }} % 1000000 ))
+        env:
+          QT_QPA_PLATFORM: offscreen
+          ASAN_OPTIONS: detect_leaks=1
+          UBSAN_OPTIONS: halt_on_error=1
 
   format:
     name: clang-format

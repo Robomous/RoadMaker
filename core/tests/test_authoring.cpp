@@ -132,4 +132,22 @@ TEST(FitClothoidPath, LockedFitRejectsDegenerateInputLikeThePointOnlyFit) {
   EXPECT_FALSE(roadmaker::fit_clothoid_path(single, EndpointHeadings{.start = 0.0}).has_value());
 }
 
+// Regression for issue #87 (found by the soak driver, seed 1): Clothoids
+// reports SOME degenerate inputs by throwing Utils::Runtime_Error instead of
+// returning false — its Biarc guess fails on sharp spikes (the turn between
+// consecutive segments approaching a fold-back), which a user produces by
+// dragging a node behind its neighbor. The kernel API is exception-free: the
+// fit must return an error, never terminate. The waypoints are a verbatim
+// throwing input captured from the seed-1 soak run.
+TEST(FitClothoidPath, SharpSpikeWaypointsReturnErrorInsteadOfThrowing) {
+  const std::vector<Waypoint> spike = {Waypoint{.x = 115.70471052111692, .y = -385.28078955130997},
+                                       Waypoint{.x = 24.204778506832959, .y = -398.54673629408848},
+                                       Waypoint{.x = 44.654070372422005, .y = -338.91596722066254}};
+  const auto point_only = roadmaker::fit_clothoid_path(spike);
+  EXPECT_FALSE(point_only.has_value());
+
+  const auto locked = roadmaker::fit_clothoid_path(spike, EndpointHeadings{.start = 0.0});
+  EXPECT_FALSE(locked.has_value());
+}
+
 } // namespace

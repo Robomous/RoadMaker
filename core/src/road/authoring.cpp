@@ -109,6 +109,36 @@ ReferenceLine to_reference_line(const G2lib::ClothoidList& path) {
   return line;
 }
 
+/// The kernel↔Clothoids exception boundary. build_G1 reports some degenerate
+/// inputs by returning false — but others (e.g. a fold where waypoint i-1
+/// coincides with waypoint i+1, which passes the coincident-CONSECUTIVE
+/// check) by throwing Utils::Runtime_Error from UTILS_ASSERT0. The kernel
+/// API is exception-free, so translate here (crash found by the soak
+/// driver, issue #87).
+Expected<ReferenceLine> build_g1_path(std::span<const double> xs,
+                                      std::span<const double> ys,
+                                      const double* headings,
+                                      const char* failure_message) {
+  try {
+    G2lib::ClothoidList path("rm_author");
+    const int count = static_cast<int>(xs.size());
+    const bool ok = headings != nullptr ? path.build_G1(count, xs.data(), ys.data(), headings)
+                                        : path.build_G1(count, xs.data(), ys.data());
+    if (!ok) {
+      return make_error(ErrorCode::InvalidArgument, failure_message);
+    }
+    return to_reference_line(path);
+  } catch (const std::exception& e) {
+    std::string context(e.what());
+    while (!context.empty() && (context.back() == '\n' || context.back() == '\r')) {
+      context.pop_back();
+    }
+    return make_error(ErrorCode::InvalidArgument, failure_message, std::move(context));
+  } catch (...) {
+    return make_error(ErrorCode::InvalidArgument, failure_message, "unknown exception");
+  }
+}
+
 } // namespace
 
 Expected<ReferenceLine> fit_clothoid_path(std::span<const Waypoint> waypoints) {
@@ -120,11 +150,7 @@ Expected<ReferenceLine> fit_clothoid_path(std::span<const Waypoint> waypoints) {
 
   // G1 clothoid spline through the waypoints; angles are estimated by the
   // library (never hand-roll Fresnel math).
-  G2lib::ClothoidList path("rm_author");
-  if (!path.build_G1(static_cast<int>(waypoints.size()), xs.data(), ys.data())) {
-    return make_error(ErrorCode::InvalidArgument, "clothoid G1 fit failed");
-  }
-  return to_reference_line(path);
+  return build_g1_path(xs, ys, nullptr, "clothoid G1 fit failed");
 }
 
 Expected<ReferenceLine> fit_clothoid_path(std::span<const Waypoint> waypoints,
@@ -138,11 +164,7 @@ Expected<ReferenceLine> fit_clothoid_path(std::span<const Waypoint> waypoints,
   }
   const auto& [xs, ys] = *coordinates;
 
-  G2lib::ClothoidList path("rm_author");
-  if (!path.build_G1(static_cast<int>(waypoints.size()), xs.data(), ys.data(), headings.data())) {
-    return make_error(ErrorCode::InvalidArgument, "clothoid G1 Hermite fit failed");
-  }
-  return to_reference_line(path);
+  return build_g1_path(xs, ys, headings.data(), "clothoid G1 Hermite fit failed");
 }
 
 Expected<ReferenceLine> fit_clothoid_path(std::span<const Waypoint> waypoints,

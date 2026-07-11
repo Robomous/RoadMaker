@@ -793,6 +793,7 @@ void write_junction(pugi::xml_node root, const RoadNetwork& network, const Junct
   // carry no arms and emit nothing. Format: "roadOdrId:start|end;…".
   if (!junction.arms.empty()) {
     std::string value;
+    std::size_t written_arms = 0;
     for (const RoadEnd& arm : junction.arms) {
       const Road* road = network.road(arm.road);
       if (road == nullptr) {
@@ -804,6 +805,16 @@ void write_junction(pugi::xml_node root, const RoadNetwork& network, const Junct
       value += road->odr_id;
       value += ':';
       value += arm.contact == ContactPoint::End ? "end" : "start";
+      ++written_arms;
+    }
+    // Reader/writer symmetry (issue #90, found by the soak round-trip
+    // invariant): the reader rejects rm:arms with fewer than 2 arms, so
+    // writing a degenerate list (a junction that lost arms to delete_road's
+    // closure) would not round-trip byte-identically. A junction below 2
+    // arms cannot regenerate anyway — it persists as arm-less (foreign
+    // semantics: recreate to edit).
+    if (written_arms < 2) {
+      value.clear();
     }
     if (!value.empty()) {
       pugi::xml_node user_data = junction_node.append_child("userData");
