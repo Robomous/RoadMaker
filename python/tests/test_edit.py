@@ -1,8 +1,12 @@
 """The kernel edit layer through the bindings: EditStack + factories."""
 
+from pathlib import Path
+
 import pytest
 
 import roadmaker as rm
+
+SAMPLES = Path(__file__).resolve().parents[2] / "assets" / "samples"
 
 
 @pytest.fixture
@@ -117,6 +121,46 @@ def test_split_and_junction_commands(network):
         stack.undo(network)
     assert network.road_count == 1
     assert network.junction_count == 0
+
+
+def test_delete_road_closure_takes_connecting_roads_and_undo_restores():
+    # t_junction.xodr: incoming road "1" feeds connecting roads "10"/"11"
+    # inside junction "100". Deleting "1" carries the referential closure.
+    network, _ = rm.load_xodr(SAMPLES / "t_junction.xodr")
+    stack = rm.edit.EditStack()
+    incoming = network.find_road("1")
+    junction = network.find_junction("100")
+    before = rm.write_xodr(network)
+
+    stack.push(network, rm.edit.delete_road(network, incoming))
+    assert network.road(incoming) is None
+    assert not network.find_road("10")
+    assert not network.find_road("11")
+    assert network.junction(junction).connections == []
+    assert network.find_road("2")  # surviving leg
+
+    stack.undo(network)
+    assert rm.write_xodr(network) == before
+
+
+def test_delete_junction_closure_and_undo_restores():
+    network, _ = rm.load_xodr(SAMPLES / "t_junction.xodr")
+    stack = rm.edit.EditStack()
+    junction = network.find_junction("100")
+    incoming = network.find_road("1")
+    before = rm.write_xodr(network)
+
+    stack.push(network, rm.edit.delete_junction(network, junction))
+    # The junction takes its connecting roads along; arms survive with their
+    # links into it cleared.
+    assert network.junction(junction) is None
+    assert not network.find_road("10")
+    assert not network.find_road("11")
+    assert network.road(incoming) is not None
+    assert network.road(incoming).successor is None
+
+    stack.undo(network)
+    assert rm.write_xodr(network) == before
 
 
 def test_depth_limit_drops_oldest(network):

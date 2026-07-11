@@ -67,6 +67,15 @@ def main() -> int:
         stack.redo(network)
     assert network.road(road).name == "Main Street"
 
+    # Deletion is one undoable command carrying the full referential closure:
+    # junction connections referencing the road are removed (and, where it
+    # was the incoming road, their connecting roads deleted with it), so a
+    # single undo restores every object and link under the original ids.
+    stack.push(network, rm.edit.delete_road(network, road))
+    assert network.road(road) is None
+    stack.undo(network)
+    assert network.road(road).name == "Main Street"
+
     # Snapping queries (kernel-side, pure): interactive tools call this per
     # cursor move. Near a road end the endpoint outranks tangent and grid.
     snap = rm.edit.snap_point(network, (161.0, 0.5), rm.edit.SnapOptions(radius=2.0, grid=1.0))
