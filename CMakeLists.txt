@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.26)
 
 project(roadmaker
-  VERSION 0.2.0
+  VERSION 0.3.0
   DESCRIPTION "Open source road-network authoring toolkit for AV simulation"
   HOMEPAGE_URL "https://github.com/robomous/roadmaker"
   LANGUAGES CXX C

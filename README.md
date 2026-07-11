@@ -70,7 +70,7 @@ on the public [project board](https://github.com/Robomous/RoadMaker/projects):
 | Milestone | Theme | Golden scene |
 |---|---|---|
 | **M1** ✅ | Kernel + read-only viewer (OpenDRIVE I/O, clothoids, meshing, glTF, Python) | — |
-| **M2** 🔨 | Editing core: tools, junction 3D surfaces, USD export | — |
+| **M2** ✅ | Editing core: tools, junction 3D surfaces, USD export (v0.2.0 → v0.3.0) | — |
 | **M3a** | Visual & standards completeness: `<objects>`, `<signals>`, full markings, textured viewport, props, terrain | GS-1 urban intersection |
 | **M3b** | Real-world import: GIS/lidar (PDAL/GDAL), OSM extraction | GS-2 imported district |
 | **M4** | Scenario mode: OpenSCENARIO kernel, Map ↔ Scenario modes, actors & routes, Asset Library Browser | GS-3 ambulance run |

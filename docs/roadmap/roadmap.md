@@ -23,15 +23,17 @@ vocabulary**.
 | Milestone | Theme | Contents (summary) | Golden scene |
 |---|---|---|---|
 | **M1** ✅ | Kernel + viewer | OpenDRIVE I/O, clothoid authoring, meshing, glTF, Python package, read-only Qt editor (v0.1.0 → v0.2.0) | — |
-| **M2** 🔨 (in flight, unchanged) | Editing core | Editing tools, junction 3D surfaces, USD export — per the approved [M2 design docs](../design/m2/00_overview.md) | — (gates already defined per phase) |
+| **M2** ✅ (shipped, v0.3.0) | Editing core | Editing tools, junction 3D surfaces, USD export — delivered per the [M2 design docs](../design/m2/00_overview.md) (reconciled as-built at close-out) | — (per-phase gates, all met) |
 | **M3a** | Visual & standards completeness | Kernel: OpenDRIVE `<objects>`, `<signals>`, crosswalk/arrow/stop-line road marks · textured viewport mode (default ON; sober mode kept as a toggle) · terrain skirt + procedural ground · CC0 prop set (vegetation, poles, signs) · sky/lighting pass | [GS-1 "Urban intersection"](golden_scenes/gs1_urban_intersection.md) |
 | **M3b** | Real-world import | GIS/lidar import (PDAL/GDAL/PROJ), OSM road-network extraction | [GS-2 "Imported district"](golden_scenes/gs2_imported_district.md) |
 | **M4** | Scenario mode | OpenSCENARIO XML kernel (read/write model) · app mode switch (Map ↔ Scenario) · actor placement, lane-anchored routes with offsets, actor attributes panel · **Asset Library Browser** | [GS-3 "Ambulance run"](golden_scenes/gs3_ambulance_run.md) |
 | **M5** | Scenario logic | Node-based logic editor for stories/maneuvers/conditions · simulation preview hooks (esmini interop) | GS-3 extended with a logic graph |
 
-**M2 is untouchable.** Its scope, phases, and gates are fixed in the
-approved design docs; this roadmap only positions what comes after it.
-Items the old roadmap parked under "M4+ reach" (web viewer, renderer
+**M2 shipped in v0.3.0.** Its scope, phases, and gates were frozen in the
+approved design docs and delivered against them (deviations reconciled
+as-built in [design/m2](../design/m2/00_overview.md)); the golden-scene
+acceptance process begins with M3a/GS-1. This roadmap positions what comes
+after M2. Items the old roadmap parked under "M4+ reach" (web viewer, renderer
 upgrade, PyPI wheels matrix, branding/signing) remain valid backlog but are
 unscheduled — they attach to milestones opportunistically rather than
 defining them. Capabilities deliberately not scheduled at all are recorded

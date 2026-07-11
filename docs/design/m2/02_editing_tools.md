@@ -164,6 +164,16 @@ overshoot control complexity in M2).
 `fit_elevation_profile(span<const double> s, span<const double> z) → std::vector<Poly3>`
 (pure, tested directly).
 
+> **As-built (#16, PR #57).** `set_node_elevation` previously wrote a
+> piecewise-*linear* profile through the node heights; #16 swapped it to the
+> cubic helper above. The helper is a plain **C1 cubic Hermite** — node
+> tangents from finite differences (central interior, one-sided at the ends) —
+> and is deliberately **not** overshoot/monotonicity-clamped (no
+> Fritsch–Carlson); "monotone-in-s" above means only that the emitted
+> `<elevation>` records ascend in s, not that z(s) is monotone. `eval_profile`
+> reproduces the node heights exactly and an all-zero profile is written as no
+> profile. Signature and rationale: `core/include/roadmaker/geometry/profile_fit.hpp`.
+
 **Undo.** One command per value commit.
 
 **Standards.** `<elevation>` elements ascending in s
@@ -229,6 +239,20 @@ set; regeneration = deterministic re-run of the generator with the junction's
 recorded arm list (arms are `RoadEnd`s stored on the `Junction`; new field).
 Regeneration replaces connecting roads in place (IDs preserved via
 restore-in-place so undo stays valid).
+
+> **As-built (#17, PR #58) — resolved open point: arm persistence.** This
+> spec left unspecified how the recorded arm list survives save/load (the
+> `.xodr` is the project file). Resolved per the `rm:waypoints` precedent
+> (`01` §2.5): `Junction::arms` serializes to a `<userData code="rm:arms">`
+> element on the junction and round-trips through the writer/reader. A
+> junction loaded from a **foreign** file (no `rm:arms`) comes in with an
+> empty arm list and **cannot regenerate until it is recreated** — M2 does
+> *not* derive arms from the `<connection>` table. In-place regeneration
+> covers the stable-topology case only: `regenerate_junction` reuses
+> connecting-road IDs when the connection count is unchanged, but a change to
+> the count (a lane added/removed on an arm) returns an error asking for a
+> recreate rather than reallocating IDs. Kernel surface: `preview_junction`
+> (non-mutating count + dropped-turn report) and `regenerate_junction`.
 
 **Edge cases.** Ends too far apart (> configurable 50 m): factory error. Arms
 nearly parallel: connecting-road fit may loop — generator drops turn pairs whose
