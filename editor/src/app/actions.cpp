@@ -38,6 +38,13 @@ Actions::Actions(QUndoStack& undo_stack, QObject* parent) : QObject(parent) {
                              "drag a node handle moves it (V)"));
   tool_group->addAction(tool_select);
 
+  tool_create_road = new QAction(tr("&Create Road"), this);
+  tool_create_road->setCheckable(true);
+  tool_create_road->setShortcut(Qt::Key_C);
+  tool_create_road->setToolTip(tr("Create Road — click places waypoints, Enter or double-click "
+                                  "creates the road, Esc cancels (C)"));
+  tool_group->addAction(tool_create_road);
+
   tool_edit_nodes = new QAction(tr("Edit &Nodes"), this);
   tool_edit_nodes->setCheckable(true);
   tool_edit_nodes->setShortcut(Qt::Key_N);
@@ -50,6 +57,25 @@ Actions::Actions(QUndoStack& undo_stack, QObject* parent) : QObject(parent) {
   tool_delete->setShortcut(Qt::Key_X);
   tool_delete->setToolTip(tr("Delete — click a road to delete it, undo restores (X)"));
   tool_group->addAction(tool_delete);
+
+  // Road templates for the Create Road tool (02_editing_tools.md §2):
+  // exclusive and always checked; the toolbar shows them as a dropdown.
+  template_group = new QActionGroup(this);
+  template_rural = new QAction(tr("Two-lane &Rural"), this);
+  template_rural->setCheckable(true);
+  template_rural->setChecked(true); // the tool's default profile
+  template_rural->setToolTip(tr("One driving lane each way, right-hand shoulder"));
+  template_group->addAction(template_rural);
+
+  template_urban = new QAction(tr("&Urban Sidewalk"), this);
+  template_urban->setCheckable(true);
+  template_urban->setToolTip(tr("One driving lane each way, sidewalks both sides"));
+  template_group->addAction(template_urban);
+
+  template_highway = new QAction(tr("&Highway"), this);
+  template_highway->setCheckable(true);
+  template_highway->setToolTip(tr("Two driving lanes each way, wide shoulders"));
+  template_group->addAction(template_highway);
 
   reset_camera = new QAction(tr("Reset &Camera"), this);
   frame_selection = new QAction(tr("&Frame Selection"), this);
@@ -73,8 +99,12 @@ void Actions::apply_icons() {
   undo->setIcon(Icons::get(QStringLiteral("undo-2")));
   redo->setIcon(Icons::get(QStringLiteral("redo-2")));
   tool_select->setIcon(Icons::get(QStringLiteral("mouse-pointer-2")));
+  tool_create_road->setIcon(Icons::get(QStringLiteral("clothoid-road")));
   tool_edit_nodes->setIcon(Icons::get(QStringLiteral("waypoints")));
   tool_delete->setIcon(Icons::get(QStringLiteral("trash-2")));
+  template_rural->setIcon(Icons::get(QStringLiteral("template-rural")));
+  template_urban->setIcon(Icons::get(QStringLiteral("template-urban")));
+  template_highway->setIcon(Icons::get(QStringLiteral("template-highway")));
   reset_camera->setIcon(Icons::get(QStringLiteral("rotate-ccw")));
   frame_selection->setIcon(Icons::get(QStringLiteral("scan")));
 }

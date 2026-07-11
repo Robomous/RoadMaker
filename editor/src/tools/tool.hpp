@@ -64,6 +64,11 @@ public:
 
   [[nodiscard]] virtual bool mouse_release(const ToolEvent&) { return false; }
 
+  // Qt double-click sequence is press, release, double-click, release — the
+  // pair's first press is delivered normally, so a tool placing points on
+  // press sees one point plus this commit gesture (Create Road, 02 §2).
+  [[nodiscard]] virtual bool mouse_double_click(const ToolEvent&) { return false; }
+
   [[nodiscard]] virtual bool key_press(int key, Qt::KeyboardModifiers) {
     return static_cast<void>(key), false;
   }
