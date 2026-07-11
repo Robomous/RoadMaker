@@ -359,3 +359,63 @@ TEST(SelectTool, PreviewShowsHandlesForSelectedRoads) {
                          roadmaker::editor::SelectMode::Add);
   EXPECT_EQ(tool.preview().point_positions.size(), 15U); // 3 + 2 waypoints
 }
+
+// --- Delete key (issue #11, 02 §7) --------------------------------------------
+
+TEST(SelectTool, DeleteKeyDeletesMultiSelectionAsOneUndoStep) {
+  Scene scene;
+  SelectTool tool(scene.document, scene.selection);
+  scene.selection.select_many(std::vector<SelectionEntry>{{.road = scene.dragged, .lane = LaneId{}},
+                                                          {.road = scene.other, .lane = LaneId{}}},
+                              roadmaker::editor::SelectMode::Replace);
+
+  ASSERT_TRUE(tool.key_press(Qt::Key_Delete, Qt::NoModifier));
+
+  EXPECT_EQ(scene.document.network().road(scene.dragged), nullptr);
+  EXPECT_EQ(scene.document.network().road(scene.other), nullptr);
+  // ONE macro on the stack; the selection pruned itself.
+  EXPECT_EQ(scene.document.undo_stack()->count(), scene.base_count + 1);
+  EXPECT_TRUE(scene.selection.empty());
+
+  // One Ctrl+Z restores everything byte-identically under the original ids.
+  scene.document.undo_stack()->undo();
+  ASSERT_NE(scene.document.network().road(scene.dragged), nullptr);
+  ASSERT_NE(scene.document.network().road(scene.other), nullptr);
+  EXPECT_EQ(xodr(scene.document), scene.base_xodr);
+}
+
+TEST(SelectTool, DeleteKeySingleSelectionIsAPlainCommand) {
+  Scene scene;
+  SelectTool tool(scene.document, scene.selection);
+  scene.selection.select({.road = scene.dragged, .lane = LaneId{}});
+
+  ASSERT_TRUE(tool.key_press(Qt::Key_Backspace, Qt::NoModifier));
+
+  EXPECT_EQ(scene.document.network().road(scene.dragged), nullptr);
+  EXPECT_EQ(scene.document.undo_stack()->count(), scene.base_count + 1);
+  scene.document.undo_stack()->undo();
+  EXPECT_EQ(xodr(scene.document), scene.base_xodr);
+}
+
+TEST(SelectTool, DeleteKeyWithEmptySelectionIsNotConsumed) {
+  Scene scene;
+  SelectTool tool(scene.document, scene.selection);
+
+  EXPECT_FALSE(tool.key_press(Qt::Key_Delete, Qt::NoModifier));
+  EXPECT_EQ(scene.document.undo_stack()->count(), scene.base_count);
+  EXPECT_EQ(xodr(scene.document), scene.base_xodr);
+}
+
+TEST(SelectTool, DeleteKeyIsInertDuringADrag) {
+  Scene scene;
+  SelectTool tool(scene.document, scene.selection);
+  scene.selection.select({.road = scene.dragged, .lane = LaneId{}});
+
+  ASSERT_TRUE(tool.mouse_press(at(50.5, 10.5, Qt::LeftButton)));
+  ASSERT_TRUE(tool.mouse_move(at(70.0, 25.0, Qt::LeftButton)));
+  EXPECT_FALSE(tool.key_press(Qt::Key_Delete, Qt::NoModifier));
+  ASSERT_NE(scene.document.network().road(scene.dragged), nullptr);
+
+  ASSERT_TRUE(tool.key_press(Qt::Key_Escape, Qt::NoModifier)); // clean exit
+  EXPECT_EQ(xodr(scene.document), scene.base_xodr);
+}

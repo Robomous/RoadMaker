@@ -68,9 +68,12 @@ create_road(std::vector<Waypoint> waypoints, LaneProfile profile, std::string na
 [[nodiscard]] RM_API std::unique_ptr<Command>
 split_road(const RoadNetwork& network, RoadId road, double s);
 
-/// Deletes the road with its sections and lanes; junction connections and
-/// road links referencing it are detached. Undo restores every object under
-/// its original id, so references held elsewhere become valid again.
+/// Deletes the road with its sections and lanes, taking the full referential
+/// closure with it (02_editing_tools.md §7): junction connections referencing
+/// the road are removed, and where the road was the INCOMING one their
+/// connecting roads are deleted too; surviving roads' links into the deleted
+/// set are cleared. Undo restores every removed object and link under its
+/// original id, so references held elsewhere become valid again.
 [[nodiscard]] RM_API std::unique_ptr<Command> delete_road(const RoadNetwork& network, RoadId road);
 
 /// Creates a junction record (auto id) and links each road end to it. M2
@@ -80,8 +83,10 @@ split_road(const RoadNetwork& network, RoadId road, double s);
 [[nodiscard]] RM_API std::unique_ptr<Command> create_junction(const RoadNetwork& network,
                                                               std::span<const RoadEnd> ends);
 
-/// Deletes the junction; roads pointing at it (back-references and links)
-/// are detached. Connecting roads survive, as with RoadNetwork semantics.
+/// Deletes the junction AND its connecting roads (the §7 closure); incoming
+/// roads survive with their predecessor/successor links into the junction
+/// cleared. Undo restores the junction, every connecting road, and every
+/// cleared link exactly.
 [[nodiscard]] RM_API std::unique_ptr<Command> delete_junction(const RoadNetwork& network,
                                                               JunctionId junction);
 

@@ -19,6 +19,7 @@
 #include "panels/diagnostics_panel.hpp"
 #include "panels/properties_panel.hpp"
 #include "panels/scene_tree_panel.hpp"
+#include "tools/delete_tool.hpp"
 #include "tools/edit_nodes_tool.hpp"
 #include "tools/select_tool.hpp"
 
@@ -71,6 +72,14 @@ MainWindow::MainWindow(QWidget* parent)
   tool_manager_.register_tool(ToolId::EditNodes, std::move(edit_nodes_tool));
   connect(actions_->tool_edit_nodes, &QAction::triggered, this, [this] {
     tool_manager_.set_active(ToolId::EditNodes);
+  });
+  auto delete_tool = std::make_unique<DeleteTool>(document_);
+  connect(delete_tool.get(), &Tool::status_message, this, [this](const QString& text) {
+    statusBar()->showMessage(text, 5000);
+  });
+  tool_manager_.register_tool(ToolId::Delete, std::move(delete_tool));
+  connect(actions_->tool_delete, &QAction::triggered, this, [this] {
+    tool_manager_.set_active(ToolId::Delete);
   });
   tool_manager_.set_active(ToolId::Select);
 
@@ -148,6 +157,7 @@ void MainWindow::build_toolbar() {
   toolbar->addSeparator();
   toolbar->addAction(actions_->tool_select);
   toolbar->addAction(actions_->tool_edit_nodes);
+  toolbar->addAction(actions_->tool_delete);
   toolbar->addSeparator();
   toolbar->addAction(actions_->reset_camera);
   toolbar->addAction(actions_->frame_selection);

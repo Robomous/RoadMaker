@@ -36,6 +36,12 @@ Actions::Actions(QUndoStack& undo_stack, QObject* parent) : QObject(parent) {
                                  "marker to insert, Delete removes the active node (N)"));
   tool_group->addAction(tool_edit_nodes);
 
+  tool_delete = new QAction(tr("&Delete"), this);
+  tool_delete->setCheckable(true);
+  tool_delete->setShortcut(Qt::Key_X);
+  tool_delete->setToolTip(tr("Delete — click a road to delete it, undo restores (X)"));
+  tool_group->addAction(tool_delete);
+
   reset_camera = new QAction(tr("Reset &Camera"), this);
   frame_selection = new QAction(tr("&Frame Selection"), this);
   frame_selection->setShortcut(Qt::Key_F);
@@ -56,6 +62,7 @@ void Actions::apply_icons() {
   redo->setIcon(Icons::get(QStringLiteral("redo-2")));
   tool_select->setIcon(Icons::get(QStringLiteral("mouse-pointer-2")));
   tool_edit_nodes->setIcon(Icons::get(QStringLiteral("waypoints")));
+  tool_delete->setIcon(Icons::get(QStringLiteral("trash-2")));
   reset_camera->setIcon(Icons::get(QStringLiteral("rotate-ccw")));
   frame_selection->setIcon(Icons::get(QStringLiteral("scan")));
 }

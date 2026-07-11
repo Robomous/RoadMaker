@@ -22,12 +22,14 @@
 #include <nanobind/stl/string.h>
 #include <nanobind/stl/string_view.h>
 #include <nanobind/stl/unique_ptr.h>
+#include <nanobind/stl/variant.h>
 #include <nanobind/stl/vector.h>
 
 #include <filesystem>
 #include <stdexcept>
 #include <string>
 #include <utility>
+#include <variant>
 #include <vector>
 
 namespace nb = nanobind;
@@ -272,11 +274,27 @@ NB_MODULE(_roadmaker, m) {
         return "LaneSection(s0=" + std::to_string(section.s0) + ")";
       });
 
+  nb::class_<roadmaker::RoadLink>(m, "RoadLink")
+      .def_ro(
+          "target", &roadmaker::RoadLink::target, "The linked element: a RoadId or a JunctionId.")
+      .def_ro("contact", &roadmaker::RoadLink::contact)
+      .def("__repr__", [](const roadmaker::RoadLink& link) {
+        return std::holds_alternative<roadmaker::RoadId>(link.target)
+                   ? std::string("RoadLink(road)")
+                   : std::string("RoadLink(junction)");
+      });
+
   nb::class_<roadmaker::Road>(m, "Road")
       .def_ro("name", &roadmaker::Road::name)
       .def_ro("odr_id", &roadmaker::Road::odr_id)
       .def_ro("length", &roadmaker::Road::length)
       .def_ro("junction", &roadmaker::Road::junction)
+      .def_ro("predecessor",
+              &roadmaker::Road::predecessor,
+              "Road-level predecessor link; None when detached.")
+      .def_ro("successor",
+              &roadmaker::Road::successor,
+              "Road-level successor link; None when detached.")
       .def_ro("sections", &roadmaker::Road::sections)
       .def_prop_ro(
           "plan_view",

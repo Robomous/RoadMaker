@@ -374,12 +374,113 @@ bool links_to_road(const std::optional<RoadLink>& link, RoadId road) {
   return target != nullptr && *target == road;
 }
 
-bool links_to_junction(const std::optional<RoadLink>& link, JunctionId junction) {
+// ---- deletion closure (docs/design/m2/02_editing_tools.md §7) -----------------
+
+bool contains_road(std::span<const RoadId> roads, RoadId id) {
+  return std::ranges::find(roads, id) != roads.end();
+}
+
+/// Does `link` point at any doomed road, or at the doomed junction?
+bool links_into_closure(const std::optional<RoadLink>& link,
+                        std::span<const RoadId> doomed,
+                        std::optional<JunctionId> doomed_junction) {
   if (!link.has_value()) {
     return false;
   }
-  const auto* target = std::get_if<JunctionId>(&link->target);
-  return target != nullptr && *target == junction;
+  if (const auto* road = std::get_if<RoadId>(&link->target)) {
+    return contains_road(doomed, *road);
+  }
+  return doomed_junction.has_value() && std::get<JunctionId>(link->target) == *doomed_junction;
+}
+
+/// Expands seed roads to the full deletion closure: a junction connection
+/// whose INCOMING road dies takes its connecting road along (the turn cannot
+/// outlive the road it comes from). Runs to a fixpoint so chains resolve even
+/// on data violating
+/// asam.net:xodr:1.4.0:junctions.connection.connect_road_no_incoming_road
+/// (a connecting road acting as an incoming road elsewhere).
+std::vector<RoadId> deletion_closure(const RoadNetwork& network, std::vector<RoadId> doomed) {
+  bool grew = true;
+  while (grew) {
+    grew = false;
+    network.for_each_junction([&](JunctionId, const Junction& junction) {
+      for (const JunctionConnection& connection : junction.connections) {
+        if (contains_road(doomed, connection.incoming_road) &&
+            !contains_road(doomed, connection.connecting_road) &&
+            network.road(connection.connecting_road) != nullptr) {
+          doomed.push_back(connection.connecting_road);
+          grew = true;
+        }
+      }
+    });
+  }
+  return doomed;
+}
+
+/// Captures onto `command` everything the closure deletion touches: the
+/// doomed roads with their sections and lanes (plus `doomed_junction` when
+/// set) as erasures, and — as before/after value edits — surviving junctions
+/// whose connections reference a doomed road, and surviving roads whose
+/// links (or junction back-reference) point into the deleted set. Undo
+/// restores every removed object and link exactly.
+void capture_deletion(const RoadNetwork& network,
+                      GenericCommand& command,
+                      std::span<const RoadId> doomed,
+                      std::optional<JunctionId> doomed_junction) {
+  for (const RoadId road_id : doomed) {
+    const Road* road = network.road(road_id);
+    command.erased.roads.emplace_back(road_id, *road);
+    for (const LaneSectionId section_id : road->sections) {
+      const LaneSection* section = network.lane_section(section_id);
+      command.erased.sections.emplace_back(section_id, *section);
+      for (const LaneId lane_id : section->lanes) {
+        command.erased.lanes.emplace_back(lane_id, *network.lane(lane_id));
+      }
+    }
+  }
+  if (doomed_junction.has_value()) {
+    command.erased.junctions.emplace_back(*doomed_junction, *network.junction(*doomed_junction));
+  }
+
+  network.for_each_junction([&](JunctionId junction_id, const Junction& junction) {
+    if (doomed_junction.has_value() && junction_id == *doomed_junction) {
+      return; // erased wholesale, connections and all
+    }
+    const auto doomed_connection = [&doomed](const JunctionConnection& connection) {
+      return contains_road(doomed, connection.incoming_road) ||
+             contains_road(doomed, connection.connecting_road);
+    };
+    if (!std::ranges::any_of(junction.connections, doomed_connection)) {
+      return;
+    }
+    Junction after = junction;
+    std::erase_if(after.connections, doomed_connection);
+    command.before.junctions.emplace_back(junction_id, junction);
+    command.after.junctions.emplace_back(junction_id, std::move(after));
+  });
+
+  network.for_each_road([&](RoadId road_id, const Road& road) {
+    if (contains_road(doomed, road_id)) {
+      return;
+    }
+    const bool backref = doomed_junction.has_value() && road.junction == *doomed_junction;
+    if (!backref && !links_into_closure(road.predecessor, doomed, doomed_junction) &&
+        !links_into_closure(road.successor, doomed, doomed_junction)) {
+      return;
+    }
+    Road after = road;
+    if (backref) {
+      after.junction = {};
+    }
+    if (links_into_closure(after.predecessor, doomed, doomed_junction)) {
+      after.predecessor.reset();
+    }
+    if (links_into_closure(after.successor, doomed, doomed_junction)) {
+      after.successor.reset();
+    }
+    command.before.roads.emplace_back(road_id, road);
+    command.after.roads.emplace_back(road_id, std::move(after));
+  });
 }
 
 // ---- waypoint re-fit commands -------------------------------------------------
@@ -562,56 +663,23 @@ std::unique_ptr<Command> delete_road(const RoadNetwork& network, RoadId road_id)
                            Error{.code = ErrorCode::InvalidArgument, .message = "stale road id"});
   }
 
-  auto command = std::make_unique<GenericCommand>(
-      std::string(kName),
-      // The doomed road itself is dirty so incremental re-mesh drops (and,
-      // on undo, restores) its mesh entry.
-      DirtySet{
-          .roads = {road_id}, .junctions = junctions_touching(network, road_id), .topology = true});
+  // §7 closure: connections referencing the road disappear, and where the
+  // road was the INCOMING one, their now-dangling connecting roads go too.
+  const std::vector<RoadId> doomed = deletion_closure(network, {road_id});
 
-  command->erased.roads.emplace_back(road_id, *road);
-  for (const LaneSectionId section_id : road->sections) {
-    const LaneSection* section = network.lane_section(section_id);
-    command->erased.sections.emplace_back(section_id, *section);
-    for (const LaneId lane_id : section->lanes) {
-      command->erased.lanes.emplace_back(lane_id, *network.lane(lane_id));
+  // Every doomed road is dirty so incremental re-mesh drops (and, on undo,
+  // restores) its mesh entry; every junction touching one re-floors.
+  DirtySet dirty{.roads = doomed, .topology = true};
+  for (const RoadId doomed_id : doomed) {
+    for (const JunctionId junction_id : junctions_touching(network, doomed_id)) {
+      if (std::ranges::find(dirty.junctions, junction_id) == dirty.junctions.end()) {
+        dirty.junctions.push_back(junction_id);
+      }
     }
   }
 
-  // Detach every reference into the doomed road: junction connections and
-  // other roads' links. Undo restores the exact previous values.
-  network.for_each_junction([&](JunctionId junction_id, const Junction& junction) {
-    const bool references =
-        std::ranges::any_of(junction.connections, [road_id](const JunctionConnection& connection) {
-          return connection.incoming_road == road_id || connection.connecting_road == road_id;
-        });
-    if (!references) {
-      return;
-    }
-    Junction after = junction;
-    std::erase_if(after.connections, [road_id](const JunctionConnection& connection) {
-      return connection.incoming_road == road_id || connection.connecting_road == road_id;
-    });
-    command->before.junctions.emplace_back(junction_id, junction);
-    command->after.junctions.emplace_back(junction_id, std::move(after));
-  });
-  network.for_each_road([&](RoadId other_id, const Road& other) {
-    if (other_id == road_id) {
-      return;
-    }
-    if (!links_to_road(other.predecessor, road_id) && !links_to_road(other.successor, road_id)) {
-      return;
-    }
-    Road after = other;
-    if (links_to_road(after.predecessor, road_id)) {
-      after.predecessor.reset();
-    }
-    if (links_to_road(after.successor, road_id)) {
-      after.successor.reset();
-    }
-    command->before.roads.emplace_back(other_id, other);
-    command->after.roads.emplace_back(other_id, std::move(after));
-  });
+  auto command = std::make_unique<GenericCommand>(std::string(kName), std::move(dirty));
+  capture_deletion(network, *command, doomed, std::nullopt);
   return command;
 }
 
@@ -880,29 +948,27 @@ std::unique_ptr<Command> delete_junction(const RoadNetwork& network, JunctionId 
         std::string(kName),
         Error{.code = ErrorCode::InvalidArgument, .message = "stale junction id"});
   }
-  auto command = std::make_unique<GenericCommand>(
-      std::string(kName), DirtySet{.junctions = {junction_id}, .topology = true});
-  command->erased.junctions.emplace_back(junction_id, *junction);
+  // §7 closure: the junction takes its connecting roads (back-reference set)
+  // with it; incoming roads survive with their links into it cleared.
+  std::vector<RoadId> seeds;
   network.for_each_road([&](RoadId road_id, const Road& road) {
-    const bool backref = road.junction == junction_id;
-    const bool linked = links_to_junction(road.predecessor, junction_id) ||
-                        links_to_junction(road.successor, junction_id);
-    if (!backref && !linked) {
-      return;
+    if (road.junction == junction_id) {
+      seeds.push_back(road_id);
     }
-    Road after = road;
-    if (backref) {
-      after.junction = {};
-    }
-    if (links_to_junction(after.predecessor, junction_id)) {
-      after.predecessor.reset();
-    }
-    if (links_to_junction(after.successor, junction_id)) {
-      after.successor.reset();
-    }
-    command->before.roads.emplace_back(road_id, road);
-    command->after.roads.emplace_back(road_id, std::move(after));
   });
+  const std::vector<RoadId> doomed = deletion_closure(network, std::move(seeds));
+
+  DirtySet dirty{.roads = doomed, .junctions = {junction_id}, .topology = true};
+  for (const RoadId doomed_id : doomed) {
+    for (const JunctionId touched : junctions_touching(network, doomed_id)) {
+      if (std::ranges::find(dirty.junctions, touched) == dirty.junctions.end()) {
+        dirty.junctions.push_back(touched);
+      }
+    }
+  }
+
+  auto command = std::make_unique<GenericCommand>(std::string(kName), std::move(dirty));
+  capture_deletion(network, *command, doomed, junction_id);
   return command;
 }
 

@@ -1,5 +1,6 @@
 #include "tools/select_tool.hpp"
 
+#include "roadmaker/edit/operations.hpp"
 #include "roadmaker/road/network.hpp"
 
 #include <algorithm>
@@ -142,6 +143,10 @@ bool SelectTool::mouse_release(const ToolEvent& event) {
 
 bool SelectTool::key_press(int key, Qt::KeyboardModifiers modifiers) {
   static_cast<void>(modifiers);
+  if (key == Qt::Key_Delete || key == Qt::Key_Backspace) {
+    // Mid-gesture the keys are inert — Esc is the way out of a drag/band.
+    return !drag_.has_value() && !press_.has_value() && delete_selection();
+  }
   if (key != Qt::Key_Escape) {
     return false;
   }
@@ -156,6 +161,43 @@ bool SelectTool::key_press(int key, Qt::KeyboardModifiers modifiers) {
     return true;
   }
   return false;
+}
+
+bool SelectTool::delete_selection() {
+  std::vector<RoadId> doomed;
+  for (const RoadId road_id : selection_.selected_roads()) {
+    if (document_.network().road(road_id) != nullptr) {
+      doomed.push_back(road_id);
+    }
+  }
+  if (doomed.empty()) {
+    return false;
+  }
+
+  // One QUndoStack macro = one undo step for the whole selection (02 §7).
+  // Each delete_road carries its referential closure, so an earlier command
+  // in the macro may have already taken a later selected road with it —
+  // those are skipped, not errors.
+  const bool macro = doomed.size() > 1;
+  if (macro) {
+    document_.undo_stack()->beginMacro(tr("Delete %1 Roads").arg(doomed.size()));
+  }
+  int deleted = 0;
+  for (const RoadId road_id : doomed) {
+    if (document_.network().road(road_id) == nullptr) {
+      continue;
+    }
+    if (document_.push_command(edit::delete_road(document_.network(), road_id))) {
+      ++deleted;
+    }
+  }
+  if (macro) {
+    document_.undo_stack()->endMacro();
+  }
+  emit status_message(deleted == 1 ? tr("Deleted 1 road — Ctrl+Z restores")
+                                   : tr("Deleted %1 roads — Ctrl+Z restores").arg(deleted));
+  emit preview_changed(); // the deleted roads' node handles vanish
+  return true;
 }
 
 void SelectTool::apply_band_selection(const Waypoint& current, Qt::KeyboardModifiers modifiers) {
