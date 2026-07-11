@@ -104,7 +104,8 @@ add_lane(const RoadNetwork& network, LaneSectionId section, int side, LaneType t
 
 /// Removes a lane. M2 restriction: only the outermost lane of its side can
 /// be removed (keeps OpenDRIVE lane numbering contiguous); the center lane
-/// never can. Dangling links in adjacent sections are cleared.
+/// never can. Dangling links in adjacent sections and junction lane_links
+/// referencing the lane are cleared (and restored exactly on undo).
 [[nodiscard]] RM_API std::unique_ptr<Command> remove_lane(const RoadNetwork& network, LaneId lane);
 
 [[nodiscard]] RM_API std::unique_ptr<Command>
@@ -114,7 +115,10 @@ set_lane_type(const RoadNetwork& network, LaneId lane, LaneType type);
 [[nodiscard]] RM_API std::unique_ptr<Command>
 set_lane_width(const RoadNetwork& network, LaneId lane, double width_m);
 
-/// Replaces the lane's outer-boundary marking (single record in M2).
+/// Edits the FIRST of the lane's outer-boundary marking records; later
+/// records survive untouched (the M2 editor edits the sOffset-0 entry only)
+/// but the edit must keep ascending sOffset order
+/// (asam.net:xodr:1.4.0:road.lane.road_mark.elem_asc_order).
 [[nodiscard]] RM_API std::unique_ptr<Command>
 set_road_mark(const RoadNetwork& network, LaneId lane, RoadMark mark);
 

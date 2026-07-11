@@ -1048,9 +1048,34 @@ std::unique_ptr<Command> remove_lane(const RoadNetwork& network, LaneId lane_id)
     }
   }
 
-  auto command = std::make_unique<GenericCommand>(
-      std::string(kName), DirtySet{.roads = {context->road_id}, .topology = true});
+  // Junction connections referencing the removed lane by odr id (as the
+  // incoming or the connecting side of a lane_link pair) would dangle — drop
+  // those pairs; undo restores them exactly (spec 02 §4 integrity).
+  std::vector<std::pair<JunctionId, Junction>> junctions_before;
+  std::vector<std::pair<JunctionId, Junction>> junctions_after;
+  network.for_each_junction([&](JunctionId junction_id, const Junction& junction) {
+    Junction junction_after = junction;
+    bool changed = false;
+    for (JunctionConnection& connection : junction_after.connections) {
+      changed |= std::erase_if(connection.lane_links, [&](const std::pair<int, int>& link) {
+                   return (connection.incoming_road == context->road_id && link.first == odr_id) ||
+                          (connection.connecting_road == context->road_id && link.second == odr_id);
+                 }) > 0;
+    }
+    if (changed) {
+      junctions_before.emplace_back(junction_id, junction);
+      junctions_after.emplace_back(junction_id, std::move(junction_after));
+    }
+  });
+
+  DirtySet dirty{.roads = {context->road_id}, .topology = true};
+  for (const auto& [junction_id, value] : junctions_before) {
+    dirty.junctions.push_back(junction_id);
+  }
+  auto command = std::make_unique<GenericCommand>(std::string(kName), std::move(dirty));
   command->erased.lanes.emplace_back(lane_id, context->lane);
+  command->before.junctions = std::move(junctions_before);
+  command->after.junctions = std::move(junctions_after);
 
   LaneSection section_after = section;
   std::erase(section_after.lanes, lane_id);
@@ -1135,8 +1160,23 @@ std::unique_ptr<Command> set_road_mark(const RoadNetwork& network, LaneId lane_i
                            Error{.code = ErrorCode::InvalidArgument,
                                  .message = "road mark width and sOffset must be >= 0"});
   }
+  // Each lane's mark list describes its OUTER boundary, so
+  // asam.net:xodr:1.9.0:road.lane.road_mark.only_outer holds by construction.
+  // Additional <roadMark> records stay supported in data: M2 edits the first
+  // record only (spec 02 §4), and the edit must keep the list in ascending
+  // sOffset order (asam.net:xodr:1.4.0:road.lane.road_mark.elem_asc_order).
   Lane after = context->lane;
-  after.road_marks = {mark};
+  if (after.road_marks.size() > 1 && mark.s_offset >= after.road_marks[1].s_offset) {
+    return invalid_command(
+        std::string(kName),
+        Error{.code = ErrorCode::InvalidArgument,
+              .message = "road mark sOffset must stay below the lane's next record"});
+  }
+  if (after.road_marks.empty()) {
+    after.road_marks.push_back(mark);
+  } else {
+    after.road_marks.front() = mark;
+  }
   auto command =
       std::make_unique<GenericCommand>(std::string(kName), DirtySet{.roads = {context->road_id}});
   command->before.lanes.emplace_back(lane_id, context->lane);

@@ -723,6 +723,85 @@ TEST(EditOperations, RemoveLaneOutermostOnlyAndRoundTrips) {
   EXPECT_EQ(network.lane(outer_right)->type, LaneType::Shoulder);
 }
 
+/// The issue #14 integrity criterion: junction lane_links referencing the
+/// removed lane (on either side of a pair) are dropped with the lane and
+/// restored exactly on undo.
+TEST(EditOperations, RemoveLaneDropsJunctionLaneLinksAndRestoresThem) {
+  RoadNetwork network;
+  const RoadId incoming = author_default(network, "1");
+  const RoadId connecting = author_default(network, "2", 40.0);
+  const JunctionId junction = network.create_junction("100", "X");
+  network.junction(junction)->connections.push_back(JunctionConnection{
+      .incoming_road = incoming,
+      .connecting_road = connecting,
+      .contact_point = ContactPoint::Start,
+      .lane_links = {{-1, -1}, {-2, -2}},
+  });
+
+  const auto outer_right = [&](RoadId road_id) {
+    const LaneSectionId section = network.road(road_id)->sections[0];
+    return network.lane_section(section)->lanes.back(); // -2 shoulder
+  };
+
+  // Removing the INCOMING road's -2 drops the pair by its first element.
+  auto from_incoming = roadmaker::edit::remove_lane(network, outer_right(incoming));
+  expect_command_round_trip(network, *from_incoming);
+  ASSERT_TRUE(from_incoming->apply(network).has_value());
+  {
+    const auto& links = network.junction(junction)->connections[0].lane_links;
+    ASSERT_EQ(links.size(), 1U);
+    EXPECT_EQ(links[0], (std::pair<int, int>{-1, -1}));
+  }
+  const roadmaker::edit::DirtySet dirty = from_incoming->dirty();
+  ASSERT_EQ(dirty.junctions.size(), 1U);
+  EXPECT_EQ(dirty.junctions[0], junction);
+  ASSERT_TRUE(from_incoming->revert(network).has_value());
+  EXPECT_EQ(network.junction(junction)->connections[0].lane_links.size(), 2U);
+
+  // Removing the CONNECTING road's -2 drops the pair by its second element.
+  auto from_connecting = roadmaker::edit::remove_lane(network, outer_right(connecting));
+  ASSERT_TRUE(from_connecting->apply(network).has_value());
+  {
+    const auto& links = network.junction(junction)->connections[0].lane_links;
+    ASSERT_EQ(links.size(), 1U);
+    EXPECT_EQ(links[0], (std::pair<int, int>{-1, -1}));
+  }
+  ASSERT_TRUE(from_connecting->revert(network).has_value());
+  EXPECT_EQ(network.junction(junction)->connections[0].lane_links.size(), 2U);
+}
+
+/// Spec 02 §4: multiple <roadMark> records per lane stay supported in data —
+/// the M2 edit touches the first (sOffset 0) record only, and the surviving
+/// tail keeps ascending sOffset order (…road_mark.elem_asc_order).
+TEST(EditOperations, SetRoadMarkEditsTheFirstRecordOnly) {
+  RoadNetwork network;
+  const RoadId road = author_default(network, "1");
+  const LaneSectionId section = network.road(road)->sections[0];
+  const LaneId outer_right = network.lane_section(section)->lanes.back();
+  network.lane(outer_right)->road_marks = {
+      RoadMark{.s_offset = 0.0, .type = RoadMarkType::Broken, .width = 0.12},
+      RoadMark{.s_offset = 40.0, .type = RoadMarkType::Solid, .width = 0.12},
+  };
+
+  auto command = roadmaker::edit::set_road_mark(
+      network, outer_right, RoadMark{.s_offset = 0.0, .type = RoadMarkType::Solid, .width = 0.25});
+  expect_command_round_trip(network, *command);
+
+  ASSERT_TRUE(command->apply(network).has_value());
+  const std::vector<RoadMark>& marks = network.lane(outer_right)->road_marks;
+  ASSERT_EQ(marks.size(), 2U);
+  EXPECT_EQ(marks[0].type, RoadMarkType::Solid);
+  EXPECT_NEAR(marks[0].width, 0.25, 1e-12);
+  EXPECT_EQ(marks[1].type, RoadMarkType::Solid); // tail untouched
+  EXPECT_NEAR(marks[1].s_offset, 40.0, 1e-12);
+
+  // An sOffset at or past the next record would break ascending order.
+  expect_command_rejected(
+      network,
+      roadmaker::edit::set_road_mark(
+          network, outer_right, RoadMark{.s_offset = 40.0, .type = RoadMarkType::None}));
+}
+
 // --- integration with the stack ---------------------------------------------------
 
 TEST(EditOperations, EditStackDrivesTopologyCommands) {
