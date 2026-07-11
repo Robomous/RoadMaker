@@ -195,6 +195,15 @@ copy) already needed for foreign passthrough; it is defined once in
   **object layer** dirty (a new `DirtySet::objects` set keyed by `RoadId`), so
   re-mesh re-anchors props without re-tessellating road surfaces (`04` §4).
 
+**Phase ownership (clarified 2026-07-11, after Phase 0 shipped without them):**
+nothing in this subsection belongs to phases 0/1. The `edit::Command` wrappers
+(`AddObject` … `SetSignalValue`) land in **phase 5**
+([#72](https://github.com/Robomous/RoadMaker/issues/72)) together with their
+Python bindings and headless tool tests; `DirtySet::objects` lands in
+**phase 2** ([#69](https://github.com/Robomous/RoadMaker/issues/69)) with its
+first mesh consumer. Phases 0/1 ship arena + parse/write/validate only — a
+phase-1 executor must **not** add signal commands "for parity".
+
 ## 3. GS-1 signal & object catalog (hard-coded, decision 1)
 
 M3a ships **no signal-catalog data file**; it hard-codes exactly the GS-1 set as
@@ -330,4 +339,44 @@ in M3a — meshing uses the prop asset, not the box (`04` §3).
   `.xodr` (same-PR binding rule).
 - **Sanitizer:** ASan+UBSan over the parse/write path (macOS: no
   `detect_leaks`, per the known gotcha) before merge.
+
+## 9. As-built — Phase 0 (`<objects>`, PR #74)
+
+Phase 0 shipped per this design with the following deviations. **Phase 1
+(`<signals>`, #68) and phase 2 (#69) must follow the as-built patterns below,
+not the §2 sketches, wherever the two differ.**
+
+- **Optionality is round-trip-driven.** Attributes that are optional in the
+  schema stay `std::optional<>` so an absent attribute is never invented on
+  write: `Object::height`, `valid_length`, `dynamic`, and
+  `ObjectOutline::closed` (absent `@closed` has a type-dependent default per
+  §13.14, so absence must survive). The §2 sketches showed plain doubles/bools
+  for some of these. Apply the same rule to `Signal` (e.g. `height`/`width`/
+  `length` already optional in §2.3).
+- **Original spellings survive enums:** `Object::type_str` keeps `@type`
+  exactly as spelled in the file; the enum is a classification, the string is
+  authoritative on write. A signal's `type`/`subtype` are already free strings
+  (§2.3), so no `type_str` twin is needed there.
+- **`RawXml`** (`xodr/raw_xml.hpp`) is `attributes` (name/value pairs, document
+  order) + `children` (serialized fragments) with an `empty()` helper — not an
+  opaque fragment string as §5 loosely sketched.
+- **Outline fallback:** an `<outline>` that cannot be modeled faithfully
+  (`<curveLocal>` children or mixed corner kinds) is preserved whole in
+  `ObjectOutline::raw` with `corners` left empty; the writer re-emits it
+  verbatim inside `<outlines>`.
+- **`<repeat>` is 0..*:** `Object::repeats` is a vector, not the single
+  `optional<ObjectRepeat>` of §2.2; `ObjectRepeat` gained the 1.9.0 cubic
+  `b_t`/`c_t`/`d_t` and the 1.8.0 `detach_from_reference_line`.
+- **`ObjectOutline::lane_type`** is `optional<std::string>` (not `LaneType` —
+  the outline enum is wider than the lane enum and must round-trip unknown
+  values).
+- **Road-level container extras:** non-`<object>` children of `<objects>`
+  (`<objectReference>`, `<tunnel>`, `<bridge>`, §13.10–§13.12) are preserved
+  as verbatim fragments in `Road::object_extras`. Phase 1 mirrors this with
+  `Road::signal_extras` for non-`<signal>` children of `<signals>`
+  (`<signalReference>`, §14.5 — multiplicity 0..*).
+- **Legacy acceptance:** the 1.4-era direct-child `<outline>` (no `<outlines>`
+  wrapper) parses; the writer always emits the wrapped form.
+- **Not shipped in Phase 0 (deliberate, see §2.4 phase ownership):** edit
+  commands, `DirtySet::objects`, and any mesh work.
 </content>

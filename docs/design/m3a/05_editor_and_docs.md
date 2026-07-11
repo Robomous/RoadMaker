@@ -12,6 +12,17 @@ all selection through `SelectionModel`, every item model ships its
 A new dock panel `editor/src/panels/library_panel.{hpp,cpp}` — **flat list +
 drag-to-place, no search, no categories** (the M4 browser subsumes it).
 
+**Issue boundary (clarified 2026-07-11):** this section is
+[#50](https://github.com/Robomous/RoadMaker/issues/50) — the `LibraryManifest`
+loader's *view* side: `LibraryListModel`, the dock panel, and the **drag
+source** (the outgoing MIME payload carrying the library `key`). The viewport
+**drop target**, the placement commands it issues, and the properties-panel
+sections are §2 = [#72](https://github.com/Robomous/RoadMaker/issues/72).
+#50 depends on [#70](https://github.com/Robomous/RoadMaker/issues/70)
+(`assets/library.json` + the headless loader ship there); #72 depends on #50.
+If #50 lands first, its drag payload is testable without a drop target (model
++ MIME tests only).
+
 - **Model:** `LibraryListModel` (`editor/src/document/`) over the
   `LibraryManifest` loaded from `assets/library.json`
   ([`03`](03_assets.md) §4). A flat `QAbstractListModel`: icon (class glyph) +
@@ -28,7 +39,14 @@ drag-to-place, no search, no categories** (the M4 browser subsumes it).
 ## 2. Object & signal placement
 
 Two entry points, both producing the same `edit::Command`s from
-[`01`](01_kernel_objects_signals.md) §2.4 (`AddObject`/`AddSignal` etc.):
+[`01`](01_kernel_objects_signals.md) §2.4 (`AddObject`/`AddSignal` etc.).
+**The kernel command layer itself lands here** (#72): phases 0/1 shipped the
+arena + `restore`/`erase_exact` API only, so this issue adds
+`edit/operations.hpp` commands for objects *and* signals, their Python
+bindings + example (same-PR rule), and the headless apply→revert tests —
+see `01` §2.4 phase ownership. Marking placement uses the normative subtypes
+of [`02`](02_road_marks.md) §3 (`zebra`, `signalLines`, `arrowLeft`/
+`arrowStraight`/`arrowRight`):
 
 - **Library drag-to-place** (§1): drop resolves `key` → manifest item → a new
   `<object>` or `<signal>` at the snapped `s`/`t`, with the manifest's placement

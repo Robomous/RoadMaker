@@ -110,7 +110,8 @@ uploads **once**; placed instances draw via `InstanceData` transforms:
   exports to `.xodr`.
 - **Incremental re-upload:** M2's dirty-road re-mesh already re-uploads only
   changed meshes. M3a adds the object dirty set
-  ([`01`](01_kernel_objects_signals.md) §2.4): moving a prop re-uploads only its
+  ([`01`](01_kernel_objects_signals.md) §2.4 — implemented in phase 2/#69,
+  consumed here): moving a prop re-uploads only its
   instance transform, not the road surface. Textures upload once and are keyed
   by material.
 

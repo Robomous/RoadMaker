@@ -72,9 +72,26 @@ the outline. Only traffic-control *signs and lights* are `<signal>`s
 
 | GS-1 marking | Representation | Mesh |
 |---|---|---|
-| Crosswalk (per arm) | `<object type="crosswalk">` with a closed `<outline>` (`<cornerRoad>` rectangle across the lanes), `@fillType="paint"` | striped quad band (§4) |
-| Stop line (per approach) | `<object type="roadMark">` (subtype `stopLine`), closed painted outline spanning the approach lanes | filled quad |
-| Lane arrow (approach lanes) | `<object type="roadMark">` (subtype `arrow`, variant left/straight/right) point object at lane center, `hdg` along travel | generated arrow glyph (§4) |
+| Crosswalk (per arm) | `<object type="crosswalk" subtype="zebra">`; **mandatory** `width`/`length` bounding volume, optional closed `<outline>` (`<cornerRoad>` rectangle, `@closed` defaults true), stripes via `<marking>` children (Table 112 example) | striped quad band (§4) |
+| Stop line (per approach) | `<object type="roadMark" subtype="signalLines">` — the subtype for lines referenced by a signal (the traffic light); spans the approach lanes | filled quad |
+| Lane arrow (approach lanes) | `<object type="roadMark" subtype="arrowLeft"/"arrowStraight"/"arrowRight">`; **mandatory** `width`/`length`/`height` bounding volume, placed at lane center, `hdg` along travel | generated arrow glyph (§4) |
+
+> **Correction (2026-07-11, pre-implementation).** The original draft of this
+> table invented subtypes `stopLine` and `arrow` + variant. The normative
+> combinations are OpenDRIVE 1.9.0 **§13.14.3 Table 112** (crosswalk subtypes:
+> `pedestrian`, `bicycle`, `zebra`, `virtual`, `other`) and **§13.14.8
+> Table 117** (roadMark subtypes: `arrowLeft`, `arrowLeftLeft`,
+> `arrowLeftRight`, `arrowRight`, `arrowRightRight`, `arrowRightLeft`,
+> `arrowStraight`, `arrowStraightLeft`, `arrowStraightRight`,
+> `arrowStraightLeftRight`, `arrowMergeLeft`, `arrowMergeRight`,
+> `signalLines`, `text`, `symbol`). There is **no `stopLine` subtype**; stop
+> lines related to a traffic light are `signalLines` (§13.1: "the stop line
+> (object) for a traffic light (signal)"). Both tables forbid the
+> radius-based bounding volume and `<repeat distance="0">` for these types.
+> GS-1 authors only `zebra`, `signalLines`, and the three plain arrows; the
+> parser classifies every Table 117 subtype string into the modeled tier
+> (free-string `subtype`, no enum needed — Phase 0 as-built keeps `subtype`
+> a `std::string`).
 
 These reuse the `Object`/`ObjectOutline` model from [`01`](01_kernel_objects_signals.md)
 §2 — no new kernel type. The editor authors them through the object-placement
@@ -109,8 +126,10 @@ surface (avoiding z-fighting):
 Incremental re-mesh: markings belong to their lane's road, so they re-tessellate
 with `remesh_roads`; object-based arrows/stop-lines belong to the object layer
 and re-mesh with the object dirty set ([`01`](01_kernel_objects_signals.md)
-§2.4). Determinism (stable vertex order) is required, matching the M2 mesh
-tests.
+§2.4). **`DirtySet::objects` is implemented in this phase** (#69) — it did not
+ship with Phase 0 (see `01` §2.4 phase ownership); this phase is its first
+consumer, and Phase 4 (#71) reuses it for instance-transform re-upload.
+Determinism (stable vertex order) is required, matching the M2 mesh tests.
 
 ## 5. Test plan
 
