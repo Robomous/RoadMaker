@@ -18,6 +18,7 @@ add_library(roadmaker_core ${_rm_core_type}
   src/edit/snap.cpp
   src/xodr/reader.cpp
   src/xodr/writer.cpp
+  src/xodr/junction_export.cpp
   src/mesh/mesh_builder.cpp
   src/mesh/junction_surface.cpp
   src/io/gltf_exporter.cpp
