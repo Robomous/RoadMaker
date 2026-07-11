@@ -61,6 +61,21 @@ branch on the primitive type. Clothoid evaluation and continuity rules:
   parser emits a warn-once diagnostic and ignores the element — never a
   silent drop.
 
+## Road marks
+
+- A `<roadMark>` styles the line on its lane's **outer** border (rule
+  `asam.net:xodr:1.9.0:road.lane.road_mark.only_outer`); the center line
+  between left and right lanes is lane 0's road mark. RoadMaker stores one
+  mark list per lane, so the rule holds by construction.
+- The spec's `@width` is optional and has **no normative numeric values**
+  (`@weight` standard/bold is its coarse axis). RoadMaker's *conventions*:
+  **0.12 m** for a standard-weight line (the kernel default) and **0.25 m**
+  for a bold one — these are the editor's road-mark width presets, not spec
+  requirements.
+- Multiple `<roadMark>` records per lane (ascending `sOffset`, rule
+  `asam.net:xodr:1.4.0:road.lane.road_mark.elem_asc_order`) are preserved in
+  data; the M2 editor edits the first (`sOffset` 0) record only.
+
 ## Elevation and superelevation
 
 - `<elevationProfile>` gives z(s) as piecewise cubics in global road s.

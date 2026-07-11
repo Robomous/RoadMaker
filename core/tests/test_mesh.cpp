@@ -1,10 +1,13 @@
+#include "roadmaker/edit/operations.hpp"
 #include "roadmaker/mesh/mesh_builder.hpp"
+#include "roadmaker/road/authoring.hpp"
 #include "roadmaker/xodr/reader.hpp"
 
 #include <gtest/gtest.h>
 
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <filesystem>
 #include <stdexcept>
 
@@ -202,6 +205,50 @@ TEST(RemeshRoads, TouchesOnlyListedRoadsAndMatchesFullRebuild) {
     ASSERT_NE(incremental, mesh.roads.end());
     EXPECT_EQ(incremental->positions, road.positions);
   }
+}
+
+/// The issue #14 criterion: a lane width edit shows up in the tessellation at
+/// a station, driven through the command + incremental re-mesh path the
+/// editor panel uses.
+TEST(RemeshRoads, ReflectsALaneWidthEditAtStation) {
+  roadmaker::RoadNetwork network;
+  const std::array<roadmaker::Waypoint, 2> waypoints{roadmaker::Waypoint{.x = 0.0, .y = 0.0},
+                                                     roadmaker::Waypoint{.x = 60.0, .y = 0.0}};
+  const auto road_id = roadmaker::author_clothoid_road(
+      network, waypoints, roadmaker::LaneProfile::two_lane_default(), "", "1");
+  ASSERT_TRUE(road_id.has_value());
+  NetworkMesh mesh = roadmaker::build_network_mesh(network);
+
+  // Widen the inner right driving lane (-1) from 3.5 m to 5.0 m.
+  const roadmaker::LaneSectionId section = network.road(*road_id)->sections[0];
+  roadmaker::LaneId inner_right;
+  for (const roadmaker::LaneId lane_id : network.lane_section(section)->lanes) {
+    if (network.lane(lane_id)->odr_id == -1) {
+      inner_right = lane_id;
+    }
+  }
+  auto command = roadmaker::edit::set_lane_width(network, inner_right, 5.0);
+  ASSERT_TRUE(command->apply(network).has_value());
+  const std::array<roadmaker::RoadId, 1> dirty{*road_id};
+  roadmaker::remesh_roads(network, mesh, dirty);
+
+  // At station s=30 the lane's outer boundary now sits at t=-5 (was -3.5).
+  const auto road = std::ranges::find(mesh.roads, *road_id, &RoadMesh::road);
+  ASSERT_NE(road, mesh.roads.end());
+  const auto patch = std::ranges::find(road->lanes, -1, &RoadMesh::LanePatch::odr_lane_id);
+  ASSERT_NE(patch, road->lanes.end());
+  double min_y_at_station = 0.0;
+  bool sampled = false;
+  for (const std::uint32_t index : patch->indices) {
+    const double x = road->positions[index * 3];
+    const double y = road->positions[(index * 3) + 1];
+    if (std::abs(x - 30.0) < 2.0) {
+      min_y_at_station = std::min(min_y_at_station, y);
+      sampled = true;
+    }
+  }
+  ASSERT_TRUE(sampled);
+  EXPECT_NEAR(min_y_at_station, -5.0, 1e-9);
 }
 
 TEST(RemeshRoads, AppendsNewRoadsAndRemovesErasedOnes) {

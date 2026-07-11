@@ -15,6 +15,7 @@ add_executable(roadmaker_editor_tests
   test_edit_nodes_tool.cpp
   test_editor_command.cpp
   test_icons.cpp
+  test_lane_profile.cpp
   test_panels.cpp
   test_picking.cpp
   test_preview_session.cpp

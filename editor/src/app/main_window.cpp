@@ -24,6 +24,7 @@
 #include "tools/create_road_tool.hpp"
 #include "tools/delete_tool.hpp"
 #include "tools/edit_nodes_tool.hpp"
+#include "tools/lane_profile_tool.hpp"
 #include "tools/select_tool.hpp"
 
 namespace roadmaker::editor {
@@ -109,6 +110,14 @@ MainWindow::MainWindow(QWidget* parent)
   tool_manager_.register_tool(ToolId::EditNodes, std::move(edit_nodes_tool));
   connect(actions_->tool_edit_nodes, &QAction::triggered, this, [this] {
     tool_manager_.set_active(ToolId::EditNodes);
+  });
+  auto lane_profile_tool = std::make_unique<LaneProfileTool>(selection_);
+  connect(lane_profile_tool.get(), &Tool::status_message, this, [this](const QString& text) {
+    statusBar()->showMessage(text, 5000);
+  });
+  tool_manager_.register_tool(ToolId::LaneProfile, std::move(lane_profile_tool));
+  connect(actions_->tool_lane_profile, &QAction::triggered, this, [this] {
+    tool_manager_.set_active(ToolId::LaneProfile);
   });
   auto delete_tool = std::make_unique<DeleteTool>(document_);
   connect(delete_tool.get(), &Tool::status_message, this, [this](const QString& text) {
@@ -217,6 +226,7 @@ void MainWindow::build_toolbar() {
           [template_button](QAction* action) { template_button->setIcon(action->icon()); });
   toolbar->addWidget(template_button);
   toolbar->addAction(actions_->tool_edit_nodes);
+  toolbar->addAction(actions_->tool_lane_profile);
   toolbar->addAction(actions_->tool_delete);
   toolbar->addSeparator();
   toolbar->addAction(actions_->reset_camera);

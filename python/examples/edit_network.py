@@ -50,10 +50,20 @@ def main() -> int:
     # piecewise-linear through the waypoint heights.
     stack.push(network, rm.edit.set_node_elevation(network, road, 1, 3.0))
 
-    # Widen the outermost right lane.
+    # Widen the outermost right lane and paint its outer boundary solid at
+    # the bold convention width (0.25 m; the standard-weight convention is
+    # 0.12 m — OpenDRIVE itself sets no numeric values).
     section = network.road(road).sections[0]
     outer_right = network.lane_section(section).lanes[-1]
     stack.push(network, rm.edit.set_lane_width(network, outer_right, 2.5))
+    stack.push(
+        network,
+        rm.edit.set_road_mark(
+            network,
+            outer_right,
+            rm.RoadMark(s_offset=0.0, type=rm.RoadMarkType.SOLID, width=0.25),
+        ),
+    )
 
     print(f"{stack.size} commands recorded")
 
