@@ -9,7 +9,9 @@
 #include <cstddef>
 #include <cstdint>
 #include <limits>
+#include <optional>
 #include <utility>
+#include <variant>
 #include <vector>
 
 #include "../mesh/junction_surface.hpp"
@@ -189,6 +191,164 @@ JunctionSurfaceExport build_junction_export(const RoadNetwork& network,
   }
 
   out.has_surface = true;
+  return out;
+}
+
+namespace {
+
+/// An arm of a junction: the end of an incoming/outgoing road that a
+/// connecting road attaches to.
+struct Arm {
+  RoadId road;
+  ContactPoint contact = ContactPoint::Start;
+  double x = 0.0;
+  double y = 0.0;
+
+  friend bool operator==(const Arm& a, const Arm& b) {
+    return a.road == b.road && a.contact == b.contact;
+  }
+};
+
+/// World position of a road's contact end.
+Vec2 road_end_point(const Road& road, ContactPoint contact) {
+  const double s = contact == ContactPoint::Start ? 0.0 : road.plan_view.length();
+  const PathPoint pose = road.plan_view.evaluate(s);
+  return {pose.x, pose.y};
+}
+
+/// The arm a connecting-road link points at (target is a road end), or nullopt
+/// when the link is absent or targets a junction.
+std::optional<Arm> link_arm(const RoadNetwork& network, const std::optional<RoadLink>& link) {
+  if (!link.has_value()) {
+    return std::nullopt;
+  }
+  const auto* road_target = std::get_if<RoadId>(&link->target);
+  if (road_target == nullptr) {
+    return std::nullopt;
+  }
+  const Road* road = network.road(*road_target);
+  if (road == nullptr || road->plan_view.empty()) {
+    return std::nullopt;
+  }
+  const Vec2 p = road_end_point(*road, link->contact);
+  return Arm{.road = *road_target, .contact = link->contact, .x = p.x, .y = p.y};
+}
+
+/// One connecting road with the two arms it bridges (from = predecessor,
+/// to = successor — connecting roads run start→end from incoming to outgoing).
+struct Bridge {
+  RoadId road;
+  Arm from;
+  Arm to;
+  Vec2 mid; // reference-line midpoint, for outer-arc selection
+};
+
+} // namespace
+
+JunctionBoundaryExport build_junction_boundary(const RoadNetwork& network,
+                                               const Junction& junction) {
+  JunctionBoundaryExport out;
+
+  // 1. Every connecting road with the two arms it bridges. A connecting road
+  //    missing either road link cannot be placed on the boundary — bail to the
+  //    warning path rather than emit a partial (non-closing) boundary.
+  std::vector<Bridge> bridges;
+  for (const JunctionConnection& connection : junction.connections) {
+    const Road* connecting = network.road(connection.connecting_road);
+    if (connecting == nullptr || connecting->plan_view.empty()) {
+      continue;
+    }
+    const std::optional<Arm> from = link_arm(network, connecting->predecessor);
+    const std::optional<Arm> to = link_arm(network, connecting->successor);
+    if (!from.has_value() || !to.has_value()) {
+      return out; // no arm metadata (foreign junction) — keep the warning
+    }
+    const PathPoint mid = connecting->plan_view.evaluate(connecting->plan_view.length() / 2.0);
+    bridges.push_back(Bridge{
+        .road = connection.connecting_road, .from = *from, .to = *to, .mid = {mid.x, mid.y}});
+  }
+  if (bridges.empty()) {
+    return out;
+  }
+
+  // 2. Distinct arms + footprint centroid.
+  std::vector<Arm> arms;
+  const auto note_arm = [&arms](const Arm& arm) {
+    if (std::ranges::find(arms, arm) == arms.end()) {
+      arms.push_back(arm);
+    }
+  };
+  for (const Bridge& bridge : bridges) {
+    note_arm(bridge.from);
+    note_arm(bridge.to);
+  }
+  if (arms.size() < 2) {
+    return out;
+  }
+  double cx = 0.0;
+  double cy = 0.0;
+  for (const Arm& arm : arms) {
+    cx += arm.x;
+    cy += arm.y;
+  }
+  cx /= static_cast<double>(arms.size());
+  cy /= static_cast<double>(arms.size());
+
+  // 3. Order arms counter-clockwise around the centroid.
+  std::ranges::sort(arms, [cx, cy](const Arm& a, const Arm& b) {
+    return std::atan2(a.y - cy, a.x - cx) < std::atan2(b.y - cy, b.x - cx);
+  });
+
+  // 4. Walk CCW-adjacent arm pairs: the outer connecting road between them is a
+  //    lane segment, with a joint cap at each arm. A pair with no bridging
+  //    connecting road is a gap the existing roads cannot close — defer to
+  //    auxiliary boundary roads (not generated here), keeping the warning.
+  const std::size_t n = arms.size();
+  std::vector<JunctionBoundarySegment> segments;
+  for (std::size_t i = 0; i < n; ++i) {
+    const Arm& a = arms[i];
+    const Arm& b = arms[(i + 1) % n];
+    const Bridge* outer = nullptr;
+    for (const Bridge& bridge : bridges) {
+      const bool matches =
+          (bridge.from == a && bridge.to == b) || (bridge.from == b && bridge.to == a);
+      if (!matches) {
+        continue;
+      }
+      const double d =
+          ((bridge.mid.x - cx) * (bridge.mid.x - cx)) + ((bridge.mid.y - cy) * (bridge.mid.y - cy));
+      if (outer == nullptr) {
+        outer = &bridge;
+        continue;
+      }
+      const double best =
+          ((outer->mid.x - cx) * (outer->mid.x - cx)) + ((outer->mid.y - cy) * (outer->mid.y - cy));
+      // Farthest-from-centre wins (the outer arc); ties break on road id for
+      // determinism.
+      if (d > best + tol::kLength ||
+          (std::abs(d - best) <= tol::kLength &&
+           network.road(bridge.road)->odr_id < network.road(outer->road)->odr_id)) {
+        outer = &bridge;
+      }
+    }
+    if (outer == nullptr) {
+      return out; // gap — auxiliary boundary roads required (kept as a warning)
+    }
+    // Lane segment along the outer connecting road (its single driving lane
+    // -1, whose outer edge forms the corner). Walk begin→end when the road
+    // runs from arm a to arm b, else reversed.
+    segments.push_back(JunctionBoundarySegment{.is_lane = true,
+                                               .road_id = network.road(outer->road)->odr_id,
+                                               .boundary_lane = -1,
+                                               .s_begin_to_end = (outer->from == a)});
+    // Joint cap at arm b (the shared end between this lane segment and the
+    // next), perpendicular to the arm road across all its lanes.
+    segments.push_back(JunctionBoundarySegment{
+        .is_lane = false, .road_id = network.road(b.road)->odr_id, .contact = b.contact});
+  }
+
+  out.has_boundary = true;
+  out.segments = std::move(segments);
   return out;
 }
 
