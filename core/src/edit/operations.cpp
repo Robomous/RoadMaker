@@ -1,5 +1,6 @@
 #include "roadmaker/edit/operations.hpp"
 
+#include "roadmaker/geometry/profile_fit.hpp"
 #include "roadmaker/road/network.hpp"
 #include "roadmaker/tol.hpp"
 
@@ -1215,20 +1216,13 @@ std::unique_ptr<Command> set_node_elevation(const RoadNetwork& network,
 
   Road after = *road;
   after.authoring_waypoints = waypoints;
+  // A flat profile is written as no profile at all (the OpenDRIVE default
+  // elevation is zero — asam.net:xodr:1.9.0:road.elevation, §10.5.1);
+  // otherwise re-fit a C1 cubic through the node (s, z) pairs so the surface
+  // reads smoothly (docs/design/m2/02_editing_tools.md §5). Records come out
+  // ascending in s (asam.net:xodr:1.4.0:road.elevation.elem_asc_order).
   const bool all_zero = std::ranges::all_of(heights, [](double h) { return std::abs(h) < 1e-12; });
-  if (all_zero) {
-    after.elevation.clear();
-  } else {
-    after.elevation.clear();
-    for (std::size_t i = 0; i + 1 < stations->size(); ++i) {
-      const double run = (*stations)[i + 1] - (*stations)[i];
-      after.elevation.push_back(Poly3{
-          .s = (*stations)[i],
-          .a = heights[i],
-          .b = run > tol::kLength ? (heights[i + 1] - heights[i]) / run : 0.0,
-      });
-    }
-  }
+  after.elevation = all_zero ? std::vector<Poly3>{} : fit_elevation_profile(*stations, heights);
 
   auto command = std::make_unique<GenericCommand>(
       std::string(kName),
