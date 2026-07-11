@@ -152,6 +152,21 @@ def test_export_empty_mesh_raises():
         rm.export_glb(mesh, "unused.glb")
 
 
+# export_usda is only bound when the kernel is built with RM_BUILD_USD=ON.
+# The published wheels ship USD-off, so skip when the symbol is absent.
+@pytest.mark.skipif(not hasattr(rm, "export_usda"), reason="kernel built without RM_BUILD_USD")
+def test_export_usda(tmp_path):
+    network, _ = rm.load_xodr(SAMPLES / "t_junction.xodr")
+    mesh = rm.build_network_mesh(network)
+
+    out = tmp_path / "t.usda"
+    rm.export_usda(mesh, out)
+    text = out.read_text()
+    assert text.startswith("#usda 1.0")
+    assert 'upAxis = "Y"' in text
+    assert 'defaultPrim = "World"' in text
+
+
 def test_network_editing_api():
     network = rm.RoadNetwork()
     road_id = network.create_road("r", "1")

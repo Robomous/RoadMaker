@@ -20,6 +20,11 @@ Actions::Actions(QUndoStack& undo_stack, QObject* parent) : QObject(parent) {
   export_glb = new QAction(tr("&Export glTF…"), this);
   export_glb->setEnabled(false); // enabled once a file is loaded
 
+#ifdef RM_HAVE_USD
+  export_usd = new QAction(tr("Export &USD…"), this);
+  export_usd->setEnabled(false); // enabled once a file is loaded
+#endif
+
   quit = new QAction(tr("&Quit"), this);
   quit->setShortcut(QKeySequence::Quit);
   quit->setMenuRole(QAction::QuitRole);
@@ -117,6 +122,9 @@ void Actions::apply_icons() {
   save->setIcon(Icons::get(QStringLiteral("save")));
   save_as->setIcon(Icons::get(QStringLiteral("save")));
   export_glb->setIcon(Icons::get(QStringLiteral("box")));
+#ifdef RM_HAVE_USD
+  export_usd->setIcon(Icons::get(QStringLiteral("box")));
+#endif
   undo->setIcon(Icons::get(QStringLiteral("undo-2")));
   redo->setIcon(Icons::get(QStringLiteral("redo-2")));
   tool_select->setIcon(Icons::get(QStringLiteral("mouse-pointer-2")));

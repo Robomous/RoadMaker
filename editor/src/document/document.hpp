@@ -51,6 +51,12 @@ public:
   /// Exports the current tessellation as a binary glTF (.glb).
   [[nodiscard]] Expected<void> export_glb(const std::filesystem::path& path) const;
 
+#ifdef RM_HAVE_USD
+  /// Exports the current tessellation as OpenUSD ASCII (.usda). Only present
+  /// when the kernel was built with RM_BUILD_USD=ON.
+  [[nodiscard]] Expected<void> export_usd(const std::filesystem::path& path) const;
+#endif
+
   [[nodiscard]] const RoadNetwork& network() const { return network_; }
 
   [[nodiscard]] const NetworkMesh& mesh() const { return mesh_; }

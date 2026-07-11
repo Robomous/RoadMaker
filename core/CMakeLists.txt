@@ -25,6 +25,14 @@ add_library(roadmaker_core ${_rm_core_type}
 )
 add_library(roadmaker::core ALIAS roadmaker_core)
 
+# OpenUSD (.usda) exporter — optional, gated on RM_BUILD_USD. RM_HAVE_USD is
+# PUBLIC so consumers (bindings, editor) can gate on the exported symbol.
+if(RM_BUILD_USD)
+  target_sources(roadmaker_core PRIVATE src/io/usd_exporter.cpp)
+  target_link_libraries(roadmaker_core PRIVATE tinyusdz::tinyusdz)
+  target_compile_definitions(roadmaker_core PUBLIC RM_HAVE_USD)
+endif()
+
 # Explicit RM_API exports only — hidden visibility everywhere else. A missed
 # annotation is a LINK error in the shared CI job, which is the point:
 # WINDOWS_EXPORT_ALL_SYMBOLS would paper over API-hygiene mistakes.

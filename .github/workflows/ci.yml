@@ -245,6 +245,47 @@ jobs:
       - name: Run 30 s smoke
         run: ./build/core/tests/fuzz/roadmaker_fuzz_xodr core/tests/fuzz/corpus -max_total_time=30 -print_final_stats=1
 
+  usd-export:
+    name: USD export (usdchecker)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    # The OpenUSD exporter is gated behind RM_BUILD_USD (off in the default
+    # matrix and in wheels). This dedicated job builds it ON, runs the golden
+    # gtests + the USD Python binding, and validates the exported .usda against
+    # the OpenUSD reference implementation (usdchecker from usd-core).
+    env:
+      TMPDIR: /tmp # keep the gtest golden path predictable for usdchecker
+    steps:
+      - uses: actions/checkout@v4
+      - uses: lukka/get-cmake@latest
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: hendrikmuhs/ccache-action@v1.2
+        with:
+          key: usd-export
+      - name: Cache FetchContent downloads
+        uses: actions/cache@v4
+        with:
+          path: build/_deps/*-subbuild/*-populate-prefix/src/*.tar.gz
+          key: deps-usd-${{ hashFiles('cmake/deps.cmake') }}
+      - name: Install usd-core (usdchecker) + nanobind
+        run: pip install usd-core nanobind
+      - name: Configure (RM_BUILD_USD=ON, kernel + tests + Python binding)
+        run: >
+          cmake -B build -G Ninja
+          -DCMAKE_BUILD_TYPE=Release
+          -DRM_BUILD_USD=ON -DRM_BUILD_TESTS=ON -DRM_BUILD_PYTHON=ON
+          -DRM_BUILD_EDITOR=OFF -DRM_WERROR=ON
+      - name: Build
+        run: cmake --build build
+      - name: Golden gtests (writes /tmp/rm_usd_golden.usda)
+        run: ctest --test-dir build --output-on-failure -R '^Usd\.'
+      # usd-core ships the pxr Python modules but not the usdchecker CLI, so we
+      # drive its compliance engine (UsdUtils.ComplianceChecker) directly.
+      - name: Validate exported .usda against the OpenUSD reference checker
+        run: python scripts/usd_compliance_check.py /tmp/rm_usd_golden.usda
+
   docs:
     name: docs link check
     runs-on: ubuntu-latest

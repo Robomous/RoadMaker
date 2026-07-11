@@ -18,6 +18,12 @@ add_executable(roadmaker_core_tests
   test_remesh_budget.cpp
 )
 
+# The USD exporter and its golden tests only exist when RM_BUILD_USD=ON. The
+# test reads back the emitted USDA text, so it needs no tinyusdz link.
+if(RM_BUILD_USD)
+  target_sources(roadmaker_core_tests PRIVATE test_usd.cpp)
+endif()
+
 target_compile_definitions(roadmaker_core_tests PRIVATE
   RM_SAMPLES_DIR="${CMAKE_SOURCE_DIR}/assets/samples"
   RM_FIXTURES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/fixtures/junctions"

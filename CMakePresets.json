@@ -52,7 +52,8 @@
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release",
         "RM_BUILD_SHARED": "ON",
-        "RM_BUILD_PYTHON": "OFF"
+        "RM_BUILD_PYTHON": "OFF",
+        "RM_BUILD_USD": "ON"
       }
     },
     { "name": "release-macos", "inherits": "release-base" },

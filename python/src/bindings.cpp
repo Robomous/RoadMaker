@@ -9,6 +9,7 @@
 #include "roadmaker/error.hpp"
 #include "roadmaker/geometry/profile_fit.hpp"
 #include "roadmaker/io/gltf_exporter.hpp"
+#include "roadmaker/io/usd_exporter.hpp"
 #include "roadmaker/mesh/mesh_builder.hpp"
 #include "roadmaker/road/authoring.hpp"
 #include "roadmaker/road/network.hpp"
@@ -841,4 +842,19 @@ NB_MODULE(_roadmaker, m) {
       "mesh"_a,
       "path"_a,
       "Writes binary glTF 2.0 (Y-up, meters).");
+
+#ifdef RM_HAVE_USD
+  // Only present when the kernel was built with RM_BUILD_USD=ON (wheels ship
+  // USD-off in M2). Callers should feature-detect with hasattr(rm,
+  // "export_usda").
+  m.def(
+      "export_usda",
+      [](const roadmaker::NetworkMesh& mesh, const std::filesystem::path& path) {
+        unwrap(roadmaker::export_usda(mesh, path));
+      },
+      "mesh"_a,
+      "path"_a,
+      "Writes OpenUSD ASCII .usda (Y-up, meters). USDA only — .usdc/.usdz crate "
+      "output is unsupported in M2. Requires a kernel built with RM_BUILD_USD=ON.");
+#endif
 }

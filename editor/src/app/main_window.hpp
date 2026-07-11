@@ -51,6 +51,9 @@ private:
   /// user chose Save (and it succeeded) or Discard.
   bool confirm_discard();
   void export_file_dialog();
+#ifdef RM_HAVE_USD
+  void export_usd_dialog();
+#endif
   void show_about_dialog();
   void update_recent_files_menu();
   void update_window_title();
