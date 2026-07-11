@@ -41,6 +41,16 @@ bool SelectionModel::contains(const SelectionEntry& entry) const {
   return std::ranges::find(entries_, entry) != entries_.end();
 }
 
+std::vector<RoadId> SelectionModel::selected_roads() const {
+  std::vector<RoadId> roads;
+  for (const SelectionEntry& entry : entries_) {
+    if (std::ranges::find(roads, entry.road) == roads.end()) {
+      roads.push_back(entry.road);
+    }
+  }
+  return roads;
+}
+
 bool SelectionModel::is_live(const SelectionEntry& entry) const {
   if (document_.network().road(entry.road) == nullptr) {
     return false;

@@ -38,6 +38,14 @@ def main() -> int:
     stack.push(network, rm.edit.move_waypoint(network, road, 1, (80.0, 40.0)))
     print(f"after move: length={network.road(road).length:.2f} m")
 
+    # The editing nodes and their stations along the fitted reference line —
+    # what an interactive editor renders as node handles. For roads loaded
+    # without rm:waypoints metadata this derives nodes from the geometry
+    # records instead.
+    nodes = rm.edit.effective_waypoints(network.road(road))
+    stations = rm.edit.waypoint_stations(network.road(road))
+    print(f"editing nodes: {nodes} at s={[f'{s:.1f}' for s in stations]}")
+
     # Raise the middle waypoint 3 m — the elevation profile becomes
     # piecewise-linear through the waypoint heights.
     stack.push(network, rm.edit.set_node_elevation(network, road, 1, 3.0))

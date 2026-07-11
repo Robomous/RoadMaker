@@ -87,11 +87,13 @@ event sequence pushes nothing.
 ## 3. Edit Nodes
 
 **Interaction.** With a road selected: node handles + tangent visualization.
-Click on segment midpoint marker: insert node at that station. Click node +
-`Delete` key (or dedicated mode): delete node. Drag node: as Select/Move.
-Drag tangent handle (M2: tangent handles display-only on interior nodes —
-G1 fit derives tangents; the *end* node of a road offers a heading handle only
-when not snapped to a neighbor).
+Click on segment midpoint marker: insert node at that station (on the curve,
+so the shape is preserved until the node is dragged). Click node + `Delete`
+key: delete node. Drag node: as Select/Move. Tangent visualization is
+display-only in M2 (whiskers along the fitted heading at every node — the G1
+fit derives all tangents from the waypoints; a draggable end-node heading
+handle needs a heading field in the waypoint data model and is deferred with
+it to M3).
 
 **Kernel API.** `edit::insert_waypoint`, `edit::delete_waypoint`,
 `edit::move_waypoint`. Waypoint derivation for foreign roads per `01` §2.5.

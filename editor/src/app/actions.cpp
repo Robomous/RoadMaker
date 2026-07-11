@@ -29,6 +29,13 @@ Actions::Actions(QUndoStack& undo_stack, QObject* parent) : QObject(parent) {
                              "drag a node handle moves it (V)"));
   tool_group->addAction(tool_select);
 
+  tool_edit_nodes = new QAction(tr("Edit &Nodes"), this);
+  tool_edit_nodes->setCheckable(true);
+  tool_edit_nodes->setShortcut(Qt::Key_N);
+  tool_edit_nodes->setToolTip(tr("Edit Nodes — drag a node to move it, click a midpoint "
+                                 "marker to insert, Delete removes the active node (N)"));
+  tool_group->addAction(tool_edit_nodes);
+
   reset_camera = new QAction(tr("Reset &Camera"), this);
   frame_selection = new QAction(tr("&Frame Selection"), this);
   frame_selection->setShortcut(Qt::Key_F);
@@ -48,6 +55,7 @@ void Actions::apply_icons() {
   undo->setIcon(Icons::get(QStringLiteral("undo-2")));
   redo->setIcon(Icons::get(QStringLiteral("redo-2")));
   tool_select->setIcon(Icons::get(QStringLiteral("mouse-pointer-2")));
+  tool_edit_nodes->setIcon(Icons::get(QStringLiteral("waypoints")));
   reset_camera->setIcon(Icons::get(QStringLiteral("rotate-ccw")));
   frame_selection->setIcon(Icons::get(QStringLiteral("scan")));
 }

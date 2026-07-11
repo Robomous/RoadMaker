@@ -533,6 +533,16 @@ NB_MODULE(_roadmaker, m) {
       "index"_a,
       "at"_a);
   edit.def("delete_waypoint", &roadmaker::edit::delete_waypoint, "network"_a, "road"_a, "index"_a);
+  edit.def("effective_waypoints",
+           &roadmaker::edit::effective_waypoints,
+           "road"_a,
+           "The road's editing nodes: recorded authoring waypoints, or the set "
+           "derived from geometry-record endpoints for foreign roads.");
+  edit.def(
+      "waypoint_stations",
+      [](const roadmaker::Road& road) { return unwrap(roadmaker::edit::waypoint_stations(road)); },
+      "road"_a,
+      "Stations [m] of effective_waypoints(road) along the reference line.");
   edit.def(
       "create_road",
       [](const std::vector<std::pair<double, double>>& waypoints,

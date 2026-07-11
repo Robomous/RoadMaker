@@ -10,6 +10,7 @@
 #include <cstdlib>
 #include <functional>
 #include <optional>
+#include <span>
 #include <utility>
 #include <variant>
 
@@ -274,10 +275,6 @@ std::vector<Waypoint> derive_waypoints(const Road& road) {
   return waypoints;
 }
 
-std::vector<Waypoint> effective_waypoints(const Road& road) {
-  return road.authoring_waypoints.has_value() ? *road.authoring_waypoints : derive_waypoints(road);
-}
-
 /// Stations of the waypoints along the CURRENT reference line: record starts
 /// plus the total length. Only meaningful while waypoints and records are in
 /// sync (waypoint count == record count + 1, the fit invariant).
@@ -387,12 +384,30 @@ bool links_to_junction(const std::optional<RoadLink>& link, JunctionId junction)
 
 // ---- waypoint re-fit commands -------------------------------------------------
 
+/// Headings of the current plan view at the derive_waypoints() stations
+/// (record starts + endpoint). The §2.5 derivation re-fit interpolates
+/// these (G1 Hermite), so the first edit of a foreign road reproduces every
+/// untouched line/arc/spiral segment exactly — a points-only re-fit would
+/// reflow the whole chain by up to ~1 m. Later edits (waypoints recorded)
+/// re-fit through positions alone, the authored-road reflow semantics.
+std::vector<double> derived_headings(const Road& road) {
+  std::vector<double> headings;
+  headings.reserve(road.plan_view.records().size() + 1);
+  for (const GeometryRecord& record : road.plan_view.records()) {
+    headings.push_back(record.hdg);
+  }
+  headings.push_back(road.plan_view.evaluate(road.plan_view.length()).hdg);
+  return headings;
+}
+
 std::unique_ptr<Command> refit_command(const RoadNetwork& network,
                                        RoadId road_id,
                                        std::string command_name,
-                                       std::vector<Waypoint> waypoints) {
+                                       std::vector<Waypoint> waypoints,
+                                       std::span<const double> headings = {}) {
   const Road* road = network.road(road_id);
-  auto line = fit_clothoid_path(waypoints);
+  auto line =
+      headings.empty() ? fit_clothoid_path(waypoints) : fit_clothoid_path(waypoints, headings);
   if (!line.has_value()) {
     return invalid_command(std::move(command_name), line.error());
   }
@@ -421,6 +436,14 @@ std::unique_ptr<Command> refit_command(const RoadNetwork& network,
 
 } // namespace
 
+std::vector<Waypoint> effective_waypoints(const Road& road) {
+  return road.authoring_waypoints.has_value() ? *road.authoring_waypoints : derive_waypoints(road);
+}
+
+Expected<std::vector<double>> waypoint_stations(const Road& road) {
+  return waypoint_stations(road, effective_waypoints(road).size());
+}
+
 std::unique_ptr<Command>
 move_waypoint(const RoadNetwork& network, RoadId road_id, std::size_t index, Waypoint to) {
   static constexpr std::string_view kName = "Move Waypoint";
@@ -435,8 +458,12 @@ move_waypoint(const RoadNetwork& network, RoadId road_id, std::size_t index, Way
         std::string(kName),
         Error{.code = ErrorCode::InvalidArgument, .message = "waypoint index out of range"});
   }
+  std::vector<double> headings;
+  if (!road->authoring_waypoints.has_value()) {
+    headings = derived_headings(*road); // the moved node keeps the chain's heading
+  }
   waypoints[index] = to;
-  return refit_command(network, road_id, std::string(kName), std::move(waypoints));
+  return refit_command(network, road_id, std::string(kName), std::move(waypoints), headings);
 }
 
 std::unique_ptr<Command>
@@ -453,8 +480,21 @@ insert_waypoint(const RoadNetwork& network, RoadId road_id, std::size_t index, W
         std::string(kName),
         Error{.code = ErrorCode::InvalidArgument, .message = "waypoint index out of range"});
   }
+  std::vector<double> headings;
+  if (!road->authoring_waypoints.has_value()) {
+    headings = derived_headings(*road);
+    // Heading for the new node: the chain's heading midway between its
+    // neighbors' stations (exact for the on-curve midpoint-marker insert).
+    // Derived waypoints always satisfy the count == records + 1 invariant,
+    // so the station lookup cannot fail here.
+    const auto stations = waypoint_stations(*road, waypoints.size());
+    const double lo = index == 0 ? stations->front() : stations->at(index - 1);
+    const double hi = index == waypoints.size() ? stations->back() : stations->at(index);
+    headings.insert(headings.begin() + static_cast<std::ptrdiff_t>(index),
+                    road->plan_view.evaluate((lo + hi) / 2.0).hdg);
+  }
   waypoints.insert(waypoints.begin() + static_cast<std::ptrdiff_t>(index), at);
-  return refit_command(network, road_id, std::string(kName), std::move(waypoints));
+  return refit_command(network, road_id, std::string(kName), std::move(waypoints), headings);
 }
 
 std::unique_ptr<Command>
@@ -476,8 +516,13 @@ delete_waypoint(const RoadNetwork& network, RoadId road_id, std::size_t index) {
         std::string(kName),
         Error{.code = ErrorCode::InvalidArgument, .message = "a road needs at least 2 waypoints"});
   }
+  std::vector<double> headings;
+  if (!road->authoring_waypoints.has_value()) {
+    headings = derived_headings(*road);
+    headings.erase(headings.begin() + static_cast<std::ptrdiff_t>(index));
+  }
   waypoints.erase(waypoints.begin() + static_cast<std::ptrdiff_t>(index));
-  return refit_command(network, road_id, std::string(kName), std::move(waypoints));
+  return refit_command(network, road_id, std::string(kName), std::move(waypoints), headings);
 }
 
 std::unique_ptr<Command>

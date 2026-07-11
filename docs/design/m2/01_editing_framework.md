@@ -190,11 +190,14 @@ the authoring API and edit commands; **persisted** in `.xodr` via a
 round-trips through save/load. For roads loaded without it (foreign files),
 Edit Nodes derives waypoints lazily from geometry-record endpoints (each record
 start + final endpoint) — the first node edit re-fits the whole reference line
-as a clothoid path through those points and records the result (this is a
-geometry-altering operation within `tol::kRoundTripPosition` only for pure
-line/arc/spiral chains; the Properties panel shows a one-time notice for
-paramPoly3 roads). The writer must keep emitting foreign geometry untouched for
-roads that were never node-edited.
+as a clothoid path through those points, **interpolating the original chain's
+headings at them** (G1 Hermite — a points-only fit would reflow the chain by
+up to ~1 m), and records the result. Pure line/arc/spiral chains are thereby
+reproduced within `tol::kRoundTripPosition`; paramPoly3 roads are re-fitted
+approximately, with a one-time status-bar notice from the editing tool. Once
+waypoints are recorded, subsequent edits re-fit through the points alone — the
+authored-road reflow semantics. The writer must keep emitting foreign geometry
+untouched for roads that were never node-edited.
 
 ## 3. Drag interactions: preview session + one command
 

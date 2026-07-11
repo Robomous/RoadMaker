@@ -26,8 +26,23 @@ namespace roadmaker::edit {
 
 // --- geometry (re-fit clothoid through authoring waypoints, §2.5) ----------
 // Roads loaded without rm:waypoints get them derived from geometry-record
-// endpoints on their first node edit; the re-fit reproduces line/arc/spiral
-// chains within rm::tol and is geometry-altering for paramPoly3 roads.
+// endpoints on their first node edit. That derivation re-fit interpolates
+// the chain's headings (G1 Hermite), so pure line/arc/spiral chains are
+// reproduced within rm::tol; paramPoly3 roads are re-fitted approximately
+// (the editor's one-time notice). Once waypoints are recorded, later edits
+// re-fit through positions alone — the authored-road reflow semantics.
+
+/// The editing nodes of `road`: its recorded authoring waypoints, or — for
+/// roads loaded without rm:waypoints metadata — the derived set (every
+/// geometry-record start plus the final endpoint, §2.5). What the waypoint
+/// command factories below edit, and what an editor renders as node handles.
+[[nodiscard]] RM_API std::vector<Waypoint> effective_waypoints(const Road& road);
+
+/// Stations [m] of effective_waypoints() along the road's CURRENT reference
+/// line (record starts plus the total length). Fails when recorded authoring
+/// waypoints are out of sync with the plan-view geometry (hand-edited
+/// rm:waypoints metadata) — waypoint count must equal record count + 1.
+[[nodiscard]] RM_API Expected<std::vector<double>> waypoint_stations(const Road& road);
 
 [[nodiscard]] RM_API std::unique_ptr<Command>
 move_waypoint(const RoadNetwork& network, RoadId road, std::size_t index, Waypoint to);
