@@ -1,16 +1,19 @@
 #pragma once
 
 // Properties of the selected entity: read-only rows rebuilt from the kernel
-// on every selection change, plus the Lane Profile section (issue #14,
-// docs/design/m2/02_editing_tools.md §4) editing the primary lane through
-// Document commands — one command per discrete panel action, spin boxes
-// commit on editingFinished.
+// on every selection change, plus manually bound editors (issues #14/#15,
+// docs/design/m2/01_editing_framework.md §7) — the road name and the Lane
+// Profile section edit the primary selection through Document commands, one
+// command per discrete panel action. Text/spin editors commit on
+// editingFinished only and skip the push when the value did not change, so
+// refresh-on-undo never echoes a command back.
 
 #include <QComboBox>
 #include <QDoubleSpinBox>
 #include <QFormLayout>
 #include <QGroupBox>
 #include <QLabel>
+#include <QLineEdit>
 #include <QPushButton>
 #include <QWidget>
 
@@ -52,6 +55,9 @@ private:
   const SelectionModel& selection_;
   QFormLayout* form_;
   QLabel* placeholder_;
+
+  QWidget* name_row_;
+  QLineEdit* name_edit_;
 
   QGroupBox* lane_group_;
   QComboBox* type_combo_;

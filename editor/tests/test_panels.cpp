@@ -2,11 +2,17 @@
 // selection bidirectionally. Rendering itself is not asserted (no GL in the
 // offscreen platform) — the ViewportWidget is deliberately absent here.
 
+#include "roadmaker/xodr/writer.hpp"
+
 #include <gtest/gtest.h>
 
 #include <QItemSelectionModel>
+#include <QLineEdit>
+#include <QSignalSpy>
 #include <QTemporaryDir>
 #include <fstream>
+#include <stdexcept>
+#include <string>
 #include <vector>
 
 #include "document/diagnostics_model.hpp"
@@ -56,6 +62,14 @@ std::vector<RoadId> all_roads(const Document& document) {
   std::vector<RoadId> roads;
   document.network().for_each_road([&](RoadId id, const Road&) { roads.push_back(id); });
   return roads;
+}
+
+std::string xodr(const Document& document) {
+  auto text = roadmaker::write_xodr(document.network());
+  if (!text) {
+    throw std::runtime_error(text.error().message);
+  }
+  return *text;
 }
 
 TEST(SceneTreePanel, ViewClickDrivesSelectionModel) {
@@ -132,6 +146,71 @@ TEST(PropertiesPanel, ConstructsAndFollowsSelection) {
   h.selection.select({.road = all_roads(h.document).front()});
   h.selection.clear();
   ASSERT_TRUE(h.document.load(kSample).has_value()); // reload with panel alive
+}
+
+// Editable Properties panel via manual binding (issue #15,
+// docs/design/m2/01_editing_framework.md §7): the road-name line edit
+// commits ONE rename command on editingFinished, skips no-op commits, and
+// refresh-on-undo re-syncs the editor without echoing a command back.
+TEST(PropertiesPanel, RoadNameEditCommitsOneRenameAndUndoRestores) {
+  Harness h;
+  ASSERT_TRUE(h.document.load(kSample).has_value());
+  PropertiesPanel panel(h.document, h.selection);
+  auto* name_edit = panel.findChild<QLineEdit*>(QStringLiteral("road_name_edit"));
+  ASSERT_NE(name_edit, nullptr);
+  EXPECT_FALSE(name_edit->isVisibleTo(&panel)); // nothing selected yet
+
+  const RoadId road = all_roads(h.document).front();
+  h.selection.select({.road = road});
+  ASSERT_TRUE(name_edit->isVisibleTo(&panel));
+  const std::string original = h.document.network().road(road)->name;
+  EXPECT_EQ(name_edit->text().toStdString(), original); // synced from the network
+
+  const std::string before = xodr(h.document);
+  const int base = h.document.undo_stack()->count();
+  name_edit->setText(QStringLiteral("Renamed by panel"));
+  emit name_edit->editingFinished();
+  EXPECT_EQ(h.document.undo_stack()->count(), base + 1);
+  EXPECT_EQ(h.document.network().road(road)->name, "Renamed by panel");
+
+  // Focus-out without a change (Qt fires editingFinished on both Return and
+  // focus loss) must not push a second command.
+  emit name_edit->editingFinished();
+  EXPECT_EQ(h.document.undo_stack()->count(), base + 1);
+
+  h.document.undo_stack()->undo();
+  EXPECT_EQ(xodr(h.document), before);
+  EXPECT_EQ(name_edit->text().toStdString(), original); // refresh re-synced the editor
+}
+
+TEST(PropertiesPanel, UndoRedoRefreshDoesNotEchoCommands) {
+  Harness h;
+  ASSERT_TRUE(h.document.load(kSample).has_value());
+  PropertiesPanel panel(h.document, h.selection);
+  const RoadId road = all_roads(h.document).front();
+  h.selection.select({.road = road});
+
+  auto* name_edit = panel.findChild<QLineEdit*>(QStringLiteral("road_name_edit"));
+  ASSERT_NE(name_edit, nullptr);
+  const int base = h.document.undo_stack()->count();
+  name_edit->setText(QStringLiteral("Echo probe"));
+  emit name_edit->editingFinished();
+  ASSERT_EQ(h.document.undo_stack()->count(), base + 1);
+
+  // Each undo/redo re-meshes once and refreshes the panel; the refresh must
+  // not push commands back (count stable, index moves exactly one step).
+  QSignalSpy mesh_spy(&h.document, &Document::mesh_changed);
+  h.document.undo_stack()->undo();
+  EXPECT_EQ(mesh_spy.count(), 1);
+  EXPECT_EQ(h.document.undo_stack()->count(), base + 1);
+  EXPECT_EQ(h.document.undo_stack()->index(), base);
+
+  h.document.undo_stack()->redo();
+  EXPECT_EQ(mesh_spy.count(), 2);
+  EXPECT_EQ(h.document.undo_stack()->count(), base + 1);
+  EXPECT_EQ(h.document.undo_stack()->index(), base + 1);
+  EXPECT_EQ(h.document.network().road(road)->name, "Echo probe");
+  EXPECT_EQ(name_edit->text(), QStringLiteral("Echo probe"));
 }
 
 TEST(DiagnosticsPanel, DoubleClickResolvableRowSelectsEntity) {

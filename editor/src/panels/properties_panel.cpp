@@ -112,14 +112,21 @@ PropertiesPanel::PropertiesPanel(Document& document,
                                  const SelectionModel& selection,
                                  QWidget* parent)
     : QWidget(parent), document_(document), selection_(selection), form_(new QFormLayout),
-      placeholder_(new QLabel(tr("Select a road or lane."), this)),
-      lane_group_(new QGroupBox(tr("Lane profile"), this)), type_combo_(new QComboBox),
-      width_spin_(new QDoubleSpinBox), mark_combo_(new QComboBox),
+      placeholder_(new QLabel(tr("Select a road or lane."), this)), name_row_(new QWidget(this)),
+      name_edit_(new QLineEdit), lane_group_(new QGroupBox(tr("Lane profile"), this)),
+      type_combo_(new QComboBox), width_spin_(new QDoubleSpinBox), mark_combo_(new QComboBox),
       mark_width_spin_(new QDoubleSpinBox), add_left_(new QPushButton(tr("Add left"))),
       add_right_(new QPushButton(tr("Add right"))),
       remove_lane_(new QPushButton(tr("Remove lane"))) {
   placeholder_->setWordWrap(true);
   placeholder_->setEnabled(false);
+
+  // The editable name row persists across refreshes (form_ rows are
+  // rebuilt from scratch, which would destroy an editor placed there).
+  name_edit_->setObjectName(QStringLiteral("road_name_edit"));
+  auto* name_form = new QFormLayout(name_row_);
+  name_form->setContentsMargins(0, 0, 0, 0);
+  name_form->addRow(tr("Name"), name_edit_);
 
   type_combo_->setObjectName(QStringLiteral("lane_type_combo"));
   width_spin_->setObjectName(QStringLiteral("lane_width_spin"));
@@ -158,13 +165,24 @@ PropertiesPanel::PropertiesPanel(Document& document,
 
   auto* layout = new QVBoxLayout(this);
   layout->addWidget(placeholder_);
+  layout->addWidget(name_row_);
   layout->addLayout(form_);
   layout->addWidget(lane_group_);
   layout->addStretch();
 
-  // One command per discrete action (spec 02 §4). Combos commit on
-  // `activated` — user gestures only, never programmatic refresh; spins on
-  // editingFinished, skipping pushes when the value did not change.
+  // One command per discrete action (spec 01 §7). Combos commit on
+  // `activated` — user gestures only, never programmatic refresh; text/spin
+  // editors on editingFinished, skipping pushes when the value did not
+  // change — that skip is the re-entrancy guard: refresh() re-syncs the
+  // editors from the network without a command echoing back.
+  connect(name_edit_, &QLineEdit::editingFinished, this, [this] {
+    const Road* road = document_.network().road(selection_.primary().road);
+    if (road == nullptr || name_edit_->text().toStdString() == road->name) {
+      return;
+    }
+    push(edit::rename_road(
+        document_.network(), selection_.primary().road, name_edit_->text().toStdString()));
+  });
   connect(type_combo_, &QComboBox::activated, this, [this](int index) {
     if (primary_lane() != nullptr) {
       push(edit::set_lane_type(document_.network(),
@@ -234,17 +252,22 @@ void PropertiesPanel::refresh() {
   const Road* road = document_.network().road(primary.road);
   if (road == nullptr) {
     placeholder_->show();
+    name_row_->hide();
     lane_group_->hide();
     return;
   }
   placeholder_->hide();
 
+  name_row_->show();
+  {
+    const QSignalBlocker blocker(name_edit_);
+    name_edit_->setText(QString::fromStdString(road->name));
+    name_edit_->setPlaceholderText(tr("Road %1").arg(QString::fromStdString(road->odr_id)));
+  }
+
   if (selection_.entries().size() > 1) {
     add_row(tr("Selection"), tr("%1 items").arg(selection_.entries().size()));
   }
-  add_row(tr("Road"),
-          road->name.empty() ? QString::fromStdString(road->odr_id)
-                             : QString::fromStdString(road->name));
   add_row(tr("OpenDRIVE id"), QString::fromStdString(road->odr_id));
   add_row(tr("Length"), tr("%1 m").arg(road->length, 0, 'f', 3));
   add_row(tr("Geometry records"), QString::number(road->plan_view.records().size()));
