@@ -14,6 +14,7 @@
 #include "roadmaker/road/authoring.hpp"
 #include "roadmaker/road/junction.hpp"
 #include "roadmaker/road/network.hpp"
+#include "roadmaker/xodr/reader.hpp"
 #include "roadmaker/xodr/rules.hpp"
 #include "roadmaker/xodr/writer.hpp"
 
@@ -330,15 +331,118 @@ TEST(JunctionExport, BicubicReconstructionTracksSurfaceAtNyquist) {
   EXPECT_LT(max_err, 0.01);
 }
 
-TEST(JunctionExport, BoundaryOmissionIsWarnedWithRuleId) {
+// --- <boundary> (§12.10, M3a phase 2b #62) -----------------------------------
+
+struct ParsedSegment {
+  std::string type;    // "lane" | "joint"
+  std::string road_id; // @roadId
+  std::string s_start; // lane: @sStart
+  std::string s_end;   // lane: @sEnd
+  int boundary_lane = 0;
+};
+
+std::vector<ParsedSegment> parse_first_boundary(const std::string& xml) {
+  pugi::xml_document doc;
+  EXPECT_TRUE(doc.load_string(xml.c_str()));
+  const pugi::xml_node boundary = doc.child("OpenDRIVE").child("junction").child("boundary");
+  std::vector<ParsedSegment> segments;
+  for (const pugi::xml_node seg : boundary.children("segment")) {
+    segments.push_back(ParsedSegment{.type = seg.attribute("type").value(),
+                                     .road_id = seg.attribute("roadId").value(),
+                                     .s_start = seg.attribute("sStart").value(),
+                                     .s_end = seg.attribute("sEnd").value(),
+                                     .boundary_lane = seg.attribute("boundaryLane").as_int()});
+  }
+  return segments;
+}
+
+TEST(JunctionBoundary, EmittedAsClosedAlternatingLoopForGeneratedJunction) {
+  RoadNetwork network;
+  build_four_way(network);
+  const auto xml = roadmaker::write_xodr(network, "j");
+  ASSERT_TRUE(xml.has_value());
+
+  const std::vector<ParsedSegment> segments = parse_first_boundary(*xml);
+  // A 4-arm junction: one lane segment per arm pair + one joint cap per arm.
+  ASSERT_EQ(segments.size(), 8U);
+  std::size_t lanes = 0;
+  std::size_t joints = 0;
+  for (std::size_t i = 0; i < segments.size(); ++i) {
+    // Segments alternate lane, joint, lane, joint … (closed CCW loop).
+    const bool expect_lane = (i % 2 == 0);
+    EXPECT_EQ(segments[i].type, expect_lane ? "lane" : "joint");
+    (segments[i].type == "lane" ? lanes : joints)++;
+  }
+  EXPECT_EQ(lanes, 4U);
+  EXPECT_EQ(joints, 4U);
+}
+
+TEST(JunctionBoundary, SegmentsReferenceRealRoadsWithSaneAttributes) {
+  RoadNetwork network;
+  build_four_way(network);
+  const auto xml = roadmaker::write_xodr(network, "j");
+  ASSERT_TRUE(xml.has_value());
+  const std::vector<ParsedSegment> segments = parse_first_boundary(*xml);
+
+  for (const ParsedSegment& seg : segments) {
+    const RoadId road = network.find_road(seg.road_id);
+    ASSERT_TRUE(road.is_valid()) << "segment references unknown road " << seg.road_id;
+    if (seg.type == "lane") {
+      // Lane segments follow a connecting road (junction set); boundaryLane is
+      // the connecting road's single driving lane; sStart/sEnd are contact
+      // keywords.
+      EXPECT_TRUE(network.road(road)->junction.is_valid());
+      EXPECT_EQ(seg.boundary_lane, -1);
+      EXPECT_TRUE(seg.s_start == "begin" || seg.s_start == "end");
+      EXPECT_TRUE(seg.s_end == "begin" || seg.s_end == "end");
+      EXPECT_NE(seg.s_start, seg.s_end);
+    } else {
+      // Joint caps are on the incoming arm roads (not junction-internal).
+      EXPECT_FALSE(network.road(road)->junction.is_valid());
+    }
+  }
+}
+
+TEST(JunctionBoundary, EmittingBoundaryClearsTheOmittedWarning) {
   RoadNetwork network;
   build_four_way(network);
   const auto findings = roadmaker::validate_network(network);
-  const auto it = std::find_if(findings.begin(), findings.end(), [](const auto& d) {
+  const bool warned = std::any_of(findings.begin(), findings.end(), [](const auto& d) {
     return d.rule_id == roadmaker::rules::kJunctionBoundaryCloseGap;
   });
-  ASSERT_NE(it, findings.end());
-  EXPECT_EQ(it->severity, roadmaker::Severity::Warning);
+  EXPECT_FALSE(warned);
+}
+
+TEST(JunctionBoundary, ThreeWayJunctionAlsoCloses) {
+  RoadNetwork network;
+  const RoadId west = author(network, {Waypoint{-40.0, 0.0}, Waypoint{-6.0, 0.0}}, "1");
+  const RoadId east = author(network, {Waypoint{40.0, 0.0}, Waypoint{6.0, 0.0}}, "2");
+  const RoadId south = author(network, {Waypoint{0.0, -40.0}, Waypoint{0.0, -6.0}}, "3");
+  make_junction(network, {end_of(west), end_of(east), end_of(south)});
+
+  const auto xml = roadmaker::write_xodr(network, "j");
+  ASSERT_TRUE(xml.has_value());
+  const std::vector<ParsedSegment> segments = parse_first_boundary(*xml);
+  ASSERT_EQ(segments.size(), 6U); // 3 lane + 3 joint
+
+  const auto findings = roadmaker::validate_network(network);
+  EXPECT_FALSE(std::any_of(findings.begin(), findings.end(), [](const auto& d) {
+    return d.rule_id == roadmaker::rules::kJunctionBoundaryCloseGap;
+  }));
+}
+
+TEST(JunctionBoundary, RoundTripsAsAFixedPoint) {
+  RoadNetwork network;
+  build_four_way(network);
+  const auto written = roadmaker::write_xodr(network, "j");
+  ASSERT_TRUE(written.has_value());
+  // The boundary is derived, ignored on read, and regenerated identically on
+  // the next write — a byte-stable fixed point.
+  const auto reparsed = roadmaker::parse_xodr(*written, "j");
+  ASSERT_TRUE(reparsed.has_value());
+  const auto rewritten = roadmaker::write_xodr(reparsed->network, "j");
+  ASSERT_TRUE(rewritten.has_value());
+  EXPECT_EQ(*written, *rewritten);
 }
 
 TEST(JunctionExport, WriteIsDeterministic) {

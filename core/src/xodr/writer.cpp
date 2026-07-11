@@ -730,6 +730,30 @@ void write_junction_surface(pugi::xml_node junction_node, const JunctionSurfaceE
   }
 }
 
+/// Emits the OpenDRIVE ≥1.8 junction <boundary> (§12.10): a counter-clockwise,
+/// closed loop of lane/joint <segment>s. Written only when the boundary can be
+/// closed from the existing connecting roads (build_junction_boundary); a gap
+/// that would need auxiliary boundary roads leaves it unwritten.
+void write_junction_boundary(pugi::xml_node junction_node, const JunctionBoundaryExport& boundary) {
+  if (!boundary.has_boundary) {
+    return;
+  }
+  pugi::xml_node node = junction_node.append_child("boundary");
+  for (const JunctionBoundarySegment& segment : boundary.segments) {
+    pugi::xml_node seg = node.append_child("segment");
+    seg.append_attribute("type").set_value(segment.is_lane ? "lane" : "joint");
+    seg.append_attribute("roadId").set_value(segment.road_id.c_str());
+    if (segment.is_lane) {
+      seg.append_attribute("boundaryLane").set_value(segment.boundary_lane);
+      seg.append_attribute("sStart").set_value(segment.s_begin_to_end ? "begin" : "end");
+      seg.append_attribute("sEnd").set_value(segment.s_begin_to_end ? "end" : "begin");
+    } else {
+      seg.append_attribute("contactPoint")
+          .set_value(segment.contact == ContactPoint::End ? "end" : "start");
+    }
+  }
+}
+
 void write_junction(pugi::xml_node root, const RoadNetwork& network, const Junction& junction) {
   pugi::xml_node junction_node = root.append_child("junction");
   junction_node.append_attribute("id").set_value(junction.odr_id.c_str());
@@ -756,9 +780,12 @@ void write_junction(pugi::xml_node root, const RoadNetwork& network, const Junct
     }
   }
 
-  // Blended 2.5D surface (≥1.8): reference line + elevation grid, derived from
-  // the network so no model state is stored. Emitted before <userData> so the
-  // normative children keep their order.
+  // Junction <boundary> (§12.10) then the blended 2.5D surface (§12.11:
+  // reference line + elevation grid), both derived from the network so no model
+  // state is stored, and emitted before <userData> so the normative children
+  // keep their order. The boundary defines the area the grid applies to, so it
+  // precedes the grid.
+  write_junction_boundary(junction_node, build_junction_boundary(network, junction));
   write_junction_surface(junction_node, build_junction_export(network, junction));
 
   // The generator's arm list round-trips through <userData> (OpenDRIVE 1.9.0
@@ -907,11 +934,13 @@ std::vector<Diagnostic> validate_network(const RoadNetwork& network, const Write
     }
   });
 
-  // The writer emits a junction's blended surface as <planView> + <elevationGrid>
-  // (≥1.8) but omits <boundary>: closing it needs auxiliary boundary roads for
-  // any gap between arms (junctions.boundary.close_gap_with_new_roads), which is
-  // M3 scope (docs/design/m2/03_junction_blending.md §3). Surface a structured
-  // warning for every common junction so the omission is never silent.
+  // The writer emits a junction <boundary> (§12.10) whenever it can be closed
+  // from the existing connecting roads (build_junction_boundary). Only when a
+  // gap remains — an adjacent arm pair with no bridging connecting road, or a
+  // foreign junction with no arm metadata — does closing it need auxiliary
+  // boundary roads (junctions.boundary.close_gap_with_new_roads, M3a #62
+  // follow-up); that residual case keeps the structured warning so the
+  // omission is never silent.
   network.for_each_junction([&](JunctionId, const Junction& junction) {
     const bool has_connecting_road =
         std::any_of(junction.connections.begin(),
@@ -919,13 +948,13 @@ std::vector<Diagnostic> validate_network(const RoadNetwork& network, const Write
                     [&](const JunctionConnection& connection) {
                       return network.road(connection.connecting_road) != nullptr;
                     });
-    if (has_connecting_road) {
-      findings.push_back(Diagnostic{
-          .severity = Severity::Warning,
-          .location = fmt::format("junction id={}", junction.odr_id),
-          .message = "junction boundary omitted — closing it with lane/joint segments requires "
-                     "auxiliary boundary roads (M3); the elevation grid stays valid without it",
-          .rule_id = std::string(rules::kJunctionBoundaryCloseGap)});
+    if (has_connecting_road && !build_junction_boundary(network, junction).has_boundary) {
+      findings.push_back(
+          Diagnostic{.severity = Severity::Warning,
+                     .location = fmt::format("junction id={}", junction.odr_id),
+                     .message = "junction boundary not closed — a gap between arms needs auxiliary "
+                                "boundary roads; the elevation grid stays valid without it",
+                     .rule_id = std::string(rules::kJunctionBoundaryCloseGap)});
     }
   });
 

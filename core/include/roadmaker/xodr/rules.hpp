@@ -137,10 +137,28 @@ inline constexpr std::string_view kSignalUseCountryCode =
 
 /// "If the existing roads are not sufficient to define a closed junction
 /// boundary, additional roads shall be defined for the missing segments."
-/// (1.8.0, §12.10.) M2 omits <boundary> and cites this: closing the boundary
-/// with auxiliary boundary roads is M3 (docs/design/m2/03_junction_blending.md
-/// §3), so the blended surface stays editor-internal until then.
+/// (1.8.0, §12.10.) M3a emits <boundary> for gap-free generated junctions;
+/// this is cited only when a gap remains that would need auxiliary boundary
+/// roads (docs/design/m3a/00 phase 2b, #62).
 inline constexpr std::string_view kJunctionBoundaryCloseGap =
     "asam.net:xodr:1.8.0:junctions.boundary.close_gap_with_new_roads";
+
+/// "Junction boundaries are currently only valid for common junctions."
+/// (1.8.0, §12.10.)
+inline constexpr std::string_view kJunctionBoundaryOnlyCommon =
+    "asam.net:xodr:1.8.0:junctions.boundary.only_for_common_junctions";
+
+/// "Segments shall be ordered counter clockwise." (1.8.0, §12.10.)
+inline constexpr std::string_view kJunctionBoundaryCcwOrder =
+    "asam.net:xodr:1.8.0:junctions.boundary.segments_counter_clockwise_order";
+
+/// "Segments shall close the entire junction boundary." (1.8.0, §12.10.)
+inline constexpr std::string_view kJunctionBoundaryClosed =
+    "asam.net:xodr:1.8.0:junctions.boundary.segments_close_boundry";
+
+/// "Segments shall be defined to reach the start or end of all roads connected
+/// to the junction." (1.8.0, §12.10.)
+inline constexpr std::string_view kJunctionBoundaryReachAllRoads =
+    "asam.net:xodr:1.8.0:junctions.boundary.segments_for_each_conn_road";
 
 } // namespace roadmaker::rules
