@@ -65,6 +65,11 @@ kernel cannot represent and validate first.
    - Road-mark completions: multi-line `solid solid` as **true dual geometry**
      (descoped from M2), road-mark **color**, and object-based **stop lines**
      and **lane arrows**.
+   - Junction `<boundary>` completion (deferred from M2 by
+     [m2/03](../m2/03_junction_blending.md) §3): counter-clockwise lane/joint
+     `<segment>` emission plus **auxiliary boundary roads** where connecting
+     roads leave gaps; scope, rule IDs, and acceptance in
+     [#62](https://github.com/Robomous/RoadMaker/issues/62).
    - Mesh generation for all of the above: object placeholder / instanced-prop
      anchors, and marking geometry for arrows and stop lines.
 2. **Assets — CC0 prop set** (`03`)
@@ -129,6 +134,7 @@ changes.
 | 0 | Kernel `<objects>` model + parse/write/validate (crosswalk outline, point objects, `<repeat>`); fuzz-corpus + round-trip tests | `<object>` round-trip stable within `rm::tol`, validator rule-ids cited |
 | 1 | Kernel `<signals>` model + parse/write/validate (dynamic + static, GS-1 set); Python bindings + example | `<signal>` round-trip stable, GS-1 signal set represented, validator clean |
 | 2 | Road-mark completions: `solid solid` dual geometry + road-mark color; stop lines + lane arrows as object markings; marking meshes | Marking round-trip + dual-strip mesh; arrows/stop-lines validate |
+| 2b | Junction `<boundary>` segments + auxiliary boundary roads — deferred from M2, scope in [#62](https://github.com/Robomous/RoadMaker/issues/62) | `<boundary>` emitted CCW + closed for generated junctions; `close_gap_with_new_roads` warning cleared once the boundary closes; esmini loads without junction warnings |
 | 3 | Assets: CC0 prop kit import + texture extension; library manifest format + loader; `ASSETS_LICENSES.md` rows | Manifest loads; every asset license-verified and recorded; `check_asset_licenses.py` green |
 | 4 | Render: textured mode default + sober toggle; terrain skirt + procedural ground; sky/lighting pass; instanced prop rendering | Textured lit scene renders headless; sober mode still packages; frame parity test |
 | 5 | Editor UX: read-only library panel + drag-to-place; object/signal placement + properties; autosave & crash recovery | Author GS-1 props/signals in-editor; autosave restores after a simulated crash |
@@ -160,6 +166,9 @@ local ASAM texts per the standing rule; see
   static vs. dynamic.
 - OpenDRIVE 1.9.0 **§11.9 Lane road markings** — `<roadMark>` color and
   multi-line geometry.
+- OpenDRIVE 1.9.0 **§12 Junctions** — junction `<boundary>` lane/joint
+  segments and auxiliary boundary roads
+  ([#62](https://github.com/Robomous/RoadMaker/issues/62), phase 2b).
 
 Version handling: object/signal elements exist since ≤1.4; `<skeleton>` and
 `@length` on signals are 1.8.0; `@temporary`/`@invalidated` and `<curveLocal>`
