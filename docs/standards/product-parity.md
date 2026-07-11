@@ -73,6 +73,32 @@ Process (details and the current scene set:
 - Scene specs are reviewed against this page: pure OpenDRIVE/OpenSCENARIO
   vocabulary, no references to any vendor's sample content.
 
+## The golden-workflow process
+
+A **golden workflow** is the path-based complement to golden scenes: a
+scripted sequence of user actions with a time budget and a zero-crash
+requirement, executed **by the maintainer by hand** at every milestone
+gate. Specs and process:
+[golden workflows](../roadmap/golden_workflows/README.md).
+
+- **Every milestone from the hardening sprint (v0.4.0) on gates on its
+  golden scene AND at least one golden workflow.** Scenes measure the
+  result; workflows measure the path. Automated soak/regression replays
+  are complementary evidence, never a substitute for the manual run.
+
+## The workflow-walkthrough rule for specs
+
+Element coverage is not enough. The v0.3.0 dogfooding lesson: tool specs
+written only from the standard's vocabulary ("which OpenDRIVE elements
+exist") made T-intersections impossible while every element checklist was
+green — and the golden scene shared the blind spot.
+
+Therefore every tool or milestone spec must include **workflow
+walkthroughs**: what a user tries to draw in their first minutes, step by
+step, in tool/UI vocabulary — alongside the element coverage. A spec
+reviewer asks "can someone actually draw the second thing they'll try?"
+before asking "are all the elements representable?".
+
 ## If in doubt
 
 Treat anything that would make a reasonable observer say "that came from
