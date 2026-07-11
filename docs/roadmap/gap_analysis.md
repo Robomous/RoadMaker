@@ -105,3 +105,19 @@ Two patterns repeat across all five:
    don't compose into a convincing product on their own. Each milestone
    therefore targets a [golden scene](golden_scenes/README.md) whose
    checklist ties kernel features, assets, and rendering together.
+
+## Known exclusions
+
+Honest scope is part of open-source credibility: the RoadRunner
+capabilities below are deliberately **not scheduled** on any milestone.
+**Backlog** means the exclusion is pragmatic and revisitable if demand
+appears; **permanent exclusion** means a hard constraint (licensing) rules
+it out.
+
+| Capability | Status | Rationale |
+|---|---|---|
+| OpenCRG road-surface detail | Backlog | High-fidelity surface simulation is niche; no golden scene needs it yet. |
+| FBX export | **Permanent exclusion** | Requires the proprietary Autodesk FBX SDK, which the [dependency policy](../standards/dependencies.md) forbids; glTF and USD are the interchange formats instead. |
+| Procedural traffic / swarm generation | Backlog | Simulation-runtime territory — esmini/CARLA consume RoadMaker's exported scenes and do this better. |
+| Terrain sculpting beyond the road corridor | Backlog | M3a's terrain skirt covers the corridor; general terrain modeling is a different product surface. |
+| Sensor-simulation asset packs | Backlog | Sensor-material metadata serves specific simulators; revisit when a consuming integration demands it. |
