@@ -34,7 +34,9 @@ approved design docs; this roadmap only positions what comes after it.
 Items the old roadmap parked under "M4+ reach" (web viewer, renderer
 upgrade, PyPI wheels matrix, branding/signing) remain valid backlog but are
 unscheduled — they attach to milestones opportunistically rather than
-defining them.
+defining them. Capabilities deliberately not scheduled at all are recorded
+in the gap analysis's
+[known exclusions](gap_analysis.md#known-exclusions).
 
 ## Why M3 split into M3a and M3b
 
@@ -55,13 +57,13 @@ props and materials in map mode and vehicles in scenario mode. M4 is the
 right home because the browser's forcing function is actor placement, and
 because M4 already carries the mode switch it must integrate with.
 
-**Open option for the maintainer** (flagged during seed-writing, not
-decided): GS-1 needs ~20 vegetation props placed in M3a. If placing them
-via a properties-panel workflow proves too clumsy, M3a could pull forward a
-*minimal read-only* library panel (flat list + drag-to-place, no search, no
-categories) whose model the M4 browser then subsumes. Cost: earlier
-commitment to the runtime manifest format. The [M3a seed](seeds/m3a.md) and
-[M4 seed](seeds/m4.md) both mark this boundary.
+**Decided (2026-07-10, recorded in
+[#34](https://github.com/Robomous/RoadMaker/issues/34)):** M3a pulls
+forward a *minimal read-only* library panel — flat list + drag-to-place,
+no search, no categories — whose model the M4 browser then subsumes.
+Accepted cost: the runtime manifest format is committed in M3a. The
+[M3a seed](seeds/m3a.md) and [M4 seed](seeds/m4.md) both mark this
+boundary.
 
 ## Tracking
 
@@ -83,6 +85,27 @@ lives; this page is the plan the board follows.
   standard release gates pass (CI on three platforms, sanitizers), and the
   scene's data round-trips through the relevant standard (OpenDRIVE for
   GS-1/GS-2, plus OpenSCENARIO for GS-3).
+
+## Cross-cutting quality gates
+
+Two gates attach to milestones rather than defining them; each is recorded
+in the owning milestone's seed.
+
+- **Scale targets** (owner: **M3b**; measured from M3b on): the editor must
+  open and edit a 1,000-road network and import a ~50 km² OSM district.
+  The metrics are load time, node-drag latency at scale, and a memory
+  ceiling; concrete numbers are *proposed* for maintainer sign-off during
+  the M3b planning task. Recorded in the [M3b seed](seeds/m3b.md).
+- **Simulator round-trip validation** (owner: **M3a**, then permanent):
+  the exported `.xodr` of every golden scene must load in
+  [esmini](https://github.com/esmini/esmini) without errors — a headless
+  esmini smoke job joins CI in M3a. esmini is lightweight and permissively
+  licensed; verify its current license and binary-distribution method at
+  implementation time, per the
+  [dependency policy](../standards/dependencies.md). CARLA ingestion
+  validation stays a manual release-checklist item until it is CI-feasible.
+  Recorded in the [M3a seed](seeds/m3a.md) and the
+  [golden-scene acceptance mechanics](golden_scenes/README.md).
 
 ## Version targets
 

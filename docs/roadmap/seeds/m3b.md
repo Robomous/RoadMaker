@@ -27,6 +27,16 @@ when M3b's planning task runs.*
 - License audit of all transitive deps before pinning
   ([policy](../../standards/dependencies.md)).
 
+### Quality gate: scale targets
+
+M3b owns the roadmap's
+[scale-targets gate](../roadmap.md#cross-cutting-quality-gates) (added
+2026-07-10; measured from M3b on): open + edit a **1,000-road network**
+and import a **~50 km² OSM district**. The metrics are load time,
+node-drag latency at scale, and a memory ceiling; concrete numbers are
+*proposed* for maintainer sign-off during the M3b planning task. A
+measurement harness for these metrics is part of M3b scope.
+
 ### Editor
 
 - Import dialog/flow (source selection, extent, CRS report, import stats).

@@ -51,6 +51,12 @@ Every spec contains:
 - **Checklists are tracked in the milestone.** Each element row maps to the
   GitHub issue(s) implementing its kernel feature/asset; the scene spec is
   updated with checkmarks as rows land.
+- **esmini round-trip is part of acceptance (from M3a on).** Every golden
+  scene's exported `.xodr` must load in esmini without errors; a headless
+  smoke job in CI enforces this (the roadmap's
+  [simulator round-trip gate](../roadmap.md#cross-cutting-quality-gates)).
+  CARLA ingestion validation remains a manual release-checklist item until
+  it is CI-feasible.
 
 ## Rules for writing or changing a spec
 
