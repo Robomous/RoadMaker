@@ -21,6 +21,9 @@ Every PR:
 
 When applicable:
 
+- [ ] User-visible change (feature, behavior, CLI/API, packaging) → add a
+      one-line entry under `[Unreleased]` in `CHANGELOG.md`, in the **same
+      PR**, linked to its issue/PR.
 - [ ] Touched the OpenDRIVE parser/writer or added an xodr feature → fuzz
       corpus in `core/tests/fuzz/corpus/` extended (see [Testing](testing.md)).
 - [ ] Changed the public kernel API → `python/src/bindings.cpp` updated and at
