@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<OpenDRIVE>
+  <header revMajor="1" revMinor="8"/>
+  <road name="r" length="100" id="1" junction="-1">
+    <planView>
+      <geometry s="0" x="0" y="0" hdg="0" length="100"><line/></geometry>
+    </planView>
+    <lanes>
+      <laneSection s="0">
+        <center><lane id="0" type="none" level="false"/></center>
+      </laneSection>
+    </lanes>
+    <objects>
+      <object type="obstacle" id="1" s="1" t="0" zOffset="0" orientation="none">
+        <outlines>
+          <outline outer="true">
+            <cornerRoad s="0" t="0" dz="0" height="1"/>
+            <cornerLocal u="1" v="1" z="0" height="1"/>
+          </outline>
+          <outline outer="true">
+            <cornerLocal u="0" v="0" z="0" height="1"/>
+          </outline>
+        </outlines>
+      </object>
+      <object id="1" s="2" t="0" zOffset="0" orientation="bogus" radius="1" length="2"/>
+    </objects>
+  </road>
+</OpenDRIVE>

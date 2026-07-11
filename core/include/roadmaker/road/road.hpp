@@ -87,6 +87,12 @@ struct Road {
   /// foreign files load without it — Edit Nodes derives waypoints lazily
   /// (docs/m2/01_editing_framework.md §2.5).
   std::optional<std::vector<Waypoint>> authoring_waypoints;
+
+  /// Non-<object> children of this road's <objects> container
+  /// (<objectReference>, <tunnel>, <bridge> — §13.10–§13.12), preserved as
+  /// verbatim XML fragments in document order. M3a does not model them; the
+  /// writer re-emits them inside <objects> so round-trip loses nothing.
+  std::vector<std::string> object_extras;
 };
 
 } // namespace roadmaker

@@ -13,6 +13,7 @@
 #include <fstream>
 #include <numbers>
 #include <optional>
+#include <set>
 #include <sstream>
 #include <string>
 #include <variant>
@@ -60,6 +61,41 @@ const char* lane_type_name(LaneType type) {
     return "none";
   case LaneType::Other:
     return "none"; // parsed-as-other exotic types have no faithful name
+  }
+  return "none";
+}
+
+const char* object_type_name(ObjectType type) {
+  switch (type) {
+  case ObjectType::Crosswalk:
+    return "crosswalk";
+  case ObjectType::Tree:
+    return "tree";
+  case ObjectType::Vegetation:
+    return "vegetation";
+  case ObjectType::Pole:
+    return "pole";
+  case ObjectType::Barrier:
+    return "barrier";
+  case ObjectType::Building:
+    return "building";
+  case ObjectType::Obstacle:
+    return "obstacle";
+  case ObjectType::None:
+  case ObjectType::Other: // Other always carries its spelling in type_str
+    return "none";
+  }
+  return "none";
+}
+
+const char* orientation_name(ObjectOrientation orientation) {
+  switch (orientation) {
+  case ObjectOrientation::Plus:
+    return "+";
+  case ObjectOrientation::Minus:
+    return "-";
+  case ObjectOrientation::None:
+    return "none";
   }
   return "none";
 }
@@ -240,7 +276,175 @@ void write_lane(pugi::xml_node side, const Lane& lane) {
   }
 }
 
-void write_road(pugi::xml_node root, const RoadNetwork& network, const Road& road) {
+void set_optional_num(pugi::xml_node node, const char* name, std::optional<double> value) {
+  if (value.has_value()) {
+    set_num(node, name, *value);
+  }
+}
+
+void write_repeat(pugi::xml_node object_node,
+                  const ObjectRepeat& repeat,
+                  const WriterOptions& options) {
+  pugi::xml_node node = object_node.append_child("repeat");
+  set_num(node, "s", repeat.s);
+  set_num(node, "length", repeat.length);
+  set_num(node, "distance", repeat.distance);
+  set_num(node, "tStart", repeat.t_start);
+  set_num(node, "tEnd", repeat.t_end);
+  set_num(node, "zOffsetStart", repeat.z_offset_start);
+  set_num(node, "zOffsetEnd", repeat.z_offset_end);
+  set_optional_num(node, "widthStart", repeat.width_start);
+  set_optional_num(node, "widthEnd", repeat.width_end);
+  set_optional_num(node, "heightStart", repeat.height_start);
+  set_optional_num(node, "heightEnd", repeat.height_end);
+  set_optional_num(node, "lengthStart", repeat.length_start);
+  set_optional_num(node, "lengthEnd", repeat.length_end);
+  set_optional_num(node, "radiusStart", repeat.radius_start);
+  set_optional_num(node, "radiusEnd", repeat.radius_end);
+  // @detachFromReferenceLine is 1.8.0 (1.9.0 §13.4, Table 95) — both writer
+  // targets are >=1.8, so it needs no gate; @bT/@cT/@dT are 1.9.0 only
+  // (absent from 1.8.1 §13.4), so a 1.8.1 target keeps the linear t
+  // interpolation and drops the coefficients.
+  if (repeat.detach_from_reference_line) {
+    node.append_attribute("detachFromReferenceLine").set_value("true");
+  }
+  if (options.target_version == XodrVersion::v1_9_0) {
+    set_optional_num(node, "bT", repeat.b_t);
+    set_optional_num(node, "cT", repeat.c_t);
+    set_optional_num(node, "dT", repeat.d_t);
+  }
+}
+
+void append_fragment(pugi::xml_node parent, const std::string& fragment) {
+  parent.append_buffer(fragment.data(), fragment.size());
+}
+
+void write_object(pugi::xml_node objects_node, const Object& object, const WriterOptions& options) {
+  pugi::xml_node node = objects_node.append_child("object");
+  // type_str keeps the file's exact spelling (incl. values outside the
+  // ObjectType enum); authored objects without it derive from the enum.
+  if (!object.type_str.empty()) {
+    node.append_attribute("type").set_value(object.type_str.c_str());
+  } else if (object.type != ObjectType::None) {
+    node.append_attribute("type").set_value(object_type_name(object.type));
+  }
+  if (!object.subtype.empty()) {
+    node.append_attribute("subtype").set_value(object.subtype.c_str());
+  }
+  if (!object.name.empty()) {
+    node.append_attribute("name").set_value(object.name.c_str());
+  }
+  node.append_attribute("id").set_value(object.odr_id.c_str());
+  set_num(node, "s", object.s);
+  set_num(node, "t", object.t);
+  set_num(node, "zOffset", object.z_offset);
+  node.append_attribute("orientation").set_value(orientation_name(object.orientation));
+  if (object.hdg != 0.0) {
+    set_num(node, "hdg", object.hdg);
+  }
+  if (object.pitch != 0.0) {
+    set_num(node, "pitch", object.pitch);
+  }
+  if (object.roll != 0.0) {
+    set_num(node, "roll", object.roll);
+  }
+  if (object.perp_to_road) {
+    node.append_attribute("perpToRoad").set_value("true");
+  }
+  if (object.dynamic.has_value()) {
+    node.append_attribute("dynamic").set_value(*object.dynamic ? "yes" : "no");
+  }
+  set_optional_num(node, "length", object.length);
+  set_optional_num(node, "width", object.width);
+  set_optional_num(node, "radius", object.radius);
+  set_optional_num(node, "height", object.height);
+  set_optional_num(node, "validLength", object.valid_length);
+  // @temporary/@invalidated exist since 1.9.0 (Table 85); 1.8.1 §13.1 has no
+  // such attributes, so a 1.8.1 target omits them (the 1.9.0 defaults —
+  // permanent, not invalidated — are the only expressible states there).
+  if (options.target_version == XodrVersion::v1_9_0) {
+    if (object.temporary.has_value()) {
+      node.append_attribute("temporary").set_value(*object.temporary ? "true" : "false");
+    }
+    if (object.invalidated.has_value()) {
+      node.append_attribute("invalidated").set_value(*object.invalidated ? "true" : "false");
+    }
+  }
+  for (const auto& [name, value] : object.preserved.attributes) {
+    node.append_attribute(name.c_str()).set_value(value.c_str());
+  }
+
+  for (const ObjectRepeat& repeat : object.repeats) {
+    write_repeat(node, repeat, options);
+  }
+  if (!object.outlines.empty()) {
+    pugi::xml_node outlines_node = node.append_child("outlines");
+    for (const ObjectOutline& outline : object.outlines) {
+      if (!outline.raw.empty()) {
+        append_fragment(outlines_node, outline.raw); // preserved verbatim
+        continue;
+      }
+      pugi::xml_node outline_node = outlines_node.append_child("outline");
+      if (outline.id.has_value()) {
+        outline_node.append_attribute("id").set_value(*outline.id);
+      }
+      if (outline.fill_type.has_value()) {
+        outline_node.append_attribute("fillType").set_value(outline.fill_type->c_str());
+      }
+      outline_node.append_attribute("outer").set_value(outline.outer ? "true" : "false");
+      if (outline.closed.has_value()) {
+        outline_node.append_attribute("closed").set_value(*outline.closed ? "true" : "false");
+      }
+      if (outline.lane_type.has_value()) {
+        outline_node.append_attribute("laneType").set_value(outline.lane_type->c_str());
+      }
+      for (const OutlineCorner& corner : outline.corners) {
+        pugi::xml_node corner_node =
+            outline_node.append_child(outline.road_coords ? "cornerRoad" : "cornerLocal");
+        if (outline.road_coords) {
+          set_num(corner_node, "s", corner.a);
+          set_num(corner_node, "t", corner.b);
+          set_num(corner_node, "dz", corner.dz_or_z);
+        } else {
+          set_num(corner_node, "u", corner.a);
+          set_num(corner_node, "v", corner.b);
+          set_num(corner_node, "z", corner.dz_or_z);
+        }
+        set_num(corner_node, "height", corner.height);
+        if (corner.id.has_value()) {
+          corner_node.append_attribute("id").set_value(*corner.id);
+        }
+      }
+    }
+  }
+  for (const std::string& fragment : object.preserved.children) {
+    append_fragment(node, fragment);
+  }
+}
+
+void write_objects(pugi::xml_node road_node,
+                   const RoadNetwork& network,
+                   RoadId road_id,
+                   const Road& road,
+                   const WriterOptions& options) {
+  const std::vector<ObjectId> owned = objects_of(network, road_id);
+  if (owned.empty() && road.object_extras.empty()) {
+    return;
+  }
+  pugi::xml_node objects_node = road_node.append_child("objects");
+  for (const ObjectId object_id : owned) {
+    write_object(objects_node, *network.object(object_id), options);
+  }
+  for (const std::string& fragment : road.object_extras) {
+    append_fragment(objects_node, fragment);
+  }
+}
+
+void write_road(pugi::xml_node root,
+                const RoadNetwork& network,
+                RoadId road_id,
+                const Road& road,
+                const WriterOptions& options) {
   pugi::xml_node road_node = root.append_child("road");
   if (!road.name.empty()) {
     road_node.append_attribute("name").set_value(road.name.c_str());
@@ -335,6 +539,9 @@ void write_road(pugi::xml_node root, const RoadNetwork& network, const Road& roa
       }
     }
   }
+
+  // <objects> follows <lanes> in the road element sequence (1.9.0 §10.1).
+  write_objects(road_node, network, road_id, road, options);
 
   // Authoring waypoints round-trip through the spec-sanctioned <userData>
   // extension (OpenDRIVE 1.9.0 §7.2: code required, value optional free
@@ -480,6 +687,54 @@ std::vector<Diagnostic> validate_network(const RoadNetwork& network, const Write
       }
     }
   });
+  // Objects (§13): model-level checker rules. Parse-time defects (missing
+  // required attributes) are diagnosed by the reader; this pass checks what
+  // only the assembled model can know.
+  std::set<std::string> seen_object_ids;
+  network.for_each_object([&](ObjectId, const Object& object) {
+    const Road* owner = network.road(object.road);
+    const std::string location = fmt::format(
+        "road id={}/object id={}", owner != nullptr ? owner->odr_id : "?", object.odr_id);
+    const auto finding = [&](std::string message, std::string_view rule) {
+      findings.push_back(Diagnostic{.severity = Severity::Warning,
+                                    .location = location,
+                                    .message = std::move(message),
+                                    .rule_id = std::string(rule),
+                                    .road = object.road});
+    };
+    if (!object.odr_id.empty() && !seen_object_ids.insert(object.odr_id).second) {
+      finding(fmt::format("duplicate object id '{}'", object.odr_id), rules::kIdUniqueInClass);
+    }
+    if (object.type == ObjectType::None && object.type_str.empty()) {
+      finding("object has no type", rules::kObjectTypeAttr);
+    }
+    if (object.radius.has_value() && (object.length.has_value() || object.width.has_value())) {
+      finding("object mixes circular (radius) and angular (length/width) bounding volumes",
+              rules::kObjectCircularVsAngular);
+    }
+    if (!object.outlines.empty()) {
+      const auto outer_count =
+          std::count_if(object.outlines.begin(),
+                        object.outlines.end(),
+                        [](const ObjectOutline& outline) { return outline.outer; });
+      if (outer_count != 1) {
+        finding(fmt::format("object has {} outer outline(s), expected exactly 1", outer_count),
+                rules::kOutlineExactlyOneOuter);
+      }
+    }
+    for (const ObjectOutline& outline : object.outlines) {
+      if (!outline.raw.empty()) {
+        continue; // preserved verbatim — not interpreted, not re-validated
+      }
+      if (outline.corners.empty()) {
+        finding("outline has no corner elements", rules::kOutlineFollowedByCorner);
+      } else if (outline.corners.size() < 2) {
+        finding("outline has fewer than 2 corner elements",
+                outline.road_coords ? rules::kCornerRoadMinAmount : rules::kCornerLocalMinAmount);
+      }
+    }
+  });
+
   // The writer emits a junction's blended surface as <planView> + <elevationGrid>
   // (≥1.8) but omits <boundary>: closing it needs auxiliary boundary roads for
   // any gap between arms (junctions.boundary.close_gap_with_new_roads), which is
@@ -559,7 +814,8 @@ Expected<std::string> write_xodr(const RoadNetwork& network,
   header.append_attribute("name").set_value(std::string(document_name).c_str());
   header.append_attribute("vendor").set_value("RoadMaker");
 
-  network.for_each_road([&](RoadId, const Road& road) { write_road(root, network, road); });
+  network.for_each_road(
+      [&](RoadId road_id, const Road& road) { write_road(root, network, road_id, road, options); });
   network.for_each_junction(
       [&](JunctionId, const Junction& junction) { write_junction(root, network, junction); });
 

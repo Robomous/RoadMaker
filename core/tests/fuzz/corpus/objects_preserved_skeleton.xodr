@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<OpenDRIVE>
+  <header revMajor="1" revMinor="9" name="objects-preserved"/>
+  <road name="r" length="100" id="1" junction="-1">
+    <planView>
+      <geometry s="0" x="0" y="0" hdg="0" length="100"><line/></geometry>
+    </planView>
+    <lanes>
+      <laneSection s="0">
+        <center><lane id="0" type="none" level="false"/></center>
+        <right><lane id="-1" type="driving" level="false"><width sOffset="0" a="3.5" b="0" c="0" d="0"/></lane></right>
+      </laneSection>
+    </lanes>
+    <objects>
+      <object type="pole" id="1" s="1" t="-4" zOffset="0" orientation="none" vendorFoo="bar">
+        <skeleton><polyline id="0"><vertexLocal u="0" v="0" z="0" radius="0.1"/><vertexLocal u="0" v="0" z="4" radius="0.1"/></polyline></skeleton>
+        <userData code="vendor:x" value="1"/>
+      </object>
+      <object type="obstacle" id="2" s="10" t="0" zOffset="0" orientation="none">
+        <outlines><outline outer="true"><curveLocal sOffset="0" length="5"/></outline></outlines>
+      </object>
+      <tunnel s="20" length="30" id="t1" type="standard"/>
+      <objectReference s="60" t="0" id="ref1" orientation="none"/>
+    </objects>
+  </road>
+</OpenDRIVE>
