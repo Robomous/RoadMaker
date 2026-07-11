@@ -163,3 +163,77 @@ def test_network_editing_api():
     assert network.erase_road(road_id)
     assert network.road(road_id) is None
     assert network.lane(lane) is None  # cascaded
+
+
+# --- version-explicit writer + checker validation (issue #12) -----------------
+
+
+def _authored_network():
+    net = rm.RoadNetwork()
+    rm.author_clothoid_road(
+        net,
+        [(0.0, 0.0), (100.0, 0.0)],
+        rm.LaneProfile.two_lane_default(),
+        "Main",
+        "1",
+    )
+    return net
+
+
+def test_write_xodr_targets_opendrive_1_8_by_default():
+    text = rm.write_xodr(_authored_network())
+    assert 'revMajor="1"' in text
+    assert 'revMinor="8"' in text
+
+
+@pytest.mark.parametrize(
+    ("target", "rev_minor"),
+    [(rm.XodrVersion.V1_8_1, "8"), (rm.XodrVersion.V1_9_0, "9")],
+)
+def test_write_xodr_target_version_selects_the_header(target, rev_minor):
+    text = rm.write_xodr(_authored_network(), target_version=target)
+    assert f'revMinor="{rev_minor}"' in text
+
+
+def test_save_xodr_reload_is_byte_equal(tmp_path):
+    # Python parity of the Phase 1 gate: author -> save -> reload -> byte-equal.
+    path = tmp_path / "scene.xodr"
+    rm.save_xodr(_authored_network(), path, "scene")
+
+    reloaded, diagnostics = rm.load_xodr(path)
+    assert not diagnostics
+    assert rm.write_xodr(reloaded, "scene") == path.read_text()
+
+
+def test_validate_network_is_quiet_on_a_valid_network():
+    net = _authored_network()
+    assert rm.validate_network(net) == []
+    assert rm.validate_network(net, target_version=rm.XodrVersion.V1_9_0) == []
+
+
+def test_validate_network_cites_version_specific_rules_only_for_their_target():
+    # A two-arm junction violates junctions.common.not_only_two — a rule that
+    # exists only in the 1.9.0 catalog (Annex F.4.5.3), so targeting 1.8.1
+    # has nothing to cite.
+    net = _authored_network()
+    stack = rm.edit.EditStack()
+    road = net.find_road("1")
+    stack.push(net, rm.edit.split_road(net, road, net.road(road).length * 0.5))
+    tail = net.find_road("2")
+    stack.push(
+        net,
+        rm.edit.create_junction(
+            net,
+            [
+                rm.RoadEnd(road, rm.ContactPoint.START),
+                rm.RoadEnd(tail, rm.ContactPoint.END),
+            ],
+        ),
+    )
+
+    assert rm.validate_network(net) == []
+    findings = rm.validate_network(net, target_version=rm.XodrVersion.V1_9_0)
+    assert [f.rule_id for f in findings] == [
+        "asam.net:xodr:1.9.0:junctions.common.not_only_two"
+    ]
+    assert findings[0].severity == rm.Severity.WARNING

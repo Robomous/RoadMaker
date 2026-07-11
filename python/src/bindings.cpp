@@ -403,23 +403,47 @@ NB_MODULE(_roadmaker, m) {
       "text"_a,
       "Parses OpenDRIVE XML from a string. Returns (network, diagnostics).");
 
+  nb::enum_<roadmaker::XodrVersion>(m, "XodrVersion")
+      .value("V1_8_1", roadmaker::XodrVersion::v1_8_1)
+      .value("V1_9_0", roadmaker::XodrVersion::v1_9_0);
+
   m.def(
       "write_xodr",
-      [](const roadmaker::RoadNetwork& network, std::string_view name) {
-        return unwrap(roadmaker::write_xodr(network, name));
+      [](const roadmaker::RoadNetwork& network,
+         std::string_view name,
+         roadmaker::XodrVersion target_version) {
+        return unwrap(roadmaker::write_xodr(network, name, {.target_version = target_version}));
       },
       "network"_a,
       "name"_a = "roadmaker",
-      "Serializes the network as OpenDRIVE 1.7 XML (validates first).");
+      "target_version"_a = roadmaker::XodrVersion::v1_8_1,
+      "Serializes the network as OpenDRIVE XML targeting `target_version` "
+      "(1.8.1 default; validates first).");
 
   m.def(
       "save_xodr",
       [](const roadmaker::RoadNetwork& network,
          const std::filesystem::path& path,
-         std::string_view name) { unwrap(roadmaker::save_xodr(network, path, name)); },
+         std::string_view name,
+         roadmaker::XodrVersion target_version) {
+        unwrap(roadmaker::save_xodr(network, path, name, {.target_version = target_version}));
+      },
       "network"_a,
       "path"_a,
-      "name"_a = "roadmaker");
+      "name"_a = "roadmaker",
+      "target_version"_a = roadmaker::XodrVersion::v1_8_1);
+
+  m.def(
+      "validate_network",
+      [](const roadmaker::RoadNetwork& network, roadmaker::XodrVersion target_version) {
+        return roadmaker::validate_network(network, {.target_version = target_version});
+      },
+      "network"_a,
+      "target_version"_a = roadmaker::XodrVersion::v1_8_1,
+      "Checker-rule validation against the target version's catalog. Returns "
+      "a list of Diagnostic citing normative rule UIDs; rules present in only "
+      "one version's catalog are cited only for that target. Findings never "
+      "block write_xodr/save_xodr.");
 
   // --- authoring -----------------------------------------------------------------
 

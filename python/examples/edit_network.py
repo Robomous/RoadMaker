@@ -87,7 +87,16 @@ def main() -> int:
     drag_options = rm.edit.SnapOptions(radius=2.0, grid=1.0, exclude_road=road)
     assert rm.edit.snap_point(network, (161.0, 0.5), drag_options).kind == rm.edit.SnapKind.Grid
 
-    rm.save_xodr(network, out_path, "edit_network_example")
+    # Before shipping a file, run the checker validation. Findings cite
+    # normative ASAM rule UIDs; rules that exist only in one version's
+    # catalog are cited only when targeting that version — and they never
+    # block the save.
+    for finding in rm.validate_network(network, target_version=rm.XodrVersion.V1_9_0):
+        print(f"validator: {finding}")
+
+    # The writer targets OpenDRIVE 1.8.1 by default; 1.9.0 is selectable.
+    rm.save_xodr(network, out_path, "edit_network_example",
+                 target_version=rm.XodrVersion.V1_8_1)
     print(f"wrote {out_path}")
     return 0
 
