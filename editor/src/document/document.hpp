@@ -142,6 +142,13 @@ private:
   /// incremental re-mesh is issue #4).
   void after_kernel_mutation(const edit::DirtySet& dirty);
 
+  /// Pushes an already-applied command, folding regeneration of every
+  /// junction it touched (recorded arms) into the same undo entry (02 §6).
+  /// `already_meshed` skips the re-mesh when the caller (commit_preview)
+  /// already tessellated the primary edit. Shared by push_command and
+  /// commit_preview.
+  void push_applied_with_regeneration(std::unique_ptr<edit::Command> command, bool already_meshed);
+
   RoadNetwork network_;
   NetworkMesh mesh_;
   std::vector<Diagnostic> diagnostics_;

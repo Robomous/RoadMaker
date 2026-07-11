@@ -1,5 +1,6 @@
 #include "document/document.hpp"
 
+#include "roadmaker/edit/operations.hpp"
 #include "roadmaker/io/gltf_exporter.hpp"
 #include "roadmaker/mesh/mesh_builder.hpp"
 #include "roadmaker/xodr/reader.hpp"
@@ -7,7 +8,9 @@
 
 #include <spdlog/spdlog.h>
 
+#include <algorithm>
 #include <utility>
+#include <vector>
 
 #include "document/editor_command.hpp"
 
@@ -114,12 +117,67 @@ Expected<void> Document::push_command(std::unique_ptr<edit::Command> command) {
     emit diagnostics_changed();
     return applied;
   }
-  const edit::DirtySet dirty = command->dirty();
   // Already applied above — KernelEditorCommand skips the redo() that
   // QUndoStack fires on push.
-  undo_stack_.push(new KernelEditorCommand(*this, std::move(command)));
-  after_kernel_mutation(dirty);
+  push_applied_with_regeneration(std::move(command), /*already_meshed=*/false);
   return {};
+}
+
+void Document::push_applied_with_regeneration(std::unique_ptr<edit::Command> command,
+                                              bool already_meshed) {
+  edit::DirtySet dirty = command->dirty();
+
+  // Editing an incoming road (geometry, elevation) regenerates every junction
+  // it touches (02 §6): re-run the generator from each junction's recorded
+  // arms, replacing the connecting-road geometry in place. Junctions loaded
+  // from foreign files have no recorded arms and are left untouched.
+  // Topology commands (create/delete junction, split, delete road) are
+  // skipped: they list their own junction as dirty but must not self- or
+  // double-regenerate — the create already built the connecting roads.
+  std::vector<std::unique_ptr<edit::Command>> regenerations;
+  for (const JunctionId junction_id : dirty.junctions) {
+    if (dirty.topology) {
+      break;
+    }
+    const Junction* junction = network_.junction(junction_id);
+    if (junction == nullptr || junction->arms.empty()) {
+      continue;
+    }
+    auto regen = edit::regenerate_junction(network_, junction_id);
+    if (auto applied = regen->apply(network_); !applied.has_value()) {
+      // A changed turn set (e.g. a lane added to an arm) cannot regenerate in
+      // place — leave the junction for an explicit recreate, don't fail the
+      // user's edit.
+      spdlog::warn("junction regeneration skipped: {}", applied.error().message);
+      continue;
+    }
+    const edit::DirtySet regen_dirty = regen->dirty();
+    for (const RoadId road : regen_dirty.roads) {
+      if (std::ranges::find(dirty.roads, road) == dirty.roads.end()) {
+        dirty.roads.push_back(road);
+      }
+    }
+    regenerations.push_back(std::move(regen));
+  }
+
+  if (regenerations.empty()) {
+    undo_stack_.push(new KernelEditorCommand(*this, std::move(command)));
+    if (!already_meshed) {
+      after_kernel_mutation(dirty);
+    }
+    return;
+  }
+  // Group the edit and its regenerations into ONE undo entry so a single
+  // Ctrl+Z reverts both together (all already applied — the wrappers skip
+  // their first redo).
+  undo_stack_.beginMacro(
+      QString::fromUtf8(command->name().data(), static_cast<qsizetype>(command->name().size())));
+  undo_stack_.push(new KernelEditorCommand(*this, std::move(command)));
+  for (auto& regen : regenerations) {
+    undo_stack_.push(new KernelEditorCommand(*this, std::move(regen)));
+  }
+  undo_stack_.endMacro();
+  after_kernel_mutation(dirty);
 }
 
 Expected<void> Document::begin_preview(std::unique_ptr<edit::Command> command) {
@@ -181,7 +239,9 @@ void Document::commit_preview() {
   }
   // Already applied by begin/update — KernelEditorCommand skips the redo()
   // that QUndoStack fires on push, and the mesh already reflects the state.
-  undo_stack_.push(new KernelEditorCommand(*this, std::move(preview_command_)));
+  // Fold in any junction regeneration so a dragged arm's junction updates
+  // (and undoes) with the drag; the preview already meshed the primary edit.
+  push_applied_with_regeneration(std::move(preview_command_), /*already_meshed=*/true);
 }
 
 void Document::cancel_preview() {

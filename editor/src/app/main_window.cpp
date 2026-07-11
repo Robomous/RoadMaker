@@ -21,6 +21,7 @@
 #include "panels/diagnostics_panel.hpp"
 #include "panels/properties_panel.hpp"
 #include "panels/scene_tree_panel.hpp"
+#include "tools/create_junction_tool.hpp"
 #include "tools/create_road_tool.hpp"
 #include "tools/delete_tool.hpp"
 #include "tools/edit_nodes_tool.hpp"
@@ -131,6 +132,14 @@ MainWindow::MainWindow(QWidget* parent)
   });
   // The Properties panel edits the node the Elevation tool has made active.
   properties_panel_->set_elevation_tool(elevation_tool_);
+  auto create_junction_tool = std::make_unique<CreateJunctionTool>(document_);
+  connect(create_junction_tool.get(), &Tool::status_message, this, [this](const QString& text) {
+    statusBar()->showMessage(text, 5000);
+  });
+  tool_manager_.register_tool(ToolId::CreateJunction, std::move(create_junction_tool));
+  connect(actions_->tool_create_junction, &QAction::triggered, this, [this] {
+    tool_manager_.set_active(ToolId::CreateJunction);
+  });
   auto delete_tool = std::make_unique<DeleteTool>(document_);
   connect(delete_tool.get(), &Tool::status_message, this, [this](const QString& text) {
     statusBar()->showMessage(text, 5000);
@@ -241,6 +250,7 @@ void MainWindow::build_toolbar() {
   toolbar->addAction(actions_->tool_edit_nodes);
   toolbar->addAction(actions_->tool_lane_profile);
   toolbar->addAction(actions_->tool_elevation);
+  toolbar->addAction(actions_->tool_create_junction);
   toolbar->addAction(actions_->tool_delete);
   toolbar->addSeparator();
   toolbar->addAction(actions_->reset_camera);
