@@ -39,7 +39,10 @@ MainWindow::MainWindow(QWidget* parent)
   build_toolbar();
   build_status_bar();
 
+  connect(actions_->new_file, &QAction::triggered, this, &MainWindow::new_file);
   connect(actions_->open, &QAction::triggered, this, &MainWindow::open_file_dialog);
+  connect(actions_->save, &QAction::triggered, this, [this] { save_file(); });
+  connect(actions_->save_as, &QAction::triggered, this, [this] { save_file_as(); });
   connect(actions_->export_glb, &QAction::triggered, this, &MainWindow::export_file_dialog);
   connect(actions_->quit, &QAction::triggered, this, &QMainWindow::close);
   connect(actions_->reset_camera, &QAction::triggered, viewport_, &ViewportWidget::reset_camera);
@@ -54,6 +57,12 @@ MainWindow::MainWindow(QWidget* parent)
     diagnostics_dock_->setVisible(!document_.diagnostics().empty() ||
                                   diagnostics_dock_->isVisible());
   });
+  // QUndoStack::isClean drives the modified flag; the [*] placeholder in
+  // the window title renders it (§8).
+  connect(document_.undo_stack(), &QUndoStack::cleanChanged, this, [this](bool clean) {
+    setWindowModified(!clean);
+  });
+  connect(&document_, &Document::saved, this, &MainWindow::update_window_title);
 
   // Editing tools (M2). Select/Move is the default; guidance lands in the
   // status bar via the tool's status_message.
@@ -120,9 +129,13 @@ void MainWindow::build_docks() {
 
 void MainWindow::build_menus() {
   QMenu* file_menu = menuBar()->addMenu(tr("&File"));
+  file_menu->addAction(actions_->new_file);
   file_menu->addAction(actions_->open);
   recent_menu_ = file_menu->addMenu(tr("Open &Recent"));
   update_recent_files_menu();
+  file_menu->addSeparator();
+  file_menu->addAction(actions_->save);
+  file_menu->addAction(actions_->save_as);
   file_menu->addSeparator();
   file_menu->addAction(actions_->export_glb);
   file_menu->addSeparator();
@@ -152,7 +165,9 @@ void MainWindow::build_toolbar() {
   toolbar->setIconSize(QSize(16, 16));
   toolbar->setToolButtonStyle(Qt::ToolButtonIconOnly);
   toolbar->setMovable(false);
+  toolbar->addAction(actions_->new_file);
   toolbar->addAction(actions_->open);
+  toolbar->addAction(actions_->save);
   toolbar->addAction(actions_->export_glb);
   toolbar->addSeparator();
   toolbar->addAction(actions_->tool_select);
@@ -185,6 +200,67 @@ void MainWindow::load_file(const std::filesystem::path& path) {
   }
   settings_.add_recent_file(document_.file_path());
   update_recent_files_menu();
+}
+
+void MainWindow::new_file() {
+  if (!confirm_discard()) {
+    return;
+  }
+  document_.reset();
+}
+
+bool MainWindow::save_file() {
+  if (!document_.has_file()) {
+    return save_file_as();
+  }
+  return save_to(std::filesystem::path(document_.file_path().toStdString()));
+}
+
+bool MainWindow::save_file_as() {
+  const QString suggested =
+      document_.has_file() ? document_.file_path() : QStringLiteral("untitled.xodr");
+  // QFileDialog owns the overwrite prompt (§8 edge cases).
+  const QString path = QFileDialog::getSaveFileName(
+      this, tr("Save OpenDRIVE file"), suggested, tr("OpenDRIVE (*.xodr);;All files (*)"));
+  if (path.isEmpty()) {
+    return false;
+  }
+  return save_to(std::filesystem::path(path.toStdString()));
+}
+
+bool MainWindow::save_to(const std::filesystem::path& path) {
+  const auto result = document_.save(path);
+  // Validator findings (rule ids included) landed in the Diagnostics panel
+  // either way — errors never block the save, but the user sees what a
+  // consumer would (§8).
+  diagnostics_dock_->setVisible(!document_.diagnostics().empty() || diagnostics_dock_->isVisible());
+  if (!result) {
+    QMessageBox::warning(this,
+                         tr("Save failed"),
+                         tr("%1\n%2").arg(QString::fromStdString(result.error().message),
+                                          QString::fromStdString(result.error().context)));
+    return false;
+  }
+  settings_.add_recent_file(document_.file_path());
+  update_recent_files_menu();
+  statusBar()->showMessage(tr("Saved %1").arg(document_.file_path()), 5000);
+  return true;
+}
+
+bool MainWindow::confirm_discard() {
+  if (!document_.is_dirty()) {
+    return true;
+  }
+  const auto choice =
+      QMessageBox::warning(this,
+                           tr("Unsaved changes"),
+                           tr("The document has unsaved changes. Save them first?"),
+                           QMessageBox::Save | QMessageBox::Discard | QMessageBox::Cancel,
+                           QMessageBox::Save);
+  if (choice == QMessageBox::Save) {
+    return save_file();
+  }
+  return choice == QMessageBox::Discard;
 }
 
 void MainWindow::open_file_dialog() {
@@ -240,9 +316,10 @@ void MainWindow::update_recent_files_menu() {
 }
 
 void MainWindow::update_window_title() {
-  setWindowTitle(document_.has_file()
-                     ? tr("%1 — RoadMaker").arg(QFileInfo(document_.file_path()).fileName())
-                     : tr("RoadMaker"));
+  // [*] renders the QUndoStack dirty flag (setWindowModified).
+  const QString name =
+      document_.has_file() ? QFileInfo(document_.file_path()).fileName() : tr("Untitled");
+  setWindowTitle(tr("%1[*] — RoadMaker").arg(name));
 }
 
 void MainWindow::update_status_entities() {
@@ -279,6 +356,10 @@ void MainWindow::changeEvent(QEvent* event) {
 }
 
 void MainWindow::closeEvent(QCloseEvent* event) {
+  if (!confirm_discard()) {
+    event->ignore();
+    return;
+  }
   settings_.save_window(*this);
   QMainWindow::closeEvent(event);
 }

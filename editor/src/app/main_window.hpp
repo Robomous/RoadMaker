@@ -40,7 +40,16 @@ private:
   void build_toolbar();
   void build_docks();
   void build_status_bar();
+  void new_file();
   void open_file_dialog();
+  /// Save / Save As… — return false when the user cancels or the write
+  /// fails, so confirm_discard() can abort the enclosing New/close.
+  bool save_file();
+  bool save_file_as();
+  bool save_to(const std::filesystem::path& path);
+  /// True when it is safe to drop the current document: clean stack, or the
+  /// user chose Save (and it succeeded) or Discard.
+  bool confirm_discard();
   void export_file_dialog();
   void show_about_dialog();
   void update_recent_files_menu();

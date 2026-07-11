@@ -3,6 +3,7 @@
 #include "roadmaker/io/gltf_exporter.hpp"
 #include "roadmaker/mesh/mesh_builder.hpp"
 #include "roadmaker/xodr/reader.hpp"
+#include "roadmaker/xodr/writer.hpp"
 
 #include <spdlog/spdlog.h>
 
@@ -43,6 +44,49 @@ Expected<void> Document::load(const std::filesystem::path& path) {
 
   emit loaded();
   emit mesh_changed({});
+  emit diagnostics_changed();
+  return {};
+}
+
+void Document::reset() {
+  cancel_preview();
+  network_ = RoadNetwork{};
+  diagnostics_.clear();
+  file_path_.clear();
+  undo_stack_.clear();
+  mesh_ = build_network_mesh(network_);
+
+  emit loaded();
+  emit mesh_changed({});
+  emit diagnostics_changed();
+}
+
+Expected<void> Document::save(const std::filesystem::path& path) {
+  // Checker findings replace the document diagnostics — the user sees what
+  // a consumer would (§8) — but never block the save.
+  diagnostics_ = roadmaker::validate_network(network_);
+
+  const std::string name = path.stem().string();
+  auto written = roadmaker::save_xodr(network_, path, name.empty() ? "roadmaker" : name);
+  if (!written) {
+    diagnostics_.push_back(Diagnostic{
+        .severity = Severity::Error,
+        .location = written.error().context,
+        .message = written.error().message,
+    });
+    spdlog::error("save failed: {} ({})", written.error().message, written.error().context);
+    emit diagnostics_changed();
+    return written;
+  }
+
+  file_path_ = QString::fromStdString(path.string());
+  undo_stack_.setClean();
+  spdlog::info("saved {} ({} roads, {} diagnostics)",
+               path.string(),
+               network_.road_count(),
+               diagnostics_.size());
+
+  emit saved();
   emit diagnostics_changed();
   return {};
 }

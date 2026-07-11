@@ -32,6 +32,22 @@ public:
   /// success.
   [[nodiscard]] Expected<void> load(const std::filesystem::path& path);
 
+  /// Replaces the document with an empty network (File → New). Mirrors
+  /// load(): cancels any preview, clears the undo stack and file path,
+  /// then emits loaded(), mesh_changed({}), diagnostics_changed(). Not
+  /// undoable — callers prompt on a dirty stack before resetting.
+  void reset();
+
+  /// Saves as OpenDRIVE (the .xodr IS the project file, §8). Runs
+  /// validate_network first and publishes the findings as the document
+  /// diagnostics — checker findings never block the save; only a network
+  /// the writer cannot serialize fails. On success records `path`, marks
+  /// the undo stack clean, and emits saved().
+  [[nodiscard]] Expected<void> save(const std::filesystem::path& path);
+
+  /// Dirty means the undo stack has moved since the last load/save/new.
+  [[nodiscard]] bool is_dirty() const { return !undo_stack_.isClean(); }
+
   /// Exports the current tessellation as a binary glTF (.glb).
   [[nodiscard]] Expected<void> export_glb(const std::filesystem::path& path) const;
 
@@ -41,7 +57,8 @@ public:
 
   [[nodiscard]] const std::vector<Diagnostic>& diagnostics() const { return diagnostics_; }
 
-  /// Path of the loaded file; empty until the first successful load.
+  /// Path of the loaded/saved file; empty until the first successful
+  /// load() or save() (and again after reset()).
   [[nodiscard]] QString file_path() const { return file_path_; }
 
   [[nodiscard]] bool has_file() const { return !file_path_.isEmpty(); }
@@ -111,6 +128,10 @@ signals:
   void topology_changed();
 
   void diagnostics_changed();
+
+  /// Written to disk successfully; file_path() points at the file and the
+  /// undo stack is clean again.
+  void saved();
 
 private:
   // The undo-stack bridge mutates the network on redo/undo; it is part of
