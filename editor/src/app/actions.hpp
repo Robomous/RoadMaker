@@ -34,6 +34,7 @@ public:
   QActionGroup* tool_group = nullptr;
   QAction* tool_select = nullptr;
   QAction* tool_edit_nodes = nullptr;
+  QAction* tool_delete = nullptr;
 
   QAction* reset_camera = nullptr;
   QAction* frame_selection = nullptr;

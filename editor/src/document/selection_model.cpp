@@ -1,12 +1,17 @@
 #include "document/selection_model.hpp"
 
 #include <algorithm>
+#include <iterator>
 
 namespace roadmaker::editor {
 
 SelectionModel::SelectionModel(const Document& document, QObject* parent)
     : QObject(parent), document_(document) {
   connect(&document_, &Document::loaded, this, &SelectionModel::clear);
+  // Deletion commands leave entries with dead ids behind; selection is view
+  // state (not undoable), so they simply drop out — undoing the deletion
+  // does not re-select.
+  connect(&document_, &Document::topology_changed, this, &SelectionModel::prune_stale);
 }
 
 void SelectionModel::select(const SelectionEntry& entry, SelectMode mode) {
@@ -35,6 +40,14 @@ void SelectionModel::select_many(std::span<const SelectionEntry> entries, Select
 
 void SelectionModel::clear() {
   set({});
+}
+
+void SelectionModel::prune_stale() {
+  std::vector<SelectionEntry> live;
+  std::ranges::copy_if(entries_, std::back_inserter(live), [this](const SelectionEntry& entry) {
+    return is_live(entry);
+  });
+  set(std::move(live));
 }
 
 bool SelectionModel::contains(const SelectionEntry& entry) const {

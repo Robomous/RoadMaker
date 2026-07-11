@@ -73,6 +73,11 @@ signals:
   void selection_changed();
 
 private:
+  /// Drops entries whose entity a command deleted (runs on every
+  /// topology_changed). Selection is view state: undoing the deletion
+  /// restores the ids but does not re-select.
+  void prune_stale();
+
   /// True for entries whose ids resolve in the current network.
   [[nodiscard]] bool is_live(const SelectionEntry& entry) const;
 

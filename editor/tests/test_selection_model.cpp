@@ -1,3 +1,5 @@
+#include "roadmaker/edit/operations.hpp"
+
 #include <gtest/gtest.h>
 
 #include <QSignalSpy>
@@ -183,6 +185,30 @@ TEST(SelectionModel, ReloadClearsSelectionEvenWhenIdsAlias) {
   ASSERT_TRUE(document.load(kSample).has_value());
   EXPECT_TRUE(selection.empty());
   EXPECT_EQ(spy.count(), 1);
+  expect_invariants(selection);
+}
+
+TEST(SelectionModel, DeletionCommandPrunesItsEntries) {
+  Document document;
+  ASSERT_TRUE(document.load(kSample).has_value());
+  SelectionModel selection(document);
+
+  const std::vector<RoadId> roads = all_roads(document);
+  ASSERT_GE(roads.size(), 2U);
+  selection.select_many(std::vector<SelectionEntry>{{.road = roads[0]}, {.road = roads[1]}});
+
+  // Deleting one selected road drops exactly its entry (topology_changed →
+  // prune); undoing the deletion restores the id but not the selection —
+  // selection is view state, not undoable.
+  QSignalSpy spy(&selection, &SelectionModel::selection_changed);
+  ASSERT_TRUE(document.push_command(edit::delete_road(document.network(), roads[0])).has_value());
+  EXPECT_EQ(spy.count(), 1);
+  ASSERT_EQ(selection.entries().size(), 1U);
+  EXPECT_EQ(selection.primary().road, roads[1]);
+  expect_invariants(selection);
+
+  document.undo_stack()->undo();
+  EXPECT_EQ(selection.entries().size(), 1U);
   expect_invariants(selection);
 }
 

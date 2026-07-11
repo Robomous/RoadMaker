@@ -74,6 +74,11 @@ private:
   /// Ends the drag reverting any live preview (Esc / deactivate path).
   void abort_drag();
 
+  /// Deletes every selected road (Delete/Backspace, 02 §7) — one command
+  /// each, wrapped in ONE QUndoStack macro when the selection holds more
+  /// than one road. False when there is nothing to delete.
+  bool delete_selection();
+
   Document& document_;
   SelectionModel& selection_;
   double pick_radius_ = 2.0;
