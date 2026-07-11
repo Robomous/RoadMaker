@@ -462,6 +462,7 @@ private:
           .s_offset = attr_double(mark_node, "sOffset", location, 0.0, false),
           .type = road_mark_type_from_string(mark_node.attribute("type").value()),
           .width = attr_double(mark_node, "width", location, 0.12, false),
+          .color = road_mark_color_from_string(mark_node.attribute("color").value()),
       };
       if (mark.type == RoadMarkType::Other) {
         diag(Severity::Warning,
@@ -469,7 +470,27 @@ private:
              fmt::format("road mark type '{}' rendered as generic marking",
                          mark_node.attribute("type").value()));
       }
-      lane.road_marks.push_back(mark);
+      if (mark.color == RoadMarkColor::Other) {
+        diag(Severity::Warning,
+             location,
+             fmt::format("road mark color '{}' rendered as standard",
+                         mark_node.attribute("color").value()));
+      }
+      // Explicit multi-line geometry: <type> with <line> children (§11.9.1).
+      // Each <line> becomes a RoadMarkLine; the simple single-stripe mark
+      // leaves `lines` empty and keeps the scalar @width (M2 behaviour).
+      if (const pugi::xml_node type_node = mark_node.child("type")) {
+        for (const pugi::xml_node line_node : type_node.children("line")) {
+          mark.lines.push_back(RoadMarkLine{
+              .width = attr_double(line_node, "width", location, mark.width, false),
+              .length = attr_double(line_node, "length", location, 0.0, false),
+              .space = attr_double(line_node, "space", location, 0.0, false),
+              .t_offset = attr_double(line_node, "tOffset", location, 0.0, false),
+              .s_offset = attr_double(line_node, "sOffset", location, 0.0, false),
+          });
+        }
+      }
+      lane.road_marks.push_back(std::move(mark));
     }
 
     if (const pugi::xml_node link = lane_node.child("link")) {
@@ -523,6 +544,26 @@ private:
     if (name == "broken solid")
       return RoadMarkType::BrokenSolid;
     return RoadMarkType::Other;
+  }
+
+  /// e_roadMarkColor (§11.9, Table 48). Empty/absent -> Standard; unknown ->
+  /// Other with a diagnostic at the call site (never dropped).
+  static RoadMarkColor road_mark_color_from_string(std::string_view name) {
+    if (name == "standard" || name.empty())
+      return RoadMarkColor::Standard;
+    if (name == "white")
+      return RoadMarkColor::White;
+    if (name == "yellow")
+      return RoadMarkColor::Yellow;
+    if (name == "red")
+      return RoadMarkColor::Red;
+    if (name == "blue")
+      return RoadMarkColor::Blue;
+    if (name == "green")
+      return RoadMarkColor::Green;
+    if (name == "orange")
+      return RoadMarkColor::Orange;
+    return RoadMarkColor::Other;
   }
 
   // --- objects (OpenDRIVE §13) ----------------------------------------------

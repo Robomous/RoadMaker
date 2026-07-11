@@ -33,6 +33,8 @@ from ._roadmaker import (  # noqa: F401
     RoadEnd,
     RoadId,
     RoadMark,
+    RoadMarkColor,
+    RoadMarkLine,
     RoadMarkType,
     RoadNetwork,
     Severity,

@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<OpenDRIVE>
+  <header revMajor="1" revMinor="9" name="road-marks-dual-yellow"/>
+  <road name="r" length="100" id="1" junction="-1">
+    <planView>
+      <geometry s="0" x="0" y="0" hdg="0" length="100"><line/></geometry>
+    </planView>
+    <lanes>
+      <laneSection s="0">
+        <center>
+          <lane id="0" type="none" level="false">
+            <roadMark sOffset="0" type="solid solid" color="yellow" width="0.3">
+              <type name="solid solid" width="0.3">
+                <line length="0" space="0" tOffset="0.1" sOffset="0" width="0.12"/>
+                <line length="0" space="0" tOffset="-0.1" sOffset="0" width="0.12"/>
+              </type>
+            </roadMark>
+          </lane>
+        </center>
+        <right>
+          <lane id="-1" type="driving" level="false">
+            <width sOffset="0" a="3.5" b="0" c="0" d="0"/>
+            <roadMark sOffset="0" type="broken" color="white" width="0.12"/>
+          </lane>
+        </right>
+      </laneSection>
+    </lanes>
+    <objects>
+      <object type="crosswalk" subtype="zebra" id="10" s="50" t="0" zOffset="0" orientation="none" hdg="1.5707963267948966" length="4" width="3.5"/>
+      <object type="roadMark" subtype="signalLines" id="11" s="44" t="0" zOffset="0" orientation="none" length="0.3" width="3.5"/>
+      <object type="roadMark" subtype="arrowStraight" id="12" s="40" t="-1.75" zOffset="0" orientation="none" length="4" width="1.75" height="0"/>
+    </objects>
+  </road>
+</OpenDRIVE>
