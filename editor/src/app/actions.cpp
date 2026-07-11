@@ -52,6 +52,13 @@ Actions::Actions(QUndoStack& undo_stack, QObject* parent) : QObject(parent) {
                                  "marker to insert, Delete removes the active node (N)"));
   tool_group->addAction(tool_edit_nodes);
 
+  tool_lane_profile = new QAction(tr("&Lane Profile"), this);
+  tool_lane_profile->setCheckable(true);
+  tool_lane_profile->setShortcut(Qt::Key_L);
+  tool_lane_profile->setToolTip(tr("Lane Profile — click a lane, then edit its type, width, and "
+                                   "road mark in the Properties panel (L)"));
+  tool_group->addAction(tool_lane_profile);
+
   tool_delete = new QAction(tr("&Delete"), this);
   tool_delete->setCheckable(true);
   tool_delete->setShortcut(Qt::Key_X);
@@ -101,6 +108,7 @@ void Actions::apply_icons() {
   tool_select->setIcon(Icons::get(QStringLiteral("mouse-pointer-2")));
   tool_create_road->setIcon(Icons::get(QStringLiteral("clothoid-road")));
   tool_edit_nodes->setIcon(Icons::get(QStringLiteral("waypoints")));
+  tool_lane_profile->setIcon(Icons::get(QStringLiteral("lane-section")));
   tool_delete->setIcon(Icons::get(QStringLiteral("trash-2")));
   template_rural->setIcon(Icons::get(QStringLiteral("template-rural")));
   template_urban->setIcon(Icons::get(QStringLiteral("template-urban")));
