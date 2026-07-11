@@ -51,8 +51,8 @@ struct RoadMesh {
   std::vector<SubMesh> markings;
 };
 
-/// One junction's floor, keyed by its id so incremental re-meshing can
-/// replace exactly the affected entry.
+/// One junction's blended surface, keyed by its id so incremental re-meshing
+/// can replace exactly the affected entry.
 struct JunctionFloor {
   JunctionId junction;
   SubMesh mesh;
@@ -62,8 +62,9 @@ struct JunctionFloor {
 struct NetworkMesh {
   std::vector<RoadMesh> roads;
 
-  /// Plan-view junction floors (Clipper2 union + CDT). Full 3D junction
-  /// surface blending is Milestone 2 — this is the explicit M1 seam.
+  /// Blended 2.5D junction surfaces (Clipper2 union → CDT → harmonic elevation
+  /// field, stitched watertight to the road meshes). Built by
+  /// junction_surface.cpp — docs/design/m2/03_junction_blending.md.
   std::vector<JunctionFloor> junction_floors;
 };
 

@@ -8,6 +8,7 @@ add_executable(roadmaker_core_tests
   test_xodr_reader.cpp
   test_xodr_writer.cpp
   test_mesh.cpp
+  test_junction_surface.cpp
   test_gltf.cpp
   test_round_trip.cpp
   test_edit_stack.cpp
@@ -18,6 +19,8 @@ add_executable(roadmaker_core_tests
 
 target_compile_definitions(roadmaker_core_tests PRIVATE
   RM_SAMPLES_DIR="${CMAKE_SOURCE_DIR}/assets/samples"
+  RM_FIXTURES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/fixtures/junctions"
+  RM_FUZZ_CORPUS_DIR="${CMAKE_CURRENT_SOURCE_DIR}/fuzz/corpus"
 )
 
 if(RM_BUILD_SHARED)

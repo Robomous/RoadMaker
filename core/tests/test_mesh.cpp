@@ -150,10 +150,17 @@ TEST(Mesh, TJunctionBuildsOneJunctionFloor) {
   const roadmaker::SubMesh& floor = mesh.junction_floors[0].mesh;
   ASSERT_FALSE(floor.indices.empty());
 
-  // The floor must cover at least the through-connection footprint
-  // (20 m x 3.5 m) and sit slightly below the surface.
+  // The surface must cover at least the through-connection footprint
+  // (20 m x 3.5 m) and, on this flat network, sit at road elevation (z = 0)
+  // rather than the old dropped floor.
   EXPECT_GT(patch_area_xy(floor.positions, floor.indices), 20.0 * 3.5 * 0.9);
-  EXPECT_LT(floor.positions[2], 0.0);
+  for (std::size_t i = 2; i < floor.positions.size(); i += 3) {
+    EXPECT_NEAR(floor.positions[i], 0.0, 1e-9);
+  }
+  // Height field: every normal points into the +Z hemisphere.
+  for (std::size_t i = 2; i < floor.normals.size(); i += 3) {
+    EXPECT_GT(floor.normals[i], 0.0);
+  }
 }
 
 TEST(Mesh, OptionsCanDisableMarkingsAndFloors) {
@@ -276,7 +283,9 @@ TEST(RemeshJunctions, RegeneratesAndRemovesFloors) {
   const roadmaker::JunctionId junction = mesh.junction_floors[0].junction;
   const double old_z = mesh.junction_floors[0].mesh.positions[2];
 
-  // Raising a connecting road's elevation moves the regenerated floor.
+  // Raising every connecting road's elevation by a constant shifts the whole
+  // regenerated surface by that constant (the harmonic field is linear in the
+  // Dirichlet boundary values).
   network.for_each_road([&](roadmaker::RoadId, roadmaker::Road& road) {
     if (road.junction == junction) {
       road.elevation = {{.s = 0.0, .a = 3.0}};
