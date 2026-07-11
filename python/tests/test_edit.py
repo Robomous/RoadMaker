@@ -196,3 +196,78 @@ def test_invalid_commands_raise_on_push(factory):
     with pytest.raises(ValueError):
         stack.push(two_point, factory(two_point, target))
     assert not stack.can_undo
+
+
+# --- issue #13: lane-profile templates + endpoint-locked fit -----------------
+
+
+def test_lane_profile_templates_contents():
+    rural = rm.LaneProfile.two_lane_rural()
+    assert [lane.type for lane in rural.left] == [rm.LaneType.DRIVING]
+    assert [lane.type for lane in rural.right] == [rm.LaneType.DRIVING, rm.LaneType.SHOULDER]
+    assert rural.center_marking
+
+    urban = rm.LaneProfile.urban_sidewalk()
+    for side in (urban.left, urban.right):
+        assert [lane.type for lane in side] == [rm.LaneType.DRIVING, rm.LaneType.SIDEWALK]
+        assert [lane.width for lane in side] == [pytest.approx(3.5), pytest.approx(2.0)]
+
+    highway = rm.LaneProfile.highway()
+    for side in (highway.left, highway.right):
+        assert [lane.type for lane in side] == [
+            rm.LaneType.DRIVING,
+            rm.LaneType.DRIVING,
+            rm.LaneType.SHOULDER,
+        ]
+    assert not highway.center_marking
+
+    # two_lane_default stays as an alias of the rural template.
+    alias = rm.LaneProfile.two_lane_default()
+    assert [lane.type for lane in alias.right] == [lane.type for lane in rural.right]
+
+
+def test_create_road_locked_start_heading_chains_g1(network):
+    first = network.road(network.find_road("1"))
+    end = first.plan_view.evaluate(first.length)
+
+    stack = rm.edit.EditStack()
+    stack.push(
+        network,
+        rm.edit.create_road(
+            [(end.x, end.y), (end.x + 70.0, end.y - 25.0)],
+            rm.LaneProfile.two_lane_rural(),
+            "Chained",
+            start_heading=end.hdg,
+        ),
+    )
+    chained = network.road(network.find_road("2"))
+    start = chained.plan_view.evaluate(0.0)
+    assert start.x == pytest.approx(end.x)
+    assert start.y == pytest.approx(end.y)
+    assert start.hdg == pytest.approx(end.hdg, abs=1e-9)
+
+
+def test_create_road_auto_names_from_the_assigned_id(network):
+    stack = rm.edit.EditStack()
+    stack.push(
+        network,
+        rm.edit.create_road([(0.0, 50.0), (80.0, 60.0)], rm.LaneProfile.urban_sidewalk(), ""),
+    )
+    assert network.road(network.find_road("2")).name == "Road 2"
+
+
+def test_author_clothoid_road_accepts_locked_headings():
+    net = rm.RoadNetwork()
+    rm.author_clothoid_road(
+        net,
+        [(0.0, 0.0), (60.0, 10.0), (120.0, 0.0)],
+        rm.LaneProfile.two_lane_rural(),
+        "Locked",
+        "1",
+        start_heading=0.4,
+        end_heading=-0.3,
+    )
+    line = net.road(net.find_road("1")).plan_view
+    assert line.evaluate(0.0).hdg == pytest.approx(0.4, abs=1e-9)
+    assert line.evaluate(line.length).hdg == pytest.approx(-0.3, abs=1e-9)
+

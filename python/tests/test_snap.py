@@ -30,7 +30,9 @@ def test_endpoint_beats_tangent_and_grid(network):
     assert result.position.x == pytest.approx(100.0, abs=1e-4)
     assert result.position.y == pytest.approx(0.0, abs=1e-4)
     assert result.road == network.find_road("1")
-    assert result.heading is None
+    # Endpoint snaps carry the continuation heading (issue #13): Create Road
+    # locks the chained fit when the click lands ON the end.
+    assert result.heading == pytest.approx(0.0, abs=1e-9)
 
 
 def test_tangent_continuation_beyond_the_end_carries_heading(network):

@@ -470,7 +470,18 @@ NB_MODULE(_roadmaker, m) {
       .def_rw("left", &roadmaker::LaneProfile::left)
       .def_rw("right", &roadmaker::LaneProfile::right)
       .def_rw("center_marking", &roadmaker::LaneProfile::center_marking)
-      .def_static("two_lane_default", &roadmaker::LaneProfile::two_lane_default);
+      .def_static("two_lane_rural",
+                  &roadmaker::LaneProfile::two_lane_rural,
+                  "One driving lane each way, right-hand shoulder.")
+      .def_static("urban_sidewalk",
+                  &roadmaker::LaneProfile::urban_sidewalk,
+                  "One driving lane each way, sidewalks both sides.")
+      .def_static("highway",
+                  &roadmaker::LaneProfile::highway,
+                  "Two driving lanes each way, wide shoulders, no center mark.")
+      .def_static("two_lane_default",
+                  &roadmaker::LaneProfile::two_lane_default,
+                  "Historical alias of two_lane_rural().");
 
   m.def(
       "author_clothoid_road",
@@ -478,22 +489,32 @@ NB_MODULE(_roadmaker, m) {
          const std::vector<std::pair<double, double>>& waypoints,
          const roadmaker::LaneProfile& profile,
          std::string name,
-         std::string odr_id) {
+         std::string odr_id,
+         std::optional<double> start_heading,
+         std::optional<double> end_heading) {
         std::vector<roadmaker::Waypoint> points;
         points.reserve(waypoints.size());
         for (const auto& [x, y] : waypoints) {
           points.push_back(roadmaker::Waypoint{.x = x, .y = y});
         }
-        return unwrap(roadmaker::author_clothoid_road(
-            network, points, profile, std::move(name), std::move(odr_id)));
+        return unwrap(
+            roadmaker::author_clothoid_road(network,
+                                            points,
+                                            profile,
+                                            std::move(name),
+                                            std::move(odr_id),
+                                            {.start = start_heading, .end = end_heading}));
       },
       "network"_a,
       "waypoints"_a,
       "profile"_a,
       "name"_a = "",
       "odr_id"_a = "",
+      "start_heading"_a = nb::none(),
+      "end_heading"_a = nb::none(),
       "Fits a G1 clothoid path through (x, y) waypoints and inserts a road. "
-      "Returns its RoadId. Raises ValueError on invalid input.");
+      "A start/end heading [rad] locks the fit there (tangent-snap "
+      "chaining). Returns its RoadId. Raises ValueError on invalid input.");
 
   // --- editing (undo/redo parity with the editor) ------------------------------
 
@@ -589,12 +610,21 @@ NB_MODULE(_roadmaker, m) {
       "create_road",
       [](const std::vector<std::pair<double, double>>& waypoints,
          const roadmaker::LaneProfile& profile,
-         std::string name) {
-        return roadmaker::edit::create_road(to_waypoints(waypoints), profile, std::move(name));
+         std::string name,
+         std::optional<double> start_heading,
+         std::optional<double> end_heading) {
+        return roadmaker::edit::create_road(to_waypoints(waypoints),
+                                            profile,
+                                            std::move(name),
+                                            {.start = start_heading, .end = end_heading});
       },
       "waypoints"_a,
       "profile"_a,
-      "name"_a = "");
+      "name"_a = "",
+      "start_heading"_a = nb::none(),
+      "end_heading"_a = nb::none(),
+      "Authors a clothoid road (auto id; empty name auto-names \"Road <id>\"). "
+      "A start/end heading [rad] locks the fit there for G1 chaining.");
   edit.def("split_road", &roadmaker::edit::split_road, "network"_a, "road"_a, "s"_a);
   edit.def("delete_road", &roadmaker::edit::delete_road, "network"_a, "road"_a);
   edit.def(
