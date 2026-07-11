@@ -138,7 +138,7 @@ private:
       diag(Severity::Warning,
            "header",
            fmt::format(
-               "OpenDRIVE revision {}.{} is outside the tested 1.6/1.7 range", major, minor));
+               "OpenDRIVE revision {}.{} is outside the tested 1.4-1.9 range", major, minor));
     }
   }
 

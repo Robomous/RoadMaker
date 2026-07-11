@@ -2,14 +2,17 @@
 
 #include "roadmaker/geometry/reference_line.hpp"
 #include "roadmaker/tol.hpp"
+#include "roadmaker/xodr/rules.hpp"
 
 #include <fmt/format.h>
 #include <pugixml.hpp>
 
+#include <algorithm>
 #include <cmath>
 #include <cstdlib>
 #include <fstream>
 #include <numbers>
+#include <optional>
 #include <sstream>
 #include <string>
 #include <variant>
@@ -79,76 +82,99 @@ const char* road_mark_name(RoadMarkType type) {
   return "none";
 }
 
-/// Pre-write validation per the writer contract.
-Expected<void> validate(const RoadNetwork& network) {
-  Error error;
-  bool failed = false;
-  network.for_each_road([&](RoadId, const Road& road) {
-    if (failed) {
+/// Structural defects the writer refuses to serialize. Findings are
+/// appended in check order; each cites its normative rule UID.
+void check_road_structure(const RoadNetwork& network,
+                          RoadId road_id,
+                          const Road& road,
+                          std::vector<Diagnostic>& findings) {
+  const std::string location = fmt::format("road id={}", road.odr_id);
+  if (road.plan_view.empty()) {
+    findings.push_back(Diagnostic{.severity = Severity::Error,
+                                  .location = location,
+                                  .message = "road has no plan-view geometry",
+                                  .rule_id = std::string(rules::kReflineExists),
+                                  .road = road_id});
+    return;
+  }
+  if (road.sections.empty()) {
+    findings.push_back(Diagnostic{.severity = Severity::Error,
+                                  .location = location,
+                                  .message = "road has no lane sections",
+                                  .rule_id = std::string(rules::kLaneSectionRequired),
+                                  .road = road_id});
+    return;
+  }
+  // Geometry continuity: end pose of record i vs start of record i+1.
+  const auto& records = road.plan_view.records();
+  for (std::size_t i = 0; i + 1 < records.size(); ++i) {
+    const PathPoint end = road.plan_view.evaluate(records[i + 1].s - 1e-12);
+    const double gap = std::hypot(end.x - records[i + 1].x, end.y - records[i + 1].y);
+    const double heading_gap =
+        std::abs(std::remainder(end.hdg - records[i + 1].hdg, 2.0 * std::numbers::pi));
+    if (gap > tol::kRoundTripPosition || heading_gap > 1e-6) {
+      findings.push_back(Diagnostic{
+          .severity = Severity::Error,
+          .location = location,
+          .message = fmt::format(
+              "geometry discontinuity at record {} (gap {} m, {} rad)", i + 1, gap, heading_gap),
+          .rule_id = std::string(rules::kReflineNoGaps),
+          .road = road_id});
       return;
     }
-    const std::string context = fmt::format("road id={}", road.odr_id);
-    if (road.plan_view.empty()) {
-      error = Error{.code = ErrorCode::InvalidArgument,
-                    .message = "road has no plan-view geometry",
-                    .context = context};
-      failed = true;
-      return;
-    }
-    if (road.sections.empty()) {
-      error = Error{.code = ErrorCode::InvalidArgument,
-                    .message = "road has no lane sections",
-                    .context = context};
-      failed = true;
-      return;
-    }
-    // Geometry continuity: end pose of record i vs start of record i+1.
-    const auto& records = road.plan_view.records();
-    for (std::size_t i = 0; i + 1 < records.size(); ++i) {
-      const PathPoint end = road.plan_view.evaluate(records[i + 1].s - 1e-12);
-      const double gap = std::hypot(end.x - records[i + 1].x, end.y - records[i + 1].y);
-      const double heading_gap =
-          std::abs(std::remainder(end.hdg - records[i + 1].hdg, 2.0 * std::numbers::pi));
-      if (gap > tol::kRoundTripPosition || heading_gap > 1e-6) {
-        error = Error{
-            .code = ErrorCode::InvalidArgument,
+  }
+  // Lane-link consistency between consecutive sections.
+  for (std::size_t si = 0; si + 1 < road.sections.size(); ++si) {
+    const LaneSection& here = *network.lane_section(road.sections[si]);
+    const LaneSection& next = *network.lane_section(road.sections[si + 1]);
+    auto lane_exists = [&](const LaneSection& section, int odr_id) {
+      for (const LaneId id : section.lanes) {
+        if (network.lane(id)->odr_id == odr_id) {
+          return true;
+        }
+      }
+      return false;
+    };
+    for (const LaneId lane_id : here.lanes) {
+      const Lane& lane = *network.lane(lane_id);
+      if (lane.successor && !lane_exists(next, *lane.successor)) {
+        findings.push_back(Diagnostic{
+            .severity = Severity::Error,
+            .location = location,
             .message = fmt::format(
-                "geometry discontinuity at record {} (gap {} m, {} rad)", i + 1, gap, heading_gap),
-            .context = context};
-        failed = true;
+                "lane {} successor {} missing in next section", lane.odr_id, *lane.successor),
+            .rule_id = std::string(rules::kOnlyRefDefinedIds),
+            .road = road_id,
+            .lane = lane_id});
         return;
       }
     }
-    // Lane-link consistency between consecutive sections.
-    for (std::size_t si = 0; si + 1 < road.sections.size(); ++si) {
-      const LaneSection& here = *network.lane_section(road.sections[si]);
-      const LaneSection& next = *network.lane_section(road.sections[si + 1]);
-      auto lane_exists = [&](const LaneSection& section, int odr_id) {
-        for (const LaneId id : section.lanes) {
-          if (network.lane(id)->odr_id == odr_id) {
-            return true;
-          }
-        }
-        return false;
-      };
-      for (const LaneId lane_id : here.lanes) {
-        const Lane& lane = *network.lane(lane_id);
-        if (lane.successor && !lane_exists(next, *lane.successor)) {
-          error = Error{.code = ErrorCode::InvalidArgument,
-                        .message = fmt::format("lane {} successor {} missing in next section",
-                                               lane.odr_id,
-                                               *lane.successor),
-                        .context = context};
-          failed = true;
-          return;
-        }
-      }
+  }
+}
+
+/// Pre-write validation per the writer contract: first structural defect
+/// refuses the write, keeping the historical Error message/context shape.
+Expected<void> validate(const RoadNetwork& network) {
+  std::vector<Diagnostic> findings;
+  network.for_each_road([&](RoadId road_id, const Road& road) {
+    if (findings.empty()) {
+      check_road_structure(network, road_id, road, findings);
     }
   });
-  if (failed) {
-    return tl::unexpected<Error>(std::move(error));
+  if (!findings.empty()) {
+    return tl::unexpected<Error>(Error{.code = ErrorCode::InvalidArgument,
+                                       .message = findings.front().message,
+                                       .context = findings.front().location});
   }
   return {};
+}
+
+bool links_to_junction(const std::optional<RoadLink>& link, JunctionId junction_id) {
+  if (!link.has_value()) {
+    return false;
+  }
+  const JunctionId* target = std::get_if<JunctionId>(&link->target);
+  return target != nullptr && *target == junction_id;
 }
 
 void write_poly3_list(pugi::xml_node parent,
@@ -356,7 +382,66 @@ void write_junction(pugi::xml_node root, const RoadNetwork& network, const Junct
 
 } // namespace
 
-Expected<std::string> write_xodr(const RoadNetwork& network, std::string_view document_name) {
+std::vector<Diagnostic> validate_network(const RoadNetwork& network, const WriterOptions& options) {
+  std::vector<Diagnostic> findings;
+  network.for_each_road([&](RoadId road_id, const Road& road) {
+    check_road_structure(network, road_id, road, findings);
+    // "The width of the lane shall be defined for the full length of the
+    // lane section" — a non-center lane needs a <width> at sOffset 0.
+    for (const LaneSectionId section_id : road.sections) {
+      const LaneSection& section = *network.lane_section(section_id);
+      for (const LaneId lane_id : section.lanes) {
+        const Lane& lane = *network.lane(lane_id);
+        if (lane.odr_id != 0 && (lane.widths.empty() || lane.widths.front().s > 1e-9)) {
+          findings.push_back(
+              Diagnostic{.severity = Severity::Error,
+                         .location = fmt::format("road id={}", road.odr_id),
+                         .message = fmt::format("lane {} has no width at sOffset 0", lane.odr_id),
+                         .rule_id = std::string(rules::kWidthDefinedWholeSection),
+                         .road = road_id,
+                         .lane = lane_id});
+        }
+      }
+    }
+  });
+  // junctions.common.not_only_two exists only in the 1.9.0 catalog
+  // (Annex F.4.5.3); 1.8.1's Annex E (checker rules, normative) has no
+  // equivalent, so the finding is version-gated on the writer target.
+  if (options.target_version == XodrVersion::v1_9_0) {
+    network.for_each_junction([&](JunctionId junction_id, const Junction& junction) {
+      std::vector<RoadId> meeting;
+      auto note = [&](RoadId id) {
+        if (network.road(id) != nullptr &&
+            std::find(meeting.begin(), meeting.end(), id) == meeting.end()) {
+          meeting.push_back(id);
+        }
+      };
+      for (const JunctionConnection& connection : junction.connections) {
+        note(connection.incoming_road);
+      }
+      network.for_each_road([&](RoadId road_id, const Road& road) {
+        if (road.junction != junction_id && (links_to_junction(road.predecessor, junction_id) ||
+                                             links_to_junction(road.successor, junction_id))) {
+          note(road_id);
+        }
+      });
+      if (meeting.size() <= 2) {
+        findings.push_back(Diagnostic{
+            .severity = Severity::Warning,
+            .location = fmt::format("junction id={}", junction.odr_id),
+            .message = fmt::format("junction joins only {} road(s) — junctions should not be "
+                                   "used when only two roads meet",
+                                   meeting.size()),
+            .rule_id = std::string(rules::kJunctionNotOnlyTwo)});
+      }
+    });
+  }
+  return findings;
+}
+
+Expected<std::string> write_xodr(const RoadNetwork& network,
+                                 std::string_view document_name,
+                                 const WriterOptions& options) {
   if (auto valid = validate(network); !valid) {
     return tl::unexpected<Error>(valid.error());
   }
@@ -368,8 +453,11 @@ Expected<std::string> write_xodr(const RoadNetwork& network, std::string_view do
 
   pugi::xml_node root = doc.append_child("OpenDRIVE");
   pugi::xml_node header = root.append_child("header");
+  // Both spec patch levels serialize as revMajor 1 + revMinor 8/9
+  // (header carries no patch digit — 1.8.1 §6.4.1, 1.9.0 §6.4.1).
   header.append_attribute("revMajor").set_value(1);
-  header.append_attribute("revMinor").set_value(7);
+  header.append_attribute("revMinor")
+      .set_value(options.target_version == XodrVersion::v1_9_0 ? 9 : 8);
   header.append_attribute("name").set_value(std::string(document_name).c_str());
   header.append_attribute("vendor").set_value("RoadMaker");
 
@@ -384,8 +472,9 @@ Expected<std::string> write_xodr(const RoadNetwork& network, std::string_view do
 
 Expected<void> save_xodr(const RoadNetwork& network,
                          const std::filesystem::path& path,
-                         std::string_view document_name) {
-  auto text = write_xodr(network, document_name);
+                         std::string_view document_name,
+                         const WriterOptions& options) {
+  auto text = write_xodr(network, document_name, options);
   if (!text) {
     return tl::unexpected<Error>(text.error());
   }
