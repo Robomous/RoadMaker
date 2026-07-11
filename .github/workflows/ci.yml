@@ -281,8 +281,10 @@ jobs:
         run: cmake --build build
       - name: Golden gtests (writes /tmp/rm_usd_golden.usda)
         run: ctest --test-dir build --output-on-failure -R '^Usd\.'
-      - name: usdchecker against the OpenUSD reference implementation
-        run: usdchecker /tmp/rm_usd_golden.usda
+      # usd-core ships the pxr Python modules but not the usdchecker CLI, so we
+      # drive its compliance engine (UsdUtils.ComplianceChecker) directly.
+      - name: Validate exported .usda against the OpenUSD reference checker
+        run: python scripts/usd_compliance_check.py /tmp/rm_usd_golden.usda
 
   docs:
     name: docs link check
