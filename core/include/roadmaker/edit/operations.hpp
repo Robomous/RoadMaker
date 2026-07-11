@@ -56,10 +56,14 @@ delete_waypoint(const RoadNetwork& network, RoadId road, std::size_t index);
 
 // --- topology ---------------------------------------------------------------
 
-/// Authors a new clothoid road (auto-assigned OpenDRIVE id). Undo frees the
-/// id; redo resurrects the identical road under the same ids.
-[[nodiscard]] RM_API std::unique_ptr<Command>
-create_road(std::vector<Waypoint> waypoints, LaneProfile profile, std::string name);
+/// Authors a new clothoid road (auto-assigned OpenDRIVE id; an empty name
+/// auto-names it "Road <odr id>"). `locked` end headings pin the fit for
+/// tangent-snap chaining (02_editing_tools.md §2). Undo frees the id; redo
+/// resurrects the identical road under the same ids.
+[[nodiscard]] RM_API std::unique_ptr<Command> create_road(std::vector<Waypoint> waypoints,
+                                                          LaneProfile profile,
+                                                          std::string name,
+                                                          EndpointHeadings locked = {});
 
 /// Splits at station s: the original keeps [0, s), a new road (auto id)
 /// gets [s, length). Sections, profiles, links and lane links are carried

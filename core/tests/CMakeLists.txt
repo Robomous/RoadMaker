@@ -3,6 +3,7 @@ add_executable(roadmaker_core_tests
   test_id_arena.cpp
   test_network.cpp
   test_reference_line.cpp
+  test_authoring.cpp
   test_xodr_reader.cpp
   test_xodr_writer.cpp
   test_mesh.cpp

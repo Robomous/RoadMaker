@@ -55,18 +55,21 @@ snap_point(const RoadNetwork& network, Waypoint cursor, const SnapOptions& optio
         const bool at_end = contact == ContactPoint::End;
         const PathPoint pose = line.evaluate(at_end ? line.length() : 0.0);
         const Waypoint end_pos{.x = pose.x, .y = pose.y};
+        const double away = at_end ? pose.hdg : wrap_angle(pose.hdg + std::numbers::pi);
 
         if (options.endpoints) {
           consider(best_endpoint,
                    Candidate{
-                       .result = {.position = end_pos, .kind = SnapKind::RoadEndpoint, .road = id},
+                       .result = {.position = end_pos,
+                                  .heading = away,
+                                  .kind = SnapKind::RoadEndpoint,
+                                  .road = id},
                        .dist = distance(cursor, end_pos),
                    },
                    options.radius);
         }
 
         if (options.tangent) {
-          const double away = at_end ? pose.hdg : wrap_angle(pose.hdg + std::numbers::pi);
           const double ux = std::cos(away);
           const double uy = std::sin(away);
           // Cursor along the continuation ray; behind the end the endpoint

@@ -42,7 +42,20 @@ TEST(SnapPoint, EndpointWinsOverTangentAndGrid) {
   EXPECT_NEAR(result->position.x, 100.0, tol::kRoundTripPosition);
   EXPECT_NEAR(result->position.y, 0.0, tol::kRoundTripPosition);
   EXPECT_TRUE(result->road.has_value());
-  EXPECT_FALSE(result->heading.has_value());
+  // Endpoint snaps carry the continuation heading so Create Road can lock
+  // the chained fit when the click lands ON the end (02 §2).
+  ASSERT_TRUE(result->heading.has_value());
+  expect_angle_near(*result->heading, 0.0, tol::kAngle);
+}
+
+TEST(SnapPoint, StartEndpointCarriesReversedContinuationHeading) {
+  const RoadNetwork network = straight_network();
+  const auto result =
+      snap_point(network, {.x = 0.4, .y = -0.3}, {.radius = 2.0, .endpoints = true});
+  ASSERT_TRUE(result.has_value());
+  EXPECT_EQ(result->kind, SnapKind::RoadEndpoint);
+  ASSERT_TRUE(result->heading.has_value());
+  expect_angle_near(*result->heading, std::numbers::pi, tol::kAngle);
 }
 
 TEST(SnapPoint, ClosestEndpointWinsWithinKind) {

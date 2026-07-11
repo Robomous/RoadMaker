@@ -626,22 +626,29 @@ delete_waypoint(const RoadNetwork& network, RoadId road_id, std::size_t index) {
   return refit_command(network, road_id, std::string(kName), std::move(waypoints), headings);
 }
 
-std::unique_ptr<Command>
-create_road(std::vector<Waypoint> waypoints, LaneProfile profile, std::string name) {
+std::unique_ptr<Command> create_road(std::vector<Waypoint> waypoints,
+                                     LaneProfile profile,
+                                     std::string name,
+                                     EndpointHeadings locked) {
   static constexpr std::string_view kName = "Create Road";
   // Pre-validate the fit so obviously-bad input fails at factory time; the
   // authoring call re-validates against the live network on apply.
-  if (auto fit = fit_clothoid_path(waypoints); !fit.has_value()) {
+  if (auto fit = fit_clothoid_path(waypoints, locked); !fit.has_value()) {
     return invalid_command(std::string(kName), fit.error());
   }
   auto command = std::make_unique<GenericCommand>(std::string(kName), DirtySet{.topology = true});
-  command->creator =
-      [waypoints = std::move(waypoints), profile = std::move(profile), name = std::move(name)](
-          RoadNetwork& target, Values& created) -> Expected<void> {
+  command->creator = [waypoints = std::move(waypoints),
+                      profile = std::move(profile),
+                      name = std::move(name),
+                      locked](RoadNetwork& target, Values& created) -> Expected<void> {
     // author_clothoid_road validates everything before its first mutation.
-    auto road_id = author_clothoid_road(target, waypoints, profile, name);
+    auto road_id = author_clothoid_road(target, waypoints, profile, name, {}, locked);
     if (!road_id.has_value()) {
       return tl::unexpected<Error>(road_id.error());
+    }
+    if (name.empty()) {
+      Road& road = *target.road(*road_id);
+      road.name = "Road " + road.odr_id;
     }
     created.roads.emplace_back(*road_id, Road{});
     for (const LaneSectionId section_id : target.road(*road_id)->sections) {
