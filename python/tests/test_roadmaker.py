@@ -214,19 +214,21 @@ def test_validate_network_is_quiet_on_a_valid_network():
 def test_validate_network_cites_version_specific_rules_only_for_their_target():
     # A two-arm junction violates junctions.common.not_only_two — a rule that
     # exists only in the 1.9.0 catalog (Annex F.4.5.3), so targeting 1.8.1
-    # has nothing to cite.
-    net = _authored_network()
+    # has nothing to cite. Two short arms meeting head-on stay within the
+    # generator's 50 m end-distance limit.
+    net = rm.RoadNetwork()
+    rm.author_clothoid_road(
+        net, [(-40.0, 0.0), (-6.0, 0.0)], rm.LaneProfile.two_lane_default(), "", "1")
+    rm.author_clothoid_road(
+        net, [(40.0, 0.0), (6.0, 0.0)], rm.LaneProfile.two_lane_default(), "", "2")
     stack = rm.edit.EditStack()
-    road = net.find_road("1")
-    stack.push(net, rm.edit.split_road(net, road, net.road(road).length * 0.5))
-    tail = net.find_road("2")
     stack.push(
         net,
         rm.edit.create_junction(
             net,
             [
-                rm.RoadEnd(road, rm.ContactPoint.START),
-                rm.RoadEnd(tail, rm.ContactPoint.END),
+                rm.RoadEnd(net.find_road("1"), rm.ContactPoint.END),
+                rm.RoadEnd(net.find_road("2"), rm.ContactPoint.END),
             ],
         ),
     )
