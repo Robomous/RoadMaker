@@ -7,6 +7,7 @@
     <file alias="box.svg">icons/lucide/box.svg</file>
     <file alias="circle-plus.svg">icons/lucide/circle-plus.svg</file>
     <file alias="file-output.svg">icons/lucide/file-output.svg</file>
+    <file alias="file-plus.svg">icons/lucide/file-plus.svg</file>
     <file alias="folder-open.svg">icons/lucide/folder-open.svg</file>
     <file alias="info.svg">icons/lucide/info.svg</file>
     <file alias="magnet.svg">icons/lucide/magnet.svg</file>

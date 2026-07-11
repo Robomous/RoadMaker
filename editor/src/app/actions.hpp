@@ -22,7 +22,10 @@ public:
   /// application palette changes so the tint follows the theme.
   void apply_icons();
 
+  QAction* new_file = nullptr;
   QAction* open = nullptr;
+  QAction* save = nullptr;
+  QAction* save_as = nullptr;
   QAction* export_glb = nullptr;
   QAction* quit = nullptr;
 

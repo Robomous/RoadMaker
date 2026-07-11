@@ -29,6 +29,7 @@ from ._roadmaker import (  # noqa: F401
     RoadNetwork,
     Severity,
     Waypoint,
+    XodrVersion,
     author_clothoid_road,
     build_network_mesh,
     edit,
@@ -36,6 +37,7 @@ from ._roadmaker import (  # noqa: F401
     load_xodr,
     parse_xodr,
     save_xodr,
+    validate_network,
     version,
     write_xodr,
 )

@@ -5,8 +5,17 @@
 namespace roadmaker::editor {
 
 Actions::Actions(QUndoStack& undo_stack, QObject* parent) : QObject(parent) {
+  new_file = new QAction(tr("&New"), this);
+  new_file->setShortcut(QKeySequence::New);
+
   open = new QAction(tr("&Open…"), this);
   open->setShortcut(QKeySequence::Open);
+
+  save = new QAction(tr("&Save"), this);
+  save->setShortcut(QKeySequence::Save);
+
+  save_as = new QAction(tr("Save &As…"), this);
+  save_as->setShortcut(QKeySequence::SaveAs);
 
   export_glb = new QAction(tr("&Export glTF…"), this);
   export_glb->setEnabled(false); // enabled once a file is loaded
@@ -56,7 +65,10 @@ Actions::Actions(QUndoStack& undo_stack, QObject* parent) : QObject(parent) {
 void Actions::apply_icons() {
   // Bundled palette-tinted set (docs/design/m2/05_assets.md §1) — never
   // QIcon::fromTheme, which is empty on macOS/Windows.
+  new_file->setIcon(Icons::get(QStringLiteral("file-plus")));
   open->setIcon(Icons::get(QStringLiteral("folder-open")));
+  save->setIcon(Icons::get(QStringLiteral("save")));
+  save_as->setIcon(Icons::get(QStringLiteral("save")));
   export_glb->setIcon(Icons::get(QStringLiteral("box")));
   undo->setIcon(Icons::get(QStringLiteral("undo-2")));
   redo->setIcon(Icons::get(QStringLiteral("redo-2")));

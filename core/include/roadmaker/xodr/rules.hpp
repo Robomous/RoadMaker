@@ -58,4 +58,10 @@ inline constexpr std::string_view kWidthDefinedWholeSection =
 inline constexpr std::string_view kRoadLinkAttributeUsage =
     "asam.net:xodr:1.4.0:road.linkage.road_link_attribute_usage";
 
+/// "Junctions should not be used when only two roads meet." Present only
+/// in the 1.9.0 catalog (Annex F.4.5.3); 1.8.1's Annex E has no
+/// equivalent, so validate_network cites it only when targeting 1.9.0.
+inline constexpr std::string_view kJunctionNotOnlyTwo =
+    "asam.net:xodr:1.9.0:junctions.common.not_only_two";
+
 } // namespace roadmaker::rules

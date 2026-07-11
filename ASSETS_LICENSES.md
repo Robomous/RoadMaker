@@ -23,6 +23,7 @@ models, fonts, images). Policy — see `docs/design/m2/05_assets.md`:
 | `editor/resources/icons/lucide/box.svg` | [lucide 1.24.0](https://github.com/lucide-icons/lucide/tree/1.24.0) | Lucide Contributors | ISC | 2026-07-10 |
 | `editor/resources/icons/lucide/circle-plus.svg` | [lucide 1.24.0](https://github.com/lucide-icons/lucide/tree/1.24.0) | Lucide Contributors | ISC | 2026-07-10 |
 | `editor/resources/icons/lucide/file-output.svg` | [lucide 1.24.0](https://github.com/lucide-icons/lucide/tree/1.24.0) | Lucide Contributors | ISC | 2026-07-10 |
+| `editor/resources/icons/lucide/file-plus.svg` | [lucide 1.24.0](https://github.com/lucide-icons/lucide/tree/1.24.0) | Lucide Contributors | ISC | 2026-07-10 |
 | `editor/resources/icons/lucide/folder-open.svg` | [lucide 1.24.0](https://github.com/lucide-icons/lucide/tree/1.24.0) | Lucide Contributors | ISC | 2026-07-10 |
 | `editor/resources/icons/lucide/info.svg` | [lucide 1.24.0](https://github.com/lucide-icons/lucide/tree/1.24.0) | Lucide Contributors | ISC | 2026-07-10 |
 | `editor/resources/icons/lucide/magnet.svg` | [lucide 1.24.0](https://github.com/lucide-icons/lucide/tree/1.24.0) | Lucide Contributors | ISC | 2026-07-10 |

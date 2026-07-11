@@ -1,8 +1,12 @@
+#include "roadmaker/edit/operations.hpp"
+#include "roadmaker/xodr/writer.hpp"
+
 #include <gtest/gtest.h>
 
 #include <QSignalSpy>
 #include <QTemporaryDir>
 #include <fstream>
+#include <sstream>
 
 #include "document/document.hpp"
 
@@ -10,6 +14,19 @@ namespace roadmaker::editor {
 namespace {
 
 const std::filesystem::path kSample = std::filesystem::path(RM_SAMPLES_DIR) / "t_junction.xodr";
+
+std::unique_ptr<edit::Command> make_road(double y, const char* name) {
+  return edit::create_road({Waypoint{.x = 0.0, .y = y}, Waypoint{.x = 100.0, .y = y}},
+                           LaneProfile::two_lane_default(),
+                           name);
+}
+
+std::string file_bytes(const std::filesystem::path& path) {
+  std::ifstream in(path, std::ios::binary);
+  std::ostringstream out;
+  out << in.rdbuf();
+  return std::move(out).str();
+}
 
 TEST(Document, LoadEmitsSignalsAndPopulatesNetwork) {
   Document document;
@@ -82,6 +99,91 @@ TEST(Document, ExportGlbWritesValidMagic) {
   in.read(magic.data(), magic.size());
   EXPECT_TRUE(in.good());
   EXPECT_EQ(std::string_view(magic.data(), 4), "glTF");
+}
+
+// The Phase 1 gate (issue #12, docs/design/m2/02_editing_tools.md §8):
+// new → author → save → reload → byte-equal.
+TEST(Document, NewAuthorSaveReloadIsByteEqual) {
+  QTemporaryDir dir;
+  ASSERT_TRUE(dir.isValid());
+  const std::filesystem::path path = std::filesystem::path(dir.path().toStdString()) / "scene.xodr";
+
+  Document document;
+  document.reset();
+  ASSERT_TRUE(document.push_command(make_road(0.0, "First")).has_value());
+  ASSERT_TRUE(document.push_command(make_road(40.0, "Second")).has_value());
+
+  QSignalSpy saved_spy(&document, &Document::saved);
+  ASSERT_TRUE(document.save(path).has_value());
+  EXPECT_EQ(saved_spy.count(), 1);
+  EXPECT_EQ(document.file_path(), QString::fromStdString(path.string()));
+  EXPECT_TRUE(document.diagnostics().empty()); // authored network is valid
+
+  Document reloaded;
+  ASSERT_TRUE(reloaded.load(path).has_value());
+  EXPECT_EQ(reloaded.network().road_count(), 2U);
+  const auto rewritten = roadmaker::write_xodr(reloaded.network(), "scene");
+  ASSERT_TRUE(rewritten.has_value());
+  EXPECT_EQ(*rewritten, file_bytes(path));
+}
+
+TEST(Document, DirtyFlagLifecycle) {
+  QTemporaryDir dir;
+  ASSERT_TRUE(dir.isValid());
+  const std::filesystem::path path = std::filesystem::path(dir.path().toStdString()) / "scene.xodr";
+
+  Document document;
+  EXPECT_FALSE(document.is_dirty()); // fresh document is clean
+
+  ASSERT_TRUE(document.push_command(make_road(0.0, "First")).has_value());
+  EXPECT_TRUE(document.is_dirty());
+
+  ASSERT_TRUE(document.save(path).has_value());
+  EXPECT_FALSE(document.is_dirty()); // setClean() on successful save
+
+  ASSERT_TRUE(document.push_command(make_road(40.0, "Second")).has_value());
+  EXPECT_TRUE(document.is_dirty());
+
+  document.undo_stack()->undo();
+  EXPECT_FALSE(document.is_dirty()); // undo back to the saved state
+
+  document.undo_stack()->redo();
+  EXPECT_TRUE(document.is_dirty());
+}
+
+TEST(Document, ResetClearsDocumentAndEmitsLoadSignals) {
+  Document document;
+  ASSERT_TRUE(document.load(kSample).has_value());
+  ASSERT_TRUE(document.push_command(make_road(500.0, "Extra")).has_value());
+  ASSERT_TRUE(document.is_dirty());
+
+  QSignalSpy loaded_spy(&document, &Document::loaded);
+  QSignalSpy mesh_spy(&document, &Document::mesh_changed);
+  QSignalSpy diagnostics_spy(&document, &Document::diagnostics_changed);
+  document.reset();
+
+  EXPECT_EQ(loaded_spy.count(), 1);
+  EXPECT_EQ(mesh_spy.count(), 1);
+  EXPECT_EQ(diagnostics_spy.count(), 1);
+  EXPECT_EQ(document.network().road_count(), 0U);
+  EXPECT_FALSE(document.has_file());
+  EXPECT_TRUE(document.diagnostics().empty());
+  EXPECT_EQ(document.undo_stack()->count(), 0); // New is not undoable
+  EXPECT_FALSE(document.is_dirty());
+}
+
+TEST(Document, SaveEmptyDocumentIsValidAndReloads) {
+  QTemporaryDir dir;
+  ASSERT_TRUE(dir.isValid());
+  const std::filesystem::path path = std::filesystem::path(dir.path().toStdString()) / "empty.xodr";
+
+  Document document;
+  ASSERT_TRUE(document.save(path).has_value()); // header-only document (§8)
+
+  Document reloaded;
+  ASSERT_TRUE(reloaded.load(path).has_value());
+  EXPECT_EQ(reloaded.network().road_count(), 0U);
+  EXPECT_TRUE(reloaded.diagnostics().empty());
 }
 
 } // namespace

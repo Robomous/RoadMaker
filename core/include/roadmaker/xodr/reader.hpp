@@ -24,7 +24,7 @@ struct XodrParseResult {
   double revision = 0.0;
 };
 
-/// Parses OpenDRIVE 1.6/1.7 XML from an in-memory buffer.
+/// Parses OpenDRIVE 1.4-1.9 XML from an in-memory buffer.
 /// `source_name` is used in error contexts only.
 [[nodiscard]] RM_API Expected<XodrParseResult>
 parse_xodr(std::string_view xml_text, std::string_view source_name = "<memory>");

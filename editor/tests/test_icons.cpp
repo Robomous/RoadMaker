@@ -55,6 +55,7 @@ TEST(Icons, EveryMappedIconIsBundled) {
                                "box",
                                "circle-plus",
                                "file-output",
+                               "file-plus",
                                "folder-open",
                                "info",
                                "magnet",
