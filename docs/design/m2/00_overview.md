@@ -1,7 +1,12 @@
 # M2 overview — interactive editing, junction surfaces, OpenUSD
 
-Status: design phase (pre-implementation). Baseline: v0.2.0 (Qt 6 Widgets editor,
-read-only viewer, shared-lib kernel, Diagnostic rule-id extension merged in PR #2).
+Status: **as-built — shipped in v0.3.0** (all five phases merged to `main`;
+this document was reconciled with the implementation in the M2 close-out,
+issue #21). Baseline was v0.2.0 (Qt 6 Widgets editor, read-only viewer,
+shared-lib kernel, Diagnostic rule-id extension merged in PR #2). Deviations
+from the frozen design are recorded inline in the relevant section (search
+"**As-built**"); the two substantive ones are the elevation fit (`02` §5)
+and junction arm persistence (`02` §6).
 
 M2 turns RoadMaker from a viewer into an editor: a user creates and edits a small
 road network entirely inside `roadmaker-editor` (with undo/redo), junctions get
