@@ -271,3 +271,58 @@ def test_author_clothoid_road_accepts_locked_headings():
     assert line.evaluate(0.0).hdg == pytest.approx(0.4, abs=1e-9)
     assert line.evaluate(line.length).hdg == pytest.approx(-0.3, abs=1e-9)
 
+
+
+def test_remove_lane_drops_junction_lane_links_and_undo_restores():
+    network, _ = rm.load_xodr(SAMPLES / "t_junction.xodr")
+    stack = rm.edit.EditStack()
+    west = network.find_road("1")
+    junction = network.find_junction("100")
+    outer_right = network.lane_section(network.road(west).sections[0]).lanes[-1]
+    before = rm.write_xodr(network)
+
+    # Both connections link West Approach's lane -1 — removal must not leave
+    # a dangling laneLink (issue #14 integrity criterion).
+    stack.push(network, rm.edit.remove_lane(network, outer_right))
+    for connection in network.junction(junction).connections:
+        assert connection.lane_links == []
+
+    stack.undo(network)
+    assert rm.write_xodr(network) == before
+    for connection in network.junction(junction).connections:
+        assert connection.lane_links == [(-1, -1)]
+
+
+def test_set_road_mark_edits_the_first_record_only(network):
+    road = network.find_road("1")
+    outer_right = network.lane_section(network.road(road).sections[0]).lanes[-1]
+    network.lane(outer_right).road_marks = [
+        rm.RoadMark(s_offset=0.0, type=rm.RoadMarkType.BROKEN, width=0.12),
+        rm.RoadMark(s_offset=40.0, type=rm.RoadMarkType.SOLID, width=0.12),
+    ]
+
+    stack = rm.edit.EditStack()
+    stack.push(
+        network,
+        rm.edit.set_road_mark(
+            network,
+            outer_right,
+            rm.RoadMark(s_offset=0.0, type=rm.RoadMarkType.SOLID, width=0.25),
+        ),
+    )
+    marks = network.lane(outer_right).road_marks
+    assert len(marks) == 2
+    assert marks[0].type == rm.RoadMarkType.SOLID
+    assert marks[0].width == pytest.approx(0.25)
+    assert marks[1].s_offset == pytest.approx(40.0)  # tail untouched
+
+    # An sOffset at or past the next record would break ascending order.
+    with pytest.raises(ValueError):
+        stack.push(
+            network,
+            rm.edit.set_road_mark(
+                network,
+                outer_right,
+                rm.RoadMark(s_offset=40.0, type=rm.RoadMarkType.NONE, width=0.12),
+            ),
+        )

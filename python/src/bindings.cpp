@@ -258,7 +258,10 @@ NB_MODULE(_roadmaker, m) {
       .def_ro("odr_id", &roadmaker::Lane::odr_id)
       .def_rw("type", &roadmaker::Lane::type)
       .def_ro("widths", &roadmaker::Lane::widths)
-      .def_ro("road_marks", &roadmaker::Lane::road_marks)
+      .def_rw("road_marks",
+              &roadmaker::Lane::road_marks,
+              "Marks on this lane's OUTER boundary, ascending s_offset "
+              "(rm.edit.set_road_mark edits the first record only).")
       .def_ro("predecessor", &roadmaker::Lane::predecessor)
       .def_ro("successor", &roadmaker::Lane::successor)
       .def("__repr__", [](const roadmaker::Lane& lane) {
@@ -642,10 +645,20 @@ NB_MODULE(_roadmaker, m) {
            "side"_a,
            "type"_a,
            "side: +1 = left of the reference line, -1 = right.");
-  edit.def("remove_lane", &roadmaker::edit::remove_lane, "network"_a, "lane"_a);
+  edit.def("remove_lane",
+           &roadmaker::edit::remove_lane,
+           "network"_a,
+           "lane"_a,
+           "Outermost lane of its side only; adjacent-section links and junction "
+           "lane_links referencing the lane are cleared (undo restores them).");
   edit.def("set_lane_type", &roadmaker::edit::set_lane_type, "network"_a, "lane"_a, "type"_a);
   edit.def("set_lane_width", &roadmaker::edit::set_lane_width, "network"_a, "lane"_a, "width_m"_a);
-  edit.def("set_road_mark", &roadmaker::edit::set_road_mark, "network"_a, "lane"_a, "mark"_a);
+  edit.def("set_road_mark",
+           &roadmaker::edit::set_road_mark,
+           "network"_a,
+           "lane"_a,
+           "mark"_a,
+           "Edits the FIRST road-mark record; later records survive untouched.");
   edit.def("set_node_elevation",
            &roadmaker::edit::set_node_elevation,
            "network"_a,
