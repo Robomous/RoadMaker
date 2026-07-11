@@ -18,6 +18,16 @@ architecture, domain conventions, and roadmap.
 3. [Repository tour](getting-started/repository-tour.md) — what each folder
    is.
 
+## I want to author a network
+
+The [user guide](user-guide/index.md) is task-by-task guidance for building an
+OpenDRIVE scene in the editor: [Create Road](user-guide/create-road.md),
+[Edit Nodes](user-guide/edit-nodes.md),
+[Lane Profile](user-guide/lane-profile.md),
+[Elevation](user-guide/elevation.md), [Junction](user-guide/junction.md),
+[Objects & signals](user-guide/objects-signals.md), and
+[Save & export](user-guide/save-export.md).
+
 ## I want to contribute
 
 1. [Workflow](contributing/workflow.md) — branches, conventional commits,

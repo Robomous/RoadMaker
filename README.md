@@ -43,7 +43,11 @@ Details, kernel-only builds, and troubleshooting:
 
 ## Documentation
 
+New to authoring? The [user guide](docs/user-guide/index.md) walks through the
+editor tool by tool.
+
 Everything lives under [`docs/`](docs/README.md): getting started,
+the [user guide](docs/user-guide/index.md),
 [contributing](docs/contributing/workflow.md),
 [standards](docs/standards/cpp-style.md),
 [architecture](docs/architecture/overview.md),
