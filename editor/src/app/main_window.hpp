@@ -59,6 +59,11 @@ private:
   /// Startup scan for another session's crashed recovery set; prompts
   /// Recover (load + re-point at the original path, dirty) or Discard.
   void check_recovery();
+  /// Startup scan for crash reports left by earlier sessions (#84): appends
+  /// the crashed session's log tail to the newest report, tells the user
+  /// where it lives (local only — nothing is uploaded), offers to open the
+  /// folder, and acknowledges every pending report so each is shown once.
+  void check_crash_reports();
   void update_recent_files_menu();
   void update_window_title();
   void update_status_entities();

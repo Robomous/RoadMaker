@@ -33,7 +33,9 @@ qt_standard_project_setup()
 # editor tests can link the same objects and run headless (offscreen QPA).
 add_library(roadmaker_editor_lib STATIC
   src/app/actions.cpp
+  src/app/crash_handler.cpp
   src/app/icons.cpp
+  src/app/log_setup.cpp
   src/app/main_window.cpp
   src/app/settings.cpp
   src/document/autosave.cpp
@@ -84,6 +86,26 @@ target_link_libraries(roadmaker_editor_lib
 )
 
 rm_apply_warnings(roadmaker_editor_lib)
+
+# Crash reports carry the commit alongside the version (configure-time
+# capture — stale only until the next reconfigure, which is fine for a
+# best-effort report field).
+execute_process(
+  COMMAND git rev-parse --short HEAD
+  WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+  OUTPUT_VARIABLE RM_GIT_COMMIT
+  OUTPUT_STRIP_TRAILING_WHITESPACE
+  ERROR_QUIET)
+if(NOT RM_GIT_COMMIT)
+  set(RM_GIT_COMMIT "unknown")
+endif()
+target_compile_definitions(roadmaker_editor_lib PRIVATE RM_GIT_COMMIT="${RM_GIT_COMMIT}")
+
+if(WIN32)
+  # dbghelp backs SymFromAddr in the SEH crash filter (ships with Windows;
+  # not a third-party dependency).
+  target_link_libraries(roadmaker_editor_lib PRIVATE dbghelp)
+endif()
 
 qt_add_executable(roadmaker-editor src/main.cpp)
 
