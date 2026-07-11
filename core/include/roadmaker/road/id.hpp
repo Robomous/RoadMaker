@@ -25,12 +25,14 @@ struct LaneSectionTag;
 struct LaneTag;
 struct JunctionTag;
 struct ObjectTag;
+struct SignalTag;
 
 using RoadId = Id<RoadTag>;
 using LaneSectionId = Id<LaneSectionTag>;
 using LaneId = Id<LaneTag>;
 using JunctionId = Id<JunctionTag>;
 using ObjectId = Id<ObjectTag>;
+using SignalId = Id<SignalTag>;
 
 } // namespace roadmaker
 

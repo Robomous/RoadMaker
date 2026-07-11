@@ -127,6 +127,14 @@ inline constexpr std::string_view kCornerLocalMinAmount =
 inline constexpr std::string_view kCornerRoadLocalExcl =
     "asam.net:xodr:1.9.0:road.corner_road.corner_road_local_exclusivity";
 
+/// "Signals shall have a specific type and subtype." (§14.1.)
+inline constexpr std::string_view kSignalType = "asam.net:xodr:1.7.0:road.signal.signal_type";
+
+/// "A country code shall be added to refer to country-specific rules using
+/// the @country attribute." (§14.1.)
+inline constexpr std::string_view kSignalUseCountryCode =
+    "asam.net:xodr:1.7.0:road.signal.use_country_code";
+
 /// "If the existing roads are not sufficient to define a closed junction
 /// boundary, additional roads shall be defined for the missing segments."
 /// (1.8.0, §12.10.) M2 omits <boundary> and cites this: closing the boundary

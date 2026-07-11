@@ -440,6 +440,83 @@ void write_objects(pugi::xml_node road_node,
   }
 }
 
+void write_signal(pugi::xml_node signals_node, const Signal& signal, const WriterOptions& options) {
+  pugi::xml_node node = signals_node.append_child("signal");
+  set_num(node, "s", signal.s);
+  set_num(node, "t", signal.t);
+  node.append_attribute("id").set_value(signal.odr_id.c_str());
+  if (!signal.name.empty()) {
+    node.append_attribute("name").set_value(signal.name.c_str());
+  }
+  if (signal.dynamic.has_value()) {
+    node.append_attribute("dynamic").set_value(*signal.dynamic ? "yes" : "no");
+  }
+  node.append_attribute("orientation").set_value(orientation_name(signal.orientation));
+  set_num(node, "zOffset", signal.z_offset);
+  if (!signal.country.empty()) {
+    node.append_attribute("country").set_value(signal.country.c_str());
+  }
+  if (!signal.country_revision.empty()) {
+    node.append_attribute("countryRevision").set_value(signal.country_revision.c_str());
+  }
+  node.append_attribute("type").set_value(signal.type.c_str());
+  node.append_attribute("subtype").set_value(signal.subtype.c_str());
+  set_optional_num(node, "value", signal.value);
+  if (!signal.unit.empty()) {
+    node.append_attribute("unit").set_value(signal.unit.c_str());
+  }
+  if (!signal.text.empty()) {
+    node.append_attribute("text").set_value(signal.text.c_str());
+  }
+  if (signal.h_offset != 0.0) {
+    set_num(node, "hOffset", signal.h_offset);
+  }
+  if (signal.pitch != 0.0) {
+    set_num(node, "pitch", signal.pitch);
+  }
+  if (signal.roll != 0.0) {
+    set_num(node, "roll", signal.roll);
+  }
+  set_optional_num(node, "height", signal.height);
+  set_optional_num(node, "width", signal.width);
+  // @length is 1.8.0 (Table 122); both writer targets are >=1.8, so it needs
+  // no gate. @temporary/@invalidated are 1.9.0 only (1.8.1 §14.1 has no such
+  // attributes), so a 1.8.1 target omits them (the 1.9.0 default is false).
+  set_optional_num(node, "length", signal.length);
+  if (options.target_version == XodrVersion::v1_9_0) {
+    if (signal.temporary.has_value()) {
+      node.append_attribute("temporary").set_value(*signal.temporary ? "true" : "false");
+    }
+    if (signal.invalidated.has_value()) {
+      node.append_attribute("invalidated").set_value(*signal.invalidated ? "true" : "false");
+    }
+  }
+  for (const auto& [name, value] : signal.preserved.attributes) {
+    node.append_attribute(name.c_str()).set_value(value.c_str());
+  }
+  for (const std::string& fragment : signal.preserved.children) {
+    append_fragment(node, fragment);
+  }
+}
+
+void write_signals(pugi::xml_node road_node,
+                   const RoadNetwork& network,
+                   RoadId road_id,
+                   const Road& road,
+                   const WriterOptions& options) {
+  const std::vector<SignalId> owned = signals_of(network, road_id);
+  if (owned.empty() && road.signal_extras.empty()) {
+    return;
+  }
+  pugi::xml_node signals_node = road_node.append_child("signals");
+  for (const SignalId signal_id : owned) {
+    write_signal(signals_node, *network.signal(signal_id), options);
+  }
+  for (const std::string& fragment : road.signal_extras) {
+    append_fragment(signals_node, fragment);
+  }
+}
+
 void write_road(pugi::xml_node root,
                 const RoadNetwork& network,
                 RoadId road_id,
@@ -542,6 +619,9 @@ void write_road(pugi::xml_node root,
 
   // <objects> follows <lanes> in the road element sequence (1.9.0 §10.1).
   write_objects(road_node, network, road_id, road, options);
+
+  // <signals> follows <objects> in the road element sequence (1.9.0 §10.1).
+  write_signals(road_node, network, road_id, road, options);
 
   // Authoring waypoints round-trip through the spec-sanctioned <userData>
   // extension (OpenDRIVE 1.9.0 §7.2: code required, value optional free
@@ -732,6 +812,35 @@ std::vector<Diagnostic> validate_network(const RoadNetwork& network, const Write
         finding("outline has fewer than 2 corner elements",
                 outline.road_coords ? rules::kCornerRoadMinAmount : rules::kCornerLocalMinAmount);
       }
+    }
+  });
+
+  // Signals (§14): model-level checker rules. Parse-time defects (missing
+  // required attributes) are diagnosed by the reader; this pass checks what
+  // only the assembled model can know (id uniqueness across the file) plus
+  // the type/country rules whose absence is a Warning, never a drop.
+  std::set<std::string> seen_signal_ids;
+  network.for_each_signal([&](SignalId, const Signal& signal) {
+    const Road* owner = network.road(signal.road);
+    const std::string location = fmt::format(
+        "road id={}/signal id={}", owner != nullptr ? owner->odr_id : "?", signal.odr_id);
+    const auto finding = [&](std::string message, std::string_view rule) {
+      findings.push_back(Diagnostic{.severity = Severity::Warning,
+                                    .location = location,
+                                    .message = std::move(message),
+                                    .rule_id = std::string(rule),
+                                    .road = signal.road});
+    };
+    if (!signal.odr_id.empty() && !seen_signal_ids.insert(signal.odr_id).second) {
+      finding(fmt::format("duplicate signal id '{}'", signal.odr_id), rules::kIdUniqueInClass);
+    }
+    // "Signals shall have a specific type and subtype." (§14.1.)
+    if (signal.type.empty() || signal.subtype.empty()) {
+      finding("signal has no type/subtype", rules::kSignalType);
+    }
+    // "A country code shall be added to refer to country-specific rules." (§14.1.)
+    if (signal.country.empty()) {
+      finding("signal has no country code", rules::kSignalUseCountryCode);
     }
   });
 

@@ -169,6 +169,7 @@ NB_MODULE(_roadmaker, m) {
   bind_id<roadmaker::LaneId>(m, "LaneId");
   bind_id<roadmaker::JunctionId>(m, "JunctionId");
   bind_id<roadmaker::ObjectId>(m, "ObjectId");
+  bind_id<roadmaker::SignalId>(m, "SignalId");
 
   // --- value types -----------------------------------------------------------
 
@@ -453,6 +454,40 @@ NB_MODULE(_roadmaker, m) {
                ", t=" + std::to_string(object.t) + ")";
       });
 
+  nb::class_<roadmaker::Signal>(m, "Signal")
+      .def(nb::init<>())
+      .def_ro("road", &roadmaker::Signal::road, "Owning road (back-reference).")
+      .def_rw("odr_id", &roadmaker::Signal::odr_id)
+      .def_rw("name", &roadmaker::Signal::name)
+      .def_rw("s", &roadmaker::Signal::s)
+      .def_rw("t", &roadmaker::Signal::t)
+      .def_rw("z_offset", &roadmaker::Signal::z_offset)
+      .def_rw("dynamic",
+              &roadmaker::Signal::dynamic,
+              "@dynamic yes/no: dynamic (traffic light) vs. static (sign).")
+      .def_rw("orientation", &roadmaker::Signal::orientation)
+      .def_rw("h_offset", &roadmaker::Signal::h_offset)
+      .def_rw("pitch", &roadmaker::Signal::pitch)
+      .def_rw("roll", &roadmaker::Signal::roll)
+      .def_rw("type", &roadmaker::Signal::type)
+      .def_rw("subtype", &roadmaker::Signal::subtype)
+      .def_rw(
+          "country", &roadmaker::Signal::country, "e_countryCode; 'OpenDRIVE' for catalog signals.")
+      .def_rw("country_revision", &roadmaker::Signal::country_revision)
+      .def_rw("value", &roadmaker::Signal::value, "Signal value; @unit is required when set.")
+      .def_rw("unit", &roadmaker::Signal::unit)
+      .def_rw("text", &roadmaker::Signal::text)
+      .def_rw("height", &roadmaker::Signal::height)
+      .def_rw("width", &roadmaker::Signal::width)
+      .def_rw("length", &roadmaker::Signal::length, "1.8.0; emitted only when target >=1.8.0.")
+      .def_rw("temporary", &roadmaker::Signal::temporary)
+      .def_rw("invalidated", &roadmaker::Signal::invalidated)
+      .def_ro("preserved", &roadmaker::Signal::preserved)
+      .def("__repr__", [](const roadmaker::Signal& signal) {
+        return "Signal(odr_id='" + signal.odr_id + "', type='" + signal.type +
+               "', s=" + std::to_string(signal.s) + ", t=" + std::to_string(signal.t) + ")";
+      });
+
   // --- the network -----------------------------------------------------------
 
   nb::class_<roadmaker::RoadNetwork>(m, "RoadNetwork")
@@ -467,9 +502,16 @@ NB_MODULE(_roadmaker, m) {
            "value"_a,
            "Adds an OpenDRIVE <object> to `road`; returns an invalid id if "
            "`road` is stale.")
+      .def("add_signal",
+           &roadmaker::RoadNetwork::add_signal,
+           "road"_a,
+           "value"_a,
+           "Adds an OpenDRIVE <signal> to `road`; returns an invalid id if "
+           "`road` is stale.")
       .def("erase_road", &roadmaker::RoadNetwork::erase_road, "road"_a)
       .def("erase_junction", &roadmaker::RoadNetwork::erase_junction, "junction"_a)
       .def("erase_object", &roadmaker::RoadNetwork::erase_object, "object"_a)
+      .def("erase_signal", &roadmaker::RoadNetwork::erase_signal, "signal"_a)
       .def("object",
            nb::overload_cast<roadmaker::ObjectId>(&roadmaker::RoadNetwork::object),
            "id"_a,
@@ -483,6 +525,19 @@ NB_MODULE(_roadmaker, m) {
           },
           "road"_a,
           "ObjectIds the road owns, in creation order.")
+      .def("signal",
+           nb::overload_cast<roadmaker::SignalId>(&roadmaker::RoadNetwork::signal),
+           "id"_a,
+           nb::rv_policy::reference_internal,
+           "Signal for id, or None if the id is stale. The reference is valid "
+           "only until the network is mutated.")
+      .def(
+          "signals_of",
+          [](const roadmaker::RoadNetwork& network, roadmaker::RoadId road) {
+            return roadmaker::signals_of(network, road);
+          },
+          "road"_a,
+          "SignalIds the road owns, in creation order.")
       .def("road",
            nb::overload_cast<roadmaker::RoadId>(&roadmaker::RoadNetwork::road),
            "id"_a,
@@ -526,10 +581,19 @@ NB_MODULE(_roadmaker, m) {
                      });
                      return ids;
                    })
+      .def_prop_ro("signal_ids",
+                   [](const roadmaker::RoadNetwork& network) {
+                     std::vector<roadmaker::SignalId> ids;
+                     network.for_each_signal([&](roadmaker::SignalId id, const roadmaker::Signal&) {
+                       ids.push_back(id);
+                     });
+                     return ids;
+                   })
       .def_prop_ro("road_count", &roadmaker::RoadNetwork::road_count)
       .def_prop_ro("lane_count", &roadmaker::RoadNetwork::lane_count)
       .def_prop_ro("junction_count", &roadmaker::RoadNetwork::junction_count)
       .def_prop_ro("object_count", &roadmaker::RoadNetwork::object_count)
+      .def_prop_ro("signal_count", &roadmaker::RoadNetwork::signal_count)
       .def("__repr__", [](const roadmaker::RoadNetwork& network) {
         return "RoadNetwork(roads=" + std::to_string(network.road_count()) +
                ", junctions=" + std::to_string(network.junction_count()) + ")";

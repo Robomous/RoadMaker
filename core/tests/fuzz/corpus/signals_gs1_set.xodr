@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<OpenDRIVE>
+  <header revMajor="1" revMinor="9" name="signals-gs1-set"/>
+  <road name="r" length="100" id="1" junction="-1">
+    <planView>
+      <geometry s="0" x="0" y="0" hdg="0" length="100"><line/></geometry>
+    </planView>
+    <lanes>
+      <laneSection s="0">
+        <center><lane id="0" type="none" level="false"/></center>
+        <right><lane id="-1" type="driving" level="false"><width sOffset="0" a="3.5" b="0" c="0" d="0"/></lane></right>
+      </laneSection>
+    </lanes>
+    <signals>
+      <signal s="50" t="-4" id="10" name="SpeedLimit50" dynamic="no" orientation="+" zOffset="1.9" country="DE" countryRevision="2017" type="274" subtype="50" value="50" unit="km/h" height="0.77" width="0.77"/>
+      <signal s="95" t="-6" id="11" name="light" dynamic="yes" orientation="+" zOffset="3.0" country="OpenDRIVE" countryRevision="2023" type="1000001" subtype="-1" height="1.0" width="0.3" temporary="false" invalidated="false"/>
+      <signal s="40" t="-4" id="12" name="pedestrian" dynamic="no" orientation="+" zOffset="2.0" country="DE" type="101" subtype="11"/>
+    </signals>
+  </road>
+</OpenDRIVE>

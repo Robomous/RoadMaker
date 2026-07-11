@@ -210,6 +210,7 @@ private:
     parse_lateral_profile(road_node.child("lateralProfile"), road, location);
     parse_lanes(road_node.child("lanes"), road_id, location);
     parse_objects(road_node.child("objects"), road_id, location);
+    parse_signals(road_node.child("signals"), road_id, location);
     parse_road_user_data(road_node, *network().road(road_id), location);
 
     // Stash string-typed references for pass 2.
@@ -225,7 +226,7 @@ private:
       const std::string name = child.name();
       if (name != "planView" && name != "elevationProfile" && name != "lateralProfile" &&
           name != "lanes" && name != "link" && name != "type" && name != "userData" &&
-          name != "objects") {
+          name != "objects" && name != "signals") {
         warn_unsupported(name, location);
       }
     }
@@ -757,6 +758,123 @@ private:
     repeat.d_t = attr_optional_double(node, "dT", location);
     repeat.detach_from_reference_line = node.attribute("detachFromReferenceLine").as_bool(false);
     object.repeats.push_back(repeat);
+  }
+
+  // --- signals (OpenDRIVE §14) ----------------------------------------------
+
+  void
+  parse_signals(const pugi::xml_node& signals_node, RoadId road_id, const std::string& location) {
+    if (!signals_node) {
+      return;
+    }
+    std::size_t index = 0;
+    for (const pugi::xml_node child : signals_node.children()) {
+      if (std::string_view(child.name()) == "signal") {
+        parse_signal(child, road_id, fmt::format("{}/signals/signal[{}]", location, index++));
+      } else {
+        // <signalReference> (§14.5, 0..*) is not modeled in M3a — preserved
+        // verbatim so round-trip loses nothing.
+        network().road(road_id)->signal_extras.push_back(node_to_string(child));
+      }
+    }
+  }
+
+  void parse_signal(const pugi::xml_node& node, RoadId road_id, const std::string& location) {
+    Signal signal;
+    signal.odr_id = node.attribute("id").value();
+    if (signal.odr_id.empty()) {
+      diag(Severity::Warning, location, "signal without 'id' attribute");
+    }
+    signal.name = node.attribute("name").value();
+
+    if (!node.attribute("s") || !node.attribute("t")) {
+      diag(Severity::Warning,
+           location,
+           "signal origin requires 's' and 't' coordinates, using 0",
+           rules::kObjectStTCoords);
+    }
+    signal.s = attr_double(node, "s", location, 0.0, false);
+    signal.t = attr_double(node, "t", location, 0.0, false);
+    signal.z_offset = attr_double(node, "zOffset", location);
+    signal.h_offset = attr_double(node, "hOffset", location, 0.0, false);
+    signal.pitch = attr_double(node, "pitch", location, 0.0, false);
+    signal.roll = attr_double(node, "roll", location, 0.0, false);
+
+    if (const pugi::xml_attribute dynamic = node.attribute("dynamic")) {
+      signal.dynamic = std::string_view(dynamic.value()) == "yes";
+    }
+
+    const pugi::xml_attribute orientation = node.attribute("orientation");
+    if (!orientation) {
+      diag(Severity::Warning,
+           location,
+           "signal without 'orientation' attribute, assuming 'none'",
+           rules::kObjectOrientation);
+    }
+    const std::string_view orientation_value = orientation.value();
+    if (orientation_value == "+") {
+      signal.orientation = ObjectOrientation::Plus;
+    } else if (orientation_value == "-") {
+      signal.orientation = ObjectOrientation::Minus;
+    } else {
+      if (!orientation_value.empty() && orientation_value != "none") {
+        diag(Severity::Warning,
+             location,
+             fmt::format("unknown orientation '{}' mapped to 'none'", orientation_value));
+      }
+      signal.orientation = ObjectOrientation::None;
+    }
+
+    signal.type = node.attribute("type").value();
+    signal.subtype = node.attribute("subtype").value();
+    if (signal.type.empty() || signal.subtype.empty()) {
+      diag(Severity::Warning,
+           location,
+           "signal requires 'type' and 'subtype' attributes",
+           rules::kSignalType);
+    }
+    signal.country = node.attribute("country").value();
+    signal.country_revision = node.attribute("countryRevision").value();
+    if (signal.country.empty()) {
+      diag(Severity::Warning,
+           location,
+           "signal without 'country' attribute",
+           rules::kSignalUseCountryCode);
+    }
+
+    signal.value = attr_optional_double(node, "value", location);
+    signal.unit = node.attribute("unit").value();
+    signal.text = node.attribute("text").value();
+    signal.height = attr_optional_double(node, "height", location);
+    signal.width = attr_optional_double(node, "width", location);
+    signal.length = attr_optional_double(node, "length", location);
+    if (const pugi::xml_attribute temporary = node.attribute("temporary")) {
+      signal.temporary = temporary.as_bool(false);
+    }
+    if (const pugi::xml_attribute invalidated = node.attribute("invalidated")) {
+      signal.invalidated = invalidated.as_bool(false);
+    }
+
+    // Preserved tier: unknown attributes and unmodeled children (<validity>,
+    // <dependency>, <reference>, <userData>, boards, ...) survive verbatim —
+    // never dropped (docs/design/m3a/01 §5).
+    static constexpr std::string_view kModeledAttrs[] = {
+        "id",         "name",    "s",           "t",      "zOffset", "hOffset", "pitch",
+        "roll",       "dynamic", "orientation", "type",   "subtype", "country", "countryRevision",
+        "value",      "unit",    "text",        "height", "width",   "length",  "temporary",
+        "invalidated"};
+    for (const pugi::xml_attribute attr : node.attributes()) {
+      const std::string_view name = attr.name();
+      if (std::find(std::begin(kModeledAttrs), std::end(kModeledAttrs), name) ==
+          std::end(kModeledAttrs)) {
+        signal.preserved.attributes.emplace_back(std::string(name), attr.value());
+      }
+    }
+    for (const pugi::xml_node child : node.children()) {
+      signal.preserved.children.push_back(node_to_string(child));
+    }
+
+    network().add_signal(road_id, std::move(signal));
   }
 
   // --- junctions -----------------------------------------------------------

@@ -58,6 +58,14 @@ ObjectId RoadNetwork::add_object(RoadId road_id, Object value) {
   return objects_.emplace(std::move(value));
 }
 
+SignalId RoadNetwork::add_signal(RoadId road_id, Signal value) {
+  if (roads_.get(road_id) == nullptr) {
+    return {};
+  }
+  value.road = road_id;
+  return signals_.emplace(std::move(value));
+}
+
 bool RoadNetwork::erase_road(RoadId road_id) {
   Road* doomed = roads_.get(road_id);
   if (doomed == nullptr) {
@@ -82,6 +90,16 @@ bool RoadNetwork::erase_road(RoadId road_id) {
   for (const ObjectId id : owned) {
     objects_.erase(id);
   }
+  // Signals are owned by their road too — same collect-then-erase discipline.
+  std::vector<SignalId> owned_signals;
+  signals_.for_each([&](SignalId id, const Signal& signal) {
+    if (signal.road == road_id) {
+      owned_signals.push_back(id);
+    }
+  });
+  for (const SignalId id : owned_signals) {
+    signals_.erase(id);
+  }
   // Keep junctions coherent: drop connections that reference this road.
   junctions_.for_each([road_id](JunctionId, Junction& junction) {
     std::erase_if(junction.connections, [road_id](const JunctionConnection& connection) {
@@ -93,6 +111,10 @@ bool RoadNetwork::erase_road(RoadId road_id) {
 
 bool RoadNetwork::erase_object(ObjectId object_id) {
   return objects_.erase(object_id);
+}
+
+bool RoadNetwork::erase_signal(SignalId signal_id) {
+  return signals_.erase(signal_id);
 }
 
 bool RoadNetwork::erase_junction(JunctionId junction_id) {
@@ -145,6 +167,14 @@ Expected<ObjectId> RoadNetwork::restore_object(ObjectId id, Object value) {
 
 Expected<void> RoadNetwork::erase_object_exact(ObjectId id) {
   return objects_.erase_exact(id);
+}
+
+Expected<SignalId> RoadNetwork::restore_signal(SignalId id, Signal value) {
+  return signals_.restore(id, std::move(value));
+}
+
+Expected<void> RoadNetwork::erase_signal_exact(SignalId id) {
+  return signals_.erase_exact(id);
 }
 
 RoadId RoadNetwork::find_road(std::string_view odr_id) const {
@@ -203,6 +233,16 @@ std::vector<ObjectId> objects_of(const RoadNetwork& network, RoadId road_id) {
   std::vector<ObjectId> owned;
   network.for_each_object([&](ObjectId id, const Object& object) {
     if (object.road == road_id) {
+      owned.push_back(id);
+    }
+  });
+  return owned;
+}
+
+std::vector<SignalId> signals_of(const RoadNetwork& network, RoadId road_id) {
+  std::vector<SignalId> owned;
+  network.for_each_signal([&](SignalId id, const Signal& signal) {
+    if (signal.road == road_id) {
       owned.push_back(id);
     }
   });

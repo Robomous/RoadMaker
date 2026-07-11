@@ -8,6 +8,7 @@
 #include "roadmaker/road/lane_section.hpp"
 #include "roadmaker/road/object.hpp"
 #include "roadmaker/road/road.hpp"
+#include "roadmaker/road/signal.hpp"
 
 #include <string>
 #include <string_view>
@@ -48,6 +49,10 @@ public:
   /// overwritten with `road`. Returns an invalid id if `road` is stale.
   RM_API ObjectId add_object(RoadId road, Object value);
 
+  /// Adds a road signal (OpenDRIVE <signal>, §14). `value.road` is
+  /// overwritten with `road`. Returns an invalid id if `road` is stale.
+  RM_API SignalId add_signal(RoadId road, Signal value);
+
   // --- destruction (cascading) --------------------------------------------
 
   /// Erases the road with its sections, lanes, and objects, and removes
@@ -57,6 +62,10 @@ public:
   /// Objects are leaves — nothing references them, so erasing cascades
   /// nothing. Returns false on a stale id.
   RM_API bool erase_object(ObjectId object);
+
+  /// Signals are leaves — nothing references them, so erasing cascades
+  /// nothing. Returns false on a stale id.
+  RM_API bool erase_signal(SignalId signal);
 
   /// Erases the junction and detaches roads that pointed at it (their
   /// Road::junction becomes invalid). Connecting roads themselves survive.
@@ -86,6 +95,9 @@ public:
   RM_API Expected<ObjectId> restore_object(ObjectId id, Object value);
   RM_API Expected<void> erase_object_exact(ObjectId id);
 
+  RM_API Expected<SignalId> restore_signal(SignalId id, Signal value);
+  RM_API Expected<void> erase_signal_exact(SignalId id);
+
   // --- lookup (nullptr on stale/invalid ids) ------------------------------
 
   [[nodiscard]] Road* road(RoadId id) { return roads_.get(id); }
@@ -110,6 +122,10 @@ public:
 
   [[nodiscard]] const Object* object(ObjectId id) const { return objects_.get(id); }
 
+  [[nodiscard]] Signal* signal(SignalId id) { return signals_.get(id); }
+
+  [[nodiscard]] const Signal* signal(SignalId id) const { return signals_.get(id); }
+
   /// Linear search by OpenDRIVE id; invalid id if absent.
   [[nodiscard]] RM_API RoadId find_road(std::string_view odr_id) const;
   [[nodiscard]] RM_API JunctionId find_junction(std::string_view odr_id) const;
@@ -125,6 +141,8 @@ public:
   [[nodiscard]] std::size_t junction_count() const { return junctions_.size(); }
 
   [[nodiscard]] std::size_t object_count() const { return objects_.size(); }
+
+  [[nodiscard]] std::size_t signal_count() const { return signals_.size(); }
 
   /// fn(RoadId, Road&) over live roads, in creation order.
   template <class Fn>
@@ -153,12 +171,24 @@ public:
     objects_.for_each(fn);
   }
 
+  /// fn(SignalId, Signal&) over live signals, in creation order.
+  template <class Fn>
+  void for_each_signal(Fn fn) {
+    signals_.for_each(fn);
+  }
+
+  template <class Fn>
+  void for_each_signal(Fn fn) const {
+    signals_.for_each(fn);
+  }
+
 private:
   Arena<Road, RoadId> roads_;
   Arena<LaneSection, LaneSectionId> sections_;
   Arena<Lane, LaneId> lanes_;
   Arena<Junction, JunctionId> junctions_;
   Arena<Object, ObjectId> objects_;
+  Arena<Signal, SignalId> signals_;
 };
 
 /// Junctions the road participates in: as a connecting road
@@ -172,5 +202,9 @@ private:
 /// Objects the road owns, in arena order. Linear scan — object counts stay
 /// small at GS-1 scale (docs/design/m3a/01 §2.1).
 [[nodiscard]] RM_API std::vector<ObjectId> objects_of(const RoadNetwork& network, RoadId road);
+
+/// Signals the road owns, in arena order. Linear scan — signal counts stay
+/// small at GS-1 scale (docs/design/m3a/01 §2.1).
+[[nodiscard]] RM_API std::vector<SignalId> signals_of(const RoadNetwork& network, RoadId road);
 
 } // namespace roadmaker
