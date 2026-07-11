@@ -24,10 +24,25 @@ vocabulary**.
 |---|---|---|---|
 | **M1** ✅ | Kernel + viewer | OpenDRIVE I/O, clothoid authoring, meshing, glTF, Python package, read-only Qt editor (v0.1.0 → v0.2.0) | — |
 | **M2** ✅ (shipped, v0.3.0) | Editing core | Editing tools, junction 3D surfaces, USD export — delivered per the [M2 design docs](../design/m2/00_overview.md) (reconciled as-built at close-out) | — (per-phase gates, all met) |
+| **Hardening** (in flight) | Stability & workflow gaps | Crash-capture infra + interactive soak testing, all known crashes fixed · T-junctions (split road + attach-to-side) · vertical-profile editor + overpass workflow · autosave/crash recovery (pulled forward from M3a) · golden **workflows** join the acceptance process | [GW-1 "First network"](golden_workflows/gw1_first_network.md) + [GW-2 "Recover from crash"](golden_workflows/gw2_recover_from_crash.md) |
 | **M3a** | Visual & standards completeness | Kernel: OpenDRIVE `<objects>`, `<signals>`, crosswalk/arrow/stop-line road marks · textured viewport mode (default ON; sober mode kept as a toggle) · terrain skirt + procedural ground · CC0 prop set (vegetation, poles, signs) · sky/lighting pass | [GS-1 "Urban intersection"](golden_scenes/gs1_urban_intersection.md) |
 | **M3b** | Real-world import | GIS/lidar import (PDAL/GDAL/PROJ), OSM road-network extraction | [GS-2 "Imported district"](golden_scenes/gs2_imported_district.md) |
 | **M4** | Scenario mode | OpenSCENARIO XML kernel (read/write model) · app mode switch (Map ↔ Scenario) · actor placement, lane-anchored routes with offsets, actor attributes panel · **Asset Library Browser** | [GS-3 "Ambulance run"](golden_scenes/gs3_ambulance_run.md) |
 | **M5** | Scenario logic | Node-based logic editor for stories/maneuvers/conditions · simulation preview hooks (esmini interop) | GS-3 extended with a logic graph |
+
+**Why a hardening sprint sits between M2 and M3a.** Maintainer dogfooding
+of v0.3.0 — sitting down and building a real map — found product gaps that
+milestone plans and scene-based acceptance did not catch: T-intersections
+(attaching a road end to the *side* of another road) were impossible,
+because tool specs were written from the standard's element vocabulary
+rather than from user workflows — and GS-1 itself is a 4-arm *endpoint*
+junction, so our own acceptance mechanism shared the blind spot; elevation
+editing could not express real vertical design; and normal interactive use
+crashed. The sprint fixes those before any new milestone features land, and
+it adds [golden workflows](golden_workflows/README.md) — path-based
+acceptance executed by hand — so this class of gap is measured from now on.
+Honesty in the roadmap is a feature: the gap was in our spec process, not
+in the backlog.
 
 **M2 shipped in v0.3.0.** Its scope, phases, and gates were frozen in the
 approved design docs and delivered against them (deviations reconciled
@@ -78,6 +93,11 @@ lives; this page is the plan the board follows.
 
 ## Acceptance mechanics
 
+- **From the hardening sprint on, every milestone gates on its golden scene
+  AND at least one [golden workflow](golden_workflows/README.md)** — a
+  scripted sequence of user actions with a time budget and a zero-crash
+  requirement, executed by the maintainer by hand at the gate. Golden
+  scenes measure the *result*; golden workflows measure the *path*.
 - Each milestone's release PR attaches the current render of its golden
   scene from the camera fixed in the spec
   ([process](golden_scenes/README.md)).
@@ -114,10 +134,11 @@ in the owning milestone's seed.
 | Milestone | Release |
 |---|---|
 | M2 | v0.3.0 |
-| M3a | v0.4.0 |
-| M3b | v0.5.0 |
-| M4 | v0.6.0 |
-| M5 | v0.7.0 |
+| Hardening | v0.4.0 |
+| M3a | v0.5.0 |
+| M3b | v0.6.0 |
+| M4 | v0.7.0 |
+| M5 | v0.8.0 |
 
 Versions are targets, not promises; a milestone that needs an intermediate
 release takes the next patch/minor slot.
