@@ -7,6 +7,7 @@ find_package(Qt6 ${RM_QT_VERSION} REQUIRED COMPONENTS Test)
 add_executable(roadmaker_editor_tests
   qt_gtest_main.cpp
   test_camera.cpp
+  test_create_junction_tool.cpp
   test_create_road_tool.cpp
   test_delete_tool.cpp
   test_diagnostics_model.cpp

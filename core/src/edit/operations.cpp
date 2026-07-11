@@ -1,15 +1,18 @@
 #include "roadmaker/edit/operations.hpp"
 
 #include "roadmaker/geometry/profile_fit.hpp"
+#include "roadmaker/road/authoring.hpp"
 #include "roadmaker/road/network.hpp"
 #include "roadmaker/tol.hpp"
 
 #include <fmt/format.h>
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstdlib>
 #include <functional>
+#include <numbers>
 #include <optional>
 #include <span>
 #include <utility>
@@ -536,6 +539,238 @@ std::unique_ptr<Command> refit_command(const RoadNetwork& network,
   return command;
 }
 
+// ---- junction connecting-road generator (docs/design/m2/02 §6) ----------------
+
+/// A driving lane at an arm's junction-facing end, with its width there [m].
+struct ArmLane {
+  int odr_id = 0;
+  double width = 0.0;
+};
+
+/// The junction-facing end of an arm: its point, the tangent leaving the arm
+/// INTO the junction (a connecting road's start heading here) and the tangent
+/// entering the arm OUT of the junction (a connecting road's end heading
+/// here), plus the lane section and station at that end. All angles [rad] in
+/// the inertial frame.
+struct ArmEnd {
+  double x = 0.0;
+  double y = 0.0;
+  double into_hdg = 0.0;
+  double out_hdg = 0.0;
+  LaneSectionId section;
+  double station = 0.0;
+};
+
+/// Width [m] of `lane` at road station `road_s` (widths are section-local,
+/// evaluated on the last record starting at or before the station).
+double lane_width_at(const Lane& lane, const LaneSection& section, double road_s) {
+  if (lane.widths.empty()) {
+    return 0.0;
+  }
+  const double local = road_s - section.s0;
+  const Poly3* width = &lane.widths.front();
+  for (const Poly3& poly : lane.widths) {
+    if (poly.s <= local + tol::kLength) {
+      width = &poly;
+    }
+  }
+  const double ds = local - width->s;
+  return width->a + (width->b * ds) + (width->c * ds * ds) + (width->d * ds * ds * ds);
+}
+
+Expected<ArmEnd> arm_end(const RoadNetwork& network, const RoadEnd& end) {
+  const Road* road = network.road(end.road);
+  if (road == nullptr) {
+    return make_error(ErrorCode::InvalidArgument, "stale road id in road ends");
+  }
+  if (road->sections.empty()) {
+    return make_error(ErrorCode::InvalidArgument, "arm road has no lane sections", road->odr_id);
+  }
+  constexpr double kPi = std::numbers::pi;
+  ArmEnd out;
+  if (end.contact == ContactPoint::Start) {
+    const PathPoint pose = road->plan_view.evaluate(0.0);
+    out = ArmEnd{.x = pose.x,
+                 .y = pose.y,
+                 .into_hdg = pose.hdg + kPi, // travel toward decreasing s enters the junction
+                 .out_hdg = pose.hdg,        // road body continues along +s
+                 .section = road->sections.front(),
+                 .station = 0.0};
+  } else {
+    const double station = road->plan_view.length();
+    const PathPoint pose = road->plan_view.evaluate(station);
+    out = ArmEnd{.x = pose.x,
+                 .y = pose.y,
+                 .into_hdg = pose.hdg,      // travel toward increasing s enters the junction
+                 .out_hdg = pose.hdg + kPi, // road body continues along -s
+                 .section = road->sections.back(),
+                 .station = station};
+  }
+  return out;
+}
+
+/// Driving lanes at an arm's junction end, ordered curb-in (outermost first).
+/// `incoming` picks the lanes leading INTO the junction; otherwise the lanes
+/// leading OUT (which serve as the outgoing road, 12.3). Which sign leads in
+/// depends on the contact end: at a Start end traffic toward decreasing s
+/// (positive/left lanes) enters; at an End end traffic toward increasing s
+/// (negative/right lanes) enters.
+std::vector<ArmLane> arm_driving_lanes(const RoadNetwork& network,
+                                       const RoadEnd& end,
+                                       const ArmEnd& geom,
+                                       bool incoming) {
+  const LaneSection& section = *network.lane_section(geom.section);
+  const bool positive_leads_in = end.contact == ContactPoint::Start;
+  const bool want_positive = incoming ? positive_leads_in : !positive_leads_in;
+  std::vector<ArmLane> lanes;
+  for (const LaneId lane_id : section.lanes) { // leftmost first: +N..+1,0,-1..-N
+    const Lane& lane = *network.lane(lane_id);
+    if (lane.type != LaneType::Driving) {
+      continue;
+    }
+    if (want_positive ? (lane.odr_id > 0) : (lane.odr_id < 0)) {
+      lanes.push_back(
+          ArmLane{.odr_id = lane.odr_id, .width = lane_width_at(lane, section, geom.station)});
+    }
+  }
+  // Positive lanes already arrive outermost-first (+N..+1); negative lanes
+  // arrive innermost-first (-1..-N), so reverse them to curb-in order.
+  if (!want_positive) {
+    std::ranges::reverse(lanes);
+  }
+  return lanes;
+}
+
+/// A connecting road the generator will build for one permitted turn.
+struct ConnectingPlan {
+  RoadEnd from;       // incoming arm
+  RoadEnd to;         // outgoing arm
+  int from_lane = 0;  // incoming lane odr id on `from`
+  int to_lane = 0;    // outgoing lane odr id on `to`
+  ReferenceLine line; // driving-direction reference line, from → to
+  double start_width = 0.0;
+  double end_width = 0.0;
+};
+
+struct JunctionPlan {
+  std::vector<ConnectingPlan> roads;
+  std::vector<std::string> dropped;
+};
+
+double end_distance(const ArmEnd& a, const ArmEnd& b) {
+  return std::hypot(a.x - b.x, a.y - b.y);
+}
+
+/// The deterministic core shared by preview/create/regenerate: enumerates the
+/// connecting roads for every ordered arm pair (A_in → B_out, A ≠ B, no
+/// U-turns), matching driving lanes curb-in. Turns whose G1 clothoid loops
+/// (length > k·end-distance) are dropped with a note; ends farther apart than
+/// the limit are a hard error. Does NOT check link-slot occupancy — that is a
+/// create-only precondition (regeneration runs on already-linked arms).
+Expected<JunctionPlan> plan_junction(const RoadNetwork& network,
+                                     std::span<const RoadEnd> ends,
+                                     const JunctionGenOptions& options) {
+  if (ends.size() < 2) {
+    return make_error(ErrorCode::InvalidArgument, "a junction needs at least 2 road ends");
+  }
+  for (std::size_t i = 0; i < ends.size(); ++i) {
+    for (std::size_t j = i + 1; j < ends.size(); ++j) {
+      if (ends[i] == ends[j]) {
+        return make_error(ErrorCode::InvalidArgument, "duplicate road end");
+      }
+    }
+  }
+  std::vector<ArmEnd> arm_ends;
+  arm_ends.reserve(ends.size());
+  for (const RoadEnd& end : ends) {
+    auto geom = arm_end(network, end);
+    if (!geom.has_value()) {
+      return tl::unexpected<Error>(geom.error());
+    }
+    arm_ends.push_back(*geom);
+  }
+  for (std::size_t i = 0; i < arm_ends.size(); ++i) {
+    for (std::size_t j = i + 1; j < arm_ends.size(); ++j) {
+      const double dist = end_distance(arm_ends[i], arm_ends[j]);
+      if (dist > options.max_end_distance_m + tol::kLength) {
+        return make_error(
+            ErrorCode::InvalidArgument,
+            fmt::format("road ends are {:.1f} m apart, exceeding the {:.1f} m junction limit",
+                        dist,
+                        options.max_end_distance_m));
+      }
+    }
+  }
+
+  JunctionPlan plan;
+  for (std::size_t i = 0; i < ends.size(); ++i) {
+    for (std::size_t j = 0; j < ends.size(); ++j) {
+      if (i == j) {
+        continue; // U-turns omitted in M2
+      }
+      const std::vector<ArmLane> incoming =
+          arm_driving_lanes(network, ends[i], arm_ends[i], /*incoming=*/true);
+      const std::vector<ArmLane> outgoing =
+          arm_driving_lanes(network, ends[j], arm_ends[j], /*incoming=*/false);
+      const std::size_t pairs = std::min(incoming.size(), outgoing.size());
+      const double dist = end_distance(arm_ends[i], arm_ends[j]);
+      for (std::size_t k = 0; k < pairs; ++k) {
+        const std::array<Waypoint, 2> waypoints{Waypoint{arm_ends[i].x, arm_ends[i].y},
+                                                Waypoint{arm_ends[j].x, arm_ends[j].y}};
+        const std::array<double, 2> headings{arm_ends[i].into_hdg, arm_ends[j].out_hdg};
+        const auto describe = [&] {
+          return fmt::format("{}→{} (lane {}→{})",
+                             network.road(ends[i].road)->odr_id,
+                             network.road(ends[j].road)->odr_id,
+                             incoming[k].odr_id,
+                             outgoing[k].odr_id);
+        };
+        auto line = fit_clothoid_path(waypoints, headings);
+        if (!line.has_value()) {
+          plan.dropped.push_back(describe() + ": clothoid fit failed");
+          continue;
+        }
+        if (line->length() > options.max_loop_factor * dist) {
+          plan.dropped.push_back(describe() + ": fitted turn loops");
+          continue;
+        }
+        plan.roads.push_back(ConnectingPlan{.from = ends[i],
+                                            .to = ends[j],
+                                            .from_lane = incoming[k].odr_id,
+                                            .to_lane = outgoing[k].odr_id,
+                                            .line = std::move(*line),
+                                            .start_width = incoming[k].width,
+                                            .end_width = outgoing[k].width});
+      }
+    }
+  }
+  return plan;
+}
+
+/// A connecting road's single-lane blended width profile: linear source →
+/// target along its length (constant when the widths match).
+Poly3 connecting_lane_width(const ConnectingPlan& plan, double length) {
+  return Poly3{.s = 0.0,
+               .a = plan.start_width,
+               .b = length > tol::kLength ? (plan.end_width - plan.start_width) / length : 0.0};
+}
+
+/// create-only precondition: every incoming end's link slot must be free.
+Expected<void> ends_link_slots_free(const RoadNetwork& network, std::span<const RoadEnd> ends) {
+  for (const RoadEnd& end : ends) {
+    const Road* road = network.road(end.road);
+    if (road == nullptr) {
+      return make_error(ErrorCode::InvalidArgument, "stale road id in road ends");
+    }
+    const auto& slot = end.contact == ContactPoint::Start ? road->predecessor : road->successor;
+    if (slot.has_value()) {
+      return make_error(ErrorCode::InvalidArgument,
+                        fmt::format("road '{}' is already linked at that end", road->odr_id));
+    }
+  }
+  return {};
+}
+
 } // namespace
 
 std::vector<Waypoint> effective_waypoints(const Road& road) {
@@ -895,31 +1130,86 @@ std::unique_ptr<Command> split_road(const RoadNetwork& network, RoadId road_id, 
   return command;
 }
 
-std::unique_ptr<Command> create_junction(const RoadNetwork& network,
-                                         std::span<const RoadEnd> ends) {
-  static constexpr std::string_view kName = "Create Junction";
-  const auto fail = [&](std::string message) {
-    return invalid_command(
-        std::string(kName),
-        Error{.code = ErrorCode::InvalidArgument, .message = std::move(message)});
-  };
-  if (ends.size() < 2) {
-    return fail("a junction needs at least 2 road ends");
+Expected<JunctionPreview> preview_junction(const RoadNetwork& network,
+                                           std::span<const RoadEnd> ends,
+                                           const JunctionGenOptions& options) {
+  if (auto free = ends_link_slots_free(network, ends); !free.has_value()) {
+    return tl::unexpected<Error>(free.error());
   }
-  for (std::size_t i = 0; i < ends.size(); ++i) {
-    const Road* road = network.road(ends[i].road);
-    if (road == nullptr) {
-      return fail("stale road id in road ends");
+  auto plan = plan_junction(network, ends, options);
+  if (!plan.has_value()) {
+    return tl::unexpected<Error>(plan.error());
+  }
+  return JunctionPreview{.connection_count = static_cast<int>(plan->roads.size()),
+                         .dropped_turns = std::move(plan->dropped)};
+}
+
+/// Builds the junction record, its connecting roads and the connection table
+/// into `target` from `plan`, registering every created object in `created`;
+/// also links each incoming end to the junction. Shared by create_junction's
+/// creator (regeneration edits existing roads in place instead). Assumes the
+/// arm link slots are free — validated at factory time.
+Expected<void> materialize_junction(RoadNetwork& target,
+                                    Values& created,
+                                    std::span<const RoadEnd> ends,
+                                    const JunctionPlan& plan) {
+  const JunctionId junction_id = target.create_junction(next_free_junction_odr_id(target), "");
+  created.junctions.emplace_back(junction_id, Junction{});
+  Junction& junction = *target.junction(junction_id);
+  junction.arms.assign(ends.begin(), ends.end());
+
+  for (const RoadEnd& end : ends) {
+    Road& road = *target.road(end.road);
+    const RoadLink link{.target = junction_id, .contact = ContactPoint::Start};
+    if (end.contact == ContactPoint::Start) {
+      road.predecessor = link;
+    } else {
+      road.successor = link;
     }
-    for (std::size_t j = i + 1; j < ends.size(); ++j) {
-      if (ends[i] == ends[j]) {
-        return fail("duplicate road end");
-      }
-    }
-    const auto& slot = ends[i].contact == ContactPoint::Start ? road->predecessor : road->successor;
-    if (slot.has_value()) {
-      return fail(fmt::format("road '{}' is already linked at that end", road->odr_id));
-    }
+  }
+
+  for (const ConnectingPlan& cp : plan.roads) {
+    const RoadId road_id = target.create_road("", next_free_road_odr_id(target));
+    created.roads.emplace_back(road_id, Road{});
+    Road& road = *target.road(road_id);
+    road.plan_view = cp.line;
+    road.length = road.plan_view.length();
+    road.junction = junction_id;
+    // Connecting roads run in driving direction: start touches the incoming
+    // arm, end the outgoing arm (12.4.1 laneLink direction rules).
+    road.predecessor = RoadLink{.target = cp.from.road, .contact = cp.from.contact};
+    road.successor = RoadLink{.target = cp.to.road, .contact = cp.to.contact};
+
+    const LaneSectionId section_id = target.add_lane_section(road_id, 0.0);
+    created.sections.emplace_back(section_id, LaneSection{});
+    const LaneId center = target.add_lane(section_id, 0, LaneType::None);
+    created.lanes.emplace_back(center, Lane{});
+    // Single right-hand driving lane carrying the +s (driving-direction) flow.
+    const LaneId drive = target.add_lane(section_id, -1, LaneType::Driving);
+    created.lanes.emplace_back(drive, Lane{});
+    Lane& lane = *target.lane(drive);
+    lane.widths.push_back(connecting_lane_width(cp, road.length));
+    lane.predecessor = cp.from_lane;
+    lane.successor = cp.to_lane;
+
+    junction.connections.push_back(JunctionConnection{.incoming_road = cp.from.road,
+                                                      .connecting_road = road_id,
+                                                      .contact_point = ContactPoint::Start,
+                                                      .lane_links = {{cp.from_lane, -1}}});
+  }
+  return {};
+}
+
+std::unique_ptr<Command> create_junction(const RoadNetwork& network,
+                                         std::span<const RoadEnd> ends,
+                                         const JunctionGenOptions& options) {
+  static constexpr std::string_view kName = "Create Junction";
+  if (auto free = ends_link_slots_free(network, ends); !free.has_value()) {
+    return invalid_command(std::string(kName), free.error());
+  }
+  auto plan = plan_junction(network, ends, options);
+  if (!plan.has_value()) {
+    return invalid_command(std::string(kName), plan.error());
   }
 
   auto command = std::make_unique<GenericCommand>(std::string(kName), DirtySet{.topology = true});
@@ -930,21 +1220,79 @@ std::unique_ptr<Command> create_junction(const RoadNetwork& network,
       command->before.roads.emplace_back(end.road, *network.road(end.road));
     }
   }
-  command->creator = [ends = std::vector<RoadEnd>(ends.begin(), ends.end())](
-                         RoadNetwork& target, Values& created) -> Expected<void> {
-    const JunctionId junction_id = target.create_junction(next_free_junction_odr_id(target), "");
-    created.junctions.emplace_back(junction_id, Junction{});
-    for (const RoadEnd& end : ends) {
-      Road& road = *target.road(end.road);
-      RoadLink link{.target = junction_id, .contact = ContactPoint::Start};
-      if (end.contact == ContactPoint::Start) {
-        road.predecessor = link;
-      } else {
-        road.successor = link;
-      }
-    }
-    return {};
+  command->creator = [ends = std::vector<RoadEnd>(ends.begin(), ends.end()),
+                      plan = std::move(*plan)](RoadNetwork& target,
+                                               Values& created) -> Expected<void> {
+    return materialize_junction(target, created, ends, plan);
   };
+  return command;
+}
+
+std::unique_ptr<Command> regenerate_junction(const RoadNetwork& network,
+                                             JunctionId junction_id,
+                                             const JunctionGenOptions& options) {
+  static constexpr std::string_view kName = "Regenerate Junction";
+  const auto fail = [&](std::string message) {
+    return invalid_command(
+        std::string(kName),
+        Error{.code = ErrorCode::InvalidArgument, .message = std::move(message)});
+  };
+  const Junction* junction = network.junction(junction_id);
+  if (junction == nullptr) {
+    return fail("stale junction id");
+  }
+  if (junction->arms.empty()) {
+    return fail("junction has no recorded arms (loaded from a foreign file); recreate it to edit");
+  }
+  auto plan = plan_junction(network, junction->arms, options);
+  if (!plan.has_value()) {
+    return invalid_command(std::string(kName), plan.error());
+  }
+  // M2 restriction: only geometry/width may change; a different turn set
+  // (a lane added or removed on an incoming road) needs a full recreate so
+  // ids can be freed. Regeneration edits the existing connecting roads in
+  // place, preserving their ids and the connection table.
+  if (plan->roads.size() != junction->connections.size()) {
+    return fail("regeneration changed the connection count; delete and recreate the junction");
+  }
+
+  DirtySet dirty{.junctions = {junction_id}};
+  for (const JunctionConnection& connection : junction->connections) {
+    dirty.roads.push_back(connection.connecting_road);
+  }
+  auto command = std::make_unique<GenericCommand>(std::string(kName), std::move(dirty));
+  for (std::size_t i = 0; i < plan->roads.size(); ++i) {
+    const ConnectingPlan& cp = plan->roads[i];
+    const JunctionConnection& connection = junction->connections[i];
+    // The plan and the connection table share generation order; a mismatch
+    // means the recorded topology drifted from the roads (hand-edited file).
+    if (connection.incoming_road != cp.from.road || connection.lane_links.size() != 1 ||
+        connection.lane_links.front().first != cp.from_lane) {
+      return fail("recorded connections no longer match the arms; recreate the junction");
+    }
+    const RoadId road_id = connection.connecting_road;
+    const Road* road = network.road(road_id);
+    if (road == nullptr || road->sections.empty()) {
+      return fail("connecting road is missing; recreate the junction");
+    }
+    Road after = *road;
+    after.plan_view = cp.line;
+    after.length = after.plan_view.length();
+    command->before.roads.emplace_back(road_id, *road);
+    command->after.roads.emplace_back(road_id, std::move(after));
+
+    const LaneSection& section = *network.lane_section(road->sections.front());
+    for (const LaneId lane_id : section.lanes) {
+      const Lane* lane = network.lane(lane_id);
+      if (lane->odr_id != -1) {
+        continue;
+      }
+      Lane lane_after = *lane;
+      lane_after.widths = {connecting_lane_width(cp, after.length)};
+      command->before.lanes.emplace_back(lane_id, *lane);
+      command->after.lanes.emplace_back(lane_id, std::move(lane_after));
+    }
+  }
   return command;
 }
 

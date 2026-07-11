@@ -135,31 +135,64 @@ def test_set_node_elevation_writes_the_cubic_fit(network):
     assert [p.d for p in elevation] == pytest.approx([p.d for p in expected])
 
 
-def test_split_and_junction_commands(network):
+def test_split_command_and_undo(network):
     stack = rm.edit.EditStack()
     road = network.find_road("1")
     length = network.road(road).length
 
     stack.push(network, rm.edit.split_road(network, road, length * 0.5))
     assert network.road_count == 2
-    tail = network.find_road("2")
-
-    stack.push(
-        network,
-        rm.edit.create_junction(
-            network,
-            [
-                rm.RoadEnd(road, rm.ContactPoint.START),
-                rm.RoadEnd(tail, rm.ContactPoint.END),
-            ],
-        ),
-    )
-    assert network.junction_count == 1
 
     while stack.can_undo:
         stack.undo(network)
     assert network.road_count == 1
-    assert network.junction_count == 0
+
+
+def _t_junction_arms(net):
+    """Three straight two-lane arms whose ends meet near the origin."""
+    for coords, odr in (
+        ([(-40.0, 0.0), (-6.0, 0.0)], "1"),
+        ([(40.0, 0.0), (6.0, 0.0)], "2"),
+        ([(0.0, -40.0), (0.0, -6.0)], "3"),
+    ):
+        rm.author_clothoid_road(net, coords, rm.LaneProfile.two_lane_default(), "", odr)
+    return [
+        rm.RoadEnd(net.find_road("1"), rm.ContactPoint.END),
+        rm.RoadEnd(net.find_road("2"), rm.ContactPoint.END),
+        rm.RoadEnd(net.find_road("3"), rm.ContactPoint.END),
+    ]
+
+
+def test_create_junction_generates_connecting_roads_and_persists_arms(tmp_path):
+    net = rm.RoadNetwork()
+    ends = _t_junction_arms(net)
+
+    # Preview mirrors what generation produces: six turns, none dropped.
+    preview = rm.edit.preview_junction(net, ends)
+    assert preview.connection_count == 6
+    assert preview.dropped_turns == []
+
+    stack = rm.edit.EditStack()
+    stack.push(net, rm.edit.create_junction(net, ends))
+    assert net.junction_count == 1
+    junction = net.find_junction("1")
+    assert len(net.junction(junction).connections) == 6
+    assert len(net.junction(junction).arms) == 3
+
+    # A no-op regeneration keeps the junction valid and is undoable.
+    stack.push(net, rm.edit.regenerate_junction(net, junction))
+
+    # Arms round-trip through <userData code="rm:arms"> so the saved project
+    # can regenerate after reload.
+    out = tmp_path / "junction.xodr"
+    rm.save_xodr(net, out, "junction_example")
+    assert "rm:arms" in out.read_text()
+    assert rm.validate_network(net) == []
+
+    while stack.can_undo:
+        stack.undo(net)
+    assert net.junction_count == 0
+    assert net.road_count == 3
 
 
 def test_delete_road_closure_takes_connecting_roads_and_undo_restores():

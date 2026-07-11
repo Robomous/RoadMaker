@@ -1,6 +1,7 @@
 // Round-trip invariants are first-class tests: author → write → re-parse →
 // compare within rm::tol (position 1e-4 m, heading 1e-6 rad).
 
+#include "roadmaker/edit/operations.hpp"
 #include "roadmaker/road/authoring.hpp"
 #include "roadmaker/xodr/reader.hpp"
 #include "roadmaker/xodr/writer.hpp"
@@ -13,7 +14,10 @@
 
 #include "support/network_compare.hpp"
 
+using roadmaker::ContactPoint;
+using roadmaker::JunctionId;
 using roadmaker::LaneProfile;
+using roadmaker::RoadEnd;
 using roadmaker::RoadId;
 using roadmaker::RoadNetwork;
 using roadmaker::Waypoint;
@@ -143,6 +147,43 @@ TEST(RoundTrip, ParsedSampleWriteParsePreservesTopologyAndGeometry) {
   const auto j2 = *second->network.junction(second->network.find_junction("100"));
   ASSERT_EQ(j1.connections.size(), j2.connections.size());
   EXPECT_EQ(j2.connections[0].lane_links, j1.connections[0].lane_links);
+}
+
+TEST(RoundTrip, GeneratedJunctionArmsSurviveWriteParseAndRegenerate) {
+  RoadNetwork network;
+  const auto arm = [&](std::vector<Waypoint> waypoints, const char* id) {
+    return *roadmaker::author_clothoid_road(
+        network, waypoints, LaneProfile::two_lane_default(), "", id);
+  };
+  const RoadId west = arm({Waypoint{-40.0, 0.0}, Waypoint{-6.0, 0.0}}, "1");
+  const RoadId east = arm({Waypoint{40.0, 0.0}, Waypoint{6.0, 0.0}}, "2");
+  const RoadId south = arm({Waypoint{0.0, -40.0}, Waypoint{0.0, -6.0}}, "3");
+  const std::array<RoadEnd, 3> ends{RoadEnd{.road = west, .contact = ContactPoint::End},
+                                    RoadEnd{.road = east, .contact = ContactPoint::End},
+                                    RoadEnd{.road = south, .contact = ContactPoint::End}};
+  ASSERT_TRUE(roadmaker::edit::create_junction(network, ends)->apply(network).has_value());
+
+  const auto xml = roadmaker::write_xodr(network, "gen_junction");
+  ASSERT_TRUE(xml.has_value());
+  EXPECT_NE(xml->find("rm:arms"), std::string::npos);
+
+  auto reparsed = roadmaker::parse_xodr(*xml, "gen_junction");
+  ASSERT_TRUE(reparsed.has_value());
+  EXPECT_EQ(roadmaker::count_errors(reparsed->diagnostics), 0U);
+
+  // The arm list survives the round trip, so the reloaded junction still
+  // regenerates — and a no-op regeneration reproduces the document.
+  const JunctionId junction = reparsed->network.find_junction("1");
+  ASSERT_TRUE(junction.is_valid());
+  EXPECT_EQ(reparsed->network.junction(junction)->arms.size(), 3U);
+
+  const auto before = roadmaker::write_xodr(reparsed->network, "gen_junction");
+  ASSERT_TRUE(before.has_value());
+  auto regen = roadmaker::edit::regenerate_junction(reparsed->network, junction);
+  ASSERT_TRUE(regen->apply(reparsed->network).has_value());
+  const auto after = roadmaker::write_xodr(reparsed->network, "gen_junction");
+  ASSERT_TRUE(after.has_value());
+  EXPECT_EQ(*before, *after);
 }
 
 TEST(RoundTrip, AuthoringWaypointsSurviveWriteParse) {

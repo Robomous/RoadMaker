@@ -31,6 +31,14 @@ struct Junction {
   std::string name;
 
   std::vector<JunctionConnection> connections;
+
+  /// The road ends this junction was generated from, in selection order —
+  /// the deterministic input the connecting-road generator re-runs from on
+  /// regeneration (docs/design/m2/02_editing_tools.md §6). Persisted in
+  /// .xodr as `<userData code="rm:arms">` on the junction so edit sessions
+  /// survive save/load; junctions from foreign files load with an empty arm
+  /// list and cannot regenerate until recreated.
+  std::vector<RoadEnd> arms;
 };
 
 } // namespace roadmaker

@@ -535,6 +535,55 @@ private:
       }
       junction.connections.push_back(std::move(result));
     }
+    parse_junction_user_data(junction_node, junction, location);
+  }
+
+  /// The generator's arm list (roadmaker::edit) round-trips through
+  /// <userData code="rm:arms"> ("roadOdrId:start|end;…"); roads parse before
+  /// junctions, so arm road ids resolve here. Unknown codes are reported and
+  /// ignored; a malformed value drops the arms (the junction still loads but
+  /// cannot regenerate until recreated).
+  void parse_junction_user_data(const pugi::xml_node& junction_node,
+                                Junction& junction,
+                                const std::string& location) {
+    for (const pugi::xml_node node : junction_node.children("userData")) {
+      const std::string code = node.attribute("code").value();
+      if (code != "rm:arms") {
+        diag(Severity::Warning,
+             location,
+             fmt::format("userData code '{}' is not understood and was ignored", code));
+        continue;
+      }
+      std::vector<RoadEnd> arms;
+      bool malformed = false;
+      const std::string value = node.attribute("value").value();
+      for (std::size_t begin = 0; begin <= value.size();) {
+        std::size_t end = value.find(';', begin);
+        if (end == std::string::npos) {
+          end = value.size();
+        }
+        const std::string_view entry = std::string_view(value).substr(begin, end - begin);
+        const std::size_t colon = entry.find(':');
+        const RoadId road_id = colon != std::string_view::npos
+                                   ? network().find_road(std::string(entry.substr(0, colon)))
+                                   : RoadId{};
+        const std::string_view contact =
+            colon != std::string_view::npos ? entry.substr(colon + 1) : std::string_view{};
+        if (!road_id.is_valid() || (contact != "start" && contact != "end")) {
+          malformed = true;
+          break;
+        }
+        arms.push_back(
+            RoadEnd{.road = road_id,
+                    .contact = contact == "end" ? ContactPoint::End : ContactPoint::Start});
+        begin = end + 1;
+      }
+      if (malformed || arms.size() < 2) {
+        diag(Severity::Warning, location, "malformed rm:arms userData ignored");
+        continue;
+      }
+      junction.arms = std::move(arms);
+    }
   }
 
   // --- pass 2: reference resolution ---------------------------------------

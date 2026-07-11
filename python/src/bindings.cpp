@@ -328,6 +328,7 @@ NB_MODULE(_roadmaker, m) {
       .def_ro("odr_id", &roadmaker::Junction::odr_id)
       .def_ro("name", &roadmaker::Junction::name)
       .def_ro("connections", &roadmaker::Junction::connections)
+      .def_ro("arms", &roadmaker::Junction::arms)
       .def("__repr__", [](const roadmaker::Junction& junction) {
         return "Junction(odr_id='" + junction.odr_id +
                "', connections=" + std::to_string(junction.connections.size()) + ")";
@@ -644,13 +645,51 @@ NB_MODULE(_roadmaker, m) {
       "A start/end heading [rad] locks the fit there for G1 chaining.");
   edit.def("split_road", &roadmaker::edit::split_road, "network"_a, "road"_a, "s"_a);
   edit.def("delete_road", &roadmaker::edit::delete_road, "network"_a, "road"_a);
+  nb::class_<roadmaker::edit::JunctionGenOptions>(edit, "JunctionGenOptions")
+      .def(nb::init<>())
+      .def_rw("max_end_distance_m", &roadmaker::edit::JunctionGenOptions::max_end_distance_m)
+      .def_rw("max_loop_factor", &roadmaker::edit::JunctionGenOptions::max_loop_factor);
+
+  nb::class_<roadmaker::edit::JunctionPreview>(edit, "JunctionPreview")
+      .def_ro("connection_count", &roadmaker::edit::JunctionPreview::connection_count)
+      .def_ro("dropped_turns", &roadmaker::edit::JunctionPreview::dropped_turns);
+
   edit.def(
-      "create_junction",
-      [](const roadmaker::RoadNetwork& network, const std::vector<roadmaker::RoadEnd>& ends) {
-        return roadmaker::edit::create_junction(network, ends);
+      "preview_junction",
+      [](const roadmaker::RoadNetwork& network,
+         const std::vector<roadmaker::RoadEnd>& ends,
+         const roadmaker::edit::JunctionGenOptions& options) {
+        return unwrap(roadmaker::edit::preview_junction(network, ends, options));
       },
       "network"_a,
-      "ends"_a);
+      "ends"_a,
+      "options"_a = roadmaker::edit::JunctionGenOptions{},
+      "Non-mutating summary of what create_junction would generate: connection "
+      "count and any dropped turns.");
+  edit.def(
+      "create_junction",
+      [](const roadmaker::RoadNetwork& network,
+         const std::vector<roadmaker::RoadEnd>& ends,
+         const roadmaker::edit::JunctionGenOptions& options) {
+        return roadmaker::edit::create_junction(network, ends, options);
+      },
+      "network"_a,
+      "ends"_a,
+      "options"_a = roadmaker::edit::JunctionGenOptions{},
+      "Generates a common junction: links each arm and builds one connecting "
+      "road per permitted (incoming lane, outgoing lane) turn.");
+  edit.def(
+      "regenerate_junction",
+      [](const roadmaker::RoadNetwork& network,
+         roadmaker::JunctionId junction,
+         const roadmaker::edit::JunctionGenOptions& options) {
+        return roadmaker::edit::regenerate_junction(network, junction, options);
+      },
+      "network"_a,
+      "junction"_a,
+      "options"_a = roadmaker::edit::JunctionGenOptions{},
+      "Re-runs the generator from the junction's recorded arms, replacing "
+      "connecting-road geometry in place (ids preserved).");
   edit.def("delete_junction", &roadmaker::edit::delete_junction, "network"_a, "junction"_a);
   edit.def("add_lane",
            &roadmaker::edit::add_lane,
