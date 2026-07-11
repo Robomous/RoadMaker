@@ -11,10 +11,10 @@
       <geometry s="30.0" x="30.0" y="0.0" hdg="0.0" length="20.0">
         <spiral curvStart="0.0" curvEnd="0.05"/>
       </geometry>
-      <geometry s="50.0" x="49.8335050" y="3.3183099" hdg="0.5" length="31.4159265">
+      <geometry s="50.0" x="49.5057538" y="3.2742809" hdg="0.5" length="31.4159265">
         <arc curvature="0.05"/>
       </geometry>
-      <geometry s="81.4159265" x="59.0294617" y="30.7620234" hdg="2.0707963" length="20.0">
+      <geometry s="81.4159265" x="57.4688942" y="30.4144429" hdg="2.0707963" length="20.0">
         <spiral curvStart="0.05" curvEnd="0.0"/>
       </geometry>
     </planView>
