@@ -18,6 +18,8 @@
 #include <variant>
 #include <vector>
 
+#include "junction_export.hpp"
+
 namespace roadmaker {
 
 namespace {
@@ -353,6 +355,51 @@ void write_road(pugi::xml_node root, const RoadNetwork& network, const Road& roa
   }
 }
 
+/// Emits the OpenDRIVE ≥1.8 junction surface elements: the <planView>
+/// reference line and the <elevationGrid> sampled from the blended 2.5D surface
+/// (docs/design/m2/03_junction_blending.md §3). Both writer targets are ≥1.8,
+/// so these are always written for junctions that carry a surface. No
+/// <boundary> is written in M2 — see junction_export.hpp.
+void write_junction_surface(pugi::xml_node junction_node, const JunctionSurfaceExport& surface) {
+  if (!surface.has_surface) {
+    return;
+  }
+  pugi::xml_node plan_view = junction_node.append_child("planView");
+  pugi::xml_node geometry = plan_view.append_child("geometry");
+  set_num(geometry, "s", 0.0);
+  set_num(geometry, "x", surface.ref_line.x);
+  set_num(geometry, "y", surface.ref_line.y);
+  set_num(geometry, "hdg", surface.ref_line.hdg);
+  set_num(geometry, "length", surface.ref_line.length);
+  geometry.append_child("line");
+
+  pugi::xml_node grid = junction_node.append_child("elevationGrid");
+  set_num(grid, "sStart", surface.grid.s_start);
+  set_num(grid, "gridSpacing", surface.grid.grid_spacing);
+  const auto join = [](const std::vector<double>& values) {
+    std::string text;
+    for (const double value : values) {
+      if (!text.empty()) {
+        text += ' ';
+      }
+      text += num(value);
+    }
+    return text;
+  };
+  for (const JunctionGridColumn& column : surface.grid.columns) {
+    pugi::xml_node elevation = grid.append_child("elevation");
+    // left/center/right list z from inside (nearest the reference line) to
+    // outside; center sits on the line and is always present.
+    if (!column.left.empty()) {
+      elevation.append_attribute("left").set_value(join(column.left).c_str());
+    }
+    elevation.append_attribute("center").set_value(num(column.center).c_str());
+    if (!column.right.empty()) {
+      elevation.append_attribute("right").set_value(join(column.right).c_str());
+    }
+  }
+}
+
 void write_junction(pugi::xml_node root, const RoadNetwork& network, const Junction& junction) {
   pugi::xml_node junction_node = root.append_child("junction");
   junction_node.append_attribute("id").set_value(junction.odr_id.c_str());
@@ -378,6 +425,11 @@ void write_junction(pugi::xml_node root, const RoadNetwork& network, const Junct
       link.append_attribute("to").set_value(to);
     }
   }
+
+  // Blended 2.5D surface (≥1.8): reference line + elevation grid, derived from
+  // the network so no model state is stored. Emitted before <userData> so the
+  // normative children keep their order.
+  write_junction_surface(junction_node, build_junction_export(network, junction));
 
   // The generator's arm list round-trips through <userData> (OpenDRIVE 1.9.0
   // §7.2) so regeneration survives save/load; junctions from foreign files
@@ -428,6 +480,28 @@ std::vector<Diagnostic> validate_network(const RoadNetwork& network, const Write
       }
     }
   });
+  // The writer emits a junction's blended surface as <planView> + <elevationGrid>
+  // (≥1.8) but omits <boundary>: closing it needs auxiliary boundary roads for
+  // any gap between arms (junctions.boundary.close_gap_with_new_roads), which is
+  // M3 scope (docs/design/m2/03_junction_blending.md §3). Surface a structured
+  // warning for every common junction so the omission is never silent.
+  network.for_each_junction([&](JunctionId, const Junction& junction) {
+    const bool has_connecting_road =
+        std::any_of(junction.connections.begin(),
+                    junction.connections.end(),
+                    [&](const JunctionConnection& connection) {
+                      return network.road(connection.connecting_road) != nullptr;
+                    });
+    if (has_connecting_road) {
+      findings.push_back(Diagnostic{
+          .severity = Severity::Warning,
+          .location = fmt::format("junction id={}", junction.odr_id),
+          .message = "junction boundary omitted — closing it with lane/joint segments requires "
+                     "auxiliary boundary roads (M3); the elevation grid stays valid without it",
+          .rule_id = std::string(rules::kJunctionBoundaryCloseGap)});
+    }
+  });
+
   // junctions.common.not_only_two exists only in the 1.9.0 catalog
   // (Annex F.4.5.3); 1.8.1's Annex E (checker rules, normative) has no
   // equivalent, so the finding is version-gated on the writer target.

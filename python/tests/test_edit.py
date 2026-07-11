@@ -187,7 +187,14 @@ def test_create_junction_generates_connecting_roads_and_persists_arms(tmp_path):
     out = tmp_path / "junction.xodr"
     rm.save_xodr(net, out, "junction_example")
     assert "rm:arms" in out.read_text()
-    assert rm.validate_network(net) == []
+    # No structural errors; the only finding is the intentional boundary-omitted
+    # warning (M2 writes the surface without <boundary>).
+    findings = rm.validate_network(net)
+    assert all(f.severity == rm.Severity.WARNING for f in findings)
+    assert all(
+        f.rule_id == "asam.net:xodr:1.8.0:junctions.boundary.close_gap_with_new_roads"
+        for f in findings
+    )
 
     while stack.can_undo:
         stack.undo(net)

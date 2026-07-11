@@ -233,9 +233,12 @@ def test_validate_network_cites_version_specific_rules_only_for_their_target():
         ),
     )
 
-    assert rm.validate_network(net) == []
+    not_only_two = "asam.net:xodr:1.9.0:junctions.common.not_only_two"
+    # A common junction always draws the boundary-omitted warning (M2 emits the
+    # surface without <boundary>), so filter by rule rather than expecting an
+    # empty finding set: not_only_two is cited only for the 1.9.0 target.
+    assert not_only_two not in [f.rule_id for f in rm.validate_network(net)]
     findings = rm.validate_network(net, target_version=rm.XodrVersion.V1_9_0)
-    assert [f.rule_id for f in findings] == [
-        "asam.net:xodr:1.9.0:junctions.common.not_only_two"
-    ]
-    assert findings[0].severity == rm.Severity.WARNING
+    matched = [f for f in findings if f.rule_id == not_only_two]
+    assert len(matched) == 1
+    assert matched[0].severity == rm.Severity.WARNING

@@ -157,8 +157,12 @@ TEST(XodrWriter, TwoArmJunctionRuleIsCitedOnlyForV190) {
   RoadNetwork network;
   make_two_arm_junction(network);
 
-  // 1.8.1's Annex E has no not_only_two rule — nothing to cite.
-  EXPECT_TRUE(roadmaker::validate_network(network).empty());
+  // 1.8.1's Annex E has no not_only_two rule — nothing to cite. (A common
+  // junction still draws the boundary-omitted warning, so filter by rule
+  // rather than asserting the finding set is empty.)
+  EXPECT_TRUE(findings_with_rule(roadmaker::validate_network(network),
+                                 roadmaker::rules::kJunctionNotOnlyTwo)
+                  .empty());
 
   const auto findings =
       roadmaker::validate_network(network, {.target_version = XodrVersion::v1_9_0});

@@ -64,4 +64,32 @@ inline constexpr std::string_view kRoadLinkAttributeUsage =
 inline constexpr std::string_view kJunctionNotOnlyTwo =
     "asam.net:xodr:1.9.0:junctions.common.not_only_two";
 
+/// "Junction reference lines shall be defined by one <geometry> element. This
+/// <geometry> element shall have only one <line> element." (1.8.0, §12.9.)
+inline constexpr std::string_view kJunctionOneLineElement =
+    "asam.net:xodr:1.8.0:junctions.geometry.only_one_line_element";
+
+/// "The <geometry> element of a junction reference line shall be defined in a
+/// way that every point of the junction can be reached with a perpendicular
+/// straight line." (1.8.0, §12.9.)
+inline constexpr std::string_view kJunctionRefLineDefinition =
+    "asam.net:xodr:1.8.0:junctions.geometry.ref_line_definition";
+
+/// "A junction shall have only one elevation grid." (1.8.0, §12.11.)
+inline constexpr std::string_view kJunctionOneElevGrid =
+    "asam.net:xodr:1.8.0:junctions.elevation_grid.only_one_elev_grid";
+
+/// "The elevation grid shall be defined with vectors perpendicular to the
+/// junction reference line." (1.8.0, §12.11.)
+inline constexpr std::string_view kJunctionElevGridPerpendicular =
+    "asam.net:xodr:1.8.0:junctions.elevation_grid.perpendicular_vectors";
+
+/// "If the existing roads are not sufficient to define a closed junction
+/// boundary, additional roads shall be defined for the missing segments."
+/// (1.8.0, §12.10.) M2 omits <boundary> and cites this: closing the boundary
+/// with auxiliary boundary roads is M3 (docs/design/m2/03_junction_blending.md
+/// §3), so the blended surface stays editor-internal until then.
+inline constexpr std::string_view kJunctionBoundaryCloseGap =
+    "asam.net:xodr:1.8.0:junctions.boundary.close_gap_with_new_roads";
+
 } // namespace roadmaker::rules

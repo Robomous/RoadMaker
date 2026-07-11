@@ -3,7 +3,9 @@
 #include "roadmaker/road/authoring.hpp"
 #include "roadmaker/road/network.hpp"
 #include "roadmaker/tol.hpp"
+#include "roadmaker/xodr/diagnostic.hpp"
 #include "roadmaker/xodr/reader.hpp"
+#include "roadmaker/xodr/rules.hpp"
 
 #include <gtest/gtest.h>
 
@@ -744,8 +746,14 @@ TEST(EditOperations, CreateJunctionOutputValidatesCleanly) {
   for (const XodrVersion version : {XodrVersion::v1_8_1, XodrVersion::v1_9_0}) {
     const auto findings =
         roadmaker::validate_network(network, roadmaker::WriterOptions{.target_version = version});
-    EXPECT_TRUE(findings.empty()) << "version index " << static_cast<int>(version) << " has "
-                                  << findings.size() << " diagnostics";
+    // No structural errors. The only expected finding is the intentional
+    // boundary-omitted warning (M2 emits the surface without <boundary> — see
+    // junctions.boundary.close_gap_with_new_roads).
+    EXPECT_EQ(roadmaker::count_errors(findings), 0U);
+    for (const auto& finding : findings) {
+      EXPECT_EQ(finding.rule_id, roadmaker::rules::kJunctionBoundaryCloseGap)
+          << "version index " << static_cast<int>(version) << " unexpected diagnostic";
+    }
   }
 }
 
