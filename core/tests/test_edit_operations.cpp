@@ -431,6 +431,101 @@ TEST(EditOperations, DeleteRoadDetachesAndUndoResurrectsOriginalIds) {
   EXPECT_EQ(std::get<RoadId>(network.road(neighbor)->predecessor->target), doomed);
 }
 
+/// §7 closure setup shared by the two closure tests: `incoming` feeds
+/// `connecting` (a proper junction-internal road) which exits onto
+/// `outgoing`.
+struct JunctionClosureFixture {
+  RoadId incoming;
+  RoadId connecting;
+  RoadId outgoing;
+  JunctionId junction;
+};
+
+JunctionClosureFixture make_junction_closure(RoadNetwork& network) {
+  JunctionClosureFixture fixture;
+  fixture.incoming = author_default(network, "1");
+  fixture.connecting = author_default(network, "2", 40.0);
+  fixture.outgoing = author_default(network, "3", 80.0);
+  fixture.junction = network.create_junction("100", "X");
+
+  network.road(fixture.incoming)->successor =
+      roadmaker::RoadLink{.target = fixture.junction, .contact = ContactPoint::Start};
+  network.road(fixture.outgoing)->predecessor =
+      roadmaker::RoadLink{.target = fixture.junction, .contact = ContactPoint::Start};
+  roadmaker::Road& connecting = *network.road(fixture.connecting);
+  connecting.junction = fixture.junction;
+  connecting.predecessor =
+      roadmaker::RoadLink{.target = fixture.incoming, .contact = ContactPoint::End};
+  connecting.successor =
+      roadmaker::RoadLink{.target = fixture.outgoing, .contact = ContactPoint::Start};
+  network.junction(fixture.junction)
+      ->connections.push_back(JunctionConnection{
+          .incoming_road = fixture.incoming,
+          .connecting_road = fixture.connecting,
+          .contact_point = ContactPoint::Start,
+          .lane_links = {{-1, -1}},
+      });
+  return fixture;
+}
+
+TEST(EditOperations, DeleteIncomingRoadDeletesItsConnectingRoads) {
+  RoadNetwork network;
+  const JunctionClosureFixture fixture = make_junction_closure(network);
+
+  auto command = roadmaker::edit::delete_road(network, fixture.incoming);
+  expect_command_round_trip(network, *command);
+
+  ASSERT_TRUE(command->apply(network).has_value());
+  // The connection referencing the incoming road is gone, and its connecting
+  // road went with it — the §7 closure.
+  EXPECT_EQ(network.road(fixture.incoming), nullptr);
+  EXPECT_EQ(network.road(fixture.connecting), nullptr);
+  ASSERT_NE(network.junction(fixture.junction), nullptr);
+  EXPECT_TRUE(network.junction(fixture.junction)->connections.empty());
+  // The outgoing road survives; its link into the surviving junction stays.
+  ASSERT_NE(network.road(fixture.outgoing), nullptr);
+  EXPECT_TRUE(network.road(fixture.outgoing)->predecessor.has_value());
+
+  // Both doomed roads are in the dirty set, plus the junction they touched.
+  const roadmaker::edit::DirtySet dirty = command->dirty();
+  EXPECT_TRUE(dirty.topology);
+  EXPECT_NE(std::ranges::find(dirty.roads, fixture.connecting), dirty.roads.end());
+  EXPECT_NE(std::ranges::find(dirty.junctions, fixture.junction), dirty.junctions.end());
+
+  ASSERT_TRUE(command->revert(network).has_value());
+  ASSERT_NE(network.road(fixture.connecting), nullptr);
+  EXPECT_EQ(network.road(fixture.connecting)->odr_id, "2");
+  ASSERT_EQ(network.junction(fixture.junction)->connections.size(), 1U);
+  EXPECT_EQ(network.junction(fixture.junction)->connections[0].connecting_road, fixture.connecting);
+}
+
+TEST(EditOperations, DeleteJunctionDeletesConnectingRoadsAndClearsLinks) {
+  RoadNetwork network;
+  const JunctionClosureFixture fixture = make_junction_closure(network);
+
+  auto command = roadmaker::edit::delete_junction(network, fixture.junction);
+  expect_command_round_trip(network, *command);
+
+  ASSERT_TRUE(command->apply(network).has_value());
+  // The junction takes its connecting road along; the incoming and outgoing
+  // roads survive with their links into the junction cleared.
+  EXPECT_EQ(network.junction(fixture.junction), nullptr);
+  EXPECT_EQ(network.road(fixture.connecting), nullptr);
+  ASSERT_NE(network.road(fixture.incoming), nullptr);
+  EXPECT_FALSE(network.road(fixture.incoming)->successor.has_value());
+  ASSERT_NE(network.road(fixture.outgoing), nullptr);
+  EXPECT_FALSE(network.road(fixture.outgoing)->predecessor.has_value());
+
+  ASSERT_TRUE(command->revert(network).has_value());
+  // Every removed object and link is back under its original id.
+  ASSERT_NE(network.junction(fixture.junction), nullptr);
+  ASSERT_NE(network.road(fixture.connecting), nullptr);
+  EXPECT_EQ(network.road(fixture.connecting)->junction, fixture.junction);
+  ASSERT_TRUE(network.road(fixture.incoming)->successor.has_value());
+  EXPECT_EQ(std::get<JunctionId>(network.road(fixture.incoming)->successor->target),
+            fixture.junction);
+}
+
 TEST(EditOperations, SplitRoadPreservesGeometryAndRoundTrips) {
   RoadNetwork network;
   const RoadId road = author_default(network, "1");
