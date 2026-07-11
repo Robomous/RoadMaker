@@ -94,6 +94,39 @@ void emit_marking_strip(const Road& road,
   }
 }
 
+/// The painted stripes a road mark decomposes into, resolved for meshing
+/// (docs/design/m3a/02 §1/§4). Explicit <line> geometry wins; otherwise the
+/// multi-line types synthesize two symmetric stripes so solid_solid renders
+/// as true dual geometry, and single types stay one stripe (M2 behaviour).
+std::vector<RoadMarkLine> resolve_stripes(const RoadMark& mark) {
+  if (!mark.lines.empty()) {
+    return mark.lines;
+  }
+  const double w = mark.width;
+  const RoadMarkLine solid{.width = w};
+  const RoadMarkLine broken{.width = w, .length = kDashLength, .space = kDashCycle - kDashLength};
+  // Symmetric split for the *_family: two stripes one mark-width apart.
+  const auto at = [](RoadMarkLine stripe, double t) {
+    stripe.t_offset = t;
+    return stripe;
+  };
+  switch (mark.type) {
+  case RoadMarkType::Broken:
+    return {broken};
+  case RoadMarkType::SolidSolid:
+    return {at(solid, +w), at(solid, -w)};
+  case RoadMarkType::SolidBroken:
+    return {at(solid, +w), at(broken, -w)};
+  case RoadMarkType::BrokenSolid:
+    return {at(broken, +w), at(solid, -w)};
+  case RoadMarkType::Solid:
+  case RoadMarkType::Other:
+  case RoadMarkType::None:
+    break;
+  }
+  return {solid};
+}
+
 void build_markings(const RoadNetwork& network,
                     const Road& road,
                     const RoadId road_id,
@@ -131,17 +164,27 @@ void build_markings(const RoadNetwork& network,
         strip.material = lane.type;
         strip.name = fmt::format("road {} lane {} marking", road.odr_id, lane.odr_id);
 
-        if (mark.type == RoadMarkType::Broken) {
-          for (double dash = mark_begin; dash < mark_end; dash += kDashCycle) {
-            const double dash_end = std::min(dash + kDashLength, mark_end);
-            const double t = outer_boundary_offset(network, road, section, lane, dash);
-            emit_marking_strip(road, dash, dash_end, t, mark.width, section_stations, strip);
+        // One quad run per painted stripe. Multi-line marks emit two strips at
+        // their lateral offsets; dashed stripes (space > 0) tessellate as
+        // segment runs of `length` on / (length + space) cycle.
+        for (const RoadMarkLine& stripe : resolve_stripes(mark)) {
+          const double begin = std::min(mark_begin + stripe.s_offset, mark_end);
+          if (stripe.width <= 0.0) {
+            continue;
           }
-        } else {
-          // Solid and every multi-line type render as one solid strip in
-          // M1 (M2: double lines with proper spacing).
-          const double t = outer_boundary_offset(network, road, section, lane, mark_begin);
-          emit_marking_strip(road, mark_begin, mark_end, t, mark.width, section_stations, strip);
+          if (stripe.space > tol::kLength && stripe.length > tol::kLength) {
+            const double cycle = stripe.length + stripe.space;
+            for (double dash = begin; dash < mark_end; dash += cycle) {
+              const double dash_end = std::min(dash + stripe.length, mark_end);
+              const double t =
+                  outer_boundary_offset(network, road, section, lane, dash) + stripe.t_offset;
+              emit_marking_strip(road, dash, dash_end, t, stripe.width, section_stations, strip);
+            }
+          } else {
+            const double t =
+                outer_boundary_offset(network, road, section, lane, begin) + stripe.t_offset;
+            emit_marking_strip(road, begin, mark_end, t, stripe.width, section_stations, strip);
+          }
         }
         if (!strip.indices.empty()) {
           mesh.markings.push_back(std::move(strip));
@@ -150,6 +193,148 @@ void build_markings(const RoadNetwork& network,
     }
     (void)road_id;
   }
+}
+
+// --- object markings (crosswalks, stop lines, lane arrows) — §13.8/§13.14 ---
+
+/// A flat local frame at an object's origin for painted-marking geometry: the
+/// world centre (lifted off the surface) plus planar u (forward = road tangent
+/// rotated by the object heading) and v (leftward) axes.
+struct ObjectFrame {
+  std::array<double, 3> center;
+  std::array<double, 3> normal;
+  double ux, uy; // forward axis in world XY
+  double vx, vy; // leftward axis in world XY
+};
+
+ObjectFrame object_frame(const Road& road, const Object& object) {
+  const StationFrame f = make_frame(road, object.s);
+  std::array<double, 3> center = lateral_point(f, object.t);
+  center[2] += kMarkingLift;
+  const double heading = std::atan2(f.sin_h, f.cos_h) + object.hdg;
+  return ObjectFrame{.center = center,
+                     .normal = surface_normal(f),
+                     .ux = std::cos(heading),
+                     .uy = std::sin(heading),
+                     .vx = -std::sin(heading),
+                     .vy = std::cos(heading)};
+}
+
+/// Appends a convex polygon (local u/v points, CCW) as a triangle fan.
+void emit_object_polygon(const ObjectFrame& frame,
+                         std::span<const std::array<double, 2>> points,
+                         SubMesh& out) {
+  if (points.size() < 3) {
+    return;
+  }
+  const std::uint32_t base = static_cast<std::uint32_t>(out.positions.size() / 3);
+  for (const std::array<double, 2>& p : points) {
+    out.positions.insert(out.positions.end(),
+                         {frame.center[0] + (p[0] * frame.ux) + (p[1] * frame.vx),
+                          frame.center[1] + (p[0] * frame.uy) + (p[1] * frame.vy),
+                          frame.center[2]});
+    out.normals.insert(out.normals.end(), frame.normal.begin(), frame.normal.end());
+  }
+  for (std::uint32_t i = 1; i + 1 < static_cast<std::uint32_t>(points.size()); ++i) {
+    out.indices.insert(out.indices.end(), {base, base + i, base + i + 1});
+  }
+}
+
+/// A filled rectangle centred at the object, `length` along u, `width` along v.
+void emit_object_quad(const ObjectFrame& frame, double length, double width, SubMesh& out) {
+  const double hu = length / 2.0;
+  const double hv = width / 2.0;
+  const std::array<std::array<double, 2>, 4> quad{{{-hu, -hv}, {hu, -hv}, {hu, hv}, {-hu, hv}}};
+  emit_object_polygon(frame, quad, out);
+}
+
+// Zebra stripe geometry (§13.14.3): paint band + gap repeated along u.
+constexpr double kZebraStripe = 0.5;
+constexpr double kZebraGap = 0.5;
+
+/// Alternating painted bars across the crossing: `length` along u (crossing
+/// direction), `width` along v. Deterministic bar layout from -length/2.
+void emit_zebra(const ObjectFrame& frame, double length, double width, SubMesh& out) {
+  const double hv = width / 2.0;
+  const double cycle = kZebraStripe + kZebraGap;
+  for (double u = -length / 2.0; u < length / 2.0 - tol::kLength; u += cycle) {
+    const double u_end = std::min(u + kZebraStripe, length / 2.0);
+    const std::array<std::array<double, 2>, 4> bar{{{u, -hv}, {u_end, -hv}, {u_end, hv}, {u, hv}}};
+    emit_object_polygon(frame, bar, out);
+  }
+}
+
+/// Parametric arrow glyph (generated, no asset — GS-1 checklist row 5): a
+/// shaft rectangle plus a triangular head, `length` along u (travel), sized to
+/// `width`. The head tip shifts laterally for the left/right turn variants.
+void emit_arrow(
+    const ObjectFrame& frame, double length, double width, std::string_view subtype, SubMesh& out) {
+  const double neck = length * 0.2;       // where the head starts (from centre)
+  const double shaft_half = width * 0.15; // shaft half-width
+  const double head_half = width * 0.5;   // head base half-width
+  // Shaft: tail (-length/2) to neck.
+  const std::array<std::array<double, 2>, 4> shaft{{{-length / 2.0, -shaft_half},
+                                                    {neck, -shaft_half},
+                                                    {neck, shaft_half},
+                                                    {-length / 2.0, shaft_half}}};
+  emit_object_polygon(frame, shaft, out);
+  // Head: base at neck spanning ±head_half, tip forward (+u) with a lateral
+  // bias for turn arrows.
+  double tip_v = 0.0;
+  if (subtype == "arrowLeft") {
+    tip_v = head_half;
+  } else if (subtype == "arrowRight") {
+    tip_v = -head_half;
+  }
+  const std::array<std::array<double, 2>, 3> head{
+      {{neck, -head_half}, {neck, head_half}, {length / 2.0, tip_v}}};
+  emit_object_polygon(frame, head, out);
+}
+
+/// Object-based road markings a road owns (crosswalks, stop lines, arrows —
+/// docs/design/m3a/02 §3). Emitted as paint submeshes; unresolved object
+/// types are left to the render-side placeholder box (phase 4).
+void build_object_markings(const RoadNetwork& network,
+                           const Road& road,
+                           RoadId road_id,
+                           RoadMesh& mesh) {
+  for (const ObjectId object_id : objects_of(network, road_id)) {
+    const Object& object = *network.object(object_id);
+    const ObjectFrame frame = object_frame(road, object);
+    SubMesh marking;
+    marking.material = LaneType::None;
+
+    if (object.type == ObjectType::Crosswalk) {
+      const double length = object.length.value_or(4.0);
+      const double width = object.width.value_or(2.0);
+      marking.name = fmt::format("road {} object {} crosswalk", road.odr_id, object.odr_id);
+      emit_zebra(frame, length, width, marking);
+    } else if (object.type_str == "roadMark" && object.subtype == "signalLines") {
+      const double length = object.length.value_or(0.3);
+      const double width = object.width.value_or(3.5);
+      marking.name = fmt::format("road {} object {} stop line", road.odr_id, object.odr_id);
+      emit_object_quad(frame, length, width, marking);
+    } else if (object.type_str == "roadMark" && object.subtype.starts_with("arrow")) {
+      const double length = object.length.value_or(4.0);
+      const double width = object.width.value_or(1.75);
+      marking.name = fmt::format("road {} object {} arrow", road.odr_id, object.odr_id);
+      emit_arrow(frame, length, width, object.subtype, marking);
+    } else {
+      continue; // not a painted marking — render-side placeholder (phase 4)
+    }
+    if (!marking.indices.empty()) {
+      mesh.markings.push_back(std::move(marking));
+    }
+  }
+}
+
+/// Sampling stations for one road (mandatory profile knots + adaptive fill).
+std::vector<double>
+road_stations(const RoadNetwork& network, const Road& road, const MeshOptions& options) {
+  SamplingOptions sampling = options.sampling;
+  const std::vector<double> extra = mandatory_stations(network, road);
+  sampling.extra_stations.insert(sampling.extra_stations.end(), extra.begin(), extra.end());
+  return sample_stations(road.plan_view, sampling);
 }
 
 /// One road's tessellation; empty (no lanes, no markings) for degenerate
@@ -164,10 +349,7 @@ RoadMesh build_one_road(const RoadNetwork& network,
     return mesh; // parser already diagnosed these
   }
 
-  SamplingOptions sampling = options.sampling;
-  const std::vector<double> extra = mandatory_stations(network, road);
-  sampling.extra_stations.insert(sampling.extra_stations.end(), extra.begin(), extra.end());
-  const std::vector<double> stations = sample_stations(road.plan_view, sampling);
+  const std::vector<double> stations = road_stations(network, road, options);
 
   mesh.name = road.name.empty() ? fmt::format("road {}", road.odr_id) : road.name;
 
@@ -255,6 +437,7 @@ RoadMesh build_one_road(const RoadNetwork& network,
 
   if (options.markings) {
     build_markings(network, road, road_id, stations, mesh);
+    build_object_markings(network, road, road_id, mesh);
   }
   return mesh;
 }
@@ -317,6 +500,38 @@ void remesh_roads(const RoadNetwork& network,
       *existing = std::move(rebuilt);
     } else {
       mesh.roads.push_back(std::move(rebuilt));
+    }
+  }
+}
+
+void remesh_objects(const RoadNetwork& network,
+                    NetworkMesh& mesh,
+                    std::span<const RoadId> roads,
+                    const MeshOptions& options) {
+  for (const RoadId road_id : roads) {
+    const auto existing = std::ranges::find(mesh.roads, road_id, &RoadMesh::road);
+    const Road* road = network.road(road_id);
+    if (existing == mesh.roads.end()) {
+      // Road not meshed yet — fall back to a full build so the object markings
+      // still land (keeps the entry point total for a fresh network).
+      if (road != nullptr) {
+        RoadMesh rebuilt = build_one_road(network, road_id, *road, options);
+        if (!road_mesh_is_empty(rebuilt)) {
+          mesh.roads.push_back(std::move(rebuilt));
+        }
+      }
+      continue;
+    }
+    // Object-layer re-mesh: regenerate ONLY the marking submeshes (lane marks
+    // re-anchor with the object markings), leaving the road surface grid and
+    // lane patches untouched — the editor re-uploads only the markings
+    // (docs/design/m3a/01 §2.4, first consumer of DirtySet::objects).
+    existing->markings.clear();
+    if (road != nullptr && options.markings && !road->plan_view.empty() &&
+        !road->sections.empty()) {
+      const std::vector<double> stations = road_stations(network, *road, options);
+      build_markings(network, *road, road_id, stations, *existing);
+      build_object_markings(network, *road, road_id, *existing);
     }
   }
 }

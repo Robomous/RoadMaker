@@ -120,6 +120,28 @@ const char* road_mark_name(RoadMarkType type) {
   return "none";
 }
 
+const char* road_mark_color_name(RoadMarkColor color) {
+  switch (color) {
+  case RoadMarkColor::Standard:
+    return "standard";
+  case RoadMarkColor::White:
+    return "white";
+  case RoadMarkColor::Yellow:
+    return "yellow";
+  case RoadMarkColor::Red:
+    return "red";
+  case RoadMarkColor::Blue:
+    return "blue";
+  case RoadMarkColor::Green:
+    return "green";
+  case RoadMarkColor::Orange:
+    return "orange";
+  case RoadMarkColor::Other:
+    return "standard"; // parsed-as-other exotic colors have no faithful name
+  }
+  return "standard";
+}
+
 /// Structural defects the writer refuses to serialize. Findings are
 /// appended in check order; each cites its normative rule UID.
 void check_road_structure(const RoadNetwork& network,
@@ -272,7 +294,28 @@ void write_lane(pugi::xml_node side, const Lane& lane) {
     pugi::xml_node mark_node = lane_node.append_child("roadMark");
     set_num(mark_node, "sOffset", mark.s_offset);
     mark_node.append_attribute("type").set_value(road_mark_name(mark.type));
+    // @color is written explicitly only when not Standard (§11.9): the M2
+    // single-line form (Standard, no <line>) stays byte-identical.
+    if (mark.color != RoadMarkColor::Standard) {
+      mark_node.append_attribute("color").set_value(road_mark_color_name(mark.color));
+    }
     set_num(mark_node, "width", mark.width);
+    // Explicit multi-line geometry (§11.9.1): a <type>/<line> block when the
+    // mark carries stripes; @name is the mark type spelling, @width the mark
+    // width (Table 49 requires both, and @width supersedes @roadMark/width).
+    if (!mark.lines.empty()) {
+      pugi::xml_node type_node = mark_node.append_child("type");
+      type_node.append_attribute("name").set_value(road_mark_name(mark.type));
+      set_num(type_node, "width", mark.width);
+      for (const RoadMarkLine& line : mark.lines) {
+        pugi::xml_node line_node = type_node.append_child("line");
+        set_num(line_node, "length", line.length);
+        set_num(line_node, "space", line.space);
+        set_num(line_node, "tOffset", line.t_offset);
+        set_num(line_node, "sOffset", line.s_offset);
+        set_num(line_node, "width", line.width);
+      }
+    }
   }
 }
 
@@ -763,6 +806,26 @@ std::vector<Diagnostic> validate_network(const RoadNetwork& network, const Write
                          .rule_id = std::string(rules::kWidthDefinedWholeSection),
                          .road = road_id,
                          .lane = lane_id});
+        }
+        // RoadMaker advisory (NOT a normative ASAM rule — rule_id stays empty
+        // so it is never spoofed as one): a solid_solid-family mark authored
+        // with explicit <line> geometry should carry exactly two stripes
+        // (docs/design/m3a/02 §2). Bare marks (lines empty) keep the M2 path.
+        for (const RoadMark& mark : lane.road_marks) {
+          const bool multi = mark.type == RoadMarkType::SolidSolid ||
+                             mark.type == RoadMarkType::SolidBroken ||
+                             mark.type == RoadMarkType::BrokenSolid;
+          if (multi && !mark.lines.empty() && mark.lines.size() != 2) {
+            findings.push_back(Diagnostic{
+                .severity = Severity::Warning,
+                .location = fmt::format("road id={}", road.odr_id),
+                .message = fmt::format(
+                    "advisory: lane {} multi-line road mark has {} <line> element(s), expected 2",
+                    lane.odr_id,
+                    mark.lines.size()),
+                .road = road_id,
+                .lane = lane_id});
+          }
         }
       }
     }

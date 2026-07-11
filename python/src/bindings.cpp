@@ -137,6 +137,16 @@ NB_MODULE(_roadmaker, m) {
       .value("BROKEN_SOLID", roadmaker::RoadMarkType::BrokenSolid)
       .value("OTHER", roadmaker::RoadMarkType::Other);
 
+  nb::enum_<roadmaker::RoadMarkColor>(m, "RoadMarkColor")
+      .value("STANDARD", roadmaker::RoadMarkColor::Standard)
+      .value("WHITE", roadmaker::RoadMarkColor::White)
+      .value("YELLOW", roadmaker::RoadMarkColor::Yellow)
+      .value("RED", roadmaker::RoadMarkColor::Red)
+      .value("BLUE", roadmaker::RoadMarkColor::Blue)
+      .value("GREEN", roadmaker::RoadMarkColor::Green)
+      .value("ORANGE", roadmaker::RoadMarkColor::Orange)
+      .value("OTHER", roadmaker::RoadMarkColor::Other);
+
   nb::enum_<roadmaker::ContactPoint>(m, "ContactPoint")
       .value("START", roadmaker::ContactPoint::Start)
       .value("END", roadmaker::ContactPoint::End);
@@ -204,6 +214,33 @@ NB_MODULE(_roadmaker, m) {
            "s"_a,
            "Pose at station s [m], clamped to [0, length].");
 
+  nb::class_<roadmaker::RoadMarkLine>(m, "RoadMarkLine")
+      .def(nb::init<>())
+      .def(
+          "__init__",
+          [](roadmaker::RoadMarkLine* self,
+             double width,
+             double length,
+             double space,
+             double t_offset,
+             double s_offset) {
+            new (self) roadmaker::RoadMarkLine{.width = width,
+                                               .length = length,
+                                               .space = space,
+                                               .t_offset = t_offset,
+                                               .s_offset = s_offset};
+          },
+          "width"_a = 0.12,
+          "length"_a = 0.0,
+          "space"_a = 0.0,
+          "t_offset"_a = 0.0,
+          "s_offset"_a = 0.0)
+      .def_rw("width", &roadmaker::RoadMarkLine::width)
+      .def_rw("length", &roadmaker::RoadMarkLine::length)
+      .def_rw("space", &roadmaker::RoadMarkLine::space)
+      .def_rw("t_offset", &roadmaker::RoadMarkLine::t_offset)
+      .def_rw("s_offset", &roadmaker::RoadMarkLine::s_offset);
+
   nb::class_<roadmaker::RoadMark>(m, "RoadMark")
       .def(nb::init<>())
       .def(
@@ -211,15 +248,23 @@ NB_MODULE(_roadmaker, m) {
           [](roadmaker::RoadMark* self,
              double s_offset,
              roadmaker::RoadMarkType type,
-             double width) {
-            new (self) roadmaker::RoadMark{.s_offset = s_offset, .type = type, .width = width};
+             double width,
+             roadmaker::RoadMarkColor color) {
+            new (self) roadmaker::RoadMark{
+                .s_offset = s_offset, .type = type, .width = width, .color = color};
           },
           "s_offset"_a = 0.0,
           "type"_a = roadmaker::RoadMarkType::None,
-          "width"_a = 0.12)
+          "width"_a = 0.12,
+          "color"_a = roadmaker::RoadMarkColor::Standard)
       .def_rw("s_offset", &roadmaker::RoadMark::s_offset)
       .def_rw("type", &roadmaker::RoadMark::type)
-      .def_rw("width", &roadmaker::RoadMark::width);
+      .def_rw("width", &roadmaker::RoadMark::width)
+      .def_rw("color", &roadmaker::RoadMark::color)
+      .def_rw("lines",
+              &roadmaker::RoadMark::lines,
+              "Explicit multi-line stripes (<type>/<line>); empty for a simple "
+              "single-stripe mark.");
 
   nb::class_<roadmaker::Waypoint>(m, "Waypoint")
       .def(nb::init<>())

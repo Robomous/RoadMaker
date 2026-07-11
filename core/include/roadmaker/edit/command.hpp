@@ -23,6 +23,13 @@ struct DirtySet {
   /// Junctions whose incoming roads changed — need surface regeneration.
   std::vector<JunctionId> junctions;
 
+  /// Roads whose object layer changed (an object/signal was added, moved, or
+  /// removed) — keyed by the owning road so the editor re-anchors props and
+  /// object markings via remesh_objects() WITHOUT re-tessellating the road
+  /// surface (docs/design/m3a/01 §2.4). First mesh consumer is the marking
+  /// pass in phase 2 (#69); phase 4 (#71) reuses it for instanced props.
+  std::vector<RoadId> objects;
+
   /// Roads or junctions were added or removed (drives tree-model resets).
   bool topology = false;
 };
