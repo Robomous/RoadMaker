@@ -62,6 +62,20 @@ campaign — its job is to catch corpus regressions and obvious parser crashes
 quickly. Extending the corpus is part of every parser change
 ([Testing](testing.md#what-to-test)).
 
+### `esmini-roundtrip`
+
+The simulator round-trip quality gate
+([roadmap](../roadmap/roadmap.md#cross-cutting-quality-gates), owned by M3a
+and permanent from there): every tracked `.xodr` — the samples today, every
+golden-scene export as they land — must **load headless in esmini without
+errors**. The job fetches a pinned esmini release binary (cached; MPL-2.0,
+used strictly as an external smoke tool — never linked, never redistributed)
+and runs `scripts/esmini_smoke.py`, which wraps each `.xodr` in a minimal
+OpenSCENARIO scenario and fails on any parse/load error. A second step runs
+the deliberately-broken fixture `tests/esmini/broken.xodr` with
+`--expect-fail`, guarding the gate itself: if esmini ever accepts it, the
+job fails. Bump the pin by editing `ESMINI_VERSION` in the job.
+
 ### `docs`
 
 Markdown link check (lychee) over `docs/**` and the root `.md` files —

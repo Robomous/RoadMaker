@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Deliberately broken fixture for the esmini-roundtrip CI guard
+     (issue #51): truncated mid-element so ANY conforming XML parser must
+     reject it. If esmini ever loads this "cleanly", the smoke gate itself
+     is broken — scripts/esmini_smoke.py --expect-fail turns that into a
+     CI failure. -->
+<OpenDRIVE>
+  <header revMajor="1" revMinor="8" name="broken" version="1.00">
+  </header>
+  <road name="truncated" length="100.0" id="1" junction="-1">
+    <planView>
+      <geometry s="0.0" x="0.0" y="0.0" hdg="0.0" length="100.0">
+        <line/>
