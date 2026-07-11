@@ -346,7 +346,7 @@ TEST(EditOperations, ForeignRoadEditGoldenCurvedRoad) {
 
 // --- elevation ------------------------------------------------------------------
 
-TEST(EditOperations, SetNodeElevationBuildsPiecewiseLinearProfile) {
+TEST(EditOperations, SetNodeElevationFitsCubicThroughNodes) {
   RoadNetwork network;
   const RoadId road = author_default(network, "1");
 
@@ -355,16 +355,34 @@ TEST(EditOperations, SetNodeElevationBuildsPiecewiseLinearProfile) {
 
   ASSERT_TRUE(raise->apply(network).has_value());
   const roadmaker::Road& value = *network.road(road);
-  ASSERT_EQ(value.elevation.size(), 2U); // two linear segments through 3 nodes
-  const double mid_s = value.plan_view.records().at(1).s;
-  EXPECT_NEAR(roadmaker::eval_profile(value.elevation, 0.0), 0.0, 1e-9);
-  EXPECT_NEAR(roadmaker::eval_profile(value.elevation, mid_s), 4.0, 1e-9);
-  EXPECT_NEAR(roadmaker::eval_profile(value.elevation, value.length), 0.0, 1e-9);
+  ASSERT_EQ(value.elevation.size(), 2U); // two cubic segments through 3 nodes
 
-  // Lowering the node back to zero drops the profile entirely.
+  // The fitted profile reproduces the node heights (0, 4, 0) exactly at the
+  // node stations, and its records ascend in s
+  // (asam.net:xodr:1.4.0:road.elevation.elem_asc_order).
+  const auto stations = roadmaker::edit::waypoint_stations(value);
+  ASSERT_TRUE(stations.has_value());
+  ASSERT_EQ(stations->size(), 3U);
+  const std::array<double, 3> expected{0.0, 4.0, 0.0};
+  for (std::size_t i = 0; i < stations->size(); ++i) {
+    EXPECT_NEAR(roadmaker::eval_profile(value.elevation, (*stations)[i]),
+                expected[i],
+                roadmaker::tol::kLength);
+  }
+  EXPECT_TRUE(std::ranges::is_sorted(
+      value.elevation,
+      [](const roadmaker::Poly3& a, const roadmaker::Poly3& b) { return a.s < b.s; }));
+
+  // Lowering the node back to zero drops the profile entirely (the OpenDRIVE
+  // default elevation is zero, so a flat road carries no <elevation>).
   auto lower = roadmaker::edit::set_node_elevation(network, road, 1, 0.0);
   ASSERT_TRUE(lower->apply(network).has_value());
   EXPECT_TRUE(network.road(road)->elevation.empty());
+
+  // A stale road id is refused without touching the network.
+  expect_command_rejected(network, roadmaker::edit::set_node_elevation(network, RoadId{}, 0, 1.0));
+  // An out-of-range waypoint index is refused too.
+  expect_command_rejected(network, roadmaker::edit::set_node_elevation(network, road, 99, 1.0));
 }
 
 // --- topology: create / delete / split roads --------------------------------------
@@ -506,6 +524,18 @@ JunctionClosureFixture make_junction_closure(RoadNetwork& network) {
           .lane_links = {{-1, -1}},
       });
   return fixture;
+}
+
+TEST(EditOperations, SetNodeElevationMarksTouchingJunctionDirty) {
+  RoadNetwork network;
+  const JunctionClosureFixture fixture = make_junction_closure(network);
+
+  // Editing the grade of a junction-incoming road must re-blend the junction
+  // surface (03 §4), so the touched junction rides along in the dirty set.
+  auto command = roadmaker::edit::set_node_elevation(network, fixture.incoming, 2, 3.0);
+  const roadmaker::edit::DirtySet dirty = command->dirty();
+  EXPECT_NE(std::ranges::find(dirty.roads, fixture.incoming), dirty.roads.end());
+  EXPECT_NE(std::ranges::find(dirty.junctions, fixture.junction), dirty.junctions.end());
 }
 
 TEST(EditOperations, DeleteIncomingRoadDeletesItsConnectingRoads) {

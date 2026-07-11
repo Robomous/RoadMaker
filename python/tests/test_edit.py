@@ -96,6 +96,45 @@ def test_waypoint_and_lane_edits(network):
     assert network.road(road).elevation == []
 
 
+def test_fit_elevation_profile_interpolates_nodes_and_ascends():
+    s = [0.0, 50.0, 100.0]
+    z = [0.0, 10.0, 0.0]
+    profile = rm.fit_elevation_profile(s, z)
+    assert len(profile) == 2
+
+    # Reproduces the node heights at the node stations and ascends in s.
+    for station, height in zip(s, z):
+        record = profile[0] if station < profile[1].s else profile[1]
+        assert record.eval(station) == pytest.approx(height, abs=1e-6)
+    assert [p.s for p in profile] == sorted(p.s for p in profile)
+
+    # A constant-grade ramp fits as straight cubics (c = d = 0).
+    ramp = rm.fit_elevation_profile([0.0, 50.0, 100.0], [0.0, 5.0, 10.0])
+    assert ramp[0].b == pytest.approx(0.1)
+    assert ramp[0].c == pytest.approx(0.0, abs=1e-6)
+    assert ramp[0].d == pytest.approx(0.0, abs=1e-6)
+
+    # Degenerate inputs return an empty profile.
+    assert rm.fit_elevation_profile([], []) == []
+    assert rm.fit_elevation_profile([0.0, 10.0], [1.0]) == []
+
+
+def test_set_node_elevation_writes_the_cubic_fit(network):
+    stack = rm.edit.EditStack()
+    road = network.find_road("1")
+
+    stack.push(network, rm.edit.set_node_elevation(network, road, 1, 4.0))
+    elevation = network.road(road).elevation
+    stations = rm.edit.waypoint_stations(network.road(road))
+
+    # The written <elevation> records match the pure fit through (s, z).
+    heights = [0.0, 4.0, 0.0]
+    expected = rm.fit_elevation_profile(list(stations), heights)
+    assert [p.s for p in elevation] == pytest.approx([p.s for p in expected])
+    assert [p.a for p in elevation] == pytest.approx([p.a for p in expected])
+    assert [p.d for p in elevation] == pytest.approx([p.d for p in expected])
+
+
 def test_split_and_junction_commands(network):
     stack = rm.edit.EditStack()
     road = network.find_road("1")

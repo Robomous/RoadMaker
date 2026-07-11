@@ -7,6 +7,7 @@
 #include "roadmaker/edit/operations.hpp"
 #include "roadmaker/edit/snap.hpp"
 #include "roadmaker/error.hpp"
+#include "roadmaker/geometry/profile_fit.hpp"
 #include "roadmaker/io/gltf_exporter.hpp"
 #include "roadmaker/mesh/mesh_builder.hpp"
 #include "roadmaker/road/authoring.hpp"
@@ -518,6 +519,19 @@ NB_MODULE(_roadmaker, m) {
       "Fits a G1 clothoid path through (x, y) waypoints and inserts a road. "
       "A start/end heading [rad] locks the fit there (tangent-snap "
       "chaining). Returns its RoadId. Raises ValueError on invalid input.");
+
+  m.def(
+      "fit_elevation_profile",
+      [](const std::vector<double>& s, const std::vector<double>& z) {
+        return roadmaker::fit_elevation_profile(s, z);
+      },
+      "s"_a,
+      "z"_a,
+      "Fits a smooth C1 cubic elevation profile z(s) through the (s, z) node "
+      "pairs (cubic Hermite, finite-difference tangents; not overshoot-limited). "
+      "Returns the list of Poly3 records, ascending in s, that "
+      "edit.set_node_elevation writes. s must be strictly ascending and the same "
+      "length as z; degenerate inputs return an empty list.");
 
   // --- editing (undo/redo parity with the editor) ------------------------------
 

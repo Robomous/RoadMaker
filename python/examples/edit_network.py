@@ -46,8 +46,14 @@ def main() -> int:
     stations = rm.edit.waypoint_stations(network.road(road))
     print(f"editing nodes: {nodes} at s={[f'{s:.1f}' for s in stations]}")
 
-    # Raise the middle waypoint 3 m — the elevation profile becomes
-    # piecewise-linear through the waypoint heights.
+    # Raise the middle waypoint 3 m — the elevation profile is re-fitted as a
+    # smooth C1 cubic through the node heights. The same pure fit is exposed
+    # for inspection: fit_elevation_profile(stations, heights) returns the
+    # <elevation> records (ascending in s) the command writes.
+    heights = [0.0, 3.0, 0.0]
+    profile = rm.fit_elevation_profile(list(stations), heights)
+    crest = profile[1]
+    print(f"elevation records: {len(profile)}; crest z={crest.eval(crest.s):.2f} m")
     stack.push(network, rm.edit.set_node_elevation(network, road, 1, 3.0))
 
     # Widen the outermost right lane and paint its outer boundary solid at

@@ -24,6 +24,7 @@
 #include "tools/create_road_tool.hpp"
 #include "tools/delete_tool.hpp"
 #include "tools/edit_nodes_tool.hpp"
+#include "tools/elevation_tool.hpp"
 #include "tools/lane_profile_tool.hpp"
 #include "tools/select_tool.hpp"
 
@@ -119,6 +120,17 @@ MainWindow::MainWindow(QWidget* parent)
   connect(actions_->tool_lane_profile, &QAction::triggered, this, [this] {
     tool_manager_.set_active(ToolId::LaneProfile);
   });
+  auto elevation_tool = std::make_unique<ElevationTool>(document_, selection_);
+  elevation_tool_ = elevation_tool.get();
+  connect(elevation_tool.get(), &Tool::status_message, this, [this](const QString& text) {
+    statusBar()->showMessage(text, 5000);
+  });
+  tool_manager_.register_tool(ToolId::Elevation, std::move(elevation_tool));
+  connect(actions_->tool_elevation, &QAction::triggered, this, [this] {
+    tool_manager_.set_active(ToolId::Elevation);
+  });
+  // The Properties panel edits the node the Elevation tool has made active.
+  properties_panel_->set_elevation_tool(elevation_tool_);
   auto delete_tool = std::make_unique<DeleteTool>(document_);
   connect(delete_tool.get(), &Tool::status_message, this, [this](const QString& text) {
     statusBar()->showMessage(text, 5000);
@@ -152,7 +164,8 @@ void MainWindow::build_docks() {
 
   properties_dock_ = new QDockWidget(tr("Properties"), this);
   properties_dock_->setObjectName(QStringLiteral("dock.properties"));
-  properties_dock_->setWidget(new PropertiesPanel(document_, selection_, properties_dock_));
+  properties_panel_ = new PropertiesPanel(document_, selection_, properties_dock_);
+  properties_dock_->setWidget(properties_panel_);
   properties_dock_->widget()->setMinimumWidth(300);
   addDockWidget(Qt::RightDockWidgetArea, properties_dock_);
 
@@ -227,6 +240,7 @@ void MainWindow::build_toolbar() {
   toolbar->addWidget(template_button);
   toolbar->addAction(actions_->tool_edit_nodes);
   toolbar->addAction(actions_->tool_lane_profile);
+  toolbar->addAction(actions_->tool_elevation);
   toolbar->addAction(actions_->tool_delete);
   toolbar->addSeparator();
   toolbar->addAction(actions_->reset_camera);

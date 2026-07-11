@@ -59,6 +59,13 @@ Actions::Actions(QUndoStack& undo_stack, QObject* parent) : QObject(parent) {
                                    "road mark in the Properties panel (L)"));
   tool_group->addAction(tool_lane_profile);
 
+  tool_elevation = new QAction(tr("&Elevation"), this);
+  tool_elevation->setCheckable(true);
+  tool_elevation->setShortcut(Qt::Key_E);
+  tool_elevation->setToolTip(tr("Elevation — click a road node, then set its height in the "
+                                "Properties panel; the grade re-fits smoothly (E)"));
+  tool_group->addAction(tool_elevation);
+
   tool_delete = new QAction(tr("&Delete"), this);
   tool_delete->setCheckable(true);
   tool_delete->setShortcut(Qt::Key_X);
@@ -109,6 +116,7 @@ void Actions::apply_icons() {
   tool_create_road->setIcon(Icons::get(QStringLiteral("clothoid-road")));
   tool_edit_nodes->setIcon(Icons::get(QStringLiteral("waypoints")));
   tool_lane_profile->setIcon(Icons::get(QStringLiteral("lane-section")));
+  tool_elevation->setIcon(Icons::get(QStringLiteral("mountain")));
   tool_delete->setIcon(Icons::get(QStringLiteral("trash-2")));
   template_rural->setIcon(Icons::get(QStringLiteral("template-rural")));
   template_urban->setIcon(Icons::get(QStringLiteral("template-urban")));

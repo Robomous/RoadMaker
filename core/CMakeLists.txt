@@ -10,6 +10,7 @@ endif()
 add_library(roadmaker_core ${_rm_core_type}
   src/version.cpp
   src/geometry/reference_line.cpp
+  src/geometry/profile_fit.cpp
   src/road/network.cpp
   src/road/authoring.cpp
   src/edit/edit_stack.cpp
