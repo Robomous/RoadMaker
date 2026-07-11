@@ -48,6 +48,13 @@ public:
   /// Dirty means the undo stack has moved since the last load/save/new.
   [[nodiscard]] bool is_dirty() const { return !undo_stack_.isClean(); }
 
+  /// Re-points a just-loaded recovery copy at the document it recovers
+  /// (M3a #53): file_path() becomes the crashed session's original path
+  /// (empty when that document was never saved) and the document reads
+  /// dirty until the next explicit Save — recovered work must never look
+  /// already-saved.
+  void mark_recovered(const QString& original_path);
+
   /// Exports the current tessellation as a binary glTF (.glb).
   [[nodiscard]] Expected<void> export_glb(const std::filesystem::path& path) const;
 

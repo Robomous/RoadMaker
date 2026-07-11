@@ -95,6 +95,13 @@ Expected<void> Document::save(const std::filesystem::path& path) {
   return {};
 }
 
+void Document::mark_recovered(const QString& original_path) {
+  file_path_ = original_path;
+  // resetClean (not a moved index) — the loaded recovery stack IS empty,
+  // but the content differs from whatever sits at original_path.
+  undo_stack_.resetClean();
+}
+
 Expected<void> Document::export_glb(const std::filesystem::path& path) const {
   return roadmaker::export_glb(mesh_, path);
 }
