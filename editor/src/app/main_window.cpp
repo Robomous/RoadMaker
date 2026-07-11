@@ -50,6 +50,9 @@ MainWindow::MainWindow(QWidget* parent)
   connect(actions_->save, &QAction::triggered, this, [this] { save_file(); });
   connect(actions_->save_as, &QAction::triggered, this, [this] { save_file_as(); });
   connect(actions_->export_glb, &QAction::triggered, this, &MainWindow::export_file_dialog);
+#ifdef RM_HAVE_USD
+  connect(actions_->export_usd, &QAction::triggered, this, &MainWindow::export_usd_dialog);
+#endif
   connect(actions_->quit, &QAction::triggered, this, &QMainWindow::close);
   connect(actions_->reset_camera, &QAction::triggered, viewport_, &ViewportWidget::reset_camera);
   connect(
@@ -58,6 +61,9 @@ MainWindow::MainWindow(QWidget* parent)
   connect(viewport_, &ViewportWidget::hover_changed, this, &MainWindow::on_hover);
   connect(&document_, &Document::loaded, this, [this] {
     actions_->export_glb->setEnabled(true);
+#ifdef RM_HAVE_USD
+    actions_->export_usd->setEnabled(true);
+#endif
     update_window_title();
     update_status_entities();
     diagnostics_dock_->setVisible(!document_.diagnostics().empty() ||
@@ -197,6 +203,9 @@ void MainWindow::build_menus() {
   file_menu->addAction(actions_->save_as);
   file_menu->addSeparator();
   file_menu->addAction(actions_->export_glb);
+#ifdef RM_HAVE_USD
+  file_menu->addAction(actions_->export_usd);
+#endif
   file_menu->addSeparator();
   file_menu->addAction(actions_->quit);
 
@@ -366,6 +375,27 @@ void MainWindow::export_file_dialog() {
     statusBar()->showMessage(tr("Exported %1").arg(path), 5000);
   }
 }
+
+#ifdef RM_HAVE_USD
+void MainWindow::export_usd_dialog() {
+  const QString suggested = document_.has_file()
+                                ? QFileInfo(document_.file_path()).completeBaseName() + ".usda"
+                                : QStringLiteral("network.usda");
+  // USDA (ASCII) only — .usdc/.usdz crate output is not supported in M2
+  // (docs/design/m2/04_usd_export.md).
+  const QString path = QFileDialog::getSaveFileName(
+      this, tr("Export USD (ASCII .usda only)"), suggested, tr("OpenUSD ASCII (*.usda)"));
+  if (path.isEmpty()) {
+    return;
+  }
+  const auto result = document_.export_usd(std::filesystem::path(path.toStdString()));
+  if (!result) {
+    QMessageBox::warning(this, tr("Export failed"), QString::fromStdString(result.error().message));
+  } else {
+    statusBar()->showMessage(tr("Exported %1").arg(path), 5000);
+  }
+}
+#endif
 
 void MainWindow::show_about_dialog() {
   QMessageBox::about(

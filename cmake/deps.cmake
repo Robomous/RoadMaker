@@ -151,6 +151,36 @@ FetchContent_Declare(fastfloat
 )
 
 # ---------------------------------------------------------------------------
+# tinyusdz v0.9.1 (Apache-2.0) — OpenUSD ASCII (.usda) export backend, gated on
+# RM_BUILD_USD. Vendored permissive-licensed code: mapbox/eternal (ISC),
+# linalg.h (Unlicense), jsteemann/atoi (Apache-2.0) — see THIRD_PARTY_LICENSES.
+# Unlike the header-only deps above we DO use its own CMake (a hand-rolled
+# source list would have to track 60+ TUs + vendored externals + the exact
+# define set across three toolchains); we just trim it to the USDA writer and
+# force C++17 to match the configuration validated in the spike.
+if(RM_BUILD_USD)
+  FetchContent_Declare(tinyusdz
+    URL https://github.com/lighttransport/tinyusdz/archive/refs/tags/v0.9.1.tar.gz
+    URL_HASH SHA256=7e3d6dd8f54bfa8c7afe830d4505f7740bc26d5055f5f2a603ee9585872933e2
+  )
+  # Trim upstream to the static core: no examples/tests/benchmarks, no image or
+  # audio codecs, no MaterialX/FBX/Python/C-API. NO_WERROR is required
+  # (upstream is not warning-clean on our toolchains).
+  set(TINYUSDZ_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+  set(TINYUSDZ_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+  set(TINYUSDZ_BUILD_BENCHMARKS OFF CACHE BOOL "" FORCE)
+  set(TINYUSDZ_WITH_USDMTLX OFF CACHE BOOL "" FORCE)
+  set(TINYUSDZ_WITH_PYTHON OFF CACHE BOOL "" FORCE)
+  set(TINYUSDZ_WITH_C_API OFF CACHE BOOL "" FORCE)
+  set(TINYUSDZ_WITH_EXR OFF CACHE BOOL "" FORCE)
+  set(TINYUSDZ_WITH_TIFF OFF CACHE BOOL "" FORCE)
+  set(TINYUSDZ_WITH_USDFBX OFF CACHE BOOL "" FORCE)
+  set(TINYUSDZ_WITH_AUDIO OFF CACHE BOOL "" FORCE)
+  set(TINYUSDZ_USE_CCACHE OFF CACHE BOOL "" FORCE)
+  set(TINYUSDZ_NO_WERROR ON CACHE BOOL "" FORCE)
+endif()
+
+# ---------------------------------------------------------------------------
 # NOTE: the editor's UI toolkit (Qt 6, LGPLv3, dynamic linking only) is NOT a
 # FetchContent dependency — it is provisioned by scripts/setup_qt.py and
 # discovered via cmake/QtVersion.cmake. See THIRD_PARTY_LICENSES.md.
@@ -173,6 +203,22 @@ FetchContent_MakeAvailable(
   clothoids utilslite quartic gencon tlexpected fastfloat)
 if(RM_BUILD_TESTS)
   FetchContent_MakeAvailable(googletest)
+endif()
+if(RM_BUILD_USD)
+  FetchContent_MakeAvailable(tinyusdz)
+  # Upstream builds the static lib as `tinyusdz_static` (alias
+  # tinyusdz::tinyusdz_static) but attaches no INTERFACE include dirs — add our
+  # own namespaced alias and a SYSTEM include path (src/) so our exporter can
+  # #include "usda-writer.hh" without inheriting upstream header warnings under
+  # -Werror. Pin it to C++17: as a subdirectory it does not force its own
+  # standard, and it is not C++20-clean (same treatment as Clothoids).
+  add_library(tinyusdz::tinyusdz ALIAS tinyusdz_static)
+  target_include_directories(tinyusdz_static SYSTEM INTERFACE
+    ${tinyusdz_SOURCE_DIR}/src)
+  set_target_properties(tinyusdz_static PROPERTIES
+    CXX_STANDARD 17
+    CXX_STANDARD_REQUIRED ON
+    CXX_EXTENSIONS OFF)
 endif()
 
 # In-tree upstream targets lack the namespaced aliases their installed

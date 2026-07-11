@@ -18,6 +18,10 @@ BSL-1.0, Unlicense/CC0. License files verified in each upstream archive.
 | Clipper2 | 2.0.1 | BSL-1.0 | https://github.com/AngusJohnson/Clipper2 | 2D polygon offsets/unions for plan-view lane logic |
 | pugixml | 1.16 | MIT | https://github.com/zeux/pugixml | XML parsing/writing for OpenDRIVE |
 | tinygltf | 3.0.0 | MIT | https://github.com/syoyo/tinygltf | glTF 2.0 export (bundles nlohmann/json, MIT; stb, MIT/public-domain) |
+| tinyusdz | v0.9.1 | Apache-2.0 | https://github.com/lighttransport/tinyusdz | OpenUSD ASCII (.usda) export backend (editor/optional builds only, gated on `RM_BUILD_USD`; `.usdc`/`.usdz` crate output unsupported — documented M2 limitation) |
+| mapbox/eternal | vendored in tinyusdz v0.9.1 | ISC | https://github.com/mapbox/eternal | Compile-time hash map used internally by tinyusdz. ISC is not in the enumerated allow-list but is more permissive than MIT — maintainer-approved 2026-07-10 |
+| linalg.h | vendored in tinyusdz v0.9.1 | Unlicense | https://github.com/sgorsten/linalg | Small linear-algebra header used internally by tinyusdz — maintainer-approved 2026-07-10 |
+| jsteemann/atoi | vendored in tinyusdz v0.9.1 | Apache-2.0 | https://github.com/jsteemann/atoi | Fast integer parsing used internally by tinyusdz (upstream Apache-2.0; no license text shipped in-tree) |
 | tl::expected | 1.3.1 | CC0-1.0 | https://github.com/TartanLlama/expected | rm::Expected error returns (std::expected is C++23; kernel is C++20) |
 | fast_float | 8.2.10 | Apache-2.0 OR MIT OR BSL-1.0 | https://github.com/fastfloat/fast_float | Locale-independent number parsing in xodr IO |
 | GoogleTest | 1.17.0 | BSD-3-Clause | https://github.com/google/googletest | C++ unit tests (test builds only) |

@@ -50,6 +50,17 @@ Everything lives under [`docs/`](docs/README.md): getting started,
 [domain conventions](docs/domain/opendrive.md), design docs, and decision
 records.
 
+## Export formats
+
+RoadMaker tessellates a network into simulation-ready 3D meshes and writes:
+
+- **glTF 2.0** (`.glb`) — binary, self-contained, always available.
+- **OpenUSD** (`.usda`) — ASCII only, in editor/optional builds configured with
+  `-DRM_BUILD_USD=ON` (prebuilt release packages include it; Python wheels ship
+  it off). `.usdc`/`.usdz` **crate** output is intentionally unsupported in M2 —
+  every USD consumer (usdview, Omniverse/Isaac Sim, Blender) reads `.usda`. See
+  [docs/design/m2/04_usd_export.md](docs/design/m2/04_usd_export.md).
+
 ## Roadmap
 
 Summary — the source of truth is

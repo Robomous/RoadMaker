@@ -2,6 +2,7 @@
 
 #include "roadmaker/edit/operations.hpp"
 #include "roadmaker/io/gltf_exporter.hpp"
+#include "roadmaker/io/usd_exporter.hpp"
 #include "roadmaker/mesh/mesh_builder.hpp"
 #include "roadmaker/xodr/reader.hpp"
 #include "roadmaker/xodr/writer.hpp"
@@ -97,6 +98,12 @@ Expected<void> Document::save(const std::filesystem::path& path) {
 Expected<void> Document::export_glb(const std::filesystem::path& path) const {
   return roadmaker::export_glb(mesh_, path);
 }
+
+#ifdef RM_HAVE_USD
+Expected<void> Document::export_usd(const std::filesystem::path& path) const {
+  return roadmaker::export_usda(mesh_, path);
+}
+#endif
 
 Expected<void> Document::push_command(std::unique_ptr<edit::Command> command) {
   if (command == nullptr) {

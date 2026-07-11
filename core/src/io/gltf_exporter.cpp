@@ -4,11 +4,12 @@
 
 #include "roadmaker/io/gltf_exporter.hpp"
 
+#include "mesh_export_common.hpp"
+
 // tinygltf implementation lives in this TU only (its NO_STB/NO_EXTERNAL
 // config macros come from the rm_tinygltf CMake target so every consumer
 // agrees). RoadMaker writes fully self-contained binary glTF.
 #define TINYGLTF_IMPLEMENTATION
-#include <fmt/format.h>
 #include <tiny_gltf.h>
 
 #include <algorithm>
@@ -24,38 +25,8 @@ namespace roadmaker {
 
 namespace {
 
-/// Base colors per material class (linear RGBA).
-std::array<double, 4> material_color(LaneType type) {
-  switch (type) {
-  case LaneType::Driving:
-    return {0.25, 0.25, 0.27, 1.0};
-  case LaneType::Stop:
-    return {0.45, 0.22, 0.20, 1.0};
-  case LaneType::Shoulder:
-    return {0.42, 0.42, 0.39, 1.0};
-  case LaneType::Biking:
-    return {0.55, 0.28, 0.24, 1.0};
-  case LaneType::Sidewalk:
-    return {0.65, 0.65, 0.63, 1.0};
-  case LaneType::Border:
-    return {0.50, 0.50, 0.50, 1.0};
-  case LaneType::Restricted:
-    return {0.50, 0.40, 0.30, 1.0};
-  case LaneType::Parking:
-    return {0.30, 0.32, 0.48, 1.0};
-  case LaneType::Median:
-    return {0.30, 0.45, 0.30, 1.0};
-  case LaneType::Curb:
-    return {0.55, 0.55, 0.50, 1.0};
-  case LaneType::None:
-  case LaneType::Other:
-    return {0.35, 0.35, 0.35, 1.0};
-  }
-  return {0.35, 0.35, 0.35, 1.0};
-}
-
-constexpr std::array<double, 4> kMarkingColor{0.92, 0.92, 0.87, 1.0};
-constexpr std::array<double, 4> kFloorColor{0.18, 0.18, 0.19, 1.0};
+using io_common::kFloorColor;
+using io_common::kMarkingColor;
 
 class GlbWriter {
 public:
@@ -88,14 +59,13 @@ public:
   }
 
 private:
-  /// Kernel Z-up → glTF Y-up, doubles → floats.
+  /// Kernel Z-up → glTF Y-up, doubles → floats (shared boundary rotation).
   static std::vector<float> to_gltf_frame(const std::vector<double>& xyz) {
     std::vector<float> out;
     out.reserve(xyz.size());
     for (std::size_t i = 0; i + 2 < xyz.size(); i += 3) {
-      out.push_back(static_cast<float>(xyz[i]));      // x
-      out.push_back(static_cast<float>(xyz[i + 2]));  // z -> up
-      out.push_back(static_cast<float>(-xyz[i + 1])); // -y -> forward
+      const auto v = io_common::to_export_frame(xyz[i], xyz[i + 1], xyz[i + 2]);
+      out.insert(out.end(), v.begin(), v.end());
     }
     return out;
   }
@@ -165,22 +135,25 @@ private:
     if (found != lane_materials_.end()) {
       return found->second;
     }
-    const auto color = material_color(type);
-    const int index = add_material(fmt::format("lane_{}", static_cast<int>(type)), color, 0.95);
+    const auto color = io_common::lane_material_color(type);
+    const int index =
+        add_material(io_common::lane_material_name(type), color, io_common::kLaneRoughness);
     lane_materials_.emplace(type, index);
     return index;
   }
 
   int marking_material() {
     if (marking_material_ < 0) {
-      marking_material_ = add_material("lane_marking", kMarkingColor, 0.6);
+      marking_material_ = add_material(
+          io_common::kMarkingMaterialName, kMarkingColor, io_common::kMarkingRoughness);
     }
     return marking_material_;
   }
 
   int floor_material() {
     if (floor_material_ < 0) {
-      floor_material_ = add_material("junction_floor", kFloorColor, 0.95);
+      floor_material_ =
+          add_material(io_common::kFloorMaterialName, kFloorColor, io_common::kFloorRoughness);
     }
     return floor_material_;
   }

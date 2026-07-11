@@ -27,6 +27,9 @@ public:
   QAction* save = nullptr;
   QAction* save_as = nullptr;
   QAction* export_glb = nullptr;
+  /// Only constructed when the kernel is built with RM_BUILD_USD=ON; stays
+  /// nullptr otherwise so MainWindow can skip wiring it.
+  QAction* export_usd = nullptr;
   QAction* quit = nullptr;
 
   QAction* undo = nullptr;
