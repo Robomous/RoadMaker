@@ -4,18 +4,22 @@
 
 #include <QApplication>
 #include <QCloseEvent>
+#include <QDateTime>
 #include <QDragEnterEvent>
 #include <QDropEvent>
 #include <QFileDialog>
 #include <QFileInfo>
+#include <QLocale>
 #include <QMenu>
 #include <QMenuBar>
 #include <QMessageBox>
 #include <QMimeData>
 #include <QStatusBar>
+#include <QTimer>
 #include <QToolBar>
 #include <QToolButton>
 #include <QUrl>
+#include <QUuid>
 
 #include "app/icons.hpp"
 #include "panels/diagnostics_panel.hpp"
@@ -32,8 +36,11 @@
 namespace roadmaker::editor {
 
 MainWindow::MainWindow(QWidget* parent)
-    : QMainWindow(parent), selection_(document_), scene_tree_model_(document_),
-      diagnostics_model_(document_), actions_(new Actions(*document_.undo_stack(), this)),
+    : QMainWindow(parent), autosave_(document_,
+                                     AutosaveManager::default_recovery_dir(),
+                                     QUuid::createUuid().toString(QUuid::WithoutBraces)),
+      selection_(document_), scene_tree_model_(document_), diagnostics_model_(document_),
+      actions_(new Actions(*document_.undo_stack(), this)),
       viewport_(new ViewportWidget(document_, selection_, tool_manager_, this)),
       status_hover_(new QLabel(this)), status_entities_(new QLabel(this)) {
   setAcceptDrops(true);
@@ -75,6 +82,17 @@ MainWindow::MainWindow(QWidget* parent)
     setWindowModified(!clean);
   });
   connect(&document_, &Document::saved, this, &MainWindow::update_window_title);
+
+  // Autosave tick — the debounce and the recover-vs-clean decision live in
+  // AutosaveManager (fake-clock testable, §3); this timer is the thin
+  // widget-side wrapper. Ticking faster than kIntervalMs keeps the actual
+  // debounce inside maybe_autosave().
+  auto* autosave_timer = new QTimer(this);
+  autosave_timer->setInterval(5'000);
+  connect(autosave_timer, &QTimer::timeout, &autosave_, &AutosaveManager::maybe_autosave);
+  autosave_timer->start();
+  // After the event loop is up: offer to recover a crashed session's work.
+  QTimer::singleShot(0, this, &MainWindow::check_recovery);
 
   // Editing tools (M2). Select/Move is the default; guidance lands in the
   // status bar via the tool's status_message.
@@ -397,6 +415,55 @@ void MainWindow::export_usd_dialog() {
 }
 #endif
 
+void MainWindow::check_recovery() {
+  const std::vector<RecoverySet> sets = AutosaveManager::pending_recoveries(
+      AutosaveManager::default_recovery_dir(), autosave_.session());
+  const RecoverySet* candidate = nullptr;
+  for (const RecoverySet& set : sets) {
+    if (!AutosaveManager::should_recover(set)) {
+      // Stale clean leftovers — nothing to recover, sweep them.
+      AutosaveManager::discard(set);
+    } else if (candidate == nullptr) {
+      // Offer only the newest set this startup; older crashed sessions stay
+      // on disk and are offered on the next start.
+      candidate = &set;
+    }
+  }
+  if (candidate == nullptr) {
+    return;
+  }
+  const QString when = QLocale().toString(QDateTime::fromMSecsSinceEpoch(candidate->written_ms),
+                                          QLocale::ShortFormat);
+  const QString name = candidate->original_path.isEmpty()
+                           ? tr("an unsaved document")
+                           : QFileInfo(candidate->original_path).fileName();
+  const auto choice = QMessageBox::question(this,
+                                            tr("Recover unsaved work"),
+                                            tr("RoadMaker did not shut down cleanly.\n"
+                                               "Recover unsaved work on %1 from %2?")
+                                                .arg(name, when),
+                                            QMessageBox::Yes | QMessageBox::No,
+                                            QMessageBox::Yes);
+  if (choice != QMessageBox::Yes) {
+    AutosaveManager::discard(*candidate);
+    return;
+  }
+  const auto result = document_.load(candidate->xodr);
+  if (!result) {
+    // Keep the set on disk — the user can retry on the next start.
+    QMessageBox::warning(this,
+                         tr("Recovery failed"),
+                         tr("%1\n%2").arg(QString::fromStdString(result.error().message),
+                                          QString::fromStdString(result.error().context)));
+    return;
+  }
+  document_.mark_recovered(candidate->original_path);
+  AutosaveManager::discard(*candidate);
+  // Re-protect the recovered (dirty) document under this session right away.
+  (void)autosave_.autosave_now();
+  update_window_title();
+}
+
 void MainWindow::show_about_dialog() {
   QMessageBox::about(
       this,
@@ -469,6 +536,9 @@ void MainWindow::closeEvent(QCloseEvent* event) {
     event->ignore();
     return;
   }
+  // Explicit close: whatever the user decided in confirm_discard, the
+  // recovery set is moot (§3 cleanup rule).
+  autosave_.clear_recovery();
   settings_.save_window(*this);
   QMainWindow::closeEvent(event);
 }

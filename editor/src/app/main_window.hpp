@@ -11,6 +11,7 @@
 
 #include "app/actions.hpp"
 #include "app/settings.hpp"
+#include "document/autosave.hpp"
 #include "document/diagnostics_model.hpp"
 #include "document/document.hpp"
 #include "document/scene_tree_model.hpp"
@@ -55,12 +56,16 @@ private:
   void export_usd_dialog();
 #endif
   void show_about_dialog();
+  /// Startup scan for another session's crashed recovery set; prompts
+  /// Recover (load + re-point at the original path, dirty) or Discard.
+  void check_recovery();
   void update_recent_files_menu();
   void update_window_title();
   void update_status_entities();
   void on_hover(const HoverInfo& info);
 
   Document document_;
+  AutosaveManager autosave_; // after document_: connects to its signals
   SelectionModel selection_;
   SceneTreeModel scene_tree_model_;
   DiagnosticsModel diagnostics_model_;

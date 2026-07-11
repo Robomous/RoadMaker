@@ -36,6 +36,7 @@ add_library(roadmaker_editor_lib STATIC
   src/app/icons.cpp
   src/app/main_window.cpp
   src/app/settings.cpp
+  src/document/autosave.cpp
   src/document/diagnostics_model.cpp
   src/document/document.cpp
   src/document/editor_command.cpp
