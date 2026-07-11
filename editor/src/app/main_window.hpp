@@ -67,6 +67,10 @@ private:
   Settings settings_;
   /// Owned by tool_manager_; kept for template-dropdown profile changes.
   class CreateRoadTool* create_road_tool_ = nullptr;
+  /// Owned by tool_manager_; the Properties panel reads its active node.
+  class ElevationTool* elevation_tool_ = nullptr;
+  /// Owned by properties_dock_; kept to attach the Elevation tool.
+  class PropertiesPanel* properties_panel_ = nullptr;
 
   ViewportWidget* viewport_;
   QDockWidget* scene_dock_;

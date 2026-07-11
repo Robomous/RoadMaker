@@ -1,6 +1,8 @@
 #include "panels/properties_panel.hpp"
 
 #include "roadmaker/edit/operations.hpp"
+#include "roadmaker/geometry/poly3.hpp"
+#include "roadmaker/road/network.hpp"
 
 #include <QHBoxLayout>
 #include <QSignalBlocker>
@@ -8,6 +10,8 @@
 #include <array>
 #include <cmath>
 #include <utility>
+
+#include "tools/elevation_tool.hpp"
 
 namespace roadmaker::editor {
 
@@ -117,7 +121,9 @@ PropertiesPanel::PropertiesPanel(Document& document,
       type_combo_(new QComboBox), width_spin_(new QDoubleSpinBox), mark_combo_(new QComboBox),
       mark_width_spin_(new QDoubleSpinBox), add_left_(new QPushButton(tr("Add left"))),
       add_right_(new QPushButton(tr("Add right"))),
-      remove_lane_(new QPushButton(tr("Remove lane"))) {
+      remove_lane_(new QPushButton(tr("Remove lane"))),
+      elevation_group_(new QGroupBox(tr("Elevation"), this)),
+      elevation_node_label_(new QLabel(this)), elevation_spin_(new QDoubleSpinBox) {
   placeholder_->setWordWrap(true);
   placeholder_->setEnabled(false);
 
@@ -163,11 +169,25 @@ PropertiesPanel::PropertiesPanel(Document& document,
   group_layout->addLayout(lane_form);
   group_layout->addLayout(buttons);
 
+  // Elevation: one persistent spin box that edits whichever node the
+  // Elevation tool has made active (issue #16, spec 02 §5). The label names
+  // the node; the spin box drives edit::set_node_elevation.
+  elevation_spin_->setObjectName(QStringLiteral("node_elevation_spin"));
+  elevation_spin_->setRange(-1000.0, 1000.0);
+  elevation_spin_->setSingleStep(0.5);
+  elevation_spin_->setDecimals(3);
+  elevation_spin_->setSuffix(tr(" m"));
+  elevation_node_label_->setWordWrap(true);
+  auto* elevation_form = new QFormLayout(elevation_group_);
+  elevation_form->addRow(elevation_node_label_);
+  elevation_form->addRow(tr("Height"), elevation_spin_);
+
   auto* layout = new QVBoxLayout(this);
   layout->addWidget(placeholder_);
   layout->addWidget(name_row_);
   layout->addLayout(form_);
   layout->addWidget(lane_group_);
+  layout->addWidget(elevation_group_);
   layout->addStretch();
 
   // One command per discrete action (spec 01 §7). Combos commit on
@@ -235,6 +255,32 @@ PropertiesPanel::PropertiesPanel(Document& document,
       push(edit::remove_lane(document_.network(), selection_.primary().lane));
     }
   });
+  // Commit the active node's height on focus-out, skipping the push when the
+  // value is unchanged — the same re-entrancy guard the lane editors use, so
+  // refresh() re-syncing the spin box after undo never echoes a command back.
+  connect(elevation_spin_, &QDoubleSpinBox::editingFinished, this, [this] {
+    if (elevation_tool_ == nullptr) {
+      return;
+    }
+    const auto node = elevation_tool_->active_node();
+    if (!node.has_value()) {
+      return;
+    }
+    const Road* road = document_.network().road(node->first);
+    if (road == nullptr) {
+      return;
+    }
+    const auto stations = edit::waypoint_stations(*road);
+    if (!stations.has_value() || node->second >= stations->size()) {
+      return;
+    }
+    const double current = eval_profile(road->elevation, (*stations)[node->second]);
+    if (std::abs(elevation_spin_->value() - current) < 1e-9) {
+      return;
+    }
+    push(edit::set_node_elevation(
+        document_.network(), node->first, node->second, elevation_spin_->value()));
+  });
 
   connect(&selection_, &SelectionModel::selection_changed, this, &PropertiesPanel::refresh);
   connect(&document_, &Document::loaded, this, &PropertiesPanel::refresh);
@@ -254,6 +300,7 @@ void PropertiesPanel::refresh() {
     placeholder_->show();
     name_row_->hide();
     lane_group_->hide();
+    elevation_group_->hide();
     return;
   }
   placeholder_->hide();
@@ -282,6 +329,45 @@ void PropertiesPanel::refresh() {
 
   lane_group_->show();
   refresh_lane_section();
+  refresh_elevation();
+}
+
+void PropertiesPanel::set_elevation_tool(ElevationTool* tool) {
+  elevation_tool_ = tool;
+  if (elevation_tool_ != nullptr) {
+    connect(elevation_tool_,
+            &ElevationTool::active_node_changed,
+            this,
+            &PropertiesPanel::refresh_elevation);
+  }
+  refresh_elevation();
+}
+
+void PropertiesPanel::refresh_elevation() {
+  // The section only appears once an Elevation tool is wired up; without an
+  // active node it prompts the user to pick one in the viewport.
+  if (elevation_tool_ == nullptr ||
+      document_.network().road(selection_.primary().road) == nullptr) {
+    elevation_group_->hide();
+    return;
+  }
+  elevation_group_->show();
+
+  const auto node = elevation_tool_->active_node();
+  const Road* road = node.has_value() ? document_.network().road(node->first) : nullptr;
+  if (road != nullptr) {
+    if (const auto stations = edit::waypoint_stations(*road);
+        stations.has_value() && node->second < stations->size()) {
+      elevation_spin_->setEnabled(true);
+      elevation_node_label_->setText(
+          tr("Node %1 (s = %2 m)").arg(node->second).arg((*stations)[node->second], 0, 'f', 2));
+      const QSignalBlocker blocker(elevation_spin_);
+      elevation_spin_->setValue(eval_profile(road->elevation, (*stations)[node->second]));
+      return;
+    }
+  }
+  elevation_spin_->setEnabled(false);
+  elevation_node_label_->setText(tr("Click a road node to edit its elevation."));
 }
 
 void PropertiesPanel::refresh_lane_section() {

@@ -22,11 +22,18 @@
 
 namespace roadmaker::editor {
 
+class ElevationTool;
+
 class PropertiesPanel : public QWidget {
   Q_OBJECT
 
 public:
   PropertiesPanel(Document& document, const SelectionModel& selection, QWidget* parent = nullptr);
+
+  /// Wires the Elevation editing section to the Elevation tool's active node
+  /// (issue #16). Until a tool is attached the section stays hidden; the
+  /// panel never owns the tool. Call once, after both exist.
+  void set_elevation_tool(ElevationTool* tool);
 
   /// The editor's road-mark width conventions [m]. OpenDRIVE's @width has no
   /// normative values (weight standard/bold is the spec's coarse axis) —
@@ -37,6 +44,7 @@ public:
 private:
   void refresh();
   void refresh_lane_section();
+  void refresh_elevation();
   void add_row(const QString& label, const QString& value);
   void clear_rows();
 
@@ -67,6 +75,11 @@ private:
   QPushButton* add_left_;
   QPushButton* add_right_;
   QPushButton* remove_lane_;
+
+  QGroupBox* elevation_group_;
+  QLabel* elevation_node_label_;
+  QDoubleSpinBox* elevation_spin_;
+  ElevationTool* elevation_tool_ = nullptr;
 };
 
 } // namespace roadmaker::editor

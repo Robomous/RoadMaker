@@ -50,6 +50,7 @@ add_library(roadmaker_editor_lib STATIC
   src/tools/create_road_tool.cpp
   src/tools/delete_tool.cpp
   src/tools/edit_nodes_tool.cpp
+  src/tools/elevation_tool.cpp
   src/tools/lane_profile_tool.cpp
   src/tools/node_drag.cpp
   src/tools/select_tool.cpp

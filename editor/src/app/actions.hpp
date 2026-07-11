@@ -39,6 +39,7 @@ public:
   QAction* tool_create_road = nullptr;
   QAction* tool_edit_nodes = nullptr;
   QAction* tool_lane_profile = nullptr;
+  QAction* tool_elevation = nullptr;
   QAction* tool_delete = nullptr;
 
   /// Create Road cross-section templates (exclusive, one always checked);
