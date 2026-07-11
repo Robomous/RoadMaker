@@ -34,6 +34,7 @@ from ._roadmaker import (  # noqa: F401
     build_network_mesh,
     edit,
     export_glb,
+    fit_elevation_profile,
     load_xodr,
     parse_xodr,
     save_xodr,
