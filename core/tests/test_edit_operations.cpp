@@ -648,26 +648,149 @@ TEST(EditOperations, SplitRoadRejectsBadStationsAndJunctionRoads) {
 
 // --- junctions ---------------------------------------------------------------------
 
-TEST(EditOperations, CreateJunctionLinksArmsAndRoundTrips) {
-  RoadNetwork network;
-  const RoadId a = author_default(network, "1");
-  const RoadId b = author_default(network, "2", 40.0);
+namespace {
 
-  const std::array<RoadEnd, 2> ends{
-      RoadEnd{.road = a, .contact = ContactPoint::End},
-      RoadEnd{.road = b, .contact = ContactPoint::Start},
-  };
-  auto command = roadmaker::edit::create_junction(network, ends);
+/// Three straight two-lane arms whose ends meet near the origin — the golden
+/// T-junction of 02 §6 (west, east and south arms, all contacting at End).
+struct TJunction {
+  RoadId west;
+  RoadId east;
+  RoadId south;
+  std::array<RoadEnd, 3> ends;
+};
+
+TJunction make_t_junction(RoadNetwork& network) {
+  const RoadId west = author(network, {Waypoint{-40.0, 0.0}, Waypoint{-6.0, 0.0}}, "1");
+  const RoadId east = author(network, {Waypoint{40.0, 0.0}, Waypoint{6.0, 0.0}}, "2");
+  const RoadId south = author(network, {Waypoint{0.0, -40.0}, Waypoint{0.0, -6.0}}, "3");
+  return TJunction{.west = west,
+                   .east = east,
+                   .south = south,
+                   .ends = {RoadEnd{.road = west, .contact = ContactPoint::End},
+                            RoadEnd{.road = east, .contact = ContactPoint::End},
+                            RoadEnd{.road = south, .contact = ContactPoint::End}}};
+}
+
+/// Every driving lane on `road` is negative (right) on a road authored with
+/// two_lane_default, so an End-contact arm's single incoming lane is -1.
+int connections_with_incoming(const RoadNetwork& network, JunctionId junction, RoadId incoming) {
+  int count = 0;
+  for (const JunctionConnection& connection : network.junction(junction)->connections) {
+    if (connection.incoming_road == incoming) {
+      ++count;
+    }
+  }
+  return count;
+}
+
+} // namespace
+
+TEST(EditOperations, CreateJunctionGeneratesTJunctionAndRoundTrips) {
+  RoadNetwork network;
+  const TJunction t = make_t_junction(network);
+
+  auto command = roadmaker::edit::create_junction(network, t.ends);
   expect_command_round_trip(network, *command);
 
   ASSERT_TRUE(command->apply(network).has_value());
-  EXPECT_EQ(network.junction_count(), 1U);
   const JunctionId junction = network.find_junction("1");
   ASSERT_TRUE(junction.is_valid());
-  ASSERT_TRUE(network.road(a)->successor.has_value());
-  EXPECT_EQ(std::get<JunctionId>(network.road(a)->successor->target), junction);
-  ASSERT_TRUE(network.road(b)->predecessor.has_value());
-  EXPECT_EQ(std::get<JunctionId>(network.road(b)->predecessor->target), junction);
+  ASSERT_TRUE(network.junction(junction) != nullptr);
+
+  // 3 two-way single-lane arms → 6 ordered turns → 6 connecting roads.
+  const auto& connections = network.junction(junction)->connections;
+  EXPECT_EQ(connections.size(), 6U);
+  // Each arm is the incoming road for exactly two turns (to the other two).
+  EXPECT_EQ(connections_with_incoming(network, junction, t.west), 2);
+  EXPECT_EQ(connections_with_incoming(network, junction, t.east), 2);
+  EXPECT_EQ(connections_with_incoming(network, junction, t.south), 2);
+
+  // Arms are linked to the junction; arms record for regeneration.
+  EXPECT_EQ(std::get<JunctionId>(network.road(t.west)->successor->target), junction);
+  EXPECT_EQ(network.junction(junction)->arms.size(), 3U);
+
+  for (const JunctionConnection& connection : connections) {
+    // One laneLink per connection, incoming lane -1 → connecting lane -1.
+    ASSERT_EQ(connection.lane_links.size(), 1U);
+    EXPECT_EQ(connection.lane_links.front().first, -1);
+    EXPECT_EQ(connection.lane_links.front().second, -1);
+    EXPECT_EQ(connection.contact_point, ContactPoint::Start);
+
+    const roadmaker::Road* connecting = network.road(connection.connecting_road);
+    ASSERT_NE(connecting, nullptr);
+    EXPECT_EQ(connecting->junction, junction);
+    EXPECT_EQ(std::get<RoadId>(connecting->predecessor->target), connection.incoming_road);
+    // The single connecting lane links incoming (-1) to outgoing (+1).
+    const LaneSectionId section = connecting->sections.front();
+    for (const LaneId lane_id : network.lane_section(section)->lanes) {
+      const roadmaker::Lane& lane = *network.lane(lane_id);
+      if (lane.odr_id == -1) {
+        EXPECT_EQ(lane.type, LaneType::Driving);
+        EXPECT_EQ(lane.predecessor, -1);
+        EXPECT_EQ(lane.successor, 1);
+        ASSERT_FALSE(lane.widths.empty());
+        EXPECT_NEAR(lane.widths.front().a, 3.5, 1e-9); // source width
+      }
+    }
+  }
+}
+
+TEST(EditOperations, CreateJunctionOutputValidatesCleanly) {
+  RoadNetwork network;
+  const TJunction t = make_t_junction(network);
+  ASSERT_TRUE(roadmaker::edit::create_junction(network, t.ends)->apply(network).has_value());
+
+  using roadmaker::XodrVersion;
+  for (const XodrVersion version : {XodrVersion::v1_8_1, XodrVersion::v1_9_0}) {
+    const auto findings =
+        roadmaker::validate_network(network, roadmaker::WriterOptions{.target_version = version});
+    EXPECT_TRUE(findings.empty()) << "version index " << static_cast<int>(version) << " has "
+                                  << findings.size() << " diagnostics";
+  }
+}
+
+TEST(EditOperations, RegenerateJunctionIsByteEqualWhenNothingChanged) {
+  RoadNetwork network;
+  const TJunction t = make_t_junction(network);
+  ASSERT_TRUE(roadmaker::edit::create_junction(network, t.ends)->apply(network).has_value());
+  const JunctionId junction = network.find_junction("1");
+  const std::string before = snapshot_xodr(network);
+
+  auto regen = roadmaker::edit::regenerate_junction(network, junction);
+  ASSERT_TRUE(regen->apply(network).has_value());
+  EXPECT_EQ(before, snapshot_xodr(network)); // deterministic re-run reproduces the document
+}
+
+TEST(EditOperations, RegenerateJunctionTracksMovedIncomingEnd) {
+  RoadNetwork network;
+  const TJunction t = make_t_junction(network);
+  ASSERT_TRUE(roadmaker::edit::create_junction(network, t.ends)->apply(network).has_value());
+  const JunctionId junction = network.find_junction("1");
+
+  // Move the west arm's junction end; the connecting roads must follow it.
+  auto move = roadmaker::edit::move_waypoint(network, t.west, 1, Waypoint{.x = -8.0, .y = -1.0});
+  ASSERT_TRUE(move->apply(network).has_value());
+  ASSERT_TRUE(!roadmaker::junctions_touching(network, t.west).empty());
+
+  auto regen = roadmaker::edit::regenerate_junction(network, junction);
+  expect_command_round_trip(network, *regen);
+  ASSERT_TRUE(regen->apply(network).has_value());
+
+  for (const JunctionConnection& connection : network.junction(junction)->connections) {
+    if (connection.incoming_road != t.west) {
+      continue;
+    }
+    const roadmaker::Road* connecting = network.road(connection.connecting_road);
+    const auto start = connecting->plan_view.evaluate(0.0);
+    EXPECT_NEAR(start.x, -8.0, 1e-6);
+    EXPECT_NEAR(start.y, -1.0, 1e-6);
+  }
+}
+
+TEST(EditOperations, RegenerateJunctionRejectsForeignJunction) {
+  RoadNetwork network;
+  const JunctionId junction = network.create_junction("100", "X"); // no recorded arms
+  expect_command_rejected(network, roadmaker::edit::regenerate_junction(network, junction));
 }
 
 TEST(EditOperations, CreateJunctionRejectsBadEnds) {
@@ -690,18 +813,38 @@ TEST(EditOperations, CreateJunctionRejectsBadEnds) {
       RoadEnd{.road = b, .contact = ContactPoint::Start},
   };
   expect_command_rejected(network, roadmaker::edit::create_junction(network, occupied));
+
+  // Ends farther apart than the 50 m limit are a hard error (a End (120,0),
+  // b Start (0,40) are ~126 m apart).
+  const std::array<RoadEnd, 2> too_far{
+      RoadEnd{.road = a, .contact = ContactPoint::End},
+      RoadEnd{.road = b, .contact = ContactPoint::Start},
+  };
+  network.road(b)->predecessor.reset();
+  expect_command_rejected(network, roadmaker::edit::create_junction(network, too_far));
+}
+
+TEST(EditOperations, PreviewJunctionReportsCountAndDroppedTurns) {
+  RoadNetwork network;
+  const TJunction t = make_t_junction(network);
+  const auto preview = roadmaker::edit::preview_junction(network, t.ends);
+  ASSERT_TRUE(preview.has_value());
+  EXPECT_EQ(preview->connection_count, 6);
+  EXPECT_TRUE(preview->dropped_turns.empty());
+
+  // A tight loop budget (fit must be shorter than 0.5× the end distance) is
+  // unsatisfiable for every turn, so all six are dropped with a note.
+  const auto dropped = roadmaker::edit::preview_junction(
+      network, t.ends, roadmaker::edit::JunctionGenOptions{.max_loop_factor = 0.5});
+  ASSERT_TRUE(dropped.has_value());
+  EXPECT_EQ(dropped->connection_count, 0);
+  EXPECT_EQ(dropped->dropped_turns.size(), 6U);
 }
 
 TEST(EditOperations, DeleteJunctionDetachesRoadsAndRoundTrips) {
   RoadNetwork network;
-  const RoadId a = author_default(network, "1");
-  const RoadId b = author_default(network, "2", 40.0);
-  const std::array<RoadEnd, 2> ends{
-      RoadEnd{.road = a, .contact = ContactPoint::End},
-      RoadEnd{.road = b, .contact = ContactPoint::Start},
-  };
-  auto create = roadmaker::edit::create_junction(network, ends);
-  ASSERT_TRUE(create->apply(network).has_value());
+  const TJunction t = make_t_junction(network);
+  ASSERT_TRUE(roadmaker::edit::create_junction(network, t.ends)->apply(network).has_value());
   const JunctionId junction = network.find_junction("1");
 
   auto command = roadmaker::edit::delete_junction(network, junction);
@@ -709,8 +852,11 @@ TEST(EditOperations, DeleteJunctionDetachesRoadsAndRoundTrips) {
 
   ASSERT_TRUE(command->apply(network).has_value());
   EXPECT_EQ(network.junction(junction), nullptr);
-  EXPECT_FALSE(network.road(a)->successor.has_value());
-  EXPECT_FALSE(network.road(b)->predecessor.has_value());
+  EXPECT_FALSE(network.road(t.west)->successor.has_value());
+  EXPECT_FALSE(network.road(t.east)->successor.has_value());
+  EXPECT_FALSE(network.road(t.south)->successor.has_value());
+  // The six connecting roads went with the junction (only the 3 arms remain).
+  EXPECT_EQ(network.road_count(), 3U);
 }
 
 // --- lanes: add / remove --------------------------------------------------------

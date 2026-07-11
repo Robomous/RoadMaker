@@ -80,12 +80,62 @@ split_road(const RoadNetwork& network, RoadId road, double s);
 /// original id, so references held elsewhere become valid again.
 [[nodiscard]] RM_API std::unique_ptr<Command> delete_road(const RoadNetwork& network, RoadId road);
 
-/// Creates a junction record (auto id) and links each road end to it. M2
-/// scope: topology only — connecting-road generation is the Create Junction
-/// tool's kernel work (issue #17). Errors: fewer than 2 ends, duplicate
-/// ends, or an end whose link slot is already occupied.
-[[nodiscard]] RM_API std::unique_ptr<Command> create_junction(const RoadNetwork& network,
-                                                              std::span<const RoadEnd> ends);
+/// Tuning for the connecting-road generator (docs/design/m2/02 §6).
+struct JunctionGenOptions {
+  /// Two arm ends farther apart than this [m] make create_junction fail.
+  double max_end_distance_m = 50.0;
+
+  /// A turn whose fitted connecting-road length exceeds this multiple of the
+  /// straight-line end distance is dropped (nearly-parallel arms whose
+  /// clothoid would loop). k=4 per 02 §6.
+  double max_loop_factor = 4.0;
+};
+
+/// Non-mutating summary of what create_junction would generate for `ends`:
+/// the connection count (status-bar feedback) and any turns the generator
+/// drops. Same planner create_junction runs, so the editor previews exactly
+/// what generation will produce. Errors match create_junction's factory
+/// errors (fewer than 2 ends, stale/duplicate ends, an occupied link slot,
+/// or ends farther apart than max_end_distance_m).
+struct JunctionPreview {
+  int connection_count = 0;
+
+  /// Human-readable "road A→road B (lane i→j)" for every dropped turn.
+  std::vector<std::string> dropped_turns;
+};
+
+[[nodiscard]] RM_API Expected<JunctionPreview>
+preview_junction(const RoadNetwork& network,
+                 std::span<const RoadEnd> ends,
+                 const JunctionGenOptions& options = {});
+
+/// Creates a common junction from `ends` (auto id): links each incoming road
+/// end to the junction and generates the connecting roads for every permitted
+/// turn — one connecting road per (incoming lane, outgoing lane) pair, a G1
+/// clothoid built in driving direction (contactPoint="start"), single lane
+/// section, lane width blended linearly source→target (02 §6). The arm list
+/// is recorded on the junction for deterministic regeneration. Errors: fewer
+/// than 2 ends, duplicate ends, an end whose link slot is already occupied,
+/// or two ends farther apart than options.max_end_distance_m. Turns whose fit
+/// loops (see max_loop_factor) are dropped, not an error — use
+/// preview_junction to surface them. Undo frees every created id; redo
+/// resurrects them identically.
+[[nodiscard]] RM_API std::unique_ptr<Command>
+create_junction(const RoadNetwork& network,
+                std::span<const RoadEnd> ends,
+                const JunctionGenOptions& options = {});
+
+/// Re-runs the generator from a junction's recorded arm list and replaces its
+/// connecting-road geometry and lane widths in place — connecting-road IDs
+/// and the connection table survive, so held references and the undo stack
+/// stay valid (02 §6 "Dependency tracking"). The editor triggers this after
+/// any edit to an incoming road (via junctions_touching). M2 restriction: the
+/// connection COUNT must be unchanged (a lane added/removed on an incoming
+/// road changes the turn set — recreate the junction); an empty arm list
+/// (foreign junction) is an error. A no-op regeneration writes byte-identical
+/// output.
+[[nodiscard]] RM_API std::unique_ptr<Command> regenerate_junction(
+    const RoadNetwork& network, JunctionId junction, const JunctionGenOptions& options = {});
 
 /// Deletes the junction AND its connecting roads (the §7 closure); incoming
 /// roads survive with their predecessor/successor links into the junction

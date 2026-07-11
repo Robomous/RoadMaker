@@ -378,6 +378,30 @@ void write_junction(pugi::xml_node root, const RoadNetwork& network, const Junct
       link.append_attribute("to").set_value(to);
     }
   }
+
+  // The generator's arm list round-trips through <userData> (OpenDRIVE 1.9.0
+  // §7.2) so regeneration survives save/load; junctions from foreign files
+  // carry no arms and emit nothing. Format: "roadOdrId:start|end;…".
+  if (!junction.arms.empty()) {
+    std::string value;
+    for (const RoadEnd& arm : junction.arms) {
+      const Road* road = network.road(arm.road);
+      if (road == nullptr) {
+        continue; // stale arm references are not written
+      }
+      if (!value.empty()) {
+        value += ';';
+      }
+      value += road->odr_id;
+      value += ':';
+      value += arm.contact == ContactPoint::End ? "end" : "start";
+    }
+    if (!value.empty()) {
+      pugi::xml_node user_data = junction_node.append_child("userData");
+      user_data.append_attribute("code").set_value("rm:arms");
+      user_data.append_attribute("value").set_value(value.c_str());
+    }
+  }
 }
 
 } // namespace
