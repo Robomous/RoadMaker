@@ -62,6 +62,11 @@ public:
 
   [[nodiscard]] bool empty() const { return entries_.empty(); }
 
+  /// Roads present in the selection, in selection order — road-level and
+  /// lane entries of the same road collapse to one. The road set the editing
+  /// tools operate on (node handles show on selected roads, 02 §1/§3).
+  [[nodiscard]] std::vector<RoadId> selected_roads() const;
+
 signals:
   /// Emitted only when the selection actually changes. Carries no payload —
   /// listeners pull entries()/primary().

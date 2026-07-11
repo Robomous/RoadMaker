@@ -1,6 +1,5 @@
 #include "tools/select_tool.hpp"
 
-#include "roadmaker/edit/operations.hpp"
 #include "roadmaker/road/network.hpp"
 
 #include <algorithm>
@@ -25,18 +24,6 @@ SelectMode mode_from(Qt::KeyboardModifiers modifiers) {
   return SelectMode::Replace;
 }
 
-/// Selected roads, deduplicated (road-level and lane entries of the same
-/// road collapse to one), in selection order.
-std::vector<RoadId> selected_roads(const SelectionModel& selection) {
-  std::vector<RoadId> roads;
-  for (const SelectionEntry& entry : selection.entries()) {
-    if (std::ranges::find(roads, entry.road) == roads.end()) {
-      roads.push_back(entry.road);
-    }
-  }
-  return roads;
-}
-
 } // namespace
 
 SelectTool::SelectTool(Document& document, SelectionModel& selection, QObject* parent)
@@ -56,10 +43,10 @@ void SelectTool::deactivate() {
   }
 }
 
-std::optional<SelectTool::DragState> SelectTool::pick_selected_node(const Waypoint& cursor) const {
-  std::optional<DragState> best;
+std::optional<NodeDragState> SelectTool::pick_selected_node(const Waypoint& cursor) const {
+  std::optional<NodeDragState> best;
   double best_dist = pick_radius_;
-  for (const RoadId road_id : selected_roads(selection_)) {
+  for (const RoadId road_id : selection_.selected_roads()) {
     const Road* road = document_.network().road(road_id);
     if (road == nullptr || !road->authoring_waypoints) {
       continue;
@@ -69,7 +56,7 @@ std::optional<SelectTool::DragState> SelectTool::pick_selected_node(const Waypoi
       const double dist = std::hypot(cursor.x - node.x, cursor.y - node.y);
       if (dist <= best_dist) {
         best_dist = dist;
-        best = DragState{.road = road_id, .index = i, .original = node, .current = node};
+        best = NodeDragState{.road = road_id, .index = i, .original = node, .current = node};
       }
     }
   }
@@ -100,25 +87,7 @@ bool SelectTool::mouse_move(const ToolEvent& event) {
   const Waypoint cursor{.x = event.world_x, .y = event.world_y};
 
   if (drag_.has_value()) {
-    edit::SnapOptions options = snap_options_;
-    options.exclude_road = drag_->road;
-    drag_->snap = edit::snap_point(document_.network(), cursor, options);
-    const Waypoint target =
-        drag_->snap ? Waypoint{.x = drag_->snap->position.x, .y = drag_->snap->position.y} : cursor;
-
-    const RoadId road = drag_->road;
-    const std::size_t index = drag_->index;
-    const Expected<void> moved = document_.preview_active()
-                                     ? document_.update_preview([&](const RoadNetwork& base) {
-                                         return edit::move_waypoint(base, road, index, target);
-                                       })
-                                     : document_.begin_preview(edit::move_waypoint(
-                                           document_.network(), road, index, target));
-    if (moved.has_value()) {
-      drag_->current = target;
-    }
-    // On failure the session (if any) stays at its last good state; the drag
-    // keeps running so a later move can recover.
+    update_node_drag(document_, *drag_, snap_options_, cursor);
     emit preview_changed();
     return true;
   }
@@ -220,7 +189,7 @@ PreviewGeometry SelectTool::preview() const {
 
   // Node handles on every selected road; during a drag the network already
   // holds the live-previewed waypoints, so the moving handle tracks.
-  for (const RoadId road_id : selected_roads(selection_)) {
+  for (const RoadId road_id : selection_.selected_roads()) {
     const Road* road = document_.network().road(road_id);
     if (road == nullptr || !road->authoring_waypoints) {
       continue;
@@ -231,13 +200,7 @@ PreviewGeometry SelectTool::preview() const {
   }
 
   if (drag_.has_value()) {
-    if (drag_->snap) {
-      geometry.point_positions.insert(geometry.point_positions.end(),
-                                      {drag_->snap->position.x, drag_->snap->position.y, 0.0});
-    }
-    geometry.line_positions.insert(
-        geometry.line_positions.end(),
-        {drag_->original.x, drag_->original.y, 0.0, drag_->current.x, drag_->current.y, 0.0});
+    append_node_drag_overlay(*drag_, geometry);
   }
 
   if (press_.has_value() && band_current_.has_value()) {

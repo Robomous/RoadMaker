@@ -11,9 +11,9 @@
 #include "roadmaker/edit/snap.hpp"
 #include "roadmaker/road/road.hpp"
 
-#include <cstddef>
 #include <optional>
 
+#include "tools/node_drag.hpp"
 #include "tools/tool.hpp"
 
 namespace roadmaker::editor {
@@ -56,14 +56,6 @@ public:
   [[nodiscard]] bool banding() const { return band_current_.has_value(); }
 
 private:
-  struct DragState {
-    RoadId road;
-    std::size_t index = 0;
-    Waypoint original;
-    Waypoint current;
-    std::optional<edit::SnapResult> snap;
-  };
-
   /// LMB held without a node grab: a click, or a rubber band once the cursor
   /// leaves the click tolerance from an empty-space press.
   struct PressState {
@@ -73,7 +65,7 @@ private:
 
   /// Nearest authoring waypoint of a SELECTED road within pick_radius_
   /// (handles are only visible — hence grabbable — on selected roads).
-  [[nodiscard]] std::optional<DragState> pick_selected_node(const Waypoint& cursor) const;
+  [[nodiscard]] std::optional<NodeDragState> pick_selected_node(const Waypoint& cursor) const;
 
   /// Applies the rubber band [press..current]: selects roads whose mesh AABB
   /// intersects the world-space rectangle.
@@ -87,7 +79,7 @@ private:
   double pick_radius_ = 2.0;
   double click_tolerance_ = 0.5;
   edit::SnapOptions snap_options_{};
-  std::optional<DragState> drag_;
+  std::optional<NodeDragState> drag_;
   std::optional<PressState> press_;
   std::optional<Waypoint> band_current_;
 };

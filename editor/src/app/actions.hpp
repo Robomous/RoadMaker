@@ -33,6 +33,7 @@ public:
   /// join the group in later M2 phases).
   QActionGroup* tool_group = nullptr;
   QAction* tool_select = nullptr;
+  QAction* tool_edit_nodes = nullptr;
 
   QAction* reset_camera = nullptr;
   QAction* frame_selection = nullptr;

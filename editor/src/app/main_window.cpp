@@ -19,6 +19,7 @@
 #include "panels/diagnostics_panel.hpp"
 #include "panels/properties_panel.hpp"
 #include "panels/scene_tree_panel.hpp"
+#include "tools/edit_nodes_tool.hpp"
 #include "tools/select_tool.hpp"
 
 namespace roadmaker::editor {
@@ -62,6 +63,14 @@ MainWindow::MainWindow(QWidget* parent)
   tool_manager_.register_tool(ToolId::Select, std::move(select_tool));
   connect(actions_->tool_select, &QAction::triggered, this, [this] {
     tool_manager_.set_active(ToolId::Select);
+  });
+  auto edit_nodes_tool = std::make_unique<EditNodesTool>(document_, selection_);
+  connect(edit_nodes_tool.get(), &Tool::status_message, this, [this](const QString& text) {
+    statusBar()->showMessage(text, 5000);
+  });
+  tool_manager_.register_tool(ToolId::EditNodes, std::move(edit_nodes_tool));
+  connect(actions_->tool_edit_nodes, &QAction::triggered, this, [this] {
+    tool_manager_.set_active(ToolId::EditNodes);
   });
   tool_manager_.set_active(ToolId::Select);
 
@@ -138,6 +147,7 @@ void MainWindow::build_toolbar() {
   toolbar->addAction(actions_->export_glb);
   toolbar->addSeparator();
   toolbar->addAction(actions_->tool_select);
+  toolbar->addAction(actions_->tool_edit_nodes);
   toolbar->addSeparator();
   toolbar->addAction(actions_->reset_camera);
   toolbar->addAction(actions_->frame_selection);

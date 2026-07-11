@@ -1,0 +1,87 @@
+#pragma once
+
+// Edit Nodes tool (issue #10, docs/design/m2/02_editing_tools.md §3). On the
+// selected roads it shows node handles with display-only tangent whiskers
+// and segment-midpoint markers: dragging a handle moves the waypoint (as
+// Select/Move, preview session + one command), clicking a marker inserts a
+// node ON the curve at that station (one command, immediately grabbed so the
+// same gesture can keep dragging), and Delete/Backspace removes the active
+// node. Node handles for foreign roads come from the §2.5 derivation
+// (edit::effective_waypoints), with a one-time re-fit notice. Headless by
+// construction: ToolEvent in, commands + PreviewGeometry out.
+
+#include "roadmaker/edit/snap.hpp"
+#include "roadmaker/road/road.hpp"
+
+#include <cstddef>
+#include <optional>
+#include <utility>
+
+#include "tools/node_drag.hpp"
+#include "tools/tool.hpp"
+
+namespace roadmaker::editor {
+
+class Document;
+class SelectionModel;
+
+class EditNodesTool : public Tool {
+  Q_OBJECT
+
+public:
+  EditNodesTool(Document& document, SelectionModel& selection, QObject* parent = nullptr);
+
+  /// Capture radius [m] around node handles and midpoint markers; handles
+  /// win over markers, markers over lane patches.
+  void set_pick_radius(double radius) { pick_radius_ = radius; }
+
+  /// Snap query options for node drags (the dragged road always excluded).
+  void set_snap_options(edit::SnapOptions options) { snap_options_ = options; }
+
+  void activate() override;
+  void deactivate() override;
+
+  [[nodiscard]] bool mouse_press(const ToolEvent& event) override;
+  [[nodiscard]] bool mouse_move(const ToolEvent& event) override;
+  [[nodiscard]] bool mouse_release(const ToolEvent& event) override;
+  [[nodiscard]] bool key_press(int key, Qt::KeyboardModifiers modifiers) override;
+
+  /// Node handles (points) + tangent whiskers and midpoint-marker diamonds
+  /// (lines) of every selected road, the active-node highlight square, and
+  /// during a drag the snap hint + original→current tether.
+  [[nodiscard]] PreviewGeometry preview() const override;
+
+  [[nodiscard]] bool dragging() const { return drag_.has_value(); }
+
+  /// The node a press activated (Delete's target); (road, waypoint index).
+  [[nodiscard]] std::optional<std::pair<RoadId, std::size_t>> active_node() const {
+    return active_;
+  }
+
+private:
+  struct MarkerHit {
+    RoadId road;
+    std::size_t insert_index = 0; ///< insert_waypoint index (segment + 1)
+    Waypoint position;            ///< on the curve, at the segment's mid station
+  };
+
+  /// Nearest effective waypoint of a selected road within pick_radius_.
+  [[nodiscard]] std::optional<NodeDragState> pick_node(const Waypoint& cursor) const;
+
+  /// Nearest segment-midpoint marker of a selected road within pick_radius_.
+  [[nodiscard]] std::optional<MarkerHit> pick_midpoint(const Waypoint& cursor) const;
+
+  /// One-time §2.5 notice when an edit is about to derive waypoints.
+  void notify_derivation(const Road& road);
+
+  void delete_active_node();
+
+  Document& document_;
+  SelectionModel& selection_;
+  double pick_radius_ = 2.0;
+  edit::SnapOptions snap_options_{};
+  std::optional<NodeDragState> drag_;
+  std::optional<std::pair<RoadId, std::size_t>> active_;
+};
+
+} // namespace roadmaker::editor
