@@ -286,6 +286,42 @@ jobs:
       - name: Validate exported .usda against the OpenUSD reference checker
         run: python scripts/usd_compliance_check.py /tmp/rm_usd_golden.usda
 
+  esmini-roundtrip:
+    name: esmini round-trip smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # Cross-cutting quality gate owned by M3a, then permanent (issue #51,
+    # docs/design/m3a/05_editor_and_docs.md §4): every tracked .xodr — and,
+    # from #73 on, every golden scene export — must load headless in esmini
+    # without errors. esmini (MPL-2.0) is an EXTERNAL smoke tool: a pinned
+    # release binary fetched like a test fixture, never linked into any
+    # RoadMaker target, never redistributed (docs/standards/dependencies.md).
+    env:
+      ESMINI_VERSION: v3.5.0
+    steps:
+      - uses: actions/checkout@v4
+      - name: Cache esmini
+        id: esmini-cache
+        uses: actions/cache@v4
+        with:
+          path: .esmini
+          key: esmini-${{ runner.os }}-v3.5.0
+      - name: Fetch pinned esmini release binary
+        if: steps.esmini-cache.outputs.cache-hit != 'true'
+        run: |
+          curl -sSL -o esmini.zip "https://github.com/esmini/esmini/releases/download/${ESMINI_VERSION}/esmini-bin_Linux.zip"
+          mkdir -p .esmini && unzip -q esmini.zip -d .esmini
+          chmod +x .esmini/esmini/bin/esmini
+      # The esmini binary links GL/X11 through OpenSceneGraph even when run
+      # --headless; keep the runtime deps explicit rather than relying on
+      # what happens to be on the runner image.
+      - name: esmini runtime deps
+        run: sudo apt-get update && sudo apt-get install -y libgl1 libx11-6 libxrandr2 libxinerama1
+      - name: Smoke-load every tracked .xodr
+        run: python3 scripts/esmini_smoke.py --esmini .esmini/esmini/bin/esmini assets/samples/*.xodr
+      - name: Broken fixture must fail (guards the gate itself)
+        run: python3 scripts/esmini_smoke.py --esmini .esmini/esmini/bin/esmini --expect-fail tests/esmini/broken.xodr
+
   docs:
     name: docs link check
     runs-on: ubuntu-latest
