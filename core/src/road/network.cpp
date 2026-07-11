@@ -50,6 +50,14 @@ LaneId RoadNetwork::add_lane(LaneSectionId section_id, int odr_lane_id, LaneType
   return id;
 }
 
+ObjectId RoadNetwork::add_object(RoadId road_id, Object value) {
+  if (roads_.get(road_id) == nullptr) {
+    return {};
+  }
+  value.road = road_id;
+  return objects_.emplace(std::move(value));
+}
+
 bool RoadNetwork::erase_road(RoadId road_id) {
   Road* doomed = roads_.get(road_id);
   if (doomed == nullptr) {
@@ -63,6 +71,17 @@ bool RoadNetwork::erase_road(RoadId road_id) {
       sections_.erase(section_id);
     }
   }
+  // Objects are owned by their road: collect first, then erase — for_each
+  // must not mutate the arena it iterates.
+  std::vector<ObjectId> owned;
+  objects_.for_each([&](ObjectId id, const Object& object) {
+    if (object.road == road_id) {
+      owned.push_back(id);
+    }
+  });
+  for (const ObjectId id : owned) {
+    objects_.erase(id);
+  }
   // Keep junctions coherent: drop connections that reference this road.
   junctions_.for_each([road_id](JunctionId, Junction& junction) {
     std::erase_if(junction.connections, [road_id](const JunctionConnection& connection) {
@@ -70,6 +89,10 @@ bool RoadNetwork::erase_road(RoadId road_id) {
     });
   });
   return roads_.erase(road_id);
+}
+
+bool RoadNetwork::erase_object(ObjectId object_id) {
+  return objects_.erase(object_id);
 }
 
 bool RoadNetwork::erase_junction(JunctionId junction_id) {
@@ -114,6 +137,14 @@ Expected<JunctionId> RoadNetwork::restore_junction(JunctionId id, Junction value
 
 Expected<void> RoadNetwork::erase_junction_exact(JunctionId id) {
   return junctions_.erase_exact(id);
+}
+
+Expected<ObjectId> RoadNetwork::restore_object(ObjectId id, Object value) {
+  return objects_.restore(id, std::move(value));
+}
+
+Expected<void> RoadNetwork::erase_object_exact(ObjectId id) {
+  return objects_.erase_exact(id);
 }
 
 RoadId RoadNetwork::find_road(std::string_view odr_id) const {
@@ -166,6 +197,16 @@ std::vector<JunctionId> junctions_touching(const RoadNetwork& network, RoadId ro
     }
   });
   return touched;
+}
+
+std::vector<ObjectId> objects_of(const RoadNetwork& network, RoadId road_id) {
+  std::vector<ObjectId> owned;
+  network.for_each_object([&](ObjectId id, const Object& object) {
+    if (object.road == road_id) {
+      owned.push_back(id);
+    }
+  });
+  return owned;
 }
 
 } // namespace roadmaker

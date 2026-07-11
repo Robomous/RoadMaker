@@ -9,6 +9,7 @@
 
 #include <fast_float/fast_float.h>
 
+#include <algorithm>
 #include <cmath>
 #include <fstream>
 #include <optional>
@@ -43,6 +44,14 @@ std::optional<double> to_double(std::string_view text) {
     return std::nullopt;
   }
   return value;
+}
+
+/// Serializes a node as a self-contained XML fragment (no indentation), for
+/// the verbatim-preservation tier (roadmaker/xodr/raw_xml.hpp).
+std::string node_to_string(const pugi::xml_node& node) {
+  std::ostringstream out;
+  node.print(out, "", pugi::format_raw);
+  return out.str();
 }
 
 class Parser {
@@ -124,6 +133,23 @@ private:
     return fallback;
   }
 
+  /// Attribute as optional double: nullopt when absent (no diagnostic —
+  /// optional per schema) or malformed (with a diagnostic).
+  std::optional<double>
+  attr_optional_double(const pugi::xml_node& node, const char* name, const std::string& location) {
+    const pugi::xml_attribute attr = node.attribute(name);
+    if (!attr) {
+      return std::nullopt;
+    }
+    if (const auto value = to_double(attr.value())) {
+      return value;
+    }
+    diag(Severity::Warning,
+         location,
+         fmt::format("attribute '{}' is not a valid number ('{}'), ignored", name, attr.value()));
+    return std::nullopt;
+  }
+
   // --- header --------------------------------------------------------------
 
   void parse_header(const pugi::xml_node& header) {
@@ -183,7 +209,8 @@ private:
     parse_elevation(road_node.child("elevationProfile"), road, location);
     parse_lateral_profile(road_node.child("lateralProfile"), road, location);
     parse_lanes(road_node.child("lanes"), road_id, location);
-    parse_road_user_data(road_node, road, location);
+    parse_objects(road_node.child("objects"), road_id, location);
+    parse_road_user_data(road_node, *network().road(road_id), location);
 
     // Stash string-typed references for pass 2.
     PendingRoadRefs pending{.road = road_id};
@@ -197,7 +224,8 @@ private:
     for (const pugi::xml_node child : road_node.children()) {
       const std::string name = child.name();
       if (name != "planView" && name != "elevationProfile" && name != "lateralProfile" &&
-          name != "lanes" && name != "link" && name != "type" && name != "userData") {
+          name != "lanes" && name != "link" && name != "type" && name != "userData" &&
+          name != "objects") {
         warn_unsupported(name, location);
       }
     }
@@ -494,6 +522,241 @@ private:
     if (name == "broken solid")
       return RoadMarkType::BrokenSolid;
     return RoadMarkType::Other;
+  }
+
+  // --- objects (OpenDRIVE §13) ----------------------------------------------
+
+  static ObjectType object_type_from_string(std::string_view name) {
+    if (name == "crosswalk")
+      return ObjectType::Crosswalk;
+    if (name == "tree")
+      return ObjectType::Tree;
+    if (name == "vegetation")
+      return ObjectType::Vegetation;
+    if (name == "pole")
+      return ObjectType::Pole;
+    if (name == "barrier")
+      return ObjectType::Barrier;
+    if (name == "building")
+      return ObjectType::Building;
+    if (name == "obstacle")
+      return ObjectType::Obstacle;
+    if (name == "none" || name.empty())
+      return ObjectType::None;
+    return ObjectType::Other; // spelling survives in Object::type_str
+  }
+
+  void
+  parse_objects(const pugi::xml_node& objects_node, RoadId road_id, const std::string& location) {
+    if (!objects_node) {
+      return;
+    }
+    std::size_t index = 0;
+    for (const pugi::xml_node child : objects_node.children()) {
+      if (std::string_view(child.name()) == "object") {
+        parse_object(child, road_id, fmt::format("{}/objects/object[{}]", location, index++));
+      } else {
+        // <objectReference>/<tunnel>/<bridge> (§13.10–§13.12) are not modeled
+        // in M3a — preserved verbatim so round-trip loses nothing.
+        network().road(road_id)->object_extras.push_back(node_to_string(child));
+      }
+    }
+  }
+
+  void parse_object(const pugi::xml_node& node, RoadId road_id, const std::string& location) {
+    Object object;
+    object.odr_id = node.attribute("id").value();
+    if (object.odr_id.empty()) {
+      diag(Severity::Warning, location, "object without 'id' attribute");
+    }
+    object.name = node.attribute("name").value();
+
+    object.type_str = node.attribute("type").value();
+    object.type = object_type_from_string(object.type_str);
+    if (!node.attribute("type")) {
+      diag(Severity::Warning, location, "object without 'type' attribute", rules::kObjectTypeAttr);
+    }
+    object.subtype = node.attribute("subtype").value();
+
+    if (!node.attribute("s") || !node.attribute("t")) {
+      diag(Severity::Warning,
+           location,
+           "object origin requires 's' and 't' coordinates, using 0",
+           rules::kObjectStTCoords);
+    }
+    object.s = attr_double(node, "s", location, 0.0, false);
+    object.t = attr_double(node, "t", location, 0.0, false);
+    object.z_offset = attr_double(node, "zOffset", location);
+    object.hdg = attr_double(node, "hdg", location, 0.0, false);
+    object.pitch = attr_double(node, "pitch", location, 0.0, false);
+    object.roll = attr_double(node, "roll", location, 0.0, false);
+
+    const pugi::xml_attribute orientation = node.attribute("orientation");
+    if (!orientation) {
+      diag(Severity::Warning,
+           location,
+           "object without 'orientation' attribute, assuming 'none'",
+           rules::kObjectOrientation);
+    }
+    const std::string_view orientation_value = orientation.value();
+    if (orientation_value == "+") {
+      object.orientation = ObjectOrientation::Plus;
+    } else if (orientation_value == "-") {
+      object.orientation = ObjectOrientation::Minus;
+    } else {
+      if (!orientation_value.empty() && orientation_value != "none") {
+        diag(Severity::Warning,
+             location,
+             fmt::format("unknown orientation '{}' mapped to 'none'", orientation_value));
+      }
+      object.orientation = ObjectOrientation::None;
+    }
+
+    object.perp_to_road = node.attribute("perpToRoad").as_bool(false);
+    object.length = attr_optional_double(node, "length", location);
+    object.width = attr_optional_double(node, "width", location);
+    object.radius = attr_optional_double(node, "radius", location);
+    object.height = attr_optional_double(node, "height", location);
+    object.valid_length = attr_optional_double(node, "validLength", location);
+    if (const pugi::xml_attribute dynamic = node.attribute("dynamic")) {
+      object.dynamic = std::string_view(dynamic.value()) == "yes";
+    }
+    if (const pugi::xml_attribute temporary = node.attribute("temporary")) {
+      object.temporary = temporary.as_bool(false);
+    }
+    if (const pugi::xml_attribute invalidated = node.attribute("invalidated")) {
+      object.invalidated = invalidated.as_bool(false);
+    }
+
+    // ASAM OpenDRIVE 1.4 outline definitions (direct <outline> child, no
+    // <outlines> wrapper) shall still be supported (1.9.0 §13.2).
+    std::size_t outline_index = 0;
+    for (const pugi::xml_node outline : node.children("outline")) {
+      parse_outline(outline, object, fmt::format("{}/outline[{}]", location, outline_index++));
+    }
+    for (const pugi::xml_node outline : node.child("outlines").children("outline")) {
+      parse_outline(
+          outline, object, fmt::format("{}/outlines/outline[{}]", location, outline_index++));
+    }
+
+    std::size_t repeat_index = 0;
+    for (const pugi::xml_node repeat : node.children("repeat")) {
+      parse_repeat(repeat, object, fmt::format("{}/repeat[{}]", location, repeat_index++));
+    }
+
+    // Preserved tier: unknown attributes and unmodeled children survive
+    // verbatim (never dropped) — docs/design/m3a/01 §5.
+    static constexpr std::string_view kModeledAttrs[] = {
+        "id",    "name",   "type",   "subtype",     "s",          "t",          "zOffset",
+        "hdg",   "pitch",  "roll",   "orientation", "perpToRoad", "dynamic",    "length",
+        "width", "radius", "height", "validLength", "temporary",  "invalidated"};
+    for (const pugi::xml_attribute attr : node.attributes()) {
+      const std::string_view name = attr.name();
+      if (std::find(std::begin(kModeledAttrs), std::end(kModeledAttrs), name) ==
+          std::end(kModeledAttrs)) {
+        object.preserved.attributes.emplace_back(std::string(name), attr.value());
+      }
+    }
+    for (const pugi::xml_node child : node.children()) {
+      const std::string_view name = child.name();
+      if (name != "outline" && name != "outlines" && name != "repeat") {
+        object.preserved.children.push_back(node_to_string(child));
+      }
+    }
+
+    network().add_object(road_id, std::move(object));
+  }
+
+  void parse_outline(const pugi::xml_node& node, Object& object, const std::string& location) {
+    ObjectOutline outline;
+    outline.outer = node.attribute("outer").as_bool(true);
+    if (const pugi::xml_attribute closed = node.attribute("closed")) {
+      outline.closed = closed.as_bool(false);
+    }
+    if (const pugi::xml_attribute id = node.attribute("id")) {
+      outline.id = id.as_int();
+    }
+    if (const pugi::xml_attribute fill = node.attribute("fillType")) {
+      outline.fill_type = fill.value();
+    }
+    if (const pugi::xml_attribute lane_type = node.attribute("laneType")) {
+      outline.lane_type = lane_type.value();
+    }
+
+    const bool has_road = static_cast<bool>(node.child("cornerRoad"));
+    const bool has_local = static_cast<bool>(node.child("cornerLocal"));
+    const bool has_curve = static_cast<bool>(node.child("curveLocal"));
+    if (has_curve || (has_road && has_local)) {
+      if (has_road && has_local) {
+        diag(Severity::Warning,
+             location,
+             "outline mixes cornerRoad and cornerLocal elements; preserved verbatim",
+             rules::kCornerRoadLocalExcl);
+      }
+      // <curveLocal> outlines are the Preserved tier in M3a: kept verbatim,
+      // not interpreted (docs/design/m3a/01 §1).
+      outline.raw = node_to_string(node);
+      object.outlines.push_back(std::move(outline));
+      return;
+    }
+    if (!has_road && !has_local) {
+      diag(Severity::Warning,
+           location,
+           "outline without corner elements",
+           rules::kOutlineFollowedByCorner);
+    }
+    outline.road_coords = has_road || !has_local;
+    const char* corner_name = outline.road_coords ? "cornerRoad" : "cornerLocal";
+    for (const pugi::xml_node corner_node : node.children(corner_name)) {
+      OutlineCorner corner;
+      if (outline.road_coords) {
+        corner.a = attr_double(corner_node, "s", location);
+        corner.b = attr_double(corner_node, "t", location);
+        corner.dz_or_z = attr_double(corner_node, "dz", location);
+      } else {
+        corner.a = attr_double(corner_node, "u", location);
+        corner.b = attr_double(corner_node, "v", location);
+        corner.dz_or_z = attr_double(corner_node, "z", location);
+      }
+      corner.height = attr_double(corner_node, "height", location);
+      if (const pugi::xml_attribute id = corner_node.attribute("id")) {
+        corner.id = id.as_int();
+      }
+      outline.corners.push_back(corner);
+    }
+    if ((has_road || has_local) && outline.corners.size() < 2) {
+      diag(Severity::Warning,
+           location,
+           fmt::format("outline has {} corner element(s), expected at least 2",
+                       outline.corners.size()),
+           outline.road_coords ? rules::kCornerRoadMinAmount : rules::kCornerLocalMinAmount);
+    }
+    object.outlines.push_back(std::move(outline));
+  }
+
+  void parse_repeat(const pugi::xml_node& node, Object& object, const std::string& location) {
+    ObjectRepeat repeat{
+        .s = attr_double(node, "s", location),
+        .length = attr_double(node, "length", location),
+        .distance = attr_double(node, "distance", location),
+        .t_start = attr_double(node, "tStart", location),
+        .t_end = attr_double(node, "tEnd", location),
+        .z_offset_start = attr_double(node, "zOffsetStart", location),
+        .z_offset_end = attr_double(node, "zOffsetEnd", location),
+    };
+    repeat.width_start = attr_optional_double(node, "widthStart", location);
+    repeat.width_end = attr_optional_double(node, "widthEnd", location);
+    repeat.height_start = attr_optional_double(node, "heightStart", location);
+    repeat.height_end = attr_optional_double(node, "heightEnd", location);
+    repeat.length_start = attr_optional_double(node, "lengthStart", location);
+    repeat.length_end = attr_optional_double(node, "lengthEnd", location);
+    repeat.radius_start = attr_optional_double(node, "radiusStart", location);
+    repeat.radius_end = attr_optional_double(node, "radiusEnd", location);
+    repeat.b_t = attr_optional_double(node, "bT", location);
+    repeat.c_t = attr_optional_double(node, "cT", location);
+    repeat.d_t = attr_optional_double(node, "dT", location);
+    repeat.detach_from_reference_line = node.attribute("detachFromReferenceLine").as_bool(false);
+    object.repeats.push_back(repeat);
   }
 
   // --- junctions -----------------------------------------------------------

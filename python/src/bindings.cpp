@@ -141,6 +141,22 @@ NB_MODULE(_roadmaker, m) {
       .value("START", roadmaker::ContactPoint::Start)
       .value("END", roadmaker::ContactPoint::End);
 
+  nb::enum_<roadmaker::ObjectType>(m, "ObjectType")
+      .value("NONE", roadmaker::ObjectType::None)
+      .value("CROSSWALK", roadmaker::ObjectType::Crosswalk)
+      .value("TREE", roadmaker::ObjectType::Tree)
+      .value("VEGETATION", roadmaker::ObjectType::Vegetation)
+      .value("POLE", roadmaker::ObjectType::Pole)
+      .value("BARRIER", roadmaker::ObjectType::Barrier)
+      .value("BUILDING", roadmaker::ObjectType::Building)
+      .value("OBSTACLE", roadmaker::ObjectType::Obstacle)
+      .value("OTHER", roadmaker::ObjectType::Other);
+
+  nb::enum_<roadmaker::ObjectOrientation>(m, "ObjectOrientation")
+      .value("PLUS", roadmaker::ObjectOrientation::Plus)
+      .value("MINUS", roadmaker::ObjectOrientation::Minus)
+      .value("NONE", roadmaker::ObjectOrientation::None);
+
   nb::enum_<roadmaker::Severity>(m, "Severity")
       .value("INFO", roadmaker::Severity::Info)
       .value("WARNING", roadmaker::Severity::Warning)
@@ -152,6 +168,7 @@ NB_MODULE(_roadmaker, m) {
   bind_id<roadmaker::LaneSectionId>(m, "LaneSectionId");
   bind_id<roadmaker::LaneId>(m, "LaneId");
   bind_id<roadmaker::JunctionId>(m, "JunctionId");
+  bind_id<roadmaker::ObjectId>(m, "ObjectId");
 
   // --- value types -----------------------------------------------------------
 
@@ -335,6 +352,107 @@ NB_MODULE(_roadmaker, m) {
                "', connections=" + std::to_string(junction.connections.size()) + ")";
       });
 
+  nb::class_<roadmaker::RawXml>(m, "RawXml")
+      .def_ro("attributes",
+              &roadmaker::RawXml::attributes,
+              "Unknown attributes preserved verbatim, as (name, value) pairs.")
+      .def_ro("children",
+              &roadmaker::RawXml::children,
+              "Unmodeled child elements preserved as XML fragments.")
+      .def("__bool__", [](const roadmaker::RawXml& raw) { return !raw.empty(); });
+
+  nb::class_<roadmaker::OutlineCorner>(m, "OutlineCorner")
+      .def(nb::init<>())
+      .def(
+          "__init__",
+          [](roadmaker::OutlineCorner* self, double a, double b, double height, double dz_or_z) {
+            new (self)
+                roadmaker::OutlineCorner{.a = a, .b = b, .height = height, .dz_or_z = dz_or_z};
+          },
+          "a"_a,
+          "b"_a,
+          "height"_a = 0.0,
+          "dz_or_z"_a = 0.0)
+      .def_rw("a", &roadmaker::OutlineCorner::a, "s (cornerRoad) or u (cornerLocal) [m].")
+      .def_rw("b", &roadmaker::OutlineCorner::b, "t (cornerRoad) or v (cornerLocal) [m].")
+      .def_rw("height", &roadmaker::OutlineCorner::height)
+      .def_rw("dz_or_z", &roadmaker::OutlineCorner::dz_or_z)
+      .def_rw("id", &roadmaker::OutlineCorner::id);
+
+  nb::class_<roadmaker::ObjectOutline>(m, "ObjectOutline")
+      .def(nb::init<>())
+      .def_rw("road_coords",
+              &roadmaker::ObjectOutline::road_coords,
+              "True for <cornerRoad> corners, False for <cornerLocal>.")
+      .def_rw("closed", &roadmaker::ObjectOutline::closed)
+      .def_rw("outer", &roadmaker::ObjectOutline::outer)
+      .def_rw("id", &roadmaker::ObjectOutline::id)
+      .def_rw("fill_type", &roadmaker::ObjectOutline::fill_type)
+      .def_rw("lane_type", &roadmaker::ObjectOutline::lane_type)
+      .def_rw("corners", &roadmaker::ObjectOutline::corners)
+      .def_ro("raw",
+              &roadmaker::ObjectOutline::raw,
+              "Verbatim <outline> XML when the outline is preserved, not modeled.");
+
+  nb::class_<roadmaker::ObjectRepeat>(m, "ObjectRepeat")
+      .def(nb::init<>())
+      .def_rw("s", &roadmaker::ObjectRepeat::s)
+      .def_rw("length", &roadmaker::ObjectRepeat::length)
+      .def_rw("distance",
+              &roadmaker::ObjectRepeat::distance,
+              "Spacing between instances [m]; 0 extrudes one continuous object.")
+      .def_rw("t_start", &roadmaker::ObjectRepeat::t_start)
+      .def_rw("t_end", &roadmaker::ObjectRepeat::t_end)
+      .def_rw("z_offset_start", &roadmaker::ObjectRepeat::z_offset_start)
+      .def_rw("z_offset_end", &roadmaker::ObjectRepeat::z_offset_end)
+      .def_rw("width_start", &roadmaker::ObjectRepeat::width_start)
+      .def_rw("width_end", &roadmaker::ObjectRepeat::width_end)
+      .def_rw("height_start", &roadmaker::ObjectRepeat::height_start)
+      .def_rw("height_end", &roadmaker::ObjectRepeat::height_end)
+      .def_rw("length_start", &roadmaker::ObjectRepeat::length_start)
+      .def_rw("length_end", &roadmaker::ObjectRepeat::length_end)
+      .def_rw("radius_start", &roadmaker::ObjectRepeat::radius_start)
+      .def_rw("radius_end", &roadmaker::ObjectRepeat::radius_end)
+      .def_rw("b_t", &roadmaker::ObjectRepeat::b_t)
+      .def_rw("c_t", &roadmaker::ObjectRepeat::c_t)
+      .def_rw("d_t", &roadmaker::ObjectRepeat::d_t)
+      .def_rw("detach_from_reference_line", &roadmaker::ObjectRepeat::detach_from_reference_line);
+
+  nb::class_<roadmaker::Object>(m, "Object")
+      .def(nb::init<>())
+      .def_ro("road", &roadmaker::Object::road, "Owning road (back-reference).")
+      .def_rw("odr_id", &roadmaker::Object::odr_id)
+      .def_rw("name", &roadmaker::Object::name)
+      .def_rw("type", &roadmaker::Object::type)
+      .def_rw("type_str",
+              &roadmaker::Object::type_str,
+              "@type exactly as spelled in the file; empty for authored objects "
+              "(the writer then derives it from `type`).")
+      .def_rw("subtype", &roadmaker::Object::subtype)
+      .def_rw("s", &roadmaker::Object::s)
+      .def_rw("t", &roadmaker::Object::t)
+      .def_rw("z_offset", &roadmaker::Object::z_offset)
+      .def_rw("hdg", &roadmaker::Object::hdg)
+      .def_rw("pitch", &roadmaker::Object::pitch)
+      .def_rw("roll", &roadmaker::Object::roll)
+      .def_rw("orientation", &roadmaker::Object::orientation)
+      .def_rw("perp_to_road", &roadmaker::Object::perp_to_road)
+      .def_rw("length", &roadmaker::Object::length)
+      .def_rw("width", &roadmaker::Object::width)
+      .def_rw("radius", &roadmaker::Object::radius)
+      .def_rw("height", &roadmaker::Object::height)
+      .def_rw("valid_length", &roadmaker::Object::valid_length)
+      .def_rw("dynamic", &roadmaker::Object::dynamic)
+      .def_rw("temporary", &roadmaker::Object::temporary)
+      .def_rw("invalidated", &roadmaker::Object::invalidated)
+      .def_rw("outlines", &roadmaker::Object::outlines)
+      .def_rw("repeats", &roadmaker::Object::repeats)
+      .def_ro("preserved", &roadmaker::Object::preserved)
+      .def("__repr__", [](const roadmaker::Object& object) {
+        return "Object(odr_id='" + object.odr_id + "', s=" + std::to_string(object.s) +
+               ", t=" + std::to_string(object.t) + ")";
+      });
+
   // --- the network -----------------------------------------------------------
 
   nb::class_<roadmaker::RoadNetwork>(m, "RoadNetwork")
@@ -343,8 +461,28 @@ NB_MODULE(_roadmaker, m) {
       .def("create_junction", &roadmaker::RoadNetwork::create_junction, "odr_id"_a, "name"_a)
       .def("add_lane_section", &roadmaker::RoadNetwork::add_lane_section, "road"_a, "s0"_a)
       .def("add_lane", &roadmaker::RoadNetwork::add_lane, "section"_a, "odr_lane_id"_a, "type"_a)
+      .def("add_object",
+           &roadmaker::RoadNetwork::add_object,
+           "road"_a,
+           "value"_a,
+           "Adds an OpenDRIVE <object> to `road`; returns an invalid id if "
+           "`road` is stale.")
       .def("erase_road", &roadmaker::RoadNetwork::erase_road, "road"_a)
       .def("erase_junction", &roadmaker::RoadNetwork::erase_junction, "junction"_a)
+      .def("erase_object", &roadmaker::RoadNetwork::erase_object, "object"_a)
+      .def("object",
+           nb::overload_cast<roadmaker::ObjectId>(&roadmaker::RoadNetwork::object),
+           "id"_a,
+           nb::rv_policy::reference_internal,
+           "Object for id, or None if the id is stale. The reference is valid "
+           "only until the network is mutated.")
+      .def(
+          "objects_of",
+          [](const roadmaker::RoadNetwork& network, roadmaker::RoadId road) {
+            return roadmaker::objects_of(network, road);
+          },
+          "road"_a,
+          "ObjectIds the road owns, in creation order.")
       .def("road",
            nb::overload_cast<roadmaker::RoadId>(&roadmaker::RoadNetwork::road),
            "id"_a,
@@ -380,9 +518,18 @@ NB_MODULE(_roadmaker, m) {
                 [&](roadmaker::JunctionId id, const roadmaker::Junction&) { ids.push_back(id); });
             return ids;
           })
+      .def_prop_ro("object_ids",
+                   [](const roadmaker::RoadNetwork& network) {
+                     std::vector<roadmaker::ObjectId> ids;
+                     network.for_each_object([&](roadmaker::ObjectId id, const roadmaker::Object&) {
+                       ids.push_back(id);
+                     });
+                     return ids;
+                   })
       .def_prop_ro("road_count", &roadmaker::RoadNetwork::road_count)
       .def_prop_ro("lane_count", &roadmaker::RoadNetwork::lane_count)
       .def_prop_ro("junction_count", &roadmaker::RoadNetwork::junction_count)
+      .def_prop_ro("object_count", &roadmaker::RoadNetwork::object_count)
       .def("__repr__", [](const roadmaker::RoadNetwork& network) {
         return "RoadNetwork(roads=" + std::to_string(network.road_count()) +
                ", junctions=" + std::to_string(network.junction_count()) + ")";

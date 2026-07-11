@@ -1,13 +1,14 @@
 # M3a overview — visual & standards completeness
 
-Status: **design — planning pass, awaiting maintainer approval.** This is the
-frozen-scope design for milestone **M3a**, written after M2 shipped
-(v0.3.0) per the gate in the [M3a seed](../../roadmap/seeds/m3a.md) and epic
-[#38](https://github.com/Robomous/RoadMaker/issues/38): *"Full design docs are
-written when M3a's own planning task runs, after M2 ships. Do not start M3a
-implementation before that planning pass and maintainer approval."* Once
-approved, these docs are frozen the way `docs/design/m2/` was; deviations are
-recorded inline as **As-built** notes during implementation.
+Status: **approved & frozen** — the maintainer approved this planning pass by
+merging PR [#66](https://github.com/Robomous/RoadMaker/pull/66) (2026-07-11);
+implementation may proceed phase by phase. This is the frozen-scope design for
+milestone **M3a**, written after M2 shipped (v0.3.0) per the gate in the
+[M3a seed](../../roadmap/seeds/m3a.md) and epic
+[#38](https://github.com/Robomous/RoadMaker/issues/38). The docs are frozen the
+way `docs/design/m2/` was: scope does not grow during implementation, and
+deviations discovered while building are recorded inline as **As-built** notes
+(see `01` §9 for Phase 0's).
 
 M3a turns an authored network from a *correct* road graph into a *road scene
 that looks and validates like the real thing*: crosswalks, signals, signs, lane
@@ -129,16 +130,35 @@ GoogleTest/pytest with the code; kernel API changes update
 corpus for each new element class; sanitizer run before merging geometry/parsing
 changes.
 
-| Phase | Contents | Gate |
-|---|---|---|
-| 0 | Kernel `<objects>` model + parse/write/validate (crosswalk outline, point objects, `<repeat>`); fuzz-corpus + round-trip tests | `<object>` round-trip stable within `rm::tol`, validator rule-ids cited |
-| 1 | Kernel `<signals>` model + parse/write/validate (dynamic + static, GS-1 set); Python bindings + example | `<signal>` round-trip stable, GS-1 signal set represented, validator clean |
-| 2 | Road-mark completions: `solid solid` dual geometry + road-mark color; stop lines + lane arrows as object markings; marking meshes | Marking round-trip + dual-strip mesh; arrows/stop-lines validate |
-| 2b | Junction `<boundary>` segments + auxiliary boundary roads — deferred from M2, scope in [#62](https://github.com/Robomous/RoadMaker/issues/62) | `<boundary>` emitted CCW + closed for generated junctions; `close_gap_with_new_roads` warning cleared once the boundary closes; esmini loads without junction warnings |
-| 3 | Assets: CC0 prop kit import + texture extension; library manifest format + loader; `ASSETS_LICENSES.md` rows | Manifest loads; every asset license-verified and recorded; `check_asset_licenses.py` green |
-| 4 | Render: textured mode default + sober toggle; terrain skirt + procedural ground; sky/lighting pass; instanced prop rendering | Textured lit scene renders headless; sober mode still packages; frame parity test |
-| 5 | Editor UX: read-only library panel + drag-to-place; object/signal placement + properties; autosave & crash recovery | Author GS-1 props/signals in-editor; autosave restores after a simulated crash |
-| 6 | Quality & release: esmini round-trip CI job; minimal user guide; GS-1 golden render; v0.4.0 checklist | GS-1 element checklist green; esmini loads exported `.xodr`; v0.4.0 tagged on green CI |
+| Phase | Issue | Contents | Gate |
+|---|---|---|---|
+| 0 | [#67](https://github.com/Robomous/RoadMaker/issues/67) | Kernel `<objects>` model + parse/write/validate (crosswalk outline, point objects, `<repeat>`); fuzz-corpus + round-trip tests. **Not here:** edit commands (phase 5) and the object dirty set (phase 2) | `<object>` round-trip stable within `rm::tol`, validator rule-ids cited |
+| 1 | [#68](https://github.com/Robomous/RoadMaker/issues/68) | Kernel `<signals>` model + parse/write/validate (dynamic + static, GS-1 set); Python bindings + example. Mirrors the **as-built** Phase 0 patterns (`01` §9), not the original sketches | `<signal>` round-trip stable, GS-1 signal set represented, validator clean |
+| 2 | [#69](https://github.com/Robomous/RoadMaker/issues/69) | Road-mark completions: `solid solid` dual geometry + road-mark color; stop lines + lane arrows as object markings (normative subtypes in `02` §3); marking meshes; **`DirtySet::objects`** (`01` §2.4 — defined here with its first mesh consumer) | Marking round-trip + dual-strip mesh; arrows/stop-lines validate |
+| 2b | [#62](https://github.com/Robomous/RoadMaker/issues/62) | Junction `<boundary>` segments + auxiliary boundary roads — deferred from M2, scope in the issue. Independent of phases 0–2 (junction-only, builds on M2); must land before phase 6 | `<boundary>` emitted CCW + closed for generated junctions; `close_gap_with_new_roads` warning cleared once the boundary closes; esmini loads without junction warnings |
+| 3 | [#70](https://github.com/Robomous/RoadMaker/issues/70) | Assets: CC0 prop kit import + texture extension; library manifest format + loader; `ASSETS_LICENSES.md` rows | Manifest loads; every asset license-verified and recorded; `check_asset_licenses.py` green |
+| 4 | [#71](https://github.com/Robomous/RoadMaker/issues/71) | Render: textured mode default + sober toggle; terrain skirt + procedural ground; sky/lighting pass; instanced prop rendering (consumes phase 2's object dirty set; placeholder-box mesh for unresolvable objects is render-side, `04` §3) | Textured lit scene renders headless; sober mode still packages; frame parity test |
+| 5 | [#72](https://github.com/Robomous/RoadMaker/issues/72), [#50](https://github.com/Robomous/RoadMaker/issues/50), [#53](https://github.com/Robomous/RoadMaker/issues/53) | Editor UX: read-only library panel + drag-to-place (#50); object/signal placement + properties (#72 — **includes the kernel edit commands** `AddObject`…`SetSignalValue` of `01` §2.4, with bindings, same PR); autosave & crash recovery (#53) | Author GS-1 props/signals in-editor; autosave restores after a simulated crash |
+| 6 | [#51](https://github.com/Robomous/RoadMaker/issues/51), [#52](https://github.com/Robomous/RoadMaker/issues/52), [#73](https://github.com/Robomous/RoadMaker/issues/73) | Quality & release: esmini round-trip CI job (#51); minimal user guide (#52); GS-1 golden render + v0.4.0 checklist (#73) | GS-1 element checklist green; esmini loads exported `.xodr`; v0.4.0 tagged on green CI |
+
+### Execution order & dependencies
+
+Kernel phases are strictly ordered **0 → 1 → 2** (signals mirror the as-built
+object patterns; object markings reuse the phase-0 `Object` model). Everything
+else keys off these edges:
+
+- **2b (#62)** touches only junctions — it can run any time after M2, in
+  parallel with 0–3, but must land before 6.
+- **3 (#70)** has no kernel dependency and can run in parallel with 0–2. It
+  blocks **4** (textures/models) and **#50** (`assets/library.json` must exist).
+- **4 (#71)** needs 2 (marking meshes + object dirty set) and 3 (textures,
+  prop models).
+- **5:** #50 needs 3; #72 needs 0, 1, and #50 (drag-to-place enters through the
+  panel); #53 is independent (any time after M2).
+- **6** is last; #73 depends on every other open M3a issue.
+
+An executor picking "the next issue" takes the lowest unblocked phase; two
+agents can safely work 2b or 3 in parallel with the kernel line.
 
 ## Risk register
 

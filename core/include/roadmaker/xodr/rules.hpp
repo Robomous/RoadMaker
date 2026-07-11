@@ -84,6 +84,49 @@ inline constexpr std::string_view kJunctionOneElevGrid =
 inline constexpr std::string_view kJunctionElevGridPerpendicular =
     "asam.net:xodr:1.8.0:junctions.elevation_grid.perpendicular_vectors";
 
+/// "The type of an object shall be given by the @type attribute." (§13.1.)
+inline constexpr std::string_view kObjectTypeAttr = "asam.net:xodr:1.7.0:road.object.type_attr";
+
+/// "The direction for which objects are valid shall be specified." (§13.1.)
+inline constexpr std::string_view kObjectOrientation =
+    "asam.net:xodr:1.7.0:road.object.orientation";
+
+/// "The origin position of the object shall be described with s- and
+/// t-coordinates along the road surface." (§13.1.)
+inline constexpr std::string_view kObjectStTCoords = "asam.net:xodr:1.7.0:road.object.s_t_coords";
+
+/// "Objects may be of circular or angular shape. The possibilities are
+/// mutually exclusive. The shape is defined by the used attributes." (§13.1.)
+inline constexpr std::string_view kObjectCircularVsAngular =
+    "asam.net:xodr:1.7.0:road.object.circular_vs_angular";
+
+/// "An <outline> element shall be followed by two or more <cornerRoad>
+/// elements, by two or more <cornerLocal> elements, or by one or more
+/// <curveLocal> elements." (1.9.0, §13.2.)
+inline constexpr std::string_view kOutlineFollowedByCorner =
+    "asam.net:xodr:1.9.0:road.object.outline.outline_followed_by_corner";
+
+/// "<outlines> elements shall have exactly one <outline> element with
+/// @outer=true." (1.9.0, §13.2.)
+inline constexpr std::string_view kOutlineExactlyOneOuter =
+    "asam.net:xodr:1.9.0:road.object.outline.exactly_one_outer";
+
+/// "There shall be at least two <cornerRoad> elements inside an <outline>
+/// element." (§13.2.1.)
+inline constexpr std::string_view kCornerRoadMinAmount =
+    "asam.net:xodr:1.7.0:road.corner_road.element_min_amount";
+
+/// "There shall be at least two <cornerLocal> elements inside an <outline>
+/// element." (§13.2.2.)
+inline constexpr std::string_view kCornerLocalMinAmount =
+    "asam.net:xodr:1.7.0:road.corner_local.element_min_amount";
+
+/// "There shall be no mixture of <cornerRoad>, <cornerLocal>, and
+/// <curveLocal> elements inside the same <outline> element." (1.9.0,
+/// §13.2.1/§13.2.2.)
+inline constexpr std::string_view kCornerRoadLocalExcl =
+    "asam.net:xodr:1.9.0:road.corner_road.corner_road_local_exclusivity";
+
 /// "If the existing roads are not sufficient to define a closed junction
 /// boundary, additional roads shall be defined for the missing segments."
 /// (1.8.0, §12.10.) M2 omits <boundary> and cites this: closing the boundary

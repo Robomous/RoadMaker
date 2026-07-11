@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<OpenDRIVE>
+  <header revMajor="1" revMinor="8"/>
+  <road name="r" length="100" id="1" junction="-1">
+    <planView>
+      <geometry s="0" x="0" y="0" hdg="0" length="100"><line/></geometry>
+    </planView>
+    <lanes>
+      <laneSection s="0">
+        <center><lane id="0" type="none" level="false"/></center>
+      </laneSection>
+    </lanes>
+    <objects>
+      <object type="tree" id="1" s="NaN" t="1e309" zOffset="">
+        <repeat s="5" length="-90" distance="fifteen" tStart="8"

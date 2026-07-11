@@ -167,7 +167,8 @@ TEST(XodrReader, UnsupportedElementsWarnOnceAndAreNeverSilent) {
 </OpenDRIVE>)";
   const auto result = roadmaker::parse_xodr(kXml);
   ASSERT_TRUE(result.has_value());
-  EXPECT_TRUE(has_warning_containing(result->diagnostics, "<objects>"));
+  // <objects> is parsed since M3a P0 (issue #67) — no longer unsupported.
+  EXPECT_FALSE(has_warning_containing(result->diagnostics, "<objects>"));
   EXPECT_TRUE(has_warning_containing(result->diagnostics, "<signals>"));
   EXPECT_TRUE(has_warning_containing(result->diagnostics, "<station>"));
   EXPECT_TRUE(has_warning_containing(result->diagnostics, "hoverlane"));
