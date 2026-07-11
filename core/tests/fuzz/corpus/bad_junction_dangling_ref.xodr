@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- MALFORMED seed: junction with duplicate connection ids and a connection
+     referencing a non-existent connectingRoad. Parser must diagnose. MIT. -->
+<OpenDRIVE>
+  <header revMajor="1" revMinor="7" name="bad_junction_dangling_ref"/>
+  <road name="R" length="20.0" id="1" junction="-1">
+    <planView>
+      <geometry s="0.0" x="0.0" y="0.0" hdg="0.0" length="20.0"><line/></geometry>
+    </planView>
+    <lanes>
+      <laneSection s="0.0"><center><lane id="0" type="none" level="false"/></center></laneSection>
+    </lanes>
+  </road>
+  <junction id="100" name="Dangling">
+    <connection id="0" incomingRoad="1" connectingRoad="999" contactPoint="start">
+      <laneLink from="-1" to="-1"/>
+    </connection>
+    <connection id="0" incomingRoad="1" connectingRoad="1" contactPoint="start">
+      <laneLink from="-1" to="-1"/>
+    </connection>
+  </junction>
+</OpenDRIVE>

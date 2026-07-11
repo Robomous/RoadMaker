@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- RoadMaker seed: one road with three laneSections at increasing s, with a
+     lane count change between sections. Exercises the laneSection loop and
+     per-section lane maps. Hand-authored for the RoadMaker project (MIT). -->
+<OpenDRIVE>
+  <header revMajor="1" revMinor="7" name="multi_lane_section" vendor="Robomous"/>
+  <road name="Widening" length="90.0" id="1" junction="-1">
+    <planView>
+      <geometry s="0.0" x="0.0" y="0.0" hdg="0.0" length="90.0">
+        <line/>
+      </geometry>
+    </planView>
+    <lanes>
+      <laneSection s="0.0">
+        <center><lane id="0" type="none" level="false"/></center>
+        <right>
+          <lane id="-1" type="driving" level="false">
+            <width sOffset="0.0" a="3.5" b="0.0" c="0.0" d="0.0"/>
+          </lane>
+        </right>
+      </laneSection>
+      <laneSection s="30.0">
+        <center><lane id="0" type="none" level="false"/></center>
+        <right>
+          <lane id="-1" type="driving" level="false">
+            <width sOffset="0.0" a="3.5" b="0.0" c="0.0" d="0.0"/>
+          </lane>
+          <lane id="-2" type="driving" level="false">
+            <width sOffset="0.0" a="0.0" b="0.1167" c="0.0" d="0.0"/>
+          </lane>
+        </right>
+      </laneSection>
+      <laneSection s="60.0">
+        <center><lane id="0" type="none" level="false"/></center>
+        <right>
+          <lane id="-1" type="driving" level="false">
+            <width sOffset="0.0" a="3.5" b="0.0" c="0.0" d="0.0"/>
+          </lane>
+          <lane id="-2" type="driving" level="false">
+            <width sOffset="0.0" a="3.5" b="0.0" c="0.0" d="0.0"/>
+          </lane>
+        </right>
+      </laneSection>
+    </lanes>
+  </road>
+</OpenDRIVE>

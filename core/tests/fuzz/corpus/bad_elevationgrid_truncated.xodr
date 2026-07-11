@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- MALFORMED seed: junction <elevationGrid> (OpenDRIVE 1.8) truncated mid
+     element list. Parser must reject via load error, not crash. MIT. -->
+<OpenDRIVE>
+  <header revMajor="1" revMinor="8" name="bad_elevationgrid_truncated"/>
+  <road name="R" length="20.0" id="1" junction="-1">
+    <planView>
+      <geometry s="0.0" x="0.0" y="0.0" hdg="0.0" length="20.0"><line/></geometry>
+    </planView>
+    <lanes>
+      <laneSection s="0.0"><center><lane id="0" type="none" level="false"/></center></laneSection>
+    </lanes>
+  </road>
+  <junction id="100" name="Trunc">
+    <connection id="0" incomingRoad="1" connectingRoad="1" contactPoint="start">
+      <laneLink from="-1" to="-1"/>
+    </connection>
+    <planView>
+      <geometry s="0" x="-2.0" y="-2.0" hdg="0" length="4.0"><line/></geometry>
+    </planView>
+    <elevationGrid sStart="0" gridSpacing="2">
+      <elevation left="0 0" center="0" right="0 0"/>
