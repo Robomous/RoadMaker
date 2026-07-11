@@ -173,7 +173,10 @@ extern "C" void posix_crash_handler(int sig) {
 }
 
 void install_platform_handler() {
-  struct sigaction action{};
+  // memset over brace-init: clang-format versions disagree on how to format
+  // `struct sigaction action{}` and CI enforces the newer one.
+  struct sigaction action;
+  std::memset(&action, 0, sizeof(action));
   action.sa_handler = posix_crash_handler;
   sigemptyset(&action.sa_mask);
   action.sa_flags = 0;
