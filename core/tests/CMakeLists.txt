@@ -8,6 +8,7 @@ add_executable(roadmaker_core_tests
   test_xodr_reader.cpp
   test_xodr_writer.cpp
   test_xodr_objects.cpp
+  test_xodr_signals.cpp
   test_mesh.cpp
   test_junction_surface.cpp
   test_junction_export.cpp

@@ -36,6 +36,8 @@ from ._roadmaker import (  # noqa: F401
     RoadMarkType,
     RoadNetwork,
     Severity,
+    Signal,
+    SignalId,
     Waypoint,
     XodrVersion,
     author_clothoid_road,

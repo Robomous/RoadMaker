@@ -93,6 +93,12 @@ struct Road {
   /// verbatim XML fragments in document order. M3a does not model them; the
   /// writer re-emits them inside <objects> so round-trip loses nothing.
   std::vector<std::string> object_extras;
+
+  /// Non-<signal> children of this road's <signals> container
+  /// (<signalReference> — §14.5, multiplicity 0..*), preserved as verbatim
+  /// XML fragments in document order. M3a does not model them; the writer
+  /// re-emits them inside <signals> so round-trip loses nothing.
+  std::vector<std::string> signal_extras;
 };
 
 } // namespace roadmaker

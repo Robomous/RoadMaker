@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<OpenDRIVE>
+  <header revMajor="1" revMinor="9" name="signals-preserved-validity"/>
+  <road name="r" length="100" id="1" junction="-1">
+    <planView>
+      <geometry s="0" x="0" y="0" hdg="0" length="100"><line/></geometry>
+    </planView>
+    <lanes>
+      <laneSection s="0">
+        <center><lane id="0" type="none" level="false"/></center>
+        <right><lane id="-1" type="driving" level="false"><width sOffset="0" a="3.5" b="0" c="0" d="0"/></lane></right>
+      </laneSection>
+    </lanes>
+    <signals>
+      <signal s="1.0" t="-0.1" id="5" name="pedestrian_trafficlight" dynamic="yes" orientation="+" zOffset="3.03" type="1000002" subtype="-1" country="OpenDRIVE" countryRevision="2023" vendorFoo="bar">
+        <validity fromLane="-1" toLane="-1"/>
+        <reference elementId="7" elementType="signal" type="stopline"/>
+        <userData code="vendor:x" value="1"/>
+      </signal>
+      <signalReference s="13.1" t="0" id="5" orientation="-"/>
+    </signals>
+  </road>
+</OpenDRIVE>

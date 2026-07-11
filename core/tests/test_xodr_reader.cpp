@@ -154,6 +154,7 @@ TEST(XodrReader, UnsupportedElementsWarnOnceAndAreNeverSilent) {
     </planView>
     <objects/>
     <signals/>
+    <surface/>
     <lanes>
       <laneSection s="0">
         <center><lane id="0" type="none"/></center>
@@ -167,9 +168,11 @@ TEST(XodrReader, UnsupportedElementsWarnOnceAndAreNeverSilent) {
 </OpenDRIVE>)";
   const auto result = roadmaker::parse_xodr(kXml);
   ASSERT_TRUE(result.has_value());
-  // <objects> is parsed since M3a P0 (issue #67) — no longer unsupported.
+  // <objects> is parsed since M3a P0 (issue #67), <signals> since P1 (#68) —
+  // no longer unsupported.
   EXPECT_FALSE(has_warning_containing(result->diagnostics, "<objects>"));
-  EXPECT_TRUE(has_warning_containing(result->diagnostics, "<signals>"));
+  EXPECT_FALSE(has_warning_containing(result->diagnostics, "<signals>"));
+  EXPECT_TRUE(has_warning_containing(result->diagnostics, "<surface>"));
   EXPECT_TRUE(has_warning_containing(result->diagnostics, "<station>"));
   EXPECT_TRUE(has_warning_containing(result->diagnostics, "hoverlane"));
 
