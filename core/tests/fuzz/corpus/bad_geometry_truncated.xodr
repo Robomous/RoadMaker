@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- MALFORMED seed: <geometry> element left unclosed (file truncated mid-tag).
+     Parser must reject via structured load error, not crash. MIT. -->
+<OpenDRIVE>
+  <header revMajor="1" revMinor="7" name="bad_geometry_truncated"/>
+  <road name="Trunc" length="50.0" id="1" junction="-1">
+    <planView>
+      <geometry s="0.0" x="0.0" y="0.0" hdg="0.0" length="50.0">
+        <line/>

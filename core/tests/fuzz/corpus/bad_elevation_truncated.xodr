@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- MALFORMED seed: <elevationProfile> truncated (unclosed). Parser must
+     reject via load error, not crash. MIT. -->
+<OpenDRIVE>
+  <header revMajor="1" revMinor="7" name="bad_elevation_truncated"/>
+  <road name="Trunc" length="80.0" id="1" junction="-1">
+    <planView>
+      <geometry s="0.0" x="0.0" y="0.0" hdg="0.0" length="80.0"><line/></geometry>
+    </planView>
+    <elevationProfile>
+      <elevation s="0.0" a="0.0" b="0.02" c="0.0" d="0.0"/>

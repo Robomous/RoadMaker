@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- MALFORMED seed: <junction> truncated mid-connection (unclosed tags).
+     Parser must reject via load error, not crash. MIT. -->
+<OpenDRIVE>
+  <header revMajor="1" revMinor="8" name="bad_junction_truncated"/>
+  <road name="R" length="20.0" id="1" junction="-1">
+    <planView>
+      <geometry s="0.0" x="0.0" y="0.0" hdg="0.0" length="20.0"><line/></geometry>
+    </planView>
+    <lanes>
+      <laneSection s="0.0"><center><lane id="0" type="none" level="false"/></center></laneSection>
+    </lanes>
+  </road>
+  <junction id="100" name="Trunc">
+    <connection id="0" incomingRoad="1" connectingRoad="1" contactPoint="start">
+      <laneLink from="-1" to="-1"/>

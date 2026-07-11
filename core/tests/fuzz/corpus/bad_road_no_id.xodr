@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- MALFORMED seed: <road> missing its id attribute and carrying a negative
+     length. Parser must diagnose, not crash. MIT. -->
+<OpenDRIVE>
+  <header revMajor="1" revMinor="7" name="bad_road_no_id"/>
+  <road name="NoId" length="-10.0" junction="-1">
+    <planView>
+      <geometry s="0.0" x="0.0" y="0.0" hdg="0.0" length="10.0"><line/></geometry>
+    </planView>
+    <lanes>
+      <laneSection s="0.0">
+        <center><lane id="0" type="none" level="false"/></center>
+      </laneSection>
+    </lanes>
+  </road>
+</OpenDRIVE>

@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- MALFORMED seed: planView geometries with decreasing/out-of-order s.
+     Parser must emit a diagnostic, not crash. MIT. -->
+<OpenDRIVE>
+  <header revMajor="1" revMinor="7" name="bad_geometry_out_of_order_s"/>
+  <road name="OOO" length="60.0" id="1" junction="-1">
+    <planView>
+      <geometry s="30.0" x="30.0" y="0.0" hdg="0.0" length="30.0"><line/></geometry>
+      <geometry s="0.0" x="0.0" y="0.0" hdg="0.0" length="30.0"><line/></geometry>
+    </planView>
+    <lanes>
+      <laneSection s="0.0">
+        <center><lane id="0" type="none" level="false"/></center>
+      </laneSection>
+    </lanes>
+  </road>
+</OpenDRIVE>

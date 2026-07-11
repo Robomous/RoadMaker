@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- MALFORMED seed: <roadMark> / <lane> truncated (unclosed tags, file cut).
+     Parser must reject via load error, not crash. MIT. -->
+<OpenDRIVE>
+  <header revMajor="1" revMinor="7" name="bad_roadmark_truncated"/>
+  <road name="Trunc" length="30.0" id="1" junction="-1">
+    <planView>
+      <geometry s="0.0" x="0.0" y="0.0" hdg="0.0" length="30.0"><line/></geometry>
+    </planView>
+    <lanes>
+      <laneSection s="0.0">
+        <center>
+          <lane id="0" type="none" level="false">
+            <roadMark sOffset="0.0" type="broken" width="0.12
