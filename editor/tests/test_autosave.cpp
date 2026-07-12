@@ -9,6 +9,7 @@
 #include <gtest/gtest.h>
 
 #include <QTemporaryDir>
+#include <array>
 #include <fstream>
 #include <sstream>
 
@@ -227,6 +228,76 @@ TEST(Autosave, MissingRecoveryDirYieldsNoCandidates) {
   EXPECT_TRUE(AutosaveManager::pending_recoveries(dir_path(dir) / "does-not-exist",
                                                   QStringLiteral("session-b"))
                   .empty());
+}
+
+// Hardening sprint §4.6 gap-fill tests.
+
+TEST(Autosave, DisabledManagerWritesNothingAndSweepsItsPair) {
+  QTemporaryDir dir;
+  ASSERT_TRUE(dir.isValid());
+  const std::filesystem::path root(dir.path().toStdString());
+  Document document;
+  qint64 now = 0;
+  AutosaveManager autosave(document, root, QStringLiteral("s-disabled"), [&now] { return now; });
+
+  ASSERT_TRUE(document
+                  .push_command(roadmaker::edit::create_road(
+                      {roadmaker::Waypoint{0.0, 0.0}, roadmaker::Waypoint{50.0, 0.0}},
+                      roadmaker::LaneProfile::two_lane_default(),
+                      ""))
+                  .has_value());
+  ASSERT_TRUE(autosave.autosave_now().has_value());
+  ASSERT_TRUE(std::filesystem::exists(autosave.xodr_path()));
+
+  autosave.set_enabled(false); // sweeps the pair, stops writing
+  EXPECT_FALSE(std::filesystem::exists(autosave.xodr_path()));
+  now += 10 * AutosaveManager::kIntervalMs;
+  autosave.maybe_autosave();
+  EXPECT_TRUE(autosave.autosave_now().has_value()); // no-op success
+  EXPECT_FALSE(std::filesystem::exists(autosave.xodr_path()));
+
+  autosave.set_enabled(true);
+  ASSERT_TRUE(autosave.autosave_now().has_value());
+  EXPECT_TRUE(std::filesystem::exists(autosave.xodr_path()));
+}
+
+TEST(Autosave, JunctionRegenerationTriggersAPreRegenerationCopy) {
+  QTemporaryDir dir;
+  ASSERT_TRUE(dir.isValid());
+  const std::filesystem::path root(dir.path().toStdString());
+  Document document;
+  qint64 now = 0;
+  AutosaveManager autosave(document, root, QStringLiteral("s-regen"), [&now] { return now; });
+
+  const auto road = [&](double ax, double ay, double bx, double by) {
+    ASSERT_TRUE(document
+                    .push_command(roadmaker::edit::create_road(
+                        {roadmaker::Waypoint{ax, ay}, roadmaker::Waypoint{bx, by}},
+                        roadmaker::LaneProfile::two_lane_default(),
+                        ""))
+                    .has_value());
+  };
+  road(-40.0, 0.0, -6.0, 0.0);
+  road(40.0, 0.0, 6.0, 0.0);
+  const roadmaker::RoadId west = document.network().find_road("1");
+  const roadmaker::RoadId east = document.network().find_road("2");
+  const std::array<roadmaker::RoadEnd, 2> ends{
+      roadmaker::RoadEnd{.road = west, .contact = roadmaker::ContactPoint::End},
+      roadmaker::RoadEnd{.road = east, .contact = roadmaker::ContactPoint::End}};
+  ASSERT_TRUE(document.push_command(roadmaker::edit::create_junction(document.network(), ends))
+                  .has_value());
+  AutosaveManager::discard(RecoverySet{.xodr = autosave.xodr_path(),
+                                       .sidecar = autosave.sidecar_path(),
+                                       .session = autosave.session()});
+  ASSERT_FALSE(std::filesystem::exists(autosave.xodr_path()));
+
+  // Dragging the junction's incoming-road node regenerates the junction —
+  // the pre-regeneration copy must exist WITHOUT any timer tick.
+  ASSERT_TRUE(document
+                  .push_command(roadmaker::edit::move_waypoint(
+                      document.network(), west, 0, roadmaker::Waypoint{-42.0, 3.0}))
+                  .has_value());
+  EXPECT_TRUE(std::filesystem::exists(autosave.xodr_path()));
 }
 
 } // namespace

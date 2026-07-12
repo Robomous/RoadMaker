@@ -22,6 +22,10 @@ public:
   /// Prepends `path` (deduplicated, capped at kMaxRecentFiles).
   void add_recent_file(const QString& path);
 
+  /// Autosave master switch (hardening §4.6 "setting to disable").
+  [[nodiscard]] bool autosave_enabled() const;
+  void set_autosave_enabled(bool enabled);
+
   static constexpr int kMaxRecentFiles = 10;
 
 private:

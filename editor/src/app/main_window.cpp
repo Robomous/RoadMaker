@@ -91,6 +91,7 @@ MainWindow::MainWindow(QWidget* parent)
   // AutosaveManager (fake-clock testable, §3); this timer is the thin
   // widget-side wrapper. Ticking faster than kIntervalMs keeps the actual
   // debounce inside maybe_autosave().
+  autosave_.set_enabled(settings_.autosave_enabled());
   auto* autosave_timer = new QTimer(this);
   autosave_timer->setInterval(5'000);
   connect(autosave_timer, &QTimer::timeout, &autosave_, &AutosaveManager::maybe_autosave);
@@ -231,6 +232,15 @@ void MainWindow::build_menus() {
 #ifdef RM_HAVE_USD
   file_menu->addAction(actions_->export_usd);
 #endif
+  file_menu->addSeparator();
+  auto* autosave_action = new QAction(tr("Enable &Autosave"), this);
+  autosave_action->setCheckable(true);
+  autosave_action->setChecked(settings_.autosave_enabled());
+  connect(autosave_action, &QAction::toggled, this, [this](bool enabled) {
+    settings_.set_autosave_enabled(enabled);
+    autosave_.set_enabled(enabled);
+  });
+  file_menu->addAction(autosave_action);
   file_menu->addSeparator();
   file_menu->addAction(actions_->quit);
 

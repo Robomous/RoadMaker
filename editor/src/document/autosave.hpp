@@ -55,6 +55,13 @@ public:
   /// flight, and at least kIntervalMs elapsed since the last write.
   void maybe_autosave();
 
+  /// Master switch (default on; the editor persists it as a setting). A
+  /// disabled manager writes nothing and sweeps its own recovery pair so a
+  /// stale copy never outlives the choice.
+  void set_enabled(bool enabled);
+
+  [[nodiscard]] bool enabled() const { return enabled_; }
+
   /// Writes the recovery pair now (still skipped when the document is clean
   /// or a preview session is active — mid-drag state is transient).
   [[nodiscard]] Expected<void> autosave_now();
@@ -86,6 +93,7 @@ public:
 private:
   void on_command_committed();
 
+  bool enabled_ = true;
   Document& document_;
   std::filesystem::path dir_;
   QString session_;

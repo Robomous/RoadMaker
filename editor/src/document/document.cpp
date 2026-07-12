@@ -171,6 +171,7 @@ void Document::push_applied_with_regeneration(std::unique_ptr<edit::Command> com
   // skipped: they list their own junction as dirty but must not self- or
   // double-regenerate — the create already built the connecting roads.
   std::vector<std::unique_ptr<edit::Command>> regenerations;
+  bool announced = false;
   for (const JunctionId junction_id : dirty.junctions) {
     if (dirty.topology) {
       break;
@@ -178,6 +179,12 @@ void Document::push_applied_with_regeneration(std::unique_ptr<edit::Command> com
     const Junction* junction = network_.junction(junction_id);
     if (junction == nullptr || junction->arms.empty()) {
       continue;
+    }
+    if (!announced) {
+      // The network holds the primary edit but no regeneration yet — the
+      // exact state a recovery copy should capture (#53 gap-fill).
+      emit about_to_regenerate();
+      announced = true;
     }
     auto regen = edit::regenerate_junction(network_, junction_id);
     if (auto applied = regen->apply(network_); !applied.has_value()) {
