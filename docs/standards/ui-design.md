@@ -39,11 +39,24 @@ and viewport improvements in our GL layer. No QML/web rewrite.
 Icons are monochrome SVGs tinted at load to the palette's text color
 (`Icons::get`); the accent is reserved for state, never for icon fills.
 
-**Default palette:** decided by maintainer pick from three rendered
-candidates (graphite + amber · slate + cyan · warm dark + signal yellow);
-the pick is baked as the default `Theme` in `editor/src/theme/theme.cpp`.
-Alternates stay selectable via `--theme <name>` for screenshots and A/B
-comparisons.
+**Default palette: `graphite-amber`** — maintainer pick from the three
+rendered candidates (graphite + amber · slate + cyan · warm dark + signal
+yellow), 2026-07-12. Values live in `editor/src/theme/theme.cpp`:
+
+| Token | Value | | Token | Value |
+|---|---|---|---|---|
+| `bg0` | `#131417` | | `accent` | `#f5a623` |
+| `bg1` | `#1b1d21` | | `accent_hover` | `#ffb84d` |
+| `bg2` | `#22252a` | | `on_accent` | `#1f1600` |
+| `bg_input` | `#101114` | | `warning` | `#e3b341` |
+| `border` | `#2e3238` | | `error` | `#e5534b` |
+| `border_strong` | `#434951` | | `success` | `#57ab5a` |
+| `text_primary` | `#e8eaed` | | `sky_top` | `#1d2026` |
+| `text_secondary` | `#a7adb5` | | `sky_horizon` | `#3a4149` |
+| `text_disabled` | `#5f666e` | | `grid_major` / `grid_minor` | `#535a63` / `#33383f` |
+
+The two alternates stay selectable via `--theme <name>` for screenshots
+and A/B comparisons.
 
 ## Spacing, radii, sizes
 

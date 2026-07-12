@@ -295,8 +295,8 @@ const Theme& warm_signal() {
 }
 
 const Theme& default_theme() {
-  // Phase 0 maintainer pick pending — graphite-amber stands in until the
-  // 3-mockup decision lands (ui-design.md "Default palette").
+  // Maintainer pick from the Phase 0 three-mockup checkpoint (2026-07-12):
+  // graphite-amber (ui-design.md "Default palette").
   return graphite_amber();
 }
 
