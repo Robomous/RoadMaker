@@ -18,6 +18,11 @@ void OrbitCamera::orbit(float delta_yaw, float delta_pitch) {
   pitch_ = std::clamp(pitch_ + delta_pitch, 0.05F, kPi / 2.0F - 0.01F);
 }
 
+void OrbitCamera::set_view(float yaw, float pitch) {
+  yaw_ = yaw;
+  pitch_ = std::clamp(pitch, 0.05F, kPi / 2.0F - 0.01F);
+}
+
 void OrbitCamera::pan(float delta_x, float delta_y) {
   // Move the target in the camera's right/up-ish (ground-projected) axes.
   const float scale = distance_ * 0.0016F;

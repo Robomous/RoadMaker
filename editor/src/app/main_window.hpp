@@ -30,6 +30,9 @@ public:
   /// Loads a .xodr; failures land in the Diagnostics panel and a message box.
   void load_file(const std::filesystem::path& path);
 
+  /// The central viewport (screenshot mode drives its camera and capture).
+  [[nodiscard]] ViewportWidget* viewport() { return viewport_; }
+
 protected:
   void changeEvent(QEvent* event) override;
   void closeEvent(QCloseEvent* event) override;

@@ -5,6 +5,7 @@
 // camera and the picking state; selection flows OUT through SelectionModel
 // and highlight state flows back IN through it — never widget-to-widget.
 
+#include <QImage>
 #include <QOpenGLWidget>
 #include <QPoint>
 #include <QString>
@@ -62,6 +63,16 @@ public slots:
 
 public:
   [[nodiscard]] QString hint() const { return hint_text_; }
+
+  /// Camera preset for scripted captures: "top" (plan view, north up) or
+  /// "orbit" (the default 3/4 view). Unknown names keep the current view.
+  void set_camera_preset(const QString& preset);
+
+  /// Renders the current scene into an offscreen framebuffer and returns the
+  /// frame (screenshot mode, docs/contributing/pull-requests.md visual
+  /// evidence). Runs any pending scene upload first via paintGL. Null image
+  /// when GL never initialized.
+  [[nodiscard]] QImage capture_frame();
 
 signals:
   void hover_changed(const roadmaker::editor::HoverInfo& info);
