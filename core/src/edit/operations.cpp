@@ -1589,6 +1589,62 @@ double half_width_at(const RoadNetwork& network, const Road& road, double statio
   return std::max(left, right);
 }
 
+double t_attach_gap(const RoadNetwork& network,
+                    RoadEnd end,
+                    RoadId target_id,
+                    double s,
+                    const TAttachOptions& options) {
+  if (options.gap_m > 0.0) {
+    return options.gap_m;
+  }
+  const Road* target = network.road(target_id);
+  const Road* attaching = network.road(end.road);
+  if (target == nullptr || attaching == nullptr) {
+    return 0.0;
+  }
+  constexpr double kPi = std::numbers::pi;
+  const PathPoint corner = target->plan_view.evaluate(s);
+  const PathPoint branch_face = attaching->plan_view.evaluate(
+      end.contact == ContactPoint::Start ? 0.0 : attaching->plan_view.length());
+
+  // Auto (design doc §gap auto-sizing): the junction area must span the
+  // crossing road's body (width bound) AND give both generated turn
+  // directions room to stay drivable (turning bound). A circular turn of
+  // radius r deflecting by Δθ needs tangent legs of r·tan(Δθ/2) on each
+  // side of the corner; the leg along the target is the gap. Δθ is clamped
+  // to 150° — beyond that the tangent length diverges while the fitted
+  // clothoid resolves the remainder as an S-curve near the branch mouth.
+  const double attach_station = end.contact == ContactPoint::Start ? 0.0 : attaching->length;
+  const double width_bound = std::max(half_width_at(network, *target, s),
+                                      half_width_at(network, *attaching, attach_station)) +
+                             1.0;
+  const double branch_in_hdg =
+      end.contact == ContactPoint::Start ? branch_face.hdg + kPi : branch_face.hdg;
+  const double psi = std::abs(std::remainder(branch_in_hdg - corner.hdg, 2.0 * kPi));
+  constexpr double kMaxDeflection = 150.0 * kPi / 180.0;
+  // On a curved target the cut faces rotate with the reference line, so a
+  // turn's real deflection grows by the heading swept across the gap
+  // (gap·|κ|); attaching on the concave (inside) side is the cramped case —
+  // the arms rotate TOWARD the branch, so the sweep counts double there.
+  // gap appears on both sides of the equation — 3 fixed-point rounds
+  // converge far below tol for every drivable target curvature.
+  const double lateral_sign = (std::cos(corner.hdg) * (branch_face.y - corner.y)) -
+                              (std::sin(corner.hdg) * (branch_face.x - corner.x));
+  const bool inside_attach = lateral_sign * corner.curvature > 0.0;
+  const double kappa = std::abs(corner.curvature) * (inside_attach ? 2.0 : 1.0);
+  double gap = width_bound;
+  for (int round = 0; round < 3; ++round) {
+    const double sweep = gap * kappa;
+    const double turn_toward_tail = std::min(psi + sweep, kMaxDeflection);
+    const double turn_toward_head = std::min(kPi - psi + sweep, kMaxDeflection);
+    const double turning_bound = (options.generation.min_turn_radius_m *
+                                  std::tan(std::max(turn_toward_tail, turn_toward_head) / 2.0)) +
+                                 1.0;
+    gap = std::max(width_bound, turning_bound);
+  }
+  return gap;
+}
+
 std::unique_ptr<Command> attach_t_junction(const RoadNetwork& network,
                                            RoadEnd end,
                                            RoadId target_id,
@@ -1623,51 +1679,12 @@ std::unique_ptr<Command> attach_t_junction(const RoadNetwork& network,
     return fail("a junction's connecting road cannot be an arm of another junction");
   }
 
-  constexpr double kPi = std::numbers::pi;
   const PathPoint corner = target->plan_view.evaluate(s);
   const double branch_length = attaching->plan_view.length();
   const PathPoint branch_face = attaching->plan_view.evaluate(
       end.contact == ContactPoint::Start ? 0.0 : branch_length);
 
-  double gap = options.gap_m;
-  if (gap <= 0.0) {
-    // Auto (design doc §gap auto-sizing): the junction area must span the
-    // crossing road's body (width bound) AND give both generated turn
-    // directions room to stay drivable (turning bound). A circular turn of
-    // radius r deflecting by Δθ needs tangent legs of r·tan(Δθ/2) on each
-    // side of the corner; the leg along the target is the gap. Δθ is clamped
-    // to 150° — beyond that the tangent length diverges while the fitted
-    // clothoid resolves the remainder as an S-curve near the branch mouth.
-    const double attach_station = end.contact == ContactPoint::Start ? 0.0 : attaching->length;
-    const double width_bound = std::max(half_width_at(network, *target, s),
-                                        half_width_at(network, *attaching, attach_station)) +
-                               1.0;
-    const double branch_in_hdg =
-        end.contact == ContactPoint::Start ? branch_face.hdg + kPi : branch_face.hdg;
-    const double psi = std::abs(std::remainder(branch_in_hdg - corner.hdg, 2.0 * kPi));
-    constexpr double kMaxDeflection = 150.0 * kPi / 180.0;
-    // On a curved target the cut faces rotate with the reference line, so a
-    // turn's real deflection grows by the heading swept across the gap
-    // (gap·|κ|); attaching on the concave (inside) side is the cramped case —
-    // the arms rotate TOWARD the branch, so the sweep counts double there.
-    // gap appears on both sides of the equation — 3 fixed-point rounds
-    // converge far below tol for every drivable target curvature.
-    const double lateral_sign = (std::cos(corner.hdg) * (branch_face.y - corner.y)) -
-                                (std::sin(corner.hdg) * (branch_face.x - corner.x));
-    const bool inside_attach = lateral_sign * corner.curvature > 0.0;
-    const double kappa = std::abs(corner.curvature) * (inside_attach ? 2.0 : 1.0);
-    gap = width_bound;
-    for (int round = 0; round < 3; ++round) {
-      const double sweep = gap * kappa;
-      const double turn_toward_tail = std::min(psi + sweep, kMaxDeflection);
-      const double turn_toward_head = std::min(kPi - psi + sweep, kMaxDeflection);
-      const double turning_bound =
-          (options.generation.min_turn_radius_m *
-           std::tan(std::max(turn_toward_tail, turn_toward_head) / 2.0)) +
-          1.0;
-      gap = std::max(width_bound, turning_bound);
-    }
-  }
+  const double gap = t_attach_gap(network, end, target_id, s, options);
   const double length = target->plan_view.length();
   if (s - gap <= tol::kLength || s + gap >= length - tol::kLength) {
     return fail("attach point too close to the target road's end — use an endpoint junction "

@@ -41,6 +41,8 @@ def main() -> int:
     # junction area, like the target's middle stub.
     options = rm.edit.TAttachOptions()
     options.generation.min_turn_radius_m = 6.0
+    gap = rm.edit.t_attach_gap(network, side_end, main_road, 60.0, options)
+    print(f"junction area spans s = {60.0 - gap:.2f} .. {60.0 + gap:.2f}")
     stack.push(network, rm.edit.attach_t_junction(network, side_end, main_road, 60.0, options))
     print(
         f"teed: {network.road_count} roads, "

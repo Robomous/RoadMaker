@@ -88,18 +88,46 @@ coincident-vertex welding pass, no T-junction cracks.
   the surface, generated from `<roadMark>` records — never baked into
   textures.
 
-## Junction floors
+## Junction surfaces
 
-The current junction surface is a plan-view floor:
+The junction surface is a blended 2.5D height field
+([junction blending](../design/m2/03_junction_blending.md), hardened by the
+T-junction fix — [t_junction](../design/hardening/t_junction.md)):
 
-1. take the footprint polygons of the junction's connecting roads,
-2. union them with **Clipper2**,
-3. triangulate the union with **CDT** (constrained Delaunay).
+1. footprint polygons of the connecting roads **plus a joint quad per arm**
+   (its full end cross-section extruded into the junction),
+2. all welded by a 1 cm inflation and unioned with **Clipper2** at
+   micrometer precision, then cut back to the exact arm cross-section lines,
+3. triangulated with **CDT** (boundary edges subdivided to the Steiner step;
+   Steiner grid keeps half a step of boundary clearance),
+4. elevation solved as a harmonic field (Dirichlet boundary from the road
+   meshes' exact border vertices, soft centerline constraints),
+5. boundary vertices snapped bitwise onto road-mesh vertices (cluster weld);
+   degenerate and near-collinear cap triangles dropped.
 
+Connecting roads emit **no lane surface of their own** while junction floors
+are on — the floor IS the junction surface (two coplanar copies z-fight).
 Each floor is keyed by `JunctionId` so incremental re-meshing can replace
-exactly the affected entry. This is an explicit seam: full 3D junction
-surface blending (elevation-aware, curb-aware) is Milestone 2 — see
-[junction blending](../design/m2/03_junction_blending.md).
+exactly the affected entry.
+
+### Junction quality invariants
+
+Regenerated for every fixture of the tee matrix
+(`core/tests/test_t_junction_quality.cpp`) and enforced in CI:
+
+- ≤ 2 sliver triangles (min angle < 5°); zero degenerate (zero-plan-area)
+  and zero flipped (plan-CW) triangles;
+- zero floor-boundary self-intersections;
+- watertight seams: every boundary vertex within 1.2 cm of a road-mesh
+  vertex is a bitwise copy of it; coincident-in-plan vertices share z
+  exactly;
+- connecting-road curvature ≤ 1/`min_turn_radius_m` (drivable bound);
+- connections fanning out of one arm from different lanes never cross
+  (lane-order preservation, `junctions.connection.smooth_fit`);
+- elevation continuity: connecting-road end z equals the linked arm's
+  cut-face z within `tol::kLength`;
+- re-meshing the same network is bitwise deterministic, including across
+  save/load.
 
 ## Incremental re-meshing
 

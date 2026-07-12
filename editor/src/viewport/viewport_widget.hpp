@@ -55,6 +55,14 @@ public slots:
   /// Frames the selected road/lane, or the whole scene without a selection.
   void frame_selection();
 
+  /// Active-tool hint drawn in the viewport corner (mirrors the status bar —
+  /// the user's eyes are on the viewport during a tool interaction, issue
+  /// #103 discoverability). Empty text clears it.
+  void set_hint(const QString& text);
+
+public:
+  [[nodiscard]] QString hint() const { return hint_text_; }
+
 signals:
   void hover_changed(const roadmaker::editor::HoverInfo& info);
 
@@ -127,6 +135,9 @@ private:
   QMetaObject::Connection preview_connection_;
 
   QPoint last_mouse_pos_;
+
+  /// Corner hint text (set_hint); painted over the GL frame in paintGL.
+  QString hint_text_;
 };
 
 } // namespace roadmaker::editor

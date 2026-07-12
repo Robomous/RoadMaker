@@ -72,19 +72,112 @@ children, so ids resurrect identically (the M2 restore-in-place contract).
 Any mid-chain failure reverts the already-applied prefix — a failed apply
 leaves the network untouched, per the command-layer invariant.
 
-### Gap auto-sizing
+### Gap auto-sizing (as built — revised by the GW-1 fix, issue #103)
 
-`gap_m = 0` derives the gap from the geometry it must clear:
+`gap_m = 0` derives the gap from BOTH constraints it must satisfy
+(`edit::t_attach_gap`, shared by the command and the editor preview):
 
 ```
-gap = max(half_width(target at s), half_width(end road at its end)) + 1.0 m
+width_bound   = max(half_width(target at s), half_width(end road at its end)) + 1 m
+turning_bound = min_turn_radius · tan(Δθ_worst / 2) + 1 m
+gap           = max(width_bound, turning_bound)
 ```
 
-with `half_width` = the wider side's total lane width. Rationale: the
-junction area must at least span the crossing road's body; the +1 m keeps
-the arm ends out of the blended surface's steepest region. An explicit
-`gap_m` wins (the editor may expose it later; the tool does not in this
-sprint).
+with `half_width` = the wider side's total lane width,
+`min_turn_radius` = `JunctionGenOptions::min_turn_radius_m` (6 m default),
+and `Δθ_worst` the larger deflection of the two turn directions (branch→head
+and branch→tail), clamped to 150°. On a curved target the cut faces rotate
+with the reference line, so the deflection grows by the heading swept across
+the gap (`gap·|κ|`, doubled when attaching on the concave side); gap appears
+on both sides of that equation, resolved by 3 fixed-point rounds.
+
+The original width-only formula was the GW-1 gate finding's root cause #1:
+it bounded the junction area by road *width* while the binding constraint is
+*turning geometry* — undersized gaps forced fitted turns to κ up to
+0.63 m⁻¹ (r ≈ 1.6 m). RoadRunner-class editors size junction areas from
+turn radii for the same reason.
+
+**Branch trimming.** The branch face needs the same clearance from the
+corner that the gap gives the target's cut faces — the editor's side-snap
+places the branch end wherever the user drew it, often ON the target. The
+attach therefore trims the branch's overhang back to chord-distance `gap`
+from the corner (two more composite children: split + delete-stub, exactly
+like the target's middle). A branch too short to reach the junction boundary
+is a factory error. An explicit `gap_m` wins and skips nothing else.
+
+### Connecting-road fitting (as built, issue #103)
+
+- **Lane-boundary anchors.** Every connecting road's reference line is
+  anchored on the linked lanes' INNER boundaries (laneOffset included) at
+  both cut faces — the connecting road carries one right-hand lane (id −1)
+  spanning `[−width, 0]`, so the linked lanes coincide exactly at both
+  contacts (`asam.net:xodr:1.9.0:junctions.connection.smooth_fit`, §10.3
+  linkage semantics). Fitting arm-center to arm-center (the original M2
+  code) stacked every lane pair of a movement on the same curve and left
+  multi-lane junction interiors uncovered.
+- **Fillet-guided fits.** Turns are fitted through guide waypoints — the two
+  tangent points and the arc midpoint of the largest circle tangent to both
+  anchor rays, with headings locked (entry/exit tangents; arc-midpoint
+  tangent = the travel-direction bisector). A bare 2-point G1 Hermite
+  overshoots the inscribed arc's curvature by ~1.4× on asymmetric legs.
+  (Near-)collinear movements — the tee's through path — take the plain
+  2-point fit.
+- **Lane discipline.** When a movement cannot use every lane
+  (`pairs < lanes`), right turns keep the curb-in default (outermost lanes);
+  LEFT turns use the INNERMOST lanes — outer-lane departures would cross the
+  inner lanes' through connections, a lane-order swap the quality matrix's
+  fan-out invariant forbids.
+- **Elevation.** Each generated connecting road carries a cubic elevation
+  profile matching the linked arms' z AND grade at both cut faces, signed
+  along the connecting road's driving direction
+  (`asam.net:xodr:1.8.0:junctions.elevation_grid.entry_exit_smoothness`).
+  The tee cut faces inherit the target's profile at `s±gap` through
+  split_road, so the junction surface is continuous on graded roads.
+
+### Junction surface (as built, issue #103 — junction_surface.cpp)
+
+The tee exposed gaps between the M2 blending design (03 §1) and its
+implementation; the pipeline now matches the design plus hardening:
+
+- per-arm **joint quads** (the full end cross-section extruded 2 m into the
+  junction) join the footprint union, so the surface reaches every arm face;
+  their vertices are the road mesh's exact end-station vertices (Dirichlet
+  data + stitch targets). Emitted only when the arm list persists (≥ 2 arms,
+  the writer's `rm:arms` rule) so meshing is identical across save/load;
+- the union runs at **precision 6** (micrometer — Clipper2's DEFAULT of 2
+  silently rounded every seam vertex to 1 cm), all inputs are welded by a
+  1 cm inflation (adjacent ribbons are exactly tangent; the raw union kept
+  mm-wide zigzag channels that CDT turned into sub-degree slivers), and the
+  weld's overhang past each arm face is cut back to the exact cross-section
+  line;
+- boundary edges are subdivided to the Steiner step, Steiner points keep
+  half a step of boundary clearance, boundary vertices snap bitwise onto
+  road vertices within 1.2 cm (cluster-welded, exact vertices win), and
+  degenerate/cap triangles are dropped;
+- **connecting roads no longer emit their own lane surfaces** when junction
+  floors are on: the floor IS the junction surface. The pre-fix editor drew
+  both, coplanar, z-fighting across the whole interior.
+
+### Quality gates
+
+`core/tests/test_t_junction_quality.cpp` runs an 11-fixture tee matrix
+(perpendicular / 45° / 135° / R=100 and R=30 inside+outside / asymmetric /
+Start-contact / graded / multi-lane) asserting per fixture: ≤ 2 sliver
+triangles (< 5°), zero degenerate/flipped triangles, zero boundary
+self-intersections, zero seam mismatches, max |κ| ≤ 1/6 m⁻¹, no same-arm
+fan-out crossings, seam Δz ≤ tol, bitwise-deterministic re-mesh — plus G1
+contacts, validator-clean export (both versions), save/reload re-mesh
+identity, and ONE-undo byte identity.
+
+### Before / after (GW-1 finding, issue #103)
+
+| | before | after |
+|---|---|---|
+| perpendicular | ![before](img/tee_before_perp.png) | ![after](img/tee_after_perp.png) |
+| 45° | ![before](img/tee_before_deg45.png) | ![after](img/tee_after_deg45.png) |
+| graded | ![before](img/tee_before_graded.png) | ![after](img/tee_after_graded.png) |
+| multi-lane | ![before](img/tee_before_multilane.png) | ![after](img/tee_after_multilane.png) |
+| esmini | ![before](img/tee_before_esmini_perp.png) | ![after](img/tee_after_esmini_perp_top.png) |
 
 ### Factory-time validation (fast, user-facing errors)
 

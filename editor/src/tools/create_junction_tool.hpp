@@ -53,6 +53,11 @@ private:
   /// roads whose ends are already selected.
   [[nodiscard]] std::optional<edit::SideSnap> snap_side(const Waypoint& cursor) const;
 
+  /// Tee overlay (issue #103 discoverability): anchor marker, dashed ghost
+  /// line from the selected end, and the [s−gap, s+gap] replaced-span
+  /// highlight with perpendicular end ticks.
+  void add_tee_preview(PreviewGeometry& geometry, const edit::SideSnap& side) const;
+
   void toggle(const RoadEnd& end);
   void generate();
   void generate_t_attach();

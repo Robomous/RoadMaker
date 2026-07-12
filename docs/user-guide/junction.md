@@ -18,6 +18,10 @@ generated between every arm.*
 The junction is one undoable command. Moving an arm road later (via
 [Edit Nodes](edit-nodes.md)) regenerates the connecting lanes.
 
+To attach a road's end to another road's **body** instead of joining ends,
+see [T-junction](t-junction.md) — same tool, one selected end plus a body
+anchor.
+
 ## Notes
 
 - The selected arms are remembered on the junction, so it can be regenerated

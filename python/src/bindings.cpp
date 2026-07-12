@@ -986,6 +986,22 @@ NB_MODULE(_roadmaker, m) {
       .def_rw("generation", &roadmaker::edit::TAttachOptions::generation);
 
   edit.def(
+      "t_attach_gap",
+      [](const roadmaker::RoadNetwork& network,
+         const roadmaker::RoadEnd& end,
+         roadmaker::RoadId target,
+         double s,
+         const roadmaker::edit::TAttachOptions& options) {
+        return roadmaker::edit::t_attach_gap(network, end, target, s, options);
+      },
+      "network"_a,
+      "end"_a,
+      "target"_a,
+      "s"_a,
+      "options"_a = roadmaker::edit::TAttachOptions{},
+      "Half-length [m] of the junction area attach_t_junction would remove "
+      "around s (the editor preview's [s-gap, s+gap] highlight).");
+  edit.def(
       "attach_t_junction",
       [](const roadmaker::RoadNetwork& network,
          const roadmaker::RoadEnd& end,

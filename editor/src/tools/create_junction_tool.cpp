@@ -14,7 +14,8 @@ CreateJunctionTool::CreateJunctionTool(Document& document, QObject* parent)
 
 void CreateJunctionTool::activate() {
   reset_session();
-  emit status_message(tr("Create Junction — click 2+ road ends, Enter generates, Esc cancels"));
+  emit status_message(tr("Create Junction — click 2+ road ends, or 1 end + a road body to tee "
+                         "into it; Enter generates, Esc cancels"));
 }
 
 void CreateJunctionTool::deactivate() {
@@ -83,9 +84,13 @@ bool CreateJunctionTool::mouse_press(const ToolEvent& event) {
     side_anchor_ = side;
     emit preview_changed();
     const Road* target = document_.network().road(side->road);
-    emit status_message(tr("Tee into %1 at s=%2 m — Enter attaches, Esc cancels")
+    const double gap = edit::t_attach_gap(document_.network(), ends_.front(), side->road, side->s);
+    emit status_message(tr("Tee into %1 at s=%2 m — replaces s=%3–%4 m; Enter attaches, "
+                           "Esc cancels")
                             .arg(QString::fromStdString(target->name))
-                            .arg(side->s, 0, 'f', 1));
+                            .arg(side->s, 0, 'f', 1)
+                            .arg(side->s - gap, 0, 'f', 1)
+                            .arg(side->s + gap, 0, 'f', 1));
   }
   return true;
 }
@@ -169,7 +174,7 @@ PreviewGeometry CreateJunctionTool::preview() const {
     add_point(pose.x, pose.y);
   }
   if (side_anchor_.has_value()) {
-    add_point(side_anchor_->position.x, side_anchor_->position.y);
+    add_tee_preview(geometry, *side_anchor_);
   }
   if (hover_.has_value()) {
     if (const auto end = snap_end(*hover_); end.has_value()) {
@@ -178,11 +183,75 @@ PreviewGeometry CreateJunctionTool::preview() const {
           end->contact == ContactPoint::Start ? 0.0 : road->plan_view.length());
       add_point(pose.x, pose.y);
     } else if (const auto side = snap_side(*hover_); side.has_value()) {
-      // The side-snap indicator on the target's reference line.
-      add_point(side->position.x, side->position.y);
+      // Live tee preview while hovering, same as a placed anchor.
+      add_tee_preview(geometry, *side);
     }
   }
   return geometry;
+}
+
+/// The tee overlay (discoverability package, issue #103): the anchor marker
+/// on the target's reference line, a dashed ghost line from the selected end
+/// to the anchor, and the [s−gap, s+gap] span the attach will replace —
+/// highlighted along the reference line so the user sees exactly what
+/// generation consumes. Lines are xyz pairs; the dash pattern is emitted as
+/// separate segments (the viewport draws PreviewGeometry lines pairwise).
+void CreateJunctionTool::add_tee_preview(PreviewGeometry& geometry,
+                                         const edit::SideSnap& side) const {
+  const RoadNetwork& network = document_.network();
+  const Road* target = network.road(side.road);
+  if (target == nullptr || ends_.size() != 1) {
+    return;
+  }
+  const auto add_segment = [&](double ax, double ay, double bx, double by) {
+    geometry.line_positions.insert(geometry.line_positions.end(), {ax, ay, 0.0, bx, by, 0.0});
+  };
+
+  // Anchor marker on the reference line.
+  geometry.point_positions.insert(geometry.point_positions.end(),
+                                  {side.position.x, side.position.y, 0.0});
+
+  // Dashed ghost from the attaching end to the anchor (1 m dash / 1 m gap).
+  const Road* branch = network.road(ends_.front().road);
+  if (branch != nullptr) {
+    const auto from = branch->plan_view.evaluate(
+        ends_.front().contact == ContactPoint::Start ? 0.0 : branch->plan_view.length());
+    const double dx = side.position.x - from.x;
+    const double dy = side.position.y - from.y;
+    const double length = std::hypot(dx, dy);
+    constexpr double kDash = 1.0;
+    for (double d = 0.0; d < length; d += 2.0 * kDash) {
+      const double e = std::min(d + kDash, length);
+      add_segment(from.x + (dx * d / length),
+                  from.y + (dy * d / length),
+                  from.x + (dx * e / length),
+                  from.y + (dy * e / length));
+    }
+  }
+
+  // The replaced span [s−gap, s+gap], drawn along the reference line.
+  const double gap = edit::t_attach_gap(network, ends_.front(), side.road, side.s);
+  if (gap <= 0.0) {
+    return;
+  }
+  const double s0 = std::max(0.0, side.s - gap);
+  const double s1 = std::min(target->plan_view.length(), side.s + gap);
+  const int steps = std::max(2, static_cast<int>((s1 - s0)));
+  auto prev = target->plan_view.evaluate(s0);
+  for (int i = 1; i <= steps; ++i) {
+    const auto next = target->plan_view.evaluate(s0 + ((s1 - s0) * static_cast<double>(i) / steps));
+    add_segment(prev.x, prev.y, next.x, next.y);
+    prev = next;
+  }
+  // Span end ticks: 3 m perpendicular strokes at the future cut faces.
+  constexpr double kTickHalf = 3.0;
+  for (const double s_cut : {s0, s1}) {
+    const auto pose = target->plan_view.evaluate(s_cut);
+    add_segment(pose.x + (kTickHalf * std::sin(pose.hdg)),
+                pose.y - (kTickHalf * std::cos(pose.hdg)),
+                pose.x - (kTickHalf * std::sin(pose.hdg)),
+                pose.y + (kTickHalf * std::cos(pose.hdg)));
+  }
 }
 
 void CreateJunctionTool::reset_session() {

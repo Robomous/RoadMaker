@@ -74,8 +74,8 @@ Actions::Actions(QUndoStack& undo_stack, QObject* parent) : QObject(parent) {
   tool_create_junction = new QAction(tr("Create &Junction"), this);
   tool_create_junction->setCheckable(true);
   tool_create_junction->setShortcut(Qt::Key_J);
-  tool_create_junction->setToolTip(tr("Create Junction — click 2+ road ends, Enter generates the "
-                                      "connecting roads, Esc cancels (J)"));
+  tool_create_junction->setToolTip(tr("Create Junction — click 2+ road ends, or 1 end + a road "
+                                      "body to tee into it; Enter generates, Esc cancels (J)"));
   tool_group->addAction(tool_create_junction);
 
   tool_delete = new QAction(tr("&Delete"), this);

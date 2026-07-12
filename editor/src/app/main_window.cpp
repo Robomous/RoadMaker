@@ -104,20 +104,24 @@ MainWindow::MainWindow(QWidget* parent)
   QTimer::singleShot(0, this, &MainWindow::check_recovery);
 
   // Editing tools (M2). Select/Move is the default; guidance lands in the
-  // status bar via the tool's status_message.
+  // status bar via the tool's status_message AND as the viewport corner
+  // hint — during a tool interaction the user's eyes are on the viewport,
+  // not the status bar (issue #103 discoverability).
+  const auto wire_status = [this](Tool* tool) {
+    connect(tool, &Tool::status_message, this, [this](const QString& text) {
+      statusBar()->showMessage(text, 5000);
+      viewport_->set_hint(text);
+    });
+  };
   auto select_tool = std::make_unique<SelectTool>(document_, selection_);
-  connect(select_tool.get(), &Tool::status_message, this, [this](const QString& text) {
-    statusBar()->showMessage(text, 5000);
-  });
+  wire_status(select_tool.get());
   tool_manager_.register_tool(ToolId::Select, std::move(select_tool));
   connect(actions_->tool_select, &QAction::triggered, this, [this] {
     tool_manager_.set_active(ToolId::Select);
   });
   auto create_road_tool = std::make_unique<CreateRoadTool>(document_);
   create_road_tool_ = create_road_tool.get();
-  connect(create_road_tool.get(), &Tool::status_message, this, [this](const QString& text) {
-    statusBar()->showMessage(text, 5000);
-  });
+  wire_status(create_road_tool.get());
   tool_manager_.register_tool(ToolId::CreateRoad, std::move(create_road_tool));
   connect(actions_->tool_create_road, &QAction::triggered, this, [this] {
     tool_manager_.set_active(ToolId::CreateRoad);
@@ -139,26 +143,20 @@ MainWindow::MainWindow(QWidget* parent)
     arm_template(LaneProfile::highway());
   });
   auto edit_nodes_tool = std::make_unique<EditNodesTool>(document_, selection_);
-  connect(edit_nodes_tool.get(), &Tool::status_message, this, [this](const QString& text) {
-    statusBar()->showMessage(text, 5000);
-  });
+  wire_status(edit_nodes_tool.get());
   tool_manager_.register_tool(ToolId::EditNodes, std::move(edit_nodes_tool));
   connect(actions_->tool_edit_nodes, &QAction::triggered, this, [this] {
     tool_manager_.set_active(ToolId::EditNodes);
   });
   auto lane_profile_tool = std::make_unique<LaneProfileTool>(selection_);
-  connect(lane_profile_tool.get(), &Tool::status_message, this, [this](const QString& text) {
-    statusBar()->showMessage(text, 5000);
-  });
+  wire_status(lane_profile_tool.get());
   tool_manager_.register_tool(ToolId::LaneProfile, std::move(lane_profile_tool));
   connect(actions_->tool_lane_profile, &QAction::triggered, this, [this] {
     tool_manager_.set_active(ToolId::LaneProfile);
   });
   auto elevation_tool = std::make_unique<ElevationTool>(document_, selection_);
   elevation_tool_ = elevation_tool.get();
-  connect(elevation_tool.get(), &Tool::status_message, this, [this](const QString& text) {
-    statusBar()->showMessage(text, 5000);
-  });
+  wire_status(elevation_tool.get());
   tool_manager_.register_tool(ToolId::Elevation, std::move(elevation_tool));
   connect(actions_->tool_elevation, &QAction::triggered, this, [this] {
     tool_manager_.set_active(ToolId::Elevation);
@@ -166,17 +164,13 @@ MainWindow::MainWindow(QWidget* parent)
   // The Properties panel edits the node the Elevation tool has made active.
   properties_panel_->set_elevation_tool(elevation_tool_);
   auto create_junction_tool = std::make_unique<CreateJunctionTool>(document_);
-  connect(create_junction_tool.get(), &Tool::status_message, this, [this](const QString& text) {
-    statusBar()->showMessage(text, 5000);
-  });
+  wire_status(create_junction_tool.get());
   tool_manager_.register_tool(ToolId::CreateJunction, std::move(create_junction_tool));
   connect(actions_->tool_create_junction, &QAction::triggered, this, [this] {
     tool_manager_.set_active(ToolId::CreateJunction);
   });
   auto delete_tool = std::make_unique<DeleteTool>(document_);
-  connect(delete_tool.get(), &Tool::status_message, this, [this](const QString& text) {
-    statusBar()->showMessage(text, 5000);
-  });
+  wire_status(delete_tool.get());
   tool_manager_.register_tool(ToolId::Delete, std::move(delete_tool));
   connect(actions_->tool_delete, &QAction::triggered, this, [this] {
     tool_manager_.set_active(ToolId::Delete);

@@ -148,6 +148,17 @@ struct TAttachOptions {
   JunctionGenOptions generation;
 };
 
+/// The half-length [m] of the junction area attach_t_junction would remove
+/// around `s` for these inputs: options.gap_m when positive, else the auto
+/// formula (width bound vs turning bound — see TAttachOptions::gap_m).
+/// The editor's tee preview highlights [s−gap, s+gap] with this so the user
+/// sees exactly the span generation will replace. Returns 0 for stale ids.
+[[nodiscard]] RM_API double t_attach_gap(const RoadNetwork& network,
+                                         RoadEnd end,
+                                         RoadId target,
+                                         double s,
+                                         const TAttachOptions& options = {});
+
 /// Attaches `end` to the SIDE of `target` at station `s` — the T-junction
 /// workflow (docs/design/hardening/t_junction.md): splits the target at
 /// s±gap, deletes the middle stub (it becomes the junction area, and its
