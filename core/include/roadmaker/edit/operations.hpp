@@ -125,6 +125,36 @@ create_junction(const RoadNetwork& network,
                 std::span<const RoadEnd> ends,
                 const JunctionGenOptions& options = {});
 
+/// Tuning for attach_t_junction (docs/design/hardening/t_junction.md).
+struct TAttachOptions {
+  /// Half-length of the junction area removed from the target around `s`
+  /// [m]. 0 = auto: max(target half-width at s, attaching road half-width
+  /// at its end) + 1 m — the area must at least span the crossing road's
+  /// body.
+  double gap_m = 0.0;
+
+  /// Passed through to the M2 connecting-road generator.
+  JunctionGenOptions generation;
+};
+
+/// Attaches `end` to the SIDE of `target` at station `s` — the T-junction
+/// workflow (docs/design/hardening/t_junction.md): splits the target at
+/// s±gap, deletes the middle stub (it becomes the junction area, and its
+/// deletion closure frees the facing link slots), then creates a common
+/// junction from the three resulting ends (head:End, tail:Start, `end`)
+/// generating ALL legal turns — the documented default policy; permission
+/// pruning is a later milestone. ONE command: apply→revert leaves
+/// write_xodr byte-identical, and a failure anywhere in the chain unwinds
+/// the already-applied prefix so the network is untouched. Errors: stale
+/// ids, end.road == target, an occupied link slot on `end`, a target
+/// participating in a junction, s±gap not strictly inside the target, or a
+/// paramPoly3 record at a cut station (M2 split restrictions).
+[[nodiscard]] RM_API std::unique_ptr<Command> attach_t_junction(const RoadNetwork& network,
+                                                                RoadEnd end,
+                                                                RoadId target,
+                                                                double s,
+                                                                const TAttachOptions& options = {});
+
 /// Re-runs the generator from a junction's recorded arm list and replaces its
 /// connecting-road geometry and lane widths in place — connecting-road IDs
 /// and the connection table survive, so held references and the undo stack

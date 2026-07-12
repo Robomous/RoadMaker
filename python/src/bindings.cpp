@@ -935,6 +935,29 @@ NB_MODULE(_roadmaker, m) {
       "options"_a = roadmaker::edit::JunctionGenOptions{},
       "Generates a common junction: links each arm and builds one connecting "
       "road per permitted (incoming lane, outgoing lane) turn.");
+  nb::class_<roadmaker::edit::TAttachOptions>(edit, "TAttachOptions")
+      .def(nb::init<>())
+      .def_rw("gap_m", &roadmaker::edit::TAttachOptions::gap_m)
+      .def_rw("generation", &roadmaker::edit::TAttachOptions::generation);
+
+  edit.def(
+      "attach_t_junction",
+      [](const roadmaker::RoadNetwork& network,
+         const roadmaker::RoadEnd& end,
+         roadmaker::RoadId target,
+         double s,
+         const roadmaker::edit::TAttachOptions& options) {
+        return roadmaker::edit::attach_t_junction(network, end, target, s, options);
+      },
+      "network"_a,
+      "end"_a,
+      "target"_a,
+      "s"_a,
+      "options"_a = roadmaker::edit::TAttachOptions{},
+      "Attaches a road end to the SIDE of another road at station s — the "
+      "T-junction workflow: splits the target around s, deletes the middle "
+      "stub, and generates a junction from the three ends (all legal turns). "
+      "One undoable command.");
   edit.def(
       "regenerate_junction",
       [](const roadmaker::RoadNetwork& network,

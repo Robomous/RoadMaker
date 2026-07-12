@@ -56,6 +56,7 @@ void SoakDriver::step(int index) {
       {1, &SoakDriver::op_elevation, "elevation"},
       {1, &SoakDriver::op_split_road, "split_road"},
       {2, &SoakDriver::op_create_junction, "create_junction"},
+      {1, &SoakDriver::op_attach_t, "attach_t"},
       {1, &SoakDriver::op_delete_junction, "delete_junction"},
       {1, &SoakDriver::op_delete_road, "delete_road"},
       {2, &SoakDriver::op_undo_redo, "undo_redo"},
@@ -253,8 +254,17 @@ void SoakDriver::op_drag_waypoint() {
 
   // A drag: begin, a few move updates, then commit (usually) or Esc.
   Waypoint target = waypoints[index];
-  target.x += rand_range(-25.0, 25.0);
-  target.y += rand_range(-25.0, 25.0);
+  if (chance(0.1) && waypoints.size() >= 2) {
+    // Sharp reversal: drag the node next to a neighbor — the runaway-fit
+    // class the maintainer hit (#93); the command layer must refuse, never
+    // balloon.
+    const std::size_t neighbor = index > 0 ? index - 1 : index + 1;
+    target.x = waypoints[neighbor].x + rand_range(-6.0, 6.0);
+    target.y = waypoints[neighbor].y + rand_range(-6.0, 6.0);
+  } else {
+    target.x += rand_range(-25.0, 25.0);
+    target.y += rand_range(-25.0, 25.0);
+  }
   if (!document_.begin_preview(edit::move_waypoint(document_.network(), road_id, index, target))
            .has_value()) {
     ++stats_.rejected;
@@ -445,6 +455,27 @@ void SoakDriver::op_create_junction() {
     return;
   }
   push(edit::create_junction(document_.network(), arms));
+}
+
+void SoakDriver::op_attach_t() {
+  // Tee a road end into another road's side (the hardening T workflow).
+  const std::vector<RoadId> roads = live_roads(/*editable_only=*/true);
+  if (roads.size() < 2) {
+    return;
+  }
+  const RoadId attach_road = roads[static_cast<std::size_t>(rand_int(0, int(roads.size()) - 1))];
+  RoadId target_road = roads[static_cast<std::size_t>(rand_int(0, int(roads.size()) - 1))];
+  if (target_road == attach_road) {
+    return; // self-tee is a rejection path already covered by kernel tests
+  }
+  const Road* target = document_.network().road(target_road);
+  if (target->length < 30.0) {
+    return;
+  }
+  const RoadEnd end{.road = attach_road,
+                    .contact = chance(0.5) ? ContactPoint::Start : ContactPoint::End};
+  push(edit::attach_t_junction(
+      document_.network(), end, target_road, rand_range(12.0, target->length - 12.0)));
 }
 
 void SoakDriver::op_delete_junction() {

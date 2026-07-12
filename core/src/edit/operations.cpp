@@ -228,6 +228,93 @@ std::unique_ptr<Command> invalid_command(std::string name, Error error) {
   return command;
 }
 
+/// A command composed of child commands applied in order and reverted in
+/// reverse. Children AFTER the first may be built lazily during the first
+/// apply (their builder sees the network with the previous children already
+/// applied) — how attach_t_junction learns the arena ids its later stages
+/// need, since those are assigned at apply time. A failing child unwinds the
+/// already-applied prefix, so a failed apply leaves the network untouched;
+/// redo re-applies the captured children, which resurrect their created
+/// objects under the original ids (the restore-in-place contract).
+class CompositeCommand final : public Command {
+public:
+  using Builder = std::function<std::unique_ptr<Command>(RoadNetwork&)>;
+
+  CompositeCommand(std::string name, DirtySet base_dirty, std::vector<Builder> builders)
+      : name_(std::move(name)), base_dirty_(std::move(base_dirty)), builders_(std::move(builders)) {
+    children_.resize(builders_.size());
+  }
+
+  Expected<void> apply(RoadNetwork& network) override {
+    for (std::size_t i = 0; i < builders_.size(); ++i) {
+      if (children_[i] == nullptr) {
+        children_[i] = builders_[i](network);
+      }
+      Expected<void> applied =
+          children_[i] != nullptr
+              ? children_[i]->apply(network)
+              : Expected<void>(
+                    make_error(ErrorCode::InvalidArgument, "composite stage yielded no command"));
+      if (!applied.has_value()) {
+        // Unwind the applied prefix — the whole composite is atomic.
+        for (std::size_t k = i; k-- > 0;) {
+          (void)children_[k]->revert(network);
+        }
+        // A lazily-built child that failed its own apply captured state from
+        // a network the unwind just rewound — drop it so a redo rebuilds it
+        // against the (identical) re-applied prefix.
+        if (children_[i] != nullptr) {
+          children_[i] = nullptr;
+        }
+        return applied;
+      }
+    }
+    return {};
+  }
+
+  Expected<void> revert(RoadNetwork& network) override {
+    for (std::size_t i = children_.size(); i-- > 0;) {
+      if (children_[i] == nullptr) {
+        continue; // never applied (failed composite apply)
+      }
+      if (auto reverted = children_[i]->revert(network); !reverted.has_value()) {
+        return reverted;
+      }
+    }
+    return {};
+  }
+
+  std::string_view name() const override { return name_; }
+
+  DirtySet dirty() const override {
+    DirtySet dirty = base_dirty_;
+    for (const auto& child : children_) {
+      if (child == nullptr) {
+        continue;
+      }
+      const DirtySet child_dirty = child->dirty();
+      for (const RoadId road : child_dirty.roads) {
+        if (std::ranges::find(dirty.roads, road) == dirty.roads.end()) {
+          dirty.roads.push_back(road);
+        }
+      }
+      for (const JunctionId junction : child_dirty.junctions) {
+        if (std::ranges::find(dirty.junctions, junction) == dirty.junctions.end()) {
+          dirty.junctions.push_back(junction);
+        }
+      }
+      dirty.topology = dirty.topology || child_dirty.topology;
+    }
+    return dirty;
+  }
+
+private:
+  std::string name_;
+  DirtySet base_dirty_;
+  std::vector<Builder> builders_;
+  std::vector<std::unique_ptr<Command>> children_;
+};
+
 // ---- shared lookups and geometry helpers -------------------------------------
 
 struct LaneContext {
@@ -516,6 +603,31 @@ std::vector<double> derived_headings(const Road& road) {
   return headings;
 }
 
+/// Interactive-fit loop guard (issue #93, maintainer CRASH-1): a sharp
+/// turn-back between waypoints makes the G1 spline loop, and the fitted
+/// length can grow without bound — everything downstream (mesh sampling,
+/// road-mark quads) scales with it until the editor dies. Mirror of the
+/// junction generator's max_loop_factor (k=4, 02 §6), applied only on the
+/// AUTHORING paths — derivation re-fits of foreign geometry may be
+/// legitimately loopy and are not gated here.
+constexpr double kMaxFitLoopFactor = 4.0;
+
+Expected<void> check_fit_bounded(const ReferenceLine& line, std::span<const Waypoint> waypoints) {
+  double polyline = 0.0;
+  for (std::size_t i = 1; i < waypoints.size(); ++i) {
+    polyline +=
+        std::hypot(waypoints[i].x - waypoints[i - 1].x, waypoints[i].y - waypoints[i - 1].y);
+  }
+  if (line.length() > kMaxFitLoopFactor * std::max(polyline, tol::kLength)) {
+    return make_error(ErrorCode::InvalidArgument,
+                      fmt::format("fitted road loops ({:.0f} m for a {:.0f} m waypoint span) — "
+                                  "soften the turn or add intermediate waypoints",
+                                  line.length(),
+                                  polyline));
+  }
+  return {};
+}
+
 std::unique_ptr<Command> refit_command(const RoadNetwork& network,
                                        RoadId road_id,
                                        std::string command_name,
@@ -526,6 +638,14 @@ std::unique_ptr<Command> refit_command(const RoadNetwork& network,
       headings.empty() ? fit_clothoid_path(waypoints) : fit_clothoid_path(waypoints, headings);
   if (!line.has_value()) {
     return invalid_command(std::move(command_name), line.error());
+  }
+  if (headings.empty()) {
+    // Authored (points-only) re-fit: gate runaway loops (#93). The headings
+    // overload is the §2.5 derivation re-fit, which must keep reproducing
+    // foreign geometry however loopy it legitimately is.
+    if (auto bounded = check_fit_bounded(*line, waypoints); !bounded.has_value()) {
+      return invalid_command(std::move(command_name), bounded.error());
+    }
   }
   const double new_length = line->length();
   for (const LaneSectionId section_id : road->sections) {
@@ -880,8 +1000,12 @@ std::unique_ptr<Command> create_road(std::vector<Waypoint> waypoints,
   static constexpr std::string_view kName = "Create Road";
   // Pre-validate the fit so obviously-bad input fails at factory time; the
   // authoring call re-validates against the live network on apply.
-  if (auto fit = fit_clothoid_path(waypoints, locked); !fit.has_value()) {
+  auto fit = fit_clothoid_path(waypoints, locked);
+  if (!fit.has_value()) {
     return invalid_command(std::string(kName), fit.error());
+  }
+  if (auto bounded = check_fit_bounded(*fit, waypoints); !bounded.has_value()) {
+    return invalid_command(std::string(kName), bounded.error());
   }
   auto command = std::make_unique<GenericCommand>(std::string(kName), DirtySet{.topology = true});
   command->creator = [waypoints = std::move(waypoints),
@@ -948,8 +1072,41 @@ std::unique_ptr<Command> split_road(const RoadNetwork& network, RoadId road_id, 
   if (road == nullptr) {
     return fail("stale road id");
   }
-  if (!junctions_touching(network, road_id).empty()) {
-    return fail("roads attached to junctions cannot be split in M2");
+  if (road->junction.is_valid()) {
+    return fail("connecting roads inside a junction cannot be split");
+  }
+  // Junction-linked ENDS are splittable since the hardening sprint (#92 —
+  // the T workflow tees the same main road repeatedly): the head keeps a
+  // predecessor-side junction untouched, and a successor-side junction is
+  // remapped onto the tail (arm, connections, connecting-road links). Only
+  // junctions referencing the road WITHOUT a link on it (foreign data) still
+  // refuse — there is no arm to say which end moved.
+  std::optional<JunctionId> succ_junction;
+  if (road->successor.has_value()) {
+    if (const auto* junction_id = std::get_if<JunctionId>(&road->successor->target)) {
+      succ_junction = *junction_id;
+      const Junction* junction = network.junction(*junction_id);
+      if (junction == nullptr) {
+        return fail("successor references a stale junction");
+      }
+      for (const RoadEnd& arm : junction->arms) {
+        if (arm.road == road_id && arm.contact == ContactPoint::Start) {
+          return fail("road enters the same junction at both ends; recreate the junction first");
+        }
+      }
+    }
+  }
+  std::optional<JunctionId> pred_junction;
+  if (road->predecessor.has_value()) {
+    if (const auto* junction_id = std::get_if<JunctionId>(&road->predecessor->target)) {
+      pred_junction = *junction_id;
+    }
+  }
+  for (const JunctionId touched : junctions_touching(network, road_id)) {
+    if (touched != succ_junction.value_or(JunctionId{}) &&
+        touched != pred_junction.value_or(JunctionId{})) {
+      return fail("a junction references this road without a link on it; recreate the junction");
+    }
   }
   const double length = road->plan_view.length();
   if (split_s <= tol::kLength || split_s >= length - tol::kLength) {
@@ -1055,8 +1212,11 @@ std::unique_ptr<Command> split_road(const RoadNetwork& network, RoadId road_id, 
     duplicated_lanes.push_back(LaneBlueprint{.value = std::move(copy)});
   }
 
-  auto command = std::make_unique<GenericCommand>(std::string(kName),
-                                                  DirtySet{.roads = {road_id}, .topology = true});
+  DirtySet split_dirty{.roads = {road_id}, .topology = true};
+  if (succ_junction.has_value()) {
+    split_dirty.junctions.push_back(*succ_junction);
+  }
+  auto command = std::make_unique<GenericCommand>(std::string(kName), std::move(split_dirty));
 
   // Touched objects: the original road, every moved section, the spanning
   // section's lanes (their successors become identity links into the
@@ -1075,6 +1235,26 @@ std::unique_ptr<Command> split_road(const RoadNetwork& network, RoadId road_id, 
       command->before.roads.emplace_back(*target, *network.road(*target));
     }
   }
+  std::vector<RoadId> succ_connecting; // connecting roads touching the moved End
+  if (succ_junction.has_value()) {
+    command->before.junctions.emplace_back(*succ_junction, *network.junction(*succ_junction));
+    network.for_each_road([&](RoadId connecting_id, const Road& connecting) {
+      if (connecting.junction != *succ_junction) {
+        return;
+      }
+      const auto touches_end = [&](const std::optional<RoadLink>& link) {
+        if (!link.has_value() || link->contact != ContactPoint::End) {
+          return false;
+        }
+        const auto* road_target = std::get_if<RoadId>(&link->target);
+        return road_target != nullptr && *road_target == road_id;
+      };
+      if (touches_end(connecting.predecessor) || touches_end(connecting.successor)) {
+        succ_connecting.push_back(connecting_id);
+        command->before.roads.emplace_back(connecting_id, connecting);
+      }
+    });
+  }
 
   command->creator = [road_id,
                       original_after = std::move(original_after),
@@ -1082,7 +1262,9 @@ std::unique_ptr<Command> split_road(const RoadNetwork& network, RoadId road_id, 
                       duplicated_lanes = std::move(duplicated_lanes),
                       moved_sections,
                       split_s,
-                      far_neighbor](RoadNetwork& target, Values& created) -> Expected<void> {
+                      far_neighbor,
+                      succ_junction,
+                      succ_connecting](RoadNetwork& target, Values& created) -> Expected<void> {
     const std::string odr_id = next_free_road_odr_id(target);
     const RoadId tail_id = target.create_road(tail_blueprint.name, odr_id);
     created.roads.emplace_back(tail_id, Road{});
@@ -1136,9 +1318,163 @@ std::unique_ptr<Command> split_road(const RoadNetwork& network, RoadId road_id, 
         neighbor.successor->target = tail_id;
       }
     }
+    // Successor-side junction: the road's End (its arm end) now lives on the
+    // tail — remap the arm, the connection table, and the connecting-road
+    // links that referenced it (issue #92). Lane numbering survives intact
+    // (the duplicate spanning section keeps identity odr ids), so laneLinks
+    // need no rewrite.
+    if (succ_junction.has_value()) {
+      Junction& junction = *target.junction(*succ_junction);
+      for (RoadEnd& arm : junction.arms) {
+        if (arm.road == road_id && arm.contact == ContactPoint::End) {
+          arm.road = tail_id;
+        }
+      }
+      for (JunctionConnection& connection : junction.connections) {
+        if (connection.incoming_road == road_id) {
+          connection.incoming_road = tail_id;
+        }
+      }
+      for (const RoadId connecting_id : succ_connecting) {
+        Road& connecting = *target.road(connecting_id);
+        const auto repoint = [&](std::optional<RoadLink>& link) {
+          if (link.has_value() && link->contact == ContactPoint::End) {
+            if (auto* road_target = std::get_if<RoadId>(&link->target);
+                road_target != nullptr && *road_target == road_id) {
+              *road_target = tail_id;
+            }
+          }
+        };
+        repoint(connecting.predecessor);
+        repoint(connecting.successor);
+      }
+      // The moved End keeps its junction link — on the tail now.
+      Road& tail = *target.road(tail_id);
+      tail.successor = RoadLink{.target = *succ_junction, .contact = ContactPoint::Start};
+    }
     return {};
   };
   return command;
+}
+
+/// The wider side's total lane width at `station` [m] — what the T-attach
+/// gap must clear (docs/design/hardening/t_junction.md).
+double half_width_at(const RoadNetwork& network, const Road& road, double station) {
+  const LaneSection* covering = nullptr;
+  double local = 0.0;
+  for (const LaneSectionId section_id : road.sections) {
+    const LaneSection* section = network.lane_section(section_id);
+    if (section != nullptr && section->s0 <= station + tol::kLength) {
+      covering = section;
+      local = station - section->s0;
+    }
+  }
+  if (covering == nullptr) {
+    return 0.0;
+  }
+  double left = 0.0;
+  double right = 0.0;
+  for (const LaneId lane_id : covering->lanes) {
+    const Lane* lane = network.lane(lane_id);
+    if (lane == nullptr) {
+      continue;
+    }
+    const double width = eval_profile(lane->widths, local);
+    if (lane->odr_id > 0) {
+      left += width;
+    } else if (lane->odr_id < 0) {
+      right += width;
+    }
+  }
+  return std::max(left, right);
+}
+
+std::unique_ptr<Command> attach_t_junction(const RoadNetwork& network,
+                                           RoadEnd end,
+                                           RoadId target_id,
+                                           double s,
+                                           const TAttachOptions& options) {
+  static constexpr std::string_view kName = "Attach T-Junction";
+  const auto fail = [&](std::string message) {
+    return invalid_command(
+        std::string(kName),
+        Error{.code = ErrorCode::InvalidArgument, .message = std::move(message)});
+  };
+
+  const Road* target = network.road(target_id);
+  if (target == nullptr) {
+    return fail("stale target road id");
+  }
+  const Road* attaching = network.road(end.road);
+  if (attaching == nullptr) {
+    return fail("stale attaching road id");
+  }
+  if (end.road == target_id) {
+    return fail("a road cannot tee into itself");
+  }
+  const std::array<RoadEnd, 1> attach_end{end};
+  if (auto free = ends_link_slots_free(network, attach_end); !free.has_value()) {
+    return invalid_command(std::string(kName), free.error());
+  }
+  if (target->junction.is_valid()) {
+    return fail("cannot tee into a junction's connecting road");
+  }
+  if (attaching->junction.is_valid()) {
+    return fail("a junction's connecting road cannot be an arm of another junction");
+  }
+
+  double gap = options.gap_m;
+  if (gap <= 0.0) {
+    // Auto: the junction area must at least span the crossing road's body
+    // (design doc §gap auto-sizing).
+    const double attach_station = end.contact == ContactPoint::Start ? 0.0 : attaching->length;
+    gap = std::max(half_width_at(network, *target, s),
+                   half_width_at(network, *attaching, attach_station)) +
+          1.0;
+  }
+  const double length = target->plan_view.length();
+  if (s - gap <= tol::kLength || s + gap >= length - tol::kLength) {
+    return fail("attach point too close to the target road's end — use an endpoint junction "
+                "or attach farther from the ends");
+  }
+
+  // Stage state resolved during apply: arena ids are assigned when the
+  // splits run, so later builders read them off the mutated network.
+  struct Stages {
+    RoadId tail;   // [s+gap, …) — the far half, a junction arm
+    RoadId middle; // [s−gap, s+gap) — deleted; the junction area
+  };
+
+  auto stages = std::make_shared<Stages>();
+  const JunctionGenOptions generation = options.generation;
+
+  std::vector<CompositeCommand::Builder> builders;
+  builders.push_back(
+      [target_id, cut = s + gap](RoadNetwork& net) { return split_road(net, target_id, cut); });
+  builders.push_back([target_id, cut = s - gap, stages](RoadNetwork& net) {
+    // The first split just pointed the head's successor at the new tail.
+    const Road& head = *net.road(target_id);
+    stages->tail = std::get<RoadId>(head.successor->target);
+    return split_road(net, target_id, cut);
+  });
+  builders.push_back([target_id, stages](RoadNetwork& net) {
+    const Road& head = *net.road(target_id);
+    stages->middle = std::get<RoadId>(head.successor->target);
+    return delete_road(net, stages->middle);
+  });
+  builders.push_back([target_id, end, stages, generation](RoadNetwork& net) {
+    const std::array<RoadEnd, 3> ends{
+        RoadEnd{.road = target_id, .contact = ContactPoint::End},
+        RoadEnd{.road = stages->tail, .contact = ContactPoint::Start},
+        end,
+    };
+    return create_junction(net, ends, generation);
+  });
+
+  return std::make_unique<CompositeCommand>(
+      std::string(kName),
+      DirtySet{.roads = {target_id, end.road}, .topology = true},
+      std::move(builders));
 }
 
 Expected<JunctionPreview> preview_junction(const RoadNetwork& network,

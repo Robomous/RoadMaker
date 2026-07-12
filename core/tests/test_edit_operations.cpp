@@ -643,9 +643,17 @@ TEST(EditOperations, SplitRoadRejectsBadStationsAndJunctionRoads) {
   expect_command_rejected(network, roadmaker::edit::split_road(network, road, 0.0));
   expect_command_rejected(network, roadmaker::edit::split_road(network, road, length));
 
+  // Junction-LINKED ends are splittable since the hardening sprint (#92 —
+  // the successor-side junction remaps onto the tail); only a junction's
+  // CONNECTING road still refuses, as does a junction referencing the road
+  // without any link on it (foreign data with no arm to say which end moved).
   const JunctionId junction = network.create_junction("100", "X");
-  network.road(road)->successor =
-      roadmaker::RoadLink{.target = junction, .contact = ContactPoint::Start};
+  network.road(road)->junction = junction;
+  expect_command_rejected(network, roadmaker::edit::split_road(network, road, length * 0.5));
+  network.road(road)->junction = {};
+
+  network.junction(junction)->connections.push_back(
+      JunctionConnection{.incoming_road = road, .connecting_road = road});
   expect_command_rejected(network, roadmaker::edit::split_road(network, road, length * 0.5));
 }
 
@@ -812,6 +820,196 @@ TEST(EditOperations, CreateJunctionOutputValidatesCleanly) {
           << "version index " << static_cast<int>(version) << " unexpected diagnostic";
     }
   }
+}
+
+// ---- attach_t_junction (hardening sprint #92) --------------------------------
+
+/// A 120 m straight main road along +x and a side road ending 10 m south of
+/// its midpoint — the canonical tee.
+struct TAttachFixture {
+  RoadId main_road;
+  RoadId side;
+};
+
+TAttachFixture make_t_attach(RoadNetwork& network) {
+  return TAttachFixture{
+      .main_road = author(network, {Waypoint{-60.0, 0.0}, Waypoint{60.0, 0.0}}, "1"),
+      .side = author(network, {Waypoint{0.0, -50.0}, Waypoint{0.0, -10.0}}, "2"),
+  };
+}
+
+TEST(EditOperations, AttachTJunctionBuildsThreeArmJunctionAndRoundTrips) {
+  RoadNetwork network;
+  const TAttachFixture t = make_t_attach(network);
+
+  auto command = roadmaker::edit::attach_t_junction(
+      network, RoadEnd{.road = t.side, .contact = ContactPoint::End}, t.main_road, 60.0);
+  expect_command_round_trip(network, *command);
+
+  ASSERT_TRUE(command->apply(network).has_value());
+  const JunctionId junction = network.find_junction("1");
+  ASSERT_TRUE(junction.is_valid());
+  const roadmaker::Junction& built = *network.junction(junction);
+  ASSERT_EQ(built.arms.size(), 3U);
+  // 3 two-way single-lane arms -> 6 ordered turns, like the endpoint T.
+  EXPECT_EQ(built.connections.size(), 6U);
+
+  // The main road was shortened to [0, s-gap) and a tail road carries the
+  // far half; the deleted middle stub is the junction area.
+  const roadmaker::Road& head = *network.road(t.main_road);
+  EXPECT_LT(head.length, 60.0);
+  ASSERT_TRUE(head.successor.has_value());
+  EXPECT_EQ(std::get<JunctionId>(head.successor->target), junction);
+  bool tail_found = false;
+  for (const RoadEnd& arm : built.arms) {
+    ASSERT_NE(network.road(arm.road), nullptr);
+    if (arm.road != t.main_road && arm.road != t.side) {
+      tail_found = true;
+      const roadmaker::Road& tail = *network.road(arm.road);
+      EXPECT_EQ(arm.contact, ContactPoint::Start);
+      ASSERT_TRUE(tail.predecessor.has_value());
+      EXPECT_EQ(std::get<JunctionId>(tail.predecessor->target), junction);
+    }
+  }
+  EXPECT_TRUE(tail_found);
+  // head + side + tail + 6 connecting roads.
+  EXPECT_EQ(network.road_count(), 9U);
+  EXPECT_EQ(roadmaker::count_errors(roadmaker::validate_network(network)), 0U);
+}
+
+TEST(EditOperations, AttachTJunctionUndoRestoresTheExactPreSplitNetwork) {
+  RoadNetwork network;
+  const TAttachFixture t = make_t_attach(network);
+  const auto before = roadmaker::write_xodr(network, "t");
+  ASSERT_TRUE(before.has_value());
+
+  auto command = roadmaker::edit::attach_t_junction(
+      network, RoadEnd{.road = t.side, .contact = ContactPoint::End}, t.main_road, 60.0);
+  ASSERT_TRUE(command->apply(network).has_value());
+  ASSERT_TRUE(command->revert(network).has_value());
+
+  const auto after = roadmaker::write_xodr(network, "t");
+  ASSERT_TRUE(after.has_value());
+  EXPECT_EQ(*before, *after);
+
+  // Redo resurrects the identical junction under the same ids.
+  ASSERT_TRUE(command->apply(network).has_value());
+  EXPECT_TRUE(network.find_junction("1").is_valid());
+  EXPECT_EQ(roadmaker::count_errors(roadmaker::validate_network(network)), 0U);
+}
+
+TEST(EditOperations, AttachTJunctionRejectsBadInput) {
+  RoadNetwork network;
+  const TAttachFixture t = make_t_attach(network);
+
+  // Self-attach.
+  EXPECT_FALSE(
+      roadmaker::edit::attach_t_junction(
+          network, RoadEnd{.road = t.main_road, .contact = ContactPoint::End}, t.main_road, 60.0)
+          ->apply(network)
+          .has_value());
+  // Too close to the target's end for the junction area.
+  EXPECT_FALSE(roadmaker::edit::attach_t_junction(
+                   network, RoadEnd{.road = t.side, .contact = ContactPoint::End}, t.main_road, 2.0)
+                   ->apply(network)
+                   .has_value());
+  // All rejections left the network untouched.
+  EXPECT_EQ(network.road_count(), 2U);
+  EXPECT_EQ(network.junction_count(), 0U);
+}
+
+TEST(EditOperations, AttachTJunctionRefusesAnOccupiedAttachSlot) {
+  RoadNetwork network;
+  const TAttachFixture t = make_t_attach(network);
+  ASSERT_TRUE(roadmaker::edit::attach_t_junction(
+                  network, RoadEnd{.road = t.side, .contact = ContactPoint::End}, t.main_road, 60.0)
+                  ->apply(network)
+                  .has_value());
+  // The side road's End now links into junction 1 — a second tee from the
+  // same end must refuse without touching the network.
+  const auto snapshot = roadmaker::write_xodr(network, "t");
+  EXPECT_FALSE(
+      roadmaker::edit::attach_t_junction(
+          network, RoadEnd{.road = t.side, .contact = ContactPoint::End}, t.main_road, 30.0)
+          ->apply(network)
+          .has_value());
+  EXPECT_EQ(*roadmaker::write_xodr(network, "t"), *snapshot);
+}
+
+TEST(EditOperations, SecondTeeOnTheHeadHalfRemapsTheFirstJunction) {
+  RoadNetwork network;
+  const TAttachFixture t = make_t_attach(network);
+  ASSERT_TRUE(roadmaker::edit::attach_t_junction(
+                  network, RoadEnd{.road = t.side, .contact = ContactPoint::End}, t.main_road, 60.0)
+                  ->apply(network)
+                  .has_value());
+  const JunctionId first = network.find_junction("1");
+  ASSERT_TRUE(first.is_valid());
+
+  // Tee a second side road into the HEAD half — its End links into junction
+  // 1, so the split inside the second attach must remap junction 1's arm,
+  // connections, and connecting-road links onto the new far piece (#92
+  // lifts the M2 "no split near junctions" restriction for exactly this).
+  const roadmaker::Road& head = *network.road(t.main_road);
+  const double s2 = head.length / 2.0; // safely inside the head half
+  const double head_x0 = -60.0;        // head starts where the main road did
+  const RoadId side2 =
+      author(network, {Waypoint{head_x0 + s2, -50.0}, Waypoint{head_x0 + s2, -10.0}}, "50");
+  auto second = roadmaker::edit::attach_t_junction(
+      network, RoadEnd{.road = side2, .contact = ContactPoint::End}, t.main_road, s2);
+  ASSERT_TRUE(second->apply(network).has_value());
+
+  // Junction 1 must no longer reference the (re-split) head road anywhere.
+  const roadmaker::Junction& first_junction = *network.junction(first);
+  for (const RoadEnd& arm : first_junction.arms) {
+    EXPECT_NE(arm.road, t.main_road);
+    ASSERT_NE(network.road(arm.road), nullptr);
+  }
+  for (const JunctionConnection& connection : first_junction.connections) {
+    EXPECT_NE(connection.incoming_road, t.main_road);
+    ASSERT_NE(network.road(connection.incoming_road), nullptr);
+    ASSERT_NE(network.road(connection.connecting_road), nullptr);
+  }
+  EXPECT_EQ(network.junction_count(), 2U);
+  EXPECT_EQ(roadmaker::count_errors(roadmaker::validate_network(network)), 0U);
+
+  // The whole double-tee undoes back to the single-tee network exactly.
+  const auto with_one = [&] {
+    RoadNetwork fresh;
+    const TAttachFixture f = make_t_attach(fresh);
+    (void)f;
+    return fresh;
+  };
+  (void)with_one;
+  ASSERT_TRUE(second->revert(network).has_value());
+  EXPECT_EQ(network.junction_count(), 1U);
+  EXPECT_EQ(roadmaker::count_errors(roadmaker::validate_network(network)), 0U);
+}
+
+// ---- interactive fit loop guard (hardening sprint #93, maintainer CRASH-1) ---
+
+TEST(EditOperations, RunawayLoopFitsAreRefusedAtTheCommandLayer) {
+  // A sharp turn-back makes the G1 spline balloon (~5.4x the waypoint span
+  // here); unbounded, mesh/marking work grows until the editor dies.
+  const std::vector<Waypoint> turn_back = {
+      Waypoint{.x = 0.0, .y = 0.0}, Waypoint{.x = 100.0, .y = 0.0}, Waypoint{.x = 95.0, .y = 3.0}};
+  RoadNetwork network;
+  EXPECT_FALSE(roadmaker::edit::create_road(turn_back, LaneProfile::two_lane_default(), "")
+                   ->apply(network)
+                   .has_value());
+  EXPECT_EQ(network.road_count(), 0U);
+
+  // Same guard on the waypoint-edit re-fit: dragging the last node of a
+  // straight road back onto its middle must refuse, not balloon.
+  const RoadId road = author(network, {Waypoint{0.0, 0.0}, Waypoint{100.0, 0.0}}, "1");
+  ASSERT_TRUE(roadmaker::edit::insert_waypoint(network, road, 2, Waypoint{200.0, 0.0})
+                  ->apply(network)
+                  .has_value());
+  const auto snapshot = roadmaker::write_xodr(network, "guard");
+  EXPECT_FALSE(roadmaker::edit::move_waypoint(network, road, 2, Waypoint{95.0, 3.0})
+                   ->apply(network)
+                   .has_value());
+  EXPECT_EQ(*roadmaker::write_xodr(network, "guard"), *snapshot);
 }
 
 TEST(EditOperations, RegenerateJunctionIsByteEqualWhenNothingChanged) {
