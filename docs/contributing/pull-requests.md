@@ -47,6 +47,32 @@ viewport interactions) must include **screenshots or GIFs in the PR
 description**. Reviewers should be able to judge the result without building
 the branch. Before/after pairs are ideal for visual changes.
 
+## Visual output: pixels are the acceptance test
+
+**Any PR touching mesh generation, materials, normals, or the renderer must
+include editor-rendered before/after screenshots in the PR description, and
+visual changes get maintainer approval before merge.** Metric tests gate
+correctness; the maintainer gates appearance — the tee shipped with green
+metrics and a visibly wrong junction once, and this rule is why it will not
+happen again (see
+[product parity — visual acceptance](../standards/product-parity.md)).
+
+Capture screenshots with the editor's screenshot mode (works headless):
+
+```sh
+python scripts/editor_screenshot.py scene.xodr out.png --camera orbit
+```
+
+CI's `editor visual artifacts` job renders the canonical scenes
+(`assets/samples/crossing.xodr`, `t_attach.xodr`, `overpass.xodr`) and
+uploads the PNGs on every run — link or embed them when they cover your
+change.
+
+**Evidence lives in issues and PRs, never in the repo.** Diagnostic renders,
+`.glb` dumps, and before/after images are attached to the tracking issue or
+the PR description; binary evidence directories are gitignored and must not
+be committed.
+
 ## Review process
 
 - A Robomous maintainer reviews every PR; maintainer approval plus green CI
