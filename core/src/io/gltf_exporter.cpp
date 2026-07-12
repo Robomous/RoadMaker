@@ -25,7 +25,6 @@ namespace roadmaker {
 
 namespace {
 
-using io_common::kFloorColor;
 using io_common::kMarkingColor;
 
 class GlbWriter {
@@ -40,7 +39,9 @@ public:
       scene.nodes.push_back(add_road_node(road));
     }
     for (const JunctionFloor& floor : mesh.junction_floors) {
-      scene.nodes.push_back(add_submesh_node(floor.mesh, floor_material()));
+      // Floors carry the driving-lane material: one continuous asphalt with
+      // the roads feeding them (a distinct junction color read as a patch).
+      scene.nodes.push_back(add_submesh_node(floor.mesh, material_for(floor.mesh.material)));
     }
     model_.scenes.push_back(std::move(scene));
     model_.defaultScene = 0;
@@ -150,14 +151,6 @@ private:
     return marking_material_;
   }
 
-  int floor_material() {
-    if (floor_material_ < 0) {
-      floor_material_ =
-          add_material(io_common::kFloorMaterialName, kFloorColor, io_common::kFloorRoughness);
-    }
-    return floor_material_;
-  }
-
   int add_material(const std::string& name, const std::array<double, 4>& color, double roughness) {
     tinygltf::Material material;
     material.name = name;
@@ -226,7 +219,6 @@ private:
   tinygltf::Model model_;
   std::map<LaneType, int> lane_materials_;
   int marking_material_ = -1;
-  int floor_material_ = -1;
 };
 
 } // namespace

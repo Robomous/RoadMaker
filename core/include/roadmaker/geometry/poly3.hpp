@@ -48,4 +48,18 @@ struct Poly3 {
   return it->eval(s);
 }
 
+/// First derivative of a piecewise-cubic profile at `s`; same record lookup
+/// as eval_profile. Returns 0.0 for an empty profile.
+[[nodiscard]] constexpr double eval_profile_derivative(std::span<const Poly3> profile, double s) {
+  if (profile.empty()) {
+    return 0.0;
+  }
+  auto it = std::upper_bound(
+      profile.begin(), profile.end(), s, [](double lhs, const Poly3& rhs) { return lhs < rhs.s; });
+  if (it != profile.begin()) {
+    --it;
+  }
+  return it->eval_derivative(s);
+}
+
 } // namespace roadmaker

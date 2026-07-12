@@ -136,12 +136,15 @@ create_junction(const RoadNetwork& network,
 /// Tuning for attach_t_junction (docs/design/hardening/t_junction.md).
 struct TAttachOptions {
   /// Half-length of the junction area removed from the target around `s`
-  /// [m]. 0 = auto: the larger of the width bound (max(target half-width at
+  /// [m]. 0 = auto: the largest of the width bound (max(target half-width at
   /// s, attaching road half-width at its end) + 1 m — the area must at least
-  /// span the crossing road's body) and the turning bound
+  /// span the crossing road's body), the turning bound
   /// (generation.min_turn_radius_m · tan(Δθ/2) + 1 m over both generated
   /// turn directions, Δθ clamped to 150° — the turns must fit at drivable
-  /// curvature; docs/design/hardening/t_junction.md §gap auto-sizing).
+  /// curvature), and the fillet bound (branch half-width + the 3 m corner
+  /// fillet's tangent leg + 0.5 m — the junction surface's pavement-edge
+  /// arcs must fit between the branch corners and the cut faces;
+  /// docs/design/hardening/t_junction.md §gap auto-sizing).
   double gap_m = 0.0;
 
   /// Passed through to the M2 connecting-road generator.

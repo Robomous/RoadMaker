@@ -24,6 +24,7 @@ struct StationFrame {
   double x, y, z;
   double cos_h, sin_h;
   double cos_r, sin_r; // superelevation roll
+  double dz_ds;        // longitudinal grade (elevation profile slope)
 };
 
 inline StationFrame make_frame(const Road& road, double s) {
@@ -37,6 +38,7 @@ inline StationFrame make_frame(const Road& road, double s) {
       .sin_h = std::sin(pose.hdg),
       .cos_r = std::cos(roll),
       .sin_r = std::sin(roll),
+      .dz_ds = eval_profile_derivative(road.elevation, s),
   };
 }
 
@@ -53,9 +55,21 @@ inline std::array<double, 3> lateral_point(const StationFrame& f, double t) {
 }
 
 /// Surface normal at a station (independent of t in this approximation):
-/// normal = cos(roll)·ẑ − sin(roll)·N̂ with N̂ the leftward lateral.
+/// tangent x lateral with the tangent carrying the longitudinal grade, so a
+/// climbing road's shading tilts with it — grade-blind normals lit every
+/// graded surface as if flat and creased visibly against the junction
+/// floors' geometric normals (tee visual finding, follow-up to issue #103).
 inline std::array<double, 3> surface_normal(const StationFrame& f) {
-  return {f.sin_r * f.sin_h, -f.sin_r * f.cos_h, f.cos_r};
+  // T = (cos_h, sin_h, dz/ds), L = leftward lateral with superelevation.
+  const std::array<double, 3> t{f.cos_h, f.sin_h, f.dz_ds};
+  const std::array<double, 3> l{-f.sin_h * f.cos_r, f.cos_h * f.cos_r, f.sin_r};
+  std::array<double, 3> n{
+      (t[1] * l[2]) - (t[2] * l[1]), (t[2] * l[0]) - (t[0] * l[2]), (t[0] * l[1]) - (t[1] * l[0])};
+  const double len = std::sqrt((n[0] * n[0]) + (n[1] * n[1]) + (n[2] * n[2]));
+  if (len > 0.0) {
+    n = {n[0] / len, n[1] / len, n[2] / len};
+  }
+  return n;
 }
 
 /// Lateral boundary offsets (leftmost first) of a section at station s.

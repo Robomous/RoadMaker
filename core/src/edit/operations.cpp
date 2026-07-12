@@ -1629,6 +1629,17 @@ double t_attach_gap(const RoadNetwork& network,
                               (std::sin(corner.hdg) * (branch_face.x - corner.x));
   const bool inside_attach = lateral_sign * corner.curvature > 0.0;
   const double kappa = std::abs(corner.curvature) * (inside_attach ? 2.0 : 1.0);
+  // Fillet bound: the pavement corners between the branch edges and the
+  // target edges must leave a 3 m-radius fillet's tangent leg between the
+  // corner and each cut face, or the junction surface has to shrink its
+  // corner arcs below the visual floor (tee visual finding, follow-up to
+  // issue #103; radius floor mirrors mesh kFilletRadiusFloor). The leg along
+  // the target measures from the branch's outer pavement edge; the fillet
+  // half-angle at the corner is half the crossing angle on the acute side.
+  constexpr double kFilletRadiusFloor = 3.0;
+  const double corner_half_angle = std::max(std::min(psi, kPi - psi) / 2.0, 0.1);
+  const double fillet_bound = half_width_at(network, *attaching, attach_station) +
+                              (kFilletRadiusFloor / std::tan(corner_half_angle)) + 0.5;
   double gap = width_bound;
   for (int round = 0; round < 3; ++round) {
     const double sweep = gap * kappa;
@@ -1637,7 +1648,7 @@ double t_attach_gap(const RoadNetwork& network,
     const double turning_bound = (options.generation.min_turn_radius_m *
                                   std::tan(std::max(turn_toward_tail, turn_toward_head) / 2.0)) +
                                  1.0;
-    gap = std::max(width_bound, turning_bound);
+    gap = std::max({width_bound, turning_bound, fillet_bound});
   }
   return gap;
 }
