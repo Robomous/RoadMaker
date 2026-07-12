@@ -497,14 +497,32 @@ std::string format_metrics(const QualityMetrics& m) {
                      m.deterministic);
 }
 
+/// RM_TJ_DIAG_DIR's value, empty when unset. MSVC deprecates std::getenv
+/// (C4996 under /WX); _dupenv_s is its sanctioned equivalent.
+std::string diag_dir() {
+#ifdef _MSC_VER
+  char* value = nullptr;
+  std::size_t length = 0;
+  if (_dupenv_s(&value, &length, "RM_TJ_DIAG_DIR") != 0 || value == nullptr) {
+    return {};
+  }
+  std::string out(value);
+  std::free(value);
+  return out;
+#else
+  const char* value = std::getenv("RM_TJ_DIAG_DIR");
+  return value == nullptr ? std::string() : std::string(value);
+#endif
+}
+
 /// Dumps .xodr + .glb + metrics when RM_TJ_DIAG_DIR is set (diagnosis and PR
 /// screenshot workflow — see the file header).
 void dump_diagnostics(const std::string& name,
                       const Tee& tee,
                       const NetworkMesh& mesh,
                       const QualityMetrics& metrics) {
-  const char* dir = std::getenv("RM_TJ_DIAG_DIR");
-  if (dir == nullptr) {
+  const std::string dir = diag_dir();
+  if (dir.empty()) {
     return;
   }
   namespace fs = std::filesystem;
@@ -703,4 +721,8 @@ INSTANTIATE_TEST_SUITE_P(
                       TeeCase{"start_contact", setup_start_contact},
                       TeeCase{"graded", setup_graded},
                       TeeCase{"multilane", setup_multilane}),
-    [](const ::testing::TestParamInfo<TeeCase>& info) { return std::string(info.param.name); });
+    // `tee_case`, not `info` — GCC -Wshadow flags the gtest macro's internal
+    // parameter of the same name.
+    [](const ::testing::TestParamInfo<TeeCase>& tee_case) {
+      return std::string(tee_case.param.name);
+    });
