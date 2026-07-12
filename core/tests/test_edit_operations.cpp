@@ -6,6 +6,7 @@
 #include "roadmaker/xodr/diagnostic.hpp"
 #include "roadmaker/xodr/reader.hpp"
 #include "roadmaker/xodr/rules.hpp"
+#include "roadmaker/xodr/writer.hpp"
 
 #include <gtest/gtest.h>
 
@@ -735,6 +736,62 @@ TEST(EditOperations, CreateJunctionGeneratesTJunctionAndRoundTrips) {
       }
     }
   }
+}
+
+// Regression for issue #89 (soak seed 1): the delete_road closure pruned
+// junction CONNECTIONS referencing the doomed road but left its RoadEnd in
+// the recorded arms — a dangling id that regeneration re-plans from and
+// rm:arms persists into saved files. Arms are part of the closure.
+TEST(EditOperations, DeleteRoadPrunesJunctionArmsAndUndoRestoresThem) {
+  RoadNetwork network;
+  const TJunction t = make_t_junction(network);
+  ASSERT_TRUE(roadmaker::edit::create_junction(network, t.ends)->apply(network).has_value());
+  const JunctionId junction = network.find_junction("1");
+  ASSERT_EQ(network.junction(junction)->arms.size(), 3U);
+
+  auto command = roadmaker::edit::delete_road(network, t.west);
+  expect_command_round_trip(network, *command);
+
+  ASSERT_TRUE(command->apply(network).has_value());
+  const roadmaker::Junction& after = *network.junction(junction);
+  EXPECT_EQ(after.arms.size(), 2U);
+  for (const RoadEnd& arm : after.arms) {
+    EXPECT_NE(arm.road, t.west);
+    EXPECT_NE(network.road(arm.road), nullptr);
+  }
+  for (const JunctionConnection& connection : after.connections) {
+    EXPECT_NE(connection.incoming_road, t.west);
+    EXPECT_NE(network.road(connection.incoming_road), nullptr);
+    EXPECT_NE(network.road(connection.connecting_road), nullptr);
+  }
+
+  ASSERT_TRUE(command->revert(network).has_value());
+  EXPECT_EQ(network.junction(junction)->arms.size(), 3U);
+}
+
+// Regression for issue #90 (soak round-trip invariant): a junction the
+// delete_road closure leaves with ONE recorded arm must still round-trip
+// byte-identically — the reader rejects rm:arms below 2 arms, so the writer
+// must not emit a degenerate list only the first generation carries.
+TEST(EditOperations, JunctionBelowTwoArmsRoundTripsByteIdentically) {
+  RoadNetwork network;
+  const TJunction t = make_t_junction(network);
+  const std::array<RoadEnd, 2> two_ends = {t.ends[0], t.ends[1]};
+  ASSERT_TRUE(roadmaker::edit::create_junction(network, two_ends)->apply(network).has_value());
+  ASSERT_TRUE(roadmaker::edit::delete_road(network, t.west)->apply(network).has_value());
+  const JunctionId junction = network.find_junction("1");
+  ASSERT_TRUE(junction.is_valid());
+  ASSERT_EQ(network.junction(junction)->arms.size(), 1U);
+
+  const auto first = roadmaker::write_xodr(network, "regression");
+  ASSERT_TRUE(first.has_value());
+  EXPECT_EQ(first->find("rm:arms"), std::string::npos)
+      << "a degenerate arm list must not be persisted";
+  auto parsed = roadmaker::parse_xodr(*first, "<regression>");
+  ASSERT_TRUE(parsed.has_value());
+  const auto second = roadmaker::write_xodr(parsed->network, "regression");
+  ASSERT_TRUE(second.has_value());
+  EXPECT_EQ(*first, *second);
 }
 
 TEST(EditOperations, CreateJunctionOutputValidatesCleanly) {
