@@ -515,7 +515,23 @@ void append_corner_fillets(const RoadNetwork& network,
     const std::array<double, 2> pb = b.left;  // B's edge facing A
     const double cross = (a.ix * b.iy) - (a.iy * b.ix);
     if (std::abs(cross) < 1e-6) {
-      continue; // parallel edges (a through movement) — no corner
+      // Parallel edges: a straight through corridor, no corner to fillet —
+      // but the corridor edge itself still needs pavement. Through ribbons
+      // cover only their lanes, so a wide arm's outer band (highway
+      // shoulders) would otherwise stay uncovered between the 2 m joint
+      // quads: the boundary dropped to the driving edge mid-corridor with
+      // two 90-degree bites. The strip pins the boundary to the edge chord;
+      // the enclosed remainder of the band is paved by the hole fill below.
+      if (((a.ix * (pb[0] - pa[0])) + (a.iy * (pb[1] - pa[1]))) > tol::kLength &&
+          ((b.ix * (pa[0] - pb[0])) + (b.iy * (pa[1] - pb[1]))) > tol::kLength) {
+        Clipper2Lib::PathD quad;
+        quad.emplace_back(pa[0], pa[1]);
+        quad.emplace_back(pb[0], pb[1]);
+        quad.emplace_back(pb[0] + (b.iy * kEdgeStripWidth), pb[1] - (b.ix * kEdgeStripWidth));
+        quad.emplace_back(pa[0] - (a.iy * kEdgeStripWidth), pa[1] + (a.ix * kEdgeStripWidth));
+        push_ccw(std::move(quad));
+      }
+      continue;
     }
     // Edge-line intersection pa + ta·A_dir = pb + tb·B_dir.
     const double dx = pb[0] - pa[0];

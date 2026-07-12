@@ -44,6 +44,7 @@ add_executable(roadmaker_editor_tests
   test_editor_command.cpp
   test_icons.cpp
   test_lane_profile.cpp
+  test_mesh_parity.cpp
   test_panels.cpp
   test_picking.cpp
   test_preview_session.cpp

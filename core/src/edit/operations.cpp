@@ -1702,11 +1702,27 @@ std::unique_ptr<Command> attach_t_junction(const RoadNetwork& network,
   // The branch face needs the same clearance from the corner (the target's
   // reference-line point at s) that the gap gives the target's cut faces —
   // otherwise the turns are cramped against the branch mouth regardless of
-  // gap. The junction consumes the branch's overhang: trim it back so its
-  // face sits `gap` (chord-measured) from the corner, exactly as the target
-  // loses its middle stub. A branch too short to trim is a user error.
+  // gap. On a wide target the gap alone can still park the face barely past
+  // the target's pavement edge, which pinches the mouth's corner fillets to
+  // cosmetic size — so the face also clears the target pavement by the
+  // 3 m fillet's tangent leg (mirrors t_attach_gap's fillet bound on the
+  // target side). The junction consumes the branch's overhang: trim it back
+  // so its face sits at the required chord distance from the corner, exactly
+  // as the target loses its middle stub. A branch too short to trim is a
+  // user error.
+  const double branch_in_hdg_trim =
+      end.contact == ContactPoint::Start ? branch_face.hdg + std::numbers::pi : branch_face.hdg;
+  const double psi_trim =
+      std::abs(std::remainder(branch_in_hdg_trim - corner.hdg, 2.0 * std::numbers::pi));
+  const double corner_half_angle_trim =
+      std::max(std::min(psi_trim, std::numbers::pi - psi_trim) / 2.0, 0.1);
+  constexpr double kFilletRadiusFloorTrim = 3.0; // mirrors mesh kFilletRadiusFloor
+  const double fillet_face_distance = half_width_at(network, *target, s) +
+                                      (kFilletRadiusFloorTrim / std::tan(corner_half_angle_trim)) +
+                                      0.5;
+  const double required_face_distance = std::max(gap, fillet_face_distance);
   const double face_distance = std::hypot(branch_face.x - corner.x, branch_face.y - corner.y);
-  const double trim = gap - face_distance;
+  const double trim = required_face_distance - face_distance;
   if (trim > tol::kLength) {
     const double kept = branch_length - trim;
     if (kept <= tol::kLength) {

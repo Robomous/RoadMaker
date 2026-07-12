@@ -45,10 +45,12 @@
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
+#include <iterator>
 #include <limits>
 #include <map>
 #include <numbers>
 #include <optional>
+#include <set>
 #include <stdexcept>
 #include <string>
 #include <utility>
@@ -690,6 +692,277 @@ TEST(TJunctionExport, TeeEmitsReferenceLineAndElevationGrid) {
   EXPECT_NE(xml->find("<planView>", junction_pos), std::string::npos);
   EXPECT_NE(xml->find("<elevationGrid", junction_pos), std::string::npos);
   EXPECT_NE(xml->find("rm:arms", junction_pos), std::string::npos);
+}
+
+namespace {
+
+/// The floor's outer boundary as an ordered vertex loop (largest loop when
+/// the CDT left more than one — the outer ring).
+std::vector<std::array<double, 2>> boundary_loop(const SubMesh& floor) {
+  std::map<std::pair<std::uint32_t, std::uint32_t>, int> edge_count;
+  const auto key = [](std::uint32_t a, std::uint32_t b) {
+    return a < b ? std::pair{a, b} : std::pair{b, a};
+  };
+  for (std::size_t i = 0; i + 2 < floor.indices.size(); i += 3) {
+    edge_count[key(floor.indices[i], floor.indices[i + 1])] += 1;
+    edge_count[key(floor.indices[i + 1], floor.indices[i + 2])] += 1;
+    edge_count[key(floor.indices[i + 2], floor.indices[i])] += 1;
+  }
+  std::map<std::uint32_t, std::vector<std::uint32_t>> adjacency;
+  for (const auto& [edge, count] : edge_count) {
+    if (count == 1) {
+      adjacency[edge.first].push_back(edge.second);
+      adjacency[edge.second].push_back(edge.first);
+    }
+  }
+  std::vector<std::array<double, 2>> best;
+  std::set<std::uint32_t> visited;
+  for (const auto& [start, _] : adjacency) {
+    if (visited.contains(start)) {
+      continue;
+    }
+    std::vector<std::uint32_t> loop{start};
+    visited.insert(start);
+    std::uint32_t prev = start;
+    std::uint32_t cur = adjacency[start].front();
+    while (cur != start) {
+      loop.push_back(cur);
+      visited.insert(cur);
+      const auto& next = adjacency[cur];
+      const std::uint32_t follow = next.front() == prev ? next.back() : next.front();
+      prev = cur;
+      cur = follow;
+    }
+    if (loop.size() > best.size()) {
+      best.clear();
+      for (const std::uint32_t v : loop) {
+        best.push_back({floor.positions[v * 3], floor.positions[(v * 3) + 1]});
+      }
+    }
+  }
+  return best;
+}
+
+double signed_area(const std::vector<std::array<double, 2>>& loop) {
+  double area2 = 0.0;
+  for (std::size_t i = 0; i < loop.size(); ++i) {
+    const auto& a = loop[i];
+    const auto& b = loop[(i + 1) % loop.size()];
+    area2 += (a[0] * b[1]) - (b[0] * a[1]);
+  }
+  return area2 / 2.0;
+}
+
+/// Circumradius of the triangle (a, b, c); huge for near-collinear points.
+double circumradius(const std::array<double, 2>& a,
+                    const std::array<double, 2>& b,
+                    const std::array<double, 2>& c) {
+  const double la = std::hypot(b[0] - a[0], b[1] - a[1]);
+  const double lb = std::hypot(c[0] - b[0], c[1] - b[1]);
+  const double lc = std::hypot(a[0] - c[0], a[1] - c[1]);
+  const double area2 = std::abs(((b[0] - a[0]) * (c[1] - a[1])) - ((c[0] - a[0]) * (b[1] - a[1])));
+  if (area2 < 1e-12) {
+    return std::numeric_limits<double>::max();
+  }
+  return (la * lb * lc) / (2.0 * area2);
+}
+
+} // namespace
+
+// Fillet existence (tee visual spec §3): the floor's outer boundary must be
+// G1-smooth at every re-entrant (concave) corner — no sharp bite where two
+// arms meet — and the concave arcs must not dip below the fillet radius
+// floor. Convex corners (arm faces, edge/face joints) are legitimate hard
+// corners and exempt.
+TEST_P(TJunctionQuality, FilletedBoundaryIsSmoothAndRadiused) {
+  Tee tee = attach(GetParam().setup());
+  const NetworkMesh mesh = roadmaker::build_network_mesh(tee.network);
+  ASSERT_FALSE(mesh.junction_floors.empty());
+
+  std::vector<std::array<double, 2>> loop = boundary_loop(mesh.junction_floors.front().mesh);
+  ASSERT_GE(loop.size(), 8u);
+  if (signed_area(loop) < 0.0) {
+    std::ranges::reverse(loop); // normalize to CCW: interior on the left
+  }
+
+  const std::size_t n = loop.size();
+  std::vector<double> concave_turn_deg(n, 0.0);
+  double max_concave_turn = 0.0;
+  for (std::size_t i = 0; i < n; ++i) {
+    const auto& a = loop[(i + n - 1) % n];
+    const auto& b = loop[i];
+    const auto& c = loop[(i + 1) % n];
+    const double ux = b[0] - a[0], uy = b[1] - a[1];
+    const double vx = c[0] - b[0], vy = c[1] - b[1];
+    const double cross = (ux * vy) - (uy * vx);
+    const double dot = (ux * vx) + (uy * vy);
+    const double turn = std::atan2(std::abs(cross), dot) * 180.0 / kPi;
+    // CCW loop: right turns (cross < 0) are re-entrant corners.
+    if (cross < 0.0) {
+      concave_turn_deg[i] = turn;
+      max_concave_turn = std::max(max_concave_turn, turn);
+    }
+  }
+  // A missing fillet shows up as one sharp re-entrant corner (90° for a perp
+  // tee); a filleted boundary turns through the same total angle in small
+  // per-vertex steps. 20° accommodates the coarsest legitimate arc step plus
+  // the tangency shortcut (kFilletTangentLift).
+  EXPECT_LT(max_concave_turn, 20.0) << "re-entrant corner without a fillet arc";
+
+  // Radius floor along concave runs: stride-2 triples keep the sagitta far
+  // above the union's sub-centimeter vertex noise. The kernel targets a 3 m
+  // arc but clamps to the tangent legs the cut faces leave room for — skew
+  // (deg45/deg135) and narrow-branch corners legitimately land near 2 m —
+  // so the gate asserts arcs never collapse to cosmetic size rather than
+  // the un-clamped default.
+  double min_concave_radius = std::numeric_limits<double>::max();
+  for (std::size_t i = 0; i < n; ++i) {
+    const std::array<std::size_t, 5> run{
+        (i + n - 2) % n, (i + n - 1) % n, i, (i + 1) % n, (i + 2) % n};
+    const bool all_concave =
+        std::ranges::all_of(run, [&](std::size_t k) { return concave_turn_deg[k] > 2.0; });
+    if (all_concave) {
+      min_concave_radius =
+          std::min(min_concave_radius, circumradius(loop[run[0]], loop[run[2]], loop[run[4]]));
+    }
+  }
+  if (min_concave_radius < std::numeric_limits<double>::max()) {
+    EXPECT_GE(min_concave_radius, 1.8) << "fillet arc below the radius floor";
+  }
+}
+
+// Material continuity (tee visual spec §3): the floor carries the driving
+// material — junction interiors export as the same asphalt as the roads
+// feeding them, and the legacy junction-debug material never reappears.
+TEST_P(TJunctionQuality, FloorCarriesDrivingMaterial) {
+  Tee tee = attach(GetParam().setup());
+  const NetworkMesh mesh = roadmaker::build_network_mesh(tee.network);
+  ASSERT_FALSE(mesh.junction_floors.empty());
+  for (const roadmaker::JunctionFloor& floor : mesh.junction_floors) {
+    EXPECT_EQ(floor.mesh.material, LaneType::Driving);
+  }
+
+  const std::filesystem::path glb = std::filesystem::temp_directory_path() /
+                                    fmt::format("rm_tee_material_{}.glb", GetParam().name);
+  ASSERT_TRUE(roadmaker::export_glb(mesh, glb).has_value());
+  std::ifstream in(glb, std::ios::binary);
+  const std::string bytes((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+  EXPECT_EQ(bytes.find("junction_floor"), std::string::npos)
+      << "legacy junction-debug material leaked into the export";
+  std::filesystem::remove(glb);
+
+  // Connecting roads surface as the floor; their own grid must stay empty
+  // and they carry no markings — no paint through the junction interior.
+  tee.network.for_each_road([&](RoadId id, const Road& road) {
+    if (road.junction != tee.junction) {
+      return;
+    }
+    for (const RoadMesh& rm : mesh.roads) {
+      if (rm.road == id) {
+        EXPECT_TRUE(rm.lanes.empty()) << "connecting road double-surfaces the junction";
+        EXPECT_TRUE(rm.markings.empty()) << "road marks through the junction interior";
+      }
+    }
+  });
+}
+
+// Shading continuity (tee visual spec §3): road surfaces shade smooth along
+// their length — adjacent face normals stay well under the crease threshold —
+// and welded vertices (bitwise-equal positions, floor/arm seams included)
+// never carry divergent normals. On the graded fixture the arm normals must
+// actually tilt with the slope (the grade-blind-normal regression).
+TEST_P(TJunctionQuality, SurfaceNormalsAreSmoothAndWelded) {
+  constexpr double kCreaseDeg = 40.0;
+  Tee tee = attach(GetParam().setup());
+  const NetworkMesh mesh = roadmaker::build_network_mesh(tee.network);
+  ASSERT_FALSE(mesh.junction_floors.empty());
+
+  const auto face_normal = [](const std::vector<double>& p,
+                              std::uint32_t a,
+                              std::uint32_t b,
+                              std::uint32_t c) {
+    const double ux = p[b * 3] - p[a * 3];
+    const double uy = p[(b * 3) + 1] - p[(a * 3) + 1];
+    const double uz = p[(b * 3) + 2] - p[(a * 3) + 2];
+    const double vx = p[c * 3] - p[a * 3];
+    const double vy = p[(c * 3) + 1] - p[(a * 3) + 1];
+    const double vz = p[(c * 3) + 2] - p[(a * 3) + 2];
+    std::array<double, 3> n{(uy * vz) - (uz * vy), (uz * vx) - (ux * vz), (ux * vy) - (uy * vx)};
+    const double len = std::hypot(n[0], std::hypot(n[1], n[2]));
+    if (len > 0.0) {
+      n = {n[0] / len, n[1] / len, n[2] / len};
+    }
+    return n;
+  };
+  const auto angle_deg = [](const std::array<double, 3>& a, const std::array<double, 3>& b) {
+    const double dot = std::clamp((a[0] * b[0]) + (a[1] * b[1]) + (a[2] * b[2]), -1.0, 1.0);
+    return std::acos(dot) * 180.0 / kPi;
+  };
+
+  // (a) Adjacent-triangle face normals within each surface.
+  const auto check_surface = [&](const std::vector<double>& positions,
+                                 const std::vector<std::uint32_t>& indices,
+                                 const char* what) {
+    std::map<std::pair<std::uint32_t, std::uint32_t>, std::array<double, 3>> first_face;
+    for (std::size_t i = 0; i + 2 < indices.size(); i += 3) {
+      const auto n = face_normal(positions, indices[i], indices[i + 1], indices[i + 2]);
+      const std::array<std::pair<std::uint32_t, std::uint32_t>, 3> edges{
+          std::minmax(indices[i], indices[i + 1]),
+          std::minmax(indices[i + 1], indices[i + 2]),
+          std::minmax(indices[i + 2], indices[i])};
+      for (const auto& edge : edges) {
+        const auto found = first_face.find(edge);
+        if (found == first_face.end()) {
+          first_face.emplace(edge, n);
+        } else {
+          EXPECT_LT(angle_deg(found->second, n), kCreaseDeg)
+              << what << ": shading crease across a shared edge";
+        }
+      }
+    }
+  };
+  for (const RoadMesh& road : mesh.roads) {
+    std::vector<std::uint32_t> all;
+    for (const RoadMesh::LanePatch& patch : road.lanes) {
+      all.insert(all.end(), patch.indices.begin(), patch.indices.end());
+    }
+    check_surface(road.positions, all, "road");
+  }
+  const SubMesh& floor = mesh.junction_floors.front().mesh;
+  check_surface(floor.positions, floor.indices, "floor");
+
+  // (b) Weld check: bitwise-equal positions across the whole network mesh
+  // must agree on their vertex normal (seams share vertices AND shading).
+  std::map<std::array<double, 3>, std::array<double, 3>> seen;
+  const auto check_welds = [&](const std::vector<double>& positions,
+                               const std::vector<double>& normals) {
+    for (std::size_t i = 0; i + 2 < positions.size(); i += 3) {
+      const std::array<double, 3> pos{positions[i], positions[i + 1], positions[i + 2]};
+      const std::array<double, 3> nrm{normals[i], normals[i + 1], normals[i + 2]};
+      const auto found = seen.find(pos);
+      if (found == seen.end()) {
+        seen.emplace(pos, nrm);
+      } else {
+        EXPECT_LT(angle_deg(found->second, nrm), kCreaseDeg)
+            << "coincident vertices with divergent normals at (" << pos[0] << ", " << pos[1] << ")";
+      }
+    }
+  };
+  for (const RoadMesh& road : mesh.roads) {
+    check_welds(road.positions, road.normals);
+  }
+  check_welds(floor.positions, floor.normals);
+
+  // (c) Grade regression: a graded arm's surface normals tilt with dz/ds.
+  if (std::string(GetParam().name) == "graded") {
+    double max_tilt = 0.0;
+    for (const RoadMesh& road : mesh.roads) {
+      for (std::size_t i = 0; i + 2 < road.normals.size(); i += 3) {
+        max_tilt = std::max(max_tilt, std::hypot(road.normals[i], road.normals[i + 1]));
+      }
+    }
+    EXPECT_GT(max_tilt, 0.01) << "graded roads still lit as if flat";
+  }
 }
 
 // Regenerates the committed tee golden (assets/samples + fuzz corpus per the
