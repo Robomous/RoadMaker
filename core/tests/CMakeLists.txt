@@ -13,6 +13,7 @@ add_executable(roadmaker_core_tests
   test_mesh.cpp
   test_junction_surface.cpp
   test_junction_export.cpp
+  test_t_junction_quality.cpp
   test_gltf.cpp
   test_round_trip.cpp
   test_edit_stack.cpp

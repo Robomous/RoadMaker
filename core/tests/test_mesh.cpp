@@ -143,7 +143,10 @@ TEST(Mesh, TJunctionBuildsOneJunctionFloor) {
   const auto network = load_sample("t_junction.xodr");
   const NetworkMesh mesh = roadmaker::build_network_mesh(network);
 
-  EXPECT_EQ(mesh.roads.size(), 5U);
+  // 3 arm meshes; the 2 connecting roads emit no lane surface of their own —
+  // the junction floor IS the junction surface (issue #103, no coplanar
+  // double-draw).
+  EXPECT_EQ(mesh.roads.size(), 3U);
   ASSERT_EQ(mesh.junction_floors.size(), 1U);
 
   EXPECT_TRUE(mesh.junction_floors[0].junction.is_valid());

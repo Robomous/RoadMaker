@@ -90,6 +90,13 @@ struct JunctionGenOptions {
   /// straight-line end distance is dropped (nearly-parallel arms whose
   /// clothoid would loop). k=4 per 02 §6.
   double max_loop_factor = 4.0;
+
+  /// Tightest turn radius [m] generated turns should need. attach_t_junction
+  /// derives its auto gap from it (gap ≥ r·tan(Δθ/2) per turn — the junction
+  /// area must give every turn room to stay drivable; see
+  /// docs/design/hardening/t_junction.md §gap auto-sizing). 6 m is the
+  /// tightest urban curb-return radius the templates need.
+  double min_turn_radius_m = 6.0;
 };
 
 /// Non-mutating summary of what create_junction would generate for `ends`:
@@ -129,9 +136,12 @@ create_junction(const RoadNetwork& network,
 /// Tuning for attach_t_junction (docs/design/hardening/t_junction.md).
 struct TAttachOptions {
   /// Half-length of the junction area removed from the target around `s`
-  /// [m]. 0 = auto: max(target half-width at s, attaching road half-width
-  /// at its end) + 1 m — the area must at least span the crossing road's
-  /// body.
+  /// [m]. 0 = auto: the larger of the width bound (max(target half-width at
+  /// s, attaching road half-width at its end) + 1 m — the area must at least
+  /// span the crossing road's body) and the turning bound
+  /// (generation.min_turn_radius_m · tan(Δθ/2) + 1 m over both generated
+  /// turn directions, Δθ clamped to 150° — the turns must fit at drivable
+  /// curvature; docs/design/hardening/t_junction.md §gap auto-sizing).
   double gap_m = 0.0;
 
   /// Passed through to the M2 connecting-road generator.

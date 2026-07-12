@@ -69,9 +69,11 @@ TEST(Gltf, StraightRoadExportsAValidGlb) {
 TEST(Gltf, TJunctionExportsRoadsAndFloorNodes) {
   const tinygltf::Model model = export_and_reload("t_junction.xodr", "rm_tjunction.glb");
 
-  // 5 road nodes + 1 junction floor node in the default scene.
+  // 3 arm road nodes + 1 junction floor node in the default scene — the 2
+  // connecting roads' surfaces are the floor itself (issue #103, no coplanar
+  // double-draw).
   ASSERT_EQ(model.scenes.size(), 1U);
-  EXPECT_EQ(model.scenes[0].nodes.size(), 6U);
+  EXPECT_EQ(model.scenes[0].nodes.size(), 4U);
 
   // Every accessor references a valid buffer view and the single buffer.
   EXPECT_EQ(model.buffers.size(), 1U);
