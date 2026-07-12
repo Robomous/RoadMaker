@@ -1069,6 +1069,32 @@ NB_MODULE(_roadmaker, m) {
       "Best snap candidate for the cursor, or None. Priority: RoadEndpoint > "
       "TangentContinuation > Grid; closest wins within a kind.");
 
+  nb::class_<roadmaker::edit::SideSnap>(edit, "SideSnap")
+      .def_ro("road", &roadmaker::edit::SideSnap::road)
+      .def_ro("s", &roadmaker::edit::SideSnap::s)
+      .def_ro("position", &roadmaker::edit::SideSnap::position)
+      .def_ro("distance", &roadmaker::edit::SideSnap::distance);
+
+  edit.def(
+      "snap_to_road_side",
+      [](const roadmaker::RoadNetwork& network,
+         std::pair<double, double> cursor,
+         const roadmaker::edit::SnapOptions& options,
+         double end_margin) {
+        return roadmaker::edit::snap_to_road_side(
+            network,
+            roadmaker::Waypoint{.x = cursor.first, .y = cursor.second},
+            options,
+            end_margin);
+      },
+      "network"_a,
+      "cursor"_a,
+      "options"_a = roadmaker::edit::SnapOptions{},
+      "end_margin"_a = 8.0,
+      "Nearest road-body projection within options.radius (the T-attach "
+      "anchor): road, station s, position, distance. Skips connecting roads "
+      "and stations within end_margin of either road end.");
+
   // --- meshing / export ------------------------------------------------------------
 
   nb::class_<roadmaker::MeshOptions>(m, "MeshOptions")

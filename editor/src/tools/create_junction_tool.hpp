@@ -1,13 +1,15 @@
 #pragma once
 
-// Create Junction tool (issue #17, docs/design/m2/02_editing_tools.md §6).
+// Create Junction tool (issue #17, docs/design/m2/02_editing_tools.md §6;
+// side attach: docs/design/hardening/t_junction.md, issue #92).
 // Clicks select road ENDS (snapped to the nearest endpoint within proximity);
-// each selected end highlights and the status bar counts them. Enter generates
-// ONE edit::create_junction command — connecting roads for every permitted
-// turn, plus lane links and a flat placeholder surface — Esc clears the
-// selection. Nothing enters the network until Enter, so there is no preview
-// session. Headless by construction: ToolEvent in, command + PreviewGeometry
-// out.
+// each selected end highlights and the status bar counts them. With exactly
+// ONE end selected, a click on another road's BODY (away from its endpoints)
+// sets a side-attach anchor instead — Enter then tees the selected end into
+// that road (edit::attach_t_junction, ONE undo step). Otherwise Enter
+// generates ONE edit::create_junction command. Esc clears everything.
+// Nothing enters the network until Enter, so there is no preview session.
+// Headless by construction: ToolEvent in, command + PreviewGeometry out.
 
 #include "roadmaker/edit/operations.hpp"
 #include "roadmaker/edit/snap.hpp"
@@ -47,14 +49,20 @@ private:
   /// resolved to a RoadEnd (start/end by proximity).
   [[nodiscard]] std::optional<RoadEnd> snap_end(const Waypoint& cursor) const;
 
+  /// Road-body projection near `cursor` (the T-attach anchor); excludes the
+  /// roads whose ends are already selected.
+  [[nodiscard]] std::optional<edit::SideSnap> snap_side(const Waypoint& cursor) const;
+
   void toggle(const RoadEnd& end);
   void generate();
+  void generate_t_attach();
   void reset_session();
   void emit_count_status();
 
   Document& document_;
   edit::SnapOptions snap_options_{};
   std::vector<RoadEnd> ends_;
+  std::optional<edit::SideSnap> side_anchor_;
   std::optional<Waypoint> hover_;
 };
 
