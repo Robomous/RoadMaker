@@ -53,8 +53,32 @@ GW-1 + GW-2 executed by the maintainer.
 - **Autosave hardening** (#53 spec gaps, PR #99): a recovery copy is written
   right before every junction regeneration, and autosave gains a persisted
   File-menu disable switch.
+- **Tee preview & discoverability** (#103): the Create Junction tooltip
+  documents both flows (endpoint junction and tee); with one end selected,
+  hovering or anchoring a road body shows the tee overlay — anchor marker at
+  the projected station, dashed ghost line from the selected end, and the
+  highlighted `[s−gap, s+gap]` span the junction will replace; the status
+  text also appears as a viewport-corner hint for every tool; new
+  [T-junction user-guide page](docs/user-guide/t-junction.md); kernel
+  `edit::t_attach_gap` (bound in Python) exposes the auto-gap the preview
+  and the command share; committed tee sample `assets/samples/t_attach.xodr`.
 
 ### Fixed
+- **T-junction geometry & rendering** (#103, GW-1 gate finding): tees (and
+  multi-lane junctions generally) were geometrically non-conformant and
+  rendered wrong. Connecting roads are now anchored on the linked lanes'
+  boundaries (smooth_fit) instead of arm centers, fitted through circular
+  fillet guides (drivable curvature, ≤ 1/6 m⁻¹), given elevation profiles
+  matching arm z and grade (graded tees had 3 m cliffs), and generated with
+  lane discipline (left turns from/to inner lanes). The auto gap is sized
+  from turning geometry, not just road widths, and the branch overhang is
+  trimmed back to the junction boundary. The junction surface gains per-arm
+  joint closures, a micrometer-precision welded union (the 1 cm-rounding
+  Clipper2 default broke every seam), exact-vertex seam stitching, and
+  sliver elimination; connecting roads no longer double-draw under the
+  floor (interior z-fighting). An 11-fixture quality matrix enforces the
+  invariants (slivers, seams, curvature, crossings, elevation continuity,
+  determinism, validator-clean export, undo byte-identity) in CI.
 - Uncaught Clothoids exception on sharp waypoint turn-backs terminated the
   editor (#87, found by the soak driver; kernel exception boundary added).
 - Unbounded clothoid fits: a sharp curve could balloon a road/marking to

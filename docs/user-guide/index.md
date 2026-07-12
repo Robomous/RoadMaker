@@ -39,6 +39,7 @@ not undoable.
 | [Lane Profile](lane-profile.md) | Add, remove, and retype lanes across a road's cross-section |
 | [Elevation](elevation.md) | Give a road a vertical profile |
 | [Junction](junction.md) | Connect road ends into a junction with generated turning lanes |
+| [T-junction](t-junction.md) | Tee a road's end into another road's body |
 | [Objects & signals](objects-signals.md) | Add crosswalks, props, traffic lights, and signs |
 | [Save & export](save-export.md) | Write OpenDRIVE and export meshes (glTF, USD) |
 

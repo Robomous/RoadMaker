@@ -905,7 +905,8 @@ NB_MODULE(_roadmaker, m) {
   nb::class_<roadmaker::edit::JunctionGenOptions>(edit, "JunctionGenOptions")
       .def(nb::init<>())
       .def_rw("max_end_distance_m", &roadmaker::edit::JunctionGenOptions::max_end_distance_m)
-      .def_rw("max_loop_factor", &roadmaker::edit::JunctionGenOptions::max_loop_factor);
+      .def_rw("max_loop_factor", &roadmaker::edit::JunctionGenOptions::max_loop_factor)
+      .def_rw("min_turn_radius_m", &roadmaker::edit::JunctionGenOptions::min_turn_radius_m);
 
   nb::class_<roadmaker::edit::JunctionPreview>(edit, "JunctionPreview")
       .def_ro("connection_count", &roadmaker::edit::JunctionPreview::connection_count)
@@ -984,6 +985,22 @@ NB_MODULE(_roadmaker, m) {
       .def_rw("gap_m", &roadmaker::edit::TAttachOptions::gap_m)
       .def_rw("generation", &roadmaker::edit::TAttachOptions::generation);
 
+  edit.def(
+      "t_attach_gap",
+      [](const roadmaker::RoadNetwork& network,
+         const roadmaker::RoadEnd& end,
+         roadmaker::RoadId target,
+         double s,
+         const roadmaker::edit::TAttachOptions& options) {
+        return roadmaker::edit::t_attach_gap(network, end, target, s, options);
+      },
+      "network"_a,
+      "end"_a,
+      "target"_a,
+      "s"_a,
+      "options"_a = roadmaker::edit::TAttachOptions{},
+      "Half-length [m] of the junction area attach_t_junction would remove "
+      "around s (the editor preview's [s-gap, s+gap] highlight).");
   edit.def(
       "attach_t_junction",
       [](const roadmaker::RoadNetwork& network,

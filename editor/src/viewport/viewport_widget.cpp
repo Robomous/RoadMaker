@@ -1,8 +1,10 @@
 #include "viewport/viewport_widget.hpp"
 
+#include <QFontMetrics>
 #include <QKeyEvent>
 #include <QMouseEvent>
 #include <QOpenGLContext>
+#include <QPainter>
 #include <QWheelEvent>
 #include <algorithm>
 #include <array>
@@ -176,6 +178,34 @@ void ViewportWidget::paintGL() {
   const float aspect =
       fb_height > 0 ? static_cast<float>(fb_width) / static_cast<float>(fb_height) : 1.0F;
   renderer_->render(draw_items, camera_.matrices(aspect), fb_width, fb_height);
+
+  // Active-tool hint in the viewport corner (QPainter-over-GL is supported
+  // on QOpenGLWidget; beginNativePainting is not needed as we paint last).
+  if (!hint_text_.isEmpty()) {
+    QPainter painter(this);
+    painter.setRenderHint(QPainter::TextAntialiasing);
+    const QFontMetrics metrics(painter.font());
+    const int pad = 6;
+    const QRect text_rect =
+        metrics.boundingRect(QRect(0, 0, width() - (4 * pad), 0), Qt::TextWordWrap, hint_text_);
+    const QRect box(pad,
+                    height() - text_rect.height() - (3 * pad),
+                    text_rect.width() + (2 * pad),
+                    text_rect.height() + (2 * pad));
+    painter.setPen(Qt::NoPen);
+    painter.setBrush(QColor(0, 0, 0, 150));
+    painter.drawRoundedRect(box, 4, 4);
+    painter.setPen(QColor(235, 235, 235));
+    painter.drawText(box.adjusted(pad, pad, -pad, -pad), Qt::TextWordWrap, hint_text_);
+  }
+}
+
+void ViewportWidget::set_hint(const QString& text) {
+  if (hint_text_ == text) {
+    return;
+  }
+  hint_text_ = text;
+  update();
 }
 
 Ray ViewportWidget::ray_through(const QPointF& pos) const {

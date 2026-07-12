@@ -17,7 +17,11 @@ tries in their first twenty minutes, executed by hand, with zero crashes.*
 2. **T-junction by side attach**: create a second road and connect it in a
    **T against the first** — the endpoint attaches to the *side* of road 1
    (side-snap indicator on road 1's reference line, release commits the
-   split + junction as one undo step).
+   split + junction as one undo step). **Acceptance:** the junction area
+   renders correctly — one continuous surface, no sliver triangles,
+   no z-fighting, no road marks running through the interior — and the
+   exported `.xodr` shows the same smooth turn geometry in esmini
+   (issue #103 regression).
 3. **Overpass**: create a third road **crossing road 1 with no junction**
    — take the cross **over** option; resulting clearance ≥ 5 m over the
    crossed road.

@@ -8,8 +8,12 @@
 
 #include <gtest/gtest.h>
 
+#include <QSignalSpy>
+#include <QUndoStack>
+#include <cmath>
 #include <stdexcept>
 
+#include "app/actions.hpp"
 #include "document/document.hpp"
 #include "tools/create_junction_tool.hpp"
 
@@ -219,4 +223,87 @@ TEST(CreateJunctionTool, EndpointSnapWinsOverTheSideAnchor) {
   ASSERT_TRUE(tool.mouse_press(click_at(0.0, -10.0)));
   ASSERT_TRUE(tool.mouse_press(click_at(-60.0, 0.0))); // main road's START
   EXPECT_EQ(tool.selected_count(), 2U);
+}
+
+// ---- tee discoverability (issue #103 §8): preview overlay + status span ----
+
+TEST(CreateJunctionTool, TeePreviewShowsAnchorGhostAndReplacedSpan) {
+  TeeScene scene;
+  CreateJunctionTool tool(scene.document);
+  tool.activate();
+
+  ASSERT_TRUE(tool.mouse_press(click_at(0.0, -10.0))); // select the side end
+  ASSERT_TRUE(tool.mouse_press(click_at(1.0, 1.5)));   // anchor ~s=61 on "1"
+
+  const auto preview = tool.preview();
+  // Anchor marker on the reference line plus the selected end's marker.
+  ASSERT_GE(preview.point_positions.size(), 2U * 3U);
+  // Ghost dashes + span polyline + two end ticks all land in line_positions.
+  ASSERT_FALSE(preview.line_positions.empty());
+
+  // The span highlight runs along the target's reference line (y = 0) and
+  // covers [s−gap, s+gap] around the anchor.
+  const RoadId target = scene.document.network().find_road("1");
+  const roadmaker::RoadEnd side_end{scene.document.network().find_road("2"),
+                                    roadmaker::ContactPoint::End};
+  const double gap =
+      roadmaker::edit::t_attach_gap(scene.document.network(), side_end, target, 61.0);
+  ASSERT_GT(gap, 0.0);
+  double span_min_x = 1e9;
+  double span_max_x = -1e9;
+  bool ghost_seen = false;
+  for (std::size_t i = 0; i + 2 < preview.line_positions.size(); i += 3) {
+    const double x = preview.line_positions[i];
+    const double y = preview.line_positions[i + 1];
+    if (std::abs(y) < 1e-6) { // on the target's reference line
+      span_min_x = std::min(span_min_x, x);
+      span_max_x = std::max(span_max_x, x);
+    }
+    if (y < -1.0) { // between the branch end and the anchor
+      ghost_seen = true;
+    }
+  }
+  // Anchor x = 1 (s = 61 on a road starting at x = −60).
+  EXPECT_NEAR(span_min_x, 1.0 - gap, 1.5);
+  EXPECT_NEAR(span_max_x, 1.0 + gap, 1.5);
+  EXPECT_TRUE(ghost_seen) << "dashed ghost line from the selected end is missing";
+}
+
+TEST(CreateJunctionTool, TeePreviewClearsOnEscape) {
+  TeeScene scene;
+  CreateJunctionTool tool(scene.document);
+  tool.activate();
+
+  ASSERT_TRUE(tool.mouse_press(click_at(0.0, -10.0)));
+  ASSERT_TRUE(tool.mouse_press(click_at(1.0, 1.5)));
+  ASSERT_FALSE(tool.preview().line_positions.empty());
+
+  ASSERT_TRUE(tool.key_press(Qt::Key_Escape, Qt::NoModifier));
+  const auto preview = tool.preview();
+  EXPECT_TRUE(preview.line_positions.empty());
+  EXPECT_TRUE(preview.point_positions.empty());
+}
+
+TEST(CreateJunctionTool, TeeStatusMessageNamesTheReplacedSpan) {
+  TeeScene scene;
+  CreateJunctionTool tool(scene.document);
+  tool.activate();
+
+  QSignalSpy status_spy(&tool, &roadmaker::editor::Tool::status_message);
+  ASSERT_TRUE(tool.mouse_press(click_at(0.0, -10.0)));
+  ASSERT_TRUE(tool.mouse_press(click_at(1.0, 1.5)));
+  ASSERT_FALSE(status_spy.isEmpty());
+  const QString last = status_spy.constLast().constFirst().toString();
+  EXPECT_TRUE(last.contains("replaces s=")) << last.toStdString();
+}
+
+// The toolbar tooltip documents BOTH flows (endpoint junction and tee) — the
+// GW-1 gate found the tee flow undiscoverable without it.
+TEST(CreateJunctionTool, TooltipDocumentsBothFlows) {
+  QUndoStack undo_stack;
+  roadmaker::editor::Actions actions(undo_stack);
+  const QString tip = actions.tool_create_junction->toolTip();
+  EXPECT_TRUE(tip.contains("2+ road ends")) << tip.toStdString();
+  EXPECT_TRUE(tip.contains("tee into it")) << tip.toStdString();
+  EXPECT_TRUE(tip.contains("Esc cancels")) << tip.toStdString();
 }

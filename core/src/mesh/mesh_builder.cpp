@@ -353,7 +353,15 @@ RoadMesh build_one_road(const RoadNetwork& network,
 
   mesh.name = road.name.empty() ? fmt::format("road {}", road.odr_id) : road.name;
 
-  for (std::size_t si = 0; si < road.sections.size(); ++si) {
+  // A connecting road's surface IS the junction floor (the floor is built
+  // from the union of exactly these footprints and stitched to the arms) —
+  // emitting its lane grid too would draw two coplanar surfaces that
+  // z-fight across the whole junction interior (issue #103). Markings still
+  // emit below (they are lifted above the surface and the floor carries no
+  // marks of its own).
+  const bool surface_is_floor = options.junction_floors && road.junction.is_valid();
+
+  for (std::size_t si = 0; !surface_is_floor && si < road.sections.size(); ++si) {
     const LaneSection& section = *network.lane_section(road.sections[si]);
     const double section_end = si + 1 < road.sections.size()
                                    ? network.lane_section(road.sections[si + 1])->s0
