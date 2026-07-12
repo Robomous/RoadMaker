@@ -6,10 +6,13 @@
 #include <QOpenGLContext>
 #include <QString>
 #include <QSurfaceFormat>
+#include <charconv>
 #include <cstdio>
 #include <cstring>
 #include <filesystem>
 #include <string>
+#include <string_view>
+#include <system_error>
 
 #include "app/crash_handler.hpp"
 #include "app/log_setup.hpp"
@@ -45,8 +48,17 @@ ScreenshotArgs parse_screenshot_args(int argc, char** argv) {
       args.camera = QString::fromUtf8(argv[i + 1]);
       ++i;
     } else if (std::strcmp(argv[i], "--size") == 0 && i + 1 < argc) {
+      // std::from_chars, not sscanf: MSVC deprecates the CRT scanners
+      // (C4996 under /WX).
+      const std::string_view size(argv[i + 1]);
+      const auto parse = [](std::string_view text, int& out) {
+        const auto [ptr, ec] = std::from_chars(text.data(), text.data() + text.size(), out);
+        return ec == std::errc{} && ptr == text.data() + text.size();
+      };
+      const std::size_t cross = size.find('x');
       int w = 0, h = 0;
-      if (std::sscanf(argv[i + 1], "%dx%d", &w, &h) == 2 && w > 0 && h > 0) {
+      if (cross != std::string_view::npos && parse(size.substr(0, cross), w) &&
+          parse(size.substr(cross + 1), h) && w > 0 && h > 0) {
         args.width = w;
         args.height = h;
       } else {
