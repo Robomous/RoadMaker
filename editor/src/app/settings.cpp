@@ -38,4 +38,12 @@ void Settings::add_recent_file(const QString& path) {
   settings_.setValue(kRecentKey, recent);
 }
 
+bool Settings::autosave_enabled() const {
+  return settings_.value(QStringLiteral("autosave/enabled"), true).toBool();
+}
+
+void Settings::set_autosave_enabled(bool enabled) {
+  settings_.setValue(QStringLiteral("autosave/enabled"), enabled);
+}
+
 } // namespace roadmaker::editor
