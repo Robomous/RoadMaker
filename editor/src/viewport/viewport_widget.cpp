@@ -143,6 +143,25 @@ void ViewportWidget::refresh_road_aabbs(const std::vector<RoadId>& roads) {
   }
 }
 
+void ViewportWidget::set_camera_preset(const QString& preset) {
+  constexpr float kPi = 3.14159265358979F;
+  if (preset == QStringLiteral("top")) {
+    // Pitch just under vertical: the look-at up vector stays well-defined
+    // and the plan view keeps a hint of depth for seam inspection.
+    camera_.set_view(-kPi / 2.0F, (kPi / 2.0F) - 0.02F);
+  } else if (preset == QStringLiteral("orbit")) {
+    camera_.set_view(0.8F, 0.9F);
+  }
+  update();
+}
+
+QImage ViewportWidget::capture_frame() {
+  if (!gl_ready_) {
+    return {};
+  }
+  return grabFramebuffer(); // makes the context current and re-renders
+}
+
 bool ViewportWidget::is_highlighted(const UploadedItem& item) const {
   for (const SelectionEntry& entry : selection_.entries()) {
     if (entry.lane.is_valid() ? item.lane == entry.lane : item.road == entry.road) {

@@ -17,6 +17,7 @@
 #include <cstdint>
 #include <limits>
 #include <map>
+#include <numbers>
 #include <span>
 #include <utility>
 #include <vector>
@@ -100,6 +101,40 @@ constexpr double kFaceCutMargin = 0.5;
 // target; curved borders keep their station vertices (their sagitta at the
 // meshing step is far above this).
 constexpr double kBoundarySimplify = 5e-3;
+
+// Corner fillets (tee visual finding, follow-up to issue #103): at every
+// re-entrant corner between two adjacent arms the pavement edge follows an
+// arc tangent to both arms' outer edge lines — the strongest visual
+// signature of a real intersection. Radius floor below; the desired radius
+// derives from the corner turn's connecting road (its centerline min
+// radius approximates the inner-edge geometry) and is clamped to what the
+// arm faces leave room for.
+constexpr double kFilletRadiusFloor = 3.0;
+
+// Cap on the derived fillet radius: past this the corner reads as a slip
+// lane, and long tangent legs start colliding with neighboring corners.
+constexpr double kFilletRadiusCap = 15.0;
+
+// Fillet arcs are sampled to this sagitta [m]. Must stay above
+// kBoundarySimplify or SimplifyPaths would flatten the arc back into a
+// chord after the union.
+constexpr double kFilletArcSagitta = 8e-3;
+
+// Arc samples closer than this [m] to either tangent edge line are dropped:
+// a sample millimeters off the line it is tangent to pairs with the edge
+// into a sub-degree CDT sliver. The boundary leaves the exact tangency
+// point with a <= 8 cm chord shortcut instead — invisible, and the first
+// departure angle stays above the mesh's 5-degree sliver gate.
+constexpr double kFilletTangentLift = 0.08;
+
+// Width [m] of the corridor strips laid along each arm's outer edge lines
+// between the face corner and the fillet tangency: turn ribbons cover only
+// their own lanes, so without the strips the pavement between a wide arm's
+// shoulder edge and the ribbon keeps uncovered notches (the tee's 1x2 m
+// mouth step, issue #103 round 2). Wide enough to overlap every ribbon,
+// narrow enough to never cross an arm's opposite edge (arm half-widths are
+// >= 1.75 m for any drivable profile).
+constexpr double kEdgeStripWidth = 1.0;
 
 struct Vec3 {
   double x, y, z;
@@ -364,11 +399,249 @@ void solve_elevation(CompactMesh& mesh,
   }
 }
 
+/// One arm's face data for fillet construction, oriented INTO the junction:
+/// `left`/`right` are the outermost pavement corners as seen entering, and
+/// (ix, iy) the unit into-junction direction.
+struct ArmFace {
+  std::array<double, 2> left;
+  std::array<double, 2> right;
+  double ix = 0.0;
+  double iy = 0.0;
+};
+
+/// Minimum plan-view curvature radius of a connecting road, sampled — the
+/// fillet-radius derivation treats it as the corner turn's inner-edge scale.
+double min_plan_radius(const Road& road) {
+  constexpr int kSamples = 16;
+  const double length = road.plan_view.length();
+  if (length <= tol::kLength) {
+    return std::numeric_limits<double>::max();
+  }
+  double max_kappa = 0.0;
+  for (int i = 0; i <= kSamples; ++i) {
+    const double s = length * static_cast<double>(i) / kSamples;
+    max_kappa = std::max(max_kappa, std::abs(road.plan_view.evaluate(s).curvature));
+  }
+  return max_kappa > tol::kLength ? 1.0 / max_kappa : std::numeric_limits<double>::max();
+}
+
+double point_segment_distance(const std::array<double, 2>& p,
+                              const std::array<double, 2>& a,
+                              const std::array<double, 2>& b) {
+  const double abx = b[0] - a[0];
+  const double aby = b[1] - a[1];
+  const double len2 = (abx * abx) + (aby * aby);
+  double t = 0.0;
+  if (len2 > 0.0) {
+    t = std::clamp((((p[0] - a[0]) * abx) + ((p[1] - a[1]) * aby)) / len2, 0.0, 1.0);
+  }
+  const double dx = p[0] - (a[0] + (t * abx));
+  const double dy = p[1] - (a[1] + (t * aby));
+  return std::hypot(dx, dy);
+}
+
+/// Fillet radius for the corner between faces `a` and `b`: the smallest
+/// plan-view radius among connecting roads that run face-to-face across this
+/// corner (the turn whose inner edge shapes it), floored and capped.
+double corner_fillet_radius(const RoadNetwork& network,
+                            const Junction& junction,
+                            const ArmFace& a,
+                            const ArmFace& b) {
+  constexpr double kFaceMatch = 1.5; // endpoint-to-face tolerance [m]
+  double derived = std::numeric_limits<double>::max();
+  for (const RoadId road_id : connecting_roads(junction)) {
+    const Road* road = network.road(road_id);
+    if (road == nullptr || road->plan_view.empty()) {
+      continue;
+    }
+    const PathPoint start = road->plan_view.evaluate(0.0);
+    const PathPoint end = road->plan_view.evaluate(road->plan_view.length());
+    const std::array<double, 2> p0{start.x, start.y};
+    const std::array<double, 2> p1{end.x, end.y};
+    const bool a_to_b = point_segment_distance(p0, a.left, a.right) < kFaceMatch &&
+                        point_segment_distance(p1, b.left, b.right) < kFaceMatch;
+    const bool b_to_a = point_segment_distance(p0, b.left, b.right) < kFaceMatch &&
+                        point_segment_distance(p1, a.left, a.right) < kFaceMatch;
+    if (a_to_b || b_to_a) {
+      derived = std::min(derived, min_plan_radius(*road));
+    }
+  }
+  if (derived == std::numeric_limits<double>::max()) {
+    return kFilletRadiusFloor;
+  }
+  return std::clamp(derived, kFilletRadiusFloor, kFilletRadiusCap);
+}
+
+/// Appends the corner fillet wedges and edge corridor strips for all
+/// angularly adjacent arm pairs. The wedge fills the re-entrant corner up to
+/// an arc tangent to both arms' edge lines (G1 boundary); the strips pin the
+/// boundary to the exact pavement edge lines between each face corner and
+/// its tangency.
+void append_corner_fillets(const RoadNetwork& network,
+                           const Junction& junction,
+                           std::vector<ArmFace> faces,
+                           Clipper2Lib::PathsD& footprints) {
+  if (faces.size() < 2) {
+    return;
+  }
+  const auto push_ccw = [&footprints](Clipper2Lib::PathD path) {
+    if (Clipper2Lib::Area(path) < 0.0) {
+      std::ranges::reverse(path);
+    }
+    footprints.push_back(std::move(path));
+  };
+
+  // Cyclic CCW order around the shared centroid; the corner between
+  // consecutive arms (A, B) is A's right edge meeting B's left edge.
+  double cx = 0.0, cy = 0.0;
+  for (const ArmFace& f : faces) {
+    cx += (f.left[0] + f.right[0]) / 2.0;
+    cy += (f.left[1] + f.right[1]) / 2.0;
+  }
+  cx /= static_cast<double>(faces.size());
+  cy /= static_cast<double>(faces.size());
+  std::ranges::sort(faces, [&](const ArmFace& fa, const ArmFace& fb) {
+    const double mid_ax = ((fa.left[0] + fa.right[0]) / 2.0) - cx;
+    const double mid_ay = ((fa.left[1] + fa.right[1]) / 2.0) - cy;
+    const double mid_bx = ((fb.left[0] + fb.right[0]) / 2.0) - cx;
+    const double mid_by = ((fb.left[1] + fb.right[1]) / 2.0) - cy;
+    return std::atan2(mid_ay, mid_ax) < std::atan2(mid_by, mid_bx);
+  });
+
+  for (std::size_t i = 0; i < faces.size(); ++i) {
+    const ArmFace& a = faces[i];
+    const ArmFace& b = faces[(i + 1) % faces.size()];
+    const std::array<double, 2> pa = a.right; // A's edge facing B
+    const std::array<double, 2> pb = b.left;  // B's edge facing A
+    const double cross = (a.ix * b.iy) - (a.iy * b.ix);
+    if (std::abs(cross) < 1e-6) {
+      // Parallel edges: a straight through corridor, no corner to fillet —
+      // but the corridor edge itself still needs pavement. Through ribbons
+      // cover only their lanes, so a wide arm's outer band (highway
+      // shoulders) would otherwise stay uncovered between the 2 m joint
+      // quads: the boundary dropped to the driving edge mid-corridor with
+      // two 90-degree bites. The strip pins the boundary to the edge chord;
+      // the enclosed remainder of the band is paved by the hole fill below.
+      if (((a.ix * (pb[0] - pa[0])) + (a.iy * (pb[1] - pa[1]))) > tol::kLength &&
+          ((b.ix * (pa[0] - pb[0])) + (b.iy * (pa[1] - pb[1]))) > tol::kLength) {
+        Clipper2Lib::PathD quad;
+        quad.emplace_back(pa[0], pa[1]);
+        quad.emplace_back(pb[0], pb[1]);
+        quad.emplace_back(pb[0] + (b.iy * kEdgeStripWidth), pb[1] - (b.ix * kEdgeStripWidth));
+        quad.emplace_back(pa[0] - (a.iy * kEdgeStripWidth), pa[1] + (a.ix * kEdgeStripWidth));
+        push_ccw(std::move(quad));
+      }
+      continue;
+    }
+    // Edge-line intersection pa + ta·A_dir = pb + tb·B_dir.
+    const double dx = pb[0] - pa[0];
+    const double dy = pb[1] - pa[1];
+    const double ta = ((dx * b.iy) - (dy * b.ix)) / cross;
+    const double tb = ((dx * a.iy) - (dy * a.ix)) / cross;
+    if (ta <= tol::kLength || tb <= tol::kLength) {
+      continue; // corner behind a face — degenerate arm layout
+    }
+    const std::array<double, 2> corner{pa[0] + (ta * a.ix), pa[1] + (ta * a.iy)};
+    const double cos_phi = std::clamp((a.ix * b.ix) + (a.iy * b.iy), -1.0, 1.0);
+    const double phi = std::acos(cos_phi); // angle between the edge rays at the corner
+    if (phi < 0.1 || phi > std::numbers::pi - 0.1) {
+      continue; // near-tangent arms; a fillet would degenerate
+    }
+    const double tan_half = std::tan(phi / 2.0);
+    // Desired radius, clamped to the tangent legs the faces leave room for.
+    const double radius =
+        std::min(corner_fillet_radius(network, junction, a, b), std::min(ta, tb) * tan_half);
+    if (radius < 0.05) {
+      continue;
+    }
+    const double tangent_len = radius / tan_half;
+    const std::array<double, 2> tan_a{corner[0] - (tangent_len * a.ix),
+                                      corner[1] - (tangent_len * a.iy)};
+    const std::array<double, 2> tan_b{corner[0] - (tangent_len * b.ix),
+                                      corner[1] - (tangent_len * b.iy)};
+    // Arc center: along the inward bisector at R/sin(phi/2) from the corner.
+    double bis_x = -(a.ix + b.ix);
+    double bis_y = -(a.iy + b.iy);
+    const double bis_len = std::hypot(bis_x, bis_y);
+    if (bis_len < tol::kLength) {
+      continue;
+    }
+    bis_x /= bis_len;
+    bis_y /= bis_len;
+    const double center_dist = radius / std::sin(phi / 2.0);
+    const std::array<double, 2> center{corner[0] + (bis_x * center_dist),
+                                       corner[1] + (bis_y * center_dist)};
+
+    // Wedge: corner -> tangency on A -> arc -> tangency on B.
+    Clipper2Lib::PathD wedge;
+    wedge.emplace_back(corner[0], corner[1]);
+    const double ang_a = std::atan2(tan_a[1] - center[1], tan_a[0] - center[0]);
+    double ang_b = std::atan2(tan_b[1] - center[1], tan_b[0] - center[0]);
+    // Sweep the SHORT way (the fillet arc spans pi - phi < pi).
+    while (ang_b - ang_a > std::numbers::pi) {
+      ang_b -= 2.0 * std::numbers::pi;
+    }
+    while (ang_a - ang_b > std::numbers::pi) {
+      ang_b += 2.0 * std::numbers::pi;
+    }
+    const double sweep = ang_b - ang_a;
+    const double step_angle =
+        2.0 * std::acos(std::clamp(1.0 - (kFilletArcSagitta / radius), 0.0, 1.0));
+    const int steps =
+        std::max(4, static_cast<int>(std::ceil(std::abs(sweep) / std::max(step_angle, 1e-3))));
+    const auto line_distance = [](const std::array<double, 2>& p,
+                                  const std::array<double, 2>& on,
+                                  double dx2,
+                                  double dy2) {
+      return std::abs(((p[0] - on[0]) * dy2) - ((p[1] - on[1]) * dx2));
+    };
+    for (int k = 0; k <= steps; ++k) {
+      const double ang = ang_a + (sweep * static_cast<double>(k) / steps);
+      const std::array<double, 2> p{center[0] + (radius * std::cos(ang)),
+                                    center[1] + (radius * std::sin(ang))};
+      // Endpoints are the exact tangencies; interior samples hugging either
+      // tangent line are dropped (see kFilletTangentLift).
+      if (k != 0 && k != steps &&
+          (line_distance(p, tan_a, a.ix, a.iy) < kFilletTangentLift ||
+           line_distance(p, tan_b, b.ix, b.iy) < kFilletTangentLift)) {
+        continue;
+      }
+      wedge.emplace_back(p[0], p[1]);
+    }
+    push_ccw(std::move(wedge));
+
+    // Corridor strips: exact pavement edge from each face corner all the way
+    // to the corner point, one edge-strip width inward — the wedge covers
+    // only the fillet side of the edge lines, and turn ribbons cover only
+    // their own lanes, so without the strips the outermost band (shoulders)
+    // keeps notches between the face and the corner.
+    const auto strip = [&push_ccw](const std::array<double, 2>& from,
+                                   const std::array<double, 2>& to,
+                                   double nx,
+                                   double ny) {
+      if (std::hypot(to[0] - from[0], to[1] - from[1]) < tol::kLength) {
+        return;
+      }
+      Clipper2Lib::PathD quad;
+      quad.emplace_back(from[0], from[1]);
+      quad.emplace_back(to[0], to[1]);
+      quad.emplace_back(to[0] + (nx * kEdgeStripWidth), to[1] + (ny * kEdgeStripWidth));
+      quad.emplace_back(from[0] + (nx * kEdgeStripWidth), from[1] + (ny * kEdgeStripWidth));
+      push_ccw(std::move(quad));
+    };
+    strip(pa, corner, -a.iy, a.ix); // interior is left of A's right edge
+    strip(pb, corner, b.iy, -b.ix); // interior is right of B's left edge
+  }
+}
+
 /// Emits the compacted mesh as a SubMesh with per-vertex normals (always in
 /// the +Z hemisphere — the surface is a height field).
 SubMesh emit(const CompactMesh& mesh, std::string name) {
   SubMesh out;
-  out.material = LaneType::None;
+  // The floor IS the junction's drivable pavement — same material class as
+  // the lanes feeding it, so renderers draw one continuous asphalt surface
+  // (a distinct "junction" color made the interior read as a patch).
+  out.material = LaneType::Driving;
   out.name = std::move(name);
   out.positions.reserve(mesh.vertices.size() * 3);
   for (const Vec3& v : mesh.vertices) {
@@ -443,6 +716,7 @@ SubMesh build_junction_surface(const RoadNetwork& network,
   // wedges) uncovered. The cross-section vertices join the border ring: they
   // are the road mesh's exact end-station vertices (Dirichlet + snap data).
   std::vector<Vec3> face_vertices;
+  std::vector<ArmFace> faces;
   Clipper2Lib::PathsD face_cuts;
   // Joint quads only for junctions whose arm list persists (≥ 2 arms —
   // the writer's rm:arms rule): a degenerate or foreign junction must mesh
@@ -499,7 +773,20 @@ SubMesh build_junction_surface(const RoadNetwork& network,
       z_sum += p[2];
       ++z_count;
     }
+    // Face corners oriented into the junction: a Start-contact arm's road
+    // frame is flipped relative to the entering direction, so its road-left
+    // corner is the entering-right one.
+    const bool flipped = arm.contact == ContactPoint::Start;
+    faces.push_back(ArmFace{
+        .left = flipped ? std::array<double, 2>{right[0], right[1]}
+                        : std::array<double, 2>{left[0], left[1]},
+        .right = flipped ? std::array<double, 2>{left[0], left[1]}
+                         : std::array<double, 2>{right[0], right[1]},
+        .ix = ix,
+        .iy = iy,
+    });
   }
+  append_corner_fillets(network, junction, faces, footprints);
   if (footprints.empty()) {
     return {};
   }
@@ -516,13 +803,68 @@ SubMesh build_junction_surface(const RoadNetwork& network,
                                                                  kUnionPrecision);
   Clipper2Lib::PathsD merged =
       Clipper2Lib::Union(inflated, Clipper2Lib::FillRule::NonZero, kUnionPrecision);
+  // Deflate back: with the union this completes a morphological CLOSING —
+  // tangent-seam channels stay welded shut, but the outer boundary returns
+  // to the exact pavement edge instead of a 1 cm apron. The apron's
+  // alternating exact/proud vertices were a visible sawtooth on the junction
+  // silhouette (tee visual finding, follow-up to issue #103).
+  merged = Clipper2Lib::InflatePaths(merged,
+                                     -kFootprintWeld,
+                                     Clipper2Lib::JoinType::Round,
+                                     Clipper2Lib::EndType::Polygon,
+                                     2.0,
+                                     kUnionPrecision);
+  merged = Clipper2Lib::Union(merged, Clipper2Lib::FillRule::NonZero, kUnionPrecision);
   if (!face_cuts.empty()) {
     merged =
         Clipper2Lib::Difference(merged, face_cuts, Clipper2Lib::FillRule::NonZero, kUnionPrecision);
   }
   merged = Clipper2Lib::SimplifyPaths(merged, kBoundarySimplify);
+  // A junction's pavement is simply-connected: any hole in the union is an
+  // artifact of footprints meeting without overlapping (e.g. the channel
+  // between a wide-swinging turn ribbon's inner edge and the corner
+  // corridor) and must be paved over, not triangulated around.
+  std::erase_if(merged,
+                [](const Clipper2Lib::PathD& path) { return Clipper2Lib::Area(path) < 0.0; });
   if (merged.empty()) {
     return {};
+  }
+  // Merge sub-0.2 m boundary segments (arc-crossing debris where footprint
+  // curves meet at grazing angles): a chord that short can only pair with
+  // the 1 m-eroded interior into a sub-5-degree sliver. Vertices near a
+  // road border sample are stitch targets and always survive.
+  {
+    constexpr double kMinBoundarySegment = 0.2;
+    const auto near_border = [&border](const Clipper2Lib::PointD& p) {
+      for (const Vec3& b : border) {
+        if (std::hypot(b.x - p.x, b.y - p.y) < 0.1) {
+          return true;
+        }
+      }
+      return false;
+    };
+    for (Clipper2Lib::PathD& path : merged) {
+      Clipper2Lib::PathD kept;
+      kept.reserve(path.size());
+      for (const Clipper2Lib::PointD& p : path) {
+        if (!kept.empty() &&
+            std::hypot(p.x - kept.back().x, p.y - kept.back().y) < kMinBoundarySegment &&
+            !near_border(p)) {
+          continue;
+        }
+        kept.push_back(p);
+      }
+      // The ring wraps: the last kept vertex may crowd the first.
+      while (kept.size() > 3 &&
+             std::hypot(kept.back().x - kept.front().x, kept.back().y - kept.front().y) <
+                 kMinBoundarySegment &&
+             !near_border(kept.back())) {
+        kept.pop_back();
+      }
+      if (kept.size() >= 3) {
+        path = std::move(kept);
+      }
+    }
   }
   double area = 0.0;
   for (const Clipper2Lib::PathD& path : merged) {

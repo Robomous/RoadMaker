@@ -55,15 +55,16 @@ namespace roadmaker::io_common {
 }
 
 inline constexpr std::array<double, 4> kMarkingColor{0.92, 0.92, 0.87, 1.0};
-inline constexpr std::array<double, 4> kFloorColor{0.18, 0.18, 0.19, 1.0};
 
 // Roughness per material class (PBR metallic-roughness / UsdPreviewSurface).
 inline constexpr double kLaneRoughness = 0.95;
 inline constexpr double kMarkingRoughness = 0.6;
-inline constexpr double kFloorRoughness = 0.95;
 
 inline constexpr const char* kMarkingMaterialName = "lane_marking";
-inline constexpr const char* kFloorMaterialName = "junction_floor";
+
+// Junction floors carry the driving-lane material since the tee visual
+// rework (follow-up to issue #103) — the legacy "junction_floor" material
+// must never reappear in an export (regression-tested).
 
 /// Material name for a lane surface class: `lane_<enum>` — identical spelling
 /// in both exporters (glTF material.name and USD Material prim name).

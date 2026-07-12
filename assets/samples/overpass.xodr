@@ -1,0 +1,74 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<OpenDRIVE>
+  <header revMajor="1" revMinor="8" name="overpass" vendor="RoadMaker" />
+  <road name="under" length="200" id="1" junction="-1">
+    <planView>
+      <geometry s="0" x="-100" y="0" hdg="0" length="200">
+        <line />
+      </geometry>
+    </planView>
+    <lanes>
+      <laneSection s="0">
+        <left>
+          <lane id="1" type="driving" level="false">
+            <width sOffset="0" a="3.5" b="0" c="0" d="0" />
+            <roadMark sOffset="0" type="solid" width="0.12" />
+          </lane>
+        </left>
+        <center>
+          <lane id="0" type="none" level="false">
+            <roadMark sOffset="0" type="broken" width="0.12" />
+          </lane>
+        </center>
+        <right>
+          <lane id="-1" type="driving" level="false">
+            <width sOffset="0" a="3.5" b="0" c="0" d="0" />
+            <roadMark sOffset="0" type="solid" width="0.12" />
+          </lane>
+          <lane id="-2" type="shoulder" level="false">
+            <width sOffset="0" a="1" b="0" c="0" d="0" />
+          </lane>
+        </right>
+      </laneSection>
+    </lanes>
+    <userData code="rm:waypoints" value="-100,0;100,0" />
+  </road>
+  <road name="over" length="200" id="2" junction="-1">
+    <planView>
+      <geometry s="0" x="0" y="-100" hdg="1.5707963267948966" length="200">
+        <line />
+      </geometry>
+    </planView>
+    <elevationProfile>
+      <elevation s="0" a="0" b="0" c="-0.0011666666666666668" d="1.9444444444444445e-05" />
+      <elevation s="60" a="0" b="0.07" c="0.009624999999999998" d="-0.00017499999999999997" />
+      <elevation s="100" a="7" b="0" c="-0.011375" d="0.000175" />
+      <elevation s="140" a="0" b="-0.07" c="0.002333333333333334" d="-1.9444444444444445e-05" />
+    </elevationProfile>
+    <lanes>
+      <laneSection s="0">
+        <left>
+          <lane id="1" type="driving" level="false">
+            <width sOffset="0" a="3.5" b="0" c="0" d="0" />
+            <roadMark sOffset="0" type="solid" width="0.12" />
+          </lane>
+        </left>
+        <center>
+          <lane id="0" type="none" level="false">
+            <roadMark sOffset="0" type="broken" width="0.12" />
+          </lane>
+        </center>
+        <right>
+          <lane id="-1" type="driving" level="false">
+            <width sOffset="0" a="3.5" b="0" c="0" d="0" />
+            <roadMark sOffset="0" type="solid" width="0.12" />
+          </lane>
+          <lane id="-2" type="shoulder" level="false">
+            <width sOffset="0" a="1" b="0" c="0" d="0" />
+          </lane>
+        </right>
+      </laneSection>
+    </lanes>
+    <userData code="rm:waypoints" value="0,-100;0,100" />
+  </road>
+</OpenDRIVE>

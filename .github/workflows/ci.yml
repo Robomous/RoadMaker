@@ -190,6 +190,65 @@ jobs:
           ASAN_OPTIONS: detect_leaks=1
           UBSAN_OPTIONS: halt_on_error=1
 
+  visual-artifacts:
+    name: editor visual artifacts
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    # Renders the canonical scenes (4-arm crossing, the tee, an overpass)
+    # through the editor's --screenshot mode and uploads the PNGs for HUMAN
+    # review — metrics gate correctness, the maintainer gates appearance
+    # (docs/standards/product-parity.md). Not a pixel-diff: the artifacts
+    # exist so a reviewer can look at what the editor actually draws.
+    # Skip-not-fail: a runner without usable GL skips the renders (exit 3
+    # from the editor, absorbed by --skip-on-no-gl) instead of failing CI.
+    steps:
+      - uses: actions/checkout@v4
+      - uses: lukka/get-cmake@latest
+      - name: Linux Qt runtime deps + xvfb + Mesa
+        run: >
+          sudo apt-get update && sudo apt-get install -y
+          xvfb libgl1-mesa-dev libgl1-mesa-dri libegl1 libfontconfig1
+          libxkbcommon-x11-0 libdbus-1-3 libglib2.0-0t64
+          libxcb-cursor0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1
+          libxcb-randr0 libxcb-render-util0 libxcb-shape0
+          libxcb-xinerama0 libxcb-xkb1
+      - name: Cache Qt
+        uses: actions/cache@v4
+        with:
+          path: |
+            .qt
+            !.qt/venv
+          key: qt-${{ runner.os }}-${{ hashFiles('cmake/QtVersion.cmake', 'scripts/setup_qt.py') }}
+      - name: Provision Qt
+        run: python3 scripts/setup_qt.py
+      - uses: hendrikmuhs/ccache-action@v1.2
+        with:
+          key: visual-artifacts
+      - name: Cache FetchContent downloads
+        uses: actions/cache@v4
+        with:
+          path: build/*/_deps/*-subbuild/*-populate-prefix/src/*.tar.gz
+          key: deps-ubuntu-latest-${{ hashFiles('cmake/deps.cmake') }}
+      - name: Configure
+        run: cmake --preset ci-linux
+      - name: Build editor
+        run: cmake --build --preset ci-linux --target roadmaker-editor
+      - name: Render canonical scenes
+        run: |
+          mkdir -p shots
+          for scene in crossing t_attach overpass; do
+            for camera in orbit top; do
+              xvfb-run -a python3 scripts/editor_screenshot.py \
+                "assets/samples/${scene}.xodr" "shots/${scene}_${camera}.png" \
+                --camera "$camera" --skip-on-no-gl
+            done
+          done
+      - uses: actions/upload-artifact@v4
+        with:
+          name: editor-screenshots
+          path: shots/
+          if-no-files-found: warn # GL-less runner skipped the renders
+
   format:
     name: clang-format
     runs-on: ubuntu-latest

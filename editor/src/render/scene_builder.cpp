@@ -119,11 +119,13 @@ Scene build_scene(const NetworkMesh& mesh) {
     append_road_items(road, scene);
   }
   for (const JunctionFloor& floor : mesh.junction_floors) {
+    // Same material class as the lanes feeding the junction — one
+    // continuous asphalt (a distinct floor color read as a patch).
     scene.items.push_back(SceneItem{
         .data = to_render_data(floor.mesh.positions,
                                floor.mesh.normals,
                                floor.mesh.indices,
-                               {0.18F, 0.18F, 0.19F, 1.0F}),
+                               lane_color(floor.mesh.material)),
         .road = {},
         .lane = {},
     });

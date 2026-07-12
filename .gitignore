@@ -54,3 +54,7 @@ graphify-out/
 .claude/references/asam/**
 !.claude/references/asam/INDEX.md
 !.claude/references/asam/*/INDEX.md
+
+# Diagnostic evidence (renders, glb dumps) belongs in issues/PRs, never in
+# the repo (docs/contributing/pull-requests.md).
+diag/

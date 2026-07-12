@@ -17,6 +17,15 @@ to v0.5.0. Acceptance adds [golden workflows](docs/roadmap/golden_workflows/READ
 GW-1 + GW-2 executed by the maintainer.
 
 ### Added
+- **Editor screenshot mode + CI visual artifacts**: `roadmaker-editor
+  --screenshot <scene.xodr> <out.png> [--camera top|orbit] [--size WxH]`
+  renders a scene headless and exits (`scripts/editor_screenshot.py` wraps
+  binary discovery; a GL-less environment skips with a distinct exit code).
+  CI renders the canonical scenes — 4-arm crossing, the tee, an overpass
+  (`scripts/make_canonical_scenes.py`) — and uploads the PNGs as workflow
+  artifacts for human review. Process rule: mesh/material/normal/renderer
+  PRs ship editor-rendered before/after screenshots; the maintainer gates
+  appearance (docs/standards/product-parity.md).
 - **T-junctions — attach a road to another road's side** (#92, PR #96): the
   Create Junction tool tees one selected road end into another road's body
   (side-snap indicator at the projected station; Enter attaches as ONE undo
@@ -64,6 +73,24 @@ GW-1 + GW-2 executed by the maintainer.
   and the command share; committed tee sample `assets/samples/t_attach.xodr`.
 
 ### Fixed
+- **T-junction visual quality — fillets, materials, smooth shading, seams**
+  (follow-up to #103): the tee's measured geometry was fixed in PR #104 but
+  the rendered junction still read as a dark rectangular patch. The junction
+  surface now grows corner fillets at every re-entrant corner between arms
+  (pavement-edge arcs, radius derived from the corner turn's connecting
+  road, floored at 3 m, clamped to face availability), corridor edge strips
+  pinning the boundary to the exact pavement edges (kills the mouth
+  step/notches and highway shoulder-band gaps), a morphological closing that
+  removes the 1 cm weld apron sawtooth, and hole filling (junction pavement
+  is simply connected). Floors carry the driving-lane material in the editor
+  and both exporters — the legacy junction-debug material is gone. Road
+  normals carry the longitudinal grade (graded roads no longer lit as flat
+  and creasing against the floor), and the editor viewport renders with 4x
+  MSAA (jagged edge-strip silhouettes). The attach auto-gap and branch trim
+  reserve fillet clearance so generated tees always have room for the arcs.
+  New test gates: fillet boundary G1 + radius floor, material assertions,
+  normal smoothness/weld checks, and an editor/kernel mesh-parity suite
+  that kills the dual-meshing-path bug class.
 - **T-junction geometry & rendering** (#103, GW-1 gate finding): tees (and
   multi-lane junctions generally) were geometrically non-conformant and
   rendered wrong. Connecting roads are now anchored on the linked lanes'

@@ -230,16 +230,16 @@ Expected<void> export_usda(const NetworkMesh& mesh, const std::filesystem::path&
   }
 
   for (const JunctionFloor& floor : mesh.junction_floors) {
-    materials.emplace(
-        io_common::kFloorMaterialName,
-        MaterialDef{
-            {io_common::kFloorColor[0], io_common::kFloorColor[1], io_common::kFloorColor[2]},
-            io_common::kFloorRoughness});
+    // Floors carry the driving-lane material: one continuous asphalt with
+    // the roads feeding them (a distinct junction color read as a patch).
+    const std::string material = io_common::lane_material_name(floor.mesh.material);
+    materials.emplace(material,
+                      MaterialDef{lane_color3(floor.mesh.material), io_common::kLaneRoughness});
     worldPrim.add_child(make_mesh(sanitize_identifier(floor.mesh.name, "junction"),
                                   floor.mesh.positions,
                                   floor.mesh.normals,
                                   floor.mesh.indices,
-                                  io_common::kFloorMaterialName),
+                                  material),
                         /*rename=*/true,
                         &err);
   }

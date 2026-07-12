@@ -16,6 +16,9 @@ public:
   void zoom(float scroll);                // exponential
   void frame(const std::array<float, 3>& center, float radius);
 
+  /// Absolute orientation (screenshot presets); same pitch clamp as orbit().
+  void set_view(float yaw, float pitch);
+
   [[nodiscard]] CameraMatrices matrices(float aspect) const;
 
   [[nodiscard]] float distance() const { return distance_; }

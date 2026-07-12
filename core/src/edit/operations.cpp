@@ -1629,6 +1629,17 @@ double t_attach_gap(const RoadNetwork& network,
                               (std::sin(corner.hdg) * (branch_face.x - corner.x));
   const bool inside_attach = lateral_sign * corner.curvature > 0.0;
   const double kappa = std::abs(corner.curvature) * (inside_attach ? 2.0 : 1.0);
+  // Fillet bound: the pavement corners between the branch edges and the
+  // target edges must leave a 3 m-radius fillet's tangent leg between the
+  // corner and each cut face, or the junction surface has to shrink its
+  // corner arcs below the visual floor (tee visual finding, follow-up to
+  // issue #103; radius floor mirrors mesh kFilletRadiusFloor). The leg along
+  // the target measures from the branch's outer pavement edge; the fillet
+  // half-angle at the corner is half the crossing angle on the acute side.
+  constexpr double kFilletRadiusFloor = 3.0;
+  const double corner_half_angle = std::max(std::min(psi, kPi - psi) / 2.0, 0.1);
+  const double fillet_bound = half_width_at(network, *attaching, attach_station) +
+                              (kFilletRadiusFloor / std::tan(corner_half_angle)) + 0.5;
   double gap = width_bound;
   for (int round = 0; round < 3; ++round) {
     const double sweep = gap * kappa;
@@ -1637,7 +1648,7 @@ double t_attach_gap(const RoadNetwork& network,
     const double turning_bound = (options.generation.min_turn_radius_m *
                                   std::tan(std::max(turn_toward_tail, turn_toward_head) / 2.0)) +
                                  1.0;
-    gap = std::max(width_bound, turning_bound);
+    gap = std::max({width_bound, turning_bound, fillet_bound});
   }
   return gap;
 }
@@ -1691,11 +1702,27 @@ std::unique_ptr<Command> attach_t_junction(const RoadNetwork& network,
   // The branch face needs the same clearance from the corner (the target's
   // reference-line point at s) that the gap gives the target's cut faces —
   // otherwise the turns are cramped against the branch mouth regardless of
-  // gap. The junction consumes the branch's overhang: trim it back so its
-  // face sits `gap` (chord-measured) from the corner, exactly as the target
-  // loses its middle stub. A branch too short to trim is a user error.
+  // gap. On a wide target the gap alone can still park the face barely past
+  // the target's pavement edge, which pinches the mouth's corner fillets to
+  // cosmetic size — so the face also clears the target pavement by the
+  // 3 m fillet's tangent leg (mirrors t_attach_gap's fillet bound on the
+  // target side). The junction consumes the branch's overhang: trim it back
+  // so its face sits at the required chord distance from the corner, exactly
+  // as the target loses its middle stub. A branch too short to trim is a
+  // user error.
+  const double branch_in_hdg_trim =
+      end.contact == ContactPoint::Start ? branch_face.hdg + std::numbers::pi : branch_face.hdg;
+  const double psi_trim =
+      std::abs(std::remainder(branch_in_hdg_trim - corner.hdg, 2.0 * std::numbers::pi));
+  const double corner_half_angle_trim =
+      std::max(std::min(psi_trim, std::numbers::pi - psi_trim) / 2.0, 0.1);
+  constexpr double kFilletRadiusFloorTrim = 3.0; // mirrors mesh kFilletRadiusFloor
+  const double fillet_face_distance = half_width_at(network, *target, s) +
+                                      (kFilletRadiusFloorTrim / std::tan(corner_half_angle_trim)) +
+                                      0.5;
+  const double required_face_distance = std::max(gap, fillet_face_distance);
   const double face_distance = std::hypot(branch_face.x - corner.x, branch_face.y - corner.y);
-  const double trim = gap - face_distance;
+  const double trim = required_face_distance - face_distance;
   if (trim > tol::kLength) {
     const double kept = branch_length - trim;
     if (kept <= tol::kLength) {

@@ -99,6 +99,25 @@ step, in tool/UI vocabulary — alongside the element coverage. A spec
 reviewer asks "can someone actually draw the second thing they'll try?"
 before asking "are all the elements representable?".
 
+## Visual acceptance: metrics are a floor, not a ceiling
+
+The hardening sprint's tee lesson: every measured invariant (watertightness,
+curvature, seam stitching) was green while the rendered junction was still
+visibly wrong — a dark rectangular patch instead of a filleted intersection.
+**Metric acceptance is a floor; visual work is accepted with pixels.**
+
+- Geometry, material, normal, and renderer changes ship with
+  editor-rendered before/after screenshots in the PR
+  ([pull requests — visual output](../contributing/pull-requests.md)); the
+  maintainer approves appearance before merge.
+- The editor has a headless screenshot mode
+  (`roadmaker-editor --screenshot scene.xodr out.png`, wrapped by
+  `scripts/editor_screenshot.py`); CI renders the canonical scenes — a
+  4-arm crossing, the tee, an overpass — and uploads the PNGs as workflow
+  artifacts on every run for human review.
+- Golden-scene pixel comparison (GS-1) will build on the same capture
+  path; until then the artifacts are for eyes, not diffs.
+
 ## If in doubt
 
 Treat anything that would make a reasonable observer say "that came from

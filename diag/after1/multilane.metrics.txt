@@ -1,1 +1,0 @@
-connections=8 min_angle=3.33deg slivers=1 degenerate=0 flipped=0 boundary_crossings=0 seam_z_mismatches=0 seam_near_misses=0 max_curvature=0.1379 ribbon_crossings=2 max_seam_dz=0.000000 deterministic=true
