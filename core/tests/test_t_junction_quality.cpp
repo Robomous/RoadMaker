@@ -845,8 +845,12 @@ TEST_P(TJunctionQuality, FloorCarriesDrivingMaterial) {
   const std::filesystem::path glb = std::filesystem::temp_directory_path() /
                                     fmt::format("rm_tee_material_{}.glb", GetParam().name);
   ASSERT_TRUE(roadmaker::export_glb(mesh, glb).has_value());
-  std::ifstream in(glb, std::ios::binary);
-  const std::string bytes((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+  std::string bytes;
+  {
+    // Scoped: Windows cannot remove a file a stream still holds open.
+    std::ifstream in(glb, std::ios::binary);
+    bytes.assign(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());
+  }
   EXPECT_EQ(bytes.find("junction_floor"), std::string::npos)
       << "legacy junction-debug material leaked into the export";
   std::filesystem::remove(glb);
