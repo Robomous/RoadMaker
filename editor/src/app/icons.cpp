@@ -58,7 +58,8 @@ QIcon Icons::get(const QString& name) {
   const QColor disabled = palette.color(QPalette::Disabled, QPalette::WindowText);
 
   QIcon icon;
-  for (const int size : {16, 24, 32}) {
+  // 28 joins the ladder for the labeled main toolbar (ui-design.md sizes).
+  for (const int size : {16, 20, 24, 28, 32}) {
     for (const qreal dpr : {1.0, 2.0}) {
       icon.addPixmap(tinted_pixmap(renderer, size, dpr, normal), QIcon::Normal);
       icon.addPixmap(tinted_pixmap(renderer, size, dpr, disabled), QIcon::Disabled);

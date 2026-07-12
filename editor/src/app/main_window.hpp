@@ -7,10 +7,14 @@
 #include <QDockWidget>
 #include <QLabel>
 #include <QMainWindow>
+#include <QStackedWidget>
+#include <QToolBar>
+#include <QToolButton>
 #include <filesystem>
 
 #include "app/actions.hpp"
 #include "app/settings.hpp"
+#include "app/welcome_widget.hpp"
 #include "document/autosave.hpp"
 #include "document/diagnostics_model.hpp"
 #include "document/document.hpp"
@@ -25,7 +29,9 @@ class MainWindow : public QMainWindow {
   Q_OBJECT
 
 public:
-  explicit MainWindow(QWidget* parent = nullptr);
+  /// `restore_saved_layout` false skips the persisted window geometry/dock
+  /// state (screenshot modes need the pristine default arrangement).
+  explicit MainWindow(QWidget* parent = nullptr, bool restore_saved_layout = true);
 
   /// Loads a .xodr; failures land in the Diagnostics panel and a message box.
   void load_file(const std::filesystem::path& path);
@@ -42,8 +48,14 @@ protected:
 private:
   void build_menus();
   void build_toolbar();
+  void build_tool_options_bar();
   void build_docks();
   void build_status_bar();
+  /// Refreshes the contextual tool-options row for the active tool.
+  void update_tool_options();
+  /// Captures a small viewport render next to the recent-files entry so the
+  /// welcome screen can show it (best effort — a null frame is skipped).
+  void save_welcome_thumbnail();
   void new_file();
   void open_file_dialog();
   /// Save / Save As… — return false when the user cancels or the write
@@ -88,7 +100,17 @@ private:
   /// Owned by properties_dock_; kept to attach the Elevation tool.
   class PropertiesPanel* properties_panel_ = nullptr;
 
+  /// Central stack: welcome screen until a document exists, viewport after.
+  QStackedWidget* central_stack_;
+  WelcomeWidget* welcome_;
   ViewportWidget* viewport_;
+  QToolBar* options_bar_ = nullptr;
+  QLabel* options_caption_ = nullptr;
+  QLabel* options_hint_ = nullptr;
+  QToolButton* template_button_ = nullptr;
+  /// Handle returned by addWidget(template_button_) — visibility toggles go
+  /// through the action, not the widget (QToolBar owns the layout).
+  QAction* template_action_ = nullptr;
   QDockWidget* scene_dock_;
   QDockWidget* properties_dock_;
   QDockWidget* diagnostics_dock_;

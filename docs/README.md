@@ -42,7 +42,8 @@ OpenDRIVE scene in the editor: [Create Road](user-guide/create-road.md),
    [Cross-platform](standards/cross-platform.md) ·
    [Dependencies & licensing](standards/dependencies.md) ·
    [Assets](standards/assets.md) ·
-   [Product parity & IP](standards/product-parity.md)
+   [Product parity & IP](standards/product-parity.md) ·
+   [UI design](standards/ui-design.md)
 
 ## I want to understand the architecture
 

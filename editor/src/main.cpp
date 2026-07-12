@@ -17,13 +17,20 @@
 #include "app/crash_handler.hpp"
 #include "app/log_setup.hpp"
 #include "app/main_window.hpp"
+#include "app/settings.hpp"
+#include "theme/theme.hpp"
 
 namespace {
 
-/// `--screenshot <scene.xodr> <out.png> [--camera top|orbit] [--size WxH]`,
-/// parsed ahead of Qt construction. `valid` false = malformed arguments.
+/// `--screenshot <scene.xodr> <out.png> [--camera top|orbit] [--size WxH]`
+/// renders the viewport framebuffer; `--screenshot-ui` captures the whole
+/// themed window instead (chrome + docks + viewport — palette mockups and
+/// the golden-look capture). Parsed ahead of Qt construction; `valid`
+/// false = malformed arguments. `--theme <name>` selects a palette for the
+/// session without persisting it (mockups render all three from one build).
 struct ScreenshotArgs {
   bool requested = false;
+  bool whole_window = false;
   bool valid = true;
   std::filesystem::path scene;
   std::filesystem::path out;
@@ -35,8 +42,10 @@ struct ScreenshotArgs {
 ScreenshotArgs parse_screenshot_args(int argc, char** argv) {
   ScreenshotArgs args;
   for (int i = 1; i < argc; ++i) {
-    if (std::strcmp(argv[i], "--screenshot") == 0) {
+    const bool ui_mode = std::strcmp(argv[i], "--screenshot-ui") == 0;
+    if (ui_mode || std::strcmp(argv[i], "--screenshot") == 0) {
       args.requested = true;
+      args.whole_window = ui_mode;
       if (i + 2 >= argc) {
         args.valid = false;
         return args;
@@ -97,22 +106,33 @@ int run_screenshot(const ScreenshotArgs& args) {
     probe.doneCurrent();
   }
 
+  // "-" captures the launch state (welcome screen) instead of a scene —
+  // only meaningful for whole-window shots.
+  const bool no_scene = args.scene == "-";
   // load_file reports failures through a modal box — headless runs must
   // never block on one, so reject an unreadable scene up front.
-  if (!std::filesystem::exists(args.scene)) {
+  if (!no_scene && !std::filesystem::exists(args.scene)) {
     std::fprintf(stderr, "screenshot: scene not found: %s\n", args.scene.string().c_str());
     return kScreenshotError;
   }
 
-  roadmaker::editor::MainWindow window;
+  roadmaker::editor::MainWindow window(nullptr, /*restore_saved_layout=*/false);
   window.resize(args.width, args.height);
   window.show();
-  window.load_file(args.scene);
-  window.viewport()->set_camera_preset(args.camera);
-  window.viewport()->set_hint(QString()); // no tool overlay in captures
-  QCoreApplication::processEvents();      // realize the GL widget + first paint
+  if (!no_scene) {
+    window.load_file(args.scene);
+    window.viewport()->set_camera_preset(args.camera);
+    window.viewport()->set_hint(QString()); // no tool overlay in captures
+  }
+  QCoreApplication::processEvents(); // realize the GL widget + first paint
 
-  const QImage frame = window.viewport()->capture_frame();
+  QImage frame;
+  if (args.whole_window) {
+    QCoreApplication::processEvents(); // settle dock/toolbar layout first
+    frame = window.grab().toImage();   // composites the GL viewport (Qt 6)
+  } else {
+    frame = window.viewport()->capture_frame();
+  }
   if (frame.isNull()) {
     std::fprintf(stderr, "screenshot: framebuffer capture failed\n");
     return kScreenshotError;
@@ -141,9 +161,15 @@ int main(int argc, char** argv) {
   const ScreenshotArgs screenshot = parse_screenshot_args(argc, argv);
   if (screenshot.requested && !screenshot.valid) {
     std::fprintf(stderr,
-                 "usage: roadmaker-editor --screenshot <scene.xodr> <out.png>"
-                 " [--camera top|orbit] [--size WxH]\n");
+                 "usage: roadmaker-editor --screenshot|--screenshot-ui <scene.xodr> <out.png>"
+                 " [--camera top|orbit] [--size WxH] [--theme <name>]\n");
     return kScreenshotError;
+  }
+  QString cli_theme;
+  for (int i = 1; i + 1 < argc; ++i) {
+    if (std::strcmp(argv[i], "--theme") == 0) {
+      cli_theme = QString::fromUtf8(argv[i + 1]);
+    }
   }
 
   // Org/app names first: QStandardPaths derives the log and crash-report
@@ -172,6 +198,17 @@ int main(int argc, char** argv) {
   QApplication app(argc, argv);
   QCoreApplication::setApplicationVersion(QString::fromUtf8(
       roadmaker::version().data(), static_cast<qsizetype>(roadmaker::version().size())));
+
+  // Theme before any window exists: --theme wins for this session only;
+  // otherwise the persisted choice; unknown names fall back to the default
+  // palette (docs/standards/ui-design.md).
+  {
+    roadmaker::editor::Settings settings;
+    const QString requested = cli_theme.isEmpty() ? settings.theme_name() : cli_theme;
+    const roadmaker::editor::Theme* theme = roadmaker::editor::theme::by_name(requested);
+    roadmaker::editor::theme::apply(
+        app, theme != nullptr ? *theme : roadmaker::editor::theme::default_theme());
+  }
 
   if (screenshot.requested) {
     return run_screenshot(screenshot);

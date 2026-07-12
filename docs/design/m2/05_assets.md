@@ -14,8 +14,10 @@ verification.
   round caps. **Fallbacks:** Tabler Icons (MIT), Material Symbols (Apache-2.0)
   for gaps. **Excluded:** Breeze/Oxygen (LGPL assets), Font Awesome free
   (CC-BY).
-- Style rule (sober UI): monochrome line icons only, recolored to the palette at
-  load; no colored icon soup; default Qt widget chrome.
+- Style rule: monochrome line icons only, recolored to the theme palette at
+  load; no colored icon soup. (The original "default Qt widget chrome" rule
+  was superseded 2026-07-12 by the themed-editor decision —
+  see `docs/standards/ui-design.md`.)
 
 ### Icon mapping (candidate Lucide names — verify at fetch time)
 

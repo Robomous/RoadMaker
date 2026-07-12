@@ -69,6 +69,7 @@ CameraMatrices OrbitCamera::matrices(float aspect) const {
       (r[1] * f[2]) - (r[2] * f[1]), (r[2] * f[0]) - (r[0] * f[2]), (r[0] * f[1]) - (r[1] * f[0])};
 
   CameraMatrices out;
+  out.eye = eye;
   // Column-major view matrix (world -> camera).
   out.view = {r[0],
               u[0],

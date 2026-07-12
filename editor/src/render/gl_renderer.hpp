@@ -27,6 +27,8 @@ public:
   void remove(RenderMeshHandle handle) override;
   void clear_meshes() override;
 
+  void set_backdrop(const BackdropColors& colors) override;
+
   void render(const std::vector<DrawItem>& items,
               const CameraMatrices& camera,
               int width,
@@ -43,6 +45,7 @@ private:
   };
 
   void destroy(GpuMesh& mesh);
+  void draw_backdrop(const CameraMatrices& camera);
 
   std::unordered_map<std::uint32_t, GpuMesh> meshes_;
   std::uint32_t next_id_ = 1;
@@ -52,6 +55,23 @@ private:
   std::int32_t u_color_ = -1;
   std::int32_t u_highlight_ = -1;
   std::int32_t u_lit_ = -1;
+
+  // Backdrop passes (sky gradient + ground grid), both attributeless draws
+  // through one shared empty VAO (core profile requires a bound VAO).
+  BackdropColors backdrop_{};
+  std::uint32_t empty_vao_ = 0;
+  std::uint32_t sky_program_ = 0;
+  std::int32_t u_sky_top_ = -1;
+  std::int32_t u_sky_horizon_ = -1;
+  std::uint32_t grid_program_ = 0;
+  std::int32_t u_grid_view_ = -1;
+  std::int32_t u_grid_projection_ = -1;
+  std::int32_t u_grid_eye_ = -1;
+  std::int32_t u_grid_major_ = -1;
+  std::int32_t u_grid_minor_ = -1;
+  std::int32_t u_grid_axis_x_ = -1;
+  std::int32_t u_grid_axis_y_ = -1;
+
   bool ready_ = false;
 };
 

@@ -17,6 +17,20 @@ to v0.5.0. Acceptance adds [golden workflows](docs/roadmap/golden_workflows/READ
 GW-1 + GW-2 executed by the maintainer.
 
 ### Added
+- **UI revamp Phase 0 — the editor looks like a product** (#109, epic #108):
+  theme token system (`editor/src/theme/`, Fusion + dark QPalette +
+  generated QSS; three palettes selectable via `--theme` and persisted in
+  settings — default pending the maintainer's mockup pick); labeled main
+  toolbar (28 px icons, text under, grouped File | Tools | View) plus a
+  contextual tool-options row (Create Road's template dropdown is now a
+  visible, labeled control); welcome screen on launch (recent scenes with
+  save-time thumbnails, curated sample scenes with committed thumbnails,
+  New/Open, docs links); viewport backdrop rebuilt in the renderer —
+  gradient sky, shader ground grid (1 m/10 m lines, distance-faded, origin
+  axes) replacing the hard-edged 200 m line grid; `--screenshot-ui` captures
+  the whole themed window (`-` as scene captures the welcome screen). The
+  strategy shift is recorded in docs/standards/product-parity.md and the
+  new docs/standards/ui-design.md.
 - **Editor screenshot mode + CI visual artifacts**: `roadmaker-editor
   --screenshot <scene.xodr> <out.png> [--camera top|orbit] [--size WxH]`
   renders a scene headless and exits (`scripts/editor_screenshot.py` wraps

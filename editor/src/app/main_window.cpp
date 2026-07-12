@@ -40,21 +40,37 @@
 
 namespace roadmaker::editor {
 
-MainWindow::MainWindow(QWidget* parent)
+MainWindow::MainWindow(QWidget* parent, bool restore_saved_layout)
     : QMainWindow(parent), autosave_(document_,
                                      AutosaveManager::default_recovery_dir(),
                                      QUuid::createUuid().toString(QUuid::WithoutBraces)),
       selection_(document_), scene_tree_model_(document_), diagnostics_model_(document_),
       actions_(new Actions(*document_.undo_stack(), this)),
+      central_stack_(new QStackedWidget(this)), welcome_(new WelcomeWidget(settings_, this)),
       viewport_(new ViewportWidget(document_, selection_, tool_manager_, this)),
       status_hover_(new QLabel(this)), status_entities_(new QLabel(this)) {
   setAcceptDrops(true);
-  setCentralWidget(viewport_); // central widget: always visible, never dockable
+  // Central stack: the welcome screen greets an empty session; any document
+  // activity (New/Open/recent/sample/recovery) flips to the viewport for
+  // the rest of the session. Never dockable.
+  central_stack_->addWidget(welcome_);
+  central_stack_->addWidget(viewport_);
+  central_stack_->setCurrentWidget(welcome_);
+  setCentralWidget(central_stack_);
   resize(1600, 1000);
+
+  connect(welcome_, &WelcomeWidget::new_scene_requested, this, [this] { new_file(); });
+  connect(welcome_, &WelcomeWidget::open_requested, this, &MainWindow::open_file_dialog);
+  connect(welcome_, &WelcomeWidget::file_requested, this, [this](const QString& path) {
+    load_file(std::filesystem::path(path.toStdString()));
+  });
+  connect(
+      &document_, &Document::loaded, this, [this] { central_stack_->setCurrentWidget(viewport_); });
 
   build_docks();
   build_menus();
   build_toolbar();
+  build_tool_options_bar();
   build_status_bar();
 
   connect(actions_->new_file, &QAction::triggered, this, &MainWindow::new_file);
@@ -183,8 +199,9 @@ MainWindow::MainWindow(QWidget* parent)
   connect(actions_->reset_layout, &QAction::triggered, this, [this] {
     restoreState(default_layout_state_);
   });
-  if (!settings_.restore_window(*this)) {
-    // First run (no saved layout): keep the default arrangement built above.
+  if (!restore_saved_layout || !settings_.restore_window(*this)) {
+    // First run (no saved layout) or a scripted capture: keep the default
+    // arrangement built above.
   }
 
   update_window_title();
@@ -265,10 +282,13 @@ void MainWindow::build_menus() {
 }
 
 void MainWindow::build_toolbar() {
+  // Labeled toolbar (ui-design.md): 28 px icons with the action's iconText
+  // under each, grouped File | Tools | View — a new user can read what
+  // every button does.
   QToolBar* toolbar = addToolBar(tr("Main"));
   toolbar->setObjectName(QStringLiteral("toolbar.main"));
-  toolbar->setIconSize(QSize(16, 16));
-  toolbar->setToolButtonStyle(Qt::ToolButtonIconOnly);
+  toolbar->setIconSize(QSize(28, 28));
+  toolbar->setToolButtonStyle(Qt::ToolButtonTextUnderIcon);
   toolbar->setMovable(false);
   toolbar->addAction(actions_->new_file);
   toolbar->addAction(actions_->open);
@@ -277,22 +297,6 @@ void MainWindow::build_toolbar() {
   toolbar->addSeparator();
   toolbar->addAction(actions_->tool_select);
   toolbar->addAction(actions_->tool_create_road);
-  // Template dropdown (02 §2): an instant-popup button whose icon mirrors
-  // the checked template.
-  auto* template_button = new QToolButton(toolbar);
-  template_button->setPopupMode(QToolButton::InstantPopup);
-  template_button->setToolTip(tr("Road template for the Create Road tool"));
-  auto* template_menu = new QMenu(template_button);
-  template_menu->addAction(actions_->template_rural);
-  template_menu->addAction(actions_->template_urban);
-  template_menu->addAction(actions_->template_highway);
-  template_button->setMenu(template_menu);
-  template_button->setIcon(actions_->template_group->checkedAction()->icon());
-  connect(actions_->template_group,
-          &QActionGroup::triggered,
-          template_button,
-          [template_button](QAction* action) { template_button->setIcon(action->icon()); });
-  toolbar->addWidget(template_button);
   toolbar->addAction(actions_->tool_edit_nodes);
   toolbar->addAction(actions_->tool_lane_profile);
   toolbar->addAction(actions_->tool_elevation);
@@ -301,6 +305,59 @@ void MainWindow::build_toolbar() {
   toolbar->addSeparator();
   toolbar->addAction(actions_->reset_camera);
   toolbar->addAction(actions_->frame_selection);
+}
+
+void MainWindow::build_tool_options_bar() {
+  // Contextual options row under the main toolbar. The Create Road template
+  // choice lives here as a labeled dropdown (02 §2 moved it out of the icon
+  // toolbar's hidden popup); other tools show their one-line usage hint.
+  addToolBarBreak();
+  options_bar_ = addToolBar(tr("Tool Options"));
+  options_bar_->setObjectName(QStringLiteral("toolbar.options"));
+  options_bar_->setIconSize(QSize(16, 16));
+  options_bar_->setMovable(false);
+
+  options_caption_ = new QLabel(options_bar_);
+  options_caption_->setObjectName(QStringLiteral("toolOptionCaption"));
+  options_bar_->addWidget(options_caption_);
+
+  template_button_ = new QToolButton(options_bar_);
+  template_button_->setPopupMode(QToolButton::InstantPopup);
+  template_button_->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
+  template_button_->setToolTip(tr("Cross-section template the Create Road tool draws with"));
+  auto* template_menu = new QMenu(template_button_);
+  template_menu->addAction(actions_->template_rural);
+  template_menu->addAction(actions_->template_urban);
+  template_menu->addAction(actions_->template_highway);
+  template_button_->setMenu(template_menu);
+  const auto mirror_template = [this](const QAction* action) {
+    template_button_->setIcon(action->icon());
+    template_button_->setText(action->text().remove(QLatin1Char('&')));
+  };
+  mirror_template(actions_->template_group->checkedAction());
+  connect(actions_->template_group,
+          &QActionGroup::triggered,
+          template_button_,
+          [mirror_template](QAction* action) { mirror_template(action); });
+  template_action_ = options_bar_->addWidget(template_button_);
+
+  options_hint_ = new QLabel(options_bar_);
+  options_hint_->setObjectName(QStringLiteral("toolOptionHint"));
+  options_bar_->addWidget(options_hint_);
+
+  connect(&tool_manager_, &ToolManager::active_changed, this, &MainWindow::update_tool_options);
+  update_tool_options();
+}
+
+void MainWindow::update_tool_options() {
+  const QAction* active = actions_->tool_group->checkedAction();
+  const bool create_road = active == actions_->tool_create_road;
+  // Create Road gets its option control (labeled template dropdown); every
+  // other tool shows its one-line usage as this row's content — the hint
+  // text already leads with the tool's name.
+  options_caption_->setText(create_road ? tr("Template:") : QString());
+  template_action_->setVisible(create_road);
+  options_hint_->setText(create_road || active == nullptr ? QString() : active->toolTip());
 }
 
 void MainWindow::build_status_bar() {
@@ -368,8 +425,21 @@ bool MainWindow::save_to(const std::filesystem::path& path) {
   }
   settings_.add_recent_file(document_.file_path());
   update_recent_files_menu();
+  save_welcome_thumbnail();
   statusBar()->showMessage(tr("Saved %1").arg(document_.file_path()), 5000);
   return true;
+}
+
+void MainWindow::save_welcome_thumbnail() {
+  const QString thumb_path = WelcomeWidget::thumbnail_path_for(document_.file_path());
+  if (thumb_path.isEmpty()) {
+    return;
+  }
+  const QImage frame = viewport_->capture_frame();
+  if (frame.isNull()) {
+    return; // GL-less session (tests) — the welcome tile keeps a placeholder
+  }
+  frame.scaled(440, 248, Qt::KeepAspectRatioByExpanding, Qt::SmoothTransformation).save(thumb_path);
 }
 
 bool MainWindow::confirm_discard() {

@@ -22,6 +22,11 @@ public:
   /// Prepends `path` (deduplicated, capped at kMaxRecentFiles).
   void add_recent_file(const QString& path);
 
+  /// Theme id (docs/standards/ui-design.md). Empty = default_theme(); the
+  /// --theme CLI flag overrides without persisting.
+  [[nodiscard]] QString theme_name() const;
+  void set_theme_name(const QString& name);
+
   /// Autosave master switch (hardening §4.6 "setting to disable").
   [[nodiscard]] bool autosave_enabled() const;
   void set_autosave_enabled(bool enabled);

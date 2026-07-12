@@ -29,15 +29,6 @@ TEST(ToRenderData, NarrowsDoublesAndCopiesIndices) {
   EXPECT_EQ(data.kind, PrimitiveKind::Triangles);
 }
 
-TEST(MakeGrid, LineCountsMatchTheSquare) {
-  const RenderMeshData grid = make_grid();
-  EXPECT_EQ(grid.kind, PrimitiveKind::Lines);
-  // 201 stations, 2 lines each, 2 vertices per line, 3 floats per vertex.
-  EXPECT_EQ(grid.positions.size(), 201U * 2U * 2U * 3U);
-  EXPECT_EQ(grid.indices.size(), 201U * 4U);
-  EXPECT_TRUE(grid.normals.empty());
-}
-
 TEST(BuildScene, FlattensPatchesMarkingsAndFloors) {
   RoadNetwork network;
   const RoadId road_id = network.create_road("r", "1");
