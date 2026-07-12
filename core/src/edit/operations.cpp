@@ -1348,8 +1348,8 @@ std::unique_ptr<Command> split_road(const RoadNetwork& network, RoadId road_id, 
         repoint(connecting.predecessor);
         repoint(connecting.successor);
       }
-      // The moved End keeps its junction link — on the tail now.
-      Road& tail = *target.road(tail_id);
+      // The moved End keeps its junction link — on the tail now (`tail` is
+      // the reference bound above; no arena allocation happened since).
       tail.successor = RoadLink{.target = *succ_junction, .contact = ContactPoint::Start};
     }
     return {};
