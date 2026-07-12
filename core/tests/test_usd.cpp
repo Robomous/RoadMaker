@@ -82,8 +82,15 @@ TEST(Usd, TJunctionExportsFloorSurfaceAndMaterial) {
   // This golden file is the one the CI usdchecker step validates.
   const std::string usda = export_sample("t_junction.xodr", "rm_usd_golden.usda");
 
-  EXPECT_NE(usda.find("def Material \"junction_floor\""), std::string::npos);
-  EXPECT_NE(usda.find("rel material:binding = </Looks/junction_floor>"), std::string::npos);
+  // The floor is one continuous asphalt with the roads feeding it: it binds
+  // the driving-lane material (io_common::lane_material_name spelling,
+  // "lane_<enum>"), and the legacy junction-debug material never reappears
+  // (tee visual finding, follow-up to issue #103).
+  const std::string driving_material =
+      "lane_" + std::to_string(static_cast<int>(roadmaker::LaneType::Driving));
+  EXPECT_NE(usda.find("def Mesh \"junction_"), std::string::npos);
+  EXPECT_NE(usda.find("def Material \"" + driving_material + "\""), std::string::npos);
+  EXPECT_EQ(usda.find("junction_floor"), std::string::npos);
 }
 
 TEST(Usd, ExportingAnEmptyMeshFailsCleanly) {
