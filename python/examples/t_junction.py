@@ -35,8 +35,13 @@ def main() -> int:
     side_end = rm.RoadEnd(network.find_road("2"), rm.ContactPoint.END)
 
     # Attach at station 60 (the midpoint). gap_m=0 auto-sizes the junction
-    # area from the road widths; options.generation tunes the M2 generator.
-    stack.push(network, rm.edit.attach_t_junction(network, side_end, main_road, 60.0))
+    # area from the road widths AND the turning geometry — every generated
+    # turn gets room for options.generation.min_turn_radius_m (default 6 m);
+    # the side road's overhang past that clearance is trimmed into the
+    # junction area, like the target's middle stub.
+    options = rm.edit.TAttachOptions()
+    options.generation.min_turn_radius_m = 6.0
+    stack.push(network, rm.edit.attach_t_junction(network, side_end, main_road, 60.0, options))
     print(
         f"teed: {network.road_count} roads, "
         f"{network.junction_count} junction(s)"

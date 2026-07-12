@@ -136,7 +136,9 @@ def test_authoring_rejects_bad_input():
 def test_export_glb(tmp_path):
     network, _ = rm.load_xodr(SAMPLES / "t_junction.xodr")
     mesh = rm.build_network_mesh(network)
-    assert mesh.road_count == 5
+    # 3 arms; the 2 connecting roads' surfaces ARE the junction floor
+    # (no coplanar double-draw — issue #103).
+    assert mesh.road_count == 3
     assert mesh.junction_floor_count == 1
     assert mesh.vertex_count > 0
 

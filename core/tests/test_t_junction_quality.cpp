@@ -30,9 +30,13 @@
 #include "roadmaker/road/junction.hpp"
 #include "roadmaker/road/network.hpp"
 #include "roadmaker/tol.hpp"
+#include "roadmaker/xodr/diagnostic.hpp"
+#include "roadmaker/xodr/reader.hpp"
+#include "roadmaker/xodr/rules.hpp"
 #include "roadmaker/xodr/writer.hpp"
 
 #include <fmt/format.h>
+
 #include <gtest/gtest.h>
 
 #include <algorithm>
@@ -101,6 +105,16 @@ void apply_or_throw(RoadNetwork& network, std::unique_ptr<roadmaker::edit::Comma
   }
 }
 
+/// A tee fixture before the attach runs: the authored pre-network plus the
+/// attach parameters — so tests can snapshot the pre-attach state (undo
+/// byte-identity) before materializing.
+struct TeeSetup {
+  RoadNetwork network;
+  RoadEnd branch_end;
+  RoadId target;
+  double s = 0.0;
+};
+
 /// One authored tee: the junction plus its three arms as recorded by
 /// attach_t_junction (head:End, tail:Start, branch).
 struct Tee {
@@ -108,45 +122,54 @@ struct Tee {
   JunctionId junction;
 };
 
-Tee attach(RoadNetwork&& network, RoadEnd branch_end, RoadId target, double s,
-           const roadmaker::edit::TAttachOptions& options = {}) {
-  apply_or_throw(network, roadmaker::edit::attach_t_junction(network, branch_end, target, s, options));
+Tee attach(RoadNetwork&& network, RoadEnd branch_end, RoadId target, double s) {
+  apply_or_throw(network, roadmaker::edit::attach_t_junction(network, branch_end, target, s));
   Tee tee{.network = std::move(network)};
   tee.network.for_each_junction(
       [&](JunctionId id, const roadmaker::Junction&) { tee.junction = id; });
   return tee;
 }
 
+Tee attach(TeeSetup&& setup) {
+  return attach(std::move(setup.network), setup.branch_end, setup.target, setup.s);
+}
+
 // --- Fixture matrix (§3.1 of the task prompt) --------------------------------
 
 /// Straight E-W target, branch arriving from the south, perpendicular.
-Tee build_perp() {
-  RoadNetwork network;
-  const RoadId target = author(network, {{-100.0, 0.0}, {100.0, 0.0}}, "1");
-  const RoadId branch = author(network, {{0.0, -40.0}, {0.0, -6.0}}, "2");
-  return attach(std::move(network), RoadEnd{branch, ContactPoint::End}, target, 100.0);
+TeeSetup setup_perp() {
+  TeeSetup setup;
+  setup.target = author(setup.network, {{-100.0, 0.0}, {100.0, 0.0}}, "1");
+  const RoadId branch = author(setup.network, {{0.0, -40.0}, {0.0, -6.0}}, "2");
+  setup.branch_end = RoadEnd{branch, ContactPoint::End};
+  setup.s = 100.0;
+  return setup;
 }
 
 /// Branch heading 45° into the target (shallow same-direction merge angle).
-Tee build_deg45() {
-  RoadNetwork network;
-  const RoadId target = author(network, {{-100.0, 0.0}, {100.0, 0.0}}, "1");
-  const RoadId branch = author(network, {{-40.0, -40.0}, {-6.0, -6.0}}, "2");
-  return attach(std::move(network), RoadEnd{branch, ContactPoint::End}, target, 100.0);
+TeeSetup setup_deg45() {
+  TeeSetup setup;
+  setup.target = author(setup.network, {{-100.0, 0.0}, {100.0, 0.0}}, "1");
+  const RoadId branch = author(setup.network, {{-40.0, -40.0}, {-6.0, -6.0}}, "2");
+  setup.branch_end = RoadEnd{branch, ContactPoint::End};
+  setup.s = 100.0;
+  return setup;
 }
 
 /// Branch heading 135° into the target (against the +s direction).
-Tee build_deg135() {
-  RoadNetwork network;
-  const RoadId target = author(network, {{-100.0, 0.0}, {100.0, 0.0}}, "1");
-  const RoadId branch = author(network, {{40.0, -40.0}, {6.0, -6.0}}, "2");
-  return attach(std::move(network), RoadEnd{branch, ContactPoint::End}, target, 100.0);
+TeeSetup setup_deg135() {
+  TeeSetup setup;
+  setup.target = author(setup.network, {{-100.0, 0.0}, {100.0, 0.0}}, "1");
+  const RoadId branch = author(setup.network, {{40.0, -40.0}, {6.0, -6.0}}, "2");
+  setup.branch_end = RoadEnd{branch, ContactPoint::End};
+  setup.s = 100.0;
+  return setup;
 }
 
 /// Curved target of radius `r`, branch attached at the apex from outside
 /// (`inside=false`, convex side) or inside (toward the arc center).
-Tee build_curved(double r, bool inside) {
-  RoadNetwork network;
+TeeSetup setup_curved(double r, bool inside) {
+  TeeSetup setup;
   // Waypoints on a circle centered at (0, r); apex at the origin.
   const double half_angle = r > 50.0 ? 35.0 * kPi / 180.0 : 60.0 * kPi / 180.0;
   std::vector<Waypoint> arc;
@@ -154,54 +177,63 @@ Tee build_curved(double r, bool inside) {
     const double theta = half_angle * static_cast<double>(i) / 2.0;
     arc.push_back({r * std::sin(theta), r - (r * std::cos(theta))});
   }
-  const RoadId target = author(network, arc, "1");
-  const double s_apex = network.road(target)->length / 2.0;
-  const RoadId branch = inside
-      ? author(network, {{0.0, std::min(r - 6.0, 24.0)}, {0.0, 6.0}}, "2")
-      : author(network, {{0.0, -40.0}, {0.0, -6.0}}, "2");
-  return attach(std::move(network), RoadEnd{branch, ContactPoint::End}, target, s_apex);
+  setup.target = author(setup.network, arc, "1");
+  setup.s = setup.network.road(setup.target)->length / 2.0;
+  const RoadId branch =
+      inside ? author(setup.network, {{0.0, std::min(r - 6.0, 24.0)}, {0.0, 6.0}}, "2")
+             : author(setup.network, {{0.0, -40.0}, {0.0, -6.0}}, "2");
+  setup.branch_end = RoadEnd{branch, ContactPoint::End};
+  return setup;
 }
 
 /// Asymmetric widths: the branch is narrower than the target.
-Tee build_asymmetric() {
-  RoadNetwork network;
-  const RoadId target = author(network, {{-100.0, 0.0}, {100.0, 0.0}}, "1");
+TeeSetup setup_asymmetric() {
+  TeeSetup setup;
+  setup.target = author(setup.network, {{-100.0, 0.0}, {100.0, 0.0}}, "1");
   LaneProfile narrow;
   narrow.left = {LaneSpec{.type = LaneType::Driving, .width = 3.0}};
   narrow.right = {LaneSpec{.type = LaneType::Driving, .width = 3.0}};
-  const RoadId branch = author(network, {{0.0, -40.0}, {0.0, -6.0}}, "2", narrow);
-  return attach(std::move(network), RoadEnd{branch, ContactPoint::End}, target, 100.0);
+  const RoadId branch = author(setup.network, {{0.0, -40.0}, {0.0, -6.0}}, "2", narrow);
+  setup.branch_end = RoadEnd{branch, ContactPoint::End};
+  setup.s = 100.0;
+  return setup;
 }
 
 /// Branch arriving with its Start contact (authored away from the target).
-Tee build_start_contact() {
-  RoadNetwork network;
-  const RoadId target = author(network, {{-100.0, 0.0}, {100.0, 0.0}}, "1");
-  const RoadId branch = author(network, {{0.0, -6.0}, {0.0, -40.0}}, "2");
-  return attach(std::move(network), RoadEnd{branch, ContactPoint::Start}, target, 100.0);
+TeeSetup setup_start_contact() {
+  TeeSetup setup;
+  setup.target = author(setup.network, {{-100.0, 0.0}, {100.0, 0.0}}, "1");
+  const RoadId branch = author(setup.network, {{0.0, -6.0}, {0.0, -40.0}}, "2");
+  setup.branch_end = RoadEnd{branch, ContactPoint::Start};
+  setup.s = 100.0;
+  return setup;
 }
 
 /// Graded target (3 % climb) — the tee cut faces must inherit the profile.
-Tee build_graded() {
-  RoadNetwork network;
-  const RoadId target = author(network, {{-100.0, 0.0}, {100.0, 0.0}}, "1");
-  apply_or_throw(network,
+TeeSetup setup_graded() {
+  TeeSetup setup;
+  setup.target = author(setup.network, {{-100.0, 0.0}, {100.0, 0.0}}, "1");
+  apply_or_throw(setup.network,
                  roadmaker::edit::set_elevation_profile(
-                     network, target, {{.s = 0.0, .z = 0.0}, {.s = 200.0, .z = 6.0}}));
-  const RoadId branch = author(network, {{0.0, -40.0}, {0.0, -6.0}}, "2");
-  apply_or_throw(network,
+                     setup.network, setup.target, {{.s = 0.0, .z = 0.0}, {.s = 200.0, .z = 6.0}}));
+  const RoadId branch = author(setup.network, {{0.0, -40.0}, {0.0, -6.0}}, "2");
+  apply_or_throw(setup.network,
                  roadmaker::edit::set_elevation_profile(
-                     network, branch, {{.s = 0.0, .z = 3.0}, {.s = 34.0, .z = 3.0}}));
-  return attach(std::move(network), RoadEnd{branch, ContactPoint::End}, target, 100.0);
+                     setup.network, branch, {{.s = 0.0, .z = 3.0}, {.s = 34.0, .z = 3.0}}));
+  setup.branch_end = RoadEnd{branch, ContactPoint::End};
+  setup.s = 100.0;
+  return setup;
 }
 
 /// Multi-lane target (highway template, 2 driving lanes per side): every
 /// incoming lane must land on its own smoothly-fitting connecting ribbon.
-Tee build_multilane() {
-  RoadNetwork network;
-  const RoadId target = author(network, {{-100.0, 0.0}, {100.0, 0.0}}, "1", LaneProfile::highway());
-  const RoadId branch = author(network, {{0.0, -50.0}, {0.0, -10.0}}, "2");
-  return attach(std::move(network), RoadEnd{branch, ContactPoint::End}, target, 100.0);
+TeeSetup setup_multilane() {
+  TeeSetup setup;
+  setup.target = author(setup.network, {{-100.0, 0.0}, {100.0, 0.0}}, "1", LaneProfile::highway());
+  const RoadId branch = author(setup.network, {{0.0, -50.0}, {0.0, -10.0}}, "2");
+  setup.branch_end = RoadEnd{branch, ContactPoint::End};
+  setup.s = 100.0;
+  return setup;
 }
 
 // --- Metrics ------------------------------------------------------------------
@@ -474,7 +506,7 @@ void dump_diagnostics(const std::string& name,
 
 struct TeeCase {
   const char* name;
-  Tee (*build)();
+  TeeSetup (*setup)();
 };
 
 class TJunctionQuality : public ::testing::TestWithParam<TeeCase> {};
@@ -483,7 +515,7 @@ class TJunctionQuality : public ::testing::TestWithParam<TeeCase> {};
 
 TEST_P(TJunctionQuality, MeshAndGeometryInvariants) {
   const TeeCase& tc = GetParam();
-  Tee tee = tc.build();
+  Tee tee = attach(tc.setup());
   ASSERT_TRUE(tee.junction.is_valid());
 
   NetworkMesh mesh = roadmaker::build_network_mesh(tee.network);
@@ -515,19 +547,148 @@ TEST_P(TJunctionQuality, MeshAndGeometryInvariants) {
   EXPECT_TRUE(m.deterministic);
 }
 
-INSTANTIATE_TEST_SUITE_P(Matrix,
-                         TJunctionQuality,
-                         ::testing::Values(TeeCase{"perp", build_perp},
-                                           TeeCase{"deg45", build_deg45},
-                                           TeeCase{"deg135", build_deg135},
-                                           TeeCase{"r100_outside", [] { return build_curved(100.0, false); }},
-                                           TeeCase{"r100_inside", [] { return build_curved(100.0, true); }},
-                                           TeeCase{"r30_outside", [] { return build_curved(30.0, false); }},
-                                           TeeCase{"r30_inside", [] { return build_curved(30.0, true); }},
-                                           TeeCase{"asymmetric", build_asymmetric},
-                                           TeeCase{"start_contact", build_start_contact},
-                                           TeeCase{"graded", build_graded},
-                                           TeeCase{"multilane", build_multilane}),
-                         [](const ::testing::TestParamInfo<TeeCase>& info) {
-                           return std::string(info.param.name);
-                         });
+// G1 continuity at both contact points (§10.3 via
+// asam.net:xodr:1.9.0:junctions.connection.smooth_fit): every connecting
+// road's reference line starts/ends exactly on its linked arm's cut face
+// with the arm's tangent heading, within rm::tol.
+TEST_P(TJunctionQuality, ConnectingRoadsAreG1AtContacts) {
+  Tee tee = attach(GetParam().setup());
+  const roadmaker::Junction& junction = *tee.network.junction(tee.junction);
+  ASSERT_FALSE(junction.connections.empty());
+  int checked = 0;
+  tee.network.for_each_road([&](RoadId /*id*/, const Road& road) {
+    if (road.junction != tee.junction) {
+      return;
+    }
+    const auto expect_g1 = [&](const std::optional<roadmaker::RoadLink>& link, double s_conn) {
+      ASSERT_TRUE(link.has_value());
+      ASSERT_TRUE(std::holds_alternative<RoadId>(link->target));
+      const Road& arm = *tee.network.road(std::get<RoadId>(link->target));
+      const double arm_s = link->contact == ContactPoint::Start ? 0.0 : arm.length;
+      const auto arm_pose = arm.plan_view.evaluate(arm_s);
+      const auto conn_pose = road.plan_view.evaluate(s_conn);
+      // Position: the connecting reference line is anchored on the linked
+      // lane's inner boundary — a point ON the arm's cut-face line. Check
+      // the along-face-normal distance (the cut face is the line through
+      // arm_pose perpendicular to the arm tangent).
+      const double dx = conn_pose.x - arm_pose.x;
+      const double dy = conn_pose.y - arm_pose.y;
+      const double along_tangent = (dx * std::cos(arm_pose.hdg)) + (dy * std::sin(arm_pose.hdg));
+      EXPECT_NEAR(along_tangent, 0.0, roadmaker::tol::kLength)
+          << "contact point off the arm cut face";
+      // Heading: continuous with the arm tangent (mod π — the connecting
+      // road runs into or out of the arm depending on the contact).
+      const double dh = std::remainder(conn_pose.hdg - arm_pose.hdg, kPi);
+      EXPECT_NEAR(dh, 0.0, 1e-6) << "heading kink at the contact point";
+      ++checked;
+    };
+    expect_g1(road.predecessor, 0.0);
+    expect_g1(road.successor, road.plan_view.length());
+  });
+  EXPECT_GT(checked, 0);
+}
+
+// The exported tee passes our checker-rule validator with zero errors for
+// both supported targets; the only expected finding is the intentional
+// boundary-omitted warning (M2 emits the surface without <boundary> — see
+// junctions.boundary.close_gap_with_new_roads).
+TEST_P(TJunctionQuality, ExportValidatesCleanly) {
+  Tee tee = attach(GetParam().setup());
+  using roadmaker::XodrVersion;
+  for (const XodrVersion version : {XodrVersion::v1_8_1, XodrVersion::v1_9_0}) {
+    const auto findings = roadmaker::validate_network(
+        tee.network, roadmaker::WriterOptions{.target_version = version});
+    EXPECT_EQ(roadmaker::count_errors(findings), 0U);
+    for (const auto& finding : findings) {
+      EXPECT_EQ(finding.rule_id, roadmaker::rules::kJunctionBoundaryCloseGap)
+          << "unexpected diagnostic: " << finding.message;
+    }
+  }
+}
+
+// Round-trip: tee → save → reload → re-mesh is bitwise identical (rm:arms
+// persists the arm list, and the junction pipeline is deterministic), and
+// a reload → re-save is byte-identical.
+TEST_P(TJunctionQuality, SaveReloadRemeshesIdentically) {
+  Tee tee = attach(GetParam().setup());
+  const NetworkMesh before = roadmaker::build_network_mesh(tee.network);
+  ASSERT_FALSE(before.junction_floors.empty());
+
+  const auto xml = roadmaker::write_xodr(tee.network, "tee");
+  ASSERT_TRUE(xml.has_value());
+  auto parsed = roadmaker::parse_xodr(*xml, "<tee>");
+  ASSERT_TRUE(parsed.has_value());
+  const auto second = roadmaker::write_xodr(parsed->network, "tee");
+  ASSERT_TRUE(second.has_value());
+  EXPECT_EQ(*xml, *second);
+
+  const NetworkMesh after = roadmaker::build_network_mesh(parsed->network);
+  ASSERT_FALSE(after.junction_floors.empty());
+  EXPECT_EQ(before.junction_floors.front().mesh.positions,
+            after.junction_floors.front().mesh.positions);
+  EXPECT_EQ(before.junction_floors.front().mesh.indices,
+            after.junction_floors.front().mesh.indices);
+}
+
+// ONE undo step returns the pre-attach network byte-identically — including
+// the branch trim and both target splits (the composite reverts in reverse).
+TEST_P(TJunctionQuality, UndoRestoresPreAttachBytes) {
+  TeeSetup setup = GetParam().setup();
+  const auto before = roadmaker::write_xodr(setup.network, "tee");
+  ASSERT_TRUE(before.has_value());
+
+  auto command =
+      roadmaker::edit::attach_t_junction(setup.network, setup.branch_end, setup.target, setup.s);
+  ASSERT_TRUE(command->apply(setup.network).has_value());
+  ASSERT_TRUE(command->revert(setup.network).has_value());
+
+  const auto after = roadmaker::write_xodr(setup.network, "tee");
+  ASSERT_TRUE(after.has_value());
+  EXPECT_EQ(*before, *after);
+}
+
+// The junction surface data (§12.9–12.11) exports for tees exactly as for
+// endpoint junctions: one reference line and one elevation grid
+// (asam.net:xodr:1.8.0:junctions.geometry.only_one_line_element,
+// …elevation_grid.only_one_elev_grid).
+TEST(TJunctionExport, TeeEmitsReferenceLineAndElevationGrid) {
+  Tee tee = attach(setup_graded());
+  const auto xml = roadmaker::write_xodr(tee.network, "tee");
+  ASSERT_TRUE(xml.has_value());
+  const std::size_t junction_pos = xml->find("<junction");
+  ASSERT_NE(junction_pos, std::string::npos);
+  EXPECT_NE(xml->find("<planView>", junction_pos), std::string::npos);
+  EXPECT_NE(xml->find("<elevationGrid", junction_pos), std::string::npos);
+  EXPECT_NE(xml->find("rm:arms", junction_pos), std::string::npos);
+}
+
+// Regenerates the committed tee golden (assets/samples + fuzz corpus per the
+// new-xodr-feature rule). Run manually:
+// roadmaker_core_tests --gtest_also_run_disabled_tests
+//   --gtest_filter='*DISABLED_WriteTeeSample'.
+TEST(TJunctionQualityTools, DISABLED_WriteTeeSample) {
+  namespace fs = std::filesystem;
+  Tee tee = attach(setup_perp());
+  ASSERT_TRUE(
+      roadmaker::save_xodr(tee.network, fs::path(RM_SAMPLES_DIR) / "t_attach.xodr", "t_attach")
+          .has_value());
+  ASSERT_TRUE(
+      roadmaker::save_xodr(tee.network, fs::path(RM_FUZZ_CORPUS_DIR) / "t_attach.xodr", "t_attach")
+          .has_value());
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    Matrix,
+    TJunctionQuality,
+    ::testing::Values(TeeCase{"perp", setup_perp},
+                      TeeCase{"deg45", setup_deg45},
+                      TeeCase{"deg135", setup_deg135},
+                      TeeCase{"r100_outside", [] { return setup_curved(100.0, false); }},
+                      TeeCase{"r100_inside", [] { return setup_curved(100.0, true); }},
+                      TeeCase{"r30_outside", [] { return setup_curved(30.0, false); }},
+                      TeeCase{"r30_inside", [] { return setup_curved(30.0, true); }},
+                      TeeCase{"asymmetric", setup_asymmetric},
+                      TeeCase{"start_contact", setup_start_contact},
+                      TeeCase{"graded", setup_graded},
+                      TeeCase{"multilane", setup_multilane}),
+    [](const ::testing::TestParamInfo<TeeCase>& info) { return std::string(info.param.name); });
