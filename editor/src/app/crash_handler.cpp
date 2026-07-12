@@ -54,6 +54,17 @@ std::filesystem::path g_log_file; // normal-context use only
 
 constexpr const char* kLogTailMarker = "---- session log tail ----";
 
+/// fopen without MSVC's C4996 deprecation (fopen_s there; plain fopen
+/// elsewhere — the CRT "secure" variants are Windows-only).
+std::FILE* open_file(const char* path, const char* mode) {
+#if defined(_WIN32)
+  std::FILE* file = nullptr;
+  return fopen_s(&file, path, mode) == 0 ? file : nullptr;
+#else
+  return std::fopen(path, mode);
+#endif
+}
+
 void format_header(const std::filesystem::path& report_dir,
                    const std::filesystem::path& log_file,
                    const QString& session) {
@@ -190,7 +201,7 @@ void install_platform_handler() {
 LONG WINAPI seh_crash_filter(EXCEPTION_POINTERS* info) {
   // The filter runs in a broken process; keep to CRT basics (no Qt, no
   // allocation-heavy formatting).
-  std::FILE* file = std::fopen(g_report_path, "w");
+  std::FILE* file = open_file(g_report_path, "w");
   if (file != nullptr) {
     std::fwrite(g_header, 1, g_header_len, file);
     std::fprintf(file,
@@ -368,7 +379,7 @@ void configure(const std::filesystem::path& report_dir,
 }
 
 bool write_report(const char* reason, bool with_backtrace) {
-  std::FILE* file = std::fopen(g_report_path, "w");
+  std::FILE* file = open_file(g_report_path, "w");
   if (file == nullptr) {
     return false;
   }
