@@ -44,6 +44,17 @@ std::optional<RoadEnd> CreateJunctionTool::snap_end(const Waypoint& cursor) cons
                  .contact = to_start <= to_end ? ContactPoint::Start : ContactPoint::End};
 }
 
+std::optional<edit::SideSnap> CreateJunctionTool::snap_side(const Waypoint& cursor) const {
+  if (ends_.size() != 1) {
+    return std::nullopt; // the tee needs exactly one attaching end
+  }
+  edit::SnapOptions options = snap_options_;
+  // A body point of a road whose end is already selected is not a tee
+  // target — that end IS the junction arm.
+  options.exclude_road = ends_.front().road;
+  return edit::snap_to_road_side(document_.network(), cursor, options);
+}
+
 void CreateJunctionTool::toggle(const RoadEnd& end) {
   const auto it = std::ranges::find(ends_, end);
   if (it != ends_.end()) {
@@ -58,11 +69,23 @@ bool CreateJunctionTool::mouse_press(const ToolEvent& event) {
     return false;
   }
   // LMB belongs to the tool even on a miss (M2 button map); a hit near a road
-  // end toggles it into the selection.
-  if (const auto end = snap_end(Waypoint{event.world_x, event.world_y}); end.has_value()) {
+  // end toggles it into the selection. Endpoint snapping wins over the side
+  // anchor inside its own radius — clicking an end must never read as a tee.
+  const Waypoint cursor{event.world_x, event.world_y};
+  if (const auto end = snap_end(cursor); end.has_value()) {
+    side_anchor_.reset();
     toggle(*end);
     emit preview_changed();
     emit_count_status();
+    return true;
+  }
+  if (const auto side = snap_side(cursor); side.has_value()) {
+    side_anchor_ = side;
+    emit preview_changed();
+    const Road* target = document_.network().road(side->road);
+    emit status_message(tr("Tee into %1 at s=%2 m — Enter attaches, Esc cancels")
+                            .arg(QString::fromStdString(target->name))
+                            .arg(side->s, 0, 'f', 1));
   }
   return true;
 }
@@ -81,10 +104,29 @@ bool CreateJunctionTool::key_press(int key, Qt::KeyboardModifiers /*modifiers*/)
     return true;
   }
   if (key == Qt::Key_Return || key == Qt::Key_Enter) {
-    generate();
+    if (side_anchor_.has_value()) {
+      generate_t_attach();
+    } else {
+      generate();
+    }
     return true;
   }
   return false;
+}
+
+void CreateJunctionTool::generate_t_attach() {
+  if (ends_.size() != 1 || !side_anchor_.has_value()) {
+    emit status_message(tr("Tee needs exactly 1 selected road end plus a road-side anchor"));
+    return;
+  }
+  // ONE undo step: attach_t_junction composes split + delete + junction.
+  if (!document_.push_command(edit::attach_t_junction(
+          document_.network(), ends_.front(), side_anchor_->road, side_anchor_->s))) {
+    return; // push_command surfaced the failure in Diagnostics
+  }
+  reset_session();
+  emit preview_changed();
+  emit status_message(tr("T-junction attached"));
 }
 
 void CreateJunctionTool::generate() {
@@ -126,12 +168,18 @@ PreviewGeometry CreateJunctionTool::preview() const {
         end.contact == ContactPoint::Start ? 0.0 : road->plan_view.length());
     add_point(pose.x, pose.y);
   }
+  if (side_anchor_.has_value()) {
+    add_point(side_anchor_->position.x, side_anchor_->position.y);
+  }
   if (hover_.has_value()) {
     if (const auto end = snap_end(*hover_); end.has_value()) {
       const Road* road = document_.network().road(end->road);
       const auto pose = road->plan_view.evaluate(
           end->contact == ContactPoint::Start ? 0.0 : road->plan_view.length());
       add_point(pose.x, pose.y);
+    } else if (const auto side = snap_side(*hover_); side.has_value()) {
+      // The side-snap indicator on the target's reference line.
+      add_point(side->position.x, side->position.y);
     }
   }
   return geometry;
@@ -139,6 +187,7 @@ PreviewGeometry CreateJunctionTool::preview() const {
 
 void CreateJunctionTool::reset_session() {
   ends_.clear();
+  side_anchor_.reset();
   hover_.reset();
 }
 

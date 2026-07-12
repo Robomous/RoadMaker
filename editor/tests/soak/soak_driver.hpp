@@ -86,6 +86,7 @@ private:
   void op_elevation();
   void op_split_road();
   void op_create_junction();
+  void op_attach_t();
   void op_delete_junction();
   void op_delete_road();
   void op_undo_redo();

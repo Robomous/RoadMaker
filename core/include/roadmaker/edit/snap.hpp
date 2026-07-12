@@ -67,4 +67,31 @@ struct SnapResult {
 [[nodiscard]] RM_API std::optional<SnapResult>
 snap_point(const RoadNetwork& network, Waypoint cursor, const SnapOptions& options);
 
+/// A projection of the cursor onto a road's BODY (its reference line away
+/// from the endpoints) — the side-attach anchor of the T-junction workflow
+/// (docs/design/hardening/t_junction.md, issue #92).
+struct SideSnap {
+  RoadId road;
+
+  /// Station of the projected point [m].
+  double s = 0.0;
+
+  /// The projected point on the reference line.
+  Waypoint position;
+
+  /// Cursor-to-line distance [m].
+  double distance = 0.0;
+};
+
+/// Nearest road-body projection within options.radius, or nullopt. Skips
+/// options.exclude_road, junction connecting roads (their geometry belongs
+/// to the generator), and stations within `end_margin` of either road end —
+/// near an end the endpoint snap is the meaningful answer, and the T attach
+/// needs room for its junction area anyway. Coarse-sample + local refine;
+/// deterministic (ties keep the first road in arena order).
+[[nodiscard]] RM_API std::optional<SideSnap> snap_to_road_side(const RoadNetwork& network,
+                                                               Waypoint cursor,
+                                                               const SnapOptions& options,
+                                                               double end_margin = 8.0);
+
 } // namespace roadmaker::edit

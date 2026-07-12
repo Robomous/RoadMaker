@@ -144,3 +144,79 @@ TEST(CreateJunctionTool, EditingAnIncomingRoadRegeneratesInOneUndoStep) {
   EXPECT_NEAR(restored.x, -6.0, 1e-6);
   EXPECT_NEAR(restored.y, 0.0, 1e-6);
 }
+
+// ---- side attach (hardening sprint #92, docs/design/hardening/t_junction.md)
+
+/// A 120 m main road and a side road ending 10 m south of its midpoint.
+struct TeeScene {
+  Document document;
+
+  TeeScene() {
+    const auto road = [&](Waypoint a, Waypoint b) {
+      if (!document.push_command(roadmaker::edit::create_road(
+              {a, b}, roadmaker::LaneProfile::two_lane_default(), ""))) {
+        throw std::runtime_error("tee scene setup failed");
+      }
+    };
+    road(Waypoint{-60.0, 0.0}, Waypoint{60.0, 0.0});  // road "1", the target
+    road(Waypoint{0.0, -50.0}, Waypoint{0.0, -10.0}); // road "2", attaching end (0,-10)
+  }
+};
+
+TEST(CreateJunctionTool, SideClickAfterOneEndTeesIntoTheRoadBody) {
+  TeeScene scene;
+  CreateJunctionTool tool(scene.document);
+  tool.activate();
+
+  // Select the side road's end, then click the main road's BODY near its
+  // midpoint — the side anchor, not an endpoint toggle.
+  ASSERT_TRUE(tool.mouse_press(click_at(0.0, -10.0)));
+  EXPECT_EQ(tool.selected_count(), 1U);
+  ASSERT_TRUE(tool.mouse_press(click_at(1.0, 1.5))); // ~s=61 on road "1"
+  EXPECT_EQ(tool.selected_count(), 1U);              // an anchor, not an end
+
+  ASSERT_TRUE(tool.key_press(Qt::Key_Return, Qt::NoModifier));
+  EXPECT_EQ(scene.document.network().junction_count(), 1U);
+  const JunctionId junction = scene.document.network().find_junction("1");
+  ASSERT_TRUE(junction.is_valid());
+  EXPECT_EQ(scene.document.network().junction(junction)->arms.size(), 3U);
+
+  // ONE undo entry returns to the pre-tee network.
+  const std::size_t roads_after = scene.document.network().road_count();
+  EXPECT_GT(roads_after, 2U);
+  scene.document.undo_stack()->undo();
+  EXPECT_EQ(scene.document.network().junction_count(), 0U);
+  EXPECT_EQ(scene.document.network().road_count(), 2U);
+  scene.document.undo_stack()->redo();
+  EXPECT_EQ(scene.document.network().junction_count(), 1U);
+  EXPECT_EQ(scene.document.network().road_count(), roads_after);
+}
+
+TEST(CreateJunctionTool, EscClearsTheSideAnchor) {
+  TeeScene scene;
+  CreateJunctionTool tool(scene.document);
+  tool.activate();
+
+  ASSERT_TRUE(tool.mouse_press(click_at(0.0, -10.0)));
+  ASSERT_TRUE(tool.mouse_press(click_at(1.0, 1.5)));
+  ASSERT_TRUE(tool.key_press(Qt::Key_Escape, Qt::NoModifier));
+
+  // Enter after Esc must do nothing — the whole session was cleared.
+  ASSERT_TRUE(tool.key_press(Qt::Key_Return, Qt::NoModifier));
+  EXPECT_EQ(scene.document.network().junction_count(), 0U);
+  EXPECT_EQ(scene.document.network().road_count(), 2U);
+  EXPECT_TRUE(scene.document.undo_stack()->isClean() ||
+              scene.document.network().junction_count() == 0U);
+}
+
+TEST(CreateJunctionTool, EndpointSnapWinsOverTheSideAnchor) {
+  TeeScene scene;
+  CreateJunctionTool tool(scene.document);
+  tool.activate();
+
+  // Clicking ON an endpoint with one end already selected toggles ends —
+  // it must never read as a tee into the road body.
+  ASSERT_TRUE(tool.mouse_press(click_at(0.0, -10.0)));
+  ASSERT_TRUE(tool.mouse_press(click_at(-60.0, 0.0))); // main road's START
+  EXPECT_EQ(tool.selected_count(), 2U);
+}

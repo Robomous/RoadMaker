@@ -935,6 +935,29 @@ NB_MODULE(_roadmaker, m) {
       "options"_a = roadmaker::edit::JunctionGenOptions{},
       "Generates a common junction: links each arm and builds one connecting "
       "road per permitted (incoming lane, outgoing lane) turn.");
+  nb::class_<roadmaker::edit::TAttachOptions>(edit, "TAttachOptions")
+      .def(nb::init<>())
+      .def_rw("gap_m", &roadmaker::edit::TAttachOptions::gap_m)
+      .def_rw("generation", &roadmaker::edit::TAttachOptions::generation);
+
+  edit.def(
+      "attach_t_junction",
+      [](const roadmaker::RoadNetwork& network,
+         const roadmaker::RoadEnd& end,
+         roadmaker::RoadId target,
+         double s,
+         const roadmaker::edit::TAttachOptions& options) {
+        return roadmaker::edit::attach_t_junction(network, end, target, s, options);
+      },
+      "network"_a,
+      "end"_a,
+      "target"_a,
+      "s"_a,
+      "options"_a = roadmaker::edit::TAttachOptions{},
+      "Attaches a road end to the SIDE of another road at station s — the "
+      "T-junction workflow: splits the target around s, deletes the middle "
+      "stub, and generates a junction from the three ends (all legal turns). "
+      "One undoable command.");
   edit.def(
       "regenerate_junction",
       [](const roadmaker::RoadNetwork& network,
@@ -1045,6 +1068,32 @@ NB_MODULE(_roadmaker, m) {
       "options"_a = roadmaker::edit::SnapOptions{},
       "Best snap candidate for the cursor, or None. Priority: RoadEndpoint > "
       "TangentContinuation > Grid; closest wins within a kind.");
+
+  nb::class_<roadmaker::edit::SideSnap>(edit, "SideSnap")
+      .def_ro("road", &roadmaker::edit::SideSnap::road)
+      .def_ro("s", &roadmaker::edit::SideSnap::s)
+      .def_ro("position", &roadmaker::edit::SideSnap::position)
+      .def_ro("distance", &roadmaker::edit::SideSnap::distance);
+
+  edit.def(
+      "snap_to_road_side",
+      [](const roadmaker::RoadNetwork& network,
+         std::pair<double, double> cursor,
+         const roadmaker::edit::SnapOptions& options,
+         double end_margin) {
+        return roadmaker::edit::snap_to_road_side(
+            network,
+            roadmaker::Waypoint{.x = cursor.first, .y = cursor.second},
+            options,
+            end_margin);
+      },
+      "network"_a,
+      "cursor"_a,
+      "options"_a = roadmaker::edit::SnapOptions{},
+      "end_margin"_a = 8.0,
+      "Nearest road-body projection within options.radius (the T-attach "
+      "anchor): road, station s, position, distance. Skips connecting roads "
+      "and stations within end_margin of either road end.");
 
   // --- meshing / export ------------------------------------------------------------
 

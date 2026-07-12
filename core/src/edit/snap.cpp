@@ -3,7 +3,9 @@
 #include "roadmaker/road/network.hpp"
 #include "roadmaker/tol.hpp"
 
+#include <algorithm>
 #include <cmath>
+#include <limits>
 #include <numbers>
 
 namespace roadmaker::edit {
@@ -110,6 +112,72 @@ snap_point(const RoadNetwork& network, Waypoint cursor, const SnapOptions& optio
   }
 
   return std::nullopt;
+}
+
+std::optional<SideSnap> snap_to_road_side(const RoadNetwork& network,
+                                          Waypoint cursor,
+                                          const SnapOptions& options,
+                                          double end_margin) {
+  std::optional<SideSnap> best;
+  network.for_each_road([&](RoadId id, const Road& road) {
+    if (options.exclude_road && *options.exclude_road == id) {
+      return;
+    }
+    if (road.junction.is_valid()) {
+      return; // connecting-road geometry belongs to the generator
+    }
+    const ReferenceLine& line = road.plan_view;
+    const double length = line.length();
+    if (length <= 2.0 * end_margin) {
+      return; // no body left between the end margins
+    }
+
+    // Coarse pass: bounded sample count keeps long roads cheap; the local
+    // ternary refinement below recovers the precision the samples miss.
+    const double lo = end_margin;
+    const double hi = length - end_margin;
+    const int samples = std::clamp(static_cast<int>((hi - lo) / 2.0), 8, 512);
+    double best_s = lo;
+    double best_d = std::numeric_limits<double>::max();
+    for (int i = 0; i <= samples; ++i) {
+      const double s = lo + (hi - lo) * static_cast<double>(i) / static_cast<double>(samples);
+      const PathPoint pose = line.evaluate(s);
+      const double d = std::hypot(cursor.x - pose.x, cursor.y - pose.y);
+      if (d < best_d) {
+        best_d = d;
+        best_s = s;
+      }
+    }
+    // Ternary refinement around the best sample — distance(s) is locally
+    // unimodal at interactive scales.
+    const double step = (hi - lo) / static_cast<double>(samples);
+    double a = std::max(lo, best_s - step);
+    double b = std::min(hi, best_s + step);
+    for (int i = 0; i < 40 && (b - a) > 1e-6; ++i) {
+      const double m1 = a + (b - a) / 3.0;
+      const double m2 = b - (b - a) / 3.0;
+      const PathPoint p1 = line.evaluate(m1);
+      const PathPoint p2 = line.evaluate(m2);
+      const double d1 = std::hypot(cursor.x - p1.x, cursor.y - p1.y);
+      const double d2 = std::hypot(cursor.x - p2.x, cursor.y - p2.y);
+      if (d1 < d2) {
+        b = m2;
+      } else {
+        a = m1;
+      }
+    }
+    const double s = (a + b) / 2.0;
+    const PathPoint pose = line.evaluate(s);
+    const double d = std::hypot(cursor.x - pose.x, cursor.y - pose.y);
+    if (d > options.radius) {
+      return;
+    }
+    if (!best || d < best->distance) {
+      best = SideSnap{
+          .road = id, .s = s, .position = Waypoint{.x = pose.x, .y = pose.y}, .distance = d};
+    }
+  });
+  return best;
 }
 
 } // namespace roadmaker::edit
