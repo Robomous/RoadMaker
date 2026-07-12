@@ -986,6 +986,90 @@ TEST(EditOperations, SecondTeeOnTheHeadHalfRemapsTheFirstJunction) {
   EXPECT_EQ(roadmaker::count_errors(roadmaker::validate_network(network)), 0U);
 }
 
+// ---- elevation profile command (hardening sprint WS-C) -----------------------
+
+TEST(EditOperations, SetElevationProfileHonorsGradesAndRoundTrips) {
+  RoadNetwork network;
+  const RoadId road = author(network, {Waypoint{0.0, 0.0}, Waypoint{120.0, 0.0}}, "1");
+
+  auto command = roadmaker::edit::set_elevation_profile(
+      network,
+      road,
+      {roadmaker::edit::ElevationPoint{.s = 0.0, .z = 0.0, .grade = 0.0},
+       roadmaker::edit::ElevationPoint{.s = 60.0, .z = 5.0},
+       roadmaker::edit::ElevationPoint{.s = 120.0, .z = 0.0, .grade = 0.0}});
+  expect_command_round_trip(network, *command);
+
+  ASSERT_TRUE(command->apply(network).has_value());
+  const roadmaker::Road& after = *network.road(road);
+  ASSERT_FALSE(after.elevation.empty());
+  EXPECT_NEAR(roadmaker::eval_profile(after.elevation, 60.0), 5.0, 1e-9);
+  EXPECT_NEAR(after.elevation.front().eval_derivative(0.0), 0.0, 1e-9); // locked grade
+  EXPECT_NEAR(after.elevation.back().eval_derivative(120.0), 0.0, 1e-9);
+
+  // Read-back for the profile panel: nodes at every record start + road end.
+  const auto points = roadmaker::edit::elevation_profile_points(after);
+  ASSERT_GE(points.size(), 3U);
+  EXPECT_NEAR(points.front().z, 0.0, 1e-9);
+  EXPECT_NEAR(points.back().s, 120.0, 1e-6);
+
+  // Flattening writes NO profile (the OpenDRIVE default).
+  ASSERT_TRUE(roadmaker::edit::set_elevation_profile(
+                  network, road, {roadmaker::edit::ElevationPoint{.s = 0.0, .z = 0.0}})
+                  ->apply(network)
+                  .has_value());
+  EXPECT_TRUE(network.road(road)->elevation.empty());
+}
+
+TEST(EditOperations, SetElevationProfileRejectsBadNodes) {
+  RoadNetwork network;
+  const RoadId road = author(network, {Waypoint{0.0, 0.0}, Waypoint{100.0, 0.0}}, "1");
+  // Outside the road / duplicate stations / empty.
+  EXPECT_FALSE(roadmaker::edit::set_elevation_profile(
+                   network, road, {roadmaker::edit::ElevationPoint{.s = 150.0, .z = 1.0}})
+                   ->apply(network)
+                   .has_value());
+  EXPECT_FALSE(
+      roadmaker::edit::set_elevation_profile(network,
+                                             road,
+                                             {roadmaker::edit::ElevationPoint{.s = 10.0, .z = 1.0},
+                                              roadmaker::edit::ElevationPoint{.s = 10.0, .z = 2.0}})
+          ->apply(network)
+          .has_value());
+  EXPECT_FALSE(
+      roadmaker::edit::set_elevation_profile(network, road, {})->apply(network).has_value());
+  EXPECT_TRUE(network.road(road)->elevation.empty());
+}
+
+TEST(EditOperations, SteepGradeYieldsAnAdvisoryWarning) {
+  RoadNetwork network;
+  const RoadId road = author(network, {Waypoint{0.0, 0.0}, Waypoint{100.0, 0.0}}, "1");
+  ASSERT_TRUE(roadmaker::edit::set_elevation_profile(
+                  network,
+                  road,
+                  {roadmaker::edit::ElevationPoint{.s = 0.0, .z = 0.0, .grade = 0.0},
+                   roadmaker::edit::ElevationPoint{.s = 50.0, .z = 10.0}, // ~20 % avg
+                   roadmaker::edit::ElevationPoint{.s = 100.0, .z = 0.0, .grade = 0.0}})
+                  ->apply(network)
+                  .has_value());
+  bool warned = false;
+  for (const auto& finding : roadmaker::validate_network(network)) {
+    if (finding.severity == roadmaker::Severity::Warning &&
+        finding.message.find("grade") != std::string::npos) {
+      warned = true;
+      EXPECT_TRUE(finding.rule_id.empty()) << "advisory must not spoof an ASAM rule id";
+    }
+  }
+  EXPECT_TRUE(warned);
+
+  // Configurable, and non-positive disables.
+  roadmaker::WriterOptions permissive;
+  permissive.max_grade_warning = 0.5;
+  for (const auto& finding : roadmaker::validate_network(network, permissive)) {
+    EXPECT_EQ(finding.message.find("grade"), std::string::npos);
+  }
+}
+
 // ---- interactive fit loop guard (hardening sprint #93, maintainer CRASH-1) ---
 
 TEST(EditOperations, RunawayLoopFitsAreRefusedAtTheCommandLayer) {

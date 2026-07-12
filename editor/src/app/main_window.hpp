@@ -89,6 +89,7 @@ private:
   QDockWidget* scene_dock_;
   QDockWidget* properties_dock_;
   QDockWidget* diagnostics_dock_;
+  QDockWidget* profile_dock_;
   QMenu* recent_menu_ = nullptr;
   QLabel* status_hover_;
   QLabel* status_entities_;

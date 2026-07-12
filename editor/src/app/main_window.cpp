@@ -27,6 +27,7 @@
 #include "app/icons.hpp"
 #include "app/log_setup.hpp"
 #include "panels/diagnostics_panel.hpp"
+#include "panels/profile_panel.hpp"
 #include "panels/properties_panel.hpp"
 #include "panels/scene_tree_panel.hpp"
 #include "tools/create_junction_tool.hpp"
@@ -209,6 +210,12 @@ void MainWindow::build_docks() {
   properties_dock_->widget()->setMinimumWidth(300);
   addDockWidget(Qt::RightDockWidgetArea, properties_dock_);
 
+  profile_dock_ = new QDockWidget(tr("Profile"), this);
+  profile_dock_->setObjectName(QStringLiteral("dock.profile"));
+  profile_dock_->setWidget(new ProfilePanel(document_, selection_, profile_dock_));
+  addDockWidget(Qt::BottomDockWidgetArea, profile_dock_);
+  profile_dock_->hide(); // opt-in via the View menu — vertical design is occasional
+
   diagnostics_dock_ = new QDockWidget(tr("Diagnostics"), this);
   diagnostics_dock_->setObjectName(QStringLiteral("dock.diagnostics"));
   diagnostics_dock_->setWidget(
@@ -242,6 +249,7 @@ void MainWindow::build_menus() {
   view_menu->addAction(scene_dock_->toggleViewAction());
   view_menu->addAction(properties_dock_->toggleViewAction());
   view_menu->addAction(diagnostics_dock_->toggleViewAction());
+  view_menu->addAction(profile_dock_->toggleViewAction());
   view_menu->addSeparator();
   view_menu->addAction(actions_->reset_camera);
   view_menu->addAction(actions_->frame_selection);

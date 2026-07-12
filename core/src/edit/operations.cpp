@@ -1880,6 +1880,93 @@ std::unique_ptr<Command> set_road_mark(const RoadNetwork& network, LaneId lane_i
   return command;
 }
 
+std::vector<ElevationPoint> elevation_profile_points(const Road& road) {
+  std::vector<ElevationPoint> points;
+  const double length = road.plan_view.length();
+  if (road.elevation.empty()) {
+    points.push_back(ElevationPoint{.s = 0.0, .z = 0.0, .grade = 0.0});
+    points.push_back(ElevationPoint{.s = length, .z = 0.0, .grade = 0.0});
+    return points;
+  }
+  for (const Poly3& record : road.elevation) {
+    points.push_back(ElevationPoint{
+        .s = record.s, .z = record.eval(record.s), .grade = record.eval_derivative(record.s)});
+  }
+  const Poly3& last = road.elevation.back();
+  if (length - last.s > tol::kLength) {
+    points.push_back(
+        ElevationPoint{.s = length, .z = last.eval(length), .grade = last.eval_derivative(length)});
+  }
+  return points;
+}
+
+std::unique_ptr<Command> set_elevation_profile(const RoadNetwork& network,
+                                               RoadId road_id,
+                                               std::vector<ElevationPoint> points) {
+  static constexpr std::string_view kName = "Edit Elevation Profile";
+  const auto fail = [&](std::string message) {
+    return invalid_command(
+        std::string(kName),
+        Error{.code = ErrorCode::InvalidArgument, .message = std::move(message)});
+  };
+  const Road* road = network.road(road_id);
+  if (road == nullptr) {
+    return fail("stale road id");
+  }
+  if (points.empty()) {
+    return fail("an elevation profile needs at least one node");
+  }
+  std::ranges::sort(points, {}, &ElevationPoint::s);
+  const double length = road->plan_view.length();
+  for (std::size_t i = 0; i < points.size(); ++i) {
+    if (points[i].s < -tol::kLength || points[i].s > length + tol::kLength) {
+      return fail("profile node station outside the road");
+    }
+    if (i > 0 && points[i].s - points[i - 1].s <= tol::kLength) {
+      return fail("duplicate profile node stations");
+    }
+  }
+
+  // Fill missing grades by finite differences (the M2 node-elevation
+  // behavior), then fit the C1 Hermite through the explicit set.
+  std::vector<double> s_values;
+  std::vector<double> z_values;
+  s_values.reserve(points.size());
+  z_values.reserve(points.size());
+  for (const ElevationPoint& point : points) {
+    s_values.push_back(point.s);
+    z_values.push_back(point.z);
+  }
+  std::vector<double> grades(points.size(), 0.0);
+  const std::size_t n = points.size();
+  for (std::size_t i = 0; i < n; ++i) {
+    if (points[i].grade.has_value()) {
+      grades[i] = *points[i].grade;
+    } else if (n == 1) {
+      grades[i] = 0.0;
+    } else if (i == 0) {
+      grades[i] = (z_values[1] - z_values[0]) / (s_values[1] - s_values[0]);
+    } else if (i + 1 == n) {
+      grades[i] = (z_values[n - 1] - z_values[n - 2]) / (s_values[n - 1] - s_values[n - 2]);
+    } else {
+      grades[i] = (z_values[i + 1] - z_values[i - 1]) / (s_values[i + 1] - s_values[i - 1]);
+    }
+  }
+
+  const bool all_zero = std::ranges::all_of(points, [](const ElevationPoint& p) {
+    return std::abs(p.z) < 1e-12 && std::abs(p.grade.value_or(0.0)) < 1e-12;
+  });
+
+  Road after = *road;
+  after.elevation =
+      all_zero ? std::vector<Poly3>{} : fit_elevation_profile(s_values, z_values, grades);
+
+  auto command = std::make_unique<GenericCommand>(std::string(kName), DirtySet{.roads = {road_id}});
+  command->before.roads.emplace_back(road_id, *road);
+  command->after.roads.emplace_back(road_id, std::move(after));
+  return command;
+}
+
 std::unique_ptr<Command> set_node_elevation(const RoadNetwork& network,
                                             RoadId road_id,
                                             std::size_t waypoint_index,

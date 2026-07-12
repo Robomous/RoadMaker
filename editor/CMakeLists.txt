@@ -41,10 +41,12 @@ add_library(roadmaker_editor_lib STATIC
   src/document/autosave.cpp
   src/document/diagnostics_model.cpp
   src/document/document.cpp
+  src/document/elevation_utils.cpp
   src/document/editor_command.cpp
   src/document/scene_tree_model.cpp
   src/document/selection_model.cpp
   src/panels/diagnostics_panel.cpp
+  src/panels/profile_panel.cpp
   src/panels/properties_panel.cpp
   src/panels/scene_tree_panel.cpp
   src/render/gl_functions.cpp
