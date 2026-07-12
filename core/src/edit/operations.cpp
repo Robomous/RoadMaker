@@ -761,16 +761,14 @@ TurnGuide fillet_guides(const std::array<double, 2>& a,
   TurnGuide guide;
   constexpr double kMinGuideSpacing = 0.5;
   if (t - leg > kMinGuideSpacing) { // entry tangent point (straight leg after A)
-    guide.points.push_back(
-        Waypoint{corner[0] - (leg * d1x), corner[1] - (leg * d1y)});
+    guide.points.push_back(Waypoint{corner[0] - (leg * d1x), corner[1] - (leg * d1y)});
     guide.headings.push_back(heading_a);
   }
   const double reach = radius * ((1.0 / std::sin(half_angle)) - 1.0);
   guide.points.push_back(Waypoint{corner[0] + (bx * reach), corner[1] + (by * reach)});
   guide.headings.push_back(std::atan2(d1y + d2y, d1x + d2x)); // arc-midpoint tangent
   if (u - leg > kMinGuideSpacing) { // exit tangent point (straight leg before B)
-    guide.points.push_back(
-        Waypoint{corner[0] + (leg * d2x), corner[1] + (leg * d2y)});
+    guide.points.push_back(Waypoint{corner[0] + (leg * d2x), corner[1] + (leg * d2y)});
     guide.headings.push_back(heading_b);
   }
   return guide;
@@ -872,8 +870,8 @@ std::vector<ArmLane> arm_driving_lanes(const RoadNetwork& network,
     }
     const double width = lane_width_at(lane, section, geom.station);
     if (want_positive && lane.type == LaneType::Driving) {
-      lanes.push_back(ArmLane{
-          .odr_id = lane.odr_id, .width = width, .inner_t = center_t + left_cum});
+      lanes.push_back(
+          ArmLane{.odr_id = lane.odr_id, .width = width, .inner_t = center_t + left_cum});
     }
     left_cum += width;
   }
@@ -885,8 +883,8 @@ std::vector<ArmLane> arm_driving_lanes(const RoadNetwork& network,
       }
       const double width = lane_width_at(lane, section, geom.station);
       if (lane.type == LaneType::Driving) {
-        lanes.push_back(ArmLane{
-            .odr_id = lane.odr_id, .width = width, .inner_t = center_t - right_cum});
+        lanes.push_back(
+            ArmLane{.odr_id = lane.odr_id, .width = width, .inner_t = center_t - right_cum});
       }
       right_cum += width;
     }
@@ -1070,8 +1068,7 @@ Poly3 connecting_lane_width(const ConnectingPlan& plan, double length) {
 /// ConnectingPlan). A flat result (everything ~0) yields no profile — the
 /// OpenDRIVE default, keeping flat networks byte-identical.
 std::vector<Poly3> connecting_elevation(const ConnectingPlan& plan, double length) {
-  const bool flat = std::abs(plan.start_z) < tol::kLength &&
-                    std::abs(plan.end_z) < tol::kLength &&
+  const bool flat = std::abs(plan.start_z) < tol::kLength && std::abs(plan.end_z) < tol::kLength &&
                     std::abs(plan.start_grade) < tol::kLength &&
                     std::abs(plan.end_grade) < tol::kLength;
   if (flat || length <= tol::kLength) {
@@ -1681,8 +1678,8 @@ std::unique_ptr<Command> attach_t_junction(const RoadNetwork& network,
 
   const PathPoint corner = target->plan_view.evaluate(s);
   const double branch_length = attaching->plan_view.length();
-  const PathPoint branch_face = attaching->plan_view.evaluate(
-      end.contact == ContactPoint::Start ? 0.0 : branch_length);
+  const PathPoint branch_face =
+      attaching->plan_view.evaluate(end.contact == ContactPoint::Start ? 0.0 : branch_length);
 
   const double gap = t_attach_gap(network, end, target_id, s, options);
   const double length = target->plan_view.length();

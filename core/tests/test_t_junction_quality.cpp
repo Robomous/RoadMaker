@@ -250,21 +250,21 @@ bool proper_intersect(const Segment& s, const Segment& t) {
   const double o2 = orient(s.ax, s.ay, s.bx, s.by, t.bx, t.by);
   const double o3 = orient(t.ax, t.ay, t.bx, t.by, s.ax, s.ay);
   const double o4 = orient(t.ax, t.ay, t.bx, t.by, s.bx, s.by);
-  return ((o1 > 0.0) != (o2 > 0.0)) && ((o3 > 0.0) != (o4 > 0.0)) &&
-         std::abs(o1) > 1e-9 && std::abs(o2) > 1e-9 && std::abs(o3) > 1e-9 && std::abs(o4) > 1e-9;
+  return ((o1 > 0.0) != (o2 > 0.0)) && ((o3 > 0.0) != (o4 > 0.0)) && std::abs(o1) > 1e-9 &&
+         std::abs(o2) > 1e-9 && std::abs(o3) > 1e-9 && std::abs(o4) > 1e-9;
 }
 
 struct QualityMetrics {
   double min_angle_deg = 180.0;
-  int slivers = 0;             ///< triangles with an angle < 5°
-  int degenerate = 0;          ///< zero plan-area triangles
-  int flipped = 0;             ///< recomputed face normals with z <= 0
-  int boundary_crossings = 0;  ///< floor-boundary self-intersections
-  int seam_z_mismatches = 0;   ///< coincident-in-plan vertex, different z
-  int seam_near_misses = 0;    ///< boundary vertex 1e-6..5 cm from a road vertex
-  double max_curvature = 0.0;  ///< max |κ| over connecting roads
-  int ribbon_crossings = 0;    ///< connecting-road centerline crossings
-  double max_seam_dz = 0.0;    ///< connecting-road endpoint z vs arm cut-face z
+  int slivers = 0;            ///< triangles with an angle < 5°
+  int degenerate = 0;         ///< zero plan-area triangles
+  int flipped = 0;            ///< recomputed face normals with z <= 0
+  int boundary_crossings = 0; ///< floor-boundary self-intersections
+  int seam_z_mismatches = 0;  ///< coincident-in-plan vertex, different z
+  int seam_near_misses = 0;   ///< boundary vertex 1e-6..5 cm from a road vertex
+  double max_curvature = 0.0; ///< max |κ| over connecting roads
+  int ribbon_crossings = 0;   ///< connecting-road centerline crossings
+  double max_seam_dz = 0.0;   ///< connecting-road endpoint z vs arm cut-face z
   bool deterministic = true;
   int connection_count = 0;
 };
@@ -287,8 +287,8 @@ QualityMetrics compute_metrics(const Tee& tee, const NetworkMesh& mesh) {
       return a < b ? std::pair{a, b} : std::pair{b, a};
     };
     for (std::size_t i = 0; i + 2 < floor.indices.size(); i += 3) {
-      const std::array<std::uint32_t, 3> t{floor.indices[i], floor.indices[i + 1],
-                                           floor.indices[i + 2]};
+      const std::array<std::uint32_t, 3> t{
+          floor.indices[i], floor.indices[i + 1], floor.indices[i + 2]};
       const double ax = p[t[0] * 3], ay = p[(t[0] * 3) + 1];
       const double bx = p[t[1] * 3], by = p[(t[1] * 3) + 1];
       const double cx = p[t[2] * 3], cy = p[(t[2] * 3) + 1];
@@ -300,8 +300,8 @@ QualityMetrics compute_metrics(const Tee& tee, const NetworkMesh& mesh) {
       if (area2 < 0.0) {
         ++m.flipped; // plan-view CW = flipped height-field triangle
       }
-      const std::array<double, 3> len{std::hypot(bx - ax, by - ay), std::hypot(cx - bx, cy - by),
-                                      std::hypot(ax - cx, ay - cy)};
+      const std::array<double, 3> len{
+          std::hypot(bx - ax, by - ay), std::hypot(cx - bx, cy - by), std::hypot(ax - cx, ay - cy)};
       double tri_min_angle = 180.0;
       for (int k = 0; k < 3; ++k) {
         const double a = len[static_cast<std::size_t>(k)];
@@ -323,7 +323,9 @@ QualityMetrics compute_metrics(const Tee& tee, const NetworkMesh& mesh) {
     std::vector<Segment> boundary;
     for (const auto& [edge, count] : edge_count) {
       if (count == 1) {
-        boundary.push_back({p[edge.first * 3], p[(edge.first * 3) + 1], p[edge.second * 3],
+        boundary.push_back({p[edge.first * 3],
+                            p[(edge.first * 3) + 1],
+                            p[edge.second * 3],
                             p[(edge.second * 3) + 1]});
       }
     }
@@ -339,8 +341,7 @@ QualityMetrics compute_metrics(const Tee& tee, const NetworkMesh& mesh) {
     std::vector<std::array<double, 3>> road_vertices;
     for (const RoadMesh& road : mesh.roads) {
       for (std::size_t i = 0; i + 2 < road.positions.size(); i += 3) {
-        road_vertices.push_back(
-            {road.positions[i], road.positions[i + 1], road.positions[i + 2]});
+        road_vertices.push_back({road.positions[i], road.positions[i + 1], road.positions[i + 2]});
       }
     }
     std::vector<bool> on_boundary(p.size() / 3, false);
@@ -385,6 +386,7 @@ QualityMetrics compute_metrics(const Tee& tee, const NetworkMesh& mesh) {
     int from_lane = 0;
     int to_lane = 0;
   };
+
   std::vector<Ribbon> centerlines;
   tee.network.for_each_road([&](RoadId /*road_id*/, const Road& road) {
     if (road.junction != tee.junction) {
@@ -417,7 +419,8 @@ QualityMetrics compute_metrics(const Tee& tee, const NetworkMesh& mesh) {
         Ribbon{std::move(line), road.predecessor, road.successor, from_lane, to_lane});
 
     // Endpoint elevation vs the linked arm's cut-face elevation.
-    const auto arm_z = [&](const std::optional<roadmaker::RoadLink>& link) -> std::optional<double> {
+    const auto arm_z =
+        [&](const std::optional<roadmaker::RoadLink>& link) -> std::optional<double> {
       if (!link.has_value() || !std::holds_alternative<RoadId>(link->target)) {
         return std::nullopt;
       }
@@ -480,9 +483,18 @@ std::string format_metrics(const QualityMetrics& m) {
                      "boundary_crossings={} seam_z_mismatches={} seam_near_misses={} "
                      "max_curvature={:.4f} ribbon_crossings={} max_seam_dz={:.6f} "
                      "deterministic={}",
-                     m.connection_count, m.min_angle_deg, m.slivers, m.degenerate, m.flipped,
-                     m.boundary_crossings, m.seam_z_mismatches, m.seam_near_misses,
-                     m.max_curvature, m.ribbon_crossings, m.max_seam_dz, m.deterministic);
+                     m.connection_count,
+                     m.min_angle_deg,
+                     m.slivers,
+                     m.degenerate,
+                     m.flipped,
+                     m.boundary_crossings,
+                     m.seam_z_mismatches,
+                     m.seam_near_misses,
+                     m.max_curvature,
+                     m.ribbon_crossings,
+                     m.max_seam_dz,
+                     m.deterministic);
 }
 
 /// Dumps .xodr + .glb + metrics when RM_TJ_DIAG_DIR is set (diagnosis and PR

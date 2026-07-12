@@ -44,6 +44,7 @@ endif()
 target_link_libraries(roadmaker_core_tests
   PRIVATE
     roadmaker::core
+    fmt::fmt
     Eigen3::Eigen
     Clothoids::Clothoids
     CDT::CDT

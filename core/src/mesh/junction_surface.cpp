@@ -213,8 +213,7 @@ CompactMesh compact(const CDT::Triangulation<double>& cdt) {
     const auto& p0 = cdt.vertices[tri.vertices[0]];
     const auto& p1 = cdt.vertices[tri.vertices[1]];
     const auto& p2 = cdt.vertices[tri.vertices[2]];
-    const double area2 =
-        ((p1.x - p0.x) * (p2.y - p0.y)) - ((p2.x - p0.x) * (p1.y - p0.y));
+    const double area2 = ((p1.x - p0.x) * (p2.y - p0.y)) - ((p2.x - p0.x) * (p1.y - p0.y));
     if (std::abs(area2) < 2e-8) {
       continue;
     }
@@ -448,16 +447,15 @@ SubMesh build_junction_surface(const RoadNetwork& network,
   // Joint quads only for junctions whose arm list persists (≥ 2 arms —
   // the writer's rm:arms rule): a degenerate or foreign junction must mesh
   // identically before and after save/load (round-trip byte identity).
-  const std::span<const RoadEnd> arms =
-      junction.arms.size() >= 2 ? std::span<const RoadEnd>(junction.arms)
-                                : std::span<const RoadEnd>();
+  const std::span<const RoadEnd> arms = junction.arms.size() >= 2
+                                            ? std::span<const RoadEnd>(junction.arms)
+                                            : std::span<const RoadEnd>();
   for (const RoadEnd& arm : arms) {
     const Road* road = network.road(arm.road);
     if (road == nullptr || road->plan_view.empty() || road->sections.empty()) {
       continue;
     }
-    const double station =
-        arm.contact == ContactPoint::Start ? 0.0 : road->plan_view.length();
+    const double station = arm.contact == ContactPoint::Start ? 0.0 : road->plan_view.length();
     const StationFrame frame = make_frame(*road, station);
     const LaneSection& section = section_at(network, *road, station);
     const std::vector<double> offsets = boundary_offsets(network, *road, section, station);
@@ -519,8 +517,8 @@ SubMesh build_junction_surface(const RoadNetwork& network,
   Clipper2Lib::PathsD merged =
       Clipper2Lib::Union(inflated, Clipper2Lib::FillRule::NonZero, kUnionPrecision);
   if (!face_cuts.empty()) {
-    merged = Clipper2Lib::Difference(
-        merged, face_cuts, Clipper2Lib::FillRule::NonZero, kUnionPrecision);
+    merged =
+        Clipper2Lib::Difference(merged, face_cuts, Clipper2Lib::FillRule::NonZero, kUnionPrecision);
   }
   merged = Clipper2Lib::SimplifyPaths(merged, kBoundarySimplify);
   if (merged.empty()) {
@@ -705,8 +703,7 @@ SubMesh build_junction_surface(const RoadNetwork& network,
       const Vec3& p0 = mesh.vertices[reps[0]];
       const Vec3& p1 = mesh.vertices[reps[1]];
       const Vec3& p2 = mesh.vertices[reps[2]];
-      const double area2 =
-          ((p1.x - p0.x) * (p2.y - p0.y)) - ((p2.x - p0.x) * (p1.y - p0.y));
+      const double area2 = ((p1.x - p0.x) * (p2.y - p0.y)) - ((p2.x - p0.x) * (p1.y - p0.y));
       if (area2 < 1e-8) { // degenerate or weld-inverted
         continue;
       }

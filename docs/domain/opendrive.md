@@ -90,10 +90,10 @@ branch on the primitive type. Clothoid evaluation and continuity rules:
   each maps an incoming road onto a connecting road with per-lane
   `<laneLink>` pairs (`from` incoming lane id → `to` connecting lane id).
 - A connecting road's `Road::junction` points back at its junction.
-- Current scope: junctions are parsed, represented, and rendered via their
-  connecting-road meshes plus a plan-view junction floor
-  ([meshing](geometry.md#junction-floors)); 3D surface blending is designed
-  in [junction blending](../design/m2/03_junction_blending.md).
+- Current scope: junctions are parsed, represented, and rendered via a
+  blended 2.5D junction surface stitched to the incoming arms
+  ([meshing](geometry.md#junction-surfaces)), designed in
+  [junction blending](../design/m2/03_junction_blending.md).
 - OpenDRIVE 1.8+ adds *virtual* and *direct* junction types; RoadMaker
   currently models the common (default) junctions.
 
