@@ -935,6 +935,50 @@ NB_MODULE(_roadmaker, m) {
       "options"_a = roadmaker::edit::JunctionGenOptions{},
       "Generates a common junction: links each arm and builds one connecting "
       "road per permitted (incoming lane, outgoing lane) turn.");
+  nb::class_<roadmaker::edit::ElevationPoint>(edit, "ElevationPoint")
+      .def(nb::init<>())
+      .def(
+          "__init__",
+          [](roadmaker::edit::ElevationPoint* self,
+             double s,
+             double z,
+             std::optional<double> grade) {
+            new (self) roadmaker::edit::ElevationPoint{.s = s, .z = z, .grade = grade};
+          },
+          "s"_a,
+          "z"_a,
+          "grade"_a = nb::none())
+      .def_rw("s", &roadmaker::edit::ElevationPoint::s)
+      .def_rw("z", &roadmaker::edit::ElevationPoint::z)
+      .def_rw("grade", &roadmaker::edit::ElevationPoint::grade);
+
+  edit.def(
+      "elevation_profile_points",
+      [](const roadmaker::RoadNetwork& network, roadmaker::RoadId road) {
+        const roadmaker::Road* value = network.road(road);
+        if (value == nullptr) {
+          throw RmException{roadmaker::Error{.code = roadmaker::ErrorCode::InvalidArgument,
+                                             .message = "stale road id"}};
+        }
+        return roadmaker::edit::elevation_profile_points(*value);
+      },
+      "network"_a,
+      "road"_a,
+      "The road's vertical profile as editable nodes (s, z, grade).");
+
+  edit.def(
+      "set_elevation_profile",
+      [](const roadmaker::RoadNetwork& network,
+         roadmaker::RoadId road,
+         std::vector<roadmaker::edit::ElevationPoint> points) {
+        return roadmaker::edit::set_elevation_profile(network, road, std::move(points));
+      },
+      "network"_a,
+      "road"_a,
+      "points"_a,
+      "Replaces the road's elevation with a C1 cubic through the nodes "
+      "(explicit grades honored; all-zero writes no profile).");
+
   nb::class_<roadmaker::edit::TAttachOptions>(edit, "TAttachOptions")
       .def(nb::init<>())
       .def_rw("gap_m", &roadmaker::edit::TAttachOptions::gap_m)
