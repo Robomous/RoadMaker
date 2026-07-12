@@ -61,4 +61,7 @@ Every golden workflow spec contains:
 - Workflows are versioned like scene specs: new capabilities extend the
   set (or add steps) rather than silently rewriting history.
 - Where steps are automatable, the soak/regression suites replay them
-  headless in CI as an early-warning signal between gates.
+  headless in CI as an early-warning signal between gates. GW-1's
+  automatable steps also have a dedicated pre-flight replay
+  (`python3 scripts/gw1_replay.py`) driven through the kernel command
+  layer — the same commands the editor's undo/redo executes.

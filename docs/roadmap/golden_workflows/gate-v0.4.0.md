@@ -15,15 +15,17 @@ here verbatim.*
 
 ## Pre-flight (agent, before the run)
 
-- [ ] CI green on `main` (all platforms, sanitizers).
-- [ ] 60-minute local ASan soak clean — seed(s) and op count recorded below.
-- [ ] GW-1 steps replayed via the soak driver where automatable.
+- [x] CI green on `main` (all platforms, sanitizers).
+- [x] 60-minute local ASan soak clean — seed(s) and op count recorded below.
+- [x] GW-1 steps replayed where automatable — headless over the kernel
+  command layer (`scripts/gw1_replay.py`; the editor-only UX aspects and
+  esmini/USD remain in the maintainer's by-hand run below).
 
 | Pre-flight item | Result / evidence |
 |---|---|
-| CI run | |
-| 60-min soak (seed, ops, result) | |
-| GW-1 automatable replay | |
+| CI run | ✅ `main` @ `1be3e20` — [run 29174615502](https://github.com/Robomous/RoadMaker/actions/runs/29174615502), all jobs green incl. sanitizers + the seeded CI soak (2026-07-11). |
+| 60-min soak (seed, ops, result) | ✅ **PASS** — seed 421337, 13 718 ops in 60 min (9 155 commands, 3 166 previews, 4 150 undo / 2 011 redo, 631 saves, 885 rejected); final 1 436-road network save→reload clean (0 diagnostics). ASan build @ `1be3e20`, macOS (`ASAN_OPTIONS=detect_leaks=0` — LSan is Linux-only; leak checking runs in the Linux CI soak). 2026-07-11. |
+| GW-1 automatable replay | ✅ `python3 scripts/gw1_replay.py` @ `1be3e20` — all 7 steps PASS via the kernel command layer (side-snap T-attach, 6.0 m overpass clearance, sidewalk lane, post-drag junction regen, undo×10/redo×10 byte-identical, save→reload→save byte-identical + glTF); diagnostics at end: 0 errors, 0 warnings (2026-07-11). |
 
 ## GW-1 — First network ([spec](gw1_first_network.md))
 
