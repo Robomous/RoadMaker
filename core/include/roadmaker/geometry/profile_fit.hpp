@@ -27,4 +27,12 @@ namespace roadmaker {
 [[nodiscard]] RM_API std::vector<Poly3> fit_elevation_profile(std::span<const double> s,
                                                               std::span<const double> z);
 
+/// As above but with EXPLICIT node tangents m[i] = dz/ds — the profile
+/// editor's grade handles (hardening sprint, docs/design/hardening
+/// workstream C). Same conventions and degenerate handling; `m` must match
+/// `s` in size.
+[[nodiscard]] RM_API std::vector<Poly3> fit_elevation_profile(std::span<const double> s,
+                                                              std::span<const double> z,
+                                                              std::span<const double> m);
+
 } // namespace roadmaker

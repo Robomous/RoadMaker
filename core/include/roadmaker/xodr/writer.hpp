@@ -24,6 +24,11 @@ enum class XodrVersion {
 /// consumers that validate against the newer checker-rule catalog.
 struct WriterOptions {
   XodrVersion target_version = XodrVersion::v1_8_1;
+
+  /// validate_network warns when a road's elevation grade |dz/ds| exceeds
+  /// this anywhere (hardening sprint workstream C — advisory, no ASAM rule
+  /// id; 0.12 = 12 %). Non-positive disables the check.
+  double max_grade_warning = 0.12;
 };
 
 /// Checker-rule validation against the target version's catalog.

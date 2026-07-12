@@ -8,6 +8,7 @@
 
 #include <cstddef>
 #include <memory>
+#include <optional>
 #include <span>
 #include <string>
 #include <vector>
@@ -209,6 +210,31 @@ set_road_mark(const RoadNetwork& network, LaneId lane, RoadMark mark);
 /// all-zero profile is written as no profile).
 [[nodiscard]] RM_API std::unique_ptr<Command>
 set_node_elevation(const RoadNetwork& network, RoadId road, std::size_t waypoint_index, double z);
+
+/// One editable node of a road's vertical profile (hardening sprint
+/// workstream C — the profile-view panel's handles).
+struct ElevationPoint {
+  double s = 0.0; ///< station [m], within [0, road length]
+  double z = 0.0; ///< elevation [m]
+
+  /// Node tangent dz/ds (the grade handle; 8 % = 0.08). nullopt = estimate
+  /// by finite differences like the M2 node-elevation fit.
+  std::optional<double> grade;
+};
+
+/// The road's current vertical profile as editable nodes: one per elevation
+/// record start plus the road end, with z and grade evaluated there. An
+/// empty (flat) profile yields the two end nodes at z = 0.
+[[nodiscard]] RM_API std::vector<ElevationPoint> elevation_profile_points(const Road& road);
+
+/// Replaces the road's elevation profile with a C1 piecewise-cubic Hermite
+/// through `points` (sorted copy; explicit grades honored, missing ones
+/// finite-difference estimated). An all-zero profile (every z and explicit
+/// grade zero) is written as NO profile — the OpenDRIVE default. Errors:
+/// stale road, empty points, stations outside [0, length], or duplicate
+/// stations. The profile editor pushes one of these per drag commit.
+[[nodiscard]] RM_API std::unique_ptr<Command>
+set_elevation_profile(const RoadNetwork& network, RoadId road, std::vector<ElevationPoint> points);
 
 // --- document ---------------------------------------------------------------
 

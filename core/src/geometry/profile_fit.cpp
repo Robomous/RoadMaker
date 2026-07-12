@@ -6,21 +6,32 @@
 
 namespace roadmaker {
 
-std::vector<Poly3> fit_elevation_profile(std::span<const double> s, std::span<const double> z) {
+namespace {
+
+/// Shared validation: sizes match, at least one sample, strictly ascending
+/// stations (a zero/negative run would blow the tangents up).
+bool well_formed(std::span<const double> s, std::span<const double> z) {
   const std::size_t n = s.size();
   if (n != z.size() || n == 0) {
-    return {};
+    return false;
   }
-  if (n == 1) {
-    return {Poly3{.s = s[0], .a = z[0]}};
-  }
-  // Reject non-ascending stations defensively: a zero/negative run would make
-  // the finite-difference tangents blow up. Callers pass reference-line
-  // stations, which are strictly ascending.
   for (std::size_t i = 0; i + 1 < n; ++i) {
     if (s[i + 1] - s[i] <= tol::kLength) {
-      return {};
+      return false;
     }
+  }
+  return true;
+}
+
+} // namespace
+
+std::vector<Poly3> fit_elevation_profile(std::span<const double> s, std::span<const double> z) {
+  if (!well_formed(s, z)) {
+    return {};
+  }
+  const std::size_t n = s.size();
+  if (n == 1) {
+    return {Poly3{.s = s[0], .a = z[0]}};
   }
 
   // Node tangents m[i] = dz/ds by finite differences: central in the interior,
@@ -30,6 +41,19 @@ std::vector<Poly3> fit_elevation_profile(std::span<const double> s, std::span<co
   m[n - 1] = (z[n - 1] - z[n - 2]) / (s[n - 1] - s[n - 2]);
   for (std::size_t i = 1; i + 1 < n; ++i) {
     m[i] = (z[i + 1] - z[i - 1]) / (s[i + 1] - s[i - 1]);
+  }
+  return fit_elevation_profile(s, z, m);
+}
+
+std::vector<Poly3> fit_elevation_profile(std::span<const double> s,
+                                         std::span<const double> z,
+                                         std::span<const double> m) {
+  if (!well_formed(s, z) || m.size() != s.size()) {
+    return {};
+  }
+  const std::size_t n = s.size();
+  if (n == 1) {
+    return {Poly3{.s = s[0], .a = z[0]}};
   }
 
   // One Hermite cubic per interval, in the element-local coordinate ds = s - s[i]

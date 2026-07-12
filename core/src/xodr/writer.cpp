@@ -830,6 +830,43 @@ std::vector<Diagnostic> validate_network(const RoadNetwork& network, const Write
   std::vector<Diagnostic> findings;
   network.for_each_road([&](RoadId road_id, const Road& road) {
     check_road_structure(network, road_id, road, findings);
+    // RoadMaker advisory (no ASAM rule id — rule_id stays empty): a grade
+    // above options.max_grade_warning is drivable in a file but rarely in a
+    // vehicle. A cubic's derivative is quadratic, so per record the extreme
+    // sits at an endpoint or the derivative's vertex (hardening WS-C).
+    if (options.max_grade_warning > 0.0 && !road.elevation.empty()) {
+      double worst = 0.0;
+      double worst_s = 0.0;
+      for (std::size_t i = 0; i < road.elevation.size(); ++i) {
+        const Poly3& record = road.elevation[i];
+        const double end_s = i + 1 < road.elevation.size() ? road.elevation[i + 1].s : road.length;
+        const auto consider = [&](double s) {
+          const double grade = std::abs(record.eval_derivative(s));
+          if (grade > worst) {
+            worst = grade;
+            worst_s = s;
+          }
+        };
+        consider(record.s);
+        consider(end_s);
+        if (std::abs(record.d) > 1e-15) {
+          const double vertex = record.s - record.c / (3.0 * record.d);
+          if (vertex > record.s && vertex < end_s) {
+            consider(vertex);
+          }
+        }
+      }
+      if (worst > options.max_grade_warning) {
+        findings.push_back(Diagnostic{
+            .severity = Severity::Warning,
+            .location = fmt::format("road id={}", road.odr_id),
+            .message = fmt::format("elevation grade {:.1f} % at s={:.1f} m exceeds {:.0f} %",
+                                   worst * 100.0,
+                                   worst_s,
+                                   options.max_grade_warning * 100.0),
+            .road = road_id});
+      }
+    }
     // "The width of the lane shall be defined for the full length of the
     // lane section" — a non-center lane needs a <width> at sOffset 0.
     for (const LaneSectionId section_id : road.sections) {
