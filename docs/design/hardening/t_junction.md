@@ -235,3 +235,53 @@ is edited.
 - Editor (tool-controller level): side-snap engages/disengages by radius,
   release = one undo entry, Esc mid-drag leaves the document untouched.
 - GW-1 step 2 is the by-hand acceptance for the whole path.
+
+## Round 2 — visual quality (fillets, materials, shading, seams)
+
+PR #104 made the tee's *measured* geometry pass every metric while the
+rendered result still read as a patch: a dark rectangular slab with no
+corner fillets, a 1×2 m mouth step showing background through the
+pavement, a 1 cm apron sawtooth on the junction silhouette, and grade-blind
+normals creasing against the floor. Lesson (now in
+[product parity](../../standards/product-parity.md)): **metric acceptance
+is a floor; visual work is accepted with pixels.**
+
+What changed (kernel `junction_surface.cpp` unless noted):
+
+- **Corner fillets**: every re-entrant corner between adjacent arms gets a
+  pavement-edge arc tangent to both arms' outer edge lines. Radius derives
+  from the corner turn's connecting road (min plan-view radius), floored at
+  3 m, capped at 15 m, clamped to the tangent legs the cut faces leave.
+  `t_attach_gap` and the branch trim reserve that clearance for new tees.
+- **Corridor strips + hole fill**: the boundary is pinned to the exact
+  pavement edge lines between face corners and fillet tangencies (and
+  across parallel through-corridors — highway shoulder bands); enclosed
+  channels between footprints are paved (junction pavement is simply
+  connected).
+- **Exact boundary**: the weld inflation is deflated back after the union
+  (morphological closing) — no more 1 cm apron; sub-0.2 m boundary chords
+  from grazing arc crossings merge before the CDT (sliver source).
+- **One asphalt**: floors carry `LaneType::Driving` through the editor and
+  both exporters; the `junction_floor` debug material is retired.
+- **Graded shading**: `surface_normal` carries dz/ds (mesh_detail), so
+  graded roads shade with their slope; the editor renders with 4× MSAA
+  (main.cpp).
+
+| | editor before | editor after |
+|---|---|---|
+| 3/4 view | ![before](img/tee_visual_before_editor.png) | ![after](img/tee_visual_after_editor.png) |
+| top | ![before](img/tee_visual_before_editor_top.png) | ![after](img/tee_visual_after_editor_top.png) |
+
+glb (reference-render) boundary detail, before/after:
+![before](img/tee_visual_before_glb_zoom.png)
+![after](img/tee_visual_after_glb_zoom.png)
+
+Multilane (highway target) mouth after the corridor-strip + branch-trim
+fixes: ![multilane](img/tee_visual_after_multilane.png)
+
+New permanent gates: fillet-boundary G1 + radius floor, floor-material and
+no-marks-through-interior assertions, normal smoothness/weld checks
+(core `test_t_junction_quality.cpp`), and the editor/kernel mesh-parity
+suite (`editor/tests/test_mesh_parity.cpp`). The editor gained a headless
+`--screenshot` mode and CI uploads canonical-scene renders as artifacts —
+appearance is reviewed by the maintainer on every such PR.
