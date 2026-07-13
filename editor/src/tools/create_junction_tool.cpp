@@ -161,9 +161,7 @@ void CreateJunctionTool::generate() {
 
 PreviewGeometry CreateJunctionTool::preview() const {
   PreviewGeometry geometry;
-  const auto add_point = [&](double x, double y) {
-    geometry.point_positions.insert(geometry.point_positions.end(), {x, y, 0.0});
-  };
+  const auto add_point = [&](double x, double y) { geometry.add_handle(x, y); };
   for (const RoadEnd& end : ends_) {
     const Road* road = document_.network().road(end.road);
     if (road == nullptr) {
@@ -208,8 +206,8 @@ void CreateJunctionTool::add_tee_preview(PreviewGeometry& geometry,
   };
 
   // Anchor marker on the reference line.
-  geometry.point_positions.insert(geometry.point_positions.end(),
-                                  {side.position.x, side.position.y, 0.0});
+  geometry.add_handle(
+      side.position.x, side.position.y, 0.0, HandleKind::Node, HandleState::Hovered);
 
   // Dashed ghost from the attaching end to the anchor (1 m dash / 1 m gap).
   const Road* branch = network.road(ends_.front().road);

@@ -45,6 +45,11 @@ public:
   /// ids are ignored.
   void set_capture_highlights(const QString& select_odr, const QString& hover_odr);
 
+  /// Screenshot mode: activates a tool by id ("select", "edit-nodes",
+  /// "create-road", "lane-profile", "elevation", "create-junction", "split",
+  /// "delete") so its handle overlay renders in a capture. Unknown ids no-op.
+  void activate_tool_for_capture(const QString& tool_id);
+
 protected:
   void changeEvent(QEvent* event) override;
   void closeEvent(QCloseEvent* event) override;

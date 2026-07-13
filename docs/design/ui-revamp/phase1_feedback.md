@@ -74,10 +74,39 @@ reproducible (and CI-trackable):
 (strong accent), road 3 hovered (subtle accent brighten), other roads
 unhighlighted.*
 
+## Handles/gizmos restyle (this PR)
+
+**Delivered:** the tool preview's handle knobs are now **screen-space QPainter
+sprites** with per-handle `kind` (Node / Midpoint) and `state` (Idle / Hovered
+/ Grabbed), replacing the old world-meter GL line crosses that shrank and grew
+with zoom. `PreviewGeometry` carries a typed `std::vector<Handle>`; every tool
+was migrated to it, and the viewport projects each handle to screen with a
+pure, unit-tested `project_to_screen` (`editor/src/viewport/projection.hpp`)
+and paints it in `ViewportWidget::draw_handles`. Sizes are constant in logical
+px (so DPI-crisp): idle 4px < hovered 5px < grabbed 6px.
+
+- **Node knobs:** a light dot (`text_primary`) with a dark outline (`bg0`) when
+  idle — legible on both the dark ground and a selected (accent) road; the fill
+  switches to the **accent** on hover, and to accent with a bright ring when
+  grabbed. Edit Nodes tracks the hovered node (a live mouse-move hit-test) and
+  the grabbed node (the drag), so all three states are real.
+- **Midpoint markers:** a hollow accent ring with a plus — the "insert a node
+  here" affordance — distinct from the solid node knobs.
+- **Tangent whiskers** stay accent GL lines (they scale with the road); only
+  the knobs became screen-constant sprites.
+- **Profile panel** node/grade handles were restyled to the same circle
+  language (accent = selected), using the theme tokens the `QPalette` carries.
+
+### Evidence
+
+![Edit Nodes handles: white idle node knobs + an amber midpoint insert marker](phase1_handles.png)
+
+*Edit Nodes on a selected road (`--select 1 --tool edit-nodes` on
+`assets/samples/t_attach.xodr`): light idle node knobs at the ends, an amber
+midpoint ⊕ marker mid-segment.*
+
 ## Still to come in Phase 1
 
-- **Handles/gizmos restyle** — DPI-crisp, theme-colored node/tangent sprites
-  with idle/hover/grabbed states (next PR).
 - **Tool-hint card + transient toast overlay** — themed top-left hint card and
   a queued toast system (next PR).
 - Phase 1 closes with a hover→select→drag GIF and the maintainer look-approval

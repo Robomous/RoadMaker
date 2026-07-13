@@ -35,14 +35,47 @@ struct ToolEvent {
   Qt::KeyboardModifiers modifiers = Qt::NoModifier;
 };
 
-// Overlay geometry in the kernel frame; the viewport uploads it through the
-// Renderer's line-primitive path. xyz triples; line positions are consumed
-// pairwise as segments.
+// A draggable/interactive handle knob, positioned in the kernel frame. The
+// viewport projects it to screen and paints a DPI-crisp themed sprite whose
+// look follows `kind` (node vs. midpoint "insert here" marker) and `state`
+// (idle / hovered / grabbed) — so handle size is screen-constant, unlike the
+// old world-meter markers that shrank and grew with zoom.
+enum class HandleKind {
+  Node,     ///< an editable road node (draggable)
+  Midpoint, ///< a segment midpoint: click to insert a node
+};
+
+enum class HandleState {
+  Idle,    ///< resting
+  Hovered, ///< under the cursor, or the currently active/selected node
+  Grabbed, ///< being dragged
+};
+
+struct Handle {
+  double x = 0.0;
+  double y = 0.0;
+  double z = 0.0;
+  HandleKind kind = HandleKind::Node;
+  HandleState state = HandleState::Idle;
+};
+
+// Overlay geometry in the kernel frame. `line_positions` (xyz triples consumed
+// pairwise as segments) are the tangent whiskers / drag whiskers / band lines,
+// drawn as accent GL lines; `handles` are the node/midpoint knobs, drawn as
+// screen-space QPainter sprites.
 struct PreviewGeometry {
   std::vector<double> line_positions;
-  std::vector<double> point_positions;
+  std::vector<Handle> handles;
 
-  [[nodiscard]] bool empty() const { return line_positions.empty() && point_positions.empty(); }
+  void add_handle(double x,
+                  double y,
+                  double z = 0.0,
+                  HandleKind kind = HandleKind::Node,
+                  HandleState state = HandleState::Idle) {
+    handles.push_back(Handle{.x = x, .y = y, .z = z, .kind = kind, .state = state});
+  }
+
+  [[nodiscard]] bool empty() const { return line_positions.empty() && handles.empty(); }
 };
 
 class Tool : public QObject {

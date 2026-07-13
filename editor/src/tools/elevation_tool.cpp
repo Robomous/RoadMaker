@@ -12,23 +12,6 @@
 
 namespace roadmaker::editor {
 
-namespace {
-
-constexpr double kActiveRadius = 1.2; ///< active-node square half-side [m]
-
-void append_segment(PreviewGeometry& geometry, double x0, double y0, double x1, double y1) {
-  geometry.line_positions.insert(geometry.line_positions.end(), {x0, y0, 0.0, x1, y1, 0.0});
-}
-
-void append_square(PreviewGeometry& geometry, double x, double y, double radius) {
-  append_segment(geometry, x - radius, y - radius, x + radius, y - radius);
-  append_segment(geometry, x + radius, y - radius, x + radius, y + radius);
-  append_segment(geometry, x + radius, y + radius, x - radius, y + radius);
-  append_segment(geometry, x - radius, y + radius, x - radius, y - radius);
-}
-
-} // namespace
-
 ElevationTool::ElevationTool(Document& document, SelectionModel& selection, QObject* parent)
     : Tool(parent), document_(document), selection_(selection) {}
 
@@ -123,16 +106,15 @@ PreviewGeometry ElevationTool::preview() const {
     if (road == nullptr) {
       continue;
     }
-    for (const Waypoint& node : edit::effective_waypoints(*road)) {
-      geometry.point_positions.insert(geometry.point_positions.end(), {node.x, node.y, 0.0});
-    }
-  }
-  if (active_.has_value()) {
-    if (const Road* road = document_.network().road(active_->first)) {
-      const std::vector<Waypoint> nodes = edit::effective_waypoints(*road);
-      if (active_->second < nodes.size()) {
-        append_square(geometry, nodes[active_->second].x, nodes[active_->second].y, kActiveRadius);
-      }
+    const std::vector<Waypoint> nodes = edit::effective_waypoints(*road);
+    for (std::size_t i = 0; i < nodes.size(); ++i) {
+      const bool is_active =
+          active_.has_value() && active_->first == road_id && active_->second == i;
+      geometry.add_handle(nodes[i].x,
+                          nodes[i].y,
+                          0.0,
+                          HandleKind::Node,
+                          is_active ? HandleState::Hovered : HandleState::Idle);
     }
   }
   return geometry;

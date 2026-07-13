@@ -13,6 +13,7 @@
 #include <gtest/gtest.h>
 
 #include <QSignalSpy>
+#include <algorithm>
 #include <cstddef>
 #include <filesystem>
 #include <optional>
@@ -136,10 +137,16 @@ TEST(EditNodesTool, PreviewShowsNodesTangentsAndMarkers) {
 
   scene.selection.select({.road = scene.edited, .lane = LaneId{}});
   const auto preview = tool.preview();
-  EXPECT_EQ(preview.point_positions.size(), 9U); // 3 node handles
-  // 3 tangent whiskers (1 segment each) + 2 midpoint diamonds (4 segments
-  // each) = 11 segments · 6 doubles.
-  EXPECT_EQ(preview.line_positions.size(), 66U);
+  // 3 node handles + 2 segment-midpoint handles.
+  EXPECT_EQ(preview.handles.size(), 5U);
+  EXPECT_EQ(std::count_if(preview.handles.begin(),
+                          preview.handles.end(),
+                          [](const roadmaker::editor::Handle& handle) {
+                            return handle.kind == roadmaker::editor::HandleKind::Node;
+                          }),
+            3);
+  // 3 tangent whiskers (1 segment each) · 6 doubles (midpoints are now knobs).
+  EXPECT_EQ(preview.line_positions.size(), 18U);
 }
 
 // --- double-click bend insert --------------------------------------------------
@@ -231,8 +238,9 @@ TEST(EditNodesTool, DeleteKeyRemovesTheActiveNode) {
   EXPECT_EQ(scene.document.undo_stack()->count(), scene.base_count);
   ASSERT_TRUE(tool.active_node().has_value());
   EXPECT_EQ(tool.active_node()->second, 1U);
-  // The active-node highlight square joins the overlay (4 more segments).
-  EXPECT_EQ(tool.preview().line_positions.size(), 90U);
+  // The active-node emphasis is carried by its handle's state now, so the
+  // line overlay is just the 3 tangent whiskers (1 segment each · 6 doubles).
+  EXPECT_EQ(tool.preview().line_positions.size(), 18U);
 
   ASSERT_TRUE(tool.key_press(Qt::Key_Delete, Qt::NoModifier));
   EXPECT_EQ(scene.document.undo_stack()->count(), scene.base_count + 1);
@@ -364,8 +372,14 @@ TEST(EditNodesTool, ForeignRoadShowsDerivedNodesAndFirstEditRecordsThem) {
   selection.select({.road = road, .lane = LaneId{}});
   QSignalSpy status_spy(&tool, &roadmaker::editor::Tool::status_message);
 
-  // Derived handles: 4 record starts + the endpoint.
-  EXPECT_EQ(tool.preview().point_positions.size(), 15U);
+  // Derived handles: 4 record starts + the endpoint = 5 node knobs.
+  const auto derived = tool.preview();
+  EXPECT_EQ(std::count_if(derived.handles.begin(),
+                          derived.handles.end(),
+                          [](const roadmaker::editor::Handle& handle) {
+                            return handle.kind == roadmaker::editor::HandleKind::Node;
+                          }),
+            5);
 
   // Grab a derived node and nudge it: the derivation notice fires, the
   // commit records waypoints, and undo restores the loaded bytes (the

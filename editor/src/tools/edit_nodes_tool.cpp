@@ -17,31 +17,13 @@ namespace roadmaker::editor {
 
 namespace {
 
-// Overlay sizes in world meters — the tool has no screen scale (01 §4);
-// these read well at typical editing zoom, like the 2 m pick radius.
-constexpr double kMarkerRadius = 0.8;   ///< midpoint diamond half-diagonal
-constexpr double kActiveRadius = 1.2;   ///< active-node square half-side
+// Tangent whiskers are still world-meter line overlays (they scale with the
+// road, unlike the node knobs, which the viewport now draws screen-constant).
 constexpr double kTangentHalfMax = 6.0; ///< tangent whisker half-length cap
 constexpr double kTangentSegmentShare = 0.25;
 
 void append_segment(PreviewGeometry& geometry, double x0, double y0, double x1, double y1) {
   geometry.line_positions.insert(geometry.line_positions.end(), {x0, y0, 0.0, x1, y1, 0.0});
-}
-
-/// 4-segment diamond (midpoint marker) around (x, y).
-void append_diamond(PreviewGeometry& geometry, double x, double y, double radius) {
-  append_segment(geometry, x - radius, y, x, y + radius);
-  append_segment(geometry, x, y + radius, x + radius, y);
-  append_segment(geometry, x + radius, y, x, y - radius);
-  append_segment(geometry, x, y - radius, x - radius, y);
-}
-
-/// 4-segment axis-aligned square (active-node highlight) around (x, y).
-void append_square(PreviewGeometry& geometry, double x, double y, double radius) {
-  append_segment(geometry, x - radius, y - radius, x + radius, y - radius);
-  append_segment(geometry, x + radius, y - radius, x + radius, y + radius);
-  append_segment(geometry, x + radius, y + radius, x - radius, y + radius);
-  append_segment(geometry, x - radius, y + radius, x - radius, y - radius);
 }
 
 bool has_param_poly3(const Road& road) {
@@ -180,11 +162,36 @@ bool EditNodesTool::mouse_press(const ToolEvent& event) {
 
 bool EditNodesTool::mouse_move(const ToolEvent& event) {
   if (!drag_.has_value()) {
+    // Not dragging: track the node under the cursor for the hover handle
+    // state, but don't consume the event (the viewport keeps its road hover).
+    update_hover({.x = event.world_x, .y = event.world_y});
     return false;
   }
   update_node_drag(document_, *drag_, snap_options_, {.x = event.world_x, .y = event.world_y});
   emit preview_changed();
   return true;
+}
+
+void EditNodesTool::update_hover(const Waypoint& cursor) {
+  std::optional<std::pair<RoadId, std::size_t>> found;
+  if (const auto hit = pick_node(cursor)) {
+    found = {hit->road, hit->index};
+  }
+  if (found != hovered_) {
+    hovered_ = found;
+    emit preview_changed();
+  }
+}
+
+HandleState EditNodesTool::node_state(RoadId road, std::size_t index) const {
+  const std::pair<RoadId, std::size_t> node{road, index};
+  if (drag_.has_value() && std::pair{drag_->road, drag_->index} == node) {
+    return HandleState::Grabbed;
+  }
+  if (active_ == node || hovered_ == node) {
+    return HandleState::Hovered;
+  }
+  return HandleState::Idle;
 }
 
 bool EditNodesTool::mouse_release(const ToolEvent& event) {
@@ -297,8 +304,8 @@ PreviewGeometry EditNodesTool::preview() const {
       continue;
     }
     const std::vector<Waypoint> nodes = edit::effective_waypoints(*road);
-    for (const Waypoint& node : nodes) {
-      geometry.point_positions.insert(geometry.point_positions.end(), {node.x, node.y, 0.0});
+    for (std::size_t i = 0; i < nodes.size(); ++i) {
+      geometry.add_handle(nodes[i].x, nodes[i].y, 0.0, HandleKind::Node, node_state(road_id, i));
     }
 
     const auto stations = edit::waypoint_stations(*road);
@@ -321,19 +328,11 @@ PreviewGeometry EditNodesTool::preview() const {
       append_segment(geometry, at.x - dx, at.y - dy, at.x + dx, at.y + dy);
     }
 
-    // Midpoint insert markers, one diamond per segment.
+    // Midpoint insert markers, one per segment (the active-node emphasis is
+    // now carried by the node handle's Hovered/Grabbed state above).
     for (std::size_t i = 0; i + 1 < stations->size(); ++i) {
       const PathPoint mid = road->plan_view.evaluate((stations->at(i) + stations->at(i + 1)) / 2.0);
-      append_diamond(geometry, mid.x, mid.y, kMarkerRadius);
-    }
-  }
-
-  if (active_.has_value()) {
-    if (const Road* road = document_.network().road(active_->first)) {
-      const std::vector<Waypoint> nodes = edit::effective_waypoints(*road);
-      if (active_->second < nodes.size()) {
-        append_square(geometry, nodes[active_->second].x, nodes[active_->second].y, kActiveRadius);
-      }
+      geometry.add_handle(mid.x, mid.y, 0.0, HandleKind::Midpoint, HandleState::Idle);
     }
   }
 

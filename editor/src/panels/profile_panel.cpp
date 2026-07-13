@@ -348,24 +348,33 @@ void ProfilePanel::paintEvent(QPaintEvent* /*event*/) {
   painter.setPen(QPen(palette.color(QPalette::Highlight), 2));
   painter.drawPath(path);
 
-  // Nodes + grade handles.
+  // Nodes + grade handles — the same knob language as the viewport
+  // (draw_handles): themed circles, the accent (QPalette::Highlight) marking
+  // the selected/grabbed node. QPalette carries the theme tokens
+  // (Highlight = accent, Base/Text/Mid), keeping this panel Qt-native.
   for (std::size_t i = 0; i < nodes_.size(); ++i) {
     const QPointF node(s_to_x(nodes_[i].s), z_to_y(nodes_[i].z));
     const double grade = nodes_[i].grade.value_or(0.0);
     const double angle = std::atan2(-grade, 1.0);
     const QPointF arm = kGradeHandlePx * QPointF(std::cos(angle), std::sin(angle));
+    const bool selected = selected_node_.has_value() && *selected_node_ == i;
+
+    // Grade arm + its draggable end knob.
     painter.setPen(QPen(palette.color(QPalette::Text), 1));
     painter.drawLine(node - arm, node + arm);
-    painter.setBrush(palette.color(QPalette::Base));
+    painter.setBrush(selected ? palette.color(QPalette::Highlight) : palette.color(QPalette::Base));
+    painter.setPen(QPen(palette.color(QPalette::Text), 1.5));
     painter.drawEllipse(node + arm, 3.5, 3.5);
 
-    const bool selected = selected_node_.has_value() && *selected_node_ == i;
-    painter.setBrush(selected ? palette.color(QPalette::Highlight) : palette.color(QPalette::Text));
-    painter.setPen(Qt::NoPen);
-    painter.drawRect(QRectF(node.x() - 4, node.y() - 4, 8, 8));
+    // Node knob: accent fill when selected (grabbed), else a subtle base fill.
+    painter.setBrush(selected ? palette.color(QPalette::Highlight) : palette.color(QPalette::Base));
+    painter.setPen(
+        QPen(selected ? palette.color(QPalette::HighlightedText) : palette.color(QPalette::Mid),
+             selected ? 2.0 : 1.5));
+    painter.drawEllipse(node, selected ? 6.0 : 4.0, selected ? 6.0 : 4.0);
 
     painter.setPen(palette.color(QPalette::Mid));
-    painter.drawText(node + QPointF(6, -8), tr("%1 %").arg(grade * 100.0, 0, 'f', 1));
+    painter.drawText(node + QPointF(8, -8), tr("%1 %").arg(grade * 100.0, 0, 'f', 1));
   }
 }
 

@@ -38,6 +38,7 @@ struct ScreenshotArgs {
   QString camera = QStringLiteral("orbit");
   QString select; // OpenDRIVE id to select (captures the selection highlight)
   QString hover;  // OpenDRIVE id to hover (captures the hover highlight)
+  QString tool;   // tool id to activate (captures its handle overlay)
   int width = 1600;
   int height = 1000;
 };
@@ -64,6 +65,9 @@ ScreenshotArgs parse_screenshot_args(int argc, char** argv) {
       ++i;
     } else if (std::strcmp(argv[i], "--hover") == 0 && i + 1 < argc) {
       args.hover = QString::fromUtf8(argv[i + 1]);
+      ++i;
+    } else if (std::strcmp(argv[i], "--tool") == 0 && i + 1 < argc) {
+      args.tool = QString::fromUtf8(argv[i + 1]);
       ++i;
     } else if (std::strcmp(argv[i], "--size") == 0 && i + 1 < argc) {
       // std::from_chars, not sscanf: MSVC deprecates the CRT scanners
@@ -140,6 +144,9 @@ int run_screenshot(const ScreenshotArgs& args) {
   // the event loop).
   if (!no_scene) {
     window.set_capture_highlights(args.select, args.hover);
+    if (!args.tool.isEmpty()) {
+      window.activate_tool_for_capture(args.tool);
+    }
   }
 
   QImage frame;

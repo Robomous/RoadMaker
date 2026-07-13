@@ -6,6 +6,7 @@
 #include <QMouseEvent>
 #include <QOpenGLContext>
 #include <QPainter>
+#include <QPen>
 #include <QWheelEvent>
 #include <algorithm>
 #include <array>
@@ -17,6 +18,7 @@
 #include "render/gl_renderer.hpp"
 #include "render/scene_builder.hpp"
 #include "theme/theme.hpp"
+#include "viewport/projection.hpp"
 
 namespace roadmaker::editor {
 
@@ -193,24 +195,92 @@ void ViewportWidget::paintGL() {
       fb_height > 0 ? static_cast<float>(fb_width) / static_cast<float>(fb_height) : 1.0F;
   renderer_->render(draw_items, camera_.matrices(aspect), fb_width, fb_height);
 
-  // Active-tool hint in the viewport corner (QPainter-over-GL is supported
-  // on QOpenGLWidget; beginNativePainting is not needed as we paint last).
-  if (!hint_text_.isEmpty()) {
+  // QPainter overlays (handle sprites + the tool hint), painted over the GL
+  // frame — supported on QOpenGLWidget when done last (no beginNativePainting).
+  if (!handle_overlays_.empty() || !hint_text_.isEmpty()) {
     QPainter painter(this);
+    painter.setRenderHint(QPainter::Antialiasing);
     painter.setRenderHint(QPainter::TextAntialiasing);
-    const QFontMetrics metrics(painter.font());
-    const int pad = 6;
-    const QRect text_rect =
-        metrics.boundingRect(QRect(0, 0, width() - (4 * pad), 0), Qt::TextWordWrap, hint_text_);
-    const QRect box(pad,
-                    height() - text_rect.height() - (3 * pad),
-                    text_rect.width() + (2 * pad),
-                    text_rect.height() + (2 * pad));
-    painter.setPen(Qt::NoPen);
-    painter.setBrush(QColor(0, 0, 0, 150));
-    painter.drawRoundedRect(box, 4, 4);
-    painter.setPen(QColor(235, 235, 235));
-    painter.drawText(box.adjusted(pad, pad, -pad, -pad), Qt::TextWordWrap, hint_text_);
+    draw_handles(painter);
+
+    if (!hint_text_.isEmpty()) {
+      const QFontMetrics metrics(painter.font());
+      const int pad = 6;
+      const QRect text_rect =
+          metrics.boundingRect(QRect(0, 0, width() - (4 * pad), 0), Qt::TextWordWrap, hint_text_);
+      const QRect box(pad,
+                      height() - text_rect.height() - (3 * pad),
+                      text_rect.width() + (2 * pad),
+                      text_rect.height() + (2 * pad));
+      painter.setPen(Qt::NoPen);
+      painter.setBrush(QColor(0, 0, 0, 150));
+      painter.drawRoundedRect(box, 4, 4);
+      painter.setPen(QColor(235, 235, 235));
+      painter.drawText(box.adjusted(pad, pad, -pad, -pad), Qt::TextWordWrap, hint_text_);
+    }
+  }
+}
+
+void ViewportWidget::draw_handles(QPainter& painter) const {
+  if (handle_overlays_.empty()) {
+    return;
+  }
+  const float aspect =
+      height() > 0 ? static_cast<float>(width()) / static_cast<float>(height()) : 1.0F;
+  const CameraMatrices camera = camera_.matrices(aspect);
+  const Theme& theme = theme::current();
+
+  for (const Handle& handle : handle_overlays_) {
+    const auto screen = project_to_screen(camera,
+                                          handle.x,
+                                          handle.y,
+                                          handle.z,
+                                          static_cast<double>(width()),
+                                          static_cast<double>(height()));
+    if (!screen.has_value()) {
+      continue; // behind the camera
+    }
+    const QPointF center{(*screen)[0], (*screen)[1]};
+
+    // Screen-constant sizes (logical px → DPI-crisp): idle < hovered < grabbed.
+    // A light idle dot with a dark outline reads on both the dark ground and a
+    // selected (accent) road; hover/grabbed switch the fill to the accent.
+    double radius = 4.0;
+    QColor fill = theme.text_primary;
+    QColor stroke = theme.bg0;
+    double stroke_width = 1.5;
+    switch (handle.state) {
+    case HandleState::Hovered:
+      radius = 5.0;
+      fill = theme.accent;
+      stroke = theme.bg0;
+      break;
+    case HandleState::Grabbed:
+      radius = 6.0;
+      fill = theme.accent;
+      stroke = theme.text_primary;
+      stroke_width = 2.0;
+      break;
+    case HandleState::Idle:
+      break;
+    }
+
+    if (handle.kind == HandleKind::Midpoint) {
+      // Hollow "insert here" marker: an accent ring with a plus, no fill.
+      const double r = 4.0;
+      painter.setBrush(Qt::NoBrush);
+      painter.setPen(QPen(theme.accent, 1.5));
+      painter.drawEllipse(center, r, r);
+      painter.drawLine(QPointF(center.x() - (r * 0.55), center.y()),
+                       QPointF(center.x() + (r * 0.55), center.y()));
+      painter.drawLine(QPointF(center.x(), center.y() - (r * 0.55)),
+                       QPointF(center.x(), center.y() + (r * 0.55)));
+      continue;
+    }
+
+    painter.setBrush(fill);
+    painter.setPen(QPen(stroke, stroke_width));
+    painter.drawEllipse(center, radius, radius);
   }
 }
 
@@ -466,6 +536,7 @@ void ViewportWidget::upload_tool_preview() {
     renderer_->remove(handle);
   }
   preview_handles_.clear();
+  handle_overlays_.clear();
 
   const Tool* tool = tools_.active();
   if (tool == nullptr) {
@@ -476,20 +547,17 @@ void ViewportWidget::upload_tool_preview() {
     return;
   }
 
-  // Accent-colored overlay (theme token, ui-design.md), lifted slightly off
-  // the ground plane so handles and band lines never z-fight the road
-  // surface.
-  const QColor accent = theme::current().accent;
-  const std::array<float, 4> kOverlayColor{static_cast<float>(accent.redF()),
-                                           static_cast<float>(accent.greenF()),
-                                           static_cast<float>(accent.blueF()),
-                                           1.0F};
-  constexpr float kOverlayLift = 0.05F;
-
+  // Line overlays (tangent/drag whiskers, band lines) go to GL in the accent
+  // token, lifted slightly off the ground so they never z-fight the surface.
   if (!geometry.line_positions.empty()) {
+    const QColor accent = theme::current().accent;
+    constexpr float kOverlayLift = 0.05F;
     RenderMeshData lines;
     lines.kind = PrimitiveKind::Lines;
-    lines.color = kOverlayColor;
+    lines.color = {static_cast<float>(accent.redF()),
+                   static_cast<float>(accent.greenF()),
+                   static_cast<float>(accent.blueF()),
+                   1.0F};
     lines.positions.reserve(geometry.line_positions.size());
     for (std::size_t i = 0; i < geometry.line_positions.size(); ++i) {
       const float lift = i % 3 == 2 ? kOverlayLift : 0.0F;
@@ -500,42 +568,9 @@ void ViewportWidget::upload_tool_preview() {
     preview_handles_.push_back(renderer_->upload(lines));
   }
 
-  if (!geometry.point_positions.empty()) {
-    // The renderer has no point primitive: draw each point as a 3-axis cross
-    // sized relative to the view distance (~a steady few pixels on screen).
-    const float size = std::max(camera_.distance() * 0.012F, 0.05F);
-    RenderMeshData points;
-    points.kind = PrimitiveKind::Lines;
-    points.color = kOverlayColor;
-    points.positions.reserve(geometry.point_positions.size() * 6);
-    for (std::size_t i = 0; i + 2 < geometry.point_positions.size(); i += 3) {
-      const auto x = static_cast<float>(geometry.point_positions[i]);
-      const auto y = static_cast<float>(geometry.point_positions[i + 1]);
-      const auto z = static_cast<float>(geometry.point_positions[i + 2]) + kOverlayLift;
-      points.positions.insert(points.positions.end(),
-                              {x - size,
-                               y,
-                               z,
-                               x + size,
-                               y,
-                               z, // x arm
-                               x,
-                               y - size,
-                               z,
-                               x,
-                               y + size,
-                               z, // y arm
-                               x,
-                               y,
-                               z - size,
-                               x,
-                               y,
-                               z + size}); // z arm
-    }
-    points.indices.resize(points.positions.size() / 3);
-    std::iota(points.indices.begin(), points.indices.end(), 0U);
-    preview_handles_.push_back(renderer_->upload(points));
-  }
+  // Handle knobs are drawn as screen-space QPainter sprites in draw_handles()
+  // (screen-constant size, DPI-crisp) rather than world-meter GL crosses.
+  handle_overlays_ = geometry.handles;
 }
 
 void ViewportWidget::wheelEvent(QWheelEvent* event) {

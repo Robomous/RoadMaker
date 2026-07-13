@@ -323,7 +323,7 @@ TEST(SelectTool, SnapEngagesOnAnotherRoadsEndpoint) {
   EXPECT_NEAR(snapped.x, 120.0, roadmaker::tol::kRoundTripPosition);
   EXPECT_NEAR(snapped.y, 0.0, roadmaker::tol::kRoundTripPosition);
   // 3 handles of the selected road + the snap hint marker.
-  EXPECT_EQ(tool.preview().point_positions.size(), 12U);
+  EXPECT_EQ(tool.preview().handles.size(), 4U);
 
   ASSERT_TRUE(tool.mouse_release(at(119.0, 0.5)));
   EXPECT_EQ(scene.document.undo_stack()->count(), scene.base_count + 1);
@@ -355,12 +355,12 @@ TEST(SelectTool, PreviewShowsHandlesForSelectedRoads) {
   EXPECT_TRUE(tool.preview().empty());
 
   scene.selection.select({.road = scene.dragged, .lane = LaneId{}});
-  EXPECT_EQ(tool.preview().point_positions.size(), 9U); // 3 waypoints
+  EXPECT_EQ(tool.preview().handles.size(), 3U); // 3 waypoints
 
   // A lane entry of the other road adds ITS road's handles once.
   scene.selection.select({.road = scene.other, .lane = scene.hit(scene.other).lane},
                          roadmaker::editor::SelectMode::Add);
-  EXPECT_EQ(tool.preview().point_positions.size(), 15U); // 3 + 2 waypoints
+  EXPECT_EQ(tool.preview().handles.size(), 5U); // 3 + 2 waypoints
 }
 
 // --- Delete key (issue #11, 02 §7) --------------------------------------------
