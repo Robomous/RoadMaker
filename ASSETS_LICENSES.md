@@ -41,3 +41,17 @@ models, fonts, images). Policy — see `docs/design/m2/05_assets.md`:
 | `editor/resources/icons/lucide/triangle-alert.svg` | [lucide 1.24.0](https://github.com/lucide-icons/lucide/tree/1.24.0) | Lucide Contributors | ISC | 2026-07-10 |
 | `editor/resources/icons/lucide/undo-2.svg` | [lucide 1.24.0](https://github.com/lucide-icons/lucide/tree/1.24.0) | Lucide Contributors | ISC | 2026-07-10 |
 | `editor/resources/icons/lucide/waypoints.svg` | [lucide 1.24.0](https://github.com/lucide-icons/lucide/tree/1.24.0) | Lucide Contributors | ISC | 2026-07-10 |
+| `assets/logo/robomous-original.png` | original work (this repository) | RoadMaker contributors | MIT | 2026-07-13 |
+| `editor/resources/branding/README.md` | original work (this repository) | RoadMaker contributors | MIT | 2026-07-13 |
+| `editor/resources/branding/roadmaker.icns` | original work (this repository) | RoadMaker contributors | MIT | 2026-07-13 |
+| `editor/resources/branding/roadmaker.ico` | original work (this repository) | RoadMaker contributors | MIT | 2026-07-13 |
+| `editor/resources/branding/roadmaker.rc` | original work (this repository) | RoadMaker contributors | MIT | 2026-07-13 |
+| `editor/resources/branding/roadmaker.desktop` | original work (this repository) | RoadMaker contributors | MIT | 2026-07-13 |
+| `editor/resources/branding/icon_16.png` | original work (this repository) | RoadMaker contributors | MIT | 2026-07-13 |
+| `editor/resources/branding/icon_24.png` | original work (this repository) | RoadMaker contributors | MIT | 2026-07-13 |
+| `editor/resources/branding/icon_32.png` | original work (this repository) | RoadMaker contributors | MIT | 2026-07-13 |
+| `editor/resources/branding/icon_48.png` | original work (this repository) | RoadMaker contributors | MIT | 2026-07-13 |
+| `editor/resources/branding/icon_64.png` | original work (this repository) | RoadMaker contributors | MIT | 2026-07-13 |
+| `editor/resources/branding/icon_128.png` | original work (this repository) | RoadMaker contributors | MIT | 2026-07-13 |
+| `editor/resources/branding/icon_256.png` | original work (this repository) | RoadMaker contributors | MIT | 2026-07-13 |
+| `editor/resources/branding/icon_512.png` | original work (this repository) | RoadMaker contributors | MIT | 2026-07-13 |

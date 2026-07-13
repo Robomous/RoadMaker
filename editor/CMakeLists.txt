@@ -132,6 +132,22 @@ set_target_properties(roadmaker-editor PROPERTIES
   MACOSX_BUNDLE_SHORT_VERSION_STRING ${PROJECT_VERSION_MAJOR}.${PROJECT_VERSION_MINOR}
 )
 
+# Application icon (coral robot). macOS: bundle the .icns into Contents/
+# Resources and name it in the Info.plist. Windows: compile the .rc so the
+# .ico becomes the executable's Explorer/taskbar icon. Linux gets its icon at
+# runtime via QApplication::setWindowIcon plus the .desktop/hicolor install
+# rules below.
+if(APPLE)
+  set(_rm_macos_icon ${CMAKE_CURRENT_SOURCE_DIR}/resources/branding/roadmaker.icns)
+  target_sources(roadmaker-editor PRIVATE ${_rm_macos_icon})
+  set_source_files_properties(${_rm_macos_icon} PROPERTIES
+    MACOSX_PACKAGE_LOCATION Resources)
+  set_target_properties(roadmaker-editor PROPERTIES
+    MACOSX_BUNDLE_ICON_FILE roadmaker.icns)
+elseif(WIN32)
+  target_sources(roadmaker-editor PRIVATE resources/branding/roadmaker.rc)
+endif()
+
 rm_apply_warnings(roadmaker-editor)
 
 # Install + Qt runtime deployment must live HERE (not in cmake/Packaging.cmake):
@@ -151,6 +167,18 @@ if(RM_INSTALL)
     BUNDLE DESTINATION .
     RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
   )
+
+  # Linux desktop integration: the .desktop entry (app menu / launcher) plus
+  # the hicolor icon theme the entry's `Icon=roadmaker` resolves against.
+  if(UNIX AND NOT APPLE)
+    install(FILES resources/branding/roadmaker.desktop
+      DESTINATION ${CMAKE_INSTALL_DATADIR}/applications)
+    foreach(_sz IN ITEMS 16 24 32 48 64 128 256 512)
+      install(FILES resources/branding/icon_${_sz}.png
+        DESTINATION ${CMAKE_INSTALL_DATADIR}/icons/hicolor/${_sz}x${_sz}/apps
+        RENAME roadmaker.png)
+    endforeach()
+  endif()
 
   # macdeployqt deploys Qt only; the shared kernel must be placed into the
   # bundle ourselves. Install the REAL library renamed to its soname (what

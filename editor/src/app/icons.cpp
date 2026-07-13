@@ -5,6 +5,7 @@
 #include <QPainter>
 #include <QPalette>
 #include <QPixmap>
+#include <QSize>
 #include <QSvgRenderer>
 #include <initializer_list>
 #include <mutex>
@@ -18,6 +19,11 @@ static void rm_init_icon_resources() {
 
 namespace roadmaker::editor {
 namespace {
+
+void ensure_resources() {
+  static std::once_flag resources_once;
+  std::call_once(resources_once, rm_init_icon_resources);
+}
 
 QHash<QString, QIcon>& icon_cache() {
   static QHash<QString, QIcon> cache;
@@ -38,8 +44,7 @@ QPixmap tinted_pixmap(QSvgRenderer& renderer, int size, qreal dpr, const QColor&
 } // namespace
 
 QIcon Icons::get(const QString& name) {
-  static std::once_flag resources_once;
-  std::call_once(resources_once, rm_init_icon_resources);
+  ensure_resources();
 
   auto& cache = icon_cache();
   if (const auto it = cache.constFind(name); it != cache.constEnd()) {
@@ -66,6 +71,19 @@ QIcon Icons::get(const QString& name) {
     }
   }
   cache.insert(name, icon);
+  return icon;
+}
+
+QIcon Icons::app_icon() {
+  ensure_resources();
+
+  static const QIcon icon = [] {
+    QIcon built;
+    for (const int size : {16, 24, 32, 48, 64, 128, 256}) {
+      built.addFile(QStringLiteral(":/branding/icon_%1.png").arg(size), QSize(size, size));
+    }
+    return built;
+  }();
   return icon;
 }
 
