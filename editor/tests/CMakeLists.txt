@@ -61,6 +61,7 @@ add_executable(roadmaker_editor_tests
   test_selection_model.cpp
   test_soak_smoke.cpp
   test_theme.cpp
+  test_toast_queue.cpp
   test_tools.cpp
   test_welcome_widget.cpp
 )

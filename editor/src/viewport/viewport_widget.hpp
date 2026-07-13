@@ -5,6 +5,7 @@
 // camera and the picking state; selection flows OUT through SelectionModel
 // and highlight state flows back IN through it — never widget-to-widget.
 
+#include <QElapsedTimer>
 #include <QImage>
 #include <QOpenGLWidget>
 #include <QPoint>
@@ -23,8 +24,10 @@
 #include "tools/tool_manager.hpp"
 #include "viewport/camera.hpp"
 #include "viewport/picking.hpp"
+#include "viewport/toast_queue.hpp"
 
 class QPainter;
+class QTimer;
 
 namespace roadmaker::editor {
 
@@ -66,6 +69,11 @@ public slots:
   /// the user's eyes are on the viewport during a tool interaction, issue
   /// #103 discoverability). Empty text clears it.
   void set_hint(const QString& text);
+
+  /// Shows a transient toast in the viewport (queued, themed, auto-fading).
+  /// The single place editor feedback ("Merged", "Saved", a refusal) surfaces
+  /// over the scene instead of only in the status bar.
+  void show_toast(const QString& text, ToastSeverity severity = ToastSeverity::Info);
 
 public:
   [[nodiscard]] QString hint() const { return hint_text_; }
@@ -164,6 +172,24 @@ private:
   /// the GL frame, like the hint card.
   void draw_handles(QPainter& painter) const;
 
+  /// Themed top-left tool-hint card; fades out after an idle stretch.
+  void draw_hint_card(QPainter& painter) const;
+
+  /// Themed top-center transient toasts (queued, severity-colored, fading).
+  /// Non-const: pulls the live set from the queue, which prunes expired ones.
+  void draw_toasts(QPainter& painter);
+
+  /// Hint-card opacity from how long since the hint last changed (1 while
+  /// fresh, ramping to 0 after the idle hold).
+  [[nodiscard]] double hint_opacity() const;
+
+  /// Elapsed ms since construction — the overlay clock (hint/toast timing).
+  [[nodiscard]] std::int64_t now_ms() const;
+
+  /// Runs the overlay repaint timer while anything is animating (a live toast
+  /// or a not-yet-faded hint), stopping it when the overlay is static.
+  void refresh_overlay_animation();
+
   Document& document_;
   SelectionModel& selection_;
   ToolManager& tools_;
@@ -209,6 +235,13 @@ private:
 
   /// Corner hint text (set_hint); painted over the GL frame in paintGL.
   QString hint_text_;
+
+  /// Transient toast overlay + the shared overlay clock/animation timer. The
+  /// hint fades relative to when it last changed.
+  ToastQueue toasts_;
+  QElapsedTimer clock_;
+  QTimer* overlay_timer_ = nullptr;
+  std::int64_t hint_changed_ms_ = 0;
 
   /// Entity under the cursor, tracked by update_hover for the hover highlight
   /// (invalid = nothing hovered). A lane-level hover sets both; a road-level

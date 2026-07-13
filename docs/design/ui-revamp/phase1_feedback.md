@@ -105,9 +105,41 @@ px (so DPI-crisp): idle 4px < hovered 5px < grabbed 6px.
 `assets/samples/t_attach.xodr`): light idle node knobs at the ends, an amber
 midpoint ⊕ marker mid-segment.*
 
-## Still to come in Phase 1
+## Tool-hint card + transient toast overlay (this PR)
 
-- **Tool-hint card + transient toast overlay** — themed top-left hint card and
-  a queued toast system (next PR).
-- Phase 1 closes with a hover→select→drag GIF and the maintainer look-approval
-  checkpoint before Phase 2.
+**Delivered:** the viewport now owns both overlays, painted over the GL frame
+(QPainter, like the handles):
+
+- **Hint card** — the active tool's next-expected-input, moved to the
+  **top-left** and themed (`bg2` fill, `border`, `text_primary`, 8px radius per
+  ui-design.md). It **fades out after an idle stretch** (full for 4 s after the
+  last change, then a 700 ms fade) and snaps back to full on the next tool
+  message; coordinates stay in the status bar.
+- **Toast overlay (greenfield)** — a queued, **bottom-center** stack (clear of
+  the hint card), each toast a themed card with a **severity color bar**
+  (`success` / `warning` / `error` / accent) and an auto-fade. The queue
+  (`editor/src/viewport/toast_queue.{hpp,cpp}`) is **headless + fake-clock
+  tested**: it prunes expired toasts, **coalesces** a repeat of the newest
+  message (refreshing its timer, no duplicate), caps the stack, and computes
+  each toast's fade opacity. A single overlay timer repaints only while
+  something is animating.
+- **Re-routed** the merge / save / export result messages
+  (`main_window.cpp`) from `statusBar()->showMessage` to
+  `ViewportWidget::show_toast(text, severity)`; tool *guidance* stays in the
+  hint card.
+
+Screenshot mode gained `--toast <text>` (alongside `--tool` / `--select`) so a
+capture can show the overlays; the CI `visual-artifacts` job renders one.
+
+### Evidence
+
+![Themed top-left hint card + a bottom-center success toast](phase1_hint_toast.png)
+
+*Edit Nodes hint card (top-left) and a "Merged…" success toast (bottom-center,
+green bar), over a selected road with its handles.*
+
+## Phase 1 complete
+
+Hover/selection feedback (#124), handles (#131), and this hint-card + toast
+overlay close Phase 1's viewport look. The GW-1/GW-2 gate + the maintainer
+look-approval checkpoint run before Phase 2 UI.
