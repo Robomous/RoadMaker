@@ -10,11 +10,13 @@ of #50. Built in slices:
    headless `LibraryManifest` / `LibraryListModel`.
 2. **Kernel assemblies** (shipped, #126): `edit::assembly::t_intersection` /
    `x_intersection`.
-3. **Library panel** (this PR): the browsable dock.
-4. **Drag-and-drop creation** (next, P2.4): `QDrag` source + viewport drop
+3. **Library panel** (shipped, #133): the browsable dock.
+4. **Drag-and-drop creation** (shipped, #137): `QDrag` source + viewport drop
    handler + the behaviour matrix.
 
-## Library panel (this PR)
+All four slices are landed — Phase 2 is complete.
+
+## Library panel (#133)
 
 **Delivered:** a **Library** dock, tabbed with the Scene tree on the left
 (Scene raised by default), holding a searchable icon grid over the
