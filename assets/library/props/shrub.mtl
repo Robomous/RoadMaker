@@ -1,0 +1,3 @@
+# Materials for shrub (linear RGB).
+newmtl foliage
+Kd 0.2800 0.4600 0.2400

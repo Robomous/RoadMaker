@@ -1,0 +1,5 @@
+# Materials for tree_birch (linear RGB).
+newmtl trunk
+Kd 0.8300 0.8300 0.7800
+newmtl crown
+Kd 0.4400 0.6300 0.3200

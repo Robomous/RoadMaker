@@ -13,6 +13,18 @@ through the M2 command layer (one undo step per edit, byte-identical undo) and
 is headless-testable.
 
 ### Added
+- **Bundled low-poly tree props** (UI revamp Phase 3): five procedurally
+  authored, license-clean props (`tree_pine`/`oak`/`birch`/`poplar` and
+  `shrub`, MIT "original work") — the geometry the Library will place as
+  OpenDRIVE `<object>` trees. `scripts/gen_prop_meshes.py` builds them from
+  parametric
+  trunks/cones/icosahedral crowns and emits both an inspectable OBJ/MTL
+  reference export (`assets/library/props/`) and the embedded, flat-shaded mesh
+  table the kernel compiles in (`core/src/assets/prop_meshes.gen.cpp`), exposed
+  as the one canonical prop geometry through `roadmaker::props::model()`
+  (`core/include/roadmaker/assets/prop_library.hpp`) for the viewport and the
+  exporters alike. Design + decisions:
+  `docs/design/ui-revamp/phase3_props.md`.
 - **Drag-and-drop creation from the Library** (UI revamp Phase 2): drag a road
   template or a T/X intersection from the Library panel onto the viewport to
   create it. The model is a drag source (key carried as
