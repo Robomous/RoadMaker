@@ -1,5 +1,8 @@
 #include "document/library_list_model.hpp"
 
+#include <QMimeData>
+#include <QStringList>
+
 namespace roadmaker::editor {
 
 LibraryListModel::LibraryListModel(QObject* parent) : QAbstractListModel(parent) {}
@@ -41,6 +44,38 @@ QHash<int, QByteArray> LibraryListModel::roleNames() const {
   names[CategoryRole] = "category";
   names[ThumbnailRole] = "thumbnail";
   return names;
+}
+
+Qt::ItemFlags LibraryListModel::flags(const QModelIndex& index) const {
+  Qt::ItemFlags base = QAbstractListModel::flags(index);
+  if (index.isValid()) {
+    base |= Qt::ItemIsDragEnabled;
+  }
+  return base;
+}
+
+QStringList LibraryListModel::mimeTypes() const {
+  return {QString::fromLatin1(kLibraryItemMimeType)};
+}
+
+QMimeData* LibraryListModel::mimeData(const QModelIndexList& indexes) const {
+  for (const QModelIndex& index : indexes) {
+    if (const LibraryItem* entry = item(index.row())) {
+      auto* mime = new QMimeData;
+      mime->setData(QString::fromLatin1(kLibraryItemMimeType), entry->key.toUtf8());
+      return mime; // one item per drag
+    }
+  }
+  return nullptr;
+}
+
+const LibraryItem* LibraryListModel::item_for_key(const QString& key) const {
+  for (const LibraryItem& entry : items_) {
+    if (entry.key == key) {
+      return &entry;
+    }
+  }
+  return nullptr;
 }
 
 const LibraryItem* LibraryListModel::item(int row) const {

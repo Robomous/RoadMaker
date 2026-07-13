@@ -1,8 +1,13 @@
 #include "viewport/viewport_widget.hpp"
 
+#include <QDragEnterEvent>
+#include <QDragLeaveEvent>
+#include <QDragMoveEvent>
+#include <QDropEvent>
 #include <QEvent>
 #include <QFontMetrics>
 #include <QKeyEvent>
+#include <QMimeData>
 #include <QMouseEvent>
 #include <QOpenGLContext>
 #include <QPainter>
@@ -15,6 +20,7 @@
 #include <numeric>
 
 #include "document/highlight.hpp"
+#include "document/library_list_model.hpp"
 #include "render/gl_functions.hpp"
 #include "render/gl_renderer.hpp"
 #include "render/scene_builder.hpp"
@@ -42,6 +48,7 @@ ViewportWidget::ViewportWidget(Document& document,
   setMouseTracking(true); // hover s/t without a pressed button
   setFocusPolicy(Qt::StrongFocus);
   setMinimumSize(320, 240);
+  setAcceptDrops(true); // library items drag onto the scene to create geometry
   renderer_->set_backdrop(theme::current().backdrop()); // safe pre-init
 
   // Overlay clock + a repaint timer that only runs while a toast or the hint
@@ -209,11 +216,13 @@ void ViewportWidget::paintGL() {
   // QPainter overlays (handle sprites + the tool hint), painted over the GL
   // frame — supported on QOpenGLWidget when done last (no beginNativePainting).
   const bool has_toasts = !toasts_.active(now_ms()).empty();
-  if (!handle_overlays_.empty() || !hint_text_.isEmpty() || has_toasts) {
+  if (!handle_overlays_.empty() || !hint_text_.isEmpty() || has_toasts ||
+      drag_ghost_pos_.has_value()) {
     QPainter painter(this);
     painter.setRenderHint(QPainter::Antialiasing);
     painter.setRenderHint(QPainter::TextAntialiasing);
     draw_handles(painter);
+    draw_drag_ghost(painter);
     draw_hint_card(painter);
     draw_toasts(painter);
   }
@@ -492,6 +501,67 @@ void ViewportWidget::set_hovered_road(RoadId road) {
 void ViewportWidget::leaveEvent(QEvent* event) {
   set_hovered_road({}); // cursor left the viewport — drop the hover highlight
   QOpenGLWidget::leaveEvent(event);
+}
+
+bool ViewportWidget::has_library_mime(const QDropEvent* event) {
+  return event->mimeData()->hasFormat(QString::fromLatin1(kLibraryItemMimeType));
+}
+
+void ViewportWidget::dragEnterEvent(QDragEnterEvent* event) {
+  if (has_library_mime(event)) {
+    event->acceptProposedAction();
+    drag_ghost_pos_ = event->position().toPoint();
+    update();
+  }
+}
+
+void ViewportWidget::dragMoveEvent(QDragMoveEvent* event) {
+  if (has_library_mime(event)) {
+    event->acceptProposedAction();
+    drag_ghost_pos_ = event->position().toPoint();
+    update();
+  }
+}
+
+void ViewportWidget::dragLeaveEvent(QDragLeaveEvent* event) {
+  drag_ghost_pos_.reset();
+  update();
+  QOpenGLWidget::dragLeaveEvent(event);
+}
+
+void ViewportWidget::dropEvent(QDropEvent* event) {
+  drag_ghost_pos_.reset();
+  if (!has_library_mime(event)) {
+    return;
+  }
+  event->acceptProposedAction();
+  const QString key =
+      QString::fromUtf8(event->mimeData()->data(QString::fromLatin1(kLibraryItemMimeType)));
+  // Resolve the drop to the ground plane (z=0), like the tool events.
+  const auto ground = ground_point_at(event->position());
+  const double world_x = ground ? (*ground)[0] : 0.0;
+  const double world_y = ground ? (*ground)[1] : 0.0;
+  update();
+  emit library_item_dropped(key, world_x, world_y);
+}
+
+void ViewportWidget::draw_drag_ghost(QPainter& painter) const {
+  if (!drag_ghost_pos_.has_value()) {
+    return;
+  }
+  const Theme& theme = theme::current();
+  const QPointF center(*drag_ghost_pos_);
+  constexpr double kRadius = 10.0;
+  painter.save();
+  painter.setBrush(Qt::NoBrush);
+  painter.setPen(QPen(theme.accent, 2, Qt::DashLine));
+  painter.drawEllipse(center, kRadius, kRadius);
+  painter.setPen(QPen(theme.accent, 2));
+  painter.drawLine(QPointF(center.x() - kRadius, center.y()),
+                   QPointF(center.x() + kRadius, center.y()));
+  painter.drawLine(QPointF(center.x(), center.y() - kRadius),
+                   QPointF(center.x(), center.y() + kRadius));
+  painter.restore();
 }
 
 // M2 button map (docs/design/m2/01_editing_framework.md §4): LMB drives the

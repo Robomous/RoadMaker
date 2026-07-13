@@ -36,11 +36,12 @@ struct ScreenshotArgs {
   std::filesystem::path scene;
   std::filesystem::path out;
   QString camera = QStringLiteral("orbit");
-  QString select;     // OpenDRIVE id to select (captures the selection highlight)
-  QString hover;      // OpenDRIVE id to hover (captures the hover highlight)
-  QString tool;       // tool id to activate (captures its handle overlay)
-  QString raise_dock; // dock objectName to raise (whole-window captures)
-  QString toast;      // toast text to show (captures the toast overlay)
+  QString select;       // OpenDRIVE id to select (captures the selection highlight)
+  QString hover;        // OpenDRIVE id to hover (captures the hover highlight)
+  QString tool;         // tool id to activate (captures its handle overlay)
+  QString raise_dock;   // dock objectName to raise (whole-window captures)
+  QString toast;        // toast text to show (captures the toast overlay)
+  QString drop_library; // library item key to drop (captures the created geometry)
   int width = 1600;
   int height = 1000;
 };
@@ -76,6 +77,9 @@ ScreenshotArgs parse_screenshot_args(int argc, char** argv) {
       ++i;
     } else if (std::strcmp(argv[i], "--toast") == 0 && i + 1 < argc) {
       args.toast = QString::fromUtf8(argv[i + 1]);
+      ++i;
+    } else if (std::strcmp(argv[i], "--drop-library") == 0 && i + 1 < argc) {
+      args.drop_library = QString::fromUtf8(argv[i + 1]);
       ++i;
     } else if (std::strcmp(argv[i], "--size") == 0 && i + 1 < argc) {
       // std::from_chars, not sscanf: MSVC deprecates the CRT scanners
@@ -157,6 +161,9 @@ int run_screenshot(const ScreenshotArgs& args) {
     }
     if (!args.toast.isEmpty()) {
       window.viewport()->show_toast(args.toast, roadmaker::editor::ToastSeverity::Success);
+    }
+    if (!args.drop_library.isEmpty()) {
+      window.drop_library_item_for_capture(args.drop_library, 0.0, -70.0);
     }
   }
 
