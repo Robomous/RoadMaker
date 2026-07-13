@@ -43,6 +43,8 @@ add_library(roadmaker_editor_lib STATIC
   src/document/autosave.cpp
   src/document/diagnostics_model.cpp
   src/document/document.cpp
+  src/document/library_list_model.cpp
+  src/document/library_manifest.cpp
   src/document/elevation_utils.cpp
   src/document/editor_command.cpp
   src/document/scene_tree_model.cpp
