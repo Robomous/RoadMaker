@@ -35,6 +35,12 @@
   <!-- Full-colour application icon (coral robot). Multi-size so QIcon picks a
        crisp raster for the window/taskbar at any scale; the macOS Dock uses the
        bundled .icns and Windows the .rc/.ico instead. -->
+  <!-- Runtime library catalogue (UI-revamp Phase 2): the manifest the Library
+       panel loads. Aliased from the committed data file so there is one copy;
+       manifest.json is license-exempt (machinery, not an asset). -->
+  <qresource prefix="/library">
+    <file alias="manifest.json">../../assets/library/manifest.json</file>
+  </qresource>
   <qresource prefix="/branding">
     <file alias="icon_16.png">branding/icon_16.png</file>
     <file alias="icon_24.png">branding/icon_24.png</file>

@@ -9,6 +9,7 @@
 #include <QDesktopServices>
 #include <QDragEnterEvent>
 #include <QDropEvent>
+#include <QFile>
 #include <QFileDialog>
 #include <QFileInfo>
 #include <QLocale>
@@ -28,7 +29,9 @@
 #include "app/crash_handler.hpp"
 #include "app/icons.hpp"
 #include "app/log_setup.hpp"
+#include "document/library_manifest.hpp"
 #include "panels/diagnostics_panel.hpp"
+#include "panels/library_panel.hpp"
 #include "panels/profile_panel.hpp"
 #include "panels/properties_panel.hpp"
 #include "panels/scene_tree_panel.hpp"
@@ -315,6 +318,24 @@ void MainWindow::build_docks() {
   scene_dock_->widget()->setMinimumWidth(260);
   addDockWidget(Qt::LeftDockWidgetArea, scene_dock_);
 
+  // Library: the catalogue the user drags from (drop handler is P2.4). Loaded
+  // from the bundled manifest; tabbed with the Scene tree on the left, Scene
+  // raised by default.
+  {
+    QFile manifest(QStringLiteral(":/library/manifest.json"));
+    if (manifest.open(QIODevice::ReadOnly)) {
+      if (auto loaded = LibraryManifest::parse(manifest.readAll()); loaded.has_value()) {
+        library_model_.set_manifest(std::move(*loaded));
+      }
+    }
+  }
+  library_dock_ = new QDockWidget(tr("Library"), this);
+  library_dock_->setObjectName(QStringLiteral("dock.library"));
+  library_dock_->setWidget(new LibraryPanel(library_model_, library_dock_));
+  addDockWidget(Qt::LeftDockWidgetArea, library_dock_);
+  tabifyDockWidget(scene_dock_, library_dock_);
+  scene_dock_->raise(); // Scene tree is the default front tab
+
   properties_dock_ = new QDockWidget(tr("Properties"), this);
   properties_dock_->setObjectName(QStringLiteral("dock.properties"));
   properties_panel_ = new PropertiesPanel(document_, selection_, properties_dock_);
@@ -370,6 +391,7 @@ void MainWindow::build_menus() {
 
   QMenu* view_menu = menuBar()->addMenu(tr("&View"));
   view_menu->addAction(scene_dock_->toggleViewAction());
+  view_menu->addAction(library_dock_->toggleViewAction());
   view_menu->addAction(properties_dock_->toggleViewAction());
   view_menu->addAction(diagnostics_dock_->toggleViewAction());
   view_menu->addAction(profile_dock_->toggleViewAction());
@@ -517,6 +539,15 @@ void MainWindow::activate_tool_for_capture(const QString& tool_id) {
   };
   if (const auto found = kTools.find(tool_id); found != kTools.end()) {
     tool_manager_.set_active(found->second);
+  }
+}
+
+void MainWindow::raise_dock_for_capture(const QString& object_name) {
+  for (QDockWidget* dock : findChildren<QDockWidget*>()) {
+    if (dock->objectName() == object_name) {
+      dock->raise();
+      return;
+    }
   }
 }
 

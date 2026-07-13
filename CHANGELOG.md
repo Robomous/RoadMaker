@@ -13,6 +13,14 @@ through the M2 command layer (one undo step per edit, byte-identical undo) and
 is headless-testable.
 
 ### Added
+- **Library panel** (UI revamp Phase 2): a searchable **Library** dock, tabbed
+  with the Scene tree, holding an icon grid over the catalogue — the road
+  templates and T/X assemblies the drop handler (next PR) will place. A
+  `LibraryFilterProxy` filters by label, groups by class, and injects a themed
+  class icon (reusing the bundled template/junction glyphs — no thumbnail
+  assets needed for v1); the manifest loads from the Qt resource system so the
+  built app always has it. Screenshot mode gained `--raise-dock` (CI renders the
+  panel). Design + before/after: `docs/design/ui-revamp/phase2_library.md`.
 - **DPI-crisp themed tool handles** (UI revamp Phase 1): node and midpoint
   handles are now screen-space QPainter sprites with idle / hovered / grabbed
   states, replacing the world-meter GL crosses that shrank and grew with zoom.

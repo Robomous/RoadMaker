@@ -36,9 +36,10 @@ struct ScreenshotArgs {
   std::filesystem::path scene;
   std::filesystem::path out;
   QString camera = QStringLiteral("orbit");
-  QString select; // OpenDRIVE id to select (captures the selection highlight)
-  QString hover;  // OpenDRIVE id to hover (captures the hover highlight)
-  QString tool;   // tool id to activate (captures its handle overlay)
+  QString select;     // OpenDRIVE id to select (captures the selection highlight)
+  QString hover;      // OpenDRIVE id to hover (captures the hover highlight)
+  QString tool;       // tool id to activate (captures its handle overlay)
+  QString raise_dock; // dock objectName to raise (whole-window captures)
   int width = 1600;
   int height = 1000;
 };
@@ -68,6 +69,9 @@ ScreenshotArgs parse_screenshot_args(int argc, char** argv) {
       ++i;
     } else if (std::strcmp(argv[i], "--tool") == 0 && i + 1 < argc) {
       args.tool = QString::fromUtf8(argv[i + 1]);
+      ++i;
+    } else if (std::strcmp(argv[i], "--raise-dock") == 0 && i + 1 < argc) {
+      args.raise_dock = QString::fromUtf8(argv[i + 1]);
       ++i;
     } else if (std::strcmp(argv[i], "--size") == 0 && i + 1 < argc) {
       // std::from_chars, not sscanf: MSVC deprecates the CRT scanners
@@ -147,6 +151,10 @@ int run_screenshot(const ScreenshotArgs& args) {
     if (!args.tool.isEmpty()) {
       window.activate_tool_for_capture(args.tool);
     }
+  }
+
+  if (!args.raise_dock.isEmpty()) {
+    window.raise_dock_for_capture(args.raise_dock);
   }
 
   QImage frame;
