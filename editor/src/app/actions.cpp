@@ -135,6 +135,11 @@ Actions::Actions(QUndoStack& undo_stack, QObject* parent) : QObject(parent) {
   frame_selection->setIconText(tr("Frame"));
   frame_selection->setToolTip(tr("Frame the selection — the whole scene when "
                                  "nothing is selected (F)"));
+  merge_roads = new QAction(tr("&Merge Roads"), this);
+  merge_roads->setIconText(tr("Merge"));
+  merge_roads->setEnabled(false); // enabled only for a mergeable 2-road selection
+  merge_roads->setToolTip(tr("Merge — join two selected roads that meet end-to-start"));
+
   reset_layout = new QAction(tr("Reset &Layout"), this);
 
   about = new QAction(tr("&About RoadMaker"), this);
@@ -163,6 +168,7 @@ void Actions::apply_icons() {
   tool_elevation->setIcon(Icons::get(QStringLiteral("mountain")));
   tool_create_junction->setIcon(Icons::get(QStringLiteral("junction-connect")));
   tool_split->setIcon(Icons::get(QStringLiteral("scissors")));
+  merge_roads->setIcon(Icons::get(QStringLiteral("git-merge")));
   tool_delete->setIcon(Icons::get(QStringLiteral("trash-2")));
   template_rural->setIcon(Icons::get(QStringLiteral("template-rural")));
   template_urban->setIcon(Icons::get(QStringLiteral("template-urban")));

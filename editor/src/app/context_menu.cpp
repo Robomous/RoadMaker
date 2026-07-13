@@ -6,6 +6,8 @@
 #include <QAction>
 #include <QMenu>
 #include <QObject>
+#include <utility>
+#include <vector>
 
 #include "app/actions.hpp"
 #include "document/document.hpp"
@@ -82,6 +84,25 @@ std::vector<MenuItem> build_context_menu(const MenuContext& context, ContextMenu
                                      edit::split_road(deps.document.network(), road, *station));
                                }
                              }});
+    // Merge selected roads — enabled only for exactly two mergeable roads.
+    const std::vector<RoadId> selected = deps.selection.selected_roads();
+    const bool mergeable = selected.size() == 2 &&
+                           (edit::check_mergeable(network, selected[0], selected[1]).has_value() ||
+                            edit::check_mergeable(network, selected[1], selected[0]).has_value());
+    items.push_back(MenuItem{
+        .text = QObject::tr("Merge selected roads"),
+        .enabled = mergeable,
+        .invoke = [&deps, selected] {
+          if (selected.size() != 2) {
+            return;
+          }
+          RoadId a = selected[0];
+          RoadId b = selected[1];
+          if (!edit::check_mergeable(deps.document.network(), a, b).has_value()) {
+            std::swap(a, b);
+          }
+          (void)deps.document.push_command(edit::merge_roads(deps.document.network(), a, b));
+        }});
     items.push_back(separator());
     items.push_back(MenuItem{.text = QObject::tr("Edit lane profile"), .invoke = [&deps, road] {
                                select_road(deps, road);

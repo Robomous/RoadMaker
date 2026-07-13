@@ -56,6 +56,7 @@ public:
 
   QAction* reset_camera = nullptr;
   QAction* frame_selection = nullptr;
+  QAction* merge_roads = nullptr;
   QAction* reset_layout = nullptr;
 
   QAction* about = nullptr;

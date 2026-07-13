@@ -20,4 +20,10 @@ inline constexpr double kCurvatureEpsilon = 1e-12;
 inline constexpr double kRoundTripPosition = 1e-4;
 inline constexpr double kRoundTripHeading = 1e-6;
 
+/// Merge (edit::merge_roads) weld tolerances: the joining ends must already be
+/// this close in position [m] and heading [rad] — the weld absorbs the residual
+/// so the seam is vertex-exact.
+inline constexpr double kMergePositionGap = 0.01;
+inline constexpr double kMergeHeading = 1e-3;
+
 } // namespace roadmaker::tol

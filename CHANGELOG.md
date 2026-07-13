@@ -53,6 +53,22 @@ is headless-testable.
   `Document::last_dirty()` lets a tool discover a command's new ids (the split's
   tail); the shared `pick_waypoint()` node hit-test moves into
   `viewport/picking.{hpp,cpp}`.
+- **Merge two roads into one** (M3a topology UX): with exactly two roads
+  selected that meet end-to-start, **Merge** (git-merge icon, Edit menu,
+  toolbar, and the road context menu) welds them into one road. Kernel
+  `edit::merge_roads` keeps the first road's id and erases the second; the
+  second's geometry is re-anchored onto the first's end pose (the weld absorbs
+  the ≤ 1 cm / 1 mrad residual — vertex-exact seam), profiles and lane sections
+  concatenate (**not** coalesced, so split→merge is geometry-identical), and the
+  far-end links and any far neighbor's back-link re-point onto the merged road.
+  `edit::check_mergeable` is the enablement query and returns the verbatim reason
+  when it can't (junction road, an end already connected elsewhere, meeting the
+  wrong way round — "reverse one first (coming soon)", ends too far apart,
+  heading mismatch, or seam lane/elevation mismatch). New tolerances
+  `tol::kMergePositionGap` / `kMergeHeading`. `reverse_road` and junction-aware
+  merge are deferred (follow-ups). Python `edit.merge_roads` /
+  `check_mergeable` + `examples/merge_roads.py`; soak driver + fuzz corpus gain
+  merge/post-split seeds.
 
 ### Fixed
 - **Middle-mouse pan is now natural (ground-anchored)**: the old pan scaled

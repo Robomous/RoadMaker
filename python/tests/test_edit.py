@@ -219,6 +219,34 @@ def test_insert_node_at_rejects_near_duplicate(network):
         stack.push(network, rm.edit.insert_node_at(network, road, 0.5))  # < 2 m from start
 
 
+def test_merge_roads_joins_two_and_undo_restores():
+    net = rm.RoadNetwork()
+    stack = rm.edit.EditStack()
+    stack.push(net, rm.edit.create_road(
+        [(0.0, 0.0), (50.0, 0.0)], rm.LaneProfile.two_lane_default(), "A"))
+    stack.push(net, rm.edit.create_road(
+        [(50.0, 0.0), (100.0, 0.0)], rm.LaneProfile.two_lane_default(), "B"))
+    a = net.find_road("1")
+    b = net.find_road("2")
+    before = rm.write_xodr(net)
+
+    rm.edit.check_mergeable(net, a, b)  # does not raise
+    stack.push(net, rm.edit.merge_roads(net, a, b))
+    assert net.road_count == 1
+    assert net.road(a).length == pytest.approx(100.0, abs=1e-4)
+
+    stack.undo(net)
+    assert rm.write_xodr(net) == before  # byte-identical
+
+
+def test_check_mergeable_reports_reason_for_distant_roads():
+    net = rm.RoadNetwork()
+    rm.author_clothoid_road(net, [(0.0, 0.0), (50.0, 0.0)], rm.LaneProfile.two_lane_default(), "", "1")
+    rm.author_clothoid_road(net, [(200.0, 0.0), (250.0, 0.0)], rm.LaneProfile.two_lane_default(), "", "2")
+    with pytest.raises(ValueError):
+        rm.edit.check_mergeable(net, net.find_road("1"), net.find_road("2"))
+
+
 def _t_junction_arms(net):
     """Three straight two-lane arms whose ends meet near the origin."""
     for coords, odr in (
