@@ -80,6 +80,36 @@ These are not optional extras; reviewers and CI check for them:
   [architecture overview](../architecture/overview.md); PRs that cross them
   are rejected regardless of how green CI is.
 
+## Agent PR discipline
+
+Automated contributors (Claude Code and other agents) follow the same rules as
+everyone else, plus a tighter loop that keeps a multi-PR effort from drifting
+into rebase-cascade conflicts or leaving green work unmerged:
+
+- **Main-first branching.** Before creating *any* new branch, sync:
+  `git checkout main && git pull --ff-only`, then branch from that tip. **No
+  stacked branches off unmerged work** — the previous PR must be in `main`
+  before the next branch starts. This is the single biggest source of avoidable
+  conflicts, so it is not optional.
+- **Verify before merge.** After opening a PR, wait for CI:
+  `gh pr checks <n> --watch` until every required check passes. Never merge red,
+  never bypass a failing gate — fix it on the same branch.
+- **Merge when green, don't let it sit.** Once checks pass, merge with
+  `gh pr merge <n> --squash --delete-branch`; don't start new work on top of a
+  green-but-unmerged PR.
+- **Visual changes gate on the maintainer.** Any PR that changes what the editor
+  looks like ships before/after screenshots (a GIF for interactions) and waits
+  for **maintainer look-approval before merging** — the visual-quality bar in
+  [product parity](../standards/product-parity.md) and
+  [UI design](../standards/ui-design.md). Non-visual PRs (kernel, headless
+  models, docs, tests) merge on green without that gate.
+- **Keep the three sources of truth in sync — in the same session as the merge.**
+  After a PR merges, the docs, the issues, and the roadmap must agree about what
+  is done: tick the relevant epic checklist item, close the feature issue with a
+  comment linking the PR, add the issue to the project board with its Status, and
+  update any affected design doc, `roadmap.md` status note, or seed. Anyone
+  reading any one of the three gets the same truth.
+
 ## Typical loop
 
 ```sh

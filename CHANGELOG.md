@@ -87,6 +87,13 @@ is headless-testable.
   `ground_point()` helper (`editor/src/viewport/picking.{hpp,cpp}`) now backs
   the hover readout, tool events, and the pan.
 
+### Changed
+- **Contributing docs gained an "Agent PR discipline" section**
+  (`docs/contributing/workflow.md`): main-first branching with no stacked
+  branches off unmerged work, verify-before-merge, merge-on-green, the
+  maintainer look-approval gate for visual PRs, and the rule that docs, issues,
+  and the roadmap are synced in the same session a PR merges.
+
 ## [0.4.0] - Unreleased
 
 The **hardening release**: maintainer dogfooding of v0.3.0 found product
