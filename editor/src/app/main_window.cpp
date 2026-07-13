@@ -361,6 +361,9 @@ void MainWindow::build_docks() {
   properties_dock_ = new QDockWidget(tr("Properties"), this);
   properties_dock_->setObjectName(QStringLiteral("dock.properties"));
   properties_panel_ = new PropertiesPanel(document_, selection_, properties_dock_);
+  connect(properties_panel_, &PropertiesPanel::status_message, this, [this](const QString& text) {
+    viewport_->show_toast(text);
+  });
   properties_dock_->setWidget(properties_panel_);
   properties_dock_->widget()->setMinimumWidth(300);
   addDockWidget(Qt::RightDockWidgetArea, properties_dock_);

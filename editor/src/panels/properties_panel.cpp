@@ -94,20 +94,42 @@ void rebuild_choice_combo(QComboBox& combo,
   combo.setCurrentIndex(combo.findData(static_cast<int>(current)));
 }
 
-/// No other lane of the section sits further out on the lane's side — the
-/// only removable position in M2 (keeps OpenDRIVE numbering contiguous).
-bool is_outermost(const RoadNetwork& network, const Lane& lane) {
-  const LaneSection* section = network.lane_section(lane.section);
+/// The outermost lane on `side` (>0 left, <0 right) of the section, or an
+/// invalid id when the side carries no lane. This is the only removable
+/// position in M2 (keeps OpenDRIVE numbering contiguous), so the per-side
+/// Remove buttons act on it directly — no lane selection required.
+LaneId outermost_lane_of_side(const RoadNetwork& network, LaneSectionId section_id, int side) {
+  const LaneSection* section = network.lane_section(section_id);
   if (section == nullptr) {
-    return false;
+    return LaneId{};
   }
-  for (const LaneId other_id : section->lanes) {
-    const int other = network.lane(other_id)->odr_id;
-    if ((lane.odr_id > 0 && other > lane.odr_id) || (lane.odr_id < 0 && other < lane.odr_id)) {
-      return false;
+  LaneId best;
+  int best_odr = 0;
+  for (const LaneId id : section->lanes) {
+    const int odr = network.lane(id)->odr_id;
+    const bool on_side = side > 0 ? odr > 0 : odr < 0;
+    if (on_side && (!best.is_valid() || (side > 0 ? odr > best_odr : odr < best_odr))) {
+      best = id;
+      best_odr = odr;
     }
   }
-  return true;
+  return best;
+}
+
+/// Lanes on `side` (>0 left, <0 right) of the section.
+std::size_t lane_count_on_side(const RoadNetwork& network, LaneSectionId section_id, int side) {
+  const LaneSection* section = network.lane_section(section_id);
+  if (section == nullptr) {
+    return 0;
+  }
+  std::size_t count = 0;
+  for (const LaneId id : section->lanes) {
+    const int odr = network.lane(id)->odr_id;
+    if (side > 0 ? odr > 0 : odr < 0) {
+      ++count;
+    }
+  }
+  return count;
 }
 
 } // namespace
@@ -121,7 +143,8 @@ PropertiesPanel::PropertiesPanel(Document& document,
       type_combo_(new QComboBox), width_spin_(new QDoubleSpinBox), mark_combo_(new QComboBox),
       mark_width_spin_(new QDoubleSpinBox), add_left_(new QPushButton(tr("Add left"))),
       add_right_(new QPushButton(tr("Add right"))),
-      remove_lane_(new QPushButton(tr("Remove lane"))),
+      remove_left_(new QPushButton(tr("Remove left lane"))),
+      remove_right_(new QPushButton(tr("Remove right lane"))),
       elevation_group_(new QGroupBox(tr("Elevation"), this)),
       elevation_node_label_(new QLabel(this)), elevation_spin_(new QDoubleSpinBox) {
   placeholder_->setWordWrap(true);
@@ -154,7 +177,8 @@ PropertiesPanel::PropertiesPanel(Document& document,
           .arg(kMarkWidthBold));
   add_left_->setObjectName(QStringLiteral("add_left_lane_button"));
   add_right_->setObjectName(QStringLiteral("add_right_lane_button"));
-  remove_lane_->setObjectName(QStringLiteral("remove_lane_button"));
+  remove_left_->setObjectName(QStringLiteral("remove_left_lane_button"));
+  remove_right_->setObjectName(QStringLiteral("remove_right_lane_button"));
 
   auto* lane_form = new QFormLayout;
   lane_form->addRow(tr("Type"), type_combo_);
@@ -164,10 +188,13 @@ PropertiesPanel::PropertiesPanel(Document& document,
   auto* buttons = new QHBoxLayout;
   buttons->addWidget(add_left_);
   buttons->addWidget(add_right_);
-  buttons->addWidget(remove_lane_);
+  auto* remove_buttons = new QHBoxLayout;
+  remove_buttons->addWidget(remove_left_);
+  remove_buttons->addWidget(remove_right_);
   auto* group_layout = new QVBoxLayout(lane_group_);
   group_layout->addLayout(lane_form);
   group_layout->addLayout(buttons);
+  group_layout->addLayout(remove_buttons);
 
   // Elevation: one persistent spin box that edits whichever node the
   // Elevation tool has made active (issue #16, spec 02 §5). The label names
@@ -250,11 +277,8 @@ PropertiesPanel::PropertiesPanel(Document& document,
   connect(add_right_, &QPushButton::clicked, this, [this] {
     push(edit::add_lane(document_.network(), target_section(), -1, LaneType::Driving));
   });
-  connect(remove_lane_, &QPushButton::clicked, this, [this] {
-    if (primary_lane() != nullptr) {
-      push(edit::remove_lane(document_.network(), selection_.primary().lane));
-    }
-  });
+  connect(remove_left_, &QPushButton::clicked, this, [this] { remove_outermost_lane(+1); });
+  connect(remove_right_, &QPushButton::clicked, this, [this] { remove_outermost_lane(-1); });
   // Commit the active node's height on focus-out, skipping the push when the
   // value is unchanged — the same re-entrancy guard the lane editors use, so
   // refresh() re-syncing the spin box after undo never echoes a command back.
@@ -380,10 +404,33 @@ void PropertiesPanel::refresh_lane_section() {
   add_right_->setEnabled(true);
 
   type_combo_->setEnabled(lane_selected && !center);
-  // The center lane is width-less by rule …road.lane.center_lane_no_width;
-  // remove_lane only accepts the outermost lane of a side (M2 restriction).
+  // The center lane is width-less by rule …road.lane.center_lane_no_width.
   width_spin_->setEnabled(lane_selected && !center && !lane->widths.empty());
-  remove_lane_->setEnabled(lane_selected && !center && is_outermost(document_.network(), *lane));
+  // Per-side Remove acts on the section's outermost lane on that side — no
+  // lane selection required (the discoverable lane-removal affordance, gate
+  // finding 6). The kernel only removes the outermost lane; the editor also
+  // protects the last driving lane so a side can't be emptied of its road.
+  const auto configure_remove = [this](QPushButton* button, int side) {
+    const LaneSectionId section = target_section();
+    if (document_.network().road(selection_.primary().road) == nullptr) {
+      button->setEnabled(false);
+      button->setToolTip(tr("Select a road first."));
+      return;
+    }
+    const LaneId outermost = outermost_lane_of_side(document_.network(), section, side);
+    if (!outermost.is_valid()) {
+      button->setEnabled(false);
+      button->setToolTip(tr("No lane on this side to remove."));
+      return;
+    }
+    const bool sole_driving = lane_count_on_side(document_.network(), section, side) == 1 &&
+                              document_.network().lane(outermost)->type == LaneType::Driving;
+    button->setEnabled(!sole_driving);
+    button->setToolTip(sole_driving ? tr("Only the driving lane remains.")
+                                    : tr("Remove the outermost lane on this side."));
+  };
+  configure_remove(remove_left_, +1);
+  configure_remove(remove_right_, -1);
   // Lane 0's mark IS the center-line style — always editable on a lane.
   mark_combo_->setEnabled(lane_selected);
   mark_width_spin_->setEnabled(lane_selected);
@@ -401,6 +448,18 @@ void PropertiesPanel::refresh_lane_section() {
   {
     const QSignalBlocker blocker(mark_width_spin_);
     mark_width_spin_->setValue(mark.width);
+  }
+}
+
+void PropertiesPanel::remove_outermost_lane(int side) {
+  const LaneId lane_id = outermost_lane_of_side(document_.network(), target_section(), side);
+  const Lane* lane = document_.network().lane(lane_id);
+  if (lane == nullptr) {
+    return;
+  }
+  const int odr = lane->odr_id;
+  if (document_.push_command(edit::remove_lane(document_.network(), lane_id))) {
+    emit status_message(tr("Removed lane %1.").arg(odr));
   }
 }
 

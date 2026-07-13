@@ -361,6 +361,62 @@ TEST(ContextMenu, AssembledMenuActionSurvivesDepsGoingOutOfScope) {
   EXPECT_EQ(document.network().road_count(), 2U);
 }
 
+TEST(ContextMenu, LaneBranchRemovesTheOutermostLaneAndKeepsRoadItems) {
+  Fixture fx;
+  // two_lane_default lanes: +1, -1, -2. Outermost right (-2) is removable;
+  // the inner right lane (-1) is not.
+  LaneId outer;
+  LaneId inner;
+  const auto& section =
+      *fx.document.network().lane_section(fx.document.network().road(fx.road)->sections.front());
+  for (const LaneId id : section.lanes) {
+    const int odr = fx.document.network().lane(id)->odr_id;
+    if (odr == -2) {
+      outer = id;
+    } else if (odr == -1) {
+      inner = id;
+    }
+  }
+  ASSERT_TRUE(outer.is_valid());
+  ASSERT_TRUE(inner.is_valid());
+
+  MenuContext context;
+  context.pick = PickHit{.road = fx.road, .lane = outer};
+  context.station = 40.0;
+  const std::vector<MenuItem> items = build_context_menu(context, fx.deps);
+  const MenuItem* remove = fx.find(items, "Remove this lane");
+  ASSERT_NE(remove, nullptr);
+  EXPECT_TRUE(remove->enabled);
+  // The road-body items stay reachable alongside the lane item.
+  EXPECT_NE(fx.find(items, "Split road here"), nullptr);
+  EXPECT_NE(fx.find(items, "Delete road"), nullptr);
+
+  // A non-outermost lane shows the item disabled.
+  MenuContext inner_context;
+  inner_context.pick = PickHit{.road = fx.road, .lane = inner};
+  inner_context.station = 40.0;
+  const std::vector<MenuItem> inner_items = build_context_menu(inner_context, fx.deps);
+  const MenuItem* inner_remove = fx.find(inner_items, "Remove this lane");
+  ASSERT_NE(inner_remove, nullptr);
+  EXPECT_FALSE(inner_remove->enabled);
+
+  // Invoke removes lane -2; undo restores it.
+  const auto has_lane = [&](int odr) {
+    const auto& sec =
+        *fx.document.network().lane_section(fx.document.network().road(fx.road)->sections.front());
+    for (const LaneId id : sec.lanes) {
+      if (fx.document.network().lane(id)->odr_id == odr) {
+        return true;
+      }
+    }
+    return false;
+  };
+  remove->invoke();
+  EXPECT_FALSE(has_lane(-2));
+  fx.document.undo_stack()->undo();
+  EXPECT_TRUE(has_lane(-2));
+}
+
 TEST(ContextMenu, MergeSelectedIsEnabledForTwoMergeableRoads) {
   Document document;
   SelectionModel selection{document};

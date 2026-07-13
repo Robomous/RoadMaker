@@ -13,11 +13,14 @@ What the menu offers depends on what you clicked:
 
 | You right-clicked… | Menu |
 |---|---|
-| a **road body** | Insert bend point here · Split road here · Merge selected roads · Edit lane profile · Edit elevation profile · Frame · Delete road |
+| a **road body** | Remove this lane _(when a lane is under the cursor)_ · Insert bend point here · Split road here · Merge selected roads · Edit lane profile · Edit elevation profile · Frame · Delete road |
 | a **node handle** (on a selected road) | Split at this node · Delete node · Frame |
 | **empty space** | Create road here · Paste _(coming soon)_ · Frame all |
 | a **junction** (from the scene tree) | Frame · Delete junction |
 
+- **Remove this lane** appears when you right-click on a specific lane; it is
+  enabled only for the outermost lane of a side (the OpenDRIVE numbering must
+  stay contiguous), and the road's own items stay reachable beneath it.
 - **Merge selected roads** is enabled only when exactly two roads are selected
   and they can actually merge ([Merge & Split](merge-split.md)).
 - **Split at this node** is disabled on a road's end nodes (there is nothing to
