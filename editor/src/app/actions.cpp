@@ -131,7 +131,9 @@ Actions::Actions(QUndoStack& undo_stack, QObject* parent) : QObject(parent) {
   reset_camera->setIconText(tr("Camera"));
   reset_camera->setToolTip(tr("Reset the camera to the default view"));
   add_from_library = new QAction(tr("Add from &Library…"), this);
-  add_from_library->setToolTip(tr("Open the Library panel to drag in roads and intersections"));
+  add_from_library->setIconText(tr("Library"));
+  add_from_library->setToolTip(tr("Open the Library panel to drag in roads, intersections, "
+                                  "and props"));
   frame_selection = new QAction(tr("&Frame Selection"), this);
   frame_selection->setShortcut(Qt::Key_F);
   frame_selection->setIconText(tr("Frame"));
@@ -177,6 +179,7 @@ void Actions::apply_icons() {
   template_highway->setIcon(Icons::get(QStringLiteral("template-highway")));
   reset_camera->setIcon(Icons::get(QStringLiteral("rotate-ccw")));
   frame_selection->setIcon(Icons::get(QStringLiteral("scan")));
+  add_from_library->setIcon(Icons::get(QStringLiteral("circle-plus")));
 }
 
 } // namespace roadmaker::editor

@@ -13,6 +13,15 @@ through the M2 command layer (one undo step per edit, byte-identical undo) and
 is headless-testable.
 
 ### Added
+- **Discoverability sweep** (UI revamp Phase 4): every capability now has a
+  visible, labeled entry point (product-parity rule). **Add from Library** is a
+  first-class toolbar button (labeled "Library") and an Edit-menu entry — it was
+  reachable only from the empty-canvas context menu. Activating the **Elevation**
+  tool now opens the Profile dock, surfacing the vertical-profile handles and the
+  **Cross Over / Cross Under** overpass controls that were hidden behind a
+  View-menu toggle. The **Merge Roads** button explains itself when greyed
+  ("select two roads whose ends meet") instead of reading as broken. Audit table
+  + design: `docs/design/ui-revamp/phase4_discoverability.md`.
 - **Trees in the editor — render, pick, select, delete** (UI revamp Phase 3):
   placed tree props now draw in the viewport (baked per-part from the bundled
   prop meshes, tagged with their `ObjectId`), are hover-glowed and
