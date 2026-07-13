@@ -1,0 +1,41 @@
+{
+  "manifest_version": 1,
+  "generated": "2026-07-13",
+  "items": [
+    {
+      "key": "road.rural",
+      "label": "2-lane rural",
+      "category": "Road templates",
+      "thumbnail": "assets/library/thumbnails/road_rural.png",
+      "create": { "kind": "road_template", "profile": "two_lane_rural" }
+    },
+    {
+      "key": "road.urban",
+      "label": "Urban w/ sidewalks",
+      "category": "Road templates",
+      "thumbnail": "assets/library/thumbnails/road_urban.png",
+      "create": { "kind": "road_template", "profile": "urban_sidewalk" }
+    },
+    {
+      "key": "road.highway",
+      "label": "4-lane divided",
+      "category": "Road templates",
+      "thumbnail": "assets/library/thumbnails/road_highway.png",
+      "create": { "kind": "road_template", "profile": "highway" }
+    },
+    {
+      "key": "assembly.t",
+      "label": "T-intersection",
+      "category": "Assemblies",
+      "thumbnail": "assets/library/thumbnails/assembly_t.png",
+      "create": { "kind": "assembly", "assembly": "t" }
+    },
+    {
+      "key": "assembly.x",
+      "label": "X-intersection",
+      "category": "Assemblies",
+      "thumbnail": "assets/library/thumbnails/assembly_x.png",
+      "create": { "kind": "assembly", "assembly": "x" }
+    }
+  ]
+}

@@ -13,6 +13,17 @@ through the M2 command layer (one undo step per edit, byte-identical undo) and
 is headless-testable.
 
 ### Added
+- **Library catalogue manifest + model** (UI-revamp Phase 2 groundwork): a
+  versioned runtime manifest (`assets/library/manifest.json`) and a headless
+  `LibraryManifest` loader + flat `LibraryListModel` (`editor/src/document/`)
+  that back the coming drag-and-drop Library panel. v1 lists the road templates
+  (2-lane rural, urban w/ sidewalks, 4-lane divided) and the T/X assemblies,
+  each with a `create` spec the drop handler will dispatch on. The loader is
+  forward-compatible — an unknown `manifest_version` parses best-effort with a
+  warning, and an item whose create kind this build doesn't know is kept as
+  `Unknown` (so a Phase-3 props manifest never bricks an older editor). Ships
+  with its `QAbstractItemModelTester` gtest and parse tests. (Supersedes the
+  flat read-only panel of #50; as-built note in `docs/design/m3a/03_assets.md`.)
 - **Parametric intersection assemblies** (kernel, UI-revamp Phase 2 groundwork):
   `edit::assembly::t_intersection(net, pose, params)` and `x_intersection(...)`
   generate a standalone 3-way tee / 4-way crossing as ONE undoable command —

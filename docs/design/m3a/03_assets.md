@@ -75,6 +75,17 @@ CI), the **runtime library manifest** is what the editor loads to populate the
 library panel and what the object/signal placement resolves an asset reference
 against. New file: `assets/library.json`.
 
+> **As-built (UI-revamp Phase 2):** the manifest shipped as
+> `assets/library/manifest.json` (a subdirectory that also holds the committed
+> thumbnail PNGs) rather than the flat `assets/library.json` named here; the
+> loader/model class names (`LibraryManifest`, `LibraryListModel`) are as
+> designed. Phase 2 also supersedes the *flat, read-only, props-only* panel of
+> [`05` §1](05_editor_and_docs.md) / [#50](https://github.com/Robomous/RoadMaker/issues/50)
+> with a categorized, searchable panel carrying **road templates + parametric
+> assemblies** (props move to Phase 3); the schema below is extended with a
+> `create` block (`road_template` / `assembly`) and a top-level `category`, and
+> stays forward-compatible for the `odr`/`placement` prop fields.
+
 ```jsonc
 {
   "manifest_version": 1,            // bumped when the schema changes; M4 extends

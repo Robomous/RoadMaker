@@ -44,6 +44,7 @@ add_executable(roadmaker_editor_tests
   test_editor_command.cpp
   test_highlight.cpp
   test_icons.cpp
+  test_library_model.cpp
   test_lane_profile.cpp
   test_mesh_parity.cpp
   test_panels.cpp
@@ -63,7 +64,8 @@ add_executable(roadmaker_editor_tests
 )
 
 target_compile_definitions(roadmaker_editor_tests
-  PRIVATE RM_SAMPLES_DIR="${CMAKE_SOURCE_DIR}/assets/samples")
+  PRIVATE RM_SAMPLES_DIR="${CMAKE_SOURCE_DIR}/assets/samples"
+          RM_ASSETS_DIR="${CMAKE_SOURCE_DIR}/assets")
 
 target_link_libraries(roadmaker_editor_tests PRIVATE
   roadmaker_editor_lib
