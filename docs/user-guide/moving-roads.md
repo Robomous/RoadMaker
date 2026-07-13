@@ -62,5 +62,6 @@ follow-ups.
 
 ## Reference
 
-[M3a topology editing](../design/m3a/06_topology_editing.md) — the connectivity
-policy and the `edit::translate_roads` / `translate_road` kernel API.
+The connectivity policy and the `edit::translate_roads` / `translate_road`
+kernel API are documented in the M3a topology-editing design notes
+(`docs/design/m3a/06_topology_editing.md`).
