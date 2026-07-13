@@ -72,6 +72,17 @@ public:
   /// "orbit" (the default 3/4 view). Unknown names keep the current view.
   void set_camera_preset(const QString& preset);
 
+  /// Screenshot mode only: force a road-level hover highlight so the hover
+  /// feedback state can be captured without a live cursor. Locks the hover so
+  /// spurious enter/leave/move events around capture can't clear it;
+  /// interactive use never calls this, so live hover is unaffected.
+  void set_hover_preview(RoadId road) {
+    hovered_road_ = road;
+    hovered_lane_ = {};
+    hover_locked_ = true;
+    update();
+  }
+
   /// Renders the current scene into an offscreen framebuffer and returns the
   /// frame (screenshot mode, docs/contributing/pull-requests.md visual
   /// evidence). Runs any pending scene upload first via paintGL. Null image
@@ -96,6 +107,7 @@ protected:
   void mouseDoubleClickEvent(QMouseEvent* event) override;
   void wheelEvent(QWheelEvent* event) override;
   void keyPressEvent(QKeyEvent* event) override;
+  void leaveEvent(QEvent* event) override;
 
 private:
   struct UploadedItem {
@@ -114,7 +126,7 @@ private:
   /// document_.mesh().roads; replaced-in-place roads keep their index).
   void refresh_road_aabbs(const std::vector<RoadId>& roads);
 
-  [[nodiscard]] bool is_highlighted(const UploadedItem& item) const;
+  [[nodiscard]] HighlightState item_state(const UploadedItem& item) const;
   [[nodiscard]] Ray ray_through(const QPointF& pos) const;
 
   /// Ground-plane (z=0) world point under a viewport pixel, or nullopt when the
@@ -123,6 +135,11 @@ private:
   [[nodiscard]] std::optional<std::array<double, 3>>
   ground_point_at(const QPointF& pos, double max_t = std::numeric_limits<double>::infinity()) const;
   void update_hover(const QPointF& pos);
+
+  /// Sets the road-level hover highlight, repainting only when it changes.
+  /// A road-level hover leaves the hovered lane invalid (the whole road
+  /// brightens); pass an invalid id to clear.
+  void set_hovered_road(RoadId road);
 
   /// Builds the right-click MenuContext under a viewport pixel: node handle of
   /// a selected road (priority), else the road/lane pick + its station.
@@ -179,6 +196,17 @@ private:
 
   /// Corner hint text (set_hint); painted over the GL frame in paintGL.
   QString hint_text_;
+
+  /// Entity under the cursor, tracked by update_hover for the hover highlight
+  /// (invalid = nothing hovered). A lane-level hover sets both; a road-level
+  /// hover leaves the lane invalid. Selection (SelectionModel) takes priority
+  /// over these when both apply to the same mesh.
+  RoadId hovered_road_;
+  LaneId hovered_lane_;
+
+  /// Set by set_hover_preview (screenshot mode): update_hover then leaves the
+  /// forced hover in place so a capture isn't wiped by a spurious event.
+  bool hover_locked_ = false;
 };
 
 } // namespace roadmaker::editor

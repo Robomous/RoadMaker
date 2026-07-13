@@ -35,6 +35,8 @@ struct ScreenshotArgs {
   std::filesystem::path scene;
   std::filesystem::path out;
   QString camera = QStringLiteral("orbit");
+  QString select; // OpenDRIVE id to select (captures the selection highlight)
+  QString hover;  // OpenDRIVE id to hover (captures the hover highlight)
   int width = 1600;
   int height = 1000;
 };
@@ -55,6 +57,12 @@ ScreenshotArgs parse_screenshot_args(int argc, char** argv) {
       i += 2;
     } else if (std::strcmp(argv[i], "--camera") == 0 && i + 1 < argc) {
       args.camera = QString::fromUtf8(argv[i + 1]);
+      ++i;
+    } else if (std::strcmp(argv[i], "--select") == 0 && i + 1 < argc) {
+      args.select = QString::fromUtf8(argv[i + 1]);
+      ++i;
+    } else if (std::strcmp(argv[i], "--hover") == 0 && i + 1 < argc) {
+      args.hover = QString::fromUtf8(argv[i + 1]);
       ++i;
     } else if (std::strcmp(argv[i], "--size") == 0 && i + 1 < argc) {
       // std::from_chars, not sscanf: MSVC deprecates the CRT scanners
@@ -125,6 +133,13 @@ int run_screenshot(const ScreenshotArgs& args) {
     window.viewport()->set_hint(QString()); // no tool overlay in captures
   }
   QCoreApplication::processEvents(); // realize the GL widget + first paint
+  // Highlights are applied AFTER the first event flush: realizing the widget
+  // can deliver a synthetic mouse move that clears a forced hover, so set it
+  // last and capture immediately (grabFramebuffer re-renders without pumping
+  // the event loop).
+  if (!no_scene) {
+    window.set_capture_highlights(args.select, args.hover);
+  }
 
   QImage frame;
   if (args.whole_window) {
@@ -162,7 +177,8 @@ int main(int argc, char** argv) {
   if (screenshot.requested && !screenshot.valid) {
     std::fprintf(stderr,
                  "usage: roadmaker-editor --screenshot|--screenshot-ui <scene.xodr> <out.png>"
-                 " [--camera top|orbit] [--size WxH] [--theme <name>]\n");
+                 " [--camera top|orbit] [--size WxH] [--theme <name>]"
+                 " [--select <odr_id>] [--hover <odr_id>]\n");
     return kScreenshotError;
   }
   QString cli_theme;

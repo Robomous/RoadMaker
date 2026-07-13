@@ -208,6 +208,9 @@ BackdropColors Theme::backdrop() const {
   // palettes — muted so they read as orientation, not content.
   colors.axis_x = {0.75F, 0.35F, 0.32F};
   colors.axis_y = {0.35F, 0.65F, 0.36F};
+  // Hover/selection emphasis follows the accent token so alternate palettes
+  // (and future retints) drive the viewport highlight too.
+  colors.highlight = rgb(accent);
   return colors;
 }
 
