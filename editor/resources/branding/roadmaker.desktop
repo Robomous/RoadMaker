@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=RoadMaker
+GenericName=Road Network Editor
+Comment=Open-source road-network authoring toolkit
+Exec=roadmaker-editor %f
+Icon=roadmaker
+Terminal=false
+Categories=Graphics;Engineering;Science;

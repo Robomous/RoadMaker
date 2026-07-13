@@ -32,4 +32,16 @@
     <file alias="template-rural.svg">icons/custom/template-rural.svg</file>
     <file alias="template-urban.svg">icons/custom/template-urban.svg</file>
   </qresource>
+  <!-- Full-colour application icon (coral robot). Multi-size so QIcon picks a
+       crisp raster for the window/taskbar at any scale; the macOS Dock uses the
+       bundled .icns and Windows the .rc/.ico instead. -->
+  <qresource prefix="/branding">
+    <file alias="icon_16.png">branding/icon_16.png</file>
+    <file alias="icon_24.png">branding/icon_24.png</file>
+    <file alias="icon_32.png">branding/icon_32.png</file>
+    <file alias="icon_48.png">branding/icon_48.png</file>
+    <file alias="icon_64.png">branding/icon_64.png</file>
+    <file alias="icon_128.png">branding/icon_128.png</file>
+    <file alias="icon_256.png">branding/icon_256.png</file>
+  </qresource>
 </RCC>

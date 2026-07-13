@@ -20,6 +20,12 @@ public:
 
   [[nodiscard]] static QIcon get(const QString& name);
   static void clear_cache();
+
+  // Full-colour application icon (the coral robot), assembled from the
+  // multi-size PNGs under :/branding/. Used for QApplication::setWindowIcon —
+  // the window/taskbar icon on every platform (macOS Dock/Finder come from the
+  // bundled .icns instead). Not palette-tinted; cached after first build.
+  [[nodiscard]] static QIcon app_icon();
 };
 
 } // namespace roadmaker::editor

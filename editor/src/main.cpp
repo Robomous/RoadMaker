@@ -15,6 +15,7 @@
 #include <system_error>
 
 #include "app/crash_handler.hpp"
+#include "app/icons.hpp"
 #include "app/log_setup.hpp"
 #include "app/main_window.hpp"
 #include "app/settings.hpp"
@@ -212,6 +213,9 @@ int main(int argc, char** argv) {
   QSurfaceFormat::setDefaultFormat(format);
 
   QApplication app(argc, argv);
+  // Window/taskbar icon on every platform (the macOS Dock/Finder icon comes
+  // from the bundled .icns, Windows Explorer from the linked .rc/.ico).
+  QApplication::setWindowIcon(roadmaker::editor::Icons::app_icon());
   QCoreApplication::setApplicationVersion(QString::fromUtf8(
       roadmaker::version().data(), static_cast<qsizetype>(roadmaker::version().size())));
 

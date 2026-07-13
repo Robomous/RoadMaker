@@ -709,18 +709,20 @@ void MainWindow::check_recovery() {
 }
 
 void MainWindow::show_about_dialog() {
-  QMessageBox::about(
-      this,
-      tr("About RoadMaker"),
-      tr("<b>RoadMaker</b> — open source road-network authoring toolkit.<br>"
-         "Kernel %1<br><br>"
-         "Licensed under the MIT License — © Robomous.<br><br>"
-         "Built with Qt %2, used under the GNU LGPLv3 as dynamically linked "
-         "libraries. You may replace the bundled Qt libraries with your own "
-         "builds; see THIRD_PARTY_LICENSES.md in the distribution.")
-          .arg(QString::fromUtf8(roadmaker::version().data(),
-                                 static_cast<qsizetype>(roadmaker::version().size())),
-               QStringLiteral(QT_VERSION_STR)));
+  QMessageBox about(this);
+  about.setWindowTitle(tr("About RoadMaker"));
+  about.setTextFormat(Qt::RichText);
+  about.setIconPixmap(Icons::app_icon().pixmap(64, 64));
+  about.setText(tr("<b>RoadMaker</b> — open source road-network authoring toolkit.<br>"
+                   "Kernel %1<br><br>"
+                   "Licensed under the MIT License — © Robomous.<br><br>"
+                   "Built with Qt %2, used under the GNU LGPLv3 as dynamically linked "
+                   "libraries. You may replace the bundled Qt libraries with your own "
+                   "builds; see THIRD_PARTY_LICENSES.md in the distribution.")
+                    .arg(QString::fromUtf8(roadmaker::version().data(),
+                                           static_cast<qsizetype>(roadmaker::version().size())),
+                         QStringLiteral(QT_VERSION_STR)));
+  about.exec();
 }
 
 void MainWindow::update_recent_files_menu() {

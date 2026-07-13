@@ -47,6 +47,16 @@ TEST(Icons, ClearCacheKeepsLookupsWorking) {
   EXPECT_FALSE(icon.isNull());
 }
 
+TEST(Icons, AppIconIsBundledAndMultiSize) {
+  // The full-colour application icon (window/taskbar icon) is assembled from
+  // the :/branding/ PNGs; a non-null pixmap at a small and a large size proves
+  // the raster set is embedded and QIcon selected an image.
+  const QIcon icon = Icons::app_icon();
+  ASSERT_FALSE(icon.isNull());
+  EXPECT_FALSE(icon.pixmap(16).isNull());
+  EXPECT_FALSE(icon.pixmap(256).isNull());
+}
+
 TEST(Icons, EveryMappedIconIsBundled) {
   // The full docs/design/m2/05_assets.md §1 mapping table. A non-null pixmap
   // proves the bundled SVG rendered (the fromTheme fallback yields a null
