@@ -57,6 +57,7 @@ public:
   [[nodiscard]] bool mouse_press(const ToolEvent& event) override;
   [[nodiscard]] bool mouse_move(const ToolEvent& event) override;
   [[nodiscard]] bool mouse_release(const ToolEvent& event) override;
+  [[nodiscard]] bool mouse_double_click(const ToolEvent& event) override;
   [[nodiscard]] bool key_press(int key, Qt::KeyboardModifiers modifiers) override;
 
   /// Node handles of every selected road (points), plus during a drag the
@@ -67,6 +68,13 @@ public:
   [[nodiscard]] bool dragging() const { return drag_.has_value(); }
 
   [[nodiscard]] bool banding() const { return band_current_.has_value(); }
+
+signals:
+  /// A double-click on a road body inserted a bend node (already committed as
+  /// one command) and asks the app to switch to Edit Nodes and grab it — so a
+  /// double-click-then-drag bends the road in one motion. Carries the road and
+  /// the new node's index.
+  void edit_nodes_requested(RoadId road, std::size_t node_index);
 
 private:
   /// LMB held without a node grab: a click, a rubber band from empty space, or

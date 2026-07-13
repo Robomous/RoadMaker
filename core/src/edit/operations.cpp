@@ -1190,6 +1190,56 @@ delete_waypoint(const RoadNetwork& network, RoadId road_id, std::size_t index) {
   return refit_command(network, road_id, std::string(kName), std::move(waypoints), headings);
 }
 
+std::unique_ptr<Command> insert_node_at(const RoadNetwork& network, RoadId road_id, double s) {
+  static constexpr std::string_view kName = "Insert Node";
+  const Road* road = network.road(road_id);
+  if (road == nullptr) {
+    return invalid_command(std::string(kName),
+                           Error{.code = ErrorCode::InvalidArgument, .message = "stale road id"});
+  }
+  const double length = road->plan_view.length();
+  if (s <= 0.0 || s >= length) {
+    return invalid_command(
+        std::string(kName),
+        Error{.code = ErrorCode::InvalidArgument, .message = "insert station is outside the road"});
+  }
+
+  std::vector<Waypoint> waypoints = effective_waypoints(*road);
+  const auto stations = waypoint_stations(*road, waypoints.size());
+  if (!stations.has_value()) {
+    return invalid_command(std::string(kName), stations.error());
+  }
+  for (const double station : *stations) {
+    if (std::abs(s - station) < kMinNodeSpacingM) {
+      return invalid_command(
+          std::string(kName),
+          Error{.code = ErrorCode::InvalidArgument,
+                .message = fmt::format("a node already exists within {:g} m of this point",
+                                       kMinNodeSpacingM)});
+    }
+  }
+
+  // Insert before the first node past s.
+  std::size_t index = 0;
+  while (index < stations->size() && (*stations)[index] < s) {
+    ++index;
+  }
+
+  // Pin the heading at EVERY node from the current curve — this is what makes
+  // the re-fit reproduce untouched records exactly and split only the covering
+  // record. The new node's pose comes from evaluating the curve at s.
+  std::vector<double> headings;
+  headings.reserve(waypoints.size() + 1);
+  for (const double station : *stations) {
+    headings.push_back(road->plan_view.evaluate(station).hdg);
+  }
+  const PathPoint point = road->plan_view.evaluate(s);
+  headings.insert(headings.begin() + static_cast<std::ptrdiff_t>(index), point.hdg);
+  waypoints.insert(waypoints.begin() + static_cast<std::ptrdiff_t>(index),
+                   Waypoint{.x = point.x, .y = point.y});
+  return refit_command(network, road_id, std::string(kName), std::move(waypoints), headings);
+}
+
 std::unique_ptr<Command> create_road(std::vector<Waypoint> waypoints,
                                      LaneProfile profile,
                                      std::string name,

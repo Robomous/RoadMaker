@@ -175,6 +175,38 @@ bool SelectTool::mouse_release(const ToolEvent& event) {
   return false;
 }
 
+bool SelectTool::mouse_double_click(const ToolEvent& event) {
+  if (drag_.has_value() || !event.pick.has_value()) {
+    return false;
+  }
+  const RoadId road_id = event.pick->road;
+  const Road* road = document_.network().road(road_id);
+  if (road == nullptr) {
+    return false;
+  }
+  const StationCoord coord = find_station(road->plan_view, event.world_x, event.world_y);
+  const auto stations = edit::waypoint_stations(*road);
+  if (!stations.has_value()) {
+    return false;
+  }
+  std::size_t index = 0;
+  while (index < stations->size() && (*stations)[index] < coord.s) {
+    ++index;
+  }
+  const Expected<void> inserted =
+      document_.push_command(edit::insert_node_at(document_.network(), road_id, coord.s));
+  if (!inserted.has_value()) {
+    emit status_message(
+        tr("Cannot insert bend: %1").arg(QString::fromStdString(inserted.error().message)));
+    return true;
+  }
+  // Committed; hand off to Edit Nodes to grab the fresh node for shaping.
+  selection_.select({.road = road_id, .lane = LaneId{}}, SelectMode::Replace);
+  emit status_message(tr("Bend point inserted — drag to shape it"));
+  emit edit_nodes_requested(road_id, index);
+  return true;
+}
+
 bool SelectTool::key_press(int key, Qt::KeyboardModifiers modifiers) {
   static_cast<void>(modifiers);
   if (key == Qt::Key_Delete || key == Qt::Key_Backspace) {

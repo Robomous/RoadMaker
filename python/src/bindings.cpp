@@ -922,6 +922,13 @@ NB_MODULE(_roadmaker, m) {
       "dy"_a,
       "Moves N roads together by (dx, dy) [m] as ONE command; links between the "
       "moved roads survive, links leaving the set break on both sides.");
+  edit.def("insert_node_at",
+           &roadmaker::edit::insert_node_at,
+           "network"_a,
+           "road"_a,
+           "s"_a,
+           "Inserts a bend node at station s, pinning headings from the current "
+           "curve so the shape is preserved and only the covering record splits.");
   nb::class_<roadmaker::edit::JunctionGenOptions>(edit, "JunctionGenOptions")
       .def(nb::init<>())
       .def_rw("max_end_distance_m", &roadmaker::edit::JunctionGenOptions::max_end_distance_m)

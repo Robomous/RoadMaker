@@ -142,6 +142,31 @@ TEST(EditNodesTool, PreviewShowsNodesTangentsAndMarkers) {
   EXPECT_EQ(preview.line_positions.size(), 66U);
 }
 
+// --- double-click bend insert --------------------------------------------------
+
+TEST(EditNodesTool, DoubleClickOnBodyInsertsABendAndGrabsIt) {
+  Scene scene;
+  EditNodesTool tool(scene.document, scene.selection);
+  scene.selection.select({.road = scene.edited, .lane = LaneId{}});
+  const std::size_t before = scene.nodes(scene.edited).size();
+
+  // Double-click on the road body (a lane-patch pick carries the road).
+  const PickHit pick{.road = scene.edited, .lane = LaneId{}};
+  ASSERT_TRUE(tool.mouse_double_click(at(30.0, 6.0, Qt::LeftButton, Qt::NoModifier, pick)));
+
+  // One committed insert, the new node is active AND grabbed for shaping.
+  EXPECT_EQ(scene.document.undo_stack()->count(), scene.base_count + 1);
+  EXPECT_EQ(scene.nodes(scene.edited).size(), before + 1);
+  EXPECT_TRUE(tool.dragging());
+  ASSERT_TRUE(tool.active_node().has_value());
+  EXPECT_EQ(tool.active_node()->first, scene.edited);
+
+  // Undo removes the bend; the base bytes return.
+  ASSERT_TRUE(tool.key_press(Qt::Key_Escape, Qt::NoModifier)); // drop the grab first
+  scene.document.undo_stack()->undo();
+  EXPECT_EQ(xodr(scene.document), scene.base_xodr);
+}
+
 // --- insert via midpoint markers ----------------------------------------------
 
 TEST(EditNodesTool, ClickOnMidpointMarkerInsertsANodeOnTheCurve) {

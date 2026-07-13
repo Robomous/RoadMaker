@@ -44,7 +44,15 @@ public:
   [[nodiscard]] bool mouse_press(const ToolEvent& event) override;
   [[nodiscard]] bool mouse_move(const ToolEvent& event) override;
   [[nodiscard]] bool mouse_release(const ToolEvent& event) override;
+  [[nodiscard]] bool mouse_double_click(const ToolEvent& event) override;
   [[nodiscard]] bool key_press(int key, Qt::KeyboardModifiers modifiers) override;
+
+  /// Makes `index` the active node of `road` and grabs it for dragging — the
+  /// "double-click then drag" bend handoff from Select (and this tool's own
+  /// double-click). Selects the road so its handles are visible; the grab is
+  /// preview-less until the next move, so a plain double-click just leaves the
+  /// committed node active.
+  void adopt_node(RoadId road, std::size_t index);
 
   /// Node handles (points) + tangent whiskers and midpoint-marker diamonds
   /// (lines) of every selected road, the active-node highlight square, and
@@ -61,7 +69,8 @@ public:
 private:
   struct MarkerHit {
     RoadId road;
-    std::size_t insert_index = 0; ///< insert_waypoint index (segment + 1)
+    std::size_t insert_index = 0; ///< new node's index (segment + 1)
+    double station = 0.0;         ///< mid station of the segment, for insert_node_at
     Waypoint position;            ///< on the curve, at the segment's mid station
   };
 
