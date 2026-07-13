@@ -7,6 +7,7 @@
 #include <QOpenGLContext>
 #include <QPainter>
 #include <QPen>
+#include <QTimer>
 #include <QWheelEvent>
 #include <algorithm>
 #include <array>
@@ -42,6 +43,16 @@ ViewportWidget::ViewportWidget(Document& document,
   setFocusPolicy(Qt::StrongFocus);
   setMinimumSize(320, 240);
   renderer_->set_backdrop(theme::current().backdrop()); // safe pre-init
+
+  // Overlay clock + a repaint timer that only runs while a toast or the hint
+  // is animating (started/stopped by refresh_overlay_animation).
+  clock_.start();
+  overlay_timer_ = new QTimer(this);
+  overlay_timer_->setInterval(60);
+  connect(overlay_timer_, &QTimer::timeout, this, [this] {
+    update();
+    refresh_overlay_animation();
+  });
 
   connect(&document_, &Document::loaded, this, [this] { frame_on_rebuild_ = true; });
   connect(&document_, &Document::mesh_changed, this, [this](const std::vector<RoadId>& roads) {
@@ -197,27 +208,97 @@ void ViewportWidget::paintGL() {
 
   // QPainter overlays (handle sprites + the tool hint), painted over the GL
   // frame — supported on QOpenGLWidget when done last (no beginNativePainting).
-  if (!handle_overlays_.empty() || !hint_text_.isEmpty()) {
+  const bool has_toasts = !toasts_.active(now_ms()).empty();
+  if (!handle_overlays_.empty() || !hint_text_.isEmpty() || has_toasts) {
     QPainter painter(this);
     painter.setRenderHint(QPainter::Antialiasing);
     painter.setRenderHint(QPainter::TextAntialiasing);
     draw_handles(painter);
+    draw_hint_card(painter);
+    draw_toasts(painter);
+  }
+}
 
-    if (!hint_text_.isEmpty()) {
-      const QFontMetrics metrics(painter.font());
-      const int pad = 6;
-      const QRect text_rect =
-          metrics.boundingRect(QRect(0, 0, width() - (4 * pad), 0), Qt::TextWordWrap, hint_text_);
-      const QRect box(pad,
-                      height() - text_rect.height() - (3 * pad),
-                      text_rect.width() + (2 * pad),
-                      text_rect.height() + (2 * pad));
-      painter.setPen(Qt::NoPen);
-      painter.setBrush(QColor(0, 0, 0, 150));
-      painter.drawRoundedRect(box, 4, 4);
-      painter.setPen(QColor(235, 235, 235));
-      painter.drawText(box.adjusted(pad, pad, -pad, -pad), Qt::TextWordWrap, hint_text_);
+void ViewportWidget::draw_hint_card(QPainter& painter) const {
+  const double opacity = hint_opacity();
+  if (hint_text_.isEmpty() || opacity <= 0.0) {
+    return;
+  }
+  const Theme& theme = theme::current();
+  constexpr int kPad = 10;    // ui-design.md spacing scale
+  constexpr int kRadius = 8;  // card radius
+  constexpr int kMargin = 12; // from the viewport edge
+
+  const QFontMetrics metrics(painter.font());
+  const int max_text = std::max(120, (width() / 2) - (2 * kPad) - kMargin);
+  const QRect text_rect =
+      metrics.boundingRect(QRect(0, 0, max_text, 0), Qt::TextWordWrap, hint_text_);
+  const QRect box(
+      kMargin, kMargin, text_rect.width() + (2 * kPad), text_rect.height() + (2 * kPad));
+
+  painter.save();
+  painter.setOpacity(opacity);
+  painter.setPen(QPen(theme.border, 1));
+  painter.setBrush(theme.bg2);
+  painter.drawRoundedRect(box, kRadius, kRadius);
+  painter.setPen(theme.text_primary);
+  painter.drawText(box.adjusted(kPad, kPad, -kPad, -kPad), Qt::TextWordWrap, hint_text_);
+  painter.restore();
+}
+
+void ViewportWidget::draw_toasts(QPainter& painter) {
+  const std::vector<ToastQueue::Active> toasts = toasts_.active(now_ms());
+  if (toasts.empty()) {
+    return;
+  }
+  const Theme& theme = theme::current();
+  const auto accent_for = [&](ToastSeverity severity) {
+    switch (severity) {
+    case ToastSeverity::Success:
+      return theme.success;
+    case ToastSeverity::Warning:
+      return theme.warning;
+    case ToastSeverity::Error:
+      return theme.error;
+    case ToastSeverity::Info:
+      break;
     }
+    return theme.accent;
+  };
+
+  constexpr int kPad = 10;
+  constexpr int kRadius = 8;
+  constexpr int kGap = 8;
+  constexpr int kBar = 3; // severity color bar on the leading edge
+  const QFontMetrics metrics(painter.font());
+
+  // Bottom-center stack, newest at the bottom and older ones rising above —
+  // clear of the top-left hint card.
+  int bottom = height() - 14;
+  for (auto toast = toasts.rbegin(); toast != toasts.rend(); ++toast) {
+    const int max_text = std::min(420, width() - (4 * kPad));
+    const QRect text_rect =
+        metrics.boundingRect(QRect(0, 0, max_text, 0), Qt::TextWordWrap, toast->text);
+    const int box_w = text_rect.width() + (2 * kPad) + kBar;
+    const int box_h = text_rect.height() + (2 * kPad);
+    const QRect box((width() - box_w) / 2, bottom - box_h, box_w, box_h);
+
+    painter.save();
+    painter.setOpacity(toast->opacity);
+    painter.setPen(QPen(theme.border, 1));
+    painter.setBrush(theme.bg2);
+    painter.drawRoundedRect(box, kRadius, kRadius);
+    // Severity color bar on the left edge, clipped to the rounded corners.
+    painter.setPen(Qt::NoPen);
+    painter.setBrush(accent_for(toast->severity));
+    painter.setClipRect(box.left(), box.top(), kBar + kRadius, box.height());
+    painter.drawRoundedRect(box, kRadius, kRadius);
+    painter.setClipping(false);
+    painter.setPen(theme.text_primary);
+    painter.drawText(box.adjusted(kPad + kBar, kPad, -kPad, -kPad), Qt::TextWordWrap, toast->text);
+    painter.restore();
+
+    bottom -= box_h + kGap;
   }
 }
 
@@ -289,7 +370,48 @@ void ViewportWidget::set_hint(const QString& text) {
     return;
   }
   hint_text_ = text;
+  hint_changed_ms_ = now_ms(); // reset the idle-fade clock
+  refresh_overlay_animation();
   update();
+}
+
+void ViewportWidget::show_toast(const QString& text, ToastSeverity severity) {
+  if (text.isEmpty()) {
+    return;
+  }
+  toasts_.push(text, severity, now_ms());
+  refresh_overlay_animation();
+  update();
+}
+
+std::int64_t ViewportWidget::now_ms() const {
+  return clock_.isValid() ? clock_.elapsed() : 0;
+}
+
+double ViewportWidget::hint_opacity() const {
+  constexpr std::int64_t kHoldMs = 4000; // full opacity before the idle fade
+  constexpr std::int64_t kFadeMs = 700;
+  const std::int64_t age = now_ms() - hint_changed_ms_;
+  if (age <= kHoldMs) {
+    return 1.0;
+  }
+  if (age >= kHoldMs + kFadeMs) {
+    return 0.0;
+  }
+  return static_cast<double>(kHoldMs + kFadeMs - age) / static_cast<double>(kFadeMs);
+}
+
+void ViewportWidget::refresh_overlay_animation() {
+  if (overlay_timer_ == nullptr) {
+    return;
+  }
+  const bool animating =
+      !toasts_.active(now_ms()).empty() || (!hint_text_.isEmpty() && hint_opacity() > 0.0);
+  if (animating && !overlay_timer_->isActive()) {
+    overlay_timer_->start();
+  } else if (!animating && overlay_timer_->isActive()) {
+    overlay_timer_->stop();
+  }
 }
 
 Ray ViewportWidget::ray_through(const QPointF& pos) const {

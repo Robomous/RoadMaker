@@ -288,12 +288,14 @@ MainWindow::MainWindow(QWidget* parent, bool restore_saved_layout)
     const Expected<void> merged =
         document_.push_command(edit::merge_roads(document_.network(), a, b));
     if (!merged.has_value()) {
-      statusBar()->showMessage(
-          tr("Cannot merge: %1").arg(QString::fromStdString(merged.error().message)), 5000);
+      viewport_->show_toast(
+          tr("Cannot merge: %1").arg(QString::fromStdString(merged.error().message)),
+          ToastSeverity::Warning);
       return;
     }
     selection_.select({.road = a, .lane = LaneId{}}, SelectMode::Replace);
-    statusBar()->showMessage(tr("Merged into road %1 — Ctrl+Z to undo").arg(surviving), 5000);
+    viewport_->show_toast(tr("Merged into road %1 — Ctrl+Z to undo").arg(surviving),
+                          ToastSeverity::Success);
   });
 
   // The freshly-built arrangement is the canonical layout Reset Layout
@@ -593,7 +595,7 @@ bool MainWindow::save_to(const std::filesystem::path& path) {
   settings_.add_recent_file(document_.file_path());
   update_recent_files_menu();
   save_welcome_thumbnail();
-  statusBar()->showMessage(tr("Saved %1").arg(document_.file_path()), 5000);
+  viewport_->show_toast(tr("Saved %1").arg(document_.file_path()), ToastSeverity::Success);
   return true;
 }
 
@@ -646,7 +648,7 @@ void MainWindow::export_file_dialog() {
   if (!result) {
     QMessageBox::warning(this, tr("Export failed"), QString::fromStdString(result.error().message));
   } else {
-    statusBar()->showMessage(tr("Exported %1").arg(path), 5000);
+    viewport_->show_toast(tr("Exported %1").arg(path), ToastSeverity::Success);
   }
 }
 
@@ -666,7 +668,7 @@ void MainWindow::export_usd_dialog() {
   if (!result) {
     QMessageBox::warning(this, tr("Export failed"), QString::fromStdString(result.error().message));
   } else {
-    statusBar()->showMessage(tr("Exported %1").arg(path), 5000);
+    viewport_->show_toast(tr("Exported %1").arg(path), ToastSeverity::Success);
   }
 }
 #endif

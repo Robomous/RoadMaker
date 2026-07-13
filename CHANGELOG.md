@@ -21,6 +21,16 @@ is headless-testable.
   assets needed for v1); the manifest loads from the Qt resource system so the
   built app always has it. Screenshot mode gained `--raise-dock` (CI renders the
   panel). Design + before/after: `docs/design/ui-revamp/phase2_library.md`.
+- **Themed hint card + transient toasts** (UI revamp Phase 1): the tool-hint
+  card moved to the top-left and is now themed (bg2/border/text, 8px radius),
+  fading out when idle. A greenfield **toast overlay** surfaces editor results
+  (merge / save / export) as bottom-center themed cards with a severity color
+  bar and auto-fade — a headless, fake-clock-tested `ToastQueue`
+  (`editor/src/viewport/toast_queue.{hpp,cpp}`) that prunes, coalesces repeats,
+  caps the stack, and computes fade opacity, painted by
+  `ViewportWidget::show_toast`. Result messages re-routed off the status bar;
+  screenshot mode gained `--toast <text>`. Design + before/after:
+  `docs/design/ui-revamp/phase1_feedback.md`.
 - **DPI-crisp themed tool handles** (UI revamp Phase 1): node and midpoint
   handles are now screen-space QPainter sprites with idle / hovered / grabbed
   states, replacing the world-meter GL crosses that shrank and grew with zoom.

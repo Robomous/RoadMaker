@@ -255,6 +255,10 @@ jobs:
           xvfb-run -a python3 scripts/editor_screenshot.py \
             "assets/samples/t_attach.xodr" "shots/library_panel.png" \
             --ui --raise-dock dock.library --size 1200x800 --skip-on-no-gl
+          # Hint card + toast overlay (Phase 1).
+          xvfb-run -a python3 scripts/editor_screenshot.py \
+            "assets/samples/t_attach.xodr" "shots/hint_toast.png" \
+            --camera orbit --select 1 --tool edit-nodes --toast "Merged into road 1" --skip-on-no-gl
       - uses: actions/upload-artifact@v4
         with:
           name: editor-screenshots

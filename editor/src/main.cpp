@@ -40,6 +40,7 @@ struct ScreenshotArgs {
   QString hover;      // OpenDRIVE id to hover (captures the hover highlight)
   QString tool;       // tool id to activate (captures its handle overlay)
   QString raise_dock; // dock objectName to raise (whole-window captures)
+  QString toast;      // toast text to show (captures the toast overlay)
   int width = 1600;
   int height = 1000;
 };
@@ -72,6 +73,9 @@ ScreenshotArgs parse_screenshot_args(int argc, char** argv) {
       ++i;
     } else if (std::strcmp(argv[i], "--raise-dock") == 0 && i + 1 < argc) {
       args.raise_dock = QString::fromUtf8(argv[i + 1]);
+      ++i;
+    } else if (std::strcmp(argv[i], "--toast") == 0 && i + 1 < argc) {
+      args.toast = QString::fromUtf8(argv[i + 1]);
       ++i;
     } else if (std::strcmp(argv[i], "--size") == 0 && i + 1 < argc) {
       // std::from_chars, not sscanf: MSVC deprecates the CRT scanners
@@ -150,6 +154,9 @@ int run_screenshot(const ScreenshotArgs& args) {
     window.set_capture_highlights(args.select, args.hover);
     if (!args.tool.isEmpty()) {
       window.activate_tool_for_capture(args.tool);
+    }
+    if (!args.toast.isEmpty()) {
+      window.viewport()->show_toast(args.toast, roadmaker::editor::ToastSeverity::Success);
     }
   }
 
