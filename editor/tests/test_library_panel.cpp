@@ -24,7 +24,7 @@ LibraryListModel& populated_model() {
 TEST(LibraryPanel, ShowsEveryCatalogueItem) {
   LibraryPanel panel(populated_model());
   ASSERT_NE(panel.view()->model(), nullptr);
-  EXPECT_EQ(panel.view()->model()->rowCount(), 5); // 3 templates + T/X
+  EXPECT_EQ(panel.view()->model()->rowCount(), 10); // 3 templates + T/X + 5 props
   // The grid gives every item a themed icon (the filter proxy injects it).
   const QModelIndex first = panel.view()->model()->index(0, 0);
   EXPECT_FALSE(panel.view()->model()->data(first, Qt::DecorationRole).isNull());
@@ -41,8 +41,11 @@ TEST(LibraryPanel, SearchFiltersByLabel) {
   search->setText(QStringLiteral("intersection"));
   EXPECT_EQ(panel.view()->model()->rowCount(), 2); // T + X
 
+  search->setText(QStringLiteral("tree"));
+  EXPECT_EQ(panel.view()->model()->rowCount(), 4); // pine/oak/birch/poplar
+
   search->clear();
-  EXPECT_EQ(panel.view()->model()->rowCount(), 5);
+  EXPECT_EQ(panel.view()->model()->rowCount(), 10);
 }
 
 } // namespace

@@ -13,6 +13,16 @@ through the M2 command layer (one undo step per edit, byte-identical undo) and
 is headless-testable.
 
 ### Added
+- **Drag a tree from the Library onto a road** (UI revamp Phase 3): the Library
+  gains a **Props** category (pine/oak/birch/poplar/shrub, themed `trees` glyph);
+  dragging one onto the viewport snaps it to the nearest road's `s`/`t` and
+  places an OpenDRIVE `<object>` through one undoable command (`shrub` →
+  vegetation), while a drop away from any road places nothing and shows a "drop
+  near a road" hint (props are road-relative). Screenshot mode's
+  `--drop-library` takes a prop key; CI renders a tree drop. *Fast-follow:*
+  dragging a placed prop to a new `s`/`t` (Duplicate/Delete + re-drop cover
+  repositioning today). Design + evidence:
+  `docs/design/ui-revamp/phase3_props.md`.
 - **Discoverability sweep** (UI revamp Phase 4): every capability now has a
   visible, labeled entry point (product-parity rule). **Add from Library** is a
   first-class toolbar button (labeled "Library") and an Edit-menu entry — it was

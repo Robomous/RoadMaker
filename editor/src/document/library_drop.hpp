@@ -23,13 +23,13 @@ class RoadNetwork;
 
 namespace roadmaker::editor {
 
-enum class LibraryDropKind { None, RoadTemplate, Assembly };
+enum class LibraryDropKind { None, RoadTemplate, Assembly, Tree };
 
 struct LibraryDropAction {
   LibraryDropKind kind = LibraryDropKind::None;
   LaneProfile profile;                    ///< RoadTemplate: arm Create Road with this
-  std::unique_ptr<edit::Command> command; ///< Assembly: push this (one undo unit)
-  QString toast;                          ///< success message for the toast overlay
+  std::unique_ptr<edit::Command> command; ///< Assembly/Tree: push this (one undo unit)
+  QString toast;                          ///< success message, or (kind None) a reject hint
 };
 
 /// The LaneProfile for a road-template profile name (two_lane_rural default).

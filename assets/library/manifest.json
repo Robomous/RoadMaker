@@ -36,6 +36,41 @@
       "category": "Assemblies",
       "thumbnail": "assets/library/thumbnails/assembly_x.png",
       "create": { "kind": "assembly", "assembly": "x" }
+    },
+    {
+      "key": "prop.tree.pine",
+      "label": "Pine tree",
+      "category": "Props",
+      "thumbnail": "assets/library/thumbnails/prop_tree_pine.png",
+      "create": { "kind": "tree", "model": "tree_pine" }
+    },
+    {
+      "key": "prop.tree.oak",
+      "label": "Oak tree",
+      "category": "Props",
+      "thumbnail": "assets/library/thumbnails/prop_tree_oak.png",
+      "create": { "kind": "tree", "model": "tree_oak" }
+    },
+    {
+      "key": "prop.tree.birch",
+      "label": "Birch tree",
+      "category": "Props",
+      "thumbnail": "assets/library/thumbnails/prop_tree_birch.png",
+      "create": { "kind": "tree", "model": "tree_birch" }
+    },
+    {
+      "key": "prop.tree.poplar",
+      "label": "Poplar tree",
+      "category": "Props",
+      "thumbnail": "assets/library/thumbnails/prop_tree_poplar.png",
+      "create": { "kind": "tree", "model": "tree_poplar" }
+    },
+    {
+      "key": "prop.shrub",
+      "label": "Shrub",
+      "category": "Props",
+      "thumbnail": "assets/library/thumbnails/prop_shrub.png",
+      "create": { "kind": "tree", "model": "shrub" }
     }
   ]
 }

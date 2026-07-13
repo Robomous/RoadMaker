@@ -22,16 +22,17 @@ namespace roadmaker::editor {
 /// (`assembly` = "t" | "x"). Kind::Unknown = a create kind from a newer
 /// manifest this build can't act on (shown but not droppable).
 struct LibraryItem {
-  enum class Kind { RoadTemplate, Assembly, Unknown };
+  enum class Kind { RoadTemplate, Assembly, Tree, Unknown };
 
   QString key;       ///< stable id (drag payload / scene reference)
   QString label;     ///< shown in the panel
-  QString category;  ///< grouping header ("Road templates", "Assemblies", …)
+  QString category;  ///< grouping header ("Road templates", "Assemblies", "Props", …)
   QString thumbnail; ///< manifest-relative image path (may be empty/absent on disk)
 
   Kind kind = Kind::Unknown;
   QString profile;  ///< RoadTemplate: "two_lane_rural" | "urban_sidewalk" | "highway"
   QString assembly; ///< Assembly: "t" | "x"
+  QString model;    ///< Tree: a bundled prop model id (e.g. "tree_pine")
 };
 
 class LibraryManifest {
