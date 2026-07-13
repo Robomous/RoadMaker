@@ -85,6 +85,7 @@ private:
   void op_lane_edit();
   void op_elevation();
   void op_split_road();
+  void op_translate_road();
   void op_create_junction();
   void op_attach_t();
   void op_delete_junction();

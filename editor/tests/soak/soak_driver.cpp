@@ -55,6 +55,7 @@ void SoakDriver::step(int index) {
       {2, &SoakDriver::op_lane_edit, "lane_edit"},
       {1, &SoakDriver::op_elevation, "elevation"},
       {1, &SoakDriver::op_split_road, "split_road"},
+      {2, &SoakDriver::op_translate_road, "translate_road"},
       {2, &SoakDriver::op_create_junction, "create_junction"},
       {1, &SoakDriver::op_attach_t, "attach_t"},
       {1, &SoakDriver::op_delete_junction, "delete_junction"},
@@ -407,6 +408,25 @@ void SoakDriver::op_split_road() {
     return;
   }
   push(edit::split_road(document_.network(), road_id, rand_range(2.0, road->length - 2.0)));
+}
+
+void SoakDriver::op_translate_road() {
+  std::vector<RoadId> roads = live_roads(/*editable_only=*/true);
+  if (roads.empty()) {
+    return;
+  }
+  // Move one or two distinct roads together by a small random delta. The
+  // command refuses junction-touching roads, which push() records as rejected.
+  const int count = std::min<int>(rand_int(1, 2), static_cast<int>(roads.size()));
+  std::vector<RoadId> moved;
+  for (int i = 0; i < count; ++i) {
+    const RoadId candidate = roads[static_cast<std::size_t>(rand_int(0, int(roads.size()) - 1))];
+    if (std::ranges::find(moved, candidate) == moved.end()) {
+      moved.push_back(candidate);
+    }
+  }
+  push(edit::translate_roads(
+      document_.network(), moved, rand_range(-20.0, 20.0), rand_range(-20.0, 20.0)));
 }
 
 void SoakDriver::op_create_junction() {

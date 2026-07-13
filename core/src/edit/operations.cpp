@@ -1258,6 +1258,139 @@ std::unique_ptr<Command> delete_road(const RoadNetwork& network, RoadId road_id)
   return command;
 }
 
+std::unique_ptr<Command> translate_roads(const RoadNetwork& network,
+                                         std::span<const RoadId> road_ids,
+                                         double dx,
+                                         double dy) {
+  static constexpr std::string_view kName = "Move Road";
+  if (road_ids.empty()) {
+    return invalid_command(
+        std::string(kName),
+        Error{.code = ErrorCode::InvalidArgument, .message = "no roads to move"});
+  }
+
+  // Distinct, live ids (a duplicate would otherwise be shifted twice).
+  std::vector<RoadId> moved;
+  moved.reserve(road_ids.size());
+  for (const RoadId id : road_ids) {
+    if (network.road(id) == nullptr) {
+      return invalid_command(std::string(kName),
+                             Error{.code = ErrorCode::InvalidArgument, .message = "stale road id"});
+    }
+    if (std::ranges::find(moved, id) == moved.end()) {
+      moved.push_back(id);
+    }
+  }
+
+  // Junction roads can't be moved as free bodies — their geometry is generated
+  // from the arm poses, and an approach road's pose is welded to the junction.
+  // Refuse, naming the first offending junction (junctions_touching covers the
+  // connecting-road case, the arm/approach case, and the junction back-ref).
+  for (const RoadId id : moved) {
+    const std::vector<JunctionId> touched = junctions_touching(network, id);
+    if (!touched.empty()) {
+      const Junction* junction = network.junction(touched.front());
+      return invalid_command(
+          std::string(kName),
+          Error{.code = ErrorCode::InvalidArgument,
+                .message =
+                    fmt::format("road {} participates in junction {} — junction roads can't be "
+                                "moved; delete the junction or move its free end nodes instead",
+                                network.road(id)->odr_id,
+                                junction != nullptr ? junction->odr_id : std::string("?"))});
+    }
+  }
+
+  const auto in_set = [&moved](RoadId id) { return std::ranges::find(moved, id) != moved.end(); };
+  // A road-level link is broken when it leaves the moved set — the two ends no
+  // longer meet. Links between two roads moving together survive (both shift by
+  // the same delta). Lane-level links are left as delete_road leaves them.
+  const auto links_out = [&](const std::optional<RoadLink>& link) {
+    if (!link.has_value()) {
+      return false;
+    }
+    const auto* target = std::get_if<RoadId>(&link->target);
+    return target != nullptr && !in_set(*target);
+  };
+  const auto links_in = [&](const std::optional<RoadLink>& link) {
+    if (!link.has_value()) {
+      return false;
+    }
+    const auto* target = std::get_if<RoadId>(&link->target);
+    return target != nullptr && in_set(*target);
+  };
+
+  // Unmoved roads whose links point INTO the set: their back-links break too,
+  // cleared in the SAME command so break+move is one undo step.
+  std::vector<std::pair<RoadId, Road>> far_before;
+  std::vector<std::pair<RoadId, Road>> far_after;
+  network.for_each_road([&](RoadId id, const Road& road) {
+    if (in_set(id) || (!links_in(road.predecessor) && !links_in(road.successor))) {
+      return;
+    }
+    Road after = road;
+    if (links_in(after.predecessor)) {
+      after.predecessor.reset();
+    }
+    if (links_in(after.successor)) {
+      after.successor.reset();
+    }
+    far_before.emplace_back(id, road);
+    far_after.emplace_back(id, std::move(after));
+  });
+
+  DirtySet dirty;
+  dirty.roads = moved;
+  for (const auto& [id, road] : far_before) {
+    dirty.roads.push_back(id);
+  }
+
+  auto command = std::make_unique<GenericCommand>(std::string(kName), std::move(dirty));
+  for (const RoadId id : moved) {
+    const Road& original = *network.road(id);
+    Road after = original;
+
+    // Shift every geometry record's start position; headings, lengths and s are
+    // untouched (append recomputes s from the unchanged running length, so the
+    // reference line reproduces byte-for-byte on undo from the before snapshot).
+    ReferenceLine shifted;
+    for (GeometryRecord record : original.plan_view.records()) {
+      record.x += dx;
+      record.y += dy;
+      shifted.append(record);
+    }
+    after.plan_view = std::move(shifted);
+
+    if (after.authoring_waypoints.has_value()) {
+      for (Waypoint& waypoint : *after.authoring_waypoints) {
+        waypoint.x += dx;
+        waypoint.y += dy;
+      }
+    }
+
+    if (links_out(after.predecessor)) {
+      after.predecessor.reset();
+    }
+    if (links_out(after.successor)) {
+      after.successor.reset();
+    }
+
+    command->before.roads.emplace_back(id, original);
+    command->after.roads.emplace_back(id, std::move(after));
+  }
+  for (std::size_t i = 0; i < far_before.size(); ++i) {
+    command->before.roads.push_back(std::move(far_before[i]));
+    command->after.roads.push_back(std::move(far_after[i]));
+  }
+  return command;
+}
+
+std::unique_ptr<Command>
+translate_road(const RoadNetwork& network, RoadId road, double dx, double dy) {
+  const std::array<RoadId, 1> ids{road};
+  return translate_roads(network, ids, dx, dy);
+}
+
 std::unique_ptr<Command> split_road(const RoadNetwork& network, RoadId road_id, double split_s) {
   static constexpr std::string_view kName = "Split Road";
   const auto fail = [&](std::string message) {

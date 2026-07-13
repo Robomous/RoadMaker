@@ -148,6 +148,52 @@ def test_split_command_and_undo(network):
     assert network.road_count == 1
 
 
+def test_translate_road_shifts_geometry_and_undo_is_byte_identical(network):
+    stack = rm.edit.EditStack()
+    road = network.find_road("1")
+    before = rm.write_xodr(network)
+    start_before = network.road(road).plan_view.evaluate(0.0)
+
+    stack.push(network, rm.edit.translate_road(network, road, 10.0, -4.0))
+    start_after = network.road(road).plan_view.evaluate(0.0)
+    assert start_after.x == pytest.approx(start_before.x + 10.0)
+    assert start_after.y == pytest.approx(start_before.y - 4.0)
+
+    stack.undo(network)
+    assert rm.write_xodr(network) == before  # byte-identical restore
+
+
+def test_translate_roads_moves_many_as_one_command(network):
+    stack = rm.edit.EditStack()
+    rm.author_clothoid_road(
+        network, [(0.0, 100.0), (120.0, 100.0)], rm.LaneProfile.two_lane_default(), "Second", "2"
+    )
+    a = network.find_road("1")
+    b = network.find_road("2")
+
+    stack.push(network, rm.edit.translate_roads(network, [a, b], 5.0, 5.0))
+    # One command moved both; a single undo puts both back.
+    assert network.road(a).plan_view.evaluate(0.0).y == pytest.approx(5.0)
+    assert network.road(b).plan_view.evaluate(0.0).y == pytest.approx(105.0)
+    stack.undo(network)
+    assert network.road(a).plan_view.evaluate(0.0).y == pytest.approx(0.0)
+
+
+def test_translate_road_refuses_junction_road(network):
+    stack = rm.edit.EditStack()
+    # Build a junction so an incoming road touches it, then refuse to move it.
+    rm.author_clothoid_road(
+        network, [(200.0, 0.0), (140.0, 0.0)], rm.LaneProfile.two_lane_default(), "", "9"
+    )
+    ends = [
+        rm.RoadEnd(network.find_road("1"), rm.ContactPoint.END),
+        rm.RoadEnd(network.find_road("9"), rm.ContactPoint.END),
+    ]
+    stack.push(network, rm.edit.create_junction(network, ends))
+    with pytest.raises(Exception):
+        stack.push(network, rm.edit.translate_road(network, network.find_road("1"), 1.0, 1.0))
+
+
 def _t_junction_arms(net):
     """Three straight two-lane arms whose ends meet near the origin."""
     for coords, odr in (

@@ -78,6 +78,11 @@ public:
 signals:
   void preview_changed();
   void status_message(const QString& text);
+
+  /// Requests a viewport cursor shape (first cursor mechanism, kept minimal):
+  /// tools emit SizeAllCursor while dragging a whole road, ArrowCursor when the
+  /// drag ends. The ViewportWidget forwards it to setCursor.
+  void cursor_changed(Qt::CursorShape shape);
 };
 
 } // namespace roadmaker::editor

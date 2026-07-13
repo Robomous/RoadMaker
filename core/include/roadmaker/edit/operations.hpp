@@ -66,6 +66,22 @@ delete_waypoint(const RoadNetwork& network, RoadId road, std::size_t index);
                                                           std::string name,
                                                           EndpointHeadings locked = {});
 
+/// Translates whole roads by (dx, dy) [m] in the plan-view plane: shifts every
+/// geometry-record start position and every authoring waypoint; headings,
+/// lengths, s-values, lanes, elevation and marks are untouched, so undo is
+/// byte-identical from the value snapshots. ONE command for N roads (not a
+/// macro): links BETWEEN two roads in the set survive the move, while a pred/
+/// succ link leaving the set is cleared on BOTH sides (break + move = one undo
+/// step). Refuses (invalid_command, junction named) any road participating in a
+/// junction — connecting road, arm, or junction back-reference — since its pose
+/// is generated, not free. `road_ids` is de-duplicated; empty is an error.
+[[nodiscard]] RM_API std::unique_ptr<Command>
+translate_roads(const RoadNetwork& network, std::span<const RoadId> road_ids, double dx, double dy);
+
+/// Single-road convenience over translate_roads (same rules and diagnostics).
+[[nodiscard]] RM_API std::unique_ptr<Command>
+translate_road(const RoadNetwork& network, RoadId road, double dx, double dy);
+
 /// Splits at station s: the original keeps [0, s), a new road (auto id)
 /// gets [s, length). Sections, profiles, links and lane links are carried
 /// over. M2 restriction: roads participating in a junction cannot be split,

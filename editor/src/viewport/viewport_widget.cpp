@@ -377,9 +377,14 @@ ToolEvent ViewportWidget::make_tool_event(const QMouseEvent* event) const {
 
 void ViewportWidget::attach_active_tool() {
   disconnect(preview_connection_);
+  disconnect(cursor_connection_);
   if (Tool* tool = tools_.active()) {
     preview_connection_ =
         connect(tool, &Tool::preview_changed, this, qOverload<>(&QWidget::update));
+    cursor_connection_ = connect(
+        tool, &Tool::cursor_changed, this, [this](Qt::CursorShape shape) { setCursor(shape); });
+  } else {
+    setCursor(Qt::ArrowCursor);
   }
   update();
 }
