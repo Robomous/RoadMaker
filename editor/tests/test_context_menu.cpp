@@ -3,6 +3,7 @@
 // enabled states, and that invoke() lands the command. No QMenu needed.
 
 #include "roadmaker/edit/operations.hpp"
+#include "roadmaker/road/junction.hpp"
 #include "roadmaker/road/network.hpp"
 #include "roadmaker/xodr/writer.hpp"
 
@@ -10,6 +11,7 @@
 
 #include <QString>
 #include <algorithm>
+#include <array>
 #include <optional>
 #include <stdexcept>
 #include <string>
@@ -145,10 +147,61 @@ TEST(ContextMenu, NodeMenuSplitIsDisabledAtEndpointsEnabledInterior) {
   EXPECT_EQ(fx.document.network().road_count(), 2U);
 }
 
-TEST(ContextMenu, EmptyContextOffersFrameAll) {
+TEST(ContextMenu, EmptyContextOffersSceneWideItems) {
   Fixture fx;
   const std::vector<MenuItem> items = build_context_menu(MenuContext{}, fx.deps);
+  EXPECT_NE(fx.find(items, "Create road here"), nullptr);
   EXPECT_NE(fx.find(items, "Frame all"), nullptr);
+  const MenuItem* paste = fx.find(items, "Paste");
+  ASSERT_NE(paste, nullptr);
+  EXPECT_FALSE(paste->enabled); // stub
+}
+
+TEST(ContextMenu, JunctionMenuFramesAndDeletes) {
+  Document document;
+  SelectionModel selection{document};
+  Actions actions{*document.undo_stack()};
+  ContextMenuDeps deps{document, selection, actions};
+
+  // Two arms meeting at (50,0) joined into a junction.
+  ASSERT_TRUE(document.push_command(
+      roadmaker::edit::create_road({Waypoint{.x = 0.0, .y = 0.0}, Waypoint{.x = 50.0, .y = 0.0}},
+                                   roadmaker::LaneProfile::two_lane_default(),
+                                   "A")));
+  ASSERT_TRUE(document.push_command(
+      roadmaker::edit::create_road({Waypoint{.x = 50.0, .y = 0.0}, Waypoint{.x = 50.0, .y = 50.0}},
+                                   roadmaker::LaneProfile::two_lane_default(),
+                                   "B")));
+  RoadId a;
+  RoadId b;
+  document.network().for_each_road([&](RoadId id, const roadmaker::Road& r) {
+    if (r.name == "A") {
+      a = id;
+    } else if (r.name == "B") {
+      b = id;
+    }
+  });
+  const std::array<roadmaker::RoadEnd, 2> ends{
+      roadmaker::RoadEnd{.road = a, .contact = roadmaker::ContactPoint::End},
+      roadmaker::RoadEnd{.road = b, .contact = roadmaker::ContactPoint::Start}};
+  ASSERT_TRUE(document.push_command(roadmaker::edit::create_junction(document.network(), ends)));
+  roadmaker::JunctionId junction;
+  document.network().for_each_junction(
+      [&](roadmaker::JunctionId id, const roadmaker::Junction&) { junction = id; });
+  ASSERT_TRUE(junction.is_valid());
+
+  MenuContext context;
+  context.junction = junction;
+  const std::vector<MenuItem> items = build_context_menu(context, deps);
+  const MenuItem* del = nullptr;
+  for (const MenuItem& item : items) {
+    if (item.text == QString("Delete junction")) {
+      del = &item;
+    }
+  }
+  ASSERT_NE(del, nullptr);
+  del->invoke();
+  EXPECT_EQ(document.network().junction(junction), nullptr);
 }
 
 TEST(ContextMenu, MergeSelectedIsEnabledForTwoMergeableRoads) {

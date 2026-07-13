@@ -52,7 +52,11 @@ is headless-testable.
   a QMenu — the single source of truth the guided tour (#114) will consume.
   `Document::last_dirty()` lets a tool discover a command's new ids (the split's
   tail); the shared `pick_waypoint()` node hit-test moves into
-  `viewport/picking.{hpp,cpp}`.
+  `viewport/picking.{hpp,cpp}`. The menus are complete across all four contexts
+  — road body, node, junction (Frame · Delete junction), and empty space
+  (Create road here · Paste _stub_ · Frame all) — and the as-built design is
+  recorded in `docs/design/m3a/06_topology_editing.md` with the connectivity
+  policy, merge preconditions, and the `reverse_road` deferral inventory.
 - **Merge two roads into one** (M3a topology UX): with exactly two roads
   selected that meet end-to-start, **Merge** (git-merge icon, Edit menu,
   toolbar, and the road context menu) welds them into one road. Kernel

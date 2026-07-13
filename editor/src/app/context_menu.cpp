@@ -64,6 +64,22 @@ std::vector<MenuItem> build_context_menu(const MenuContext& context, ContextMenu
     return items;
   }
 
+  // Junction menu (reached from the scene tree — junction floors aren't picked
+  // in the viewport).
+  if (context.junction.has_value()) {
+    const JunctionId junction = *context.junction;
+    items.push_back(MenuItem{.text = QObject::tr("Frame"), .invoke = [&deps] {
+                               deps.selection.clear();
+                               deps.actions.frame_selection->trigger();
+                             }});
+    items.push_back(separator());
+    items.push_back(MenuItem{.text = QObject::tr("Delete junction"), .invoke = [&deps, junction] {
+                               (void)deps.document.push_command(
+                                   edit::delete_junction(deps.document.network(), junction));
+                             }});
+    return items;
+  }
+
   // Road-body menu.
   if (context.pick.has_value()) {
     const RoadId road = context.pick->road;
@@ -126,6 +142,10 @@ std::vector<MenuItem> build_context_menu(const MenuContext& context, ContextMenu
   }
 
   // Empty context: scene-wide.
+  items.push_back(MenuItem{.text = QObject::tr("Create road here"),
+                           .invoke = [&deps] { deps.actions.tool_create_road->trigger(); }});
+  items.push_back(MenuItem{.text = QObject::tr("Paste"), .enabled = false}); // stub (no clipboard)
+  items.push_back(separator());
   items.push_back(MenuItem{.text = QObject::tr("Frame all"), .invoke = [&deps] {
                              deps.selection.clear();
                              deps.actions.frame_selection->trigger();
