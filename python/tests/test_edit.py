@@ -194,6 +194,31 @@ def test_translate_road_refuses_junction_road(network):
         stack.push(network, rm.edit.translate_road(network, network.find_road("1"), 1.0, 1.0))
 
 
+def test_insert_node_at_preserves_shape(network):
+    stack = rm.edit.EditStack()
+    road = network.find_road("1")
+    length = network.road(road).length
+    nodes_before = len(network.road(road).authoring_waypoints)
+    sampled = [(s, network.road(road).plan_view.evaluate(s)) for s in (20.0, 60.0, 100.0)]
+
+    stack.push(network, rm.edit.insert_node_at(network, road, length * 0.25))
+    assert len(network.road(road).authoring_waypoints) == nodes_before + 1
+    for s, before in sampled:
+        after = network.road(road).plan_view.evaluate(s)
+        assert after.x == pytest.approx(before.x, abs=1e-3)
+        assert after.y == pytest.approx(before.y, abs=1e-3)
+
+    stack.undo(network)
+    assert len(network.road(road).authoring_waypoints) == nodes_before
+
+
+def test_insert_node_at_rejects_near_duplicate(network):
+    stack = rm.edit.EditStack()
+    road = network.find_road("1")
+    with pytest.raises(ValueError):
+        stack.push(network, rm.edit.insert_node_at(network, road, 0.5))  # < 2 m from start
+
+
 def _t_junction_arms(net):
     """Three straight two-lane arms whose ends meet near the origin."""
     for coords, odr in (

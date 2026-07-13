@@ -154,6 +154,7 @@ MainWindow::MainWindow(QWidget* parent, bool restore_saved_layout)
     }
     return result == QMessageBox::Ok;
   });
+  SelectTool* select_tool_ptr = select_tool.get();
   tool_manager_.register_tool(ToolId::Select, std::move(select_tool));
   connect(actions_->tool_select, &QAction::triggered, this, [this] {
     tool_manager_.set_active(ToolId::Select);
@@ -183,10 +184,21 @@ MainWindow::MainWindow(QWidget* parent, bool restore_saved_layout)
   });
   auto edit_nodes_tool = std::make_unique<EditNodesTool>(document_, selection_);
   wire_status(edit_nodes_tool.get());
+  EditNodesTool* edit_nodes_ptr = edit_nodes_tool.get();
   tool_manager_.register_tool(ToolId::EditNodes, std::move(edit_nodes_tool));
   connect(actions_->tool_edit_nodes, &QAction::triggered, this, [this] {
     tool_manager_.set_active(ToolId::EditNodes);
   });
+  // Double-clicking a road body in Select inserts a bend node and hands off to
+  // Edit Nodes with the fresh node grabbed — double-click-then-drag to shape it.
+  connect(select_tool_ptr,
+          &SelectTool::edit_nodes_requested,
+          this,
+          [this, edit_nodes_ptr](RoadId road, std::size_t index) {
+            actions_->tool_edit_nodes->setChecked(true);
+            tool_manager_.set_active(ToolId::EditNodes);
+            edit_nodes_ptr->adopt_node(road, index);
+          });
   auto lane_profile_tool = std::make_unique<LaneProfileTool>(selection_);
   wire_status(lane_profile_tool.get());
   tool_manager_.register_tool(ToolId::LaneProfile, std::move(lane_profile_tool));

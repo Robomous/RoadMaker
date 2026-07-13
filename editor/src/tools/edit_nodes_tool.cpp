@@ -11,6 +11,7 @@
 
 #include "document/document.hpp"
 #include "document/selection_model.hpp"
+#include "viewport/picking.hpp"
 
 namespace roadmaker::editor {
 
@@ -108,8 +109,10 @@ std::optional<EditNodesTool::MarkerHit> EditNodesTool::pick_midpoint(const Waypo
       const double dist = std::hypot(cursor.x - mid.x, cursor.y - mid.y);
       if (dist <= best_dist) {
         best_dist = dist;
-        best = MarkerHit{
-            .road = road_id, .insert_index = i + 1, .position = Waypoint{.x = mid.x, .y = mid.y}};
+        best = MarkerHit{.road = road_id,
+                         .insert_index = i + 1,
+                         .station = (stations->at(i) + stations->at(i + 1)) / 2.0,
+                         .position = Waypoint{.x = mid.x, .y = mid.y}};
       }
     }
   }
@@ -149,8 +152,10 @@ bool EditNodesTool::mouse_press(const ToolEvent& event) {
     if (const Road* road = document_.network().road(marker->road)) {
       notify_derivation(*road);
     }
-    const Expected<void> inserted = document_.push_command(edit::insert_waypoint(
-        document_.network(), marker->road, marker->insert_index, marker->position));
+    // insert_node_at pins headings from the current curve, so the shape is
+    // preserved (unlike insert_waypoint, which reflowed authored roads).
+    const Expected<void> inserted = document_.push_command(
+        edit::insert_node_at(document_.network(), marker->road, marker->station));
     if (!inserted.has_value()) {
       emit status_message(
           tr("Cannot insert node: %1").arg(QString::fromStdString(inserted.error().message)));
@@ -204,6 +209,50 @@ bool EditNodesTool::mouse_release(const ToolEvent& event) {
   }
   emit preview_changed();
   return true;
+}
+
+bool EditNodesTool::mouse_double_click(const ToolEvent& event) {
+  if (drag_.has_value() || !event.pick.has_value()) {
+    return false;
+  }
+  const RoadId road_id = event.pick->road;
+  const Road* road = document_.network().road(road_id);
+  if (road == nullptr) {
+    return false;
+  }
+  notify_derivation(*road);
+  const StationCoord coord = find_station(road->plan_view, event.world_x, event.world_y);
+  const auto stations = edit::waypoint_stations(*road);
+  if (!stations.has_value()) {
+    return false;
+  }
+  std::size_t index = 0;
+  while (index < stations->size() && (*stations)[index] < coord.s) {
+    ++index;
+  }
+  const Expected<void> inserted =
+      document_.push_command(edit::insert_node_at(document_.network(), road_id, coord.s));
+  if (!inserted.has_value()) {
+    emit status_message(
+        tr("Cannot insert bend: %1").arg(QString::fromStdString(inserted.error().message)));
+    return true;
+  }
+  adopt_node(road_id, index);
+  emit status_message(tr("Bend point inserted — drag to shape it"));
+  return true;
+}
+
+void EditNodesTool::adopt_node(RoadId road, std::size_t index) {
+  selection_.select({.road = road, .lane = LaneId{}}); // handles must be visible
+  active_ = {road, index};
+  if (const Road* road_ptr = document_.network().road(road)) {
+    const std::vector<Waypoint> nodes = edit::effective_waypoints(*road_ptr);
+    if (index < nodes.size()) {
+      drag_ = NodeDragState{
+          .road = road, .index = index, .original = nodes[index], .current = nodes[index]};
+    }
+  }
+  emit preview_changed();
 }
 
 bool EditNodesTool::key_press(int key, Qt::KeyboardModifiers modifiers) {

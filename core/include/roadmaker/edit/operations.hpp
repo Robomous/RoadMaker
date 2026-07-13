@@ -55,6 +55,24 @@ insert_waypoint(const RoadNetwork& network, RoadId road, std::size_t index, Wayp
 [[nodiscard]] RM_API std::unique_ptr<Command>
 delete_waypoint(const RoadNetwork& network, RoadId road, std::size_t index);
 
+/// Minimum spacing [m] between an inserted node and an existing one — a UX
+/// constraint (matches the editor's node pick radius) so a bend point never
+/// lands on top of another node.
+inline constexpr double kMinNodeSpacingM = 2.0;
+
+/// Inserts a bend node at station `s`, PINNING the heading at every node
+/// (existing and new) from the current curve so the re-fit reproduces every
+/// untouched record exactly (line/arc/spiral within rm::tol; a paramPoly3
+/// covering record is re-fitted approximately with the one-time derivation
+/// notice) and only the record covering `s` splits into two G1-Hermite halves.
+/// This is why insert_waypoint is insufficient: it approximates the new node's
+/// heading (foreign roads) or re-fits positions-only (authored roads), both of
+/// which drift the shape. The new node's position is plan_view.evaluate(s).
+/// Rejects a stale road, an `s` outside (0, length), or an `s` within
+/// kMinNodeSpacingM of an existing node.
+[[nodiscard]] RM_API std::unique_ptr<Command>
+insert_node_at(const RoadNetwork& network, RoadId road, double s);
+
 // --- topology ---------------------------------------------------------------
 
 /// Authors a new clothoid road (auto-assigned OpenDRIVE id; an empty name

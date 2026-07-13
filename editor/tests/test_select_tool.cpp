@@ -595,3 +595,30 @@ TEST(SelectTool, LinkBreakConfirmGatesTheMove) {
   ASSERT_TRUE(tool.mouse_release(at(25.0, 20.0, Qt::NoButton, Qt::NoModifier, hit)));
   EXPECT_FALSE(document.network().road(head)->successor.has_value());
 }
+
+// --- double-click bend insert + Edit Nodes hand-off ----------------------------
+
+TEST(SelectTool, DoubleClickOnBodyInsertsABendAndRequestsEditNodes) {
+  Scene scene;
+  SelectTool tool(scene.document, scene.selection);
+  RoadId requested_road;
+  std::size_t requested_index = 999;
+  int emitted = 0;
+  QObject::connect(&tool, &SelectTool::edit_nodes_requested, [&](RoadId road, std::size_t index) {
+    requested_road = road;
+    requested_index = index;
+    ++emitted;
+  });
+
+  const roadmaker::Road* road = scene.document.network().road(scene.dragged);
+  const std::size_t before = road->authoring_waypoints->size();
+  const PickHit hit = scene.hit(scene.dragged);
+  ASSERT_TRUE(tool.mouse_double_click(at(30.0, 6.0, Qt::LeftButton, Qt::NoModifier, hit)));
+
+  // One committed insert; the app is asked to hand off to Edit Nodes.
+  EXPECT_EQ(scene.document.undo_stack()->count(), scene.base_count + 1);
+  EXPECT_EQ(scene.document.network().road(scene.dragged)->authoring_waypoints->size(), before + 1);
+  EXPECT_EQ(emitted, 1);
+  EXPECT_EQ(requested_road, scene.dragged);
+  EXPECT_LT(requested_index, before + 1);
+}

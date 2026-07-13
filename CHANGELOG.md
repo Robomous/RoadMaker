@@ -29,6 +29,17 @@ is headless-testable.
   `translate_roads` + `examples/move_road.py`; the interactive soak driver
   gained a move operation. *Not yet:* rotation, moving a junction as a unit,
   lateral lane-section moves, and multi-road endpoint snapping (follow-ups).
+- **Insert a bend point on a road** (M3a topology UX): double-click a road body
+  with the Select tool to drop a node exactly where you clicked and hand off to
+  Edit Nodes with that node grabbed — double-click-then-drag bends the road in
+  one motion. Edit Nodes' own double-click does the same, and its midpoint
+  markers now use the shape-preserving insert too. Kernel `edit::insert_node_at`
+  pins the heading at every node from the current curve, so the re-fit
+  reproduces every untouched record (line/arc/spiral within tol; a paramPoly3
+  covering record is re-fitted approximately with the one-time notice) and only
+  the record covering the click splits — unlike the old `insert_waypoint`, which
+  drifted authored roads. A node within 2 m of an existing one is refused.
+  Python `edit.insert_node_at` + `examples/insert_bend.py`.
 
 ### Fixed
 - **Middle-mouse pan is now natural (ground-anchored)**: the old pan scaled
