@@ -39,6 +39,7 @@ not undoable.
 | [Edit Nodes](edit-nodes.md) | Reshape a road by moving, inserting, and deleting its waypoints |
 | [Bend Points](bend-points.md) | Double-click a road to add a bend node without reshaping it |
 | [Merge & Split](merge-split.md) | Cut a road in two, or weld two adjacent roads into one |
+| [Right-Click Menus](context-menus.md) | The context actions for roads, nodes, junctions, and empty space |
 | [Lane Profile](lane-profile.md) | Add, remove, and retype lanes across a road's cross-section |
 | [Elevation](elevation.md) | Give a road a vertical profile |
 | [Junction](junction.md) | Connect road ends into a junction with generated turning lanes |
