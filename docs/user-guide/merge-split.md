@@ -47,6 +47,6 @@ junction, are follow-ups.
 
 ## Reference
 
-[M3a topology editing](../design/m3a/06_topology_editing.md) — the
-`edit::split_road` / `merge_roads` / `check_mergeable` kernel API and the merge
-precondition list.
+The `edit::split_road` / `merge_roads` / `check_mergeable` kernel API and the
+merge precondition list are documented in the M3a topology-editing design notes
+(`docs/design/m3a/06_topology_editing.md`).
