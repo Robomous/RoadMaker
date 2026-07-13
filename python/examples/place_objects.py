@@ -68,6 +68,22 @@ def main() -> int:
     tree.repeats = [repeat]
     network.add_object(road_id, tree)
 
+    # The undoable command path (parity with the editor): place a single tree
+    # prop through the edit layer so it participates in undo/redo. `add_object`
+    # returns a Command; an EditStack applies it and can revert it exactly.
+    stack = rm.edit.EditStack()
+    standalone = rm.Object()
+    standalone.odr_id = "4"
+    standalone.type = rm.ObjectType.TREE
+    standalone.name = "tree_oak"  # a bundled prop model (renders + exports)
+    standalone.s, standalone.t = 90.0, -8.0
+    standalone.radius, standalone.height = 1.8, 4.6
+    stack.push(network, rm.edit.add_object(network, road_id, standalone))
+    added_id = network.objects_of(road_id)[-1]
+    stack.push(network, rm.edit.move_object(network, added_id, 100.0, -8.0))  # nudge along s
+    stack.undo(network)  # undo the move — the tree returns to s=90
+    print(f"command-path tree now at s={network.object(added_id).s:.1f}")
+
     print(f"placed {network.object_count} objects on {network.road(road_id)!r}")
     for object_id in network.objects_of(road_id):
         print(f"  {network.object(object_id)!r}")

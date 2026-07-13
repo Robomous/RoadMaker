@@ -13,6 +13,17 @@ through the M2 command layer (one undo step per edit, byte-identical undo) and
 is headless-testable.
 
 ### Added
+- **Tree placement through the kernel — commands, mesh, exports** (UI revamp
+  Phase 3): `edit::add_object` / `delete_object` / `move_object` command
+  factories place, remove, and drag OpenDRIVE `<object>` props through the M2
+  command layer (undo/redo, byte-identical round-trip, restore-in-place keeps
+  the `ObjectId`), exposed in the Python `edit` module with a `place_objects.py`
+  example. The mesh builder emits one instanced `ObjectInstance` per placed
+  tree/vegetation prop (via the `DirtySet::objects` channel, so a prop edit
+  never re-tessellates a road), and both exporters carry it: glTF as a shared
+  mesh per model + one instance node each, USD as a per-instance `Xform` of
+  baked part meshes. Props are road-relative only (no world-xy). What
+  simulators receive: `docs/domain/opendrive.md`.
 - **Bundled low-poly tree props** (UI revamp Phase 3): five procedurally
   authored, license-clean props (`tree_pine`/`oak`/`birch`/`poplar` and
   `shrub`, MIT "original work") — the geometry the Library will place as

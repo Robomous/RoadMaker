@@ -1,5 +1,6 @@
 #include "roadmaker/mesh/mesh_builder.hpp"
 
+#include "roadmaker/assets/prop_library.hpp"
 #include "roadmaker/geometry/poly3.hpp"
 #include "roadmaker/tol.hpp"
 
@@ -328,6 +329,37 @@ void build_object_markings(const RoadNetwork& network,
   }
 }
 
+/// Placed props (trees/vegetation) a road owns, as INSTANCES of bundled prop
+/// models. An object contributes an instance only when it is a Tree/Vegetation
+/// whose @name resolves to a prop_library model; markings and foreign objects
+/// are skipped here (they round-trip in xodr and, for markings, mesh as paint
+/// in build_object_markings). The instance transform is the object's world
+/// pose from its road-relative s/t (no marking z-lift — a prop sits on the
+/// surface, offset only by its z_offset).
+void build_object_instances(const RoadNetwork& network,
+                            const Road& road,
+                            RoadId road_id,
+                            std::vector<ObjectInstance>& out) {
+  for (const ObjectId object_id : objects_of(network, road_id)) {
+    const Object& object = *network.object(object_id);
+    if (object.type != ObjectType::Tree && object.type != ObjectType::Vegetation) {
+      continue;
+    }
+    if (props::model(object.name) == nullptr) {
+      continue;
+    }
+    const StationFrame frame = make_frame(road, object.s);
+    std::array<double, 3> position = lateral_point(frame, object.t);
+    position[2] += object.z_offset;
+    const double heading = std::atan2(frame.sin_h, frame.cos_h) + object.hdg;
+    out.push_back(ObjectInstance{.object = object_id,
+                                 .road = road_id,
+                                 .model_id = object.name,
+                                 .position = position,
+                                 .heading = heading});
+  }
+}
+
 /// Sampling stations for one road (mandatory profile knots + adaptive fill).
 std::vector<double>
 road_stations(const RoadNetwork& network, const Road& road, const MeshOptions& options) {
@@ -474,6 +506,7 @@ NetworkMesh build_network_mesh(const RoadNetwork& network, const MeshOptions& op
     if (!road_mesh_is_empty(mesh)) {
       result.roads.push_back(std::move(mesh));
     }
+    build_object_instances(network, road, road_id, result.objects);
   });
   if (options.junction_floors) {
     network.for_each_junction([&](JunctionId junction_id, const Junction& junction) {
@@ -519,6 +552,15 @@ void remesh_objects(const RoadNetwork& network,
   for (const RoadId road_id : roads) {
     const auto existing = std::ranges::find(mesh.roads, road_id, &RoadMesh::road);
     const Road* road = network.road(road_id);
+
+    // Instanced-prop layer: drop this road's placed props and rebuild them
+    // (an object was added, moved, or removed). Independent of the road's
+    // surface mesh, so it runs before the marking-only fast path below.
+    std::erase_if(mesh.objects, [&](const ObjectInstance& inst) { return inst.road == road_id; });
+    if (road != nullptr) {
+      build_object_instances(network, *road, road_id, mesh.objects);
+    }
+
     if (existing == mesh.roads.end()) {
       // Road not meshed yet — fall back to a full build so the object markings
       // still land (keeps the entry point total for a fresh network).

@@ -3,6 +3,7 @@
 #include "roadmaker/road/id.hpp"
 #include "roadmaker/road/lane.hpp"
 
+#include <array>
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -58,6 +59,20 @@ struct JunctionFloor {
   SubMesh mesh;
 };
 
+/// A placed prop (tree/vegetation) as an INSTANCE of a bundled prop model
+/// (roadmaker::props). The renderer and the glTF/USD exporters draw
+/// props::model(model_id) at this world transform — no per-prop geometry is
+/// baked into the mesh, so many props of one model share a single mesh and one
+/// draw path. World frame: right-handed, Z-up, meters; heading rotates about
+/// +Z. `position` is the prop's base centre (sits on the road surface).
+struct ObjectInstance {
+  ObjectId object;                  ///< source OpenDRIVE <object>
+  RoadId road;                      ///< owning road (DirtySet::objects channel)
+  std::string model_id;             ///< prop_library id, e.g. "tree_pine"
+  std::array<double, 3> position{}; ///< world origin (base centre), xyz
+  double heading = 0.0;             ///< world heading [rad] about +Z
+};
+
 /// Whole-network tessellation result.
 struct NetworkMesh {
   std::vector<RoadMesh> roads;
@@ -66,6 +81,11 @@ struct NetworkMesh {
   /// field, stitched watertight to the road meshes). Built by
   /// junction_surface.cpp — docs/design/m2/03_junction_blending.md.
   std::vector<JunctionFloor> junction_floors;
+
+  /// Placed props (trees/vegetation), instanced from the bundled prop library
+  /// — regenerated per owning road via the DirtySet::objects channel
+  /// (remesh_objects), so a prop edit never re-tessellates a road surface.
+  std::vector<ObjectInstance> objects;
 };
 
 } // namespace roadmaker

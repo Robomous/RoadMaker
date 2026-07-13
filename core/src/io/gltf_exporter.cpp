@@ -4,6 +4,10 @@
 
 #include "roadmaker/io/gltf_exporter.hpp"
 
+#include "roadmaker/assets/prop_library.hpp"
+
+#include <cmath>
+
 #include "mesh_export_common.hpp"
 
 // tinygltf implementation lives in this TU only (its NO_STB/NO_EXTERNAL
@@ -42,6 +46,14 @@ public:
       // Floors carry the driving-lane material: one continuous asphalt with
       // the roads feeding them (a distinct junction color read as a patch).
       scene.nodes.push_back(add_submesh_node(floor.mesh, material_for(floor.mesh.material)));
+    }
+    // Placed props: one shared mesh per prop model, one node per instance —
+    // idiomatic glTF instancing, so many trees stay one mesh in the file.
+    for (const ObjectInstance& instance : mesh.objects) {
+      const int node = add_prop_node(instance);
+      if (node >= 0) {
+        scene.nodes.push_back(node);
+      }
     }
     model_.scenes.push_back(std::move(scene));
     model_.defaultScene = 0;
@@ -216,8 +228,59 @@ private:
     return static_cast<int>(model_.nodes.size() - 1);
   }
 
+  /// The shared glTF mesh for a prop model (trunk + crown primitives, one flat
+  /// material per part), built once and cached so every instance references it.
+  /// Returns -1 for an unknown model id.
+  int prop_mesh_for(const std::string& model_id) {
+    const auto cached = prop_meshes_.find(model_id);
+    if (cached != prop_meshes_.end()) {
+      return cached->second;
+    }
+    const props::PropModel* model = props::model(model_id);
+    if (model == nullptr) {
+      return -1;
+    }
+    tinygltf::Mesh gltf_mesh;
+    gltf_mesh.name = model_id;
+    for (const props::PropPart& part : model->parts) {
+      tinygltf::Primitive primitive;
+      primitive.mode = TINYGLTF_MODE_TRIANGLES;
+      primitive.attributes["POSITION"] = add_vec3_accessor(to_gltf_frame(part.positions), true);
+      primitive.attributes["NORMAL"] = add_vec3_accessor(to_gltf_frame(part.normals), false);
+      primitive.indices = add_index_accessor(part.indices);
+      primitive.material = add_material(model_id + ":" + part.name,
+                                        {part.color[0], part.color[1], part.color[2], 1.0},
+                                        io_common::kLaneRoughness);
+      gltf_mesh.primitives.push_back(std::move(primitive));
+    }
+    model_.meshes.push_back(std::move(gltf_mesh));
+    const int index = static_cast<int>(model_.meshes.size() - 1);
+    prop_meshes_.emplace(model_id, index);
+    return index;
+  }
+
+  /// One instance node placing a shared prop mesh at its world pose. The
+  /// kernel Z-up → glTF Y-up map (x,y,z)→(x,z,−y) is Rx(−90°), so a Z-up
+  /// heading θ becomes a rotation about +Y by θ. Returns -1 for an unknown
+  /// prop model (skipped).
+  int add_prop_node(const ObjectInstance& instance) {
+    const int mesh_index = prop_mesh_for(instance.model_id);
+    if (mesh_index < 0) {
+      return -1;
+    }
+    tinygltf::Node node;
+    node.name = instance.model_id;
+    node.mesh = mesh_index;
+    node.translation = {instance.position[0], instance.position[2], -instance.position[1]};
+    const double half = instance.heading * 0.5;
+    node.rotation = {0.0, std::sin(half), 0.0, std::cos(half)};
+    model_.nodes.push_back(std::move(node));
+    return static_cast<int>(model_.nodes.size() - 1);
+  }
+
   tinygltf::Model model_;
   std::map<LaneType, int> lane_materials_;
+  std::map<std::string, int> prop_meshes_;
   int marking_material_ = -1;
 };
 

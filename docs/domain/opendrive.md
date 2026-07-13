@@ -97,6 +97,37 @@ branch on the primitive type. Clothoid evaluation and continuity rules:
 - OpenDRIVE 1.8+ adds *virtual* and *direct* junction types; RoadMaker
   currently models the common (default) junctions.
 
+## Objects (props: trees, poles, crosswalks)
+
+- `<object>` elements (spec chapter 13) are parsed, represented
+  (`roadmaker::Object`), written, and validated. An object is **road-relative**:
+  it lives under a `<road>` and is located by `s`/`t`, `zOffset`, and `hdg` —
+  OpenDRIVE has no world-placed object, so RoadMaker never invents one. The
+  editor snaps a placed prop to the nearest road's `s`/`t` and refuses drops
+  with no road nearby.
+- Object mutation goes through the command layer (`edit::add_object` /
+  `delete_object` / `move_object`), so placement participates in undo/redo with
+  the byte-identical-round-trip contract; the raw `RoadNetwork::add_object`
+  arena API stays available for headless authoring.
+- **Bundled tree/vegetation props** carry a prop-model id in `@name` (e.g.
+  `tree_pine`). The mesh builder resolves that to a bundled mesh
+  (`roadmaker::props`) and emits one `ObjectInstance` (model id + world
+  transform) per placed prop — the single geometry source shared by the
+  viewport and both exporters.
+- **What exporters emit for props** (so a downstream simulator receives real
+  geometry, not just an OpenDRIVE record):
+  - **glTF (.glb):** one shared `mesh` per prop model (trunk + crown
+    primitives, flat materials) referenced by one `node` per instance carrying
+    the world translation/rotation — idiomatic glTF instancing (many trees stay
+    one mesh in the file). Y-up per the export boundary.
+  - **USD (.usda):** one `Xform` per instance (`prop_<n>_<model>`) containing
+    the part `Mesh` prims baked into world space, each bound to a flat prop
+    `Material` under `/Looks` (tinyusdz has no ergonomic prototype instancing,
+    so USD bakes rather than instances).
+  - Non-prop objects (crosswalks, stop lines, arrows) still mesh as flat paint
+    submeshes; other object types round-trip in `.xodr` but carry no 3D export
+    geometry yet.
+
 ## Reader and writer stance
 
 - The **reader** accepts OpenDRIVE 1.6/1.7 and records the header revision.
