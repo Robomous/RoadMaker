@@ -18,6 +18,7 @@
 #include "document/autosave.hpp"
 #include "document/diagnostics_model.hpp"
 #include "document/document.hpp"
+#include "document/library_list_model.hpp"
 #include "document/scene_tree_model.hpp"
 #include "document/selection_model.hpp"
 #include "tools/tool_manager.hpp"
@@ -38,6 +39,11 @@ public:
 
   /// The central viewport (screenshot mode drives its camera and capture).
   [[nodiscard]] ViewportWidget* viewport() { return viewport_; }
+
+  /// Screenshot mode: raises the dock with the given objectName (e.g.
+  /// "dock.library") to the front of its tab group so it shows in a
+  /// whole-window capture. Unknown names no-op.
+  void raise_dock_for_capture(const QString& object_name);
 
   /// Screenshot mode: highlight roads by OpenDRIVE id so the viewport
   /// feedback states render in a capture — `select_odr` gets the strong
@@ -99,6 +105,7 @@ private:
   AutosaveManager autosave_; // after document_: connects to its signals
   SelectionModel selection_;
   SceneTreeModel scene_tree_model_;
+  LibraryListModel library_model_;
   DiagnosticsModel diagnostics_model_;
   ToolManager tool_manager_; // declared before viewport_, which references it
 
@@ -125,6 +132,7 @@ private:
   /// through the action, not the widget (QToolBar owns the layout).
   QAction* template_action_ = nullptr;
   QDockWidget* scene_dock_;
+  QDockWidget* library_dock_;
   QDockWidget* properties_dock_;
   QDockWidget* diagnostics_dock_;
   QDockWidget* profile_dock_;

@@ -251,6 +251,10 @@ jobs:
           xvfb-run -a python3 scripts/editor_screenshot.py \
             "assets/samples/t_attach.xodr" "shots/t_attach_handles.png" \
             --camera top --select 1 --tool edit-nodes --skip-on-no-gl
+          # Library panel (Phase 2): the catalogue dock, raised, whole window.
+          xvfb-run -a python3 scripts/editor_screenshot.py \
+            "assets/samples/t_attach.xodr" "shots/library_panel.png" \
+            --ui --raise-dock dock.library --size 1200x800 --skip-on-no-gl
       - uses: actions/upload-artifact@v4
         with:
           name: editor-screenshots

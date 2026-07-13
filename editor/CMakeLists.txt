@@ -50,6 +50,7 @@ add_library(roadmaker_editor_lib STATIC
   src/document/scene_tree_model.cpp
   src/document/selection_model.cpp
   src/panels/diagnostics_panel.cpp
+  src/panels/library_panel.cpp
   src/panels/profile_panel.cpp
   src/panels/properties_panel.cpp
   src/panels/scene_tree_panel.cpp
