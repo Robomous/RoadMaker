@@ -107,6 +107,77 @@ TEST(ContextMenu, SplitRoadHereInvokeLandsTheCommand) {
   EXPECT_EQ(fx.document.network().road_count(), 1U);
 }
 
+namespace {
+
+roadmaker::ObjectId place_tree(Fixture& fx) {
+  roadmaker::Object tree;
+  tree.odr_id = "1";
+  tree.name = "tree_pine";
+  tree.type = roadmaker::ObjectType::Tree;
+  tree.s = 40.0;
+  tree.t = 4.0;
+  tree.radius = 1.2;
+  tree.height = 4.2;
+  (void)fx.document.push_command(roadmaker::edit::add_object(fx.document.network(), fx.road, tree));
+  roadmaker::ObjectId id;
+  fx.document.network().for_each_object(
+      [&](roadmaker::ObjectId oid, const roadmaker::Object&) { id = oid; });
+  return id;
+}
+
+} // namespace
+
+TEST(ContextMenu, ObjectMenuHasDeleteFrameDuplicate) {
+  Fixture fx;
+  const roadmaker::ObjectId object = place_tree(fx);
+  ASSERT_TRUE(object.is_valid());
+
+  MenuContext context;
+  context.pick = PickHit{.road = fx.road, .object = object};
+  const std::vector<MenuItem> items = build_context_menu(context, fx.deps);
+
+  EXPECT_NE(fx.find(items, "Frame"), nullptr);
+  EXPECT_NE(fx.find(items, "Duplicate"), nullptr);
+  EXPECT_NE(fx.find(items, "Delete object"), nullptr);
+  // The road-body items must NOT appear — the prop wins over the body.
+  EXPECT_EQ(fx.find(items, "Split road here"), nullptr);
+}
+
+TEST(ContextMenu, DeleteObjectInvokeLandsTheCommand) {
+  Fixture fx;
+  const roadmaker::ObjectId object = place_tree(fx);
+  MenuContext context;
+  context.pick = PickHit{.road = fx.road, .object = object};
+
+  const std::vector<MenuItem> items = build_context_menu(context, fx.deps);
+  const MenuItem* del = fx.find(items, "Delete object");
+  ASSERT_NE(del, nullptr);
+  del->invoke();
+  EXPECT_EQ(fx.document.network().object_count(), 0U);
+  fx.document.undo_stack()->undo();
+  EXPECT_EQ(fx.document.network().object_count(), 1U);
+}
+
+TEST(ContextMenu, DuplicateObjectAddsASecondPropWithAFreshId) {
+  Fixture fx;
+  const roadmaker::ObjectId object = place_tree(fx);
+  MenuContext context;
+  context.pick = PickHit{.road = fx.road, .object = object};
+
+  const std::vector<MenuItem> items = build_context_menu(context, fx.deps);
+  const MenuItem* dup = fx.find(items, "Duplicate");
+  ASSERT_NE(dup, nullptr);
+  ASSERT_TRUE(dup->enabled);
+  dup->invoke();
+  EXPECT_EQ(fx.document.network().object_count(), 2U);
+  // Both ids are unique in the file (id_unique_in_class holds after duplicate).
+  std::vector<std::string> ids;
+  fx.document.network().for_each_object(
+      [&](roadmaker::ObjectId, const roadmaker::Object& o) { ids.push_back(o.odr_id); });
+  ASSERT_EQ(ids.size(), 2U);
+  EXPECT_NE(ids[0], ids[1]);
+}
+
 TEST(ContextMenu, InsertBendInvokeAddsANode) {
   Fixture fx;
   MenuContext context;

@@ -6,6 +6,9 @@
 #include <QAction>
 #include <QMenu>
 #include <QObject>
+#include <algorithm>
+#include <set>
+#include <string>
 #include <utility>
 #include <vector>
 
@@ -19,6 +22,22 @@ namespace {
 
 void select_road(ContextMenuDeps& deps, RoadId road) {
   deps.selection.select({.road = road, .lane = LaneId{}}, SelectMode::Replace);
+}
+
+void select_object(ContextMenuDeps& deps, RoadId road, ObjectId object) {
+  deps.selection.select({.road = road, .lane = LaneId{}, .object = object}, SelectMode::Replace);
+}
+
+/// Lowest positive integer odr id not already used by an object — keeps a
+/// duplicated prop id_unique_in_class-valid.
+std::string next_object_odr_id(const RoadNetwork& network) {
+  std::set<std::string> taken;
+  network.for_each_object([&](ObjectId, const Object& object) { taken.insert(object.odr_id); });
+  int candidate = 1;
+  while (taken.contains(std::to_string(candidate))) {
+    ++candidate;
+  }
+  return std::to_string(candidate);
 }
 
 MenuItem separator() {
@@ -76,6 +95,40 @@ std::vector<MenuItem> build_context_menu(const MenuContext& context, ContextMenu
     items.push_back(MenuItem{.text = QObject::tr("Delete junction"), .invoke = [&deps, junction] {
                                (void)deps.document.push_command(
                                    edit::delete_junction(deps.document.network(), junction));
+                             }});
+    return items;
+  }
+
+  // Object/prop menu — a placed prop sits on the road surface, so it wins over
+  // the road body (like a node does).
+  if (context.pick.has_value() && context.pick->object.is_valid()) {
+    const ObjectId object = context.pick->object;
+    const RoadId road = context.pick->road;
+    items.push_back(MenuItem{.text = QObject::tr("Frame"), .invoke = [&deps, road, object] {
+                               select_object(deps, road, object);
+                               deps.actions.frame_selection->trigger();
+                             }});
+    // Duplicate the prop a few meters further along its road (same model/pose).
+    const Object* source = network.object(object);
+    const Road* owner = source != nullptr ? network.road(source->road) : nullptr;
+    items.push_back(MenuItem{
+        .text = QObject::tr("Duplicate"), .enabled = owner != nullptr, .invoke = [&deps, object] {
+          const Object* src = deps.document.network().object(object);
+          const Road* road_ptr = src != nullptr ? deps.document.network().road(src->road) : nullptr;
+          if (road_ptr == nullptr) {
+            return;
+          }
+          Object copy = *src;
+          copy.odr_id = next_object_odr_id(deps.document.network());
+          const double length = road_ptr->plan_view.length();
+          copy.s = src->s + 5.0 <= length ? src->s + 5.0 : std::max(0.0, src->s - 5.0);
+          (void)deps.document.push_command(
+              edit::add_object(deps.document.network(), src->road, std::move(copy)));
+        }});
+    items.push_back(separator());
+    items.push_back(MenuItem{.text = QObject::tr("Delete object"), .invoke = [&deps, object] {
+                               (void)deps.document.push_command(
+                                   edit::delete_object(deps.document.network(), object));
                              }});
     return items;
   }

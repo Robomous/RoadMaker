@@ -249,5 +249,43 @@ TEST(PickEndToEnd, AuthoredRoadPickAndStationRoundTrip) {
   EXPECT_NEAR(coord.t, -1.75, 0.1);
 }
 
+TEST(Pick, HitsAPlacedPropInFrontOfTheRoad) {
+  RoadNetwork network;
+  NetworkMesh mesh;
+  mesh.roads.push_back(make_quad_road(network, "1", 0.0, 50.0));
+  const ObjectId tree{.index = 7, .gen = 0};
+  mesh.objects.push_back(ObjectInstance{.object = tree,
+                                        .road = mesh.roads[0].road,
+                                        .model_id = "tree_pine",
+                                        .position = {25.0, 25.0, 0.0},
+                                        .heading = 0.0});
+  const auto aabbs = compute_road_aabbs(mesh);
+
+  // Straight down through the tree: its bounding sphere is nearer than the
+  // road surface below it, so the prop wins the pick.
+  const auto on_tree = pick(mesh, aabbs, straight_down(25.0, 25.0));
+  ASSERT_TRUE(on_tree.has_value());
+  EXPECT_EQ(on_tree->object, tree);
+  EXPECT_EQ(on_tree->road, mesh.roads[0].road);
+
+  // Away from the tree the road is still picked (object invalid).
+  const auto on_road = pick(mesh, aabbs, straight_down(5.0, 5.0));
+  ASSERT_TRUE(on_road.has_value());
+  EXPECT_FALSE(on_road->object.is_valid());
+}
+
+TEST(Pick, MissesPropWhenRayIsWideOfIt) {
+  RoadNetwork network;
+  NetworkMesh mesh;
+  const ObjectId tree{.index = 7, .gen = 0};
+  mesh.objects.push_back(ObjectInstance{.object = tree,
+                                        .road = RoadId{.index = 1, .gen = 0},
+                                        .model_id = "tree_pine",
+                                        .position = {25.0, 25.0, 0.0},
+                                        .heading = 0.0});
+  // No road, ray 20 m away from the tree — nothing hit.
+  EXPECT_FALSE(pick(mesh, {}, straight_down(45.0, 45.0)).has_value());
+}
+
 } // namespace
 } // namespace roadmaker::editor
