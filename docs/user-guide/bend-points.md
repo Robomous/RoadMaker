@@ -38,5 +38,6 @@ segments within tolerance). Only then does dragging the node change the shape.
 
 ## Reference
 
-[Edit Nodes](edit-nodes.md) · [M3a topology editing](../design/m3a/06_topology_editing.md)
-— the `edit::insert_node_at` kernel API and the heading-pinning re-fit.
+[Edit Nodes](edit-nodes.md) — the `edit::insert_node_at` kernel API and the
+heading-pinning re-fit are covered in the M3a topology-editing design notes
+(`docs/design/m3a/06_topology_editing.md`).
