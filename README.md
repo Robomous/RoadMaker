@@ -19,6 +19,14 @@ validates, junctions carry coherent lane logic, and meshes are watertight and
 robust. A C++20 kernel does the work; a Qt 6 Widgets editor and a Python
 package sit on top ([architecture](docs/architecture/overview.md)).
 
+![The RoadMaker editor: a T-junction lined with tree props, the Library
+catalogue open, in the graphite-amber theme](docs/standards/golden-look.png)
+
+Drag a road assembly, an intersection, or a prop straight from the **Library**
+onto the scene — every drop is one undoable edit:
+
+![Placing trees along a junction by dragging them from the Library](docs/user-guide/img/workflow.gif)
+
 Prebuilt editor packages (DMG / NSIS installer / AppImage) and Python wheels
 are attached to every
 [GitHub release](https://github.com/robomous/roadmaker/releases).

@@ -3,6 +3,13 @@
 *Task-by-task guidance for authoring an ASAM OpenDRIVE road network in the
 RoadMaker editor — how to build a scene, not a reference manual.*
 
+![The RoadMaker editor: a T-junction lined with tree props, the Library
+catalogue open](../standards/golden-look.png)
+
+First launch runs a short, skippable **guided tour** of the core loop (draw a
+road → drag in an intersection → plant a tree → shape the elevation → export);
+replay it any time from **Help ▸ Guided Tour**.
+
 New here? Start with [Building](../getting-started/building.md) and
 [Running](../getting-started/running.md) to get the editor and the Python
 package installed, then come back.
@@ -34,6 +41,7 @@ not undoable.
 
 | Tool | Task |
 |---|---|
+| [Library](library.md) | Drag ready-made roads, intersections, and props into the scene |
 | [Create Road](create-road.md) | Lay a new clothoid road through waypoints with a lane template |
 | [Moving Roads](moving-roads.md) | Translate a whole road (or several) by dragging its body |
 | [Edit Nodes](edit-nodes.md) | Reshape a road by moving, inserting, and deleting its waypoints |
@@ -49,11 +57,11 @@ not undoable.
 
 ## About the screenshots
 
-This first edition of the guide is text-only. Per-tool screenshots recorded
-against the v0.4.0 build are captured as original works and listed in
-`ASSETS_LICENSES.md` as they are added — the in-editor object/signal placement
-and library-panel walkthroughs land alongside their editor features later in
-milestone M3a.
+Screenshots are captured from the themed (graphite-amber) editor with
+`scripts/editor_screenshot.py` as original works, listed in `ASSETS_LICENSES.md`.
+The Library, Create Road, Junction, Elevation, and Objects pages carry them
+today; the remaining tool pages gain theirs as the sweep continues
+([#52](https://github.com/Robomous/RoadMaker/issues/52)).
 
 ## See also
 

@@ -234,6 +234,15 @@ is headless-testable.
   branches off unmerged work, verify-before-merge, merge-on-green, the
   maintainer look-approval gate for visual PRs, and the rule that docs, issues,
   and the roadmap are synced in the same session a PR merges.
+- **Docs & README revamp close-out** (UI revamp Phase 4, closes epic #108): a
+  README hero + drag-and-drop workflow GIF, the committed **golden-look**
+  baseline (`docs/standards/golden-look.png`, from the new
+  `assets/samples/golden_scene.xodr` T-junction-with-props scene) wired into the
+  UI-design standard, a new [Library](docs/user-guide/library.md) user-guide
+  page, themed screenshots on the Create Road / Junction / Elevation / Objects
+  pages, and a refreshed in-editor props story on the Objects page. The M3a UI
+  revamp epic is complete; remaining standards-track work (junction boundary,
+  textures, instancing, object/signal placement, GS-1) carries on under M3a.
 
 ## [0.4.0] - Unreleased
 

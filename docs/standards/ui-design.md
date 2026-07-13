@@ -99,3 +99,19 @@ PR, maintainer approval before merge
 milestone-level bar is the **golden look** screenshot — one canonical UI
 capture (defined camera, themed app, library open, tee scene loaded)
 tracked release-over-release like golden scenes.
+
+The current baseline is [`golden-look.png`](golden-look.png), captured from
+`assets/samples/golden_scene.xodr` (a T-junction lined with tree props, the
+Library dock raised) with:
+
+```sh
+python scripts/editor_screenshot.py --ui \
+    assets/samples/golden_scene.xodr docs/standards/golden-look.png \
+    --size 1600x1000 --raise-dock dock.library
+```
+
+Re-capture it whenever the chrome or theme changes so the baseline stays
+current; the M3a UI revamp (epic
+[#108](https://github.com/Robomous/RoadMaker/issues/108)) established it.
+
+![The golden-look baseline](golden-look.png)

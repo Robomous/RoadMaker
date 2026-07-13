@@ -2,6 +2,8 @@
 
 *Give a road a vertical profile so it rises, dips, and grades smoothly.*
 
+![Two roads crossing at different elevations — an overpass](img/elevation.png)
+
 ## Steps
 
 1. Select a road, then activate the **Elevation** tool.

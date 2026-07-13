@@ -3,6 +3,8 @@
 *Lay a new road through a series of waypoints; RoadMaker fits a smooth
 clothoid reference line and applies a lane template.*
 
+![A clothoid road in the RoadMaker editor](img/create-road.png)
+
 ## Steps
 
 1. Select the **Create Road** tool from the toolbar.
