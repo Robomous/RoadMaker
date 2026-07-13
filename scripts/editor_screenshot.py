@@ -68,6 +68,9 @@ def main() -> int:
     parser.add_argument("--toast", default=None, help="toast text to show (renders the toast)")
     parser.add_argument("--drop-library", default=None, help="library item key to drop (renders it)")
     parser.add_argument(
+        "--show-tour", action="store_true", help="start the guided-tour overlay (with --ui)"
+    )
+    parser.add_argument(
         "--skip-on-no-gl",
         action="store_true",
         help="exit 0 when the editor reports no usable OpenGL (CI runners)",
@@ -101,6 +104,8 @@ def main() -> int:
         cmd += ["--toast", args.toast]
     if args.drop_library:
         cmd += ["--drop-library", args.drop_library]
+    if args.show_tour:
+        cmd += ["--show-tour"]
     result = subprocess.run(cmd, env=os.environ.copy(), check=False)
     if result.returncode == NO_GL_EXIT and args.skip_on_no_gl:
         print("editor_screenshot: no GL on this runner — skipped (not a failure)")

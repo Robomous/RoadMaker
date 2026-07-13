@@ -18,6 +18,7 @@
 #include <QMessageBox>
 #include <QMimeData>
 #include <QPushButton>
+#include <QShowEvent>
 #include <QStatusBar>
 #include <QTimer>
 #include <QToolBar>
@@ -29,6 +30,8 @@
 #include "app/crash_handler.hpp"
 #include "app/icons.hpp"
 #include "app/log_setup.hpp"
+#include "app/tour_controller.hpp"
+#include "app/tour_overlay.hpp"
 #include "document/library_drop.hpp"
 #include "document/library_manifest.hpp"
 #include "panels/diagnostics_panel.hpp"
@@ -57,6 +60,7 @@ MainWindow::MainWindow(QWidget* parent, bool restore_saved_layout)
       viewport_(new ViewportWidget(document_, selection_, tool_manager_, this)),
       status_hover_(new QLabel(this)), status_entities_(new QLabel(this)) {
   setAcceptDrops(true);
+  allow_first_run_tour_ = restore_saved_layout; // suppressed for capture windows
   // Central stack: the welcome screen greets an empty session; any document
   // activity (New/Open/recent/sample/recovery) flips to the viewport for
   // the rest of the session. Never dockable.
@@ -421,6 +425,10 @@ void MainWindow::build_menus() {
   view_menu->addAction(actions_->reset_layout);
 
   QMenu* help_menu = menuBar()->addMenu(tr("&Help"));
+  QAction* tour_action = help_menu->addAction(tr("&Guided Tour"));
+  tour_action->setToolTip(tr("Replay the 5-step first-run tour"));
+  connect(tour_action, &QAction::triggered, this, &MainWindow::start_tour);
+  help_menu->addSeparator();
   help_menu->addAction(actions_->about);
 }
 
@@ -429,6 +437,7 @@ void MainWindow::build_toolbar() {
   // under each, grouped File | Tools | View — a new user can read what
   // every button does.
   QToolBar* toolbar = addToolBar(tr("Main"));
+  main_toolbar_ = toolbar; // the guided tour highlights buttons via this
   toolbar->setObjectName(QStringLiteral("toolbar.main"));
   toolbar->setIconSize(QSize(28, 28));
   toolbar->setToolButtonStyle(Qt::ToolButtonTextUnderIcon);
@@ -600,6 +609,51 @@ void MainWindow::on_library_drop(const QString& key, double world_x, double worl
   case LibraryDropKind::None:
     break;
   }
+}
+
+void MainWindow::start_tour() {
+  if (tour_overlay_ == nullptr) {
+    tour_overlay_ = new TourOverlay(default_tour_steps(), this);
+    // Resolve a step's target (an action iconText) to its toolbar button rect.
+    tour_overlay_->set_target_resolver([this](const QString& key) -> QRect {
+      if (main_toolbar_ == nullptr) {
+        return {};
+      }
+      const QList<QAction*> toolbar_actions = main_toolbar_->actions();
+      for (QAction* action : toolbar_actions) {
+        if (action->iconText() != key) {
+          continue;
+        }
+        QWidget* widget = main_toolbar_->widgetForAction(action);
+        if (widget != nullptr && widget->isVisible()) {
+          const QPoint top_left = tour_overlay_->mapFromGlobal(widget->mapToGlobal(QPoint(0, 0)));
+          return {top_left, widget->size()};
+        }
+      }
+      return {};
+    });
+    connect(tour_overlay_, &TourOverlay::finished, this, [this] {
+      settings_.set_tour_seen(true);
+      if (tour_overlay_ != nullptr) {
+        tour_overlay_->hide();
+      }
+    });
+  }
+  tour_overlay_->setGeometry(rect());
+  tour_overlay_->begin();
+}
+
+void MainWindow::showEvent(QShowEvent* event) {
+  QMainWindow::showEvent(event);
+  if (tour_checked_ || !allow_first_run_tour_) {
+    return;
+  }
+  tour_checked_ = true;
+  if (settings_.tour_seen()) {
+    return;
+  }
+  // Defer one loop turn so the toolbar has its final geometry to highlight.
+  QTimer::singleShot(0, this, [this] { start_tour(); });
 }
 
 void MainWindow::new_file() {
