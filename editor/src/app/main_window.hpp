@@ -39,6 +39,12 @@ public:
   /// The central viewport (screenshot mode drives its camera and capture).
   [[nodiscard]] ViewportWidget* viewport() { return viewport_; }
 
+  /// Screenshot mode: highlight roads by OpenDRIVE id so the viewport
+  /// feedback states render in a capture — `select_odr` gets the strong
+  /// selection tint, `hover_odr` the subtle hover brighten. Empty or unknown
+  /// ids are ignored.
+  void set_capture_highlights(const QString& select_odr, const QString& hover_odr);
+
 protected:
   void changeEvent(QEvent* event) override;
   void closeEvent(QCloseEvent* event) override;

@@ -25,7 +25,8 @@ void main() {
 constexpr const char* kFragmentShader = R"(#version 330 core
 in vec3 v_normal;
 uniform vec4 u_color;
-uniform float u_highlight; // 0 = normal, 1 = selected
+uniform float u_highlight; // accent mix strength: 0 none, hover < selected
+uniform vec3 u_accent;     // theme accent token (hover/selection emphasis)
 uniform float u_lit;       // 0 = unlit (lines), 1 = lambert
 out vec4 frag_color;
 void main() {
@@ -33,8 +34,7 @@ void main() {
   float lambert = max(dot(normalize(v_normal), light_dir), 0.0);
   float shade = mix(1.0, 0.35 + 0.65 * lambert, u_lit);
   vec3 base = u_color.rgb * shade;
-  vec3 highlight_tint = vec3(1.0, 0.65, 0.1);
-  frag_color = vec4(mix(base, highlight_tint, 0.55 * u_highlight), u_color.a);
+  frag_color = vec4(mix(base, u_accent, u_highlight), u_color.a);
 }
 )";
 
@@ -179,6 +179,7 @@ bool GLRenderer::init() {
   u_projection_ = gl::GetUniformLocation(program_, "u_projection");
   u_color_ = gl::GetUniformLocation(program_, "u_color");
   u_highlight_ = gl::GetUniformLocation(program_, "u_highlight");
+  u_accent_ = gl::GetUniformLocation(program_, "u_accent");
   u_lit_ = gl::GetUniformLocation(program_, "u_lit");
   u_sky_top_ = gl::GetUniformLocation(sky_program_, "u_sky_top");
   u_sky_horizon_ = gl::GetUniformLocation(sky_program_, "u_sky_horizon");
@@ -344,6 +345,21 @@ void GLRenderer::render(const std::vector<DrawItem>& items,
   gl::UseProgram(program_);
   gl::UniformMatrix4fv(u_view_, 1, 0, camera.view.data());
   gl::UniformMatrix4fv(u_projection_, 1, 0, camera.projection.data());
+  gl::Uniform3f(u_accent_, backdrop_.highlight[0], backdrop_.highlight[1], backdrop_.highlight[2]);
+
+  // Accent mix strength per feedback state: a subtle brighten on hover, a
+  // stronger tint on selection (both toward the theme accent).
+  const auto highlight_strength = [](HighlightState state) {
+    switch (state) {
+    case HighlightState::Selected:
+      return 0.62F;
+    case HighlightState::Hover:
+      return 0.30F;
+    case HighlightState::None:
+      break;
+    }
+    return 0.0F;
+  };
 
   for (const DrawItem& item : items) {
     const auto found = meshes_.find(item.mesh.id);
@@ -352,8 +368,12 @@ void GLRenderer::render(const std::vector<DrawItem>& items,
     }
     const GpuMesh& mesh = found->second;
     gl::Uniform4f(u_color_, mesh.color[0], mesh.color[1], mesh.color[2], mesh.color[3]);
-    gl::Uniform4f(u_highlight_, item.highlighted ? 1.0F : 0.0F, 0, 0, 0);
-    gl::Uniform4f(u_lit_, mesh.kind == PrimitiveKind::Triangles ? 1.0F : 0.0F, 0, 0, 0);
+    // u_highlight and u_lit are `float` uniforms: they MUST be set with
+    // Uniform1f. glUniform4f on a float uniform is GL_INVALID_OPERATION and
+    // silently leaves the uniform at 0 (which is why the surface highlight
+    // never rendered before).
+    gl::Uniform1f(u_highlight_, highlight_strength(item.state));
+    gl::Uniform1f(u_lit_, mesh.kind == PrimitiveKind::Triangles ? 1.0F : 0.0F);
     gl::BindVertexArray(mesh.vao);
     gl::DrawElements(mesh.kind == PrimitiveKind::Triangles ? gl::kTriangles : gl::kLines,
                      mesh.index_count,

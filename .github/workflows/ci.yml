@@ -243,6 +243,10 @@ jobs:
                 --camera "$camera" --skip-on-no-gl
             done
           done
+          # Viewport feedback states (Phase 1): selection tint + hover brighten.
+          xvfb-run -a python3 scripts/editor_screenshot.py \
+            "assets/samples/crossing.xodr" "shots/crossing_feedback.png" \
+            --camera orbit --select 1 --hover 3 --skip-on-no-gl
       - uses: actions/upload-artifact@v4
         with:
           name: editor-screenshots
