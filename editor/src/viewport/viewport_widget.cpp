@@ -14,6 +14,7 @@
 #include "render/gl_functions.hpp"
 #include "render/gl_renderer.hpp"
 #include "render/scene_builder.hpp"
+#include "theme/theme.hpp"
 
 namespace roadmaker::editor {
 
@@ -36,6 +37,7 @@ ViewportWidget::ViewportWidget(Document& document,
   setMouseTracking(true); // hover s/t without a pressed button
   setFocusPolicy(Qt::StrongFocus);
   setMinimumSize(320, 240);
+  renderer_->set_backdrop(theme::current().backdrop()); // safe pre-init
 
   connect(&document_, &Document::loaded, this, [this] { frame_on_rebuild_ = true; });
   connect(&document_, &Document::mesh_changed, this, [this](const std::vector<RoadId>& roads) {
@@ -68,7 +70,6 @@ void ViewportWidget::initializeGL() {
   if (!gl_ready_) {
     qFatal("Failed to initialize OpenGL 3.3 core renderer");
   }
-  grid_ = renderer_->upload(make_grid());
   scene_dirty_ = true;
 }
 
@@ -77,7 +78,6 @@ void ViewportWidget::rebuild_scene() {
   items_.clear();
   pending_roads_.clear();
   preview_handles_.clear(); // clear_meshes() dropped them; re-uploaded this paint
-  grid_ = renderer_->upload(make_grid());
 
   Scene scene = build_scene(document_.mesh());
   items_.reserve(scene.items.size());
@@ -180,10 +180,7 @@ void ViewportWidget::paintGL() {
   upload_tool_preview();
 
   std::vector<DrawItem> draw_items;
-  draw_items.reserve(items_.size() + preview_handles_.size() + 1);
-  if (grid_.valid()) {
-    draw_items.push_back(DrawItem{.mesh = grid_});
-  }
+  draw_items.reserve(items_.size() + preview_handles_.size());
   for (const UploadedItem& item : items_) {
     draw_items.push_back(DrawItem{.mesh = item.handle, .highlighted = is_highlighted(item)});
   }
@@ -375,9 +372,14 @@ void ViewportWidget::upload_tool_preview() {
     return;
   }
 
-  // Amber overlay, lifted slightly off the ground plane so handles and band
-  // lines never z-fight the road surface.
-  constexpr std::array<float, 4> kOverlayColor{1.0F, 0.62F, 0.13F, 1.0F};
+  // Accent-colored overlay (theme token, ui-design.md), lifted slightly off
+  // the ground plane so handles and band lines never z-fight the road
+  // surface.
+  const QColor accent = theme::current().accent;
+  const std::array<float, 4> kOverlayColor{static_cast<float>(accent.redF()),
+                                           static_cast<float>(accent.greenF()),
+                                           static_cast<float>(accent.blueF()),
+                                           1.0F};
   constexpr float kOverlayLift = 0.05F;
 
   if (!geometry.line_positions.empty()) {

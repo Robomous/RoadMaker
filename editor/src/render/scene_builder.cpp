@@ -67,26 +67,6 @@ RenderMeshData to_render_data(const std::vector<double>& positions,
   return data;
 }
 
-RenderMeshData make_grid() {
-  RenderMeshData data;
-  data.kind = PrimitiveKind::Lines;
-  data.color = {0.28F, 0.29F, 0.31F, 1.0F};
-  constexpr int kHalf = 100;
-  std::uint32_t index = 0;
-  for (int i = -kHalf; i <= kHalf; ++i) {
-    const auto a = static_cast<float>(i);
-    const auto h = static_cast<float>(kHalf);
-    // Line parallel to Y at x=i.
-    data.positions.insert(data.positions.end(), {a, -h, 0.0F, a, h, 0.0F});
-    // Line parallel to X at y=i.
-    data.positions.insert(data.positions.end(), {-h, a, 0.0F, h, a, 0.0F});
-    for (int k = 0; k < 4; ++k) {
-      data.indices.push_back(index++);
-    }
-  }
-  return data;
-}
-
 float SceneBounds::framing_radius() const {
   const float dx = hi[0] - lo[0];
   const float dy = hi[1] - lo[1];

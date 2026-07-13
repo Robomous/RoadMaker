@@ -41,6 +41,36 @@ Our assets come exclusively from license-verified sources under the
 [asset policy](assets.md); our scenes are specified from OpenDRIVE /
 OpenSCENARIO concepts in the [golden-scene specs](../roadmap/golden_scenes/README.md).
 
+## Visual experience is a first-class product goal
+
+*Maintainer decision, 2026-07-12 (supersedes the earlier "sober UI /
+default theme only" stance): users judge in the first 30 seconds, with
+their eyes.*
+
+**RoadMaker's editor must look like a modern professional DCC tool. Visual
+quality is a first-class acceptance criterion, gated by maintainer
+screenshot approval.** The concrete design system — palette tokens, spacing,
+icon sizes, typography — is the [UI design standard](ui-design.md).
+
+Three binding rules follow:
+
+- **Visual-quality rule.** "Works but looks like a dated generic Qt app" is
+  a defect, not a shipped feature. Correctness of the kernel remains the
+  moat; the editor's look and feel carries equal priority from M3a on.
+- **Iteration rule.** UI work lands in small slices where **every PR ships
+  a visible improvement**, evidenced by screenshots or a GIF in the PR
+  description (the screenshot mode and CI visual artifacts make this
+  cheap). Multi-week invisible refactors of editor chrome are not accepted.
+- **Discoverability rule.** No feature may exist only behind an
+  undocumented shortcut or a status-bar message. Every capability needs at
+  least one visible, labeled entry point — toolbar button, library item,
+  context menu, or panel control — plus a tooltip. Shortcuts remain as
+  accelerators, never as the only path.
+
+The IP guardrail above is unchanged by this: competitor products inform
+*functional* choices (labeled toolbar, library browser, attributes panel,
+drag-to-place); their icons, colors, and artwork stay copied-from-nothing.
+
 ## The decomposition rule: kernel first, then assets, then render
 
 Parity work is decomposed in a fixed order, and lands in that order:

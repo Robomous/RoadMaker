@@ -126,7 +126,6 @@ private:
   std::unique_ptr<Renderer> renderer_;
   OrbitCamera camera_;
   std::vector<UploadedItem> items_;
-  RenderMeshHandle grid_;
   std::vector<RoadAabb> road_aabbs_;
   SceneBounds scene_bounds_;
 

@@ -38,6 +38,86 @@ void main() {
 }
 )";
 
+// Fullscreen sky gradient — attributeless triangle, drawn first with depth
+// untouched. Screen-space vertical mix: horizon color low, sky color high.
+constexpr const char* kSkyVertexShader = R"(#version 330 core
+out vec2 v_uv;
+void main() {
+  vec2 pos = vec2((gl_VertexID << 1) & 2, gl_VertexID & 2);
+  v_uv = pos;
+  gl_Position = vec4(pos * 2.0 - 1.0, 0.0, 1.0);
+}
+)";
+
+constexpr const char* kSkyFragmentShader = R"(#version 330 core
+in vec2 v_uv;
+uniform vec3 u_sky_top;
+uniform vec3 u_sky_horizon;
+out vec4 frag_color;
+void main() {
+  float h = smoothstep(0.0, 0.8, v_uv.y);
+  frag_color = vec4(mix(u_sky_horizon, u_sky_top, h), 1.0);
+}
+)";
+
+// Ground grid — a camera-following quad on z=0, lines computed procedurally
+// (1 m minor / 10 m major, fwidth-antialiased) and faded with distance so
+// the plane dissolves toward the horizon instead of ending at a hard edge.
+// The x/y origin axes tint their zero lines. Alpha-blended over the sky,
+// depth writes off (roads at z>=0 draw over it afterwards).
+constexpr const char* kGridVertexShader = R"(#version 330 core
+uniform mat4 u_view;
+uniform mat4 u_projection;
+uniform vec3 u_eye;
+out vec2 v_world;
+const float kExtent = 4000.0;
+void main() {
+  vec2 corner = vec2((gl_VertexID << 1) & 2, gl_VertexID & 2) - 1.0;
+  vec2 world = u_eye.xy + corner * kExtent;
+  v_world = world;
+  gl_Position = u_projection * u_view * vec4(world, 0.0, 1.0);
+}
+)";
+
+constexpr const char* kGridFragmentShader = R"(#version 330 core
+in vec2 v_world;
+uniform vec3 u_eye;
+uniform vec4 u_major;
+uniform vec4 u_minor;
+uniform vec3 u_axis_x;
+uniform vec3 u_axis_y;
+out vec4 frag_color;
+
+float grid_line(vec2 p, float spacing) {
+  vec2 q = p / spacing;
+  vec2 g = abs(fract(q - 0.5) - 0.5) / fwidth(q);
+  return 1.0 - min(min(g.x, g.y), 1.0);
+}
+
+void main() {
+  float dist = distance(v_world, u_eye.xy);
+  float eye_height = max(u_eye.z, 4.0);
+  float fade_major = exp(-dist / (eye_height * 14.0));
+  float fade_minor = exp(-dist / (eye_height * 5.0));
+
+  vec4 color = vec4(0.0);
+  float minor = grid_line(v_world, 1.0);
+  color = mix(color, vec4(u_minor.rgb, u_minor.a * fade_minor), minor);
+  float major = grid_line(v_world, 10.0);
+  color = mix(color, vec4(u_major.rgb, u_major.a * fade_major), major);
+
+  float x_axis = 1.0 - min(abs(v_world.y) / fwidth(v_world.y), 1.0);
+  float y_axis = 1.0 - min(abs(v_world.x) / fwidth(v_world.x), 1.0);
+  color = mix(color, vec4(u_axis_x, min(u_major.a * fade_major * 1.6, 1.0)), x_axis);
+  color = mix(color, vec4(u_axis_y, min(u_major.a * fade_major * 1.6, 1.0)), y_axis);
+
+  if (color.a <= 0.004) {
+    discard;
+  }
+  frag_color = color;
+}
+)";
+
 std::uint32_t compile(gl::GLenum type, const char* source) {
   const gl::GLuint shader = gl::CreateShader(type);
   gl::ShaderSource(shader, 1, &source, nullptr);
@@ -54,6 +134,32 @@ std::uint32_t compile(gl::GLenum type, const char* source) {
   return shader;
 }
 
+std::uint32_t link_program(const char* vs_source, const char* fs_source) {
+  const std::uint32_t vs = compile(gl::kVertexShader, vs_source);
+  const std::uint32_t fs = compile(gl::kFragmentShader, fs_source);
+  if (vs == 0 || fs == 0) {
+    gl::DeleteShader(vs);
+    gl::DeleteShader(fs);
+    return 0;
+  }
+  const gl::GLuint program = gl::CreateProgram();
+  gl::AttachShader(program, vs);
+  gl::AttachShader(program, fs);
+  gl::LinkProgram(program);
+  gl::DeleteShader(vs);
+  gl::DeleteShader(fs);
+  gl::GLint status = 0;
+  gl::GetProgramiv(program, gl::kLinkStatus, &status);
+  if (status == 0) {
+    std::string log(512, '\0');
+    gl::GetProgramInfoLog(program, static_cast<gl::GLsizei>(log.size()), nullptr, log.data());
+    spdlog::error("program link failed: {}", log.c_str());
+    gl::DeleteProgram(program);
+    return 0;
+  }
+  return program;
+}
+
 } // namespace
 
 GLRenderer::~GLRenderer() {
@@ -63,23 +169,10 @@ GLRenderer::~GLRenderer() {
 bool GLRenderer::init() {
   // Precondition: gl::load_functions(resolver) succeeded with the current
   // context — the windowing layer owns the resolver, not the renderer.
-  const std::uint32_t vs = compile(gl::kVertexShader, kVertexShader);
-  const std::uint32_t fs = compile(gl::kFragmentShader, kFragmentShader);
-  if (vs == 0 || fs == 0) {
-    return false;
-  }
-  program_ = gl::CreateProgram();
-  gl::AttachShader(program_, vs);
-  gl::AttachShader(program_, fs);
-  gl::LinkProgram(program_);
-  gl::DeleteShader(vs);
-  gl::DeleteShader(fs);
-  gl::GLint status = 0;
-  gl::GetProgramiv(program_, gl::kLinkStatus, &status);
-  if (status == 0) {
-    std::string log(512, '\0');
-    gl::GetProgramInfoLog(program_, static_cast<gl::GLsizei>(log.size()), nullptr, log.data());
-    spdlog::error("program link failed: {}", log.c_str());
+  program_ = link_program(kVertexShader, kFragmentShader);
+  sky_program_ = link_program(kSkyVertexShader, kSkyFragmentShader);
+  grid_program_ = link_program(kGridVertexShader, kGridFragmentShader);
+  if (program_ == 0 || sky_program_ == 0 || grid_program_ == 0) {
     return false;
   }
   u_view_ = gl::GetUniformLocation(program_, "u_view");
@@ -87,6 +180,16 @@ bool GLRenderer::init() {
   u_color_ = gl::GetUniformLocation(program_, "u_color");
   u_highlight_ = gl::GetUniformLocation(program_, "u_highlight");
   u_lit_ = gl::GetUniformLocation(program_, "u_lit");
+  u_sky_top_ = gl::GetUniformLocation(sky_program_, "u_sky_top");
+  u_sky_horizon_ = gl::GetUniformLocation(sky_program_, "u_sky_horizon");
+  u_grid_view_ = gl::GetUniformLocation(grid_program_, "u_view");
+  u_grid_projection_ = gl::GetUniformLocation(grid_program_, "u_projection");
+  u_grid_eye_ = gl::GetUniformLocation(grid_program_, "u_eye");
+  u_grid_major_ = gl::GetUniformLocation(grid_program_, "u_major");
+  u_grid_minor_ = gl::GetUniformLocation(grid_program_, "u_minor");
+  u_grid_axis_x_ = gl::GetUniformLocation(grid_program_, "u_axis_x");
+  u_grid_axis_y_ = gl::GetUniformLocation(grid_program_, "u_axis_y");
+  gl::GenVertexArrays(1, &empty_vao_);
   ready_ = true;
   return true;
 }
@@ -97,8 +200,18 @@ void GLRenderer::shutdown() {
   }
   clear_meshes();
   gl::DeleteProgram(program_);
+  gl::DeleteProgram(sky_program_);
+  gl::DeleteProgram(grid_program_);
+  gl::DeleteVertexArrays(1, &empty_vao_);
   program_ = 0;
+  sky_program_ = 0;
+  grid_program_ = 0;
+  empty_vao_ = 0;
   ready_ = false;
+}
+
+void GLRenderer::set_backdrop(const BackdropColors& colors) {
+  backdrop_ = colors;
 }
 
 RenderMeshHandle GLRenderer::upload(const RenderMeshData& data) {
@@ -173,6 +286,45 @@ void GLRenderer::clear_meshes() {
   meshes_.clear();
 }
 
+void GLRenderer::draw_backdrop(const CameraMatrices& camera) {
+  gl::BindVertexArray(empty_vao_);
+
+  // Sky gradient: no depth interaction at all.
+  gl::Disable(gl::kDepthTest);
+  gl::UseProgram(sky_program_);
+  gl::Uniform3f(u_sky_top_, backdrop_.sky_top[0], backdrop_.sky_top[1], backdrop_.sky_top[2]);
+  gl::Uniform3f(
+      u_sky_horizon_, backdrop_.sky_horizon[0], backdrop_.sky_horizon[1], backdrop_.sky_horizon[2]);
+  gl::DrawArrays(gl::kTriangles, 0, 3);
+  gl::Enable(gl::kDepthTest);
+
+  // Ground grid: alpha-blended, no depth writes — meshes drawn afterwards
+  // overwrite it wherever they cover the plane (grid sits at z = 0 too).
+  gl::UseProgram(grid_program_);
+  gl::UniformMatrix4fv(u_grid_view_, 1, 0, camera.view.data());
+  gl::UniformMatrix4fv(u_grid_projection_, 1, 0, camera.projection.data());
+  gl::Uniform3f(u_grid_eye_, camera.eye[0], camera.eye[1], camera.eye[2]);
+  gl::Uniform4f(u_grid_major_,
+                backdrop_.grid_major[0],
+                backdrop_.grid_major[1],
+                backdrop_.grid_major[2],
+                backdrop_.grid_major[3]);
+  gl::Uniform4f(u_grid_minor_,
+                backdrop_.grid_minor[0],
+                backdrop_.grid_minor[1],
+                backdrop_.grid_minor[2],
+                backdrop_.grid_minor[3]);
+  gl::Uniform3f(u_grid_axis_x_, backdrop_.axis_x[0], backdrop_.axis_x[1], backdrop_.axis_x[2]);
+  gl::Uniform3f(u_grid_axis_y_, backdrop_.axis_y[0], backdrop_.axis_y[1], backdrop_.axis_y[2]);
+  gl::DepthMask(0);
+  gl::Enable(gl::kBlend);
+  gl::BlendFunc(gl::kSrcAlpha, gl::kOneMinusSrcAlpha);
+  gl::DrawArrays(gl::kTriangleStrip, 0, 4);
+  gl::Disable(gl::kBlend);
+  gl::DepthMask(1);
+  gl::BindVertexArray(0);
+}
+
 void GLRenderer::render(const std::vector<DrawItem>& items,
                         const CameraMatrices& camera,
                         int width,
@@ -181,10 +333,13 @@ void GLRenderer::render(const std::vector<DrawItem>& items,
     return;
   }
   gl::Viewport(0, 0, width, height);
-  gl::ClearColor(0.13F, 0.14F, 0.16F, 1.0F);
+  gl::ClearColor(
+      backdrop_.sky_horizon[0], backdrop_.sky_horizon[1], backdrop_.sky_horizon[2], 1.0F);
   gl::Clear(gl::kColorBufferBit | gl::kDepthBufferBit);
   gl::Enable(gl::kDepthTest);
   gl::DepthFunc(gl::kLess);
+
+  draw_backdrop(camera);
 
   gl::UseProgram(program_);
   gl::UniformMatrix4fv(u_view_, 1, 0, camera.view.data());

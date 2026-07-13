@@ -40,6 +40,19 @@ struct DrawItem {
 struct CameraMatrices {
   std::array<float, 16> view{};
   std::array<float, 16> projection{};
+  std::array<float, 3> eye{}; // world-space camera position (backdrop fade)
+};
+
+/// Viewport backdrop colors — sky gradient, ground grid, origin axes. Plain
+/// floats because this is the theme→renderer boundary (render/ stays
+/// Qt-free); values come from the active Theme (editor/src/theme/).
+struct BackdropColors {
+  std::array<float, 3> sky_top{0.137F, 0.153F, 0.180F};
+  std::array<float, 3> sky_horizon{0.227F, 0.255F, 0.286F};
+  std::array<float, 4> grid_major{0.239F, 0.263F, 0.294F, 0.85F};
+  std::array<float, 4> grid_minor{0.149F, 0.169F, 0.192F, 0.55F};
+  std::array<float, 3> axis_x{0.75F, 0.35F, 0.32F};
+  std::array<float, 3> axis_y{0.35F, 0.65F, 0.36F};
 };
 
 class Renderer {
@@ -52,6 +65,10 @@ public:
   virtual RenderMeshHandle upload(const RenderMeshData& data) = 0;
   virtual void remove(RenderMeshHandle handle) = 0;
   virtual void clear_meshes() = 0;
+
+  /// Sets the sky/grid/axes colors. Safe to call before init(); the frame
+  /// after the call uses the new colors.
+  virtual void set_backdrop(const BackdropColors& colors) = 0;
 
   /// Renders one frame into the currently bound framebuffer region.
   /// `width`/`height` are FRAMEBUFFER pixels (HiDPI-safe), not window units.

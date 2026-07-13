@@ -38,6 +38,7 @@ add_library(roadmaker_editor_lib STATIC
   src/app/log_setup.cpp
   src/app/main_window.cpp
   src/app/settings.cpp
+  src/app/welcome_widget.cpp
   src/document/autosave.cpp
   src/document/diagnostics_model.cpp
   src/document/document.cpp
@@ -52,6 +53,7 @@ add_library(roadmaker_editor_lib STATIC
   src/render/gl_functions.cpp
   src/render/gl_renderer.cpp
   src/render/scene_builder.cpp
+  src/theme/theme.cpp
   src/tools/create_junction_tool.cpp
   src/tools/create_road_tool.cpp
   src/tools/delete_tool.cpp

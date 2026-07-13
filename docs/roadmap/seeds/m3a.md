@@ -1,4 +1,4 @@
-# M3a seed — visual & standards completeness
+# M3a seed — UI revamp & visual completeness
 
 *Scope sketch for M3a. A seed, not a design: the full design docs are
 written when M3a's own planning task runs, after M2 ships.*
@@ -9,9 +9,23 @@ written when M3a's own planning task runs, after M2 ships.*
 > editor/docs). This seed remains the scope sketch and decision record; the
 > design docs are the implementation source of truth.
 
+> **Rescope (2026-07-12, maintainer pivot).** M3a now opens with the
+> **UI/UX revamp epic**
+> ([#108](https://github.com/Robomous/RoadMaker/issues/108)): theme system,
+> labeled toolbar, welcome screen, viewport quality/feedback, a
+> **manifest-driven library panel with drag-and-drop creation**
+> (`assets/library/manifest.json` — this pulls the M4 Library Browser
+> design forward and **supersedes the "minimal read-only panel"
+> pull-forward below**, issue #50 closed), props (trees) end-to-end, and a
+> discoverability sweep. The sections below re-sequence as **phase 5+** of
+> the milestone; kernel groundwork (objects/signals/road marks) is already
+> merged. Strategy: visual experience now carries equal priority with
+> correctness — [product parity](../../standards/product-parity.md) /
+> [UI design standard](../../standards/ui-design.md).
+
 - **Theme:** authored scenes look and validate like real road scenes.
 - **Golden scene:** [GS-1 "Urban intersection"](../golden_scenes/gs1_urban_intersection.md)
-- **Release target:** v0.4.0
+- **Release target:** v0.5.0 (shifted by the hardening sprint's v0.4.0)
 - **Gap coverage:** [gap 1 — viewport visual completeness](../gap_analysis.md#gap-1--viewport-visual-completeness)
 
 ## Scope sketch

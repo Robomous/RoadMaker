@@ -24,9 +24,6 @@ namespace roadmaker::editor {
                                             const std::vector<std::uint32_t>& indices,
                                             const std::array<float, 4>& color);
 
-/// Ground grid: 1 m lines over a 200 m square, thicker style left to color.
-[[nodiscard]] RenderMeshData make_grid();
-
 /// One uploadable mesh plus the entity it visualizes. `lane` is invalid for
 /// markings and junction floors; both ids are invalid for decorations.
 struct SceneItem {

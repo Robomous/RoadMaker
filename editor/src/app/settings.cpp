@@ -38,6 +38,14 @@ void Settings::add_recent_file(const QString& path) {
   settings_.setValue(kRecentKey, recent);
 }
 
+QString Settings::theme_name() const {
+  return settings_.value(QStringLiteral("ui/theme")).toString();
+}
+
+void Settings::set_theme_name(const QString& name) {
+  settings_.setValue(QStringLiteral("ui/theme"), name);
+}
+
 bool Settings::autosave_enabled() const {
   return settings_.value(QStringLiteral("autosave/enabled"), true).toBool();
 }
