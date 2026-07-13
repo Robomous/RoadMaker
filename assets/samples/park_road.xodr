@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<OpenDRIVE>
+  <header revMajor="1" revMinor="8" name="park" vendor="RoadMaker" />
+  <road name="Park Road" length="198.20400622703423" id="1" junction="-1">
+    <planView>
+      <geometry s="0" x="-90" y="-70" hdg="0.5835584545150937" length="63.044224933319676">
+        <arc curvature="-0.010741024788435007" />
+      </geometry>
+      <geometry s="63.044224933319676" x="-30" y="-55" hdg="-0.09360112826136552" length="68.19475594838231">
+        <spiral curvStart="-0.034462717518063" curvEnd="0.036425452478165046" />
+      </geometry>
+      <geometry s="131.238980881702" x="30" y="-85" hdg="-0.026677012463606764" length="66.96502534533224">
+        <arc curvature="0.012587709180722256" />
+      </geometry>
+    </planView>
+    <lanes>
+      <laneSection s="0">
+        <left>
+          <lane id="1" type="driving" level="false">
+            <width sOffset="0" a="3.5" b="0" c="0" d="0" />
+            <roadMark sOffset="0" type="solid" width="0.12" />
+          </lane>
+        </left>
+        <center>
+          <lane id="0" type="none" level="false">
+            <roadMark sOffset="0" type="broken" width="0.12" />
+          </lane>
+        </center>
+        <right>
+          <lane id="-1" type="driving" level="false">
+            <width sOffset="0" a="3.5" b="0" c="0" d="0" />
+            <roadMark sOffset="0" type="solid" width="0.12" />
+          </lane>
+          <lane id="-2" type="shoulder" level="false">
+            <width sOffset="0" a="1" b="0" c="0" d="0" />
+          </lane>
+        </right>
+      </laneSection>
+    </lanes>
+    <userData code="rm:waypoints" value="-90,-70;-30,-55;30,-85;90,-60" />
+  </road>
+</OpenDRIVE>

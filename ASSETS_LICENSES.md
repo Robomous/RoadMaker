@@ -38,6 +38,7 @@ models, fonts, images). Policy — see `docs/design/m2/05_assets.md`:
 | `editor/resources/icons/lucide/scan.svg` | [lucide 1.24.0](https://github.com/lucide-icons/lucide/tree/1.24.0) | Lucide Contributors | ISC | 2026-07-10 |
 | `editor/resources/icons/lucide/scissors.svg` | [lucide 1.24.0](https://github.com/lucide-icons/lucide/tree/1.24.0) | Lucide Contributors | ISC | 2026-07-12 |
 | `editor/resources/icons/lucide/trash-2.svg` | [lucide 1.24.0](https://github.com/lucide-icons/lucide/tree/1.24.0) | Lucide Contributors | ISC | 2026-07-10 |
+| `editor/resources/icons/lucide/trees.svg` | [lucide 1.24.0](https://github.com/lucide-icons/lucide/tree/1.24.0) | Lucide Contributors | ISC | 2026-07-13 |
 | `editor/resources/icons/lucide/triangle-alert.svg` | [lucide 1.24.0](https://github.com/lucide-icons/lucide/tree/1.24.0) | Lucide Contributors | ISC | 2026-07-10 |
 | `editor/resources/icons/lucide/undo-2.svg` | [lucide 1.24.0](https://github.com/lucide-icons/lucide/tree/1.24.0) | Lucide Contributors | ISC | 2026-07-10 |
 | `editor/resources/icons/lucide/waypoints.svg` | [lucide 1.24.0](https://github.com/lucide-icons/lucide/tree/1.24.0) | Lucide Contributors | ISC | 2026-07-10 |
