@@ -1,6 +1,9 @@
 #include "render/scene_builder.hpp"
 
+#include "roadmaker/assets/prop_library.hpp"
+
 #include <algorithm>
+#include <cmath>
 
 namespace roadmaker::editor {
 
@@ -93,6 +96,44 @@ void append_road_items(const RoadMesh& road, Scene& scene) {
   }
 }
 
+void append_object_items(const ObjectInstance& instance, Scene& scene) {
+  const props::PropModel* model = props::model(instance.model_id);
+  if (model == nullptr) {
+    return;
+  }
+  const double cos_h = std::cos(instance.heading);
+  const double sin_h = std::sin(instance.heading);
+  for (const props::PropPart& part : model->parts) {
+    // Bake the model-space part to world space (rotate about +Z by heading,
+    // translate to the instance origin); the renderer draws pre-baked world
+    // positions with no model matrix.
+    std::vector<double> world_pos(part.positions.size());
+    std::vector<double> world_nrm(part.normals.size());
+    for (std::size_t i = 0; i + 2 < part.positions.size(); i += 3) {
+      const double x = part.positions[i];
+      const double y = part.positions[i + 1];
+      world_pos[i] = (cos_h * x) - (sin_h * y) + instance.position[0];
+      world_pos[i + 1] = (sin_h * x) + (cos_h * y) + instance.position[1];
+      world_pos[i + 2] = part.positions[i + 2] + instance.position[2];
+      const double nx = part.normals[i];
+      const double ny = part.normals[i + 1];
+      world_nrm[i] = (cos_h * nx) - (sin_h * ny);
+      world_nrm[i + 1] = (sin_h * nx) + (cos_h * ny);
+      world_nrm[i + 2] = part.normals[i + 2];
+    }
+    scene.items.push_back(SceneItem{
+        .data = to_render_data(world_pos,
+                               world_nrm,
+                               part.indices,
+                               {part.color[0], part.color[1], part.color[2], 1.0F}),
+        .road = instance.road,
+        .lane = {},
+        .object = instance.object,
+    });
+    grow_bounds(scene.bounds, world_pos);
+  }
+}
+
 Scene build_scene(const NetworkMesh& mesh) {
   Scene scene;
   for (const RoadMesh& road : mesh.roads) {
@@ -110,6 +151,9 @@ Scene build_scene(const NetworkMesh& mesh) {
         .lane = {},
     });
     grow_bounds(scene.bounds, floor.mesh.positions);
+  }
+  for (const ObjectInstance& instance : mesh.objects) {
+    append_object_items(instance, scene);
   }
   return scene;
 }

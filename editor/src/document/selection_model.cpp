@@ -12,6 +12,9 @@ SelectionModel::SelectionModel(const Document& document, QObject* parent)
   // state (not undoable), so they simply drop out — undoing the deletion
   // does not re-select.
   connect(&document_, &Document::topology_changed, this, &SelectionModel::prune_stale);
+  // Object add/delete travels the objects channel, not topology_changed, so a
+  // deleted prop must be pruned from the selection here too.
+  connect(&document_, &Document::objects_changed, this, &SelectionModel::prune_stale);
 }
 
 void SelectionModel::select(const SelectionEntry& entry, SelectMode mode) {
@@ -57,6 +60,9 @@ bool SelectionModel::contains(const SelectionEntry& entry) const {
 std::vector<RoadId> SelectionModel::selected_roads() const {
   std::vector<RoadId> roads;
   for (const SelectionEntry& entry : entries_) {
+    if (entry.object.is_valid()) {
+      continue; // a prop selection does not put its owning road in play
+    }
     if (std::ranges::find(roads, entry.road) == roads.end()) {
       roads.push_back(entry.road);
     }
@@ -64,7 +70,20 @@ std::vector<RoadId> SelectionModel::selected_roads() const {
   return roads;
 }
 
+std::vector<ObjectId> SelectionModel::selected_objects() const {
+  std::vector<ObjectId> objects;
+  for (const SelectionEntry& entry : entries_) {
+    if (entry.object.is_valid()) {
+      objects.push_back(entry.object);
+    }
+  }
+  return objects;
+}
+
 bool SelectionModel::is_live(const SelectionEntry& entry) const {
+  if (entry.object.is_valid()) {
+    return document_.network().object(entry.object) != nullptr;
+  }
   if (document_.network().road(entry.road) == nullptr) {
     return false;
   }

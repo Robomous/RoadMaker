@@ -78,6 +78,44 @@ catalogue never advertises an item the editor cannot yet act on.
 meshes (flat-shaded, trunk + crown submeshes). Viewport/export rendering is
 wired in the following slices.*
 
+## Editor integration — rendering, picking, selection (slice 3)
+
+`ObjectId` is threaded through the editor's entity model so a placed prop is a
+first-class, addressable object alongside roads and lanes:
+
+- **Rendering.** `scene_builder` emits each prop's parts (trunk, crown, …) as
+  `SceneItem`s, baking the bundled model geometry into world space at the
+  instance pose and tagging every part with its `ObjectId` + owning road. This
+  reuses the existing per-mesh render path (one flat colour per part), so trees
+  draw with no renderer changes. *(True GPU instancing —
+  `glDrawElementsInstanced` — is deferred to the standards-track #71, which
+  owns "instanced props"; baking is correct and gives per-object hover/selection
+  highlight for free.)*
+- **Picking.** `pick()` bounding-sphere-tests each prop and shares `best_t` with
+  the lane-patch test, so a tree in front of the road wins the pick; `PickHit`
+  carries the hit `ObjectId`.
+- **Selection & highlight.** `SelectionEntry` and the hover state gain an
+  `ObjectId`; `highlight_state_for` matches a prop only by object id (selecting
+  a road never lights its trees, and vice versa). Hover glow / selection outline
+  reuse the road accent path.
+- **Delete & context menu.** The Select tool's Delete key removes selected props
+  (`delete_object`) in the same undo macro as roads (props first — they are
+  leaves). The right-click menu gains an object branch: **Delete / Frame /
+  Duplicate** (Duplicate places a fresh-id copy a few metres further along the
+  road). **Move** (drag a prop to a new `s`/`t`) lands with the drag-and-drop
+  placement slice, which shares the world→`s`/`t` machinery.
+- **Re-mesh wiring.** `Document::after_kernel_mutation` regenerates only the
+  owning roads' prop instances via the reserved `DirtySet::objects` channel and
+  emits `objects_changed`, which prunes stale prop selections.
+
+### Evidence
+
+![Trees rendered along a curved road in the editor viewport](phase3_editing.png)
+
+*Pine, oak, birch, poplar, and shrub props placed at road-relative `s`/`t` down
+both sides of a curved road, drawn in the themed viewport
+(`assets/samples/tree_avenue.xodr`).*
+
 ## Regenerating the props
 
     python3 scripts/gen_prop_meshes.py   # rewrites the OBJs and the .gen.cpp

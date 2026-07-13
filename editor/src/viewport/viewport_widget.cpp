@@ -104,8 +104,10 @@ void ViewportWidget::rebuild_scene() {
   Scene scene = build_scene(document_.mesh());
   items_.reserve(scene.items.size());
   for (const SceneItem& item : scene.items) {
-    items_.push_back(
-        UploadedItem{.handle = renderer_->upload(item.data), .road = item.road, .lane = item.lane});
+    items_.push_back(UploadedItem{.handle = renderer_->upload(item.data),
+                                  .road = item.road,
+                                  .lane = item.lane,
+                                  .object = item.object});
   }
   scene_bounds_ = scene.bounds;
   if (scene_bounds_.valid() && frame_on_rebuild_) {
@@ -123,9 +125,11 @@ void ViewportWidget::apply_pending_road_updates() {
   pending_roads_.erase(duplicates.begin(), duplicates.end());
 
   for (const RoadId road_id : pending_roads_) {
-    // Drop the road's previous GPU meshes and items...
+    // Drop the road's previous surface meshes and items — but NOT its prop
+    // items (props re-upload on the objects channel; a road-geometry edit
+    // leaves them in place).
     for (auto it = items_.begin(); it != items_.end();) {
-      if (it->road == road_id) {
+      if (it->road == road_id && !it->object.is_valid()) {
         renderer_->remove(it->handle);
         it = items_.erase(it);
       } else {
@@ -140,8 +144,10 @@ void ViewportWidget::apply_pending_road_updates() {
       Scene scene;
       append_road_items(road, scene);
       for (const SceneItem& item : scene.items) {
-        items_.push_back(UploadedItem{
-            .handle = renderer_->upload(item.data), .road = item.road, .lane = item.lane});
+        items_.push_back(UploadedItem{.handle = renderer_->upload(item.data),
+                                      .road = item.road,
+                                      .lane = item.lane,
+                                      .object = item.object});
       }
       break;
     }
@@ -185,8 +191,13 @@ QImage ViewportWidget::capture_frame() {
 }
 
 HighlightState ViewportWidget::item_state(const UploadedItem& item) const {
-  return highlight_state_for(
-      item.road, item.lane, selection_.entries(), hovered_road_, hovered_lane_);
+  return highlight_state_for(item.road,
+                             item.lane,
+                             item.object,
+                             selection_.entries(),
+                             hovered_road_,
+                             hovered_lane_,
+                             hovered_object_);
 }
 
 void ViewportWidget::paintGL() {
@@ -458,11 +469,20 @@ void ViewportWidget::update_hover(const QPointF& pos) {
     info.world_y = (*ground)[1];
   }
 
-  RoadId new_hover_road; // invalid = nothing under the cursor
+  RoadId new_hover_road;     // invalid = no road under the cursor
+  ObjectId new_hover_object; // invalid = no prop under the cursor
   if (const auto hit = pick(document_.mesh(), road_aabbs_, ray)) {
-    const Road* road = document_.network().road(hit->road);
-    const Lane* lane = document_.network().lane(hit->lane);
-    if (road != nullptr) {
+    if (hit->object.is_valid()) {
+      // A prop is nearer than any road surface — highlight the whole tree.
+      if (const Object* object = document_.network().object(hit->object)) {
+        info.valid = true;
+        info.world_x = hit->position[0];
+        info.world_y = hit->position[1];
+        info.entity = tr("object %1").arg(QString::fromStdString(object->odr_id));
+        new_hover_object = hit->object;
+      }
+    } else if (const Road* road = document_.network().road(hit->road)) {
+      const Lane* lane = document_.network().lane(hit->lane);
       info.valid = true;
       info.on_road = true;
       info.world_x = hit->position[0];
@@ -477,9 +497,10 @@ void ViewportWidget::update_hover(const QPointF& pos) {
       new_hover_road = hit->road;
     }
   }
-  // Highlight the whole hovered road (a road-level hover: lane left invalid);
-  // repaint only when it actually changes so plain mouse-overs stay cheap.
+  // Highlight the hovered road or prop (mutually exclusive); repaint only when
+  // it actually changes so plain mouse-overs stay cheap.
   set_hovered_road(new_hover_road);
+  set_hovered_object(new_hover_object);
   emit hover_changed(info);
 }
 
@@ -498,8 +519,18 @@ void ViewportWidget::set_hovered_road(RoadId road) {
   update();
 }
 
+void ViewportWidget::set_hovered_object(ObjectId object) {
+  if (hover_locked_ || hovered_object_ == object) {
+    return;
+  }
+  hovered_object_ = object;
+  update();
+}
+
 void ViewportWidget::leaveEvent(QEvent* event) {
-  set_hovered_road({}); // cursor left the viewport — drop the hover highlight
+  // Cursor left the viewport — drop both hover highlights.
+  set_hovered_road({});
+  set_hovered_object({});
   QOpenGLWidget::leaveEvent(event);
 }
 
@@ -791,15 +822,25 @@ void ViewportWidget::frame_selection() {
     return;
   }
 
-  // Bounds of every selected road's uploaded meshes, recomputed from the
-  // kernel mesh — cheap at selection frequency.
+  // Bounds of every selected road's meshes and every selected prop instance,
+  // recomputed from the kernel mesh — cheap at selection frequency. A prop
+  // selection frames the tree itself, not its whole owning road.
+  const auto& entries = selection_.entries();
   NetworkMesh selected;
   for (const RoadMesh& road : document_.mesh().roads) {
-    const auto& entries = selection_.entries();
-    const bool road_selected = std::ranges::any_of(
-        entries, [&](const SelectionEntry& entry) { return entry.road == road.road; });
+    const bool road_selected = std::ranges::any_of(entries, [&](const SelectionEntry& entry) {
+      return !entry.object.is_valid() && entry.road == road.road;
+    });
     if (road_selected) {
       selected.roads.push_back(road);
+    }
+  }
+  for (const ObjectInstance& instance : document_.mesh().objects) {
+    const bool object_selected = std::ranges::any_of(entries, [&](const SelectionEntry& entry) {
+      return entry.object.is_valid() && entry.object == instance.object;
+    });
+    if (object_selected) {
+      selected.objects.push_back(instance);
     }
   }
   const SceneBounds bounds = build_scene(selected).bounds;

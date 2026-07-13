@@ -304,10 +304,20 @@ void Document::cancel_preview() {
 void Document::after_kernel_mutation(const edit::DirtySet& dirty) {
   remesh_roads(network_, mesh_, dirty.roads);
   remesh_junctions(network_, mesh_, dirty.junctions);
+  // Prop layer: regenerate only the owning roads' instances (no road-surface
+  // re-tessellation) via the reserved objects channel.
+  if (!dirty.objects.empty()) {
+    remesh_objects(network_, mesh_, dirty.objects);
+  }
   // Topology and junction-floor changes reshape the item list wholesale;
-  // only pure road-geometry edits ride the partial-upload path.
+  // only pure road-geometry edits ride the partial-upload path. An
+  // objects-only edit (roads empty) rebuilds wholesale via the empty list,
+  // which now re-reads the prop instances too.
   const bool partial = !dirty.topology && dirty.junctions.empty() && !dirty.roads.empty();
   emit mesh_changed(partial ? dirty.roads : std::vector<RoadId>{});
+  if (!dirty.objects.empty()) {
+    emit objects_changed(dirty.objects); // prunes stale prop selections
+  }
   if (dirty.topology) {
     emit topology_changed();
   }

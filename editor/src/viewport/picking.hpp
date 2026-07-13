@@ -50,8 +50,9 @@ ground_point(const CameraMatrices& camera,
              double max_t = std::numeric_limits<double>::infinity());
 
 struct PickHit {
-  RoadId road;
-  LaneId lane; // invalid when the hit is not a lane patch
+  RoadId road;     // for an object hit: its owning road
+  LaneId lane;     // invalid when the hit is not a lane patch
+  ObjectId object; // valid when the hit is a placed prop (nearer than any road)
   std::array<double, 3> position{};
   double distance = 0.0; // along the ray [m]
 };

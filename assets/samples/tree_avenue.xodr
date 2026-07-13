@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<OpenDRIVE>
+  <header revMajor="1" revMinor="8" name="trees" vendor="RoadMaker" />
+  <road name="Tree Avenue" length="135.05084975381104" id="1" junction="-1">
+    <planView>
+      <geometry s="0" x="0" y="0" hdg="0.8457078522658814" length="45.19838632665433">
+        <arc curvature="-0.01871101871101872" />
+      </geometry>
+      <geometry s="45.19838632665433" x="40" y="18" hdg="0" length="44.65407710050237">
+        <spiral curvStart="-0.05672008491931251" curvEnd="0.05672008491931251" />
+      </geometry>
+      <geometry s="89.85246342715669" x="80" y="0" hdg="0" length="45.19838632665434">
+        <arc curvature="0.018711018711018712" />
+      </geometry>
+    </planView>
+    <lanes>
+      <laneSection s="0">
+        <left>
+          <lane id="1" type="driving" level="false">
+            <width sOffset="0" a="3.5" b="0" c="0" d="0" />
+            <roadMark sOffset="0" type="solid" width="0.12" />
+          </lane>
+        </left>
+        <center>
+          <lane id="0" type="none" level="false">
+            <roadMark sOffset="0" type="broken" width="0.12" />
+          </lane>
+        </center>
+        <right>
+          <lane id="-1" type="driving" level="false">
+            <width sOffset="0" a="3.5" b="0" c="0" d="0" />
+            <roadMark sOffset="0" type="solid" width="0.12" />
+          </lane>
+          <lane id="-2" type="shoulder" level="false">
+            <width sOffset="0" a="1" b="0" c="0" d="0" />
+          </lane>
+        </right>
+      </laneSection>
+    </lanes>
+    <objects>
+      <object type="tree" name="tree_pine" id="1" s="12" t="6.5" zOffset="0" orientation="none" radius="1.4" height="5" />
+      <object type="tree" name="tree_oak" id="2" s="12" t="-6.5" zOffset="0" orientation="none" radius="1.4" height="5" />
+      <object type="tree" name="tree_oak" id="3" s="26" t="6.5" zOffset="0" orientation="none" radius="1.4" height="5" />
+      <object type="tree" name="tree_birch" id="4" s="26" t="-6.5" zOffset="0" orientation="none" radius="1.4" height="5" />
+      <object type="tree" name="tree_birch" id="5" s="40" t="6.5" zOffset="0" orientation="none" radius="1.4" height="5" />
+      <object type="tree" name="tree_poplar" id="6" s="40" t="-6.5" zOffset="0" orientation="none" radius="1.4" height="5" />
+      <object type="tree" name="tree_poplar" id="7" s="54" t="6.5" zOffset="0" orientation="none" radius="1.4" height="5" />
+      <object type="tree" name="shrub" id="8" s="54" t="-6.5" zOffset="0" orientation="none" radius="1.4" height="5" />
+      <object type="tree" name="shrub" id="9" s="68" t="6.5" zOffset="0" orientation="none" radius="1.4" height="5" />
+      <object type="tree" name="tree_pine" id="10" s="68" t="-6.5" zOffset="0" orientation="none" radius="1.4" height="5" />
+      <object type="tree" name="tree_pine" id="11" s="82" t="6.5" zOffset="0" orientation="none" radius="1.4" height="5" />
+      <object type="tree" name="tree_oak" id="12" s="82" t="-6.5" zOffset="0" orientation="none" radius="1.4" height="5" />
+      <object type="tree" name="tree_oak" id="13" s="96" t="6.5" zOffset="0" orientation="none" radius="1.4" height="5" />
+      <object type="tree" name="tree_birch" id="14" s="96" t="-6.5" zOffset="0" orientation="none" radius="1.4" height="5" />
+      <object type="tree" name="tree_birch" id="15" s="110" t="6.5" zOffset="0" orientation="none" radius="1.4" height="5" />
+      <object type="tree" name="tree_poplar" id="16" s="110" t="-6.5" zOffset="0" orientation="none" radius="1.4" height="5" />
+    </objects>
+    <userData code="rm:waypoints" value="0,0;40,18;80,0;120,18" />
+  </road>
+</OpenDRIVE>

@@ -161,7 +161,9 @@ bool SelectTool::mouse_release(const ToolEvent& event) {
       // click-pick; a miss clears unless a modifier asks to keep.
       const SelectMode mode = mode_from(event.modifiers);
       if (event.pick.has_value()) {
-        selection_.select({.road = event.pick->road, .lane = event.pick->lane}, mode);
+        selection_.select(
+            {.road = event.pick->road, .lane = event.pick->lane, .object = event.pick->object},
+            mode);
       } else if (mode == SelectMode::Replace) {
         selection_.clear();
       }
@@ -234,38 +236,62 @@ bool SelectTool::key_press(int key, Qt::KeyboardModifiers modifiers) {
 }
 
 bool SelectTool::delete_selection() {
-  std::vector<RoadId> doomed;
+  std::vector<RoadId> doomed_roads;
   for (const RoadId road_id : selection_.selected_roads()) {
     if (document_.network().road(road_id) != nullptr) {
-      doomed.push_back(road_id);
+      doomed_roads.push_back(road_id);
     }
   }
-  if (doomed.empty()) {
+  std::vector<ObjectId> doomed_objects;
+  for (const ObjectId object_id : selection_.selected_objects()) {
+    if (document_.network().object(object_id) != nullptr) {
+      doomed_objects.push_back(object_id);
+    }
+  }
+  const std::size_t total = doomed_roads.size() + doomed_objects.size();
+  if (total == 0) {
     return false;
   }
 
   // One QUndoStack macro = one undo step for the whole selection (02 §7).
   // Each delete_road carries its referential closure, so an earlier command
-  // in the macro may have already taken a later selected road with it —
-  // those are skipped, not errors.
-  const bool macro = doomed.size() > 1;
+  // in the macro may have already taken a later selected road (or its props)
+  // with it — those are skipped, not errors. Props go first: they are leaves,
+  // and deleting an owning road would otherwise cascade them out from under a
+  // still-pending delete_object.
+  const bool macro = total > 1;
   if (macro) {
-    document_.undo_stack()->beginMacro(tr("Delete %1 Roads").arg(doomed.size()));
+    document_.undo_stack()->beginMacro(tr("Delete %1 Items").arg(total));
   }
-  int deleted = 0;
-  for (const RoadId road_id : doomed) {
+  for (const ObjectId object_id : doomed_objects) {
+    if (document_.network().object(object_id) != nullptr) {
+      (void)document_.push_command(edit::delete_object(document_.network(), object_id));
+    }
+  }
+  int deleted_roads = 0;
+  for (const RoadId road_id : doomed_roads) {
     if (document_.network().road(road_id) == nullptr) {
       continue;
     }
     if (document_.push_command(edit::delete_road(document_.network(), road_id))) {
-      ++deleted;
+      ++deleted_roads;
     }
   }
   if (macro) {
     document_.undo_stack()->endMacro();
   }
-  emit status_message(deleted == 1 ? tr("Deleted 1 road — Ctrl+Z restores")
-                                   : tr("Deleted %1 roads — Ctrl+Z restores").arg(deleted));
+  const auto deleted_objects = doomed_objects.size();
+  if (deleted_roads > 0 && deleted_objects > 0) {
+    emit status_message(tr("Deleted selection — Ctrl+Z restores"));
+  } else if (deleted_objects > 0) {
+    emit status_message(deleted_objects == 1
+                            ? tr("Deleted 1 object — Ctrl+Z restores")
+                            : tr("Deleted %1 objects — Ctrl+Z restores").arg(deleted_objects));
+  } else {
+    emit status_message(deleted_roads == 1
+                            ? tr("Deleted 1 road — Ctrl+Z restores")
+                            : tr("Deleted %1 roads — Ctrl+Z restores").arg(deleted_roads));
+  }
   emit preview_changed(); // the deleted roads' node handles vanish
   return true;
 }

@@ -1,5 +1,6 @@
 #include "viewport/picking.hpp"
 
+#include "roadmaker/assets/prop_library.hpp"
 #include "roadmaker/edit/operations.hpp"
 #include "roadmaker/road/network.hpp"
 
@@ -154,6 +155,29 @@ std::vector<RoadAabb> compute_road_aabbs(const NetworkMesh& mesh) {
   return boxes;
 }
 
+/// Nearest positive ray/sphere hit distance, or nullopt on a miss. `ray`
+/// direction is unit length.
+std::optional<double>
+intersect_sphere(const Ray& ray, const std::array<double, 3>& center, double radius) {
+  const Vec3 oc = to_vec(ray.origin) - to_vec(center);
+  const Vec3 dir = to_vec(ray.direction);
+  const double b = dir.dot(oc);
+  const double c = oc.dot(oc) - (radius * radius);
+  const double disc = (b * b) - c;
+  if (disc < 0.0) {
+    return std::nullopt;
+  }
+  const double root = std::sqrt(disc);
+  double t = -b - root;
+  if (t < 0.0) {
+    t = -b + root;
+  }
+  if (t < 0.0) {
+    return std::nullopt;
+  }
+  return t;
+}
+
 std::optional<PickHit>
 pick(const NetworkMesh& mesh, std::span<const RoadAabb> road_aabbs, const Ray& ray) {
   std::optional<PickHit> best;
@@ -182,6 +206,33 @@ pick(const NetworkMesh& mesh, std::span<const RoadAabb> road_aabbs, const Ray& r
           };
         }
       }
+    }
+  }
+
+  // Placed props, bounding-sphere tested and sharing best_t so a prop in front
+  // of a road wins the pick. A generous whole-tree sphere makes trunks (thin)
+  // as easy to grab as crowns.
+  for (const ObjectInstance& instance : mesh.objects) {
+    const props::PropModel* model = props::model(instance.model_id);
+    if (model == nullptr) {
+      continue;
+    }
+    const double half_height = model->height * 0.5;
+    const std::array<double, 3> center{
+        instance.position[0], instance.position[1], instance.position[2] + half_height};
+    const double radius = std::max(model->radius, half_height);
+    const auto t = intersect_sphere(ray, center, radius);
+    if (t && *t < best_t) {
+      best_t = *t;
+      best = PickHit{
+          .road = instance.road,
+          .lane = {},
+          .object = instance.object,
+          .position = {ray.origin[0] + (ray.direction[0] * *t),
+                       ray.origin[1] + (ray.direction[1] * *t),
+                       ray.origin[2] + (ray.direction[2] * *t)},
+          .distance = *t,
+      };
     }
   }
   return best;

@@ -95,5 +95,37 @@ TEST(SceneBounds, FramingRadiusUsesPlanExtentWithFloor) {
   EXPECT_FLOAT_EQ(tiny.framing_radius(), 5.0F); // 10 m floor
 }
 
+TEST(BuildScene, EmitsPropItemsTaggedWithObjectAndRoad) {
+  constexpr ObjectId kObject{.index = 5, .gen = 0};
+  constexpr RoadId kRoad{.index = 2, .gen = 0};
+  NetworkMesh mesh;
+  mesh.objects.push_back(ObjectInstance{.object = kObject,
+                                        .road = kRoad,
+                                        .model_id = "tree_pine",
+                                        .position = {10.0, 20.0, 0.0},
+                                        .heading = 0.0});
+
+  const Scene scene = build_scene(mesh);
+  ASSERT_FALSE(scene.items.empty()); // trunk + crown parts
+  for (const SceneItem& item : scene.items) {
+    EXPECT_EQ(item.object, kObject);
+    EXPECT_EQ(item.road, kRoad);
+    EXPECT_FALSE(item.lane.is_valid());
+  }
+  ASSERT_TRUE(scene.bounds.valid());
+  EXPECT_NEAR(scene.bounds.center()[0], 10.0F, 2.0F);
+  EXPECT_NEAR(scene.bounds.center()[1], 20.0F, 2.0F);
+}
+
+TEST(BuildScene, UnknownPropModelEmitsNothing) {
+  NetworkMesh mesh;
+  mesh.objects.push_back(ObjectInstance{.object = ObjectId{.index = 1, .gen = 0},
+                                        .road = RoadId{.index = 1, .gen = 0},
+                                        .model_id = "not_a_prop",
+                                        .position = {0.0, 0.0, 0.0},
+                                        .heading = 0.0});
+  EXPECT_TRUE(build_scene(mesh).items.empty());
+}
+
 } // namespace
 } // namespace roadmaker::editor
