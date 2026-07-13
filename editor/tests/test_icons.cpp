@@ -78,6 +78,7 @@ TEST(Icons, EveryMappedIconIsBundled) {
                                "save",
                                "scan",
                                "trash-2",
+                               "trees",
                                "triangle-alert",
                                "undo-2",
                                "waypoints",

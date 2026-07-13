@@ -22,6 +22,7 @@
     <file alias="scan.svg">icons/lucide/scan.svg</file>
     <file alias="scissors.svg">icons/lucide/scissors.svg</file>
     <file alias="trash-2.svg">icons/lucide/trash-2.svg</file>
+    <file alias="trees.svg">icons/lucide/trees.svg</file>
     <file alias="triangle-alert.svg">icons/lucide/triangle-alert.svg</file>
     <file alias="undo-2.svg">icons/lucide/undo-2.svg</file>
     <file alias="waypoints.svg">icons/lucide/waypoints.svg</file>

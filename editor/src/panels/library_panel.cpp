@@ -26,6 +26,9 @@ namespace {
   if (key.startsWith(QStringLiteral("assembly."))) {
     return QStringLiteral("junction-connect");
   }
+  if (key.startsWith(QStringLiteral("prop."))) {
+    return QStringLiteral("trees");
+  }
   return QStringLiteral("box");
 }
 

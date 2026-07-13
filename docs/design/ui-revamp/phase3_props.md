@@ -116,6 +116,35 @@ first-class, addressable object alongside roads and lanes:
 both sides of a curved road, drawn in the themed viewport
 (`assets/samples/tree_avenue.xodr`).*
 
+## Placement — drag from the Library (slice 4)
+
+The catalogue entries deferred from slice 1 land here, with the editor able to
+act on them:
+
+- **Manifest.** The **Props** category (5 trees) is added to
+  `assets/library/manifest.json`; `LibraryItem::Kind::Tree` parses
+  `create.kind == "tree"` + a `model` id. The Library panel shows the props with
+  a themed **trees** glyph (bundled Lucide `trees.svg`, ISC).
+- **Drop.** `resolve_library_drop`'s `Tree` case snaps the drop to the nearest
+  road's `(s, t)` within a threshold and builds one `add_object` command
+  (radius/height from the prop model; `shrub` → `Vegetation`, else `Tree`); a
+  drop with **no road nearby places nothing and shows a "drop near a road"
+  hint** (road-attached-only decision). `MainWindow::on_library_drop` pushes the
+  command + a success toast, or surfaces the hint.
+- **Evidence.** Screenshot mode's `--drop-library` accepts a prop key; the CI
+  `visual-artifacts` job renders a tree drop (`assets/samples/park_road.xodr`).
+
+![The Library Props category and a pine dropped onto a road](phase3_placement.png)
+
+*The Library panel's Props category (pine/oak/birch/poplar/shrub with the trees
+glyph); dropping a pine onto the road places it through the command layer with a
+"Placed Pine tree" toast.*
+
+**Deferred (fast-follow):** dragging a *placed* prop to a new `s`/`t` (move by
+drag). The context menu's **Duplicate** + **Delete** and re-drop cover
+repositioning for now; a drag-move reuses the same world→`s`/`t` snap and a
+Document preview session — filed as a follow-up.
+
 ## Regenerating the props
 
     python3 scripts/gen_prop_meshes.py   # rewrites the OBJs and the .gen.cpp

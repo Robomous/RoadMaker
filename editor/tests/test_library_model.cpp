@@ -21,11 +21,13 @@ TEST(LibraryManifest, ParsesTheShippedManifest) {
   const auto manifest = LibraryManifest::load(kManifest);
   ASSERT_TRUE(manifest.has_value()) << (manifest ? "" : manifest.error().message);
   EXPECT_EQ(manifest->version(), 1);
-  EXPECT_EQ(manifest->items().size(), 5U); // 3 road templates + 2 assemblies
+  EXPECT_EQ(manifest->items().size(), 10U); // 3 road templates + 2 assemblies + 5 tree props
 
-  // The road templates resolve to a profile; the assemblies to a t/x kind.
+  // Road templates resolve to a profile, assemblies to a t/x kind, trees to a
+  // bundled prop model id.
   int templates = 0;
   int assemblies = 0;
+  int trees = 0;
   for (const LibraryItem& item : manifest->items()) {
     EXPECT_FALSE(item.key.isEmpty());
     EXPECT_FALSE(item.label.isEmpty());
@@ -35,10 +37,15 @@ TEST(LibraryManifest, ParsesTheShippedManifest) {
     } else if (item.kind == LibraryItem::Kind::Assembly) {
       ++assemblies;
       EXPECT_TRUE(item.assembly == "t" || item.assembly == "x");
+    } else if (item.kind == LibraryItem::Kind::Tree) {
+      ++trees;
+      EXPECT_FALSE(item.model.isEmpty());
+      EXPECT_EQ(item.category, "Props");
     }
   }
   EXPECT_EQ(templates, 3);
   EXPECT_EQ(assemblies, 2);
+  EXPECT_EQ(trees, 5);
 }
 
 TEST(LibraryManifest, ParsesFieldsAndCreateKinds) {
@@ -60,6 +67,21 @@ TEST(LibraryManifest, ParsesFieldsAndCreateKinds) {
   EXPECT_EQ(road.kind, LibraryItem::Kind::RoadTemplate);
   EXPECT_EQ(road.profile, "two_lane_rural");
   EXPECT_EQ(manifest->items()[1].kind, LibraryItem::Kind::Assembly);
+}
+
+TEST(LibraryManifest, ParsesTreeCreateKindWithModel) {
+  const auto manifest = LibraryManifest::parse(json(R"({
+    "manifest_version": 1,
+    "items": [
+      {"key": "prop.tree.pine", "label": "Pine", "category": "Props",
+       "create": {"kind": "tree", "model": "tree_pine"}}
+    ]
+  })"));
+  ASSERT_TRUE(manifest.has_value());
+  ASSERT_EQ(manifest->items().size(), 1U);
+  const LibraryItem& tree = manifest->items()[0];
+  EXPECT_EQ(tree.kind, LibraryItem::Kind::Tree);
+  EXPECT_EQ(tree.model, "tree_pine");
 }
 
 TEST(LibraryManifest, NewerVersionParsesBestEffort) {
@@ -97,7 +119,7 @@ TEST(LibraryListModel, PassesQtModelSanityChecksEmptyAndPopulated) {
   const auto manifest = LibraryManifest::load(kManifest);
   ASSERT_TRUE(manifest.has_value());
   model.set_manifest(*manifest);
-  EXPECT_EQ(model.rowCount(), 5);
+  EXPECT_EQ(model.rowCount(), 10);
 }
 
 TEST(LibraryListModel, ExposesRolesAndItemLookup) {
@@ -115,7 +137,7 @@ TEST(LibraryListModel, ExposesRolesAndItemLookup) {
   ASSERT_NE(item, nullptr);
   EXPECT_EQ(model.data(first, LibraryListModel::KeyRole).toString(), item->key);
   EXPECT_EQ(model.item(-1), nullptr);
-  EXPECT_EQ(model.item(5), nullptr);
+  EXPECT_EQ(model.item(10), nullptr);
 }
 
 } // namespace

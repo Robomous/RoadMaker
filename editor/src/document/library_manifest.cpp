@@ -19,6 +19,9 @@ LibraryItem::Kind parse_kind(const QString& kind) {
   if (kind == QStringLiteral("assembly")) {
     return LibraryItem::Kind::Assembly;
   }
+  if (kind == QStringLiteral("tree")) {
+    return LibraryItem::Kind::Tree;
+  }
   return LibraryItem::Kind::Unknown;
 }
 
@@ -72,6 +75,7 @@ Expected<LibraryManifest> LibraryManifest::parse(const QByteArray& json) {
     item.kind = parse_kind(create.value(QStringLiteral("kind")).toString());
     item.profile = create.value(QStringLiteral("profile")).toString();
     item.assembly = create.value(QStringLiteral("assembly")).toString();
+    item.model = create.value(QStringLiteral("model")).toString();
     manifest.items_.push_back(std::move(item));
   }
   return manifest;

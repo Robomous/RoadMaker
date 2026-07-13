@@ -170,6 +170,15 @@
       "retrieved": "2026-07-10"
     },
     {
+      "url": "https://raw.githubusercontent.com/lucide-icons/lucide/1.24.0/icons/trees.svg",
+      "sha256": "5bd0ff178d40b8c81dd38180dae0683aa9bc89c71b204167e06d2a3a0d506563",
+      "license": "ISC",
+      "license_url": "https://github.com/lucide-icons/lucide/blob/1.24.0/LICENSE",
+      "author": "Lucide Contributors",
+      "destination": "editor/resources/icons/lucide/trees.svg",
+      "retrieved": "2026-07-13"
+    },
+    {
       "url": "https://raw.githubusercontent.com/lucide-icons/lucide/1.24.0/icons/triangle-alert.svg",
       "sha256": "4866f38b8560d410f21e3226413e0b77997b6dfbb6931fadfe0a0d5aef9ffeb4",
       "license": "ISC",

@@ -600,6 +600,7 @@ void MainWindow::on_library_drop(const QString& key, double world_x, double worl
     viewport_->show_toast(tr("Create Road armed — click to add points"), ToastSeverity::Info);
     break;
   case LibraryDropKind::Assembly:
+  case LibraryDropKind::Tree:
     if (document_.push_command(std::move(action.command)).has_value()) {
       viewport_->show_toast(action.toast, ToastSeverity::Success);
     } else {
@@ -607,6 +608,10 @@ void MainWindow::on_library_drop(const QString& key, double world_x, double worl
     }
     break;
   case LibraryDropKind::None:
+    // A resolver may reject with a hint (e.g. a tree dropped away from any road).
+    if (!action.toast.isEmpty()) {
+      viewport_->show_toast(action.toast, ToastSeverity::Info);
+    }
     break;
   }
 }
