@@ -22,6 +22,18 @@ is headless-testable.
   View-menu toggle. The **Merge Roads** button explains itself when greyed
   ("select two roads whose ends meet") instead of reading as broken. Audit table
   + design: `docs/design/ui-revamp/phase4_discoverability.md`.
+- **Trees in the editor — render, pick, select, delete** (UI revamp Phase 3):
+  placed tree props now draw in the viewport (baked per-part from the bundled
+  prop meshes, tagged with their `ObjectId`), are hover-glowed and
+  selection-outlined via the road accent path, are pickable (bounding-sphere
+  test that shares depth with the road surface so a tree in front wins),
+  deletable with the Delete key (one undo macro with any selected roads), and
+  carry a right-click **Delete / Frame / Duplicate** menu. `ObjectId` is
+  threaded through picking → selection → highlight → scene building, and object
+  edits ride the `DirtySet::objects` re-mesh channel (no road re-tessellation).
+  Dragging a prop to a new `s`/`t` follows in the placement slice; GPU
+  instancing is deferred to #71. Design + evidence:
+  `docs/design/ui-revamp/phase3_props.md`.
 - **Tree placement through the kernel — commands, mesh, exports** (UI revamp
   Phase 3): `edit::add_object` / `delete_object` / `move_object` command
   factories place, remove, and drag OpenDRIVE `<object>` props through the M2

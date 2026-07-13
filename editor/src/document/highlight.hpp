@@ -14,24 +14,34 @@
 
 namespace roadmaker::editor {
 
-/// Feedback state for the mesh of `road`/`lane` (lane invalid = a road-level
-/// mesh such as a marking or junction floor). An entry/hover matches a
-/// lane-level target by lane id and a road-level target by road id — the same
-/// rule the scene tree and picking use. Selected takes priority over Hover.
+/// Feedback state for the mesh of `road`/`lane`/`object` — a lane patch
+/// (`lane` valid), a road-level mesh such as a marking or junction floor (all
+/// invalid but `road`), or a placed prop part (`object` valid). A prop matches
+/// only by object id (selecting a road never lights its trees, and vice
+/// versa); a lane-level target matches by lane id; a road-level target matches
+/// by road id but never a prop part. Selected takes priority over Hover.
 [[nodiscard]] inline HighlightState highlight_state_for(RoadId road,
                                                         LaneId lane,
+                                                        ObjectId object,
                                                         std::span<const SelectionEntry> selection,
                                                         RoadId hovered_road,
-                                                        LaneId hovered_lane) {
-  const auto matches = [&](RoadId r, LaneId l) {
-    return l.is_valid() ? lane == l : (r.is_valid() && road == r);
+                                                        LaneId hovered_lane,
+                                                        ObjectId hovered_object) {
+  const auto matches = [&](RoadId r, LaneId l, ObjectId o) {
+    if (o.is_valid()) {
+      return object.is_valid() && object == o;
+    }
+    if (l.is_valid()) {
+      return lane == l;
+    }
+    return !object.is_valid() && r.is_valid() && road == r;
   };
   for (const SelectionEntry& entry : selection) {
-    if (matches(entry.road, entry.lane)) {
+    if (matches(entry.road, entry.lane, entry.object)) {
       return HighlightState::Selected;
     }
   }
-  if (matches(hovered_road, hovered_lane)) {
+  if (matches(hovered_road, hovered_lane, hovered_object)) {
     return HighlightState::Hover;
   }
   return HighlightState::None;

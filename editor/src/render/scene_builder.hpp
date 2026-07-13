@@ -25,11 +25,14 @@ namespace roadmaker::editor {
                                             const std::array<float, 4>& color);
 
 /// One uploadable mesh plus the entity it visualizes. `lane` is invalid for
-/// markings and junction floors; both ids are invalid for decorations.
+/// markings and junction floors; `object` is valid only for prop parts (a
+/// placed tree/vegetation instance), where `road` is its owning road and
+/// `lane` is invalid. All three ids are invalid for undecorated geometry.
 struct SceneItem {
   RenderMeshData data;
   RoadId road;
   LaneId lane;
+  ObjectId object;
 };
 
 /// Axis-aligned bounds of the built scene (kernel frame, meters).
@@ -55,6 +58,12 @@ struct Scene {
 /// Appends one road's items (lane patches + markings) to `scene`, growing
 /// its bounds — the unit of work for partial viewport re-uploads.
 void append_road_items(const RoadMesh& road, Scene& scene);
+
+/// Appends a placed prop's parts (trunk, crown, …) to `scene` as one SceneItem
+/// each, baking the bundled model geometry into world space at the instance's
+/// pose and tagging every part with the owning road + ObjectId (so hover,
+/// selection, and picking address the whole tree). Grows the scene bounds.
+void append_object_items(const ObjectInstance& instance, Scene& scene);
 
 /// Flattens a NetworkMesh into upload-ready items: one per lane patch (with
 /// road+lane ids), one per marking (road id only), one per junction floor.

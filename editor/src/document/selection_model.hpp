@@ -14,10 +14,12 @@
 
 namespace roadmaker::editor {
 
-/// One selected entity: a whole road (lane invalid) or a lane on a road.
+/// One selected entity: a whole road (lane invalid), a lane on a road, or a
+/// placed object/prop (`object` valid, `road` = its owning road, lane invalid).
 struct SelectionEntry {
   RoadId road;
-  LaneId lane; // invalid = road-level selection
+  LaneId lane;     // invalid = road-level selection
+  ObjectId object; // valid = a placed object/prop selection
 
   friend bool operator==(const SelectionEntry&, const SelectionEntry&) = default;
 };
@@ -66,6 +68,11 @@ public:
   /// lane entries of the same road collapse to one. The road set the editing
   /// tools operate on (node handles show on selected roads, 02 §1/§3).
   [[nodiscard]] std::vector<RoadId> selected_roads() const;
+
+  /// Placed objects/props present in the selection, in selection order. What
+  /// the delete/move/context-menu object flows operate on (objects are moved
+  /// by their own road-relative s/t, not by dragging the owning road).
+  [[nodiscard]] std::vector<ObjectId> selected_objects() const;
 
 signals:
   /// Emitted only when the selection actually changes. Carries no payload —

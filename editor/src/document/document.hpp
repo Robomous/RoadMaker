@@ -146,6 +146,12 @@ signals:
   /// resets); fires after mesh_changed().
   void topology_changed();
 
+  /// A road's object/prop layer changed (a prop was placed, moved, or
+  /// removed). `roads` lists the owning roads whose prop instances the
+  /// viewport should re-upload; an empty list means rebuild wholesale. Prunes
+  /// stale prop selections. Fires after the objects re-mesh.
+  void objects_changed(const std::vector<RoadId>& roads);
+
   void diagnostics_changed();
 
   /// Fired once per push right before junction regeneration applies (the
