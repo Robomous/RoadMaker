@@ -13,6 +13,16 @@ through the M2 command layer (one undo step per edit, byte-identical undo) and
 is headless-testable.
 
 ### Added
+- **Parametric intersection assemblies** (kernel, UI-revamp Phase 2 groundwork):
+  `edit::assembly::t_intersection(net, pose, params)` and `x_intersection(...)`
+  generate a standalone 3-way tee / 4-way crossing as ONE undoable command —
+  they lay down the stub roads (a `Pose` places the center, `IntersectionParams`
+  tunes arm length, junction gap, and lane profile) and generate the connecting
+  roads via the existing junction generator, built as a `CompositeCommand` so
+  apply→revert is byte-identical. Validator-clean (fixture tests assert zero
+  errors for both). Python bindings under `rm.edit.assembly`, an
+  `examples/x_intersection.py`, and `t_intersection.xodr` / `x_intersection.xodr`
+  fuzz-corpus seeds ship with it.
 - **Viewport hover & selection feedback** (UI revamp Phase 1): the road under
   the cursor now warms subtly and the selected road(s) tint in the theme
   **accent**, both via the renderer — a per-`DrawItem` `HighlightState`

@@ -504,3 +504,42 @@ def test_set_road_mark_edits_the_first_record_only(network):
                 rm.RoadMark(s_offset=40.0, type=rm.RoadMarkType.NONE, width=0.12),
             ),
         )
+
+
+def test_t_intersection_generates_a_valid_junction():
+    net = rm.RoadNetwork()
+    stack = rm.edit.EditStack()
+    stack.push(net, rm.edit.assembly.t_intersection(net, rm.edit.assembly.Pose(0.0, 0.0, 0.0)))
+    assert net.junction_count == 1
+    assert net.road_count >= 3  # 3 arms + generated connecting roads
+    errors = [d for d in rm.validate_network(net) if d.severity == rm.Severity.ERROR]
+    assert not errors
+
+
+def test_x_intersection_undo_is_byte_identical():
+    net = rm.RoadNetwork()
+    stack = rm.edit.EditStack()
+    before = rm.write_xodr(net)
+    stack.push(net, rm.edit.assembly.x_intersection(net, rm.edit.assembly.Pose(5.0, -2.0, 0.4)))
+    assert net.junction_count == 1
+    after = rm.write_xodr(net)
+    stack.undo(net)
+    assert rm.write_xodr(net) == before  # undo restores the empty network exactly
+    stack.redo(net)
+    assert rm.write_xodr(net) == after
+
+
+def test_intersection_params_honored_and_bad_arm_length_raises():
+    net = rm.RoadNetwork()
+    stack = rm.edit.EditStack()
+    params = rm.edit.assembly.IntersectionParams()
+    params.arm_length_m = 25.0
+    params.gap_m = 10.0
+    params.profile = rm.LaneProfile.highway()
+    stack.push(net, rm.edit.assembly.x_intersection(net, rm.edit.assembly.Pose(), params))
+    assert net.junction_count == 1
+
+    bad = rm.edit.assembly.IntersectionParams()
+    bad.arm_length_m = 0.0
+    with pytest.raises(ValueError):
+        stack.push(net, rm.edit.assembly.t_intersection(net, rm.edit.assembly.Pose(), bad))

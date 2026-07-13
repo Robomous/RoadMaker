@@ -1,5 +1,6 @@
 #include "roadmaker/edit/operations.hpp"
 
+#include "roadmaker/edit/assembly.hpp"
 #include "roadmaker/geometry/profile_fit.hpp"
 #include "roadmaker/road/authoring.hpp"
 #include "roadmaker/road/network.hpp"
@@ -2497,6 +2498,116 @@ std::unique_ptr<Command> delete_junction(const RoadNetwork& network, JunctionId 
   capture_deletion(network, *command, doomed, junction_id);
   return command;
 }
+
+// --- parametric intersection assemblies -------------------------------------
+
+namespace assembly {
+
+namespace {
+
+/// Widest side's total lane width [m]; the junction area must clear it.
+double profile_half_width(const LaneProfile& profile) {
+  const auto side_width = [](const std::vector<LaneSpec>& lanes) {
+    double sum = 0.0;
+    for (const LaneSpec& lane : lanes) {
+      sum += lane.width;
+    }
+    return sum;
+  };
+  return std::max(side_width(profile.left), side_width(profile.right));
+}
+
+double resolve_gap(const IntersectionParams& params) {
+  if (params.gap_m > 0.0) {
+    return params.gap_m;
+  }
+  // Match attach_t_junction's spirit: the area must clear the pavement and
+  // give the tightest turn room. tan(45°)=1 for the 90° arms, so the turn
+  // bound is ~min_turn_radius.
+  return std::max(profile_half_width(params.profile) + 1.0,
+                  params.generation.min_turn_radius_m + 1.0);
+}
+
+/// Composite for an N-arm intersection whose arm directions are
+/// pose.heading + offsets[i]. Each arm is a straight stub authored from the
+/// junction boundary (gap out from the center) to gap+arm_length, inner→outer
+/// so its Start faces the junction; the final builder links every stub into a
+/// generated common junction. One command (apply→revert byte-identical).
+std::unique_ptr<Command> make_intersection(const RoadNetwork& network,
+                                           std::string_view name,
+                                           Pose pose,
+                                           std::span<const double> offsets,
+                                           const IntersectionParams& params) {
+  const auto fail = [&](std::string message) {
+    return invalid_command(
+        std::string(name),
+        Error{.code = ErrorCode::InvalidArgument, .message = std::move(message)});
+  };
+  if (params.arm_length_m <= tol::kLength) {
+    return fail("intersection arm length must be positive");
+  }
+  if (params.profile.left.empty() && params.profile.right.empty()) {
+    return fail("intersection lane profile is empty");
+  }
+
+  const double gap = resolve_gap(params);
+  const double outer = gap + params.arm_length_m;
+
+  // Roads present now; every road the stub builders create (absent here) is
+  // an arm — the junction builder discovers them the way attach_t_junction
+  // discovers its split-created ids.
+  std::vector<RoadId> existing;
+  network.for_each_road([&](RoadId id, const Road&) { existing.push_back(id); });
+
+  std::vector<CompositeCommand::Builder> builders;
+  for (const double offset : offsets) {
+    const double angle = pose.heading + offset;
+    const double dx = std::cos(angle);
+    const double dy = std::sin(angle);
+    std::vector<Waypoint> waypoints{
+        Waypoint{.x = pose.x + (gap * dx), .y = pose.y + (gap * dy)},
+        Waypoint{.x = pose.x + (outer * dx), .y = pose.y + (outer * dy)},
+    };
+    builders.push_back([waypoints = std::move(waypoints), profile = params.profile, angle](
+                           RoadNetwork& net) {
+      (void)net;
+      return create_road(waypoints, profile, {}, EndpointHeadings{.start = angle, .end = angle});
+    });
+  }
+
+  builders.push_back(
+      [existing = std::move(existing), generation = params.generation](RoadNetwork& net) {
+        std::vector<RoadEnd> ends;
+        net.for_each_road([&](RoadId id, const Road&) {
+          if (std::ranges::find(existing, id) == existing.end()) {
+            ends.push_back(RoadEnd{.road = id, .contact = ContactPoint::Start});
+          }
+        });
+        return create_junction(net, ends, generation);
+      });
+
+  return std::make_unique<CompositeCommand>(
+      std::string(name), DirtySet{.topology = true}, std::move(builders));
+}
+
+} // namespace
+
+std::unique_ptr<Command>
+t_intersection(const RoadNetwork& network, Pose pose, IntersectionParams params) {
+  // Through road along pose.heading (arms at 0 and π) plus a perpendicular
+  // stem to the left (+π/2).
+  const std::array<double, 3> offsets{0.0, std::numbers::pi, std::numbers::pi / 2.0};
+  return make_intersection(network, "T-Intersection", pose, offsets, params);
+}
+
+std::unique_ptr<Command>
+x_intersection(const RoadNetwork& network, Pose pose, IntersectionParams params) {
+  const std::array<double, 4> offsets{
+      0.0, std::numbers::pi / 2.0, std::numbers::pi, 3.0 * std::numbers::pi / 2.0};
+  return make_intersection(network, "X-Intersection", pose, offsets, params);
+}
+
+} // namespace assembly
 
 std::unique_ptr<Command>
 add_lane(const RoadNetwork& network, LaneSectionId section_id, int side, LaneType type) {

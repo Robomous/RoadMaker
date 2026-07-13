@@ -3,6 +3,7 @@
 // Expected, __repr__ everywhere. No C++ exception ever crosses this
 // boundary unhandled — rm::Error is translated to Python exceptions.
 
+#include "roadmaker/edit/assembly.hpp"
 #include "roadmaker/edit/edit_stack.hpp"
 #include "roadmaker/edit/operations.hpp"
 #include "roadmaker/edit/snap.hpp"
@@ -1075,6 +1076,54 @@ NB_MODULE(_roadmaker, m) {
       "Re-runs the generator from the junction's recorded arms, replacing "
       "connecting-road geometry in place (ids preserved).");
   edit.def("delete_junction", &roadmaker::edit::delete_junction, "network"_a, "junction"_a);
+
+  // --- parametric intersection assemblies (rm.edit.assembly) ---
+  auto assembly = edit.def_submodule(
+      "assembly",
+      "Parametric intersection generators: one undoable command that lays down "
+      "the stub roads of a standalone junction and generates its connecting roads.");
+  nb::class_<roadmaker::edit::assembly::Pose>(assembly, "Pose")
+      .def(
+          "__init__",
+          [](roadmaker::edit::assembly::Pose* self, double x, double y, double heading) {
+            new (self) roadmaker::edit::assembly::Pose{.x = x, .y = y, .heading = heading};
+          },
+          "x"_a = 0.0,
+          "y"_a = 0.0,
+          "heading"_a = 0.0)
+      .def_rw("x", &roadmaker::edit::assembly::Pose::x)
+      .def_rw("y", &roadmaker::edit::assembly::Pose::y)
+      .def_rw("heading", &roadmaker::edit::assembly::Pose::heading);
+  nb::class_<roadmaker::edit::assembly::IntersectionParams>(assembly, "IntersectionParams")
+      .def(nb::init<>())
+      .def_rw("arm_length_m", &roadmaker::edit::assembly::IntersectionParams::arm_length_m)
+      .def_rw("gap_m", &roadmaker::edit::assembly::IntersectionParams::gap_m)
+      .def_rw("profile", &roadmaker::edit::assembly::IntersectionParams::profile)
+      .def_rw("generation", &roadmaker::edit::assembly::IntersectionParams::generation);
+  assembly.def(
+      "t_intersection",
+      [](const roadmaker::RoadNetwork& network,
+         roadmaker::edit::assembly::Pose pose,
+         roadmaker::edit::assembly::IntersectionParams params) {
+        return roadmaker::edit::assembly::t_intersection(network, pose, params);
+      },
+      "network"_a,
+      "pose"_a,
+      "params"_a = roadmaker::edit::assembly::IntersectionParams{},
+      "A 3-way T-intersection at pose (through road along pose.heading + a "
+      "perpendicular stem). One undoable command.");
+  assembly.def(
+      "x_intersection",
+      [](const roadmaker::RoadNetwork& network,
+         roadmaker::edit::assembly::Pose pose,
+         roadmaker::edit::assembly::IntersectionParams params) {
+        return roadmaker::edit::assembly::x_intersection(network, pose, params);
+      },
+      "network"_a,
+      "pose"_a,
+      "params"_a = roadmaker::edit::assembly::IntersectionParams{},
+      "A 4-way X-intersection at pose. One undoable command.");
+
   edit.def("add_lane",
            &roadmaker::edit::add_lane,
            "network"_a,
