@@ -19,6 +19,7 @@
     <file alias="rotate-ccw.svg">icons/lucide/rotate-ccw.svg</file>
     <file alias="save.svg">icons/lucide/save.svg</file>
     <file alias="scan.svg">icons/lucide/scan.svg</file>
+    <file alias="scissors.svg">icons/lucide/scissors.svg</file>
     <file alias="trash-2.svg">icons/lucide/trash-2.svg</file>
     <file alias="triangle-alert.svg">icons/lucide/triangle-alert.svg</file>
     <file alias="undo-2.svg">icons/lucide/undo-2.svg</file>

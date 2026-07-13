@@ -22,6 +22,7 @@ enum class ToolId {
   LaneProfile,
   Elevation,
   CreateJunction,
+  Split,
   Delete,
 };
 
@@ -83,6 +84,11 @@ signals:
   /// tools emit SizeAllCursor while dragging a whole road, ArrowCursor when the
   /// drag ends. The ViewportWidget forwards it to setCursor.
   void cursor_changed(Qt::CursorShape shape);
+
+  /// A one-shot tool asks the app to switch to another tool — e.g. Split
+  /// returns to Select after a successful cut or Esc. MainWindow forwards it to
+  /// the ToolManager.
+  void request_tool(ToolId id);
 };
 
 } // namespace roadmaker::editor

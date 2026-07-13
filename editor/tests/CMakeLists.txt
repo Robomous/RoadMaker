@@ -49,7 +49,9 @@ add_executable(roadmaker_editor_tests
   test_picking.cpp
   test_preview_session.cpp
   test_profile_panel.cpp
+  test_context_menu.cpp
   test_select_tool.cpp
+  test_split_tool.cpp
   test_scene_builder.cpp
   test_scene_tree_model.cpp
   test_selection_model.cpp

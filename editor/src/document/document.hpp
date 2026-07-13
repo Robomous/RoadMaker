@@ -88,6 +88,12 @@ public:
   /// the document unchanged, appends a diagnostic, and is NOT pushed.
   [[nodiscard]] Expected<void> push_command(std::unique_ptr<edit::Command> command);
 
+  /// The dirty set of the most recently applied command (push_command or a
+  /// committed preview). Lets a tool discover ids a command created without a
+  /// return channel — e.g. a split's new tail road is the dirty road that is
+  /// not the original. Empty before the first mutation.
+  [[nodiscard]] const edit::DirtySet& last_dirty() const { return last_dirty_; }
+
   /// Builds the replacement command for update_preview(). Invoked against
   /// the BASE-state network (the current preview already reverted) so the
   /// command's value snapshots capture pre-session values.
@@ -172,6 +178,7 @@ private:
   std::vector<Diagnostic> diagnostics_;
   QString file_path_;
   QUndoStack undo_stack_;
+  edit::DirtySet last_dirty_;
   std::unique_ptr<edit::Command> preview_command_;
 };
 

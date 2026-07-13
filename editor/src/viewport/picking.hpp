@@ -7,14 +7,20 @@
 
 #include "roadmaker/geometry/reference_line.hpp"
 #include "roadmaker/mesh/mesh.hpp"
+#include "roadmaker/road/road.hpp"
 
 #include <array>
+#include <cstddef>
 #include <limits>
 #include <optional>
 #include <span>
 #include <vector>
 
 #include "render/renderer.hpp"
+
+namespace roadmaker {
+class RoadNetwork;
+} // namespace roadmaker
 
 namespace roadmaker::editor {
 
@@ -82,5 +88,18 @@ struct StationCoord {
 /// bracketing interval. The kernel has no analytic inverse projection; the
 /// coarse pass keeps multimodal cases (hairpins) on the right branch.
 [[nodiscard]] StationCoord find_station(const ReferenceLine& line, double x, double y);
+
+/// A hovered authoring waypoint of one of `roads`: which road, its index, and
+/// position. The shared node hit-test behind SelectTool, EditNodesTool, and the
+/// context menu — nearest effective waypoint within `radius` [m], ties keep the
+/// first road in `roads` order.
+struct WaypointHit {
+  RoadId road;
+  std::size_t index = 0;
+  Waypoint position;
+};
+
+[[nodiscard]] std::optional<WaypointHit> pick_waypoint(
+    const RoadNetwork& network, std::span<const RoadId> roads, double x, double y, double radius);
 
 } // namespace roadmaker::editor

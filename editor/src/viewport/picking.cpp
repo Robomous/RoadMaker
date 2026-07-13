@@ -1,5 +1,8 @@
 #include "viewport/picking.hpp"
 
+#include "roadmaker/edit/operations.hpp"
+#include "roadmaker/road/network.hpp"
+
 #include <Eigen/Dense>
 
 #include <algorithm>
@@ -178,6 +181,27 @@ pick(const NetworkMesh& mesh, std::span<const RoadAabb> road_aabbs, const Ray& r
               .distance = *t,
           };
         }
+      }
+    }
+  }
+  return best;
+}
+
+std::optional<WaypointHit> pick_waypoint(
+    const RoadNetwork& network, std::span<const RoadId> roads, double x, double y, double radius) {
+  std::optional<WaypointHit> best;
+  double best_dist = radius;
+  for (const RoadId road_id : roads) {
+    const Road* road = network.road(road_id);
+    if (road == nullptr) {
+      continue;
+    }
+    const std::vector<Waypoint> nodes = edit::effective_waypoints(*road);
+    for (std::size_t i = 0; i < nodes.size(); ++i) {
+      const double dist = std::hypot(x - nodes[i].x, y - nodes[i].y);
+      if (dist <= best_dist) {
+        best_dist = dist;
+        best = WaypointHit{.road = road_id, .index = i, .position = nodes[i]};
       }
     }
   }

@@ -94,6 +94,13 @@ Actions::Actions(QUndoStack& undo_stack, QObject* parent) : QObject(parent) {
                                       "body to tee into it; Enter generates, Esc cancels (J)"));
   tool_group->addAction(tool_create_junction);
 
+  tool_split = new QAction(tr("&Split"), this);
+  tool_split->setCheckable(true);
+  tool_split->setShortcut(Qt::Key_K);
+  tool_split->setIconText(tr("Split"));
+  tool_split->setToolTip(tr("Split — click a road to cut it in two at the marker (K)"));
+  tool_group->addAction(tool_split);
+
   tool_delete = new QAction(tr("&Delete"), this);
   tool_delete->setCheckable(true);
   tool_delete->setShortcut(Qt::Key_X);
@@ -155,6 +162,7 @@ void Actions::apply_icons() {
   tool_lane_profile->setIcon(Icons::get(QStringLiteral("lane-section")));
   tool_elevation->setIcon(Icons::get(QStringLiteral("mountain")));
   tool_create_junction->setIcon(Icons::get(QStringLiteral("junction-connect")));
+  tool_split->setIcon(Icons::get(QStringLiteral("scissors")));
   tool_delete->setIcon(Icons::get(QStringLiteral("trash-2")));
   template_rural->setIcon(Icons::get(QStringLiteral("template-rural")));
   template_urban->setIcon(Icons::get(QStringLiteral("template-urban")));
