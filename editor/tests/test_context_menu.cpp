@@ -9,7 +9,10 @@
 
 #include <gtest/gtest.h>
 
+#include <QAction>
+#include <QMenu>
 #include <QString>
+#include <QWidget>
 #include <algorithm>
 #include <array>
 #include <optional>
@@ -26,6 +29,7 @@ using roadmaker::LaneId;
 using roadmaker::RoadId;
 using roadmaker::Waypoint;
 using roadmaker::editor::Actions;
+using roadmaker::editor::assemble_context_menu;
 using roadmaker::editor::build_context_menu;
 using roadmaker::editor::ContextMenuDeps;
 using roadmaker::editor::Document;
@@ -273,6 +277,88 @@ TEST(ContextMenu, JunctionMenuFramesAndDeletes) {
   ASSERT_NE(del, nullptr);
   del->invoke();
   EXPECT_EQ(document.network().junction(junction), nullptr);
+}
+
+// Regression (gate finding 6, the hard blocker): the invoke closures must
+// outlive the ContextMenuDeps bundle the caller assembled them from. MainWindow
+// builds `ContextMenuDeps` as a stack local and shows the menu with the
+// non-blocking QMenu::popup() — the deps local dies immediately, so a later
+// click used to dereference freed stack memory (use-after-free that crashed the
+// editor on right-click actions). The document/selection/actions it *references*
+// are long-lived, so the closures must hold those by value. ASan turns the old
+// bug into a hard failure here; both tests let `deps` die before the invoke.
+TEST(ContextMenu, InvokeSurvivesDepsGoingOutOfScope) {
+  Document document;
+  SelectionModel selection{document};
+  Actions actions{*document.undo_stack()};
+  ASSERT_TRUE(
+      document.push_command(roadmaker::edit::create_road({Waypoint{.x = 0.0, .y = 0.0},
+                                                          Waypoint{.x = 50.0, .y = 10.0},
+                                                          Waypoint{.x = 100.0, .y = 0.0}},
+                                                         roadmaker::LaneProfile::two_lane_default(),
+                                                         "Road")));
+  RoadId road;
+  document.network().for_each_road([&](RoadId id, const roadmaker::Road&) { road = id; });
+
+  MenuContext context;
+  context.pick = PickHit{.road = road, .lane = LaneId{}};
+  context.station = 40.0;
+
+  // Build the descriptor from a deps that dies at the end of this block — a
+  // by-reference capture would now dangle.
+  std::vector<MenuItem> items;
+  {
+    ContextMenuDeps deps{document, selection, actions};
+    items = build_context_menu(context, deps);
+  }
+
+  const MenuItem* split = nullptr;
+  for (const MenuItem& item : items) {
+    if (item.text == QString("Split road here")) {
+      split = &item;
+    }
+  }
+  ASSERT_NE(split, nullptr);
+  split->invoke();
+  EXPECT_EQ(document.network().road_count(), 2U);
+}
+
+TEST(ContextMenu, AssembledMenuActionSurvivesDepsGoingOutOfScope) {
+  Document document;
+  SelectionModel selection{document};
+  Actions actions{*document.undo_stack()};
+  ASSERT_TRUE(
+      document.push_command(roadmaker::edit::create_road({Waypoint{.x = 0.0, .y = 0.0},
+                                                          Waypoint{.x = 50.0, .y = 10.0},
+                                                          Waypoint{.x = 100.0, .y = 0.0}},
+                                                         roadmaker::LaneProfile::two_lane_default(),
+                                                         "Road")));
+  RoadId road;
+  document.network().for_each_road([&](RoadId id, const roadmaker::Road&) { road = id; });
+
+  MenuContext context;
+  context.pick = PickHit{.road = road, .lane = LaneId{}};
+  context.station = 40.0;
+
+  // The full QMenu path MainWindow uses: the menu is parented to a widget (as the
+  // real WA_DeleteOnClose menu is to MainWindow) and outlives the deps local.
+  QWidget parent;
+  QMenu* menu = nullptr;
+  {
+    ContextMenuDeps deps{document, selection, actions};
+    menu = assemble_context_menu(context, deps, &parent);
+  }
+  ASSERT_NE(menu, nullptr);
+
+  QAction* split = nullptr;
+  for (QAction* action : menu->actions()) {
+    if (action->text() == QString("Split road here")) {
+      split = action;
+    }
+  }
+  ASSERT_NE(split, nullptr);
+  split->trigger(); // the deferred click — this was the use-after-free
+  EXPECT_EQ(document.network().road_count(), 2U);
 }
 
 TEST(ContextMenu, MergeSelectedIsEnabledForTwoMergeableRoads) {

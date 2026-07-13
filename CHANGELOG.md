@@ -216,6 +216,20 @@ is headless-testable.
   merge/post-split seeds.
 
 ### Fixed
+- **Right-click context-menu actions no longer crash the editor** (gate
+  finding 6, the GW-1 hard blocker): `MainWindow` built `ContextMenuDeps` (a
+  bundle of three references) as a stack local and showed the menu with the
+  non-blocking `QMenu::popup()`, while every `MenuItem` closure captured that
+  bundle **by reference** — the local died as soon as `popup()` returned, so any
+  later click was a use-after-free (it affected *every* context-menu action, not
+  just lanes). The closures now capture the deps **by value** (a copy of three
+  references to long-lived `MainWindow` members), making each menu fully
+  self-contained regardless of how it is shown. A controller-level regression
+  test assembles the menu from a scope whose `deps` goes out of scope and then
+  triggers the action — ASan reported `stack-use-after-scope` on the old code
+  and is clean on the new. Audit of the same class: the panels capture `this`
+  (lifetime-tied, auto-disconnected) and re-read live state each invocation, and
+  kernel commands reject stale ids, so no other instance existed.
 - **Middle-mouse pan is now natural (ground-anchored)**: the old pan scaled
   screen deltas by an arbitrary `distance × 0.0016` constant that ignored
   pitch and FOV (wildly wrong speed at low pitch) and moved content *against*

@@ -20,11 +20,11 @@ namespace roadmaker::editor {
 
 namespace {
 
-void select_road(ContextMenuDeps& deps, RoadId road) {
+void select_road(const ContextMenuDeps& deps, RoadId road) {
   deps.selection.select({.road = road, .lane = LaneId{}}, SelectMode::Replace);
 }
 
-void select_object(ContextMenuDeps& deps, RoadId road, ObjectId object) {
+void select_object(const ContextMenuDeps& deps, RoadId road, ObjectId object) {
   deps.selection.select({.road = road, .lane = LaneId{}, .object = object}, SelectMode::Replace);
 }
 
@@ -65,18 +65,18 @@ std::vector<MenuItem> build_context_menu(const MenuContext& context, ContextMenu
     }
     items.push_back(MenuItem{.text = QObject::tr("Split at this node"),
                              .enabled = interior,
-                             .invoke = [&deps, road, station] {
+                             .invoke = [deps, road, station] {
                                if (station.has_value()) {
                                  (void)deps.document.push_command(
                                      edit::split_road(deps.document.network(), road, *station));
                                }
                              }});
-    items.push_back(MenuItem{.text = QObject::tr("Delete node"), .invoke = [&deps, road, index] {
+    items.push_back(MenuItem{.text = QObject::tr("Delete node"), .invoke = [deps, road, index] {
                                (void)deps.document.push_command(
                                    edit::delete_waypoint(deps.document.network(), road, index));
                              }});
     items.push_back(separator());
-    items.push_back(MenuItem{.text = QObject::tr("Frame"), .invoke = [&deps, road] {
+    items.push_back(MenuItem{.text = QObject::tr("Frame"), .invoke = [deps, road] {
                                select_road(deps, road);
                                deps.actions.frame_selection->trigger();
                              }});
@@ -87,12 +87,12 @@ std::vector<MenuItem> build_context_menu(const MenuContext& context, ContextMenu
   // in the viewport).
   if (context.junction.has_value()) {
     const JunctionId junction = *context.junction;
-    items.push_back(MenuItem{.text = QObject::tr("Frame"), .invoke = [&deps] {
+    items.push_back(MenuItem{.text = QObject::tr("Frame"), .invoke = [deps] {
                                deps.selection.clear();
                                deps.actions.frame_selection->trigger();
                              }});
     items.push_back(separator());
-    items.push_back(MenuItem{.text = QObject::tr("Delete junction"), .invoke = [&deps, junction] {
+    items.push_back(MenuItem{.text = QObject::tr("Delete junction"), .invoke = [deps, junction] {
                                (void)deps.document.push_command(
                                    edit::delete_junction(deps.document.network(), junction));
                              }});
@@ -104,7 +104,7 @@ std::vector<MenuItem> build_context_menu(const MenuContext& context, ContextMenu
   if (context.pick.has_value() && context.pick->object.is_valid()) {
     const ObjectId object = context.pick->object;
     const RoadId road = context.pick->road;
-    items.push_back(MenuItem{.text = QObject::tr("Frame"), .invoke = [&deps, road, object] {
+    items.push_back(MenuItem{.text = QObject::tr("Frame"), .invoke = [deps, road, object] {
                                select_object(deps, road, object);
                                deps.actions.frame_selection->trigger();
                              }});
@@ -112,7 +112,7 @@ std::vector<MenuItem> build_context_menu(const MenuContext& context, ContextMenu
     const Object* source = network.object(object);
     const Road* owner = source != nullptr ? network.road(source->road) : nullptr;
     items.push_back(MenuItem{
-        .text = QObject::tr("Duplicate"), .enabled = owner != nullptr, .invoke = [&deps, object] {
+        .text = QObject::tr("Duplicate"), .enabled = owner != nullptr, .invoke = [deps, object] {
           const Object* src = deps.document.network().object(object);
           const Road* road_ptr = src != nullptr ? deps.document.network().road(src->road) : nullptr;
           if (road_ptr == nullptr) {
@@ -126,7 +126,7 @@ std::vector<MenuItem> build_context_menu(const MenuContext& context, ContextMenu
               edit::add_object(deps.document.network(), src->road, std::move(copy)));
         }});
     items.push_back(separator());
-    items.push_back(MenuItem{.text = QObject::tr("Delete object"), .invoke = [&deps, object] {
+    items.push_back(MenuItem{.text = QObject::tr("Delete object"), .invoke = [deps, object] {
                                (void)deps.document.push_command(
                                    edit::delete_object(deps.document.network(), object));
                              }});
@@ -139,7 +139,7 @@ std::vector<MenuItem> build_context_menu(const MenuContext& context, ContextMenu
     const std::optional<double> station = context.station;
     items.push_back(MenuItem{.text = QObject::tr("Insert bend point here"),
                              .enabled = station.has_value(),
-                             .invoke = [&deps, road, station] {
+                             .invoke = [deps, road, station] {
                                if (station.has_value()) {
                                  (void)deps.document.push_command(
                                      edit::insert_node_at(deps.document.network(), road, *station));
@@ -147,7 +147,7 @@ std::vector<MenuItem> build_context_menu(const MenuContext& context, ContextMenu
                              }});
     items.push_back(MenuItem{.text = QObject::tr("Split road here"),
                              .enabled = station.has_value(),
-                             .invoke = [&deps, road, station] {
+                             .invoke = [deps, road, station] {
                                if (station.has_value()) {
                                  (void)deps.document.push_command(
                                      edit::split_road(deps.document.network(), road, *station));
@@ -161,7 +161,7 @@ std::vector<MenuItem> build_context_menu(const MenuContext& context, ContextMenu
     items.push_back(MenuItem{
         .text = QObject::tr("Merge selected roads"),
         .enabled = mergeable,
-        .invoke = [&deps, selected] {
+        .invoke = [deps, selected] {
           if (selected.size() != 2) {
             return;
           }
@@ -173,21 +173,20 @@ std::vector<MenuItem> build_context_menu(const MenuContext& context, ContextMenu
           (void)deps.document.push_command(edit::merge_roads(deps.document.network(), a, b));
         }});
     items.push_back(separator());
-    items.push_back(MenuItem{.text = QObject::tr("Edit lane profile"), .invoke = [&deps, road] {
+    items.push_back(MenuItem{.text = QObject::tr("Edit lane profile"), .invoke = [deps, road] {
                                select_road(deps, road);
                                deps.actions.tool_lane_profile->trigger();
                              }});
-    items.push_back(
-        MenuItem{.text = QObject::tr("Edit elevation profile"), .invoke = [&deps, road] {
-                   select_road(deps, road);
-                   deps.actions.tool_elevation->trigger();
-                 }});
-    items.push_back(MenuItem{.text = QObject::tr("Frame"), .invoke = [&deps, road] {
+    items.push_back(MenuItem{.text = QObject::tr("Edit elevation profile"), .invoke = [deps, road] {
+                               select_road(deps, road);
+                               deps.actions.tool_elevation->trigger();
+                             }});
+    items.push_back(MenuItem{.text = QObject::tr("Frame"), .invoke = [deps, road] {
                                select_road(deps, road);
                                deps.actions.frame_selection->trigger();
                              }});
     items.push_back(separator());
-    items.push_back(MenuItem{.text = QObject::tr("Delete road"), .invoke = [&deps, road] {
+    items.push_back(MenuItem{.text = QObject::tr("Delete road"), .invoke = [deps, road] {
                                (void)deps.document.push_command(
                                    edit::delete_road(deps.document.network(), road));
                              }});
@@ -196,12 +195,12 @@ std::vector<MenuItem> build_context_menu(const MenuContext& context, ContextMenu
 
   // Empty context: scene-wide.
   items.push_back(MenuItem{.text = QObject::tr("Create road here"),
-                           .invoke = [&deps] { deps.actions.tool_create_road->trigger(); }});
+                           .invoke = [deps] { deps.actions.tool_create_road->trigger(); }});
   items.push_back(MenuItem{.text = QObject::tr("Add from library…"),
-                           .invoke = [&deps] { deps.actions.add_from_library->trigger(); }});
+                           .invoke = [deps] { deps.actions.add_from_library->trigger(); }});
   items.push_back(MenuItem{.text = QObject::tr("Paste"), .enabled = false}); // stub (no clipboard)
   items.push_back(separator());
-  items.push_back(MenuItem{.text = QObject::tr("Frame all"), .invoke = [&deps] {
+  items.push_back(MenuItem{.text = QObject::tr("Frame all"), .invoke = [deps] {
                              deps.selection.clear();
                              deps.actions.frame_selection->trigger();
                            }});
