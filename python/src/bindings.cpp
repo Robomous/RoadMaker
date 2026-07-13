@@ -901,6 +901,22 @@ NB_MODULE(_roadmaker, m) {
       "Authors a clothoid road (auto id; empty name auto-names \"Road <id>\"). "
       "A start/end heading [rad] locks the fit there for G1 chaining.");
   edit.def("split_road", &roadmaker::edit::split_road, "network"_a, "road"_a, "s"_a);
+  edit.def(
+      "check_mergeable",
+      [](const roadmaker::RoadNetwork& network, roadmaker::RoadId a, roadmaker::RoadId b) {
+        unwrap(roadmaker::edit::check_mergeable(network, a, b));
+      },
+      "network"_a,
+      "a"_a,
+      "b"_a,
+      "Raises ValueError with the reason if a's END can't merge into b's START, "
+      "else returns None.");
+  edit.def("merge_roads",
+           &roadmaker::edit::merge_roads,
+           "network"_a,
+           "a"_a,
+           "b"_a,
+           "Merges a's END into b's START into one road keeping a's id (b is erased).");
   edit.def("delete_road", &roadmaker::edit::delete_road, "network"_a, "road"_a);
   edit.def("translate_road",
            &roadmaker::edit::translate_road,

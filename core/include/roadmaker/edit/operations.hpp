@@ -107,6 +107,29 @@ translate_road(const RoadNetwork& network, RoadId road, double dx, double dy);
 [[nodiscard]] RM_API std::unique_ptr<Command>
 split_road(const RoadNetwork& network, RoadId road, double s);
 
+/// Checks whether `a`'s END can be merged into `b`'s START — the editor's
+/// enablement query and the merge factory's precondition. Ok() means merge_roads
+/// will succeed; otherwise the error message is the verbatim reason (one per
+/// refusal): stale/equal ids; either road in or touching a junction; a joining
+/// end already linked to a third road; the roads meet the wrong way round
+/// ("reverse one first (coming soon)"); the joining ends farther apart than
+/// kMergePositionGap; headings off by more than kMergeHeading; or the seam lane
+/// profiles / elevation not matching. reverse_road is deferred, so only the
+/// End(a)→Start(b) orientation merges (the editor normalizes the argument order).
+[[nodiscard]] RM_API Expected<void> check_mergeable(const RoadNetwork& network, RoadId a, RoadId b);
+
+/// Merges `a`'s END with `b`'s START into one road that keeps `a`'s id (`b` is
+/// erased). `b`'s geometry is re-anchored to `a`'s end pose (the weld absorbs
+/// the ≤ kMergePositionGap / kMergeHeading residual — vertex-exact seam), the
+/// profiles and lane sections concatenate (sections are NOT coalesced — the
+/// seam boundary survives, so split→merge is geometry-identical, not
+/// byte-identical; coalescing is a follow-up), `b`'s far-end links and any far
+/// neighbor's back-link re-point onto the merged road. Preconditions are
+/// check_mergeable; a failing factory returns invalid_command. Undo is
+/// byte-identical via the value snapshots.
+[[nodiscard]] RM_API std::unique_ptr<Command>
+merge_roads(const RoadNetwork& network, RoadId a, RoadId b);
+
 /// Deletes the road with its sections and lanes, taking the full referential
 /// closure with it (02_editing_tools.md §7): junction connections referencing
 /// the road are removed, and where the road was the INCOMING one their

@@ -254,6 +254,45 @@ MainWindow::MainWindow(QWidget* parent, bool restore_saved_layout)
   });
   tool_manager_.set_active(ToolId::Select);
 
+  // Merge Roads: enabled only for exactly two selected roads mergeable in some
+  // orientation; the trigger normalizes the argument order and pushes the merge
+  // (reverse_road is deferred, so only End→Start merges).
+  const auto update_merge_enabled = [this] {
+    const std::vector<RoadId> roads = selection_.selected_roads();
+    const bool ok = roads.size() == 2 &&
+                    (edit::check_mergeable(document_.network(), roads[0], roads[1]).has_value() ||
+                     edit::check_mergeable(document_.network(), roads[1], roads[0]).has_value());
+    actions_->merge_roads->setEnabled(ok);
+  };
+  connect(&selection_, &SelectionModel::selection_changed, this, update_merge_enabled);
+  connect(&document_,
+          &Document::mesh_changed,
+          this,
+          [update_merge_enabled](const std::vector<RoadId>&) { update_merge_enabled(); });
+  connect(actions_->merge_roads, &QAction::triggered, this, [this] {
+    const std::vector<RoadId> roads = selection_.selected_roads();
+    if (roads.size() != 2) {
+      return;
+    }
+    RoadId a = roads[0];
+    RoadId b = roads[1];
+    if (!edit::check_mergeable(document_.network(), a, b).has_value()) {
+      std::swap(a, b);
+    }
+    const Road* survivor = document_.network().road(a);
+    const QString surviving =
+        survivor != nullptr ? QString::fromStdString(survivor->odr_id) : QString();
+    const Expected<void> merged =
+        document_.push_command(edit::merge_roads(document_.network(), a, b));
+    if (!merged.has_value()) {
+      statusBar()->showMessage(
+          tr("Cannot merge: %1").arg(QString::fromStdString(merged.error().message)), 5000);
+      return;
+    }
+    selection_.select({.road = a, .lane = LaneId{}}, SelectMode::Replace);
+    statusBar()->showMessage(tr("Merged into road %1 — Ctrl+Z to undo").arg(surviving), 5000);
+  });
+
   // The freshly-built arrangement is the canonical layout Reset Layout
   // restores; user geometry (if any) is applied on top of it.
   default_layout_state_ = saveState();
@@ -326,6 +365,8 @@ void MainWindow::build_menus() {
   QMenu* edit_menu = menuBar()->addMenu(tr("&Edit"));
   edit_menu->addAction(actions_->undo);
   edit_menu->addAction(actions_->redo);
+  edit_menu->addSeparator();
+  edit_menu->addAction(actions_->merge_roads);
 
   QMenu* view_menu = menuBar()->addMenu(tr("&View"));
   view_menu->addAction(scene_dock_->toggleViewAction());
@@ -364,6 +405,8 @@ void MainWindow::build_toolbar() {
   toolbar->addAction(actions_->tool_create_junction);
   toolbar->addAction(actions_->tool_split);
   toolbar->addAction(actions_->tool_delete);
+  toolbar->addSeparator();
+  toolbar->addAction(actions_->merge_roads);
   toolbar->addSeparator();
   toolbar->addAction(actions_->reset_camera);
   toolbar->addAction(actions_->frame_selection);

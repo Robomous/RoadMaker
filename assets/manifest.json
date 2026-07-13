@@ -26,6 +26,15 @@
       "retrieved": "2026-07-10"
     },
     {
+      "url": "https://raw.githubusercontent.com/lucide-icons/lucide/1.24.0/icons/git-merge.svg",
+      "sha256": "1199a8738328e9faa9d1e18b4053e6849a473aa9456117006c92681f6d547477",
+      "license": "ISC",
+      "license_url": "https://github.com/lucide-icons/lucide/blob/1.24.0/LICENSE",
+      "author": "Lucide Contributors",
+      "destination": "editor/resources/icons/lucide/git-merge.svg",
+      "retrieved": "2026-07-12"
+    },
+    {
       "url": "https://raw.githubusercontent.com/lucide-icons/lucide/1.24.0/icons/file-output.svg",
       "sha256": "94a0abe002d76ae0047b9a7e9ec2e2045381c4f4a81372da1d961d6bc14c5868",
       "license": "ISC",

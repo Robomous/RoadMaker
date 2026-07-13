@@ -1737,6 +1737,325 @@ std::unique_ptr<Command> split_road(const RoadNetwork& network, RoadId road_id, 
   return command;
 }
 
+// ---- merge (docs/design/m3a/06_topology_editing.md) ---------------------------
+
+namespace {
+
+/// Inverse of rebase_profile: shifts a profile from local coordinates (starting
+/// at 0) to a global origin at `shift` [m]. Coefficients are unchanged.
+std::vector<Poly3> shift_profile(std::span<const Poly3> profile, double shift) {
+  std::vector<Poly3> out;
+  out.reserve(profile.size());
+  for (const Poly3& poly : profile) {
+    out.push_back(Poly3{.s = poly.s + shift, .a = poly.a, .b = poly.b, .c = poly.c, .d = poly.d});
+  }
+  return out;
+}
+
+/// Value of a global-s profile at `s` (0 when empty).
+double profile_value_at(std::span<const Poly3> profile, double s) {
+  const Poly3* covering = nullptr;
+  for (const Poly3& poly : profile) {
+    if (poly.s <= s + tol::kLength) {
+      covering = &poly;
+    }
+  }
+  return covering != nullptr ? covering->eval(s) : 0.0;
+}
+
+double profile_grade_at(std::span<const Poly3> profile, double s) {
+  const Poly3* covering = nullptr;
+  for (const Poly3& poly : profile) {
+    if (poly.s <= s + tol::kLength) {
+      covering = &poly;
+    }
+  }
+  return covering != nullptr ? covering->eval_derivative(s) : 0.0;
+}
+
+/// The road mark active at section-local offset `offset` (the last one starting
+/// at or before it), or a default mark.
+RoadMark active_mark(std::span<const RoadMark> marks, double offset) {
+  RoadMark active;
+  for (const RoadMark& mark : marks) {
+    if (mark.s_offset <= offset + tol::kLength) {
+      active = mark;
+    }
+  }
+  active.s_offset = 0.0; // compare shape, not position
+  return active;
+}
+
+tl::unexpected<Error> merge_error(std::string message) {
+  return tl::unexpected<Error>(
+      Error{.code = ErrorCode::InvalidArgument, .message = std::move(message)});
+}
+
+} // namespace
+
+Expected<void> check_mergeable(const RoadNetwork& network, RoadId a_id, RoadId b_id) {
+  if (a_id == b_id) {
+    return merge_error("cannot merge a road with itself");
+  }
+  const Road* a = network.road(a_id);
+  const Road* b = network.road(b_id);
+  if (a == nullptr || b == nullptr) {
+    return merge_error("stale road id");
+  }
+  if (a->plan_view.empty() || b->plan_view.empty()) {
+    return merge_error("a road has no geometry");
+  }
+
+  // v1: any junction involvement is refused (junction-aware merge is a
+  // follow-up). junctions_touching covers connecting roads, arms, and links.
+  if (!junctions_touching(network, a_id).empty() || !junctions_touching(network, b_id).empty()) {
+    return merge_error(
+        fmt::format("road {} or {} participates in a junction — merging junction roads isn't "
+                    "supported yet; delete the junction first",
+                    a->odr_id,
+                    b->odr_id));
+  }
+
+  // The joining ends (a's End, b's Start) must be free of third-party links.
+  if (a->successor.has_value()) {
+    const auto* target = std::get_if<RoadId>(&a->successor->target);
+    if (target == nullptr || *target != b_id) {
+      return merge_error(
+          fmt::format("road {}'s end is already connected to another road", a->odr_id));
+    }
+  }
+  if (b->predecessor.has_value()) {
+    const auto* target = std::get_if<RoadId>(&b->predecessor->target);
+    if (target == nullptr || *target != a_id) {
+      return merge_error(
+          fmt::format("road {}'s start is already connected to another road", b->odr_id));
+    }
+  }
+
+  const PathPoint a_end = a->plan_view.evaluate(a->plan_view.length());
+  const PathPoint a_start = a->plan_view.evaluate(0.0);
+  const PathPoint b_start = b->plan_view.evaluate(0.0);
+  const PathPoint b_end = b->plan_view.evaluate(b->plan_view.length());
+
+  const double gap = std::hypot(a_end.x - b_start.x, a_end.y - b_start.y);
+  if (gap > tol::kMergePositionGap) {
+    const double gap_end_end = std::hypot(a_end.x - b_end.x, a_end.y - b_end.y);
+    const double gap_start_start = std::hypot(a_start.x - b_start.x, a_start.y - b_start.y);
+    if (std::min(gap_end_end, gap_start_start) <= gap) {
+      return merge_error("the roads meet end-to-end — reverse one first (coming soon)");
+    }
+    return merge_error(
+        fmt::format("the joining ends are {:.2f} m apart — move them together first", gap));
+  }
+
+  const double heading_gap =
+      std::abs(std::remainder(a_end.hdg - b_start.hdg, 2.0 * std::numbers::pi));
+  if (heading_gap > tol::kMergeHeading) {
+    return merge_error("the joining ends' headings differ — align them first");
+  }
+
+  // Seam profile equality, lane by lane (v1: values must match; sections are
+  // concatenated, never coalesced).
+  const LaneSection* a_seam = network.lane_section(a->sections.back());
+  const LaneSection* b_seam = network.lane_section(b->sections.front());
+  const double a_seam_local = a->plan_view.length() - a_seam->s0;
+
+  if (a_seam->lanes.size() != b_seam->lanes.size()) {
+    return merge_error("the roads have different lane counts at the seam");
+  }
+  constexpr double kSeamValue = 1e-3;
+  for (const LaneId a_lane_id : a_seam->lanes) {
+    const Lane& a_lane = *network.lane(a_lane_id);
+    const Lane* b_lane = nullptr;
+    for (const LaneId b_lane_id : b_seam->lanes) {
+      if (network.lane(b_lane_id)->odr_id == a_lane.odr_id) {
+        b_lane = network.lane(b_lane_id);
+        break;
+      }
+    }
+    if (b_lane == nullptr) {
+      return merge_error(
+          fmt::format("lane {} is missing on the other road at the seam", a_lane.odr_id));
+    }
+    if (a_lane.type != b_lane->type) {
+      return merge_error(fmt::format("lane {} changes type at the seam", a_lane.odr_id));
+    }
+    if (std::abs(profile_value_at(a_lane.widths, a_seam_local) -
+                 profile_value_at(b_lane->widths, 0.0)) > kSeamValue) {
+      return merge_error(fmt::format("lane {} width doesn't match at the seam", a_lane.odr_id));
+    }
+    if (active_mark(a_lane.road_marks, a_seam_local) != active_mark(b_lane->road_marks, 0.0)) {
+      return merge_error(fmt::format("lane {} road mark changes at the seam", a_lane.odr_id));
+    }
+  }
+
+  if (std::abs(profile_value_at(a->lane_offset, a->plan_view.length()) -
+               profile_value_at(b->lane_offset, 0.0)) > kSeamValue) {
+    return merge_error("the lane offset doesn't match at the seam");
+  }
+  if (std::abs(profile_value_at(a->elevation, a->plan_view.length()) -
+               profile_value_at(b->elevation, 0.0)) > kSeamValue ||
+      std::abs(profile_grade_at(a->elevation, a->plan_view.length()) -
+               profile_grade_at(b->elevation, 0.0)) > kSeamValue) {
+    return merge_error("the elevation doesn't match at the seam");
+  }
+  return {};
+}
+
+std::unique_ptr<Command> merge_roads(const RoadNetwork& network, RoadId a_id, RoadId b_id) {
+  static constexpr std::string_view kName = "Merge Roads";
+  if (auto ok = check_mergeable(network, a_id, b_id); !ok.has_value()) {
+    return invalid_command(std::string(kName), ok.error());
+  }
+  const Road* a = network.road(a_id);
+  const Road* b = network.road(b_id);
+  const double a_length = a->plan_view.length();
+
+  // Re-anchor b's plan view onto a's end pose (weld absorbs the residual).
+  const PathPoint a_end = a->plan_view.evaluate(a_length);
+  const PathPoint b_start = b->plan_view.evaluate(0.0);
+  const double dtheta = std::remainder(a_end.hdg - b_start.hdg, 2.0 * std::numbers::pi);
+  const double cos_t = std::cos(dtheta);
+  const double sin_t = std::sin(dtheta);
+  ReferenceLine merged_line;
+  for (const GeometryRecord& record : a->plan_view.records()) {
+    merged_line.append(record);
+  }
+  for (const GeometryRecord& record : b->plan_view.records()) {
+    const double dx = record.x - b_start.x;
+    const double dy = record.y - b_start.y;
+    GeometryRecord welded = record;
+    welded.x = a_end.x + ((cos_t * dx) - (sin_t * dy));
+    welded.y = a_end.y + ((sin_t * dx) + (cos_t * dy));
+    welded.hdg = record.hdg + dtheta;
+    merged_line.append(welded);
+  }
+
+  // Far neighbor at b's far end whose back-link must re-point onto a.
+  std::optional<RoadId> far_neighbor;
+  if (b->successor.has_value()) {
+    if (const auto* target = std::get_if<RoadId>(&b->successor->target)) {
+      far_neighbor = *target;
+    }
+  }
+
+  Road merged_after = *a;
+  merged_after.plan_view = merged_line;
+  merged_after.length = merged_line.length();
+  merged_after.elevation = a->elevation;
+  for (const Poly3& poly : shift_profile(b->elevation, a_length)) {
+    merged_after.elevation.push_back(poly);
+  }
+  merged_after.superelevation = a->superelevation;
+  for (const Poly3& poly : shift_profile(b->superelevation, a_length)) {
+    merged_after.superelevation.push_back(poly);
+  }
+  merged_after.lane_offset = a->lane_offset;
+  for (const Poly3& poly : shift_profile(b->lane_offset, a_length)) {
+    merged_after.lane_offset.push_back(poly);
+  }
+  merged_after.successor = b->successor; // a inherits b's far-end link
+  merged_after.authoring_waypoints = derive_waypoints(merged_after);
+
+  // DirtySet + captured objects.
+  DirtySet dirty{.roads = {a_id, b_id}, .topology = true};
+  auto command = std::make_unique<GenericCommand>(std::string(kName), std::move(dirty));
+
+  // Undo snapshots: a and its seam lanes (successors change), the far neighbor.
+  command->before.roads.emplace_back(a_id, *a);
+  const LaneSectionId a_seam_section = a->sections.back();
+  for (const LaneId lane_id : network.lane_section(a_seam_section)->lanes) {
+    command->before.lanes.emplace_back(lane_id, *network.lane(lane_id));
+  }
+  if (far_neighbor.has_value() && *far_neighbor != a_id && *far_neighbor != b_id) {
+    command->before.roads.emplace_back(*far_neighbor, *network.road(*far_neighbor));
+  }
+
+  // Erasures: b, all its sections, all its lanes.
+  command->erased.roads.emplace_back(b_id, *b);
+  for (const LaneSectionId section_id : b->sections) {
+    const LaneSection* section = network.lane_section(section_id);
+    command->erased.sections.emplace_back(section_id, *section);
+    for (const LaneId lane_id : section->lanes) {
+      command->erased.lanes.emplace_back(lane_id, *network.lane(lane_id));
+    }
+  }
+
+  // Snapshot the data the creator needs (b dies before the creator's copies).
+  struct SectionBlueprint {
+    double s0 = 0.0;
+    bool first = false;
+    std::vector<Lane> lanes;
+  };
+
+  std::vector<SectionBlueprint> section_blueprints;
+  for (std::size_t i = 0; i < b->sections.size(); ++i) {
+    const LaneSection* section = network.lane_section(b->sections[i]);
+    SectionBlueprint blueprint{.s0 = section->s0 + a_length, .first = (i == 0)};
+    for (const LaneId lane_id : section->lanes) {
+      blueprint.lanes.push_back(*network.lane(lane_id));
+    }
+    section_blueprints.push_back(std::move(blueprint));
+  }
+
+  command->creator = [a_id,
+                      a_seam_section,
+                      far_neighbor,
+                      b_id,
+                      merged_after = std::move(merged_after),
+                      section_blueprints = std::move(section_blueprints)](
+                         RoadNetwork& target, Values& created) -> Expected<void> {
+    // Copy b's sections and lanes onto a (new ids; odr ids preserved).
+    std::vector<LaneSectionId> new_sections;
+    for (const SectionBlueprint& blueprint : section_blueprints) {
+      const LaneSectionId section_id = target.add_lane_section(a_id, blueprint.s0);
+      created.sections.emplace_back(section_id, LaneSection{});
+      new_sections.push_back(section_id);
+      for (const Lane& lane_value : blueprint.lanes) {
+        const LaneId lane_id = target.add_lane(section_id, lane_value.odr_id, lane_value.type);
+        Lane& lane = *target.lane(lane_id);
+        const LaneSectionId keep_section = lane.section;
+        lane = lane_value;
+        lane.section = keep_section;
+        // The first copied section is the seam continuation: identity link back
+        // into a's original last section (mirror of split's stitching).
+        if (blueprint.first && lane.odr_id != 0) {
+          lane.predecessor = lane.odr_id;
+        }
+        created.lanes.emplace_back(lane_id, Lane{});
+      }
+    }
+
+    // Rewrite a: geometry/profiles/links, seam identity successors, appended
+    // section list.
+    Road& merged = *target.road(a_id);
+    merged = merged_after;
+    for (const LaneSectionId section_id : new_sections) {
+      merged.sections.push_back(section_id);
+    }
+    for (const LaneId lane_id : target.lane_section(a_seam_section)->lanes) {
+      Lane& lane = *target.lane(lane_id);
+      if (lane.odr_id != 0) {
+        lane.successor = lane.odr_id; // identity link into the first copied section
+      }
+    }
+
+    // Far neighbor's back-link re-points from b onto a.
+    if (far_neighbor.has_value() && far_neighbor != a_id) {
+      if (Road* neighbor = target.road(*far_neighbor)) {
+        if (links_to_road(neighbor->predecessor, b_id)) {
+          neighbor->predecessor->target = a_id;
+        }
+        if (links_to_road(neighbor->successor, b_id)) {
+          neighbor->successor->target = a_id;
+        }
+      }
+    }
+    return {};
+  };
+  return command;
+}
+
 /// The wider side's total lane width at `station` [m] — what the T-attach
 /// gap must clear (docs/design/hardening/t_junction.md).
 double half_width_at(const RoadNetwork& network, const Road& road, double station) {

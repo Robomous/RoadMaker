@@ -56,6 +56,7 @@ void SoakDriver::step(int index) {
       {1, &SoakDriver::op_elevation, "elevation"},
       {1, &SoakDriver::op_split_road, "split_road"},
       {2, &SoakDriver::op_translate_road, "translate_road"},
+      {1, &SoakDriver::op_merge_roads, "merge_roads"},
       {2, &SoakDriver::op_create_junction, "create_junction"},
       {1, &SoakDriver::op_attach_t, "attach_t"},
       {1, &SoakDriver::op_delete_junction, "delete_junction"},
@@ -427,6 +428,25 @@ void SoakDriver::op_translate_road() {
   }
   push(edit::translate_roads(
       document_.network(), moved, rand_range(-20.0, 20.0), rand_range(-20.0, 20.0)));
+}
+
+void SoakDriver::op_merge_roads() {
+  // Merge the first road whose successor is a mergeable plain-road neighbor
+  // (commonly a pair produced by an earlier split).
+  for (const RoadId a : live_roads(/*editable_only=*/true)) {
+    const Road* road = document_.network().road(a);
+    if (road == nullptr || !road->successor.has_value()) {
+      continue;
+    }
+    const auto* b = std::get_if<RoadId>(&road->successor->target);
+    if (b == nullptr) {
+      continue;
+    }
+    if (edit::check_mergeable(document_.network(), a, *b).has_value()) {
+      push(edit::merge_roads(document_.network(), a, *b));
+      return;
+    }
+  }
 }
 
 void SoakDriver::op_create_junction() {
