@@ -9,7 +9,10 @@
 #include <QOpenGLWidget>
 #include <QPoint>
 #include <QString>
+#include <array>
+#include <limits>
 #include <memory>
+#include <optional>
 #include <vector>
 
 #include "document/document.hpp"
@@ -106,6 +109,12 @@ private:
 
   [[nodiscard]] bool is_highlighted(const UploadedItem& item) const;
   [[nodiscard]] Ray ray_through(const QPointF& pos) const;
+
+  /// Ground-plane (z=0) world point under a viewport pixel, or nullopt when the
+  /// ray misses the plane (or lies beyond `max_t` — used to reject near-horizon
+  /// rays for the anchored pan). Shared by hover, tool events, and MMB pan.
+  [[nodiscard]] std::optional<std::array<double, 3>>
+  ground_point_at(const QPointF& pos, double max_t = std::numeric_limits<double>::infinity()) const;
   void update_hover(const QPointF& pos);
 
   /// Translates a Qt mouse event into the tool seam's abstract event:
@@ -145,6 +154,11 @@ private:
   QMetaObject::Connection preview_connection_;
 
   QPoint last_mouse_pos_;
+
+  /// Ground point grabbed on middle-mouse press; the anchored pan keeps it
+  /// pinned under the cursor. nullopt when the press ray missed the ground
+  /// (near-horizon) — the pan then falls back to a scaled view-plane shift.
+  std::optional<std::array<double, 3>> pan_anchor_world_;
 
   /// Corner hint text (set_hint); painted over the GL frame in paintGL.
   QString hint_text_;

@@ -115,6 +115,21 @@ Ray make_pick_ray(const CameraMatrices& camera, double px, double py, double wid
   };
 }
 
+std::optional<std::array<double, 3>> ground_point(
+    const CameraMatrices& camera, double px, double py, double width, double height, double max_t) {
+  const Ray ray = make_pick_ray(camera, px, py, width, height);
+  if (std::abs(ray.direction[2]) < 1e-12) {
+    return std::nullopt; // parallel to the ground plane
+  }
+  const double t = -ray.origin[2] / ray.direction[2];
+  if (t < 0.0 || t > max_t) {
+    return std::nullopt; // behind the camera or beyond the far cap
+  }
+  return std::array<double, 3>{ray.origin[0] + (ray.direction[0] * t),
+                               ray.origin[1] + (ray.direction[1] * t),
+                               ray.origin[2] + (ray.direction[2] * t)};
+}
+
 RoadAabb compute_road_aabb(const RoadMesh& road) {
   constexpr double kMax = std::numeric_limits<double>::max();
   RoadAabb box{.lo = {kMax, kMax, kMax}, .hi = {-kMax, -kMax, -kMax}};
