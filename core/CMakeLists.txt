@@ -21,6 +21,7 @@ add_library(roadmaker_core ${_rm_core_type}
   src/xodr/junction_export.cpp
   src/mesh/mesh_builder.cpp
   src/mesh/junction_surface.cpp
+  src/assets/prop_meshes.gen.cpp
   src/io/gltf_exporter.cpp
 )
 add_library(roadmaker::core ALIAS roadmaker_core)

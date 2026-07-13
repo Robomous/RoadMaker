@@ -1,0 +1,5 @@
+# Materials for tree_pine (linear RGB).
+newmtl trunk
+Kd 0.4200 0.3000 0.1700
+newmtl crown
+Kd 0.1600 0.3800 0.2200
