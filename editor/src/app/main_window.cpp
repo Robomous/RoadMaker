@@ -240,6 +240,11 @@ MainWindow::MainWindow(QWidget* parent, bool restore_saved_layout)
   tool_manager_.register_tool(ToolId::Elevation, std::move(elevation_tool));
   connect(actions_->tool_elevation, &QAction::triggered, this, [this] {
     tool_manager_.set_active(ToolId::Elevation);
+    // Surface the Profile dock (vertical-profile handles + the overpass Cross
+    // Over/Under controls) when the elevation workflow starts — otherwise it
+    // hides behind a View-menu toggle (discoverability rule, product-parity.md).
+    profile_dock_->show();
+    profile_dock_->raise();
   });
   // The Properties panel edits the node the Elevation tool has made active.
   properties_panel_->set_elevation_tool(elevation_tool_);
@@ -272,6 +277,11 @@ MainWindow::MainWindow(QWidget* parent, bool restore_saved_layout)
                     (edit::check_mergeable(document_.network(), roads[0], roads[1]).has_value() ||
                      edit::check_mergeable(document_.network(), roads[1], roads[0]).has_value());
     actions_->merge_roads->setEnabled(ok);
+    // A greyed button with no explanation reads as broken — say why it is off.
+    actions_->merge_roads->setToolTip(
+        ok ? tr("Merge — join the two selected roads that meet end-to-start")
+           : tr("Merge — select exactly two roads whose ends meet (one road's end at the "
+                "other's start)"));
   };
   connect(&selection_, &SelectionModel::selection_changed, this, update_merge_enabled);
   connect(&document_,
@@ -396,6 +406,7 @@ void MainWindow::build_menus() {
   edit_menu->addAction(actions_->redo);
   edit_menu->addSeparator();
   edit_menu->addAction(actions_->merge_roads);
+  edit_menu->addAction(actions_->add_from_library);
 
   QMenu* view_menu = menuBar()->addMenu(tr("&View"));
   view_menu->addAction(scene_dock_->toggleViewAction());
@@ -437,6 +448,7 @@ void MainWindow::build_toolbar() {
   toolbar->addAction(actions_->tool_delete);
   toolbar->addSeparator();
   toolbar->addAction(actions_->merge_roads);
+  toolbar->addAction(actions_->add_from_library);
   toolbar->addSeparator();
   toolbar->addAction(actions_->reset_camera);
   toolbar->addAction(actions_->frame_selection);
