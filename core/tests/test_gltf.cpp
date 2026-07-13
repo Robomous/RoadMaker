@@ -1,8 +1,13 @@
 #include "roadmaker/io/gltf_exporter.hpp"
 #include "roadmaker/mesh/mesh_builder.hpp"
+#include "roadmaker/road/authoring.hpp"
+#include "roadmaker/road/network.hpp"
+#include "roadmaker/road/object.hpp"
 #include "roadmaker/xodr/reader.hpp"
 
 #include <gtest/gtest.h>
+
+#include <vector>
 
 // Reader-side of tinygltf for validation (implementation is compiled in
 // gltf_exporter.cpp).
@@ -88,4 +93,58 @@ TEST(Gltf, ExportingAnEmptyMeshFailsCleanly) {
   const auto result = roadmaker::export_glb(empty, temp_glb("rm_empty.glb"));
   ASSERT_FALSE(result.has_value());
   EXPECT_EQ(result.error().code, roadmaker::ErrorCode::InvalidArgument);
+}
+
+TEST(Gltf, TreePropExportsASharedMeshAndInstanceNode) {
+  roadmaker::RoadNetwork network;
+  const std::vector<roadmaker::Waypoint> waypoints{roadmaker::Waypoint{.x = 0.0, .y = 0.0},
+                                                   roadmaker::Waypoint{.x = 100.0, .y = 0.0}};
+  auto road = roadmaker::author_clothoid_road(
+      network, waypoints, roadmaker::LaneProfile::two_lane_default());
+  ASSERT_TRUE(road.has_value());
+
+  roadmaker::Object tree;
+  tree.odr_id = "1";
+  tree.name = "tree_pine";
+  tree.type = roadmaker::ObjectType::Tree;
+  tree.s = 50.0;
+  tree.t = 6.0;
+  tree.radius = 1.2;
+  tree.height = 4.2;
+  network.add_object(*road, tree);
+
+  const auto mesh = roadmaker::build_network_mesh(network, {});
+  ASSERT_EQ(mesh.objects.size(), 1U);
+
+  const auto path = temp_glb("rm_tree.glb");
+  ASSERT_TRUE(roadmaker::export_glb(mesh, path).has_value());
+  tinygltf::Model model;
+  tinygltf::TinyGLTF loader;
+  std::string err;
+  std::string warn;
+  ASSERT_TRUE(loader.LoadBinaryFromFile(&model, &err, &warn, path.string()));
+  std::remove(path.string().c_str());
+
+  // The prop is one shared mesh (trunk + crown primitives) named for its model.
+  int prop_mesh = -1;
+  for (std::size_t i = 0; i < model.meshes.size(); ++i) {
+    if (model.meshes[i].name == "tree_pine") {
+      prop_mesh = static_cast<int>(i);
+      EXPECT_EQ(model.meshes[i].primitives.size(), 2U);
+    }
+  }
+  ASSERT_GE(prop_mesh, 0);
+
+  // ...referenced by an instance node placed at the tree's world pose. Y-up
+  // frame (x, z, -y): translation ≈ (50, 0, -6).
+  bool found_node = false;
+  for (const auto& node : model.nodes) {
+    if (node.mesh == prop_mesh) {
+      found_node = true;
+      ASSERT_EQ(node.translation.size(), 3U);
+      EXPECT_NEAR(node.translation[0], 50.0, 1.5);
+      EXPECT_NEAR(node.translation[2], -6.0, 1.5);
+    }
+  }
+  EXPECT_TRUE(found_node);
 }

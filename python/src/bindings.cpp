@@ -1152,6 +1152,25 @@ NB_MODULE(_roadmaker, m) {
            "waypoint_index"_a,
            "z"_a);
   edit.def(
+      "add_object",
+      [](const roadmaker::RoadNetwork& network, roadmaker::RoadId road, roadmaker::Object object) {
+        return roadmaker::edit::add_object(network, road, std::move(object));
+      },
+      "network"_a,
+      "road"_a,
+      "object"_a,
+      "Adds an OpenDRIVE <object> (e.g. a tree prop) to a road; object.road is "
+      "set to `road`. Located by road-relative s/t. Undo/redo keep the id.");
+  edit.def("delete_object", &roadmaker::edit::delete_object, "network"_a, "object"_a);
+  edit.def("move_object",
+           &roadmaker::edit::move_object,
+           "network"_a,
+           "object"_a,
+           "s"_a,
+           "t"_a,
+           "hdg"_a = std::optional<double>{},
+           "Re-locates an object to road-relative (s, t); hdg (rad) optional.");
+  edit.def(
       "rename_road",
       [](const roadmaker::RoadNetwork& network, roadmaker::RoadId road, std::string name) {
         return roadmaker::edit::rename_road(network, road, std::move(name));

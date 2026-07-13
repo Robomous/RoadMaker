@@ -9,11 +9,14 @@
 
 #include "roadmaker/io/usd_exporter.hpp"
 
+#include "roadmaker/assets/prop_library.hpp"
+
 #include "mesh_export_common.hpp"
 
 // tinyusdz headers arrive through a SYSTEM include dir (rm target property) so
 // their non-warning-clean code never trips our -Werror.
 #include <array>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <map>
@@ -242,6 +245,51 @@ Expected<void> export_usda(const NetworkMesh& mesh, const std::filesystem::path&
                                   material),
                         /*rename=*/true,
                         &err);
+  }
+
+  // Placed props (trees/vegetation). tinyusdz has no ergonomic prototype
+  // instancing, so each instance's geometry is baked into world space (Z-up,
+  // then make_mesh rotates to Y-up) — a simulator receives real per-tree
+  // meshes. Every part carries a flat prop material.
+  for (std::size_t oi = 0; oi < mesh.objects.size(); ++oi) {
+    const ObjectInstance& instance = mesh.objects[oi];
+    const props::PropModel* model = props::model(instance.model_id);
+    if (model == nullptr) {
+      continue;
+    }
+    const double cos_h = std::cos(instance.heading);
+    const double sin_h = std::sin(instance.heading);
+    tz::Xform prop_xform;
+    prop_xform.name = sanitize_identifier("prop_" + std::to_string(oi) + "_" + instance.model_id,
+                                          "prop_" + std::to_string(oi));
+    tz::Prim propPrim(prop_xform);
+    for (const props::PropPart& part : model->parts) {
+      std::vector<double> world_pos(part.positions.size());
+      std::vector<double> world_nrm(part.normals.size());
+      for (std::size_t i = 0; i + 2 < part.positions.size(); i += 3) {
+        const double x = part.positions[i];
+        const double y = part.positions[i + 1];
+        world_pos[i] = (cos_h * x) - (sin_h * y) + instance.position[0];
+        world_pos[i + 1] = (sin_h * x) + (cos_h * y) + instance.position[1];
+        world_pos[i + 2] = part.positions[i + 2] + instance.position[2];
+        const double nx = part.normals[i];
+        const double ny = part.normals[i + 1];
+        world_nrm[i] = (cos_h * nx) - (sin_h * ny);
+        world_nrm[i + 1] = (sin_h * nx) + (cos_h * ny);
+        world_nrm[i + 2] = part.normals[i + 2];
+      }
+      const std::string material =
+          sanitize_identifier("propmat_" + instance.model_id + "_" + part.name, "propmat");
+      materials.emplace(
+          material,
+          MaterialDef{{part.color[0], part.color[1], part.color[2]}, io_common::kLaneRoughness});
+      propPrim.add_child(
+          make_mesh(
+              sanitize_identifier(part.name, "part"), world_pos, world_nrm, part.indices, material),
+          /*rename=*/true,
+          &err);
+    }
+    worldPrim.add_child(std::move(propPrim), /*rename=*/true, &err);
   }
 
   tz::Scope looks;

@@ -38,6 +38,7 @@ struct Values {
   std::vector<std::pair<LaneSectionId, LaneSection>> sections;
   std::vector<std::pair<LaneId, Lane>> lanes;
   std::vector<std::pair<JunctionId, Junction>> junctions;
+  std::vector<std::pair<ObjectId, Object>> objects;
 };
 
 Expected<void> ensure_live(const RoadNetwork& network, const Values& values) {
@@ -61,6 +62,11 @@ Expected<void> ensure_live(const RoadNetwork& network, const Values& values) {
       return make_error(ErrorCode::InvalidArgument, "stale junction id");
     }
   }
+  for (const auto& [id, value] : values.objects) {
+    if (network.object(id) == nullptr) {
+      return make_error(ErrorCode::InvalidArgument, "stale object id");
+    }
+  }
   return {};
 }
 
@@ -78,6 +84,9 @@ void write_values(RoadNetwork& network, const Values& values) {
   for (const auto& [id, value] : values.junctions) {
     *network.junction(id) = value;
   }
+  for (const auto& [id, value] : values.objects) {
+    *network.object(id) = value;
+  }
 }
 
 /// Same ids as `ids`, values re-read from the network (post-mutation).
@@ -94,6 +103,9 @@ Values read_values(const RoadNetwork& network, const Values& ids) {
   }
   for (const auto& [id, value] : ids.junctions) {
     out.junctions.emplace_back(id, *network.junction(id));
+  }
+  for (const auto& [id, value] : ids.objects) {
+    out.objects.emplace_back(id, *network.object(id));
   }
   return out;
 }
@@ -119,12 +131,23 @@ Expected<void> restore_values(RoadNetwork& network, const Values& values) {
       return tl::unexpected<Error>(restored.error());
     }
   }
+  for (const auto& [id, value] : values.objects) {
+    if (auto restored = network.restore_object(id, value); !restored.has_value()) {
+      return tl::unexpected<Error>(restored.error());
+    }
+  }
   return {};
 }
 
 Expected<void> erase_values_exact(RoadNetwork& network, const Values& values) {
   // Leaf to root, so a partially-visible intermediate state never has a
-  // parent without its children.
+  // parent without its children. Objects are pure leaves (a road erase would
+  // otherwise cascade them) — erase them first.
+  for (const auto& [id, value] : values.objects) {
+    if (auto erased = network.erase_object_exact(id); !erased.has_value()) {
+      return erased;
+    }
+  }
   for (const auto& [id, value] : values.lanes) {
     if (auto erased = network.erase_lane_exact(id); !erased.has_value()) {
       return erased;
@@ -2945,6 +2968,80 @@ std::unique_ptr<Command> set_node_elevation(const RoadNetwork& network,
       DirtySet{.roads = {road_id}, .junctions = junctions_touching(network, road_id)});
   command->before.roads.emplace_back(road_id, *road);
   command->after.roads.emplace_back(road_id, std::move(after));
+  return command;
+}
+
+// ---- objects (road props) ---------------------------------------------------
+
+Error stale_object_error() {
+  return Error{.code = ErrorCode::InvalidArgument, .message = "stale object id"};
+}
+
+Error object_s_error() {
+  return Error{.code = ErrorCode::InvalidArgument, .message = "object s is outside the road"};
+}
+
+std::unique_ptr<Command> add_object(const RoadNetwork& network, RoadId road, Object object) {
+  static constexpr std::string_view kName = "Add Object";
+  const Road* owner = network.road(road);
+  if (owner == nullptr) {
+    return invalid_command(std::string(kName),
+                           Error{.code = ErrorCode::InvalidArgument, .message = "stale road id"});
+  }
+  if (object.s < -tol::kLength || object.s > owner->plan_view.length() + tol::kLength) {
+    return invalid_command(std::string(kName), object_s_error());
+  }
+  object.road = road;
+  auto command = std::make_unique<GenericCommand>(std::string(kName), DirtySet{.objects = {road}});
+  command->creator = [road, object](RoadNetwork& net, Values& created) -> Expected<void> {
+    const ObjectId id = net.add_object(road, object);
+    if (!id.is_valid()) {
+      return make_error(ErrorCode::InvalidArgument, "failed to add object (stale road)");
+    }
+    created.objects.emplace_back(id, object);
+    return {};
+  };
+  return command;
+}
+
+std::unique_ptr<Command> delete_object(const RoadNetwork& network, ObjectId object) {
+  static constexpr std::string_view kName = "Delete Object";
+  const Object* value = network.object(object);
+  if (value == nullptr) {
+    return invalid_command(std::string(kName), stale_object_error());
+  }
+  auto command =
+      std::make_unique<GenericCommand>(std::string(kName), DirtySet{.objects = {value->road}});
+  command->erased.objects.emplace_back(object, *value);
+  return command;
+}
+
+std::unique_ptr<Command> move_object(
+    const RoadNetwork& network, ObjectId object, double s, double t, std::optional<double> hdg) {
+  static constexpr std::string_view kName = "Move Object";
+  const Object* current = network.object(object);
+  if (current == nullptr) {
+    return invalid_command(std::string(kName), stale_object_error());
+  }
+  const Road* owner = network.road(current->road);
+  if (owner == nullptr) {
+    return invalid_command(std::string(kName),
+                           Error{.code = ErrorCode::InvalidArgument,
+                                 .message = "object has a stale road back-reference"});
+  }
+  if (s < -tol::kLength || s > owner->plan_view.length() + tol::kLength) {
+    return invalid_command(std::string(kName), object_s_error());
+  }
+  Object moved = *current;
+  moved.s = s;
+  moved.t = t;
+  if (hdg.has_value()) {
+    moved.hdg = *hdg;
+  }
+  auto command =
+      std::make_unique<GenericCommand>(std::string(kName), DirtySet{.objects = {current->road}});
+  command->before.objects.emplace_back(object, *current);
+  command->after.objects.emplace_back(object, std::move(moved));
   return command;
 }
 

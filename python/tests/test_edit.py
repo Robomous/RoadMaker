@@ -543,3 +543,66 @@ def test_intersection_params_honored_and_bad_arm_length_raises():
     bad.arm_length_m = 0.0
     with pytest.raises(ValueError):
         stack.push(net, rm.edit.assembly.t_intersection(net, rm.edit.assembly.Pose(), bad))
+
+
+def _tree(odr_id: str, s: float, t: float) -> rm.Object:
+    tree = rm.Object()
+    tree.odr_id = odr_id
+    tree.name = "tree_pine"
+    tree.type = rm.ObjectType.TREE
+    tree.s, tree.t = s, t
+    tree.radius, tree.height = 1.2, 4.2
+    return tree
+
+
+def test_add_object_undo_redo_round_trip(network):
+    stack = rm.edit.EditStack()
+    road = network.find_road("1")
+    before = rm.write_xodr(network)
+
+    stack.push(network, rm.edit.add_object(network, road, _tree("1", 20.0, 5.0)))
+    assert network.object_count == 1
+    added = rm.write_xodr(network)
+
+    stack.undo(network)
+    assert network.object_count == 0
+    assert rm.write_xodr(network) == before  # byte-identical restore
+
+    stack.redo(network)
+    assert rm.write_xodr(network) == added
+
+
+def test_move_object_then_undo_is_byte_identical(network):
+    stack = rm.edit.EditStack()
+    road = network.find_road("1")
+    stack.push(network, rm.edit.add_object(network, road, _tree("1", 20.0, 5.0)))
+    obj = network.objects_of(road)[-1]
+    placed = rm.write_xodr(network)
+
+    stack.push(network, rm.edit.move_object(network, obj, 40.0, -5.0, 0.3))
+    assert network.object(obj).s == 40.0
+    assert network.object(obj).hdg == pytest.approx(0.3)
+
+    stack.undo(network)
+    assert rm.write_xodr(network) == placed
+
+
+def test_delete_object_undo_restores_it(network):
+    stack = rm.edit.EditStack()
+    road = network.find_road("1")
+    obj = network.add_object(road, _tree("1", 20.0, 5.0))
+    with_object = rm.write_xodr(network)
+
+    stack.push(network, rm.edit.delete_object(network, obj))
+    assert network.object(obj) is None
+
+    stack.undo(network)
+    assert network.object(obj) is not None
+    assert rm.write_xodr(network) == with_object
+
+
+def test_add_object_bad_station_raises(network):
+    stack = rm.edit.EditStack()
+    road = network.find_road("1")
+    with pytest.raises(ValueError):
+        stack.push(network, rm.edit.add_object(network, road, _tree("1", 9999.0, 5.0)))

@@ -4,6 +4,7 @@
 #include "roadmaker/export.hpp"
 #include "roadmaker/road/authoring.hpp"
 #include "roadmaker/road/lane.hpp"
+#include "roadmaker/road/object.hpp"
 #include "roadmaker/road/road.hpp"
 
 #include <cstddef>
@@ -316,6 +317,33 @@ struct ElevationPoint {
 /// stations. The profile editor pushes one of these per drag commit.
 [[nodiscard]] RM_API std::unique_ptr<Command>
 set_elevation_profile(const RoadNetwork& network, RoadId road, std::vector<ElevationPoint> points);
+
+// --- objects (road props: trees, vegetation) --------------------------------
+
+/// Adds a road object (OpenDRIVE <object>, §13) to `road`; `object.road` is
+/// set to `road`. The object is located by its road-relative (s, t) — callers
+/// snap the drop point to a road first (the editor rejects an off-road drop
+/// rather than invent a world-xy placement: OpenDRIVE objects live under a
+/// <road>). Undo erases the created object and redo resurrects it under the
+/// same ObjectId (restore-in-place), so held references survive. Fails
+/// (invalid_command) for a stale road or an s outside [0, road length].
+[[nodiscard]] RM_API std::unique_ptr<Command>
+add_object(const RoadNetwork& network, RoadId road, Object object);
+
+/// Removes an object; undo restores it exactly (same ObjectId). Fails for a
+/// stale object id.
+[[nodiscard]] RM_API std::unique_ptr<Command> delete_object(const RoadNetwork& network,
+                                                            ObjectId object);
+
+/// Re-locates an object to road-relative (s, t) [m], optionally setting its
+/// heading `hdg` [rad] (left unchanged when nullopt) — the drag-move commit.
+/// Undo is byte-identical from the value snapshot. Fails for a stale object id
+/// or an s outside [0, owning-road length].
+[[nodiscard]] RM_API std::unique_ptr<Command> move_object(const RoadNetwork& network,
+                                                          ObjectId object,
+                                                          double s,
+                                                          double t,
+                                                          std::optional<double> hdg = std::nullopt);
 
 // --- document ---------------------------------------------------------------
 

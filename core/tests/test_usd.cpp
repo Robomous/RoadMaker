@@ -8,6 +8,9 @@
 
 #include "roadmaker/io/usd_exporter.hpp"
 #include "roadmaker/mesh/mesh_builder.hpp"
+#include "roadmaker/road/authoring.hpp"
+#include "roadmaker/road/network.hpp"
+#include "roadmaker/road/object.hpp"
 #include "roadmaker/xodr/reader.hpp"
 
 #include <gtest/gtest.h>
@@ -17,6 +20,7 @@
 #include <sstream>
 #include <stdexcept>
 #include <string>
+#include <vector>
 
 namespace {
 
@@ -99,4 +103,35 @@ TEST(Usd, ExportingAnEmptyMeshFailsCleanly) {
       roadmaker::export_usda(empty, std::filesystem::temp_directory_path() / "rm_empty.usda");
   ASSERT_FALSE(result.has_value());
   EXPECT_EQ(result.error().code, roadmaker::ErrorCode::InvalidArgument);
+}
+
+TEST(Usd, TreePropEmitsAnXformWithPartMeshesAndMaterials) {
+  roadmaker::RoadNetwork network;
+  const std::vector<roadmaker::Waypoint> waypoints{roadmaker::Waypoint{.x = 0.0, .y = 0.0},
+                                                   roadmaker::Waypoint{.x = 100.0, .y = 0.0}};
+  auto road = roadmaker::author_clothoid_road(
+      network, waypoints, roadmaker::LaneProfile::two_lane_default());
+  ASSERT_TRUE(road.has_value());
+
+  roadmaker::Object tree;
+  tree.odr_id = "1";
+  tree.name = "tree_pine";
+  tree.type = roadmaker::ObjectType::Tree;
+  tree.s = 50.0;
+  tree.t = 6.0;
+  tree.radius = 1.2;
+  tree.height = 4.2;
+  network.add_object(*road, tree);
+
+  const auto mesh = roadmaker::build_network_mesh(network, {});
+  ASSERT_EQ(mesh.objects.size(), 1U);
+  const auto path = std::filesystem::temp_directory_path() / "rm_tree.usda";
+  ASSERT_TRUE(roadmaker::export_usda(mesh, path).has_value());
+  const std::string usda = slurp(path);
+
+  // A prop Xform with the trunk + crown part meshes and their flat materials.
+  EXPECT_NE(usda.find("def Xform \"prop_0_tree_pine\""), std::string::npos);
+  EXPECT_NE(usda.find("def Mesh \"trunk\""), std::string::npos);
+  EXPECT_NE(usda.find("def Mesh \"crown\""), std::string::npos);
+  EXPECT_NE(usda.find("def Material \"propmat_tree_pine_crown\""), std::string::npos);
 }
