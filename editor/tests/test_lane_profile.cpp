@@ -13,6 +13,7 @@
 #include <QComboBox>
 #include <QDoubleSpinBox>
 #include <QPushButton>
+#include <QSignalSpy>
 #include <stdexcept>
 #include <string>
 
@@ -178,22 +179,47 @@ TEST(LaneProfilePanel, AddLaneButtonsAppendOutermostOnEachSide) {
   EXPECT_EQ(scene.document.undo_stack()->count(), scene.base_count + 2);
 }
 
-TEST(LaneProfilePanel, RemoveLaneEnabledOnlyForTheOutermostLane) {
+TEST(LaneProfilePanel, RemoveSideButtonsActOnTheOutermostLaneOfEachSide) {
   Scene scene;
-  auto* remove = scene.editor<QPushButton>("remove_lane_button");
+  // No lane selection needed — the per-side buttons act on the section.
+  scene.selection.select({.road = scene.road, .lane = LaneId{}});
+  auto* remove_left = scene.editor<QPushButton>("remove_left_lane_button");
+  auto* remove_right = scene.editor<QPushButton>("remove_right_lane_button");
 
-  scene.select_lane(-1); // inner right — not removable in M2
-  EXPECT_FALSE(remove->isEnabled());
+  const auto side_has = [&](int odr) {
+    const auto& section = *scene.document.network().lane_section(
+        scene.document.network().road(scene.road)->sections[0]);
+    for (const LaneId lane_id : section.lanes) {
+      if (scene.document.network().lane(lane_id)->odr_id == odr) {
+        return true;
+      }
+    }
+    return false;
+  };
 
-  scene.select_lane(-2); // outermost right shoulder
-  ASSERT_TRUE(remove->isEnabled());
-  emit remove->clicked();
+  // two_lane_default: left [+1 driving], right [-1 driving, -2 shoulder].
+  EXPECT_FALSE(remove_left->isEnabled()); // sole driving lane — protected
+  ASSERT_TRUE(remove_right->isEnabled()); // outermost right is the shoulder
+
+  emit remove_right->clicked();
   EXPECT_EQ(scene.document.undo_stack()->count(), scene.base_count + 1);
-  const auto& section = *scene.document.network().lane_section(
-      scene.document.network().road(scene.road)->sections[0]);
-  for (const LaneId lane_id : section.lanes) {
-    EXPECT_NE(scene.document.network().lane(lane_id)->odr_id, -2);
-  }
+  EXPECT_FALSE(side_has(-2));
+  EXPECT_TRUE(side_has(-1));
+  // Now only the driving lane remains on the right — the button disables.
+  EXPECT_FALSE(remove_right->isEnabled());
+
+  // Undo restores the same lane and re-enables the button.
+  scene.document.undo_stack()->undo();
+  EXPECT_TRUE(side_has(-2));
+  EXPECT_TRUE(remove_right->isEnabled());
+}
+
+TEST(LaneProfilePanel, RemoveSideButtonEmitsAStatusMessageOnSuccess) {
+  Scene scene;
+  scene.selection.select({.road = scene.road, .lane = LaneId{}});
+  QSignalSpy spy(&scene.panel, &PropertiesPanel::status_message);
+  emit scene.editor<QPushButton>("remove_right_lane_button")->clicked();
+  EXPECT_EQ(spy.count(), 1);
 }
 
 TEST(LaneProfilePanel, CenterLaneEditsAreRestrictedToTheRoadMark) {
@@ -201,7 +227,6 @@ TEST(LaneProfilePanel, CenterLaneEditsAreRestrictedToTheRoadMark) {
   scene.select_lane(0);
   EXPECT_FALSE(scene.editor<QDoubleSpinBox>("lane_width_spin")->isEnabled());
   EXPECT_FALSE(scene.editor<QComboBox>("lane_type_combo")->isEnabled());
-  EXPECT_FALSE(scene.editor<QPushButton>("remove_lane_button")->isEnabled());
 
   // Lane 0's mark IS the center-line style — editable.
   auto* combo = scene.editor<QComboBox>("road_mark_combo");
@@ -213,14 +238,18 @@ TEST(LaneProfilePanel, CenterLaneEditsAreRestrictedToTheRoadMark) {
             RoadMarkType::Solid);
 }
 
-TEST(LaneProfilePanel, RoadLevelSelectionOffersOnlyAddLane) {
+TEST(LaneProfilePanel, RoadLevelSelectionOffersAddAndPerSideRemove) {
   Scene scene;
   scene.selection.select({.road = scene.road, .lane = LaneId{}});
   EXPECT_TRUE(scene.editor<QPushButton>("add_left_lane_button")->isEnabled());
   EXPECT_TRUE(scene.editor<QPushButton>("add_right_lane_button")->isEnabled());
+  // Per-side remove works at road level (no lane pick): right has a removable
+  // shoulder, left has only its driving lane.
+  EXPECT_TRUE(scene.editor<QPushButton>("remove_right_lane_button")->isEnabled());
+  EXPECT_FALSE(scene.editor<QPushButton>("remove_left_lane_button")->isEnabled());
+  // Lane editors stay disabled without a lane selection.
   EXPECT_FALSE(scene.editor<QComboBox>("lane_type_combo")->isEnabled());
   EXPECT_FALSE(scene.editor<QDoubleSpinBox>("lane_width_spin")->isEnabled());
-  EXPECT_FALSE(scene.editor<QPushButton>("remove_lane_button")->isEnabled());
 
   emit scene.editor<QPushButton>("add_right_lane_button")->clicked();
   EXPECT_EQ(scene.document.undo_stack()->count(), scene.base_count + 1);

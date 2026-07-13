@@ -13,6 +13,18 @@ through the M2 command layer (one undo step per edit, byte-identical undo) and
 is headless-testable.
 
 ### Added
+- **Discoverable lane removal** (gate finding 6): the properties panel's single
+  context-dependent "Remove lane" button is replaced by **Remove left lane** /
+  **Remove right lane** buttons that act on the outermost lane of each side of
+  the selected road — no lane selection required. A button greys out (with an
+  explanatory tooltip) when only the driving lane remains on that side or when
+  no road is selected, protecting a side's driving floor even though the kernel
+  would allow the removal. Right-clicking a lane in the viewport now also offers
+  **Remove this lane** (same outermost rule), with the road's own menu items
+  still reachable. Removal is one undoable `edit::remove_lane` command that
+  restores the exact lane on undo; a success toast surfaces via the panel's new
+  `status_message` signal. Behaviour and tests:
+  `docs/user-guide/lane-profile.md`, `docs/user-guide/context-menus.md`.
 - **First-run guided tour** (UI revamp Phase 4): a 5-step, skippable coach-mark
   tour runs once on a first launch — draw a road → drag in an intersection →
   plant a tree → shape the elevation → export — dimming the app and ringing the

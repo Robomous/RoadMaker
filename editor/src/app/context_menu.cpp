@@ -44,6 +44,28 @@ MenuItem separator() {
   return MenuItem{.separator = true};
 }
 
+/// A lane is removable exactly when the kernel's edit::remove_lane accepts it:
+/// non-center and the outermost lane of its side (M2 restriction). Mirrored
+/// here so the menu can enable/disable the item; the kernel stays the final
+/// arbiter (a refused command appends a diagnostic).
+bool lane_removable(const RoadNetwork& network, LaneId lane_id) {
+  const Lane* lane = network.lane(lane_id);
+  if (lane == nullptr || lane->odr_id == 0) {
+    return false;
+  }
+  const LaneSection* section = network.lane_section(lane->section);
+  if (section == nullptr) {
+    return false;
+  }
+  for (const LaneId other_id : section->lanes) {
+    const int other = network.lane(other_id)->odr_id;
+    if ((lane->odr_id > 0 && other > lane->odr_id) || (lane->odr_id < 0 && other < lane->odr_id)) {
+      return false; // a lane sits further out — not the outermost
+    }
+  }
+  return true;
+}
+
 } // namespace
 
 std::vector<MenuItem> build_context_menu(const MenuContext& context, ContextMenuDeps& deps) {
@@ -137,6 +159,19 @@ std::vector<MenuItem> build_context_menu(const MenuContext& context, ContextMenu
   if (context.pick.has_value()) {
     const RoadId road = context.pick->road;
     const std::optional<double> station = context.station;
+    // Lane removal — when a specific lane was picked, offer to remove it (the
+    // road items stay reachable below). Enabled per the kernel's outermost /
+    // non-center rule; disabled (greyed) otherwise (gate finding 6).
+    if (context.pick->lane.is_valid()) {
+      const LaneId lane = context.pick->lane;
+      items.push_back(MenuItem{.text = QObject::tr("Remove this lane"),
+                               .enabled = lane_removable(network, lane),
+                               .invoke = [deps, lane] {
+                                 (void)deps.document.push_command(
+                                     edit::remove_lane(deps.document.network(), lane));
+                               }});
+      items.push_back(separator());
+    }
     items.push_back(MenuItem{.text = QObject::tr("Insert bend point here"),
                              .enabled = station.has_value(),
                              .invoke = [deps, road, station] {

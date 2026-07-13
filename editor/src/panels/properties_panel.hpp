@@ -30,6 +30,13 @@ class PropertiesPanel : public QWidget {
 public:
   PropertiesPanel(Document& document, const SelectionModel& selection, QWidget* parent = nullptr);
 
+signals:
+  /// A discrete panel action produced a user-facing result (e.g. a lane was
+  /// removed) — MainWindow routes it to the viewport toast overlay. The panel
+  /// never touches the viewport itself.
+  void status_message(const QString& text);
+
+public:
   /// Wires the Elevation editing section to the Elevation tool's active node
   /// (issue #16). Until a tool is attached the section stays hidden; the
   /// panel never owns the tool. Call once, after both exist.
@@ -47,6 +54,10 @@ private:
   void refresh_elevation();
   void add_row(const QString& label, const QString& value);
   void clear_rows();
+
+  /// Removes the outermost lane on `side` (>0 left, <0 right) of the target
+  /// section — no lane selection needed. Emits status_message on success.
+  void remove_outermost_lane(int side);
 
   /// Pushes one command; a kernel refusal surfaces through the document's
   /// diagnostics (push_command appends one), never a crash or a stale panel
@@ -74,7 +85,8 @@ private:
   QDoubleSpinBox* mark_width_spin_;
   QPushButton* add_left_;
   QPushButton* add_right_;
-  QPushButton* remove_lane_;
+  QPushButton* remove_left_;
+  QPushButton* remove_right_;
 
   QGroupBox* elevation_group_;
   QLabel* elevation_node_label_;
