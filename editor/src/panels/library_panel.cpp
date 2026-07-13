@@ -67,6 +67,8 @@ LibraryPanel::LibraryPanel(LibraryListModel& model, QWidget* parent) : QWidget(p
   view_->setSpacing(6);
   view_->setSelectionMode(QAbstractItemView::SingleSelection);
   view_->setEditTriggers(QAbstractItemView::NoEditTriggers);
+  view_->setDragEnabled(true); // drag an item onto the viewport to create it
+  view_->setDragDropMode(QAbstractItemView::DragOnly);
 
   connect(search_, &QLineEdit::textChanged, &proxy_, &QSortFilterProxyModel::setFilterFixedString);
 

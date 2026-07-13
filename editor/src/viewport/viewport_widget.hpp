@@ -28,6 +28,10 @@
 
 class QPainter;
 class QTimer;
+class QDragEnterEvent;
+class QDragMoveEvent;
+class QDragLeaveEvent;
+class QDropEvent;
 
 namespace roadmaker::editor {
 
@@ -108,6 +112,11 @@ signals:
   void context_menu_requested(const roadmaker::editor::MenuContext& context,
                               const QPoint& global_pos);
 
+  /// A library item was dropped on the viewport at the ground point
+  /// (world_x, world_y). MainWindow resolves the key and creates the geometry
+  /// (it owns the library model, document, and tools).
+  void library_item_dropped(const QString& key, double world_x, double world_y);
+
 protected:
   void initializeGL() override;
   void paintGL() override;
@@ -118,6 +127,10 @@ protected:
   void wheelEvent(QWheelEvent* event) override;
   void keyPressEvent(QKeyEvent* event) override;
   void leaveEvent(QEvent* event) override;
+  void dragEnterEvent(QDragEnterEvent* event) override;
+  void dragMoveEvent(QDragMoveEvent* event) override;
+  void dragLeaveEvent(QDragLeaveEvent* event) override;
+  void dropEvent(QDropEvent* event) override;
 
 private:
   struct UploadedItem {
@@ -178,6 +191,13 @@ private:
   /// Themed top-center transient toasts (queued, severity-colored, fading).
   /// Non-const: pulls the live set from the queue, which prunes expired ones.
   void draw_toasts(QPainter& painter);
+
+  /// A "drop here" crosshair at the cursor while a library item is dragged
+  /// over the viewport.
+  void draw_drag_ghost(QPainter& painter) const;
+
+  /// True when the drag carries a library item (accept it as a drop).
+  [[nodiscard]] static bool has_library_mime(const QDropEvent* event);
 
   /// Hint-card opacity from how long since the hint last changed (1 while
   /// fresh, ramping to 0 after the idle hold).
@@ -242,6 +262,10 @@ private:
   QElapsedTimer clock_;
   QTimer* overlay_timer_ = nullptr;
   std::int64_t hint_changed_ms_ = 0;
+
+  /// Cursor position (widget px) while a library item is dragged over the
+  /// viewport; drives the drop-ghost crosshair. Empty when no drag is active.
+  std::optional<QPoint> drag_ghost_pos_;
 
   /// Entity under the cursor, tracked by update_hover for the hover highlight
   /// (invalid = nothing hovered). A lane-level hover sets both; a road-level

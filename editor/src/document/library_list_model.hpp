@@ -12,6 +12,10 @@
 
 namespace roadmaker::editor {
 
+/// MIME type of a dragged library item; the payload is the item's `key`
+/// (UTF-8). The panel is the drag source, the viewport the drop target.
+inline constexpr char kLibraryItemMimeType[] = "application/x-roadmaker-library-item";
+
 class LibraryListModel : public QAbstractListModel {
   Q_OBJECT
 
@@ -32,9 +36,18 @@ public:
   [[nodiscard]] QVariant data(const QModelIndex& index, int role) const override;
   [[nodiscard]] QHash<int, QByteArray> roleNames() const override;
 
+  // Drag source: one dragged item carries its key as kLibraryItemMimeType.
+  [[nodiscard]] Qt::ItemFlags flags(const QModelIndex& index) const override;
+  [[nodiscard]] QStringList mimeTypes() const override;
+  [[nodiscard]] QMimeData* mimeData(const QModelIndexList& indexes) const override;
+
   /// The item at `row`, or nullptr when out of range — the drop handler's
   /// key→item lookup goes through here.
   [[nodiscard]] const LibraryItem* item(int row) const;
+
+  /// Lookup by stable key (the drop handler resolves the dragged key). Null
+  /// when unknown.
+  [[nodiscard]] const LibraryItem* item_for_key(const QString& key) const;
 
 private:
   std::vector<LibraryItem> items_;

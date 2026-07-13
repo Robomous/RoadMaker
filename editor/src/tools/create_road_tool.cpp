@@ -77,6 +77,14 @@ EndpointHeadings CreateRoadTool::locked_headings() const {
   return locked;
 }
 
+void CreateRoadTool::begin_at(double world_x, double world_y) {
+  ToolEvent event;
+  event.world_x = world_x;
+  event.world_y = world_y;
+  place_point(event);
+  emit preview_changed();
+}
+
 void CreateRoadTool::place_point(const ToolEvent& event) {
   const Waypoint raw{.x = event.world_x, .y = event.world_y};
   const std::optional<edit::SnapResult> snapped = snap(raw);

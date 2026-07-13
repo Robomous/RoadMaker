@@ -66,6 +66,7 @@ def main() -> int:
     parser.add_argument("--ui", action="store_true", help="capture the whole themed window")
     parser.add_argument("--raise-dock", default=None, help="dock objectName to raise (with --ui)")
     parser.add_argument("--toast", default=None, help="toast text to show (renders the toast)")
+    parser.add_argument("--drop-library", default=None, help="library item key to drop (renders it)")
     parser.add_argument(
         "--skip-on-no-gl",
         action="store_true",
@@ -98,6 +99,8 @@ def main() -> int:
         cmd += ["--raise-dock", args.raise_dock]
     if args.toast:
         cmd += ["--toast", args.toast]
+    if args.drop_library:
+        cmd += ["--drop-library", args.drop_library]
     result = subprocess.run(cmd, env=os.environ.copy(), check=False)
     if result.returncode == NO_GL_EXIT and args.skip_on_no_gl:
         print("editor_screenshot: no GL on this runner — skipped (not a failure)")

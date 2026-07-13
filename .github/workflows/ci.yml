@@ -259,6 +259,10 @@ jobs:
           xvfb-run -a python3 scripts/editor_screenshot.py \
             "assets/samples/t_attach.xodr" "shots/hint_toast.png" \
             --camera orbit --select 1 --tool edit-nodes --toast "Merged into road 1" --skip-on-no-gl
+          # Drag-and-drop creation (Phase 2): an X-intersection dropped from the library.
+          xvfb-run -a python3 scripts/editor_screenshot.py \
+            "assets/samples/t_attach.xodr" "shots/library_drop.png" \
+            --camera top --drop-library assembly.x --skip-on-no-gl
       - uses: actions/upload-artifact@v4
         with:
           name: editor-screenshots

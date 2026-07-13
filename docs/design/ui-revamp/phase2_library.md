@@ -45,11 +45,48 @@ the front; the CI `visual-artifacts` job renders it.
 *T/X intersection assemblies and the three road templates, grouped by class
 with a search box, tabbed with the Scene tree.*
 
+## Drag-and-drop creation (P2.4)
+
+**Delivered:** dragging a library item onto the viewport creates geometry.
+
+- **Drag source** — `LibraryListModel` is drag-enabled (`Qt::ItemIsDragEnabled`
+  + `mimeTypes`/`mimeData`); a dragged item carries its `key` as
+  `application/x-roadmaker-library-item`. The panel's `QListView` is
+  `DragOnly`.
+- **Drop target** — `ViewportWidget` accepts that MIME type, shows a themed
+  "drop here" crosshair ghost at the cursor during the drag, and on drop
+  resolves the cursor to the ground plane and emits
+  `library_item_dropped(key, world_x, world_y)`.
+- **Behaviour matrix** — a pure, unit-tested `resolve_library_drop(item,
+  network, x, y)` (`editor/src/document/library_drop.{hpp,cpp}`) maps the drop
+  to an action, which `MainWindow` carries out:
+  - **Road template →** arms Create Road with that profile and places the
+    first waypoint at the drop point (`CreateRoadTool::begin_at`).
+  - **T assembly →** `assembly::t_intersection` at the drop point (one undoable
+    command) → success toast.
+  - **X assembly →** `assembly::x_intersection` at the drop point → success
+    toast.
+- **Discoverability** — the empty-viewport context menu gained **"Add from
+  library…"** (`Actions::add_from_library`), which raises the Library dock.
+
+Screenshot mode gained `--drop-library <key>` (drives the real drop path); the
+CI `visual-artifacts` job renders a drop.
+
+### Evidence
+
+![Dropping an X-intersection assembly onto the scene](phase2_dragdrop.png)
+
+*An X-intersection dropped below an existing tee — the 4-way is created and a
+"Placed X-intersection" success toast confirms it.*
+
 ### Deferred (fast-follow)
 
-- **Pre-rendered thumbnails** — the v1 grid uses monochrome class glyphs;
-  photographic per-item thumbnails (rendered via the screenshot tooling) can
-  replace the `DecorationRole` later. Distinct T vs. X glyphs too (they share
-  the junction glyph now; labels disambiguate).
-- **Drag-and-drop** (P2.4): the `QDrag` source, the viewport drop handler with
-  ghost preview, and the create behaviour matrix.
+- **Tee INTO an existing road** — dropping a T on a road body should split it
+  and tee a branch in (via `attach_t_junction`); v1 places a standalone
+  assembly at the drop point. Needs a kernel `tee_road` factory (create branch
+  stub + attach) — a follow-up.
+- **Pre-rendered thumbnails** — the grid uses monochrome class glyphs;
+  photographic per-item thumbnails can replace the `DecorationRole` later.
+  Distinct T vs. X glyphs too (they share the junction glyph now).
+- **Live ghost of the item shape** — the drag ghost is a crosshair; a T/X-shaped
+  ghost is a polish follow-up.

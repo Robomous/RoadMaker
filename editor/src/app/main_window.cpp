@@ -29,6 +29,7 @@
 #include "app/crash_handler.hpp"
 #include "app/icons.hpp"
 #include "app/log_setup.hpp"
+#include "document/library_drop.hpp"
 #include "document/library_manifest.hpp"
 #include "panels/diagnostics_panel.hpp"
 #include "panels/library_panel.hpp"
@@ -91,8 +92,13 @@ MainWindow::MainWindow(QWidget* parent, bool restore_saved_layout)
   connect(actions_->reset_camera, &QAction::triggered, viewport_, &ViewportWidget::reset_camera);
   connect(
       actions_->frame_selection, &QAction::triggered, viewport_, &ViewportWidget::frame_selection);
+  connect(actions_->add_from_library, &QAction::triggered, this, [this] {
+    library_dock_->show();
+    library_dock_->raise();
+  });
   connect(actions_->about, &QAction::triggered, this, &MainWindow::show_about_dialog);
   connect(viewport_, &ViewportWidget::hover_changed, this, &MainWindow::on_hover);
+  connect(viewport_, &ViewportWidget::library_item_dropped, this, &MainWindow::on_library_drop);
   connect(viewport_,
           &ViewportWidget::context_menu_requested,
           this,
@@ -550,6 +556,37 @@ void MainWindow::raise_dock_for_capture(const QString& object_name) {
       dock->raise();
       return;
     }
+  }
+}
+
+void MainWindow::drop_library_item_for_capture(const QString& key, double world_x, double world_y) {
+  on_library_drop(key, world_x, world_y);
+}
+
+void MainWindow::on_library_drop(const QString& key, double world_x, double world_y) {
+  const LibraryItem* item = library_model_.item_for_key(key);
+  if (item == nullptr) {
+    return;
+  }
+  LibraryDropAction action = resolve_library_drop(*item, document_.network(), world_x, world_y);
+  switch (action.kind) {
+  case LibraryDropKind::RoadTemplate:
+    actions_->tool_create_road->trigger(); // activate Create Road
+    if (create_road_tool_ != nullptr) {
+      create_road_tool_->set_profile(action.profile);
+      create_road_tool_->begin_at(world_x, world_y);
+    }
+    viewport_->show_toast(tr("Create Road armed — click to add points"), ToastSeverity::Info);
+    break;
+  case LibraryDropKind::Assembly:
+    if (document_.push_command(std::move(action.command)).has_value()) {
+      viewport_->show_toast(action.toast, ToastSeverity::Success);
+    } else {
+      viewport_->show_toast(tr("Couldn't place that here"), ToastSeverity::Warning);
+    }
+    break;
+  case LibraryDropKind::None:
+    break;
   }
 }
 

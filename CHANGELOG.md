@@ -13,6 +13,17 @@ through the M2 command layer (one undo step per edit, byte-identical undo) and
 is headless-testable.
 
 ### Added
+- **Drag-and-drop creation from the Library** (UI revamp Phase 2): drag a road
+  template or a T/X intersection from the Library panel onto the viewport to
+  create it. The model is a drag source (key carried as
+  `application/x-roadmaker-library-item`); the viewport shows a "drop here"
+  ghost and, on drop, a pure unit-tested `resolve_library_drop` dispatches —
+  a road template arms Create Road with that profile at the drop point, a T/X
+  assembly pushes `assembly::t/x_intersection` there (one undoable command) and
+  toasts the result. The empty-viewport context menu gained **"Add from
+  library…"**. Screenshot mode gained `--drop-library`. *Fast-follow:* dropping
+  a T on a road tees INTO it (v1 places a standalone assembly). Design +
+  before/after: `docs/design/ui-revamp/phase2_library.md`.
 - **Library panel** (UI revamp Phase 2): a searchable **Library** dock, tabbed
   with the Scene tree, holding an icon grid over the catalogue — the road
   templates and T/X assemblies the drop handler (next PR) will place. A

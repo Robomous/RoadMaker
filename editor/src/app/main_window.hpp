@@ -51,6 +51,10 @@ public:
   /// ids are ignored.
   void set_capture_highlights(const QString& select_odr, const QString& hover_odr);
 
+  /// Screenshot mode: drops the library item `key` at world (x, y) through the
+  /// real drop path, so a capture shows the created geometry + result toast.
+  void drop_library_item_for_capture(const QString& key, double world_x, double world_y);
+
   /// Screenshot mode: activates a tool by id ("select", "edit-nodes",
   /// "create-road", "lane-profile", "elevation", "create-junction", "split",
   /// "delete") so its handle overlay renders in a capture. Unknown ids no-op.
@@ -100,6 +104,11 @@ private:
   void update_window_title();
   void update_status_entities();
   void on_hover(const HoverInfo& info);
+
+  /// Creates geometry from a library item dropped on the viewport: a road
+  /// template arms Create Road at the drop point; a T/X assembly pushes a
+  /// standalone-intersection command and toasts the result.
+  void on_library_drop(const QString& key, double world_x, double world_y);
 
   Document document_;
   AutosaveManager autosave_; // after document_: connects to its signals

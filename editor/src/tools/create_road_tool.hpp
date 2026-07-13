@@ -49,6 +49,10 @@ public:
 
   [[nodiscard]] std::size_t waypoint_count() const { return points_.size(); }
 
+  /// Places the first waypoint at a world point — a library road-template drop
+  /// arms the tool here so the user continues from the drop location.
+  void begin_at(double world_x, double world_y);
+
 private:
   /// One placed waypoint plus the continuation heading of the snap that
   /// produced it (set for road-end and tangent snaps, nullopt otherwise).
