@@ -1,5 +1,6 @@
 #include "viewport/viewport_widget.hpp"
 
+#include <QEvent>
 #include <QFontMetrics>
 #include <QKeyEvent>
 #include <QMouseEvent>
@@ -11,6 +12,7 @@
 #include <cmath>
 #include <numeric>
 
+#include "document/highlight.hpp"
 #include "render/gl_functions.hpp"
 #include "render/gl_renderer.hpp"
 #include "render/scene_builder.hpp"
@@ -162,13 +164,9 @@ QImage ViewportWidget::capture_frame() {
   return grabFramebuffer(); // makes the context current and re-renders
 }
 
-bool ViewportWidget::is_highlighted(const UploadedItem& item) const {
-  for (const SelectionEntry& entry : selection_.entries()) {
-    if (entry.lane.is_valid() ? item.lane == entry.lane : item.road == entry.road) {
-      return true;
-    }
-  }
-  return false;
+HighlightState ViewportWidget::item_state(const UploadedItem& item) const {
+  return highlight_state_for(
+      item.road, item.lane, selection_.entries(), hovered_road_, hovered_lane_);
 }
 
 void ViewportWidget::paintGL() {
@@ -182,7 +180,7 @@ void ViewportWidget::paintGL() {
   std::vector<DrawItem> draw_items;
   draw_items.reserve(items_.size() + preview_handles_.size());
   for (const UploadedItem& item : items_) {
-    draw_items.push_back(DrawItem{.mesh = item.handle, .highlighted = is_highlighted(item)});
+    draw_items.push_back(DrawItem{.mesh = item.handle, .state = item_state(item)});
   }
   for (const RenderMeshHandle handle : preview_handles_) {
     draw_items.push_back(DrawItem{.mesh = handle});
@@ -259,6 +257,7 @@ void ViewportWidget::update_hover(const QPointF& pos) {
     info.world_y = (*ground)[1];
   }
 
+  RoadId new_hover_road; // invalid = nothing under the cursor
   if (const auto hit = pick(document_.mesh(), road_aabbs_, ray)) {
     const Road* road = document_.network().road(hit->road);
     const Lane* lane = document_.network().lane(hit->lane);
@@ -274,9 +273,33 @@ void ViewportWidget::update_hover(const QPointF& pos) {
       const StationCoord coord = find_station(road->plan_view, hit->position[0], hit->position[1]);
       info.s = coord.s;
       info.t = coord.t;
+      new_hover_road = hit->road;
     }
   }
+  // Highlight the whole hovered road (a road-level hover: lane left invalid);
+  // repaint only when it actually changes so plain mouse-overs stay cheap.
+  set_hovered_road(new_hover_road);
   emit hover_changed(info);
+}
+
+void ViewportWidget::set_hovered_road(RoadId road) {
+  // A capture forced the hover (set_hover_preview): ignore live enter/leave/
+  // move updates so the screenshot state holds. Interactive sessions never
+  // lock, so this is a no-op there.
+  if (hover_locked_) {
+    return;
+  }
+  if (hovered_road_ == road && !hovered_lane_.is_valid()) {
+    return;
+  }
+  hovered_road_ = road;
+  hovered_lane_ = {};
+  update();
+}
+
+void ViewportWidget::leaveEvent(QEvent* event) {
+  set_hovered_road({}); // cursor left the viewport — drop the hover highlight
+  QOpenGLWidget::leaveEvent(event);
 }
 
 // M2 button map (docs/design/m2/01_editing_framework.md §4): LMB drives the

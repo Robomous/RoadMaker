@@ -54,6 +54,7 @@ private:
   std::int32_t u_projection_ = -1;
   std::int32_t u_color_ = -1;
   std::int32_t u_highlight_ = -1;
+  std::int32_t u_accent_ = -1;
   std::int32_t u_lit_ = -1;
 
   // Backdrop passes (sky gradient + ground grid), both attributeless draws

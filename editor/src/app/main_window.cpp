@@ -489,6 +489,21 @@ void MainWindow::load_file(const std::filesystem::path& path) {
   update_recent_files_menu();
 }
 
+void MainWindow::set_capture_highlights(const QString& select_odr, const QString& hover_odr) {
+  if (!select_odr.isEmpty()) {
+    const RoadId road = document_.network().find_road(select_odr.toStdString());
+    if (road.is_valid()) {
+      selection_.select({.road = road, .lane = LaneId{}}, SelectMode::Replace);
+    }
+  }
+  if (!hover_odr.isEmpty()) {
+    const RoadId road = document_.network().find_road(hover_odr.toStdString());
+    if (road.is_valid()) {
+      viewport_->set_hover_preview(road);
+    }
+  }
+}
+
 void MainWindow::new_file() {
   if (!confirm_discard()) {
     return;

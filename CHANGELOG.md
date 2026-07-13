@@ -23,6 +23,21 @@ is headless-testable.
   errors for both). Python bindings under `rm.edit.assembly`, an
   `examples/x_intersection.py`, and `t_intersection.xodr` / `x_intersection.xodr`
   fuzz-corpus seeds ship with it.
+- **Viewport hover & selection feedback** (UI revamp Phase 1): the road under
+  the cursor now warms subtly and the selected road(s) tint in the theme
+  **accent**, both via the renderer — a per-`DrawItem` `HighlightState`
+  (`None`/`Hover`/`Selected`) mapped by a pure, headless `highlight_state_for`
+  and mixed toward the accent token in the mesh shader (hover subtler than
+  selection; selection wins). The accent reaches the renderer as plain floats
+  (`BackdropColors::highlight` from `Theme::accent`), so it retints with the
+  palette and `render/` stays Qt-free. **Fix:** the old selection tint never
+  actually rendered — `u_highlight`/`u_lit` (scalar uniforms) were set with
+  `glUniform4f` (a no-op `GL_INVALID_OPERATION`); corrected to `glUniform1f`.
+  Screenshot mode gained `--select`/`--hover <odr_id>` (forwarded by
+  `editor_screenshot.py`, rendered by the CI visual-artifacts job) so the
+  feedback states are captured headlessly. Chosen technique (accent surface
+  tint vs. a silhouette outline) and rationale:
+  `docs/design/ui-revamp/phase1_feedback.md`.
 - **Move a whole road** (M3a topology UX): drag a road body with the Select
   tool to translate the whole road in plan view — auto-selecting it first, or
   moving every selected road together when several are picked. The cursor

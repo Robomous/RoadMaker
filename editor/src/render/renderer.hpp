@@ -31,9 +31,19 @@ struct RenderMeshData {
   PrimitiveKind kind = PrimitiveKind::Triangles;
 };
 
+/// Per-item feedback state. Drives the accent emphasis in the mesh shader:
+/// None renders the base color, Hover a subtle accent brighten, Selected a
+/// stronger accent tint. The accent color itself is a theme token handed to
+/// the renderer via BackdropColors::highlight (render/ stays Qt-free).
+enum class HighlightState {
+  None,
+  Hover,
+  Selected,
+};
+
 struct DrawItem {
   RenderMeshHandle mesh;
-  bool highlighted = false;
+  HighlightState state = HighlightState::None;
 };
 
 /// Right-handed, Z-up camera matrices (column-major 4x4).
@@ -53,6 +63,11 @@ struct BackdropColors {
   std::array<float, 4> grid_minor{0.149F, 0.169F, 0.192F, 0.55F};
   std::array<float, 3> axis_x{0.75F, 0.35F, 0.32F};
   std::array<float, 3> axis_y{0.35F, 0.65F, 0.36F};
+  /// Selection/hover emphasis color (the theme `accent` token). Lives here
+  /// because BackdropColors is the single theme→renderer float channel, wired
+  /// to re-push on theme changes; the mesh shader mixes toward it per
+  /// DrawItem::state.
+  std::array<float, 3> highlight{0.961F, 0.651F, 0.137F};
 };
 
 class Renderer {

@@ -10,6 +10,10 @@ skip-not-fail, docs/contributing/ci.md).
 Usage:
   python scripts/editor_screenshot.py scene.xodr out.png
       [--camera top|orbit] [--size WxH] [--editor PATH] [--skip-on-no-gl]
+      [--select ODR_ID] [--hover ODR_ID]
+
+``--select``/``--hover`` highlight a road by its OpenDRIVE id so the viewport
+feedback states (selection tint, hover brighten) render in the capture.
 
 Exit codes: 0 ok (or skipped with --skip-on-no-gl), 1 failure, 3 no GL.
 """
@@ -56,6 +60,8 @@ def main() -> int:
     parser.add_argument("--camera", choices=["top", "orbit"], default="orbit")
     parser.add_argument("--size", default="1600x1000")
     parser.add_argument("--editor", type=Path, default=None)
+    parser.add_argument("--select", default=None, help="OpenDRIVE id to select (selection tint)")
+    parser.add_argument("--hover", default=None, help="OpenDRIVE id to hover (hover brighten)")
     parser.add_argument(
         "--skip-on-no-gl",
         action="store_true",
@@ -78,6 +84,10 @@ def main() -> int:
         "--size",
         args.size,
     ]
+    if args.select:
+        cmd += ["--select", args.select]
+    if args.hover:
+        cmd += ["--hover", args.hover]
     result = subprocess.run(cmd, env=os.environ.copy(), check=False)
     if result.returncode == NO_GL_EXIT and args.skip_on_no_gl:
         print("editor_screenshot: no GL on this runner — skipped (not a failure)")
