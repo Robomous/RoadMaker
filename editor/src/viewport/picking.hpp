@@ -9,6 +9,7 @@
 #include "roadmaker/mesh/mesh.hpp"
 
 #include <array>
+#include <limits>
 #include <optional>
 #include <span>
 #include <vector>
@@ -27,6 +28,20 @@ struct Ray {
 /// near/far NDC points through inverse(projection * view).
 [[nodiscard]] Ray
 make_pick_ray(const CameraMatrices& camera, double px, double py, double width, double height);
+
+/// Intersection of the pixel (px, py) ray with the ground plane z=0, in the
+/// same viewport convention as make_pick_ray. nullopt when the ray is parallel
+/// to the plane, points away from it (t < 0), or the hit lies farther than
+/// `max_t` along the ray — callers cap that to reject near-horizon rays at low
+/// pitch. Shared by the hover readout, tool events, and the ground-anchored
+/// MMB pan (which pins the grabbed point under the cursor).
+[[nodiscard]] std::optional<std::array<double, 3>>
+ground_point(const CameraMatrices& camera,
+             double px,
+             double py,
+             double width,
+             double height,
+             double max_t = std::numeric_limits<double>::infinity());
 
 struct PickHit {
   RoadId road;

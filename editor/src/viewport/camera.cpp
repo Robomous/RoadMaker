@@ -23,14 +23,18 @@ void OrbitCamera::set_view(float yaw, float pitch) {
   pitch_ = std::clamp(pitch, 0.05F, kPi / 2.0F - 0.01F);
 }
 
-void OrbitCamera::pan(float delta_x, float delta_y) {
-  // Move the target in the camera's right/up-ish (ground-projected) axes.
-  const float scale = distance_ * 0.0016F;
+void OrbitCamera::pan_pixels(float dx_pixels, float dy_pixels, float viewport_height) {
+  // Exact per-pixel world scale at the target depth. fov_y matches matrices().
+  const float fov_y = 50.0F * kPi / 180.0F;
+  const float world_per_px =
+      2.0F * distance_ * std::tan(fov_y / 2.0F) / std::max(viewport_height, 1.0F);
   const float sin_yaw = std::sin(yaw_);
   const float cos_yaw = std::cos(yaw_);
-  // Right vector on the ground plane.
-  target_[0] += ((-sin_yaw * -delta_x) + (cos_yaw * delta_y)) * scale;
-  target_[1] += ((cos_yaw * -delta_x) + (sin_yaw * delta_y)) * scale;
+  // Ground-projected camera axes: right = (-sin, cos), screen-up = (-cos, -sin).
+  // Grab-world signs: the target moves opposite the cursor so content tracks it
+  // (Qt y grows downward).
+  target_[0] += world_per_px * ((dx_pixels * sin_yaw) - (dy_pixels * cos_yaw));
+  target_[1] += world_per_px * ((-dx_pixels * cos_yaw) - (dy_pixels * sin_yaw));
 }
 
 void OrbitCamera::zoom(float scroll) {

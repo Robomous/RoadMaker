@@ -5,6 +5,26 @@ All notable changes to RoadMaker are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.0] - Unreleased
+
+M3a opens with a topology-editing pass — moving whole roads, inserting bend
+points, splitting and merging — plus interaction polish. Every change ships
+through the M2 command layer (one undo step per edit, byte-identical undo)
+and is headless-testable.
+
+### Fixed
+- **Middle-mouse pan is now natural (ground-anchored)**: the old pan scaled
+  screen deltas by an arbitrary `distance × 0.0016` constant that ignored
+  pitch and FOV (wildly wrong speed at low pitch) and moved content *against*
+  the mouse vertically. The pan now ray-casts the cursor to the ground plane
+  on middle-mouse press and keeps that grabbed point pinned under the cursor
+  — exact 1:1 tracking at every zoom, pitch, and yaw (the RoadRunner/CAD/maps
+  standard, zero tuning constants). Near-horizon rays at low pitch fall back
+  to a correctly depth-scaled view-plane pan
+  (`2·distance·tan(fov/2)/viewport_height` per pixel). The shared
+  `ground_point()` helper (`editor/src/viewport/picking.{hpp,cpp}`) now backs
+  the hover readout, tool events, and the pan.
+
 ## [0.4.0] - Unreleased
 
 The **hardening release**: maintainer dogfooding of v0.3.0 found product

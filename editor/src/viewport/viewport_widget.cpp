@@ -236,18 +236,27 @@ Ray ViewportWidget::ray_through(const QPointF& pos) const {
                        static_cast<double>(height()));
 }
 
+std::optional<std::array<double, 3>> ViewportWidget::ground_point_at(const QPointF& pos,
+                                                                     double max_t) const {
+  const float aspect =
+      height() > 0 ? static_cast<float>(width()) / static_cast<float>(height()) : 1.0F;
+  return ground_point(camera_.matrices(aspect),
+                      pos.x(),
+                      pos.y(),
+                      static_cast<double>(width()),
+                      static_cast<double>(height()),
+                      max_t);
+}
+
 void ViewportWidget::update_hover(const QPointF& pos) {
   HoverInfo info;
   const Ray ray = ray_through(pos);
 
   // Cursor world x/y: ray ∩ ground plane (z = 0).
-  if (std::abs(ray.direction[2]) > 1e-12) {
-    const double t = -ray.origin[2] / ray.direction[2];
-    if (t >= 0.0) {
-      info.valid = true;
-      info.world_x = ray.origin[0] + (ray.direction[0] * t);
-      info.world_y = ray.origin[1] + (ray.direction[1] * t);
-    }
+  if (const auto ground = ground_point_at(pos)) {
+    info.valid = true;
+    info.world_x = (*ground)[0];
+    info.world_y = (*ground)[1];
   }
 
   if (const auto hit = pick(document_.mesh(), road_aabbs_, ray)) {
@@ -276,6 +285,11 @@ void ViewportWidget::update_hover(const QPointF& pos) {
 
 void ViewportWidget::mousePressEvent(QMouseEvent* event) {
   last_mouse_pos_ = event->pos();
+  if (event->button() == Qt::MiddleButton) {
+    // Grab the ground point under the cursor; the anchored pan keeps it pinned.
+    // Cap the ray so a near-horizon grab at low pitch falls back to view-plane.
+    pan_anchor_world_ = ground_point_at(event->position(), 10.0 * camera_.distance());
+  }
   if (Tool* tool = tools_.active(); tool != nullptr && event->button() == Qt::LeftButton &&
                                     tool->mouse_press(make_tool_event(event))) {
     update();
@@ -297,7 +311,20 @@ void ViewportWidget::mouseMoveEvent(QMouseEvent* event) {
     camera_.orbit(static_cast<float>(-delta.x()) * 0.008F, static_cast<float>(delta.y()) * 0.008F);
     update();
   } else if ((event->buttons() & Qt::MiddleButton) != 0) {
-    camera_.pan(static_cast<float>(delta.x()), static_cast<float>(delta.y()));
+    // Ground-anchored pan: keep the grabbed world point under the cursor at 1:1
+    // (RoadRunner/CAD/maps feel, zero tuning constants). Degenerate near-horizon
+    // rays (no anchor, or the current ray misses / is capped) fall back to a
+    // correctly-scaled view-plane pan.
+    const std::optional<std::array<double, 3>> current =
+        ground_point_at(event->position(), 10.0 * camera_.distance());
+    if (pan_anchor_world_ && current) {
+      camera_.move_target(static_cast<float>((*pan_anchor_world_)[0] - (*current)[0]),
+                          static_cast<float>((*pan_anchor_world_)[1] - (*current)[1]));
+    } else {
+      camera_.pan_pixels(static_cast<float>(delta.x()),
+                         static_cast<float>(delta.y()),
+                         static_cast<float>(height()));
+    }
     update();
   } else {
     update_hover(event->position());
@@ -306,6 +333,9 @@ void ViewportWidget::mouseMoveEvent(QMouseEvent* event) {
 }
 
 void ViewportWidget::mouseReleaseEvent(QMouseEvent* event) {
+  if (event->button() == Qt::MiddleButton) {
+    pan_anchor_world_.reset();
+  }
   if (Tool* tool = tools_.active(); tool != nullptr && event->button() == Qt::LeftButton &&
                                     tool->mouse_release(make_tool_event(event))) {
     update();
@@ -335,12 +365,9 @@ ToolEvent ViewportWidget::make_tool_event(const QMouseEvent* event) const {
   ToolEvent tool_event;
   const Ray ray = ray_through(event->position());
   // Cursor world x/y: ray ∩ ground plane (z = 0), like the hover readout.
-  if (std::abs(ray.direction[2]) > 1e-12) {
-    const double t = -ray.origin[2] / ray.direction[2];
-    if (t >= 0.0) {
-      tool_event.world_x = ray.origin[0] + (ray.direction[0] * t);
-      tool_event.world_y = ray.origin[1] + (ray.direction[1] * t);
-    }
+  if (const auto ground = ground_point_at(event->position())) {
+    tool_event.world_x = (*ground)[0];
+    tool_event.world_y = (*ground)[1];
   }
   tool_event.pick = pick(document_.mesh(), road_aabbs_, ray);
   tool_event.buttons = event->buttons(); // press events include their button
