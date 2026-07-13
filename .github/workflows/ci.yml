@@ -267,6 +267,10 @@ jobs:
           xvfb-run -a python3 scripts/editor_screenshot.py \
             "assets/samples/park_road.xodr" "shots/tree_drop.png" \
             --ui --raise-dock dock.library --drop-library prop.tree.pine --size 1200x800 --skip-on-no-gl
+          # First-run tour (Phase 4): the guided-tour overlay on its first step.
+          xvfb-run -a python3 scripts/editor_screenshot.py \
+            "assets/samples/t_junction.xodr" "shots/tour.png" \
+            --ui --show-tour --size 1200x800 --skip-on-no-gl
       - uses: actions/upload-artifact@v4
         with:
           name: editor-screenshots

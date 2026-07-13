@@ -31,6 +31,11 @@ public:
   [[nodiscard]] bool autosave_enabled() const;
   void set_autosave_enabled(bool enabled);
 
+  /// Whether the first-run guided tour has already been shown (or skipped).
+  /// Persisted so the tour never re-appears; no telemetry.
+  [[nodiscard]] bool tour_seen() const;
+  void set_tour_seen(bool seen);
+
   static constexpr int kMaxRecentFiles = 10;
 
 private:

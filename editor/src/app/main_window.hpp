@@ -60,11 +60,17 @@ public:
   /// "delete") so its handle overlay renders in a capture. Unknown ids no-op.
   void activate_tool_for_capture(const QString& tool_id);
 
+  /// Starts the first-run guided tour overlay (Help ▸ Guided Tour, the first
+  /// launch, or a `--show-tour` capture). Highlights real toolbar buttons via
+  /// their action iconText.
+  void start_tour();
+
 protected:
   void changeEvent(QEvent* event) override;
   void closeEvent(QCloseEvent* event) override;
   void dragEnterEvent(QDragEnterEvent* event) override;
   void dropEvent(QDropEvent* event) override;
+  void showEvent(QShowEvent* event) override;
 
 private:
   void build_menus();
@@ -148,6 +154,16 @@ private:
   QMenu* recent_menu_ = nullptr;
   QLabel* status_hover_;
   QLabel* status_entities_;
+
+  /// Main toolbar — kept so the guided tour can locate an action's button to
+  /// highlight (widgetForAction).
+  QToolBar* main_toolbar_ = nullptr;
+  /// First-run guided-tour overlay; created lazily on first show / Help menu.
+  class TourOverlay* tour_overlay_ = nullptr;
+  bool tour_checked_ = false; // first-run tour prompt fires at most once
+  /// Only interactive launches auto-run the tour — screenshot/capture windows
+  /// (restore_saved_layout=false) must never pop it over a render.
+  bool allow_first_run_tour_ = false;
 
   QByteArray default_layout_state_; // captured post-construction for Reset Layout
 };

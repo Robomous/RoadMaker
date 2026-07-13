@@ -54,4 +54,12 @@ void Settings::set_autosave_enabled(bool enabled) {
   settings_.setValue(QStringLiteral("autosave/enabled"), enabled);
 }
 
+bool Settings::tour_seen() const {
+  return settings_.value(QStringLiteral("tour/seen"), false).toBool();
+}
+
+void Settings::set_tour_seen(bool seen) {
+  settings_.setValue(QStringLiteral("tour/seen"), seen);
+}
+
 } // namespace roadmaker::editor

@@ -13,6 +13,16 @@ through the M2 command layer (one undo step per edit, byte-identical undo) and
 is headless-testable.
 
 ### Added
+- **First-run guided tour** (UI revamp Phase 4): a 5-step, skippable coach-mark
+  tour runs once on a first launch — draw a road → drag in an intersection →
+  plant a tree → shape the elevation → export — dimming the app and ringing the
+  real toolbar button each step points at. A headless `TourController` holds the
+  step logic (seam-tested like `ToastQueue`); a standalone `TourOverlay` widget
+  paints it (never touches the GL viewport). It never re-shows (`tour/seen`
+  QSettings flag, no telemetry) and capture windows never auto-run it;
+  **Help ▸ Guided Tour** replays it. Screenshot mode gained `--show-tour` and CI
+  renders the first step. Design + evidence:
+  `docs/design/ui-revamp/phase4_tour.md`.
 - **Drag a tree from the Library onto a road** (UI revamp Phase 3): the Library
   gains a **Props** category (pine/oak/birch/poplar/shrub, themed `trees` glyph);
   dragging one onto the viewport snaps it to the nearest road's `s`/`t` and

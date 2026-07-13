@@ -39,6 +39,8 @@ add_library(roadmaker_editor_lib STATIC
   src/app/log_setup.cpp
   src/app/main_window.cpp
   src/app/settings.cpp
+  src/app/tour_controller.cpp
+  src/app/tour_overlay.cpp
   src/app/welcome_widget.cpp
   src/document/autosave.cpp
   src/document/diagnostics_model.cpp
