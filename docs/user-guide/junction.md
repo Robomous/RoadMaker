@@ -3,6 +3,8 @@
 *Connect the ends of several roads into a junction, with turning lanes
 generated between every arm.*
 
+![A four-arm junction with generated turning lanes](img/junction.png)
+
 ## Steps
 
 1. Arrange the roads so their ends meet where the junction should be.

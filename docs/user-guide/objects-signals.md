@@ -37,11 +37,19 @@ true dual stripes.
 
 ## In the editor
 
-In-editor object and signal **placement** — a properties-panel workflow plus a
-read-only library panel with drag-to-place — arrives with its editor features
-later in milestone M3a. Until then, author objects and signals from the Python
-package (above) or another OpenDRIVE tool and open the result in the editor to
-inspect it.
+**Props** (trees) place directly in the editor: drag one from the
+[**Library**](library.md) onto a road and RoadMaker adds it as an
+`<object type="tree">`, snapped to the nearest road in `s`/`t`. Placed props
+select, move, delete, duplicate, and round-trip through save/reload and the
+glTF / USD exports.
+
+![Trees placed along a road, with the Library catalogue open](img/library.png)
+
+The remaining object and signal families — crosswalks, poles, traffic lights,
+and signs — still author from the Python package (above) or another OpenDRIVE
+tool; open the result in the editor to inspect it. Their in-editor placement
+follows in the M3a standards track
+([#72](https://github.com/Robomous/RoadMaker/issues/72)).
 
 ## Reference
 
