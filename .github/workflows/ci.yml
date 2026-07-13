@@ -247,6 +247,10 @@ jobs:
           xvfb-run -a python3 scripts/editor_screenshot.py \
             "assets/samples/crossing.xodr" "shots/crossing_feedback.png" \
             --camera orbit --select 1 --hover 3 --skip-on-no-gl
+          # Edit Nodes handle overlay (Phase 1): node knobs + midpoint markers.
+          xvfb-run -a python3 scripts/editor_screenshot.py \
+            "assets/samples/t_attach.xodr" "shots/t_attach_handles.png" \
+            --camera top --select 1 --tool edit-nodes --skip-on-no-gl
       - uses: actions/upload-artifact@v4
         with:
           name: editor-screenshots

@@ -30,9 +30,11 @@ void update_node_drag(Document& document,
 }
 
 void append_node_drag_overlay(const NodeDragState& drag, PreviewGeometry& geometry) {
+  // A snap target gets an extra hovered handle at the snap point (the grabbed
+  // node itself already renders at the moved/snapped position).
   if (drag.snap) {
-    geometry.point_positions.insert(geometry.point_positions.end(),
-                                    {drag.snap->position.x, drag.snap->position.y, 0.0});
+    geometry.add_handle(
+        drag.snap->position.x, drag.snap->position.y, 0.0, HandleKind::Node, HandleState::Hovered);
   }
   geometry.line_positions.insert(
       geometry.line_positions.end(),

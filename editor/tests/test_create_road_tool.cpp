@@ -224,7 +224,7 @@ TEST(CreateRoadTool, PreviewShowsGhostFitAndSnapHint) {
   EXPECT_TRUE(tool.preview().empty());
 
   click(tool, 0.0, 0.0);
-  EXPECT_EQ(tool.preview().point_positions.size(), 3U); // one placed point
+  EXPECT_EQ(tool.preview().handles.size(), 1U); // one placed point
 
   // Hovering after one point: ghost segment to the cursor.
   EXPECT_FALSE(tool.mouse_move(at(30.0, 5.0))); // hover never consumes

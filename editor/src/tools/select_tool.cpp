@@ -440,7 +440,7 @@ PreviewGeometry SelectTool::preview() const {
       continue;
     }
     for (const Waypoint& node : *road->authoring_waypoints) {
-      geometry.point_positions.insert(geometry.point_positions.end(), {node.x, node.y, 0.0});
+      geometry.add_handle(node.x, node.y);
     }
   }
 
@@ -454,8 +454,11 @@ PreviewGeometry SelectTool::preview() const {
         geometry.line_positions.end(),
         {move_->press.x, move_->press.y, 0.0, move_->current.x, move_->current.y, 0.0});
     if (move_->snap.has_value()) {
-      geometry.point_positions.insert(geometry.point_positions.end(),
-                                      {move_->snap->position.x, move_->snap->position.y, 0.0});
+      geometry.add_handle(move_->snap->position.x,
+                          move_->snap->position.y,
+                          0.0,
+                          HandleKind::Node,
+                          HandleState::Hovered);
     }
   }
 

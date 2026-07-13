@@ -13,6 +13,18 @@ through the M2 command layer (one undo step per edit, byte-identical undo) and
 is headless-testable.
 
 ### Added
+- **DPI-crisp themed tool handles** (UI revamp Phase 1): node and midpoint
+  handles are now screen-space QPainter sprites with idle / hovered / grabbed
+  states, replacing the world-meter GL crosses that shrank and grew with zoom.
+  `PreviewGeometry` carries a typed `Handle { pos, kind, state }` list (every
+  tool migrated); the viewport projects each to logical pixels via a pure,
+  unit-tested `project_to_screen` and paints it in `ViewportWidget::draw_handles`
+  — light idle node dots (accent on hover/grab), a hollow accent "insert-here"
+  ring for midpoints, tangent whiskers still accent GL lines. Edit Nodes tracks
+  the hovered node live; the profile panel's node/grade handles adopt the same
+  circle language. Screenshot mode gained `--tool <id>` to render a tool's
+  overlay (CI renders an Edit Nodes handles shot). Design + before/after:
+  `docs/design/ui-revamp/phase1_feedback.md`.
 - **Library catalogue manifest + model** (UI-revamp Phase 2 groundwork): a
   versioned runtime manifest (`assets/library/manifest.json`) and a headless
   `LibraryManifest` loader + flat `LibraryListModel` (`editor/src/document/`)

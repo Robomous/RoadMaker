@@ -504,6 +504,22 @@ void MainWindow::set_capture_highlights(const QString& select_odr, const QString
   }
 }
 
+void MainWindow::activate_tool_for_capture(const QString& tool_id) {
+  static const std::map<QString, ToolId> kTools{
+      {QStringLiteral("select"), ToolId::Select},
+      {QStringLiteral("create-road"), ToolId::CreateRoad},
+      {QStringLiteral("edit-nodes"), ToolId::EditNodes},
+      {QStringLiteral("lane-profile"), ToolId::LaneProfile},
+      {QStringLiteral("elevation"), ToolId::Elevation},
+      {QStringLiteral("create-junction"), ToolId::CreateJunction},
+      {QStringLiteral("split"), ToolId::Split},
+      {QStringLiteral("delete"), ToolId::Delete},
+  };
+  if (const auto found = kTools.find(tool_id); found != kTools.end()) {
+    tool_manager_.set_active(found->second);
+  }
+}
+
 void MainWindow::new_file() {
   if (!confirm_discard()) {
     return;

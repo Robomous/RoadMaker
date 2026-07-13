@@ -185,8 +185,7 @@ PreviewGeometry CreateRoadTool::preview() const {
   PreviewGeometry geometry;
 
   for (const PlacedPoint& point : points_) {
-    geometry.point_positions.insert(geometry.point_positions.end(),
-                                    {point.position.x, point.position.y, 0.0});
+    geometry.add_handle(point.position.x, point.position.y);
   }
 
   // Ghost polyline through the placed points and on to the cursor.

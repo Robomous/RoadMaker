@@ -16,6 +16,7 @@
 #include <QDoubleSpinBox>
 #include <QLabel>
 #include <QSignalSpy>
+#include <algorithm>
 #include <filesystem>
 #include <stdexcept>
 #include <string>
@@ -116,14 +117,23 @@ TEST(ElevationTool, ClickingANodeMakesItActiveAndSelectsItsRoad) {
 TEST(ElevationTool, PreviewDrawsNodeHandlesAndTheActiveHighlight) {
   Scene scene;
   scene.selection.select({.road = scene.road, .lane = roadmaker::LaneId{}});
-  // Node handles for the three waypoints, no highlight square yet.
-  EXPECT_EQ(scene.tool.preview().point_positions.size(), 3U * 3U);
+  // Node handles for the three waypoints, no active highlight yet.
+  EXPECT_EQ(scene.tool.preview().handles.size(), 3U);
   EXPECT_TRUE(scene.tool.preview().line_positions.empty());
 
   const Waypoint first = scene.node(0);
   ASSERT_TRUE(scene.click(first.x, first.y));
-  // The active-node highlight is a 4-segment square (8 endpoints × 3 coords).
-  EXPECT_EQ(scene.tool.preview().line_positions.size(), 4U * 2U * 3U);
+  // The active node is now carried by its handle's Hovered state (no lines);
+  // still three handles, exactly one of them highlighted.
+  const auto preview = scene.tool.preview();
+  EXPECT_EQ(preview.handles.size(), 3U);
+  EXPECT_TRUE(preview.line_positions.empty());
+  EXPECT_EQ(std::count_if(preview.handles.begin(),
+                          preview.handles.end(),
+                          [](const roadmaker::editor::Handle& handle) {
+                            return handle.state == roadmaker::editor::HandleState::Hovered;
+                          }),
+            1);
 }
 
 TEST(ElevationTool, EscapeClearsTheActiveNode) {

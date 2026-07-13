@@ -237,7 +237,7 @@ TEST(CreateJunctionTool, TeePreviewShowsAnchorGhostAndReplacedSpan) {
 
   const auto preview = tool.preview();
   // Anchor marker on the reference line plus the selected end's marker.
-  ASSERT_GE(preview.point_positions.size(), 2U * 3U);
+  ASSERT_GE(preview.handles.size(), 2U);
   // Ghost dashes + span polyline + two end ticks all land in line_positions.
   ASSERT_FALSE(preview.line_positions.empty());
 
@@ -281,7 +281,7 @@ TEST(CreateJunctionTool, TeePreviewClearsOnEscape) {
   ASSERT_TRUE(tool.key_press(Qt::Key_Escape, Qt::NoModifier));
   const auto preview = tool.preview();
   EXPECT_TRUE(preview.line_positions.empty());
-  EXPECT_TRUE(preview.point_positions.empty());
+  EXPECT_TRUE(preview.handles.empty());
 }
 
 TEST(CreateJunctionTool, TeeStatusMessageNamesTheReplacedSpan) {

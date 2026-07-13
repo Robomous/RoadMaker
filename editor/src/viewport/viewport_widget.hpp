@@ -24,6 +24,8 @@
 #include "viewport/camera.hpp"
 #include "viewport/picking.hpp"
 
+class QPainter;
+
 namespace roadmaker::editor {
 
 /// Status-bar payload for the current mouse position. `world_*` come from the
@@ -153,8 +155,14 @@ private:
   void attach_active_tool();
 
   /// Replaces the overlay meshes with the active tool's PreviewGeometry
-  /// (GL context must be current — called from paintGL).
+  /// (GL context must be current — called from paintGL). Uploads the line
+  /// overlays to GL and stashes the handle knobs for draw_handles().
   void upload_tool_preview();
+
+  /// Paints the active tool's handle knobs as screen-space themed sprites
+  /// (idle/hovered/grabbed), projected from the kernel frame. QPainter over
+  /// the GL frame, like the hint card.
+  void draw_handles(QPainter& painter) const;
 
   Document& document_;
   SelectionModel& selection_;
@@ -177,8 +185,13 @@ private:
   /// edit-driven rebuilds must not yank the view.
   bool frame_on_rebuild_ = true;
 
-  /// Overlay meshes for the active tool's preview, replaced every paint.
+  /// Overlay meshes for the active tool's preview line geometry, replaced
+  /// every paint. The handle knobs are drawn separately (draw_handles).
   std::vector<RenderMeshHandle> preview_handles_;
+
+  /// The active tool's handle knobs (kernel frame), stashed by
+  /// upload_tool_preview and painted as screen sprites by draw_handles.
+  std::vector<Handle> handle_overlays_;
   QMetaObject::Connection preview_connection_;
   QMetaObject::Connection cursor_connection_;
 

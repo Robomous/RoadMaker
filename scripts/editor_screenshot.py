@@ -62,6 +62,7 @@ def main() -> int:
     parser.add_argument("--editor", type=Path, default=None)
     parser.add_argument("--select", default=None, help="OpenDRIVE id to select (selection tint)")
     parser.add_argument("--hover", default=None, help="OpenDRIVE id to hover (hover brighten)")
+    parser.add_argument("--tool", default=None, help="tool id to activate (renders its handles)")
     parser.add_argument(
         "--skip-on-no-gl",
         action="store_true",
@@ -88,6 +89,8 @@ def main() -> int:
         cmd += ["--select", args.select]
     if args.hover:
         cmd += ["--hover", args.hover]
+    if args.tool:
+        cmd += ["--tool", args.tool]
     result = subprocess.run(cmd, env=os.environ.copy(), check=False)
     if result.returncode == NO_GL_EXIT and args.skip_on_no_gl:
         print("editor_screenshot: no GL on this runner — skipped (not a failure)")

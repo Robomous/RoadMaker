@@ -85,12 +85,22 @@ private:
 
   void delete_active_node();
 
+  /// Tracks the node under the cursor (no drag) for the hover handle state,
+  /// repainting only when it changes.
+  void update_hover(const Waypoint& cursor);
+
+  /// Handle state for waypoint `index` of `road`: Grabbed while dragging it,
+  /// Hovered when it is the active (clicked) node or under the cursor, else
+  /// Idle.
+  [[nodiscard]] HandleState node_state(RoadId road, std::size_t index) const;
+
   Document& document_;
   SelectionModel& selection_;
   double pick_radius_ = 2.0;
   edit::SnapOptions snap_options_{};
   std::optional<NodeDragState> drag_;
   std::optional<std::pair<RoadId, std::size_t>> active_;
+  std::optional<std::pair<RoadId, std::size_t>> hovered_;
 };
 
 } // namespace roadmaker::editor
