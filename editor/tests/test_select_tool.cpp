@@ -12,10 +12,13 @@
 #include <gtest/gtest.h>
 
 #include <QSignalSpy>
+#include <QString>
+#include <array>
 #include <cstddef>
 #include <optional>
 #include <stdexcept>
 #include <string>
+#include <vector>
 
 #include "document/document.hpp"
 #include "document/selection_model.hpp"
@@ -418,4 +421,177 @@ TEST(SelectTool, DeleteKeyIsInertDuringADrag) {
 
   ASSERT_TRUE(tool.key_press(Qt::Key_Escape, Qt::NoModifier)); // clean exit
   EXPECT_EQ(xodr(scene.document), scene.base_xodr);
+}
+
+// --- whole-road body move (M3a) ---------------------------------------------
+
+TEST(SelectTool, BodyDragMovesWholeRoadAutoSelectingItOneUndo) {
+  Scene scene;
+  SelectTool tool(scene.document, scene.selection);
+  const PickHit hit = scene.hit(scene.dragged);
+  const Waypoint before = node(scene.document, scene.dragged, 0);
+
+  // Press on the body of an unselected road, then drag +20 in x.
+  ASSERT_TRUE(tool.mouse_press(at(50.0, 3.0, Qt::LeftButton, Qt::NoModifier, hit)));
+  ASSERT_TRUE(tool.mouse_move(at(70.0, 3.0, Qt::LeftButton, Qt::NoModifier, hit)));
+  EXPECT_TRUE(tool.moving());
+  ASSERT_TRUE(tool.mouse_release(at(70.0, 3.0, Qt::NoButton, Qt::NoModifier, hit)));
+
+  // Auto-selected, and every node shifted by the drag delta.
+  EXPECT_EQ(scene.selection.primary().road, scene.dragged);
+  const Waypoint after = node(scene.document, scene.dragged, 0);
+  EXPECT_NEAR(after.x, before.x + 20.0, roadmaker::tol::kRoundTripPosition);
+  EXPECT_NEAR(after.y, before.y, roadmaker::tol::kRoundTripPosition);
+
+  // Exactly one undo entry; undo restores byte-for-byte.
+  EXPECT_EQ(scene.document.undo_stack()->count(), scene.base_count + 1);
+  scene.document.undo_stack()->undo();
+  EXPECT_EQ(xodr(scene.document), scene.base_xodr);
+}
+
+TEST(SelectTool, BodyDragMovesEverySelectedRoadTogether) {
+  Scene scene;
+  SelectTool tool(scene.document, scene.selection);
+  scene.selection.select({.road = scene.dragged, .lane = LaneId{}});
+  scene.selection.select({.road = scene.other, .lane = LaneId{}},
+                         roadmaker::editor::SelectMode::Add);
+  const Waypoint dragged_before = node(scene.document, scene.dragged, 0);
+  const Waypoint other_before = node(scene.document, scene.other, 0);
+
+  const PickHit hit = scene.hit(scene.dragged);
+  ASSERT_TRUE(tool.mouse_press(at(50.0, 3.0, Qt::LeftButton, Qt::NoModifier, hit)));
+  ASSERT_TRUE(tool.mouse_move(at(50.0, 33.0, Qt::LeftButton, Qt::NoModifier, hit)));
+  ASSERT_TRUE(tool.mouse_release(at(50.0, 33.0, Qt::NoButton, Qt::NoModifier, hit)));
+
+  // Both roads shifted by +30 in y; one undo entry covers the pair.
+  EXPECT_NEAR(node(scene.document, scene.dragged, 0).y,
+              dragged_before.y + 30.0,
+              roadmaker::tol::kRoundTripPosition);
+  EXPECT_NEAR(node(scene.document, scene.other, 0).y,
+              other_before.y + 30.0,
+              roadmaker::tol::kRoundTripPosition);
+  EXPECT_EQ(scene.document.undo_stack()->count(), scene.base_count + 1);
+}
+
+TEST(SelectTool, EscapeCancelsAMoveLeavingTheNetworkPristine) {
+  Scene scene;
+  SelectTool tool(scene.document, scene.selection);
+  const PickHit hit = scene.hit(scene.dragged);
+
+  ASSERT_TRUE(tool.mouse_press(at(50.0, 3.0, Qt::LeftButton, Qt::NoModifier, hit)));
+  ASSERT_TRUE(tool.mouse_move(at(90.0, 40.0, Qt::LeftButton, Qt::NoModifier, hit)));
+  EXPECT_TRUE(tool.moving());
+  ASSERT_TRUE(tool.key_press(Qt::Key_Escape, Qt::NoModifier));
+
+  EXPECT_FALSE(tool.moving());
+  EXPECT_EQ(scene.document.undo_stack()->count(), scene.base_count);
+  EXPECT_EQ(xodr(scene.document), scene.base_xodr);
+}
+
+TEST(SelectTool, MoveEmitsSizeAllThenArrowCursor) {
+  Scene scene;
+  SelectTool tool(scene.document, scene.selection);
+  std::vector<Qt::CursorShape> cursors;
+  QObject::connect(&tool, &SelectTool::cursor_changed, [&cursors](Qt::CursorShape shape) {
+    cursors.push_back(shape);
+  });
+  const PickHit hit = scene.hit(scene.dragged);
+
+  ASSERT_TRUE(tool.mouse_press(at(50.0, 3.0, Qt::LeftButton, Qt::NoModifier, hit)));
+  ASSERT_TRUE(tool.mouse_move(at(70.0, 3.0, Qt::LeftButton, Qt::NoModifier, hit)));
+  ASSERT_TRUE(tool.mouse_release(at(70.0, 3.0, Qt::NoButton, Qt::NoModifier, hit)));
+
+  ASSERT_EQ(cursors.size(), 2U);
+  EXPECT_EQ(cursors.front(), Qt::SizeAllCursor);
+  EXPECT_EQ(cursors.back(), Qt::ArrowCursor);
+}
+
+// Helpers that build real topology through the command layer (the network
+// accessor is const — tests can't hand-set links).
+namespace {
+
+RoadId find_road(const Document& document, const char* name) {
+  RoadId found;
+  document.network().for_each_road([&](RoadId id, const roadmaker::Road& r) {
+    if (r.name == name) {
+      found = id;
+    }
+  });
+  return found;
+}
+
+PickHit body_hit(const Document& document, RoadId road) {
+  const roadmaker::Road* road_ptr = document.network().road(road);
+  const auto* section = document.network().lane_section(road_ptr->sections.front());
+  return PickHit{.road = road, .lane = section->lanes.back()};
+}
+
+} // namespace
+
+TEST(SelectTool, JunctionRoadRefusesMoveWithAToast) {
+  Document document;
+  SelectionModel selection{document};
+  // Two roads meeting at (50,0) joined by a common junction; the approach road
+  // "A" then touches the junction and can't be moved as a free body.
+  ASSERT_TRUE(document.push_command(
+      roadmaker::edit::create_road({Waypoint{.x = 0.0, .y = 0.0}, Waypoint{.x = 50.0, .y = 0.0}},
+                                   roadmaker::LaneProfile::two_lane_default(),
+                                   "A")));
+  ASSERT_TRUE(document.push_command(
+      roadmaker::edit::create_road({Waypoint{.x = 50.0, .y = 0.0}, Waypoint{.x = 50.0, .y = 50.0}},
+                                   roadmaker::LaneProfile::two_lane_default(),
+                                   "B")));
+  const RoadId a = find_road(document, "A");
+  const RoadId b = find_road(document, "B");
+  const std::array<roadmaker::RoadEnd, 2> ends{
+      roadmaker::RoadEnd{.road = a, .contact = roadmaker::ContactPoint::End},
+      roadmaker::RoadEnd{.road = b, .contact = roadmaker::ContactPoint::Start}};
+  ASSERT_TRUE(document.push_command(roadmaker::edit::create_junction(document.network(), ends)));
+  const std::string before = xodr(document);
+
+  SelectTool tool(document, selection);
+  std::vector<QString> toasts;
+  QObject::connect(&tool, &SelectTool::status_message, [&toasts](const QString& text) {
+    toasts.push_back(text);
+  });
+  const PickHit hit = body_hit(document, a);
+  ASSERT_TRUE(tool.mouse_press(at(25.0, 0.0, Qt::LeftButton, Qt::NoModifier, hit)));
+  ASSERT_TRUE(tool.mouse_move(at(25.0, 20.0, Qt::LeftButton, Qt::NoModifier, hit)));
+
+  EXPECT_FALSE(tool.moving());
+  EXPECT_EQ(xodr(document), before); // untouched
+  ASSERT_FALSE(toasts.empty());
+  EXPECT_TRUE(toasts.back().contains("can't be moved")) << toasts.back().toStdString();
+}
+
+TEST(SelectTool, LinkBreakConfirmGatesTheMove) {
+  Document document;
+  SelectionModel selection{document};
+  // A road split into two halves is genuinely road-road linked (head↔tail).
+  ASSERT_TRUE(document.push_command(
+      roadmaker::edit::create_road({Waypoint{.x = 0.0, .y = 0.0}, Waypoint{.x = 100.0, .y = 0.0}},
+                                   roadmaker::LaneProfile::two_lane_default(),
+                                   "Long")));
+  const RoadId head = find_road(document, "Long");
+  ASSERT_TRUE(document.push_command(roadmaker::edit::split_road(document.network(), head, 50.0)));
+  ASSERT_TRUE(document.network().road(head)->successor.has_value()); // head→tail link
+  const std::string linked = xodr(document);
+
+  SelectTool tool(document, selection);
+  const PickHit hit = body_hit(document, head);
+
+  // Refusing the confirm leaves the network untouched.
+  tool.set_link_break_confirm([] { return false; });
+  ASSERT_TRUE(tool.mouse_press(at(25.0, 0.0, Qt::LeftButton, Qt::NoModifier, hit)));
+  ASSERT_TRUE(tool.mouse_move(at(25.0, 20.0, Qt::LeftButton, Qt::NoModifier, hit)));
+  EXPECT_FALSE(tool.moving());
+  EXPECT_EQ(xodr(document), linked);
+
+  // Accepting it moves the head and clears the head↔tail link on both sides.
+  tool.set_link_break_confirm([] { return true; });
+  ASSERT_TRUE(tool.mouse_press(at(25.0, 0.0, Qt::LeftButton, Qt::NoModifier, hit)));
+  ASSERT_TRUE(tool.mouse_move(at(25.0, 20.0, Qt::LeftButton, Qt::NoModifier, hit)));
+  ASSERT_TRUE(tool.moving());
+  ASSERT_TRUE(tool.mouse_release(at(25.0, 20.0, Qt::NoButton, Qt::NoModifier, hit)));
+  EXPECT_FALSE(document.network().road(head)->successor.has_value());
 }

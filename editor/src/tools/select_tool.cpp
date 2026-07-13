@@ -1,10 +1,12 @@
 #include "tools/select_tool.hpp"
 
 #include "roadmaker/edit/operations.hpp"
+#include "roadmaker/road/junction.hpp"
 #include "roadmaker/road/network.hpp"
 
 #include <algorithm>
 #include <cmath>
+#include <variant>
 #include <vector>
 
 #include "document/document.hpp"
@@ -31,12 +33,13 @@ SelectTool::SelectTool(Document& document, SelectionModel& selection, QObject* p
     : Tool(parent), document_(document), selection_(selection) {}
 
 void SelectTool::activate() {
-  emit status_message(tr("Click to select — Shift adds, Ctrl toggles; drag from empty space for a "
-                         "rubber band; drag a node handle of a selected road to move it"));
+  emit status_message(tr("Click to select — Shift adds, Ctrl toggles; drag a road body to move the "
+                         "whole road, a node handle to bend it, or empty space for a rubber band"));
 }
 
 void SelectTool::deactivate() {
   abort_drag();
+  abort_move();
   if (press_.has_value() || band_current_.has_value()) {
     press_.reset();
     band_current_.reset();
@@ -80,7 +83,10 @@ bool SelectTool::mouse_press(const ToolEvent& event) {
     emit preview_changed();
     return true;
   }
-  press_ = PressState{.world = cursor, .on_geometry = event.pick.has_value()};
+  press_ = PressState{.world = cursor,
+                      .on_geometry = event.pick.has_value(),
+                      .road = event.pick.has_value() ? std::optional<RoadId>(event.pick->road)
+                                                     : std::nullopt};
   return true;
 }
 
@@ -93,12 +99,28 @@ bool SelectTool::mouse_move(const ToolEvent& event) {
     return true;
   }
 
+  if (move_.has_value()) {
+    update_move_drag(cursor);
+    emit preview_changed();
+    return true;
+  }
+
   if (press_.has_value()) {
     const bool beyond_tolerance = std::abs(cursor.x - press_->world.x) > click_tolerance_ ||
                                   std::abs(cursor.y - press_->world.y) > click_tolerance_;
-    // Rubber bands span from empty space only; a drag that started on
-    // geometry is consumed but inert (no road-body move in M2).
-    if (!press_->on_geometry && (band_current_.has_value() || beyond_tolerance)) {
+    // A drag that started on a road body moves the whole road (auto-selecting
+    // it first); one from empty space spans a rubber band.
+    if (press_->on_geometry) {
+      if (beyond_tolerance) {
+        begin_move_drag(event.modifiers);
+        if (move_.has_value()) {
+          update_move_drag(cursor);
+          emit preview_changed();
+        }
+      }
+      return true;
+    }
+    if (band_current_.has_value() || beyond_tolerance) {
       band_current_ = cursor;
       emit preview_changed();
     }
@@ -115,6 +137,18 @@ bool SelectTool::mouse_release(const ToolEvent& event) {
     document_.commit_preview();
     drag_.reset();
     emit status_message(tr("Node moved"));
+    emit preview_changed();
+    return true;
+  }
+
+  if (move_.has_value()) {
+    const std::size_t count = move_->roads.size();
+    // A move that never crossed a fit / preview commits nothing (no-op).
+    document_.commit_preview();
+    move_.reset();
+    emit cursor_changed(Qt::ArrowCursor);
+    emit status_message(count == 1 ? tr("Road moved — Ctrl+Z to undo")
+                                   : tr("%1 roads moved — Ctrl+Z to undo").arg(count));
     emit preview_changed();
     return true;
   }
@@ -152,6 +186,10 @@ bool SelectTool::key_press(int key, Qt::KeyboardModifiers modifiers) {
   }
   if (drag_.has_value()) {
     abort_drag();
+    return true;
+  }
+  if (move_.has_value()) {
+    abort_move();
     return true;
   }
   if (press_.has_value()) {
@@ -226,6 +264,139 @@ void SelectTool::abort_drag() {
   emit preview_changed();
 }
 
+void SelectTool::begin_move_drag(Qt::KeyboardModifiers modifiers) {
+  static_cast<void>(modifiers);
+  if (!press_.has_value() || !press_->road.has_value()) {
+    return;
+  }
+  const RoadId pressed = *press_->road;
+  const RoadNetwork& network = document_.network();
+
+  // Move set: the whole selection when the pressed road is part of it, else the
+  // pressed road alone (auto-selected below, only once the refusals pass).
+  const std::vector<RoadId> selected = selection_.selected_roads();
+  const bool pressed_selected = std::ranges::find(selected, pressed) != selected.end();
+  std::vector<RoadId> roads =
+      pressed_selected && !selected.empty() ? selected : std::vector<RoadId>{pressed};
+
+  // Junction roads have generated poses — refuse with a toast, touch nothing.
+  for (const RoadId road_id : roads) {
+    const std::vector<JunctionId> touched = junctions_touching(network, road_id);
+    if (!touched.empty()) {
+      const Road* road = network.road(road_id);
+      const Junction* junction = network.junction(touched.front());
+      emit status_message(
+          tr("Road %1 belongs to Junction %2 — junction roads can't be moved. Delete the "
+             "junction or move its free end nodes instead.")
+              .arg(road != nullptr ? QString::fromStdString(road->odr_id) : QString())
+              .arg(junction != nullptr ? QString::fromStdString(junction->odr_id) : QString()));
+      press_.reset();
+      return;
+    }
+  }
+
+  // A link leaving the moved set breaks — confirm BEFORE begin_preview (a modal
+  // opened mid-drag would swallow the mouse-release).
+  const auto in_set = [&roads](RoadId id) { return std::ranges::find(roads, id) != roads.end(); };
+  const auto leaves_set = [&](const std::optional<RoadLink>& link) {
+    if (!link.has_value()) {
+      return false;
+    }
+    const auto* target = std::get_if<RoadId>(&link->target);
+    return target != nullptr && !in_set(*target);
+  };
+  bool breaks_link = false;
+  for (const RoadId road_id : roads) {
+    const Road* road = network.road(road_id);
+    if (road != nullptr && (leaves_set(road->predecessor) || leaves_set(road->successor))) {
+      breaks_link = true;
+      break;
+    }
+  }
+  if (breaks_link && confirm_link_break_ && !confirm_link_break_()) {
+    press_.reset();
+    return;
+  }
+
+  if (!pressed_selected) {
+    selection_.select({.road = pressed, .lane = LaneId{}}, SelectMode::Replace);
+  }
+
+  const std::size_t count = roads.size();
+  move_ =
+      MoveDragState{.roads = std::move(roads), .press = press_->world, .current = press_->world};
+  press_.reset();
+  emit cursor_changed(Qt::SizeAllCursor);
+  emit status_message(count == 1
+                          ? tr("Moving road — release to place, Esc cancels")
+                          : tr("Moving %1 roads — release to place, Esc cancels").arg(count));
+}
+
+void SelectTool::update_move_drag(const Waypoint& cursor) {
+  if (!move_.has_value()) {
+    return;
+  }
+  double dx = cursor.x - move_->press.x;
+  double dy = cursor.y - move_->press.y;
+  move_->snap.reset();
+
+  // Single-road drags snap the nearer translated endpoint to another road's
+  // endpoint; multi-road drags don't snap in v1 (documented follow-up — a
+  // multi-road exclude span is a kernel/snap enhancement).
+  if (move_->roads.size() == 1) {
+    const Road* road = document_.network().road(move_->roads.front());
+    if (road != nullptr && !road->plan_view.empty()) {
+      edit::SnapOptions options = snap_options_;
+      options.exclude_road = move_->roads.front();
+      options.endpoints = true;
+      options.tangent = false;
+      const PathPoint start = road->plan_view.evaluate(0.0);
+      const PathPoint end = road->plan_view.evaluate(road->plan_view.length());
+      double best = options.radius;
+      double adj_x = 0.0;
+      double adj_y = 0.0;
+      for (const PathPoint& endpoint : {start, end}) {
+        const Waypoint candidate{.x = endpoint.x + dx, .y = endpoint.y + dy};
+        const auto snap = edit::snap_point(document_.network(), candidate, options);
+        if (!snap.has_value()) {
+          continue;
+        }
+        const double distance =
+            std::hypot(snap->position.x - candidate.x, snap->position.y - candidate.y);
+        if (distance <= best) {
+          best = distance;
+          adj_x = snap->position.x - candidate.x;
+          adj_y = snap->position.y - candidate.y;
+          move_->snap = snap;
+        }
+      }
+      dx += adj_x;
+      dy += adj_y;
+    }
+  }
+
+  const std::vector<RoadId> roads = move_->roads;
+  const Expected<void> moved =
+      document_.preview_active()
+          ? document_.update_preview([&roads, dx, dy](const RoadNetwork& base) {
+              return edit::translate_roads(base, roads, dx, dy);
+            })
+          : document_.begin_preview(edit::translate_roads(document_.network(), roads, dx, dy));
+  static_cast<void>(moved);
+  move_->current = Waypoint{.x = move_->press.x + dx, .y = move_->press.y + dy};
+}
+
+void SelectTool::abort_move() {
+  if (!move_.has_value()) {
+    return;
+  }
+  document_.cancel_preview();
+  move_.reset();
+  emit cursor_changed(Qt::ArrowCursor);
+  emit status_message(tr("Move cancelled"));
+  emit preview_changed();
+}
+
 PreviewGeometry SelectTool::preview() const {
   PreviewGeometry geometry;
 
@@ -243,6 +414,17 @@ PreviewGeometry SelectTool::preview() const {
 
   if (drag_.has_value()) {
     append_node_drag_overlay(*drag_, geometry);
+  }
+
+  if (move_.has_value()) {
+    // Press→current tether, plus the engaged endpoint-snap marker.
+    geometry.line_positions.insert(
+        geometry.line_positions.end(),
+        {move_->press.x, move_->press.y, 0.0, move_->current.x, move_->current.y, 0.0});
+    if (move_->snap.has_value()) {
+      geometry.point_positions.insert(geometry.point_positions.end(),
+                                      {move_->snap->position.x, move_->snap->position.y, 0.0});
+    }
   }
 
   if (press_.has_value() && band_current_.has_value()) {

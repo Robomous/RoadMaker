@@ -152,6 +152,7 @@ private:
   /// Overlay meshes for the active tool's preview, replaced every paint.
   std::vector<RenderMeshHandle> preview_handles_;
   QMetaObject::Connection preview_connection_;
+  QMetaObject::Connection cursor_connection_;
 
   QPoint last_mouse_pos_;
 

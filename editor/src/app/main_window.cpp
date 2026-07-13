@@ -3,6 +3,7 @@
 #include "roadmaker/version.hpp"
 
 #include <QApplication>
+#include <QCheckBox>
 #include <QCloseEvent>
 #include <QDateTime>
 #include <QDesktopServices>
@@ -131,6 +132,28 @@ MainWindow::MainWindow(QWidget* parent, bool restore_saved_layout)
   };
   auto select_tool = std::make_unique<SelectTool>(document_, selection_);
   wire_status(select_tool.get());
+  // Moving a road that links to roads staying put breaks those links. Confirm
+  // once (with a session-wide "don't ask again"), BEFORE the preview begins —
+  // a modal opened mid-drag swallows the mouse-release.
+  select_tool->set_link_break_confirm([this]() -> bool {
+    if (suppress_link_break_confirm_) {
+      return true;
+    }
+    QMessageBox box(this);
+    box.setIcon(QMessageBox::Question);
+    box.setWindowTitle(tr("Break road links?"));
+    box.setText(tr("Moving this road will break its connection to roads that stay put."));
+    box.setInformativeText(tr("Move it anyway?"));
+    auto* dont_ask = new QCheckBox(tr("Don't ask again this session"), &box);
+    box.setCheckBox(dont_ask);
+    box.setStandardButtons(QMessageBox::Ok | QMessageBox::Cancel);
+    box.setDefaultButton(QMessageBox::Ok);
+    const int result = box.exec();
+    if (dont_ask->isChecked()) {
+      suppress_link_break_confirm_ = true;
+    }
+    return result == QMessageBox::Ok;
+  });
   tool_manager_.register_tool(ToolId::Select, std::move(select_tool));
   connect(actions_->tool_select, &QAction::triggered, this, [this] {
     tool_manager_.set_active(ToolId::Select);

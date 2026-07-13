@@ -35,6 +35,7 @@ not undoable.
 | Tool | Task |
 |---|---|
 | [Create Road](create-road.md) | Lay a new clothoid road through waypoints with a lane template |
+| [Moving Roads](moving-roads.md) | Translate a whole road (or several) by dragging its body |
 | [Edit Nodes](edit-nodes.md) | Reshape a road by moving, inserting, and deleting its waypoints |
 | [Lane Profile](lane-profile.md) | Add, remove, and retype lanes across a road's cross-section |
 | [Elevation](elevation.md) | Give a road a vertical profile |

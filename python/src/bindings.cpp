@@ -902,6 +902,26 @@ NB_MODULE(_roadmaker, m) {
       "A start/end heading [rad] locks the fit there for G1 chaining.");
   edit.def("split_road", &roadmaker::edit::split_road, "network"_a, "road"_a, "s"_a);
   edit.def("delete_road", &roadmaker::edit::delete_road, "network"_a, "road"_a);
+  edit.def("translate_road",
+           &roadmaker::edit::translate_road,
+           "network"_a,
+           "road"_a,
+           "dx"_a,
+           "dy"_a,
+           "Moves a whole road by (dx, dy) [m] in plan view; breaks links leaving "
+           "the road and refuses junction roads.");
+  edit.def(
+      "translate_roads",
+      [](const roadmaker::RoadNetwork& network,
+         std::vector<roadmaker::RoadId> roads,
+         double dx,
+         double dy) { return roadmaker::edit::translate_roads(network, roads, dx, dy); },
+      "network"_a,
+      "roads"_a,
+      "dx"_a,
+      "dy"_a,
+      "Moves N roads together by (dx, dy) [m] as ONE command; links between the "
+      "moved roads survive, links leaving the set break on both sides.");
   nb::class_<roadmaker::edit::JunctionGenOptions>(edit, "JunctionGenOptions")
       .def(nb::init<>())
       .def_rw("max_end_distance_m", &roadmaker::edit::JunctionGenOptions::max_end_distance_m)

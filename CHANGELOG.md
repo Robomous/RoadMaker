@@ -9,8 +9,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 M3a opens with a topology-editing pass — moving whole roads, inserting bend
 points, splitting and merging — plus interaction polish. Every change ships
-through the M2 command layer (one undo step per edit, byte-identical undo)
-and is headless-testable.
+through the M2 command layer (one undo step per edit, byte-identical undo) and
+is headless-testable.
+
+### Added
+- **Move a whole road** (M3a topology UX): drag a road body with the Select
+  tool to translate the whole road in plan view — auto-selecting it first, or
+  moving every selected road together when several are picked. The cursor
+  becomes a move cursor during the drag, a ghost tracks it, a single-road drag
+  snaps its nearer endpoint to other roads, and the release is exactly one
+  undo step. Kernel `edit::translate_roads` (and the single-road
+  `translate_road` convenience) shift plan-view geometry and authoring
+  waypoints only — headings, lengths, lanes, elevation and marks are untouched,
+  so undo is byte-identical. Links between two roads moving together survive;
+  a link leaving the moved set is broken on both sides in the same command
+  (confirmed once, with a session-wide "don't ask again"). Roads that
+  participate in a junction refuse to move (their pose is generated) with a
+  toast pointing at the junction. Python `edit.translate_road` /
+  `translate_roads` + `examples/move_road.py`; the interactive soak driver
+  gained a move operation. *Not yet:* rotation, moving a junction as a unit,
+  lateral lane-section moves, and multi-road endpoint snapping (follow-ups).
 
 ### Fixed
 - **Middle-mouse pan is now natural (ground-anchored)**: the old pan scaled

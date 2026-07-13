@@ -93,6 +93,8 @@ private:
 
   Actions* actions_;
   Settings settings_;
+  /// Session-wide "don't ask again" for the move-breaks-links confirm dialog.
+  bool suppress_link_break_confirm_ = false;
   /// Owned by tool_manager_; kept for template-dropdown profile changes.
   class CreateRoadTool* create_road_tool_ = nullptr;
   /// Owned by tool_manager_; the Properties panel reads its active node.
