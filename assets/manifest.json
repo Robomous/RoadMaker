@@ -143,6 +143,15 @@
       "retrieved": "2026-07-10"
     },
     {
+      "url": "https://raw.githubusercontent.com/lucide-icons/lucide/1.24.0/icons/scissors.svg",
+      "sha256": "4c831fc2c903825f68565c28ffab945c34b2c60b6c564e2ae54250e1099fa550",
+      "license": "ISC",
+      "license_url": "https://github.com/lucide-icons/lucide/blob/1.24.0/LICENSE",
+      "author": "Lucide Contributors",
+      "destination": "editor/resources/icons/lucide/scissors.svg",
+      "retrieved": "2026-07-12"
+    },
+    {
       "url": "https://raw.githubusercontent.com/lucide-icons/lucide/1.24.0/icons/trash-2.svg",
       "sha256": "27299f69ad7c6272be64b1b8e2d48cbd6dcf0ef0d4f92827a1affa945c91700e",
       "license": "ISC",

@@ -161,6 +161,7 @@ Expected<void> Document::push_command(std::unique_ptr<edit::Command> command) {
 void Document::push_applied_with_regeneration(std::unique_ptr<edit::Command> command,
                                               bool already_meshed) {
   edit::DirtySet dirty = command->dirty();
+  last_dirty_ = dirty; // the primary edit's dirty set (before regenerations)
   spdlog::info("command: {} {}", command->name(), describe_dirty(dirty));
 
   // Editing an incoming road (geometry, elevation) regenerates every junction

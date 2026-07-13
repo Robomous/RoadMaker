@@ -15,6 +15,7 @@
 #include <optional>
 #include <vector>
 
+#include "app/context_menu.hpp"
 #include "document/document.hpp"
 #include "document/selection_model.hpp"
 #include "render/renderer.hpp"
@@ -80,6 +81,12 @@ public:
 signals:
   void hover_changed(const roadmaker::editor::HoverInfo& info);
 
+  /// A right-click without an orbit drag: the descriptor context under the
+  /// cursor and the global position to popup at. MainWindow assembles and
+  /// shows the QMenu (it holds the Actions the item closures need).
+  void context_menu_requested(const roadmaker::editor::MenuContext& context,
+                              const QPoint& global_pos);
+
 protected:
   void initializeGL() override;
   void paintGL() override;
@@ -116,6 +123,10 @@ private:
   [[nodiscard]] std::optional<std::array<double, 3>>
   ground_point_at(const QPointF& pos, double max_t = std::numeric_limits<double>::infinity()) const;
   void update_hover(const QPointF& pos);
+
+  /// Builds the right-click MenuContext under a viewport pixel: node handle of
+  /// a selected road (priority), else the road/lane pick + its station.
+  [[nodiscard]] MenuContext build_menu_context(const QPointF& pos) const;
 
   /// Translates a Qt mouse event into the tool seam's abstract event:
   /// ground-plane (z=0) world position, lane-patch pick, buttons, modifiers.
@@ -160,6 +171,11 @@ private:
   /// pinned under the cursor. nullopt when the press ray missed the ground
   /// (near-horizon) — the pan then falls back to a scaled view-plane shift.
   std::optional<std::array<double, 3>> pan_anchor_world_;
+
+  /// Right-mouse click-vs-drag disambiguation: press position, and whether the
+  /// drag crossed the threshold (orbiting) — a release without it pops the menu.
+  QPoint rmb_press_pos_;
+  bool rmb_orbiting_ = false;
 
   /// Corner hint text (set_hint); painted over the GL frame in paintGL.
   QString hint_text_;

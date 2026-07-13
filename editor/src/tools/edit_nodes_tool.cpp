@@ -72,24 +72,16 @@ void EditNodesTool::deactivate() {
 }
 
 std::optional<NodeDragState> EditNodesTool::pick_node(const Waypoint& cursor) const {
-  std::optional<NodeDragState> best;
-  double best_dist = pick_radius_;
-  for (const RoadId road_id : selection_.selected_roads()) {
-    const Road* road = document_.network().road(road_id);
-    if (road == nullptr) {
-      continue;
-    }
-    const std::vector<Waypoint> nodes = edit::effective_waypoints(*road);
-    for (std::size_t i = 0; i < nodes.size(); ++i) {
-      const double dist = std::hypot(cursor.x - nodes[i].x, cursor.y - nodes[i].y);
-      if (dist <= best_dist) {
-        best_dist = dist;
-        best =
-            NodeDragState{.road = road_id, .index = i, .original = nodes[i], .current = nodes[i]};
-      }
-    }
+  // Shared node hit-test (also behind the context menu). Handles show on
+  // selected roads only, so only those are candidates.
+  if (const auto hit = pick_waypoint(
+          document_.network(), selection_.selected_roads(), cursor.x, cursor.y, pick_radius_)) {
+    return NodeDragState{.road = hit->road,
+                         .index = hit->index,
+                         .original = hit->position,
+                         .current = hit->position};
   }
-  return best;
+  return std::nullopt;
 }
 
 std::optional<EditNodesTool::MarkerHit> EditNodesTool::pick_midpoint(const Waypoint& cursor) const {

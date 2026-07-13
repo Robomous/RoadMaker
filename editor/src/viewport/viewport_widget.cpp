@@ -290,6 +290,12 @@ void ViewportWidget::mousePressEvent(QMouseEvent* event) {
     // Cap the ray so a near-horizon grab at low pitch falls back to view-plane.
     pan_anchor_world_ = ground_point_at(event->position(), 10.0 * camera_.distance());
   }
+  if (event->button() == Qt::RightButton) {
+    // RMB is orbit-or-context: remember where it went down; a drag past the
+    // threshold orbits, a release without one pops the context menu.
+    rmb_press_pos_ = event->pos();
+    rmb_orbiting_ = false;
+  }
   if (Tool* tool = tools_.active(); tool != nullptr && event->button() == Qt::LeftButton &&
                                     tool->mouse_press(make_tool_event(event))) {
     update();
@@ -308,8 +314,18 @@ void ViewportWidget::mouseMoveEvent(QMouseEvent* event) {
   }
 
   if ((event->buttons() & Qt::RightButton) != 0) {
-    camera_.orbit(static_cast<float>(-delta.x()) * 0.008F, static_cast<float>(delta.y()) * 0.008F);
-    update();
+    // Only orbit once the drag passes the click threshold — a small wiggle
+    // still opens the context menu on release (platform-timing-safe vs
+    // contextMenuEvent).
+    if (!rmb_orbiting_ && (event->pos() - rmb_press_pos_).manhattanLength() >
+                              static_cast<int>(std::lround(4.0 * devicePixelRatioF()))) {
+      rmb_orbiting_ = true;
+    }
+    if (rmb_orbiting_) {
+      camera_.orbit(static_cast<float>(-delta.x()) * 0.008F,
+                    static_cast<float>(delta.y()) * 0.008F);
+      update();
+    }
   } else if ((event->buttons() & Qt::MiddleButton) != 0) {
     // Ground-anchored pan: keep the grabbed world point under the cursor at 1:1
     // (RoadRunner/CAD/maps feel, zero tuning constants). Degenerate near-horizon
@@ -336,11 +352,44 @@ void ViewportWidget::mouseReleaseEvent(QMouseEvent* event) {
   if (event->button() == Qt::MiddleButton) {
     pan_anchor_world_.reset();
   }
+  if (event->button() == Qt::RightButton && !rmb_orbiting_) {
+    emit context_menu_requested(build_menu_context(event->position()),
+                                event->globalPosition().toPoint());
+    event->accept();
+    return;
+  }
   if (Tool* tool = tools_.active(); tool != nullptr && event->button() == Qt::LeftButton &&
                                     tool->mouse_release(make_tool_event(event))) {
     update();
   }
   event->accept();
+}
+
+MenuContext ViewportWidget::build_menu_context(const QPointF& pos) const {
+  MenuContext context;
+  const Ray ray = ray_through(pos);
+
+  // World point on the ground plane, for node picking.
+  if (std::abs(ray.direction[2]) > 1e-12) {
+    const double t = -ray.origin[2] / ray.direction[2];
+    if (t >= 0.0) {
+      const double wx = ray.origin[0] + (ray.direction[0] * t);
+      const double wy = ray.origin[1] + (ray.direction[1] * t);
+      // A node handle of a selected road wins over the body.
+      if (auto node =
+              pick_waypoint(document_.network(), selection_.selected_roads(), wx, wy, 2.0)) {
+        context.node = node;
+      }
+    }
+  }
+
+  if (const auto hit = pick(document_.mesh(), road_aabbs_, ray)) {
+    context.pick = hit;
+    if (const Road* road = document_.network().road(hit->road)) {
+      context.station = find_station(road->plan_view, hit->position[0], hit->position[1]).s;
+    }
+  }
+  return context;
 }
 
 void ViewportWidget::mouseDoubleClickEvent(QMouseEvent* event) {

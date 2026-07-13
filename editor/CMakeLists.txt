@@ -33,6 +33,7 @@ qt_standard_project_setup()
 # editor tests can link the same objects and run headless (offscreen QPA).
 add_library(roadmaker_editor_lib STATIC
   src/app/actions.cpp
+  src/app/context_menu.cpp
   src/app/crash_handler.cpp
   src/app/icons.cpp
   src/app/log_setup.cpp
@@ -62,6 +63,7 @@ add_library(roadmaker_editor_lib STATIC
   src/tools/lane_profile_tool.cpp
   src/tools/node_drag.cpp
   src/tools/select_tool.cpp
+  src/tools/split_tool.cpp
   src/tools/tool.cpp
   src/tools/tool_manager.cpp
   src/viewport/camera.cpp

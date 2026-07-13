@@ -24,6 +24,7 @@
 #include <QUrl>
 #include <QUuid>
 
+#include "app/context_menu.hpp"
 #include "app/crash_handler.hpp"
 #include "app/icons.hpp"
 #include "app/log_setup.hpp"
@@ -38,6 +39,7 @@
 #include "tools/elevation_tool.hpp"
 #include "tools/lane_profile_tool.hpp"
 #include "tools/select_tool.hpp"
+#include "tools/split_tool.hpp"
 
 namespace roadmaker::editor {
 
@@ -88,6 +90,15 @@ MainWindow::MainWindow(QWidget* parent, bool restore_saved_layout)
       actions_->frame_selection, &QAction::triggered, viewport_, &ViewportWidget::frame_selection);
   connect(actions_->about, &QAction::triggered, this, &MainWindow::show_about_dialog);
   connect(viewport_, &ViewportWidget::hover_changed, this, &MainWindow::on_hover);
+  connect(viewport_,
+          &ViewportWidget::context_menu_requested,
+          this,
+          [this](const MenuContext& context, const QPoint& global_pos) {
+            ContextMenuDeps deps{document_, selection_, *actions_};
+            if (QMenu* menu = assemble_context_menu(context, deps, this)) {
+              menu->popup(global_pos);
+            }
+          });
   connect(&document_, &Document::loaded, this, [this] {
     actions_->export_glb->setEnabled(true);
 #ifdef RM_HAVE_USD
@@ -128,6 +139,15 @@ MainWindow::MainWindow(QWidget* parent, bool restore_saved_layout)
     connect(tool, &Tool::status_message, this, [this](const QString& text) {
       statusBar()->showMessage(text, 5000);
       viewport_->set_hint(text);
+    });
+    // One-shot tools ask to return to another tool; trigger the matching action
+    // so its checkable toolbar state follows (Select is the only target today).
+    connect(tool, &Tool::request_tool, this, [this](ToolId id) {
+      if (id == ToolId::Select) {
+        actions_->tool_select->trigger();
+      } else {
+        tool_manager_.set_active(id);
+      }
     });
   };
   auto select_tool = std::make_unique<SelectTool>(document_, selection_);
@@ -219,6 +239,12 @@ MainWindow::MainWindow(QWidget* parent, bool restore_saved_layout)
   tool_manager_.register_tool(ToolId::CreateJunction, std::move(create_junction_tool));
   connect(actions_->tool_create_junction, &QAction::triggered, this, [this] {
     tool_manager_.set_active(ToolId::CreateJunction);
+  });
+  auto split_tool = std::make_unique<SplitTool>(document_, selection_);
+  wire_status(split_tool.get());
+  tool_manager_.register_tool(ToolId::Split, std::move(split_tool));
+  connect(actions_->tool_split, &QAction::triggered, this, [this] {
+    tool_manager_.set_active(ToolId::Split);
   });
   auto delete_tool = std::make_unique<DeleteTool>(document_);
   wire_status(delete_tool.get());
@@ -336,6 +362,7 @@ void MainWindow::build_toolbar() {
   toolbar->addAction(actions_->tool_lane_profile);
   toolbar->addAction(actions_->tool_elevation);
   toolbar->addAction(actions_->tool_create_junction);
+  toolbar->addAction(actions_->tool_split);
   toolbar->addAction(actions_->tool_delete);
   toolbar->addSeparator();
   toolbar->addAction(actions_->reset_camera);

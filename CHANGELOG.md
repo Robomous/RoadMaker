@@ -40,6 +40,19 @@ is headless-testable.
   the record covering the click splits — unlike the old `insert_waypoint`, which
   drifted authored roads. A node within 2 m of an existing one is refused.
   Python `edit.insert_node_at` + `examples/insert_bend.py`.
+- **Split tool + right-click context menus** (M3a topology UX): a new **Split**
+  tool (scissors icon, `K`) — hover a road to see the cut marker, click to cut
+  it in two at that station (one undo step); both halves are selected and named
+  in the toast, and the tool returns to Select. Right-clicking the viewport now
+  opens a context menu (a quick right-click, distinguished from an orbit drag by
+  a movement threshold): on a **road body** — insert bend point, split here,
+  edit lane/elevation profile, frame, delete; on a **node** — split at this
+  node, delete node, frame. The menu is built by a headless descriptor builder
+  (`editor/src/app/context_menu.{hpp,cpp}`) so its logic is unit-tested without
+  a QMenu — the single source of truth the guided tour (#114) will consume.
+  `Document::last_dirty()` lets a tool discover a command's new ids (the split's
+  tail); the shared `pick_waypoint()` node hit-test moves into
+  `viewport/picking.{hpp,cpp}`.
 
 ### Fixed
 - **Middle-mouse pan is now natural (ground-anchored)**: the old pan scaled
