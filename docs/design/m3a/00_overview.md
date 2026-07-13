@@ -10,6 +10,24 @@ way `docs/design/m2/` was: scope does not grow during implementation, and
 deviations discovered while building are recorded inline as **As-built** notes
 (see `01` §9 for Phase 0's).
 
+> **Rescope (2026-07-12, maintainer pivot — sequencing and release number
+> only; the scope below is unchanged).** M3a now **opens with the UI/UX
+> revamp epic** ([#108](https://github.com/Robomous/RoadMaker/issues/108),
+> phases 0–4: #109, #111–#114 — theme system, viewport feedback, library
+> panel + drag-and-drop, props, discoverability); the phases in this
+> document follow it as the **standards track** (S1 = #62, S2 = #70,
+> S3 = #71, S4 = #72, close-out = #73). Release target shifts to
+> **v0.5.0** — the hardening sprint between M2 and M3a took v0.4.0.
+> Already delivered ahead of this document's phase map: kernel
+> objects/signals/road marks (phases 0–2, #67–#69), autosave & crash
+> recovery (#53, hardening PR #99), and the esmini CI gate (#51). The
+> minimal read-only library panel (#50, phase 5) is **superseded** by the
+> revamp Phase 2 manifest-driven library (#112); the user guide (#52)
+> ships with v0.5.0 after a themed-screenshot refresh in revamp Phase 4
+> (#114). Strategy record: [product parity](../../standards/product-parity.md)
+> / [UI design standard](../../standards/ui-design.md); rescoped
+> [roadmap](../../roadmap/roadmap.md) and [seed](../../roadmap/seeds/m3a.md).
+
 M3a turns an authored network from a *correct* road graph into a *road scene
 that looks and validates like the real thing*: crosswalks, signals, signs, lane
 arrows, and stop lines carry real ASAM OpenDRIVE semantics; a CC0 prop set and
@@ -17,7 +35,7 @@ textured, lit viewport make the scene legible; and every exported `.xodr` still
 validates clean and survives a headless simulator load. The acceptance artifact
 is **golden scene GS-1 "Urban intersection"**
 ([spec](../../roadmap/golden_scenes/gs1_urban_intersection.md)). Release target:
-**v0.4.0**. Gap coverage:
+**v0.5.0** (originally v0.4.0; shifted by the hardening sprint). Gap coverage:
 [gap 1 — viewport visual completeness](../../roadmap/gap_analysis.md#gap-1--viewport-visual-completeness).
 
 ## Baseline (what M2 shipped)
@@ -87,7 +105,7 @@ kernel cannot represent and validate first.
    - Autosave and crash recovery.
 4. **Cross-cutting quality & docs** (`05`)
    - esmini round-trip smoke-validation CI job (permanent from M3a).
-   - Minimal user guide (`docs/user-guide/`) shipped with v0.4.0.
+   - Minimal user guide (`docs/user-guide/`) shipped with v0.5.0.
 
 ## Maintainer decisions (locked, 2026-07-10)
 
@@ -139,7 +157,7 @@ changes.
 | 3 | [#70](https://github.com/Robomous/RoadMaker/issues/70) | Assets: CC0 prop kit import + texture extension; library manifest format + loader; `ASSETS_LICENSES.md` rows | Manifest loads; every asset license-verified and recorded; `check_asset_licenses.py` green |
 | 4 | [#71](https://github.com/Robomous/RoadMaker/issues/71) | Render: textured mode default + sober toggle; terrain skirt + procedural ground; sky/lighting pass; instanced prop rendering (consumes phase 2's object dirty set; placeholder-box mesh for unresolvable objects is render-side, `04` §3) | Textured lit scene renders headless; sober mode still packages; frame parity test |
 | 5 | [#72](https://github.com/Robomous/RoadMaker/issues/72), [#50](https://github.com/Robomous/RoadMaker/issues/50), [#53](https://github.com/Robomous/RoadMaker/issues/53) | Editor UX: read-only library panel + drag-to-place (#50); object/signal placement + properties (#72 — **includes the kernel edit commands** `AddObject`…`SetSignalValue` of `01` §2.4, with bindings, same PR); autosave & crash recovery (#53) | Author GS-1 props/signals in-editor; autosave restores after a simulated crash |
-| 6 | [#51](https://github.com/Robomous/RoadMaker/issues/51), [#52](https://github.com/Robomous/RoadMaker/issues/52), [#73](https://github.com/Robomous/RoadMaker/issues/73) | Quality & release: esmini round-trip CI job (#51); minimal user guide (#52); GS-1 golden render + v0.4.0 checklist (#73) | GS-1 element checklist green; esmini loads exported `.xodr`; v0.4.0 tagged on green CI |
+| 6 | [#51](https://github.com/Robomous/RoadMaker/issues/51), [#52](https://github.com/Robomous/RoadMaker/issues/52), [#73](https://github.com/Robomous/RoadMaker/issues/73) | Quality & release: esmini round-trip CI job (#51); minimal user guide (#52); GS-1 golden render + v0.5.0 checklist (#73) | GS-1 element checklist green; esmini loads exported `.xodr`; v0.5.0 tagged on green CI |
 
 ### Execution order & dependencies
 
