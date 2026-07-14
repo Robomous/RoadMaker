@@ -1,7 +1,7 @@
 # Asset licenses
 
 Ledger for every binary/media asset in the repository (icons, textures,
-models, fonts, images). Policy — see `docs/design/m2/05_assets.md`:
+models, fonts, images). Policy — see [`docs/standards/assets.md`](docs/standards/assets.md):
 
 - Allowed licenses: **CC0, MIT, ISC, Apache-2.0** (public-domain US-federal
   works count as CC0 here).
@@ -11,6 +11,11 @@ models, fonts, images). Policy — see `docs/design/m2/05_assets.md`:
 - Every file under `assets/` and `editor/resources/` must have a row in this
   table (CI enforces via `scripts/check_asset_licenses.py`). Fetched assets
   additionally carry a manifest entry in `assets/manifest.json`.
+- **AI-generated** assets (permitted for textures and simple original graphics,
+  per [`docs/standards/assets.md`](docs/standards/assets.md#ai-generated-assets))
+  use `License = MIT` with the **Source** column set to
+  *"AI-generated original work (tool, date)"* and **Author** the person who
+  generated it.
 
 | File | Source | Author | License | Retrieved |
 |---|---|---|---|---|

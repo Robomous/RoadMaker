@@ -94,6 +94,24 @@ expensive.
 **Owner: M4** decides and implements; the
 [M4 seed](seeds/m4.md) presents the options without deciding today.
 
+## Gap 6 — material depth and built structures
+
+Benchmarking against RoadRunner footage (2026-07-13) found ~40% of the visual
+target unscheduled, clustering into three scheduled gaps now owned by the
+**Materials & Structures (v0.7.0)** milestone (prerequisite for GS-2's approval):
+
+| Cluster | Exists today | Missing | Owner |
+|---|---|---|---|
+| Material system | M3a textured mode: fixed asphalt/concrete textures, per-lane surface classification | PBR-lite (albedo + normal + roughness), an assignable **material library** with variants (new/worn asphalt), drag-onto-surface / properties assignment | Materials & Structures / GS-2 |
+| Built structures | Roads carry elevation (overpasses via profile) | Auto-generated **bridge structures** — deck with thickness, abutments/piers, guardrails (Manifold solids), offered on grade separation | Materials & Structures / GS-4 |
+| City content density | CC0 trees end-to-end | **Buildings, streetlights, gantry signs** as Library props (CC0), for district-scale scenes | Materials & Structures / GS-2 |
+
+**Owner: Materials & Structures (v0.7.0).** Seed:
+[seeds/materials-structures.md](seeds/materials-structures.md); golden scene:
+[GS-4](golden_scenes/gs4_rural_overpass.md). Interaction polish landed alongside
+GS-1 — **placement drops land under the cursor, and a Move tool + transform
+gizmo** make elements movable (epic [#178](https://github.com/Robomous/RoadMaker/issues/178)).
+
 ## Reading the gaps
 
 Two patterns repeat across all five:
@@ -119,5 +137,6 @@ it out.
 | OpenCRG road-surface detail | Backlog | High-fidelity surface simulation is niche; no golden scene needs it yet. |
 | FBX export | **Permanent exclusion** | Requires the proprietary Autodesk FBX SDK, which the [dependency policy](../standards/dependencies.md) forbids; glTF and USD are the interchange formats instead. |
 | Procedural traffic / swarm generation | Backlog | Simulation-runtime territory — esmini/CARLA consume RoadMaker's exported scenes and do this better. |
-| Terrain sculpting beyond the road corridor | Backlog | M3a's terrain skirt covers the corridor; general terrain modeling is a different product surface. |
+| Heightmap terrain under the network (DEM import + raise/lower/smooth brush) | **Scheduled — M3b (v0.8.0)** | Ground the network sits *in*, not just a skirt: a single height field per scene via DEM import (rides M3b's GDAL work) plus a basic brush; roads conform via the skirt/cut logic. Accepted in [ADR-0006](../decisions/0006-terrain-scope.md) (Option B). |
+| Terrain sculpting beyond a single height field | Backlog | Multi-layer materials, overhangs, and LOD (ADR-0006 Option C) are a different product surface; the M3b height field covers the dogfooding expectation. |
 | Sensor-simulation asset packs | Backlog | Sensor-material metadata serves specific simulators; revisit when a consuming integration demands it. |

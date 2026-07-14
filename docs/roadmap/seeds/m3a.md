@@ -25,7 +25,7 @@ written when M3a's own planning task runs, after M2 ships.*
 
 - **Theme:** authored scenes look and validate like real road scenes.
 - **Golden scene:** [GS-1 "Urban intersection"](../golden_scenes/gs1_urban_intersection.md)
-- **Release target:** v0.5.0 (shifted by the hardening sprint's v0.4.0)
+- **Release target:** v0.5.0 (UI/UX revamp) → v0.6.0 (GS-1 standards track)
 - **Gap coverage:** [gap 1 — viewport visual completeness](../gap_analysis.md#gap-1--viewport-visual-completeness)
 
 ## Scope sketch

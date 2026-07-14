@@ -6,9 +6,11 @@ when M3b's planning task runs.*
 - **Theme:** the world comes in — real road networks become editable
   RoadMaker documents.
 - **Golden scene:** [GS-2 "Imported district"](../golden_scenes/gs2_imported_district.md)
-- **Release target:** v0.5.0
-- **Gap coverage:** enables scale; no direct gap, but GS-2 proves M3a's
-  visual stack on non-authored data.
+- **Release target:** v0.8.0
+- **Gap coverage:** enables scale; GS-2 proves M3a's visual stack on
+  non-authored data; and it lands **heightmap terrain**
+  ([gap 6 / known exclusions](../gap_analysis.md#known-exclusions),
+  [ADR-0006](../../decisions/0006-terrain-scope.md)).
 
 ## Scope sketch
 
@@ -24,6 +26,12 @@ when M3b's planning task runs.*
   documented defaults, junction construction at shared nodes. Structured
   diagnostics for every dropped or defaulted element — the parser-never-
   silently-drops rule extends to importers.
+- **Heightmap terrain** ([ADR-0006](../../decisions/0006-terrain-scope.md),
+  Option B): a single height-field data model + sampler in the kernel frame;
+  **DEM raster import** riding the GDAL path above; roads conform to the field
+  via the existing terrain-skirt / cut logic (M3a's flat skirt is the fallback
+  where no field is present). No multi-layer materials or arbitrary sculpting
+  (that stays excluded).
 - License audit of all transitive deps before pinning
   ([policy](../../standards/dependencies.md)).
 
@@ -43,6 +51,8 @@ measurement harness for these metrics is part of M3b scope.
 - Reference-layer display (imagery underlay, point-cloud display) —
   read-only layers under the road network.
 - Post-import cleanup workflow using the M2 editing tools.
+- **Terrain brush** — raise / lower / smooth over the height field, each op an
+  undoable `edit::Command` (M2 command-layer parity); roads re-conform on edit.
 
 ### Assets
 

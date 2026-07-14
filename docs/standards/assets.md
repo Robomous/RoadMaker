@@ -39,6 +39,26 @@
   individually. The scouted list lives in
   [roadmap/asset_candidates](../roadmap/asset_candidates.md).
 
+## AI-generated assets
+
+AI-generated assets are **permitted for textures and simple original graphics**
+under the rules below (maintainer decision, 2026-07-13). They may be revisited if
+provenance norms shift.
+
+- **Provenance recorded per asset:** the generating tool + version, the date, and
+  the author (the person who generated it) are recorded — in the commit and in
+  the asset's `ASSETS_LICENSES.md` row.
+- **Prompt hygiene:** prompts must **not** request the style of identifiable
+  artists, products, or brands, nor reproduce logos or trade dress. Output is
+  reviewed against the [product-parity IP rules](product-parity.md) before commit.
+- **Licensing:** AI-generated original work is licensed **MIT** as project assets;
+  its `ASSETS_LICENSES.md` row reads *"AI-generated original work (tool, date)"*
+  in the source/author columns.
+- **Preference order (unchanged):** (1) **CC0 libraries**, (2) **procedural**,
+  (3) **AI-generated** for missing variants, (4) **commissioned**. AI generation
+  fills gaps a CC0 library or a procedural approach doesn't cover — it is not the
+  first reach.
+
 ## Icon style rules
 
 - Monochrome line icons only, recolored to the palette at load time — no

@@ -26,7 +26,8 @@ vocabulary**.
 | **M2** ✅ (shipped, v0.3.0) | Editing core | Editing tools, junction 3D surfaces, USD export — delivered per the [M2 design docs](../design/m2/00_overview.md) (reconciled as-built at close-out) | — (per-phase gates, all met) |
 | **Hardening** (in flight) | Stability & workflow gaps | Crash-capture infra + interactive soak testing, all known crashes fixed · T-junctions (split road + attach-to-side) · vertical-profile editor + overpass workflow · autosave/crash recovery (pulled forward from M3a) · golden **workflows** join the acceptance process | [GW-1 "First network"](golden_workflows/gw1_first_network.md) + [GW-2 "Recover from crash"](golden_workflows/gw2_recover_from_crash.md) |
 | **M3a** | UI revamp & visual completeness | **Opening epic: UI/UX revamp** ([#108](https://github.com/Robomous/RoadMaker/issues/108)) ✅ **complete** (Phases 0–4, v0.5.0) — theme system + dark professional look, labeled toolbar, welcome screen, viewport quality & feedback, **manifest-driven library panel with drag-and-drop creation** (templates, T/X assemblies — pulled forward from M4's Library Browser), CC0 props (trees) end-to-end, discoverability sweep, first-run tour, **golden-look screenshot** joins the release evidence ([`docs/standards/golden-look.png`](../standards/golden-look.png)) · then the standards-completeness track (in flight): kernel `<objects>`/`<signals>` editor exposure, crosswalk/arrow/stop-line road marks, textured viewport mode, terrain per [ADR-0006](../decisions/), sky/lighting pass | [GS-1 "Urban intersection"](golden_scenes/gs1_urban_intersection.md) + golden-look UI capture |
-| **M3b** | Real-world import | GIS/lidar import (PDAL/GDAL/PROJ), OSM road-network extraction | [GS-2 "Imported district"](golden_scenes/gs2_imported_district.md) |
+| **Materials & Structures (v0.7.0)** | Visual depth | Material system v2 (PBR-lite: albedo + normal + roughness in the GL 3.3 renderer); assignable **material library** (Library category, drag-onto-surface or properties assignment; variants like new/worn asphalt); **bridge structure generator** (deck with thickness, abutments/piers, guardrails — auto-offered on grade separation, manual too; Manifold solids); city props expansion (buildings, streetlights — CC0, scouted for GS-2); sign-text rendering (text-to-texture) as stretch | [GS-4 "Rural overpass"](golden_scenes/gs4_rural_overpass.md) |
+| **M3b** | Real-world import | GIS/lidar import (PDAL/GDAL/PROJ), OSM road-network extraction · heightmap terrain (DEM import + raise/lower/smooth brush, [ADR-0006](../decisions/0006-terrain-scope.md)) | [GS-2 "Imported district"](golden_scenes/gs2_imported_district.md) |
 | **M4** | Scenario mode | OpenSCENARIO XML kernel (read/write model) · app mode switch (Map ↔ Scenario) · actor placement, lane-anchored routes with offsets, actor attributes panel · **Asset Library Browser** | [GS-3 "Ambulance run"](golden_scenes/gs3_ambulance_run.md) |
 | **M5** | Scenario logic | Node-based logic editor for stories/maneuvers/conditions · simulation preview hooks (esmini interop) | GS-3 extended with a logic graph |
 
@@ -78,6 +79,23 @@ gap is mostly kernel work (`<objects>`, `<signals>`, new road-mark types)
 plus license-clean assets, not import machinery. Splitting lets visual and
 standards completeness land first (M3a), so that when import arrives (M3b),
 imported districts render as convincing scenes instead of gray ribbons.
+
+## Why Materials & Structures is its own milestone (v0.7.0)
+
+**Decided (2026-07-13, maintainer).** Benchmarking the editor against
+RoadRunner reference footage put current coverage at roughly 60%. The
+unscheduled 40% clusters into three areas that GS-1's foundations touch but
+don't complete: a deeper **material system** (PBR-lite, an assignable material
+library, new/worn variants); auto-generated **bridge structures** (deck,
+abutments/piers, guardrails); and **city content density** (buildings,
+streetlights, gantry signs). These are a milestone's worth of work on their
+own and — critically — **GS-2 ("Imported district") is unapprovable without
+buildings and material variety**, so this milestone is its prerequisite.
+Rather than stretch M3a or overload M3b's import scope, it lands as its own
+milestone, **Materials & Structures (v0.7.0)**, between M3a (GS-1, v0.6.0) and
+M3b (now v0.8.0), shifting M4 → v0.9.0 and M5 → v0.10.0. Scope sketch:
+[seeds/materials-structures.md](seeds/materials-structures.md); golden scene:
+[GS-4 "Rural overpass"](golden_scenes/gs4_rural_overpass.md).
 
 ## Library Browser placement
 
@@ -148,10 +166,14 @@ in the owning milestone's seed.
 |---|---|
 | M2 | v0.3.0 |
 | Hardening | v0.4.0 |
-| M3a | v0.5.0 |
-| M3b | v0.6.0 |
-| M4 | v0.7.0 |
-| M5 | v0.8.0 |
+| M3a | v0.5.0 → v0.6.0 |
+| Materials & Structures | v0.7.0 |
+| M3b | v0.8.0 |
+| M4 | v0.9.0 |
+| M5 | v0.10.0 |
+
+M3a spans two releases: the UI/UX revamp shipped as v0.5.0, and the GS-1
+standards-completeness track lands as v0.6.0.
 
 Versions are targets, not promises; a milestone that needs an intermediate
 release takes the next patch/minor slot.
