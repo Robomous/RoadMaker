@@ -171,6 +171,23 @@ std::vector<MenuItem> build_context_menu(const MenuContext& context, ContextMenu
                    }
                    deps.document.undo_stack()->endMacro();
                  }});
+    // A straight lane arrow on each approach lane, pointing into the junction.
+    const bool has_arrow_arms = !edit::junction_lane_arrows(network, junction).empty();
+    items.push_back(
+        MenuItem{.text = QObject::tr("Add lane arrows to all arms"),
+                 .enabled = has_arrow_arms,
+                 .invoke = [deps, junction] {
+                   auto arrows = edit::junction_lane_arrows(deps.document.network(), junction);
+                   if (arrows.empty()) {
+                     return;
+                   }
+                   deps.document.undo_stack()->beginMacro(QObject::tr("Add lane arrows"));
+                   for (auto& [road, object] : arrows) {
+                     (void)deps.document.push_command(
+                         edit::add_object(deps.document.network(), road, std::move(object)));
+                   }
+                   deps.document.undo_stack()->endMacro();
+                 }});
     items.push_back(separator());
     items.push_back(MenuItem{.text = QObject::tr("Delete junction"), .invoke = [deps, junction] {
                                (void)deps.document.push_command(

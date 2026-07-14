@@ -894,6 +894,16 @@ NB_MODULE(_roadmaker, m) {
       "One solid stop line Object across each arm's approach lanes, just behind "
       "the crosswalk. Returns a list of (RoadId, Object); add each with "
       "edit.add_object.");
+  edit.def(
+      "junction_lane_arrows",
+      [](const roadmaker::RoadNetwork& network, roadmaker::JunctionId junction) {
+        return roadmaker::edit::junction_lane_arrows(network, junction);
+      },
+      "network"_a,
+      "junction"_a,
+      "One straight lane-arrow Object on each approach lane of every arm, "
+      "pointing into the junction. Returns a list of (RoadId, Object); add each "
+      "with edit.add_object.");
   edit.def("effective_waypoints",
            &roadmaker::edit::effective_waypoints,
            "road"_a,

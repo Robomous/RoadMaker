@@ -189,4 +189,54 @@ junction_stop_lines(const RoadNetwork& network, JunctionId junction, const StopL
   return out;
 }
 
+std::vector<std::pair<RoadId, Object>> junction_lane_arrows(const RoadNetwork& network,
+                                                            JunctionId junction,
+                                                            const LaneArrowParams& params) {
+  std::vector<std::pair<RoadId, Object>> out;
+  const Junction* record = network.junction(junction);
+  if (record == nullptr) {
+    return out;
+  }
+
+  OdrIdReserver ids(network);
+  for (const RoadId arm : distinct_arms(*record)) {
+    const Road* road = network.road(arm);
+    if (road == nullptr || road->plan_view.empty()) {
+      continue;
+    }
+    const std::optional<ContactPoint> facing = facing_end(network, arm, junction);
+    if (!facing.has_value()) {
+      continue;
+    }
+    const RoadEnd end{.road = arm, .contact = *facing};
+    const Expected<ContactState> contact = contact_state(network, end);
+    if (!contact) {
+      continue;
+    }
+
+    const double length = road->plan_view.length();
+    const double s = *facing == ContactPoint::Start
+                         ? params.setback_m + params.length_m / 2.0
+                         : length - params.setback_m - params.length_m / 2.0;
+    // The glyph points INTO the junction: +s for an End-facing arm (approach
+    // lanes travel toward s = length), -s for a Start-facing one.
+    const double hdg = *facing == ContactPoint::End ? 0.0 : std::numbers::pi;
+
+    for (const ContactLane& lane : driving_lanes_at(network, end, *contact, /*incoming=*/true)) {
+      const double center = lane.inner_t + ((lane.odr_id > 0 ? lane.width : -lane.width) / 2.0);
+      Object arrow;
+      arrow.odr_id = ids.next();
+      arrow.type_str = "roadMark"; // a road-mark object (type stays None)
+      arrow.subtype = "arrowStraight";
+      arrow.s = std::clamp(s, 0.0, length);
+      arrow.t = center;
+      arrow.hdg = hdg;
+      arrow.length = params.length_m;               // along travel
+      arrow.width = lane.width * params.width_frac; // narrower than the lane
+      out.emplace_back(arm, std::move(arrow));
+    }
+  }
+  return out;
+}
+
 } // namespace roadmaker::edit

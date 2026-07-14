@@ -56,6 +56,12 @@ def main() -> int:
     for road, stop_line in stop_lines:
         stack.push(network, rm.edit.add_object(network, road, stop_line))
 
+    # A straight arrow on each approach lane, pointing into the junction.
+    arrows = rm.edit.junction_lane_arrows(network, junction)
+    print(f"authoring {len(arrows)} lane arrows")
+    for road, arrow in arrows:
+        stack.push(network, rm.edit.add_object(network, road, arrow))
+
     assert rm.validate_network(network) == []
     rm.save_xodr(network, out_path, "junction_crosswalks_example")
     print(f"wrote {out_path}")
