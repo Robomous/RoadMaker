@@ -50,7 +50,15 @@ public:
     // Placed props: one shared mesh per prop model, one node per instance —
     // idiomatic glTF instancing, so many trees stay one mesh in the file.
     for (const ObjectInstance& instance : mesh.objects) {
-      const int node = add_prop_node(instance);
+      const int node = add_prop_node(instance.model_id, instance.position, instance.heading);
+      if (node >= 0) {
+        scene.nodes.push_back(node);
+      }
+    }
+    // Placed signals share the identical instancing path (one mesh per signal
+    // model, one node per placement).
+    for (const SignalInstance& instance : mesh.signal_instances) {
+      const int node = add_prop_node(instance.model_id, instance.position, instance.heading);
       if (node >= 0) {
         scene.nodes.push_back(node);
       }
@@ -263,16 +271,18 @@ private:
   /// kernel Z-up → glTF Y-up map (x,y,z)→(x,z,−y) is Rx(−90°), so a Z-up
   /// heading θ becomes a rotation about +Y by θ. Returns -1 for an unknown
   /// prop model (skipped).
-  int add_prop_node(const ObjectInstance& instance) {
-    const int mesh_index = prop_mesh_for(instance.model_id);
+  int add_prop_node(const std::string& model_id,
+                    const std::array<double, 3>& position,
+                    double heading) {
+    const int mesh_index = prop_mesh_for(model_id);
     if (mesh_index < 0) {
       return -1;
     }
     tinygltf::Node node;
-    node.name = instance.model_id;
+    node.name = model_id;
     node.mesh = mesh_index;
-    node.translation = {instance.position[0], instance.position[2], -instance.position[1]};
-    const double half = instance.heading * 0.5;
+    node.translation = {position[0], position[2], -position[1]};
+    const double half = heading * 0.5;
     node.rotation = {0.0, std::sin(half), 0.0, std::cos(half)};
     model_.nodes.push_back(std::move(node));
     return static_cast<int>(model_.nodes.size() - 1);

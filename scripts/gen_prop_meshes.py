@@ -145,6 +145,25 @@ def blob(cx: float, cy: float, cz: float,
     return _orient_outward(tris, (cx, cy, cz))
 
 
+def box(cx: float, cy: float, cz: float,
+        sx: float, sy: float, sz: float) -> list[Tri]:
+    """An axis-aligned box centred at (cx,cy,cz) with full extents sx,sy,sz.
+    Signal housings and sign plates are boxes; the "front" faces +x (local
+    heading 0), so a thin sx makes a plate whose face looks down +x."""
+    hx, hy, hz = sx / 2.0, sy / 2.0, sz / 2.0
+    v = [(cx - hx, cy - hy, cz - hz), (cx + hx, cy - hy, cz - hz),
+         (cx + hx, cy + hy, cz - hz), (cx - hx, cy + hy, cz - hz),
+         (cx - hx, cy - hy, cz + hz), (cx + hx, cy - hy, cz + hz),
+         (cx + hx, cy + hy, cz + hz), (cx - hx, cy + hy, cz + hz)]
+    quads = [(0, 3, 2, 1), (4, 5, 6, 7), (0, 1, 5, 4),
+             (2, 3, 7, 6), (1, 2, 6, 5), (3, 0, 4, 7)]
+    tris: list[Tri] = []
+    for a, b, c, d in quads:
+        tris.append((v[a], v[b], v[c]))
+        tris.append((v[a], v[c], v[d]))
+    return _orient_outward(tris, (cx, cy, cz))
+
+
 # --------------------------------------------------------------------------- #
 # Tree definitions — each part is (name, color, triangles).
 # --------------------------------------------------------------------------- #
@@ -211,6 +230,66 @@ def shrub() -> dict:
 
 
 TREES = [tree_pine(), tree_oak(), tree_birch(), tree_poplar(), shrub()]
+
+
+# --------------------------------------------------------------------------- #
+# Signal definitions — traffic light + generic sign. Same procedurally-authored
+# original-work provenance as the trees (no third-party art). A signal's local
+# frame faces +x (heading 0 points down +x); the mesh builder rotates it to the
+# world heading derived from the road tangent + the signal's hOffset. z=0 sits
+# on the road surface; the pole rises along +z. Colours are flat linear RGB.
+# --------------------------------------------------------------------------- #
+
+POLE_GREY = (0.32, 0.34, 0.36)
+HOUSING_BLACK = (0.10, 0.11, 0.12)
+LAMP_RED = (0.86, 0.14, 0.11)
+LAMP_AMBER = (0.94, 0.66, 0.12)
+LAMP_GREEN = (0.18, 0.70, 0.30)
+PLATE_WHITE = (0.92, 0.92, 0.90)
+PLATE_RIM = (0.74, 0.14, 0.12)
+
+
+def signal_light() -> dict:
+    """Three-lamp vertical traffic light on a pole. Housing faces +x; the lamps
+    sit on the +x face so a light placed facing oncoming traffic shows its
+    lenses. Overall height 3.9 m (pole 3.0 + housing 0.9)."""
+    pole = cylinder(0.08, 0.0, 3.0)
+    housing = box(0.0, 0.0, 3.42, 0.18, 0.26, 0.84)
+    lamp_r = box(0.10, 0.0, 3.66, 0.05, 0.14, 0.14)
+    lamp_a = box(0.10, 0.0, 3.42, 0.05, 0.14, 0.14)
+    lamp_g = box(0.10, 0.0, 3.18, 0.05, 0.14, 0.14)
+    return {
+        "id": "signal_light", "label": "Traffic light", "otype": "Signal",
+        "height": 3.9, "radius": 0.26,
+        "parts": [("pole", POLE_GREY, pole),
+                  ("housing", HOUSING_BLACK, housing),
+                  ("lamp_red", LAMP_RED, lamp_r),
+                  ("lamp_amber", LAMP_AMBER, lamp_a),
+                  ("lamp_green", LAMP_GREEN, lamp_g)],
+    }
+
+
+def sign_generic() -> dict:
+    """A generic round-ish regulatory sign: a thin plate on a pole, plate face
+    down +x. The plate is a white disc with a red rim (two coplanar boxes, the
+    rim slightly larger and behind) — enough to read as a sign at scene scale
+    without importing MUTCD artwork. Overall height 2.55 m."""
+    pole = cylinder(0.05, 0.0, 2.2)
+    rim = box(0.02, 0.0, 2.32, 0.03, 0.64, 0.64)
+    face = box(0.04, 0.0, 2.32, 0.03, 0.52, 0.52)
+    return {
+        "id": "sign_generic", "label": "Traffic sign", "otype": "Signal",
+        "height": 2.7, "radius": 0.32,
+        "parts": [("pole", POLE_GREY, pole),
+                  ("rim", PLATE_RIM, rim),
+                  ("face", PLATE_WHITE, face)],
+    }
+
+
+SIGNALS = [signal_light(), sign_generic()]
+
+# Everything the kernel embeds and the library/exporters resolve by id.
+MODELS = TREES + SIGNALS
 
 
 # --------------------------------------------------------------------------- #
@@ -287,7 +366,7 @@ def write_cpp() -> None:
         "",
     ]
     model_ids: list[str] = []
-    for tree in TREES:
+    for tree in MODELS:
         cid = tree["id"].replace("-", "_")
         model_ids.append(tree["id"])
         lines.append(f"const PropModel k_{cid} = {{")
@@ -310,8 +389,8 @@ def write_cpp() -> None:
         lines.append("};")
         lines.append("")
     lines.append("const std::array<const PropModel*, "
-                 f"{len(TREES)}> k_models = {{")
-    for tree in TREES:
+                 f"{len(MODELS)}> k_models = {{")
+    for tree in MODELS:
         cid = tree["id"].replace("-", "_")
         lines.append(f"    &k_{cid},")
     lines.append("};")
@@ -344,11 +423,11 @@ def write_cpp() -> None:
 def main() -> int:
     OBJ_DIR.mkdir(parents=True, exist_ok=True)
     GEN_CPP.parent.mkdir(parents=True, exist_ok=True)
-    for tree in TREES:
+    for tree in MODELS:
         write_obj(tree)
     write_cpp()
-    tri_total = sum(len(tris) for tree in TREES for _, _, tris in tree["parts"])
-    print(f"[gen_prop_meshes] wrote {len(TREES)} props "
+    tri_total = sum(len(tris) for tree in MODELS for _, _, tris in tree["parts"])
+    print(f"[gen_prop_meshes] wrote {len(MODELS)} models "
           f"({tri_total} triangles) → {OBJ_DIR} and {GEN_CPP}")
     return 0
 

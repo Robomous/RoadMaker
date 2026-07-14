@@ -81,6 +81,20 @@ struct ObjectInstance {
   double heading = 0.0;             ///< world heading [rad] about +Z
 };
 
+/// A placed <signal> as an INSTANCE of a bundled signal model
+/// (roadmaker::props — "signal_light" for a dynamic signal, "sign_generic" for
+/// a static one). Same instanced draw path as ObjectInstance: no per-signal
+/// geometry is baked, so many signals share one mesh. World frame is Z-up,
+/// meters; `position` is the pole base (sits on the road surface at z_offset);
+/// `heading` faces the model's +x front along the road tangent + hOffset.
+struct SignalInstance {
+  SignalId signal;                  ///< source OpenDRIVE <signal>
+  RoadId road;                      ///< owning road (DirtySet::objects channel)
+  std::string model_id;             ///< prop_library id ("signal_light"/"sign_generic")
+  std::array<double, 3> position{}; ///< world origin (pole base), xyz
+  double heading = 0.0;             ///< world heading [rad] about +Z
+};
+
 /// Whole-network tessellation result.
 struct NetworkMesh {
   std::vector<RoadMesh> roads;
@@ -94,6 +108,13 @@ struct NetworkMesh {
   /// — regenerated per owning road via the DirtySet::objects channel
   /// (remesh_objects), so a prop edit never re-tessellates a road surface.
   std::vector<ObjectInstance> objects;
+
+  /// Placed signals (traffic lights/signs), instanced from the bundled signal
+  /// models. Regenerated on the same DirtySet::objects channel as objects — a
+  /// signal edit never re-tessellates a road surface. (Named `signal_instances`,
+  /// not `signals`, because Qt's moc `signals` macro would rewrite the member in
+  /// any editor TU that includes this header.)
+  std::vector<SignalInstance> signal_instances;
 };
 
 } // namespace roadmaker

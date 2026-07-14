@@ -1,0 +1,7 @@
+# Materials for sign_generic (linear RGB).
+newmtl pole
+Kd 0.3200 0.3400 0.3600
+newmtl rim
+Kd 0.7400 0.1400 0.1200
+newmtl face
+Kd 0.9200 0.9200 0.9000

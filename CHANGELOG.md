@@ -52,6 +52,17 @@ through the M2 command layer (one undo step per edit, byte-identical undo) and
 is headless-testable.
 
 ### Added
+- **Signals render as 3D instances — traffic light + sign meshes** (GS-1 WS-C):
+  a placed `<signal>` now draws in the viewport (and glTF/USD exports) as an
+  instance of a bundled signal model — a dynamic signal as a three-lamp traffic
+  light, a static one as a sign on a pole. The models are procedurally authored
+  original work (`scripts/gen_prop_meshes.py`, MIT), embedded in
+  `prop_meshes.gen.cpp` alongside the trees. The mesh builder gains
+  `build_signal_instances`, emitting one `SignalInstance` per signal at its
+  world pose (s/t → position, road tangent + `hOffset` → heading, `zOffset`
+  lift); signals rebuild on the same `DirtySet::objects` re-mesh channel as
+  props, so a signal edit never re-tessellates a road surface. Python
+  `NetworkMesh.signal_count` / `object_count`. Part of the GS-1 signals set.
 - **Signal edit commands — add / move / delete a `<signal>`** (GS-1 WS-C): the
   kernel command layer gains `edit::add_signal` / `edit::move_signal` /
   `edit::delete_signal`, mirroring the object commands — every mutation is an

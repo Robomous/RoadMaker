@@ -238,4 +238,34 @@ The §4 per-`LaneType` textured materials landed on the A1 material/UV pipe:
   but never a crash. Guarded by `SurfaceTextures.BundledJpegsDecodeFromQrc`.
 - Tests: `SurfaceFor.*`, `BuildScene.TagsSurfaceClassesForTexturedMode`, the qrc
   decode test above. The rendered look is CI-verified (`editor-visual-artifacts`).
+
+## 11. As-built — WS-C signal meshes (instanced traffic lights + signs)
+
+Signals now render, reusing the §3 prop-instancing path end to end:
+
+- **Models:** `scripts/gen_prop_meshes.py` grew a `box` primitive and two
+  procedurally-authored original-work models — `signal_light` (pole + housing +
+  three lamps, ~3.9 m) and `sign_generic` (pole + red-rim white plate, ~2.7 m).
+  They join the tree table in `prop_meshes.gen.cpp` (`MODELS = TREES + SIGNALS`),
+  so `props::model("signal_light")` resolves everywhere props do (renderer, glTF,
+  USD). No third-party art, no new license rows.
+- **Instances:** `mesh::build_signal_instances` mirrors `build_object_instances`,
+  emitting one `SignalInstance` (kernel `mesh.hpp`) per `<signal>` — model id by
+  `@dynamic` (light vs. sign; absent ⇒ sign, the conservative default), world
+  pose from `s/t` → position, road tangent + `hOffset` → heading, `zOffset` lift.
+  Stored in `NetworkMesh::signal_instances` (named so, not `signals`, because Qt's
+  moc `signals` macro would rewrite the member in an editor TU).
+- **Dirty channel:** signals rebuild inside `remesh_objects` on the
+  `DirtySet::objects` channel — the same channel the signal edit commands (§WS-C
+  slice 1) already dirty — so add/move/delete re-instances the signal without
+  re-tessellating the road surface.
+- **Consumers:** `scene_builder` bakes signal parts to world via a shared
+  `append_model_items` (props + signals), tagging each `SceneItem` with the
+  `SignalId`; the glTF/USD exporters instance signals through the generalized
+  prop-node/`bake_instance` paths. Signal **picking/selection + properties** are
+  the next WS-C slice — signals draw and export now, but are not yet click-select.
+- Tests: `SignalMeshes.*` (model existence, dynamic/static resolution, pose,
+  `hOffset`/`zOffset`, remesh rebuild, absent-`@dynamic` default); the existing
+  glTF/USD/prop-library suites cover the shared instancing path. Python
+  `NetworkMesh.signal_count` + `examples/place_signals.py` meshes and asserts.
 </content>

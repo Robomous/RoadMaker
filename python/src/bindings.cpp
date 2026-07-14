@@ -1450,6 +1450,10 @@ NB_MODULE(_roadmaker, m) {
                    [](const roadmaker::NetworkMesh& mesh) { return mesh.roads.size(); })
       .def_prop_ro("junction_floor_count",
                    [](const roadmaker::NetworkMesh& mesh) { return mesh.junction_floors.size(); })
+      .def_prop_ro("object_count",
+                   [](const roadmaker::NetworkMesh& mesh) { return mesh.objects.size(); })
+      .def_prop_ro("signal_count",
+                   [](const roadmaker::NetworkMesh& mesh) { return mesh.signal_instances.size(); })
       .def_prop_ro("vertex_count",
                    [](const roadmaker::NetworkMesh& mesh) {
                      std::size_t count = 0;
@@ -1466,7 +1470,9 @@ NB_MODULE(_roadmaker, m) {
                    })
       .def("__repr__", [](const roadmaker::NetworkMesh& mesh) {
         return "NetworkMesh(roads=" + std::to_string(mesh.roads.size()) +
-               ", junction_floors=" + std::to_string(mesh.junction_floors.size()) + ")";
+               ", junction_floors=" + std::to_string(mesh.junction_floors.size()) +
+               ", objects=" + std::to_string(mesh.objects.size()) +
+               ", signals=" + std::to_string(mesh.signal_instances.size()) + ")";
       });
 
   m.def(
