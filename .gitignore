@@ -58,3 +58,6 @@ graphify-out/
 # Diagnostic evidence (renders, glb dumps) belongs in issues/PRs, never in
 # the repo (docs/contributing/pull-requests.md).
 diag/
+
+# gw1_replay.py generated artifacts
+gw1_replay_out/
