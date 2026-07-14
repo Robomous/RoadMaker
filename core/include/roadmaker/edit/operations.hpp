@@ -114,6 +114,18 @@ translate_roads(const RoadNetwork& network, std::span<const RoadId> road_ids, do
 [[nodiscard]] RM_API std::unique_ptr<Command>
 translate_road(const RoadNetwork& network, RoadId road, double dx, double dy);
 
+/// Rotates a single road about the world pivot (pivot_x, pivot_y) by `angle`
+/// [rad] CCW: every geometry record's start position rotates about the pivot and
+/// `angle` is added to its heading, and authoring waypoints rotate too.
+/// Elevation (s-relative) and each record's shape coefficients (defined in the
+/// record's local u/v frame, which follows the heading) are unchanged — the
+/// rotation is rigid, so arcs/spirals/paramPoly3 need no coefficient edit. Same
+/// connectivity policy as translate_road: refuses a junction road (invalid_command,
+/// junction named), and a road-level link to a road that does not rotate with it
+/// breaks on BOTH sides (break + rotate = one undo step). Undo is byte-identical.
+[[nodiscard]] RM_API std::unique_ptr<Command>
+rotate_road(const RoadNetwork& network, RoadId road, double angle, double pivot_x, double pivot_y);
+
 /// Splits at station s: the original keeps [0, s), a new road (auto id)
 /// gets [s, length). Sections, profiles, links and lane links are carried
 /// over. M2 restriction: roads participating in a junction cannot be split,

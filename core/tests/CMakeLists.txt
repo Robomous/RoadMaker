@@ -25,6 +25,7 @@ add_executable(roadmaker_core_tests
   test_edit_operations.cpp
   test_assembly.cpp
   test_translate_road.cpp
+  test_rotate_road.cpp
   test_insert_node.cpp
   test_merge_roads.cpp
   test_edit_snap.cpp

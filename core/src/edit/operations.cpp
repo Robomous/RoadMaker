@@ -1261,6 +1261,118 @@ translate_road(const RoadNetwork& network, RoadId road, double dx, double dy) {
   return translate_roads(network, ids, dx, dy);
 }
 
+std::unique_ptr<Command> rotate_road(
+    const RoadNetwork& network, RoadId road_id, double angle, double pivot_x, double pivot_y) {
+  static constexpr std::string_view kName = "Rotate Road";
+  const Road* original_ptr = network.road(road_id);
+  if (original_ptr == nullptr) {
+    return invalid_command(std::string(kName),
+                           Error{.code = ErrorCode::InvalidArgument, .message = "stale road id"});
+  }
+
+  // Junction roads have generated poses (see translate_roads) — refuse.
+  const std::vector<JunctionId> touched = junctions_touching(network, road_id);
+  if (!touched.empty()) {
+    const Junction* junction = network.junction(touched.front());
+    return invalid_command(
+        std::string(kName),
+        Error{.code = ErrorCode::InvalidArgument,
+              .message =
+                  fmt::format("road {} participates in junction {} — junction roads can't be "
+                              "rotated; delete the junction or move its free end nodes instead",
+                              original_ptr->odr_id,
+                              junction != nullptr ? junction->odr_id : std::string("?"))});
+  }
+
+  const double cos_a = std::cos(angle);
+  const double sin_a = std::sin(angle);
+  const auto rot_x = [&](double x, double y) {
+    return pivot_x + (cos_a * (x - pivot_x)) - (sin_a * (y - pivot_y));
+  };
+  const auto rot_y = [&](double x, double y) {
+    return pivot_y + (sin_a * (x - pivot_x)) + (cos_a * (y - pivot_y));
+  };
+
+  // A single road rotating alone breaks every road-level link it has (the ends
+  // no longer meet). links_to(road_id) finds neighbours pointing INTO it so
+  // their back-links clear in the same command (break + rotate = one undo step).
+  const auto links_to_road = [&](const std::optional<RoadLink>& link) {
+    if (!link.has_value()) {
+      return false;
+    }
+    const auto* target = std::get_if<RoadId>(&link->target);
+    return target != nullptr && *target == road_id;
+  };
+  const auto is_road_link = [](const std::optional<RoadLink>& link) {
+    return link.has_value() && std::get_if<RoadId>(&link->target) != nullptr;
+  };
+
+  std::vector<std::pair<RoadId, Road>> far_before;
+  std::vector<std::pair<RoadId, Road>> far_after;
+  network.for_each_road([&](RoadId id, const Road& road) {
+    if (id == road_id || (!links_to_road(road.predecessor) && !links_to_road(road.successor))) {
+      return;
+    }
+    Road after = road;
+    if (links_to_road(after.predecessor)) {
+      after.predecessor.reset();
+    }
+    if (links_to_road(after.successor)) {
+      after.successor.reset();
+    }
+    far_before.emplace_back(id, road);
+    far_after.emplace_back(id, std::move(after));
+  });
+
+  DirtySet dirty;
+  dirty.roads.push_back(road_id);
+  for (const auto& [id, road] : far_before) {
+    dirty.roads.push_back(id);
+  }
+
+  auto command = std::make_unique<GenericCommand>(std::string(kName), std::move(dirty));
+
+  const Road& original = *original_ptr;
+  Road after = original;
+  ReferenceLine rotated;
+  for (GeometryRecord record : original.plan_view.records()) {
+    const double nx = rot_x(record.x, record.y);
+    const double ny = rot_y(record.x, record.y);
+    record.x = nx;
+    record.y = ny;
+    // hdg' = hdg + angle, normalized to [-pi, pi] (atan2 is periodic, so the
+    // shape variant — arc/spiral/paramPoly3, all in the local heading frame —
+    // needs no change).
+    record.hdg = std::atan2(std::sin(record.hdg + angle), std::cos(record.hdg + angle));
+    rotated.append(record);
+  }
+  after.plan_view = std::move(rotated);
+
+  if (after.authoring_waypoints.has_value()) {
+    for (Waypoint& waypoint : *after.authoring_waypoints) {
+      const double nx = rot_x(waypoint.x, waypoint.y);
+      const double ny = rot_y(waypoint.x, waypoint.y);
+      waypoint.x = nx;
+      waypoint.y = ny;
+    }
+  }
+
+  if (is_road_link(after.predecessor)) {
+    after.predecessor.reset();
+  }
+  if (is_road_link(after.successor)) {
+    after.successor.reset();
+  }
+
+  command->before.roads.emplace_back(road_id, original);
+  command->after.roads.emplace_back(road_id, std::move(after));
+  for (std::size_t i = 0; i < far_before.size(); ++i) {
+    command->before.roads.push_back(std::move(far_before[i]));
+    command->after.roads.push_back(std::move(far_after[i]));
+  }
+  return command;
+}
+
 std::unique_ptr<Command> split_road(const RoadNetwork& network, RoadId road_id, double split_s) {
   static constexpr std::string_view kName = "Split Road";
   const auto fail = [&](std::string message) {
