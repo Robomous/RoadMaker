@@ -71,6 +71,9 @@ def main() -> int:
         "--show-tour", action="store_true", help="start the guided-tour overlay (with --ui)"
     )
     parser.add_argument(
+        "--textured", action="store_true", help="render in Textured mode (default is plain Sober)"
+    )
+    parser.add_argument(
         "--skip-on-no-gl",
         action="store_true",
         help="exit 0 when the editor reports no usable OpenGL (CI runners)",
@@ -106,6 +109,8 @@ def main() -> int:
         cmd += ["--drop-library", args.drop_library]
     if args.show_tour:
         cmd += ["--show-tour"]
+    if args.textured:
+        cmd += ["--textured"]
     result = subprocess.run(cmd, env=os.environ.copy(), check=False)
     if result.returncode == NO_GL_EXIT and args.skip_on_no_gl:
         print("editor_screenshot: no GL on this runner — skipped (not a failure)")

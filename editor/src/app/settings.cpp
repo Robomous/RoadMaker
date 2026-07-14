@@ -63,7 +63,9 @@ void Settings::set_tour_seen(bool seen) {
 }
 
 bool Settings::textured_rendering() const {
-  return settings_.value(QStringLiteral("view/textured_rendering"), true).toBool();
+  // Default OFF: the editor opens in the plain-color + reference-grid (Sober)
+  // look; textured mode (lit surfaces, grass ground, asphalt/concrete) is opt-in.
+  return settings_.value(QStringLiteral("view/textured_rendering"), false).toBool();
 }
 
 void Settings::set_textured_rendering(bool textured) {

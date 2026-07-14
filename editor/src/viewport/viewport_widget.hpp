@@ -251,9 +251,10 @@ private:
   bool gl_ready_ = false;
   bool scene_dirty_ = false;
 
-  /// Render mode: true = daytime Textured (default), false = flat Sober. Drives
-  /// the renderer Environment and the reference-grid dimming via apply_render_mode().
-  bool textured_rendering_ = true;
+  /// Render mode: false = plain-color + reference-grid (Sober, the DEFAULT),
+  /// true = daytime Textured (lit surfaces, grass ground, textures — opt-in).
+  /// Drives the renderer Environment/ground/grid via apply_render_mode().
+  bool textured_rendering_ = false;
 
   /// Surface textures uploaded once at GL init (from the :/textures qrc). Invalid
   /// if loading failed — material_for then falls back to the flat mesh color.

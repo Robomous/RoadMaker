@@ -13,8 +13,9 @@ through the M2 command layer (one undo step per edit, byte-identical undo) and
 is headless-testable.
 
 ### Added
-- **Textured road & sidewalk surfaces** (GS-1 WS-A part 2 + assets): in Textured
-  mode the driving surfaces now render with a real **asphalt** texture and
+- **Textured road & sidewalk surfaces** (GS-1 WS-A part 2 + assets): in the
+  opt-in Textured mode the driving surfaces now render with a real **asphalt**
+  texture and
   sidewalks/curbs with **concrete** (two CC0 512² textures from Poly Haven,
   bundled in the editor), tiled at 4 m via the material UV pipe, and lane
   markings render as **bright flat paint** (unlit) instead of shaded off-white.
@@ -25,9 +26,9 @@ is headless-testable.
   in `docs/design/m3a/textured_render.md`. Closes the render half of
   [#71](https://github.com/Robomous/RoadMaker/issues/71) surface work + assets
   [#70](https://github.com/Robomous/RoadMaker/issues/70) (textures).
-- **Procedural grass ground under the network** (GS-1 WS-D, part 2): Textured
-  mode now draws a **procedural grass ground plane** beneath the roads instead of
-  floating over a bare grid — a camera-following surface (value-noise mottled,
+- **Procedural grass ground under the network** (GS-1 WS-D, part 2): the opt-in
+  Textured mode draws a **procedural grass ground plane** beneath the roads instead
+  of floating over a bare grid — a camera-following surface (value-noise mottled,
   lit by the scene environment, fading into the sky at the horizon) at the
   network floor, so the scene finally sits on something. It renders opaque with
   depth so the roads cleanly occlude it, and it's a render-layer-only surface
@@ -36,15 +37,15 @@ is headless-testable.
   deferred to the terrain ADR ([#83](https://github.com/Robomous/RoadMaker/issues/83)).
   Per-material texture-vs-procedural decisions: `docs/design/m3a/textured_render.md`.
   Part of [#71](https://github.com/Robomous/RoadMaker/issues/71).
-- **Daytime lighting + a `View → Textured Rendering` toggle** (GS-1 WS-D, part
-  1): the viewport now renders with a **hemisphere ambient (sky/ground by
-  surface normal) + one directional sun** driven by the renderer `Environment`,
-  giving surfaces real daytime shading instead of a single flat lambert term. A
-  new **Textured** mode is the default; a **Sober** mode (persisted via `View →
-  Textured Rendering`) reproduces the flat M2 look **exactly** (white ambient
-  0.35 + 0.65·lambert) and stays the packaging/CI smoke path. Textured mode also
-  fades the reference grid so it reads as scenery, not a blueprint. No shadow
-  maps (M3a decision 3). Switching modes is instant (no re-mesh). Part of
+- **Opt-in daytime lighting via a `View → Textured Rendering` toggle** (GS-1
+  WS-D, part 1): the plain-color + reference-grid (**Sober**) look stays the
+  **default**; a new opt-in **Textured** mode renders with a **hemisphere ambient
+  (sky/ground by surface normal) + one directional sun** driven by the renderer
+  `Environment`, giving surfaces real daytime shading, and fades the reference
+  grid so it reads as scenery. Persisted via `View → Textured Rendering`
+  (`view/textured_rendering`, default off). Sober reproduces the flat M2 look
+  **exactly** (white ambient 0.35 + 0.65·lambert). No shadow maps (M3a decision
+  3). Switching modes is instant (no re-mesh). Part of
   [#71](https://github.com/Robomous/RoadMaker/issues/71).
 - **Renderer material/texture foundation + mesh texture coordinates** (GS-1
   WS-A, part 1): the `Renderer` interface gains `TextureHandle`/`TextureData`

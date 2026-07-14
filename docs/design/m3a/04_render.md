@@ -184,11 +184,16 @@ The §2 lighting pass and §5 toggle landed together:
   original direction) — the sober-parity guarantee is a unit test, not just a
   pixel review.
 - **The toggle is `View → Textured Rendering`** (checkable, persisted as
-  `view/textured_rendering`, default on). It calls
-  `ViewportWidget::set_textured_rendering`, which swaps the `Environment` and
-  dims the reference-grid alpha in textured mode — no re-mesh, per §5. The
-  screenshot/packaging path keeps rendering (sober stays available for
-  GL-limited smoke).
+  `view/textured_rendering`). It calls `ViewportWidget::set_textured_rendering`,
+  which swaps the `Environment` and dims the reference-grid alpha in textured
+  mode — no re-mesh, per §5.
+- **Default changed to Sober (maintainer decision, 2026-07-14).** The frozen §5
+  made Textured the default; the maintainer reversed this — the editor opens in
+  the **plain-color + reference-grid** look and Textured (lit surfaces, grass
+  ground, textures) is **opt-in** (`view/textured_rendering` default **off**).
+  The `--screenshot` CLI and `editor_screenshot.py` gained a `--textured` flag to
+  capture the daytime look (the golden scene and one CI showcase shot use it);
+  every other capture is Sober.
 - Tests: `Lighting.SoberPresetReproducesFlatM2Shading`,
   `Lighting.TexturedPresetIsTheDaytimeDefault`. The rendered look is captured by
   the `editor-visual-artifacts` CI job (Linux + xvfb); local macOS offscreen has

@@ -3,8 +3,9 @@
 As-built companion to [`04_render.md`](04_render.md): the concrete
 texture-vs-procedural choice for each GS-1 surface class, recorded as it lands
 (the design doc mandates recording these per `03_assets.md` and `00` risk 3).
-The render-mode framing (Textured default / Sober toggle, hemisphere +
-directional lighting, no shadows) is in `04_render.md` §7–§9.
+The render-mode framing (**Sober plain-color + grid is the default**; Textured
+is the opt-in `View → Textured Rendering` toggle — hemisphere + directional
+lighting, textures, grass, no shadows) is in `04_render.md` §5, §7–§10.
 
 ## Decision table
 
