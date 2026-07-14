@@ -13,6 +13,16 @@ through the M2 command layer (one undo step per edit, byte-identical undo) and
 is headless-testable.
 
 ### Added
+- **Daytime lighting + a `View → Textured Rendering` toggle** (GS-1 WS-D, part
+  1): the viewport now renders with a **hemisphere ambient (sky/ground by
+  surface normal) + one directional sun** driven by the renderer `Environment`,
+  giving surfaces real daytime shading instead of a single flat lambert term. A
+  new **Textured** mode is the default; a **Sober** mode (persisted via `View →
+  Textured Rendering`) reproduces the flat M2 look **exactly** (white ambient
+  0.35 + 0.65·lambert) and stays the packaging/CI smoke path. Textured mode also
+  fades the reference grid so it reads as scenery, not a blueprint. No shadow
+  maps (M3a decision 3). Switching modes is instant (no re-mesh). Part of
+  [#71](https://github.com/Robomous/RoadMaker/issues/71).
 - **Renderer material/texture foundation + mesh texture coordinates** (GS-1
   WS-A, part 1): the `Renderer` interface gains `TextureHandle`/`TextureData`
   (RGBA8 upload), a `Material` (optional base-color texture + tint + per-meter

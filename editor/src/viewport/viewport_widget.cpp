@@ -49,7 +49,7 @@ ViewportWidget::ViewportWidget(Document& document,
   setFocusPolicy(Qt::StrongFocus);
   setMinimumSize(320, 240);
   setAcceptDrops(true); // library items drag onto the scene to create geometry
-  renderer_->set_backdrop(theme::current().backdrop()); // safe pre-init
+  apply_render_mode();  // pushes backdrop + environment (both safe pre-init)
 
   // Overlay clock + a repaint timer that only runs while a toast or the hint
   // is animating (started/stopped by refresh_overlay_animation).
@@ -825,6 +825,29 @@ void ViewportWidget::wheelEvent(QWheelEvent* event) {
     update();
   }
   event->accept();
+}
+
+void ViewportWidget::apply_render_mode() {
+  renderer_->set_environment(textured_rendering_ ? textured_lighting() : sober_lighting());
+
+  // In textured mode the reference grid is scenery-competing clutter, so fade
+  // it heavily (the daytime surfaces carry the scene); sober mode keeps the
+  // full-strength grid it has always had.
+  BackdropColors backdrop = theme::current().backdrop();
+  if (textured_rendering_) {
+    backdrop.grid_major[3] *= 0.35F;
+    backdrop.grid_minor[3] *= 0.35F;
+  }
+  renderer_->set_backdrop(backdrop);
+}
+
+void ViewportWidget::set_textured_rendering(bool textured) {
+  if (textured == textured_rendering_) {
+    return;
+  }
+  textured_rendering_ = textured;
+  apply_render_mode();
+  update();
 }
 
 void ViewportWidget::reset_camera() {

@@ -170,4 +170,27 @@ mapping + continuity), `ToRenderData.NarrowsUVsWhenProvided`,
 `Material.DefaultsAreFlatAndUninstanced` (the flat-look guarantee). The
 offscreen frame/parity and instancing-behaviour tests (§6) land with D1/WS-C
 when there is a visible surface to assert.
+
+## 8. As-built — WS-D part 1 (lighting + render-mode toggle)
+
+The §2 lighting pass and §5 toggle landed together:
+
+- **`Environment` now drives the mesh fragment shader** (hemisphere ambient by
+  `normal.z` + one directional sun), replacing the hardcoded
+  `0.35 + 0.65*lambert`. Two presets live next to the struct in `renderer.hpp`:
+  `textured_lighting()` (the daytime default, == `Environment{}`) and
+  `sober_lighting()`, tuned so the shader reduces to the **exact** old grey
+  shading (sky == ground == white, ambient 0.35, white sun at 0.65 along the
+  original direction) — the sober-parity guarantee is a unit test, not just a
+  pixel review.
+- **The toggle is `View → Textured Rendering`** (checkable, persisted as
+  `view/textured_rendering`, default on). It calls
+  `ViewportWidget::set_textured_rendering`, which swaps the `Environment` and
+  dims the reference-grid alpha in textured mode — no re-mesh, per §5. The
+  screenshot/packaging path keeps rendering (sober stays available for
+  GL-limited smoke).
+- Tests: `Lighting.SoberPresetReproducesFlatM2Shading`,
+  `Lighting.TexturedPresetIsTheDaytimeDefault`. The rendered look is captured by
+  the `editor-visual-artifacts` CI job (Linux + xvfb); local macOS offscreen has
+  no GL context, so pixel review happens on CI artifacts.
 </content>

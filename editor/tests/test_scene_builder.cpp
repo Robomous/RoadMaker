@@ -106,6 +106,32 @@ TEST(BuildScene, FlattensPatchesMarkingsAndFloors) {
   EXPECT_FLOAT_EQ(scene.bounds.hi[2], 2.0F);
 }
 
+// The Sober preset must reproduce the M2 `0.35 + 0.65*lambert` grey shading:
+// a white, normal-independent ambient (sky == ground) at 0.35 plus a white
+// directional term at 0.65 along the original hardcoded light direction.
+TEST(Lighting, SoberPresetReproducesFlatM2Shading) {
+  const Environment sober = sober_lighting();
+  EXPECT_EQ(sober.sky_color, sober.ground_color); // no hemisphere tint
+  EXPECT_FLOAT_EQ(sober.sky_color[0], 1.0F);
+  EXPECT_FLOAT_EQ(sober.ambient, 0.35F);
+  EXPECT_FLOAT_EQ(sober.sun_color[0], 1.0F);
+  EXPECT_FLOAT_EQ(sober.sun_intensity, 0.65F);
+  EXPECT_FALSE(sober.procedural_sky);
+  // Same sun direction the pre-Environment shader hardcoded.
+  EXPECT_FLOAT_EQ(sober.sun_dir[0], 0.35F);
+  EXPECT_FLOAT_EQ(sober.sun_dir[1], 0.25F);
+  EXPECT_FLOAT_EQ(sober.sun_dir[2], 0.90F);
+}
+
+TEST(Lighting, TexturedPresetIsTheDaytimeDefault) {
+  const Environment textured = textured_lighting();
+  const Environment defaults; // struct defaults == the textured preset
+  EXPECT_EQ(textured.sky_color, defaults.sky_color);
+  EXPECT_TRUE(textured.procedural_sky);
+  // Textured sky is a tinted hemisphere, unlike Sober's flat white.
+  EXPECT_NE(textured.sky_color, sober_lighting().sky_color);
+}
+
 TEST(BuildScene, RoadPatchesInheritSharedGridUVs) {
   NetworkMesh mesh;
   RoadMesh road;

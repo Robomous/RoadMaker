@@ -36,6 +36,11 @@ public:
   [[nodiscard]] bool tour_seen() const;
   void set_tour_seen(bool seen);
 
+  /// Viewport render mode: true = daytime Textured (default), false = flat
+  /// Sober (the M2 look / packaging smoke path). docs/design/m3a/04_render.md §5.
+  [[nodiscard]] bool textured_rendering() const;
+  void set_textured_rendering(bool textured);
+
   static constexpr int kMaxRecentFiles = 10;
 
 private:

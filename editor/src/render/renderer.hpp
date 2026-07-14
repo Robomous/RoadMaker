@@ -126,9 +126,9 @@ struct BackdropColors {
 
 /// Scene lighting + sky description (all plain floats — theme/render boundary
 /// stays Qt- and GL-free). Hemisphere ambient (sky/ground lerp by normal.z) +
-/// one directional sun; no shadow maps (M3a decision 3). The default values
-/// reproduce the M2 flat directional look until the textured-mode pass (D1)
-/// drives them from the active render mode.
+/// one directional sun; no shadow maps (M3a decision 3). The DEFAULT values are
+/// the daytime "Textured" preset (the new default render mode); `sober_lighting`
+/// below reproduces the flat M2 look for the Sober toggle.
 struct Environment {
   std::array<float, 3> sun_dir{0.35F, 0.25F, 0.90F}; ///< world, Z-up (to light)
   std::array<float, 3> sun_color{1.0F, 0.97F, 0.90F};
@@ -138,6 +138,27 @@ struct Environment {
   float ambient = 0.35F;
   bool procedural_sky = true; ///< false → sampled HDRI (later render polish)
 };
+
+/// The daytime "Textured" render mode: hemisphere sky/ground + a warm sun.
+[[nodiscard]] inline Environment textured_lighting() {
+  return Environment{};
+}
+
+/// The "Sober" render mode — reproduces the M2 flat look exactly: a white,
+/// normal-independent ambient of 0.35 plus a white directional term of
+/// 0.65*lambert along the original hardcoded light direction, i.e. the old
+/// `0.35 + 0.65*lambert` grey shading. Kept as the packaging/CI smoke path.
+[[nodiscard]] inline Environment sober_lighting() {
+  Environment env;
+  env.sun_dir = {0.35F, 0.25F, 0.90F};
+  env.sun_color = {1.0F, 1.0F, 1.0F};
+  env.sky_color = {1.0F, 1.0F, 1.0F};    // sky == ground → normal-independent
+  env.ground_color = {1.0F, 1.0F, 1.0F}; // ambient term, so no hemisphere tint
+  env.sun_intensity = 0.65F;
+  env.ambient = 0.35F;
+  env.procedural_sky = false;
+  return env;
+}
 
 class Renderer {
 public:

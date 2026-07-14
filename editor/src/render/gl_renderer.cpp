@@ -32,21 +32,33 @@ in vec2 v_uv;
 uniform vec4 u_color;
 uniform float u_highlight;  // accent mix strength: 0 none, hover < selected
 uniform vec3 u_accent;      // theme accent token (hover/selection emphasis)
-uniform float u_lit;        // 0 = unlit (lines), 1 = lambert
+uniform float u_lit;        // 0 = unlit (lines), 1 = lit
 uniform int u_has_texture;  // 1 = sample u_base_color, 0 = flat u_color
 uniform sampler2D u_base_color;
 uniform float u_uv_scale;   // texels per meter (material tiling)
 uniform vec4 u_tint;        // multiplies the texture sample
+// Environment lighting (hemisphere ambient + one directional sun). The Sober
+// preset sets sky == ground == white and intensity 0.65 so this reduces to the
+// old 0.35 + 0.65*lambert grey shading exactly.
+uniform vec3 u_sun_dir;
+uniform vec3 u_sun_color;
+uniform float u_sun_intensity;
+uniform vec3 u_sky_light;
+uniform vec3 u_ground_light;
+uniform float u_ambient;
 out vec4 frag_color;
 void main() {
   // A default Material carries no texture, so u_has_texture stays 0 and the
-  // flat u_color path below is byte-identical to the pre-material renderer.
+  // flat u_color path is used.
   vec4 albedo = u_has_texture == 1
       ? texture(u_base_color, v_uv * u_uv_scale) * u_tint
       : u_color;
-  vec3 light_dir = normalize(vec3(0.35, 0.25, 0.9));
-  float lambert = max(dot(normalize(v_normal), light_dir), 0.0);
-  float shade = mix(1.0, 0.35 + 0.65 * lambert, u_lit);
+  vec3 n = normalize(v_normal);
+  vec3 hemi = mix(u_ground_light, u_sky_light, 0.5 * (n.z + 1.0)) * u_ambient;
+  float lambert = max(dot(n, normalize(u_sun_dir)), 0.0);
+  vec3 direct = u_sun_color * (u_sun_intensity * lambert);
+  vec3 lighting = hemi + direct;                // colored light multiplier
+  vec3 shade = mix(vec3(1.0), lighting, u_lit); // lines (u_lit=0) stay unlit
   vec3 base = albedo.rgb * shade;
   frag_color = vec4(mix(base, u_accent, u_highlight), albedo.a);
 }
@@ -204,6 +216,12 @@ bool GLRenderer::init() {
   u_base_color_ = gl::GetUniformLocation(program_, "u_base_color");
   u_uv_scale_ = gl::GetUniformLocation(program_, "u_uv_scale");
   u_tint_ = gl::GetUniformLocation(program_, "u_tint");
+  u_sun_dir_ = gl::GetUniformLocation(program_, "u_sun_dir");
+  u_sun_color_ = gl::GetUniformLocation(program_, "u_sun_color");
+  u_sun_intensity_ = gl::GetUniformLocation(program_, "u_sun_intensity");
+  u_sky_light_ = gl::GetUniformLocation(program_, "u_sky_light");
+  u_ground_light_ = gl::GetUniformLocation(program_, "u_ground_light");
+  u_ambient_ = gl::GetUniformLocation(program_, "u_ambient");
   u_sky_top_ = gl::GetUniformLocation(sky_program_, "u_sky_top");
   u_sky_horizon_ = gl::GetUniformLocation(sky_program_, "u_sky_horizon");
   u_grid_view_ = gl::GetUniformLocation(grid_program_, "u_view");
@@ -425,6 +443,22 @@ void GLRenderer::render(const std::vector<DrawItem>& items,
   gl::UniformMatrix4fv(u_view_, 1, 0, camera.view.data());
   gl::UniformMatrix4fv(u_projection_, 1, 0, camera.projection.data());
   gl::Uniform3f(u_accent_, backdrop_.highlight[0], backdrop_.highlight[1], backdrop_.highlight[2]);
+  gl::Uniform3f(
+      u_sun_dir_, environment_.sun_dir[0], environment_.sun_dir[1], environment_.sun_dir[2]);
+  gl::Uniform3f(u_sun_color_,
+                environment_.sun_color[0],
+                environment_.sun_color[1],
+                environment_.sun_color[2]);
+  gl::Uniform1f(u_sun_intensity_, environment_.sun_intensity);
+  gl::Uniform3f(u_sky_light_,
+                environment_.sky_color[0],
+                environment_.sky_color[1],
+                environment_.sky_color[2]);
+  gl::Uniform3f(u_ground_light_,
+                environment_.ground_color[0],
+                environment_.ground_color[1],
+                environment_.ground_color[2]);
+  gl::Uniform1f(u_ambient_, environment_.ambient);
 
   // Accent mix strength per feedback state: a subtle brighten on hover, a
   // stronger tint on selection (both toward the theme accent).
