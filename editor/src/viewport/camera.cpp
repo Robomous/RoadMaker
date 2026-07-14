@@ -23,6 +23,15 @@ void OrbitCamera::set_view(float yaw, float pitch) {
   pitch_ = std::clamp(pitch, 0.05F, kPi / 2.0F - 0.01F);
 }
 
+void OrbitCamera::set_pose(const std::array<float, 3>& target,
+                           float yaw,
+                           float pitch,
+                           float distance) {
+  target_ = target;
+  distance_ = std::clamp(distance, kMinDistance, kMaxDistance);
+  set_view(yaw, pitch);
+}
+
 void OrbitCamera::pan_pixels(float dx_pixels, float dy_pixels, float viewport_height) {
   // Exact per-pixel world scale at the target depth. fov_y matches matrices().
   const float fov_y = 50.0F * kPi / 180.0F;

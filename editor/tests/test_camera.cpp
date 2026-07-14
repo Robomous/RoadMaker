@@ -51,6 +51,20 @@ TEST(OrbitCamera, FrameSetsClampedDistance) {
   EXPECT_FLOAT_EQ(camera.distance(), 2.0F); // min-distance clamp
 }
 
+TEST(OrbitCamera, SetPosePlacesTheEyeAtTheExactWorldPoint) {
+  // The GS-1 golden camera: eye (−55, −55, 35) looking at the origin. set_pose
+  // must reproduce that eye regardless of any prior framing, so the golden
+  // baseline is scene-independent.
+  constexpr float kPi = 3.14159265358979F;
+  OrbitCamera camera;
+  camera.frame({999.0F, 999.0F, 999.0F}, 500.0F); // prior framing must not leak
+  camera.set_pose({0.0F, 0.0F, 0.0F}, -3.0F * kPi / 4.0F, 0.42294F, 85.294F);
+  const CameraMatrices m = camera.matrices(16.0F / 9.0F);
+  EXPECT_NEAR(m.eye[0], -55.0F, 0.05F);
+  EXPECT_NEAR(m.eye[1], -55.0F, 0.05F);
+  EXPECT_NEAR(m.eye[2], 35.0F, 0.05F);
+}
+
 TEST(OrbitCamera, ZoomIsExponentialAndClamped) {
   OrbitCamera camera;
   const float before = camera.distance();

@@ -32,6 +32,11 @@ public:
   /// Absolute orientation (screenshot presets); same pitch clamp as orbit().
   void set_view(float yaw, float pitch);
 
+  /// Absolute pose: target, orientation, and distance in one call — for a fixed
+  /// golden-scene camera whose eye must land at an exact world point regardless
+  /// of scene bounds (unlike frame(), which fits the distance to a radius).
+  void set_pose(const std::array<float, 3>& target, float yaw, float pitch, float distance);
+
   [[nodiscard]] CameraMatrices matrices(float aspect) const;
 
   [[nodiscard]] float distance() const { return distance_; }
