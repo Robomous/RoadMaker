@@ -1309,6 +1309,25 @@ NB_MODULE(_roadmaker, m) {
            "hdg"_a = std::optional<double>{},
            "Re-locates an object to road-relative (s, t); hdg (rad) optional.");
   edit.def(
+      "add_signal",
+      [](const roadmaker::RoadNetwork& network, roadmaker::RoadId road, roadmaker::Signal signal) {
+        return roadmaker::edit::add_signal(network, road, std::move(signal));
+      },
+      "network"_a,
+      "road"_a,
+      "signal"_a,
+      "Adds an OpenDRIVE <signal> (traffic light / sign) to a road; signal.road "
+      "is set to `road`. Located by road-relative s/t. Undo/redo keep the id.");
+  edit.def("delete_signal", &roadmaker::edit::delete_signal, "network"_a, "signal"_a);
+  edit.def("move_signal",
+           &roadmaker::edit::move_signal,
+           "network"_a,
+           "signal"_a,
+           "s"_a,
+           "t"_a,
+           "h_offset"_a = std::optional<double>{},
+           "Re-locates a signal to road-relative (s, t); h_offset (rad) optional.");
+  edit.def(
       "rename_road",
       [](const roadmaker::RoadNetwork& network, roadmaker::RoadId road, std::string name) {
         return roadmaker::edit::rename_road(network, road, std::move(name));

@@ -13,6 +13,16 @@ through the M2 command layer (one undo step per edit, byte-identical undo) and
 is headless-testable.
 
 ### Added
+- **Signal edit commands — add / move / delete a `<signal>`** (GS-1 WS-C): the
+  kernel command layer gains `edit::add_signal` / `edit::move_signal` /
+  `edit::delete_signal`, mirroring the object commands — every mutation is an
+  undoable `edit::Command` (apply→revert byte-identical, restore-in-place keeps
+  the `SignalId` across undo/redo, a failed apply leaves the network untouched).
+  The `Values`/`GenericCommand` restore engine now carries signals as leaf
+  entities. Python `edit.add_signal` / `move_signal` / `delete_signal` +
+  `examples/place_signals.py`. Groundwork for placing traffic lights and signs;
+  the Library **Signals** category, 3D meshes, and properties follow. Part of
+  [#72](https://github.com/Robomous/RoadMaker/issues/72).
 - **Add lane arrows to all arms of a junction** (GS-1 WS-B): the junction
   context menu gains **Add lane arrows to all arms** — a straight lane arrow
   (`<object subtype="arrowStraight">`) on each approach lane, pointing into the

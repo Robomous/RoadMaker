@@ -358,6 +358,32 @@ add_object(const RoadNetwork& network, RoadId road, Object object);
                                                           double t,
                                                           std::optional<double> hdg = std::nullopt);
 
+// --- signals (traffic control) ----------------------------------------------
+
+/// Adds a traffic-control signal (OpenDRIVE <signal>, §14) to `road`;
+/// `signal.road` is set to `road`. Located by road-relative (s, t); undo erases
+/// the created signal and redo resurrects it under the same SignalId
+/// (restore-in-place). Fails (invalid_command) for a stale road or an s outside
+/// [0, road length].
+[[nodiscard]] RM_API std::unique_ptr<Command>
+add_signal(const RoadNetwork& network, RoadId road, Signal signal);
+
+/// Removes a signal; undo restores it exactly (same SignalId). Fails for a stale
+/// signal id.
+[[nodiscard]] RM_API std::unique_ptr<Command> delete_signal(const RoadNetwork& network,
+                                                            SignalId signal);
+
+/// Re-locates a signal to road-relative (s, t) [m], optionally setting its
+/// heading offset `h_offset` [rad] (left unchanged when nullopt). Undo is
+/// byte-identical from the value snapshot. Fails for a stale signal id or an s
+/// outside [0, owning-road length].
+[[nodiscard]] RM_API std::unique_ptr<Command>
+move_signal(const RoadNetwork& network,
+            SignalId signal,
+            double s,
+            double t,
+            std::optional<double> h_offset = std::nullopt);
+
 // --- document ---------------------------------------------------------------
 
 [[nodiscard]] RM_API std::unique_ptr<Command>
