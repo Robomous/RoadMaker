@@ -44,13 +44,16 @@ acceptance executed by hand — so this class of gap is measured from now on.
 Honesty in the roadmap is a feature: the gap was in our spec process, not
 in the backlog.
 
-**Gate NO-GO, 2026-07-13.** The first GW-1/GW-2 gate run on `main`
-(`de5bd7c`) returned **NO-GO** — six first-hand findings, one of them a hard
-crash (right-click lane delete). Per the gate rules the sprint extends with
-those findings only, tracked by the gate-extension epic
-([#147](https://github.com/Robomous/RoadMaker/issues/147)); v0.4.0 and v0.5.0
-stay unpublished until the maintainer re-gates once on post-extension `main`
-(one run covers both). Scope and root causes:
+**Gate NO-GO, 2026-07-13 → extension complete, 2026-07-14.** The first
+GW-1/GW-2 gate run on `main` (`de5bd7c`) returned **NO-GO** — six first-hand
+findings, one of them a hard crash (right-click lane delete). Per the gate
+rules the sprint extended with those findings only, tracked by the
+gate-extension epic ([#147](https://github.com/Robomous/RoadMaker/issues/147)).
+All six findings are now fixed across PRs #159–#163 (`main` at `3dbfbc5`) and
+**#147 is closed**. **Maintainer action item:** re-run the GW-1/GW-2 gate once
+on post-extension `main` (one run covers both) to convert the NO-GO to a PASS
+and **publish v0.4.0 + v0.5.0**, which stay unpublished until then. Scope and
+root causes:
 [`docs/design/hardening/gate_extension.md`](../design/hardening/gate_extension.md);
 verdict detail: [`golden_workflows/gate-v0.4.0.md`](golden_workflows/gate-v0.4.0.md).
 
