@@ -649,6 +649,7 @@ void MainWindow::on_library_drop(const QString& key, double world_x, double worl
     break;
   case LibraryDropKind::Assembly:
   case LibraryDropKind::Tree:
+  case LibraryDropKind::Signal:
     if (document_.push_command(std::move(action.command)).has_value()) {
       viewport_->show_toast(action.toast, ToastSeverity::Success);
     } else {

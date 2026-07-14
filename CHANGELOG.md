@@ -52,6 +52,17 @@ through the M2 command layer (one undo step per edit, byte-identical undo) and
 is headless-testable.
 
 ### Added
+- **Drag traffic lights & signs from the Library** (GS-1 WS-C): the Library
+  panel gains a **Signals** category with a **Traffic light** and a **Traffic
+  sign** — drag either onto (or beside) a road and it snaps to the nearest
+  reference line and plants there as an OpenDRIVE `<signal>` in **one undo step**,
+  the drag ghost marking exactly where the pole lands (ghost==commit). A light
+  authors a dynamic signal (traffic-light catalog type), a sign a static German
+  speed-limit plate (274/50) — both retypable later in the properties panel. A
+  drop away from any road tints the ghost and is rejected with a hint. Resolver
+  `resolve_library_drop` `Kind::Signal` + `edit::add_signal`; the placed signal
+  renders through the WS-C signal-mesh instancing. Part of
+  [#72](https://github.com/Robomous/RoadMaker/issues/72).
 - **Signals render as 3D instances — traffic light + sign meshes** (GS-1 WS-C):
   a placed `<signal>` now draws in the viewport (and glTF/USD exports) as an
   instance of a bundled signal model — a dynamic signal as a three-lamp traffic

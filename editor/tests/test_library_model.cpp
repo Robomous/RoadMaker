@@ -21,13 +21,15 @@ TEST(LibraryManifest, ParsesTheShippedManifest) {
   const auto manifest = LibraryManifest::load(kManifest);
   ASSERT_TRUE(manifest.has_value()) << (manifest ? "" : manifest.error().message);
   EXPECT_EQ(manifest->version(), 1);
-  EXPECT_EQ(manifest->items().size(), 10U); // 3 road templates + 2 assemblies + 5 tree props
+  EXPECT_EQ(manifest->items().size(),
+            12U); // 3 road templates + 2 assemblies + 5 tree props + 2 signals
 
   // Road templates resolve to a profile, assemblies to a t/x kind, trees to a
-  // bundled prop model id.
+  // bundled prop model id, signals to a light/sign create tag.
   int templates = 0;
   int assemblies = 0;
   int trees = 0;
+  int signal_items = 0;
   for (const LibraryItem& item : manifest->items()) {
     EXPECT_FALSE(item.key.isEmpty());
     EXPECT_FALSE(item.label.isEmpty());
@@ -41,11 +43,16 @@ TEST(LibraryManifest, ParsesTheShippedManifest) {
       ++trees;
       EXPECT_FALSE(item.model.isEmpty());
       EXPECT_EQ(item.category, "Props");
+    } else if (item.kind == LibraryItem::Kind::Signal) {
+      ++signal_items;
+      EXPECT_TRUE(item.signal == "light" || item.signal == "sign");
+      EXPECT_EQ(item.category, "Signals");
     }
   }
   EXPECT_EQ(templates, 3);
   EXPECT_EQ(assemblies, 2);
   EXPECT_EQ(trees, 5);
+  EXPECT_EQ(signal_items, 2);
 }
 
 TEST(LibraryManifest, ParsesFieldsAndCreateKinds) {
@@ -119,7 +126,7 @@ TEST(LibraryListModel, PassesQtModelSanityChecksEmptyAndPopulated) {
   const auto manifest = LibraryManifest::load(kManifest);
   ASSERT_TRUE(manifest.has_value());
   model.set_manifest(*manifest);
-  EXPECT_EQ(model.rowCount(), 10);
+  EXPECT_EQ(model.rowCount(), 12);
 }
 
 TEST(LibraryListModel, ExposesRolesAndItemLookup) {
@@ -137,7 +144,7 @@ TEST(LibraryListModel, ExposesRolesAndItemLookup) {
   ASSERT_NE(item, nullptr);
   EXPECT_EQ(model.data(first, LibraryListModel::KeyRole).toString(), item->key);
   EXPECT_EQ(model.item(-1), nullptr);
-  EXPECT_EQ(model.item(10), nullptr);
+  EXPECT_EQ(model.item(12), nullptr);
 }
 
 } // namespace

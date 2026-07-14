@@ -71,6 +71,20 @@
       "category": "Props",
       "thumbnail": "assets/library/thumbnails/prop_shrub.png",
       "create": { "kind": "tree", "model": "shrub" }
+    },
+    {
+      "key": "signal.traffic_light",
+      "label": "Traffic light",
+      "category": "Signals",
+      "thumbnail": "assets/library/thumbnails/signal_traffic_light.png",
+      "create": { "kind": "signal", "signal": "light" }
+    },
+    {
+      "key": "signal.sign",
+      "label": "Traffic sign",
+      "category": "Signals",
+      "thumbnail": "assets/library/thumbnails/signal_sign.png",
+      "create": { "kind": "signal", "signal": "sign" }
     }
   ]
 }
