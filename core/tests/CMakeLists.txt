@@ -10,6 +10,7 @@ add_executable(roadmaker_core_tests
   test_xodr_objects.cpp
   test_prop_library.cpp
   test_object_ops.cpp
+  test_signal_ops.cpp
   test_xodr_signals.cpp
   test_road_marks.cpp
   test_mesh.cpp
