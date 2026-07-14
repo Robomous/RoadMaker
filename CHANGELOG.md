@@ -13,6 +13,27 @@ through the M2 command layer (one undo step per edit, byte-identical undo) and
 is headless-testable.
 
 ### Added
+- **Connection engine — one authority for contact-and-fit geometry** (gate
+  extension WS-2): the contact/fit primitives that junction generation used to
+  keep to itself now live in `roadmaker/edit/connection.{hpp,cpp}` —
+  `contact_state`, `contact_lateral`, `driving_lanes_at`, `aligned_pose_on_road`,
+  and `fit_connector` (the G1 straight-fillet-straight clothoid fit) — so the
+  junction, assembly-drop, and gap-closing consumers share one implementation
+  and cannot drift. `plan_junction` is refitted onto them with **byte-identical
+  goldens** as the regression gate. New queries land alongside: `junction_at_end`
+  / `matching_junction` (idempotency — a repeat selection regenerates in place
+  rather than overlaying a duplicate) and `verify_junction_welds` (post-regen
+  position/heading coincidence, computed with the same anchor math the generator
+  uses). `close_gap` / `check_linkable` weld two free road ends in one undoable
+  command — a pure link when they nearly coincide, else a single-lane connector
+  road (Python `edit.close_gap` / `check_linkable` / `junction_at_end` /
+  `matching_junction` + `examples/close_gap.py`). New tolerances `tol::kWeld*`.
+- **Duplicate-junction invariant** (gate finding 5): a road end may be an arm of
+  at most one junction. `create_junction` now refuses an end already owned by a
+  junction ("regenerate that junction instead"), and `validate_network` emits a
+  RoadMaker-authored diagnostic `robomous.ai:rm:1.0.0:junctions.arm_single_owner`
+  (Error) when two junctions claim the same arm — the vendor namespace marks it
+  as a RoadMaker rule, not an ASAM one.
 - **Discoverable lane removal** (gate finding 6): the properties panel's single
   context-dependent "Remove lane" button is replaced by **Remove left lane** /
   **Remove right lane** buttons that act on the outermost lane of each side of

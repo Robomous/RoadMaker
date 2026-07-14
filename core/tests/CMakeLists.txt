@@ -19,6 +19,7 @@ add_executable(roadmaker_core_tests
   test_gltf.cpp
   test_round_trip.cpp
   test_edit_stack.cpp
+  test_connection.cpp
   test_edit_operations.cpp
   test_assembly.cpp
   test_translate_road.cpp

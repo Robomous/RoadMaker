@@ -1038,6 +1038,37 @@ std::vector<Diagnostic> validate_network(const RoadNetwork& network, const Write
       }
     });
   }
+
+  // robomous.ai:rm:1.0.0:junctions.arm_single_owner (RoadMaker-authored, NOT
+  // ASAM): a road end may be an arm of at most one junction. Two junctions
+  // claiming the same (road, contact) end produce superimposed / ambiguous
+  // topology (gate finding 5). Map each recorded arm to its junction; a second
+  // claimant is an Error.
+  {
+    std::vector<std::pair<RoadEnd, JunctionId>> claimed;
+    network.for_each_junction([&](JunctionId junction_id, const Junction& junction) {
+      for (const RoadEnd& arm : junction.arms) {
+        const auto prior = std::find_if(
+            claimed.begin(), claimed.end(), [&](const auto& entry) { return entry.first == arm; });
+        if (prior == claimed.end()) {
+          claimed.emplace_back(arm, junction_id);
+          continue;
+        }
+        const Road* road = network.road(arm.road);
+        const Junction* owner = network.junction(prior->second);
+        findings.push_back(Diagnostic{
+            .severity = Severity::Error,
+            .location = fmt::format("junction id={}", junction.odr_id),
+            .message = fmt::format(
+                "road '{}' {} end is an arm of two junctions (already junction {}) — regenerate "
+                "that junction instead of overlaying a second",
+                road != nullptr ? road->odr_id : "?",
+                arm.contact == ContactPoint::Start ? "start" : "end",
+                owner != nullptr ? owner->odr_id : "?"),
+            .rule_id = std::string(rules::kJunctionArmSingleOwner)});
+      }
+    });
+  }
   return findings;
 }
 
