@@ -133,4 +133,51 @@ TEST(ProfilePanel, OverpassWithoutCrossingsRefuses) {
   EXPECT_FALSE(rig.panel.apply_overpass(true));
 }
 
+TEST(ProfilePanel, OverpassCreatesNoTopologyAtTheCrossing) {
+  // Gate finding 4 diagnosis (editor path): the maintainer's "overpass produced
+  // a junction-like area" is NOT a junction — apply_overpass is pure elevation.
+  // Drive it through the panel and assert no junction/link is ever created at
+  // the crossing (the crossing-road stays a plain, independent road).
+  Rig rig(200.0);
+  const RoadId crosser = make_road(rig.document, Waypoint{100.0, -80.0}, Waypoint{100.0, 80.0});
+  ASSERT_EQ(rig.document.network().junction_count(), 0U);
+
+  ASSERT_TRUE(rig.panel.apply_overpass(true));
+
+  EXPECT_EQ(rig.document.network().junction_count(), 0U) << "overpass must not create a junction";
+  // Neither road gained a junction back-reference or a link into the other.
+  EXPECT_FALSE(rig.document.network().road(rig.road)->junction.is_valid());
+  EXPECT_FALSE(rig.document.network().road(crosser)->junction.is_valid());
+}
+
+TEST(ProfilePanel, DeletingACrossingRoadLeavesTheOverpassIntact) {
+  // Gate finding 4 integrity (editor path): with an overpass applied, deleting
+  // the crossed road must leave the overpass road's geometry, elevation profile,
+  // and the network validity fully intact — no cascade, no corruption.
+  Rig rig(200.0);
+  const RoadId crossed = rig.road;
+  const RoadId overpass = make_road(rig.document, Waypoint{100.0, -80.0}, Waypoint{100.0, 80.0});
+  rig.selection.select({.road = overpass, .lane = {}});
+  ASSERT_TRUE(rig.panel.apply_overpass(true));
+
+  const roadmaker::Road* before = rig.document.network().road(overpass);
+  const double length_before = before->length;
+  const std::size_t elevation_records = before->elevation.size();
+  ASSERT_GT(elevation_records, 0U);
+
+  ASSERT_TRUE(
+      rig.document.push_command(roadmaker::edit::delete_road(rig.document.network(), crossed))
+          .has_value());
+
+  const roadmaker::Road* after = rig.document.network().road(overpass);
+  ASSERT_NE(after, nullptr) << "deleting the crossed road must not remove the overpass road";
+  EXPECT_EQ(rig.document.network().road(crossed), nullptr);
+  EXPECT_NEAR(after->length, length_before, 1e-9);
+  EXPECT_EQ(after->elevation.size(), elevation_records);
+  for (const roadmaker::Diagnostic& diagnostic :
+       roadmaker::validate_network(rig.document.network())) {
+    EXPECT_NE(diagnostic.severity, roadmaker::Severity::Error) << diagnostic.message;
+  }
+}
+
 } // namespace

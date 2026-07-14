@@ -77,3 +77,49 @@ vendor namespace `robomous.ai:rm:1.0.0:junctions.arm_single_owner`.
 ## As-built root causes & re-gate evidence
 
 *(filled in per workstream as each lands; final report WS-4.)*
+
+### WS-3 — Overpass semantics (finding 4), PR #… (branch `fix/overpass-semantics`)
+
+**Diagnosis (ground truth).** The reported "overpass produced an unselectable
+junction-like area that corrupts on adjacent-road delete" is **two separate,
+non-topological facts**, not a junction created by the overpass:
+
+1. **The overpass creates no topology.** `ProfilePanel::apply_overpass`
+   (`find_crossings` → `overpass_points` → one `edit::set_elevation_profile`)
+   is pure elevation. `scripts/gw1_replay.py` already asserted
+   `junction_count == 1` unchanged through step 3; this is now also asserted
+   through the **editor path** by `ProfilePanel.OverpassCreatesNoTopologyAtTheCrossing`
+   (junction count stays 0, neither road gains a `junction` back-reference).
+2. **The "junction-like area" was the step-2 T-junction's blended floor**
+   (`NetworkMesh::junction_floors`), which rendered but `pick()` deliberately
+   skipped ("junction floors are not pickable in M1"). It was therefore visible
+   but unselectable — read as a mysterious area. "Corrupts on delete" is
+   `deletion_closure` doing the *correct* thing (a connecting road cannot outlive
+   the incoming road it turns from); with the floor unselectable, the user had
+   no way to inspect what changed.
+
+**Fix.**
+- **Selectable everywhere.** `PickHit`, `SelectionEntry`, `SceneItem` and the
+  highlight rule gained a `JunctionId`. `pick()` now tests junction-floor
+  triangles after roads/props (nearest road/prop wins on a tie, so the arms stay
+  grabbable; the open floor interior becomes pickable). A viewport click selects
+  the junction; the Junctions scene-tree node round-trips to the same entity
+  (`SceneTreeModel::index_for_junction`); the properties panel shows the
+  junction's arm/connection counts; hover readout says "junction N".
+- **No implicit topology at crossings.** Confirmed none is created — the
+  diagnosis showed the overpass path never makes a junction/link, so no code
+  change was needed there (guarded by the new editor-path test).
+- **Delete integrity.** `ProfilePanel.DeletingACrossingRoadLeavesTheOverpassIntact`
+  builds an overpass, deletes the crossed road, and asserts the overpass road's
+  length, elevation records, and network validity are untouched.
+- **Soak invariant** (rendered primitive → selectable entity): every
+  `JunctionFloor` in the mesh must resolve to a live junction, and the selection
+  never holds a stale junction id (`SoakDriver::check_invariants`).
+
+**Tests.** `test_picking` (`JunctionFloorIsSelectable`, `RoadOverFloorWinsOnTie`),
+`test_selection_model` (`JunctionEntrySelectsAndClassifies`,
+`StaleJunctionEntryIsDropped`), `test_highlight`
+(`JunctionSelectionHighlightsOnlyThatFloor`, `HoverHighlightsTheHoveredFloor`),
+`test_scene_tree_model` (`JunctionNodeRoundTripsToASelectableTarget`),
+`test_profile_panel` (`OverpassCreatesNoTopologyAtTheCrossing`,
+`DeletingACrossingRoadLeavesTheOverpassIntact`). Full editor suite green (286).

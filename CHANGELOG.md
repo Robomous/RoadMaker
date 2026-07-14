@@ -274,6 +274,20 @@ is headless-testable.
   merge/post-split seeds.
 
 ### Fixed
+- **Junction floors are selectable — no more unselectable "junction-like area"**
+  (gate finding 4): the blended surface between a junction's arms now picks,
+  hovers, highlights, and selects as its own entity (its `JunctionId`), from the
+  viewport or the Junctions scene tree, and the properties panel shows its
+  arm/connection counts. Diagnosis first confirmed the maintainer's "overpass
+  produced a junction-like area" is **not** topology — `ProfilePanel::apply_overpass`
+  is pure elevation and creates no junction or link (now asserted through the
+  editor path), and deleting a crossed road leaves the overpass road's geometry,
+  profile, and network validity fully intact (regression test). What the
+  maintainer could not select was the step-2 T-junction's floor, which rendered
+  but was excluded from picking; `pick()` now tests junction-floor triangles
+  (nearest road/prop still wins on a tie, so arms stay grabbable). A soak
+  invariant asserts every rendered junction floor maps to a live, selectable
+  junction — no ghost surfaces.
 - **Re-generating a junction over the same ends regenerates it in place** (gate
   finding 5): the Create Junction tool now checks `edit::matching_junction`
   before generating — an exact re-selection of an existing junction's arms

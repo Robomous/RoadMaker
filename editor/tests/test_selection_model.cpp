@@ -20,6 +20,16 @@ std::vector<RoadId> all_roads(const Document& document) {
   return roads;
 }
 
+JunctionId first_junction(const Document& document) {
+  JunctionId found;
+  document.network().for_each_junction([&](JunctionId id, const Junction&) {
+    if (!found.is_valid()) {
+      found = id;
+    }
+  });
+  return found;
+}
+
 LaneId first_lane_of(const Document& document, RoadId road_id) {
   const Road* road = document.network().road(road_id);
   if (road == nullptr || road->sections.empty()) {
@@ -210,6 +220,44 @@ TEST(SelectionModel, DeletionCommandPrunesItsEntries) {
   document.undo_stack()->undo();
   EXPECT_EQ(selection.entries().size(), 1U);
   expect_invariants(selection);
+}
+
+TEST(SelectionModel, JunctionEntrySelectsAndClassifies) {
+  // Gate finding 4: a junction floor pick lands as a junction entry —
+  // selectable, reported by selected_junctions(), and never mistaken for a
+  // road (its arms are selected separately).
+  Document document;
+  ASSERT_TRUE(document.load(kSample).has_value());
+  SelectionModel selection(document);
+
+  const JunctionId junction = first_junction(document);
+  ASSERT_TRUE(junction.is_valid());
+
+  selection.select({.junction = junction});
+  ASSERT_EQ(selection.entries().size(), 1U);
+  EXPECT_EQ(selection.primary().junction, junction);
+  ASSERT_EQ(selection.selected_junctions().size(), 1U);
+  EXPECT_EQ(selection.selected_junctions().front(), junction);
+  EXPECT_TRUE(selection.selected_roads().empty());
+  EXPECT_TRUE(selection.selected_objects().empty());
+  expect_invariants(selection);
+}
+
+TEST(SelectionModel, StaleJunctionEntryIsDropped) {
+  // A junction entry is view state like any other: reloading the document
+  // clears it, and an entry naming a since-removed junction never survives.
+  Document document;
+  ASSERT_TRUE(document.load(kSample).has_value());
+  SelectionModel selection(document);
+
+  const JunctionId junction = first_junction(document);
+  ASSERT_TRUE(junction.is_valid());
+  selection.select({.junction = junction});
+  ASSERT_EQ(selection.entries().size(), 1U);
+
+  // Reload → SelectionModel::clear via Document::loaded.
+  ASSERT_TRUE(document.load(kSample).has_value());
+  EXPECT_TRUE(selection.empty());
 }
 
 } // namespace

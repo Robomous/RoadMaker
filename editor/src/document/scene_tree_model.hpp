@@ -37,6 +37,7 @@ public:
   struct Target {
     RoadId road;
     LaneId lane;
+    JunctionId junction;
   };
 
   [[nodiscard]] Target target_for(const QModelIndex& index) const;
@@ -45,6 +46,7 @@ public:
   /// QModelIndex when the entity is not in the snapshot.
   [[nodiscard]] QModelIndex index_for_road(RoadId road) const;
   [[nodiscard]] QModelIndex index_for_lane(LaneId lane) const;
+  [[nodiscard]] QModelIndex index_for_junction(JunctionId junction) const;
 
 private:
   enum class Kind : std::uint8_t { RoadsGroup, JunctionsGroup, Road, LaneSection, Lane, Junction };
@@ -56,6 +58,7 @@ private:
     std::vector<int> children;
     RoadId road;
     LaneId lane;
+    JunctionId junction;
     QString label;
   };
 
@@ -67,6 +70,7 @@ private:
   std::vector<Node> nodes_; // nodes_[0] = Roads group, nodes_[1] = Junctions group
   std::unordered_map<RoadId, int> road_nodes_;
   std::unordered_map<LaneId, int> lane_nodes_;
+  std::unordered_map<JunctionId, int> junction_nodes_;
 };
 
 } // namespace roadmaker::editor

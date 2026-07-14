@@ -8,7 +8,13 @@ namespace roadmaker::editor {
 namespace {
 
 SelectionEntry entry_for(const SceneTreeModel::Target& target) {
-  return {.road = target.road, .lane = target.lane};
+  return {.road = target.road, .lane = target.lane, .junction = target.junction};
+}
+
+/// A tree row resolves to an entity when it names a road or a junction — group
+/// headers carry neither.
+bool resolves(const SelectionEntry& entry) {
+  return entry.road.is_valid() || entry.junction.is_valid();
 }
 
 } // namespace
@@ -46,7 +52,7 @@ void SceneTreePanel::on_view_selection() {
   const QModelIndex current = view_->currentIndex();
   for (const QModelIndex& index : view_->selectionModel()->selectedRows()) {
     const SelectionEntry entry = entry_for(model_.target_for(index));
-    if (!entry.road.is_valid()) {
+    if (!resolves(entry)) {
       continue;
     }
     if (index == current) {
@@ -55,7 +61,7 @@ void SceneTreePanel::on_view_selection() {
     }
     entries.push_back(entry);
   }
-  if (current_entry.road.is_valid()) {
+  if (resolves(current_entry)) {
     entries.push_back(current_entry);
   }
 
@@ -76,8 +82,9 @@ void SceneTreePanel::on_model_selection() {
   QItemSelection view_selection;
   QModelIndex primary_index;
   for (const SelectionEntry& entry : selection_.entries()) {
-    const QModelIndex index = entry.lane.is_valid() ? model_.index_for_lane(entry.lane)
-                                                    : model_.index_for_road(entry.road);
+    const QModelIndex index = entry.junction.is_valid() ? model_.index_for_junction(entry.junction)
+                              : entry.lane.is_valid()   ? model_.index_for_lane(entry.lane)
+                                                        : model_.index_for_road(entry.road);
     if (!index.isValid()) {
       continue;
     }

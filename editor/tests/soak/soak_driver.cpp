@@ -181,9 +181,27 @@ bool SoakDriver::check_invariants(int index, const char* label) {
     return false;
   }
 
+  // Every rendered primitive maps to a selectable entity (gate finding 4): a
+  // junction floor renders as its own pickable surface, so its JunctionId must
+  // resolve — a floor left behind for a dead junction would be an
+  // unselectable "ghost" area.
+  for (const JunctionFloor& floor : document_.mesh().junction_floors) {
+    if (network.junction(floor.junction) == nullptr) {
+      fail(index, label, "rendered junction floor references a dead junction");
+      return false;
+    }
+  }
+
   // Selection must never hold stale ids (02 §1: all flows through
   // SelectionModel, which prunes on topology changes).
   for (const SelectionEntry& entry : selection_.entries()) {
+    if (entry.junction.is_valid()) {
+      if (network.junction(entry.junction) == nullptr) {
+        fail(index, label, "selection holds a stale junction id");
+        return false;
+      }
+      continue;
+    }
     if (network.road(entry.road) == nullptr) {
       fail(index, label, "selection holds a stale road id");
       return false;

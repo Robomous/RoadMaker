@@ -14,34 +14,40 @@
 
 namespace roadmaker::editor {
 
-/// Feedback state for the mesh of `road`/`lane`/`object` — a lane patch
-/// (`lane` valid), a road-level mesh such as a marking or junction floor (all
-/// invalid but `road`), or a placed prop part (`object` valid). A prop matches
-/// only by object id (selecting a road never lights its trees, and vice
-/// versa); a lane-level target matches by lane id; a road-level target matches
-/// by road id but never a prop part. Selected takes priority over Hover.
+/// Feedback state for the mesh of `road`/`lane`/`object`/`junction` — a lane
+/// patch (`lane` valid), a junction floor (`junction` valid, road invalid), a
+/// road-level mesh such as a marking (all invalid but `road`), or a placed prop
+/// part (`object` valid). A prop matches only by object id (selecting a road
+/// never lights its trees, and vice versa); a junction floor matches only by
+/// junction id; a lane-level target matches by lane id; a road-level target
+/// matches by road id but never a prop or floor. Selected beats Hover.
 [[nodiscard]] inline HighlightState highlight_state_for(RoadId road,
                                                         LaneId lane,
                                                         ObjectId object,
+                                                        JunctionId junction,
                                                         std::span<const SelectionEntry> selection,
                                                         RoadId hovered_road,
                                                         LaneId hovered_lane,
-                                                        ObjectId hovered_object) {
-  const auto matches = [&](RoadId r, LaneId l, ObjectId o) {
+                                                        ObjectId hovered_object,
+                                                        JunctionId hovered_junction) {
+  const auto matches = [&](RoadId r, LaneId l, ObjectId o, JunctionId j) {
+    if (j.is_valid()) {
+      return junction.is_valid() && junction == j;
+    }
     if (o.is_valid()) {
       return object.is_valid() && object == o;
     }
     if (l.is_valid()) {
       return lane == l;
     }
-    return !object.is_valid() && r.is_valid() && road == r;
+    return !object.is_valid() && !junction.is_valid() && r.is_valid() && road == r;
   };
   for (const SelectionEntry& entry : selection) {
-    if (matches(entry.road, entry.lane, entry.object)) {
+    if (matches(entry.road, entry.lane, entry.object, entry.junction)) {
       return HighlightState::Selected;
     }
   }
-  if (matches(hovered_road, hovered_lane, hovered_object)) {
+  if (matches(hovered_road, hovered_lane, hovered_object, hovered_junction)) {
     return HighlightState::Hover;
   }
   return HighlightState::None;

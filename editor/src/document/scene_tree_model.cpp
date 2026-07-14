@@ -22,6 +22,7 @@ void SceneTreeModel::rebuild() {
   nodes_.clear();
   road_nodes_.clear();
   lane_nodes_.clear();
+  junction_nodes_.clear();
 
   nodes_.push_back(Node{.kind = Kind::RoadsGroup, .row = 0, .label = tr("Roads")});
   nodes_.push_back(Node{.kind = Kind::JunctionsGroup, .row = 1, .label = tr("Junctions")});
@@ -74,7 +75,7 @@ void SceneTreeModel::rebuild() {
     }
   });
 
-  network.for_each_junction([&](JunctionId, const Junction& junction) {
+  network.for_each_junction([&](JunctionId junction_id, const Junction& junction) {
     const int junction_node = static_cast<int>(nodes_.size());
     const QString name = junction.name.empty()
                              ? tr("junction %1").arg(QString::fromStdString(junction.odr_id))
@@ -82,7 +83,9 @@ void SceneTreeModel::rebuild() {
     nodes_.push_back(Node{.kind = Kind::Junction,
                           .parent = 1,
                           .row = static_cast<int>(nodes_[1].children.size()),
+                          .junction = junction_id,
                           .label = name});
+    junction_nodes_[junction_id] = junction_node;
     nodes_[1].children.push_back(junction_node);
   });
 }
@@ -160,7 +163,7 @@ SceneTreeModel::Target SceneTreeModel::target_for(const QModelIndex& index) cons
   if (node == nullptr) {
     return {};
   }
-  return Target{.road = node->road, .lane = node->lane};
+  return Target{.road = node->road, .lane = node->lane, .junction = node->junction};
 }
 
 QModelIndex SceneTreeModel::index_for_road(RoadId road) const {
@@ -171,6 +174,11 @@ QModelIndex SceneTreeModel::index_for_road(RoadId road) const {
 QModelIndex SceneTreeModel::index_for_lane(LaneId lane) const {
   const auto it = lane_nodes_.find(lane);
   return it == lane_nodes_.end() ? QModelIndex{} : index_for_node(it->second);
+}
+
+QModelIndex SceneTreeModel::index_for_junction(JunctionId junction) const {
+  const auto it = junction_nodes_.find(junction);
+  return it == junction_nodes_.end() ? QModelIndex{} : index_for_node(it->second);
 }
 
 } // namespace roadmaker::editor

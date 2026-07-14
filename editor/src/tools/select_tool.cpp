@@ -83,10 +83,12 @@ bool SelectTool::mouse_press(const ToolEvent& event) {
     emit preview_changed();
     return true;
   }
+  // A junction-floor pick carries no road, so it never starts a road-body move
+  // drag (it only selects on release) — treat only road/prop hits as geometry.
+  const bool on_road = event.pick.has_value() && event.pick->road.is_valid();
   press_ = PressState{.world = cursor,
-                      .on_geometry = event.pick.has_value(),
-                      .road = event.pick.has_value() ? std::optional<RoadId>(event.pick->road)
-                                                     : std::nullopt};
+                      .on_geometry = on_road,
+                      .road = on_road ? std::optional<RoadId>(event.pick->road) : std::nullopt};
   return true;
 }
 
@@ -161,9 +163,11 @@ bool SelectTool::mouse_release(const ToolEvent& event) {
       // click-pick; a miss clears unless a modifier asks to keep.
       const SelectMode mode = mode_from(event.modifiers);
       if (event.pick.has_value()) {
-        selection_.select(
-            {.road = event.pick->road, .lane = event.pick->lane, .object = event.pick->object},
-            mode);
+        selection_.select({.road = event.pick->road,
+                           .lane = event.pick->lane,
+                           .object = event.pick->object,
+                           .junction = event.pick->junction},
+                          mode);
       } else if (mode == SelectMode::Replace) {
         selection_.clear();
       }

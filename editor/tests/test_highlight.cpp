@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 
+#include <span>
 #include <vector>
 
 #include "document/highlight.hpp"
@@ -14,73 +15,104 @@ constexpr LaneId kLaneA1{.index = 10, .gen = 0};
 constexpr LaneId kLaneA2{.index = 11, .gen = 0};
 constexpr ObjectId kTreeA{.index = 20, .gen = 0};
 constexpr ObjectId kTreeB{.index = 21, .gen = 0};
+constexpr JunctionId kJctA{.index = 30, .gen = 0};
+constexpr JunctionId kJctB{.index = 31, .gen = 0};
+
+// Convenience wrappers so each test reads at the level it cares about — a road/
+// lane/prop mesh (no junction) or a junction floor (road/lane/object invalid).
+HighlightState road_state(RoadId road,
+                          LaneId lane,
+                          ObjectId object,
+                          std::span<const SelectionEntry> selection,
+                          RoadId hovered_road = {},
+                          LaneId hovered_lane = {},
+                          ObjectId hovered_object = {}) {
+  return highlight_state_for(
+      road, lane, object, {}, selection, hovered_road, hovered_lane, hovered_object, {});
+}
+
+HighlightState floor_state(JunctionId junction,
+                           std::span<const SelectionEntry> selection,
+                           JunctionId hovered_junction = {}) {
+  return highlight_state_for({}, {}, {}, junction, selection, {}, {}, {}, hovered_junction);
+}
 
 TEST(HighlightState, NoneWhenNeitherSelectedNorHovered) {
   const std::vector<SelectionEntry> selection;
-  EXPECT_EQ(highlight_state_for(kRoadA, kLaneA1, {}, selection, {}, {}, {}), HighlightState::None);
+  EXPECT_EQ(road_state(kRoadA, kLaneA1, {}, selection), HighlightState::None);
 }
 
 TEST(HighlightState, RoadLevelSelectionHighlightsTheWholeRoad) {
   const std::vector<SelectionEntry> selection{{.road = kRoadA, .lane = {}}};
-  EXPECT_EQ(highlight_state_for(kRoadA, kLaneA1, {}, selection, {}, {}, {}),
-            HighlightState::Selected);
-  EXPECT_EQ(highlight_state_for(kRoadA, kLaneA2, {}, selection, {}, {}, {}),
-            HighlightState::Selected);
-  // A road-level mesh (marking / junction floor, lane invalid) matches too.
-  EXPECT_EQ(highlight_state_for(kRoadA, {}, {}, selection, {}, {}, {}), HighlightState::Selected);
+  EXPECT_EQ(road_state(kRoadA, kLaneA1, {}, selection), HighlightState::Selected);
+  EXPECT_EQ(road_state(kRoadA, kLaneA2, {}, selection), HighlightState::Selected);
+  // A road-level mesh (marking, lane invalid) matches too.
+  EXPECT_EQ(road_state(kRoadA, {}, {}, selection), HighlightState::Selected);
   // A different road is untouched.
-  EXPECT_EQ(highlight_state_for(kRoadB, {}, {}, selection, {}, {}, {}), HighlightState::None);
+  EXPECT_EQ(road_state(kRoadB, {}, {}, selection), HighlightState::None);
 }
 
 TEST(HighlightState, RoadSelectionDoesNotHighlightItsProps) {
   // A prop part belongs to road A but is a distinct entity — selecting the road
   // must not light its trees.
   const std::vector<SelectionEntry> selection{{.road = kRoadA, .lane = {}}};
-  EXPECT_EQ(highlight_state_for(kRoadA, {}, kTreeA, selection, {}, {}, {}), HighlightState::None);
+  EXPECT_EQ(road_state(kRoadA, {}, kTreeA, selection), HighlightState::None);
 }
 
 TEST(HighlightState, LaneLevelSelectionHighlightsOnlyThatLane) {
   const std::vector<SelectionEntry> selection{{.road = kRoadA, .lane = kLaneA1}};
-  EXPECT_EQ(highlight_state_for(kRoadA, kLaneA1, {}, selection, {}, {}, {}),
-            HighlightState::Selected);
-  EXPECT_EQ(highlight_state_for(kRoadA, kLaneA2, {}, selection, {}, {}, {}), HighlightState::None);
+  EXPECT_EQ(road_state(kRoadA, kLaneA1, {}, selection), HighlightState::Selected);
+  EXPECT_EQ(road_state(kRoadA, kLaneA2, {}, selection), HighlightState::None);
 }
 
 TEST(HighlightState, ObjectSelectionHighlightsOnlyThatProp) {
   const std::vector<SelectionEntry> selection{{.road = kRoadA, .lane = {}, .object = kTreeA}};
-  EXPECT_EQ(highlight_state_for(kRoadA, {}, kTreeA, selection, {}, {}, {}),
-            HighlightState::Selected);
+  EXPECT_EQ(road_state(kRoadA, {}, kTreeA, selection), HighlightState::Selected);
   // A different prop, and the owning road's surface, stay unlit.
-  EXPECT_EQ(highlight_state_for(kRoadA, {}, kTreeB, selection, {}, {}, {}), HighlightState::None);
-  EXPECT_EQ(highlight_state_for(kRoadA, {}, {}, selection, {}, {}, {}), HighlightState::None);
+  EXPECT_EQ(road_state(kRoadA, {}, kTreeB, selection), HighlightState::None);
+  EXPECT_EQ(road_state(kRoadA, {}, {}, selection), HighlightState::None);
+}
+
+TEST(HighlightState, JunctionSelectionHighlightsOnlyThatFloor) {
+  // Gate finding 4: a selected junction floor lights up, and only that floor —
+  // never a road or a different junction.
+  const std::vector<SelectionEntry> selection{{.junction = kJctA}};
+  EXPECT_EQ(floor_state(kJctA, selection), HighlightState::Selected);
+  EXPECT_EQ(floor_state(kJctB, selection), HighlightState::None);
+  // A junction selection does not light a road-level mesh, and vice versa.
+  EXPECT_EQ(road_state(kRoadA, {}, {}, selection), HighlightState::None);
+  const std::vector<SelectionEntry> road_selection{{.road = kRoadA, .lane = {}}};
+  EXPECT_EQ(floor_state(kJctA, road_selection), HighlightState::None);
 }
 
 TEST(HighlightState, HoverHighlightsTheHoveredRoad) {
   const std::vector<SelectionEntry> selection;
-  EXPECT_EQ(highlight_state_for(kRoadA, kLaneA1, {}, selection, kRoadA, {}, {}),
-            HighlightState::Hover);
-  EXPECT_EQ(highlight_state_for(kRoadB, {}, {}, selection, kRoadA, {}, {}), HighlightState::None);
+  EXPECT_EQ(road_state(kRoadA, kLaneA1, {}, selection, kRoadA), HighlightState::Hover);
+  EXPECT_EQ(road_state(kRoadB, {}, {}, selection, kRoadA), HighlightState::None);
 }
 
 TEST(HighlightState, HoverHighlightsTheHoveredProp) {
   const std::vector<SelectionEntry> selection;
-  EXPECT_EQ(highlight_state_for(kRoadA, {}, kTreeA, selection, {}, {}, kTreeA),
-            HighlightState::Hover);
+  EXPECT_EQ(road_state(kRoadA, {}, kTreeA, selection, {}, {}, kTreeA), HighlightState::Hover);
   // Hovering the road does not hover its prop, and vice versa.
-  EXPECT_EQ(highlight_state_for(kRoadA, {}, kTreeA, selection, kRoadA, {}, {}),
-            HighlightState::None);
+  EXPECT_EQ(road_state(kRoadA, {}, kTreeA, selection, kRoadA), HighlightState::None);
+}
+
+TEST(HighlightState, HoverHighlightsTheHoveredFloor) {
+  const std::vector<SelectionEntry> selection;
+  EXPECT_EQ(floor_state(kJctA, selection, kJctA), HighlightState::Hover);
+  EXPECT_EQ(floor_state(kJctB, selection, kJctA), HighlightState::None);
 }
 
 TEST(HighlightState, SelectionWinsOverHover) {
   const std::vector<SelectionEntry> selection{{.road = kRoadA, .lane = {}}};
-  EXPECT_EQ(highlight_state_for(kRoadA, kLaneA1, {}, selection, kRoadA, {}, {}),
-            HighlightState::Selected);
+  EXPECT_EQ(road_state(kRoadA, kLaneA1, {}, selection, kRoadA), HighlightState::Selected);
 }
 
 TEST(HighlightState, InvalidHoverIsInert) {
   const std::vector<SelectionEntry> selection;
   // An unset (invalid) hover id must not match a road-level (lane-invalid) mesh.
-  EXPECT_EQ(highlight_state_for(kRoadA, {}, {}, selection, {}, {}, {}), HighlightState::None);
+  EXPECT_EQ(road_state(kRoadA, {}, {}, selection), HighlightState::None);
 }
 
 } // namespace
