@@ -161,4 +161,12 @@ inline constexpr std::string_view kJunctionBoundaryClosed =
 inline constexpr std::string_view kJunctionBoundaryReachAllRoads =
     "asam.net:xodr:1.8.0:junctions.boundary.segments_for_each_conn_road";
 
+/// RoadMaker-authored rule (NOT ASAM): "A road end may be an arm of at most one
+/// junction." Two junctions claiming the same (road, contact) end produce
+/// superimposed/ambiguous topology (gate finding 5). Uses the vendor namespace
+/// `robomous.ai` per the maintainer-approved convention extension; the version
+/// is RoadMaker's, not a spec version.
+inline constexpr std::string_view kJunctionArmSingleOwner =
+    "robomous.ai:rm:1.0.0:junctions.arm_single_owner";
+
 } // namespace roadmaker::rules

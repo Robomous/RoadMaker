@@ -26,4 +26,13 @@ inline constexpr double kRoundTripHeading = 1e-6;
 inline constexpr double kMergePositionGap = 0.01;
 inline constexpr double kMergeHeading = 1e-3;
 
+/// Weld coincidence tolerances for the connection engine (edit::connection):
+/// the maxima verify_junction_welds and the gap-closing weld assertions allow
+/// between two ends that are meant to be continuous — position [m], heading
+/// [rad], and plan-view curvature [1/m]. Curvature is looser: a G1 weld leaves
+/// a curvature step, and only a G2 close_gap drives it below kWeldCurvature.
+inline constexpr double kWeldPosition = 1e-3;
+inline constexpr double kWeldHeading = 1e-3;
+inline constexpr double kWeldCurvature = 5e-3;
+
 } // namespace roadmaker::tol

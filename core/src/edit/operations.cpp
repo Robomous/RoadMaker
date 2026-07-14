@@ -1,6 +1,7 @@
 #include "roadmaker/edit/operations.hpp"
 
 #include "roadmaker/edit/assembly.hpp"
+#include "roadmaker/edit/connection.hpp"
 #include "roadmaker/geometry/profile_fit.hpp"
 #include "roadmaker/road/authoring.hpp"
 #include "roadmaker/road/network.hpp"
@@ -695,230 +696,12 @@ std::unique_ptr<Command> refit_command(const RoadNetwork& network,
 }
 
 // ---- junction connecting-road generator (docs/design/m2/02 §6) ----------------
-
-/// A driving lane at an arm's junction-facing end: its width there [m] and
-/// the lateral offset of its INNER boundary (the boundary nearer lane 0,
-/// laneOffset included, positive = left of the arm's reference line). A
-/// connecting road anchors its reference line on that boundary so the linked
-/// lanes coincide exactly at the contact point
-/// (asam.net:xodr:1.9.0:junctions.connection.smooth_fit — linked lanes shall
-/// fit smoothly as for road linkage, §10.3).
-struct ArmLane {
-  int odr_id = 0;
-  double width = 0.0;
-  double inner_t = 0.0;
-};
-
-/// The junction-facing end of an arm: its point, the tangent leaving the arm
-/// INTO the junction (a connecting road's start heading here) and the tangent
-/// entering the arm OUT of the junction (a connecting road's end heading
-/// here), plus the lane section and station at that end. All angles [rad] in
-/// the inertial frame. road_hdg is the arm's own +s heading at the station —
-/// the frame lateral offsets (lane boundaries) are measured against.
-struct ArmEnd {
-  double x = 0.0;
-  double y = 0.0;
-  double into_hdg = 0.0;
-  double out_hdg = 0.0;
-  double road_hdg = 0.0;
-  LaneSectionId section;
-  double station = 0.0;
-};
-
-/// Inertial point at lateral offset t (positive = left) from an arm end.
-std::array<double, 2> arm_lateral(const ArmEnd& end, double t) {
-  return {end.x - (t * std::sin(end.road_hdg)), end.y + (t * std::cos(end.road_hdg))};
-}
-
-/// Guide waypoints (with locked headings) approximating a turn as
-/// straight-leg + circular-fillet + straight-leg: the two tangent points and
-/// the arc midpoint of the largest circle tangent to both anchor rays.
-/// Pinning these keeps the clothoid chain's peak curvature at the arc's 1/r —
-/// a bare 2-point G1 Hermite overshoots by ~1.4× on asymmetric legs. Empty
-/// for (near-)collinear movements — the through path needs no guide — or
-/// when the rays do not intersect forward of both anchors.
-struct TurnGuide {
-  std::vector<Waypoint> points;
-  std::vector<double> headings;
-};
-
-TurnGuide fillet_guides(const std::array<double, 2>& a,
-                        double heading_a,
-                        const std::array<double, 2>& b,
-                        double heading_b) {
-  constexpr double kPi = std::numbers::pi;
-  const double deflection = std::abs(std::remainder(heading_b - heading_a, 2.0 * kPi));
-  constexpr double kMinDeflection = 10.0 * kPi / 180.0;
-  constexpr double kMaxDeflection = 170.0 * kPi / 180.0;
-  if (deflection < kMinDeflection || deflection > kMaxDeflection) {
-    return {};
-  }
-  const double d1x = std::cos(heading_a), d1y = std::sin(heading_a);
-  const double d2x = std::cos(heading_b), d2y = std::sin(heading_b);
-  // Corner C: A + t·d1 = B − u·d2 with t, u > 0 (tangent-line intersection).
-  const double det = (d1x * d2y) - (d1y * d2x);
-  if (std::abs(det) < 1e-9) {
-    return {};
-  }
-  const double rx = b[0] - a[0];
-  const double ry = b[1] - a[1];
-  const double t = ((rx * d2y) - (ry * d2x)) / det;
-  const double u = -((rx * d1y) - (ry * d1x)) / det;
-  if (t <= tol::kLength || u <= tol::kLength) {
-    return {};
-  }
-  const std::array<double, 2> corner{a[0] + (t * d1x), a[1] + (t * d1y)};
-  // Tangent length `leg` = the shorter clearance; the longer side keeps a
-  // straight approach between its anchor and its tangent point.
-  const double leg = std::min(t, u);
-  const double half_angle = (kPi - deflection) / 2.0;
-  const double radius = leg / std::tan(deflection / 2.0);
-  double bx = -d1x + d2x;
-  double by = -d1y + d2y;
-  const double blen = std::hypot(bx, by);
-  if (blen < 1e-9) {
-    return {};
-  }
-  bx /= blen;
-  by /= blen;
-
-  TurnGuide guide;
-  constexpr double kMinGuideSpacing = 0.5;
-  if (t - leg > kMinGuideSpacing) { // entry tangent point (straight leg after A)
-    guide.points.push_back(Waypoint{corner[0] - (leg * d1x), corner[1] - (leg * d1y)});
-    guide.headings.push_back(heading_a);
-  }
-  const double reach = radius * ((1.0 / std::sin(half_angle)) - 1.0);
-  guide.points.push_back(Waypoint{corner[0] + (bx * reach), corner[1] + (by * reach)});
-  guide.headings.push_back(std::atan2(d1y + d2y, d1x + d2x)); // arc-midpoint tangent
-  if (u - leg > kMinGuideSpacing) { // exit tangent point (straight leg before B)
-    guide.points.push_back(Waypoint{corner[0] + (leg * d2x), corner[1] + (leg * d2y)});
-    guide.headings.push_back(heading_b);
-  }
-  return guide;
-}
-
-/// dz/ds of a piecewise-cubic profile at station s (0 for an empty profile).
-double profile_grade(std::span<const Poly3> profile, double s) {
-  if (profile.empty()) {
-    return 0.0;
-  }
-  const Poly3* covering = &profile.front();
-  for (const Poly3& poly : profile) {
-    if (poly.s <= s + tol::kLength) {
-      covering = &poly;
-    }
-  }
-  const double ds = s - covering->s;
-  return covering->b + (2.0 * covering->c * ds) + (3.0 * covering->d * ds * ds);
-}
-
-/// Width [m] of `lane` at road station `road_s` (widths are section-local,
-/// evaluated on the last record starting at or before the station).
-double lane_width_at(const Lane& lane, const LaneSection& section, double road_s) {
-  if (lane.widths.empty()) {
-    return 0.0;
-  }
-  const double local = road_s - section.s0;
-  const Poly3* width = &lane.widths.front();
-  for (const Poly3& poly : lane.widths) {
-    if (poly.s <= local + tol::kLength) {
-      width = &poly;
-    }
-  }
-  const double ds = local - width->s;
-  return width->a + (width->b * ds) + (width->c * ds * ds) + (width->d * ds * ds * ds);
-}
-
-Expected<ArmEnd> arm_end(const RoadNetwork& network, const RoadEnd& end) {
-  const Road* road = network.road(end.road);
-  if (road == nullptr) {
-    return make_error(ErrorCode::InvalidArgument, "stale road id in road ends");
-  }
-  if (road->sections.empty()) {
-    return make_error(ErrorCode::InvalidArgument, "arm road has no lane sections", road->odr_id);
-  }
-  constexpr double kPi = std::numbers::pi;
-  ArmEnd out;
-  if (end.contact == ContactPoint::Start) {
-    const PathPoint pose = road->plan_view.evaluate(0.0);
-    out = ArmEnd{.x = pose.x,
-                 .y = pose.y,
-                 .into_hdg = pose.hdg + kPi, // travel toward decreasing s enters the junction
-                 .out_hdg = pose.hdg,        // road body continues along +s
-                 .road_hdg = pose.hdg,
-                 .section = road->sections.front(),
-                 .station = 0.0};
-  } else {
-    const double station = road->plan_view.length();
-    const PathPoint pose = road->plan_view.evaluate(station);
-    out = ArmEnd{.x = pose.x,
-                 .y = pose.y,
-                 .into_hdg = pose.hdg,      // travel toward increasing s enters the junction
-                 .out_hdg = pose.hdg + kPi, // road body continues along -s
-                 .road_hdg = pose.hdg,
-                 .section = road->sections.back(),
-                 .station = station};
-  }
-  return out;
-}
-
-/// Driving lanes at an arm's junction end, ordered curb-in (outermost first).
-/// `incoming` picks the lanes leading INTO the junction; otherwise the lanes
-/// leading OUT (which serve as the outgoing road, 12.3). Which sign leads in
-/// depends on the contact end: at a Start end traffic toward decreasing s
-/// (positive/left lanes) enters; at an End end traffic toward increasing s
-/// (negative/right lanes) enters.
-std::vector<ArmLane> arm_driving_lanes(const RoadNetwork& network,
-                                       const RoadEnd& end,
-                                       const ArmEnd& geom,
-                                       bool incoming) {
-  const Road& road = *network.road(end.road);
-  const LaneSection& section = *network.lane_section(geom.section);
-  const bool positive_leads_in = end.contact == ContactPoint::Start;
-  const bool want_positive = incoming ? positive_leads_in : !positive_leads_in;
-  const double center_t = eval_profile(road.lane_offset, geom.station);
-  // Cumulative same-side width between lane 0 and each lane (ALL lane types
-  // count — a median or border lane still displaces the driving lanes).
-  std::vector<ArmLane> lanes;
-  double left_cum = 0.0;
-  double right_cum = 0.0;
-  // section.lanes is sorted leftmost-first (+N..+1, 0, -1..-N): walk the
-  // positive side from the CENTER outward by iterating it in reverse.
-  std::vector<LaneId> ordered(section.lanes.begin(), section.lanes.end());
-  std::ranges::reverse(ordered); // now -N..-1, 0, +1..+N
-  for (const LaneId lane_id : ordered) {
-    const Lane& lane = *network.lane(lane_id);
-    if (lane.odr_id <= 0) {
-      continue;
-    }
-    const double width = lane_width_at(lane, section, geom.station);
-    if (want_positive && lane.type == LaneType::Driving) {
-      lanes.push_back(
-          ArmLane{.odr_id = lane.odr_id, .width = width, .inner_t = center_t + left_cum});
-    }
-    left_cum += width;
-  }
-  if (!want_positive) {
-    for (const LaneId lane_id : section.lanes) { // leftmost first; negatives follow 0
-      const Lane& lane = *network.lane(lane_id);
-      if (lane.odr_id >= 0) {
-        continue;
-      }
-      const double width = lane_width_at(lane, section, geom.station);
-      if (lane.type == LaneType::Driving) {
-        lanes.push_back(
-            ArmLane{.odr_id = lane.odr_id, .width = width, .inner_t = center_t - right_cum});
-      }
-      right_cum += width;
-    }
-  }
-  // Curb-in order (outermost first): positive lanes were collected
-  // innermost-first (+1..+N) — reverse them; negative lanes arrived
-  // innermost-first (-1..-N) — reverse those too.
-  std::ranges::reverse(lanes);
-  return lanes;
-}
+//
+// The contact/fit primitives this generator runs on (contact_state,
+// contact_lateral, driving_lanes_at, fit_connector) now live in the connection
+// engine (roadmaker/edit/connection.hpp) so the junction, assembly-drop, and
+// gap-closing consumers share one authority (gate-extension WS-2). ConnectingPlan
+// / JunctionPlan and the elevation/width blends stay here as junction policy.
 
 /// A connecting road the generator will build for one permitted turn.
 struct ConnectingPlan {
@@ -944,7 +727,7 @@ struct JunctionPlan {
   std::vector<std::string> dropped;
 };
 
-double end_distance(const ArmEnd& a, const ArmEnd& b) {
+double end_distance(const ContactState& a, const ContactState& b) {
   return std::hypot(a.x - b.x, a.y - b.y);
 }
 
@@ -967,10 +750,10 @@ Expected<JunctionPlan> plan_junction(const RoadNetwork& network,
       }
     }
   }
-  std::vector<ArmEnd> arm_ends;
+  std::vector<ContactState> arm_ends;
   arm_ends.reserve(ends.size());
   for (const RoadEnd& end : ends) {
-    auto geom = arm_end(network, end);
+    auto geom = contact_state(network, end);
     if (!geom.has_value()) {
       return tl::unexpected<Error>(geom.error());
     }
@@ -995,10 +778,10 @@ Expected<JunctionPlan> plan_junction(const RoadNetwork& network,
       if (i == j) {
         continue; // U-turns omitted in M2
       }
-      std::vector<ArmLane> incoming =
-          arm_driving_lanes(network, ends[i], arm_ends[i], /*incoming=*/true);
-      std::vector<ArmLane> outgoing =
-          arm_driving_lanes(network, ends[j], arm_ends[j], /*incoming=*/false);
+      std::vector<ContactLane> incoming =
+          driving_lanes_at(network, ends[i], arm_ends[i], /*incoming=*/true);
+      std::vector<ContactLane> outgoing =
+          driving_lanes_at(network, ends[j], arm_ends[j], /*incoming=*/false);
       const std::size_t pairs = std::min(incoming.size(), outgoing.size());
       // Lane discipline when the movement cannot use every lane: right
       // turns depart from / arrive at the OUTERMOST (curb) lanes — the
@@ -1022,30 +805,20 @@ Expected<JunctionPlan> plan_junction(const RoadNetwork& network,
       const Road& road_out = *network.road(ends[j].road);
       // Elevation and grade at the cut faces, signed along the connecting
       // road's driving direction (a Start-contact arm runs opposite to it).
-      const double z_in = eval_profile(road_in.elevation, arm_ends[i].station);
-      const double z_out = eval_profile(road_out.elevation, arm_ends[j].station);
-      const double g_in = (ends[i].contact == ContactPoint::End ? 1.0 : -1.0) *
-                          profile_grade(road_in.elevation, arm_ends[i].station);
-      const double g_out = (ends[j].contact == ContactPoint::Start ? 1.0 : -1.0) *
-                           profile_grade(road_out.elevation, arm_ends[j].station);
+      // contact_state precomputes z and the +s grade, so these read off it.
+      const double z_in = arm_ends[i].z;
+      const double z_out = arm_ends[j].z;
+      const double g_in = (ends[i].contact == ContactPoint::End ? 1.0 : -1.0) * arm_ends[i].grade;
+      const double g_out =
+          (ends[j].contact == ContactPoint::Start ? 1.0 : -1.0) * arm_ends[j].grade;
       for (std::size_t k = 0; k < pairs; ++k) {
         // Anchor the reference line on the linked lanes' inner boundaries:
         // the connecting road carries one right-hand lane (id -1) spanning
         // [-width, 0], so a reference line laid on the inner boundary makes
         // the connecting lane occupy exactly the linked lane's cross section
-        // at both contacts (smooth_fit, see ArmLane).
-        const std::array<double, 2> a = arm_lateral(arm_ends[i], incoming[k].inner_t);
-        const std::array<double, 2> b = arm_lateral(arm_ends[j], outgoing[k].inner_t);
-        const double heading_a = arm_ends[i].into_hdg;
-        const double heading_b = arm_ends[j].out_hdg;
-        std::vector<Waypoint> waypoints{Waypoint{a[0], a[1]}};
-        std::vector<double> headings{heading_a};
-        const TurnGuide guide = fillet_guides(a, heading_a, b, heading_b);
-        waypoints.insert(waypoints.end(), guide.points.begin(), guide.points.end());
-        headings.insert(headings.end(), guide.headings.begin(), guide.headings.end());
-        waypoints.push_back(Waypoint{b[0], b[1]});
-        headings.push_back(heading_b);
-        const double dist = std::hypot(b[0] - a[0], b[1] - a[1]);
+        // at both contacts (smooth_fit, see ContactLane).
+        const std::array<double, 2> a = contact_lateral(arm_ends[i], incoming[k].inner_t);
+        const std::array<double, 2> b = contact_lateral(arm_ends[j], outgoing[k].inner_t);
         const auto describe = [&] {
           return fmt::format("{}→{} (lane {}→{})",
                              road_in.odr_id,
@@ -1053,20 +826,21 @@ Expected<JunctionPlan> plan_junction(const RoadNetwork& network,
                              incoming[k].odr_id,
                              outgoing[k].odr_id);
         };
-        auto line = fit_clothoid_path(waypoints, headings);
-        if (!line.has_value()) {
-          plan.dropped.push_back(describe() + ": clothoid fit failed");
-          continue;
-        }
-        if (line->length() > options.max_loop_factor * dist) {
-          plan.dropped.push_back(describe() + ": fitted turn loops");
+        // The junction G1 connector fit — position + heading — now via the
+        // shared engine primitive (byte-identical to the inline sequence).
+        auto connector =
+            fit_connector(ConnectorEndpoint{.x = a[0], .y = a[1], .heading = arm_ends[i].into_hdg},
+                          ConnectorEndpoint{.x = b[0], .y = b[1], .heading = arm_ends[j].out_hdg},
+                          ConnectorParams{.max_loop_factor = options.max_loop_factor});
+        if (!connector.has_value()) {
+          plan.dropped.push_back(describe() + ": " + connector.error().message);
           continue;
         }
         plan.roads.push_back(ConnectingPlan{.from = ends[i],
                                             .to = ends[j],
                                             .from_lane = incoming[k].odr_id,
                                             .to_lane = outgoing[k].odr_id,
-                                            .line = std::move(*line),
+                                            .line = std::move(connector->line),
                                             .start_width = incoming[k].width,
                                             .end_width = outgoing[k].width,
                                             .start_z = z_in,
@@ -2397,6 +2171,24 @@ std::unique_ptr<Command> create_junction(const RoadNetwork& network,
                                          std::span<const RoadEnd> ends,
                                          const JunctionGenOptions& options) {
   static constexpr std::string_view kName = "Create Junction";
+  // Single-owner invariant (gate finding 5): a road end already claimed by a
+  // junction may not become an arm of a second one — regenerate the existing
+  // junction instead of overlaying a duplicate. Checked before the link-slot
+  // precondition so the message names the owning junction.
+  for (const RoadEnd& end : ends) {
+    if (const auto owner = junction_at_end(network, end)) {
+      const Road* road = network.road(end.road);
+      const Junction* junction = network.junction(*owner);
+      return invalid_command(
+          std::string(kName),
+          Error{.code = ErrorCode::InvalidArgument,
+                .message = fmt::format(
+                    "road '{}' end already belongs to junction {} — regenerate that junction "
+                    "instead",
+                    road != nullptr ? road->odr_id : "?",
+                    junction != nullptr ? junction->odr_id : "?")});
+    }
+  }
   if (auto free = ends_link_slots_free(network, ends); !free.has_value()) {
     return invalid_command(std::string(kName), free.error());
   }
@@ -2417,6 +2209,98 @@ std::unique_ptr<Command> create_junction(const RoadNetwork& network,
                       plan = std::move(*plan)](RoadNetwork& target,
                                                Values& created) -> Expected<void> {
     return materialize_junction(target, created, ends, plan);
+  };
+  return command;
+}
+
+std::unique_ptr<Command> close_gap(const RoadNetwork& network,
+                                   const RoadEnd& a,
+                                   const RoadEnd& b,
+                                   const CloseGapOptions& options) {
+  static constexpr std::string_view kName = "Close Gap";
+  if (auto ok = check_linkable(network, a, b, options); !ok.has_value()) {
+    return invalid_command(std::string(kName), ok.error());
+  }
+  const ContactState ca = *contact_state(network, a); // valid: check_linkable passed
+  const ContactState cb = *contact_state(network, b);
+  const double gap = std::hypot(ca.x - cb.x, ca.y - cb.y);
+
+  // Which resolved link slot each end owns.
+  const auto slot_of = [](Road& road, ContactPoint contact) -> std::optional<RoadLink>& {
+    return contact == ContactPoint::Start ? road.predecessor : road.successor;
+  };
+
+  auto command = std::make_unique<GenericCommand>(
+      std::string(kName), DirtySet{.roads = {a.road, b.road}, .topology = true});
+  command->before.roads.emplace_back(a.road, *network.road(a.road));
+  command->before.roads.emplace_back(b.road, *network.road(b.road));
+
+  if (gap <= options.coincident_gap_m) {
+    // Near-coincident ends: a pure link weld (Create Road's tangent-continuation
+    // snap and "Link Ends" for touching ends). No new geometry.
+    Road road_a = *network.road(a.road);
+    Road road_b = *network.road(b.road);
+    slot_of(road_a, a.contact) = RoadLink{.target = b.road, .contact = b.contact};
+    slot_of(road_b, b.contact) = RoadLink{.target = a.road, .contact = a.contact};
+    command->after.roads.emplace_back(a.road, std::move(road_a));
+    command->after.roads.emplace_back(b.road, std::move(road_b));
+    return command;
+  }
+
+  // A real gap: bridge it with a single-lane G1 connector road linked at both
+  // ends (a → connector → b). The connector leaves a along a's continuation
+  // tangent and arrives at b along b's, so both joints are G1. (G2 curvature
+  // easing is the WS-2 PR 6 refinement.)
+  auto connector = fit_connector(ConnectorEndpoint{.x = ca.x,
+                                                   .y = ca.y,
+                                                   .heading = ca.into_hdg,
+                                                   .curvature = ca.curvature,
+                                                   .z = ca.z,
+                                                   .grade = ca.grade},
+                                 ConnectorEndpoint{.x = cb.x,
+                                                   .y = cb.y,
+                                                   .heading = cb.out_hdg,
+                                                   .curvature = cb.curvature,
+                                                   .z = cb.z,
+                                                   .grade = cb.grade},
+                                 ConnectorParams{});
+  if (!connector.has_value()) {
+    return invalid_command(std::string(kName), connector.error());
+  }
+  // Width for the connector's single driving lane: the incoming end's outermost
+  // driving-lane width, or a default when the end carries none.
+  const std::vector<ContactLane> lanes = driving_lanes_at(network, a, ca, /*incoming=*/true);
+  const double lane_width = lanes.empty() ? 3.5 : lanes.back().width;
+
+  command->creator = [a,
+                      b,
+                      line = std::move(connector->line),
+                      elevation = std::move(connector->elevation),
+                      lane_width](RoadNetwork& target, Values& created) -> Expected<void> {
+    const RoadId road_id = target.create_road("", next_free_road_odr_id(target));
+    created.roads.emplace_back(road_id, Road{});
+    Road& road = *target.road(road_id);
+    road.plan_view = line;
+    road.length = road.plan_view.length();
+    road.elevation = elevation;
+    road.predecessor = RoadLink{.target = a.road, .contact = a.contact};
+    road.successor = RoadLink{.target = b.road, .contact = b.contact};
+
+    const LaneSectionId section_id = target.add_lane_section(road_id, 0.0);
+    created.sections.emplace_back(section_id, LaneSection{});
+    const LaneId center = target.add_lane(section_id, 0, LaneType::None);
+    created.lanes.emplace_back(center, Lane{});
+    const LaneId drive = target.add_lane(section_id, -1, LaneType::Driving);
+    created.lanes.emplace_back(drive, Lane{});
+    target.lane(drive)->widths.push_back(Poly3{.s = 0.0, .a = lane_width});
+
+    Road& road_a = *target.road(a.road);
+    (a.contact == ContactPoint::Start ? road_a.predecessor : road_a.successor) =
+        RoadLink{.target = road_id, .contact = ContactPoint::Start};
+    Road& road_b = *target.road(b.road);
+    (b.contact == ContactPoint::Start ? road_b.predecessor : road_b.successor) =
+        RoadLink{.target = road_id, .contact = ContactPoint::End};
+    return {};
   };
   return command;
 }

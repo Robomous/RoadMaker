@@ -4,6 +4,7 @@
 // boundary unhandled — rm::Error is translated to Python exceptions.
 
 #include "roadmaker/edit/assembly.hpp"
+#include "roadmaker/edit/connection.hpp"
 #include "roadmaker/edit/edit_stack.hpp"
 #include "roadmaker/edit/operations.hpp"
 #include "roadmaker/edit/snap.hpp"
@@ -980,6 +981,58 @@ NB_MODULE(_roadmaker, m) {
       "options"_a = roadmaker::edit::JunctionGenOptions{},
       "Generates a common junction: links each arm and builds one connecting "
       "road per permitted (incoming lane, outgoing lane) turn.");
+
+  // --- connection engine (gate-extension WS-2) ------------------------------
+  nb::class_<roadmaker::edit::CloseGapOptions>(edit, "CloseGapOptions")
+      .def(nb::init<>())
+      .def_rw("max_gap_m", &roadmaker::edit::CloseGapOptions::max_gap_m)
+      .def_rw("coincident_gap_m", &roadmaker::edit::CloseGapOptions::coincident_gap_m);
+  edit.def(
+      "junction_at_end",
+      [](const roadmaker::RoadNetwork& network, const roadmaker::RoadEnd& end) {
+        return roadmaker::edit::junction_at_end(network, end);
+      },
+      "network"_a,
+      "end"_a,
+      "The junction that already owns this road end as an arm, or None.");
+  edit.def(
+      "matching_junction",
+      [](const roadmaker::RoadNetwork& network, const std::vector<roadmaker::RoadEnd>& ends) {
+        return roadmaker::edit::matching_junction(network, ends);
+      },
+      "network"_a,
+      "ends"_a,
+      "The junction whose recorded arm set is exactly these ends (order-free), "
+      "or None — so a repeat selection regenerates in place, never duplicates.");
+  edit.def(
+      "check_linkable",
+      [](const roadmaker::RoadNetwork& network,
+         const roadmaker::RoadEnd& a,
+         const roadmaker::RoadEnd& b,
+         const roadmaker::edit::CloseGapOptions& options) {
+        unwrap(roadmaker::edit::check_linkable(network, a, b, options));
+      },
+      "network"_a,
+      "a"_a,
+      "b"_a,
+      "options"_a = roadmaker::edit::CloseGapOptions{},
+      "Raises ValueError with the reason if the two free ends can't be linked, "
+      "else returns None.");
+  edit.def(
+      "close_gap",
+      [](const roadmaker::RoadNetwork& network,
+         const roadmaker::RoadEnd& a,
+         const roadmaker::RoadEnd& b,
+         const roadmaker::edit::CloseGapOptions& options) {
+        return roadmaker::edit::close_gap(network, a, b, options);
+      },
+      "network"_a,
+      "a"_a,
+      "b"_a,
+      "options"_a = roadmaker::edit::CloseGapOptions{},
+      "Closes the gap between two free road ends: a pure link when they nearly "
+      "coincide, else a single-lane connector road, in one undoable command.");
+
   nb::class_<roadmaker::edit::ElevationPoint>(edit, "ElevationPoint")
       .def(nb::init<>())
       .def(
