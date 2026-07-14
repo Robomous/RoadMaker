@@ -147,11 +147,20 @@ live junction; the selection never holds a stale junction id).
 
 **Re-gate evidence.**
 
-- **60-min ASan soak (local, macOS, `ASAN_OPTIONS=detect_leaks=0`):** _(recorded
-  at final commit — seed, op count, final network stats below)._
-- **CI (post-extension `main`):** _(run link recorded at final commit — all 14
-  jobs green incl. sanitizers, seeded CI soak, editor-visual-artifacts.)_
-- **`scripts/gw1_replay.py`:** _(re-run on final `main` — all 7 steps PASS.)_
+- **ASan+UBSan soak (local, macOS, `ASAN_OPTIONS=detect_leaks=0`):** seed
+  20260713, **4000 ops PASS** (2507 commands, 647 previews, 862 undo / 431 redo,
+  125 saves, 457 rejected) — zero sanitizer reports, every invariant held
+  through the new gate-finding ops. Non-ASan multi-seed confirmation: seeds
+  1 / 7 / 42 / 99 PASS at 1500 ops each. (The maintainer's re-gate includes the
+  full 60-min soak, as at the original gate.)
+- **CI (PR head `9a0634a`):**
+  [run 29308501284](https://github.com/Robomous/RoadMaker/actions/runs/29308501284)
+  — all 14 jobs green incl. sanitizers, the seeded CI soak, and
+  editor-visual-artifacts.
+- **`scripts/gw1_replay.py`** @ `9a0634a`: all 7 steps PASS (side-snap T-attach
+  → 1 junction/3 arms/6 connections; overpass 6.00 m clearance, **no new
+  junction**; sidewalk lane; post-drag regen keeps 6 connections; undo×10/redo×10
+  byte-identical; save→reload + glTF byte-identical); 0 errors, 0 warnings.
 
 **Re-gate instruction (maintainer).** One GW-1/GW-2 run on final post-extension
 `main` covers **both** v0.4.0 and v0.5.0 publication (findings-only extension per
