@@ -34,4 +34,20 @@ struct CrosswalkParams {
 [[nodiscard]] RM_API std::vector<std::pair<RoadId, Object>> junction_crosswalks(
     const RoadNetwork& network, JunctionId junction, const CrosswalkParams& params = {});
 
+/// Parameters for junction-arm stop-line authoring.
+struct StopLineParams {
+  double thickness_m = 0.3; ///< line extent ALONG the road (§13 solid line)
+  double setback_m = 4.0;   ///< gap from the junction edge — clears a crosswalk
+};
+
+/// A solid stop line (`<object type="roadMark" subtype="signalLines">`) across
+/// the APPROACH lanes of each distinct arm road of `junction`, placed just
+/// inside the junction (the "Add stop lines to all arms" action). Spans only the
+/// lanes leading INTO the junction (one travel direction), so a two-way road
+/// gets a stop line per side at its own approach. Returns {owning road, object}
+/// pairs ready for `edit::add_object`, each with a unique `odr_id`. Empty when
+/// the junction is stale/foreign or an arm has no approach lanes. Pure.
+[[nodiscard]] RM_API std::vector<std::pair<RoadId, Object>> junction_stop_lines(
+    const RoadNetwork& network, JunctionId junction, const StopLineParams& params = {});
+
 } // namespace roadmaker::edit
