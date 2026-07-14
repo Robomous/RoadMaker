@@ -115,6 +115,35 @@ TEST(Mesh, StraightRoadMeshesWithCorrectExtentsAndAreas) {
   EXPECT_NEAR(patch_area_xy(solid->positions, solid->indices), 0.12 * 100.0, 1e-3);
 }
 
+TEST(Mesh, RoadGridCarriesContinuousPlanarUVs) {
+  const auto network = load_sample("straight_road.xodr");
+  const NetworkMesh mesh = roadmaker::build_network_mesh(network);
+  ASSERT_EQ(mesh.roads.size(), 1U);
+  const RoadMesh& road = mesh.roads[0];
+
+  // One uv pair per shared-grid vertex, so every lane patch inherits UVs.
+  ASSERT_FALSE(road.uvs.empty());
+  ASSERT_EQ(road.uvs.size() * 3U, road.positions.size() * 2U);
+
+  // Planar mapping is u = s (along the road), v = t (across it). straight_road
+  // is flat and unrotated (heading 0, z = 0), so t coincides with world y —
+  // v must equal each vertex's world y exactly. u must span the full 0..100 m
+  // length from a 0 datum. Together this proves the s/t planar mapping and its
+  // continuity across lane boundaries (the shared grid has one uv per vertex).
+  double min_u = 1e9;
+  double max_u = -1e9;
+  const std::size_t vertex_count = road.positions.size() / 3;
+  for (std::size_t i = 0; i < vertex_count; ++i) {
+    const double u = road.uvs[i * 2];
+    const double v = road.uvs[(i * 2) + 1];
+    EXPECT_NEAR(v, road.positions[(i * 3) + 1], 1e-9); // v = t = world y here
+    min_u = std::min(min_u, u);
+    max_u = std::max(max_u, u);
+  }
+  EXPECT_NEAR(min_u, 0.0, 1e-9);
+  EXPECT_NEAR(max_u, 100.0, 1e-9);
+}
+
 TEST(Mesh, CurvedRoadAppliesElevationAndSuperelevation) {
   const auto network = load_sample("curved_road.xodr");
   const NetworkMesh mesh = roadmaker::build_network_mesh(network);

@@ -17,6 +17,10 @@ namespace roadmaker {
 struct SubMesh {
   std::vector<double> positions;
   std::vector<double> normals;
+  /// Planar texture coordinates in meters (u=s along the road, v=t across),
+  /// one uv pair per position. Empty = untextured (markings, junction floors
+  /// until the render layer assigns them). Sized 2*(positions/3) when present.
+  std::vector<double> uvs;
   std::vector<std::uint32_t> indices;
 
   /// Material class for surfaces; markings and junction floors carry their
@@ -36,6 +40,10 @@ struct RoadMesh {
   /// Shared vertex grid for all lane patches (xyz triplets).
   std::vector<double> positions;
   std::vector<double> normals;
+  /// Planar texture coordinates (u=s, v=t in meters), one uv pair per grid
+  /// vertex — parallel to positions/normals, so lane patches indexing the
+  /// shared grid inherit continuous UVs across boundaries.
+  std::vector<double> uvs;
 
   struct LanePatch {
     LaneId lane;

@@ -46,6 +46,18 @@ inline constexpr GLenum kFragmentShader = 0x8B30;
 inline constexpr GLenum kCompileStatus = 0x8B81;
 inline constexpr GLenum kLinkStatus = 0x8B82;
 inline constexpr GLenum kPolygonOffsetFill = 0x8037;
+inline constexpr GLenum kTexture2D = 0x0DE1;
+inline constexpr GLenum kTexture0 = 0x84C0;
+inline constexpr GLenum kRgba = 0x1908;
+inline constexpr GLenum kRgba8 = 0x8058;
+inline constexpr GLenum kUnsignedByte = 0x1401;
+inline constexpr GLenum kTextureMinFilter = 0x2801;
+inline constexpr GLenum kTextureMagFilter = 0x2800;
+inline constexpr GLenum kTextureWrapS = 0x2802;
+inline constexpr GLenum kTextureWrapT = 0x2803;
+inline constexpr GLenum kLinear = 0x2601;
+inline constexpr GLenum kLinearMipmapLinear = 0x2703;
+inline constexpr GLenum kRepeat = 0x2901;
 
 // Function pointers, loaded by load_functions().
 // NOLINTBEGIN(readability-identifier-naming) — official GL spellings.
@@ -94,7 +106,15 @@ inline constexpr GLenum kPolygonOffsetFill = 0x8037;
   X(void, EnableVertexAttribArray, GLuint)                                                         \
   X(void, VertexAttribPointer, GLuint, GLint, GLenum, GLboolean, GLsizei, const void*)             \
   X(void, DrawElements, GLenum, GLsizei, GLenum, const void*)                                      \
-  X(void, DrawArrays, GLenum, GLint, GLsizei)
+  X(void, DrawArrays, GLenum, GLint, GLsizei)                                                      \
+  X(void, Uniform1i, GLint, GLint)                                                                 \
+  X(void, ActiveTexture, GLenum)                                                                   \
+  X(void, GenTextures, GLsizei, GLuint*)                                                           \
+  X(void, BindTexture, GLenum, GLuint)                                                             \
+  X(void, TexImage2D, GLenum, GLint, GLint, GLsizei, GLsizei, GLint, GLenum, GLenum, const void*)  \
+  X(void, TexParameteri, GLenum, GLenum, GLint)                                                    \
+  X(void, GenerateMipmap, GLenum)                                                                  \
+  X(void, DeleteTextures, GLsizei, const GLuint*)
 
 #define RM_GL_DECLARE(ret, name, ...) extern ret(RM_GL_APIENTRY* name)(__VA_ARGS__);
 RM_GL_FUNCTIONS(RM_GL_DECLARE)

@@ -22,7 +22,8 @@ namespace roadmaker::editor {
 [[nodiscard]] RenderMeshData to_render_data(const std::vector<double>& positions,
                                             const std::vector<double>& normals,
                                             const std::vector<std::uint32_t>& indices,
-                                            const std::array<float, 4>& color);
+                                            const std::array<float, 4>& color,
+                                            const std::vector<double>& uvs = {});
 
 /// One uploadable mesh plus the entity it visualizes. `lane` is invalid for
 /// markings and junction floors; `object` is valid only for prop parts (a
