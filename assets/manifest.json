@@ -1,5 +1,5 @@
 {
-  "comment": "Fetched-asset manifest consumed by scripts/fetch_assets.py. Each entry: url, sha256 (of the download), license (must be in the allowed set), license_url (page where the license was verified), author, destination (repo-relative), retrieved (YYYY-MM-DD), postprocess (list of documented steps, informational). Assets authored in-repo (e.g. editor/resources/icons/custom/) are NOT listed here \u2014 they appear only in ASSETS_LICENSES.md.",
+  "comment": "Fetched-asset manifest consumed by scripts/fetch_assets.py. Each entry: url, sha256 (of the download), license (must be in the allowed set), license_url (page where the license was verified), author, destination (repo-relative), retrieved (YYYY-MM-DD), postprocess (list of documented steps, informational). Assets authored in-repo (e.g. editor/resources/icons/custom/) are NOT listed here \u2014 they appear only in ASSETS_LICENSES.md. For a POSTPROCESSED entry (has a postprocess list, e.g. a resized/re-encoded texture) sha256 is of the committed DERIVED file (what fetch_assets.py verifies against the present file) and source_sha256 is of the raw download; the postprocess steps are applied at asset-introduction time (fetch_assets.py places the raw download only on --force).",
   "allowed_licenses": [
     "CC0",
     "MIT",
@@ -204,6 +204,34 @@
       "author": "Lucide Contributors",
       "destination": "editor/resources/icons/lucide/waypoints.svg",
       "retrieved": "2026-07-10"
+    },
+    {
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/asphalt_02/asphalt_02_diff_1k.jpg",
+      "source_sha256": "1aa5ce99f58a625c71d48cfc3e68b65ca85ccb00f39e045c0a928608a0ea25ed",
+      "sha256": "5dbe19ecc43512316f496eb29d75e3e0bcfdf7780d00b54f7f00e0f2a17a4869",
+      "license": "CC0",
+      "license_url": "https://polyhaven.com/a/asphalt_02",
+      "author": "Poly Haven (Rob Tuytel, Sergej Majboroda)",
+      "destination": "assets/textures/asphalt/asphalt_02_diff_512.jpg",
+      "retrieved": "2026-07-14",
+      "postprocess": [
+        "resize to 512x512 (Lanczos)",
+        "re-encode JPEG quality 85, optimize"
+      ]
+    },
+    {
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/brushed_concrete/brushed_concrete_diff_1k.jpg",
+      "source_sha256": "4054ed6eb65cd063356ffb4a88706b7d7b78c5435051c48bf0ee64290f04bc8c",
+      "sha256": "54ba825af74ed3853099f95c8c4d34c8831654346fc163d9aaec80b59cd919ac",
+      "license": "CC0",
+      "license_url": "https://polyhaven.com/a/brushed_concrete",
+      "author": "Poly Haven (Rob Tuytel, Sergej Majboroda)",
+      "destination": "assets/textures/concrete/brushed_concrete_diff_512.jpg",
+      "retrieved": "2026-07-14",
+      "postprocess": [
+        "resize to 512x512 (Lanczos)",
+        "re-encode JPEG quality 85, optimize"
+      ]
     }
   ]
 }

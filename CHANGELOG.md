@@ -13,6 +13,18 @@ through the M2 command layer (one undo step per edit, byte-identical undo) and
 is headless-testable.
 
 ### Added
+- **Textured road & sidewalk surfaces** (GS-1 WS-A part 2 + assets): in Textured
+  mode the driving surfaces now render with a real **asphalt** texture and
+  sidewalks/curbs with **concrete** (two CC0 512² textures from Poly Haven,
+  bundled in the editor), tiled at 4 m via the material UV pipe, and lane
+  markings render as **bright flat paint** (unlit) instead of shaded off-white.
+  Surfaces are classified per lane type (`surface_for`), resolved to a texture or
+  paint material per draw; Sober mode is unchanged (flat colors). A failed
+  texture load degrades gracefully to flat color (never a crash). Asset
+  provenance + licenses: `assets/manifest.json`, `ASSETS_LICENSES.md`; decisions
+  in `docs/design/m3a/textured_render.md`. Closes the render half of
+  [#71](https://github.com/Robomous/RoadMaker/issues/71) surface work + assets
+  [#70](https://github.com/Robomous/RoadMaker/issues/70) (textures).
 - **Procedural grass ground under the network** (GS-1 WS-D, part 2): Textured
   mode now draws a **procedural grass ground plane** beneath the roads instead of
   floating over a bare grid — a camera-following surface (value-noise mottled,

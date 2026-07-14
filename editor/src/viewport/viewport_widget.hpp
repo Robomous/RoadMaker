@@ -147,7 +147,13 @@ private:
     LaneId lane;
     ObjectId object;
     JunctionId junction;
+    SurfaceKind surface = SurfaceKind::Untextured;
   };
+
+  /// The textured-mode Material for an item: the resolved surface texture
+  /// (asphalt/concrete) or bright unlit paint for markings. Returns a default
+  /// (flat) Material in Sober mode or when the textures failed to load.
+  [[nodiscard]] Material material_for(SurfaceKind surface) const;
 
   void rebuild_scene();
 
@@ -248,6 +254,11 @@ private:
   /// Render mode: true = daytime Textured (default), false = flat Sober. Drives
   /// the renderer Environment and the reference-grid dimming via apply_render_mode().
   bool textured_rendering_ = true;
+
+  /// Surface textures uploaded once at GL init (from the :/textures qrc). Invalid
+  /// if loading failed — material_for then falls back to the flat mesh color.
+  TextureHandle asphalt_texture_;
+  TextureHandle concrete_texture_;
 
   /// Roads awaiting a partial re-upload on the next paint (deduplicated
   /// there); ignored while a full rebuild is pending.

@@ -42,6 +42,12 @@
   <qresource prefix="/library">
     <file alias="manifest.json">../../assets/library/manifest.json</file>
   </qresource>
+  <!-- Surface textures (CC0, Poly Haven) for the textured render mode. Aliased
+       from the committed, re-encoded files; rows in ASSETS_LICENSES.md. -->
+  <qresource prefix="/textures">
+    <file alias="asphalt.jpg">../../assets/textures/asphalt/asphalt_02_diff_512.jpg</file>
+    <file alias="concrete.jpg">../../assets/textures/concrete/brushed_concrete_diff_512.jpg</file>
+  </qresource>
   <qresource prefix="/branding">
     <file alias="icon_16.png">branding/icon_16.png</file>
     <file alias="icon_24.png">branding/icon_24.png</file>

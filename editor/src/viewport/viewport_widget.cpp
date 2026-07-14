@@ -6,6 +6,7 @@
 #include <QDropEvent>
 #include <QEvent>
 #include <QFontMetrics>
+#include <QImage>
 #include <QKeyEvent>
 #include <QMimeData>
 #include <QMouseEvent>
@@ -17,6 +18,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <cstring>
 #include <numeric>
 
 #include "document/highlight.hpp"
@@ -92,7 +94,56 @@ void ViewportWidget::initializeGL() {
   if (!gl_ready_) {
     qFatal("Failed to initialize OpenGL 3.3 core renderer");
   }
+
+  // Upload the surface textures once (bundled in the :/textures qrc). A failed
+  // load leaves an invalid handle and material_for() falls back to flat color,
+  // so a runner without the JPEG image handler still renders (untextured).
+  const auto upload_texture = [this](const char* resource) -> TextureHandle {
+    QImage image(QString::fromLatin1(resource));
+    if (image.isNull()) {
+      qWarning("viewport: could not load surface texture %s", resource);
+      return {};
+    }
+    image = image.convertToFormat(QImage::Format_RGBA8888);
+    TextureData data;
+    data.width = image.width();
+    data.height = image.height();
+    data.rgba.resize(static_cast<std::size_t>(image.width()) *
+                     static_cast<std::size_t>(image.height()) * 4U);
+    // Copy scanline by scanline (QImage rows may be padded to 4-byte alignment).
+    const std::size_t row_bytes = static_cast<std::size_t>(image.width()) * 4U;
+    for (int y = 0; y < image.height(); ++y) {
+      std::memcpy(data.rgba.data() + (static_cast<std::size_t>(y) * row_bytes),
+                  image.constScanLine(y),
+                  row_bytes);
+    }
+    return renderer_->upload(data);
+  };
+  asphalt_texture_ = upload_texture(":/textures/asphalt.jpg");
+  concrete_texture_ = upload_texture(":/textures/concrete.jpg");
+
   scene_dirty_ = true;
+}
+
+Material ViewportWidget::material_for(SurfaceKind surface) const {
+  Material material;
+  if (!textured_rendering_) {
+    return material; // Sober mode: flat per-mesh color, no textures/paint.
+  }
+  switch (surface) {
+  case SurfaceKind::Asphalt:
+    material.base_color = asphalt_texture_; // invalid → renderer uses mesh color
+    break;
+  case SurfaceKind::Concrete:
+    material.base_color = concrete_texture_;
+    break;
+  case SurfaceKind::Paint:
+    material.unlit = true; // markings read as bright flat paint, not shaded
+    break;
+  case SurfaceKind::Untextured:
+    break;
+  }
+  return material;
 }
 
 void ViewportWidget::rebuild_scene() {
@@ -108,7 +159,8 @@ void ViewportWidget::rebuild_scene() {
                                   .road = item.road,
                                   .lane = item.lane,
                                   .object = item.object,
-                                  .junction = item.junction});
+                                  .junction = item.junction,
+                                  .surface = item.surface});
   }
   scene_bounds_ = scene.bounds;
   // Keep the ground plane just under the (possibly changed) network floor.
@@ -150,7 +202,8 @@ void ViewportWidget::apply_pending_road_updates() {
         items_.push_back(UploadedItem{.handle = renderer_->upload(item.data),
                                       .road = item.road,
                                       .lane = item.lane,
-                                      .object = item.object});
+                                      .object = item.object,
+                                      .surface = item.surface});
       }
       break;
     }
@@ -216,7 +269,8 @@ void ViewportWidget::paintGL() {
   std::vector<DrawItem> draw_items;
   draw_items.reserve(items_.size() + preview_handles_.size());
   for (const UploadedItem& item : items_) {
-    draw_items.push_back(DrawItem{.mesh = item.handle, .state = item_state(item)});
+    draw_items.push_back(DrawItem{
+        .mesh = item.handle, .state = item_state(item), .material = material_for(item.surface)});
   }
   for (const RenderMeshHandle handle : preview_handles_) {
     draw_items.push_back(DrawItem{.mesh = handle});
