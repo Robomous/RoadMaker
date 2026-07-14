@@ -105,19 +105,19 @@ void ViewportWidget::initializeGL() {
       return {};
     }
     image = image.convertToFormat(QImage::Format_RGBA8888);
-    TextureData data;
-    data.width = image.width();
-    data.height = image.height();
-    data.rgba.resize(static_cast<std::size_t>(image.width()) *
-                     static_cast<std::size_t>(image.height()) * 4U);
+    TextureData tex;
+    tex.width = image.width();
+    tex.height = image.height();
+    tex.rgba.resize(static_cast<std::size_t>(image.width()) *
+                    static_cast<std::size_t>(image.height()) * 4U);
     // Copy scanline by scanline (QImage rows may be padded to 4-byte alignment).
     const std::size_t row_bytes = static_cast<std::size_t>(image.width()) * 4U;
     for (int y = 0; y < image.height(); ++y) {
-      std::memcpy(data.rgba.data() + (static_cast<std::size_t>(y) * row_bytes),
+      std::memcpy(tex.rgba.data() + (static_cast<std::size_t>(y) * row_bytes),
                   image.constScanLine(y),
                   row_bytes);
     }
-    return renderer_->upload(data);
+    return renderer_->upload(tex);
   };
   asphalt_texture_ = upload_texture(":/textures/asphalt.jpg");
   concrete_texture_ = upload_texture(":/textures/concrete.jpg");
