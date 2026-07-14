@@ -205,6 +205,24 @@ TEST(ContextMenu, AddCrosswalksToAllArmsIsOneUndoableMacro) {
   EXPECT_EQ(object_count(fx), 3U);
 }
 
+TEST(ContextMenu, AddStopLinesToAllArmsIsOneUndoableMacro) {
+  Fixture fx;
+  const roadmaker::JunctionId junction = build_junction(fx);
+  ASSERT_TRUE(junction.is_valid());
+
+  MenuContext context;
+  context.junction = junction;
+  const std::vector<MenuItem> items = build_context_menu(context, fx.deps);
+  const MenuItem* add = fx.find(items, "Add stop lines to all arms");
+  ASSERT_NE(add, nullptr);
+  ASSERT_TRUE(add->enabled);
+
+  add->invoke();
+  EXPECT_EQ(object_count(fx), 3U); // one stop line per arm
+  fx.document.undo_stack()->undo();
+  EXPECT_EQ(object_count(fx), 0U);
+}
+
 TEST(ContextMenu, DeleteObjectInvokeLandsTheCommand) {
   Fixture fx;
   const roadmaker::ObjectId object = place_tree(fx);

@@ -1,4 +1,6 @@
-"""Add a zebra crosswalk to every arm of a junction (edit.junction_crosswalks).
+"""Add crosswalks and stop lines to every arm of a junction.
+
+Uses edit.junction_crosswalks and edit.junction_stop_lines.
 
 This is the kernel geometry behind the editor's junction "Add crosswalks to all
 arms" action: for each distinct arm road, derive one <object type="crosswalk">
@@ -47,6 +49,12 @@ def main() -> int:
             f"s={crosswalk.s:.1f} width(across)={crosswalk.length:.1f} depth={crosswalk.width:.1f}"
         )
         stack.push(network, rm.edit.add_object(network, road, crosswalk))
+
+    # A stop line behind each arm's crosswalk, spanning the approach lanes.
+    stop_lines = rm.edit.junction_stop_lines(network, junction)
+    print(f"authoring {len(stop_lines)} stop lines")
+    for road, stop_line in stop_lines:
+        stack.push(network, rm.edit.add_object(network, road, stop_line))
 
     assert rm.validate_network(network) == []
     rm.save_xodr(network, out_path, "junction_crosswalks_example")

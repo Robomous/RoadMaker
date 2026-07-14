@@ -884,6 +884,16 @@ NB_MODULE(_roadmaker, m) {
       "One zebra crosswalk Object per arm of the junction, spanning its driving "
       "lanes just inside it. Returns a list of (RoadId, Object); add each with "
       "edit.add_object (the editor groups them into one undo step).");
+  edit.def(
+      "junction_stop_lines",
+      [](const roadmaker::RoadNetwork& network, roadmaker::JunctionId junction) {
+        return roadmaker::edit::junction_stop_lines(network, junction);
+      },
+      "network"_a,
+      "junction"_a,
+      "One solid stop line Object across each arm's approach lanes, just behind "
+      "the crosswalk. Returns a list of (RoadId, Object); add each with "
+      "edit.add_object.");
   edit.def("effective_waypoints",
            &roadmaker::edit::effective_waypoints,
            "road"_a,

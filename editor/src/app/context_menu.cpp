@@ -153,6 +153,24 @@ std::vector<MenuItem> build_context_menu(const MenuContext& context, ContextMenu
                    }
                    deps.document.undo_stack()->endMacro();
                  }});
+    // A solid stop line across each arm's approach lanes, just behind the
+    // crosswalk — again one undo step.
+    const bool has_stop_arms = !edit::junction_stop_lines(network, junction).empty();
+    items.push_back(
+        MenuItem{.text = QObject::tr("Add stop lines to all arms"),
+                 .enabled = has_stop_arms,
+                 .invoke = [deps, junction] {
+                   auto stop_lines = edit::junction_stop_lines(deps.document.network(), junction);
+                   if (stop_lines.empty()) {
+                     return;
+                   }
+                   deps.document.undo_stack()->beginMacro(QObject::tr("Add stop lines"));
+                   for (auto& [road, object] : stop_lines) {
+                     (void)deps.document.push_command(
+                         edit::add_object(deps.document.network(), road, std::move(object)));
+                   }
+                   deps.document.undo_stack()->endMacro();
+                 }});
     items.push_back(separator());
     items.push_back(MenuItem{.text = QObject::tr("Delete junction"), .invoke = [deps, junction] {
                                (void)deps.document.push_command(

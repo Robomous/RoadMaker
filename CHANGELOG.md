@@ -13,6 +13,14 @@ through the M2 command layer (one undo step per edit, byte-identical undo) and
 is headless-testable.
 
 ### Added
+- **Add stop lines to all arms of a junction** (GS-1 WS-B): the junction context
+  menu gains **Add stop lines to all arms** — a solid stop line
+  (`<object subtype="signalLines">`) across each arm's *approach* lanes, set back
+  to clear the crosswalk, added in a **single undo step**. Kernel helper
+  `edit::junction_stop_lines` (approach-lane span only, so a two-way road gets a
+  line per side; thin along the road) + Python `edit.junction_stop_lines`; the
+  marks mesh through the existing stop-line path. Part of
+  [#72](https://github.com/Robomous/RoadMaker/issues/72).
 - **Add crosswalks to all arms of a junction** (GS-1 WS-B): the junction
   context menu gains **Add crosswalks to all arms** — one zebra crosswalk per
   arm road, spanning that arm's driving lanes just inside the junction, added as
