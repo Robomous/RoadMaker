@@ -209,6 +209,31 @@ pick(const NetworkMesh& mesh, std::span<const RoadAabb> road_aabbs, const Ray& r
     }
   }
 
+  // Junction floors: the blended surface between the arms is its own
+  // selectable entity. Tested after roads so a road patch lying over the floor
+  // (they meet coplanar at the stitch seam) still wins on a tie, but the open
+  // floor interior — which no road covers — becomes grabbable. Reports the
+  // JunctionId with road/lane invalid.
+  for (const JunctionFloor& floor : mesh.junction_floors) {
+    const std::vector<std::uint32_t>& indices = floor.mesh.indices;
+    for (std::size_t i = 0; i + 2 < indices.size(); i += 3) {
+      const auto t = intersect_triangle(ray,
+                                        vertex(floor.mesh.positions, indices[i]),
+                                        vertex(floor.mesh.positions, indices[i + 1]),
+                                        vertex(floor.mesh.positions, indices[i + 2]));
+      if (t && *t < best_t) {
+        best_t = *t;
+        best = PickHit{
+            .junction = floor.junction,
+            .position = {ray.origin[0] + (ray.direction[0] * *t),
+                         ray.origin[1] + (ray.direction[1] * *t),
+                         ray.origin[2] + (ray.direction[2] * *t)},
+            .distance = *t,
+        };
+      }
+    }
+  }
+
   // Placed props, bounding-sphere tested and sharing best_t so a prop in front
   // of a road wins the pick. A generous whole-tree sphere makes trunks (thin)
   // as easy to grab as crowns.

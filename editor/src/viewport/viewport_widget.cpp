@@ -107,7 +107,8 @@ void ViewportWidget::rebuild_scene() {
     items_.push_back(UploadedItem{.handle = renderer_->upload(item.data),
                                   .road = item.road,
                                   .lane = item.lane,
-                                  .object = item.object});
+                                  .object = item.object,
+                                  .junction = item.junction});
   }
   scene_bounds_ = scene.bounds;
   if (scene_bounds_.valid() && frame_on_rebuild_) {
@@ -194,10 +195,12 @@ HighlightState ViewportWidget::item_state(const UploadedItem& item) const {
   return highlight_state_for(item.road,
                              item.lane,
                              item.object,
+                             item.junction,
                              selection_.entries(),
                              hovered_road_,
                              hovered_lane_,
-                             hovered_object_);
+                             hovered_object_,
+                             hovered_junction_);
 }
 
 void ViewportWidget::paintGL() {
@@ -469,10 +472,19 @@ void ViewportWidget::update_hover(const QPointF& pos) {
     info.world_y = (*ground)[1];
   }
 
-  RoadId new_hover_road;     // invalid = no road under the cursor
-  ObjectId new_hover_object; // invalid = no prop under the cursor
+  RoadId new_hover_road;         // invalid = no road under the cursor
+  ObjectId new_hover_object;     // invalid = no prop under the cursor
+  JunctionId new_hover_junction; // invalid = no junction floor under the cursor
   if (const auto hit = pick(document_.mesh(), road_aabbs_, ray)) {
-    if (hit->object.is_valid()) {
+    if (hit->junction.is_valid()) {
+      if (const Junction* junction = document_.network().junction(hit->junction)) {
+        info.valid = true;
+        info.world_x = hit->position[0];
+        info.world_y = hit->position[1];
+        info.entity = tr("junction %1").arg(QString::fromStdString(junction->odr_id));
+        new_hover_junction = hit->junction;
+      }
+    } else if (hit->object.is_valid()) {
       // A prop is nearer than any road surface — highlight the whole tree.
       if (const Object* object = document_.network().object(hit->object)) {
         info.valid = true;
@@ -497,10 +509,11 @@ void ViewportWidget::update_hover(const QPointF& pos) {
       new_hover_road = hit->road;
     }
   }
-  // Highlight the hovered road or prop (mutually exclusive); repaint only when
-  // it actually changes so plain mouse-overs stay cheap.
+  // Highlight the hovered road, prop, or junction floor (mutually exclusive);
+  // repaint only when it actually changes so plain mouse-overs stay cheap.
   set_hovered_road(new_hover_road);
   set_hovered_object(new_hover_object);
+  set_hovered_junction(new_hover_junction);
   emit hover_changed(info);
 }
 
@@ -527,10 +540,19 @@ void ViewportWidget::set_hovered_object(ObjectId object) {
   update();
 }
 
+void ViewportWidget::set_hovered_junction(JunctionId junction) {
+  if (hover_locked_ || hovered_junction_ == junction) {
+    return;
+  }
+  hovered_junction_ = junction;
+  update();
+}
+
 void ViewportWidget::leaveEvent(QEvent* event) {
-  // Cursor left the viewport — drop both hover highlights.
+  // Cursor left the viewport — drop every hover highlight.
   set_hovered_road({});
   set_hovered_object({});
+  set_hovered_junction({});
   QOpenGLWidget::leaveEvent(event);
 }
 

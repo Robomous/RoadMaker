@@ -321,10 +321,19 @@ void PropertiesPanel::refresh() {
   const SelectionEntry primary = selection_.primary();
   const Road* road = document_.network().road(primary.road);
   if (road == nullptr) {
-    placeholder_->show();
     name_row_->hide();
     lane_group_->hide();
     elevation_group_->hide();
+    // A selected junction floor has no road but is a real entity — show its
+    // topology instead of the empty placeholder (gate finding 4).
+    if (const Junction* junction = document_.network().junction(primary.junction)) {
+      placeholder_->hide();
+      add_row(tr("OpenDRIVE id"), tr("junction %1").arg(QString::fromStdString(junction->odr_id)));
+      add_row(tr("Arms"), QString::number(junction->arms.size()));
+      add_row(tr("Connections"), QString::number(junction->connections.size()));
+      return;
+    }
+    placeholder_->show();
     return;
   }
   placeholder_->hide();

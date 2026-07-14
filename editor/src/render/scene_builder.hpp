@@ -33,6 +33,7 @@ struct SceneItem {
   RoadId road;
   LaneId lane;
   ObjectId object;
+  JunctionId junction; // valid for a junction-floor item (road/lane invalid)
 };
 
 /// Axis-aligned bounds of the built scene (kernel frame, meters).

@@ -61,6 +61,24 @@ TEST(SceneTreeModel, TargetRoundTripsThroughIndexLookup) {
   }
 }
 
+TEST(SceneTreeModel, JunctionNodeRoundTripsToASelectableTarget) {
+  // Gate finding 4: a Junctions-tree node resolves to a junction target (road/
+  // lane invalid) and round-trips through index_for_junction, so a tree click
+  // selects the junction the same entity a floor pick does.
+  Document document;
+  ASSERT_TRUE(document.load(kSample).has_value());
+  SceneTreeModel model(document);
+
+  document.network().for_each_junction([&](JunctionId junction_id, const Junction&) {
+    const QModelIndex index = model.index_for_junction(junction_id);
+    ASSERT_TRUE(index.isValid());
+    const SceneTreeModel::Target target = model.target_for(index);
+    EXPECT_EQ(target.junction, junction_id);
+    EXPECT_FALSE(target.road.is_valid());
+    EXPECT_FALSE(target.lane.is_valid());
+  });
+}
+
 TEST(SceneTreeModel, GroupHeadersYieldEmptyTargets) {
   Document document;
   ASSERT_TRUE(document.load(kSample).has_value());

@@ -149,6 +149,7 @@ Scene build_scene(const NetworkMesh& mesh) {
                                lane_color(floor.mesh.material)),
         .road = {},
         .lane = {},
+        .junction = floor.junction,
     });
     grow_bounds(scene.bounds, floor.mesh.positions);
   }

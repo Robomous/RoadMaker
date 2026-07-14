@@ -138,6 +138,7 @@ private:
     RoadId road;
     LaneId lane;
     ObjectId object;
+    JunctionId junction;
   };
 
   void rebuild_scene();
@@ -168,6 +169,10 @@ private:
   /// Sets the hovered prop/object (repainting only on change); an object hover
   /// clears the road/lane hover and vice versa. Pass an invalid id to clear.
   void set_hovered_object(ObjectId object);
+
+  /// Sets the hovered junction floor (repainting only on change). Mutually
+  /// exclusive with the road/object hover; pass an invalid id to clear.
+  void set_hovered_junction(JunctionId junction);
 
   /// Builds the right-click MenuContext under a viewport pixel: node handle of
   /// a selected road (priority), else the road/lane pick + its station.
@@ -282,6 +287,10 @@ private:
   /// Prop/object under the cursor (invalid = none). Mutually exclusive with
   /// the road/lane hover — an object hit clears the road hover and vice versa.
   ObjectId hovered_object_;
+
+  /// Junction floor under the cursor (invalid = none). Mutually exclusive with
+  /// the road/object hover.
+  JunctionId hovered_junction_;
 
   /// Set by set_hover_preview (screenshot mode): update_hover then leaves the
   /// forced hover in place so a capture isn't wiped by a spurious event.

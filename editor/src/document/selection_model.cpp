@@ -60,14 +60,24 @@ bool SelectionModel::contains(const SelectionEntry& entry) const {
 std::vector<RoadId> SelectionModel::selected_roads() const {
   std::vector<RoadId> roads;
   for (const SelectionEntry& entry : entries_) {
-    if (entry.object.is_valid()) {
-      continue; // a prop selection does not put its owning road in play
+    if (entry.object.is_valid() || entry.junction.is_valid()) {
+      continue; // a prop/junction selection puts no road in play
     }
     if (std::ranges::find(roads, entry.road) == roads.end()) {
       roads.push_back(entry.road);
     }
   }
   return roads;
+}
+
+std::vector<JunctionId> SelectionModel::selected_junctions() const {
+  std::vector<JunctionId> junctions;
+  for (const SelectionEntry& entry : entries_) {
+    if (entry.junction.is_valid()) {
+      junctions.push_back(entry.junction);
+    }
+  }
+  return junctions;
 }
 
 std::vector<ObjectId> SelectionModel::selected_objects() const {
@@ -83,6 +93,9 @@ std::vector<ObjectId> SelectionModel::selected_objects() const {
 bool SelectionModel::is_live(const SelectionEntry& entry) const {
   if (entry.object.is_valid()) {
     return document_.network().object(entry.object) != nullptr;
+  }
+  if (entry.junction.is_valid()) {
+    return document_.network().junction(entry.junction) != nullptr;
   }
   if (document_.network().road(entry.road) == nullptr) {
     return false;

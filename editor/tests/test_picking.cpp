@@ -33,6 +33,18 @@ RoadMesh make_quad_road(RoadNetwork& network, std::string odr_id, double z, doub
   return mesh;
 }
 
+/// One-quad junction floor at height `z` covering [0,size]x[0,size], keyed to a
+/// fresh junction id in `network`.
+JunctionFloor make_quad_floor(RoadNetwork& network, std::string odr_id, double z, double size) {
+  const JunctionId junction_id = network.create_junction(odr_id, "");
+  JunctionFloor floor;
+  floor.junction = junction_id;
+  floor.mesh.positions = {0.0, 0.0, z, size, 0.0, z, size, size, z, 0.0, size, z};
+  floor.mesh.normals = {0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1};
+  floor.mesh.indices = {0, 1, 2, 0, 2, 3};
+  return floor;
+}
+
 Ray straight_down(double x, double y, double from_z = 10.0) {
   return Ray{.origin = {x, y, from_z}, .direction = {0.0, 0.0, -1.0}};
 }
@@ -91,6 +103,38 @@ TEST(Pick, HitInsideQuadReturnsLaneAndPoint) {
   EXPECT_NEAR(hit->position[1], 6.0, 1e-9);
   EXPECT_NEAR(hit->position[2], 0.0, 1e-9);
   EXPECT_NEAR(hit->distance, 10.0, 1e-9);
+}
+
+TEST(Pick, JunctionFloorIsSelectable) {
+  // Gate finding 4: a junction floor is its own pickable entity — a ray into
+  // the open floor interior (no road covers it) reports the JunctionId with
+  // road/lane/object left invalid.
+  RoadNetwork network;
+  NetworkMesh mesh;
+  mesh.junction_floors.push_back(make_quad_floor(network, "j", 0.0, 10.0));
+
+  const auto hit = pick(mesh, {}, straight_down(5.0, 5.0));
+  ASSERT_TRUE(hit.has_value());
+  EXPECT_EQ(hit->junction, mesh.junction_floors[0].junction);
+  EXPECT_FALSE(hit->road.is_valid());
+  EXPECT_FALSE(hit->lane.is_valid());
+  EXPECT_FALSE(hit->object.is_valid());
+  EXPECT_NEAR(hit->position[2], 0.0, 1e-9);
+}
+
+TEST(Pick, RoadOverFloorWinsOnTie) {
+  // A road patch coplanar with (or above) the floor still wins the pick so the
+  // arms stay grabbable; the floor only claims the interior no road covers.
+  RoadNetwork network;
+  NetworkMesh mesh;
+  mesh.junction_floors.push_back(make_quad_floor(network, "j", 0.0, 10.0));
+  mesh.roads.push_back(make_quad_road(network, "1", 0.1, 10.0));
+  const auto aabbs = compute_road_aabbs(mesh);
+
+  const auto hit = pick(mesh, aabbs, straight_down(5.0, 5.0));
+  ASSERT_TRUE(hit.has_value());
+  EXPECT_EQ(hit->road, mesh.roads[0].road);
+  EXPECT_FALSE(hit->junction.is_valid());
 }
 
 TEST(Pick, MissOutsideQuad) {

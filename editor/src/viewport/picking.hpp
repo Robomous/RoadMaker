@@ -50,9 +50,10 @@ ground_point(const CameraMatrices& camera,
              double max_t = std::numeric_limits<double>::infinity());
 
 struct PickHit {
-  RoadId road;     // for an object hit: its owning road
-  LaneId lane;     // invalid when the hit is not a lane patch
-  ObjectId object; // valid when the hit is a placed prop (nearer than any road)
+  RoadId road;         // for an object hit: its owning road
+  LaneId lane;         // invalid when the hit is not a lane patch
+  ObjectId object;     // valid when the hit is a placed prop (nearer than any road)
+  JunctionId junction; // valid when a junction floor was hit (road/lane invalid)
   std::array<double, 3> position{};
   double distance = 0.0; // along the ray [m]
 };
@@ -72,7 +73,11 @@ struct RoadAabb {
 /// Nearest lane-patch hit via Möller–Trumbore over roads whose AABB the ray
 /// enters. Backfaces are NOT culled: roads are thin sheets and downhill-facing
 /// patches must stay pickable. `road_aabbs` must come from compute_road_aabbs
-/// on the same mesh. Markings and junction floors are not pickable in M1.
+/// on the same mesh. Junction floors ARE pickable (nearest triangle wins,
+/// sharing the road/prop depth test) and report their JunctionId with road,
+/// lane and object left invalid — every rendered surface maps to a selectable
+/// entity. Lane markings remain non-pickable (they ride on the road they
+/// annotate).
 [[nodiscard]] std::optional<PickHit>
 pick(const NetworkMesh& mesh, std::span<const RoadAabb> road_aabbs, const Ray& ray);
 

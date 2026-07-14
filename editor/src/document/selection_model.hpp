@@ -14,12 +14,14 @@
 
 namespace roadmaker::editor {
 
-/// One selected entity: a whole road (lane invalid), a lane on a road, or a
-/// placed object/prop (`object` valid, `road` = its owning road, lane invalid).
+/// One selected entity: a whole road (lane invalid), a lane on a road, a
+/// placed object/prop (`object` valid, `road` = its owning road, lane invalid),
+/// or a junction (`junction` valid, road/lane/object all invalid).
 struct SelectionEntry {
   RoadId road;
-  LaneId lane;     // invalid = road-level selection
-  ObjectId object; // valid = a placed object/prop selection
+  LaneId lane;         // invalid = road-level selection
+  ObjectId object;     // valid = a placed object/prop selection
+  JunctionId junction; // valid = a junction floor selection (road invalid)
 
   friend bool operator==(const SelectionEntry&, const SelectionEntry&) = default;
 };
@@ -73,6 +75,11 @@ public:
   /// the delete/move/context-menu object flows operate on (objects are moved
   /// by their own road-relative s/t, not by dragging the owning road).
   [[nodiscard]] std::vector<ObjectId> selected_objects() const;
+
+  /// Junctions present in the selection, in selection order. A junction floor
+  /// pick or a Junctions-tree click lands here; selecting a junction never
+  /// puts its arms/connecting roads in play (they are selected as roads).
+  [[nodiscard]] std::vector<JunctionId> selected_junctions() const;
 
 signals:
   /// Emitted only when the selection actually changes. Carries no payload —
