@@ -64,6 +64,14 @@ through the M2 command layer (one undo step per edit, byte-identical undo) and
 is headless-testable.
 
 ### Added
+- **Signal properties panel** (GS-1 WS-C): selecting a traffic light or sign
+  shows a **Signal** section in the Properties panel — its kind (dynamic/static),
+  type/subtype, and country as read-only rows, plus editable **s / t / heading
+  offset** spinboxes that each commit one `edit::move_signal` on focus-out (with
+  the same unchanged-value skip guard the other editors use, so undo-refresh
+  never echoes a command back). Completes the WS-C signal authoring loop
+  (place → select → edit → delete). Retyping type/subtype is a later slice. Part
+  of [#72](https://github.com/Robomous/RoadMaker/issues/72).
 - **Signals are selectable, hoverable, and deletable** (GS-1 WS-C): a placed
   traffic light or sign is now a first-class editor entity — click it to select
   (it highlights as a whole pole), hover shows a "signal N" readout, and

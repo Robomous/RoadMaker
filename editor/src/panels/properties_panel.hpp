@@ -92,6 +92,19 @@ private:
   QLabel* elevation_node_label_;
   QDoubleSpinBox* elevation_spin_;
   ElevationTool* elevation_tool_ = nullptr;
+
+  QGroupBox* signal_group_;
+  QDoubleSpinBox* signal_s_spin_;
+  QDoubleSpinBox* signal_t_spin_;
+  QDoubleSpinBox* signal_h_spin_;
+  QLabel* signal_kind_label_;
+
+  /// Populates the Signal section (position spinboxes + read-only type rows)
+  /// from the primary selection's signal, and shows it.
+  void refresh_signal(const Signal& signal);
+
+  /// Commits a move_signal from the spinbox values for the primary signal.
+  void push_signal_move();
 };
 
 } // namespace roadmaker::editor

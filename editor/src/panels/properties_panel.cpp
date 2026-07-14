@@ -146,7 +146,10 @@ PropertiesPanel::PropertiesPanel(Document& document,
       remove_left_(new QPushButton(tr("Remove left lane"))),
       remove_right_(new QPushButton(tr("Remove right lane"))),
       elevation_group_(new QGroupBox(tr("Elevation"), this)),
-      elevation_node_label_(new QLabel(this)), elevation_spin_(new QDoubleSpinBox) {
+      elevation_node_label_(new QLabel(this)), elevation_spin_(new QDoubleSpinBox),
+      signal_group_(new QGroupBox(tr("Signal"), this)), signal_s_spin_(new QDoubleSpinBox),
+      signal_t_spin_(new QDoubleSpinBox), signal_h_spin_(new QDoubleSpinBox),
+      signal_kind_label_(new QLabel(this)) {
   placeholder_->setWordWrap(true);
   placeholder_->setEnabled(false);
 
@@ -209,12 +212,37 @@ PropertiesPanel::PropertiesPanel(Document& document,
   elevation_form->addRow(elevation_node_label_);
   elevation_form->addRow(tr("Height"), elevation_spin_);
 
+  // Signal: a placed <signal>'s road-relative pose. s/t/heading edit through
+  // move_signal (one command each); type/subtype stay read-only for now (a
+  // retype command is a later slice).
+  signal_kind_label_->setObjectName(QStringLiteral("signal_kind_label"));
+  signal_kind_label_->setWordWrap(true);
+  const auto configure_signal_spin =
+      [](QDoubleSpinBox* spin, const char* name, double lo, double hi, const QString& suffix) {
+        spin->setObjectName(QString::fromLatin1(name));
+        spin->setRange(lo, hi);
+        spin->setDecimals(3);
+        spin->setSuffix(suffix);
+      };
+  configure_signal_spin(signal_s_spin_, "signal_s_spin", 0.0, 100000.0, tr(" m"));
+  signal_s_spin_->setSingleStep(1.0);
+  configure_signal_spin(signal_t_spin_, "signal_t_spin", -100.0, 100.0, tr(" m"));
+  signal_t_spin_->setSingleStep(0.5);
+  configure_signal_spin(signal_h_spin_, "signal_h_spin", -6.2832, 6.2832, tr(" rad"));
+  signal_h_spin_->setSingleStep(0.1);
+  auto* signal_form = new QFormLayout(signal_group_);
+  signal_form->addRow(signal_kind_label_);
+  signal_form->addRow(tr("s"), signal_s_spin_);
+  signal_form->addRow(tr("t"), signal_t_spin_);
+  signal_form->addRow(tr("Heading offset"), signal_h_spin_);
+
   auto* layout = new QVBoxLayout(this);
   layout->addWidget(placeholder_);
   layout->addWidget(name_row_);
   layout->addLayout(form_);
   layout->addWidget(lane_group_);
   layout->addWidget(elevation_group_);
+  layout->addWidget(signal_group_);
   layout->addStretch();
 
   // One command per discrete action (spec 01 §7). Combos commit on
@@ -306,6 +334,12 @@ PropertiesPanel::PropertiesPanel(Document& document,
         document_.network(), node->first, node->second, elevation_spin_->value()));
   });
 
+  // Signal pose: commit s/t/heading on focus-out through move_signal, with the
+  // same unchanged-value skip guard so refresh() after undo never re-commits.
+  for (QDoubleSpinBox* spin : {signal_s_spin_, signal_t_spin_, signal_h_spin_}) {
+    connect(spin, &QDoubleSpinBox::editingFinished, this, [this] { push_signal_move(); });
+  }
+
   connect(&selection_, &SelectionModel::selection_changed, this, &PropertiesPanel::refresh);
   connect(&document_, &Document::loaded, this, &PropertiesPanel::refresh);
   // Commands and undo/redo change lane values without touching the
@@ -319,6 +353,19 @@ void PropertiesPanel::refresh() {
 
   // The primary entry (most recently selected) drives the panel.
   const SelectionEntry primary = selection_.primary();
+
+  // A signal entry carries its owning road, so check it BEFORE the road path:
+  // a selected signal shows its own pose section, not the road under it.
+  if (const Signal* signal = document_.network().signal(primary.signal)) {
+    name_row_->hide();
+    lane_group_->hide();
+    elevation_group_->hide();
+    placeholder_->hide();
+    refresh_signal(*signal);
+    return;
+  }
+  signal_group_->hide();
+
   const Road* road = document_.network().road(primary.road);
   if (road == nullptr) {
     name_row_->hide();
@@ -363,6 +410,52 @@ void PropertiesPanel::refresh() {
   lane_group_->show();
   refresh_lane_section();
   refresh_elevation();
+}
+
+void PropertiesPanel::refresh_signal(const Signal& signal) {
+  add_row(tr("OpenDRIVE id"), tr("signal %1").arg(QString::fromStdString(signal.odr_id)));
+  const bool dynamic = signal.dynamic.value_or(false);
+  signal_kind_label_->setText(dynamic ? tr("Dynamic signal (traffic light)")
+                                      : tr("Static signal (sign)"));
+  add_row(tr("Type / subtype"),
+          tr("%1 / %2")
+              .arg(QString::fromStdString(signal.type.empty() ? "—" : signal.type))
+              .arg(QString::fromStdString(signal.subtype.empty() ? "—" : signal.subtype)));
+  if (!signal.country.empty()) {
+    add_row(tr("Country"), QString::fromStdString(signal.country));
+  }
+  // Programmatic sync must not echo a move_signal back — block the editingFinished
+  // guard's siblings while we set values.
+  const QSignalBlocker block_s(signal_s_spin_);
+  const QSignalBlocker block_t(signal_t_spin_);
+  const QSignalBlocker block_h(signal_h_spin_);
+  signal_s_spin_->setValue(signal.s);
+  signal_t_spin_->setValue(signal.t);
+  signal_h_spin_->setValue(signal.h_offset);
+  signal_group_->show();
+}
+
+void PropertiesPanel::push_signal_move() {
+  const std::vector<SignalId> signal_ids = selection_.selected_signals();
+  if (signal_ids.empty()) {
+    return;
+  }
+  const Signal* signal = document_.network().signal(signal_ids.back());
+  if (signal == nullptr) {
+    return;
+  }
+  // Skip the push when nothing changed — the re-entrancy guard that keeps a
+  // refresh()-driven setValue from committing a redundant command.
+  if (std::abs(signal->s - signal_s_spin_->value()) < 1e-9 &&
+      std::abs(signal->t - signal_t_spin_->value()) < 1e-9 &&
+      std::abs(signal->h_offset - signal_h_spin_->value()) < 1e-9) {
+    return;
+  }
+  push(edit::move_signal(document_.network(),
+                         signal_ids.back(),
+                         signal_s_spin_->value(),
+                         signal_t_spin_->value(),
+                         signal_h_spin_->value()));
 }
 
 void PropertiesPanel::set_elevation_tool(ElevationTool* tool) {
