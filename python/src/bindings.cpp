@@ -997,6 +997,16 @@ NB_MODULE(_roadmaker, m) {
       "dy"_a,
       "Moves N roads together by (dx, dy) [m] as ONE command; links between the "
       "moved roads survive, links leaving the set break on both sides.");
+  edit.def("rotate_road",
+           &roadmaker::edit::rotate_road,
+           "network"_a,
+           "road"_a,
+           "angle"_a,
+           "pivot_x"_a,
+           "pivot_y"_a,
+           "Rotates a whole road about the world pivot (pivot_x, pivot_y) by angle "
+           "[rad] CCW; rigid (elevation and shape coefficients unchanged), breaks "
+           "links to non-rotating roads and refuses junction roads.");
   edit.def("insert_node_at",
            &roadmaker::edit::insert_node_at,
            "network"_a,

@@ -12,6 +12,15 @@ Placement and transform corrections found while dogfooding GS-1
 placement path GS-1 signal placement builds on.
 
 ### Added
+- **`rotate_road` kernel op** ([#177](https://github.com/Robomous/RoadMaker/issues/177)):
+  `edit::rotate_road(network, road, angle, pivot_x, pivot_y)` rigidly rotates a
+  whole road about a world pivot — every geometry record's start position rotates
+  and its heading gains the angle, authoring waypoints rotate too, while lengths,
+  lanes, elevation (s-relative) and shape coefficients (local-frame) are
+  untouched, so undo is byte-identical. Same connectivity policy as
+  `translate_road` (breaks links to non-rotating roads, refuses junction roads).
+  Python `edit.rotate_road` + `examples/rotate_road.py`. Foundation for the
+  transform gizmo's road rotation.
 - **Explicit Move tool** ([#176](https://github.com/Robomous/RoadMaker/issues/176)):
   a dedicated, discoverable **Move** tool on the toolbar (Lucide 4-arrow icon,
   shortcut **M**) — hovering a movable entity shows the 4-arrow cursor and a body
