@@ -7,8 +7,6 @@
 // in the message (same seed = same sequence). CI runs it under ASan for
 // ~10 minutes; longer local runs are the sprint's crash hunt.
 
-#include <spdlog/common.h>
-
 #include <QApplication>
 #include <QTemporaryDir>
 #include <cstdio>
@@ -36,7 +34,7 @@ int main(int argc, char** argv) {
   // editor library because Document logs through that library's spdlog registry
   // (a set_level from this translation unit does not reach it). SPDLOG_LEVEL
   // (e.g. =info) restores the full op trace for local seed debugging.
-  roadmaker::editor::logging::set_console_level_from_env(spdlog::level::critical);
+  roadmaker::editor::logging::set_soak_console_level();
 
   roadmaker::editor::soak::SoakOptions options;
   options.max_ops = 5000;

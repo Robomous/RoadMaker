@@ -53,17 +53,18 @@ void prune_old_logs(const std::filesystem::path& log_dir, int keep_files) {
 
 } // namespace
 
-spdlog::level::level_enum console_level_from_env(spdlog::level::level_enum fallback) {
+std::string soak_console_level() {
   const char* env = std::getenv("SPDLOG_LEVEL"); // NOLINT(concurrency-mt-unsafe)
-  // from_str maps an unknown/typo name to `off`; only consult it when the caller
-  // actually set something, so an unset var keeps the fallback rather than off.
-  return (env != nullptr && env[0] != '\0') ? spdlog::level::from_str(env) : fallback;
+  // Only consult the var when the caller actually set something, so an unset
+  // var keeps the quiet default rather than an empty name.
+  return (env != nullptr && env[0] != '\0') ? std::string(env) : "critical";
 }
 
-void set_console_level_from_env(spdlog::level::level_enum fallback) {
+void set_soak_console_level() {
   auto sink = std::make_shared<spdlog::sinks::stderr_color_sink_mt>();
   auto logger = std::make_shared<spdlog::logger>("roadmaker", std::move(sink));
-  logger->set_level(console_level_from_env(fallback));
+  // from_str maps an unknown/typo name to `off` — same as spdlog's env loader.
+  logger->set_level(spdlog::level::from_str(soak_console_level()));
   spdlog::set_default_logger(std::move(logger));
 }
 
