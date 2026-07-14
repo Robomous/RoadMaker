@@ -86,7 +86,45 @@ sky.
 - Every asset used has its `ASSETS_LICENSES.md` row
   ([asset policy](../../standards/assets.md)).
 
+## Build (as-built, v0.5.0)
+
+The scene is authored by **dogfooding the kernel edit layer** —
+`python/examples/build_gs1.py` lays down the junction and every mark, signal,
+and prop as real `edit::Command`s on an `EditStack`, exactly as the editor
+would — and saved to `assets/samples/gs1_urban_intersection.xodr`
+(16 roads · 1 junction · 28 objects · 6 signals · **0 diagnostics**). The
+`esmini-roundtrip` job globs `assets/samples/*.xodr`, so GS-1 loads there
+automatically; the golden view renders in `editor-visual-artifacts`
+(`--camera gs1 --textured --size 1920x1080`).
+
+Per-row status against the current build:
+
+| # | Element | Status |
+|---|---|---|
+| 1 | Four-arm junction, valid lane links | ✅ `edit::assembly::x_intersection` (urban profile) |
+| 2 | Textured asphalt roadway | ✅ textured mode (opt-in) |
+| 3 | Concrete sidewalks with curb offset | ✅ `urban_sidewalk` profile |
+| 4 | Crosswalks on all four arms | ✅ `junction_crosswalks` |
+| 5 | Lane arrows | ✅ `junction_lane_arrows` (straight) |
+| 6 | Stop lines at each approach | ✅ `junction_stop_lines` |
+| 7 | Center double-yellow lines | ◐ profile centre marking (single-line urban); dual-yellow authoring is a follow-up |
+| 8 | Dashed white lane lines | ◐ n/a for a one-lane-per-direction urban profile |
+| 9 | Traffic lights ×4 | ✅ one dynamic `<signal>` per arm, instanced mesh |
+| 10 | Speed-limit + crossing signs | ✅ two static `<signal>`s (DE 274/50, 133/10) |
+| 11 | ~20 vegetation props | ◐ 16 street trees (below the ~20 target; tune before final) |
+| 12 | Grass terrain around roads | ✅ procedural ground (textured mode) |
+| 13 | Sky and daytime lighting | ✅ environment lighting (textured mode) |
+| 14 | Sober mode still available | ✅ `View → Textured Rendering` toggle |
+
+**Baseline:** the golden PNG
+(`docs/roadmap/golden_scenes/img/gs1_baseline_v0.5.0.png`) is captured from the
+`editor-visual-artifacts` run's `gs1_urban_intersection.png` artifact — macOS
+dev has no offscreen GL context, so it is committed from a CI render on review.
+
 ## History
 
 - 2026-07-10 — initial spec (this document). Camera not yet exercised; the
   first render lands with M3a's release PR.
+- 2026-07-14 — GS-1 built (`build_gs1.py` + `gs1_urban_intersection.xodr`),
+  `gs1` golden camera + CI render added. Rows 7/8/11 have honest follow-up
+  notes above; baseline to be committed from the CI artifact on review.

@@ -235,6 +235,13 @@ void ViewportWidget::set_camera_preset(const QString& preset) {
     camera_.set_view(-kPi / 2.0F, (kPi / 2.0F) - 0.02F);
   } else if (preset == QStringLiteral("orbit")) {
     camera_.set_view(0.8F, 0.9F);
+  } else if (preset == QStringLiteral("gs1")) {
+    // The GS-1 golden camera (docs/roadmap/golden_scenes/gs1_urban_intersection.md):
+    // a fixed three-quarter view down one diagonal at eye (−55, −55, 35) looking
+    // at the junction centre (origin). yaw = −3π/4, pitch = asin(35/|d|), and the
+    // exact distance |(−55,−55,35)| = 85.29 m so the baseline is reproducible
+    // regardless of the loaded scene's bounds.
+    camera_.set_pose({0.0F, 0.0F, 0.0F}, -3.0F * kPi / 4.0F, 0.42294F, 85.294F);
   }
   update();
 }

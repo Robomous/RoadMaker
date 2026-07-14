@@ -288,6 +288,13 @@ jobs:
           xvfb-run -a python3 scripts/editor_screenshot.py \
             "assets/samples/crossing.xodr" "shots/crossing_textured.png" \
             --camera orbit --textured --skip-on-no-gl
+          # GS-1 golden render (WS-E acceptance): the M3a "Urban intersection"
+          # golden scene from its fixed diagonal camera, textured daytime look,
+          # at the spec's 1920x1080. Compare against the committed baseline
+          # docs/roadmap/golden_scenes/img/gs1_baseline_v0.5.0.png on review.
+          xvfb-run -a python3 scripts/editor_screenshot.py \
+            "assets/samples/gs1_urban_intersection.xodr" "shots/gs1_urban_intersection.png" \
+            --camera gs1 --textured --size 1920x1080 --skip-on-no-gl
       - uses: actions/upload-artifact@v4
         with:
           name: editor-screenshots

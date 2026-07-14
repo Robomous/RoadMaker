@@ -52,6 +52,16 @@ through the M2 command layer (one undo step per edit, byte-identical undo) and
 is headless-testable.
 
 ### Added
+- **GS-1 golden scene — "Urban intersection"** (GS-1 WS-E, acceptance artifact):
+  the M3a golden scene is built and rendered. `python/examples/build_gs1.py`
+  dogfoods the kernel edit layer end to end — a 4-arm urban junction
+  (`x_intersection`, sidewalk profile), crosswalks / stop lines / lane arrows on
+  every arm, four traffic lights + two static signs, and a line of street trees
+  — saved as `assets/samples/gs1_urban_intersection.xodr` (0 diagnostics,
+  esmini-loadable). A fixed **`gs1` golden camera** (eye (−55,−55,35) → origin,
+  the spec's three-quarter diagonal) renders in CI at 1920×1080 in the textured
+  daytime look. Per-row checklist status + baseline process in
+  `docs/roadmap/golden_scenes/gs1_urban_intersection.md`.
 - **Drag traffic lights & signs from the Library** (GS-1 WS-C): the Library
   panel gains a **Signals** category with a **Traffic light** and a **Traffic
   sign** — drag either onto (or beside) a road and it snaps to the nearest
