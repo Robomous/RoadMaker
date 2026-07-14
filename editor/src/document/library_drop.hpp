@@ -23,11 +23,22 @@ namespace roadmaker::editor {
 
 enum class LibraryDropKind { None, RoadTemplate, Assembly, Tree };
 
+/// Where a resolved drop lands in the world (x, y) and whether it is valid
+/// there. The drag ghost renders at this point, so what the user sees while
+/// dragging is exactly where the element commits (ghost==commit). An invalid
+/// preview tints the ghost and the drop is rejected — never silently relocated.
+struct PlacementPreview {
+  double x = 0.0;
+  double y = 0.0;
+  bool valid = false;
+};
+
 struct LibraryDropAction {
   LibraryDropKind kind = LibraryDropKind::None;
   LaneProfile profile;                    ///< RoadTemplate: arm Create Road with this
   std::unique_ptr<edit::Command> command; ///< Assembly/Tree: push this (one undo unit)
   QString toast;                          ///< success message, or (kind None) a reject hint
+  PlacementPreview preview;               ///< where the ghost/commit lands (ghost==commit)
 };
 
 /// The LaneProfile for a road-template profile name (two_lane_rural default).

@@ -267,6 +267,11 @@ jobs:
           xvfb-run -a python3 scripts/editor_screenshot.py \
             "assets/samples/park_road.xodr" "shots/tree_drop.png" \
             --ui --raise-dock dock.library --drop-library prop.tree.pine --size 1200x800 --skip-on-no-gl
+          # Placement ghost (A1): the world-anchored drop marker at the resolved
+          # landing point mid-drag — proves ghost==commit from a low camera angle.
+          xvfb-run -a python3 scripts/editor_screenshot.py \
+            "assets/samples/park_road.xodr" "shots/drop_ghost.png" \
+            --camera orbit --drag-ghost prop.tree.pine --skip-on-no-gl
           # First-run tour (Phase 4): the guided-tour overlay on its first step.
           xvfb-run -a python3 scripts/editor_screenshot.py \
             "assets/samples/t_junction.xodr" "shots/tour.png" \

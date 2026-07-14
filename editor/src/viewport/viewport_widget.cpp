@@ -287,7 +287,7 @@ void ViewportWidget::paintGL() {
   // frame — supported on QOpenGLWidget when done last (no beginNativePainting).
   const bool has_toasts = !toasts_.active(now_ms()).empty();
   if (!handle_overlays_.empty() || !hint_text_.isEmpty() || has_toasts ||
-      drag_ghost_pos_.has_value()) {
+      drop_preview_.has_value()) {
     QPainter painter(this);
     painter.setRenderHint(QPainter::Antialiasing);
     painter.setRenderHint(QPainter::TextAntialiasing);
@@ -517,6 +517,17 @@ std::optional<std::array<double, 3>> ViewportWidget::ground_point_at(const QPoin
                       max_t);
 }
 
+std::optional<std::array<double, 3>> ViewportWidget::drop_world_point(const QPointF& pos) const {
+  // Same projection as the hover readout: the real surface under the cursor
+  // (road/junction/prop) via pick(), falling back to the ground plane in empty
+  // space — never a hidden z=0 plane over an elevated surface.
+  const Ray ray = ray_through(pos);
+  if (const auto hit = pick(document_.mesh(), road_aabbs_, ray)) {
+    return hit->position;
+  }
+  return ground_point_at(pos);
+}
+
 void ViewportWidget::update_hover(const QPointF& pos) {
   HoverInfo info;
   const Ray ray = ray_through(pos);
@@ -617,55 +628,90 @@ bool ViewportWidget::has_library_mime(const QDropEvent* event) {
 }
 
 void ViewportWidget::dragEnterEvent(QDragEnterEvent* event) {
-  if (has_library_mime(event)) {
-    event->acceptProposedAction();
-    drag_ghost_pos_ = event->position().toPoint();
-    update();
+  if (!has_library_mime(event)) {
+    return;
   }
+  event->acceptProposedAction();
+  emit_drag_preview_request(event);
 }
 
 void ViewportWidget::dragMoveEvent(QDragMoveEvent* event) {
-  if (has_library_mime(event)) {
-    event->acceptProposedAction();
-    drag_ghost_pos_ = event->position().toPoint();
-    update();
+  if (!has_library_mime(event)) {
+    return;
   }
+  event->acceptProposedAction();
+  emit_drag_preview_request(event);
 }
 
 void ViewportWidget::dragLeaveEvent(QDragLeaveEvent* event) {
-  drag_ghost_pos_.reset();
-  update();
+  clear_drop_preview();
   QOpenGLWidget::dragLeaveEvent(event);
 }
 
 void ViewportWidget::dropEvent(QDropEvent* event) {
-  drag_ghost_pos_.reset();
+  drop_preview_.reset();
   if (!has_library_mime(event)) {
+    update();
     return;
   }
   event->acceptProposedAction();
   const QString key =
       QString::fromUtf8(event->mimeData()->data(QString::fromLatin1(kLibraryItemMimeType)));
-  // Resolve the drop to the ground plane (z=0), like the tool events.
-  const auto ground = ground_point_at(event->position());
-  const double world_x = ground ? (*ground)[0] : 0.0;
-  const double world_y = ground ? (*ground)[1] : 0.0;
+  // Resolve the drop against the surface under the cursor (pick(), ground
+  // fallback) — the same projection the drag preview used, so the element lands
+  // where the ghost showed it (ghost==commit).
+  const auto world = drop_world_point(event->position());
+  const double world_x = world ? (*world)[0] : 0.0;
+  const double world_y = world ? (*world)[1] : 0.0;
   update();
   emit library_item_dropped(key, world_x, world_y);
 }
 
+void ViewportWidget::emit_drag_preview_request(const QDropEvent* event) {
+  const QString key =
+      QString::fromUtf8(event->mimeData()->data(QString::fromLatin1(kLibraryItemMimeType)));
+  const auto world = drop_world_point(event->position());
+  emit library_item_drag_moved(key, world ? (*world)[0] : 0.0, world ? (*world)[1] : 0.0);
+}
+
+void ViewportWidget::set_drop_preview(double world_x, double world_y, bool valid) {
+  drop_preview_ = DropPreview{.x = world_x, .y = world_y, .valid = valid};
+  update();
+}
+
+void ViewportWidget::clear_drop_preview() {
+  if (drop_preview_.has_value()) {
+    drop_preview_.reset();
+    update();
+  }
+}
+
 void ViewportWidget::draw_drag_ghost(QPainter& painter) const {
-  if (!drag_ghost_pos_.has_value()) {
+  if (!drop_preview_.has_value()) {
     return;
   }
+  const float aspect =
+      height() > 0 ? static_cast<float>(width()) / static_cast<float>(height()) : 1.0F;
+  const auto screen = project_to_screen(camera_.matrices(aspect),
+                                        drop_preview_->x,
+                                        drop_preview_->y,
+                                        0.0,
+                                        static_cast<double>(width()),
+                                        static_cast<double>(height()));
+  if (!screen.has_value()) {
+    return; // landing point behind the camera
+  }
   const Theme& theme = theme::current();
-  const QPointF center(*drag_ghost_pos_);
-  constexpr double kRadius = 10.0;
+  const QPointF center{(*screen)[0], (*screen)[1]};
+  // A valid drop reads in the accent; a rejected one (no road for a prop) tints
+  // to the warning color so the user sees it will not land there.
+  const QColor color = drop_preview_->valid ? theme.accent : theme.warning;
+  constexpr double kRadius = 9.0;
   painter.save();
   painter.setBrush(Qt::NoBrush);
-  painter.setPen(QPen(theme.accent, 2, Qt::DashLine));
+  painter.setPen(QPen(color, 2, drop_preview_->valid ? Qt::SolidLine : Qt::DashLine));
   painter.drawEllipse(center, kRadius, kRadius);
-  painter.setPen(QPen(theme.accent, 2));
+  painter.setPen(QPen(color, 2));
   painter.drawLine(QPointF(center.x() - kRadius, center.y()),
                    QPointF(center.x() + kRadius, center.y()));
   painter.drawLine(QPointF(center.x(), center.y() - kRadius),

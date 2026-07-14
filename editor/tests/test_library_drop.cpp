@@ -1,6 +1,7 @@
 #include "roadmaker/road/authoring.hpp"
 #include "roadmaker/road/network.hpp"
 #include "roadmaker/road/object.hpp"
+#include "roadmaker/road/road.hpp"
 #include "roadmaker/xodr/diagnostic.hpp"
 #include "roadmaker/xodr/writer.hpp"
 
@@ -11,6 +12,7 @@
 
 #include "document/library_drop.hpp"
 #include "document/library_manifest.hpp"
+#include "viewport/picking.hpp"
 
 namespace roadmaker::editor {
 namespace {
@@ -189,6 +191,65 @@ TEST(LibraryDrop, TreeInAnEmptyNetworkIsRejected) {
   const LibraryDropAction action = resolve_library_drop(tree("tree_pine"), network, 0.0, 0.0);
   EXPECT_EQ(action.kind, LibraryDropKind::None);
   EXPECT_EQ(action.command, nullptr);
+}
+
+// --- ghost == commit: the drag preview lands exactly where the drop commits ---
+
+TEST(LibraryDrop, TreeGhostPreviewMatchesTheCommittedObjectPosition) {
+  RoadNetwork network = with_straight_road(); // (0,0)-(100,0), heading +x
+  const LibraryDropAction action = resolve_library_drop(tree("tree_pine"), network, 50.0, 5.0);
+  ASSERT_EQ(action.kind, LibraryDropKind::Tree);
+  ASSERT_TRUE(action.preview.valid);
+
+  // Commit, then recover the object's world position from its (road, s, t) via
+  // the SAME projection the ghost used — the two must coincide (ghost==commit).
+  ASSERT_TRUE(action.command->apply(network).has_value());
+  roadmaker::RoadId road_id;
+  network.for_each_road([&](roadmaker::RoadId rid, const roadmaker::Road&) { road_id = rid; });
+  roadmaker::ObjectId oid;
+  network.for_each_object([&](roadmaker::ObjectId id, const roadmaker::Object&) { oid = id; });
+  const roadmaker::Road* road = network.road(road_id);
+  const roadmaker::Object* object = network.object(oid);
+  ASSERT_NE(road, nullptr);
+  ASSERT_NE(object, nullptr);
+
+  const auto committed = station_to_world(road->plan_view, object->s, object->t);
+  EXPECT_DOUBLE_EQ(action.preview.x, committed[0]);
+  EXPECT_DOUBLE_EQ(action.preview.y, committed[1]);
+  // And that spot is essentially under the drop point (5 m left of the road).
+  EXPECT_NEAR(action.preview.x, 50.0, 1.0);
+  EXPECT_NEAR(action.preview.y, 5.0, 0.5);
+}
+
+TEST(LibraryDrop, RejectedTreePreviewIsInvalidAtTheCursor) {
+  RoadNetwork network = with_straight_road();
+  // 200 m off the road — beyond the snap threshold: rejected, ghost tints at the
+  // cursor rather than relocating the object.
+  const LibraryDropAction action = resolve_library_drop(tree("tree_pine"), network, 50.0, 200.0);
+  EXPECT_EQ(action.kind, LibraryDropKind::None);
+  EXPECT_FALSE(action.preview.valid);
+  EXPECT_DOUBLE_EQ(action.preview.x, 50.0);
+  EXPECT_DOUBLE_EQ(action.preview.y, 200.0);
+}
+
+TEST(LibraryDrop, TeedAssemblyPreviewSitsOnTheRoad) {
+  RoadNetwork network = with_straight_road();
+  // Dropped 2 m off the road at x=50 — tees in at s≈50, preview snaps onto the
+  // reference line (t=0, y≈0), not at the off-to-the-side cursor.
+  const LibraryDropAction action = resolve_library_drop(assembly("t"), network, 50.0, 2.0);
+  ASSERT_EQ(action.kind, LibraryDropKind::Assembly);
+  EXPECT_TRUE(action.preview.valid);
+  EXPECT_NEAR(action.preview.x, 50.0, 1.0);
+  EXPECT_NEAR(action.preview.y, 0.0, 0.01); // pulled onto the road
+}
+
+TEST(LibraryDrop, StandaloneAssemblyPreviewIsAtTheCursor) {
+  RoadNetwork network = with_straight_road();
+  const LibraryDropAction action = resolve_library_drop(assembly("t"), network, 50.0, 200.0);
+  ASSERT_EQ(action.kind, LibraryDropKind::Assembly);
+  EXPECT_TRUE(action.preview.valid);
+  EXPECT_DOUBLE_EQ(action.preview.x, 50.0);
+  EXPECT_DOUBLE_EQ(action.preview.y, 200.0);
 }
 
 TEST(LibraryDrop, ProfileForMapsNamesWithARuralDefault) {
