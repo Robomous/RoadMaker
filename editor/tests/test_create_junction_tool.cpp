@@ -3,6 +3,7 @@
 // tests assert on the network, the undo stack, and the regeneration an
 // incoming-road edit triggers.
 
+#include "roadmaker/edit/connection.hpp"
 #include "roadmaker/edit/operations.hpp"
 #include "roadmaker/road/road.hpp"
 
@@ -111,6 +112,80 @@ TEST(CreateJunctionTool, EscapeClearsSelection) {
   ASSERT_TRUE(tool.key_press(Qt::Key_Escape, Qt::NoModifier));
   EXPECT_EQ(tool.selected_count(), 0U);
   EXPECT_EQ(scene.document.network().junction_count(), 0U);
+}
+
+TEST(CreateJunctionTool, ReselectingTheSameEndsRegeneratesInPlace) {
+  Scene scene;
+  CreateJunctionTool tool(scene.document);
+  tool.activate();
+  ASSERT_TRUE(tool.mouse_press(click_at(-6.0, 0.0)));
+  ASSERT_TRUE(tool.mouse_press(click_at(6.0, 0.0)));
+  ASSERT_TRUE(tool.mouse_press(click_at(0.0, -6.0)));
+  ASSERT_TRUE(tool.key_press(Qt::Key_Return, Qt::NoModifier));
+  ASSERT_EQ(scene.document.network().junction_count(), 1U);
+  const JunctionId junction = scene.document.network().find_junction("1");
+
+  QSignalSpy toast(&tool, &CreateJunctionTool::toast_requested);
+  // Re-selecting ends that overlap the existing junction and generating must
+  // NEVER superimpose a second junction (finding 5) — it regenerates in place
+  // or refuses, and surfaces the outcome as a toast either way.
+  ASSERT_TRUE(tool.mouse_press(click_at(-6.0, 0.0)));
+  ASSERT_TRUE(tool.mouse_press(click_at(6.0, 0.0)));
+  ASSERT_TRUE(tool.mouse_press(click_at(0.0, -6.0)));
+  ASSERT_TRUE(tool.key_press(Qt::Key_Return, Qt::NoModifier));
+
+  EXPECT_EQ(scene.document.network().junction_count(), 1U);         // no duplicate
+  EXPECT_EQ(scene.document.network().find_junction("1"), junction); // still the same one
+  EXPECT_EQ(tool.selected_count(), 0U);                             // session reset
+  EXPECT_GE(toast.count(), 1);                                      // surfaced, not silent
+}
+
+TEST(CreateJunctionTool, ExactReselectionRegeneratesInPlaceNotADuplicate) {
+  // Drive the idempotency-match path deterministically: build the junction, then
+  // regenerate it from its recorded arms through the same routing generate uses.
+  Scene scene;
+  CreateJunctionTool tool(scene.document);
+  tool.activate();
+  ASSERT_TRUE(tool.mouse_press(click_at(-6.0, 0.0)));
+  ASSERT_TRUE(tool.mouse_press(click_at(6.0, 0.0)));
+  ASSERT_TRUE(tool.mouse_press(click_at(0.0, -6.0)));
+  ASSERT_TRUE(tool.key_press(Qt::Key_Return, Qt::NoModifier));
+  const JunctionId junction = scene.document.network().find_junction("1");
+  ASSERT_TRUE(junction.is_valid());
+
+  // matching_junction over the recorded arms finds exactly this junction, so a
+  // regenerate lands (not a create) — no duplicate id is minted.
+  const auto& arms = scene.document.network().junction(junction)->arms;
+  EXPECT_EQ(roadmaker::edit::matching_junction(scene.document.network(), arms), junction);
+  ASSERT_TRUE(scene.document.push_command(
+      roadmaker::edit::regenerate_junction(scene.document.network(), junction)));
+  EXPECT_EQ(scene.document.network().junction_count(), 1U);
+}
+
+TEST(CreateJunctionTool, AnEndAlreadyInAJunctionIsRefusedWithAWarning) {
+  Scene scene;
+  CreateJunctionTool tool(scene.document);
+  tool.activate();
+  ASSERT_TRUE(tool.mouse_press(click_at(-6.0, 0.0)));
+  ASSERT_TRUE(tool.mouse_press(click_at(6.0, 0.0)));
+  ASSERT_TRUE(tool.mouse_press(click_at(0.0, -6.0)));
+  ASSERT_TRUE(tool.key_press(Qt::Key_Return, Qt::NoModifier));
+  ASSERT_EQ(scene.document.network().junction_count(), 1U);
+
+  // A fresh north arm; pairing its end with an already-owned junction arm must
+  // be refused (the single-owner invariant), not overlaid as a second junction.
+  ASSERT_TRUE(scene.document.push_command(roadmaker::edit::create_road(
+      {Waypoint{0.0, 40.0}, Waypoint{0.0, 6.0}}, roadmaker::LaneProfile::two_lane_default(), "")));
+  const int after_setup = scene.document.undo_stack()->count();
+
+  QSignalSpy toast(&tool, &CreateJunctionTool::toast_requested);
+  ASSERT_TRUE(tool.mouse_press(click_at(-6.0, 0.0))); // already a junction arm
+  ASSERT_TRUE(tool.mouse_press(click_at(0.0, 6.0)));  // the fresh road's free end
+  ASSERT_TRUE(tool.key_press(Qt::Key_Return, Qt::NoModifier));
+
+  EXPECT_EQ(scene.document.network().junction_count(), 1U);     // no duplicate
+  EXPECT_EQ(scene.document.undo_stack()->count(), after_setup); // no command pushed
+  EXPECT_GE(toast.count(), 1);                                  // warning surfaced
 }
 
 TEST(CreateJunctionTool, EditingAnIncomingRoadRegeneratesInOneUndoStep) {

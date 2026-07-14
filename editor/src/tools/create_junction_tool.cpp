@@ -1,5 +1,7 @@
 #include "tools/create_junction_tool.hpp"
 
+#include "roadmaker/edit/connection.hpp"
+#include "roadmaker/edit/operations.hpp"
 #include "roadmaker/road/network.hpp"
 
 #include <algorithm>
@@ -138,6 +140,33 @@ void CreateJunctionTool::generate() {
   if (ends_.size() < 2) {
     emit status_message(tr("Select at least 2 road ends before generating"));
     return;
+  }
+  // Idempotency (finding 5): if this exact arm set already forms a junction,
+  // regenerate it in place instead of overlaying a duplicate.
+  if (const auto existing = edit::matching_junction(document_.network(), ends_)) {
+    const roadmaker::Junction* junction = document_.network().junction(*existing);
+    const QString id =
+        junction != nullptr ? QString::fromStdString(junction->odr_id) : QStringLiteral("?");
+    if (document_.push_command(edit::regenerate_junction(document_.network(), *existing))) {
+      emit toast_requested(tr("Selection matches junction %1 — regenerated in place").arg(id),
+                           ToastSeverity::Info);
+    }
+    reset_session();
+    emit preview_changed();
+    return;
+  }
+  // Partial overlap: an end already belongs to a junction. create_junction
+  // would refuse (the single-owner invariant); surface it as a warning rather
+  // than a silent diagnostic, and don't push a doomed command.
+  for (const RoadEnd& end : ends_) {
+    if (edit::junction_at_end(document_.network(), end).has_value()) {
+      emit toast_requested(
+          tr("A selected end already belongs to a junction — regenerate that one instead"),
+          ToastSeverity::Warning);
+      reset_session();
+      emit preview_changed();
+      return;
+    }
   }
   // Preview first so the status bar can report dropped turns the generator
   // omits (nearly-parallel arms whose fit would loop).

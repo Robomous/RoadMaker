@@ -58,6 +58,7 @@ void SoakDriver::step(int index) {
       {2, &SoakDriver::op_translate_road, "translate_road"},
       {1, &SoakDriver::op_merge_roads, "merge_roads"},
       {2, &SoakDriver::op_create_junction, "create_junction"},
+      {1, &SoakDriver::op_duplicate_junction_attempt, "duplicate_junction_attempt"},
       {1, &SoakDriver::op_attach_t, "attach_t"},
       {1, &SoakDriver::op_delete_junction, "delete_junction"},
       {1, &SoakDriver::op_delete_road, "delete_road"},
@@ -495,6 +496,24 @@ void SoakDriver::op_create_junction() {
     return;
   }
   push(edit::create_junction(document_.network(), arms));
+}
+
+void SoakDriver::op_duplicate_junction_attempt() {
+  // Re-attempt a junction over the EXACT arms of an existing one: the
+  // single-owner invariant must refuse it (gate finding 5), leaving the network
+  // byte-unchanged (a refused command never mutates). A wrongly-accepted
+  // duplicate would trip validate_network's arm_single_owner rule in
+  // check_invariants.
+  const std::vector<JunctionId> junctions = live_junctions();
+  if (junctions.empty()) {
+    return;
+  }
+  const Junction* junction = document_.network().junction(
+      junctions[static_cast<std::size_t>(rand_int(0, int(junctions.size()) - 1))]);
+  if (junction == nullptr || junction->arms.size() < 2) {
+    return; // foreign junctions carry no arms to re-attempt
+  }
+  push(edit::create_junction(document_.network(), junction->arms));
 }
 
 void SoakDriver::op_attach_t() {

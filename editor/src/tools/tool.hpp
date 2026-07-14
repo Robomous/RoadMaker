@@ -6,6 +6,7 @@
 #include <vector>
 
 #include "viewport/picking.hpp"
+#include "viewport/toast_queue.hpp"
 
 namespace roadmaker::editor {
 
@@ -122,6 +123,11 @@ signals:
   /// returns to Select after a successful cut or Esc. MainWindow forwards it to
   /// the ToolManager.
   void request_tool(ToolId id);
+
+  /// A transient result worth a viewport toast (distinct from the status-bar
+  /// guidance in status_message) — e.g. "regenerated in place" or a refusal
+  /// (finding 5). MainWindow routes it to ViewportWidget::show_toast.
+  void toast_requested(const QString& text, ToastSeverity severity);
 };
 
 } // namespace roadmaker::editor

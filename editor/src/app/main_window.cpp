@@ -156,6 +156,10 @@ MainWindow::MainWindow(QWidget* parent, bool restore_saved_layout)
       statusBar()->showMessage(text, 5000);
       viewport_->set_hint(text);
     });
+    connect(
+        tool, &Tool::toast_requested, this, [this](const QString& text, ToastSeverity severity) {
+          viewport_->show_toast(text, severity);
+        });
     // One-shot tools ask to return to another tool; trigger the matching action
     // so its checkable toolbar state follows (Select is the only target today).
     connect(tool, &Tool::request_tool, this, [this](ToolId id) {

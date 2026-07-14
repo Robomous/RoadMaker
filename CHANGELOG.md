@@ -274,6 +274,17 @@ is headless-testable.
   merge/post-split seeds.
 
 ### Fixed
+- **Re-generating a junction over the same ends regenerates it in place** (gate
+  finding 5): the Create Junction tool now checks `edit::matching_junction`
+  before generating — an exact re-selection of an existing junction's arms
+  regenerates that junction (Info toast "regenerated in place") instead of
+  superimposing a duplicate, and a partial overlap (a selected end already owned
+  by a junction) is refused with a Warning toast instead of a silent diagnostic.
+  Backed by the kernel single-owner invariant (validator rule
+  `robomous.ai:rm:1.0.0:junctions.arm_single_owner`) added earlier in the
+  sprint. A new `Tool::toast_requested` signal routes tool results to the
+  viewport toast overlay; the soak driver gains an `op_duplicate_junction_attempt`
+  that asserts the re-attempt is refused and the network stays byte-unchanged.
 - **Junction regeneration follows a dragged arm** (gate finding 2): dragging a
   node of a junction's incoming road left the connecting roads frozen —
   `regenerate_junction` matched the freshly planned turns to the existing
