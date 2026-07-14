@@ -104,6 +104,10 @@ MainWindow::MainWindow(QWidget* parent, bool restore_saved_layout)
   connect(viewport_, &ViewportWidget::hover_changed, this, &MainWindow::on_hover);
   connect(viewport_, &ViewportWidget::library_item_dropped, this, &MainWindow::on_library_drop);
   connect(viewport_,
+          &ViewportWidget::library_item_drag_moved,
+          this,
+          &MainWindow::on_library_drag_moved);
+  connect(viewport_,
           &ViewportWidget::context_menu_requested,
           this,
           [this](const MenuContext& context, const QPoint& global_pos) {
@@ -606,6 +610,12 @@ void MainWindow::drop_library_item_for_capture(const QString& key, double world_
   on_library_drop(key, world_x, world_y);
 }
 
+void MainWindow::preview_library_drag_for_capture(const QString& key,
+                                                  double world_x,
+                                                  double world_y) {
+  on_library_drag_moved(key, world_x, world_y);
+}
+
 void MainWindow::on_library_drop(const QString& key, double world_x, double world_y) {
   const LibraryItem* item = library_model_.item_for_key(key);
   if (item == nullptr) {
@@ -636,6 +646,20 @@ void MainWindow::on_library_drop(const QString& key, double world_x, double worl
     }
     break;
   }
+}
+
+void MainWindow::on_library_drag_moved(const QString& key, double world_x, double world_y) {
+  const LibraryItem* item = library_model_.item_for_key(key);
+  if (item == nullptr) {
+    viewport_->clear_drop_preview();
+    return;
+  }
+  // Resolve through the SAME path the drop commit uses, so the ghost marks
+  // exactly where the element lands (ghost==commit). The command is discarded;
+  // only the resolved landing point drives the preview.
+  const LibraryDropAction action =
+      resolve_library_drop(*item, document_.network(), world_x, world_y);
+  viewport_->set_drop_preview(action.preview.x, action.preview.y, action.preview.valid);
 }
 
 void MainWindow::start_tour() {

@@ -215,6 +215,27 @@ TEST(FindStation, StraightLineAnalytic) {
   EXPECT_NEAR(left.t, 4.0, 1e-6); // left of travel direction -> positive
 }
 
+TEST(StationToWorld, InvertsFindStationOnAStraightLine) {
+  const ReferenceLine line = straight_line(100.0);
+  // station_to_world is the exact inverse of find_station: projecting a point to
+  // (s, t) and back must return the original point (the ghost==commit contract).
+  for (const auto& p : {std::array<double, 2>{50.0, -3.0},
+                        std::array<double, 2>{25.0, 4.0},
+                        std::array<double, 2>{10.0, 0.0}}) {
+    const StationCoord st = find_station(line, p[0], p[1]);
+    const auto world = station_to_world(line, st.s, st.t);
+    EXPECT_NEAR(world[0], p[0], 1e-6);
+    EXPECT_NEAR(world[1], p[1], 1e-6);
+  }
+}
+
+TEST(StationToWorld, EmptyLineYieldsOrigin) {
+  const ReferenceLine line;
+  const auto world = station_to_world(line, 5.0, 2.0);
+  EXPECT_DOUBLE_EQ(world[0], 0.0);
+  EXPECT_DOUBLE_EQ(world[1], 0.0);
+}
+
 TEST(FindStation, ClampsToLineEnds) {
   const ReferenceLine line = straight_line(100.0);
 

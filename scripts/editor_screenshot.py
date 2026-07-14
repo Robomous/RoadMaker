@@ -68,6 +68,9 @@ def main() -> int:
     parser.add_argument("--toast", default=None, help="toast text to show (renders the toast)")
     parser.add_argument("--drop-library", default=None, help="library item key to drop (renders it)")
     parser.add_argument(
+        "--drag-ghost", default=None, help="library item key to preview mid-drag (renders the ghost)"
+    )
+    parser.add_argument(
         "--show-tour", action="store_true", help="start the guided-tour overlay (with --ui)"
     )
     parser.add_argument(
@@ -107,6 +110,8 @@ def main() -> int:
         cmd += ["--toast", args.toast]
     if args.drop_library:
         cmd += ["--drop-library", args.drop_library]
+    if args.drag_ghost:
+        cmd += ["--drag-ghost", args.drag_ghost]
     if args.show_tour:
         cmd += ["--show-tour"]
     if args.textured:

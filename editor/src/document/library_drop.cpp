@@ -86,16 +86,20 @@ LibraryDropAction resolve_library_drop(const LibraryItem& item,
                                        double world_x,
                                        double world_y) {
   LibraryDropAction action;
+  // The ghost renders at action.preview; default it to the raw cursor so an
+  // unresolved/rejected drop tints there rather than jumping to the origin.
+  action.preview = {world_x, world_y, false};
   switch (item.kind) {
   case LibraryItem::Kind::RoadTemplate:
     action.kind = LibraryDropKind::RoadTemplate;
     action.profile = profile_for(item.profile);
+    action.preview.valid = true; // armed at the cursor
     return action;
   case LibraryItem::Kind::Assembly: {
     const bool is_t = item.assembly == QStringLiteral("t");
     const bool is_x = item.assembly == QStringLiteral("x");
     if (!is_t && !is_x) {
-      return action; // unknown assembly
+      return action; // unknown assembly (preview invalid at cursor)
     }
     // Dropped ON a road (finding 1): project onto it and tee/cross INTO it,
     // aligned to the road tangent, instead of a floating standalone at the
@@ -110,6 +114,10 @@ LibraryDropAction resolve_library_drop(const LibraryItem& item,
                               : edit::assembly::cross_onto_road(network, on_road->road, on_road->s);
         if (action.command != nullptr) {
           action.kind = LibraryDropKind::Assembly;
+          // Ghost sits on the road at the tee/cross station (t = 0), where the
+          // junction forms — not at the off-to-the-side cursor.
+          const auto p = station_to_world(road->plan_view, on_road->s, 0.0);
+          action.preview = {p[0], p[1], true};
           action.toast =
               is_t ? QStringLiteral("Teed a T-intersection into the road — Ctrl+Z to undo")
                    : QStringLiteral("Crossed an X-intersection over the road — Ctrl+Z to "
@@ -124,6 +132,7 @@ LibraryDropAction resolve_library_drop(const LibraryItem& item,
                           : edit::assembly::x_intersection(network, pose);
     if (action.command != nullptr) {
       action.kind = LibraryDropKind::Assembly;
+      action.preview = {world_x, world_y, true}; // standalone at the cursor
       const bool near_road = on_road.has_value();
       action.toast = near_road ? QStringLiteral("Dropped near a road end — placed a standalone "
                                                 "intersection instead; Ctrl+Z to undo")
@@ -138,7 +147,7 @@ LibraryDropAction resolve_library_drop(const LibraryItem& item,
     const auto placement = nearest_road_station(network, world_x, world_y, kTreeSnapThreshold);
     if (!placement.has_value()) {
       action.toast = QStringLiteral("Drop a tree onto or beside a road");
-      return action; // kind stays None — the caller surfaces the hint
+      return action; // kind stays None, preview invalid at cursor — caller hints
     }
     Object tree;
     tree.odr_id = next_object_odr_id(network);
@@ -153,6 +162,12 @@ LibraryDropAction resolve_library_drop(const LibraryItem& item,
     action.command = edit::add_object(network, placement->road, std::move(tree));
     if (action.command != nullptr) {
       action.kind = LibraryDropKind::Tree;
+      // Ghost at the exact station the object occupies — the same (road, s, t)
+      // → world projection the mesh builder uses, so ghost==commit.
+      if (const Road* road = network.road(placement->road)) {
+        const auto p = station_to_world(road->plan_view, placement->s, placement->t);
+        action.preview = {p[0], p[1], true};
+      }
       action.toast = QStringLiteral("Placed %1 — Ctrl+Z to undo").arg(item.label);
     }
     return action;

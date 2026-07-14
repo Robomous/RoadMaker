@@ -95,6 +95,13 @@ struct StationCoord {
 /// coarse pass keeps multimodal cases (hairpins) on the right branch.
 [[nodiscard]] StationCoord find_station(const ReferenceLine& line, double x, double y);
 
+/// Inverse of find_station: the world (x, y) of road-relative station (s, t) on
+/// `line` — evaluate(s) offset by t along the left normal (-sin hdg, cos hdg)
+/// per ASAM OpenDRIVE §8.3. {0, 0} when the line is empty. Pairs with
+/// find_station so a snapped drop can be shown exactly where it will land
+/// (the drag ghost and the committed object share this projection: ghost==commit).
+[[nodiscard]] std::array<double, 2> station_to_world(const ReferenceLine& line, double s, double t);
+
 /// A hovered authoring waypoint of one of `roads`: which road, its index, and
 /// position. The shared node hit-test behind SelectTool, EditNodesTool, and the
 /// context menu — nearest effective waypoint within `radius` [m], ties keep the

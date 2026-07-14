@@ -5,6 +5,24 @@ All notable changes to RoadMaker are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.0] - Unreleased
+
+Placement and transform corrections found while dogfooding GS-1
+([epic #178](https://github.com/Robomous/RoadMaker/issues/178)): the shared
+placement path GS-1 signal placement builds on.
+
+### Fixed
+- **Drag-drop placement lands where you drop it**
+  ([#175](https://github.com/Robomous/RoadMaker/issues/175)): a dragged library
+  item (tree, assembly) now commits at the exact spot its ghost marks. The drag
+  ghost is a world-anchored marker at the resolved landing point — projected
+  from the same `resolve_library_drop` the drop commit uses — instead of a
+  screen-space crosshair at the raw cursor; and the drop unprojects against the
+  real surface under the cursor (road / junction / prop via `pick()`, ground
+  plane only as a fallback) instead of a hidden `z = 0` plane. An off-road prop
+  drop tints the ghost and is rejected with a toast rather than silently
+  relocated. Controller tests assert ghost == commit across camera angles.
+
 ## [0.5.0] - Unreleased
 
 M3a opens with a topology-editing pass — moving whole roads, inserting bend

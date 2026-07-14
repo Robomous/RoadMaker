@@ -339,4 +339,13 @@ StationCoord find_station(const ReferenceLine& line, double x, double y) {
   return StationCoord{.s = s, .t = t};
 }
 
+std::array<double, 2> station_to_world(const ReferenceLine& line, double s, double t) {
+  if (line.empty()) {
+    return {0.0, 0.0};
+  }
+  const PathPoint pose = line.evaluate(s);
+  // Left normal (-sin hdg, cos hdg); exact inverse of find_station's t.
+  return {pose.x - (std::sin(pose.hdg) * t), pose.y + (std::cos(pose.hdg) * t)};
+}
+
 } // namespace roadmaker::editor

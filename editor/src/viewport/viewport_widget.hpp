@@ -87,6 +87,15 @@ public slots:
   /// over the scene instead of only in the status bar.
   void show_toast(const QString& text, ToastSeverity severity = ToastSeverity::Info);
 
+  /// Positions the drop ghost at a resolved landing point while a library item
+  /// is dragged over the viewport. MainWindow resolves the drag through the same
+  /// resolve_library_drop the drop commit uses, so the ghost marks exactly where
+  /// the element lands (ghost==commit); `valid` false tints it as a rejected drop.
+  void set_drop_preview(double world_x, double world_y, bool valid);
+
+  /// Clears the drop ghost (drag left the viewport or completed).
+  void clear_drop_preview();
+
 public:
   [[nodiscard]] QString hint() const { return hint_text_; }
 
@@ -124,6 +133,12 @@ signals:
   /// (world_x, world_y). MainWindow resolves the key and creates the geometry
   /// (it owns the library model, document, and tools).
   void library_item_dropped(const QString& key, double world_x, double world_y);
+
+  /// A library item is being dragged over the viewport; its resolved world
+  /// point (surface raycast, falling back to the ground plane) is
+  /// (world_x, world_y). MainWindow resolves the key and pushes back a drop
+  /// preview (set_drop_preview) so the ghost shows where it will land.
+  void library_item_drag_moved(const QString& key, double world_x, double world_y);
 
 protected:
   void initializeGL() override;
@@ -177,6 +192,13 @@ private:
   /// rays for the anchored pan). Shared by hover, tool events, and MMB pan.
   [[nodiscard]] std::optional<std::array<double, 3>>
   ground_point_at(const QPointF& pos, double max_t = std::numeric_limits<double>::infinity()) const;
+
+  /// World point under a viewport pixel for a placement drop: the actual surface
+  /// under the cursor via pick() (road/junction/prop), falling back to the ground
+  /// plane in empty space. This is the projection the hover readout uses — the
+  /// drop shares it so an element lands on the surface it visually points at,
+  /// not on a hidden z=0 plane. nullopt only when both miss.
+  [[nodiscard]] std::optional<std::array<double, 3>> drop_world_point(const QPointF& pos) const;
   void update_hover(const QPointF& pos);
 
   /// Sets the road-level hover highlight, repainting only when it changes.
@@ -220,12 +242,17 @@ private:
   /// Non-const: pulls the live set from the queue, which prunes expired ones.
   void draw_toasts(QPainter& painter);
 
-  /// A "drop here" crosshair at the cursor while a library item is dragged
-  /// over the viewport.
+  /// A world-anchored marker at the resolved landing point (drop_preview_)
+  /// while a library item is dragged over the viewport — projected to screen so
+  /// it sits where the element will commit; tinted as a rejection when invalid.
   void draw_drag_ghost(QPainter& painter) const;
 
   /// True when the drag carries a library item (accept it as a drop).
   [[nodiscard]] static bool has_library_mime(const QDropEvent* event);
+
+  /// Emits library_item_drag_moved for `event`'s key at the surface point under
+  /// the cursor, so MainWindow can resolve the drop and position the ghost.
+  void emit_drag_preview_request(const QDropEvent* event);
 
   /// Hint-card opacity from how long since the hint last changed (1 while
   /// fresh, ramping to 0 after the idle hold).
@@ -301,9 +328,18 @@ private:
   QTimer* overlay_timer_ = nullptr;
   std::int64_t hint_changed_ms_ = 0;
 
-  /// Cursor position (widget px) while a library item is dragged over the
-  /// viewport; drives the drop-ghost crosshair. Empty when no drag is active.
-  std::optional<QPoint> drag_ghost_pos_;
+  /// Resolved landing point (world x, y) and validity of a library item being
+  /// dragged over the viewport; drives the world-anchored drop ghost (a marker
+  /// at the spot the item will commit). Empty when no drag is active. Set by
+  /// MainWindow, which resolves the drag through the same resolve_library_drop
+  /// the drop commit uses (ghost==commit).
+  struct DropPreview {
+    double x = 0.0;
+    double y = 0.0;
+    bool valid = false;
+  };
+
+  std::optional<DropPreview> drop_preview_;
 
   /// Entity under the cursor, tracked by update_hover for the hover highlight
   /// (invalid = nothing hovered). A lane-level hover sets both; a road-level

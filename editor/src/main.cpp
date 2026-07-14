@@ -44,6 +44,7 @@ struct ScreenshotArgs {
   QString raise_dock;     // dock objectName to raise (whole-window captures)
   QString toast;          // toast text to show (captures the toast overlay)
   QString drop_library;   // library item key to drop (captures the created geometry)
+  QString drag_ghost;     // library item key to preview mid-drag (captures the drop ghost)
   bool show_tour = false; // start the guided-tour overlay (whole-window capture)
   bool textured = false;  // opt into the Textured render mode (default is Sober)
   int width = 1600;
@@ -84,6 +85,9 @@ ScreenshotArgs parse_screenshot_args(int argc, char** argv) {
       ++i;
     } else if (std::strcmp(argv[i], "--drop-library") == 0 && i + 1 < argc) {
       args.drop_library = QString::fromUtf8(argv[i + 1]);
+      ++i;
+    } else if (std::strcmp(argv[i], "--drag-ghost") == 0 && i + 1 < argc) {
+      args.drag_ghost = QString::fromUtf8(argv[i + 1]);
       ++i;
     } else if (std::strcmp(argv[i], "--show-tour") == 0) {
       args.show_tour = true;
@@ -175,6 +179,11 @@ int run_screenshot(const ScreenshotArgs& args) {
     }
     if (!args.drop_library.isEmpty()) {
       window.drop_library_item_for_capture(args.drop_library, 0.0, -70.0);
+    }
+    if (!args.drag_ghost.isEmpty()) {
+      // Preview (not commit): the world-anchored drop ghost at the resolved
+      // landing point, demonstrating ghost==commit for A1.
+      window.preview_library_drag_for_capture(args.drag_ghost, 0.0, -70.0);
     }
   }
   if (args.show_tour) {

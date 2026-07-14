@@ -55,6 +55,11 @@ public:
   /// real drop path, so a capture shows the created geometry + result toast.
   void drop_library_item_for_capture(const QString& key, double world_x, double world_y);
 
+  /// Screenshot mode: previews (does not commit) the library item `key` mid-drag
+  /// at world (x, y) through the real drag path, so a capture shows the
+  /// world-anchored drop ghost sitting at the resolved landing point (A1).
+  void preview_library_drag_for_capture(const QString& key, double world_x, double world_y);
+
   /// Screenshot mode: activates a tool by id ("select", "edit-nodes",
   /// "create-road", "lane-profile", "elevation", "create-junction", "split",
   /// "delete") so its handle overlay renders in a capture. Unknown ids no-op.
@@ -115,6 +120,11 @@ private:
   /// template arms Create Road at the drop point; a T/X assembly pushes a
   /// standalone-intersection command and toasts the result.
   void on_library_drop(const QString& key, double world_x, double world_y);
+
+  /// Positions the drop ghost while a library item is dragged over the viewport:
+  /// resolves the key through the same resolve_library_drop the drop uses and
+  /// pushes the resolved landing point back to the viewport (ghost==commit).
+  void on_library_drag_moved(const QString& key, double world_x, double world_y);
 
   Document document_;
   AutosaveManager autosave_; // after document_: connects to its signals
