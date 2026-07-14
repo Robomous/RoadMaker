@@ -88,6 +88,7 @@ private:
   void op_translate_road();
   void op_merge_roads();
   void op_create_junction();
+  void op_duplicate_junction_attempt();
   void op_attach_t();
   void op_delete_junction();
   void op_delete_road();
