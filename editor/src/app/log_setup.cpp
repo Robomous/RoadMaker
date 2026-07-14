@@ -7,8 +7,8 @@
 #include <QCoreApplication>
 #include <QDateTime>
 #include <QStandardPaths>
+#include <QtGlobal>
 #include <algorithm>
-#include <cstdlib>
 #include <memory>
 #include <system_error>
 #include <vector>
@@ -54,10 +54,11 @@ void prune_old_logs(const std::filesystem::path& log_dir, int keep_files) {
 } // namespace
 
 std::string soak_console_level() {
-  const char* env = std::getenv("SPDLOG_LEVEL"); // NOLINT(concurrency-mt-unsafe)
-  // Only consult the var when the caller actually set something, so an unset
-  // var keeps the quiet default rather than an empty name.
-  return (env != nullptr && env[0] != '\0') ? std::string(env) : "critical";
+  // Qt env accessor, not std::getenv (MSVC treats getenv as unsafe under /WX).
+  // qEnvironmentVariable returns an empty string when the var is unset OR empty,
+  // so an unset var keeps the quiet default rather than an empty name.
+  const QString level = qEnvironmentVariable("SPDLOG_LEVEL");
+  return level.isEmpty() ? "critical" : level.toStdString();
 }
 
 void set_soak_console_level() {
