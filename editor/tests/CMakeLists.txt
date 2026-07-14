@@ -40,6 +40,7 @@ add_executable(roadmaker_editor_tests
   test_document.cpp
   test_document_commands.cpp
   test_edit_nodes_tool.cpp
+  test_junction_regen.cpp
   test_elevation_tool.cpp
   test_editor_command.cpp
   test_highlight.cpp

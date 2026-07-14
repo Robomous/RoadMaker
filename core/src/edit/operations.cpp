@@ -2338,20 +2338,76 @@ std::unique_ptr<Command> regenerate_junction(const RoadNetwork& network,
     dirty.roads.push_back(connection.connecting_road);
   }
   auto command = std::make_unique<GenericCommand>(std::string(kName), std::move(dirty));
-  for (std::size_t i = 0; i < plan->roads.size(); ++i) {
-    const ConnectingPlan& cp = plan->roads[i];
-    const JunctionConnection& connection = junction->connections[i];
-    // The plan and the connection table share generation order; a mismatch
-    // means the recorded topology drifted from the roads (hand-edited file).
-    if (connection.incoming_road != cp.from.road || connection.lane_links.size() != 1 ||
-        connection.lane_links.front().first != cp.from_lane) {
-      return fail("recorded connections no longer match the arms; recreate the junction");
+
+  // Match each freshly planned turn to its existing connecting road by KEY —
+  // the (incoming road+contact+lane, outgoing road+contact+lane) it links — not
+  // by generation order. A node drag can re-order the plan (e.g. a turn crossing
+  // the 10-degree left-turn lane-discipline threshold) while the turn SET is
+  // unchanged; index matching would then refuse (freezing the junction) or write
+  // geometry onto the wrong connecting road (gate finding 2).
+  struct TurnKey {
+    RoadId from_road;
+    ContactPoint from_contact = ContactPoint::Start;
+    int from_lane = 0;
+    RoadId to_road;
+    ContactPoint to_contact = ContactPoint::Start;
+    int to_lane = 0;
+    bool operator==(const TurnKey&) const = default;
+  };
+
+  const auto connection_key = [&](const JunctionConnection& connection) -> std::optional<TurnKey> {
+    const Road* road = network.road(connection.connecting_road);
+    if (road == nullptr || road->sections.empty() || !road->predecessor.has_value() ||
+        !road->successor.has_value() || connection.lane_links.empty()) {
+      return std::nullopt;
     }
-    const RoadId road_id = connection.connecting_road;
+    const RoadId* from_road = std::get_if<RoadId>(&road->predecessor->target);
+    const RoadId* to_road = std::get_if<RoadId>(&road->successor->target);
+    if (from_road == nullptr || to_road == nullptr) {
+      return std::nullopt;
+    }
+    int to_lane = 0;
+    for (const LaneId lane_id : network.lane_section(road->sections.front())->lanes) {
+      const Lane& lane = *network.lane(lane_id);
+      if (lane.odr_id == -1 && lane.successor.has_value()) {
+        to_lane = *lane.successor;
+      }
+    }
+    return TurnKey{.from_road = *from_road,
+                   .from_contact = road->predecessor->contact,
+                   .from_lane = connection.lane_links.front().first,
+                   .to_road = *to_road,
+                   .to_contact = road->successor->contact,
+                   .to_lane = to_lane};
+  };
+
+  std::vector<bool> matched(junction->connections.size(), false);
+  for (const ConnectingPlan& cp : plan->roads) {
+    const TurnKey want{.from_road = cp.from.road,
+                       .from_contact = cp.from.contact,
+                       .from_lane = cp.from_lane,
+                       .to_road = cp.to.road,
+                       .to_contact = cp.to.contact,
+                       .to_lane = cp.to_lane};
+    std::size_t found = junction->connections.size();
+    for (std::size_t i = 0; i < junction->connections.size(); ++i) {
+      if (matched[i]) {
+        continue;
+      }
+      if (const auto key = connection_key(junction->connections[i]);
+          key.has_value() && *key == want) {
+        found = i;
+        break;
+      }
+    }
+    if (found == junction->connections.size()) {
+      // Same count but a different turn set (e.g. a lane retyped so a turn moved
+      // to a different lane): the ids can't be reused in place.
+      return fail("regeneration changed the turn set; delete and recreate the junction");
+    }
+    matched[found] = true;
+    const RoadId road_id = junction->connections[found].connecting_road;
     const Road* road = network.road(road_id);
-    if (road == nullptr || road->sections.empty()) {
-      return fail("connecting road is missing; recreate the junction");
-    }
     Road after = *road;
     after.plan_view = cp.line;
     after.length = after.plan_view.length();

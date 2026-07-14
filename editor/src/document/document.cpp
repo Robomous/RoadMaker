@@ -1,5 +1,6 @@
 #include "document/document.hpp"
 
+#include "roadmaker/edit/connection.hpp"
 #include "roadmaker/edit/operations.hpp"
 #include "roadmaker/io/gltf_exporter.hpp"
 #include "roadmaker/io/usd_exporter.hpp"
@@ -10,6 +11,7 @@
 #include <spdlog/spdlog.h>
 
 #include <algorithm>
+#include <cassert>
 #include <utility>
 #include <vector>
 
@@ -191,10 +193,24 @@ void Document::push_applied_with_regeneration(std::unique_ptr<edit::Command> com
     if (auto applied = regen->apply(network_); !applied.has_value()) {
       // A changed turn set (e.g. a lane added to an arm) cannot regenerate in
       // place — leave the junction for an explicit recreate, don't fail the
-      // user's edit.
+      // user's edit. Surface it (finding 2): the user sees a warning toast
+      // instead of the junction silently freezing.
       spdlog::warn("junction regeneration skipped: {}", applied.error().message);
+      emit regeneration_skipped(QString::fromStdString(applied.error().message));
       continue;
     }
+#ifndef NDEBUG
+    // The regenerated connecting roads must coincide with their arms (finding 2
+    // guard): a breach means the generator and the network drifted apart.
+    if (const auto welds = edit::verify_junction_welds(network_, junction_id);
+        welds.has_value() && welds->breaches) {
+      spdlog::error("junction {} welds breach after regeneration: pos={:.4f} hdg={:.4f}",
+                    junction_id.index,
+                    welds->max_position_gap,
+                    welds->max_heading_gap);
+      assert(false && "junction welds breach after regeneration");
+    }
+#endif
     const edit::DirtySet regen_dirty = regen->dirty();
     for (const RoadId road : regen_dirty.roads) {
       if (std::ranges::find(dirty.roads, road) == dirty.roads.end()) {

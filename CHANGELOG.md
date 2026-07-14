@@ -249,6 +249,22 @@ is headless-testable.
   merge/post-split seeds.
 
 ### Fixed
+- **Junction regeneration follows a dragged arm** (gate finding 2): dragging a
+  node of a junction's incoming road left the connecting roads frozen —
+  `regenerate_junction` matched the freshly planned turns to the existing
+  connecting roads **by generation order**, so a drag that re-ordered the plan
+  (e.g. a turn crossing the 10° left-turn lane-discipline threshold) made it
+  refuse ("recorded connections no longer match") even though the turn *set* was
+  unchanged. Matching is now **keyed** on each turn's
+  `(incoming road+contact+lane, outgoing road+contact+lane)`, so a re-ordered
+  plan still re-fits every connecting road in place; only a genuine turn-set
+  change (a lane added/removed/retyped on an arm) refuses. When it does, the
+  editor surfaces a **warning toast** ("Junction not updated: …") via the new
+  `Document::regeneration_skipped` signal instead of a silent log line, and a
+  debug-build assertion (`verify_junction_welds`) guards that a successful
+  regeneration leaves the connecting roads coincident with their arms. Landing
+  is commit-time; live mid-drag follow is filed as a follow-up (#156). Kernel
+  and editor-controller tests drive the real preview→commit drag path.
 - **Right-click context-menu actions no longer crash the editor** (gate
   finding 6, the GW-1 hard blocker): `MainWindow` built `ContextMenuDeps` (a
   bundle of three references) as a stack local and showed the menu with the
