@@ -60,8 +60,8 @@ bool SelectionModel::contains(const SelectionEntry& entry) const {
 std::vector<RoadId> SelectionModel::selected_roads() const {
   std::vector<RoadId> roads;
   for (const SelectionEntry& entry : entries_) {
-    if (entry.object.is_valid() || entry.junction.is_valid()) {
-      continue; // a prop/junction selection puts no road in play
+    if (entry.object.is_valid() || entry.signal.is_valid() || entry.junction.is_valid()) {
+      continue; // a prop/signal/junction selection puts no road in play
     }
     if (std::ranges::find(roads, entry.road) == roads.end()) {
       roads.push_back(entry.road);
@@ -90,9 +90,22 @@ std::vector<ObjectId> SelectionModel::selected_objects() const {
   return objects;
 }
 
+std::vector<SignalId> SelectionModel::selected_signals() const {
+  std::vector<SignalId> signal_ids;
+  for (const SelectionEntry& entry : entries_) {
+    if (entry.signal.is_valid()) {
+      signal_ids.push_back(entry.signal);
+    }
+  }
+  return signal_ids;
+}
+
 bool SelectionModel::is_live(const SelectionEntry& entry) const {
   if (entry.object.is_valid()) {
     return document_.network().object(entry.object) != nullptr;
+  }
+  if (entry.signal.is_valid()) {
+    return document_.network().signal(entry.signal) != nullptr;
   }
   if (entry.junction.is_valid()) {
     return document_.network().junction(entry.junction) != nullptr;

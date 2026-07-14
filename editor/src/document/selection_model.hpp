@@ -21,6 +21,7 @@ struct SelectionEntry {
   RoadId road;
   LaneId lane;         // invalid = road-level selection
   ObjectId object;     // valid = a placed object/prop selection
+  SignalId signal;     // valid = a placed signal selection (road = its owning road)
   JunctionId junction; // valid = a junction floor selection (road invalid)
 
   friend bool operator==(const SelectionEntry&, const SelectionEntry&) = default;
@@ -75,6 +76,11 @@ public:
   /// the delete/move/context-menu object flows operate on (objects are moved
   /// by their own road-relative s/t, not by dragging the owning road).
   [[nodiscard]] std::vector<ObjectId> selected_objects() const;
+
+  /// Placed signals present in the selection, in selection order. What the
+  /// delete/properties signal flows operate on (signals are addressed by their
+  /// own road-relative s/t, like objects).
+  [[nodiscard]] std::vector<SignalId> selected_signals() const;
 
   /// Junctions present in the selection, in selection order. A junction floor
   /// pick or a Junctions-tree click lands here; selecting a junction never

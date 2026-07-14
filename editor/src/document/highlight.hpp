@@ -24,30 +24,36 @@ namespace roadmaker::editor {
 [[nodiscard]] inline HighlightState highlight_state_for(RoadId road,
                                                         LaneId lane,
                                                         ObjectId object,
+                                                        SignalId signal,
                                                         JunctionId junction,
                                                         std::span<const SelectionEntry> selection,
                                                         RoadId hovered_road,
                                                         LaneId hovered_lane,
                                                         ObjectId hovered_object,
+                                                        SignalId hovered_signal,
                                                         JunctionId hovered_junction) {
-  const auto matches = [&](RoadId r, LaneId l, ObjectId o, JunctionId j) {
+  const auto matches = [&](RoadId r, LaneId l, ObjectId o, SignalId s, JunctionId j) {
     if (j.is_valid()) {
       return junction.is_valid() && junction == j;
     }
     if (o.is_valid()) {
       return object.is_valid() && object == o;
     }
+    if (s.is_valid()) {
+      return signal.is_valid() && signal == s;
+    }
     if (l.is_valid()) {
       return lane == l;
     }
-    return !object.is_valid() && !junction.is_valid() && r.is_valid() && road == r;
+    return !object.is_valid() && !signal.is_valid() && !junction.is_valid() && r.is_valid() &&
+           road == r;
   };
   for (const SelectionEntry& entry : selection) {
-    if (matches(entry.road, entry.lane, entry.object, entry.junction)) {
+    if (matches(entry.road, entry.lane, entry.object, entry.signal, entry.junction)) {
       return HighlightState::Selected;
     }
   }
-  if (matches(hovered_road, hovered_lane, hovered_object, hovered_junction)) {
+  if (matches(hovered_road, hovered_lane, hovered_object, hovered_signal, hovered_junction)) {
     return HighlightState::Hover;
   }
   return HighlightState::None;

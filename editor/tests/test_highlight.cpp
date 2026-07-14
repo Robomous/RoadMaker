@@ -17,6 +17,8 @@ constexpr ObjectId kTreeA{.index = 20, .gen = 0};
 constexpr ObjectId kTreeB{.index = 21, .gen = 0};
 constexpr JunctionId kJctA{.index = 30, .gen = 0};
 constexpr JunctionId kJctB{.index = 31, .gen = 0};
+constexpr SignalId kSignalA{.index = 40, .gen = 0};
+constexpr SignalId kSignalB{.index = 41, .gen = 0};
 
 // Convenience wrappers so each test reads at the level it cares about — a road/
 // lane/prop mesh (no junction) or a junction floor (road/lane/object invalid).
@@ -28,13 +30,19 @@ HighlightState road_state(RoadId road,
                           LaneId hovered_lane = {},
                           ObjectId hovered_object = {}) {
   return highlight_state_for(
-      road, lane, object, {}, selection, hovered_road, hovered_lane, hovered_object, {});
+      road, lane, object, {}, {}, selection, hovered_road, hovered_lane, hovered_object, {}, {});
 }
 
 HighlightState floor_state(JunctionId junction,
                            std::span<const SelectionEntry> selection,
                            JunctionId hovered_junction = {}) {
-  return highlight_state_for({}, {}, {}, junction, selection, {}, {}, {}, hovered_junction);
+  return highlight_state_for({}, {}, {}, {}, junction, selection, {}, {}, {}, {}, hovered_junction);
+}
+
+HighlightState signal_state(SignalId signal,
+                            std::span<const SelectionEntry> selection,
+                            SignalId hovered_signal = {}) {
+  return highlight_state_for({}, {}, {}, signal, {}, selection, {}, {}, {}, hovered_signal, {});
 }
 
 TEST(HighlightState, NoneWhenNeitherSelectedNorHovered) {
@@ -83,6 +91,17 @@ TEST(HighlightState, JunctionSelectionHighlightsOnlyThatFloor) {
   EXPECT_EQ(road_state(kRoadA, {}, {}, selection), HighlightState::None);
   const std::vector<SelectionEntry> road_selection{{.road = kRoadA, .lane = {}}};
   EXPECT_EQ(floor_state(kJctA, road_selection), HighlightState::None);
+}
+
+TEST(HighlightState, SignalSelectionHighlightsOnlyThatSignal) {
+  // A selected signal lights only its own pole — never another signal, and a
+  // road/prop selection never lights a signal (distinct entity id spaces).
+  const std::vector<SelectionEntry> selection{{.signal = kSignalA}};
+  EXPECT_EQ(signal_state(kSignalA, selection), HighlightState::Selected);
+  EXPECT_EQ(signal_state(kSignalB, selection), HighlightState::None);
+  EXPECT_EQ(road_state(kRoadA, {}, {}, selection), HighlightState::None);
+  const std::vector<SelectionEntry> road_selection{{.road = kRoadA, .lane = {}}};
+  EXPECT_EQ(signal_state(kSignalA, road_selection), HighlightState::None);
 }
 
 TEST(HighlightState, HoverHighlightsTheHoveredRoad) {

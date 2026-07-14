@@ -260,6 +260,32 @@ pick(const NetworkMesh& mesh, std::span<const RoadAabb> road_aabbs, const Ray& r
       };
     }
   }
+
+  // Placed signals, same bounding-sphere test as props (their models resolve
+  // through props::model too) so a traffic light in front of a road wins.
+  for (const SignalInstance& instance : mesh.signal_instances) {
+    const props::PropModel* model = props::model(instance.model_id);
+    if (model == nullptr) {
+      continue;
+    }
+    const double half_height = model->height * 0.5;
+    const std::array<double, 3> center{
+        instance.position[0], instance.position[1], instance.position[2] + half_height};
+    const double radius = std::max(model->radius, half_height);
+    const auto t = intersect_sphere(ray, center, radius);
+    if (t && *t < best_t) {
+      best_t = *t;
+      best = PickHit{
+          .road = instance.road,
+          .lane = {},
+          .signal = instance.signal,
+          .position = {ray.origin[0] + (ray.direction[0] * *t),
+                       ray.origin[1] + (ray.direction[1] * *t),
+                       ray.origin[2] + (ray.direction[2] * *t)},
+          .distance = *t,
+      };
+    }
+  }
   return best;
 }
 

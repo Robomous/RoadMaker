@@ -260,5 +260,41 @@ TEST(SelectionModel, StaleJunctionEntryIsDropped) {
   EXPECT_TRUE(selection.empty());
 }
 
+TEST(SelectionModel, SignalEntrySelectsClassifiesAndPrunesOnDelete) {
+  // A placed signal is a first-class selection: reported by selected_signals(),
+  // never mistaken for a road/object, and pruned when a delete_signal command
+  // removes it.
+  Document document;
+  ASSERT_TRUE(document.load(kSample).has_value());
+  const RoadId road = all_roads(document).front();
+
+  Signal sign;
+  sign.odr_id = "sel1";
+  sign.type = "274";
+  sign.subtype = "50";
+  sign.country = "DE";
+  sign.dynamic = false;
+  sign.s = 5.0;
+  sign.t = -4.0;
+  ASSERT_TRUE(document.push_command(edit::add_signal(document.network(), road, sign)).has_value());
+  SignalId signal;
+  document.network().for_each_signal([&](SignalId id, const Signal&) { signal = id; });
+  ASSERT_TRUE(signal.is_valid());
+
+  SelectionModel selection(document);
+  selection.select({.signal = signal});
+  ASSERT_EQ(selection.entries().size(), 1U);
+  EXPECT_EQ(selection.primary().signal, signal);
+  ASSERT_EQ(selection.selected_signals().size(), 1U);
+  EXPECT_EQ(selection.selected_signals().front(), signal);
+  EXPECT_TRUE(selection.selected_roads().empty());
+  EXPECT_TRUE(selection.selected_objects().empty());
+  expect_invariants(selection);
+
+  // Deleting the signal prunes the entry (topology_changed → prune_stale).
+  ASSERT_TRUE(document.push_command(edit::delete_signal(document.network(), signal)).has_value());
+  EXPECT_TRUE(selection.empty());
+}
+
 } // namespace
 } // namespace roadmaker::editor
