@@ -1,8 +1,7 @@
 # ADR-0006: Terrain scope
 
-- **Status:** PROPOSED — maintainer decides; nothing is implemented until
-  this ADR is accepted
-- **Date:** 2026-07-11
+- **Status:** ACCEPTED (Option B) — maintainer decided 2026-07-13
+- **Date:** 2026-07-11 (proposed) · 2026-07-13 (accepted)
 - **Deciders:** Armando Anaya
 
 ## Context
@@ -80,9 +79,24 @@ import pipeline already touches. Option A remains the fallback if M3b's
 dependency work runs over budget — the ADR would then be re-dated, not
 rewritten.
 
+## Decision (2026-07-13)
+
+**Accepted as Option B**, scheduled with **M3b (v0.8.0)**. M3b gains a
+heightmap-terrain work package: a height-field data model + sampler in the
+kernel frame, a **DEM import** path riding M3b's planned GDAL work, a simple
+**raise/lower/smooth brush** whose operations are undoable `edit::Command`s,
+and roads that conform via the existing terrain-skirt / cut logic (the M3a flat
+skirt stays the fallback where no height field is present). Sculpting beyond a
+single height field (Option C — multi-layer materials, overhangs, LOD) stays a
+**known exclusion**. Downstream docs updated with this ADR: the M3b seed, GS-2's
+checklist, the gap-analysis "known exclusions" row (backlog → scheduled), and
+the roadmap M3b row. Note: terrain is distinct from the new **Materials &
+Structures (v0.7.0)** milestone — that milestone covers surface materials and
+built structures, not ground elevation.
+
 ## Consequences
 
-- If accepted as B: M3b's seed and GS-2 gain a terrain work package; the
+- Accepted as B: M3b's seed and GS-2 gain a terrain work package; the
   kernel gains a height-field concept that mesh/skirt code must respect;
   reversal cost before M3b starts is one seed edit, afterwards it is a
   feature removal.

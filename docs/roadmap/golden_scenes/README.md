@@ -17,6 +17,7 @@ holds the specs.
 |---|---|---|
 | [GS-1 "Urban intersection"](gs1_urban_intersection.md) | M3a | 4-arm signalized junction with crosswalks, arrows, stop lines, signs, vegetation, textured surfaces |
 | [GS-2 "Imported district"](gs2_imported_district.md) | M3b | A ~500 m × 500 m real-world OSM extract imported, meshed, and textured |
+| [GS-4 "Rural overpass"](gs4_rural_overpass.md) | Materials & Structures | Two rural roads crossing via a built bridge (deck, abutments, guardrails), two asphalt materials + concrete structure |
 | [GS-3 "Ambulance run"](gs3_ambulance_run.md) | M4 (extended in M5) | GS-1 plus an emergency-vehicle actor on a lane-anchored route with offset |
 
 ## Anatomy of a spec

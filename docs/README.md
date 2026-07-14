@@ -60,14 +60,14 @@ OpenDRIVE scene in the editor: [Create Road](user-guide/create-road.md),
 
 ## Where is the project going?
 
-- [Roadmap](roadmap/roadmap.md) — milestone sequence M2 → M5, themes and
-  gates. The README table is a summary of this page.
+- [Roadmap](roadmap/roadmap.md) — milestone sequence M2 → Materials &
+  Structures → M5, themes and gates. The README table is a summary of this page.
 - [Gap analysis](roadmap/gap_analysis.md) — where RoadMaker stands against a
   RoadRunner-class editing experience.
 - [Golden scenes](roadmap/golden_scenes/README.md) — the target scenes that
   serve as visual acceptance criteria per milestone.
-- [Milestone seeds](roadmap/seeds/m3a.md) — scope sketches for M3a, M3b, M4,
-  M5.
+- [Milestone seeds](roadmap/seeds/m3a.md) — scope sketches for M3a,
+  [Materials & Structures](roadmap/seeds/materials-structures.md), M3b, M4, M5.
 
 ## Design documents and decisions
 

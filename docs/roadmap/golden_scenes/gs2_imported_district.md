@@ -55,6 +55,12 @@ the importer and archived with the scene:
 | 4 | ☐ Terrain skirt covers the extract without gaps | M3a terrain |
 | 5 | ☐ No z-fighting or cracked seams at any intersection from the fixed camera | mesh robustness |
 | 6 | ☐ OSM attribution visible in the scene's About/metadata | ODbL compliance |
+| 7 | ☐ Buildings give the district real density (not bare road ribbons) | **[Materials & Structures](../seeds/materials-structures.md)** — building props |
+| 8 | ☐ Material variety reads across surfaces (asphalt variants, sidewalk, structure) | **[Materials & Structures](../seeds/materials-structures.md)** — material library |
+
+> **Dependency note.** GS-2's approval requires buildings and material variety,
+> which are now scheduled in the **Materials & Structures (v0.7.0)** milestone
+> (its prerequisite). GS-2's own spec is otherwise unchanged.
 
 ## Fixed camera
 
