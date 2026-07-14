@@ -13,6 +13,16 @@ through the M2 command layer (one undo step per edit, byte-identical undo) and
 is headless-testable.
 
 ### Added
+- **Add crosswalks to all arms of a junction** (GS-1 WS-B): the junction
+  context menu gains **Add crosswalks to all arms** — one zebra crosswalk per
+  arm road, spanning that arm's driving lanes just inside the junction, added as
+  OpenDRIVE `<object type="crosswalk">`s in a **single undo step**. The geometry
+  is a pure kernel helper `edit::junction_crosswalks` (one crosswalk `Object`
+  per distinct arm, unique ids, across-span from the driving lanes, `hdg` across
+  the road) that the editor adds via `edit::add_object`; the marks mesh as zebra
+  bars through the existing marking path. Python `edit.junction_crosswalks` +
+  `examples/junction_crosswalks.py`. Part of
+  [#72](https://github.com/Robomous/RoadMaker/issues/72).
 - **Textured road & sidewalk surfaces** (GS-1 WS-A part 2 + assets): in the
   opt-in Textured mode the driving surfaces now render with a real **asphalt**
   texture and

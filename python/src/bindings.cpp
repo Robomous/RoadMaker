@@ -6,6 +6,7 @@
 #include "roadmaker/edit/assembly.hpp"
 #include "roadmaker/edit/connection.hpp"
 #include "roadmaker/edit/edit_stack.hpp"
+#include "roadmaker/edit/markings.hpp"
 #include "roadmaker/edit/operations.hpp"
 #include "roadmaker/edit/snap.hpp"
 #include "roadmaker/error.hpp"
@@ -873,6 +874,16 @@ NB_MODULE(_roadmaker, m) {
       "index"_a,
       "at"_a);
   edit.def("delete_waypoint", &roadmaker::edit::delete_waypoint, "network"_a, "road"_a, "index"_a);
+  edit.def(
+      "junction_crosswalks",
+      [](const roadmaker::RoadNetwork& network, roadmaker::JunctionId junction) {
+        return roadmaker::edit::junction_crosswalks(network, junction);
+      },
+      "network"_a,
+      "junction"_a,
+      "One zebra crosswalk Object per arm of the junction, spanning its driving "
+      "lanes just inside it. Returns a list of (RoadId, Object); add each with "
+      "edit.add_object (the editor groups them into one undo step).");
   edit.def("effective_waypoints",
            &roadmaker::edit::effective_waypoints,
            "road"_a,

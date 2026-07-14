@@ -15,6 +15,7 @@ add_library(roadmaker_core ${_rm_core_type}
   src/road/authoring.cpp
   src/edit/edit_stack.cpp
   src/edit/connection.cpp
+  src/edit/markings.cpp
   src/edit/operations.cpp
   src/edit/snap.cpp
   src/xodr/reader.cpp
