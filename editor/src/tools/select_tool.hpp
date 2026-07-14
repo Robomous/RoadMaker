@@ -51,6 +51,16 @@ public:
 
   [[nodiscard]] bool moving() const { return move_.has_value(); }
 
+  [[nodiscard]] bool moving_object() const { return object_move_.has_value(); }
+
+  /// "Move mode" — the dedicated, discoverable Move tool (issue #176). Hovering
+  /// a movable entity shows the 4-arrow cursor and a body drag always moves
+  /// (never rubber-bands). The plain Select tool (move_mode off) keeps the
+  /// drag-to-move as a power path and still bands from empty space.
+  void set_move_mode(bool on) { move_mode_ = on; }
+
+  [[nodiscard]] bool move_mode() const { return move_mode_; }
+
   void activate() override;
   void deactivate() override;
 
@@ -82,7 +92,9 @@ private:
   struct PressState {
     Waypoint world;
     bool on_geometry = false;
-    std::optional<RoadId> road; // the road under the press, for auto-select
+    std::optional<RoadId> road;     // the road under the press, for auto-select
+    std::optional<ObjectId> object; // the prop under the press, for a prop move
+    RoadId object_road;             // owning road of that prop (project target)
   };
 
   /// An in-flight whole-road move: the set being translated together, the press
@@ -92,6 +104,14 @@ private:
     Waypoint press;
     Waypoint current;
     std::optional<edit::SnapResult> snap;
+  };
+
+  /// An in-flight prop (object) move: which object and its owning road. Props are
+  /// road-relative, so the drag re-projects the cursor onto the owning road and
+  /// previews move_object; one command commits on release (one undo step).
+  struct ObjectMoveState {
+    ObjectId object;
+    RoadId road;
   };
 
   /// Nearest authoring waypoint of a SELECTED road within pick_radius_
@@ -119,6 +139,21 @@ private:
   /// Ends the move reverting any live preview (Esc / deactivate path).
   void abort_move();
 
+  /// Starts a prop move once the press crosses the click tolerance: auto-selects
+  /// the prop and opens a preview session. `road` is the prop's owning road.
+  void begin_object_move(ObjectId object, RoadId road);
+
+  /// One prop-move frame: projects the cursor onto the owning road and previews
+  /// move_object at the new (s, t).
+  void update_object_move(const Waypoint& cursor);
+
+  /// Ends the prop move reverting any live preview (Esc / deactivate path).
+  void abort_object_move();
+
+  /// In move mode, sets the hover cursor to the 4-arrow when `over_movable`,
+  /// else the arrow — deduped so plain hovers stay cheap. No-op off move mode.
+  void update_move_cursor(bool over_movable);
+
   /// Deletes every selected road (Delete/Backspace, 02 §7) — one command
   /// each, wrapped in ONE QUndoStack macro when the selection holds more
   /// than one road. False when there is nothing to delete.
@@ -132,8 +167,11 @@ private:
   std::function<bool()> confirm_link_break_;
   std::optional<NodeDragState> drag_;
   std::optional<MoveDragState> move_;
+  std::optional<ObjectMoveState> object_move_;
   std::optional<PressState> press_;
   std::optional<Waypoint> band_current_;
+  bool move_mode_ = false;
+  Qt::CursorShape hover_cursor_ = Qt::ArrowCursor;
 };
 
 } // namespace roadmaker::editor

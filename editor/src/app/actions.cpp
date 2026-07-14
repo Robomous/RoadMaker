@@ -54,6 +54,14 @@ Actions::Actions(QUndoStack& undo_stack, QObject* parent) : QObject(parent) {
                              "drag a node handle moves it (V)"));
   tool_group->addAction(tool_select);
 
+  tool_move = new QAction(tr("&Move"), this);
+  tool_move->setCheckable(true);
+  tool_move->setShortcut(Qt::Key_M);
+  tool_move->setIconText(tr("Move"));
+  tool_move->setToolTip(tr("Move — hover shows the 4-arrow cursor; drag a road or a prop to "
+                           "move it, or click to select and transform it (M)"));
+  tool_group->addAction(tool_move);
+
   tool_create_road = new QAction(tr("&Create Road"), this);
   tool_create_road->setCheckable(true);
   tool_create_road->setShortcut(Qt::Key_C);
@@ -166,6 +174,7 @@ void Actions::apply_icons() {
   undo->setIcon(Icons::get(QStringLiteral("undo-2")));
   redo->setIcon(Icons::get(QStringLiteral("redo-2")));
   tool_select->setIcon(Icons::get(QStringLiteral("mouse-pointer-2")));
+  tool_move->setIcon(Icons::get(QStringLiteral("move")));
   tool_create_road->setIcon(Icons::get(QStringLiteral("clothoid-road")));
   tool_edit_nodes->setIcon(Icons::get(QStringLiteral("waypoints")));
   tool_lane_profile->setIcon(Icons::get(QStringLiteral("lane-section")));

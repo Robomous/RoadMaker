@@ -39,6 +39,7 @@ public:
   /// join the group in later M2 phases).
   QActionGroup* tool_group = nullptr;
   QAction* tool_select = nullptr;
+  QAction* tool_move = nullptr;
   QAction* tool_create_road = nullptr;
   QAction* tool_edit_nodes = nullptr;
   QAction* tool_lane_profile = nullptr;

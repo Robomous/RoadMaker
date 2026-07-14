@@ -11,6 +11,18 @@ Placement and transform corrections found while dogfooding GS-1
 ([epic #178](https://github.com/Robomous/RoadMaker/issues/178)): the shared
 placement path GS-1 signal placement builds on.
 
+### Added
+- **Explicit Move tool** ([#176](https://github.com/Robomous/RoadMaker/issues/176)):
+  a dedicated, discoverable **Move** tool on the toolbar (Lucide 4-arrow icon,
+  shortcut **M**) — hovering a movable entity shows the 4-arrow cursor and a body
+  drag moves it (Esc cancels), while a click selects it. Roads move through the
+  existing `translate_roads` path; **props now move too** — dragging a prop
+  re-projects it onto its owning road and previews `move_object`, committing one
+  undo step on release (the kernel op existed but had no editor caller). The
+  Select tool keeps drag-to-move as a power path; context menus gain a **Move**
+  entry that arms the tool with the entity selected. Junction-member roads stay
+  blocked with the same toast.
+
 ### Fixed
 - **Drag-drop placement lands where you drop it**
   ([#175](https://github.com/Robomous/RoadMaker/issues/175)): a dragged library
