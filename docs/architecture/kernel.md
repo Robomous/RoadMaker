@@ -144,6 +144,40 @@ Commands are created through factories in `edit/operations.hpp`
 
 Design rationale: [editing framework](../design/m2/01_editing_framework.md).
 
+### Connection engine (`edit/connection.hpp`)
+
+The single authority for how road ends meet — junction connecting-road fits,
+assembly drops, and gap closing all build on it instead of re-deriving contact
+math (gate extension, epic #147). Pure query/fit primitives plus the two
+factories that consume them:
+
+- `contact_state(network, RoadEnd)` → `ContactState`: the pose, in/out/road
+  headings, plan-view **curvature**, elevation z + grade, section and station at
+  a road end — the shared truth every connection reads.
+- `driving_lanes_at(...)` — the lane anchors a turn connects.
+- `fit_connector(ConnectorEndpoint a, b, ConnectorParams)` → `Connector`
+  (reference line + elevation `Poly3`s): THE fit for junction connecting roads
+  and gap closing; G1 by default, `params.g2` honors endpoint curvatures.
+- `junction_at_end` / `matching_junction` — idempotency queries: which junction
+  (if any) owns an end, and whether a set of ends exactly matches an existing
+  junction's arms (order-free). Back the **single-owner invariant** — a road end
+  is an arm of at most one junction, enforced by `create_junction` /
+  `attach_t_junction` and by the validator rule
+  `robomous.ai:rm:1.0.0:junctions.arm_single_owner`.
+- `verify_junction_welds(network, JunctionId)` → `WeldReport`: post-regen
+  coincidence check (max position/heading/curvature gaps), computed with the
+  same anchor math the generator uses so checker and generator can't drift.
+- `check_linkable` + `close_gap(...)` — enablement query and the command that
+  links two nearby free ends, with a local G2 weld so no curvature kink appears
+  at the joint (never a global refit — byte-goldens stay intact).
+
+Assembly factories (`edit/assembly.hpp`) build on the engine: `t_intersection` /
+`x_intersection` (standalone), and `tee_onto_road` / `cross_onto_road` — dropping
+a T/X **onto** an existing road, aligned to its tangent and attached in one
+command. Junction floors are their own selectable entity in the editor (a
+`JunctionFloor` in the mesh maps to a `JunctionId`); nothing rendered is
+unselectable.
+
 ## Error handling
 
 No exceptions cross the public kernel API. Fallible operations return

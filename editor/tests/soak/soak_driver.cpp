@@ -1,5 +1,6 @@
 #include "soak/soak_driver.hpp"
 
+#include "roadmaker/edit/assembly.hpp"
 #include "roadmaker/edit/operations.hpp"
 #include "roadmaker/xodr/reader.hpp"
 #include "roadmaker/xodr/writer.hpp"
@@ -13,6 +14,8 @@
 #include <numbers>
 #include <utility>
 #include <vector>
+
+#include "document/elevation_utils.hpp"
 
 namespace roadmaker::editor::soak {
 
@@ -60,6 +63,10 @@ void SoakDriver::step(int index) {
       {2, &SoakDriver::op_create_junction, "create_junction"},
       {1, &SoakDriver::op_duplicate_junction_attempt, "duplicate_junction_attempt"},
       {1, &SoakDriver::op_attach_t, "attach_t"},
+      {1, &SoakDriver::op_assembly_drop_on_road, "assembly_drop_on_road"},
+      {1, &SoakDriver::op_remove_lane, "remove_lane"},
+      {1, &SoakDriver::op_overpass, "overpass"},
+      {1, &SoakDriver::op_delete_crossing_road, "delete_crossing_road"},
       {1, &SoakDriver::op_delete_junction, "delete_junction"},
       {1, &SoakDriver::op_delete_road, "delete_road"},
       {2, &SoakDriver::op_undo_redo, "undo_redo"},
@@ -553,6 +560,105 @@ void SoakDriver::op_attach_t() {
                     .contact = chance(0.5) ? ContactPoint::Start : ContactPoint::End};
   push(edit::attach_t_junction(
       document_.network(), end, target_road, rand_range(12.0, target->length - 12.0)));
+}
+
+void SoakDriver::op_assembly_drop_on_road() {
+  // Drop a T/X assembly ONTO an existing road (gate finding 1): the on-road
+  // attach must align + connect in one command, never superimpose a floating
+  // junction. Refusals (target too short, drop near an end, target already in a
+  // junction, paramPoly3 at the cut) are data — the invariants after are what
+  // must hold.
+  const std::vector<RoadId> roads = live_roads(/*editable_only=*/true);
+  if (roads.empty()) {
+    return;
+  }
+  const RoadId target = roads[static_cast<std::size_t>(rand_int(0, int(roads.size()) - 1))];
+  const Road* road = document_.network().road(target);
+  if (road == nullptr || road->length < 40.0) {
+    return;
+  }
+  const double s = rand_range(15.0, road->length - 15.0);
+  if (chance(0.5)) {
+    push(edit::assembly::tee_onto_road(document_.network(), target, s));
+  } else {
+    push(edit::assembly::cross_onto_road(document_.network(), target, s));
+  }
+}
+
+void SoakDriver::op_remove_lane() {
+  // The discoverable lane-removal path (gate finding 6): remove the OUTERMOST
+  // non-center lane of one side of a random section — what the per-side
+  // properties-panel button and the context-menu item do. Kernel remove_lane
+  // is stale-safe; a section down to just the driving lane refuses (recorded).
+  const std::vector<RoadId> roads = live_roads(/*editable_only=*/true);
+  if (roads.empty()) {
+    return;
+  }
+  const RoadId road_id = roads[static_cast<std::size_t>(rand_int(0, int(roads.size()) - 1))];
+  const Road* road = document_.network().road(road_id);
+  if (road == nullptr || road->sections.empty()) {
+    return;
+  }
+  const LaneSectionId section_id =
+      road->sections[static_cast<std::size_t>(rand_int(0, int(road->sections.size()) - 1))];
+  const LaneSection* section = document_.network().lane_section(section_id);
+  if (section == nullptr) {
+    return;
+  }
+  // Pick the outermost lane on a chosen side (largest |odr_id|); skip center.
+  const int side = chance(0.5) ? 1 : -1;
+  LaneId outermost;
+  int outermost_abs = 0;
+  for (const LaneId lane_id : section->lanes) {
+    const Lane* lane = document_.network().lane(lane_id);
+    if (lane == nullptr || lane->odr_id == 0 || (lane->odr_id > 0) != (side > 0)) {
+      continue;
+    }
+    if (std::abs(lane->odr_id) > outermost_abs) {
+      outermost_abs = std::abs(lane->odr_id);
+      outermost = lane_id;
+    }
+  }
+  if (!outermost.is_valid()) {
+    return;
+  }
+  push(edit::remove_lane(document_.network(), outermost));
+}
+
+void SoakDriver::op_overpass() {
+  // Apply the overpass elevation profile where a road crosses another (gate
+  // finding 4): the SAME headless path ProfilePanel::apply_overpass drives. It
+  // is pure elevation — check_invariants confirms it creates no junction and the
+  // network still validates.
+  const std::vector<RoadId> roads = live_roads(/*editable_only=*/true);
+  if (roads.empty()) {
+    return;
+  }
+  const RoadId road_id = roads[static_cast<std::size_t>(rand_int(0, int(roads.size()) - 1))];
+  const std::vector<elevation::Crossing> crossings =
+      elevation::find_crossings(document_.network(), road_id);
+  if (crossings.empty()) {
+    return;
+  }
+  std::vector<edit::ElevationPoint> points =
+      elevation::overpass_points(document_.network(), road_id, chance(0.5));
+  if (points.empty()) {
+    return;
+  }
+  push(edit::set_elevation_profile(document_.network(), road_id, std::move(points)));
+}
+
+void SoakDriver::op_delete_crossing_road() {
+  // Delete a road that is CROSSED by another (gate finding 4 integrity): the
+  // survivor's geometry/profile must stay intact and the network keep
+  // validating (both asserted by check_invariants). Overlaps op_delete_road but
+  // targets the crossing case deterministically.
+  for (const RoadId road_id : live_roads(/*editable_only=*/true)) {
+    if (!elevation::find_crossings(document_.network(), road_id).empty()) {
+      push(edit::delete_road(document_.network(), road_id));
+      return;
+    }
+  }
 }
 
 void SoakDriver::op_delete_junction() {
