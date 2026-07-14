@@ -159,6 +159,12 @@ signals:
   /// recovery copy of the pre-regeneration state on it (#53 gap-fill).
   void about_to_regenerate();
 
+  /// A touched junction could not regenerate in place (its turn set changed —
+  /// a lane added/removed/retyped on an arm): the edit still lands, but the
+  /// junction is left stale until an explicit recreate. MainWindow surfaces
+  /// `reason` as a warning toast instead of the old silent log line (finding 2).
+  void regeneration_skipped(const QString& reason);
+
   /// Written to disk successfully; file_path() points at the file and the
   /// undo stack is clean again.
   void saved();

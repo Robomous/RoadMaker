@@ -128,6 +128,9 @@ MainWindow::MainWindow(QWidget* parent, bool restore_saved_layout)
     setWindowModified(!clean);
   });
   connect(&document_, &Document::saved, this, &MainWindow::update_window_title);
+  connect(&document_, &Document::regeneration_skipped, this, [this](const QString& reason) {
+    viewport_->show_toast(tr("Junction not updated: %1").arg(reason), ToastSeverity::Warning);
+  });
 
   // Autosave tick — the debounce and the recover-vs-clean decision live in
   // AutosaveManager (fake-clock testable, §3); this timer is the thin

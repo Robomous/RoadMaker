@@ -198,6 +198,33 @@ TEST(Connection, VerifyJunctionWeldsCleanAndBreachesOnDisplacement) {
   EXPECT_GT(dirty->max_position_gap, roadmaker::tol::kWeldPosition);
 }
 
+TEST(Connection, RegenerateJunctionFollowsADraggedArmAndIsDeterministic) {
+  ArmedJunction fx;
+  const std::size_t connections = fx.network.junction(fx.junction)->connections.size();
+  ASSERT_GT(connections, 0U);
+
+  // Drag the west arm's far node so its approach angle changes — the junction
+  // must re-fit its connecting roads to follow (finding 2), not freeze.
+  auto move = roadmaker::edit::move_waypoint(fx.network, fx.a, 0, Waypoint{.x = -40.0, .y = 14.0});
+  ASSERT_TRUE(move->apply(fx.network).has_value());
+  auto regen = roadmaker::edit::regenerate_junction(fx.network, fx.junction);
+  ASSERT_TRUE(regen->apply(fx.network).has_value());
+
+  // The turn set is unchanged, so keyed matching keeps every connection...
+  EXPECT_EQ(fx.network.junction(fx.junction)->connections.size(), connections);
+  // ...and the regenerated connecting roads coincide with the moved arm.
+  const auto welds = roadmaker::edit::verify_junction_welds(fx.network, fx.junction);
+  ASSERT_TRUE(welds.has_value());
+  EXPECT_FALSE(welds->breaches);
+  EXPECT_LE(welds->max_position_gap, roadmaker::tol::kWeldPosition);
+
+  // Regenerating again changes nothing (determinism / idempotence).
+  const std::string once = snapshot(fx.network);
+  auto again = roadmaker::edit::regenerate_junction(fx.network, fx.junction);
+  ASSERT_TRUE(again->apply(fx.network).has_value());
+  EXPECT_EQ(snapshot(fx.network), once);
+}
+
 TEST(Connection, CreateJunctionRefusesAnEndAlreadyOwned) {
   ArmedJunction fx;
   // Road A's End is already a junction arm; a fresh road meeting it cannot form
