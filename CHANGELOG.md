@@ -286,6 +286,14 @@ is headless-testable.
   merge/post-split seeds.
 
 ### Fixed
+- **Soak CI log no longer masquerades expected refusals as errors** (#167): the
+  ASan soak fires random, mostly-invalid ops, and the command layer logged every
+  expected refusal at `[error]`/`[warning]` (~460 lines per green run) — alarming
+  noise that buried genuine failures. The soak runner now defaults its console
+  threshold to `critical` (verdict comes from the stats/PASS line and the seed on
+  failure, never spdlog); `SPDLOG_LEVEL=info` restores the full op trace for
+  local seed debugging. The threshold is applied inside the editor library
+  because `Document` logs through that library's spdlog registry.
 - **Junction floors are selectable — no more unselectable "junction-like area"**
   (gate finding 4): the blended surface between a junction's arms now picks,
   hovers, highlights, and selects as its own entity (its `JunctionId`), from the

@@ -8,6 +8,7 @@
 #include <QDateTime>
 #include <QStandardPaths>
 #include <algorithm>
+#include <cstdlib>
 #include <memory>
 #include <system_error>
 #include <vector>
@@ -51,6 +52,20 @@ void prune_old_logs(const std::filesystem::path& log_dir, int keep_files) {
 }
 
 } // namespace
+
+spdlog::level::level_enum console_level_from_env(spdlog::level::level_enum fallback) {
+  const char* env = std::getenv("SPDLOG_LEVEL"); // NOLINT(concurrency-mt-unsafe)
+  // from_str maps an unknown/typo name to `off`; only consult it when the caller
+  // actually set something, so an unset var keeps the fallback rather than off.
+  return (env != nullptr && env[0] != '\0') ? spdlog::level::from_str(env) : fallback;
+}
+
+void set_console_level_from_env(spdlog::level::level_enum fallback) {
+  auto sink = std::make_shared<spdlog::sinks::stderr_color_sink_mt>();
+  auto logger = std::make_shared<spdlog::logger>("roadmaker", std::move(sink));
+  logger->set_level(console_level_from_env(fallback));
+  spdlog::set_default_logger(std::move(logger));
+}
 
 std::filesystem::path
 init(const std::filesystem::path& log_dir, const QString& session, int keep_files) {

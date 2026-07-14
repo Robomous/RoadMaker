@@ -7,10 +7,25 @@
 // default logger, so a crash report plus its session log reconstructs what
 // the user did.
 
+#include <spdlog/common.h> // spdlog::level::level_enum
+
 #include <QString>
 #include <filesystem>
 
 namespace roadmaker::editor::logging {
+
+/// Resolves a console log threshold from the `SPDLOG_LEVEL` env var, returning
+/// `fallback` when it is unset/empty (an unknown/typo name maps to `off` via
+/// spdlog, same as spdlog's own env loader). Pure — for testing the policy.
+[[nodiscard]] spdlog::level::level_enum console_level_from_env(spdlog::level::level_enum fallback);
+
+/// Installs a plain stderr default logger at `console_level_from_env(fallback)`.
+/// Used by the soak runner to silence the expected per-op refusal diagnostics
+/// (they log at warn/error) while keeping a genuine crash's output. This MUST
+/// live in the editor library: Document and the command layer log through THIS
+/// library's spdlog registry, so a set_level/set_default_logger issued from a
+/// caller translation unit (the soak `main`) does not reach it. #167.
+void set_console_level_from_env(spdlog::level::level_enum fallback);
 
 /// "yyyyMMdd-HHmmss-<pid>" — sortable, unique enough per machine, and legal
 /// in filenames on all three platforms.

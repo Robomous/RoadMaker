@@ -7,6 +7,8 @@
 // in the message (same seed = same sequence). CI runs it under ASan for
 // ~10 minutes; longer local runs are the sprint's crash hunt.
 
+#include <spdlog/common.h>
+
 #include <QApplication>
 #include <QTemporaryDir>
 #include <cstdio>
@@ -14,6 +16,7 @@
 #include <cstring>
 #include <string>
 
+#include "app/log_setup.hpp"
 #include "soak/soak_driver.hpp"
 
 int main(int argc, char** argv) {
@@ -23,6 +26,17 @@ int main(int argc, char** argv) {
     qputenv("QT_QPA_PLATFORM", "offscreen");
   }
   QApplication app(argc, argv);
+
+  // Quiet the per-op command diagnostics. The soak fires random, mostly-invalid
+  // operations and the command layer logs every expected refusal at warn/error
+  // (e.g. "Attach T-Junction failed: road ends are 500 m apart") — pure fuzzer
+  // noise that buries genuine problems in CI (#167). The run's verdict never
+  // goes through spdlog: it is the stats + PASS/FAIL line below, and on failure
+  // the seed + reproduce command on stderr. The threshold is set inside the
+  // editor library because Document logs through that library's spdlog registry
+  // (a set_level from this translation unit does not reach it). SPDLOG_LEVEL
+  // (e.g. =info) restores the full op trace for local seed debugging.
+  roadmaker::editor::logging::set_console_level_from_env(spdlog::level::critical);
 
   roadmaker::editor::soak::SoakOptions options;
   options.max_ops = 5000;
