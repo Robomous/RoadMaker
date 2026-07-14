@@ -271,6 +271,13 @@ jobs:
           xvfb-run -a python3 scripts/editor_screenshot.py \
             "assets/samples/t_junction.xodr" "shots/tour.png" \
             --ui --show-tour --size 1200x800 --skip-on-no-gl
+          # Textured render mode (GS-1 WS-A/D): opt-in daytime look — lit surfaces,
+          # asphalt/concrete textures, grass ground. Sober (plain + grid) is the
+          # default, captured by the canonical shots above; this is the --textured
+          # variant so the opt-in mode stays visually reviewed.
+          xvfb-run -a python3 scripts/editor_screenshot.py \
+            "assets/samples/crossing.xodr" "shots/crossing_textured.png" \
+            --camera orbit --textured --skip-on-no-gl
       - uses: actions/upload-artifact@v4
         with:
           name: editor-screenshots

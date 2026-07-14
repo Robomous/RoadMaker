@@ -184,11 +184,16 @@ The §2 lighting pass and §5 toggle landed together:
   original direction) — the sober-parity guarantee is a unit test, not just a
   pixel review.
 - **The toggle is `View → Textured Rendering`** (checkable, persisted as
-  `view/textured_rendering`, default on). It calls
-  `ViewportWidget::set_textured_rendering`, which swaps the `Environment` and
-  dims the reference-grid alpha in textured mode — no re-mesh, per §5. The
-  screenshot/packaging path keeps rendering (sober stays available for
-  GL-limited smoke).
+  `view/textured_rendering`). It calls `ViewportWidget::set_textured_rendering`,
+  which swaps the `Environment` and dims the reference-grid alpha in textured
+  mode — no re-mesh, per §5.
+- **Default changed to Sober (maintainer decision, 2026-07-14).** The frozen §5
+  made Textured the default; the maintainer reversed this — the editor opens in
+  the **plain-color + reference-grid** look and Textured (lit surfaces, grass
+  ground, textures) is **opt-in** (`view/textured_rendering` default **off**).
+  The `--screenshot` CLI and `editor_screenshot.py` gained a `--textured` flag to
+  capture the daytime look (the golden scene and one CI showcase shot use it);
+  every other capture is Sober.
 - Tests: `Lighting.SoberPresetReproducesFlatM2Shading`,
   `Lighting.TexturedPresetIsTheDaytimeDefault`. The rendered look is captured by
   the `editor-visual-artifacts` CI job (Linux + xvfb); local macOS offscreen has
@@ -211,4 +216,26 @@ ground plane** (grass stays procedural-first per `03_assets.md` §1):
   ADR-0006 / #83 (PROPOSED). GS-1 is flat, so the plane is exact for it. The
   per-material texture-vs-procedural decisions live in
   [`textured_render.md`](textured_render.md).
+
+## 10. As-built — WS-A part 2 (textured surfaces + mark paint)
+
+The §4 per-`LaneType` textured materials landed on the A1 material/UV pipe:
+
+- **Assets:** two CC0 512² JPEGs (Poly Haven asphalt + brushed concrete) bundled
+  in the editor `:/textures` qrc (rows in `ASSETS_LICENSES.md`, provenance in
+  `assets/manifest.json`). Poly Haven, not the design's ambientCG, because it
+  serves direct single-file downloads that fit `fetch_assets.py` (ambientCG
+  ships zips). Grass stays procedural (D2).
+- **Surface class:** `SceneItem`/`UploadedItem` gained a `SurfaceKind`
+  (Asphalt / Concrete / Paint / Untextured) set by `scene_builder::surface_for`
+  (lanes), or Paint (markings) / Asphalt (junction floors). The viewport uploads
+  the textures once at GL init and resolves `SurfaceKind` → `Material` per draw
+  (`ViewportWidget::material_for`): asphalt/concrete texture at a 4 m tile
+  (`uv_scale`), or unlit bright paint for markings. Sober mode returns a default
+  Material (flat color), so the toggle still flips instantly with no re-mesh.
+- **Graceful degrade:** a failed texture load (no JPEG handler) leaves an invalid
+  `TextureHandle`, and the renderer falls back to the flat mesh color — untextured
+  but never a crash. Guarded by `SurfaceTextures.BundledJpegsDecodeFromQrc`.
+- Tests: `SurfaceFor.*`, `BuildScene.TagsSurfaceClassesForTexturedMode`, the qrc
+  decode test above. The rendered look is CI-verified (`editor-visual-artifacts`).
 </content>

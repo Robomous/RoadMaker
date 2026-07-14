@@ -50,6 +50,19 @@ std::array<float, 4> lane_color(LaneType type) {
   return {0.35F, 0.35F, 0.35F, 1.0F};
 }
 
+SurfaceKind surface_for(LaneType type) {
+  switch (type) {
+  case LaneType::Sidewalk:
+  case LaneType::Curb:
+  case LaneType::Border:
+    return SurfaceKind::Concrete;
+  default:
+    // Driving, shoulder, biking, parking, median, restricted, stop, none/other —
+    // the travelled/paved way reads as asphalt.
+    return SurfaceKind::Asphalt;
+  }
+}
+
 RenderMeshData to_render_data(const std::vector<double>& positions,
                               const std::vector<double>& normals,
                               const std::vector<std::uint32_t>& indices,
@@ -93,6 +106,7 @@ void append_road_items(const RoadMesh& road, Scene& scene) {
             road.positions, road.normals, patch.indices, lane_color(patch.material), road.uvs),
         .road = road.road,
         .lane = patch.lane,
+        .surface = surface_for(patch.material),
     });
   }
   for (const SubMesh& marking : road.markings) {
@@ -101,6 +115,7 @@ void append_road_items(const RoadMesh& road, Scene& scene) {
             marking.positions, marking.normals, marking.indices, {0.92F, 0.92F, 0.87F, 1.0F}),
         .road = road.road,
         .lane = {},
+        .surface = SurfaceKind::Paint,
     });
   }
 }
@@ -159,6 +174,7 @@ Scene build_scene(const NetworkMesh& mesh) {
         .road = {},
         .lane = {},
         .junction = floor.junction,
+        .surface = SurfaceKind::Asphalt,
     });
     grow_bounds(scene.bounds, floor.mesh.positions);
   }

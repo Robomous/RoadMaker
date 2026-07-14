@@ -2,10 +2,25 @@
 
 #include <gtest/gtest.h>
 
+#include <QImage>
+
 #include "render/scene_builder.hpp"
 
 namespace roadmaker::editor {
 namespace {
+
+// The textured render mode uploads these bundled CC0 surface textures at GL
+// init; guard that they decode from the qrc (the JPEG image handler is present
+// and the /textures alias resolves) so a broken bundle fails here, not silently
+// at render time as untextured surfaces.
+TEST(SurfaceTextures, BundledJpegsDecodeFromQrc) {
+  for (const char* path : {":/textures/asphalt.jpg", ":/textures/concrete.jpg"}) {
+    const QImage image{QString::fromLatin1(path)};
+    ASSERT_FALSE(image.isNull()) << path;
+    EXPECT_EQ(image.width(), 512);
+    EXPECT_EQ(image.height(), 512);
+  }
+}
 
 TEST(LaneColor, DistinguishesCoreMaterials) {
   EXPECT_NE(lane_color(LaneType::Driving), lane_color(LaneType::Sidewalk));
@@ -143,6 +158,40 @@ TEST(GroundBaseZ, SitsJustBelowTheNetworkFloor) {
 
 TEST(GroundBaseZ, DefaultsBelowTheZeroDatumWithoutGeometry) {
   EXPECT_FLOAT_EQ(ground_base_z(SceneBounds{}), -0.05F);
+}
+
+TEST(SurfaceFor, MapsLaneTypesToTexturedClasses) {
+  EXPECT_EQ(surface_for(LaneType::Driving), SurfaceKind::Asphalt);
+  EXPECT_EQ(surface_for(LaneType::Shoulder), SurfaceKind::Asphalt);
+  EXPECT_EQ(surface_for(LaneType::Sidewalk), SurfaceKind::Concrete);
+  EXPECT_EQ(surface_for(LaneType::Curb), SurfaceKind::Concrete);
+}
+
+TEST(BuildScene, TagsSurfaceClassesForTexturedMode) {
+  NetworkMesh mesh;
+  RoadMesh road;
+  road.road = RoadId{.index = 1, .gen = 0};
+  road.positions = {0, 0, 0, 10, 0, 0, 10, 5, 0, 0, 5, 0};
+  road.normals = {0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1};
+  road.lanes.push_back(RoadMesh::LanePatch{.lane = {},
+                                           .odr_lane_id = -1,
+                                           .material = LaneType::Sidewalk,
+                                           .indices = {0, 1, 2, 0, 2, 3}});
+  road.markings.push_back(SubMesh{.positions = {0, 0, 0, 1, 0, 0, 1, 1, 0},
+                                  .normals = {0, 0, 1, 0, 0, 1, 0, 0, 1},
+                                  .indices = {0, 1, 2}});
+  mesh.roads.push_back(std::move(road));
+  mesh.junction_floors.push_back(
+      JunctionFloor{.junction = {},
+                    .mesh = SubMesh{.positions = {-5, -5, -1, 0, -5, -1, 0, 0, -1},
+                                    .normals = {0, 0, 1, 0, 0, 1, 0, 0, 1},
+                                    .indices = {0, 1, 2}}});
+
+  const Scene scene = build_scene(mesh);
+  ASSERT_EQ(scene.items.size(), 3U);
+  EXPECT_EQ(scene.items[0].surface, SurfaceKind::Concrete); // sidewalk lane
+  EXPECT_EQ(scene.items[1].surface, SurfaceKind::Paint);    // lane marking
+  EXPECT_EQ(scene.items[2].surface, SurfaceKind::Asphalt);  // junction floor
 }
 
 TEST(BuildScene, RoadPatchesInheritSharedGridUVs) {

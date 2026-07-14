@@ -23,8 +23,10 @@
 
 namespace {
 
-/// `--screenshot <scene.xodr> <out.png> [--camera top|orbit] [--size WxH]`
-/// renders the viewport framebuffer; `--screenshot-ui` captures the whole
+/// `--screenshot <scene.xodr> <out.png> [--camera top|orbit] [--size WxH]
+/// [--textured]` renders the viewport framebuffer (`--textured` opts into the
+/// daytime Textured mode; default is the plain Sober look);
+/// `--screenshot-ui` captures the whole
 /// themed window instead (chrome + docks + viewport — palette mockups and
 /// the golden-look capture). Parsed ahead of Qt construction; `valid`
 /// false = malformed arguments. `--theme <name>` selects a palette for the
@@ -43,6 +45,7 @@ struct ScreenshotArgs {
   QString toast;          // toast text to show (captures the toast overlay)
   QString drop_library;   // library item key to drop (captures the created geometry)
   bool show_tour = false; // start the guided-tour overlay (whole-window capture)
+  bool textured = false;  // opt into the Textured render mode (default is Sober)
   int width = 1600;
   int height = 1000;
 };
@@ -84,6 +87,8 @@ ScreenshotArgs parse_screenshot_args(int argc, char** argv) {
       ++i;
     } else if (std::strcmp(argv[i], "--show-tour") == 0) {
       args.show_tour = true;
+    } else if (std::strcmp(argv[i], "--textured") == 0) {
+      args.textured = true;
     } else if (std::strcmp(argv[i], "--size") == 0 && i + 1 < argc) {
       // std::from_chars, not sscanf: MSVC deprecates the CRT scanners
       // (C4996 under /WX).
@@ -152,6 +157,9 @@ int run_screenshot(const ScreenshotArgs& args) {
     window.viewport()->set_camera_preset(args.camera);
     window.viewport()->set_hint(QString()); // no tool overlay in captures
   }
+  // Sober is the default; --textured opts a capture into the daytime look
+  // (used for the golden scene and to showcase the textured mode in CI).
+  window.viewport()->set_textured_rendering(args.textured);
   QCoreApplication::processEvents(); // realize the GL widget + first paint
   // Highlights are applied AFTER the first event flush: realizing the widget
   // can deliver a synthetic mouse move that clears a forced hover, so set it

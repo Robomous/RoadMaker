@@ -3,18 +3,18 @@
 As-built companion to [`04_render.md`](04_render.md): the concrete
 texture-vs-procedural choice for each GS-1 surface class, recorded as it lands
 (the design doc mandates recording these per `03_assets.md` and `00` risk 3).
-The render-mode framing (Textured default / Sober toggle, hemisphere +
-directional lighting, no shadows) is in `04_render.md` §7–§9.
+The render-mode framing (**Sober plain-color + grid is the default**; Textured
+is the opt-in `View → Textured Rendering` toggle — hemisphere + directional
+lighting, textures, grass, no shadows) is in `04_render.md` §5, §7–§10.
 
 ## Decision table
 
 | Surface class | Approach | Status | Rationale |
 |---|---|---|---|
 | **Grass ground** | **Procedural** (value-noise grass shader) | ✅ landed (WS-D D2) | Reads well without an asset; infinite camera-following plane melts into the sky horizon, so no fetch, no tiling seam, no license row. `03_assets.md` §1 explicitly keeps grass "procedural-first". |
-| Asphalt (driving/shoulder/junction floor) | Texture (ambientCG CC0) — likely | ⏳ pending WS-Assets (#70) → wired in A2 | A tiled photo texture reads better than procedural for close-up road grain; the material/UV pipe (A1) is ready. |
-| Concrete (sidewalk) | Texture (ambientCG CC0) — likely | ⏳ pending WS-Assets (#70) → A2 | Same as asphalt. |
-| Curb | Procedural (flat material) or asphalt-family | ⏳ A2 | Small area; decide at A2 against a screenshot. |
-| Lane-mark paint (crosswalk/arrow/stop-line/dual-yellow) | Procedural (bright unlit paint material + polygon offset) | ⏳ A2 | Marks are geometry, not textures (M1 rule); a flat paint material + polygon offset avoids z-fighting at grazing angles. |
+| **Asphalt** (driving/shoulder/junction floor) | **Texture** (Poly Haven `asphalt_02`, CC0) | ✅ landed (WS-A A2) | A tiled photo texture reads better than procedural for close-up road grain. 512² JPEG (87 KB), 4 m tile via `Material::uv_scale`. Source was ambientCG; Poly Haven chosen because it serves direct single-file CC0 downloads that fit the fetch pipeline. |
+| **Concrete** (sidewalk / curb / border) | **Texture** (Poly Haven `brushed_concrete`, CC0) | ✅ landed (WS-A A2) | Same rationale; 512² JPEG (51 KB). `surface_for()` maps Sidewalk/Curb/Border → Concrete, everything else paved → Asphalt. |
+| **Lane-mark paint** (crosswalk/arrow/stop-line/dual-yellow) | **Procedural** (bright **unlit** paint material) | ✅ landed (WS-A A2) | Marks are geometry, not textures (M1 rule). `SurfaceKind::Paint` → `Material::unlit` so marks read as bright flat paint, not shaded. Z-fighting handled by the existing `kMarkingLift`; a polygon-offset refinement is a follow-up if grazing angles need it. |
 | Sky | Procedural gradient | ✅ (pre-existing, driven by `Environment` since D1) | Reads fine; HDRI only if it doesn't (`04_render.md` §2). |
 
 Update this table as A2 / WS-Assets land each material.

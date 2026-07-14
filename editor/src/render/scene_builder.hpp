@@ -25,6 +25,20 @@ namespace roadmaker::editor {
                                             const std::array<float, 4>& color,
                                             const std::vector<double>& uvs = {});
 
+/// Which textured-mode surface material an item wants. Resolved to a concrete
+/// Material (texture handle / paint) by the viewport, which owns the uploaded
+/// textures; Sober mode ignores it and draws the flat per-mesh color.
+enum class SurfaceKind {
+  Untextured, ///< props and anything with a baked color
+  Asphalt,    ///< driving/shoulder/junction-floor road surface
+  Concrete,   ///< sidewalks and curbs
+  Paint,      ///< lane markings — bright unlit paint, no texture
+};
+
+/// The textured-mode surface class for a lane by its type (asphalt for the
+/// travelled way, concrete for the walked way).
+[[nodiscard]] SurfaceKind surface_for(LaneType type);
+
 /// One uploadable mesh plus the entity it visualizes. `lane` is invalid for
 /// markings and junction floors; `object` is valid only for prop parts (a
 /// placed tree/vegetation instance), where `road` is its owning road and
@@ -34,7 +48,8 @@ struct SceneItem {
   RoadId road;
   LaneId lane;
   ObjectId object;
-  JunctionId junction; // valid for a junction-floor item (road/lane invalid)
+  JunctionId junction;                           // valid for a junction-floor item
+  SurfaceKind surface = SurfaceKind::Untextured; // textured-mode material class
 };
 
 /// Axis-aligned bounds of the built scene (kernel frame, meters).

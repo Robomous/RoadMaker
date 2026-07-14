@@ -14,6 +14,8 @@ models, fonts, images). Policy — see `docs/design/m2/05_assets.md`:
 
 | File | Source | Author | License | Retrieved |
 |---|---|---|---|---|
+| `assets/textures/asphalt/asphalt_02_diff_512.jpg` | [Poly Haven — asphalt_02](https://polyhaven.com/a/asphalt_02) (resized to 512, re-encoded JPEG q85) | Poly Haven (Rob Tuytel, Sergej Majboroda) | CC0 | 2026-07-14 |
+| `assets/textures/concrete/brushed_concrete_diff_512.jpg` | [Poly Haven — brushed_concrete](https://polyhaven.com/a/brushed_concrete) (resized to 512, re-encoded JPEG q85) | Poly Haven (Rob Tuytel, Sergej Majboroda) | CC0 | 2026-07-14 |
 | `editor/resources/icons/custom/clothoid-road.svg` | original work (this repository) | RoadMaker contributors | MIT | 2026-07-10 |
 | `editor/resources/icons/custom/junction-connect.svg` | original work (this repository) | RoadMaker contributors | MIT | 2026-07-10 |
 | `editor/resources/icons/custom/lane-section.svg` | original work (this repository) | RoadMaker contributors | MIT | 2026-07-10 |
