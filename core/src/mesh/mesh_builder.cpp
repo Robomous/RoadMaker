@@ -424,6 +424,10 @@ RoadMesh build_one_road(const RoadNetwork& network,
         mesh.positions.insert(mesh.positions.end(), p.begin(), p.end());
         const auto n = surface_normal(frame);
         mesh.normals.insert(mesh.normals.end(), n.begin(), n.end());
+        // Planar texture coordinates in meters: u follows s along the road, v
+        // follows t across it, so textures tile continuously across lane
+        // boundaries and welded seams (adjacent roads share s/t at the joint).
+        mesh.uvs.insert(mesh.uvs.end(), {s, t});
       }
       row_offsets.push_back(std::move(offsets));
     }

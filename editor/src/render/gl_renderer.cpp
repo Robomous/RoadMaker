@@ -13,28 +13,42 @@ namespace {
 constexpr const char* kVertexShader = R"(#version 330 core
 layout(location = 0) in vec3 in_position;
 layout(location = 1) in vec3 in_normal;
+layout(location = 2) in vec2 in_uv;
 uniform mat4 u_view;
 uniform mat4 u_projection;
+uniform mat4 u_model; // per-instance transform; identity for single draws
 out vec3 v_normal;
+out vec2 v_uv;
 void main() {
-  v_normal = in_normal;
-  gl_Position = u_projection * u_view * vec4(in_position, 1.0);
+  v_normal = mat3(u_model) * in_normal;
+  v_uv = in_uv;
+  gl_Position = u_projection * u_view * u_model * vec4(in_position, 1.0);
 }
 )";
 
 constexpr const char* kFragmentShader = R"(#version 330 core
 in vec3 v_normal;
+in vec2 v_uv;
 uniform vec4 u_color;
-uniform float u_highlight; // accent mix strength: 0 none, hover < selected
-uniform vec3 u_accent;     // theme accent token (hover/selection emphasis)
-uniform float u_lit;       // 0 = unlit (lines), 1 = lambert
+uniform float u_highlight;  // accent mix strength: 0 none, hover < selected
+uniform vec3 u_accent;      // theme accent token (hover/selection emphasis)
+uniform float u_lit;        // 0 = unlit (lines), 1 = lambert
+uniform int u_has_texture;  // 1 = sample u_base_color, 0 = flat u_color
+uniform sampler2D u_base_color;
+uniform float u_uv_scale;   // texels per meter (material tiling)
+uniform vec4 u_tint;        // multiplies the texture sample
 out vec4 frag_color;
 void main() {
+  // A default Material carries no texture, so u_has_texture stays 0 and the
+  // flat u_color path below is byte-identical to the pre-material renderer.
+  vec4 albedo = u_has_texture == 1
+      ? texture(u_base_color, v_uv * u_uv_scale) * u_tint
+      : u_color;
   vec3 light_dir = normalize(vec3(0.35, 0.25, 0.9));
   float lambert = max(dot(normalize(v_normal), light_dir), 0.0);
   float shade = mix(1.0, 0.35 + 0.65 * lambert, u_lit);
-  vec3 base = u_color.rgb * shade;
-  frag_color = vec4(mix(base, u_accent, u_highlight), u_color.a);
+  vec3 base = albedo.rgb * shade;
+  frag_color = vec4(mix(base, u_accent, u_highlight), albedo.a);
 }
 )";
 
@@ -118,6 +132,10 @@ void main() {
 }
 )";
 
+// Column-major 4x4 identity — the model matrix for non-instanced draws.
+constexpr std::array<float, 16> kIdentity{
+    1.0F, 0.0F, 0.0F, 0.0F, 0.0F, 1.0F, 0.0F, 0.0F, 0.0F, 0.0F, 1.0F, 0.0F, 0.0F, 0.0F, 0.0F, 1.0F};
+
 std::uint32_t compile(gl::GLenum type, const char* source) {
   const gl::GLuint shader = gl::CreateShader(type);
   gl::ShaderSource(shader, 1, &source, nullptr);
@@ -177,10 +195,15 @@ bool GLRenderer::init() {
   }
   u_view_ = gl::GetUniformLocation(program_, "u_view");
   u_projection_ = gl::GetUniformLocation(program_, "u_projection");
+  u_model_ = gl::GetUniformLocation(program_, "u_model");
   u_color_ = gl::GetUniformLocation(program_, "u_color");
   u_highlight_ = gl::GetUniformLocation(program_, "u_highlight");
   u_accent_ = gl::GetUniformLocation(program_, "u_accent");
   u_lit_ = gl::GetUniformLocation(program_, "u_lit");
+  u_has_texture_ = gl::GetUniformLocation(program_, "u_has_texture");
+  u_base_color_ = gl::GetUniformLocation(program_, "u_base_color");
+  u_uv_scale_ = gl::GetUniformLocation(program_, "u_uv_scale");
+  u_tint_ = gl::GetUniformLocation(program_, "u_tint");
   u_sky_top_ = gl::GetUniformLocation(sky_program_, "u_sky_top");
   u_sky_horizon_ = gl::GetUniformLocation(sky_program_, "u_sky_horizon");
   u_grid_view_ = gl::GetUniformLocation(grid_program_, "u_view");
@@ -200,6 +223,10 @@ void GLRenderer::shutdown() {
     return;
   }
   clear_meshes();
+  for (const auto& [id, tex] : textures_) {
+    gl::DeleteTextures(1, &tex);
+  }
+  textures_.clear();
   gl::DeleteProgram(program_);
   gl::DeleteProgram(sky_program_);
   gl::DeleteProgram(grid_program_);
@@ -224,11 +251,14 @@ RenderMeshHandle GLRenderer::upload(const RenderMeshData& data) {
   mesh.kind = data.kind;
   mesh.index_count = static_cast<std::int32_t>(data.indices.size());
 
-  // Interleave position + normal (lines get zero normals).
+  // Interleave position + normal + uv (one vertex format, stride 8). Lines get
+  // zero normals; meshes without UVs (markings, lines) get (0,0) — harmless
+  // because their Material carries no texture (u_has_texture stays 0).
   const std::size_t vertex_count = data.positions.size() / 3;
   std::vector<float> interleaved;
-  interleaved.reserve(vertex_count * 6);
+  interleaved.reserve(vertex_count * 8);
   const bool has_normals = data.normals.size() == data.positions.size();
+  const bool has_uvs = data.uvs.size() == vertex_count * 2;
   for (std::size_t i = 0; i < vertex_count; ++i) {
     interleaved.push_back(data.positions[(i * 3) + 0]);
     interleaved.push_back(data.positions[(i * 3) + 1]);
@@ -236,6 +266,8 @@ RenderMeshHandle GLRenderer::upload(const RenderMeshData& data) {
     interleaved.push_back(has_normals ? data.normals[(i * 3) + 0] : 0.0F);
     interleaved.push_back(has_normals ? data.normals[(i * 3) + 1] : 0.0F);
     interleaved.push_back(has_normals ? data.normals[(i * 3) + 2] : 1.0F);
+    interleaved.push_back(has_uvs ? data.uvs[(i * 2) + 0] : 0.0F);
+    interleaved.push_back(has_uvs ? data.uvs[(i * 2) + 1] : 0.0F);
   }
 
   gl::GenVertexArrays(1, &mesh.vao);
@@ -253,12 +285,15 @@ RenderMeshHandle GLRenderer::upload(const RenderMeshData& data) {
                  data.indices.data(),
                  gl::kStaticDraw);
 
-  const auto stride = static_cast<gl::GLsizei>(6 * sizeof(float));
+  const auto stride = static_cast<gl::GLsizei>(8 * sizeof(float));
   gl::EnableVertexAttribArray(0);
   gl::VertexAttribPointer(0, 3, gl::kFloat, 0, stride, nullptr);
   gl::EnableVertexAttribArray(1);
   gl::VertexAttribPointer(
       1, 3, gl::kFloat, 0, stride, reinterpret_cast<const void*>(3 * sizeof(float)));
+  gl::EnableVertexAttribArray(2);
+  gl::VertexAttribPointer(
+      2, 2, gl::kFloat, 0, stride, reinterpret_cast<const void*>(6 * sizeof(float)));
   gl::BindVertexArray(0);
 
   const RenderMeshHandle handle{next_id_++};
@@ -285,6 +320,50 @@ void GLRenderer::clear_meshes() {
     destroy(mesh);
   }
   meshes_.clear();
+}
+
+TextureHandle GLRenderer::upload(const TextureData& data) {
+  const std::size_t expected =
+      static_cast<std::size_t>(data.width) * static_cast<std::size_t>(data.height) * 4U;
+  if (!ready_ || data.width <= 0 || data.height <= 0 || data.rgba.size() != expected) {
+    return {};
+  }
+  gl::GLuint tex = 0;
+  gl::GenTextures(1, &tex);
+  gl::BindTexture(gl::kTexture2D, tex);
+  gl::TexImage2D(gl::kTexture2D,
+                 0,
+                 static_cast<gl::GLint>(gl::kRgba8),
+                 data.width,
+                 data.height,
+                 0,
+                 gl::kRgba,
+                 gl::kUnsignedByte,
+                 data.rgba.data());
+  gl::GenerateMipmap(gl::kTexture2D);
+  gl::TexParameteri(gl::kTexture2D, gl::kTextureWrapS, static_cast<gl::GLint>(gl::kRepeat));
+  gl::TexParameteri(gl::kTexture2D, gl::kTextureWrapT, static_cast<gl::GLint>(gl::kRepeat));
+  gl::TexParameteri(
+      gl::kTexture2D, gl::kTextureMinFilter, static_cast<gl::GLint>(gl::kLinearMipmapLinear));
+  gl::TexParameteri(gl::kTexture2D, gl::kTextureMagFilter, static_cast<gl::GLint>(gl::kLinear));
+  gl::BindTexture(gl::kTexture2D, 0);
+
+  const TextureHandle handle{next_tex_id_++};
+  textures_.emplace(handle.id, tex);
+  return handle;
+}
+
+void GLRenderer::remove(TextureHandle handle) {
+  const auto found = textures_.find(handle.id);
+  if (found != textures_.end()) {
+    gl::DeleteTextures(1, &found->second);
+    textures_.erase(found);
+  }
+}
+
+void GLRenderer::set_environment(const Environment& env) {
+  // Stored now; consumed by the lighting pass in the textured-mode PR (D1).
+  environment_ = env;
 }
 
 void GLRenderer::draw_backdrop(const CameraMatrices& camera) {
@@ -361,24 +440,52 @@ void GLRenderer::render(const std::vector<DrawItem>& items,
     return 0.0F;
   };
 
+  gl::Uniform1i(u_base_color_, 0); // sampler bound to texture unit 0
+
   for (const DrawItem& item : items) {
     const auto found = meshes_.find(item.mesh.id);
     if (found == meshes_.end()) {
       continue;
     }
     const GpuMesh& mesh = found->second;
+
+    // Material resolution: sample the base-color texture when the material
+    // carries one, else fall back to the mesh's flat color — a
+    // default-constructed Material reproduces the pre-material output exactly.
+    const Material& mat = item.material;
+    const auto tex = textures_.find(mat.base_color.id);
+    const bool has_tex = mat.base_color.valid() && tex != textures_.end();
+    gl::Uniform1i(u_has_texture_, has_tex ? 1 : 0);
+    if (has_tex) {
+      gl::ActiveTexture(gl::kTexture0);
+      gl::BindTexture(gl::kTexture2D, tex->second);
+      gl::Uniform1f(u_uv_scale_, mat.uv_scale);
+      gl::Uniform4f(u_tint_, mat.tint[0], mat.tint[1], mat.tint[2], mat.tint[3]);
+    }
     gl::Uniform4f(u_color_, mesh.color[0], mesh.color[1], mesh.color[2], mesh.color[3]);
     // u_highlight and u_lit are `float` uniforms: they MUST be set with
     // Uniform1f. glUniform4f on a float uniform is GL_INVALID_OPERATION and
     // silently leaves the uniform at 0 (which is why the surface highlight
     // never rendered before).
     gl::Uniform1f(u_highlight_, highlight_strength(item.state));
-    gl::Uniform1f(u_lit_, mesh.kind == PrimitiveKind::Triangles ? 1.0F : 0.0F);
+    const bool lit = mesh.kind == PrimitiveKind::Triangles && !mat.unlit;
+    gl::Uniform1f(u_lit_, lit ? 1.0F : 0.0F);
     gl::BindVertexArray(mesh.vao);
-    gl::DrawElements(mesh.kind == PrimitiveKind::Triangles ? gl::kTriangles : gl::kLines,
-                     mesh.index_count,
-                     gl::kUnsignedInt,
-                     nullptr);
+
+    const gl::GLenum primitive =
+        mesh.kind == PrimitiveKind::Triangles ? gl::kTriangles : gl::kLines;
+    // Instancing: one draw per InstanceData transform (grouped by shared mesh);
+    // empty span = a single draw at identity. The instanced GL fast path
+    // (glDrawElementsInstanced) lands with prop instancing in a later PR.
+    if (item.instances.empty()) {
+      gl::UniformMatrix4fv(u_model_, 1, 0, kIdentity.data());
+      gl::DrawElements(primitive, mesh.index_count, gl::kUnsignedInt, nullptr);
+    } else {
+      for (const InstanceData& inst : item.instances) {
+        gl::UniformMatrix4fv(u_model_, 1, 0, inst.model.data());
+        gl::DrawElements(primitive, mesh.index_count, gl::kUnsignedInt, nullptr);
+      }
+    }
   }
   gl::BindVertexArray(0);
   gl::UseProgram(0);

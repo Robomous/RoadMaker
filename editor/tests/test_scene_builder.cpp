@@ -27,6 +27,35 @@ TEST(ToRenderData, NarrowsDoublesAndCopiesIndices) {
   EXPECT_EQ(data.indices, indices);
   EXPECT_EQ(data.color, color);
   EXPECT_EQ(data.kind, PrimitiveKind::Triangles);
+  EXPECT_TRUE(data.uvs.empty()); // no uvs passed → untextured
+}
+
+TEST(ToRenderData, NarrowsUVsWhenProvided) {
+  const std::vector<double> positions{0.0, 0.0, 0.0, 4.0, 0.0, 0.0};
+  const std::vector<double> normals{0.0, 0.0, 1.0, 0.0, 0.0, 1.0};
+  const std::vector<std::uint32_t> indices{0, 1};
+  const std::array<float, 4> color{1.0F, 1.0F, 1.0F, 1.0F};
+  const std::vector<double> uvs{0.0, -1.5, 4.0, -1.5}; // u=s, v=t
+
+  const RenderMeshData data = to_render_data(positions, normals, indices, color, uvs);
+  ASSERT_EQ(data.uvs.size(), 4U);
+  EXPECT_FLOAT_EQ(data.uvs[0], 0.0F);
+  EXPECT_FLOAT_EQ(data.uvs[1], -1.5F);
+  EXPECT_FLOAT_EQ(data.uvs[2], 4.0F);
+}
+
+// A default-constructed Material must reproduce the flat look: no base-color
+// texture and no instance transforms, so the GL backend falls back to the
+// per-mesh flat color exactly as the pre-material renderer did.
+TEST(Material, DefaultsAreFlatAndUninstanced) {
+  const Material mat;
+  EXPECT_FALSE(mat.base_color.valid());
+  EXPECT_FLOAT_EQ(mat.uv_scale, 0.25F); // 4 m tile
+  EXPECT_FALSE(mat.unlit);
+
+  const DrawItem item;
+  EXPECT_FALSE(item.material.base_color.valid());
+  EXPECT_TRUE(item.instances.empty());
 }
 
 TEST(BuildScene, FlattensPatchesMarkingsAndFloors) {
@@ -75,6 +104,25 @@ TEST(BuildScene, FlattensPatchesMarkingsAndFloors) {
   EXPECT_FLOAT_EQ(scene.bounds.hi[0], 10.0F);
   EXPECT_FLOAT_EQ(scene.bounds.lo[2], -1.0F);
   EXPECT_FLOAT_EQ(scene.bounds.hi[2], 2.0F);
+}
+
+TEST(BuildScene, RoadPatchesInheritSharedGridUVs) {
+  NetworkMesh mesh;
+  RoadMesh road;
+  road.road = RoadId{.index = 1, .gen = 0};
+  road.positions = {0, 0, 0, 10, 0, 0, 10, 5, 0, 0, 5, 0};
+  road.normals = {0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1};
+  road.uvs = {0, 0, 10, 0, 10, 5, 0, 5}; // u=s, v=t per grid vertex
+  road.lanes.push_back(RoadMesh::LanePatch{
+      .lane = {}, .odr_lane_id = -1, .material = LaneType::Driving, .indices = {0, 1, 2, 0, 2, 3}});
+  mesh.roads.push_back(std::move(road));
+
+  const Scene scene = build_scene(mesh);
+  ASSERT_EQ(scene.items.size(), 1U);
+  // The whole shared grid's UVs travel with the patch (indices select into it).
+  ASSERT_EQ(scene.items[0].data.uvs.size(), 8U);
+  EXPECT_FLOAT_EQ(scene.items[0].data.uvs[2], 10.0F);
+  EXPECT_FLOAT_EQ(scene.items[0].data.uvs[5], 5.0F);
 }
 
 TEST(BuildScene, EmptyMeshHasInvalidBounds) {

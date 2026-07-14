@@ -137,4 +137,37 @@ uploads **once**; placed instances draw via `InstanceData` transforms:
   (guards the packaging path).
 - Shadows explicitly absent — a test asserting the lighting path allocates no
   shadow resources documents decision 3.
+
+## 7. As-built — WS-A part 1 (interface + UVs + plumbing)
+
+The additive interface (§1) landed adapted to the M2 renderer as it actually
+shipped, with these deviations recorded here (design intent unchanged):
+
+- **Flat-color fallback stays on `RenderMeshData::color`, not `Material`.** M2
+  carries one flat color per uploaded mesh (not per `DrawItem`), and the M3a
+  revamp added `HighlightState` on `DrawItem`. `Material` was added *alongside*
+  these: an invalid `Material::base_color` means "use the mesh's flat color",
+  so a default-constructed `Material` reproduces the pre-material output
+  byte-for-byte. `Material::tint` therefore defaults to **white** (multiplies
+  the texture sample), not the doc's `0.8` grey (which assumed `Material`
+  owned the flat color).
+- **UVs live on the kernel mesh in meters.** `SubMesh`/`RoadMesh` gained a
+  `uvs` vector (u = s, v = t, meters); tiling is applied in the shader via
+  `Material::uv_scale` (default `0.25` = 4 m tile) rather than baking the tile
+  size into the coordinates — so a material can retile without a re-mesh. Empty
+  `uvs` = untextured (markings, junction floors until A2/D2 assign them).
+- **Instancing is a per-instance uniform loop for now.** `DrawItem::instances`
+  is honoured by drawing once per `InstanceData` with a `u_model` uniform; the
+  `glDrawElementsInstanced` fast path lands with prop instancing in WS-C. The
+  interface (an `instances` span) is final; only the backend is provisional.
+- **`set_environment` stores but does not yet light.** The `Environment` is
+  captured; the hemisphere + directional shader that consumes it is the D1
+  (textured-mode) PR, keeping WS-A part 1 a no-visual-change plumbing step.
+
+Tests that landed with it: `Mesh.RoadGridCarriesContinuousPlanarUVs` (kernel UV
+mapping + continuity), `ToRenderData.NarrowsUVsWhenProvided`,
+`BuildScene.RoadPatchesInheritSharedGridUVs`, and
+`Material.DefaultsAreFlatAndUninstanced` (the flat-look guarantee). The
+offscreen frame/parity and instancing-behaviour tests (§6) land with D1/WS-C
+when there is a visible surface to assert.
 </content>

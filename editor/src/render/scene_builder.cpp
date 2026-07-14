@@ -53,7 +53,8 @@ std::array<float, 4> lane_color(LaneType type) {
 RenderMeshData to_render_data(const std::vector<double>& positions,
                               const std::vector<double>& normals,
                               const std::vector<std::uint32_t>& indices,
-                              const std::array<float, 4>& color) {
+                              const std::array<float, 4>& color,
+                              const std::vector<double>& uvs) {
   auto narrow = [](const std::vector<double>& values) {
     std::vector<float> out;
     out.reserve(values.size());
@@ -65,6 +66,7 @@ RenderMeshData to_render_data(const std::vector<double>& positions,
   RenderMeshData data;
   data.positions = narrow(positions);
   data.normals = narrow(normals);
+  data.uvs = narrow(uvs);
   data.indices = indices;
   data.color = color;
   return data;
@@ -80,8 +82,8 @@ void append_road_items(const RoadMesh& road, Scene& scene) {
   grow_bounds(scene.bounds, road.positions);
   for (const RoadMesh::LanePatch& patch : road.lanes) {
     scene.items.push_back(SceneItem{
-        .data =
-            to_render_data(road.positions, road.normals, patch.indices, lane_color(patch.material)),
+        .data = to_render_data(
+            road.positions, road.normals, patch.indices, lane_color(patch.material), road.uvs),
         .road = road.road,
         .lane = patch.lane,
     });

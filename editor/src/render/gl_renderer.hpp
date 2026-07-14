@@ -27,6 +27,10 @@ public:
   void remove(RenderMeshHandle handle) override;
   void clear_meshes() override;
 
+  TextureHandle upload(const TextureData& data) override;
+  void remove(TextureHandle handle) override;
+
+  void set_environment(const Environment& env) override;
   void set_backdrop(const BackdropColors& colors) override;
 
   void render(const std::vector<DrawItem>& items,
@@ -49,13 +53,22 @@ private:
 
   std::unordered_map<std::uint32_t, GpuMesh> meshes_;
   std::uint32_t next_id_ = 1;
+  // GL texture names keyed by TextureHandle::id (id space disjoint from meshes).
+  std::unordered_map<std::uint32_t, std::uint32_t> textures_;
+  std::uint32_t next_tex_id_ = 1;
+  Environment environment_{};
   std::uint32_t program_ = 0;
   std::int32_t u_view_ = -1;
   std::int32_t u_projection_ = -1;
+  std::int32_t u_model_ = -1;
   std::int32_t u_color_ = -1;
   std::int32_t u_highlight_ = -1;
   std::int32_t u_accent_ = -1;
   std::int32_t u_lit_ = -1;
+  std::int32_t u_has_texture_ = -1;
+  std::int32_t u_base_color_ = -1;
+  std::int32_t u_uv_scale_ = -1;
+  std::int32_t u_tint_ = -1;
 
   // Backdrop passes (sky gradient + ground grid), both attributeless draws
   // through one shared empty VAO (core profile requires a bound VAO).

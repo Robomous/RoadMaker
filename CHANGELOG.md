@@ -13,6 +13,18 @@ through the M2 command layer (one undo step per edit, byte-identical undo) and
 is headless-testable.
 
 ### Added
+- **Renderer material/texture foundation + mesh texture coordinates** (GS-1
+  WS-A, part 1): the `Renderer` interface gains `TextureHandle`/`TextureData`
+  (RGBA8 upload), a `Material` (optional base-color texture + tint + per-meter
+  `uv_scale`, default 4 m tile), per-`InstanceData` model transforms on
+  `DrawItem`, and an `Environment` (hemisphere + sun) — all still GL-free. The
+  GL backend uploads textures, samples them through a new texcoord vertex
+  attribute, and honours a per-draw model matrix (single or instanced). The
+  kernel mesh builder now emits **planar UVs (u = s, v = t in meters)** on the
+  shared road grid, continuous across lane boundaries and welded seams. A
+  default `Material` reproduces the pre-material flat look exactly, so this PR
+  ships the plumbing with no visual change; textured surfaces, lighting, and
+  terrain follow in WS-A/D. Groundwork for [#71](https://github.com/Robomous/RoadMaker/issues/71).
 - **Weld road ends smoothly — no curvature kink at the joint** (gate finding 3):
   road-end adjacencies where an arc started right at the joint showed a visible
   curvature discontinuity. `edit::close_gap` now bridges a real gap with a **G2**

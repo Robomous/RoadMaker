@@ -6,6 +6,7 @@
 
 #include <array>
 #include <cstdint>
+#include <span>
 #include <vector>
 
 namespace roadmaker::editor {
@@ -14,6 +15,56 @@ struct RenderMeshHandle {
   std::uint32_t id = 0;
 
   [[nodiscard]] bool valid() const { return id != 0; }
+};
+
+/// Opaque handle to an uploaded texture (mirrors RenderMeshHandle). id 0 =
+/// "no texture"; a Material with an invalid base_color renders flat.
+struct TextureHandle {
+  std::uint32_t id = 0;
+
+  [[nodiscard]] bool valid() const { return id != 0; }
+};
+
+/// CPU-side texture upload, RGBA8 row-major (4 bytes/texel, width*height
+/// texels). The render boundary stays GL-free: no sampler/format enum here,
+/// the GL backend picks the internal format.
+struct TextureData {
+  int width = 0;
+  int height = 0;
+  std::vector<std::uint8_t> rgba;
+};
+
+/// A material references an optional base-color texture plus scalar factors.
+/// Defaults reproduce the M2 flat look: no texture, white tint (the per-mesh
+/// RenderMeshData::color remains the flat fallback when base_color is invalid,
+/// so a default-constructed Material never changes existing output). Resolved
+/// to a shader uniform set by the GL backend — no GL here.
+struct Material {
+  TextureHandle base_color;                          ///< invalid → use RenderMeshData::color
+  std::array<float, 4> tint{1.0F, 1.0F, 1.0F, 1.0F}; ///< multiplies the sample
+  float uv_scale = 0.25F;                            ///< texels per meter: 0.25 = 4 m tile
+  bool unlit = false;                                ///< markings/sky bypass lighting
+};
+
+/// Per-instance transform for prop instancing (many props share one mesh).
+/// Column-major 4x4, kernel frame (Z-up, meters).
+struct InstanceData {
+  std::array<float, 16> model{1.0F,
+                              0.0F,
+                              0.0F,
+                              0.0F,
+                              0.0F,
+                              1.0F,
+                              0.0F,
+                              0.0F,
+                              0.0F,
+                              0.0F,
+                              1.0F,
+                              0.0F,
+                              0.0F,
+                              0.0F,
+                              0.0F,
+                              1.0F};
 };
 
 enum class PrimitiveKind {
@@ -26,6 +77,7 @@ enum class PrimitiveKind {
 struct RenderMeshData {
   std::vector<float> positions; // xyz triplets
   std::vector<float> normals;   // xyz triplets (empty for Lines)
+  std::vector<float> uvs;       // uv pairs (u=s, v=t in meters); empty = untextured
   std::vector<std::uint32_t> indices;
   std::array<float, 4> color{0.8F, 0.8F, 0.8F, 1.0F};
   PrimitiveKind kind = PrimitiveKind::Triangles;
@@ -44,6 +96,8 @@ enum class HighlightState {
 struct DrawItem {
   RenderMeshHandle mesh;
   HighlightState state = HighlightState::None;
+  Material material{};                     ///< defaults reproduce the flat look
+  std::span<const InstanceData> instances; ///< empty = one draw at identity
 };
 
 /// Right-handed, Z-up camera matrices (column-major 4x4).
@@ -70,6 +124,21 @@ struct BackdropColors {
   std::array<float, 3> highlight{0.961F, 0.651F, 0.137F};
 };
 
+/// Scene lighting + sky description (all plain floats — theme/render boundary
+/// stays Qt- and GL-free). Hemisphere ambient (sky/ground lerp by normal.z) +
+/// one directional sun; no shadow maps (M3a decision 3). The default values
+/// reproduce the M2 flat directional look until the textured-mode pass (D1)
+/// drives them from the active render mode.
+struct Environment {
+  std::array<float, 3> sun_dir{0.35F, 0.25F, 0.90F}; ///< world, Z-up (to light)
+  std::array<float, 3> sun_color{1.0F, 0.97F, 0.90F};
+  std::array<float, 3> sky_color{0.5F, 0.7F, 1.0F};      ///< hemisphere up
+  std::array<float, 3> ground_color{0.4F, 0.38F, 0.35F}; ///< hemisphere down
+  float sun_intensity = 1.0F;
+  float ambient = 0.35F;
+  bool procedural_sky = true; ///< false → sampled HDRI (later render polish)
+};
+
 class Renderer {
 public:
   virtual ~Renderer() = default;
@@ -80,6 +149,15 @@ public:
   virtual RenderMeshHandle upload(const RenderMeshData& data) = 0;
   virtual void remove(RenderMeshHandle handle) = 0;
   virtual void clear_meshes() = 0;
+
+  /// Uploads an RGBA8 texture and returns an opaque handle; TextureData may be
+  /// discarded after the call. Safe only after init().
+  virtual TextureHandle upload(const TextureData& data) = 0;
+  virtual void remove(TextureHandle handle) = 0;
+
+  /// Sets the scene lighting/sky environment. Safe to call before init(); the
+  /// frame after the call uses the new environment.
+  virtual void set_environment(const Environment& env) = 0;
 
   /// Sets the sky/grid/axes colors. Safe to call before init(); the frame
   /// after the call uses the new colors.
