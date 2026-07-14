@@ -1,12 +1,14 @@
 #include "app/context_menu.hpp"
 
 #include "roadmaker/edit/connection.hpp"
+#include "roadmaker/edit/markings.hpp"
 #include "roadmaker/edit/operations.hpp"
 #include "roadmaker/road/network.hpp"
 
 #include <QAction>
 #include <QMenu>
 #include <QObject>
+#include <QUndoStack>
 #include <algorithm>
 #include <set>
 #include <string>
@@ -131,6 +133,26 @@ std::vector<MenuItem> build_context_menu(const MenuContext& context, ContextMenu
                                deps.selection.clear();
                                deps.actions.frame_selection->trigger();
                              }});
+    items.push_back(separator());
+    // Author one zebra crosswalk per arm, spanning its driving lanes just inside
+    // the junction — all in one undo step (§WS-B). Disabled when the junction has
+    // no resolvable arms (foreign/degenerate) so it can't no-op silently.
+    const bool has_arms = !edit::junction_crosswalks(network, junction).empty();
+    items.push_back(
+        MenuItem{.text = QObject::tr("Add crosswalks to all arms"),
+                 .enabled = has_arms,
+                 .invoke = [deps, junction] {
+                   auto crosswalks = edit::junction_crosswalks(deps.document.network(), junction);
+                   if (crosswalks.empty()) {
+                     return;
+                   }
+                   deps.document.undo_stack()->beginMacro(QObject::tr("Add crosswalks"));
+                   for (auto& [road, object] : crosswalks) {
+                     (void)deps.document.push_command(
+                         edit::add_object(deps.document.network(), road, std::move(object)));
+                   }
+                   deps.document.undo_stack()->endMacro();
+                 }});
     items.push_back(separator());
     items.push_back(MenuItem{.text = QObject::tr("Delete junction"), .invoke = [deps, junction] {
                                (void)deps.document.push_command(

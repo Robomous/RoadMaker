@@ -147,6 +147,64 @@ TEST(ContextMenu, ObjectMenuHasDeleteFrameDuplicate) {
   EXPECT_EQ(fx.find(items, "Split road here"), nullptr);
 }
 
+namespace {
+
+/// Builds a 3-arm junction in `fx.document` (separate from fx.road) and returns
+/// its id.
+roadmaker::JunctionId build_junction(Fixture& fx) {
+  const auto arm = [&](std::vector<Waypoint> waypoints) {
+    (void)fx.document.push_command(roadmaker::edit::create_road(
+        std::move(waypoints), roadmaker::LaneProfile::two_lane_default(), ""));
+  };
+  arm({Waypoint{.x = -40.0, .y = 0.0}, Waypoint{.x = -6.0, .y = 0.0}});
+  arm({Waypoint{.x = 40.0, .y = 0.0}, Waypoint{.x = 6.0, .y = 0.0}});
+  arm({Waypoint{.x = 0.0, .y = -40.0}, Waypoint{.x = 0.0, .y = -6.0}});
+  std::vector<roadmaker::RoadEnd> ends;
+  fx.document.network().for_each_road([&](RoadId id, const roadmaker::Road&) {
+    if (id != fx.road) {
+      ends.push_back(roadmaker::RoadEnd{.road = id, .contact = roadmaker::ContactPoint::End});
+    }
+  });
+  (void)fx.document.push_command(
+      roadmaker::edit::create_junction(fx.document.network(), std::move(ends)));
+  roadmaker::JunctionId junction;
+  fx.document.network().for_each_junction(
+      [&](roadmaker::JunctionId id, const roadmaker::Junction&) { junction = id; });
+  return junction;
+}
+
+std::size_t object_count(const Fixture& fx) {
+  std::size_t count = 0;
+  fx.document.network().for_each_object(
+      [&](roadmaker::ObjectId, const roadmaker::Object&) { ++count; });
+  return count;
+}
+
+} // namespace
+
+TEST(ContextMenu, AddCrosswalksToAllArmsIsOneUndoableMacro) {
+  Fixture fx;
+  const roadmaker::JunctionId junction = build_junction(fx);
+  ASSERT_TRUE(junction.is_valid());
+
+  MenuContext context;
+  context.junction = junction;
+  const std::vector<MenuItem> items = build_context_menu(context, fx.deps);
+  const MenuItem* add = fx.find(items, "Add crosswalks to all arms");
+  ASSERT_NE(add, nullptr);
+  ASSERT_TRUE(add->enabled);
+
+  ASSERT_EQ(object_count(fx), 0U);
+  add->invoke();
+  EXPECT_EQ(object_count(fx), 3U); // one crosswalk per arm
+
+  // The whole batch is a single undo step (QUndoStack macro).
+  fx.document.undo_stack()->undo();
+  EXPECT_EQ(object_count(fx), 0U);
+  fx.document.undo_stack()->redo();
+  EXPECT_EQ(object_count(fx), 3U);
+}
+
 TEST(ContextMenu, DeleteObjectInvokeLandsTheCommand) {
   Fixture fx;
   const roadmaker::ObjectId object = place_tree(fx);
