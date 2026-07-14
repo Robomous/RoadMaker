@@ -111,6 +111,8 @@ void ViewportWidget::rebuild_scene() {
                                   .junction = item.junction});
   }
   scene_bounds_ = scene.bounds;
+  // Keep the ground plane just under the (possibly changed) network floor.
+  renderer_->set_ground(textured_rendering_, ground_base_z(scene_bounds_));
   if (scene_bounds_.valid() && frame_on_rebuild_) {
     camera_.frame(scene_bounds_.center(), scene_bounds_.framing_radius());
   }
@@ -839,6 +841,10 @@ void ViewportWidget::apply_render_mode() {
     backdrop.grid_minor[3] *= 0.35F;
   }
   renderer_->set_backdrop(backdrop);
+
+  // Procedural grass ground in textured mode only, sitting just under the
+  // network floor so coplanar road surfaces draw over it (Sober keeps the grid).
+  renderer_->set_ground(textured_rendering_, ground_base_z(scene_bounds_));
 }
 
 void ViewportWidget::set_textured_rendering(bool textured) {

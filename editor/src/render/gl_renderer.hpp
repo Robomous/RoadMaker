@@ -31,6 +31,7 @@ public:
   void remove(TextureHandle handle) override;
 
   void set_environment(const Environment& env) override;
+  void set_ground(bool enabled, float base_z) override;
   void set_backdrop(const BackdropColors& colors) override;
 
   void render(const std::vector<DrawItem>& items,
@@ -50,6 +51,7 @@ private:
 
   void destroy(GpuMesh& mesh);
   void draw_backdrop(const CameraMatrices& camera);
+  void draw_ground(const CameraMatrices& camera);
 
   std::unordered_map<std::uint32_t, GpuMesh> meshes_;
   std::uint32_t next_id_ = 1;
@@ -92,6 +94,21 @@ private:
   std::int32_t u_grid_minor_ = -1;
   std::int32_t u_grid_axis_x_ = -1;
   std::int32_t u_grid_axis_y_ = -1;
+
+  // Procedural grass ground plane (textured mode only), at ground_base_z_.
+  bool ground_enabled_ = false;
+  float ground_base_z_ = 0.0F;
+  std::uint32_t ground_program_ = 0;
+  std::int32_t u_ground_view_ = -1;
+  std::int32_t u_ground_projection_ = -1;
+  std::int32_t u_ground_eye_ = -1;
+  std::int32_t u_ground_base_z_ = -1;
+  std::int32_t u_ground_horizon_ = -1;
+  std::int32_t u_ground_sun_dir_ = -1;
+  std::int32_t u_ground_sun_color_ = -1;
+  std::int32_t u_ground_sun_intensity_ = -1;
+  std::int32_t u_ground_sky_ = -1;
+  std::int32_t u_ground_ambient_ = -1;
 
   bool ready_ = false;
 };

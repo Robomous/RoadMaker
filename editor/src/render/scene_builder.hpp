@@ -52,6 +52,11 @@ struct SceneBounds {
   [[nodiscard]] float framing_radius() const;
 };
 
+/// World height (Z-up, meters) of the procedural ground plane: just below the
+/// network floor (`bounds.lo[2]`) so coplanar road surfaces don't z-fight, or a
+/// small default drop when there is no geometry yet. See Renderer::set_ground.
+[[nodiscard]] float ground_base_z(const SceneBounds& bounds);
+
 struct Scene {
   std::vector<SceneItem> items;
   SceneBounds bounds;

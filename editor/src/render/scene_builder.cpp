@@ -78,6 +78,13 @@ float SceneBounds::framing_radius() const {
   return std::max({dx, dy, 10.0F}) / 2.0F;
 }
 
+float ground_base_z(const SceneBounds& bounds) {
+  // 5 cm below the network floor: enough that a road/junction surface sitting
+  // exactly at the floor draws over the opaque ground without z-fighting, small
+  // enough to be invisible. No geometry yet → drop below the z = 0 datum.
+  return (bounds.valid() ? bounds.lo[2] : 0.0F) - 0.05F;
+}
+
 void append_road_items(const RoadMesh& road, Scene& scene) {
   grow_bounds(scene.bounds, road.positions);
   for (const RoadMesh::LanePatch& patch : road.lanes) {

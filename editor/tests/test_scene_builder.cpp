@@ -132,6 +132,19 @@ TEST(Lighting, TexturedPresetIsTheDaytimeDefault) {
   EXPECT_NE(textured.sky_color, sober_lighting().sky_color);
 }
 
+// The procedural ground plane sits just below the network floor so a road or
+// junction surface at the floor draws over the opaque grass without z-fighting.
+TEST(GroundBaseZ, SitsJustBelowTheNetworkFloor) {
+  SceneBounds bounds;
+  bounds.lo = {-10.0F, -10.0F, 2.0F};
+  bounds.hi = {10.0F, 10.0F, 8.0F};
+  EXPECT_FLOAT_EQ(ground_base_z(bounds), 2.0F - 0.05F);
+}
+
+TEST(GroundBaseZ, DefaultsBelowTheZeroDatumWithoutGeometry) {
+  EXPECT_FLOAT_EQ(ground_base_z(SceneBounds{}), -0.05F);
+}
+
 TEST(BuildScene, RoadPatchesInheritSharedGridUVs) {
   NetworkMesh mesh;
   RoadMesh road;
