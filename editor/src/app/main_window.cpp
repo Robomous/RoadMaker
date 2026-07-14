@@ -429,6 +429,18 @@ void MainWindow::build_menus() {
   view_menu->addAction(diagnostics_dock_->toggleViewAction());
   view_menu->addAction(profile_dock_->toggleViewAction());
   view_menu->addSeparator();
+  auto* textured_action = new QAction(tr("&Textured Rendering"), this);
+  textured_action->setCheckable(true);
+  textured_action->setChecked(settings_.textured_rendering());
+  textured_action->setToolTip(tr("Daytime textured lighting vs the flat Sober look"));
+  connect(textured_action, &QAction::toggled, this, [this](bool textured) {
+    settings_.set_textured_rendering(textured);
+    viewport_->set_textured_rendering(textured);
+  });
+  view_menu->addAction(textured_action);
+  // Apply the persisted mode now (no-op when it matches the viewport default).
+  viewport_->set_textured_rendering(settings_.textured_rendering());
+  view_menu->addSeparator();
   view_menu->addAction(actions_->reset_camera);
   view_menu->addAction(actions_->frame_selection);
   view_menu->addSeparator();

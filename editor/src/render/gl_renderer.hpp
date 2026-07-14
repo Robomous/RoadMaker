@@ -69,6 +69,13 @@ private:
   std::int32_t u_base_color_ = -1;
   std::int32_t u_uv_scale_ = -1;
   std::int32_t u_tint_ = -1;
+  // Environment lighting uniforms (driven by set_environment).
+  std::int32_t u_sun_dir_ = -1;
+  std::int32_t u_sun_color_ = -1;
+  std::int32_t u_sun_intensity_ = -1;
+  std::int32_t u_sky_light_ = -1;
+  std::int32_t u_ground_light_ = -1;
+  std::int32_t u_ambient_ = -1;
 
   // Backdrop passes (sky gradient + ground grid), both attributeless draws
   // through one shared empty VAO (core profile requires a bound VAO).

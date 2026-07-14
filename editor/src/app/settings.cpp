@@ -62,4 +62,12 @@ void Settings::set_tour_seen(bool seen) {
   settings_.setValue(QStringLiteral("tour/seen"), seen);
 }
 
+bool Settings::textured_rendering() const {
+  return settings_.value(QStringLiteral("view/textured_rendering"), true).toBool();
+}
+
+void Settings::set_textured_rendering(bool textured) {
+  settings_.setValue(QStringLiteral("view/textured_rendering"), textured);
+}
+
 } // namespace roadmaker::editor

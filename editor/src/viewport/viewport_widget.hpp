@@ -69,6 +69,14 @@ public slots:
   /// Frames the selected road/lane, or the whole scene without a selection.
   void frame_selection();
 
+  /// Switches between the daytime "Textured" render mode (new default —
+  /// hemisphere + directional lighting, dimmed reference grid) and the flat
+  /// "Sober" mode (the M2 look, kept as the packaging/CI smoke path). Geometry
+  /// is unchanged, so switching is instant and needs no re-mesh.
+  void set_textured_rendering(bool textured);
+
+  [[nodiscard]] bool textured_rendering() const { return textured_rendering_; }
+
   /// Active-tool hint drawn in the viewport corner (mirrors the status bar —
   /// the user's eyes are on the viewport during a tool interaction, issue
   /// #103 discoverability). Empty text clears it.
@@ -142,6 +150,10 @@ private:
   };
 
   void rebuild_scene();
+
+  /// Pushes the current render mode to the renderer: the Environment (textured
+  /// vs sober lighting) and a grid-dimmed backdrop in textured mode.
+  void apply_render_mode();
 
   /// Re-uploads only the pending roads' items (GL context must be current —
   /// called from paintGL, like rebuild_scene). Camera stays put.
@@ -232,6 +244,10 @@ private:
 
   bool gl_ready_ = false;
   bool scene_dirty_ = false;
+
+  /// Render mode: true = daytime Textured (default), false = flat Sober. Drives
+  /// the renderer Environment and the reference-grid dimming via apply_render_mode().
+  bool textured_rendering_ = true;
 
   /// Roads awaiting a partial re-upload on the next paint (deduplicated
   /// there); ignored while a full rebuild is pending.
