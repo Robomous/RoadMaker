@@ -59,6 +59,7 @@ private:
   struct PlacedPoint {
     Waypoint position;
     std::optional<double> heading;
+    std::optional<RoadId> snap_road; ///< source road when snapped to its end
   };
 
   [[nodiscard]] std::optional<edit::SnapResult> snap(const Waypoint& cursor) const;

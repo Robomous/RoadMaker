@@ -452,3 +452,41 @@ TEST(ContextMenu, MergeSelectedIsEnabledForTwoMergeableRoads) {
   merge->invoke();
   EXPECT_EQ(document.network().road_count(), 1U);
 }
+
+TEST(ContextMenu, LinkEndsWeldsTwoSelectedRoadsWithNearbyFreeEnds) {
+  Document document;
+  SelectionModel selection{document};
+  Actions actions{*document.undo_stack()};
+  ContextMenuDeps deps{document, selection, actions};
+  // Two roads with a 30 m gap between A's END and B's START — not mergeable
+  // (ends don't coincide) but linkable via close_gap.
+  ASSERT_TRUE(document.push_command(
+      roadmaker::edit::create_road({Waypoint{.x = 0.0, .y = 0.0}, Waypoint{.x = 100.0, .y = 0.0}},
+                                   roadmaker::LaneProfile::two_lane_default(),
+                                   "A")));
+  ASSERT_TRUE(document.push_command(
+      roadmaker::edit::create_road({Waypoint{.x = 130.0, .y = 0.0}, Waypoint{.x = 230.0, .y = 0.0}},
+                                   roadmaker::LaneProfile::two_lane_default(),
+                                   "B")));
+  std::vector<RoadId> roads;
+  document.network().for_each_road([&](RoadId id, const roadmaker::Road&) { roads.push_back(id); });
+  ASSERT_EQ(roads.size(), 2U);
+  selection.select({.road = roads[0], .lane = LaneId{}});
+  selection.select({.road = roads[1], .lane = LaneId{}}, roadmaker::editor::SelectMode::Add);
+
+  MenuContext context;
+  context.pick = PickHit{.road = roads[0], .lane = LaneId{}};
+  context.station = 25.0;
+  const std::vector<MenuItem> items = build_context_menu(context, deps);
+  const MenuItem* link = nullptr;
+  for (const MenuItem& item : items) {
+    if (item.text == QString("Link Ends")) {
+      link = &item;
+    }
+  }
+  ASSERT_NE(link, nullptr);
+  EXPECT_TRUE(link->enabled);
+  const std::size_t before = document.network().road_count();
+  link->invoke();
+  EXPECT_EQ(document.network().road_count(), before + 1); // a connector road welds them
+}

@@ -296,6 +296,57 @@ TEST(Connection, CloseGapBridgesARealGapWithAConnectorRoad) {
   EXPECT_EQ(snapshot(network), before);
 }
 
+TEST(Connection, CreateLinkedRoadWeldsToTheSourceEnd) {
+  RoadNetwork network;
+  const RoadId a =
+      author(network, {Waypoint{.x = 0.0, .y = 0.0}, Waypoint{.x = 100.0, .y = 0.0}}, "1");
+  const std::string before = snapshot(network);
+  // A new road whose start coincides with A's END — the Create Road snap weld.
+  std::vector<Waypoint> waypoints{Waypoint{.x = 100.0, .y = 0.0}, Waypoint{.x = 200.0, .y = 0.0}};
+  auto command = roadmaker::edit::create_linked_road(network,
+                                                     waypoints,
+                                                     roadmaker::LaneProfile::two_lane_default(),
+                                                     "B",
+                                                     RoadEnd{a, ContactPoint::End},
+                                                     roadmaker::EndpointHeadings{});
+  ASSERT_TRUE(command->apply(network).has_value());
+  EXPECT_EQ(network.road_count(), 2U);                 // pure link, no connector
+  EXPECT_TRUE(network.road(a)->successor.has_value()); // A now links to the new road
+  ASSERT_TRUE(command->revert(network).has_value());
+  EXPECT_EQ(snapshot(network), before); // byte-identical undo
+}
+
+TEST(Connection, CloseGapNoCurvatureKinkWhenArcStartsAtJoint) {
+  // The maintainer's finding-3 case: a road whose arc starts right at the joint.
+  RoadNetwork network;
+  const RoadId a =
+      author(network, {Waypoint{.x = 0.0, .y = 0.0}, Waypoint{.x = 100.0, .y = 0.0}}, "1");
+  const RoadId b = author(network,
+                          {Waypoint{.x = 130.0, .y = 0.0},
+                           Waypoint{.x = 160.0, .y = 22.0},
+                           Waypoint{.x = 210.0, .y = 22.0}},
+                          "2");
+  const double a_terminal =
+      network.road(a)->plan_view.evaluate(network.road(a)->plan_view.length()).curvature;
+  const double b_start = network.road(b)->plan_view.evaluate(0.0).curvature;
+  ASSERT_GT(std::abs(b_start), 1e-3); // b really does arc at its start
+
+  auto command = roadmaker::edit::close_gap(
+      network, RoadEnd{a, ContactPoint::End}, RoadEnd{b, ContactPoint::Start});
+  ASSERT_TRUE(command->apply(network).has_value());
+  RoadId connector;
+  network.for_each_road([&](RoadId id, const roadmaker::Road&) {
+    if (id != a && id != b) {
+      connector = id;
+    }
+  });
+  ASSERT_TRUE(connector.is_valid());
+  const auto& line = network.road(connector)->plan_view;
+  // G2 weld: the connector's curvature meets each neighbour's without a step.
+  EXPECT_NEAR(line.evaluate(0.0).curvature, a_terminal, roadmaker::tol::kWeldCurvature);
+  EXPECT_NEAR(line.evaluate(line.length()).curvature, b_start, roadmaker::tol::kWeldCurvature);
+}
+
 TEST(Connection, CloseGapAndCheckLinkableRefusals) {
   RoadNetwork network;
   const RoadId a =

@@ -62,6 +62,19 @@ def main() -> int:
 
     # Re-close and save.
     stack.push(network, rm.edit.close_gap(network, a_end, b_start))
+
+    # create_linked_road authors a road AND welds its start to a free end in one
+    # command — the Create Road tangent-continuation snap. Here a new road
+    # continues from B's END, linked in a single undo step.
+    b_end = rm.RoadEnd(b, rm.ContactPoint.END)
+    stack.push(
+        network,
+        rm.edit.create_linked_road(
+            network, [(230.0, 0.0), (330.0, 0.0)], rm.LaneProfile.two_lane_rural(), "C", b_end
+        ),
+    )
+    print(f"linked road: {network.road_count} roads")
+
     rm.save_xodr(network, out_path, "close_gap")
     print(f"wrote {out_path}")
     return 0

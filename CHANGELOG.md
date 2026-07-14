@@ -13,6 +13,19 @@ through the M2 command layer (one undo step per edit, byte-identical undo) and
 is headless-testable.
 
 ### Added
+- **Weld road ends smoothly — no curvature kink at the joint** (gate finding 3):
+  road-end adjacencies where an arc started right at the joint showed a visible
+  curvature discontinuity. `edit::close_gap` now bridges a real gap with a **G2**
+  connector (the Clothoids three-arc `G2solve3arc` interpolant, exposed as
+  `road::fit_g2_three_arc`) that matches position, heading, **and curvature** at
+  both ends. A new **Link Ends** context-menu action welds two selected roads'
+  nearby free ends (pure link when they meet, G2 connector across a gap;
+  enabled via `edit::check_linkable`), and `edit::create_linked_road` authors a
+  road AND welds its start to a free end in one undoable command — so Create
+  Road's tangent-continuation snap now produces a genuinely *linked* road, not
+  merely an adjacent one. Named fixture `CloseGapNoCurvatureKinkWhenArcStartsAtJoint`
+  proves the connector's curvature meets each neighbour within `tol::kWeldCurvature`.
+  Python `edit.create_linked_road`. Docs: `docs/user-guide/context-menus.md`.
 - **Drop a T/X intersection ONTO a road** (gate finding 1): dragging a T or X
   assembly from the Library onto an existing road now tees/crosses INTO it,
   aligned to the road tangent, instead of dropping a superimposed floating

@@ -85,6 +85,19 @@ insert_node_at(const RoadNetwork& network, RoadId road, double s);
                                                           std::string name,
                                                           EndpointHeadings locked = {});
 
+/// Authors a new clothoid road AND welds its start to the free road end
+/// `link_start` in one undoable command — the Create Road tangent-continuation
+/// snap routed through the weld path (gate finding 3), so a snapped road is
+/// genuinely linked, not merely adjacent. The road is created regardless; the
+/// weld is skipped (a no-op stage) when `link_start` is not linkable
+/// (edit::check_linkable), so the create never fails on the link.
+[[nodiscard]] RM_API std::unique_ptr<Command> create_linked_road(const RoadNetwork& network,
+                                                                 std::vector<Waypoint> waypoints,
+                                                                 LaneProfile profile,
+                                                                 std::string name,
+                                                                 RoadEnd link_start,
+                                                                 EndpointHeadings locked = {});
+
 /// Translates whole roads by (dx, dy) [m] in the plan-view plane: shifts every
 /// geometry-record start position and every authoring waypoint; headings,
 /// lengths, s-values, lanes, elevation and marks are untouched, so undo is
