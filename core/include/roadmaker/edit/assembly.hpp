@@ -65,4 +65,27 @@ t_intersection(const RoadNetwork& network, Pose pose, IntersectionParams params 
 [[nodiscard]] RM_API std::unique_ptr<Command>
 x_intersection(const RoadNetwork& network, Pose pose, IntersectionParams params = {});
 
+/// Tees a new perpendicular stem road INTO the side of `target` at station `s`
+/// — the on-road drop of a T assembly (gate finding 1). Projects the drop onto
+/// the road, aligns the stem to the road tangent (perpendicular, to the left),
+/// and attaches it (split + junction) in ONE command, instead of dropping a
+/// floating standalone junction at the cursor. Errors (invalid_command): a stale
+/// target, a non-positive arm length, a drop too near a road end, or the
+/// underlying attach_t_junction restrictions (target already in a junction, a
+/// paramPoly3 record at the cut) surfaced at apply.
+[[nodiscard]] RM_API std::unique_ptr<Command>
+tee_onto_road(const RoadNetwork& network, RoadId target, double s, IntersectionParams params = {});
+
+/// Crosses a 4-way junction OVER `target` at station `s` — the on-road drop of
+/// an X assembly (v1). Splits the target at s±gap (its two halves are the
+/// collinear through arms, collinear BY CONSTRUCTION), removes the middle stub
+/// as the junction area, lays two perpendicular stems (left + right), and
+/// generates the junction from the four ends. Inherits split's restrictions
+/// (no paramPoly3 at the cut, the target not already in a junction) as explicit
+/// errors surfaced at apply; ONE command (apply→revert byte-identical).
+[[nodiscard]] RM_API std::unique_ptr<Command> cross_onto_road(const RoadNetwork& network,
+                                                              RoadId target,
+                                                              double s,
+                                                              IntersectionParams params = {});
+
 } // namespace roadmaker::edit::assembly
