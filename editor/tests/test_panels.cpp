@@ -2,10 +2,12 @@
 // selection bidirectionally. Rendering itself is not asserted (no GL in the
 // offscreen platform) — the ViewportWidget is deliberately absent here.
 
+#include "roadmaker/edit/operations.hpp"
 #include "roadmaker/xodr/writer.hpp"
 
 #include <gtest/gtest.h>
 
+#include <QDoubleSpinBox>
 #include <QItemSelectionModel>
 #include <QLineEdit>
 #include <QSignalSpy>
@@ -146,6 +148,46 @@ TEST(PropertiesPanel, ConstructsAndFollowsSelection) {
   h.selection.select({.road = all_roads(h.document).front()});
   h.selection.clear();
   ASSERT_TRUE(h.document.load(kSample).has_value()); // reload with panel alive
+}
+
+// A selected signal shows the Signal section (pose spinboxes populated from the
+// network), and editing s commits exactly one move_signal; a no-op focus-out
+// pushes nothing.
+TEST(PropertiesPanel, SignalSelectionShowsPoseSectionAndEditCommitsMoveSignal) {
+  Harness h;
+  ASSERT_TRUE(h.document.load(kSample).has_value());
+  PropertiesPanel panel(h.document, h.selection);
+  auto* s_spin = panel.findChild<QDoubleSpinBox*>(QStringLiteral("signal_s_spin"));
+  ASSERT_NE(s_spin, nullptr);
+  EXPECT_FALSE(s_spin->isVisibleTo(&panel)); // nothing selected yet
+
+  const RoadId road = all_roads(h.document).front();
+  Signal sign;
+  sign.odr_id = "p1";
+  sign.type = "274";
+  sign.subtype = "50";
+  sign.country = "DE";
+  sign.dynamic = false;
+  sign.s = 2.0;
+  sign.t = -3.0;
+  ASSERT_TRUE(
+      h.document.push_command(edit::add_signal(h.document.network(), road, sign)).has_value());
+  SignalId signal;
+  h.document.network().for_each_signal([&](SignalId id, const Signal&) { signal = id; });
+  h.selection.select({.signal = signal});
+
+  ASSERT_TRUE(s_spin->isVisibleTo(&panel));
+  EXPECT_DOUBLE_EQ(s_spin->value(), 2.0); // synced from the network
+
+  const int base = h.document.undo_stack()->count();
+  s_spin->setValue(7.5);
+  emit s_spin->editingFinished();
+  EXPECT_EQ(h.document.undo_stack()->count(), base + 1);
+  EXPECT_DOUBLE_EQ(h.document.network().signal(signal)->s, 7.5);
+
+  // A focus-out with no change pushes nothing.
+  emit s_spin->editingFinished();
+  EXPECT_EQ(h.document.undo_stack()->count(), base + 1);
 }
 
 // Editable Properties panel via manual binding (issue #15,
