@@ -180,6 +180,13 @@ public:
   /// frame after the call uses the new environment.
   virtual void set_environment(const Environment& env) = 0;
 
+  /// Enables the procedural grass ground plane at world height `base_z` (meters,
+  /// Z-up), drawn opaque with depth so the road network occludes it. Disabled =
+  /// no ground (the Sober render mode). Safe to call before init(); it only
+  /// stores state. `base_z` should sit just under the network so coplanar road
+  /// surfaces don't z-fight (see scene_builder `ground_base_z`).
+  virtual void set_ground(bool enabled, float base_z) = 0;
+
   /// Sets the sky/grid/axes colors. Safe to call before init(); the frame
   /// after the call uses the new colors.
   virtual void set_backdrop(const BackdropColors& colors) = 0;

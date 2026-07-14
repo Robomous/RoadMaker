@@ -193,4 +193,22 @@ The §2 lighting pass and §5 toggle landed together:
   `Lighting.TexturedPresetIsTheDaytimeDefault`. The rendered look is captured by
   the `editor-visual-artifacts` CI job (Linux + xvfb); local macOS offscreen has
   no GL context, so pixel review happens on CI artifacts.
+
+## 9. As-built — WS-D part 2 (procedural ground)
+
+The §4 "terrain skirt + procedural ground" landed as a **procedural grass
+ground plane** (grass stays procedural-first per `03_assets.md` §1):
+
+- `Renderer::set_ground(enabled, base_z)` + a new GL pass draw a large
+  camera-following quad at `base_z`, opaque with depth **write** (unlike the
+  reference grid) so the road network occludes it. Grass colour is value-noise
+  mottled and lit by the scene `Environment`, fading to the sky horizon with
+  distance. Enabled in Textured mode only; Sober keeps the grid.
+- `base_z` = `scene_builder::ground_base_z(SceneBounds)` = network floor − 5 cm,
+  so coplanar road surfaces don't z-fight (unit-tested: `GroundBaseZ.*`).
+- **Deviation from §4:** it is a flat plane at the network floor, not a
+  bounds-fitted, elevation-following skirt — that is deferred to the terrain
+  ADR-0006 / #83 (PROPOSED). GS-1 is flat, so the plane is exact for it. The
+  per-material texture-vs-procedural decisions live in
+  [`textured_render.md`](textured_render.md).
 </content>

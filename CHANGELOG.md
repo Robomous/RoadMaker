@@ -13,6 +13,17 @@ through the M2 command layer (one undo step per edit, byte-identical undo) and
 is headless-testable.
 
 ### Added
+- **Procedural grass ground under the network** (GS-1 WS-D, part 2): Textured
+  mode now draws a **procedural grass ground plane** beneath the roads instead of
+  floating over a bare grid — a camera-following surface (value-noise mottled,
+  lit by the scene environment, fading into the sky at the horizon) at the
+  network floor, so the scene finally sits on something. It renders opaque with
+  depth so the roads cleanly occlude it, and it's a render-layer-only surface
+  (never exported to `.xodr`). Sober mode keeps the reference grid. The flat
+  plane is exact for GS-1; a bounds-fitted, elevation-following terrain skirt is
+  deferred to the terrain ADR ([#83](https://github.com/Robomous/RoadMaker/issues/83)).
+  Per-material texture-vs-procedural decisions: `docs/design/m3a/textured_render.md`.
+  Part of [#71](https://github.com/Robomous/RoadMaker/issues/71).
 - **Daytime lighting + a `View → Textured Rendering` toggle** (GS-1 WS-D, part
   1): the viewport now renders with a **hemisphere ambient (sky/ground by
   surface normal) + one directional sun** driven by the renderer `Environment`,

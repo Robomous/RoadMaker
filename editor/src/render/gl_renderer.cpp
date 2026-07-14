@@ -144,6 +144,67 @@ void main() {
 }
 )";
 
+// Procedural grass ground — a large camera-following quad at a fixed world
+// height (the network floor), drawn OPAQUE with depth writes so the road
+// network occludes it. Textured mode only; replaces the reference grid as the
+// scene's base. Same camera-following trick as the grid, but with depth.
+constexpr const char* kGroundVertexShader = R"(#version 330 core
+uniform mat4 u_view;
+uniform mat4 u_projection;
+uniform vec3 u_eye;
+uniform float u_base_z;
+out vec2 v_world;
+const float kExtent = 6000.0;
+void main() {
+  vec2 corner = vec2((gl_VertexID << 1) & 2, gl_VertexID & 2) - 1.0;
+  vec2 world = u_eye.xy + corner * kExtent;
+  v_world = world;
+  gl_Position = u_projection * u_view * vec4(world, u_base_z, 1.0);
+}
+)";
+
+constexpr const char* kGroundFragmentShader = R"(#version 330 core
+in vec2 v_world;
+uniform vec3 u_eye;
+uniform vec3 u_horizon;        // sky horizon color the ground fades into
+uniform vec3 u_sun_dir;
+uniform vec3 u_sun_color;
+uniform float u_sun_intensity;
+uniform vec3 u_sky;            // hemisphere sky (up) color
+uniform float u_ambient;
+out vec4 frag_color;
+
+float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+float value_noise(vec2 p) {
+  vec2 i = floor(p);
+  vec2 f = fract(p);
+  vec2 u = f * f * (3.0 - 2.0 * f);
+  float a = hash(i);
+  float b = hash(i + vec2(1.0, 0.0));
+  float c = hash(i + vec2(0.0, 1.0));
+  float d = hash(i + vec2(1.0, 1.0));
+  return mix(mix(a, b, u.x), mix(c, d, u.x), u.y);
+}
+
+void main() {
+  // Two octaves of value noise (~1 m and ~5 m) for subtly mottled grass.
+  float n = 0.65 * value_noise(v_world) + 0.35 * value_noise(v_world * 0.2);
+  vec3 grass = mix(vec3(0.20, 0.32, 0.15), vec3(0.34, 0.46, 0.22), n);
+
+  // Flat +Z surface lit by the scene environment (matches the mesh shader for
+  // an up-facing normal): hemisphere sky ambient + one directional sun.
+  vec3 lighting = (u_sky * u_ambient) +
+                  (u_sun_color * (u_sun_intensity * max(normalize(u_sun_dir).z, 0.0)));
+  vec3 color = grass * lighting;
+
+  // Melt into the sky horizon with distance so the infinite plane has no hard
+  // tiling edge; scaled by eye height so it adapts to zoom.
+  float dist = distance(v_world, u_eye.xy);
+  float fade = 1.0 - exp(-dist / (max(u_eye.z, 4.0) * 12.0));
+  frag_color = vec4(mix(color, u_horizon, fade), 1.0);
+}
+)";
+
 // Column-major 4x4 identity — the model matrix for non-instanced draws.
 constexpr std::array<float, 16> kIdentity{
     1.0F, 0.0F, 0.0F, 0.0F, 0.0F, 1.0F, 0.0F, 0.0F, 0.0F, 0.0F, 1.0F, 0.0F, 0.0F, 0.0F, 0.0F, 1.0F};
@@ -202,7 +263,8 @@ bool GLRenderer::init() {
   program_ = link_program(kVertexShader, kFragmentShader);
   sky_program_ = link_program(kSkyVertexShader, kSkyFragmentShader);
   grid_program_ = link_program(kGridVertexShader, kGridFragmentShader);
-  if (program_ == 0 || sky_program_ == 0 || grid_program_ == 0) {
+  ground_program_ = link_program(kGroundVertexShader, kGroundFragmentShader);
+  if (program_ == 0 || sky_program_ == 0 || grid_program_ == 0 || ground_program_ == 0) {
     return false;
   }
   u_view_ = gl::GetUniformLocation(program_, "u_view");
@@ -231,6 +293,16 @@ bool GLRenderer::init() {
   u_grid_minor_ = gl::GetUniformLocation(grid_program_, "u_minor");
   u_grid_axis_x_ = gl::GetUniformLocation(grid_program_, "u_axis_x");
   u_grid_axis_y_ = gl::GetUniformLocation(grid_program_, "u_axis_y");
+  u_ground_view_ = gl::GetUniformLocation(ground_program_, "u_view");
+  u_ground_projection_ = gl::GetUniformLocation(ground_program_, "u_projection");
+  u_ground_eye_ = gl::GetUniformLocation(ground_program_, "u_eye");
+  u_ground_base_z_ = gl::GetUniformLocation(ground_program_, "u_base_z");
+  u_ground_horizon_ = gl::GetUniformLocation(ground_program_, "u_horizon");
+  u_ground_sun_dir_ = gl::GetUniformLocation(ground_program_, "u_sun_dir");
+  u_ground_sun_color_ = gl::GetUniformLocation(ground_program_, "u_sun_color");
+  u_ground_sun_intensity_ = gl::GetUniformLocation(ground_program_, "u_sun_intensity");
+  u_ground_sky_ = gl::GetUniformLocation(ground_program_, "u_sky");
+  u_ground_ambient_ = gl::GetUniformLocation(ground_program_, "u_ambient");
   gl::GenVertexArrays(1, &empty_vao_);
   ready_ = true;
   return true;
@@ -248,10 +320,12 @@ void GLRenderer::shutdown() {
   gl::DeleteProgram(program_);
   gl::DeleteProgram(sky_program_);
   gl::DeleteProgram(grid_program_);
+  gl::DeleteProgram(ground_program_);
   gl::DeleteVertexArrays(1, &empty_vao_);
   program_ = 0;
   sky_program_ = 0;
   grid_program_ = 0;
+  ground_program_ = 0;
   empty_vao_ = 0;
   ready_ = false;
 }
@@ -380,8 +454,12 @@ void GLRenderer::remove(TextureHandle handle) {
 }
 
 void GLRenderer::set_environment(const Environment& env) {
-  // Stored now; consumed by the lighting pass in the textured-mode PR (D1).
   environment_ = env;
+}
+
+void GLRenderer::set_ground(bool enabled, float base_z) {
+  ground_enabled_ = enabled;
+  ground_base_z_ = base_z;
 }
 
 void GLRenderer::draw_backdrop(const CameraMatrices& camera) {
@@ -423,6 +501,38 @@ void GLRenderer::draw_backdrop(const CameraMatrices& camera) {
   gl::BindVertexArray(0);
 }
 
+void GLRenderer::draw_ground(const CameraMatrices& camera) {
+  if (!ground_enabled_) {
+    return;
+  }
+  // Opaque, depth-tested AND depth-written (unlike the grid) so the road
+  // network — drawn afterwards and sitting above ground_base_z_ — occludes it.
+  gl::BindVertexArray(empty_vao_);
+  gl::UseProgram(ground_program_);
+  gl::UniformMatrix4fv(u_ground_view_, 1, 0, camera.view.data());
+  gl::UniformMatrix4fv(u_ground_projection_, 1, 0, camera.projection.data());
+  gl::Uniform3f(u_ground_eye_, camera.eye[0], camera.eye[1], camera.eye[2]);
+  gl::Uniform1f(u_ground_base_z_, ground_base_z_);
+  gl::Uniform3f(u_ground_horizon_,
+                backdrop_.sky_horizon[0],
+                backdrop_.sky_horizon[1],
+                backdrop_.sky_horizon[2]);
+  gl::Uniform3f(
+      u_ground_sun_dir_, environment_.sun_dir[0], environment_.sun_dir[1], environment_.sun_dir[2]);
+  gl::Uniform3f(u_ground_sun_color_,
+                environment_.sun_color[0],
+                environment_.sun_color[1],
+                environment_.sun_color[2]);
+  gl::Uniform1f(u_ground_sun_intensity_, environment_.sun_intensity);
+  gl::Uniform3f(u_ground_sky_,
+                environment_.sky_color[0],
+                environment_.sky_color[1],
+                environment_.sky_color[2]);
+  gl::Uniform1f(u_ground_ambient_, environment_.ambient);
+  gl::DrawArrays(gl::kTriangleStrip, 0, 4);
+  gl::BindVertexArray(0);
+}
+
 void GLRenderer::render(const std::vector<DrawItem>& items,
                         const CameraMatrices& camera,
                         int width,
@@ -438,6 +548,7 @@ void GLRenderer::render(const std::vector<DrawItem>& items,
   gl::DepthFunc(gl::kLess);
 
   draw_backdrop(camera);
+  draw_ground(camera);
 
   gl::UseProgram(program_);
   gl::UniformMatrix4fv(u_view_, 1, 0, camera.view.data());
