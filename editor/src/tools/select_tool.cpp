@@ -33,6 +33,11 @@ SelectTool::SelectTool(Document& document, SelectionModel& selection, QObject* p
     : Tool(parent), document_(document), selection_(selection) {}
 
 void SelectTool::activate() {
+  if (move_mode_) {
+    emit status_message(tr("Move tool — hover shows the 4-arrow cursor; drag a road or a prop to "
+                           "move it (Esc cancels), or click to select it"));
+    return;
+  }
   emit status_message(tr("Click to select — Shift adds, Ctrl toggles; drag a road body to move the "
                          "whole road, a node handle to bend it, or empty space for a rubber band"));
 }
@@ -40,6 +45,8 @@ void SelectTool::activate() {
 void SelectTool::deactivate() {
   abort_drag();
   abort_move();
+  abort_object_move();
+  hover_cursor_ = Qt::ArrowCursor;
   if (press_.has_value() || band_current_.has_value()) {
     press_.reset();
     band_current_.reset();
@@ -83,12 +90,17 @@ bool SelectTool::mouse_press(const ToolEvent& event) {
     emit preview_changed();
     return true;
   }
-  // A junction-floor pick carries no road, so it never starts a road-body move
-  // drag (it only selects on release) — treat only road/prop hits as geometry.
-  const bool on_road = event.pick.has_value() && event.pick->road.is_valid();
-  press_ = PressState{.world = cursor,
-                      .on_geometry = on_road,
-                      .road = on_road ? std::optional<RoadId>(event.pick->road) : std::nullopt};
+  // A prop hit also carries its owning road; record it as a prop press so a
+  // drag moves the PROP, not the road under it. A junction-floor pick carries no
+  // road, so it never starts a body move (it only selects on release).
+  const bool on_object = event.pick.has_value() && event.pick->object.is_valid();
+  const bool on_road = event.pick.has_value() && event.pick->road.is_valid() && !on_object;
+  press_ =
+      PressState{.world = cursor,
+                 .on_geometry = on_road,
+                 .road = on_road ? std::optional<RoadId>(event.pick->road) : std::nullopt,
+                 .object = on_object ? std::optional<ObjectId>(event.pick->object) : std::nullopt,
+                 .object_road = on_object ? event.pick->road : RoadId{}};
   return true;
 }
 
@@ -107,11 +119,28 @@ bool SelectTool::mouse_move(const ToolEvent& event) {
     return true;
   }
 
+  if (object_move_.has_value()) {
+    update_object_move(cursor);
+    emit preview_changed();
+    return true;
+  }
+
   if (press_.has_value()) {
     const bool beyond_tolerance = std::abs(cursor.x - press_->world.x) > click_tolerance_ ||
                                   std::abs(cursor.y - press_->world.y) > click_tolerance_;
-    // A drag that started on a road body moves the whole road (auto-selecting
-    // it first); one from empty space spans a rubber band.
+    // A drag on a prop moves the prop; on a road body moves the whole road
+    // (auto-selecting it first); from empty space it spans a rubber band —
+    // except the Move tool, which never bands.
+    if (press_->object.has_value()) {
+      if (beyond_tolerance) {
+        begin_object_move(*press_->object, press_->object_road);
+        if (object_move_.has_value()) {
+          update_object_move(cursor);
+          emit preview_changed();
+        }
+      }
+      return true;
+    }
     if (press_->on_geometry) {
       if (beyond_tolerance) {
         begin_move_drag(event.modifiers);
@@ -122,13 +151,17 @@ bool SelectTool::mouse_move(const ToolEvent& event) {
       }
       return true;
     }
-    if (band_current_.has_value() || beyond_tolerance) {
+    if (!move_mode_ && (band_current_.has_value() || beyond_tolerance)) {
       band_current_ = cursor;
       emit preview_changed();
     }
     return true;
   }
 
+  // Plain hover (no gesture): in move mode show the 4-arrow over a movable
+  // entity. Return false so the viewport's hover readout still runs.
+  update_move_cursor(event.pick.has_value() &&
+                     (event.pick->object.is_valid() || event.pick->road.is_valid()));
   return false;
 }
 
@@ -151,6 +184,17 @@ bool SelectTool::mouse_release(const ToolEvent& event) {
     emit cursor_changed(Qt::ArrowCursor);
     emit status_message(count == 1 ? tr("Road moved — Ctrl+Z to undo")
                                    : tr("%1 roads moved — Ctrl+Z to undo").arg(count));
+    emit preview_changed();
+    return true;
+  }
+
+  if (object_move_.has_value()) {
+    // A prop drag that never crossed the tolerance commits nothing (no-op).
+    document_.commit_preview();
+    object_move_.reset();
+    hover_cursor_ = Qt::ArrowCursor;
+    emit cursor_changed(Qt::ArrowCursor);
+    emit status_message(tr("Prop moved — Ctrl+Z to undo"));
     emit preview_changed();
     return true;
   }
@@ -228,6 +272,10 @@ bool SelectTool::key_press(int key, Qt::KeyboardModifiers modifiers) {
   }
   if (move_.has_value()) {
     abort_move();
+    return true;
+  }
+  if (object_move_.has_value()) {
+    abort_object_move();
     return true;
   }
   if (press_.has_value()) {
@@ -457,6 +505,63 @@ void SelectTool::abort_move() {
   emit cursor_changed(Qt::ArrowCursor);
   emit status_message(tr("Move cancelled"));
   emit preview_changed();
+}
+
+void SelectTool::begin_object_move(ObjectId object, RoadId road) {
+  object_move_ = ObjectMoveState{.object = object, .road = road};
+  // Auto-select the grabbed prop (its owning road comes along, matching a click
+  // on the prop) so the properties panel and gizmo track it.
+  selection_.select({.road = road, .lane = LaneId{}, .object = object, .junction = JunctionId{}},
+                    SelectMode::Replace);
+  press_.reset();
+  emit cursor_changed(Qt::SizeAllCursor);
+  emit status_message(tr("Moving prop — release to place, Esc cancels"));
+}
+
+void SelectTool::update_object_move(const Waypoint& cursor) {
+  if (!object_move_.has_value()) {
+    return;
+  }
+  const Road* road = document_.network().road(object_move_->road);
+  if (road == nullptr || road->plan_view.empty()) {
+    return;
+  }
+  // Props are road-relative: re-project the cursor onto the owning road and
+  // preview move_object at the new station. One command commits on release.
+  const StationCoord st = find_station(road->plan_view, cursor.x, cursor.y);
+  const ObjectId object = object_move_->object;
+  const double s = st.s;
+  const double t = st.t;
+  const Expected<void> moved =
+      document_.preview_active()
+          ? document_.update_preview([object, s, t](const RoadNetwork& base) {
+              return edit::move_object(base, object, s, t);
+            })
+          : document_.begin_preview(edit::move_object(document_.network(), object, s, t));
+  static_cast<void>(moved);
+}
+
+void SelectTool::abort_object_move() {
+  if (!object_move_.has_value()) {
+    return;
+  }
+  document_.cancel_preview();
+  object_move_.reset();
+  hover_cursor_ = Qt::ArrowCursor;
+  emit cursor_changed(Qt::ArrowCursor);
+  emit status_message(tr("Move cancelled"));
+  emit preview_changed();
+}
+
+void SelectTool::update_move_cursor(bool over_movable) {
+  if (!move_mode_) {
+    return;
+  }
+  const Qt::CursorShape shape = over_movable ? Qt::SizeAllCursor : Qt::ArrowCursor;
+  if (shape != hover_cursor_) {
+    hover_cursor_ = shape;
+    emit cursor_changed(shape);
+  }
 }
 
 PreviewGeometry SelectTool::preview() const {

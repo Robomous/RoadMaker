@@ -6,6 +6,7 @@
 
 #include "roadmaker/edit/operations.hpp"
 #include "roadmaker/edit/snap.hpp"
+#include "roadmaker/road/object.hpp"
 #include "roadmaker/tol.hpp"
 #include "roadmaker/xodr/writer.hpp"
 
@@ -118,6 +119,26 @@ Waypoint node(const Document& document, RoadId road, std::size_t index) {
     throw std::runtime_error("road lost its waypoints");
   }
   return (*road_ptr->authoring_waypoints)[index];
+}
+
+/// Places a tree prop on `road` at (s, t) and returns its id (for prop-move
+/// tests). Pushes one command onto the stack.
+roadmaker::ObjectId place_prop(Document& document, RoadId road, double s, double t) {
+  roadmaker::Object prop;
+  prop.odr_id = "tree1";
+  prop.name = "tree_pine";
+  prop.type = roadmaker::ObjectType::Tree;
+  prop.s = s;
+  prop.t = t;
+  const auto pushed =
+      document.push_command(roadmaker::edit::add_object(document.network(), road, prop));
+  if (!pushed.has_value()) {
+    throw std::runtime_error("place_prop: " + pushed.error().message);
+  }
+  roadmaker::ObjectId id;
+  document.network().for_each_object(
+      [&](roadmaker::ObjectId oid, const roadmaker::Object&) { id = oid; });
+  return id;
 }
 
 } // namespace
@@ -486,6 +507,93 @@ TEST(SelectTool, EscapeCancelsAMoveLeavingTheNetworkPristine) {
   EXPECT_FALSE(tool.moving());
   EXPECT_EQ(scene.document.undo_stack()->count(), scene.base_count);
   EXPECT_EQ(xodr(scene.document), scene.base_xodr);
+}
+
+// --- Move tool (#176): move mode + prop-move-by-drag -----------------------
+
+TEST(SelectTool, MoveToolDragMovesAPropAlongItsRoadOneUndo) {
+  Scene scene;
+  const roadmaker::ObjectId prop = place_prop(scene.document, scene.dragged, 20.0, 0.0);
+  const int base = scene.document.undo_stack()->count();
+  const std::string base_xodr = xodr(scene.document);
+  const double s_before = scene.document.network().object(prop)->s;
+
+  SelectTool tool(scene.document, scene.selection);
+  tool.set_move_mode(true);
+  PickHit hit = scene.hit(scene.dragged);
+  hit.object = prop; // the viewport reports the prop as nearer than the road
+
+  ASSERT_TRUE(tool.mouse_press(at(20.0, 0.0, Qt::LeftButton, Qt::NoModifier, hit)));
+  ASSERT_TRUE(tool.mouse_move(at(70.0, 4.0, Qt::LeftButton, Qt::NoModifier, hit)));
+  EXPECT_TRUE(tool.moving_object());
+  EXPECT_EQ(scene.selection.primary().object, prop); // auto-selected
+  ASSERT_TRUE(tool.mouse_release(at(70.0, 4.0, Qt::NoButton, Qt::NoModifier, hit)));
+
+  // Re-projected forward along the road; exactly one undo entry; undo restores.
+  EXPECT_GT(scene.document.network().object(prop)->s, s_before + 20.0);
+  EXPECT_EQ(scene.document.undo_stack()->count(), base + 1);
+  scene.document.undo_stack()->undo();
+  EXPECT_EQ(xodr(scene.document), base_xodr);
+}
+
+TEST(SelectTool, EscapeCancelsAPropMoveLeavingItPristine) {
+  Scene scene;
+  const roadmaker::ObjectId prop = place_prop(scene.document, scene.dragged, 20.0, 0.0);
+  const std::string base_xodr = xodr(scene.document);
+
+  SelectTool tool(scene.document, scene.selection);
+  tool.set_move_mode(true);
+  PickHit hit = scene.hit(scene.dragged);
+  hit.object = prop;
+  ASSERT_TRUE(tool.mouse_press(at(20.0, 0.0, Qt::LeftButton, Qt::NoModifier, hit)));
+  ASSERT_TRUE(tool.mouse_move(at(70.0, 4.0, Qt::LeftButton, Qt::NoModifier, hit)));
+  EXPECT_TRUE(tool.moving_object());
+  ASSERT_TRUE(tool.key_press(Qt::Key_Escape, Qt::NoModifier));
+
+  EXPECT_FALSE(tool.moving_object());
+  EXPECT_EQ(xodr(scene.document), base_xodr);
+}
+
+TEST(SelectTool, MoveModeShowsTheFourArrowCursorOverMovableEntities) {
+  Scene scene;
+  SelectTool tool(scene.document, scene.selection);
+  tool.set_move_mode(true);
+  std::vector<Qt::CursorShape> cursors;
+  QObject::connect(
+      &tool, &SelectTool::cursor_changed, [&cursors](Qt::CursorShape s) { cursors.push_back(s); });
+
+  const PickHit hit = scene.hit(scene.dragged);
+  // Hover over a road (no gesture) → 4-arrow; the event is not consumed.
+  EXPECT_FALSE(tool.mouse_move(at(50.0, 3.0, Qt::NoButton, Qt::NoModifier, hit)));
+  ASSERT_FALSE(cursors.empty());
+  EXPECT_EQ(cursors.back(), Qt::SizeAllCursor);
+  // Hover empty space → arrow.
+  EXPECT_FALSE(tool.mouse_move(at(500.0, 500.0, Qt::NoButton, Qt::NoModifier, std::nullopt)));
+  EXPECT_EQ(cursors.back(), Qt::ArrowCursor);
+}
+
+TEST(SelectTool, PlainSelectModeLeavesTheCursorAloneOnHover) {
+  Scene scene;
+  SelectTool tool(scene.document, scene.selection); // move_mode off (default)
+  std::vector<Qt::CursorShape> cursors;
+  QObject::connect(
+      &tool, &SelectTool::cursor_changed, [&cursors](Qt::CursorShape s) { cursors.push_back(s); });
+  const PickHit hit = scene.hit(scene.dragged);
+  static_cast<void>(tool.mouse_move(at(50.0, 3.0, Qt::NoButton, Qt::NoModifier, hit)));
+  EXPECT_TRUE(cursors.empty()); // the Select tool never drives the hover cursor
+}
+
+TEST(SelectTool, MoveModeDoesNotRubberBandFromEmptySpace) {
+  Scene scene;
+  SelectTool tool(scene.document, scene.selection);
+  tool.set_move_mode(true);
+  ASSERT_TRUE(tool.mouse_press(at(500.0, 500.0, Qt::LeftButton, Qt::NoModifier, std::nullopt)));
+  static_cast<void>(
+      tool.mouse_move(at(600.0, 600.0, Qt::LeftButton, Qt::NoModifier, std::nullopt)));
+  EXPECT_FALSE(tool.banding());
+  static_cast<void>(
+      tool.mouse_release(at(600.0, 600.0, Qt::NoButton, Qt::NoModifier, std::nullopt)));
+  EXPECT_TRUE(scene.selection.entries().empty());
 }
 
 TEST(SelectTool, MoveEmitsSizeAllThenArrowCursor) {
