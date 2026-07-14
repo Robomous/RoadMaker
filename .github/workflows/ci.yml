@@ -272,6 +272,11 @@ jobs:
           xvfb-run -a python3 scripts/editor_screenshot.py \
             "assets/samples/park_road.xodr" "shots/drop_ghost.png" \
             --camera orbit --drag-ghost prop.tree.pine --skip-on-no-gl
+          # Move tool (A2): the discoverable Move entry in the toolbar (Lucide
+          # 4-arrow icon) on a scene with movable props.
+          xvfb-run -a python3 scripts/editor_screenshot.py \
+            "assets/samples/tree_avenue.xodr" "shots/move_tool.png" \
+            --ui --tool move --size 1200x800 --skip-on-no-gl
           # First-run tour (Phase 4): the guided-tour overlay on its first step.
           xvfb-run -a python3 scripts/editor_screenshot.py \
             "assets/samples/t_junction.xodr" "shots/tour.png" \

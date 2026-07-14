@@ -205,6 +205,11 @@ std::vector<MenuItem> build_context_menu(const MenuContext& context, ContextMenu
                                select_object(deps, road, object);
                                deps.actions.frame_selection->trigger();
                              }});
+    // Arm the Move tool with this prop selected (discoverable move path, #176).
+    items.push_back(MenuItem{.text = QObject::tr("Move"), .invoke = [deps, road, object] {
+                               select_object(deps, road, object);
+                               deps.actions.tool_move->trigger();
+                             }});
     // Duplicate the prop a few meters further along its road (same model/pose).
     const Object* source = network.object(object);
     const Road* owner = source != nullptr ? network.road(source->road) : nullptr;
@@ -247,6 +252,11 @@ std::vector<MenuItem> build_context_menu(const MenuContext& context, ContextMenu
                                }});
       items.push_back(separator());
     }
+    // Arm the Move tool with this road selected (discoverable move path, #176).
+    items.push_back(MenuItem{.text = QObject::tr("Move"), .invoke = [deps, road] {
+                               select_road(deps, road);
+                               deps.actions.tool_move->trigger();
+                             }});
     items.push_back(MenuItem{.text = QObject::tr("Insert bend point here"),
                              .enabled = station.has_value(),
                              .invoke = [deps, road, station] {

@@ -174,12 +174,11 @@ MainWindow::MainWindow(QWidget* parent, bool restore_saved_layout)
       }
     });
   };
-  auto select_tool = std::make_unique<SelectTool>(document_, selection_);
-  wire_status(select_tool.get());
   // Moving a road that links to roads staying put breaks those links. Confirm
   // once (with a session-wide "don't ask again"), BEFORE the preview begins —
-  // a modal opened mid-drag swallows the mouse-release.
-  select_tool->set_link_break_confirm([this]() -> bool {
+  // a modal opened mid-drag swallows the mouse-release. Shared by the Select
+  // tool (power path) and the Move tool (discoverable path).
+  const auto link_break_confirm = [this]() -> bool {
     if (suppress_link_break_confirm_) {
       return true;
     }
@@ -197,11 +196,26 @@ MainWindow::MainWindow(QWidget* parent, bool restore_saved_layout)
       suppress_link_break_confirm_ = true;
     }
     return result == QMessageBox::Ok;
-  });
+  };
+  auto select_tool = std::make_unique<SelectTool>(document_, selection_);
+  wire_status(select_tool.get());
+  select_tool->set_link_break_confirm(link_break_confirm);
   SelectTool* select_tool_ptr = select_tool.get();
   tool_manager_.register_tool(ToolId::Select, std::move(select_tool));
   connect(actions_->tool_select, &QAction::triggered, this, [this] {
     tool_manager_.set_active(ToolId::Select);
+  });
+
+  // The Move tool: the same Select/Move machinery in "move mode" — a discoverable
+  // toolbar entry with a 4-arrow hover cursor and always-move body drag (no
+  // rubber band). Select stays the power path (#176).
+  auto move_tool = std::make_unique<SelectTool>(document_, selection_);
+  move_tool->set_move_mode(true);
+  wire_status(move_tool.get());
+  move_tool->set_link_break_confirm(link_break_confirm);
+  tool_manager_.register_tool(ToolId::Move, std::move(move_tool));
+  connect(actions_->tool_move, &QAction::triggered, this, [this] {
+    tool_manager_.set_active(ToolId::Move);
   });
   auto create_road_tool = std::make_unique<CreateRoadTool>(document_);
   create_road_tool_ = create_road_tool.get();
@@ -474,6 +488,7 @@ void MainWindow::build_toolbar() {
   toolbar->addAction(actions_->export_glb);
   toolbar->addSeparator();
   toolbar->addAction(actions_->tool_select);
+  toolbar->addAction(actions_->tool_move);
   toolbar->addAction(actions_->tool_create_road);
   toolbar->addAction(actions_->tool_edit_nodes);
   toolbar->addAction(actions_->tool_lane_profile);
@@ -584,6 +599,7 @@ void MainWindow::set_capture_highlights(const QString& select_odr, const QString
 void MainWindow::activate_tool_for_capture(const QString& tool_id) {
   static const std::map<QString, ToolId> kTools{
       {QStringLiteral("select"), ToolId::Select},
+      {QStringLiteral("move"), ToolId::Move},
       {QStringLiteral("create-road"), ToolId::CreateRoad},
       {QStringLiteral("edit-nodes"), ToolId::EditNodes},
       {QStringLiteral("lane-profile"), ToolId::LaneProfile},

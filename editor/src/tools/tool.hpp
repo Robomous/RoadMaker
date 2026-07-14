@@ -18,6 +18,7 @@ namespace roadmaker::editor {
 
 enum class ToolId {
   Select,
+  Move,
   CreateRoad,
   EditNodes,
   LaneProfile,
