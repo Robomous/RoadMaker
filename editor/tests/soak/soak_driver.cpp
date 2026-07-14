@@ -59,6 +59,7 @@ void SoakDriver::step(int index) {
       {1, &SoakDriver::op_elevation, "elevation"},
       {1, &SoakDriver::op_split_road, "split_road"},
       {2, &SoakDriver::op_translate_road, "translate_road"},
+      {2, &SoakDriver::op_rotate_road, "rotate_road"},
       {1, &SoakDriver::op_merge_roads, "merge_roads"},
       {2, &SoakDriver::op_create_junction, "create_junction"},
       {1, &SoakDriver::op_duplicate_junction_attempt, "duplicate_junction_attempt"},
@@ -454,6 +455,23 @@ void SoakDriver::op_translate_road() {
   }
   push(edit::translate_roads(
       document_.network(), moved, rand_range(-20.0, 20.0), rand_range(-20.0, 20.0)));
+}
+
+void SoakDriver::op_rotate_road() {
+  // Gizmo-style yaw: rotate one road about its mid-point by a random angle. The
+  // command refuses junction-touching roads, which push() records as rejected.
+  std::vector<RoadId> roads = live_roads(/*editable_only=*/true);
+  if (roads.empty()) {
+    return;
+  }
+  const RoadId road = roads[static_cast<std::size_t>(rand_int(0, int(roads.size()) - 1))];
+  const Road* road_ptr = document_.network().road(road);
+  if (road_ptr == nullptr || road_ptr->plan_view.empty()) {
+    return;
+  }
+  const PathPoint pivot = road_ptr->plan_view.evaluate(road_ptr->plan_view.length() / 2.0);
+  push(edit::rotate_road(
+      document_.network(), road, rand_range(-3.14159, 3.14159), pivot.x, pivot.y));
 }
 
 void SoakDriver::op_merge_roads() {

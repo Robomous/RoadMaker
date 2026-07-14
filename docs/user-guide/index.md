@@ -43,7 +43,7 @@ not undoable.
 |---|---|
 | [Library](library.md) | Drag ready-made roads, intersections, and props into the scene |
 | [Create Road](create-road.md) | Lay a new clothoid road through waypoints with a lane template |
-| [Moving Roads](moving-roads.md) | Translate a whole road (or several) by dragging its body |
+| [Moving and transforming](moving-and-transforming.md) | Move and rotate roads and props with the Move tool and its 3D transform gizmo |
 | [Edit Nodes](edit-nodes.md) | Reshape a road by moving, inserting, and deleting its waypoints |
 | [Bend Points](bend-points.md) | Double-click a road to add a bend node without reshaping it |
 | [Merge & Split](merge-split.md) | Cut a road in two, or weld two adjacent roads into one |

@@ -23,6 +23,7 @@
 #include "render/scene_builder.hpp"
 #include "tools/tool_manager.hpp"
 #include "viewport/camera.hpp"
+#include "viewport/gizmo.hpp"
 #include "viewport/picking.hpp"
 #include "viewport/toast_queue.hpp"
 
@@ -247,6 +248,48 @@ private:
   /// it sits where the element will commit; tinted as a rejection when invalid.
   void draw_drag_ghost(QPainter& painter) const;
 
+  // --- transform gizmo (A3, #177) --------------------------------------------
+  /// The single transformable entity under the gizmo: a road or a prop, with its
+  /// world pivot. Present only when the Move tool is active with exactly one such
+  /// entity selected; nullopt otherwise (so the gizmo shows/hides automatically).
+  struct GizmoTarget {
+    RoadId road;
+    ObjectId object;
+    std::array<double, 3> pivot{};
+  };
+
+  /// An in-flight gizmo drag: the grabbed handle, the entity, its pivot, and the
+  /// press anchors (world + pixels) the constraint math resolves against.
+  struct GizmoDrag {
+    GizmoHandle handle = GizmoHandle::None;
+    RoadId road;
+    ObjectId object;
+    std::array<double, 3> pivot{};
+    std::array<double, 2> press_world{};
+    QPoint press_px;
+    double base_hdg = 0.0; ///< prop heading at press (for yaw)
+    QString summary;       ///< toast text, refreshed each frame
+  };
+
+  [[nodiscard]] std::optional<GizmoTarget> gizmo_target() const;
+
+  /// Draws the gizmo (axis arrows, yaw ring, XY pad) when gizmo_target() exists.
+  void draw_gizmo(QPainter& painter) const;
+
+  /// Starts a gizmo drag if `pos` is over a handle (returns true and consumes
+  /// the press); false lets the press fall through to the active tool.
+  [[nodiscard]] bool begin_gizmo_drag(const QPointF& pos);
+
+  /// One gizmo-drag frame: constrains the motion to the grabbed handle and
+  /// previews the matching edit command (translate / rotate / elevation).
+  void update_gizmo_drag(const QPointF& pos, Qt::KeyboardModifiers modifiers);
+
+  /// Commits the gizmo drag as ONE undo step with a summary toast.
+  void commit_gizmo_drag();
+
+  /// Reverts the gizmo drag's live preview (Esc / interruption).
+  void cancel_gizmo_drag();
+
   /// True when the drag carries a library item (accept it as a drop).
   [[nodiscard]] static bool has_library_mime(const QDropEvent* event);
 
@@ -340,6 +383,11 @@ private:
   };
 
   std::optional<DropPreview> drop_preview_;
+
+  /// Active gizmo drag (nullopt when idle) and the handle currently hovered
+  /// (for the highlight). See the transform-gizmo methods above.
+  std::optional<GizmoDrag> gizmo_drag_;
+  GizmoHandle gizmo_hover_ = GizmoHandle::None;
 
   /// Entity under the cursor, tracked by update_hover for the hover highlight
   /// (invalid = nothing hovered). A lane-level hover sets both; a road-level

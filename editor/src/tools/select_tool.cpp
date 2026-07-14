@@ -35,7 +35,8 @@ SelectTool::SelectTool(Document& document, SelectionModel& selection, QObject* p
 void SelectTool::activate() {
   if (move_mode_) {
     emit status_message(tr("Move tool — hover shows the 4-arrow cursor; drag a road or a prop to "
-                           "move it (Esc cancels), or click to select it"));
+                           "move it, or click to select it and use the transform gizmo (Esc "
+                           "cancels)"));
     return;
   }
   emit status_message(tr("Click to select — Shift adds, Ctrl toggles; drag a road body to move the "
