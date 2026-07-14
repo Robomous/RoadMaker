@@ -59,6 +59,15 @@ LibraryItem assembly(const char* which) {
   return item;
 }
 
+LibraryItem signal(const char* which) {
+  LibraryItem item;
+  item.key = QStringLiteral("signal.x");
+  item.label = QStringLiteral("Traffic light");
+  item.kind = LibraryItem::Kind::Signal;
+  item.signal = QString::fromLatin1(which);
+  return item;
+}
+
 TEST(LibraryDrop, RoadTemplateArmsCreateRoadWithItsProfile) {
   RoadNetwork network;
   const LibraryDropAction action =
@@ -175,6 +184,48 @@ TEST(LibraryDrop, ShrubMapsToVegetation) {
   roadmaker::ObjectId id;
   network.for_each_object([&](roadmaker::ObjectId oid, const roadmaker::Object&) { id = oid; });
   EXPECT_EQ(network.object(id)->type, roadmaker::ObjectType::Vegetation);
+}
+
+TEST(LibraryDrop, TrafficLightSnapsToTheNearbyRoadAndAddsADynamicSignal) {
+  RoadNetwork network = with_straight_road();
+  LibraryDropAction action = resolve_library_drop(signal("light"), network, 90.0, -6.0);
+  ASSERT_EQ(action.kind, LibraryDropKind::Signal);
+  ASSERT_NE(action.command, nullptr);
+  EXPECT_FALSE(action.toast.isEmpty());
+  ASSERT_TRUE(action.command->apply(network).has_value());
+  ASSERT_EQ(network.signal_count(), 1U);
+
+  roadmaker::SignalId id;
+  network.for_each_signal([&](roadmaker::SignalId sid, const roadmaker::Signal&) { id = sid; });
+  const roadmaker::Signal* placed = network.signal(id);
+  ASSERT_NE(placed, nullptr);
+  EXPECT_TRUE(placed->dynamic.value_or(false)); // a traffic light is dynamic
+  EXPECT_NEAR(placed->s, 90.0, 2.0);
+  EXPECT_NEAR(placed->t, -6.0, 1.0);
+  EXPECT_EQ(count_errors(validate_network(network)), 0U);
+
+  // Undo removes exactly the placed signal.
+  ASSERT_TRUE(action.command->revert(network).has_value());
+  EXPECT_EQ(network.signal_count(), 0U);
+}
+
+TEST(LibraryDrop, TrafficSignMapsToAStaticSignal) {
+  RoadNetwork network = with_straight_road();
+  LibraryDropAction action = resolve_library_drop(signal("sign"), network, 40.0, -6.0);
+  ASSERT_EQ(action.kind, LibraryDropKind::Signal);
+  ASSERT_TRUE(action.command->apply(network).has_value());
+  roadmaker::SignalId id;
+  network.for_each_signal([&](roadmaker::SignalId sid, const roadmaker::Signal&) { id = sid; });
+  EXPECT_FALSE(network.signal(id)->dynamic.value_or(true)); // a sign is static
+  EXPECT_EQ(count_errors(validate_network(network)), 0U);
+}
+
+TEST(LibraryDrop, SignalDroppedAwayFromAnyRoadIsRejectedWithAHint) {
+  RoadNetwork network = with_straight_road();
+  const LibraryDropAction action = resolve_library_drop(signal("light"), network, 50.0, 200.0);
+  EXPECT_EQ(action.kind, LibraryDropKind::None);
+  EXPECT_EQ(action.command, nullptr);
+  EXPECT_FALSE(action.toast.isEmpty());
 }
 
 TEST(LibraryDrop, TreeDroppedAwayFromAnyRoadIsRejectedWithAHint) {

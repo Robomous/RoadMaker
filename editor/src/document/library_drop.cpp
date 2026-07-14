@@ -69,6 +69,48 @@ std::string next_object_odr_id(const RoadNetwork& network) {
   return std::to_string(candidate);
 }
 
+/// A signal snaps to a road within this lateral distance [m] of its reference
+/// line — same rationale as the tree threshold (OpenDRIVE signals are
+/// road-relative; a drop in open space is rejected).
+constexpr double kSignalSnapThreshold = 12.0;
+
+/// Lowest positive integer odr id not already used by a signal (id-unique per
+/// <signals>). Signals and objects have separate id spaces in OpenDRIVE.
+std::string next_signal_odr_id(const RoadNetwork& network) {
+  std::set<std::string> taken;
+  network.for_each_signal([&](SignalId, const Signal& signal) { taken.insert(signal.odr_id); });
+  int candidate = 1;
+  while (taken.contains(std::to_string(candidate))) {
+    ++candidate;
+  }
+  return std::to_string(candidate);
+}
+
+/// The Signal a "light"/"sign" library item authors at (s, t). A traffic light
+/// is dynamic with the OpenDRIVE catalog type; a static sign defaults to a
+/// German speed-limit-50 plate (type 274/50) — a recognisable regulatory sign
+/// the user can retype in the properties panel. Orientation "+" faces the
+/// signal along increasing s (the reference-line direction); the mesh builder
+/// resolves the world heading from the road tangent.
+Signal make_dropped_signal(const RoadNetwork& network, bool light, double s, double t) {
+  Signal signal;
+  signal.odr_id = next_signal_odr_id(network);
+  signal.dynamic = light;
+  signal.orientation = ObjectOrientation::Plus;
+  signal.s = s;
+  signal.t = t;
+  if (light) {
+    signal.type = "1000001"; // OpenDRIVE traffic-light catalog type
+    signal.subtype = "-1";
+    signal.country = "OpenDRIVE";
+  } else {
+    signal.type = "274"; // German regulatory speed-limit sign
+    signal.subtype = "50";
+    signal.country = "DE";
+  }
+  return signal;
+}
+
 } // namespace
 
 LaneProfile profile_for(const QString& name) {
@@ -164,6 +206,29 @@ LibraryDropAction resolve_library_drop(const LibraryItem& item,
       action.kind = LibraryDropKind::Tree;
       // Ghost at the exact station the object occupies — the same (road, s, t)
       // → world projection the mesh builder uses, so ghost==commit.
+      if (const Road* road = network.road(placement->road)) {
+        const auto p = station_to_world(road->plan_view, placement->s, placement->t);
+        action.preview = {p[0], p[1], true};
+      }
+      action.toast = QStringLiteral("Placed %1 — Ctrl+Z to undo").arg(item.label);
+    }
+    return action;
+  }
+  case LibraryItem::Kind::Signal: {
+    // Signals are road-relative like props: snap to the nearest road, or reject
+    // with a hint. The dropped (s, t) is where the pole plants — the same
+    // (road, s, t) → world projection the mesh builder instances the signal at,
+    // so the ghost marks exactly where it lands (ghost==commit).
+    const auto placement = nearest_road_station(network, world_x, world_y, kSignalSnapThreshold);
+    if (!placement.has_value()) {
+      action.toast = QStringLiteral("Drop a signal onto or beside a road");
+      return action; // kind stays None, preview invalid — caller hints
+    }
+    const bool light = item.signal != QStringLiteral("sign");
+    Signal signal = make_dropped_signal(network, light, placement->s, placement->t);
+    action.command = edit::add_signal(network, placement->road, std::move(signal));
+    if (action.command != nullptr) {
+      action.kind = LibraryDropKind::Signal;
       if (const Road* road = network.road(placement->road)) {
         const auto p = station_to_world(road->plan_view, placement->s, placement->t);
         action.preview = {p[0], p[1], true};
