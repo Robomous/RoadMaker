@@ -95,6 +95,21 @@ struct EndpointHeadings {
 [[nodiscard]] RM_API Expected<ReferenceLine> fit_clothoid_path(std::span<const Waypoint> waypoints,
                                                                const EndpointHeadings& locked);
 
+/// Fits a G2 (curvature-continuous) three-arc clothoid path between two poses,
+/// matching position, heading [rad], AND curvature [1/m] at both ends (the
+/// Clothoids G2solve3arc interpolant). This is the smooth connector the
+/// connection engine lays into a gap so an arc starting right at the joint
+/// shows no kink (gate finding 3).
+///
+/// Errors (InvalidArgument): the three-arc solver failed to converge (ends too
+/// close or curvatures incompatible for a valid fit).
+[[nodiscard]] RM_API Expected<ReferenceLine> fit_g2_three_arc(Waypoint a,
+                                                              double heading_a,
+                                                              double curvature_a,
+                                                              Waypoint b,
+                                                              double heading_b,
+                                                              double curvature_b);
+
 /// Fits a G1 clothoid path through `waypoints` (end headings locked per
 /// `locked`), creates a road with `profile`, and inserts it into the
 /// network. The waypoints are recorded as Road::authoring_waypoints.

@@ -167,6 +167,27 @@ Expected<ReferenceLine> fit_clothoid_path(std::span<const Waypoint> waypoints,
   return build_g1_path(xs, ys, headings.data(), "clothoid G1 Hermite fit failed");
 }
 
+Expected<ReferenceLine> fit_g2_three_arc(Waypoint a,
+                                         double heading_a,
+                                         double curvature_a,
+                                         Waypoint b,
+                                         double heading_b,
+                                         double curvature_b) {
+  try {
+    G2lib::G2solve3arc g2;
+    const int status = g2.build(a.x, a.y, heading_a, curvature_a, b.x, b.y, heading_b, curvature_b);
+    if (status < 0) {
+      return make_error(ErrorCode::InvalidArgument, "G2 three-arc fit failed to converge");
+    }
+    const G2lib::ClothoidList list(g2, "rm_g2");
+    return to_reference_line(list);
+  } catch (const std::exception& e) {
+    return make_error(ErrorCode::InvalidArgument, "G2 three-arc fit failed", std::string(e.what()));
+  } catch (...) {
+    return make_error(ErrorCode::InvalidArgument, "G2 three-arc fit failed", "unknown exception");
+  }
+}
+
 Expected<ReferenceLine> fit_clothoid_path(std::span<const Waypoint> waypoints,
                                           const EndpointHeadings& locked) {
   auto estimated = fit_clothoid_path(waypoints);

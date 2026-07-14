@@ -101,6 +101,7 @@ void CreateRoadTool::place_point(const ToolEvent& event) {
   points_.push_back(PlacedPoint{
       .position = position,
       .heading = snapped.has_value() ? snapped->heading : std::nullopt,
+      .snap_road = snapped.has_value() ? snapped->road : std::nullopt,
   });
   if (points_.size() == 1 && points_.front().heading.has_value()) {
     emit status_message(tr("Start locked to the road end — the new road chains tangentially"));
@@ -170,8 +171,27 @@ void CreateRoadTool::commit() {
   for (const PlacedPoint& point : points_) {
     waypoints.push_back(point.position);
   }
-  const Expected<void> pushed = document_.push_command(
-      edit::create_road(std::move(waypoints), profile_, {}, locked_headings()));
+  // When the first point snapped onto an existing road's end, weld the new road
+  // to it (create + link in one undo step) so a continued road is genuinely
+  // linked, not merely adjacent (gate finding 3); create_linked_road no-ops the
+  // weld if that end can't link, so plain creation never fails on it.
+  const RoadNetwork& network = document_.network();
+  const PlacedPoint& first = points_.front();
+  std::unique_ptr<edit::Command> command;
+  if (first.snap_road.has_value() && network.road(*first.snap_road) != nullptr) {
+    const auto& plan = network.road(*first.snap_road)->plan_view;
+    const PathPoint start = plan.evaluate(0.0);
+    const PathPoint end = plan.evaluate(plan.length());
+    const double to_start = std::hypot(first.position.x - start.x, first.position.y - start.y);
+    const double to_end = std::hypot(first.position.x - end.x, first.position.y - end.y);
+    const RoadEnd source{.road = *first.snap_road,
+                         .contact = to_start <= to_end ? ContactPoint::Start : ContactPoint::End};
+    command = edit::create_linked_road(
+        network, std::move(waypoints), profile_, {}, source, locked_headings());
+  } else {
+    command = edit::create_road(std::move(waypoints), profile_, {}, locked_headings());
+  }
+  const Expected<void> pushed = document_.push_command(std::move(command));
   if (!pushed.has_value()) {
     // Session kept: the points are the user's work; fix and retry.
     emit status_message(

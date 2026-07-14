@@ -2247,10 +2247,12 @@ std::unique_ptr<Command> close_gap(const RoadNetwork& network,
     return command;
   }
 
-  // A real gap: bridge it with a single-lane G1 connector road linked at both
+  // A real gap: bridge it with a single-lane G2 connector road linked at both
   // ends (a → connector → b). The connector leaves a along a's continuation
-  // tangent and arrives at b along b's, so both joints are G1. (G2 curvature
-  // easing is the WS-2 PR 6 refinement.)
+  // tangent and arrives at b along b's, matching curvature at both joints so an
+  // arc starting at either end shows no kink (finding 3). contact_state
+  // curvature is signed along into_hdg; the connector's END travels along b's
+  // out_hdg (the opposite sense), so b's endpoint curvature is negated.
   auto connector = fit_connector(ConnectorEndpoint{.x = ca.x,
                                                    .y = ca.y,
                                                    .heading = ca.into_hdg,
@@ -2260,10 +2262,10 @@ std::unique_ptr<Command> close_gap(const RoadNetwork& network,
                                  ConnectorEndpoint{.x = cb.x,
                                                    .y = cb.y,
                                                    .heading = cb.out_hdg,
-                                                   .curvature = cb.curvature,
+                                                   .curvature = -cb.curvature,
                                                    .z = cb.z,
                                                    .grade = cb.grade},
-                                 ConnectorParams{});
+                                 ConnectorParams{.g2 = true});
   if (!connector.has_value()) {
     return invalid_command(std::string(kName), connector.error());
   }
@@ -2303,6 +2305,45 @@ std::unique_ptr<Command> close_gap(const RoadNetwork& network,
     return {};
   };
   return command;
+}
+
+std::unique_ptr<Command> create_linked_road(const RoadNetwork& network,
+                                            std::vector<Waypoint> waypoints,
+                                            LaneProfile profile,
+                                            std::string name,
+                                            RoadEnd link_start,
+                                            EndpointHeadings locked) {
+  static constexpr std::string_view kName = "Create Linked Road";
+  std::vector<RoadId> existing;
+  network.for_each_road([&](RoadId id, const Road&) { existing.push_back(id); });
+
+  std::vector<CompositeCommand::Builder> builders;
+  builders.push_back([waypoints = std::move(waypoints),
+                      profile = std::move(profile),
+                      name = std::move(name),
+                      locked](RoadNetwork& net) {
+    (void)net;
+    return create_road(waypoints, profile, name, locked);
+  });
+  builders.push_back(
+      [existing = std::move(existing), link_start](RoadNetwork& net) -> std::unique_ptr<Command> {
+        RoadId created;
+        net.for_each_road([&](RoadId id, const Road&) {
+          if (std::ranges::find(existing, id) == existing.end()) {
+            created = id;
+          }
+        });
+        const RoadEnd new_start{.road = created, .contact = ContactPoint::Start};
+        // Weld only when the two ends really can link; otherwise the road stands
+        // on its own (a no-op stage keeps create_linked_road from ever failing
+        // the create on the link).
+        if (check_linkable(net, new_start, link_start).has_value()) {
+          return close_gap(net, new_start, link_start);
+        }
+        return std::make_unique<GenericCommand>(std::string(kName), DirtySet{});
+      });
+  return std::make_unique<CompositeCommand>(
+      std::string(kName), DirtySet{.topology = true}, std::move(builders));
 }
 
 std::unique_ptr<Command> regenerate_junction(const RoadNetwork& network,

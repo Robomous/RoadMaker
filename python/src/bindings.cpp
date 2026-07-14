@@ -902,6 +902,32 @@ NB_MODULE(_roadmaker, m) {
       "end_heading"_a = nb::none(),
       "Authors a clothoid road (auto id; empty name auto-names \"Road <id>\"). "
       "A start/end heading [rad] locks the fit there for G1 chaining.");
+  edit.def(
+      "create_linked_road",
+      [](const roadmaker::RoadNetwork& network,
+         const std::vector<std::pair<double, double>>& waypoints,
+         const roadmaker::LaneProfile& profile,
+         std::string name,
+         const roadmaker::RoadEnd& link_start,
+         std::optional<double> start_heading,
+         std::optional<double> end_heading) {
+        return roadmaker::edit::create_linked_road(network,
+                                                   to_waypoints(waypoints),
+                                                   profile,
+                                                   std::move(name),
+                                                   link_start,
+                                                   {.start = start_heading, .end = end_heading});
+      },
+      "network"_a,
+      "waypoints"_a,
+      "profile"_a,
+      "name"_a = "",
+      "link_start"_a,
+      "start_heading"_a = nb::none(),
+      "end_heading"_a = nb::none(),
+      "Authors a clothoid road AND welds its start to the free road end "
+      "`link_start` in one undoable command (the weld is skipped when that end "
+      "can't link, so creation never fails on it).");
   edit.def("split_road", &roadmaker::edit::split_road, "network"_a, "road"_a, "s"_a);
   edit.def(
       "check_mergeable",

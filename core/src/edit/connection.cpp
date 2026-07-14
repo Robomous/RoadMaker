@@ -245,9 +245,19 @@ Expected<Connector> fit_connector(const ConnectorEndpoint& a,
   headings.push_back(b.heading);
 
   const double dist = std::hypot(b.x - a.x, b.y - a.y);
-  auto line = fit_clothoid_path(waypoints, headings);
+  // G2 matches the endpoint curvatures via the three-arc interpolant (no kink,
+  // finding 3); G1 uses the straight-fillet-straight guide chain (byte-identical
+  // to the junction connectors).
+  auto line = params.g2 ? fit_g2_three_arc(Waypoint{a.x, a.y},
+                                           a.heading,
+                                           a.curvature,
+                                           Waypoint{b.x, b.y},
+                                           b.heading,
+                                           b.curvature)
+                        : fit_clothoid_path(waypoints, headings);
   if (!line.has_value()) {
-    return make_error(ErrorCode::InvalidArgument, "clothoid fit failed");
+    return make_error(ErrorCode::InvalidArgument,
+                      params.g2 ? "G2 connector fit failed" : "clothoid fit failed");
   }
   if (params.max_loop_factor > 0.0 && line->length() > params.max_loop_factor * dist) {
     return make_error(ErrorCode::InvalidArgument, "fitted turn loops");

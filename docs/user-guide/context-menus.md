@@ -13,7 +13,7 @@ What the menu offers depends on what you clicked:
 
 | You right-clicked… | Menu |
 |---|---|
-| a **road body** | Remove this lane _(when a lane is under the cursor)_ · Insert bend point here · Split road here · Merge selected roads · Edit lane profile · Edit elevation profile · Frame · Delete road |
+| a **road body** | Remove this lane _(when a lane is under the cursor)_ · Insert bend point here · Split road here · Merge selected roads · Link Ends · Edit lane profile · Edit elevation profile · Frame · Delete road |
 | a **node handle** (on a selected road) | Split at this node · Delete node · Frame |
 | **empty space** | Create road here · Paste _(coming soon)_ · Frame all |
 | a **junction** (from the scene tree) | Frame · Delete junction |
@@ -23,6 +23,11 @@ What the menu offers depends on what you clicked:
   stay contiguous), and the road's own items stay reachable beneath it.
 - **Merge selected roads** is enabled only when exactly two roads are selected
   and they can actually merge ([Merge & Split](merge-split.md)).
+- **Link Ends** welds two selected roads whose free ends are near each other —
+  a pure link when they meet, or a smooth **G2** connector road (curvature
+  matched, so an arc starting at the joint shows no kink) across a real gap. It
+  is enabled only when the two ends can actually link (both free, neither in a
+  junction, within reach).
 - **Split at this node** is disabled on a road's end nodes (there is nothing to
   split off).
 - **Edit lane / elevation profile** selects the road and switches to that tool.

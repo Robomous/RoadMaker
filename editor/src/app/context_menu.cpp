@@ -1,5 +1,6 @@
 #include "app/context_menu.hpp"
 
+#include "roadmaker/edit/connection.hpp"
 #include "roadmaker/edit/operations.hpp"
 #include "roadmaker/road/network.hpp"
 
@@ -42,6 +43,23 @@ std::string next_object_odr_id(const RoadNetwork& network) {
 
 MenuItem separator() {
   return MenuItem{.separator = true};
+}
+
+/// The first free end-pair of two selected roads that edit::close_gap can weld
+/// (the four contact combinations), or nullopt when none is linkable — drives
+/// the "Link Ends" item (finding 3).
+std::optional<std::pair<RoadEnd, RoadEnd>>
+linkable_ends(const RoadNetwork& network, RoadId a, RoadId b) {
+  for (const ContactPoint ca : {ContactPoint::Start, ContactPoint::End}) {
+    for (const ContactPoint cb : {ContactPoint::Start, ContactPoint::End}) {
+      const RoadEnd ea{.road = a, .contact = ca};
+      const RoadEnd eb{.road = b, .contact = cb};
+      if (edit::check_linkable(network, ea, eb).has_value()) {
+        return std::pair{ea, eb};
+      }
+    }
+  }
+  return std::nullopt;
 }
 
 /// A lane is removable exactly when the kernel's edit::remove_lane accepts it:
@@ -207,6 +225,18 @@ std::vector<MenuItem> build_context_menu(const MenuContext& context, ContextMenu
           }
           (void)deps.document.push_command(edit::merge_roads(deps.document.network(), a, b));
         }});
+    // Link Ends — weld two selected roads' nearby free ends (G2, finding 3).
+    const std::optional<std::pair<RoadEnd, RoadEnd>> link_pair =
+        selected.size() == 2 ? linkable_ends(network, selected[0], selected[1]) : std::nullopt;
+    items.push_back(MenuItem{.text = QObject::tr("Link Ends"),
+                             .enabled = link_pair.has_value(),
+                             .invoke = [deps, link_pair] {
+                               if (!link_pair.has_value()) {
+                                 return;
+                               }
+                               (void)deps.document.push_command(edit::close_gap(
+                                   deps.document.network(), link_pair->first, link_pair->second));
+                             }});
     items.push_back(separator());
     items.push_back(MenuItem{.text = QObject::tr("Edit lane profile"), .invoke = [deps, road] {
                                select_road(deps, road);

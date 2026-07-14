@@ -93,10 +93,11 @@ struct ConnectorParams {
   /// Reject a fit whose minimum radius of curvature falls below this [m]
   /// (0 disables the check).
   double min_turn_radius_m = 0.0;
-  // NOTE: G2 endpoint-curvature matching (honouring ConnectorEndpoint.curvature)
-  // lands with close_gap's weld work (WS-2 PR 6, finding 3). fit_connector is
-  // G1 here — position + heading — reproducing the M2 junction connector fit
-  // exactly; verify_junction_welds measures the curvature residual it leaves.
+  /// Match the endpoint curvatures too (G2, via the Clothoids three-arc
+  /// interpolant) so an arc starting at a weld shows no kink (finding 3). When
+  /// false, only position + heading are matched (G1) — reproducing the M2
+  /// junction connector fit exactly (the junction path keeps g2=false).
+  bool g2 = false;
 };
 
 /// A fitted connector: the driving-direction reference line plus the elevation
