@@ -90,6 +90,10 @@ private:
   void op_create_junction();
   void op_duplicate_junction_attempt();
   void op_attach_t();
+  void op_assembly_drop_on_road();
+  void op_remove_lane();
+  void op_overpass();
+  void op_delete_crossing_road();
   void op_delete_junction();
   void op_delete_road();
   void op_undo_redo();

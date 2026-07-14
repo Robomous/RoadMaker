@@ -123,3 +123,37 @@ non-topological facts**, not a junction created by the overpass:
 `test_scene_tree_model` (`JunctionNodeRoundTripsToASelectableTarget`),
 `test_profile_panel` (`OverpassCreatesNoTopologyAtTheCrossing`,
 `DeletingACrossingRoadLeavesTheOverpassIntact`). Full editor suite green (286).
+
+### WS-4 — Test & workflow hardening + gate re-stamp, PR #… (branch `test/gate-hardening`)
+
+**Final report — root cause per finding (all fixed):**
+
+| # | Root cause | Fix (workstream / PR) |
+|---|------------|------------------------|
+| 1 | Assembly drop used the raw cursor as the junction center (`heading = 0`) — no projection/alignment/attach. | `edit::assembly::tee_onto_road` / `cross_onto_road` project onto the road, align to the tangent, and attach in one command; editor `library_drop` routes on-road drops through them. WS-2 PR #158. |
+| 2 | `regenerate_junction` matched planned turns to connecting roads by **generation order**, so a drag that re-ordered the plan desynced. | Keyed matching on `(incoming_road, from_lane, to_road, to_lane)`; count-changed refusal surfaces as a Warning toast, not a log line. WS-2 PR #157. |
+| 3 | Continuity was G1-only — no curvature continuity, no gap-closing op. | `close_gap` / `create_linked_road` with a **local** G2 weld (three-arc Hermite; never a global refit) + "Link Ends" action. WS-2 PR #159. |
+| 4 | The overpass is pure elevation (creates no topology); the "junction-like area" was the T-junction floor, which `pick()` skipped — visible but unselectable. | Junction floors are a first-class selectable entity (pick/hover/highlight/select from viewport + scene tree + properties panel); overpass-creates-no-topology and crossing-delete-integrity asserted through the editor path. WS-3 PR #161. |
+| 5 | The only guard against duplicate junctions was indirect; no explicit single-owner invariant, no regenerate-in-place. | Kernel single-owner invariant + validator rule `robomous.ai:rm:1.0.0:junctions.arm_single_owner`; Create Junction regenerates in place on an exact arm-set match. WS-2 PR #155 / #160. |
+| 6 | Context-menu closures captured a stack-local `ContextMenuDeps` by reference under non-blocking `popup()` → use-after-free; no lane-remove affordance. | Closures capture by value; per-side lane-remove buttons + context-menu item. WS-1 PR #153 / #154. |
+
+**Soak driver new ops** (`kOps` table): `op_assembly_drop_on_road` (drop T/X onto
+a road), `op_remove_lane` (outermost-lane UX path), `op_overpass` (the headless
+`apply_overpass` path), `op_delete_crossing_road` (finding-4 integrity), joining
+the earlier `op_duplicate_junction_attempt`. **Invariants** (`check_invariants`):
+single-junction-per-arm-set (via `validate_network`'s `arm_single_owner`) and
+**rendered primitive → selectable entity** (every `JunctionFloor` resolves to a
+live junction; the selection never holds a stale junction id).
+
+**Re-gate evidence.**
+
+- **60-min ASan soak (local, macOS, `ASAN_OPTIONS=detect_leaks=0`):** _(recorded
+  at final commit — seed, op count, final network stats below)._
+- **CI (post-extension `main`):** _(run link recorded at final commit — all 14
+  jobs green incl. sanitizers, seeded CI soak, editor-visual-artifacts.)_
+- **`scripts/gw1_replay.py`:** _(re-run on final `main` — all 7 steps PASS.)_
+
+**Re-gate instruction (maintainer).** One GW-1/GW-2 run on final post-extension
+`main` covers **both** v0.4.0 and v0.5.0 publication (findings-only extension per
+the gate rules). The GW-1 spec now carries the selectable-everything and
+single-junction-per-arm-set invariants and the on-road T/X-drop acceptance.
