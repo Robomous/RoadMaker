@@ -50,4 +50,22 @@ struct StopLineParams {
 [[nodiscard]] RM_API std::vector<std::pair<RoadId, Object>> junction_stop_lines(
     const RoadNetwork& network, JunctionId junction, const StopLineParams& params = {});
 
+/// Parameters for junction-arm lane-arrow authoring.
+struct LaneArrowParams {
+  double length_m = 4.0;   ///< arrow glyph extent along travel
+  double setback_m = 7.0;  ///< gap from the junction edge (behind the stop line)
+  double width_frac = 0.5; ///< arrow width as a fraction of the lane width
+};
+
+/// A straight lane arrow (`<object type="roadMark" subtype="arrowStraight">`) on
+/// each APPROACH lane of every arm of `junction`, pointing into the junction and
+/// set back behind the stop line (the "Add lane arrows to all arms" action —
+/// one per approach lane, so a two-lane approach gets two). Choosing per-lane
+/// turn variants (left/right) is a later, per-lane refinement. Returns {owning
+/// road, object} pairs ready for `edit::add_object`, each with a unique
+/// `odr_id`. Empty for a stale/foreign junction or arms with no approach lanes.
+/// Pure.
+[[nodiscard]] RM_API std::vector<std::pair<RoadId, Object>> junction_lane_arrows(
+    const RoadNetwork& network, JunctionId junction, const LaneArrowParams& params = {});
+
 } // namespace roadmaker::edit

@@ -159,3 +159,42 @@ TEST(JunctionStopLines, AddedObjectsMeshAsStopQuads) {
   }
   EXPECT_EQ(stop_meshes, 3);
 }
+
+TEST(JunctionLaneArrows, OnePerApproachLanePointingIntoTheJunction) {
+  ArmedJunction fx;
+  const auto arrows = roadmaker::edit::junction_lane_arrows(fx.network, fx.junction);
+  ASSERT_EQ(arrows.size(), 3U); // one approach lane per two-way arm x 3 arms
+
+  std::set<std::string> ids;
+  for (const auto& [road, arrow] : arrows) {
+    EXPECT_EQ(arrow.type_str, "roadMark");
+    EXPECT_EQ(arrow.subtype, "arrowStraight");
+    ASSERT_TRUE(arrow.length.has_value());
+    EXPECT_DOUBLE_EQ(*arrow.length, 4.0);
+    ASSERT_TRUE(arrow.width.has_value());
+    EXPECT_GT(*arrow.width, 0.0);
+    EXPECT_DOUBLE_EQ(arrow.hdg, 0.0); // End-facing arms point +s into the junction
+    ids.insert(arrow.odr_id);
+  }
+  EXPECT_EQ(ids.size(), 3U);
+}
+
+TEST(JunctionLaneArrows, AddedObjectsMeshAsArrowGlyphs) {
+  ArmedJunction fx;
+  auto arrows = roadmaker::edit::junction_lane_arrows(fx.network, fx.junction);
+  ASSERT_FALSE(arrows.empty());
+  for (auto& [road, arrow] : arrows) {
+    ASSERT_TRUE(
+        roadmaker::edit::add_object(fx.network, road, arrow)->apply(fx.network).has_value());
+  }
+  const roadmaker::NetworkMesh mesh = roadmaker::build_network_mesh(fx.network);
+  int arrow_meshes = 0;
+  for (const auto& road : mesh.roads) {
+    for (const auto& marking : road.markings) {
+      if (marking.name.find("arrow") != std::string::npos && !marking.indices.empty()) {
+        ++arrow_meshes;
+      }
+    }
+  }
+  EXPECT_EQ(arrow_meshes, 3);
+}

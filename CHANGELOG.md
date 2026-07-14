@@ -13,6 +13,16 @@ through the M2 command layer (one undo step per edit, byte-identical undo) and
 is headless-testable.
 
 ### Added
+- **Add lane arrows to all arms of a junction** (GS-1 WS-B): the junction
+  context menu gains **Add lane arrows to all arms** — a straight lane arrow
+  (`<object subtype="arrowStraight">`) on each approach lane, pointing into the
+  junction and set back behind the stop line, in a **single undo step**. Kernel
+  helper `edit::junction_lane_arrows` (one glyph per approach lane, centred in
+  the lane, oriented by the arm's travel direction) + Python
+  `edit.junction_lane_arrows`; the marks mesh through the existing arrow-glyph
+  path. Per-lane left/right turn variants are a later refinement. Completes the
+  GS-1 junction marks set (crosswalks + stop lines + arrows). Part of
+  [#72](https://github.com/Robomous/RoadMaker/issues/72).
 - **Add stop lines to all arms of a junction** (GS-1 WS-B): the junction context
   menu gains **Add stop lines to all arms** — a solid stop line
   (`<object subtype="signalLines">`) across each arm's *approach* lanes, set back
