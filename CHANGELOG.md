@@ -12,6 +12,18 @@ Placement and transform corrections found while dogfooding GS-1
 placement path GS-1 signal placement builds on.
 
 ### Added
+- **3D transform gizmo** ([#177](https://github.com/Robomous/RoadMaker/issues/177)):
+  selecting an entity with the Move tool shows the classic axis gizmo — three
+  colored axis arrows (X red, Y green, Z blue), a centre pad for free planar
+  drag, and a yaw ring around Z — at constant screen size, always on top.
+  Dragging a handle previews live through the incremental pipeline and commits
+  **one undo step** with a summary toast; **Esc** cancels mid-drag; rotation
+  snaps to **15° detents** (**Shift** for free). Roads: X/Y via `translate_roads`,
+  yaw via `rotate_road` about the selection pivot, Z as a uniform elevation
+  offset; props/signals: X/Y (re-project + `move_object`) and yaw. The gizmo math
+  (screen projection, hit-testing, axis/yaw constraint) is a pure, unit-tested
+  module; the soak driver learns `rotate_road`. Pitch/roll rings and prop-Z are
+  future work.
 - **`rotate_road` kernel op** ([#177](https://github.com/Robomous/RoadMaker/issues/177)):
   `edit::rotate_road(network, road, angle, pivot_x, pivot_y)` rigidly rotates a
   whole road about a world pivot — every geometry record's start position rotates

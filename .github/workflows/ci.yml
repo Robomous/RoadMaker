@@ -277,6 +277,11 @@ jobs:
           xvfb-run -a python3 scripts/editor_screenshot.py \
             "assets/samples/tree_avenue.xodr" "shots/move_tool.png" \
             --ui --tool move --size 1200x800 --skip-on-no-gl
+          # Transform gizmo (A3): the axis arrows + yaw ring + XY pad on a
+          # selected road with the Move tool active.
+          xvfb-run -a python3 scripts/editor_screenshot.py \
+            "assets/samples/curved_road.xodr" "shots/transform_gizmo.png" \
+            --camera orbit --tool move --select 1 --skip-on-no-gl
           # First-run tour (Phase 4): the guided-tour overlay on its first step.
           xvfb-run -a python3 scripts/editor_screenshot.py \
             "assets/samples/t_junction.xodr" "shots/tour.png" \
