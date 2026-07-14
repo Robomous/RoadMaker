@@ -90,6 +90,47 @@ TEST(LibraryDrop, XAssemblyDropIsValidAtTheDropPoint) {
   EXPECT_EQ(count_errors(validate_network(network)), 0U);
 }
 
+TEST(LibraryDrop, TAssemblyDroppedOnARoadTeesIntoIt) {
+  RoadNetwork network = with_straight_road(); // (0,0)-(100,0)
+  // Drop over the road near its middle — projects on at s≈50, teed in.
+  LibraryDropAction action = resolve_library_drop(assembly("t"), network, 50.0, 2.0);
+  ASSERT_EQ(action.kind, LibraryDropKind::Assembly);
+  ASSERT_NE(action.command, nullptr);
+  EXPECT_TRUE(action.toast.contains(QStringLiteral("into the road")));
+  ASSERT_TRUE(action.command->apply(network).has_value());
+  EXPECT_EQ(network.junction_count(), 1U);
+  EXPECT_EQ(count_errors(validate_network(network)), 0U);
+}
+
+TEST(LibraryDrop, XAssemblyDroppedOnARoadCrossesIt) {
+  RoadNetwork network = with_straight_road();
+  LibraryDropAction action = resolve_library_drop(assembly("x"), network, 50.0, 0.0);
+  ASSERT_EQ(action.kind, LibraryDropKind::Assembly);
+  EXPECT_TRUE(action.toast.contains(QStringLiteral("over the road")));
+  ASSERT_TRUE(action.command->apply(network).has_value());
+  EXPECT_EQ(network.junction_count(), 1U);
+  EXPECT_EQ(count_errors(validate_network(network)), 0U);
+}
+
+TEST(LibraryDrop, AssemblyDroppedNearARoadEndFallsBackToStandalone) {
+  RoadNetwork network = with_straight_road();
+  // s≈5 is inside the end margin — no room to attach, so a standalone lands.
+  LibraryDropAction action = resolve_library_drop(assembly("t"), network, 5.0, 2.0);
+  ASSERT_EQ(action.kind, LibraryDropKind::Assembly);
+  EXPECT_TRUE(action.toast.contains(QStringLiteral("standalone")));
+  ASSERT_TRUE(action.command->apply(network).has_value());
+  EXPECT_EQ(network.junction_count(), 1U);
+  EXPECT_EQ(count_errors(validate_network(network)), 0U);
+}
+
+TEST(LibraryDrop, AssemblyDroppedOffAnyRoadIsAStandaloneAtTheCursor) {
+  RoadNetwork network = with_straight_road();
+  // 200 m off the road — well beyond the snap threshold.
+  LibraryDropAction action = resolve_library_drop(assembly("t"), network, 50.0, 200.0);
+  ASSERT_EQ(action.kind, LibraryDropKind::Assembly);
+  EXPECT_TRUE(action.toast.contains(QStringLiteral("Placed T-intersection")));
+}
+
 TEST(LibraryDrop, UnknownItemYieldsNoAction) {
   RoadNetwork network;
   LibraryItem unknown;

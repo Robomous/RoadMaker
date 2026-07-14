@@ -1176,6 +1176,34 @@ NB_MODULE(_roadmaker, m) {
       "pose"_a,
       "params"_a = roadmaker::edit::assembly::IntersectionParams{},
       "A 4-way X-intersection at pose. One undoable command.");
+  assembly.def(
+      "tee_onto_road",
+      [](const roadmaker::RoadNetwork& network,
+         roadmaker::RoadId target,
+         double s,
+         roadmaker::edit::assembly::IntersectionParams params) {
+        return roadmaker::edit::assembly::tee_onto_road(network, target, s, params);
+      },
+      "network"_a,
+      "target"_a,
+      "s"_a,
+      "params"_a = roadmaker::edit::assembly::IntersectionParams{},
+      "Tees a perpendicular stem INTO the side of `target` at station s (aligned "
+      "to the road tangent, split + junction). One undoable command.");
+  assembly.def(
+      "cross_onto_road",
+      [](const roadmaker::RoadNetwork& network,
+         roadmaker::RoadId target,
+         double s,
+         roadmaker::edit::assembly::IntersectionParams params) {
+        return roadmaker::edit::assembly::cross_onto_road(network, target, s, params);
+      },
+      "network"_a,
+      "target"_a,
+      "s"_a,
+      "params"_a = roadmaker::edit::assembly::IntersectionParams{},
+      "Crosses a 4-way junction OVER `target` at station s (the two halves are "
+      "the collinear through arms + two perpendicular stems). One undoable command.");
 
   edit.def("add_lane",
            &roadmaker::edit::add_lane,

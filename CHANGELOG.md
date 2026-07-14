@@ -13,6 +13,18 @@ through the M2 command layer (one undo step per edit, byte-identical undo) and
 is headless-testable.
 
 ### Added
+- **Drop a T/X intersection ONTO a road** (gate finding 1): dragging a T or X
+  assembly from the Library onto an existing road now tees/crosses INTO it,
+  aligned to the road tangent, instead of dropping a superimposed floating
+  junction at the cursor. New kernel factories `edit::assembly::tee_onto_road`
+  (a perpendicular stem via `aligned_pose_on_road` + `attach_t_junction`) and
+  `cross_onto_road` (split the target at s±gap, two perpendicular stems, a 4-way
+  junction on the four ends) — each one undoable command, apply→revert
+  byte-identical, welds clean (`verify_junction_welds`). The editor's
+  `resolve_library_drop` projects the drop onto the nearest road: on a road it
+  attaches, near a road end (no room for the junction area) or in open space it
+  falls back to a standalone assembly with an explanatory toast. Python
+  `edit.assembly.tee_onto_road` / `cross_onto_road` + `examples/tee_onto_road.py`.
 - **Connection engine — one authority for contact-and-fit geometry** (gate
   extension WS-2): the contact/fit primitives that junction generation used to
   keep to itself now live in `roadmaker/edit/connection.{hpp,cpp}` —

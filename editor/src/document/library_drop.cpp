@@ -22,6 +22,17 @@ namespace {
 /// drop in open space is rejected (OpenDRIVE objects are road-relative).
 constexpr double kTreeSnapThreshold = 12.0;
 
+/// A T/X assembly dropped within this lateral distance [m] of a road's
+/// reference line tees/crosses INTO that road (aligned); a drop farther out is
+/// a standalone intersection at the cursor.
+constexpr double kAssemblySnapThreshold = 8.0;
+
+/// The drop must sit at least this far [m] from a road end to leave room for
+/// the junction area; closer than this, the on-road attach would refuse, so the
+/// drop falls back to a standalone assembly. Comfortably above the auto gap for
+/// typical profiles/turn radii.
+constexpr double kAssemblyEndMargin = 15.0;
+
 struct RoadStation {
   RoadId road;
   double s = 0.0;
@@ -81,16 +92,43 @@ LibraryDropAction resolve_library_drop(const LibraryItem& item,
     action.profile = profile_for(item.profile);
     return action;
   case LibraryItem::Kind::Assembly: {
-    const edit::assembly::Pose pose{.x = world_x, .y = world_y, .heading = 0.0};
-    if (item.assembly == QStringLiteral("t")) {
-      action.command = edit::assembly::t_intersection(network, pose);
-      action.toast = QStringLiteral("Placed T-intersection — Ctrl+Z to undo");
-    } else if (item.assembly == QStringLiteral("x")) {
-      action.command = edit::assembly::x_intersection(network, pose);
-      action.toast = QStringLiteral("Placed X-intersection — Ctrl+Z to undo");
+    const bool is_t = item.assembly == QStringLiteral("t");
+    const bool is_x = item.assembly == QStringLiteral("x");
+    if (!is_t && !is_x) {
+      return action; // unknown assembly
     }
+    // Dropped ON a road (finding 1): project onto it and tee/cross INTO it,
+    // aligned to the road tangent, instead of a floating standalone at the
+    // cursor. A drop near a road END (no room for the junction area) or in open
+    // space falls back to a standalone assembly, with a toast noting it.
+    const auto on_road = nearest_road_station(network, world_x, world_y, kAssemblySnapThreshold);
+    if (on_road.has_value()) {
+      const Road* road = network.road(on_road->road);
+      if (road != nullptr && on_road->s > kAssemblyEndMargin &&
+          on_road->s < road->plan_view.length() - kAssemblyEndMargin) {
+        action.command = is_t ? edit::assembly::tee_onto_road(network, on_road->road, on_road->s)
+                              : edit::assembly::cross_onto_road(network, on_road->road, on_road->s);
+        if (action.command != nullptr) {
+          action.kind = LibraryDropKind::Assembly;
+          action.toast =
+              is_t ? QStringLiteral("Teed a T-intersection into the road — Ctrl+Z to undo")
+                   : QStringLiteral("Crossed an X-intersection over the road — Ctrl+Z to "
+                                    "undo");
+        }
+        return action;
+      }
+    }
+    // Off-road (or too near an end): a standalone assembly at the cursor.
+    const edit::assembly::Pose pose{.x = world_x, .y = world_y, .heading = 0.0};
+    action.command = is_t ? edit::assembly::t_intersection(network, pose)
+                          : edit::assembly::x_intersection(network, pose);
     if (action.command != nullptr) {
       action.kind = LibraryDropKind::Assembly;
+      const bool near_road = on_road.has_value();
+      action.toast = near_road ? QStringLiteral("Dropped near a road end — placed a standalone "
+                                                "intersection instead; Ctrl+Z to undo")
+                     : is_t    ? QStringLiteral("Placed T-intersection — Ctrl+Z to undo")
+                               : QStringLiteral("Placed X-intersection — Ctrl+Z to undo");
     }
     return action;
   }

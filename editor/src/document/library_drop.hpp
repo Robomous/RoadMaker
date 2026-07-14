@@ -2,12 +2,10 @@
 
 // Behavior matrix for a library-item drop: maps a dropped catalogue item plus
 // the drop location to an action the MainWindow carries out — a road template
-// arms Create Road (the caller places the first waypoint), a T/X assembly
-// produces a standalone-intersection command at the drop point. Pure logic
-// (no widgets), so the mapping is unit-testable headless.
-//
-// Not yet: dropping a T on an existing road tees INTO it (splits it); v1
-// places a standalone assembly at the drop point (follow-up).
+// arms Create Road (the caller places the first waypoint); a T/X assembly
+// dropped ON a road tees/crosses INTO it (aligned to the road tangent, split +
+// junction), and a drop in open space places a standalone intersection at the
+// cursor. Pure logic (no widgets), so the mapping is unit-testable headless.
 
 #include "roadmaker/edit/command.hpp"
 #include "roadmaker/road/authoring.hpp"

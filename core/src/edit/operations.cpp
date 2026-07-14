@@ -2491,6 +2491,25 @@ double resolve_gap(const IntersectionParams& params) {
                   params.generation.min_turn_radius_m + 1.0);
 }
 
+/// The junction half-span for teeing/crossing a stem of `params.profile` onto
+/// `target` at `s`: the wider of the two pavements plus clearance, and room for
+/// the tightest turn — so the stem's inner end and the target's cut faces meet
+/// at the same boundary and attach_t_junction (given this gap) produces a clean
+/// perpendicular tee.
+double onto_road_gap(const RoadNetwork& network,
+                     RoadId target,
+                     double s,
+                     const IntersectionParams& params) {
+  if (params.gap_m > 0.0) {
+    return params.gap_m;
+  }
+  const Road* road = network.road(target);
+  const double target_half = road != nullptr ? half_width_at(network, *road, s) : 0.0;
+  const double branch_half = profile_half_width(params.profile);
+  return std::max(std::max(target_half, branch_half) + 1.0,
+                  params.generation.min_turn_radius_m + 1.0);
+}
+
 /// Composite for an N-arm intersection whose arm directions are
 /// pose.heading + offsets[i]. Each arm is a straight stub authored from the
 /// junction boundary (gap out from the center) to gap+arm_length, inner→outer
@@ -2568,6 +2587,160 @@ x_intersection(const RoadNetwork& network, Pose pose, IntersectionParams params)
   const std::array<double, 4> offsets{
       0.0, std::numbers::pi / 2.0, std::numbers::pi, 3.0 * std::numbers::pi / 2.0};
   return make_intersection(network, "X-Intersection", pose, offsets, params);
+}
+
+std::unique_ptr<Command>
+tee_onto_road(const RoadNetwork& network, RoadId target, double s, IntersectionParams params) {
+  static constexpr std::string_view kName = "Tee onto Road";
+  const auto fail = [&](std::string message) {
+    return invalid_command(
+        std::string(kName),
+        Error{.code = ErrorCode::InvalidArgument, .message = std::move(message)});
+  };
+  if (params.arm_length_m <= tol::kLength) {
+    return fail("intersection arm length must be positive");
+  }
+  const Road* target_road = network.road(target);
+  if (target_road == nullptr) {
+    return fail("stale target road id");
+  }
+  // Project + align (finding 1): a perpendicular stem leaving the road's left
+  // side at s, instead of a floating standalone junction at the cursor.
+  auto pose = aligned_pose_on_road(network, target, s, Side::Left);
+  if (!pose.has_value()) {
+    return invalid_command(std::string(kName), pose.error());
+  }
+  const double gap = onto_road_gap(network, target, s, params);
+  if (s - gap <= tol::kLength || s + gap >= target_road->plan_view.length() - tol::kLength) {
+    return fail("the drop is too near a road end to fit a junction — drop it further along");
+  }
+  const double angle = pose->heading; // road tangent + 90°, pointing off the road
+  const double dx = std::cos(angle);
+  const double dy = std::sin(angle);
+  std::vector<Waypoint> stem{
+      Waypoint{.x = pose->x + (gap * dx), .y = pose->y + (gap * dy)},
+      Waypoint{.x = pose->x + ((gap + params.arm_length_m) * dx),
+               .y = pose->y + ((gap + params.arm_length_m) * dy)},
+  };
+  std::vector<RoadId> existing;
+  network.for_each_road([&](RoadId id, const Road&) { existing.push_back(id); });
+
+  std::vector<CompositeCommand::Builder> builders;
+  builders.push_back([stem = std::move(stem), profile = params.profile, angle](RoadNetwork& net) {
+    (void)net;
+    return create_road(stem, profile, {}, EndpointHeadings{.start = angle, .end = angle});
+  });
+  builders.push_back(
+      [existing = std::move(existing), target, s, gap, generation = params.generation](
+          RoadNetwork& net) -> std::unique_ptr<Command> {
+        RoadId stem_id;
+        net.for_each_road([&](RoadId id, const Road&) {
+          if (std::ranges::find(existing, id) == existing.end()) {
+            stem_id = id;
+          }
+        });
+        return attach_t_junction(net,
+                                 RoadEnd{.road = stem_id, .contact = ContactPoint::Start},
+                                 target,
+                                 s,
+                                 TAttachOptions{.gap_m = gap, .generation = generation});
+      });
+  return std::make_unique<CompositeCommand>(
+      std::string(kName), DirtySet{.topology = true}, std::move(builders));
+}
+
+std::unique_ptr<Command>
+cross_onto_road(const RoadNetwork& network, RoadId target, double s, IntersectionParams params) {
+  static constexpr std::string_view kName = "Cross onto Road";
+  const auto fail = [&](std::string message) {
+    return invalid_command(
+        std::string(kName),
+        Error{.code = ErrorCode::InvalidArgument, .message = std::move(message)});
+  };
+  if (params.arm_length_m <= tol::kLength) {
+    return fail("intersection arm length must be positive");
+  }
+  const Road* target_road = network.road(target);
+  if (target_road == nullptr) {
+    return fail("stale target road id");
+  }
+  auto pose_left = aligned_pose_on_road(network, target, s, Side::Left);
+  auto pose_right = aligned_pose_on_road(network, target, s, Side::Right);
+  if (!pose_left.has_value()) {
+    return invalid_command(std::string(kName), pose_left.error());
+  }
+  const double gap = onto_road_gap(network, target, s, params);
+  if (s - gap <= tol::kLength || s + gap >= target_road->plan_view.length() - tol::kLength) {
+    return fail("the drop is too near a road end to fit a junction — drop it further along");
+  }
+  // Two collinear through arms (the split halves of the target) plus two
+  // perpendicular stems make the 4-way. The middle [s−gap, s+gap] becomes the
+  // junction area, exactly as attach_t_junction removes its stub.
+  const auto stem_waypoints = [&](const Pose2D& pose) {
+    const double dx = std::cos(pose.heading);
+    const double dy = std::sin(pose.heading);
+    return std::vector<Waypoint>{Waypoint{.x = pose.x + (gap * dx), .y = pose.y + (gap * dy)},
+                                 Waypoint{.x = pose.x + ((gap + params.arm_length_m) * dx),
+                                          .y = pose.y + ((gap + params.arm_length_m) * dy)}};
+  };
+
+  struct Stages {
+    RoadId stem_left;
+    RoadId stem_right;
+    RoadId tail;
+    RoadId middle;
+  };
+
+  auto stages = std::make_shared<Stages>();
+  std::vector<RoadId> existing;
+  network.for_each_road([&](RoadId id, const Road&) { existing.push_back(id); });
+  const double angle_left = pose_left->heading;
+  const double angle_right = pose_right->heading;
+
+  std::vector<CompositeCommand::Builder> builders;
+  builders.push_back([wp = stem_waypoints(*pose_left), profile = params.profile, angle_left](
+                         RoadNetwork& net) {
+    (void)net;
+    return create_road(wp, profile, {}, EndpointHeadings{.start = angle_left, .end = angle_left});
+  });
+  builders.push_back(
+      [existing, wp = stem_waypoints(*pose_right), profile = params.profile, angle_right, stages](
+          RoadNetwork& net) {
+        net.for_each_road([&](RoadId id, const Road&) {
+          if (std::ranges::find(existing, id) == existing.end()) {
+            stages->stem_left = id;
+          }
+        });
+        return create_road(
+            wp, profile, {}, EndpointHeadings{.start = angle_right, .end = angle_right});
+      });
+  builders.push_back([existing, stages, target, cut = s + gap](RoadNetwork& net) {
+    net.for_each_road([&](RoadId id, const Road&) {
+      if (std::ranges::find(existing, id) == existing.end() && id != stages->stem_left) {
+        stages->stem_right = id;
+      }
+    });
+    return split_road(net, target, cut);
+  });
+  builders.push_back([target, cut = s - gap, stages](RoadNetwork& net) {
+    stages->tail = std::get<RoadId>(net.road(target)->successor->target);
+    return split_road(net, target, cut);
+  });
+  builders.push_back([target, stages](RoadNetwork& net) {
+    stages->middle = std::get<RoadId>(net.road(target)->successor->target);
+    return delete_road(net, stages->middle);
+  });
+  builders.push_back([target, stages, generation = params.generation](RoadNetwork& net) {
+    const std::array<RoadEnd, 4> ends{
+        RoadEnd{.road = target, .contact = ContactPoint::End},
+        RoadEnd{.road = stages->tail, .contact = ContactPoint::Start},
+        RoadEnd{.road = stages->stem_left, .contact = ContactPoint::Start},
+        RoadEnd{.road = stages->stem_right, .contact = ContactPoint::Start},
+    };
+    return create_junction(net, ends, generation);
+  });
+  return std::make_unique<CompositeCommand>(
+      std::string(kName), DirtySet{.topology = true}, std::move(builders));
 }
 
 } // namespace assembly
