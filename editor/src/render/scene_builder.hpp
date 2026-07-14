@@ -48,6 +48,7 @@ struct SceneItem {
   RoadId road;
   LaneId lane;
   ObjectId object;
+  SignalId signal;                               // valid for a signal-instance part
   JunctionId junction;                           // valid for a junction-floor item
   SurfaceKind surface = SurfaceKind::Untextured; // textured-mode material class
 };
@@ -86,6 +87,12 @@ void append_road_items(const RoadMesh& road, Scene& scene);
 /// pose and tagging every part with the owning road + ObjectId (so hover,
 /// selection, and picking address the whole tree). Grows the scene bounds.
 void append_object_items(const ObjectInstance& instance, Scene& scene);
+
+/// Appends a placed signal's parts (pole, housing, lamps / plate) to `scene`,
+/// baking the bundled signal model into world space at the instance pose and
+/// tagging every part with the owning road + SignalId (so hover, selection, and
+/// picking address the whole signal). Grows the scene bounds.
+void append_signal_items(const SignalInstance& instance, Scene& scene);
 
 /// Flattens a NetworkMesh into upload-ready items: one per lane patch (with
 /// road+lane ids), one per marking (road id only), one per junction floor.

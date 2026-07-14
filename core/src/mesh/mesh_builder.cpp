@@ -10,6 +10,8 @@
 #include <array>
 #include <cmath>
 #include <cstddef>
+#include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
 
@@ -360,6 +362,37 @@ void build_object_instances(const RoadNetwork& network,
   }
 }
 
+/// The bundled signal model a <signal> renders as: a dynamic signal (traffic
+/// light) is "signal_light", a static one (sign) is "sign_generic". @dynamic is
+/// optional in the schema; an absent value is treated as static (a sign) — the
+/// conservative default, and the reader already warns on the missing attribute.
+std::string_view signal_model_id(const Signal& signal) {
+  return signal.dynamic.value_or(false) ? "signal_light" : "sign_generic";
+}
+
+/// Placed signals a road owns, as INSTANCES of bundled signal models — the
+/// signal analogue of build_object_instances. The pole base sits on the road
+/// surface at the signal's s/t, lifted by z_offset; the model's +x front faces
+/// the road tangent rotated by hOffset (so a signal reads as facing across or
+/// along the road per its authored orientation).
+void build_signal_instances(const RoadNetwork& network,
+                            const Road& road,
+                            RoadId road_id,
+                            std::vector<SignalInstance>& out) {
+  for (const SignalId signal_id : signals_of(network, road_id)) {
+    const Signal& signal = *network.signal(signal_id);
+    const StationFrame frame = make_frame(road, signal.s);
+    std::array<double, 3> position = lateral_point(frame, signal.t);
+    position[2] += signal.z_offset;
+    const double heading = std::atan2(frame.sin_h, frame.cos_h) + signal.h_offset;
+    out.push_back(SignalInstance{.signal = signal_id,
+                                 .road = road_id,
+                                 .model_id = std::string(signal_model_id(signal)),
+                                 .position = position,
+                                 .heading = heading});
+  }
+}
+
 /// Sampling stations for one road (mandatory profile knots + adaptive fill).
 std::vector<double>
 road_stations(const RoadNetwork& network, const Road& road, const MeshOptions& options) {
@@ -511,6 +544,7 @@ NetworkMesh build_network_mesh(const RoadNetwork& network, const MeshOptions& op
       result.roads.push_back(std::move(mesh));
     }
     build_object_instances(network, road, road_id, result.objects);
+    build_signal_instances(network, road, road_id, result.signal_instances);
   });
   if (options.junction_floors) {
     network.for_each_junction([&](JunctionId junction_id, const Junction& junction) {
@@ -561,8 +595,11 @@ void remesh_objects(const RoadNetwork& network,
     // (an object was added, moved, or removed). Independent of the road's
     // surface mesh, so it runs before the marking-only fast path below.
     std::erase_if(mesh.objects, [&](const ObjectInstance& inst) { return inst.road == road_id; });
+    std::erase_if(mesh.signal_instances,
+                  [&](const SignalInstance& inst) { return inst.road == road_id; });
     if (road != nullptr) {
       build_object_instances(network, *road, road_id, mesh.objects);
+      build_signal_instances(network, *road, road_id, mesh.signal_instances);
     }
 
     if (existing == mesh.roads.end()) {

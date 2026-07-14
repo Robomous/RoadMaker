@@ -1,0 +1,11 @@
+# Materials for signal_light (linear RGB).
+newmtl pole
+Kd 0.3200 0.3400 0.3600
+newmtl housing
+Kd 0.1000 0.1100 0.1200
+newmtl lamp_red
+Kd 0.8600 0.1400 0.1100
+newmtl lamp_amber
+Kd 0.9400 0.6600 0.1200
+newmtl lamp_green
+Kd 0.1800 0.7000 0.3000

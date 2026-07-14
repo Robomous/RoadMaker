@@ -3,7 +3,9 @@
 #include "roadmaker/assets/prop_library.hpp"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
+#include <string_view>
 
 namespace roadmaker::editor {
 
@@ -120,13 +122,25 @@ void append_road_items(const RoadMesh& road, Scene& scene) {
   }
 }
 
-void append_object_items(const ObjectInstance& instance, Scene& scene) {
-  const props::PropModel* model = props::model(instance.model_id);
+namespace {
+
+// Bakes a bundled model (props::model(model_id)) into world-space SceneItems at
+// the given pose — one item per part, each tagged with the owning road plus the
+// source entity id (object OR signal; the other stays invalid). Shared by the
+// prop and signal instance paths so both draw through the identical bake.
+void append_model_items(std::string_view model_id,
+                        const std::array<double, 3>& origin,
+                        double heading,
+                        RoadId road,
+                        ObjectId object,
+                        SignalId signal,
+                        Scene& scene) {
+  const props::PropModel* model = props::model(model_id);
   if (model == nullptr) {
     return;
   }
-  const double cos_h = std::cos(instance.heading);
-  const double sin_h = std::sin(instance.heading);
+  const double cos_h = std::cos(heading);
+  const double sin_h = std::sin(heading);
   for (const props::PropPart& part : model->parts) {
     // Bake the model-space part to world space (rotate about +Z by heading,
     // translate to the instance origin); the renderer draws pre-baked world
@@ -136,9 +150,9 @@ void append_object_items(const ObjectInstance& instance, Scene& scene) {
     for (std::size_t i = 0; i + 2 < part.positions.size(); i += 3) {
       const double x = part.positions[i];
       const double y = part.positions[i + 1];
-      world_pos[i] = (cos_h * x) - (sin_h * y) + instance.position[0];
-      world_pos[i + 1] = (sin_h * x) + (cos_h * y) + instance.position[1];
-      world_pos[i + 2] = part.positions[i + 2] + instance.position[2];
+      world_pos[i] = (cos_h * x) - (sin_h * y) + origin[0];
+      world_pos[i + 1] = (sin_h * x) + (cos_h * y) + origin[1];
+      world_pos[i + 2] = part.positions[i + 2] + origin[2];
       const double nx = part.normals[i];
       const double ny = part.normals[i + 1];
       world_nrm[i] = (cos_h * nx) - (sin_h * ny);
@@ -150,12 +164,35 @@ void append_object_items(const ObjectInstance& instance, Scene& scene) {
                                world_nrm,
                                part.indices,
                                {part.color[0], part.color[1], part.color[2], 1.0F}),
-        .road = instance.road,
+        .road = road,
         .lane = {},
-        .object = instance.object,
+        .object = object,
+        .signal = signal,
     });
     grow_bounds(scene.bounds, world_pos);
   }
+}
+
+} // namespace
+
+void append_object_items(const ObjectInstance& instance, Scene& scene) {
+  append_model_items(instance.model_id,
+                     instance.position,
+                     instance.heading,
+                     instance.road,
+                     instance.object,
+                     {},
+                     scene);
+}
+
+void append_signal_items(const SignalInstance& instance, Scene& scene) {
+  append_model_items(instance.model_id,
+                     instance.position,
+                     instance.heading,
+                     instance.road,
+                     {},
+                     instance.signal,
+                     scene);
 }
 
 Scene build_scene(const NetworkMesh& mesh) {
@@ -180,6 +217,9 @@ Scene build_scene(const NetworkMesh& mesh) {
   }
   for (const ObjectInstance& instance : mesh.objects) {
     append_object_items(instance, scene);
+  }
+  for (const SignalInstance& instance : mesh.signal_instances) {
+    append_signal_items(instance, scene);
   }
   return scene;
 }

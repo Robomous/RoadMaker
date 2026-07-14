@@ -247,21 +247,25 @@ Expected<void> export_usda(const NetworkMesh& mesh, const std::filesystem::path&
                         &err);
   }
 
-  // Placed props (trees/vegetation). tinyusdz has no ergonomic prototype
-  // instancing, so each instance's geometry is baked into world space (Z-up,
-  // then make_mesh rotates to Y-up) — a simulator receives real per-tree
-  // meshes. Every part carries a flat prop material.
-  for (std::size_t oi = 0; oi < mesh.objects.size(); ++oi) {
-    const ObjectInstance& instance = mesh.objects[oi];
-    const props::PropModel* model = props::model(instance.model_id);
+  // Placed props (trees/vegetation) and signals (lights/signs). tinyusdz has no
+  // ergonomic prototype instancing, so each instance's geometry is baked into
+  // world space (Z-up, then make_mesh rotates to Y-up) — a simulator receives
+  // real per-instance meshes. Every part carries a flat model material. Props
+  // and signals bake identically (both resolve through props::model).
+  const auto bake_instance = [&](std::string_view prefix,
+                                 std::size_t index,
+                                 const std::string& model_id,
+                                 const std::array<double, 3>& origin,
+                                 double heading) {
+    const props::PropModel* model = props::model(model_id);
     if (model == nullptr) {
-      continue;
+      return;
     }
-    const double cos_h = std::cos(instance.heading);
-    const double sin_h = std::sin(instance.heading);
+    const double cos_h = std::cos(heading);
+    const double sin_h = std::sin(heading);
+    const std::string tag = std::string(prefix) + "_" + std::to_string(index);
     tz::Xform prop_xform;
-    prop_xform.name = sanitize_identifier("prop_" + std::to_string(oi) + "_" + instance.model_id,
-                                          "prop_" + std::to_string(oi));
+    prop_xform.name = sanitize_identifier(tag + "_" + model_id, tag);
     tz::Prim propPrim(prop_xform);
     for (const props::PropPart& part : model->parts) {
       std::vector<double> world_pos(part.positions.size());
@@ -269,9 +273,9 @@ Expected<void> export_usda(const NetworkMesh& mesh, const std::filesystem::path&
       for (std::size_t i = 0; i + 2 < part.positions.size(); i += 3) {
         const double x = part.positions[i];
         const double y = part.positions[i + 1];
-        world_pos[i] = (cos_h * x) - (sin_h * y) + instance.position[0];
-        world_pos[i + 1] = (sin_h * x) + (cos_h * y) + instance.position[1];
-        world_pos[i + 2] = part.positions[i + 2] + instance.position[2];
+        world_pos[i] = (cos_h * x) - (sin_h * y) + origin[0];
+        world_pos[i + 1] = (sin_h * x) + (cos_h * y) + origin[1];
+        world_pos[i + 2] = part.positions[i + 2] + origin[2];
         const double nx = part.normals[i];
         const double ny = part.normals[i + 1];
         world_nrm[i] = (cos_h * nx) - (sin_h * ny);
@@ -279,7 +283,7 @@ Expected<void> export_usda(const NetworkMesh& mesh, const std::filesystem::path&
         world_nrm[i + 2] = part.normals[i + 2];
       }
       const std::string material =
-          sanitize_identifier("propmat_" + instance.model_id + "_" + part.name, "propmat");
+          sanitize_identifier("propmat_" + model_id + "_" + part.name, "propmat");
       materials.emplace(
           material,
           MaterialDef{{part.color[0], part.color[1], part.color[2]}, io_common::kLaneRoughness});
@@ -290,6 +294,14 @@ Expected<void> export_usda(const NetworkMesh& mesh, const std::filesystem::path&
           &err);
     }
     worldPrim.add_child(std::move(propPrim), /*rename=*/true, &err);
+  };
+  for (std::size_t oi = 0; oi < mesh.objects.size(); ++oi) {
+    const ObjectInstance& instance = mesh.objects[oi];
+    bake_instance("prop", oi, instance.model_id, instance.position, instance.heading);
+  }
+  for (std::size_t si = 0; si < mesh.signal_instances.size(); ++si) {
+    const SignalInstance& instance = mesh.signal_instances[si];
+    bake_instance("signal", si, instance.model_id, instance.position, instance.heading);
   }
 
   tz::Scope looks;

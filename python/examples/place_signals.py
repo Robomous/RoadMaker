@@ -50,6 +50,14 @@ def main() -> int:
 
     print(f"placed {network.signal_count} signals")
     assert rm.validate_network(network) == []
+
+    # Signals render as instances of bundled signal models: a dynamic signal as
+    # a traffic light, a static one as a sign. The mesh carries one signal
+    # instance per placed <signal> (the light + the speed-limit sign here).
+    mesh = rm.build_network_mesh(network, rm.MeshOptions())
+    print(f"mesh has {mesh.signal_count} signal instances")
+    assert mesh.signal_count == 2
+
     rm.save_xodr(network, out_path, "place_signals_example")
     print(f"wrote {out_path}")
     return 0
