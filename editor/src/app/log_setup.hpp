@@ -9,8 +9,27 @@
 
 #include <QString>
 #include <filesystem>
+#include <string>
+
+// This header stays spdlog-free on purpose: spdlog is a PRIVATE dependency of
+// the editor library, so its include dirs do not propagate to consumers of this
+// header (the app `main`, the tests). The soak level API is therefore a plain
+// spdlog level *name* string, resolved to an spdlog level inside the .cpp.
 
 namespace roadmaker::editor::logging {
+
+/// The console log level name the soak runner should use: the `SPDLOG_LEVEL`
+/// env var when set/non-empty, else `"critical"` (which silences the expected
+/// per-op refusal diagnostics). Pure — for testing the policy. #167.
+[[nodiscard]] std::string soak_console_level();
+
+/// Installs a plain stderr default logger at `soak_console_level()` (an
+/// unknown/typo name maps to `off`, same as spdlog's env loader). Silences the
+/// soak's expected per-op refusals while keeping a genuine crash's output. This
+/// MUST live in the editor library: Document and the command layer log through
+/// THIS library's spdlog registry, so a set_level/set_default_logger issued from
+/// a caller translation unit (the soak `main`) does not reach it. #167.
+void set_soak_console_level();
 
 /// "yyyyMMdd-HHmmss-<pid>" — sortable, unique enough per machine, and legal
 /// in filenames on all three platforms.

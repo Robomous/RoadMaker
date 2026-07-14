@@ -7,6 +7,7 @@
 #include <QCoreApplication>
 #include <QDateTime>
 #include <QStandardPaths>
+#include <QtGlobal>
 #include <algorithm>
 #include <memory>
 #include <system_error>
@@ -51,6 +52,22 @@ void prune_old_logs(const std::filesystem::path& log_dir, int keep_files) {
 }
 
 } // namespace
+
+std::string soak_console_level() {
+  // Qt env accessor, not std::getenv (MSVC treats getenv as unsafe under /WX).
+  // qEnvironmentVariable returns an empty string when the var is unset OR empty,
+  // so an unset var keeps the quiet default rather than an empty name.
+  const QString level = qEnvironmentVariable("SPDLOG_LEVEL");
+  return level.isEmpty() ? "critical" : level.toStdString();
+}
+
+void set_soak_console_level() {
+  auto sink = std::make_shared<spdlog::sinks::stderr_color_sink_mt>();
+  auto logger = std::make_shared<spdlog::logger>("roadmaker", std::move(sink));
+  // from_str maps an unknown/typo name to `off` — same as spdlog's env loader.
+  logger->set_level(spdlog::level::from_str(soak_console_level()));
+  spdlog::set_default_logger(std::move(logger));
+}
 
 std::filesystem::path
 init(const std::filesystem::path& log_dir, const QString& session, int keep_files) {
