@@ -166,6 +166,7 @@ void ViewportWidget::rebuild_scene() {
                                   .road = item.road,
                                   .lane = item.lane,
                                   .object = item.object,
+                                  .signal = item.signal,
                                   .junction = item.junction,
                                   .surface = item.surface});
   }
@@ -264,11 +265,13 @@ HighlightState ViewportWidget::item_state(const UploadedItem& item) const {
   return highlight_state_for(item.road,
                              item.lane,
                              item.object,
+                             item.signal,
                              item.junction,
                              selection_.entries(),
                              hovered_road_,
                              hovered_lane_,
                              hovered_object_,
+                             hovered_signal_,
                              hovered_junction_);
 }
 
@@ -557,6 +560,7 @@ void ViewportWidget::update_hover(const QPointF& pos) {
 
   RoadId new_hover_road;         // invalid = no road under the cursor
   ObjectId new_hover_object;     // invalid = no prop under the cursor
+  SignalId new_hover_signal;     // invalid = no signal under the cursor
   JunctionId new_hover_junction; // invalid = no junction floor under the cursor
   if (const auto hit = pick(document_.mesh(), road_aabbs_, ray)) {
     if (hit->junction.is_valid()) {
@@ -575,6 +579,15 @@ void ViewportWidget::update_hover(const QPointF& pos) {
         info.world_y = hit->position[1];
         info.entity = tr("object %1").arg(QString::fromStdString(object->odr_id));
         new_hover_object = hit->object;
+      }
+    } else if (hit->signal.is_valid()) {
+      // A signal is nearer than any road surface — highlight the whole pole.
+      if (const Signal* signal = document_.network().signal(hit->signal)) {
+        info.valid = true;
+        info.world_x = hit->position[0];
+        info.world_y = hit->position[1];
+        info.entity = tr("signal %1").arg(QString::fromStdString(signal->odr_id));
+        new_hover_signal = hit->signal;
       }
     } else if (const Road* road = document_.network().road(hit->road)) {
       const Lane* lane = document_.network().lane(hit->lane);
@@ -596,6 +609,7 @@ void ViewportWidget::update_hover(const QPointF& pos) {
   // repaint only when it actually changes so plain mouse-overs stay cheap.
   set_hovered_road(new_hover_road);
   set_hovered_object(new_hover_object);
+  set_hovered_signal(new_hover_signal);
   set_hovered_junction(new_hover_junction);
   emit hover_changed(info);
 }
@@ -623,6 +637,14 @@ void ViewportWidget::set_hovered_object(ObjectId object) {
   update();
 }
 
+void ViewportWidget::set_hovered_signal(SignalId signal) {
+  if (hover_locked_ || hovered_signal_ == signal) {
+    return;
+  }
+  hovered_signal_ = signal;
+  update();
+}
+
 void ViewportWidget::set_hovered_junction(JunctionId junction) {
   if (hover_locked_ || hovered_junction_ == junction) {
     return;
@@ -635,6 +657,7 @@ void ViewportWidget::leaveEvent(QEvent* event) {
   // Cursor left the viewport — drop every hover highlight.
   set_hovered_road({});
   set_hovered_object({});
+  set_hovered_signal({});
   set_hovered_junction({});
   QOpenGLWidget::leaveEvent(event);
 }

@@ -95,7 +95,12 @@ bool SelectTool::mouse_press(const ToolEvent& event) {
   // drag moves the PROP, not the road under it. A junction-floor pick carries no
   // road, so it never starts a body move (it only selects on release).
   const bool on_object = event.pick.has_value() && event.pick->object.is_valid();
-  const bool on_road = event.pick.has_value() && event.pick->road.is_valid() && !on_object;
+  // A signal pick carries its owning road, but a signal is a leaf like a prop —
+  // a press on it must not start a body-move of the road under it. It only
+  // selects on release (signal drag-move is the gizmo's job, not the body drag).
+  const bool on_signal = event.pick.has_value() && event.pick->signal.is_valid();
+  const bool on_road =
+      event.pick.has_value() && event.pick->road.is_valid() && !on_object && !on_signal;
   press_ =
       PressState{.world = cursor,
                  .on_geometry = on_road,
@@ -211,6 +216,7 @@ bool SelectTool::mouse_release(const ToolEvent& event) {
         selection_.select({.road = event.pick->road,
                            .lane = event.pick->lane,
                            .object = event.pick->object,
+                           .signal = event.pick->signal,
                            .junction = event.pick->junction},
                           mode);
       } else if (mode == SelectMode::Replace) {
@@ -301,7 +307,13 @@ bool SelectTool::delete_selection() {
       doomed_objects.push_back(object_id);
     }
   }
-  const std::size_t total = doomed_roads.size() + doomed_objects.size();
+  std::vector<SignalId> doomed_signals;
+  for (const SignalId signal_id : selection_.selected_signals()) {
+    if (document_.network().signal(signal_id) != nullptr) {
+      doomed_signals.push_back(signal_id);
+    }
+  }
+  const std::size_t total = doomed_roads.size() + doomed_objects.size() + doomed_signals.size();
   if (total == 0) {
     return false;
   }
@@ -321,6 +333,11 @@ bool SelectTool::delete_selection() {
       (void)document_.push_command(edit::delete_object(document_.network(), object_id));
     }
   }
+  for (const SignalId signal_id : doomed_signals) {
+    if (document_.network().signal(signal_id) != nullptr) {
+      (void)document_.push_command(edit::delete_signal(document_.network(), signal_id));
+    }
+  }
   int deleted_roads = 0;
   for (const RoadId road_id : doomed_roads) {
     if (document_.network().road(road_id) == nullptr) {
@@ -334,8 +351,15 @@ bool SelectTool::delete_selection() {
     document_.undo_stack()->endMacro();
   }
   const auto deleted_objects = doomed_objects.size();
-  if (deleted_roads > 0 && deleted_objects > 0) {
+  const auto deleted_signals = doomed_signals.size();
+  const int kinds =
+      (deleted_roads > 0 ? 1 : 0) + (deleted_objects > 0 ? 1 : 0) + (deleted_signals > 0 ? 1 : 0);
+  if (kinds > 1) {
     emit status_message(tr("Deleted selection — Ctrl+Z restores"));
+  } else if (deleted_signals > 0) {
+    emit status_message(deleted_signals == 1
+                            ? tr("Deleted 1 signal — Ctrl+Z restores")
+                            : tr("Deleted %1 signals — Ctrl+Z restores").arg(deleted_signals));
   } else if (deleted_objects > 0) {
     emit status_message(deleted_objects == 1
                             ? tr("Deleted 1 object — Ctrl+Z restores")

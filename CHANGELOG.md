@@ -64,6 +64,16 @@ through the M2 command layer (one undo step per edit, byte-identical undo) and
 is headless-testable.
 
 ### Added
+- **Signals are selectable, hoverable, and deletable** (GS-1 WS-C): a placed
+  traffic light or sign is now a first-class editor entity — click it to select
+  (it highlights as a whole pole), hover shows a "signal N" readout, and
+  **Delete** removes it in one undo step (`edit::delete_signal`). Picking adds a
+  bounding-sphere test on the signal instances (a signal in front of a road wins
+  the pick, like a prop); `SelectionModel` gains `selected_signals()` and prunes
+  a signal entry when a delete command removes it; the highlight rule matches by
+  `SignalId`. A body-drag on a signal no longer moves the road under it. Signal
+  **properties-panel editing** follows. Part of
+  [#72](https://github.com/Robomous/RoadMaker/issues/72).
 - **GS-1 golden scene — "Urban intersection"** (GS-1 WS-E, acceptance artifact):
   the M3a golden scene is built and rendered. `python/examples/build_gs1.py`
   dogfoods the kernel edit layer end to end — a 4-arm urban junction

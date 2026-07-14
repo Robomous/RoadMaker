@@ -162,6 +162,7 @@ private:
     RoadId road;
     LaneId lane;
     ObjectId object;
+    SignalId signal;
     JunctionId junction;
     SurfaceKind surface = SurfaceKind::Untextured;
   };
@@ -210,6 +211,10 @@ private:
   /// Sets the hovered prop/object (repainting only on change); an object hover
   /// clears the road/lane hover and vice versa. Pass an invalid id to clear.
   void set_hovered_object(ObjectId object);
+
+  /// Sets the hovered signal (repainting only on change); mutually exclusive
+  /// with the road/lane/object hover. Pass an invalid id to clear.
+  void set_hovered_signal(SignalId signal);
 
   /// Sets the hovered junction floor (repainting only on change). Mutually
   /// exclusive with the road/object hover; pass an invalid id to clear.
@@ -399,6 +404,10 @@ private:
   /// Prop/object under the cursor (invalid = none). Mutually exclusive with
   /// the road/lane hover — an object hit clears the road hover and vice versa.
   ObjectId hovered_object_;
+
+  /// Signal under the cursor (invalid = none). Mutually exclusive with the
+  /// road/lane/object hover.
+  SignalId hovered_signal_;
 
   /// Junction floor under the cursor (invalid = none). Mutually exclusive with
   /// the road/object hover.

@@ -339,6 +339,31 @@ TEST(Pick, HitsAPlacedPropInFrontOfTheRoad) {
   EXPECT_FALSE(on_road->object.is_valid());
 }
 
+TEST(Pick, HitsAPlacedSignalInFrontOfTheRoad) {
+  RoadNetwork network;
+  NetworkMesh mesh;
+  mesh.roads.push_back(make_quad_road(network, "1", 0.0, 50.0));
+  const SignalId light{.index = 9, .gen = 0};
+  mesh.signal_instances.push_back(SignalInstance{.signal = light,
+                                                 .road = mesh.roads[0].road,
+                                                 .model_id = "signal_light",
+                                                 .position = {25.0, 25.0, 0.0},
+                                                 .heading = 0.0});
+  const auto aabbs = compute_road_aabbs(mesh);
+
+  // Straight down through the signal: its bounding sphere wins over the road.
+  const auto on_signal = pick(mesh, aabbs, straight_down(25.0, 25.0));
+  ASSERT_TRUE(on_signal.has_value());
+  EXPECT_EQ(on_signal->signal, light);
+  EXPECT_EQ(on_signal->road, mesh.roads[0].road);
+  EXPECT_FALSE(on_signal->object.is_valid());
+
+  // Away from the signal the road is still picked (signal invalid).
+  const auto on_road = pick(mesh, aabbs, straight_down(5.0, 5.0));
+  ASSERT_TRUE(on_road.has_value());
+  EXPECT_FALSE(on_road->signal.is_valid());
+}
+
 TEST(Pick, MissesPropWhenRayIsWideOfIt) {
   RoadNetwork network;
   NetworkMesh mesh;
