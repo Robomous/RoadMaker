@@ -80,7 +80,7 @@ so any two releases can be put side by side.
 
 | Release | Baseline | Checklist | Notes |
 |---|---|---|---|
-| v0.6.0 | [`img/gs1_baseline_v0.6.0.png`](img/gs1_baseline_v0.6.0.png) | **12 / 14** (86%) | First baseline. M3a close-out. Gaps: centre double-yellow ([#193]), dashed lane lines ([#194], needs a multi-lane profile). Trees raised 16 → 24. Junction floor untextured and sky dark — both are v0.7.0 material work; see the spec's [honest notes](gs1_urban_intersection.md#honest-notes-on-the-v060-baseline). |
+| v0.6.0 | [`img/gs1_baseline_v0.6.0.png`](img/gs1_baseline_v0.6.0.png) | **13 / 14** (93%) | First baseline. M3a close-out. Centre lines are double-yellow ([#203] closed row 7 and gap 5a before the tag cut). Remaining gap: dashed lane lines ([#194], needs a multi-lane profile). Trees raised 16 → 24. Junction floor untextured and sky dark — both are v0.7.0 material work; see the spec's [honest notes](gs1_urban_intersection.md#honest-notes-on-the-v060-baseline). |
 
 ### GS-2 / GS-3 / GS-4
 
@@ -89,6 +89,7 @@ Materials & Structures (v0.7.0).
 
 [#193]: https://github.com/Robomous/RoadMaker/issues/193
 [#194]: https://github.com/Robomous/RoadMaker/issues/194
+[#203]: https://github.com/Robomous/RoadMaker/pull/203
 
 ## Rules for writing or changing a spec
 

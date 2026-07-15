@@ -165,6 +165,7 @@ void build_markings(const RoadNetwork& network,
 
         SubMesh strip;
         strip.material = lane.type;
+        strip.mark_color = mark.color;
         strip.name = fmt::format("road {} lane {} marking", road.odr_id, lane.odr_id);
 
         // One quad run per painted stripe. Multi-line marks emit two strips at

@@ -220,6 +220,27 @@ TEST(RoadMarks, SolidSolidRendersTwoStrips) {
   EXPECT_LT(min_y, 0.0);
 }
 
+TEST(RoadMarks, MarkColorReachesTheSubMesh) {
+  // The colour is normative data (§11.9), so the mesh carries it rather than
+  // leaving the render layer to assume white — which is what it did, so a
+  // yellow centre line still painted white.
+  const auto yellow = parse(document_with_center_mark(
+      R"(<roadMark sOffset="0" type="solid solid" color="yellow" width="0.15"/>)"));
+  const NetworkMesh mesh = roadmaker::build_network_mesh(yellow.network);
+  const SubMesh* center = find_marking(mesh, "lane 0");
+  ASSERT_NE(center, nullptr);
+  EXPECT_EQ(center->mark_color, RoadMarkColor::Yellow);
+
+  // An uncoloured mark stays Standard, so nothing that never asked for a
+  // colour changes appearance.
+  const auto plain =
+      parse(document_with_center_mark(R"(<roadMark sOffset="0" type="broken" width="0.12"/>)"));
+  const NetworkMesh plain_mesh = roadmaker::build_network_mesh(plain.network);
+  const SubMesh* plain_center = find_marking(plain_mesh, "lane 0");
+  ASSERT_NE(plain_center, nullptr);
+  EXPECT_EQ(plain_center->mark_color, RoadMarkColor::Standard);
+}
+
 TEST(RoadMarks, MeshIsDeterministic) {
   const auto parsed = parse(
       document_with_center_mark(R"(<roadMark sOffset="0" type="solid solid" width="0.15"/>)"));

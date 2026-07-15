@@ -27,6 +27,13 @@ struct SubMesh {
   /// role in `name` and are materialized separately by exporters.
   LaneType material = LaneType::None;
 
+  /// e_roadMarkColor of the lane marking this submesh paints (§11.9), so the
+  /// render/export layer can pick the paint colour instead of assuming white.
+  /// `Standard` on everything that is not a lane marking — including object
+  /// markings (crosswalks, stop lines, arrows), whose colour is an object
+  /// property, not a roadMark one.
+  RoadMarkColor mark_color = RoadMarkColor::Standard;
+
   std::string name;
 };
 
