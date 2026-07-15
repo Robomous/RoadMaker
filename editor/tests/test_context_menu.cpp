@@ -241,6 +241,36 @@ TEST(ContextMenu, AddLaneArrowsToAllArmsIsOneUndoableMacro) {
   EXPECT_EQ(object_count(fx), 0U);
 }
 
+TEST(ContextMenu, AddCentreLinesToAllArmsIsOneUndoableMacro) {
+  Fixture fx;
+  const roadmaker::JunctionId junction = build_junction(fx);
+  ASSERT_TRUE(junction.is_valid());
+
+  MenuContext context;
+  context.junction = junction;
+  const std::vector<MenuItem> items = build_context_menu(context, fx.deps);
+  const MenuItem* add = fx.find(items, "Add centre lines to all arms");
+  ASSERT_NE(add, nullptr);
+  ASSERT_TRUE(add->enabled);
+
+  // Centre lines are lane roadMarks, not objects: the object count never moves,
+  // so this asserts on the document instead.
+  const std::string before = xodr(fx.document);
+  EXPECT_EQ(before.find("color=\"yellow\""), std::string::npos);
+
+  add->invoke();
+  const std::string after = xodr(fx.document);
+  EXPECT_NE(after.find("type=\"solid solid\""), std::string::npos);
+  EXPECT_NE(after.find("color=\"yellow\""), std::string::npos);
+  EXPECT_EQ(object_count(fx), 0U);
+
+  // One undo step for the whole batch, restoring the document byte-for-byte.
+  fx.document.undo_stack()->undo();
+  EXPECT_EQ(xodr(fx.document), before);
+  fx.document.undo_stack()->redo();
+  EXPECT_EQ(xodr(fx.document), after);
+}
+
 TEST(ContextMenu, DeleteObjectInvokeLandsTheCommand) {
   Fixture fx;
   const roadmaker::ObjectId object = place_tree(fx);
