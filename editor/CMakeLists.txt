@@ -57,6 +57,8 @@ add_library(roadmaker_editor_lib STATIC
   src/panels/profile_panel.cpp
   src/panels/properties_panel.cpp
   src/panels/scene_tree_panel.cpp
+  src/panels/scrub_label.cpp
+  src/panels/slot_widget.cpp
   src/render/gl_functions.cpp
   src/render/gl_renderer.cpp
   src/render/scene_builder.cpp

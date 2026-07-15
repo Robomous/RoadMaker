@@ -82,4 +82,16 @@ LibraryPanel::LibraryPanel(LibraryListModel& model, QWidget* parent) : QWidget(p
   layout->addWidget(view_, 1);
 }
 
+void LibraryPanel::focus_category(const QString& category) {
+  search_->clear(); // the jump must not land behind a filter that hides it
+  for (int row = 0; row < proxy_.rowCount(); ++row) {
+    const QModelIndex index = proxy_.index(row, 0);
+    if (proxy_.data(index, LibraryListModel::CategoryRole).toString() == category) {
+      view_->setCurrentIndex(index);
+      view_->scrollTo(index, QAbstractItemView::PositionAtTop);
+      return;
+    }
+  }
+}
+
 } // namespace roadmaker::editor

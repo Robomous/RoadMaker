@@ -1355,6 +1355,17 @@ NB_MODULE(_roadmaker, m) {
            "hdg"_a = std::optional<double>{},
            "Re-locates an object to road-relative (s, t); hdg (rad) optional.");
   edit.def(
+      "set_object_model",
+      [](const roadmaker::RoadNetwork& network, roadmaker::ObjectId object, std::string model_id) {
+        return roadmaker::edit::set_object_model(network, object, std::move(model_id));
+      },
+      "network"_a,
+      "object"_a,
+      "model_id"_a,
+      "Re-points a placed object at another bundled prop model (the id also set "
+      "as Object.name, e.g. 'tree_pine'), refreshing its radius/height from that "
+      "model. Fails for an unknown id.");
+  edit.def(
       "add_signal",
       [](const roadmaker::RoadNetwork& network, roadmaker::RoadId road, roadmaker::Signal signal) {
         return roadmaker::edit::add_signal(network, road, std::move(signal));

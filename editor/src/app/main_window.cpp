@@ -378,7 +378,8 @@ void MainWindow::build_docks() {
   }
   library_dock_ = new QDockWidget(tr("Library"), this);
   library_dock_->setObjectName(QStringLiteral("dock.library"));
-  library_dock_->setWidget(new LibraryPanel(library_model_, library_dock_));
+  library_panel_ = new LibraryPanel(library_model_, library_dock_);
+  library_dock_->setWidget(library_panel_);
   addDockWidget(Qt::LeftDockWidgetArea, library_dock_);
   tabifyDockWidget(scene_dock_, library_dock_);
   scene_dock_->raise(); // Scene tree is the default front tab
@@ -389,6 +390,16 @@ void MainWindow::build_docks() {
   connect(properties_panel_, &PropertiesPanel::status_message, this, [this](const QString& text) {
     viewport_->show_toast(text);
   });
+  // An engaged Attributes-pane slot sends the user to the Library: the panel
+  // asks for a category, MainWindow owns the dock that can show it.
+  connect(properties_panel_,
+          &PropertiesPanel::library_category_requested,
+          this,
+          [this](const QString& category) {
+            library_dock_->show();
+            library_dock_->raise(); // it shares a tab stack with the Scene tree
+            library_panel_->focus_category(category);
+          });
   properties_dock_->setWidget(properties_panel_);
   properties_dock_->widget()->setMinimumWidth(300);
   addDockWidget(Qt::RightDockWidgetArea, properties_dock_);

@@ -415,6 +415,15 @@ move_signal(const RoadNetwork& network,
             double t,
             std::optional<double> h_offset = std::nullopt);
 
+/// Re-points a placed object at another prop model: sets Object::name (the
+/// prop_library id the mesher renders — mesh.hpp ObjectInstance::model_id) and
+/// refreshes the bounding radius/height from that model, so the object's
+/// declared volume never describes the model it used to be. Undo is
+/// byte-identical from the value snapshot. Fails for a stale object id, an
+/// empty id, or an id no bundled model matches (assets/prop_library.hpp).
+[[nodiscard]] RM_API std::unique_ptr<Command>
+set_object_model(const RoadNetwork& network, ObjectId object, std::string model_id);
+
 // --- document ---------------------------------------------------------------
 
 [[nodiscard]] RM_API std::unique_ptr<Command>

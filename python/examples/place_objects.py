@@ -84,6 +84,15 @@ def main() -> int:
     stack.undo(network)  # undo the move — the tree returns to s=90
     print(f"command-path tree now at s={network.object(added_id).s:.1f}")
 
+    # Re-point that tree at a different bundled model. This is what the
+    # editor's Attributes-pane "Model" slot commits when a library item is
+    # dropped on it: the prop's radius/height follow the new model, so its
+    # declared volume never describes the model it used to be.
+    stack.push(network, rm.edit.set_object_model(network, added_id, "shrub"))
+    swapped = network.object(added_id)
+    print(f"command-path tree is now a {swapped.name} (r={swapped.radius:.2f} m)")
+    stack.undo(network)  # back to the oak, radius and all
+
     print(f"placed {network.object_count} objects on {network.road(road_id)!r}")
     for object_id in network.objects_of(road_id):
         print(f"  {network.object(object_id)!r}")

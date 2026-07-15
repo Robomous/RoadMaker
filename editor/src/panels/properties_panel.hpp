@@ -16,9 +16,14 @@
 #include <QLineEdit>
 #include <QPushButton>
 #include <QWidget>
+#include <functional>
+#include <optional>
+#include <vector>
 
 #include "document/document.hpp"
 #include "document/selection_model.hpp"
+#include "panels/scrub_label.hpp"
+#include "panels/slot_widget.hpp"
 
 namespace roadmaker::editor {
 
@@ -35,6 +40,10 @@ signals:
   /// removed) — MainWindow routes it to the viewport toast overlay. The panel
   /// never touches the viewport itself.
   void status_message(const QString& text);
+
+  /// A slot was engaged: MainWindow should show `category` in the Library. The
+  /// panel does not know the Library exists.
+  void library_category_requested(const QString& category);
 
 public:
   /// Wires the Elevation editing section to the Elevation tool's active node
@@ -54,6 +63,49 @@ private:
   void refresh_elevation();
   void add_row(const QString& label, const QString& value);
   void clear_rows();
+
+  // --- scrub-editing (P1/GW-2) ------------------------------------------------
+  // One numeric attribute a ScrubLabel can drag. The table is deliberately
+  // LOCAL to this panel: it is the only consumer, and a shared descriptor
+  // registry would be speculative until a second one appears.
+
+  struct ScrubBinding {
+    QDoubleSpinBox* spin = nullptr; ///< live readout; also supplies the range clamp
+    double units_per_pixel = 0.0;
+
+    /// The attribute's current value, or nullopt when it is not editable right
+    /// now (nothing selected, no active node) — the gesture then does nothing.
+    std::function<std::optional<double>()> baseline;
+
+    /// The command that sets the attribute to `value`, built against the
+    /// preview session's BASE-state network (Document::PreviewFactory).
+    std::function<std::unique_ptr<edit::Command>(const RoadNetwork&, double)> factory;
+  };
+
+  /// Registers `binding` against `label` and wires the gesture to one preview
+  /// session. Returns the label so it can be dropped straight into a form row.
+  ScrubLabel* install_scrub(ScrubLabel* label, ScrubBinding binding);
+
+  void begin_scrub(std::size_t index);
+  void update_scrub(double delta);
+  void finish_scrub();
+  void cancel_scrub();
+
+  std::vector<ScrubBinding> scrubs_;
+
+  /// The in-flight gesture's binding, baseline, and latest value. Empty index
+  /// = no scrub (and no preview session owned by this panel).
+  std::optional<std::size_t> scrub_active_;
+  double scrub_baseline_ = 0.0;
+  double scrub_value_ = 0.0;
+
+  /// Commits the dropped library item into the primary prop's model slot.
+  void push_object_model(const QString& key);
+
+  /// Height of the Elevation tool's active node, or nullopt when no tool, no
+  /// active node, or a stale road/index. Shared by the Height spin box and its
+  /// scrub binding so both agree on what "current" means.
+  [[nodiscard]] std::optional<double> active_node_height() const;
 
   /// Removes the outermost lane on `side` (>0 left, <0 right) of the target
   /// section — no lane selection needed. Emits status_message on success.
@@ -98,6 +150,16 @@ private:
   QDoubleSpinBox* signal_t_spin_;
   QDoubleSpinBox* signal_h_spin_;
   QLabel* signal_kind_label_;
+
+  /// Prop section: a selected object used to show its owning ROAD's fields.
+  /// The Model slot is the first slot consumer (GW-3 mechanics).
+  QGroupBox* object_group_;
+  QLabel* object_kind_label_;
+  SlotWidget* model_slot_;
+
+  /// Populates the Prop section from the primary selection's object, and shows
+  /// it.
+  void refresh_object(const Object& object);
 
   /// Populates the Signal section (position spinboxes + read-only type rows)
   /// from the primary selection's signal, and shows it.

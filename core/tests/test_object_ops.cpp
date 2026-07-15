@@ -3,6 +3,7 @@
 // apply→revert is byte-identical, a failed apply leaves the network untouched,
 // and restore-in-place keeps the ObjectId across undo/redo.
 
+#include "roadmaker/assets/prop_library.hpp"
 #include "roadmaker/edit/operations.hpp"
 #include "roadmaker/mesh/mesh_builder.hpp"
 #include "roadmaker/road/authoring.hpp"
@@ -129,6 +130,53 @@ TEST(ObjectOps, MoveRejectsStaleObject) {
   author_street(network);
   auto command = edit::move_object(network, ObjectId{}, 5.0, 0.0);
   EXPECT_FALSE(command->apply(network).has_value());
+}
+
+// set_object_model backs the Attributes pane's "Model" slot (P1/GW-3): a
+// library item dropped on the slot re-points the prop at another model.
+TEST(ObjectOps, SetModelRetargetsThePropAndIsByteIdenticalOnRevert) {
+  RoadNetwork network;
+  const RoadId road = author_street(network);
+  const ObjectId id = network.add_object(road, make_tree("1", 10.0, 4.0));
+  const std::string before = snapshot_xodr(network);
+  ASSERT_NE(props::model("shrub"), nullptr) << "fixture needs a second bundled model";
+
+  auto command = edit::set_object_model(network, id, "shrub");
+  ASSERT_TRUE(command->apply(network).has_value());
+  EXPECT_EQ(network.object(id)->name, "shrub");
+  // The bounding volume must describe the NEW model, not the pine it was.
+  EXPECT_DOUBLE_EQ(network.object(id)->radius.value(), props::model("shrub")->radius);
+  EXPECT_DOUBLE_EQ(network.object(id)->height.value(), props::model("shrub")->height);
+  // Pose is untouched — this changes what the prop is, not where it is.
+  EXPECT_DOUBLE_EQ(network.object(id)->s, 10.0);
+  EXPECT_DOUBLE_EQ(network.object(id)->t, 4.0);
+
+  ASSERT_TRUE(command->revert(network).has_value());
+  EXPECT_EQ(snapshot_xodr(network), before);
+  EXPECT_EQ(network.object(id)->name, "tree_pine");
+}
+
+TEST(ObjectOps, SetModelDirtiesTheOwningRoadSoThePropReMeshes) {
+  RoadNetwork network;
+  const RoadId road = author_street(network);
+  const ObjectId id = network.add_object(road, make_tree("1", 10.0, 4.0));
+
+  const edit::DirtySet dirty = edit::set_object_model(network, id, "shrub")->dirty();
+  EXPECT_EQ(dirty.objects, std::vector<RoadId>{road});
+}
+
+TEST(ObjectOps, SetModelRejectsBadInputWithoutMutating) {
+  RoadNetwork network;
+  const RoadId road = author_street(network);
+  const ObjectId id = network.add_object(road, make_tree("1", 10.0, 4.0));
+  const std::string before = snapshot_xodr(network);
+
+  EXPECT_FALSE(edit::set_object_model(network, ObjectId{}, "shrub")->apply(network).has_value())
+      << "stale object id";
+  EXPECT_FALSE(edit::set_object_model(network, id, "")->apply(network).has_value()) << "empty id";
+  EXPECT_FALSE(edit::set_object_model(network, id, "no_such_model")->apply(network).has_value())
+      << "an unknown model would render as nothing";
+  EXPECT_EQ(snapshot_xodr(network), before) << "a failed apply must leave the network untouched";
 }
 
 TEST(ObjectOps, TreeObjectEmitsOneInstance) {
