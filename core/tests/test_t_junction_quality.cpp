@@ -620,10 +620,11 @@ TEST_P(TJunctionQuality, ConnectingRoadsAreG1AtContacts) {
   EXPECT_GT(checked, 0);
 }
 
-// The exported tee passes our checker-rule validator with zero errors for
-// both supported targets; the only expected finding is the intentional
-// boundary-omitted warning (M2 emits the surface without <boundary> — see
-// junctions.boundary.close_gap_with_new_roads).
+// The exported tee passes our checker-rule validator with zero errors for both
+// supported targets, and now closes its <boundary> (auxiliary boundary roads
+// fill any gap, #62), so the boundary-omitted warning
+// (junctions.boundary.close_gap_with_new_roads) no longer fires — the loop
+// guards that no unexpected diagnostic slipped in.
 TEST_P(TJunctionQuality, ExportValidatesCleanly) {
   Tee tee = attach(GetParam().setup());
   using roadmaker::XodrVersion;

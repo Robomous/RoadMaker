@@ -89,6 +89,15 @@ kernel cannot represent and validate first.
      `<segment>` emission plus **auxiliary boundary roads** where connecting
      roads leave gaps; scope, rule IDs, and acceptance in
      [#62](https://github.com/Robomous/RoadMaker/issues/62).
+     **As built:** the CCW lane/joint boundary ships for gap-free junctions;
+     a gap between adjacent arms is now closed by a synthesized auxiliary
+     boundary road (`junction_export.cpp`, `build_junction_boundary`) — a
+     *derived* `<road @junction>` emitted among the real roads and tagged
+     `rm:aux_boundary` so the reader drops it (round-trip stays a byte-identical
+     fixed point), whose lane-0 outer edge provides the closing
+     `<segment type="lane" boundaryLane="0">` (spec Fig. 99). The
+     `close_gap_with_new_roads` warning self-clears for any junction with arm
+     metadata; only foreign junctions (no `rm:arms`) still warn.
    - Mesh generation for all of the above: object placeholder / instanced-prop
      anchors, and marking geometry for arrows and stop lines.
 2. **Assets — CC0 prop set** (`03`)

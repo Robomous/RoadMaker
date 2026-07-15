@@ -10,11 +10,13 @@
 #include <cstdint>
 #include <limits>
 #include <optional>
+#include <string>
 #include <utility>
 #include <variant>
 #include <vector>
 
 #include "../mesh/junction_surface.hpp"
+#include "../mesh/mesh_detail.hpp"
 
 namespace roadmaker {
 
@@ -243,6 +245,88 @@ struct Bridge {
   Vec2 mid; // reference-line midpoint, for outer-arc selection
 };
 
+double dist2(const Vec2& p, const Vec2& q) {
+  const double dx = p.x - q.x;
+  const double dy = p.y - q.y;
+  return (dx * dx) + (dy * dy);
+}
+
+/// The two outer corners (leftmost and rightmost lane edges) of an arm road's
+/// junction-facing end cross-section, in world coordinates. Uses the same
+/// frame/offset helpers as the junction surface mesher (mesh_detail) so an
+/// auxiliary boundary road's endpoints land on the exact mouth corners the
+/// neighbouring joint caps cross.
+std::pair<Vec2, Vec2> arm_end_corners(const RoadNetwork& network, const Arm& arm) {
+  const Road& road = *network.road(arm.road);
+  const double s = arm.contact == ContactPoint::Start ? 0.0 : road.plan_view.length();
+  const mesh_detail::StationFrame frame = mesh_detail::make_frame(road, s);
+  const LaneSection& section = mesh_detail::section_at(network, road, s);
+  const std::vector<double> offsets = mesh_detail::boundary_offsets(network, road, section, s);
+  const std::array<double, 3> left = mesh_detail::lateral_point(frame, offsets.front());
+  const std::array<double, 3> right = mesh_detail::lateral_point(frame, offsets.back());
+  return {Vec2{left[0], left[1]}, Vec2{right[0], right[1]}};
+}
+
+/// A deterministic, collision-free @id for an auxiliary boundary road, namespaced
+/// by the junction id and the CCW gap index (e.g. "1_b0"); a numeric suffix is
+/// appended only if that string already names a real road.
+std::string
+unique_aux_id(const RoadNetwork& network, const Junction& junction, std::size_t gap_index) {
+  const std::string base = junction.odr_id + "_b" + std::to_string(gap_index);
+  std::string id = base;
+  for (int suffix = 1; network.find_road(id).is_valid(); ++suffix) {
+    id = base + "_" + std::to_string(suffix);
+  }
+  return id;
+}
+
+/// Synthesizes an auxiliary boundary road bridging the outer mouths of two
+/// CCW-adjacent arms `a` and `b` that no connecting road links (spec Fig. 99).
+/// The gap-facing corners are the nearest pair across the gap, so the closing
+/// lane segment meets the neighbouring joint caps; a single straight reference
+/// line runs corner→corner. Returns nullopt when the corners coincide
+/// (degenerate — no road to add).
+std::optional<AuxBoundaryRoad> make_aux_boundary_road(const RoadNetwork& network,
+                                                      const Junction& junction,
+                                                      const Arm& a,
+                                                      const Arm& b,
+                                                      std::size_t gap_index) {
+  const auto [a_left, a_right] = arm_end_corners(network, a);
+  const auto [b_left, b_right] = arm_end_corners(network, b);
+  // Gap-facing corners = the nearest pair across the gap. Fixed probe order +
+  // a tolerance-guarded strict improvement keep the choice deterministic.
+  const std::array<std::pair<Vec2, Vec2>, 4> candidates = {
+      {{a_left, b_left}, {a_left, b_right}, {a_right, b_left}, {a_right, b_right}}};
+  const std::pair<Vec2, Vec2>* best = &candidates.front();
+  double best_d = dist2(best->first, best->second);
+  for (std::size_t i = 1; i < candidates.size(); ++i) {
+    const double d = dist2(candidates[i].first, candidates[i].second);
+    if (d < best_d - tol::kLength) {
+      best = &candidates[i];
+      best_d = d;
+    }
+  }
+  const Vec2 start = best->first;
+  const Vec2 end = best->second;
+  const double length = std::hypot(end.x - start.x, end.y - start.y);
+  if (length <= tol::kLength) {
+    return std::nullopt;
+  }
+
+  AuxBoundaryRoad aux;
+  aux.junction_odr_id = junction.odr_id;
+  aux.odr_id = unique_aux_id(network, junction, gap_index);
+  aux.x = start.x;
+  aux.y = start.y;
+  aux.hdg = std::atan2(end.y - start.y, end.x - start.x);
+  aux.length = length;
+  aux.pred_road = network.road(a.road)->odr_id;
+  aux.pred_contact = a.contact;
+  aux.succ_road = network.road(b.road)->odr_id;
+  aux.succ_contact = b.contact;
+  return aux;
+}
+
 } // namespace
 
 JunctionBoundaryExport build_junction_boundary(const RoadNetwork& network,
@@ -332,7 +416,22 @@ JunctionBoundaryExport build_junction_boundary(const RoadNetwork& network,
       }
     }
     if (outer == nullptr) {
-      return out; // gap — auxiliary boundary roads required (kept as a warning)
+      // No connecting road bridges this adjacent arm pair: close the gap with a
+      // synthesized auxiliary boundary road along the outer edge between the two
+      // arm mouths (spec Fig. 99), whose lane 0 provides the missing segment.
+      std::optional<AuxBoundaryRoad> aux =
+          make_aux_boundary_road(network, junction, a, b, out.aux_roads.size());
+      if (!aux.has_value()) {
+        return {}; // degenerate mouths — cannot close; keep the warning
+      }
+      segments.push_back(JunctionBoundarySegment{
+          .is_lane = true, .road_id = aux->odr_id, .boundary_lane = 0, .s_begin_to_end = true});
+      out.aux_roads.push_back(std::move(*aux));
+      // Joint cap at arm b, exactly as the bridged branch — the alternation and
+      // CCW order are identical to a connected pair.
+      segments.push_back(JunctionBoundarySegment{
+          .is_lane = false, .road_id = network.road(b.road)->odr_id, .contact = b.contact});
+      continue;
     }
     // Lane segment along the outer connecting road (its single driving lane
     // -1, whose outer edge forms the corner). Walk begin→end when the road

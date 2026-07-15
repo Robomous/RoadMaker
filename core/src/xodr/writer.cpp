@@ -688,8 +688,8 @@ void write_road(pugi::xml_node root,
 /// Emits the OpenDRIVE ≥1.8 junction surface elements: the <planView>
 /// reference line and the <elevationGrid> sampled from the blended 2.5D surface
 /// (docs/design/m2/03_junction_blending.md §3). Both writer targets are ≥1.8,
-/// so these are always written for junctions that carry a surface. No
-/// <boundary> is written in M2 — see junction_export.hpp.
+/// so these are always written for junctions that carry a surface. The
+/// <boundary> is written separately by write_junction_boundary.
 void write_junction_surface(pugi::xml_node junction_node, const JunctionSurfaceExport& surface) {
   if (!surface.has_surface) {
     return;
@@ -754,7 +754,55 @@ void write_junction_boundary(pugi::xml_node junction_node, const JunctionBoundar
   }
 }
 
-void write_junction(pugi::xml_node root, const RoadNetwork& network, const Junction& junction) {
+/// Emits a synthesized auxiliary boundary road (§12.10,
+/// junctions.boundary.close_gap_with_new_roads, spec Fig. 99): a minimal
+/// <road @junction> — one straight reference line and a single center lane —
+/// whose outer edge closes a junction boundary gap. Tagged rm:aux_boundary so
+/// the reader drops it (round-trip stays a fixed point); consumers like esmini
+/// keep it and close the boundary. Emitted among the real <road>s.
+void write_aux_boundary_road(pugi::xml_node root, const AuxBoundaryRoad& aux) {
+  pugi::xml_node road_node = root.append_child("road");
+  set_num(road_node, "length", aux.length);
+  road_node.append_attribute("id").set_value(aux.odr_id.c_str());
+  road_node.append_attribute("junction").set_value(aux.junction_odr_id.c_str());
+
+  pugi::xml_node link = road_node.append_child("link");
+  const auto write_end = [&](const char* kind, const std::string& road_id, ContactPoint contact) {
+    pugi::xml_node node = link.append_child(kind);
+    node.append_attribute("elementType").set_value("road");
+    node.append_attribute("elementId").set_value(road_id.c_str());
+    node.append_attribute("contactPoint").set_value(contact == ContactPoint::End ? "end" : "start");
+  };
+  write_end("predecessor", aux.pred_road, aux.pred_contact);
+  write_end("successor", aux.succ_road, aux.succ_contact);
+
+  pugi::xml_node plan_view = road_node.append_child("planView");
+  pugi::xml_node geometry = plan_view.append_child("geometry");
+  set_num(geometry, "s", 0.0);
+  set_num(geometry, "x", aux.x);
+  set_num(geometry, "y", aux.y);
+  set_num(geometry, "hdg", aux.hdg);
+  set_num(geometry, "length", aux.length);
+  geometry.append_child("line");
+
+  // A single center lane (id 0, type none) so boundaryLane=0 is meaningful and
+  // the road is not lane-less (which would trip the reader's laneSection check).
+  pugi::xml_node lanes = road_node.append_child("lanes");
+  pugi::xml_node section = lanes.append_child("laneSection");
+  set_num(section, "s", 0.0);
+  pugi::xml_node lane = section.append_child("center").append_child("lane");
+  lane.append_attribute("id").set_value(0);
+  lane.append_attribute("type").set_value("none");
+  lane.append_attribute("level").set_value("false");
+
+  pugi::xml_node user_data = road_node.append_child("userData");
+  user_data.append_attribute("code").set_value("rm:aux_boundary");
+}
+
+void write_junction(pugi::xml_node root,
+                    const RoadNetwork& network,
+                    const Junction& junction,
+                    const JunctionBoundaryExport& boundary) {
   pugi::xml_node junction_node = root.append_child("junction");
   junction_node.append_attribute("id").set_value(junction.odr_id.c_str());
   if (!junction.name.empty()) {
@@ -784,8 +832,9 @@ void write_junction(pugi::xml_node root, const RoadNetwork& network, const Junct
   // reference line + elevation grid), both derived from the network so no model
   // state is stored, and emitted before <userData> so the normative children
   // keep their order. The boundary defines the area the grid applies to, so it
-  // precedes the grid.
-  write_junction_boundary(junction_node, build_junction_boundary(network, junction));
+  // precedes the grid. The boundary is precomputed by the caller so its
+  // synthesized auxiliary roads (if any) are emitted among the real <road>s.
+  write_junction_boundary(junction_node, boundary);
   write_junction_surface(junction_node, build_junction_export(network, junction));
 
   // The generator's arm list round-trips through <userData> (OpenDRIVE 1.9.0
@@ -1096,8 +1145,25 @@ Expected<std::string> write_xodr(const RoadNetwork& network,
 
   network.for_each_road(
       [&](RoadId road_id, const Road& road) { write_road(root, network, road_id, road, options); });
-  network.for_each_junction(
-      [&](JunctionId, const Junction& junction) { write_junction(root, network, junction); });
+
+  // Derive each junction's <boundary> once (pure). Any synthesized auxiliary
+  // boundary roads are emitted among the real <road>s (before the <junction>s,
+  // matching document order) so a consumer resolves the boundary's closing lane
+  // segments; the same cached boundary feeds write_junction so the two stay
+  // consistent.
+  std::vector<JunctionBoundaryExport> boundaries;
+  network.for_each_junction([&](JunctionId, const Junction& junction) {
+    boundaries.push_back(build_junction_boundary(network, junction));
+  });
+  for (const JunctionBoundaryExport& boundary : boundaries) {
+    for (const AuxBoundaryRoad& aux : boundary.aux_roads) {
+      write_aux_boundary_road(root, aux);
+    }
+  }
+  std::size_t junction_index = 0;
+  network.for_each_junction([&](JunctionId, const Junction& junction) {
+    write_junction(root, network, junction, boundaries[junction_index++]);
+  });
 
   std::ostringstream out;
   doc.save(out, "  ", pugi::format_default, pugi::encoding_utf8);

@@ -28,6 +28,7 @@
 #include <limits>
 #include <sstream>
 #include <string>
+#include <string_view>
 #include <vector>
 
 using roadmaker::ContactPoint;
@@ -67,6 +68,63 @@ JunctionId build_four_way(RoadNetwork& network) {
   const RoadId south = author(network, {Waypoint{0.0, -40.0}, Waypoint{0.0, -6.0}}, "3");
   const RoadId north = author(network, {Waypoint{0.0, 40.0}, Waypoint{0.0, 6.0}}, "4");
   return make_junction(network, {end_of(west), end_of(east), end_of(south), end_of(north)});
+}
+
+/// Links an arm road's junction-facing end to the junction (mirrors
+/// materialize_junction: End contact → successor slot, Start → predecessor).
+void link_arm_to_junction(RoadNetwork& network, const RoadEnd& arm, JunctionId junction) {
+  const roadmaker::RoadLink link{.target = junction, .contact = ContactPoint::Start};
+  roadmaker::Road& road = *network.road(arm.road);
+  if (arm.contact == ContactPoint::Start) {
+    road.predecessor = link;
+  } else {
+    road.successor = link;
+  }
+}
+
+/// Adds a hand-built connecting road bridging two arms (a line arm-end→arm-end),
+/// tagged @junction with predecessor/successor links, plus its connection-table
+/// entry — mirroring materialize_junction so build_junction_boundary treats it
+/// as a real bridge.
+void bridge_arms(RoadNetwork& network,
+                 JunctionId junction,
+                 const RoadEnd& from,
+                 const RoadEnd& to,
+                 const char* odr_id) {
+  const auto end_pos = [&](const RoadEnd& arm) {
+    const roadmaker::Road& road = *network.road(arm.road);
+    const double s = arm.contact == ContactPoint::Start ? 0.0 : road.plan_view.length();
+    const roadmaker::PathPoint p = road.plan_view.evaluate(s);
+    return Waypoint{p.x, p.y};
+  };
+  const RoadId conn = author(network, {end_pos(from), end_pos(to)}, odr_id);
+  roadmaker::Road& road = *network.road(conn);
+  road.junction = junction;
+  road.predecessor = roadmaker::RoadLink{.target = from.road, .contact = from.contact};
+  road.successor = roadmaker::RoadLink{.target = to.road, .contact = to.contact};
+  network.junction(junction)->connections.push_back(roadmaker::JunctionConnection{
+      .incoming_road = from.road, .connecting_road = conn, .contact_point = ContactPoint::Start});
+}
+
+/// A three-arm junction with a deliberate boundary gap: arms at 0°/120°/240°
+/// meeting near the origin, but only two of the three CCW-adjacent pairs are
+/// bridged by a connecting road. The unbridged pair (arm "3" ↔ arm "1") is a
+/// gap the boundary can only close with an auxiliary boundary road (#62). The
+/// generator never produces this — every ordered arm pair it can reach is
+/// bridged — so it is built by hand.
+JunctionId build_gapped_three_arm(RoadNetwork& network) {
+  const RoadId a = author(network, {Waypoint{40.0, 0.0}, Waypoint{6.0, 0.0}}, "1");         // 0°
+  const RoadId b = author(network, {Waypoint{-20.0, 34.64}, Waypoint{-3.0, 5.196}}, "2");   // 120°
+  const RoadId c = author(network, {Waypoint{-20.0, -34.64}, Waypoint{-3.0, -5.196}}, "3"); // 240°
+  const JunctionId junction = network.create_junction("10", "");
+  network.junction(junction)->arms = {end_of(a), end_of(b), end_of(c)};
+  link_arm_to_junction(network, end_of(a), junction);
+  link_arm_to_junction(network, end_of(b), junction);
+  link_arm_to_junction(network, end_of(c), junction);
+  // Bridge (a,b) and (b,c); leave (c,a) a gap.
+  bridge_arms(network, junction, end_of(a), end_of(b), "5");
+  bridge_arms(network, junction, end_of(b), end_of(c), "6");
+  return junction;
 }
 
 /// Constant, arm-specific elevations so the harmonic field bends across the
@@ -460,6 +518,132 @@ TEST(JunctionBoundary, RoundTripsAsAFixedPoint) {
   const auto rewritten = roadmaker::write_xodr(reparsed->network, "j");
   ASSERT_TRUE(rewritten.has_value());
   EXPECT_EQ(*written, *rewritten);
+}
+
+// --- auxiliary boundary roads (§12.10 close_gap_with_new_roads, #62) ----------
+
+bool boundary_warned(const RoadNetwork& network) {
+  const auto findings = roadmaker::validate_network(network);
+  return std::any_of(findings.begin(), findings.end(), [](const auto& d) {
+    return d.rule_id == roadmaker::rules::kJunctionBoundaryCloseGap;
+  });
+}
+
+/// The <road> elements in an xodr, as (id, junction, is_aux) triples.
+struct ParsedRoad {
+  std::string id;
+  std::string junction;
+  bool is_aux = false;
+};
+
+std::vector<ParsedRoad> parse_roads(const std::string& xml) {
+  pugi::xml_document doc;
+  EXPECT_TRUE(doc.load_string(xml.c_str()));
+  std::vector<ParsedRoad> roads;
+  for (const pugi::xml_node road : doc.child("OpenDRIVE").children("road")) {
+    ParsedRoad out{.id = road.attribute("id").value(),
+                   .junction = road.attribute("junction").value()};
+    for (const pugi::xml_node ud : road.children("userData")) {
+      if (std::string_view(ud.attribute("code").value()) == "rm:aux_boundary") {
+        out.is_aux = true;
+      }
+    }
+    roads.push_back(std::move(out));
+  }
+  return roads;
+}
+
+TEST(AuxBoundaryRoad, ClosesTheGapWithABoundaryLaneZeroSegment) {
+  RoadNetwork network;
+  build_gapped_three_arm(network);
+  const auto xml = roadmaker::write_xodr(network, "j");
+  ASSERT_TRUE(xml.has_value());
+
+  // The boundary now closes: 3 lane + 3 joint segments (like any 3-arm), one of
+  // the lane segments is the aux road's boundaryLane 0.
+  const std::vector<ParsedSegment> segments = parse_first_boundary(*xml);
+  ASSERT_EQ(segments.size(), 6U);
+  const auto aux_lane_segments = static_cast<std::size_t>(
+      std::count_if(segments.begin(), segments.end(), [](const ParsedSegment& s) {
+        return s.type == "lane" && s.boundary_lane == 0;
+      }));
+  EXPECT_EQ(aux_lane_segments, 1U);
+
+  // Exactly one auxiliary <road> was emitted, tagged @junction + rm:aux_boundary,
+  // and the boundaryLane-0 segment references it.
+  const std::vector<ParsedRoad> roads = parse_roads(*xml);
+  const auto aux_roads = static_cast<std::size_t>(
+      std::count_if(roads.begin(), roads.end(), [](const ParsedRoad& r) { return r.is_aux; }));
+  ASSERT_EQ(aux_roads, 1U);
+  const auto aux =
+      std::find_if(roads.begin(), roads.end(), [](const ParsedRoad& r) { return r.is_aux; });
+  EXPECT_EQ(aux->junction, "10");
+  const auto seg = std::find_if(segments.begin(), segments.end(), [](const ParsedSegment& s) {
+    return s.type == "lane" && s.boundary_lane == 0;
+  });
+  EXPECT_EQ(seg->road_id, aux->id);
+
+  EXPECT_FALSE(boundary_warned(network)) << "closing the gap must clear the warning";
+}
+
+TEST(AuxBoundaryRoad, SegmentsAlternateLaneJointAndClose) {
+  RoadNetwork network;
+  build_gapped_three_arm(network);
+  const auto xml = roadmaker::write_xodr(network, "j");
+  ASSERT_TRUE(xml.has_value());
+  const std::vector<ParsedSegment> segments = parse_first_boundary(*xml);
+  ASSERT_EQ(segments.size(), 6U);
+  std::size_t lanes = 0;
+  std::size_t joints = 0;
+  for (std::size_t i = 0; i < segments.size(); ++i) {
+    EXPECT_EQ(segments[i].type, (i % 2 == 0) ? "lane" : "joint");
+    (segments[i].type == "lane" ? lanes : joints)++;
+  }
+  EXPECT_EQ(lanes, 3U);
+  EXPECT_EQ(joints, 3U);
+}
+
+TEST(AuxBoundaryRoad, ReaderDropsItSoTheModelIsUnchanged) {
+  RoadNetwork network;
+  build_gapped_three_arm(network);
+  std::size_t original_roads = 0;
+  network.for_each_road([&](RoadId, const roadmaker::Road&) { ++original_roads; });
+  ASSERT_EQ(original_roads, 5U); // 3 arms + 2 connecting
+
+  const auto xml = roadmaker::write_xodr(network, "j");
+  ASSERT_TRUE(xml.has_value());
+  // The written file carries the aux road among its <road>s...
+  const std::vector<ParsedRoad> written_roads = parse_roads(*xml);
+  EXPECT_EQ(written_roads.size(), 6U);
+
+  // ...but parsing it back drops the aux road, so the model is unchanged.
+  const auto reparsed = roadmaker::parse_xodr(*xml, "j");
+  ASSERT_TRUE(reparsed.has_value());
+  std::size_t reparsed_roads = 0;
+  reparsed->network.for_each_road([&](RoadId, const roadmaker::Road&) { ++reparsed_roads; });
+  EXPECT_EQ(reparsed_roads, 5U);
+}
+
+TEST(AuxBoundaryRoad, RoundTripsAsAFixedPoint) {
+  RoadNetwork network;
+  build_gapped_three_arm(network);
+  const auto written = roadmaker::write_xodr(network, "j");
+  ASSERT_TRUE(written.has_value());
+  const auto reparsed = roadmaker::parse_xodr(*written, "j");
+  ASSERT_TRUE(reparsed.has_value());
+  const auto rewritten = roadmaker::write_xodr(reparsed->network, "j");
+  ASSERT_TRUE(rewritten.has_value());
+  EXPECT_EQ(*written, *rewritten);
+}
+
+TEST(AuxBoundaryRoad, WriteIsDeterministic) {
+  RoadNetwork network;
+  build_gapped_three_arm(network);
+  const auto a = roadmaker::write_xodr(network, "j");
+  const auto b = roadmaker::write_xodr(network, "j");
+  ASSERT_TRUE(a.has_value());
+  ASSERT_TRUE(b.has_value());
+  EXPECT_EQ(*a, *b);
 }
 
 TEST(JunctionExport, WriteIsDeterministic) {

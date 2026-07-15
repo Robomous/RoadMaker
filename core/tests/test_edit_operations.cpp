@@ -811,9 +811,11 @@ TEST(EditOperations, CreateJunctionOutputValidatesCleanly) {
   for (const XodrVersion version : {XodrVersion::v1_8_1, XodrVersion::v1_9_0}) {
     const auto findings =
         roadmaker::validate_network(network, roadmaker::WriterOptions{.target_version = version});
-    // No structural errors. The only expected finding is the intentional
-    // boundary-omitted warning (M2 emits the surface without <boundary> — see
-    // junctions.boundary.close_gap_with_new_roads).
+    // No structural errors. A generated junction now closes its <boundary>
+    // (every adjacent arm pair is bridged, and any gap is filled by an auxiliary
+    // boundary road, #62), so the boundary-omitted warning
+    // (junctions.boundary.close_gap_with_new_roads) no longer fires — the loop
+    // guards that no unexpected diagnostic slipped in.
     EXPECT_EQ(roadmaker::count_errors(findings), 0U);
     for (const auto& finding : findings) {
       EXPECT_EQ(finding.rule_id, roadmaker::rules::kJunctionBoundaryCloseGap)

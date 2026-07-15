@@ -1,0 +1,234 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<OpenDRIVE>
+  <header revMajor="1" revMinor="8" name="junction_boundary_gap" vendor="RoadMaker" />
+  <road length="34" id="1" junction="-1">
+    <link>
+      <successor elementType="junction" elementId="10" />
+    </link>
+    <planView>
+      <geometry s="0" x="40" y="0" hdg="3.141592653589793" length="34">
+        <line />
+      </geometry>
+    </planView>
+    <lanes>
+      <laneSection s="0">
+        <left>
+          <lane id="1" type="driving" level="false">
+            <width sOffset="0" a="3.5" b="0" c="0" d="0" />
+            <roadMark sOffset="0" type="solid" width="0.12" />
+          </lane>
+        </left>
+        <center>
+          <lane id="0" type="none" level="false">
+            <roadMark sOffset="0" type="broken" width="0.12" />
+          </lane>
+        </center>
+        <right>
+          <lane id="-1" type="driving" level="false">
+            <width sOffset="0" a="3.5" b="0" c="0" d="0" />
+            <roadMark sOffset="0" type="solid" width="0.12" />
+          </lane>
+          <lane id="-2" type="shoulder" level="false">
+            <width sOffset="0" a="1" b="0" c="0" d="0" />
+          </lane>
+        </right>
+      </laneSection>
+    </lanes>
+    <userData code="rm:waypoints" value="40,0;6,0" />
+  </road>
+  <road length="33.99925199177182" id="2" junction="-1">
+    <link>
+      <successor elementType="junction" elementId="10" />
+    </link>
+    <planView>
+      <geometry s="0" x="-20" y="34.64" hdg="-1.0471848490249274" length="33.99925199177182">
+        <line />
+      </geometry>
+    </planView>
+    <lanes>
+      <laneSection s="0">
+        <left>
+          <lane id="1" type="driving" level="false">
+            <width sOffset="0" a="3.5" b="0" c="0" d="0" />
+            <roadMark sOffset="0" type="solid" width="0.12" />
+          </lane>
+        </left>
+        <center>
+          <lane id="0" type="none" level="false">
+            <roadMark sOffset="0" type="broken" width="0.12" />
+          </lane>
+        </center>
+        <right>
+          <lane id="-1" type="driving" level="false">
+            <width sOffset="0" a="3.5" b="0" c="0" d="0" />
+            <roadMark sOffset="0" type="solid" width="0.12" />
+          </lane>
+          <lane id="-2" type="shoulder" level="false">
+            <width sOffset="0" a="1" b="0" c="0" d="0" />
+          </lane>
+        </right>
+      </laneSection>
+    </lanes>
+    <userData code="rm:waypoints" value="-20,34.64;-3,5.196" />
+  </road>
+  <road length="33.99925199177182" id="3" junction="-1">
+    <link>
+      <successor elementType="junction" elementId="10" />
+    </link>
+    <planView>
+      <geometry s="0" x="-20" y="-34.64" hdg="1.0471848490249274" length="33.99925199177182">
+        <line />
+      </geometry>
+    </planView>
+    <lanes>
+      <laneSection s="0">
+        <left>
+          <lane id="1" type="driving" level="false">
+            <width sOffset="0" a="3.5" b="0" c="0" d="0" />
+            <roadMark sOffset="0" type="solid" width="0.12" />
+          </lane>
+        </left>
+        <center>
+          <lane id="0" type="none" level="false">
+            <roadMark sOffset="0" type="broken" width="0.12" />
+          </lane>
+        </center>
+        <right>
+          <lane id="-1" type="driving" level="false">
+            <width sOffset="0" a="3.5" b="0" c="0" d="0" />
+            <roadMark sOffset="0" type="solid" width="0.12" />
+          </lane>
+          <lane id="-2" type="shoulder" level="false">
+            <width sOffset="0" a="1" b="0" c="0" d="0" />
+          </lane>
+        </right>
+      </laneSection>
+    </lanes>
+    <userData code="rm:waypoints" value="-20,-34.64;-3,-5.196" />
+  </road>
+  <road length="10.392228634898286" id="5" junction="10">
+    <link>
+      <predecessor elementType="road" elementId="1" contactPoint="end" />
+      <successor elementType="road" elementId="2" contactPoint="end" />
+    </link>
+    <planView>
+      <geometry s="0" x="6" y="4.1637991171010006e-15" hdg="2.6180065799768633" length="10.392228634898286">
+        <line />
+      </geometry>
+    </planView>
+    <lanes>
+      <laneSection s="0">
+        <left>
+          <lane id="1" type="driving" level="false">
+            <width sOffset="0" a="3.5" b="0" c="0" d="0" />
+            <roadMark sOffset="0" type="solid" width="0.12" />
+          </lane>
+        </left>
+        <center>
+          <lane id="0" type="none" level="false">
+            <roadMark sOffset="0" type="broken" width="0.12" />
+          </lane>
+        </center>
+        <right>
+          <lane id="-1" type="driving" level="false">
+            <width sOffset="0" a="3.5" b="0" c="0" d="0" />
+            <roadMark sOffset="0" type="solid" width="0.12" />
+          </lane>
+          <lane id="-2" type="shoulder" level="false">
+            <width sOffset="0" a="1" b="0" c="0" d="0" />
+          </lane>
+        </right>
+      </laneSection>
+    </lanes>
+    <userData code="rm:waypoints" value="6,4.1637991171010006e-15;-3,5.195999999999994" />
+  </road>
+  <road length="10.391999999999989" id="6" junction="10">
+    <link>
+      <predecessor elementType="road" elementId="2" contactPoint="end" />
+      <successor elementType="road" elementId="3" contactPoint="end" />
+    </link>
+    <planView>
+      <geometry s="0" x="-3" y="5.195999999999994" hdg="-1.5707963267948966" length="10.391999999999989">
+        <line />
+      </geometry>
+    </planView>
+    <lanes>
+      <laneSection s="0">
+        <left>
+          <lane id="1" type="driving" level="false">
+            <width sOffset="0" a="3.5" b="0" c="0" d="0" />
+            <roadMark sOffset="0" type="solid" width="0.12" />
+          </lane>
+        </left>
+        <center>
+          <lane id="0" type="none" level="false">
+            <roadMark sOffset="0" type="broken" width="0.12" />
+          </lane>
+        </center>
+        <right>
+          <lane id="-1" type="driving" level="false">
+            <width sOffset="0" a="3.5" b="0" c="0" d="0" />
+            <roadMark sOffset="0" type="solid" width="0.12" />
+          </lane>
+          <lane id="-2" type="shoulder" level="false">
+            <width sOffset="0" a="1" b="0" c="0" d="0" />
+          </lane>
+        </right>
+      </laneSection>
+    </lanes>
+    <userData code="rm:waypoints" value="-3,5.195999999999994;-3,-5.195999999999994" />
+  </road>
+  <road length="6.450662031653275" id="10_b0" junction="10">
+    <link>
+      <predecessor elementType="road" elementId="3" contactPoint="end" />
+      <successor elementType="road" elementId="1" contactPoint="end" />
+    </link>
+    <planView>
+      <geometry s="0" x="0.8970857368293261" y="-7.446049501633555" hdg="0.6582429271123762" length="6.450662031653275">
+        <line />
+      </geometry>
+    </planView>
+    <lanes>
+      <laneSection s="0">
+        <center>
+          <lane id="0" type="none" level="false" />
+        </center>
+      </laneSection>
+    </lanes>
+    <userData code="rm:aux_boundary" />
+  </road>
+  <junction id="10">
+    <connection id="0" incomingRoad="1" connectingRoad="5" contactPoint="start" />
+    <connection id="1" incomingRoad="2" connectingRoad="6" contactPoint="start" />
+    <boundary>
+      <segment type="lane" roadId="10_b0" boundaryLane="0" sStart="begin" sEnd="end" />
+      <segment type="joint" roadId="1" contactPoint="end" />
+      <segment type="lane" roadId="5" boundaryLane="-1" sStart="begin" sEnd="end" />
+      <segment type="joint" roadId="2" contactPoint="end" />
+      <segment type="lane" roadId="6" boundaryLane="-1" sStart="begin" sEnd="end" />
+      <segment type="joint" roadId="3" contactPoint="end" />
+    </boundary>
+    <planView>
+      <geometry s="0" x="-10.404464722014064" y="-3.497998302503441" hdg="0.4051685499144894" length="24">
+        <line />
+      </geometry>
+    </planView>
+    <elevationGrid sStart="0" gridSpacing="2">
+      <elevation left="0 0 0 0 0" center="0" right="0 0 0 0 0 0" />
+      <elevation left="0 0 0 0 0" center="0" right="0 0 0 0 0 0" />
+      <elevation left="0 0 0 0 0" center="0" right="0 0 0 0 0 0" />
+      <elevation left="0 0 0 0 0" center="0" right="0 0 0 0 0 0" />
+      <elevation left="0 0 0 0 0" center="0" right="0 0 0 0 0 0" />
+      <elevation left="0 0 0 0 0" center="0" right="0 0 0 0 0 0" />
+      <elevation left="0 0 0 0 0" center="0" right="0 0 0 0 0 0" />
+      <elevation left="0 0 0 0 0" center="0" right="0 0 0 0 0 0" />
+      <elevation left="0 0 0 0 0" center="0" right="0 0 0 0 0 0" />
+      <elevation left="0 0 0 0 0" center="0" right="0 0 0 0 0 0" />
+      <elevation left="0 0 0 0 0" center="0" right="0 0 0 0 0 0" />
+      <elevation left="0 0 0 0 0" center="0" right="0 0 0 0 0 0" />
+      <elevation left="0 0 0 0 0" center="0" right="0 0 0 0 0 0" />
+    </elevationGrid>
+    <userData code="rm:arms" value="1:end;2:end;3:end" />
+  </junction>
+</OpenDRIVE>
+
