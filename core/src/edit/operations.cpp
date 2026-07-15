@@ -2609,6 +2609,49 @@ std::unique_ptr<Command> regenerate_junction(const RoadNetwork& network,
   return command;
 }
 
+std::unique_ptr<Command> move_waypoint_following_junctions(const RoadNetwork& network,
+                                                           RoadId road_id,
+                                                           std::size_t index,
+                                                           Waypoint to) {
+  // Only junctions that can actually regenerate: one with no recorded arms came
+  // from a foreign file, and regenerate_junction calls that an error. Skipping
+  // it keeps the drag alive (the junction stays stale, exactly as it does on
+  // the commit path) instead of refusing every frame.
+  std::vector<JunctionId> followed;
+  for (const JunctionId junction_id : junctions_touching(network, road_id)) {
+    const Junction* junction = network.junction(junction_id);
+    if (junction != nullptr && !junction->arms.empty()) {
+      followed.push_back(junction_id);
+    }
+  }
+  if (followed.empty()) {
+    return move_waypoint(network, road_id, index, to);
+  }
+
+  // Validate here rather than inside a stage: a refused move should come back
+  // as the same invalid_command the plain factory returns, not as a composite
+  // that fails on apply.
+  auto probe = move_waypoint(network, road_id, index, to);
+  if (probe == nullptr) {
+    return nullptr;
+  }
+
+  std::vector<CompositeCommand::Builder> builders;
+  builders.reserve(followed.size() + 1);
+  builders.push_back(
+      [road_id, index, to](RoadNetwork& net) { return move_waypoint(net, road_id, index, to); });
+  for (const JunctionId junction_id : followed) {
+    // Built lazily, so each regeneration plans against the network with the
+    // move already applied — the whole point of following mid-drag.
+    builders.push_back(
+        [junction_id](RoadNetwork& net) { return regenerate_junction(net, junction_id); });
+  }
+  // Same undo-menu text as the plain move: whether the drag happened to touch a
+  // junction is not something the user should read in the Edit menu.
+  return std::make_unique<CompositeCommand>(
+      std::string(probe->name()), DirtySet{}, std::move(builders));
+}
+
 std::unique_ptr<Command> delete_junction(const RoadNetwork& network, JunctionId junction_id) {
   static constexpr std::string_view kName = "Delete Junction";
   const Junction* junction = network.junction(junction_id);

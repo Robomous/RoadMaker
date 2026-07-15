@@ -161,7 +161,8 @@ Expected<void> Document::push_command(std::unique_ptr<edit::Command> command) {
 }
 
 void Document::push_applied_with_regeneration(std::unique_ptr<edit::Command> command,
-                                              bool already_meshed) {
+                                              bool already_meshed,
+                                              bool already_regenerated) {
   edit::DirtySet dirty = command->dirty();
   last_dirty_ = dirty; // the primary edit's dirty set (before regenerations)
   spdlog::info("command: {} {}", command->name(), describe_dirty(dirty));
@@ -176,7 +177,7 @@ void Document::push_applied_with_regeneration(std::unique_ptr<edit::Command> com
   std::vector<std::unique_ptr<edit::Command>> regenerations;
   bool announced = false;
   for (const JunctionId junction_id : dirty.junctions) {
-    if (dirty.topology) {
+    if (dirty.topology || already_regenerated) {
       break;
     }
     const Junction* junction = network_.junction(junction_id);
@@ -293,7 +294,7 @@ Expected<void> Document::update_preview(const PreviewFactory& factory) {
   return applied;
 }
 
-void Document::commit_preview() {
+void Document::commit_preview(bool already_regenerated) {
   if (!preview_active()) {
     return;
   }
@@ -301,7 +302,8 @@ void Document::commit_preview() {
   // that QUndoStack fires on push, and the mesh already reflects the state.
   // Fold in any junction regeneration so a dragged arm's junction updates
   // (and undoes) with the drag; the preview already meshed the primary edit.
-  push_applied_with_regeneration(std::move(preview_command_), /*already_meshed=*/true);
+  push_applied_with_regeneration(
+      std::move(preview_command_), /*already_meshed=*/true, already_regenerated);
 }
 
 void Document::cancel_preview() {

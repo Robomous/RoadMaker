@@ -174,8 +174,9 @@ bool SelectTool::mouse_move(const ToolEvent& event) {
 bool SelectTool::mouse_release(const ToolEvent& event) {
   if (drag_.has_value()) {
     // A grab that never previewed pushes nothing; commit_preview is a no-op
-    // without an active session.
-    document_.commit_preview();
+    // without an active session. The drag's own command already regenerated
+    // the touched junctions on every frame (#156), so the commit must not.
+    document_.commit_preview(/*already_regenerated=*/true);
     drag_.reset();
     emit status_message(tr("Node moved"));
     emit preview_changed();

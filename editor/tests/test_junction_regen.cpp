@@ -9,12 +9,15 @@
 #include "roadmaker/road/junction.hpp"
 #include "roadmaker/road/network.hpp"
 #include "roadmaker/tol.hpp"
+#include "roadmaker/xodr/writer.hpp"
 
 #include <gtest/gtest.h>
 
 #include <QSignalSpy>
 #include <array>
+#include <cmath>
 #include <stdexcept>
+#include <string>
 #include <vector>
 
 #include "document/document.hpp"
@@ -28,6 +31,14 @@ using roadmaker::Waypoint;
 using roadmaker::editor::Document;
 
 namespace {
+
+std::string xodr(const Document& document) {
+  auto text = roadmaker::write_xodr(document.network());
+  if (!text) {
+    throw std::runtime_error(text.error().message);
+  }
+  return *text;
+}
 
 /// Three arms pointing at the origin, joined into a junction, in a Document.
 struct JunctionScene {
@@ -99,6 +110,74 @@ TEST(JunctionRegen, DraggingAnArmNodeKeepsTheConnectingRoadsCoincident) {
   ASSERT_TRUE(welds.has_value());
   EXPECT_FALSE(welds->breaches);
   EXPECT_LE(welds->max_position_gap, roadmaker::tol::kWeldPosition);
+}
+
+// Dragging node 0 swings the WEST arm's far end, so its junction-facing contact
+// point barely moves and its approach heading changes a lot. A connector that
+// does not follow therefore leaves a heading gap at the weld — which is exactly
+// what verify_junction_welds reports, and what a user sees as a kinked joint.
+TEST(JunctionRegen, ConnectingRoadsFollowTheArmMidDragNotOnlyOnRelease) {
+  JunctionScene scene;
+  QSignalSpy skipped(&scene.document, &Document::regeneration_skipped);
+  const Waypoint swung{.x = -40.0, .y = 14.0};
+
+  // The old behaviour, for contrast: a plain move previews the arm and leaves
+  // the connectors where they were, so mid-drag the joint is visibly broken.
+  ASSERT_TRUE(scene.document
+                  .begin_preview(roadmaker::edit::move_waypoint(
+                      scene.document.network(), scene.west, 0, swung))
+                  .has_value());
+  const auto stale =
+      roadmaker::edit::verify_junction_welds(scene.document.network(), scene.junction);
+  ASSERT_TRUE(stale.has_value());
+  EXPECT_TRUE(stale->breaches) << "the drag-time weld should breach without live follow — "
+                                  "if it does not, this test proves nothing";
+  const double stale_heading_gap = stale->max_heading_gap;
+  scene.document.cancel_preview();
+
+  // The new behaviour: one preview frame, no commit anywhere below this line.
+  ASSERT_TRUE(scene.document
+                  .begin_preview(roadmaker::edit::move_waypoint_following_junctions(
+                      scene.document.network(), scene.west, 0, swung))
+                  .has_value());
+
+  const auto followed =
+      roadmaker::edit::verify_junction_welds(scene.document.network(), scene.junction);
+  ASSERT_TRUE(followed.has_value());
+  EXPECT_FALSE(followed->breaches);
+  EXPECT_LE(followed->max_position_gap, roadmaker::tol::kWeldPosition);
+  EXPECT_LT(followed->max_heading_gap, stale_heading_gap);
+  EXPECT_EQ(skipped.count(), 0);
+  EXPECT_TRUE(scene.document.preview_active()); // still mid-drag
+
+  // Still a session: cancelling restores the connectors too, byte-identically.
+  const std::string base = xodr(scene.document);
+  scene.document.cancel_preview();
+  EXPECT_NE(xodr(scene.document), base);
+}
+
+TEST(JunctionRegen, LiveFollowCommitsExactlyOneUndoEntry) {
+  JunctionScene scene;
+  const int base_count = scene.document.undo_stack()->count();
+  const std::string base_xodr = xodr(scene.document);
+
+  ASSERT_TRUE(scene.document
+                  .begin_preview(roadmaker::edit::move_waypoint_following_junctions(
+                      scene.document.network(), scene.west, 0, Waypoint{.x = -40.0, .y = 6.0}))
+                  .has_value());
+  ASSERT_TRUE(scene.document
+                  .update_preview([&](const roadmaker::RoadNetwork& base) {
+                    return roadmaker::edit::move_waypoint_following_junctions(
+                        base, scene.west, 0, Waypoint{.x = -40.0, .y = 14.0});
+                  })
+                  .has_value());
+  scene.document.commit_preview(/*already_regenerated=*/true);
+
+  // The move and every regeneration are ONE entry, and undo is byte-identical
+  // — the commit must not have regenerated a second time on top.
+  EXPECT_EQ(scene.document.undo_stack()->count(), base_count + 1);
+  scene.document.undo_stack()->undo();
+  EXPECT_EQ(xodr(scene.document), base_xodr);
 }
 
 TEST(JunctionRegen, DirectCommitPathMatchesTheDragResult) {
