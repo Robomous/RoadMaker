@@ -1060,22 +1060,73 @@ void ViewportWidget::cancel_gizmo_drag() {
   update();
 }
 
-// M2 button map (docs/design/m2/01_editing_framework.md §4): LMB drives the
-// active tool (click-select, rubber band, node drag live in SelectTool),
-// RMB-drag orbits, MMB-drag pans, wheel zooms.
+// Button map: navigation chords first (P1/GW-1 — see nav_controller.hpp and
+// docs/user-guide/camera-navigation.md), then the M2 editing map
+// (docs/design/m2/01_editing_framework.md §4): plain LMB drives the gizmo and
+// the active tool (click-select, rubber band, node drag live in SelectTool).
+// Chords, MMB, and the wheel never reach a tool.
+
+void ViewportWidget::sync_pan_anchor(const QPointF& pos) {
+  if (nav_.gesture() != NavGesture::Pan) {
+    pan_anchor_world_.reset();
+    return;
+  }
+  if (!pan_anchor_world_) {
+    // Grab the ground point under the cursor; the anchored pan keeps it pinned.
+    // Cap the ray so a near-horizon grab at low pitch falls back to view-plane.
+    pan_anchor_world_ = ground_point_at(pos, 10.0 * camera_.distance());
+  }
+}
+
+void ViewportWidget::apply_nav_move(const QPoint& delta, const QPointF& pos) {
+  constexpr float kOrbitRadiansPerPixel = 0.008F;
+  constexpr float kZoomStepsPerPixel = 0.02F;
+
+  switch (nav_.gesture()) {
+  case NavGesture::Orbit:
+  case NavGesture::LegacyOrbit:
+    camera_.orbit(static_cast<float>(-delta.x()) * kOrbitRadiansPerPixel,
+                  static_cast<float>(delta.y()) * kOrbitRadiansPerPixel);
+    break;
+  case NavGesture::Pan: {
+    // Ground-anchored pan: keep the grabbed world point under the cursor at 1:1
+    // (CAD/maps feel, zero tuning constants). Degenerate near-horizon rays (no
+    // anchor, or the current ray misses / is capped) fall back to a
+    // correctly-scaled view-plane pan.
+    const std::optional<std::array<double, 3>> current =
+        ground_point_at(pos, 10.0 * camera_.distance());
+    if (pan_anchor_world_ && current) {
+      camera_.move_target(static_cast<float>((*pan_anchor_world_)[0] - (*current)[0]),
+                          static_cast<float>((*pan_anchor_world_)[1] - (*current)[1]));
+    } else {
+      camera_.pan_pixels(static_cast<float>(delta.x()),
+                         static_cast<float>(delta.y()),
+                         static_cast<float>(height()));
+    }
+    break;
+  }
+  case NavGesture::ZoomDrag:
+    // Drag up = zoom in (GW-1 step 3), matching the wheel's forward = closer.
+    camera_.zoom(static_cast<float>(-delta.y()) * kZoomStepsPerPixel);
+    break;
+  case NavGesture::PivotVertical:
+    camera_.elevate_target_pixels(static_cast<float>(delta.y()), static_cast<float>(height()));
+    break;
+  case NavGesture::None:
+  case NavGesture::ContextPending:
+    break;
+  }
+}
 
 void ViewportWidget::mousePressEvent(QMouseEvent* event) {
   last_mouse_pos_ = event->pos();
-  if (event->button() == Qt::MiddleButton) {
-    // Grab the ground point under the cursor; the anchored pan keeps it pinned.
-    // Cap the ray so a near-horizon grab at low pitch falls back to view-plane.
-    pan_anchor_world_ = ground_point_at(event->position(), 10.0 * camera_.distance());
-  }
-  if (event->button() == Qt::RightButton) {
-    // RMB is orbit-or-context: remember where it went down; a drag past the
-    // threshold orbits, a release without one pops the context menu.
-    rmb_press_pos_ = event->pos();
-    rmb_orbiting_ = false;
+  // A live gizmo drag owns the mouse until its release — a chord must not
+  // hijack it mid-edit (and, as before P1, cannot pan out from under it).
+  if (!gizmo_drag_.has_value() &&
+      nav_.press(event->button(), event->buttons(), event->modifiers(), event->pos())) {
+    sync_pan_anchor(event->position());
+    event->accept();
+    return;
   }
   // A gizmo handle grab takes LMB before the tool sees it.
   if (event->button() == Qt::LeftButton && begin_gizmo_drag(event->position())) {
@@ -1096,6 +1147,18 @@ void ViewportWidget::mouseMoveEvent(QMouseEvent* event) {
   // Drive an active gizmo drag before anything else.
   if (gizmo_drag_.has_value()) {
     update_gizmo_drag(event->position(), event->modifiers());
+    update();
+    event->accept();
+    return;
+  }
+  // A live navigation chord owns the mouse: the gizmo, the tool, and hover all
+  // stay quiet until it ends. A right-press that hasn't passed the slop yet is
+  // not live, so it falls through and leaves hover exactly as it was.
+  if (nav_.move(
+          event->pos(),
+          event->buttons(),
+          static_cast<int>(std::lround(NavController::kContextDragSlop * devicePixelRatioF())))) {
+    apply_nav_move(delta, event->position());
     update();
     event->accept();
     return;
@@ -1133,53 +1196,29 @@ void ViewportWidget::mouseMoveEvent(QMouseEvent* event) {
     return;
   }
 
-  if ((event->buttons() & Qt::RightButton) != 0) {
-    // Only orbit once the drag passes the click threshold — a small wiggle
-    // still opens the context menu on release (platform-timing-safe vs
-    // contextMenuEvent).
-    if (!rmb_orbiting_ && (event->pos() - rmb_press_pos_).manhattanLength() >
-                              static_cast<int>(std::lround(4.0 * devicePixelRatioF()))) {
-      rmb_orbiting_ = true;
-    }
-    if (rmb_orbiting_) {
-      camera_.orbit(static_cast<float>(-delta.x()) * 0.008F,
-                    static_cast<float>(delta.y()) * 0.008F);
-      update();
-    }
-  } else if ((event->buttons() & Qt::MiddleButton) != 0) {
-    // Ground-anchored pan: keep the grabbed world point under the cursor at 1:1
-    // (CAD/maps feel, zero tuning constants). Degenerate near-horizon
-    // rays (no anchor, or the current ray misses / is capped) fall back to a
-    // correctly-scaled view-plane pan.
-    const std::optional<std::array<double, 3>> current =
-        ground_point_at(event->position(), 10.0 * camera_.distance());
-    if (pan_anchor_world_ && current) {
-      camera_.move_target(static_cast<float>((*pan_anchor_world_)[0] - (*current)[0]),
-                          static_cast<float>((*pan_anchor_world_)[1] - (*current)[1]));
-    } else {
-      camera_.pan_pixels(static_cast<float>(delta.x()),
-                         static_cast<float>(delta.y()),
-                         static_cast<float>(height()));
-    }
-    update();
-  } else {
+  // A right-press that hasn't passed the slop is a pending click, not a hover:
+  // leave the highlight where it was until the button resolves (as before P1).
+  if (nav_.gesture() != NavGesture::ContextPending) {
     update_hover(event->position());
   }
   event->accept();
 }
 
 void ViewportWidget::mouseReleaseEvent(QMouseEvent* event) {
-  if (event->button() == Qt::MiddleButton) {
-    pan_anchor_world_.reset();
-  }
   if (event->button() == Qt::LeftButton && gizmo_drag_.has_value()) {
     commit_gizmo_drag();
     event->accept();
     return;
   }
-  if (event->button() == Qt::RightButton && !rmb_orbiting_) {
-    emit context_menu_requested(build_menu_context(event->position()),
-                                event->globalPosition().toPoint());
+  bool context_click = false;
+  if (nav_.release(event->button(), event->buttons(), &context_click)) {
+    // The chord may have unwound onto another gesture (⌥+LMB+RMB pan →
+    // ⌥+LMB orbit), so the anchor is re-synced rather than simply dropped.
+    sync_pan_anchor(event->position());
+    if (context_click) {
+      emit context_menu_requested(build_menu_context(event->position()),
+                                  event->globalPosition().toPoint());
+    }
     event->accept();
     return;
   }

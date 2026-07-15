@@ -74,6 +74,7 @@ add_library(roadmaker_editor_lib STATIC
   src/tools/tool_manager.cpp
   src/viewport/camera.cpp
   src/viewport/gizmo.cpp
+  src/viewport/nav_controller.cpp
   src/viewport/picking.cpp
   src/viewport/toast_queue.cpp
   src/viewport/viewport_widget.cpp

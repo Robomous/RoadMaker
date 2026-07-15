@@ -57,17 +57,20 @@ ReferenceLine straight_line(double length) {
 }
 
 TEST(PickRay, CenterPixelPassesThroughCameraTarget) {
-  OrbitCamera camera; // default target (0,0,0)
+  OrbitCamera camera;
+  const std::array<float, 3> t3 = camera.target(); // the pivot, wherever it sits
   const CameraMatrices matrices = camera.matrices(16.0F / 9.0F);
   const Ray ray = make_pick_ray(matrices, 800.0, 450.0, 1600.0, 900.0);
 
-  // Distance from the ray to the origin (camera target).
+  // Distance from the ray to the camera target: project (target − origin) onto
+  // the ray and measure the residual.
   const std::array<double, 3>& o = ray.origin;
   const std::array<double, 3>& d = ray.direction;
-  const double t = -((o[0] * d[0]) + (o[1] * d[1]) + (o[2] * d[2]));
-  const double px = o[0] + (t * d[0]);
-  const double py = o[1] + (t * d[1]);
-  const double pz = o[2] + (t * d[2]);
+  const std::array<double, 3> to_target{t3[0] - o[0], t3[1] - o[1], t3[2] - o[2]};
+  const double t = (to_target[0] * d[0]) + (to_target[1] * d[1]) + (to_target[2] * d[2]);
+  const double px = o[0] + (t * d[0]) - t3[0];
+  const double py = o[1] + (t * d[1]) - t3[1];
+  const double pz = o[2] + (t * d[2]) - t3[2];
   EXPECT_NEAR(std::sqrt((px * px) + (py * py) + (pz * pz)), 0.0, 1e-3);
 }
 

@@ -24,6 +24,7 @@
 #include "tools/tool_manager.hpp"
 #include "viewport/camera.hpp"
 #include "viewport/gizmo.hpp"
+#include "viewport/nav_controller.hpp"
 #include "viewport/picking.hpp"
 #include "viewport/toast_queue.hpp"
 
@@ -224,6 +225,15 @@ private:
   /// a selected road (priority), else the road/lane pick + its station.
   [[nodiscard]] MenuContext build_menu_context(const QPointF& pos) const;
 
+  /// Grabs (or drops) the ground point the anchored pan pins under the cursor,
+  /// to match the gesture the NavController just resolved. Called after every
+  /// press/release, since a chord can enter or leave Pan on either.
+  void sync_pan_anchor(const QPointF& pos);
+
+  /// Applies one mouse-move frame of the live navigation gesture to the camera:
+  /// orbit, ground-anchored pan, drag-zoom, or pivot lift.
+  void apply_nav_move(const QPoint& delta, const QPointF& pos);
+
   /// Translates a Qt mouse event into the tool seam's abstract event:
   /// ground-plane (z=0) world position, lane-patch pick, buttons, modifiers.
   [[nodiscard]] ToolEvent make_tool_event(const QMouseEvent* event) const;
@@ -361,10 +371,11 @@ private:
   /// (near-horizon) — the pan then falls back to a scaled view-plane shift.
   std::optional<std::array<double, 3>> pan_anchor_world_;
 
-  /// Right-mouse click-vs-drag disambiguation: press position, and whether the
-  /// drag crossed the threshold (orbiting) — a release without it pops the menu.
-  QPoint rmb_press_pos_;
-  bool rmb_orbiting_ = false;
+  /// Navigation chords (⌥ orbit/zoom/pan/pivot, MMB pan, and the legacy RMB
+  /// orbit-or-context binding). Consulted BEFORE the gizmo and the active tool
+  /// so a chord can never leak into an edit — except while a gizmo drag owns
+  /// the mouse, which stays exclusive until its LMB release.
+  NavController nav_;
 
   /// Corner hint text (set_hint); painted over the GL frame in paintGL.
   QString hint_text_;
