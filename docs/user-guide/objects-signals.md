@@ -37,18 +37,27 @@ true dual stripes.
 
 ## In the editor
 
-**Props** (trees) place directly in the editor: drag one from the
-[**Library**](library.md) onto a road and RoadMaker adds it as an
-`<object type="tree">`, snapped to the nearest road in `s`/`t`. Placed props
-select, move, delete, duplicate, and round-trip through save/reload and the
-glTF / USD exports.
+**Props and signals** place directly in the editor: drag one from the
+[**Library**](library.md) onto a road and RoadMaker adds it, snapped to the
+nearest road in `s`/`t`:
+
+- **Props** (trees, shrub) become an `<object type="tree">`.
+- **Traffic lights** become a dynamic `<signal>`; **traffic signs** a static
+  one.
 
 ![Trees placed along a road, with the Library catalogue open](img/library.png)
 
-The remaining object and signal families — crosswalks, poles, traffic lights,
-and signs — still author from the Python package (above) or another OpenDRIVE
-tool; open the result in the editor to inspect it. Their in-editor placement
-follows in the M3a standards track
+Placed props and signals select, move, delete, duplicate, and round-trip
+through save/reload and the glTF / USD exports. Select a signal and its
+properties panel shows the kind (dynamic light or static sign), its
+type / subtype and country, and lets you nudge its road-relative pose —
+`s` along the road, `t` across it, and the heading offset — each edit an
+undoable command.
+
+The remaining painted and structural families — **crosswalks**, **stop
+lines**, **lane arrows**, and **poles** — still author from the Python package
+(above) or another OpenDRIVE tool; open the result in the editor to inspect it.
+Their in-editor placement follows in the M3a standards track
 ([#72](https://github.com/Robomous/RoadMaker/issues/72)).
 
 ## Reference
