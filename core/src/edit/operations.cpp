@@ -1506,18 +1506,22 @@ std::unique_ptr<Command> split_road(const RoadNetwork& network, RoadId road_id, 
     copy.widths = rebase_profile(copy.widths, spanning_local);
     std::vector<RoadMark> marks;
     for (const RoadMark& mark : copy.road_marks) {
+      // Copy the record and rebase only s_offset: rebuilding it field by field
+      // drops @color and the <type>/<line> block (and would silently drop any
+      // field added to RoadMark later).
+      RoadMark rebased = mark;
       if (mark.s_offset <= spanning_local + tol::kLength) {
+        rebased.s_offset = 0.0;
         // Collapses every mark active before the split to offset 0; the last
         // one wins, matching eval semantics.
         if (!marks.empty() && marks.front().s_offset == 0.0) {
-          marks.front() = RoadMark{.s_offset = 0.0, .type = mark.type, .width = mark.width};
+          marks.front() = std::move(rebased);
           continue;
         }
-        marks.insert(marks.begin(),
-                     RoadMark{.s_offset = 0.0, .type = mark.type, .width = mark.width});
+        marks.insert(marks.begin(), std::move(rebased));
       } else {
-        marks.push_back(RoadMark{
-            .s_offset = mark.s_offset - spanning_local, .type = mark.type, .width = mark.width});
+        rebased.s_offset = mark.s_offset - spanning_local;
+        marks.push_back(std::move(rebased));
       }
     }
     copy.road_marks = std::move(marks);
