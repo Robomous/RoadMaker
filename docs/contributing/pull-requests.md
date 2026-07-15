@@ -85,21 +85,23 @@ be committed.
 - Force-pushing to address review is fine; the merge to `main` is what
   matters.
 
-## The project board, milestones, issues, and labels
+## The project board, pillars, issues, and labels
 
 - The public
   [project board](https://github.com/Robomous/RoadMaker/projects) is the
   **task manager for RoadMaker**: every tracked issue lives on it, grouped
-  by milestone and status. Start there to see what is in flight and what
+  by pillar and status. Start there to see what is in flight and what
   comes next.
-- Work items are **GitHub issues**, grouped by **GitHub milestones** that
-  mirror the [roadmap](../roadmap/roadmap.md): M2 (editing core — current),
-  M3a (visual & standards completeness), M3b (real-world import), M4
-  (scenario mode), M5 (scenario logic).
-- Each milestone has an `epic`-labeled issue summarizing it (larger
-  milestones also get one epic per phase, as in M2); milestone work carries
-  a matching label (`m2`, `m3a`, …) and PRs reference their issue
-  (`Closes #N`). See the [M2 overview](../design/m2/00_overview.md).
+- Work items are **GitHub issues**, grouped by the eight capability
+  **pillars** of the [roadmap](../roadmap/README.md) (P1 Interaction &
+  Navigation … P8 Scenarios). There are **no GitHub milestones and no
+  version labels** — the roadmap has a single release at the end
+  ([release philosophy](../roadmap/README.md#release-philosophy)).
+- Each pillar has an `epic`-labeled issue listing its sprint issues;
+  pillar work carries a matching label (`pillar:P1` … `pillar:P8`) and
+  PRs reference their issue (`Closes #N`). Sprint issues are titled
+  `pN-sM: short description` and state their Scope, Acceptance (the
+  golden-workflow steps they unblock), and what they supersede.
 - Found a bug or want a feature that isn't tracked? Open an issue first for
   anything non-trivial — it is the cheapest place to agree on an approach.
   New issues get triaged onto the board.

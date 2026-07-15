@@ -10,7 +10,7 @@ when M3b's planning task runs.*
 - **Gap coverage:** enables scale; GS-2 proves M3a's visual stack on
   non-authored data; and it lands **heightmap terrain**
   ([gap 6 / known exclusions](../gap_analysis.md#known-exclusions),
-  [ADR-0006](../../decisions/0006-terrain-scope.md)).
+  [ADR-0006](../../../../decisions/0006-terrain-scope.md)).
 
 ## Scope sketch
 
@@ -26,14 +26,14 @@ when M3b's planning task runs.*
   documented defaults, junction construction at shared nodes. Structured
   diagnostics for every dropped or defaulted element — the parser-never-
   silently-drops rule extends to importers.
-- **Heightmap terrain** ([ADR-0006](../../decisions/0006-terrain-scope.md),
+- **Heightmap terrain** ([ADR-0006](../../../../decisions/0006-terrain-scope.md),
   Option B): a single height-field data model + sampler in the kernel frame;
   **DEM raster import** riding the GDAL path above; roads conform to the field
   via the existing terrain-skirt / cut logic (M3a's flat skirt is the fallback
   where no field is present). No multi-layer materials or arbitrary sculpting
   (that stays excluded).
 - License audit of all transitive deps before pinning
-  ([policy](../../standards/dependencies.md)).
+  ([policy](../../../../standards/dependencies.md)).
 
 ### Quality gate: scale targets
 

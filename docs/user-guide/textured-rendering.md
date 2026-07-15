@@ -33,7 +33,7 @@ connected the way you expected, Sober tells you faster.
 
 **Textured** is the presentation view. It is what the golden-scene renders and
 release screenshots use — see
-[GS-1 "Urban intersection"](../roadmap/golden_scenes/gs1_urban_intersection.md),
+[GS-1 "Urban intersection"](../roadmap/archive/2026-07-pre-reset/golden_scenes/gs1_urban_intersection.md),
 which is rendered with this mode on.
 
 ## What "textured" does not mean

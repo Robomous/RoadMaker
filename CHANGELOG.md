@@ -29,7 +29,7 @@ Released together with [0.4.0] and [0.5.0], which are also unreleased.
 - **GS-1 baseline render, tracked release over release**
   ([#73](https://github.com/Robomous/RoadMaker/issues/73)): the golden scene's
   render from its fixed camera is committed as
-  `docs/roadmap/golden_scenes/img/gs1_baseline_v0.6.0.png` and tracked in a
+  `docs/roadmap/archive/2026-07-pre-reset/golden_scenes/img/gs1_baseline_v0.6.0.png` and tracked in a
   baseline table in the golden-scenes README (release · screenshot · checklist
   % · notes), so drift between releases is a diff rather than a memory.
   Baselines are captured from the branch's own CI artifact — macOS has no
@@ -179,7 +179,7 @@ is headless-testable.
   esmini-loadable). A fixed **`gs1` golden camera** (eye (−55,−55,35) → origin,
   the spec's three-quarter diagonal) renders in CI at 1920×1080 in the textured
   daytime look. Per-row checklist status + baseline process in
-  `docs/roadmap/golden_scenes/gs1_urban_intersection.md`.
+  `docs/roadmap/archive/2026-07-pre-reset/golden_scenes/gs1_urban_intersection.md`.
 - **Drag traffic lights & signs from the Library** (GS-1 WS-C): the Library
   panel gains a **Signals** category with a **Traffic light** and a **Traffic
   sign** — drag either onto (or beside) a road and it snaps to the nearest
@@ -615,7 +615,7 @@ is headless-testable.
   pitch and FOV (wildly wrong speed at low pitch) and moved content *against*
   the mouse vertically. The pan now ray-casts the cursor to the ground plane
   on middle-mouse press and keeps that grabbed point pinned under the cursor
-  — exact 1:1 tracking at every zoom, pitch, and yaw (the RoadRunner/CAD/maps
+  — exact 1:1 tracking at every zoom, pitch, and yaw (the CAD/maps
   standard, zero tuning constants). Near-horizon rays at low pitch fall back
   to a correctly depth-scaled view-plane pan
   (`2·distance·tan(fov/2)/viewport_height` per pixel). The shared

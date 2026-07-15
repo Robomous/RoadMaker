@@ -3,17 +3,17 @@
 *The source of truth for RoadMaker's milestone sequence. The table in the
 repository README is a summary of this page.*
 
-RoadMaker converges on a RoadRunner-class editing experience along the
+RoadMaker converges on a commercial-grade editing experience along the
 milestones below. The sequence is driven by the
 [gap analysis](gap_analysis.md); each milestone from M3a onward is accepted
 against a [golden scene](golden_scenes/README.md) — a concrete target scene
 whose element checklist replaces "looks like a real editor" with something
 verifiable. Scope details live in the [milestone seeds](seeds/m3a.md);
-full design docs (like [design/m2](../design/m2/00_overview.md)) are written
+full design docs (like [design/m2](../../../design/m2/00_overview.md)) are written
 when each milestone's own planning task runs.
 
 Two standing rules shape every milestone
-([product-parity standard](../standards/product-parity.md)):
+([product-parity standard](../../../standards/product-parity.md)):
 parity work lands **kernel-feature-first** (standards data model, then
 assets, then render), and scene specs use **only OpenDRIVE/OpenSCENARIO
 vocabulary**.
@@ -23,11 +23,11 @@ vocabulary**.
 | Milestone | Theme | Contents (summary) | Golden scene |
 |---|---|---|---|
 | **M1** ✅ | Kernel + viewer | OpenDRIVE I/O, clothoid authoring, meshing, glTF, Python package, read-only Qt editor (v0.1.0 → v0.2.0) | — |
-| **M2** ✅ (shipped, v0.3.0) | Editing core | Editing tools, junction 3D surfaces, USD export — delivered per the [M2 design docs](../design/m2/00_overview.md) (reconciled as-built at close-out) | — (per-phase gates, all met) |
+| **M2** ✅ (shipped, v0.3.0) | Editing core | Editing tools, junction 3D surfaces, USD export — delivered per the [M2 design docs](../../../design/m2/00_overview.md) (reconciled as-built at close-out) | — (per-phase gates, all met) |
 | **Hardening** (in flight) | Stability & workflow gaps | Crash-capture infra + interactive soak testing, all known crashes fixed · T-junctions (split road + attach-to-side) · vertical-profile editor + overpass workflow · autosave/crash recovery (pulled forward from M3a) · golden **workflows** join the acceptance process | [GW-1 "First network"](golden_workflows/gw1_first_network.md) + [GW-2 "Recover from crash"](golden_workflows/gw2_recover_from_crash.md) |
-| **M3a** ✅ (complete, v0.5.0 → v0.6.0 — pending maintainer review of the [close-out PR #195](https://github.com/Robomous/RoadMaker/pull/195)) | UI revamp & visual completeness | **Opening epic: UI/UX revamp** ([#108](https://github.com/Robomous/RoadMaker/issues/108)) ✅ **complete** (Phases 0–4, v0.5.0) — theme system + dark professional look, labeled toolbar, welcome screen, viewport quality & feedback, **manifest-driven library panel with drag-and-drop creation** (templates, T/X assemblies — pulled forward from M4's Library Browser), CC0 props (trees) end-to-end, discoverability sweep, first-run tour, **golden-look screenshot** joins the release evidence ([`docs/standards/golden-look.png`](../standards/golden-look.png)) · then the standards-completeness track (in flight): kernel `<objects>`/`<signals>` editor exposure, crosswalk/arrow/stop-line road marks, textured viewport mode, terrain per [ADR-0006](../decisions/), sky/lighting pass. **Closed out at v0.6.0**: GS-1 walked against its spec — 12/14 elements delivered, 2 gaps filed ([#193](https://github.com/Robomous/RoadMaker/issues/193), [#194](https://github.com/Robomous/RoadMaker/issues/194)), [baseline](golden_scenes/img/gs1_baseline_v0.6.0.png) committed and tracked | [GS-1 "Urban intersection"](golden_scenes/gs1_urban_intersection.md) + golden-look UI capture |
-| **Materials & Structures (v0.7.0)** — [design frozen](../design/materials-structures/00_overview.md), WS-1…WS-5 = [#196](https://github.com/Robomous/RoadMaker/issues/196)–[#200](https://github.com/Robomous/RoadMaker/issues/200) | Visual depth | Material system v2 (PBR-lite: albedo + normal + roughness in the GL 3.3 renderer); assignable **material library** (Library category, drag-onto-surface or properties assignment; variants like new/worn asphalt); **bridge structure generator** (deck with thickness, abutments/piers, guardrails — auto-offered on grade separation, manual too; Manifold solids); city props expansion (buildings, streetlights — CC0, scouted for GS-2); sign-text rendering (text-to-texture) as stretch | [GS-4 "Rural overpass"](golden_scenes/gs4_rural_overpass.md) |
-| **M3b** | Real-world import | GIS/lidar import (PDAL/GDAL/PROJ), OSM road-network extraction · heightmap terrain (DEM import + raise/lower/smooth brush, [ADR-0006](../decisions/0006-terrain-scope.md)) | [GS-2 "Imported district"](golden_scenes/gs2_imported_district.md) |
+| **M3a** ✅ (complete, v0.5.0 → v0.6.0 — pending maintainer review of the [close-out PR #195](https://github.com/Robomous/RoadMaker/pull/195)) | UI revamp & visual completeness | **Opening epic: UI/UX revamp** ([#108](https://github.com/Robomous/RoadMaker/issues/108)) ✅ **complete** (Phases 0–4, v0.5.0) — theme system + dark professional look, labeled toolbar, welcome screen, viewport quality & feedback, **manifest-driven library panel with drag-and-drop creation** (templates, T/X assemblies — pulled forward from M4's Library Browser), CC0 props (trees) end-to-end, discoverability sweep, first-run tour, **golden-look screenshot** joins the release evidence ([`docs/standards/golden-look.png`](../../../standards/golden-look.png)) · then the standards-completeness track (in flight): kernel `<objects>`/`<signals>` editor exposure, crosswalk/arrow/stop-line road marks, textured viewport mode, terrain per [ADR-0006](../../../decisions/), sky/lighting pass. **Closed out at v0.6.0**: GS-1 walked against its spec — 12/14 elements delivered, 2 gaps filed ([#193](https://github.com/Robomous/RoadMaker/issues/193), [#194](https://github.com/Robomous/RoadMaker/issues/194)), [baseline](golden_scenes/img/gs1_baseline_v0.6.0.png) committed and tracked | [GS-1 "Urban intersection"](golden_scenes/gs1_urban_intersection.md) + golden-look UI capture |
+| **Materials & Structures (v0.7.0)** — [design frozen](../../../design/materials-structures/00_overview.md), WS-1…WS-5 = [#196](https://github.com/Robomous/RoadMaker/issues/196)–[#200](https://github.com/Robomous/RoadMaker/issues/200) | Visual depth | Material system v2 (PBR-lite: albedo + normal + roughness in the GL 3.3 renderer); assignable **material library** (Library category, drag-onto-surface or properties assignment; variants like new/worn asphalt); **bridge structure generator** (deck with thickness, abutments/piers, guardrails — auto-offered on grade separation, manual too; Manifold solids); city props expansion (buildings, streetlights — CC0, scouted for GS-2); sign-text rendering (text-to-texture) as stretch | [GS-4 "Rural overpass"](golden_scenes/gs4_rural_overpass.md) |
+| **M3b** | Real-world import | GIS/lidar import (PDAL/GDAL/PROJ), OSM road-network extraction · heightmap terrain (DEM import + raise/lower/smooth brush, [ADR-0006](../../../decisions/0006-terrain-scope.md)) | [GS-2 "Imported district"](golden_scenes/gs2_imported_district.md) |
 | **M4** | Scenario mode | OpenSCENARIO XML kernel (read/write model) · app mode switch (Map ↔ Scenario) · actor placement, lane-anchored routes with offsets, actor attributes panel · **Asset Library Browser** | [GS-3 "Ambulance run"](golden_scenes/gs3_ambulance_run.md) |
 | **M5** | Scenario logic | Node-based logic editor for stories/maneuvers/conditions · simulation preview hooks (esmini interop) | GS-3 extended with a logic graph |
 
@@ -55,12 +55,12 @@ All six findings are now fixed across PRs #159–#163 (`main` at `3dbfbc5`) and
 on post-extension `main` (one run covers both) to convert the NO-GO to a PASS
 and **publish v0.4.0 + v0.5.0**, which stay unpublished until then. Scope and
 root causes:
-[`docs/design/hardening/gate_extension.md`](../design/hardening/gate_extension.md);
+[`docs/design/hardening/gate_extension.md`](../../../design/hardening/gate_extension.md);
 verdict detail: [`golden_workflows/gate-v0.4.0.md`](golden_workflows/gate-v0.4.0.md).
 
 **M2 shipped in v0.3.0.** Its scope, phases, and gates were frozen in the
 approved design docs and delivered against them (deviations reconciled
-as-built in [design/m2](../design/m2/00_overview.md)); the golden-scene
+as-built in [design/m2](../../../design/m2/00_overview.md)); the golden-scene
 acceptance process begins with M3a/GS-1. This roadmap positions what comes
 after M2. Items the old roadmap parked under "M4+ reach" (web viewer, renderer
 upgrade, PyPI wheels matrix, branding/signing) remain valid backlog but are
@@ -83,7 +83,7 @@ imported districts render as convincing scenes instead of gray ribbons.
 ## Why Materials & Structures is its own milestone (v0.7.0)
 
 **Decided (2026-07-13, maintainer).** Benchmarking the editor against
-RoadRunner reference footage put current coverage at roughly 60%. The
+commercial-editor reference footage put current coverage at roughly 60%. The
 unscheduled 40% clusters into three areas that GS-1's foundations touch but
 don't complete: a deeper **material system** (PBR-lite, an assignable material
 library, new/worn variants); auto-generated **bridge structures** (deck,
@@ -155,7 +155,7 @@ in the owning milestone's seed.
   esmini smoke job joins CI in M3a. esmini is lightweight and permissively
   licensed; verify its current license and binary-distribution method at
   implementation time, per the
-  [dependency policy](../standards/dependencies.md). CARLA ingestion
+  [dependency policy](../../../standards/dependencies.md). CARLA ingestion
   validation stays a manual release-checklist item until it is CI-feasible.
   Recorded in the [M3a seed](seeds/m3a.md) and the
   [golden-scene acceptance mechanics](golden_scenes/README.md).

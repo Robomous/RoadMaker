@@ -4,11 +4,11 @@
 Nothing on this page is fetched or committed until its milestone imports it
 through the pipeline with per-file license verification.*
 
-Policy context: the [asset standard](../standards/assets.md) — CC0 / MIT /
+Policy context: the [asset standard](../../../standards/assets.md) — CC0 / MIT /
 ISC / Apache-2.0 only, licenses verified **on the source page at fetch
 time**, every file recorded in `ASSETS_LICENSES.md` via
 `assets/manifest.json`. This page extends the scouting list started in the
-[M2 assets design doc](../design/m2/05_assets.md) (which owns the M2
+[M2 assets design doc](../../../design/m2/05_assets.md) (which owns the M2
 icon/texture inventory).
 
 ## 3D prop kits (M3a: vegetation, poles, signs)
@@ -52,7 +52,7 @@ where procedural reads poorly (close-ups, transitions).
 
 - Any 3D asset, texture, or sign graphic from a commercial road-editor
   product or its samples — see the
-  [product-parity rules](../standards/product-parity.md).
+  [product-parity rules](../../../standards/product-parity.md).
 - CC-BY-NC / CC-BY-ND anything; unlicensed model-sharing-site downloads.
 
 ## Process reminders

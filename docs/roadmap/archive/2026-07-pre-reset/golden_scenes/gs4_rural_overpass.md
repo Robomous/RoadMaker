@@ -6,7 +6,7 @@ material system v2 (variants), the bridge generator, and concrete structure
 material.*
 
 Specified purely from ASAM OpenDRIVE concepts, per the
-[product-parity rules](../../standards/product-parity.md).
+[product-parity rules](../../../../standards/product-parity.md).
 
 ## Scene definition
 
@@ -30,7 +30,7 @@ Two rural two-lane roads on different elevations, one bridging over the other:
 - **Props:** ~10 trees (`<object>` vegetation) scattered along the banks.
 - **Ground:** grass ground at skirt level (M3a procedural ground / terrain
   skirt). Rolling hills are **not** in scope here — the M3b heightmap terrain
-  ([ADR-0006](../../decisions/0006-terrain-scope.md)) brings sculpted ground
+  ([ADR-0006](../../../../decisions/0006-terrain-scope.md)) brings sculpted ground
   later; GS-4 proves materials and structures on the flat skirt.
 - **Lighting:** daytime sky/lighting (M3a), no shadow maps.
 
@@ -74,7 +74,7 @@ the sky, the abutments and guardrails are legible, and the under-deck clearance
 
 - The scene's `.xodr` validates with zero errors; new elements (`<bridge>`,
   materials) carry normative rule-id citations in any diagnostics
-  ([references](../../domain/references.md)).
+  ([references](../../../../domain/references.md)).
 - Round-trip: write → parse → write is stable within `rm::tol` and loses no
   `<object>` / `<bridge>` / material data (per the material-persistence decision
   taken at planning time).
@@ -83,7 +83,7 @@ the sky, the abutments and guardrails are legible, and the under-deck clearance
 - Scene loads and renders headless in the golden-screenshot CI workflow
   ([process](README.md)).
 - Every asset used has its `ASSETS_LICENSES.md` row
-  ([asset policy](../../standards/assets.md)).
+  ([asset policy](../../../../standards/assets.md)).
 
 ## History
 

@@ -1,67 +1,43 @@
-# Golden workflows
+# Golden workflows — the acceptance mechanism
 
-*What golden workflows are, and why milestone acceptance now measures the
-path a user takes — not only the scene they end up with.*
+*Step-by-step scripts a human executes in RoadMaker, each step with an
+explicit expected outcome. Passing them by hand is the only acceptance
+mechanism of the [Road to Parity roadmap](../README.md).*
 
-A **golden workflow** is a scripted sequence of user actions with a time
-budget and a **zero-crash requirement**, executed **by the maintainer by
-hand** at every milestone gate. Agent-run soak tests and offscreen unit
-tests are complementary evidence, never a substitute for the manual run —
-they exercise the command layer, not the real GL/widget/interaction
-lifetimes a human session does.
+A golden workflow is executed **by the maintainer by hand** — automated
+replays are complementary evidence, never a substitute. A run passes only
+if every step's expected result holds and the editor never crashes.
 
-## Why they exist
+Specs are written under the
+[product-parity and IP rules](../../standards/product-parity.md): RoadMaker
+tool names and ASAM OpenDRIVE / OpenSCENARIO vocabulary only.
 
-Golden scenes measure the **result**; golden workflows measure the
-**path**. The mechanism was adopted during the hardening sprint
-(v0.4.0) because scene-based acceptance had a blind spot that maintainer
-dogfooding exposed: GS-1 is a 4-arm junction built from road *endpoints*,
-so the impossible-in-v0.3.0 workflow of attaching a road to the *side* of
-another road (a T-intersection — the second thing anyone draws) was never
-exercised by any acceptance artifact. A scene checklist can be fully green
-while the path to build it by hand is broken or crashes.
+| ID | Workflow | Exercises | Fed by |
+|---|---|---|---|
+| [GW-1](gw1_camera.md) | Camera & navigation | Orbit-pivot model, push-past zoom, framing, projections, cardinal views | P1 |
+| [GW-2](gw2_simple_scene.md) | Simple scene end-to-end | Roads, auto junction, elevation + bridges, corner radius, crosswalk, road styles, lane carve, markings, props, export previews | P1–P7 |
+| [GW-3](gw3_corner_materials.md) | Corner reshaping & materials | Corner control vertices/extents, per-corner and junction materials by drag | P4, P6 |
+| [GW-4](gw4_signals.md) | Traffic signals | Auto-signalize templates, linked signal props, Signal Phase Editor | P4 |
+| [GW-5](gw5_crosswalk_assets.md) | Parametric crosswalk assets | Library-authored crosswalk assets, parameters, instance overrides | P3, P6 |
+| GW-6 | Scenarios (drafted during P8 planning) | Scenario authoring end-to-end | P8 |
 
-The standing rule that follows (recorded in the
-[product-parity standard](../../standards/product-parity.md)): tool and
-milestone specs must include **workflow walkthroughs** — what a user does,
-step by step, in their first minutes — not only element coverage of the
-standard's vocabulary.
+## Document format
 
-## The workflow set
+Each workflow doc contains:
 
-| Workflow | One-liner | Introduced |
-|---|---|---|
-| [GW-1 "First network"](gw1_first_network.md) | Two-lane road, T-junction by side attach, overpass, lane edit, junction-adjacent drag, undo/redo, save/reload, export + esmini | Hardening (v0.4.0) — the sprint's gate |
-| [GW-2 "Recover from crash"](gw2_recover_from_crash.md) | SIGKILL mid-edit, relaunch, autosave recovery, ≤ 2 min of work lost | Hardening (v0.4.0) |
+1. **Purpose** — what capability set it accepts.
+2. **Preconditions** — build, platform, assets, starting state.
+3. **Numbered steps** — each an action followed by its expected result,
+   with a checkbox.
+4. **Pass criteria** — what must hold overall (always includes
+   zero crashes).
+5. **Results table** — date, OS, commit, pass/fail, notes; one row per
+   hand-executed run. The [release gate](../README.md#release-gate)
+   requires a recorded pass on macOS, Linux, and Windows.
 
-## Anatomy of a spec
+Shortcut notation: steps use the macOS binding with the Linux/Windows
+equivalent in parentheses, e.g. `⌥ Option (Alt)`.
 
-Every golden workflow spec contains:
-
-1. **Action script** — numbered user actions in tool/UI vocabulary
-   (which tool, what interaction), specific enough that two runs are
-   comparable.
-2. **Time budget** — the whole script must complete within it, by hand.
-3. **Pass criteria** — always includes *zero crashes*; adds
-   workflow-specific checks (validation clean, recovery bounds, export
-   loads in external tools).
-4. **Evidence to record** — what the runner writes into the gate document
-   (timings, diagnostics count, crash reports if any).
-
-## Process
-
-- **Every milestone from the hardening sprint on gates on its golden
-  scene AND at least one golden workflow** (see the roadmap's
-  [acceptance mechanics](../roadmap.md#acceptance-mechanics)).
-- The maintainer executes the workflow(s) by hand at the gate and fills
-  the milestone's gate document (e.g.
-  [gate-v0.4.0.md](gate-v0.4.0.md)) during the run.
-- Any crash during a gated workflow is a NO-GO: the milestone extends
-  with those crashes only, each filed with the `crash` issue template.
-- Workflows are versioned like scene specs: new capabilities extend the
-  set (or add steps) rather than silently rewriting history.
-- Where steps are automatable, the soak/regression suites replay them
-  headless in CI as an early-warning signal between gates. GW-1's
-  automatable steps also have a dedicated pre-flight replay
-  (`python3 scripts/gw1_replay.py`) driven through the kernel command
-  layer — the same commands the editor's undo/redo executes.
+The pre-reset workflows (first-network, crash-recovery, the v0.4.0 gate)
+are preserved in the
+[archive](../archive/2026-07-pre-reset/golden_workflows/README.md).

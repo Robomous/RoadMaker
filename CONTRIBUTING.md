@@ -9,7 +9,7 @@ Everything you need lives in the documentation tree:
 - **What to work on:** the public
   [project board](https://github.com/Robomous/RoadMaker/projects) — the
   project's task manager — and
-  [how it is organized](docs/contributing/pull-requests.md#the-project-board-milestones-issues-and-labels).
+  [how it is organized](docs/contributing/pull-requests.md#the-project-board-pillars-issues-and-labels).
 - **Before opening a PR:** [pull requests](docs/contributing/pull-requests.md)
   and [testing](docs/contributing/testing.md).
 - **Standards your change must meet:**

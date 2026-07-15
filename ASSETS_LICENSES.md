@@ -84,4 +84,4 @@ models, fonts, images). Policy — see [`docs/standards/assets.md`](docs/standar
 | `docs/user-guide/img/library.png` | original work (this repository), editor screenshot | RoadMaker contributors | MIT | 2026-07-13 |
 | `docs/user-guide/img/workflow.gif` | original work (this repository), editor screen recording | RoadMaker contributors | MIT | 2026-07-13 |
 | `docs/user-guide/img/gs1_hero.png` | original work (this repository), editor screenshot rendered by CI (`visual-artifacts`) | RoadMaker contributors | MIT | 2026-07-15 |
-| `docs/roadmap/golden_scenes/img/gs1_baseline_v0.6.0.png` | original work (this repository), viewport render from the GS-1 fixed camera, rendered by CI (`visual-artifacts`) | RoadMaker contributors | MIT | 2026-07-15 |
+| `docs/roadmap/archive/2026-07-pre-reset/golden_scenes/img/gs1_baseline_v0.6.0.png` | original work (this repository), viewport render from the GS-1 fixed camera, rendered by CI (`visual-artifacts`) | RoadMaker contributors | MIT | 2026-07-15 |

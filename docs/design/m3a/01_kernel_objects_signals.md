@@ -31,7 +31,7 @@ OpenDRIVE §13/§14 are large. M3a splits every element into three tiers:
 | **Preserved** | Not interpreted; kept verbatim so round-trip loses nothing | Everything else (unknown attributes, `<skeleton>`, `<curveLocal>`, `<userData>`, signal `<dependency>`, `<controller>` links) |
 
 The **authored** (GS-1) set, per
-[the golden scene](../../roadmap/golden_scenes/gs1_urban_intersection.md):
+[the golden scene](../../roadmap/archive/2026-07-pre-reset/golden_scenes/gs1_urban_intersection.md):
 
 - **Objects:** `crosswalk` (outline object, one per arm), point props — `tree`
   / `vegetation` (point object + `<repeat>` for tree lines), `pole`

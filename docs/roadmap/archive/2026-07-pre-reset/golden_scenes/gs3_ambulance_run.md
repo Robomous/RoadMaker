@@ -5,7 +5,7 @@ GS-1 map plus one emergency-vehicle actor following a lane-anchored route
 through the junction.*
 
 Specified from OpenDRIVE and OpenSCENARIO XML concepts only, per the
-[product-parity rules](../../standards/product-parity.md).
+[product-parity rules](../../../../standards/product-parity.md).
 
 ## Scene definition
 

@@ -8,11 +8,10 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 **RoadMaker** is an open source (MIT) road-network authoring toolkit for
-autonomous-driving simulation, developed by [Robomous](https://robomous.ai) —
-an alternative to MathWorks RoadRunner. It authors clothoid-based road
-geometry with full lane semantics, reads and writes
-[ASAM OpenDRIVE](https://www.asam.net/standards/detail/opendrive/), and
-generates simulation-ready 3D meshes.
+autonomous-driving simulation, developed by [Robomous](https://robomous.ai).
+It authors clothoid-based road geometry with full lane semantics, reads and
+writes [ASAM OpenDRIVE](https://www.asam.net/standards/detail/opendrive/),
+and generates simulation-ready 3D meshes.
 
 The core value is **geometric and standards correctness**: exported OpenDRIVE
 validates, junctions carry coherent lane logic, and meshes are watertight and
@@ -30,8 +29,9 @@ onto the scene — every drop is one undoable edit:
 ![Placing trees along a junction by dragging them from the Library](docs/user-guide/img/workflow.gif)
 
 Prebuilt editor packages (DMG / NSIS installer / AppImage) and Python wheels
-are attached to every
-[GitHub release](https://github.com/robomous/roadmaker/releases).
+will ship with the first release, **v0.1.0** — published when the
+[Road to Parity roadmap](docs/roadmap/README.md) is complete. Until then,
+build from source below.
 
 ## Quickstart (from source)
 
@@ -77,25 +77,34 @@ RoadMaker tessellates a network into simulation-ready 3D meshes and writes:
 
 ## Roadmap
 
-Summary — the source of truth is
-[docs/roadmap/roadmap.md](docs/roadmap/roadmap.md); day-to-day status lives
-on the public [project board](https://github.com/Robomous/RoadMaker/projects):
+RoadMaker follows the **"Road to Parity"** roadmap
+([docs/roadmap/README.md](docs/roadmap/README.md)): eight capability
+pillars — interaction & navigation, roads & lanes, markings, junctions &
+signals, terrain & structures, assets & props & materials, import & export,
+and scenarios — that converge on a commercial-grade editing experience.
+Acceptance is by hand-executed
+[golden workflows](docs/roadmap/golden_workflows/README.md), and day-to-day
+status lives on the public
+[project board](https://github.com/Robomous/RoadMaker/projects).
 
-| Milestone | Theme | Golden scene |
-|---|---|---|
-| **M1** ✅ | Kernel + read-only viewer (OpenDRIVE I/O, clothoids, meshing, glTF, Python) | — |
-| **M2** ✅ | Editing core: tools, junction 3D surfaces, USD export (v0.2.0 → v0.3.0) | — |
-| **M3a** ✅ | UI revamp & visual/standards completeness: `<objects>`, `<signals>`, markings, textured viewport, props, terrain skirt (v0.5.0 → v0.6.0) | GS-1 urban intersection |
-| **Materials & Structures** | Material system v2 (PBR-lite, assignable library, variants), bridge generator, city props (v0.7.0) | GS-4 rural overpass |
-| **M3b** | Real-world import: GIS/lidar (PDAL/GDAL), OSM extraction, heightmap terrain | GS-2 imported district |
-| **M4** | Scenario mode: OpenSCENARIO kernel, Map ↔ Scenario modes, actors & routes, Asset Library Browser | GS-3 ambulance run |
-| **M5** | Scenario logic: node-based logic editor, simulation preview (esmini) | GS-3 + logic graph |
+**Release policy: there will be exactly one release — v0.1.0 — published
+only when every pillar is complete and the
+[release gate](docs/roadmap/README.md#release-gate) passes.** A release is
+a promise of maturity and utility, not a development checkpoint; sprints
+end with merged PRs, never with tags.
+
+### Current capabilities
+
+- ASAM OpenDRIVE 1.8/1.9 read/write/validate, clothoid geometry, watertight
+  simulation-ready meshes, structured diagnostics
+- Interactive editing: road/lane/elevation/junction tools with full
+  undo/redo, T-junctions, topology editing, junction 3D surfaces
+- Textured viewport with props and signals, dark professional theme,
+  welcome screen, Library panel with drag-and-drop creation
+- glTF 2.0 + OpenUSD export, esmini round-trip CI gate, Python bindings
 
 ## License
 
 MIT © 2026 Robomous. Third-party dependencies are listed with their licenses
 in [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md); bundled assets in
 [ASSETS_LICENSES.md](ASSETS_LICENSES.md).
-
-RoadMaker is not affiliated with, endorsed by, or sponsored by The MathWorks,
-Inc. RoadRunner is a trademark of The MathWorks, Inc.

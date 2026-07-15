@@ -23,7 +23,7 @@ zero failed checks, zero warnings.
 
 **Recommendation:** tinyusdz is sufficient **only if .usda (ASCII) output is
 an acceptable v1 deliverable**. If binary .usdc/.usdz is a requirement (it
-usually is for interchange with RoadRunner-adjacent pipelines, Omniverse,
+usually is for interchange with commercial road-authoring pipelines, Omniverse,
 and AR consumers), tinyusdz alone does not meet the bar today; see the
 Option B assessment at the end.
 

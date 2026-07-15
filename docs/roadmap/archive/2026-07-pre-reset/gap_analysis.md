@@ -1,4 +1,4 @@
-# Gap analysis — RoadMaker vs a RoadRunner-class editing experience
+# Gap analysis — RoadMaker vs a commercial-grade editing experience
 
 *The five product gaps between the current plans and a commercial-grade
 road/scenario editor, each mapped to what exists today, what is missing per
@@ -8,7 +8,7 @@ The original roadmap (M1 viewer → M2 editing → M3 import/scenario) produces
 a *correct* editor but never schedules what makes it *comparable as a
 product*. Comparing against the editing experience of commercial tools
 (functional capabilities only — see the
-[product-parity rules](../standards/product-parity.md)) surfaces five gaps,
+[product-parity rules](../../../standards/product-parity.md)) surfaces five gaps,
 in increasing order of size. The [roadmap](roadmap.md) assigns each an
 owning milestone; the [golden scenes](golden_scenes/README.md) make them
 measurable.
@@ -22,14 +22,14 @@ grid.
 
 This is only partly a rendering problem. Crosswalks, arrows, and stop lines
 are **kernel features first** (see the
-[decomposition rule](../standards/product-parity.md#the-decomposition-rule-kernel-first-then-assets-then-render)):
+[decomposition rule](../../../standards/product-parity.md#the-decomposition-rule-kernel-first-then-assets-then-render)):
 OpenDRIVE models them as `<objects>`, `<signals>`, and road-mark types that
 RoadMaker does not parse, represent, or write yet.
 
 | Layer | Exists today | Missing |
 |---|---|---|
 | Kernel | Lane meshes, line road marks (solid/broken), per-lane materials | `<objects>` (crosswalks, poles, props), `<signals>` (lights, signs), crosswalk/arrow/stop-line road-mark types, parser+writer+validation for all of them |
-| Editor/render | Sober flat-shaded mode; textured mode scoped as "optional" in the [M2 assets design](../design/m2/05_assets.md) | Textured mode as the default (sober mode kept as a toggle), terrain skirt + procedural ground, sky/lighting pass, prop rendering (instancing) |
+| Editor/render | Sober flat-shaded mode; textured mode scoped as "optional" in the [M2 assets design](../../../design/m2/05_assets.md) | Textured mode as the default (sober mode kept as a toggle), terrain skirt + procedural ground, sky/lighting pass, prop rendering (instancing) |
 | Assets | Icon pipeline, manifest + license gate | Asphalt/concrete/grass textures, vegetation/pole/sign prop set (CC0), sign-face graphics |
 
 **Owner: M3a.** Golden scene GS-1.
@@ -96,7 +96,7 @@ expensive.
 
 ## Gap 6 — material depth and built structures
 
-Benchmarking against RoadRunner footage (2026-07-13) found ~40% of the visual
+Benchmarking against commercial-editor footage (2026-07-13) found ~40% of the visual
 target unscheduled, clustering into three scheduled gaps now owned by the
 **Materials & Structures (v0.7.0)** milestone (prerequisite for GS-2's approval):
 
@@ -118,7 +118,7 @@ Two patterns repeat across all five:
 
 1. **Kernel-first decomposition** — every visual/UX gap starts as missing
    OpenDRIVE/OpenSCENARIO data-model support. That ordering is now a
-   [standing rule](../standards/product-parity.md).
+   [standing rule](../../../standards/product-parity.md).
 2. **Acceptance by scene, not by feature list** — features landed piecemeal
    don't compose into a convincing product on their own. Each milestone
    therefore targets a [golden scene](golden_scenes/README.md) whose
@@ -126,7 +126,7 @@ Two patterns repeat across all five:
 
 ## Known exclusions
 
-Honest scope is part of open-source credibility: the RoadRunner
+Honest scope is part of open-source credibility: the commercial-editor
 capabilities below are deliberately **not scheduled** on any milestone.
 **Backlog** means the exclusion is pragmatic and revisitable if demand
 appears; **permanent exclusion** means a hard constraint (licensing) rules
@@ -135,8 +135,8 @@ it out.
 | Capability | Status | Rationale |
 |---|---|---|
 | OpenCRG road-surface detail | Backlog | High-fidelity surface simulation is niche; no golden scene needs it yet. |
-| FBX export | **Permanent exclusion** | Requires the proprietary Autodesk FBX SDK, which the [dependency policy](../standards/dependencies.md) forbids; glTF and USD are the interchange formats instead. |
+| FBX export | **Permanent exclusion** | Requires the proprietary Autodesk FBX SDK, which the [dependency policy](../../../standards/dependencies.md) forbids; glTF and USD are the interchange formats instead. |
 | Procedural traffic / swarm generation | Backlog | Simulation-runtime territory — esmini/CARLA consume RoadMaker's exported scenes and do this better. |
-| Heightmap terrain under the network (DEM import + raise/lower/smooth brush) | **Scheduled — M3b (v0.8.0)** | Ground the network sits *in*, not just a skirt: a single height field per scene via DEM import (rides M3b's GDAL work) plus a basic brush; roads conform via the skirt/cut logic. Accepted in [ADR-0006](../decisions/0006-terrain-scope.md) (Option B). |
+| Heightmap terrain under the network (DEM import + raise/lower/smooth brush) | **Scheduled — M3b (v0.8.0)** | Ground the network sits *in*, not just a skirt: a single height field per scene via DEM import (rides M3b's GDAL work) plus a basic brush; roads conform via the skirt/cut logic. Accepted in [ADR-0006](../../../decisions/0006-terrain-scope.md) (Option B). |
 | Terrain sculpting beyond a single height field | Backlog | Multi-layer materials, overhangs, and LOD (ADR-0006 Option C) are a different product surface; the M3b height field covers the dogfooding expectation. |
 | Sensor-simulation asset packs | Backlog | Sensor-material metadata serves specific simulators; revisit when a consuming integration demands it. |
