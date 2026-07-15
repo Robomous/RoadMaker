@@ -1,8 +1,21 @@
 # Materials & Structures seed — visual depth
 
 *Scope sketch for the Materials & Structures milestone (v0.7.0). A seed, not a
-design: full design docs are written when the milestone's planning task runs
-(after GS-1 closes).*
+design.*
+
+> **Superseded by the design docs (2026-07-15).** The planning pass ran after
+> GS-1 closed, per the gate below. The scope source of truth is now
+> **[docs/design/materials-structures/](../../design/materials-structures/00_overview.md)**
+> (overview · material system · bridge generator · city props · phases);
+> workstreams WS-1…WS-5 are issues #196–#200 under epic
+> [#183](https://github.com/Robomous/RoadMaker/issues/183). This seed stays as
+> the record of the original intent — on conflict, the design docs win.
+>
+> Two of the seed's open questions were **decided** during that pass and are
+> flagged on the epic: **material persistence** (standard `<material>` +
+> `<userData>`, no sidecar — ASAM §7.2 names road textures as its example use,
+> and M2's `.xodr`-is-the-project-file rule rules out a companion file) and
+> **sign-text rendering** (stretch, not committed scope).
 
 - **Theme:** visual depth — the surfaces and structures that make a scene read
   as a real place, not a textured ribbon.
