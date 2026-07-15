@@ -96,6 +96,20 @@ struct StationCoord {
 /// coarse pass keeps multimodal cases (hairpins) on the right branch.
 [[nodiscard]] StationCoord find_station(const ReferenceLine& line, double x, double y);
 
+/// A prop or signal is road-relative (OpenDRIVE has no world-placed object), so
+/// a cursor farther than this laterally [m] from a road's reference line has
+/// left the road. Shared by the Library drop and the prop move-drag so the two
+/// agree on where "off the road" begins.
+inline constexpr double kObjectSnapThreshold = 12.0;
+
+/// find_station, but nullopt when (x, y) lies farther than `max_abs_t` laterally
+/// from the line, or the line is empty. find_station bounds s to the line's
+/// length but leaves t unbounded, so it reports a confident station for a point
+/// out in open space; callers placing a road-relative object need that rejected
+/// rather than turned into a huge t.
+[[nodiscard]] std::optional<StationCoord>
+station_within(const ReferenceLine& line, double x, double y, double max_abs_t);
+
 /// Inverse of find_station: the world (x, y) of road-relative station (s, t) on
 /// `line` — evaluate(s) offset by t along the left normal (-sin hdg, cos hdg)
 /// per ASAM OpenDRIVE §8.3. {0, 0} when the line is empty. Pairs with

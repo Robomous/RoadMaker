@@ -15,6 +15,7 @@
 #include <QSignalSpy>
 #include <QString>
 #include <array>
+#include <cmath>
 #include <cstddef>
 #include <optional>
 #include <stdexcept>
@@ -534,6 +535,55 @@ TEST(SelectTool, MoveToolDragMovesAPropAlongItsRoadOneUndo) {
   EXPECT_EQ(scene.document.undo_stack()->count(), base + 1);
   scene.document.undo_stack()->undo();
   EXPECT_EQ(xodr(scene.document), base_xodr);
+}
+
+TEST(SelectTool, PropDragOffTheRoadHoldsTheLastGoodStation) {
+  Scene scene;
+  const roadmaker::ObjectId prop = place_prop(scene.document, scene.dragged, 20.0, 0.0);
+  const int base = scene.document.undo_stack()->count();
+  const std::string base_xodr = xodr(scene.document);
+
+  SelectTool tool(scene.document, scene.selection);
+  tool.set_move_mode(true);
+  PickHit hit = scene.hit(scene.dragged);
+  hit.object = prop;
+
+  ASSERT_TRUE(tool.mouse_press(at(20.0, 0.0, Qt::LeftButton, Qt::NoModifier, hit)));
+  // A good frame beside the road, then one far out in the grass.
+  ASSERT_TRUE(tool.mouse_move(at(50.0, 12.0, Qt::LeftButton, Qt::NoModifier, hit)));
+  const double s_good = scene.document.network().object(prop)->s;
+  const double t_good = scene.document.network().object(prop)->t;
+
+  ASSERT_TRUE(tool.mouse_move(at(50.0, 400.0, Qt::LeftButton, Qt::NoModifier, hit)));
+  // Held, not flung: an unguarded frame would land a t of ~390 m, because
+  // find_station bounds s but not t and move_object validates s but not t.
+  EXPECT_DOUBLE_EQ(scene.document.network().object(prop)->s, s_good);
+  EXPECT_DOUBLE_EQ(scene.document.network().object(prop)->t, t_good);
+  EXPECT_TRUE(tool.moving_object()); // the session survives, the drag continues
+
+  ASSERT_TRUE(tool.mouse_release(at(50.0, 400.0, Qt::NoButton, Qt::NoModifier, hit)));
+  EXPECT_LT(std::abs(scene.document.network().object(prop)->t), 20.0);
+  EXPECT_EQ(scene.document.undo_stack()->count(), base + 1); // still one command
+  scene.document.undo_stack()->undo();
+  EXPECT_EQ(xodr(scene.document), base_xodr);
+}
+
+TEST(SelectTool, PropDragBackOntoTheRoadResumesFollowingTheCursor) {
+  Scene scene;
+  const roadmaker::ObjectId prop = place_prop(scene.document, scene.dragged, 20.0, 0.0);
+
+  SelectTool tool(scene.document, scene.selection);
+  tool.set_move_mode(true);
+  PickHit hit = scene.hit(scene.dragged);
+  hit.object = prop;
+
+  ASSERT_TRUE(tool.mouse_press(at(20.0, 0.0, Qt::LeftButton, Qt::NoModifier, hit)));
+  ASSERT_TRUE(tool.mouse_move(at(50.0, 400.0, Qt::LeftButton, Qt::NoModifier, hit))); // rejected
+  ASSERT_TRUE(tool.mouse_move(at(70.0, 2.0, Qt::LeftButton, Qt::NoModifier, hit)));   // back on
+  ASSERT_TRUE(tool.mouse_release(at(70.0, 2.0, Qt::NoButton, Qt::NoModifier, hit)));
+
+  // Rejection is per-frame, not sticky: the prop tracked the cursor again.
+  EXPECT_GT(scene.document.network().object(prop)->s, 40.0);
 }
 
 TEST(SelectTool, EscapeCancelsAPropMoveLeavingItPristine) {

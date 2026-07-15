@@ -112,6 +112,11 @@ private:
   struct ObjectMoveState {
     ObjectId object;
     RoadId road;
+
+    /// The last frame's cursor had left the road, so the prop holds its last
+    /// good station. Tracked so the hint is emitted on the transition rather
+    /// than on every mouse-move.
+    bool off_road = false;
   };
 
   /// Nearest authoring waypoint of a SELECTED road within pick_radius_

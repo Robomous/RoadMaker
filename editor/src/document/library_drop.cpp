@@ -19,8 +19,9 @@ namespace {
 
 /// A tree snaps to a road within this lateral distance [m] of its reference
 /// line — generous enough to place a tree on the verge, tight enough that a
-/// drop in open space is rejected (OpenDRIVE objects are road-relative).
-constexpr double kTreeSnapThreshold = 12.0;
+/// drop in open space is rejected (OpenDRIVE objects are road-relative). Shared
+/// with the prop move-drag so dropping and dragging agree on where the road ends.
+constexpr double kTreeSnapThreshold = kObjectSnapThreshold;
 
 /// A T/X assembly dropped within this lateral distance [m] of a road's
 /// reference line tees/crosses INTO that road (aligned); a drop farther out is
