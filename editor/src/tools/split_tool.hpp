@@ -34,6 +34,8 @@ public:
   /// A cross marker at the hovered cut point (lines).
   [[nodiscard]] PreviewGeometry preview() const override;
 
+  [[nodiscard]] QString instruction() const override;
+
 private:
   /// The road + station the cursor currently points at (updated on hover).
   struct CutHover {

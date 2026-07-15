@@ -42,6 +42,7 @@ not undoable.
 | Tool | Task |
 |---|---|
 | [Camera & navigation](camera-navigation.md) | Orbit, zoom, and pan the viewport around its pivot |
+| [Keyboard shortcuts](shortcuts.md) | Every binding, generated from the editor's own table |
 | [Editing attributes](attributes.md) | Scrub numeric fields by dragging their name; drop assets into slots |
 | [Library](library.md) | Drag ready-made roads, intersections, and props into the scene |
 | [Create Road](create-road.md) | Lay a new clothoid road through waypoints with a lane template |

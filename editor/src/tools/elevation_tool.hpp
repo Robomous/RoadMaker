@@ -47,6 +47,8 @@ public:
     return active_;
   }
 
+  [[nodiscard]] QString instruction() const override;
+
 signals:
   /// Emitted whenever active_node() changes (the Properties panel re-syncs).
   void active_node_changed();

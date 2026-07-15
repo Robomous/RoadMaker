@@ -111,8 +111,19 @@ public:
 
   [[nodiscard]] virtual PreviewGeometry preview() const { return {}; }
 
+  /// What this tool's click/drag/modifiers do right now — the PERSISTENT
+  /// status-bar instruction line (P1/GW-1). It answers "what can I do with
+  /// this tool", so it states the interaction, not the shortcut that reached
+  /// it (docs/user-guide/shortcuts.md owns keys) and not a transient result
+  /// (status_message owns those). Empty = nothing to say.
+  [[nodiscard]] virtual QString instruction() const { return {}; }
+
 signals:
   void preview_changed();
+
+  /// Transient, state-dependent guidance or a result ("Merged", a refusal).
+  /// Distinct from instruction(): this one comes and goes, that one persists
+  /// for as long as the tool is active.
   void status_message(const QString& text);
 
   /// Requests a viewport cursor shape (first cursor mechanism, kept minimal):

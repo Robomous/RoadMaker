@@ -66,6 +66,8 @@ public:
     return active_;
   }
 
+  [[nodiscard]] QString instruction() const override;
+
 private:
   struct MarkerHit {
     RoadId road;

@@ -15,10 +15,7 @@ namespace roadmaker::editor {
 ElevationTool::ElevationTool(Document& document, SelectionModel& selection, QObject* parent)
     : Tool(parent), document_(document), selection_(selection) {}
 
-void ElevationTool::activate() {
-  emit status_message(tr("Elevation — click a road node, then set its height in the Properties "
-                         "panel; the grade re-fits as a smooth curve"));
-}
+void ElevationTool::activate() {}
 
 void ElevationTool::deactivate() {
   set_active(std::nullopt);
@@ -118,6 +115,11 @@ PreviewGeometry ElevationTool::preview() const {
     }
   }
   return geometry;
+}
+
+QString ElevationTool::instruction() const {
+  return tr("Click a road node, then set its height in the Properties panel or the 2D Editor · the "
+            "grade re-fits smoothly");
 }
 
 } // namespace roadmaker::editor

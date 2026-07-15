@@ -18,9 +18,7 @@ constexpr double kMarkerRadius = 1.2; // cut-cross half-size [m]
 SplitTool::SplitTool(Document& document, SelectionModel& selection, QObject* parent)
     : Tool(parent), document_(document), selection_(selection) {}
 
-void SplitTool::activate() {
-  emit status_message(tr("Click a road to split it at the cut marker — Esc to cancel"));
-}
+void SplitTool::activate() {}
 
 void SplitTool::deactivate() {
   if (hover_.has_value()) {
@@ -121,6 +119,10 @@ PreviewGeometry SplitTool::preview() const {
                                   y - kMarkerRadius,
                                   0.0});
   return geometry;
+}
+
+QString SplitTool::instruction() const {
+  return tr("Click a road to cut it in two at the marker · Esc returns to Select");
 }
 
 } // namespace roadmaker::editor

@@ -37,10 +37,7 @@ bool has_param_poly3(const Road& road) {
 EditNodesTool::EditNodesTool(Document& document, SelectionModel& selection, QObject* parent)
     : Tool(parent), document_(document), selection_(selection) {}
 
-void EditNodesTool::activate() {
-  emit status_message(tr("Drag a node to move it; click a midpoint marker to insert a node; "
-                         "click a node, then Delete removes it — Esc cancels"));
-}
+void EditNodesTool::activate() {}
 
 void EditNodesTool::deactivate() {
   if (drag_.has_value()) {
@@ -342,6 +339,11 @@ PreviewGeometry EditNodesTool::preview() const {
   }
 
   return geometry;
+}
+
+QString EditNodesTool::instruction() const {
+  return tr("Drag a node to move it · click a midpoint marker to insert one · click a node then "
+            "Delete removes it · Esc cancels");
 }
 
 } // namespace roadmaker::editor

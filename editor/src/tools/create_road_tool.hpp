@@ -53,6 +53,8 @@ public:
   /// arms the tool here so the user continues from the drop location.
   void begin_at(double world_x, double world_y);
 
+  [[nodiscard]] QString instruction() const override;
+
 private:
   /// One placed waypoint plus the continuation heading of the snap that
   /// produced it (set for road-end and tangent snaps, nullopt otherwise).

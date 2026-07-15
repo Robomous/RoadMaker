@@ -79,6 +79,8 @@ public:
 
   [[nodiscard]] bool banding() const { return band_current_.has_value(); }
 
+  [[nodiscard]] QString instruction() const override;
+
 signals:
   /// A double-click on a road body inserted a bend node (already committed as
   /// one command) and asks the app to switch to Edit Nodes and grab it — so a

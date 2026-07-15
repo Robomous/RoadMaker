@@ -16,8 +16,6 @@ CreateJunctionTool::CreateJunctionTool(Document& document, QObject* parent)
 
 void CreateJunctionTool::activate() {
   reset_session();
-  emit status_message(tr("Create Junction — click 2+ road ends, or 1 end + a road body to tee "
-                         "into it; Enter generates, Esc cancels"));
 }
 
 void CreateJunctionTool::deactivate() {
@@ -290,6 +288,11 @@ void CreateJunctionTool::reset_session() {
 void CreateJunctionTool::emit_count_status() {
   emit status_message(tr("%1 road end(s) selected — Enter generates, Esc cancels")
                           .arg(static_cast<int>(ends_.size())));
+}
+
+QString CreateJunctionTool::instruction() const {
+  return tr("Click 2+ road ends, or one end and a road body to tee into it · Enter generates · Esc "
+            "cancels");
 }
 
 } // namespace roadmaker::editor

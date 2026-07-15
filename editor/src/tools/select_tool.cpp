@@ -33,14 +33,10 @@ SelectTool::SelectTool(Document& document, SelectionModel& selection, QObject* p
     : Tool(parent), document_(document), selection_(selection) {}
 
 void SelectTool::activate() {
-  if (move_mode_) {
-    emit status_message(tr("Move tool — hover shows the 4-arrow cursor; drag a road or a prop to "
-                           "move it, or click to select it and use the transform gizmo (Esc "
-                           "cancels)"));
-    return;
-  }
-  emit status_message(tr("Click to select — Shift adds, Ctrl toggles; drag a road body to move the "
-                         "whole road, a node handle to bend it, or empty space for a rubber band"));
+  // No status_message here: the guidance for "what does this tool do" is
+  // instruction(), which MainWindow shows in the persistent status line and the
+  // viewport hint. Emitting it transiently as well put two wordings of the same
+  // sentence in the status bar at once.
 }
 
 void SelectTool::deactivate() {
@@ -654,6 +650,17 @@ PreviewGeometry SelectTool::preview() const {
   }
 
   return geometry;
+}
+
+QString SelectTool::instruction() const {
+  // One tool, two modes — the instruction follows the mode, as the old
+  // activate() message did.
+  if (move_mode_) {
+    return tr("Drag a road or prop to move it · click to select it and use the transform gizmo · "
+              "Esc cancels");
+  }
+  return tr("Click to select · ⇧ adds, Ctrl toggles · drag a road body to move it, a node handle "
+            "to bend it, or empty space for a rubber band");
 }
 
 } // namespace roadmaker::editor
