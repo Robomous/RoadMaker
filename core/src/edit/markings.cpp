@@ -16,6 +16,9 @@ namespace roadmaker::edit {
 
 namespace {
 
+/// The Table 117 subtype every approach lane gets when no chooser overrides it.
+constexpr std::string_view kStraightArrow = "arrowStraight";
+
 /// The contact end of arm `road` that belongs to `junction` (Start or End).
 std::optional<ContactPoint>
 facing_end(const RoadNetwork& network, RoadId road, JunctionId junction) {
@@ -227,13 +230,48 @@ std::vector<std::pair<RoadId, Object>> junction_lane_arrows(const RoadNetwork& n
       Object arrow;
       arrow.odr_id = ids.next();
       arrow.type_str = "roadMark"; // a road-mark object (type stays None)
-      arrow.subtype = "arrowStraight";
+      arrow.subtype = params.glyph ? params.glyph(arm, lane) : std::string(kStraightArrow);
+      if (arrow.subtype.empty()) {
+        arrow.subtype = kStraightArrow; // a chooser that declines still writes a valid object
+      }
       arrow.s = std::clamp(s, 0.0, length);
       arrow.t = center;
       arrow.hdg = hdg;
       arrow.length = params.length_m;               // along travel
       arrow.width = lane.width * params.width_frac; // narrower than the lane
       out.emplace_back(arm, std::move(arrow));
+    }
+  }
+  return out;
+}
+
+std::vector<std::pair<LaneId, RoadMark>> junction_center_marks(const RoadNetwork& network,
+                                                               JunctionId junction,
+                                                               const CenterMarkParams& params) {
+  std::vector<std::pair<LaneId, RoadMark>> out;
+  const Junction* record = network.junction(junction);
+  if (record == nullptr) {
+    return out;
+  }
+
+  for (const RoadId arm : distinct_arms(*record)) {
+    const Road* road = network.road(arm);
+    if (road == nullptr) {
+      continue;
+    }
+    // Every section, not just the first: the centre line runs the whole arm,
+    // and a split or a lane-profile edit can leave an arm with several.
+    for (const LaneSectionId section : road->sections) {
+      for (const LaneId lane : network.lane_section(section)->lanes) {
+        if (network.lane(lane)->odr_id != 0) {
+          continue;
+        }
+        out.emplace_back(lane,
+                         RoadMark{.s_offset = 0.0,
+                                  .type = params.type,
+                                  .width = params.width,
+                                  .color = params.color});
+      }
     }
   }
   return out;

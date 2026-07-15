@@ -68,3 +68,71 @@ def test_dual_yellow_meshes_without_error(network_with_road):
     lane.road_marks = [rm.RoadMark(type=rm.RoadMarkType.SOLID_SOLID, width=0.15)]
     mesh = rm.build_network_mesh(network)
     assert mesh.vertex_count > 0
+
+
+@pytest.fixture
+def junction_network():
+    """A 4-arm urban intersection — the GS-1 construction."""
+    network = rm.RoadNetwork()
+    stack = rm.edit.EditStack()
+    params = rm.edit.assembly.IntersectionParams()
+    params.arm_length_m = 40.0
+    params.profile = rm.LaneProfile.urban_sidewalk()
+    stack.push(
+        network,
+        rm.edit.assembly.x_intersection(network, rm.edit.assembly.Pose(0.0, 0.0, 0.0), params),
+    )
+    return network, stack, network.find_junction("1")
+
+
+def test_junction_center_marks_author_dual_yellow_on_every_arm(junction_network):
+    network, stack, junction = junction_network
+    marks = rm.edit.junction_center_marks(network, junction)
+    assert len(marks) == 4  # one lane 0 per arm
+
+    for lane_id, mark in marks:
+        assert network.lane(lane_id).odr_id == 0
+        assert mark.type == rm.RoadMarkType.SOLID_SOLID
+        assert mark.color == rm.RoadMarkColor.YELLOW
+        # Bare mark: the mesh synthesizes the two stripes from `width`.
+        assert mark.lines == []
+        stack.push(network, rm.edit.set_road_mark(network, lane_id, mark))
+
+    xml = rm.write_xodr(network, "center-marks")
+    assert 'type="solid solid"' in xml
+    assert 'color="yellow"' in xml
+    assert rm.validate_network(network) == []
+
+
+def test_junction_center_marks_params_override_type_and_color(junction_network):
+    network, _stack, junction = junction_network
+    marks = rm.edit.junction_center_marks(
+        network, junction, type=rm.RoadMarkType.SOLID, color=rm.RoadMarkColor.WHITE, width=0.2
+    )
+    assert marks
+    for _lane_id, mark in marks:
+        assert mark.type == rm.RoadMarkType.SOLID
+        assert mark.color == rm.RoadMarkColor.WHITE
+        assert mark.width == pytest.approx(0.2)
+
+
+def test_junction_lane_arrows_glyph_chooser_selects_per_lane(junction_network):
+    network, _stack, junction = junction_network
+    first = network.find_road("1")
+    seen = []
+
+    def glyph(road, lane_odr_id):
+        seen.append(lane_odr_id)
+        # "" declines and takes the arrowStraight default.
+        return "arrowLeft" if road == first else ""
+
+    arrows = rm.edit.junction_lane_arrows(network, junction, glyph)
+    assert len(seen) == len(arrows)  # called once per approach lane
+    subtypes = sorted(obj.subtype for _road, obj in arrows)
+    assert subtypes == ["arrowLeft", "arrowStraight", "arrowStraight", "arrowStraight"]
+
+
+def test_junction_lane_arrows_default_to_straight(junction_network):
+    network, _stack, junction = junction_network
+    arrows = rm.edit.junction_lane_arrows(network, junction)
+    assert {obj.subtype for _road, obj in arrows} == {"arrowStraight"}

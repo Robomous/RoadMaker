@@ -8,14 +8,18 @@
 #include "roadmaker/road/authoring.hpp"
 #include "roadmaker/road/junction.hpp"
 #include "roadmaker/road/network.hpp"
+#include "roadmaker/xodr/writer.hpp"
 
 #include <gtest/gtest.h>
 
 #include <array>
 #include <cstdint>
+#include <memory>
 #include <numbers>
+#include <ranges>
 #include <set>
 #include <string>
+#include <utility>
 #include <vector>
 
 using roadmaker::ContactPoint;
@@ -179,6 +183,37 @@ TEST(JunctionLaneArrows, OnePerApproachLanePointingIntoTheJunction) {
   EXPECT_EQ(ids.size(), 3U);
 }
 
+TEST(JunctionLaneArrows, GlyphChooserPicksTurnVariantsPerLane) {
+  ArmedJunction fx;
+  const RoadId first_arm = fx.network.find_road("1");
+  ASSERT_TRUE(first_arm.is_valid());
+
+  // Turn intent is the caller's: arm 1 turns left, every other arm keeps the
+  // straight default.
+  roadmaker::edit::LaneArrowParams params;
+  params.glyph = [first_arm](RoadId arm, const roadmaker::edit::ContactLane& lane) {
+    EXPECT_NE(lane.width, 0.0); // the chooser sees the lane it is deciding for
+    return arm == first_arm ? "arrowLeft" : "";
+  };
+
+  const auto arrows = roadmaker::edit::junction_lane_arrows(fx.network, fx.junction, params);
+  ASSERT_EQ(arrows.size(), 3U);
+  int left = 0;
+  int straight = 0;
+  for (const auto& [road, arrow] : arrows) {
+    if (arrow.subtype == "arrowLeft") {
+      EXPECT_EQ(road, first_arm);
+      ++left;
+    } else {
+      // An empty choice is a decline, not an invalid object.
+      EXPECT_EQ(arrow.subtype, "arrowStraight");
+      ++straight;
+    }
+  }
+  EXPECT_EQ(left, 1);
+  EXPECT_EQ(straight, 2);
+}
+
 TEST(JunctionLaneArrows, AddedObjectsMeshAsArrowGlyphs) {
   ArmedJunction fx;
   auto arrows = roadmaker::edit::junction_lane_arrows(fx.network, fx.junction);
@@ -197,4 +232,78 @@ TEST(JunctionLaneArrows, AddedObjectsMeshAsArrowGlyphs) {
     }
   }
   EXPECT_EQ(arrow_meshes, 3);
+}
+
+// --- centre lines (#193 gap 7) ----------------------------------------------
+
+TEST(JunctionCenterMarks, DualYellowOnLaneZeroOfEveryArm) {
+  ArmedJunction fx;
+  const auto marks = roadmaker::edit::junction_center_marks(fx.network, fx.junction);
+  ASSERT_EQ(marks.size(), 3U); // one lane 0 per arm, one section each
+
+  for (const auto& [lane, mark] : marks) {
+    EXPECT_EQ(fx.network.lane(lane)->odr_id, 0);
+    EXPECT_EQ(mark.type, roadmaker::RoadMarkType::SolidSolid);
+    EXPECT_EQ(mark.color, roadmaker::RoadMarkColor::Yellow);
+    EXPECT_DOUBLE_EQ(mark.s_offset, 0.0);
+    // Left empty on purpose: the writer keeps the compact single-@width form
+    // and the mesh synthesizes the two stripes at +/-width.
+    EXPECT_TRUE(mark.lines.empty());
+  }
+}
+
+TEST(JunctionCenterMarks, ParamsChooseTypeAndColor) {
+  ArmedJunction fx;
+  const roadmaker::edit::CenterMarkParams params{.type = roadmaker::RoadMarkType::BrokenSolid,
+                                                 .color = roadmaker::RoadMarkColor::White,
+                                                 .width = 0.2};
+  const auto marks = roadmaker::edit::junction_center_marks(fx.network, fx.junction, params);
+  ASSERT_FALSE(marks.empty());
+  for (const auto& [lane, mark] : marks) {
+    EXPECT_EQ(mark.type, roadmaker::RoadMarkType::BrokenSolid);
+    EXPECT_EQ(mark.color, roadmaker::RoadMarkColor::White);
+    EXPECT_DOUBLE_EQ(mark.width, 0.2);
+  }
+}
+
+TEST(JunctionCenterMarks, StaleJunctionYieldsNone) {
+  ArmedJunction fx;
+  fx.network.erase_junction(fx.junction);
+  EXPECT_TRUE(roadmaker::edit::junction_center_marks(fx.network, fx.junction).empty());
+}
+
+TEST(JunctionCenterMarks, PushedThroughSetRoadMarkTheyReachTheFileAndUndoCleanly) {
+  // Dual-strip *rendering* is resolve_stripes' contract, covered by
+  // RoadMarks.SolidSolidRendersTwoStrips. What matters here is that the op's
+  // marks survive set_road_mark and land in the file.
+  ArmedJunction fx;
+  const auto marks = roadmaker::edit::junction_center_marks(fx.network, fx.junction);
+  ASSERT_FALSE(marks.empty());
+
+  const auto before = roadmaker::write_xodr(fx.network, "center-marks");
+  ASSERT_TRUE(before.has_value());
+  EXPECT_EQ(before->find("color=\"yellow\""), std::string::npos); // profile paints broken white
+
+  std::vector<std::unique_ptr<roadmaker::edit::Command>> pushed;
+  for (const auto& [lane, mark] : marks) {
+    auto command = roadmaker::edit::set_road_mark(fx.network, lane, mark);
+    ASSERT_NE(command, nullptr);
+    ASSERT_TRUE(command->apply(fx.network).has_value());
+    pushed.push_back(std::move(command));
+  }
+
+  const auto written = roadmaker::write_xodr(fx.network, "center-marks");
+  ASSERT_TRUE(written.has_value());
+  EXPECT_NE(written->find("type=\"solid solid\""), std::string::npos);
+  EXPECT_NE(written->find("color=\"yellow\""), std::string::npos);
+  // Bare mark: the compact single-@width form, no <type>/<line> block.
+  EXPECT_EQ(written->find("<type"), std::string::npos);
+
+  // Undo is byte-identical, reverting in reverse push order.
+  for (auto& command : std::ranges::reverse_view(pushed)) {
+    ASSERT_TRUE(command->revert(fx.network).has_value());
+  }
+  const auto reverted = roadmaker::write_xodr(fx.network, "center-marks");
+  ASSERT_TRUE(reverted.has_value());
+  EXPECT_EQ(*reverted, *before);
 }

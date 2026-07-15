@@ -22,6 +22,7 @@
 
 #include <nanobind/nanobind.h>
 #include <nanobind/stl/filesystem.h>
+#include <nanobind/stl/function.h>
 #include <nanobind/stl/optional.h>
 #include <nanobind/stl/pair.h>
 #include <nanobind/stl/string.h>
@@ -31,6 +32,7 @@
 #include <nanobind/stl/vector.h>
 
 #include <filesystem>
+#include <functional>
 #include <stdexcept>
 #include <string>
 #include <utility>
@@ -896,14 +898,48 @@ NB_MODULE(_roadmaker, m) {
       "edit.add_object.");
   edit.def(
       "junction_lane_arrows",
-      [](const roadmaker::RoadNetwork& network, roadmaker::JunctionId junction) {
-        return roadmaker::edit::junction_lane_arrows(network, junction);
+      [](const roadmaker::RoadNetwork& network,
+         roadmaker::JunctionId junction,
+         std::optional<std::function<std::string(roadmaker::RoadId, int)>> glyph) {
+        roadmaker::edit::LaneArrowParams params;
+        if (glyph.has_value()) {
+          // Hand Python the lane's odr id rather than the ContactLane: the id is
+          // what a turn decision keys on, and it keeps ContactLane unbound.
+          params.glyph = [choose = std::move(*glyph)](
+                             roadmaker::RoadId arm,
+                             const roadmaker::edit::ContactLane& lane) -> std::string {
+            return choose(arm, lane.odr_id);
+          };
+        }
+        return roadmaker::edit::junction_lane_arrows(network, junction, params);
       },
       "network"_a,
       "junction"_a,
-      "One straight lane-arrow Object on each approach lane of every arm, "
-      "pointing into the junction. Returns a list of (RoadId, Object); add each "
-      "with edit.add_object.");
+      "glyph"_a = nb::none(),
+      "One lane-arrow Object on each approach lane of every arm, pointing into "
+      "the junction. `glyph` is an optional callable (road, lane_odr_id) -> str "
+      "choosing the arrow subtype per approach lane ('arrowLeft', "
+      "'arrowStraight', 'arrowRight'); return '' or omit it for arrowStraight "
+      "everywhere. Returns a list of (RoadId, Object); add each with "
+      "edit.add_object.");
+  edit.def(
+      "junction_center_marks",
+      [](const roadmaker::RoadNetwork& network,
+         roadmaker::JunctionId junction,
+         roadmaker::RoadMarkType type,
+         roadmaker::RoadMarkColor color,
+         double width) {
+        return roadmaker::edit::junction_center_marks(
+            network, junction, roadmaker::edit::CenterMarkParams{type, color, width});
+      },
+      "network"_a,
+      "junction"_a,
+      "type"_a = roadmaker::RoadMarkType::SolidSolid,
+      "color"_a = roadmaker::RoadMarkColor::Yellow,
+      "width"_a = 0.12,
+      "The centre-line RoadMark for lane 0 of every arm of the junction — a "
+      "double-yellow centre by default. Returns a list of (LaneId, RoadMark); "
+      "apply each with edit.set_road_mark.");
   edit.def("effective_waypoints",
            &roadmaker::edit::effective_waypoints,
            "road"_a,

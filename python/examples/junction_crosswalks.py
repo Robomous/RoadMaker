@@ -1,6 +1,7 @@
-"""Add crosswalks and stop lines to every arm of a junction.
+"""Add crosswalks, stop lines, lane arrows and centre lines to a junction's arms.
 
-Uses edit.junction_crosswalks and edit.junction_stop_lines.
+Uses edit.junction_crosswalks, edit.junction_stop_lines, edit.junction_lane_arrows
+and edit.junction_center_marks.
 
 This is the kernel geometry behind the editor's junction "Add crosswalks to all
 arms" action: for each distinct arm road, derive one <object type="crosswalk">
@@ -56,11 +57,28 @@ def main() -> int:
     for road, stop_line in stop_lines:
         stack.push(network, rm.edit.add_object(network, road, stop_line))
 
-    # A straight arrow on each approach lane, pointing into the junction.
-    arrows = rm.edit.junction_lane_arrows(network, junction)
+    # An arrow on each approach lane, pointing into the junction. Without a
+    # `glyph` callable every lane gets arrowStraight; pass one to choose the
+    # turn variant per approach lane. Turn intent is the caller's — the kernel
+    # does not guess it from the junction's connections.
+    def glyph(road: rm.RoadId, lane_odr_id: int) -> str:
+        # A toy rule: the first arm turns left, the rest keep the default.
+        # Return "" to decline and take arrowStraight.
+        return "arrowLeft" if road == network.find_road("1") else ""
+
+    arrows = rm.edit.junction_lane_arrows(network, junction, glyph)
     print(f"authoring {len(arrows)} lane arrows")
     for road, arrow in arrows:
+        print(f"  road {network.road(road).odr_id}: {arrow.subtype}")
         stack.push(network, rm.edit.add_object(network, road, arrow))
+
+    # A double-yellow centre line down every arm. These are lane roadMarks, not
+    # objects, so they go through set_road_mark and replace the single centre
+    # line the road profile laid down.
+    center_marks = rm.edit.junction_center_marks(network, junction)
+    print(f"authoring {len(center_marks)} centre lines")
+    for lane, mark in center_marks:
+        stack.push(network, rm.edit.set_road_mark(network, lane, mark))
 
     assert rm.validate_network(network) == []
     rm.save_xodr(network, out_path, "junction_crosswalks_example")

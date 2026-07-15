@@ -5,10 +5,14 @@
 // for edit::add_object; the editor groups the adds into one undo step. Grounded
 // in the crosswalk mesh path (docs/design/m3a/02 road marks).
 
+#include "roadmaker/edit/connection.hpp"
 #include "roadmaker/export.hpp"
 #include "roadmaker/road/id.hpp"
+#include "roadmaker/road/lane.hpp"
 #include "roadmaker/road/object.hpp"
 
+#include <functional>
+#include <string>
 #include <utility>
 #include <vector>
 
@@ -50,22 +54,65 @@ struct StopLineParams {
 [[nodiscard]] RM_API std::vector<std::pair<RoadId, Object>> junction_stop_lines(
     const RoadNetwork& network, JunctionId junction, const StopLineParams& params = {});
 
+/// Chooses the arrow glyph for one approach `lane` of arm road `arm`. Return an
+/// OpenDRIVE roadMark arrow subtype (§13.14.8 Table 117); returning an empty
+/// string keeps the `arrowStraight` default.
+///
+/// `arrowLeft` / `arrowStraight` / `arrowRight` are the three the mesh draws
+/// (docs/design/m3a/02 §4). The combined subtypes (`arrowStraightLeft`,
+/// `arrowStraightLeftRight`, `arrowMergeLeft`, …) are equally normative and
+/// survive a round trip, but currently mesh as a plain straight glyph.
+using LaneArrowGlyph = std::function<std::string(RoadId arm, const ContactLane& lane)>;
+
 /// Parameters for junction-arm lane-arrow authoring.
 struct LaneArrowParams {
   double length_m = 4.0;   ///< arrow glyph extent along travel
   double setback_m = 7.0;  ///< gap from the junction edge (behind the stop line)
   double width_frac = 0.5; ///< arrow width as a fraction of the lane width
+
+  /// Per-approach-lane glyph choice. Unset (the default) gives every approach
+  /// lane `arrowStraight`, so a turn-lane scene opts in and every other caller
+  /// is unaffected.
+  LaneArrowGlyph glyph;
 };
 
-/// A straight lane arrow (`<object type="roadMark" subtype="arrowStraight">`) on
-/// each APPROACH lane of every arm of `junction`, pointing into the junction and
-/// set back behind the stop line (the "Add lane arrows to all arms" action —
-/// one per approach lane, so a two-lane approach gets two). Choosing per-lane
-/// turn variants (left/right) is a later, per-lane refinement. Returns {owning
-/// road, object} pairs ready for `edit::add_object`, each with a unique
-/// `odr_id`. Empty for a stale/foreign junction or arms with no approach lanes.
-/// Pure.
+/// A lane arrow (`<object type="roadMark" subtype="arrowStraight">` by default)
+/// on each APPROACH lane of every arm of `junction`, pointing into the junction
+/// and set back behind the stop line (the "Add lane arrows to all arms" action —
+/// one per approach lane, so a two-lane approach gets two). `params.glyph`
+/// picks the turn variant per lane. Returns {owning road, object} pairs ready
+/// for `edit::add_object`, each with a unique `odr_id`. Empty for a
+/// stale/foreign junction or arms with no approach lanes. Pure.
 [[nodiscard]] RM_API std::vector<std::pair<RoadId, Object>> junction_lane_arrows(
     const RoadNetwork& network, JunctionId junction, const LaneArrowParams& params = {});
+
+/// Parameters for junction-arm centre-line authoring.
+struct CenterMarkParams {
+  /// Mark type for lane 0. The solid_solid family renders as true dual
+  /// geometry — see the note on `lines` below.
+  RoadMarkType type = RoadMarkType::SolidSolid;
+
+  /// e_roadMarkColor (§11.9). Yellow is the centre-line colour GS-1 specifies.
+  RoadMarkColor color = RoadMarkColor::Yellow;
+
+  /// Painted stripe width [m].
+  double width = 0.12;
+};
+
+/// The centre-line `RoadMark` for lane 0 of every lane section of each distinct
+/// arm road of `junction` — a double-yellow centre by default (the "Add centre
+/// lines to all arms" action). Returns {lane, mark} pairs ready for
+/// `edit::set_road_mark`; the caller pushes them (the editor as one undo
+/// macro), replacing the single mark the road profile laid down at sOffset 0.
+/// Empty when the junction is stale or has no arms. Pure — no mutation, so it
+/// is headless-testable and Python-bindable.
+///
+/// `lines` is deliberately left empty: the writer then emits the compact
+/// single-`@width` form and the mesh synthesizes the two stripes at ±`width`
+/// (docs/design/m3a/02 §1/§4), which is the same picture with less file. A
+/// caller wanting explicit `<line>` geometry builds its own `RoadMark` and
+/// calls `set_road_mark` directly.
+[[nodiscard]] RM_API std::vector<std::pair<LaneId, RoadMark>> junction_center_marks(
+    const RoadNetwork& network, JunctionId junction, const CenterMarkParams& params = {});
 
 } // namespace roadmaker::edit

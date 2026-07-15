@@ -188,6 +188,25 @@ std::vector<MenuItem> build_context_menu(const MenuContext& context, ContextMenu
                    }
                    deps.document.undo_stack()->endMacro();
                  }});
+    // A double-yellow centre line down every arm. Unlike the three above these
+    // are lane roadMarks, not objects, so they go through set_road_mark and
+    // replace the single centre line the road profile laid down.
+    const bool has_center_arms = !edit::junction_center_marks(network, junction).empty();
+    items.push_back(
+        MenuItem{.text = QObject::tr("Add centre lines to all arms"),
+                 .enabled = has_center_arms,
+                 .invoke = [deps, junction] {
+                   auto marks = edit::junction_center_marks(deps.document.network(), junction);
+                   if (marks.empty()) {
+                     return;
+                   }
+                   deps.document.undo_stack()->beginMacro(QObject::tr("Add centre lines"));
+                   for (auto& [lane, mark] : marks) {
+                     (void)deps.document.push_command(
+                         edit::set_road_mark(deps.document.network(), lane, std::move(mark)));
+                   }
+                   deps.document.undo_stack()->endMacro();
+                 }});
     items.push_back(separator());
     items.push_back(MenuItem{.text = QObject::tr("Delete junction"), .invoke = [deps, junction] {
                                (void)deps.document.push_command(
