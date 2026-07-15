@@ -104,11 +104,13 @@ def main() -> int:
         signal.t = -6.5
         stack.push(network, rm.edit.add_signal(network, road_id, signal))
 
-    # 4. Street trees along the arms — a couple per side, behind the sidewalk.
+    # 4. Street trees along the arms — three per side, behind the sidewalk.
+    # Three s-stations per arm (4 arms x 3 s x 2 sides = 24) clears the spec's
+    # "~20 vegetation props" target; two stations only reached 16.
     tree_index = 0
     for road_id in arms:
         length = network.road(road_id).plan_view.length
-        for s in (length * 0.35, length * 0.65):
+        for s in (length * 0.3, length * 0.55, length * 0.8):
             for t in (-8.5, 8.5):
                 tree = rm.Object()
                 tree.odr_id = f"tree{tree_index + 1}"

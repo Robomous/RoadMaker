@@ -26,9 +26,12 @@ Every spec contains:
 
 1. **Scene definition** — pure OpenDRIVE/OpenSCENARIO vocabulary. Never a
    reference to, or imitation of, any vendor's sample content.
-2. **Element checklist** — one row per scene element, each citing the
-   kernel feature and the asset it depends on. A milestone is visually done
-   when every row is checked against a current render.
+2. **Element checklist** — one row per scene element, ticked against the
+   committed baseline and citing the PR that delivered it. **One table, not
+   two**: a row that did not land is marked `[GAP]` in place, with a reason and
+   a filed follow-up issue. A milestone does not need 14/14 to ship, but it
+   does need every unticked row to be accounted for — an aspirational checklist
+   kept separately from an as-built one always drifts (GS-1's did).
 3. **Fixed camera** — position, target, and vertical FOV in the kernel
    frame (right-handed, Z-up, meters), so screenshots are reproducible and
    comparable across releases.
@@ -39,16 +42,24 @@ Every spec contains:
 
 - **Release PRs carry the render.** The release PR of a milestone with a
   golden scene attaches the current render of that scene from the spec's
-  fixed camera. Reviewers compare against the previous release's render
+  fixed camera. Reviewers compare against the previous release's baseline
   side by side.
 - **Scene sources are versioned.** Each scene's `.xodr` (and `.xosc` from
-  GS-3 on) lives under `assets/golden_scenes/` once its milestone starts;
-  the spec is authoritative until then.
-- **CI regenerates on demand.** A manually triggered workflow
-  (`workflow_dispatch`) loads each golden scene headless, renders it from
-  the fixed camera, and uploads the images as artifacts — so drift is a
-  diff, not a memory. The workflow is seeded when M3a lands GS-1; earlier
-  milestones have nothing to render.
+  GS-3 on) lives under `assets/samples/` once its milestone starts; the spec
+  is authoritative until then.
+- **CI renders every push.** The `visual-artifacts` job in `ci.yml` loads each
+  golden scene headless under `xvfb-run`, renders it from the fixed camera,
+  and uploads the images as the `editor-screenshots` artifact — so drift is a
+  diff, not a memory. It is **skip-not-fail**: a runner with no GL context
+  exits 3 and the job absorbs it rather than blocking the merge.
+- **Comparison is by eye, not by pixel.** There is deliberately no automated
+  pixel-diff gate: the artifact is for human review against the committed
+  baseline. A render that changes for a legitimate reason (an asset upgrade, a
+  scene edit) refreshes the baseline in the same PR, with a note saying why.
+- **Baselines are committed from CI, never from a dev machine.** macOS has no
+  offscreen GL context, so the baseline PNG is downloaded from the branch's own
+  `editor-screenshots` artifact (`gh run download <run> -n editor-screenshots`)
+  and committed under `img/`.
 - **Checklists are tracked in the milestone.** Each element row maps to the
   GitHub issue(s) implementing its kernel feature/asset; the scene spec is
   updated with checkmarks as rows land.
@@ -58,6 +69,26 @@ Every spec contains:
   [simulator round-trip gate](../roadmap.md#cross-cutting-quality-gates)).
   CARLA ingestion validation remains a manual release-checklist item until
   it is CI-feasible.
+
+## Baselines
+
+The committed render of each scene, release over release. A new row lands with
+the milestone that changes the scene; the previous row's image stays in `img/`
+so any two releases can be put side by side.
+
+### GS-1 "Urban intersection"
+
+| Release | Baseline | Checklist | Notes |
+|---|---|---|---|
+| v0.6.0 | [`img/gs1_baseline_v0.6.0.png`](img/gs1_baseline_v0.6.0.png) | **12 / 14** (86%) | First baseline. M3a close-out. Gaps: centre double-yellow ([#193]), dashed lane lines ([#194], needs a multi-lane profile). Trees raised 16 → 24. Junction floor untextured and sky dark — both are v0.7.0 material work; see the spec's [honest notes](gs1_urban_intersection.md#honest-notes-on-the-v060-baseline). |
+
+### GS-2 / GS-3 / GS-4
+
+No baselines yet — their milestones have not started. GS-4 lands its first with
+Materials & Structures (v0.7.0).
+
+[#193]: https://github.com/Robomous/RoadMaker/issues/193
+[#194]: https://github.com/Robomous/RoadMaker/issues/194
 
 ## Rules for writing or changing a spec
 

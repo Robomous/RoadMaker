@@ -93,6 +93,21 @@ set(FMT_DOC OFF)
   intact and record the exact upstream commit.
 - **System packages** are only for CI tooling (ninja, ccache) — never for
   libraries the kernel links. Builds must be reproducible from CMake alone.
+- **External smoke tools** are a distinct category from dependencies: a pinned
+  third-party *binary* that CI runs as a subprocess to check our output, never
+  links, never redistributes, and that no build or runtime path depends on.
+  Because nothing is linked or shipped, the licence question is "may we run it",
+  which is far weaker than the linking test the allowed-licence list exists for
+  — but the tool still gets pinned to an exact version and its licence recorded
+  at the call site.
+  - **esmini** ([#51](https://github.com/Robomous/RoadMaker/issues/51)) — the
+    OpenDRIVE round-trip gate. **MPL-2.0** (allowed above; verified against the
+    upstream repository at close-out, 2026-07-15). Pinned `v3.5.0` in the
+    `esmini-roundtrip` job, fetched as `esmini-bin_Linux.zip` from the GitHub
+    release like a test fixture, cached, run `--headless`. It is never linked
+    into any RoadMaker target and never redistributed. If it ever needed to be
+    linked or shipped, MPL-2.0's file-level copyleft would apply and this entry
+    would not cover it.
 - Approved per-case exceptions are recorded in `THIRD_PARTY_LICENSES.md`
   and/or an ADR — e.g., tinyusdz's vendored ISC/Unlicense components are
   covered by [ADR 0005](../decisions/0005-tinyusdz-usda.md).

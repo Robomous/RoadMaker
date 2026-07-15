@@ -41,10 +41,12 @@
       <object type="crosswalk" subtype="zebra" id="1" s="2.5" t="0" zOffset="0" orientation="none" hdg="1.5707963267948966" length="7" width="3" />
       <object type="roadMark" subtype="signalLines" id="5" s="4.15" t="1.75" zOffset="0" orientation="none" length="0.3" width="3.5" />
       <object type="roadMark" subtype="arrowStraight" id="9" s="9" t="1.75" zOffset="0" orientation="none" hdg="3.141592653589793" length="4" width="1.75" />
-      <object type="tree" name="tree_pine" id="tree1" s="14" t="-8.5" zOffset="0" orientation="none" radius="1.2" height="4.5" />
-      <object type="tree" name="tree_oak" id="tree2" s="14" t="8.5" zOffset="0" orientation="none" radius="1.2" height="4.5" />
-      <object type="tree" name="tree_birch" id="tree3" s="26" t="-8.5" zOffset="0" orientation="none" radius="1.2" height="4.5" />
-      <object type="tree" name="tree_poplar" id="tree4" s="26" t="8.5" zOffset="0" orientation="none" radius="1.2" height="4.5" />
+      <object type="tree" name="tree_pine" id="tree1" s="12" t="-8.5" zOffset="0" orientation="none" radius="1.2" height="4.5" />
+      <object type="tree" name="tree_oak" id="tree2" s="12" t="8.5" zOffset="0" orientation="none" radius="1.2" height="4.5" />
+      <object type="tree" name="tree_birch" id="tree3" s="22" t="-8.5" zOffset="0" orientation="none" radius="1.2" height="4.5" />
+      <object type="tree" name="tree_poplar" id="tree4" s="22" t="8.5" zOffset="0" orientation="none" radius="1.2" height="4.5" />
+      <object type="tree" name="tree_pine" id="tree5" s="32" t="-8.5" zOffset="0" orientation="none" radius="1.2" height="4.5" />
+      <object type="tree" name="tree_oak" id="tree6" s="32" t="8.5" zOffset="0" orientation="none" radius="1.2" height="4.5" />
     </objects>
     <signals>
       <signal s="8" t="-6" id="tl1" dynamic="yes" orientation="none" zOffset="0" country="OpenDRIVE" type="1000001" subtype="-1" />
@@ -92,10 +94,12 @@
       <object type="crosswalk" subtype="zebra" id="2" s="2.5" t="0" zOffset="0" orientation="none" hdg="1.5707963267948966" length="7" width="3" />
       <object type="roadMark" subtype="signalLines" id="6" s="4.15" t="1.75" zOffset="0" orientation="none" length="0.3" width="3.5" />
       <object type="roadMark" subtype="arrowStraight" id="10" s="9" t="1.75" zOffset="0" orientation="none" hdg="3.141592653589793" length="4" width="1.75" />
-      <object type="tree" name="tree_pine" id="tree5" s="14" t="-8.5" zOffset="0" orientation="none" radius="1.2" height="4.5" />
-      <object type="tree" name="tree_oak" id="tree6" s="14" t="8.5" zOffset="0" orientation="none" radius="1.2" height="4.5" />
-      <object type="tree" name="tree_birch" id="tree7" s="26" t="-8.5" zOffset="0" orientation="none" radius="1.2" height="4.5" />
-      <object type="tree" name="tree_poplar" id="tree8" s="26" t="8.5" zOffset="0" orientation="none" radius="1.2" height="4.5" />
+      <object type="tree" name="tree_birch" id="tree7" s="12" t="-8.5" zOffset="0" orientation="none" radius="1.2" height="4.5" />
+      <object type="tree" name="tree_poplar" id="tree8" s="12" t="8.5" zOffset="0" orientation="none" radius="1.2" height="4.5" />
+      <object type="tree" name="tree_pine" id="tree9" s="22" t="-8.5" zOffset="0" orientation="none" radius="1.2" height="4.5" />
+      <object type="tree" name="tree_oak" id="tree10" s="22" t="8.5" zOffset="0" orientation="none" radius="1.2" height="4.5" />
+      <object type="tree" name="tree_birch" id="tree11" s="32" t="-8.5" zOffset="0" orientation="none" radius="1.2" height="4.5" />
+      <object type="tree" name="tree_poplar" id="tree12" s="32" t="8.5" zOffset="0" orientation="none" radius="1.2" height="4.5" />
     </objects>
     <signals>
       <signal s="8" t="-6" id="tl2" dynamic="yes" orientation="none" zOffset="0" country="OpenDRIVE" type="1000001" subtype="-1" />
@@ -143,10 +147,12 @@
       <object type="crosswalk" subtype="zebra" id="3" s="2.5" t="0" zOffset="0" orientation="none" hdg="1.5707963267948966" length="7" width="3" />
       <object type="roadMark" subtype="signalLines" id="7" s="4.15" t="1.75" zOffset="0" orientation="none" length="0.3" width="3.5" />
       <object type="roadMark" subtype="arrowStraight" id="11" s="9" t="1.75" zOffset="0" orientation="none" hdg="3.141592653589793" length="4" width="1.75" />
-      <object type="tree" name="tree_pine" id="tree9" s="14" t="-8.5" zOffset="0" orientation="none" radius="1.2" height="4.5" />
-      <object type="tree" name="tree_oak" id="tree10" s="14" t="8.5" zOffset="0" orientation="none" radius="1.2" height="4.5" />
-      <object type="tree" name="tree_birch" id="tree11" s="26" t="-8.5" zOffset="0" orientation="none" radius="1.2" height="4.5" />
-      <object type="tree" name="tree_poplar" id="tree12" s="26" t="8.5" zOffset="0" orientation="none" radius="1.2" height="4.5" />
+      <object type="tree" name="tree_pine" id="tree13" s="12" t="-8.5" zOffset="0" orientation="none" radius="1.2" height="4.5" />
+      <object type="tree" name="tree_oak" id="tree14" s="12" t="8.5" zOffset="0" orientation="none" radius="1.2" height="4.5" />
+      <object type="tree" name="tree_birch" id="tree15" s="22" t="-8.5" zOffset="0" orientation="none" radius="1.2" height="4.5" />
+      <object type="tree" name="tree_poplar" id="tree16" s="22" t="8.5" zOffset="0" orientation="none" radius="1.2" height="4.5" />
+      <object type="tree" name="tree_pine" id="tree17" s="32" t="-8.5" zOffset="0" orientation="none" radius="1.2" height="4.5" />
+      <object type="tree" name="tree_oak" id="tree18" s="32" t="8.5" zOffset="0" orientation="none" radius="1.2" height="4.5" />
     </objects>
     <signals>
       <signal s="8" t="-6" id="tl3" dynamic="yes" orientation="none" zOffset="0" country="OpenDRIVE" type="1000001" subtype="-1" />
@@ -193,10 +199,12 @@
       <object type="crosswalk" subtype="zebra" id="4" s="2.5" t="0" zOffset="0" orientation="none" hdg="1.5707963267948966" length="7" width="3" />
       <object type="roadMark" subtype="signalLines" id="8" s="4.15" t="1.75" zOffset="0" orientation="none" length="0.3" width="3.5" />
       <object type="roadMark" subtype="arrowStraight" id="12" s="9" t="1.75" zOffset="0" orientation="none" hdg="3.141592653589793" length="4" width="1.75" />
-      <object type="tree" name="tree_pine" id="tree13" s="14" t="-8.5" zOffset="0" orientation="none" radius="1.2" height="4.5" />
-      <object type="tree" name="tree_oak" id="tree14" s="14" t="8.5" zOffset="0" orientation="none" radius="1.2" height="4.5" />
-      <object type="tree" name="tree_birch" id="tree15" s="26" t="-8.5" zOffset="0" orientation="none" radius="1.2" height="4.5" />
-      <object type="tree" name="tree_poplar" id="tree16" s="26" t="8.5" zOffset="0" orientation="none" radius="1.2" height="4.5" />
+      <object type="tree" name="tree_birch" id="tree19" s="12" t="-8.5" zOffset="0" orientation="none" radius="1.2" height="4.5" />
+      <object type="tree" name="tree_poplar" id="tree20" s="12" t="8.5" zOffset="0" orientation="none" radius="1.2" height="4.5" />
+      <object type="tree" name="tree_pine" id="tree21" s="22" t="-8.5" zOffset="0" orientation="none" radius="1.2" height="4.5" />
+      <object type="tree" name="tree_oak" id="tree22" s="22" t="8.5" zOffset="0" orientation="none" radius="1.2" height="4.5" />
+      <object type="tree" name="tree_birch" id="tree23" s="32" t="-8.5" zOffset="0" orientation="none" radius="1.2" height="4.5" />
+      <object type="tree" name="tree_poplar" id="tree24" s="32" t="8.5" zOffset="0" orientation="none" radius="1.2" height="4.5" />
     </objects>
     <signals>
       <signal s="8" t="-6" id="tl4" dynamic="yes" orientation="none" zOffset="0" country="OpenDRIVE" type="1000001" subtype="-1" />

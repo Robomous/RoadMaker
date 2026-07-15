@@ -12,10 +12,17 @@ Specified purely from ASAM OpenDRIVE concepts, per the
 A flat 4-arm junction of two urban two-way streets crossing at 90°:
 
 - **Arms:** four roads, each ~80 m long, meeting in one junction. Each road:
-  two driving lanes per direction (`driving`), a parking-free curb lane
+  one driving lane per direction (`driving`), a parking-free curb lane
   omitted, one `sidewalk` lane per side behind a `curb`-height offset.
   Reference lines are straight (`line` records); the junction's connecting
   roads use arcs/spirals as produced by the junction tool.
+
+  > **Amended 2026-07-14 (close-out).** This originally read "two driving
+  > lanes per direction". The scene was built one-lane-per-direction (the
+  > `urban_sidewalk` profile), and the spec is corrected here to describe what
+  > exists rather than a scene that was never authored. The consequence is
+  > recorded honestly as gaps 7 and 8 below — a single-lane carriageway has no
+  > same-direction lane boundary to draw a dashed line on.
 - **Speed regime:** 50 km/h urban; lane widths 3.5 m driving, 2.0 m
   sidewalks.
 - **Signalization:** one traffic light per approach (OpenDRIVE `<signal>`,
@@ -37,26 +44,63 @@ A flat 4-arm junction of two urban two-way streets crossing at 90°:
 
 ## Element checklist
 
-Each row cites the kernel feature and asset it depends on — rows land as
-their features land, and the scene is done when every row is checked
-against a current render from the fixed camera.
+The single authoritative status for this scene. Each row is ticked against
+the committed baseline render from the fixed camera, and cites the PR that
+delivered it. Rows that did **not** land are marked `[GAP]` with a reason and
+a follow-up issue — never silently dropped.
 
-| # | Element | Kernel feature | Asset | Render |
-|---|---|---|---|---|
-| 1 | ☐ Four-arm junction, valid lane links | M2 junction tools (exists after M2) | — | junction surface (M2) |
-| 2 | ☐ Textured asphalt roadway | per-lane material model (exists) | ambientCG asphalt (CC0) | textured mode default ON |
-| 3 | ☐ Concrete sidewalks with curb offset | `sidewalk` lane type (exists), curb elevation | ambientCG concrete (CC0) | textured mode |
-| 4 | ☐ Crosswalks on all four arms | **new:** `<object type="crosswalk">` parse/write/validate | marking-paint material | object outline → mesh |
-| 5 | ☐ Lane arrows (left/straight/right) | **new:** arrow road-mark objects | arrow glyph geometry (generated) | road-mark mesh |
-| 6 | ☐ Stop lines at each approach | **new:** stop-line road mark | — | road-mark mesh |
-| 7 | ☐ Center double-yellow lines | **new:** multi-line road marks (`solid solid`, color) | — | dual-strip marking mesh |
-| 8 | ☐ Dashed white lane lines | broken road marks (exists) | — | existing marking path |
-| 9 | ☐ Traffic lights ×4 | **new:** `<signal>` dynamic parse/write/validate | signal-head + pole model (CC0) | prop instancing |
-| 10 | ☐ Speed-limit + crossing signs | **new:** `<signal>` static entries | verified public-domain sign faces + pole (CC0) | prop instancing |
-| 11 | ☐ ~20 vegetation props | **new:** `<object>` prop instances | vegetation kit (CC0, see [asset candidates](../asset_candidates.md)) | prop instancing |
-| 12 | ☐ Grass terrain around roads | **new:** terrain skirt + procedural ground | procedural (no fetch) | ground shader |
-| 13 | ☐ Sky and daytime lighting | — | procedural sky or CC0 HDRI | sky/lighting pass |
-| 14 | ☐ Sober mode still available | — | — | render-mode toggle |
+*(Until close-out this document carried two tables — an all-unticked
+aspirational checklist and a separate "as-built" table that disagreed with
+it. They are merged here into one.)*
+
+| # | Element | Status | Delivered by |
+|---|---|---|---|
+| 1 | Four-arm junction, valid lane links | [x] | M2 junction tools; `edit::assembly::x_intersection` urban profile ([#187]); junction boundary closed ([#191]) |
+| 2 | Textured asphalt roadway | [x] | material/texture interface ([#165]) + textured asphalt surfaces ([#170]) |
+| 3 | Concrete sidewalks with curb offset | [x] | `urban_sidewalk` profile + concrete texture ([#170]) |
+| 4 | Crosswalks on all four arms | [x] | `edit::junction_crosswalks` ([#171]) |
+| 5 | Lane arrows | [x] | `edit::junction_lane_arrows` ([#173]) — straight arrows only; left/right turn glyphs are [GAP] 5a |
+| 6 | Stop lines at each approach | [x] | `edit::junction_stop_lines` ([#172]) |
+| 7 | Center double-yellow lines | **[GAP]** | Single-line centre marking ships from the urban profile; true dual-geometry `solid solid` + yellow authoring never landed. → [#193] |
+| 8 | Dashed white lane lines | **[GAP]** | Not representable in this scene: a one-lane-per-direction carriageway has no same-direction lane boundary to mark. Needs a multi-lane profile. → [#194] |
+| 9 | Traffic lights ×4 | [x] | `add_signal` commands ([#174]) + instanced signal meshes ([#185]) + Library placement ([#186]) |
+| 10 | Speed-limit + crossing signs | [x] | two static `<signal>`s, DE 274/50 + 133/10 ([#174], [#185]) |
+| 11 | ~20 vegetation props | [x] | tree props ([#139]–[#141]); **24 street trees** — raised from 16 at close-out to clear the target |
+| 12 | Grass terrain around roads | [x] | procedural grass ground ([#169]) |
+| 13 | Sky and daytime lighting | [x] | daytime lighting + sky ([#166]) |
+| 14 | Sober mode still available | [x] | `View → Textured Rendering` toggle ([#166]); sober stays the default |
+
+**Score: 12 / 14 delivered, 2 gaps** (rows 7 and 8), plus one partial noted
+inline on row 5. Both gaps are marking-authoring work, both are filed, and
+neither blocks the milestone's acceptance claim: GS-1's purpose is to prove
+`<object>`/`<signal>`/road-mark/texture/terrain completeness end to end, and
+it does.
+
+### Gaps and follow-ups
+
+| Gap | Issue | Why it did not land |
+|---|---|---|
+| 5a | [#193] | Lane arrows render the `straight` glyph on every approach; `arrowLeft`/`arrowRight` subtypes exist in the kernel but are not authored by `junction_lane_arrows`. Filed together with the dual-yellow work. |
+| 7 | [#193] | Dual-geometry `solid solid` marks + `roadMark` colour authoring — kernel support exists ([#69]); the authoring op and the profile default do not. |
+| 8 | [#194] | Requires a two-lane-per-direction urban profile, which GS-1 does not use. Deferred to whichever milestone brings the wider profile. |
+
+[#69]: https://github.com/Robomous/RoadMaker/issues/69
+[#139]: https://github.com/Robomous/RoadMaker/pull/139
+[#141]: https://github.com/Robomous/RoadMaker/pull/141
+[#165]: https://github.com/Robomous/RoadMaker/pull/165
+[#166]: https://github.com/Robomous/RoadMaker/pull/166
+[#169]: https://github.com/Robomous/RoadMaker/pull/169
+[#170]: https://github.com/Robomous/RoadMaker/pull/170
+[#171]: https://github.com/Robomous/RoadMaker/pull/171
+[#172]: https://github.com/Robomous/RoadMaker/pull/172
+[#173]: https://github.com/Robomous/RoadMaker/pull/173
+[#174]: https://github.com/Robomous/RoadMaker/pull/174
+[#185]: https://github.com/Robomous/RoadMaker/pull/185
+[#186]: https://github.com/Robomous/RoadMaker/pull/186
+[#187]: https://github.com/Robomous/RoadMaker/pull/187
+[#191]: https://github.com/Robomous/RoadMaker/pull/191
+[#193]: https://github.com/Robomous/RoadMaker/issues/193
+[#194]: https://github.com/Robomous/RoadMaker/issues/194
 
 ## Fixed camera
 
@@ -86,45 +130,50 @@ sky.
 - Every asset used has its `ASSETS_LICENSES.md` row
   ([asset policy](../../standards/assets.md)).
 
-## Build (as-built, v0.5.0)
+## Build
 
 The scene is authored by **dogfooding the kernel edit layer** —
 `python/examples/build_gs1.py` lays down the junction and every mark, signal,
 and prop as real `edit::Command`s on an `EditStack`, exactly as the editor
 would — and saved to `assets/samples/gs1_urban_intersection.xodr`
-(16 roads · 1 junction · 28 objects · 6 signals · **0 diagnostics**). The
+(16 roads · 1 junction · **36 objects** · 6 signals · **0 diagnostics**). The
 `esmini-roundtrip` job globs `assets/samples/*.xodr`, so GS-1 loads there
-automatically; the golden view renders in `editor-visual-artifacts`
+automatically; the golden view renders in the `visual-artifacts` job
 (`--camera gs1 --textured --size 1920x1080`).
 
-Per-row status against the current build:
+**Baseline:** `img/gs1_baseline_v0.6.0.png`, captured from the
+`visual-artifacts` run's `gs1_urban_intersection.png` artifact — macOS dev has
+no offscreen GL context, so the baseline is always committed from a CI render.
+Tracked release-over-release in the [golden-scenes README](README.md#baselines).
 
-| # | Element | Status |
-|---|---|---|
-| 1 | Four-arm junction, valid lane links | ✅ `edit::assembly::x_intersection` (urban profile) |
-| 2 | Textured asphalt roadway | ✅ textured mode (opt-in) |
-| 3 | Concrete sidewalks with curb offset | ✅ `urban_sidewalk` profile |
-| 4 | Crosswalks on all four arms | ✅ `junction_crosswalks` |
-| 5 | Lane arrows | ✅ `junction_lane_arrows` (straight) |
-| 6 | Stop lines at each approach | ✅ `junction_stop_lines` |
-| 7 | Center double-yellow lines | ◐ profile centre marking (single-line urban); dual-yellow authoring is a follow-up |
-| 8 | Dashed white lane lines | ◐ n/a for a one-lane-per-direction urban profile |
-| 9 | Traffic lights ×4 | ✅ one dynamic `<signal>` per arm, instanced mesh |
-| 10 | Speed-limit + crossing signs | ✅ two static `<signal>`s (DE 274/50, 133/10) |
-| 11 | ~20 vegetation props | ◐ 16 street trees (below the ~20 target; tune before final) |
-| 12 | Grass terrain around roads | ✅ procedural ground (textured mode) |
-| 13 | Sky and daytime lighting | ✅ environment lighting (textured mode) |
-| 14 | Sober mode still available | ✅ `View → Textured Rendering` toggle |
+### Honest notes on the v0.6.0 baseline
 
-**Baseline:** the golden PNG
-(`docs/roadmap/golden_scenes/img/gs1_baseline_v0.5.0.png`) is captured from the
-`editor-visual-artifacts` run's `gs1_urban_intersection.png` artifact — macOS
-dev has no offscreen GL context, so it is committed from a CI render on review.
+Recorded at close-out from looking at the render, so the next reader is not
+surprised. None of these block acceptance; all are visual-quality work that
+the **Materials & Structures (v0.7.0)** milestone is the natural home for:
+
+- **The junction floor reads as a flat grey slab.** It carries no texture and
+  no markings across it — the surface exists and is selectable, but visually
+  it is the weakest part of the scene. Junction-floor material assignment is
+  explicitly in the v0.7.0 material-system scope.
+- **The sky is dark and murky rather than daytime.** The gradient works but
+  the top of frame is near-black; the lighting pass is doing its job (row 13
+  ticks) without looking like noon.
+- **The fixed camera frames the scene small**, with a lot of empty grass. The
+  camera is faithful to the spec's stated pose — (−55, −55, 35), 45° vFOV, and
+  the `gs1` preset matches it to within a rounding error — but the spec's own
+  prose promises "tree line against the sky", which this pose does not deliver
+  because the trees sit well below the horizon. Spec-internal inconsistency,
+  left alone deliberately: changing the fixed camera at close-out would
+  invalidate the baseline it is meant to certify.
 
 ## History
 
 - 2026-07-10 — initial spec (this document). Camera not yet exercised; the
   first render lands with M3a's release PR.
 - 2026-07-14 — GS-1 built (`build_gs1.py` + `gs1_urban_intersection.xodr`),
-  `gs1` golden camera + CI render added. Rows 7/8/11 have honest follow-up
-  notes above; baseline to be committed from the CI artifact on review.
+  `gs1` golden camera + CI render added.
+- 2026-07-14 — **close-out (v0.6.0).** The two disagreeing tables merged into
+  one authoritative checklist (12/14 + 2 filed gaps); scene definition amended
+  to the as-built one-lane-per-direction profile; trees raised 16 → 24 to clear
+  row 11; baseline committed; honest render notes recorded above.
