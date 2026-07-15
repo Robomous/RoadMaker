@@ -68,8 +68,24 @@ public:
 public slots:
   void reset_camera();
 
-  /// Frames the selected road/lane, or the whole scene without a selection.
+  /// Frames exactly what is selected (per kind — a signal frames the signal,
+  /// a lane its own patch, a junction its floor); with no selection, frames the
+  /// whole scene keeping the viewing angle; in an empty scene, returns to the
+  /// origin pivot. GW-1 steps 7-9.
   void frame_selection();
+
+  /// Moves the pivot to the point under the cursor, preserving the viewing
+  /// angle AND the zoom distance (GW-1 step 10). A cursor outside the viewport,
+  /// or over nothing at all, leaves the camera alone.
+  void frame_cursor();
+
+  /// Switches the projection; a no-op when already in `mode`. The pivot-plane
+  /// scale is shared between modes, so the content does not jump (GW-1 step 11).
+  void set_projection(roadmaker::editor::ProjectionMode mode);
+
+  /// Snaps the view to a cardinal direction, preserving pivot and distance
+  /// (GW-1 steps 12-13).
+  void look_from(roadmaker::editor::CardinalView view);
 
   /// Switches between the daytime "Textured" render mode (new default —
   /// hemisphere + directional lighting, dimmed reference grid) and the flat
@@ -101,8 +117,9 @@ public slots:
 public:
   [[nodiscard]] QString hint() const { return hint_text_; }
 
-  /// Camera preset for scripted captures: "top" (plan view, north up) or
-  /// "orbit" (the default 3/4 view). Unknown names keep the current view.
+  /// Camera preset for scripted captures: "top" (plan view, north up),
+  /// "ortho" (plan view in orthographic projection), or "orbit" (the default
+  /// 3/4 view). Unknown names keep the current view.
   void set_camera_preset(const QString& preset);
 
   /// Screenshot mode only: force a road-level hover highlight so the hover

@@ -24,6 +24,15 @@ elsewhere; the two names mean the same key throughout this page.
 | `⌥` + `⇧` + left-drag + right-drag | **Raise or lower the pivot** — drag up to raise it |
 | Right-drag | **Orbit** (see [legacy alternate](#the-legacy-right-drag-orbit)) |
 | Right-click | Open the [context menu](context-menus.md) for whatever is under the cursor |
+| `F` | **Frame** the selection (or everything, with nothing selected) |
+| `V` | **Frame on the cursor** — move the pivot to the point under it |
+| `O` / `P` | **Orthographic** / **perspective** projection |
+| Numpad `8` `2` `4` `6` | Look from **north / south / west / east** |
+| Numpad `5` | **Top-down**, north up |
+
+Without a numeric keypad, the **top-row digits** `8` `2` `4` `6` `5` do the
+same. Every one of these also lives in the **View** menu — the keys are
+shortcuts, not the only way in.
 
 A two-button chord is exactly what it sounds like: hold `⌥`, press and hold the
 left button, then add the right button without letting go. Both buttons stay
@@ -70,8 +79,44 @@ choose what to look at**.
 - Panning moves the pivot horizontally with the camera and leaves its height
   alone.
 
-Framing commands (`F`, `V`) and the cardinal views move the pivot for you.
-Those land in a later sprint — this page grows with them.
+Zooming *in* moves the pivot too, once you go far enough: rather than stopping
+dead when you reach it, the camera **pushes past** — the pivot slides forward
+and you keep travelling at the same rate, so you can fly through a scene with
+the wheel alone. Zooming back out never drags the pivot with it.
+
+## Framing
+
+Framing is how you point the camera at something without flying there by hand.
+
+- **`F`** frames the selection. It frames *exactly* what you selected: a signal
+  frames the signal, a lane frames that lane, a junction frames its floor — not
+  the road each of them happens to sit on.
+- **`F` with nothing selected** frames all the content in the scene, keeping
+  your current viewing angle.
+- **`F` in an empty scene** returns to the starting pivot above the origin.
+- **`V`** frames on the point under the cursor: the pivot jumps there and the
+  camera keeps both its angle and its zoom distance. It's the fast way to say
+  "orbit around *that* instead" — hover, tap `V`, and keep working.
+
+## Projection
+
+`P` is perspective (the default): near things look bigger, and the view has
+depth. `O` is orthographic: parallel projection with no foreshortening, so
+parallel lines stay parallel and distances read true across the frame — useful
+for checking alignment in plan view.
+
+The two share their framing, so **toggling doesn't jump**: whatever fills your
+screen in one mode fills it in the other. In orthographic mode the wheel zooms
+toward the cursor rather than the screen centre.
+
+## Cardinal views
+
+The numpad digits snap the view to a compass direction: `8` north, `2` south,
+`4` west, `6` east, and `5` straight down with north up.
+
+They snap the **direction only** — your pivot, zoom, and (except for top-down)
+your pitch stay exactly as they were. Pressing `4` re-angles the view onto what
+you were already looking at; it doesn't send you somewhere else.
 
 ## The legacy right-drag orbit
 

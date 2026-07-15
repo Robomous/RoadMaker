@@ -6,14 +6,52 @@
 
 namespace roadmaker::editor {
 
+/// How the camera projects (GW-1 step 11). Both modes share the orbit state —
+/// see matrices() for why the O/P toggle cannot jump.
+enum class ProjectionMode {
+  Perspective,
+  Orthographic,
+};
+
+/// A cardinal viewing direction (GW-1 steps 12-13). Named for where the camera
+/// LOOKS FROM: North means standing north of the pivot, looking south.
+enum class CardinalView {
+  North,
+  South,
+  West,
+  East,
+  Top,
+};
+
 /// Orbit camera in the KERNEL frame: right-handed, Z-up, meters. The editor
 /// renders kernel coordinates directly — no Y-up conversion here (that
 /// happens only at the glTF boundary).
 class OrbitCamera {
 public:
   void orbit(float delta_yaw, float delta_pitch);
-  void zoom(float scroll); // exponential
+
+  /// Exponential dolly toward (positive) or away from (negative) the pivot.
+  ///
+  /// Zooming THROUGH the pivot pushes it forward rather than dead-stopping
+  /// (GW-1 step 4): once the requested distance would fall below the minimum,
+  /// the remainder moves the pivot along the view direction instead, so the
+  /// eye keeps travelling at exactly the rate it was. Zooming out never
+  /// relocates the pivot.
+  void zoom(float scroll);
+
+  /// Zoom keeping the world point under a viewport pixel pinned there.
+  /// `anchor_ndc` is the cursor in normalized device coordinates ([-1,1], y
+  /// up). Perspective already zooms toward the cursor's ray by dollying the
+  /// eye, so this only shifts the pivot in ORTHOGRAPHIC mode — where a plain
+  /// zoom would otherwise scale about the viewport centre and slide the
+  /// content under the cursor away.
+  void zoom_about(float scroll, const std::array<float, 2>& anchor_ndc, float aspect);
+
   void frame(const std::array<float, 3>& center, float radius);
+
+  void set_projection(ProjectionMode mode) { projection_ = mode; }
+
+  [[nodiscard]] ProjectionMode projection() const { return projection_; }
 
   /// Shifts the look-at target (the pivot point of interest). The
   /// ground-anchored pan pins a grabbed ground point under the cursor by
@@ -53,6 +91,24 @@ public:
   /// with.
   [[nodiscard]] std::array<float, 3> target() const { return target_; }
 
+  [[nodiscard]] float yaw() const { return yaw_; }
+
+  [[nodiscard]] float pitch() const { return pitch_; }
+
+  /// Half the world height the orthographic frustum spans — the ortho "zoom".
+  /// Derived from `distance` so it matches what the perspective frustum spans
+  /// at the pivot depth, which is what makes the O/P toggle jump-free.
+  [[nodiscard]] float ortho_half_height() const;
+
+  /// Moves the pivot to `point`, keeping the viewing angle and zoom distance —
+  /// frame-on-cursor (GW-1 step 10) is a pivot move, not a dolly.
+  void look_at(const std::array<float, 3>& point) { target_ = point; }
+
+  /// Below-vertical top-down pitch. Exactly π/2 would make the look-at basis
+  /// degenerate (forward parallel to world up, so the right vector vanishes);
+  /// this is indistinguishable on screen and keeps the basis well-defined.
+  static constexpr float kTopDownPitch = 1.5607963F; // π/2 − 0.01
+
 private:
   /// The pivot starts 1.5 m above the world origin — roughly eye height, so an
   /// empty scene orbits around a point in the world rather than a spot on the
@@ -61,6 +117,7 @@ private:
   float yaw_ = 0.8F;   // rad, around +Z
   float pitch_ = 0.9F; // rad above the XY plane, clamped
   float distance_ = 80.0F;
+  ProjectionMode projection_ = ProjectionMode::Perspective;
 };
 
 } // namespace roadmaker::editor

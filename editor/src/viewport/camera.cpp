@@ -59,8 +59,76 @@ void OrbitCamera::elevate_target_pixels(float dy_pixels, float viewport_height) 
   target_[2] -= dy_pixels * world_per_pixel(distance_, viewport_height);
 }
 
+namespace {
+
+/// Unit vector from the eye toward the target (the view direction), Z-up.
+std::array<float, 3> forward_of(float yaw, float pitch) {
+  const float cos_pitch = std::cos(pitch);
+  // The eye sits at target + distance·(cos·cos, cos·sin, sin), so forward — the
+  // direction the camera looks — is the negation of that offset direction.
+  return {-cos_pitch * std::cos(yaw), -cos_pitch * std::sin(yaw), -std::sin(pitch)};
+}
+
+} // namespace
+
 void OrbitCamera::zoom(float scroll) {
-  distance_ = std::clamp(distance_ * std::pow(0.9F, scroll), kMinDistance, kMaxDistance);
+  const float desired = distance_ * std::pow(0.9F, scroll);
+  if (desired >= kMinDistance) {
+    distance_ = std::min(desired, kMaxDistance);
+    return;
+  }
+  // Push past the pivot (GW-1 step 4). The dolly wants to close `distance_ −
+  // desired` metres but only `distance_ − kMinDistance` are available, so the
+  // pivot absorbs the rest by sliding forward along the view direction. The eye
+  // ends up exactly where an unclamped dolly would have put it, which is what
+  // makes the travel continuous rather than a dead stop.
+  const std::array<float, 3> forward = forward_of(yaw_, pitch_);
+  const float overshoot = kMinDistance - desired;
+  for (std::size_t i = 0; i < 3; ++i) {
+    target_[i] += forward[i] * overshoot;
+  }
+  distance_ = kMinDistance;
+}
+
+void OrbitCamera::zoom_about(float scroll, const std::array<float, 2>& anchor_ndc, float aspect) {
+  if (projection_ == ProjectionMode::Perspective) {
+    zoom(scroll); // the eye moves along the cursor's ray already
+    return;
+  }
+  // Orthographic: scale is half_height (∝ distance), and the projection is
+  // centred on the pivot, so a plain zoom would slide the anchor away from the
+  // cursor. Shift the pivot across the view plane by the anchor's change in
+  // world offset, which pins it exactly.
+  const float half_height_before = ortho_half_height();
+  zoom(scroll);
+  const float delta_half_height = ortho_half_height() - half_height_before;
+
+  // View-plane basis: right and up in world space, from the look-at basis.
+  const float sin_yaw = std::sin(yaw_);
+  const float cos_yaw = std::cos(yaw_);
+  const float sin_pitch = std::sin(pitch_);
+  const float cos_pitch = std::cos(pitch_);
+  const std::array<float, 3> right{-sin_yaw, cos_yaw, 0.0F};
+  const std::array<float, 3> up{-sin_pitch * cos_yaw, -sin_pitch * sin_yaw, cos_pitch};
+
+  // The anchor sat at (ndc.x·half_width, ndc.y·half_height) from the pivot on
+  // the view plane; after the scale change it would sit at the same NDC but a
+  // different world offset. Move the pivot by the difference (negated) so the
+  // world point stays put.
+  const float dx = -anchor_ndc[0] * delta_half_height * aspect;
+  const float dy = -anchor_ndc[1] * delta_half_height;
+  for (std::size_t i = 0; i < 3; ++i) {
+    target_[i] += (right[i] * dx) + (up[i] * dy);
+  }
+}
+
+float OrbitCamera::ortho_half_height() const {
+  // Match the perspective frustum's world height AT THE PIVOT DEPTH. That is
+  // what makes the O/P toggle jump-free for free: at the pivot plane both
+  // projections span exactly the same world extent, so framed content keeps its
+  // size. It also means zoom() needs no mode-specific branch — distance IS the
+  // ortho scale.
+  return distance_ * std::tan(kFovY / 2.0F);
 }
 
 void OrbitCamera::frame(const std::array<float, 3>& center, float radius) {
@@ -114,10 +182,36 @@ CameraMatrices OrbitCamera::matrices(float aspect) const {
               ((f[0] * eye[0]) + (f[1] * eye[1]) + (f[2] * eye[2])),
               1.0F};
 
-  // Perspective projection (kFovY vertical FOV).
-  const float tan_half = std::tan(kFovY / 2.0F);
   const float near_plane = 0.1F;
   const float far_plane = 10000.0F;
+  if (projection_ == ProjectionMode::Orthographic) {
+    // Symmetric ortho box around the view axis. The near plane is pulled BEHIND
+    // the eye (−far) so geometry between the eye and the pivot — everything a
+    // perspective view would show — is not clipped away when the pivot sits
+    // inside the scene.
+    const float half_h = ortho_half_height();
+    const float half_w = half_h * aspect;
+    out.projection = {1.0F / half_w,
+                      0.0F,
+                      0.0F,
+                      0.0F,
+                      0.0F,
+                      1.0F / half_h,
+                      0.0F,
+                      0.0F,
+                      0.0F,
+                      0.0F,
+                      -2.0F / (far_plane - (-far_plane)),
+                      0.0F,
+                      0.0F,
+                      0.0F,
+                      -(far_plane + (-far_plane)) / (far_plane - (-far_plane)),
+                      1.0F};
+    return out;
+  }
+
+  // Perspective projection (kFovY vertical FOV).
+  const float tan_half = std::tan(kFovY / 2.0F);
   out.projection = {1.0F / (aspect * tan_half),
                     0.0F,
                     0.0F,

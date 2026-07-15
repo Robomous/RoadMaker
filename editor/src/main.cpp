@@ -23,7 +23,7 @@
 
 namespace {
 
-/// `--screenshot <scene.xodr> <out.png> [--camera top|orbit|gs1] [--size WxH]
+/// `--screenshot <scene.xodr> <out.png> [--camera top|ortho|orbit|gs1] [--size WxH]
 /// [--textured]` renders the viewport framebuffer (`--textured` opts into the
 /// daytime Textured mode; default is the plain Sober look);
 /// `--screenshot-ui` captures the whole
@@ -231,7 +231,7 @@ int main(int argc, char** argv) {
   if (screenshot.requested && !screenshot.valid) {
     std::fprintf(stderr,
                  "usage: roadmaker-editor --screenshot|--screenshot-ui <scene.xodr> <out.png>"
-                 " [--camera top|orbit|gs1] [--size WxH] [--theme <name>]"
+                 " [--camera top|ortho|orbit|gs1] [--size WxH] [--theme <name>]"
                  " [--select <odr_id>] [--hover <odr_id>]\n");
     return kScreenshotError;
   }

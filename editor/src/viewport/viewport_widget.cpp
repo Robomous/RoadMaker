@@ -34,6 +34,7 @@
 #include "render/gl_renderer.hpp"
 #include "render/scene_builder.hpp"
 #include "theme/theme.hpp"
+#include "viewport/framing.hpp"
 #include "viewport/projection.hpp"
 
 namespace roadmaker::editor {
@@ -241,6 +242,11 @@ void ViewportWidget::set_camera_preset(const QString& preset) {
     // Pitch just under vertical: the look-at up vector stays well-defined
     // and the plan view keeps a hint of depth for seam inspection.
     camera_.set_view(-kPi / 2.0F, (kPi / 2.0F) - 0.02F);
+  } else if (preset == QStringLiteral("ortho")) {
+    // Orthographic plan view: the true parallel projection (no foreshortening),
+    // so a capture can show what the O toggle actually does.
+    camera_.set_view(-kPi / 2.0F, OrbitCamera::kTopDownPitch);
+    camera_.set_projection(ProjectionMode::Orthographic);
   } else if (preset == QStringLiteral("orbit")) {
     camera_.set_view(0.8F, 0.9F);
   } else if (preset == QStringLiteral("gs1")) {
@@ -1347,7 +1353,16 @@ void ViewportWidget::upload_tool_preview() {
 void ViewportWidget::wheelEvent(QWheelEvent* event) {
   const float steps = static_cast<float>(event->angleDelta().y()) / 120.0F;
   if (steps != 0.0F) {
-    camera_.zoom(steps);
+    // Zoom toward the cursor. In perspective the eye already travels along the
+    // cursor's ray, so this only changes ortho — where zoom_about shifts the
+    // pivot to keep the anchored point under the cursor.
+    const float w = std::max(static_cast<float>(width()), 1.0F);
+    const float h = std::max(static_cast<float>(height()), 1.0F);
+    const std::array<float, 2> anchor_ndc{
+        (2.0F * static_cast<float>(event->position().x()) / w) - 1.0F,
+        1.0F - (2.0F * static_cast<float>(event->position().y()) / h), // Qt y is down
+    };
+    camera_.zoom_about(steps, anchor_ndc, w / h);
     update();
   }
   event->accept();
@@ -1389,40 +1404,74 @@ void ViewportWidget::reset_camera() {
 }
 
 void ViewportWidget::frame_selection() {
-  if (selection_.empty() || !scene_bounds_.valid()) {
-    if (scene_bounds_.valid()) {
-      camera_.frame(scene_bounds_.center(), scene_bounds_.framing_radius());
+  // With a selection: frame exactly what is selected, per kind (framing.hpp).
+  if (!selection_.empty()) {
+    const SceneBounds bounds = selection_bounds(document_.mesh(), selection_.entries());
+    if (bounds.valid()) {
+      camera_.frame(bounds.center(), bounds.framing_radius());
       update();
     }
+    return; // a selection that resolves to nothing leaves the view alone
+  }
+  // No selection: frame all content, keeping the viewing angle (GW-1 step 8) —
+  // frame() only moves the pivot and distance, never yaw/pitch.
+  if (scene_bounds_.valid()) {
+    camera_.frame(scene_bounds_.center(), scene_bounds_.framing_radius());
+    update();
     return;
   }
+  // Empty scene: back to the origin pivot (GW-1 step 9), angle preserved.
+  camera_.frame(OrbitCamera{}.target(), 0.0F);
+  update();
+}
 
-  // Bounds of every selected road's meshes and every selected prop instance,
-  // recomputed from the kernel mesh — cheap at selection frequency. A prop
-  // selection frames the tree itself, not its whole owning road.
-  const auto& entries = selection_.entries();
-  NetworkMesh selected;
-  for (const RoadMesh& road : document_.mesh().roads) {
-    const bool road_selected = std::ranges::any_of(entries, [&](const SelectionEntry& entry) {
-      return !entry.object.is_valid() && entry.road == road.road;
-    });
-    if (road_selected) {
-      selected.roads.push_back(road);
-    }
+void ViewportWidget::frame_cursor() {
+  // Frame-on-cursor is a PIVOT move: the camera keeps its angle and its zoom
+  // distance, so the view swings to a new point of interest without dollying
+  // (GW-1 step 10).
+  const QPointF pos = mapFromGlobal(QCursor::pos());
+  if (!rect().contains(pos.toPoint())) {
+    return; // cursor outside the viewport — nothing to frame on
   }
-  for (const ObjectInstance& instance : document_.mesh().objects) {
-    const bool object_selected = std::ranges::any_of(entries, [&](const SelectionEntry& entry) {
-      return entry.object.is_valid() && entry.object == instance.object;
-    });
-    if (object_selected) {
-      selected.objects.push_back(instance);
-    }
-  }
-  const SceneBounds bounds = build_scene(selected).bounds;
-  if (bounds.valid()) {
-    camera_.frame(bounds.center(), bounds.framing_radius());
+  if (const auto point = drop_world_point(pos)) {
+    camera_.look_at({static_cast<float>((*point)[0]),
+                     static_cast<float>((*point)[1]),
+                     static_cast<float>((*point)[2])});
     update();
   }
+}
+
+void ViewportWidget::set_projection(ProjectionMode mode) {
+  if (camera_.projection() == mode) {
+    return;
+  }
+  camera_.set_projection(mode);
+  update();
+}
+
+void ViewportWidget::look_from(CardinalView view) {
+  // Cardinals snap YAW only (and pitch for top-down): the pivot and zoom stay
+  // put, so pressing one re-angles the view without losing your place.
+  constexpr float kHalfPi = std::numbers::pi_v<float> / 2.0F;
+  switch (view) {
+  case CardinalView::North: // looking south from the north
+    camera_.set_view(kHalfPi, camera_.pitch());
+    break;
+  case CardinalView::South:
+    camera_.set_view(-kHalfPi, camera_.pitch());
+    break;
+  case CardinalView::West:
+    camera_.set_view(std::numbers::pi_v<float>, camera_.pitch());
+    break;
+  case CardinalView::East:
+    camera_.set_view(0.0F, camera_.pitch());
+    break;
+  case CardinalView::Top:
+    // North-up plan view: yaw −π/2 puts +y (north) at the top of the screen.
+    camera_.set_view(-kHalfPi, OrbitCamera::kTopDownPitch);
+    break;
+  }
+  update();
 }
 
 } // namespace roadmaker::editor

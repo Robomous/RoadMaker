@@ -9,7 +9,8 @@ skip-not-fail, docs/contributing/ci.md).
 
 Usage:
   python scripts/editor_screenshot.py scene.xodr out.png
-      [--camera top|orbit|gs1] [--size WxH] [--editor PATH] [--skip-on-no-gl]
+      [--camera top|ortho|orbit|gs1] [--size WxH] [--editor PATH]
+      [--skip-on-no-gl]
       [--select ODR_ID] [--hover ODR_ID]
 
 ``--select``/``--hover`` highlight a road by its OpenDRIVE id so the viewport
@@ -57,7 +58,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("scene", type=Path)
     parser.add_argument("out", type=Path)
-    parser.add_argument("--camera", choices=["top", "orbit", "gs1"], default="orbit")
+    parser.add_argument("--camera", choices=["top", "ortho", "orbit", "gs1"], default="orbit")
     parser.add_argument("--size", default="1600x1000")
     parser.add_argument("--editor", type=Path, default=None)
     parser.add_argument("--select", default=None, help="OpenDRIVE id to select (selection tint)")

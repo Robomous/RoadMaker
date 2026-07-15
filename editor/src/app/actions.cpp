@@ -48,10 +48,11 @@ Actions::Actions(QUndoStack& undo_stack, QObject* parent) : QObject(parent) {
   tool_select = new QAction(tr("&Select/Move"), this);
   tool_select->setCheckable(true);
   tool_select->setChecked(true); // the default tool
-  tool_select->setShortcut(Qt::Key_V);
+  // Q, not V: V is frame-on-cursor (GW-1 step 10). Rebound in p1-s2.
+  tool_select->setShortcut(Qt::Key_Q);
   tool_select->setIconText(tr("Select"));
   tool_select->setToolTip(tr("Select/Move — click picks, drag spans a rubber band, "
-                             "drag a node handle moves it (V)"));
+                             "drag a node handle moves it (Q)"));
   tool_group->addAction(tool_select);
 
   tool_move = new QAction(tr("&Move"), this);
@@ -147,6 +148,55 @@ Actions::Actions(QUndoStack& undo_stack, QObject* parent) : QObject(parent) {
   frame_selection->setIconText(tr("Frame"));
   frame_selection->setToolTip(tr("Frame the selection — the whole scene when "
                                  "nothing is selected (F)"));
+  frame_cursor = new QAction(tr("Frame Under &Cursor"), this);
+  frame_cursor->setShortcut(Qt::Key_V);
+  frame_cursor->setIconText(tr("Frame Cursor"));
+  frame_cursor->setToolTip(tr("Move the pivot to the point under the cursor, keeping the "
+                              "zoom (V)"));
+
+  // Projection (GW-1 step 11). Exclusive: the view is one or the other.
+  projection_group = new QActionGroup(this);
+  view_perspective = new QAction(tr("&Perspective"), this);
+  view_perspective->setShortcut(Qt::Key_P);
+  view_perspective->setCheckable(true);
+  view_perspective->setChecked(true); // the startup projection
+  view_perspective->setToolTip(tr("Perspective projection (P)"));
+  view_orthographic = new QAction(tr("&Orthographic"), this);
+  view_orthographic->setShortcut(Qt::Key_O);
+  view_orthographic->setCheckable(true);
+  view_orthographic->setToolTip(tr("Orthographic projection — parallel, no foreshortening (O)"));
+  projection_group->addAction(view_perspective);
+  projection_group->addAction(view_orthographic);
+
+  // Cardinal views (GW-1 steps 12-13). The numpad digits are the primary
+  // binding; the top-row digits are the alternate for keyboards without one.
+  const auto make_cardinal =
+      [this](const QString& text, const QString& tip, Qt::Key numpad, Qt::Key digit) {
+        auto* action = new QAction(text, this);
+        action->setShortcuts({QKeySequence(Qt::KeypadModifier | numpad), QKeySequence(digit)});
+        action->setToolTip(tip);
+        return action;
+      };
+  view_north = make_cardinal(tr("Look from &North"),
+                             tr("Look from the north, southward (numpad 8, or 8)"),
+                             Qt::Key_8,
+                             Qt::Key_8);
+  view_south = make_cardinal(tr("Look from &South"),
+                             tr("Look from the south, northward (numpad 2, or 2)"),
+                             Qt::Key_2,
+                             Qt::Key_2);
+  view_west = make_cardinal(tr("Look from &West"),
+                            tr("Look from the west, eastward (numpad 4, or 4)"),
+                            Qt::Key_4,
+                            Qt::Key_4);
+  view_east = make_cardinal(tr("Look from &East"),
+                            tr("Look from the east, westward (numpad 6, or 6)"),
+                            Qt::Key_6,
+                            Qt::Key_6);
+  view_top = make_cardinal(tr("&Top-Down"),
+                           tr("Plan view from directly above, north up (numpad 5, or 5)"),
+                           Qt::Key_5,
+                           Qt::Key_5);
   merge_roads = new QAction(tr("&Merge Roads"), this);
   merge_roads->setIconText(tr("Merge"));
   merge_roads->setEnabled(false); // enabled only for a mergeable 2-road selection
