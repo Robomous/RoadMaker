@@ -76,6 +76,30 @@ QString mark_type_name(RoadMarkType type) {
   }
 }
 
+/// Display name for an object's OpenDRIVE @type (§13.1, Table 85).
+QString object_type_name(ObjectType type) {
+  switch (type) {
+  case ObjectType::Crosswalk:
+    return QStringLiteral("Crosswalk");
+  case ObjectType::Tree:
+    return QStringLiteral("Tree");
+  case ObjectType::Vegetation:
+    return QStringLiteral("Vegetation");
+  case ObjectType::Pole:
+    return QStringLiteral("Pole");
+  case ObjectType::Barrier:
+    return QStringLiteral("Barrier");
+  case ObjectType::Building:
+    return QStringLiteral("Building");
+  case ObjectType::Obstacle:
+    return QStringLiteral("Obstacle");
+  case ObjectType::None:
+    return QStringLiteral("Untyped");
+  default:
+    return QStringLiteral("Other");
+  }
+}
+
 /// Rebuilds `combo` with the fixed choice list plus, when absent, `current`
 /// (as a display-only extra), and selects `current`.
 template <typename Enum, std::size_t N>
@@ -149,7 +173,9 @@ PropertiesPanel::PropertiesPanel(Document& document,
       elevation_node_label_(new QLabel(this)), elevation_spin_(new QDoubleSpinBox),
       signal_group_(new QGroupBox(tr("Signal"), this)), signal_s_spin_(new QDoubleSpinBox),
       signal_t_spin_(new QDoubleSpinBox), signal_h_spin_(new QDoubleSpinBox),
-      signal_kind_label_(new QLabel(this)) {
+      signal_kind_label_(new QLabel(this)), object_group_(new QGroupBox(tr("Prop"), this)),
+      object_kind_label_(new QLabel(this)),
+      model_slot_(new SlotWidget(QStringLiteral("Props"), this)) {
   placeholder_->setWordWrap(true);
   placeholder_->setEnabled(false);
 
@@ -183,11 +209,54 @@ PropertiesPanel::PropertiesPanel(Document& document,
   remove_left_->setObjectName(QStringLiteral("remove_left_lane_button"));
   remove_right_->setObjectName(QStringLiteral("remove_right_lane_button"));
 
+  // Scrub-editing: the NAME of a numeric attribute is the drag handle
+  // (P1/GW-2). Each label owns one binding; the gesture is one preview session
+  // and therefore exactly one undo entry. The per-attribute rates below are
+  // editor conventions, chosen so a ~100 px drag covers a useful range: 2 m of
+  // lane width, 0.2 m of mark width, 5 m of height, 10 m along s.
   auto* lane_form = new QFormLayout;
   lane_form->addRow(tr("Type"), type_combo_);
-  lane_form->addRow(tr("Width"), width_spin_);
+  lane_form->addRow(install_scrub(new ScrubLabel(tr("Width"), this),
+                                  {.spin = width_spin_,
+                                   .units_per_pixel = 0.02,
+                                   .baseline = [this]() -> std::optional<double> {
+                                     const Lane* lane = primary_lane();
+                                     if (lane == nullptr || lane->widths.empty()) {
+                                       return std::nullopt;
+                                     }
+                                     return lane->widths.front().a;
+                                   },
+                                   .factory =
+                                       [this](const RoadNetwork& network, double value) {
+                                         return edit::set_lane_width(
+                                             network, selection_.primary().lane, value);
+                                       }}),
+                    width_spin_);
   lane_form->addRow(tr("Road mark"), mark_combo_);
-  lane_form->addRow(tr("Mark width"), mark_width_spin_);
+  lane_form->addRow(
+      install_scrub(new ScrubLabel(tr("Mark width"), this),
+                    {.spin = mark_width_spin_,
+                     .units_per_pixel = 0.002,
+                     .baseline = [this]() -> std::optional<double> {
+                       const Lane* lane = primary_lane();
+                       if (lane == nullptr) {
+                         return std::nullopt;
+                       }
+                       return lane->road_marks.empty() ? kMarkWidthStandard
+                                                       : lane->road_marks.front().width;
+                     },
+                     .factory =
+                         [this](const RoadNetwork& network, double value) {
+                           const Lane* lane = primary_lane();
+                           RoadMark mark = lane == nullptr || lane->road_marks.empty()
+                                               ? RoadMark{}
+                                               : lane->road_marks.front();
+                           mark.type =
+                               static_cast<RoadMarkType>(mark_combo_->currentData().toInt());
+                           mark.width = value;
+                           return edit::set_road_mark(network, selection_.primary().lane, mark);
+                         }}),
+      mark_width_spin_);
   auto* buttons = new QHBoxLayout;
   buttons->addWidget(add_left_);
   buttons->addWidget(add_right_);
@@ -210,7 +279,18 @@ PropertiesPanel::PropertiesPanel(Document& document,
   elevation_node_label_->setWordWrap(true);
   auto* elevation_form = new QFormLayout(elevation_group_);
   elevation_form->addRow(elevation_node_label_);
-  elevation_form->addRow(tr("Height"), elevation_spin_);
+  elevation_form->addRow(
+      install_scrub(new ScrubLabel(tr("Height"), this),
+                    {.spin = elevation_spin_,
+                     .units_per_pixel = 0.05,
+                     .baseline = [this]() -> std::optional<double> { return active_node_height(); },
+                     .factory =
+                         [this](const RoadNetwork& network, double value) {
+                           const auto node = elevation_tool_->active_node();
+                           return edit::set_node_elevation(
+                               network, node->first, node->second, value);
+                         }}),
+      elevation_spin_);
 
   // Signal: a placed <signal>'s road-relative pose. s/t/heading edit through
   // move_signal (one command each); type/subtype stay read-only for now (a
@@ -232,9 +312,74 @@ PropertiesPanel::PropertiesPanel(Document& document,
   signal_h_spin_->setSingleStep(0.1);
   auto* signal_form = new QFormLayout(signal_group_);
   signal_form->addRow(signal_kind_label_);
-  signal_form->addRow(tr("s"), signal_s_spin_);
-  signal_form->addRow(tr("t"), signal_t_spin_);
-  signal_form->addRow(tr("Heading offset"), signal_h_spin_);
+  // The pose fields all commit through move_signal, so each scrub reads its two
+  // siblings from their spin boxes — the selection cannot change mid-gesture.
+  const auto signal_pose = [this](double s, double t, double h) {
+    return [this, s, t, h](const RoadNetwork& network) {
+      return edit::move_signal(network, selection_.selected_signals().back(), s, t, h);
+    };
+  };
+  const auto primary_signal = [this]() -> const Signal* {
+    const std::vector<SignalId> ids = selection_.selected_signals();
+    return ids.empty() ? nullptr : document_.network().signal(ids.back());
+  };
+  signal_form->addRow(
+      install_scrub(new ScrubLabel(tr("s"), this),
+                    {.spin = signal_s_spin_,
+                     .units_per_pixel = 0.1,
+                     .baseline = [primary_signal]() -> std::optional<double> {
+                       const Signal* signal = primary_signal();
+                       return signal == nullptr ? std::nullopt : std::optional<double>(signal->s);
+                     },
+                     .factory =
+                         [this, signal_pose](const RoadNetwork& network, double value) {
+                           return signal_pose(
+                               value, signal_t_spin_->value(), signal_h_spin_->value())(network);
+                         }}),
+      signal_s_spin_);
+  signal_form->addRow(
+      install_scrub(new ScrubLabel(tr("t"), this),
+                    {.spin = signal_t_spin_,
+                     .units_per_pixel = 0.05,
+                     .baseline = [primary_signal]() -> std::optional<double> {
+                       const Signal* signal = primary_signal();
+                       return signal == nullptr ? std::nullopt : std::optional<double>(signal->t);
+                     },
+                     .factory =
+                         [this, signal_pose](const RoadNetwork& network, double value) {
+                           return signal_pose(
+                               signal_s_spin_->value(), value, signal_h_spin_->value())(network);
+                         }}),
+      signal_t_spin_);
+  signal_form->addRow(
+      install_scrub(new ScrubLabel(tr("Heading offset"), this),
+                    {.spin = signal_h_spin_,
+                     .units_per_pixel = 0.01,
+                     .baseline = [primary_signal]() -> std::optional<double> {
+                       const Signal* signal = primary_signal();
+                       return signal == nullptr ? std::nullopt
+                                                : std::optional<double>(signal->h_offset);
+                     },
+                     .factory =
+                         [this, signal_pose](const RoadNetwork& network, double value) {
+                           return signal_pose(
+                               signal_s_spin_->value(), signal_t_spin_->value(), value)(network);
+                         }}),
+      signal_h_spin_);
+
+  // Prop: a placed <object> that renders a bundled prop model. The Model slot
+  // takes a Library drag and re-points the prop at what was dropped.
+  object_kind_label_->setObjectName(QStringLiteral("object_kind_label"));
+  object_kind_label_->setWordWrap(true);
+  model_slot_->setObjectName(QStringLiteral("object_model_slot"));
+  auto* object_form = new QFormLayout(object_group_);
+  object_form->addRow(object_kind_label_);
+  object_form->addRow(tr("Model"), model_slot_);
+  connect(model_slot_, &SlotWidget::item_dropped, this, &PropertiesPanel::push_object_model);
+  connect(model_slot_,
+          &SlotWidget::engage_requested,
+          this,
+          &PropertiesPanel::library_category_requested);
 
   auto* layout = new QVBoxLayout(this);
   layout->addWidget(placeholder_);
@@ -243,6 +388,7 @@ PropertiesPanel::PropertiesPanel(Document& document,
   layout->addWidget(lane_group_);
   layout->addWidget(elevation_group_);
   layout->addWidget(signal_group_);
+  layout->addWidget(object_group_);
   layout->addStretch();
 
   // One command per discrete action (spec 01 §7). Combos commit on
@@ -311,25 +457,11 @@ PropertiesPanel::PropertiesPanel(Document& document,
   // value is unchanged — the same re-entrancy guard the lane editors use, so
   // refresh() re-syncing the spin box after undo never echoes a command back.
   connect(elevation_spin_, &QDoubleSpinBox::editingFinished, this, [this] {
-    if (elevation_tool_ == nullptr) {
+    const auto current = active_node_height();
+    if (!current.has_value() || std::abs(elevation_spin_->value() - *current) < 1e-9) {
       return;
     }
     const auto node = elevation_tool_->active_node();
-    if (!node.has_value()) {
-      return;
-    }
-    const Road* road = document_.network().road(node->first);
-    if (road == nullptr) {
-      return;
-    }
-    const auto stations = edit::waypoint_stations(*road);
-    if (!stations.has_value() || node->second >= stations->size()) {
-      return;
-    }
-    const double current = eval_profile(road->elevation, (*stations)[node->second]);
-    if (std::abs(elevation_spin_->value() - current) < 1e-9) {
-      return;
-    }
     push(edit::set_node_elevation(
         document_.network(), node->first, node->second, elevation_spin_->value()));
   });
@@ -360,11 +492,24 @@ void PropertiesPanel::refresh() {
     name_row_->hide();
     lane_group_->hide();
     elevation_group_->hide();
+    object_group_->hide();
     placeholder_->hide();
     refresh_signal(*signal);
     return;
   }
   signal_group_->hide();
+
+  // Same for a prop: its entry carries the owning road, but the selection is
+  // the object, so show the object's own fields rather than that road's.
+  if (const Object* object = document_.network().object(primary.object)) {
+    name_row_->hide();
+    lane_group_->hide();
+    elevation_group_->hide();
+    placeholder_->hide();
+    refresh_object(*object);
+    return;
+  }
+  object_group_->hide();
 
   const Road* road = document_.network().road(primary.road);
   if (road == nullptr) {
@@ -410,6 +555,124 @@ void PropertiesPanel::refresh() {
   lane_group_->show();
   refresh_lane_section();
   refresh_elevation();
+}
+
+// --- scrub-editing -----------------------------------------------------------
+
+ScrubLabel* PropertiesPanel::install_scrub(ScrubLabel* label, ScrubBinding binding) {
+  const std::size_t index = scrubs_.size();
+  scrubs_.push_back(std::move(binding));
+  connect(label, &ScrubLabel::scrub_started, this, [this, index] { begin_scrub(index); });
+  connect(label, &ScrubLabel::scrub_moved, this, &PropertiesPanel::update_scrub);
+  connect(label, &ScrubLabel::scrub_finished, this, &PropertiesPanel::finish_scrub);
+  connect(label, &ScrubLabel::scrub_cancelled, this, &PropertiesPanel::cancel_scrub);
+  return label;
+}
+
+void PropertiesPanel::begin_scrub(std::size_t index) {
+  cancel_scrub(); // a still-open session (lost release) must not leak into this one
+
+  const ScrubBinding& binding = scrubs_[index];
+  const std::optional<double> baseline = binding.baseline();
+  if (!baseline.has_value()) {
+    return; // nothing editable under this label right now — the drag is inert
+  }
+  // Open the session on the attribute's CURRENT value: applying it is a no-op,
+  // which gives update_preview a base state to rebuild against without the
+  // gesture having changed anything yet.
+  if (!document_.begin_preview(binding.factory(document_.network(), *baseline))) {
+    return;
+  }
+  scrub_active_ = index;
+  scrub_baseline_ = *baseline;
+  scrub_value_ = *baseline;
+}
+
+void PropertiesPanel::update_scrub(double delta) {
+  if (!scrub_active_.has_value()) {
+    return;
+  }
+  const ScrubBinding& binding = scrubs_[*scrub_active_];
+  // The spin box's range is the attribute's range — scrubbing must not reach
+  // values typing cannot.
+  const double value = std::clamp(scrub_baseline_ + (delta * binding.units_per_pixel),
+                                  binding.spin->minimum(),
+                                  binding.spin->maximum());
+  if (!document_.update_preview([&binding, value](const RoadNetwork& network) {
+        return binding.factory(network, value);
+      })) {
+    return; // the session stays at its last good state (Document's contract)
+  }
+  scrub_value_ = value;
+  const QSignalBlocker blocker(binding.spin);
+  binding.spin->setValue(value); // live readout of what the drag is doing
+}
+
+void PropertiesPanel::finish_scrub() {
+  if (!scrub_active_.has_value()) {
+    return;
+  }
+  const ScrubBinding& binding = scrubs_[*scrub_active_];
+  scrub_active_.reset();
+  // A gesture that ended back where it started is not an edit: cancelling
+  // instead of committing keeps a no-op entry off the undo stack.
+  if (std::abs(scrub_value_ - scrub_baseline_) < 1e-9) {
+    document_.cancel_preview();
+  } else {
+    document_.commit_preview();
+    emit status_message(tr("%1: %2").arg(binding.spin->objectName()).arg(scrub_value_));
+  }
+  refresh();
+}
+
+void PropertiesPanel::cancel_scrub() {
+  if (!scrub_active_.has_value()) {
+    return;
+  }
+  scrub_active_.reset();
+  document_.cancel_preview(); // byte-identical restore of the pre-scrub state
+  refresh();
+}
+
+std::optional<double> PropertiesPanel::active_node_height() const {
+  if (elevation_tool_ == nullptr) {
+    return std::nullopt;
+  }
+  const auto node = elevation_tool_->active_node();
+  if (!node.has_value()) {
+    return std::nullopt;
+  }
+  const Road* road = document_.network().road(node->first);
+  if (road == nullptr) {
+    return std::nullopt;
+  }
+  const auto stations = edit::waypoint_stations(*road);
+  if (!stations.has_value() || node->second >= stations->size()) {
+    return std::nullopt;
+  }
+  return eval_profile(road->elevation, (*stations)[node->second]);
+}
+
+// --- prop --------------------------------------------------------------------
+
+void PropertiesPanel::refresh_object(const Object& object) {
+  add_row(tr("OpenDRIVE id"), tr("object %1").arg(QString::fromStdString(object.odr_id)));
+  // The group box already says "Prop"; this line says which KIND of one, from
+  // the OpenDRIVE @type (§13.1) the object actually carries.
+  object_kind_label_->setText(object_type_name(object.type));
+  add_row(tr("Position"), tr("s %1 m, t %2 m").arg(object.s, 0, 'f', 2).arg(object.t, 0, 'f', 2));
+  // Object::name IS the prop model id the mesher renders (mesh.hpp
+  // ObjectInstance::model_id) — that is what the slot shows and replaces.
+  model_slot_->set_item(QString::fromStdString(object.name));
+  object_group_->show();
+}
+
+void PropertiesPanel::push_object_model(const QString& key) {
+  const std::vector<ObjectId> objects = selection_.selected_objects();
+  if (objects.empty() || key.isEmpty()) {
+    return;
+  }
+  push(edit::set_object_model(document_.network(), objects.back(), key.toStdString()));
 }
 
 void PropertiesPanel::refresh_signal(const Signal& signal) {

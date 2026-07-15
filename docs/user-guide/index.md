@@ -42,6 +42,7 @@ not undoable.
 | Tool | Task |
 |---|---|
 | [Camera & navigation](camera-navigation.md) | Orbit, zoom, and pan the viewport around its pivot |
+| [Editing attributes](attributes.md) | Scrub numeric fields by dragging their name; drop assets into slots |
 | [Library](library.md) | Drag ready-made roads, intersections, and props into the scene |
 | [Create Road](create-road.md) | Lay a new clothoid road through waypoints with a lane template |
 | [Moving and transforming](moving-and-transforming.md) | Move and rotate roads and props with the Move tool and its 3D transform gizmo |

@@ -1,5 +1,6 @@
 #include "roadmaker/edit/operations.hpp"
 
+#include "roadmaker/assets/prop_library.hpp"
 #include "roadmaker/edit/assembly.hpp"
 #include "roadmaker/edit/connection.hpp"
 #include "roadmaker/geometry/profile_fit.hpp"
@@ -3454,6 +3455,40 @@ std::unique_ptr<Command> move_signal(const RoadNetwork& network,
       std::make_unique<GenericCommand>(std::string(kName), DirtySet{.objects = {current->road}});
   command->before.signals.emplace_back(signal, *current);
   command->after.signals.emplace_back(signal, std::move(moved));
+  return command;
+}
+
+std::unique_ptr<Command>
+set_object_model(const RoadNetwork& network, ObjectId object, std::string model_id) {
+  static constexpr std::string_view kName = "Set Object Model";
+  const Object* current = network.object(object);
+  if (current == nullptr) {
+    return invalid_command(std::string(kName),
+                           Error{.code = ErrorCode::InvalidArgument, .message = "stale object id"});
+  }
+  if (model_id.empty()) {
+    return invalid_command(
+        std::string(kName),
+        Error{.code = ErrorCode::InvalidArgument, .message = "empty prop model id"});
+  }
+  const props::PropModel* model = props::model(model_id);
+  if (model == nullptr) {
+    return invalid_command(
+        std::string(kName),
+        Error{.code = ErrorCode::InvalidArgument, .message = "unknown prop model id: " + model_id});
+  }
+
+  Object retargeted = *current;
+  retargeted.name = std::move(model_id);
+  // The bounding volume describes the model, so it must travel with it —
+  // otherwise a pine's radius would survive on a shrub.
+  retargeted.radius = model->radius;
+  retargeted.height = model->height;
+
+  auto command =
+      std::make_unique<GenericCommand>(std::string(kName), DirtySet{.objects = {current->road}});
+  command->before.objects.emplace_back(object, *current);
+  command->after.objects.emplace_back(object, std::move(retargeted));
   return command;
 }
 

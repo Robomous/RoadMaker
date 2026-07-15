@@ -36,6 +36,12 @@ public:
 
   [[nodiscard]] QListView* view() { return view_; }
 
+  /// Scrolls to and selects the first item of `category` (the manifest's
+  /// spelling, e.g. "Props") — what an engaged Attributes-pane slot asks for.
+  /// Clears the search box first, so a stale filter cannot hide the target.
+  /// Unknown categories leave the panel alone.
+  void focus_category(const QString& category);
+
 private:
   LibraryFilterProxy proxy_;
   QLineEdit* search_;

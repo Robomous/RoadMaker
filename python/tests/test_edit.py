@@ -587,6 +587,36 @@ def test_move_object_then_undo_is_byte_identical(network):
     assert rm.write_xodr(network) == placed
 
 
+def test_set_object_model_retargets_the_prop_and_undoes_exactly(network):
+    stack = rm.edit.EditStack()
+    road = network.find_road("1")
+    stack.push(network, rm.edit.add_object(network, road, _tree("1", 20.0, 5.0)))
+    obj = network.objects_of(road)[-1]
+    placed = rm.write_xodr(network)
+
+    stack.push(network, rm.edit.set_object_model(network, obj, "shrub"))
+    assert network.object(obj).name == "shrub"
+    # The bounding volume follows the model instead of describing the pine it
+    # was: the fixture's hand-set 1.2 m radius must not survive the swap.
+    assert network.object(obj).radius != pytest.approx(1.2)
+    assert network.object(obj).radius > 0.0
+    assert network.object(obj).s == 20.0  # pose untouched
+
+    stack.undo(network)
+    assert rm.write_xodr(network) == placed
+
+
+def test_set_object_model_rejects_an_unknown_model(network):
+    road = network.find_road("1")
+    obj = network.add_object(road, _tree("1", 20.0, 5.0))
+    before = rm.write_xodr(network)
+
+    stack = rm.edit.EditStack()
+    with pytest.raises(ValueError):
+        stack.push(network, rm.edit.set_object_model(network, obj, "no_such_model"))
+    assert rm.write_xodr(network) == before
+
+
 def test_delete_object_undo_restores_it(network):
     stack = rm.edit.EditStack()
     road = network.find_road("1")

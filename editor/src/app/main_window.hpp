@@ -144,6 +144,7 @@ private:
   class ElevationTool* elevation_tool_ = nullptr;
   /// Owned by properties_dock_; kept to attach the Elevation tool.
   class PropertiesPanel* properties_panel_ = nullptr;
+  class LibraryPanel* library_panel_ = nullptr;
 
   /// Central stack: welcome screen until a document exists, viewport after.
   QStackedWidget* central_stack_;

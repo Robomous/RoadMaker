@@ -51,5 +51,43 @@ TEST(LibraryPanel, SearchFiltersByLabel) {
   EXPECT_EQ(panel.view()->model()->rowCount(), 12);
 }
 
+// An engaged Attributes-pane slot asks the Library to show its category
+// (P1/GW-3): the first item of that category becomes current.
+TEST(LibraryPanel, FocusCategorySelectsThatCategorysFirstItem) {
+  LibraryPanel panel(populated_model());
+  panel.focus_category(QStringLiteral("Props"));
+
+  const QModelIndex current = panel.view()->currentIndex();
+  ASSERT_TRUE(current.isValid());
+  EXPECT_EQ(panel.view()->model()->data(current, LibraryListModel::CategoryRole).toString(),
+            QStringLiteral("Props"));
+}
+
+// A stale search must not hide the category the slot is sending us to.
+TEST(LibraryPanel, FocusCategoryClearsAFilterThatWouldHideIt) {
+  LibraryPanel panel(populated_model());
+  auto* search = panel.findChild<QLineEdit*>(QStringLiteral("library_search"));
+  ASSERT_NE(search, nullptr);
+  search->setText(QStringLiteral("rural")); // a road template — no props visible
+  ASSERT_EQ(panel.view()->model()->rowCount(), 1);
+
+  panel.focus_category(QStringLiteral("Props"));
+
+  EXPECT_TRUE(search->text().isEmpty());
+  EXPECT_EQ(panel.view()->model()->rowCount(), 12);
+  ASSERT_TRUE(panel.view()->currentIndex().isValid());
+  EXPECT_EQ(panel.view()
+                ->model()
+                ->data(panel.view()->currentIndex(), LibraryListModel::CategoryRole)
+                .toString(),
+            QStringLiteral("Props"));
+}
+
+TEST(LibraryPanel, FocusCategoryLeavesAnUnknownCategoryAlone) {
+  LibraryPanel panel(populated_model());
+  panel.focus_category(QStringLiteral("Nonexistent"));
+  EXPECT_FALSE(panel.view()->currentIndex().isValid());
+}
+
 } // namespace
 } // namespace roadmaker::editor

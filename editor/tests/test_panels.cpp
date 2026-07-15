@@ -12,6 +12,7 @@
 #include <QLineEdit>
 #include <QSignalSpy>
 #include <QTemporaryDir>
+#include <QTest>
 #include <fstream>
 #include <stdexcept>
 #include <string>
@@ -24,6 +25,8 @@
 #include "panels/diagnostics_panel.hpp"
 #include "panels/properties_panel.hpp"
 #include "panels/scene_tree_panel.hpp"
+#include "panels/scrub_label.hpp"
+#include "panels/slot_widget.hpp"
 
 namespace roadmaker::editor {
 namespace {
@@ -188,6 +191,178 @@ TEST(PropertiesPanel, SignalSelectionShowsPoseSectionAndEditCommitsMoveSignal) {
   // A focus-out with no change pushes nothing.
   emit s_spin->editingFinished();
   EXPECT_EQ(h.document.undo_stack()->count(), base + 1);
+}
+
+// --- scrub-editing (P1/GW-2) -------------------------------------------------
+// ScrubLabel's own gesture is covered in test_scrub_label.cpp; what matters
+// here is the consumer contract: a whole drag is ONE preview session and lands
+// as exactly ONE undo entry, and a cancel restores the baseline exactly.
+
+/// Selects a WIDTH-BEARING lane of the sample (the centre lane carries no
+/// <width> records — scrubbing it is correctly inert) and returns the
+/// ScrubLabel over Width.
+ScrubLabel* scrub_lane_width(Harness& h, PropertiesPanel& panel, LaneId& lane_out) {
+  const RoadId road = all_roads(h.document).front();
+  const Road* road_ptr = h.document.network().road(road);
+  const LaneSection* section = h.document.network().lane_section(road_ptr->sections.front());
+  for (const LaneId lane : section->lanes) {
+    const Lane* candidate = h.document.network().lane(lane);
+    if (candidate != nullptr && !candidate->widths.empty()) {
+      lane_out = lane;
+      break;
+    }
+  }
+  if (!lane_out.is_valid()) {
+    return nullptr;
+  }
+  h.selection.select({.road = road, .lane = lane_out});
+
+  for (ScrubLabel* label : panel.findChildren<ScrubLabel*>()) {
+    if (label->text() == QStringLiteral("Width")) {
+      return label;
+    }
+  }
+  return nullptr;
+}
+
+/// Drives a scrub of `dx` pixels on `label`, releasing unless `hold`.
+void scrub(ScrubLabel* label, int dx, bool hold = false) {
+  QTest::mousePress(label, Qt::LeftButton, Qt::NoModifier, QPoint(30, 5));
+  QTest::mouseMove(label, QPoint(30 + dx, 5));
+  QMouseEvent move(QEvent::MouseMove,
+                   QPointF(30 + dx, 5),
+                   QPointF(30 + dx, 5),
+                   Qt::NoButton,
+                   Qt::LeftButton,
+                   Qt::NoModifier);
+  QCoreApplication::sendEvent(label, &move);
+  if (!hold) {
+    QTest::mouseRelease(label, Qt::LeftButton, Qt::NoModifier, QPoint(30 + dx, 5));
+  }
+}
+
+TEST(PropertiesPanel, ScrubbingLaneWidthCommitsExactlyOneUndoEntry) {
+  Harness h;
+  ASSERT_TRUE(h.document.load(kSample).has_value());
+  PropertiesPanel panel(h.document, h.selection);
+  LaneId lane;
+  ScrubLabel* label = scrub_lane_width(h, panel, lane);
+  ASSERT_NE(label, nullptr);
+
+  const double before = h.document.network().lane(lane)->widths.front().a;
+  const std::string xodr_before = xodr(h.document);
+  const int base = h.document.undo_stack()->count();
+
+  scrub(label, 100); // ~+2 m at 0.02 m/px
+
+  EXPECT_EQ(h.document.undo_stack()->count(), base + 1)
+      << "a drag is one gesture and must be one undo entry, not one per frame";
+  const double after = h.document.network().lane(lane)->widths.front().a;
+  EXPECT_GT(after, before);
+
+  // And that single entry reverses the whole gesture, byte-identically.
+  h.document.undo_stack()->undo();
+  EXPECT_DOUBLE_EQ(h.document.network().lane(lane)->widths.front().a, before);
+  EXPECT_EQ(xodr(h.document), xodr_before);
+}
+
+TEST(PropertiesPanel, CancellingAScrubRestoresTheBaselineAndPushesNothing) {
+  Harness h;
+  ASSERT_TRUE(h.document.load(kSample).has_value());
+  PropertiesPanel panel(h.document, h.selection);
+  LaneId lane;
+  ScrubLabel* label = scrub_lane_width(h, panel, lane);
+  ASSERT_NE(label, nullptr);
+
+  const std::string xodr_before = xodr(h.document);
+  const int base = h.document.undo_stack()->count();
+
+  scrub(label, 120, /*hold=*/true);
+  ASSERT_NE(xodr(h.document), xodr_before) << "preview is live";
+  QTest::keyClick(label, Qt::Key_Escape);
+
+  EXPECT_EQ(h.document.undo_stack()->count(), base) << "a cancelled scrub pushes nothing";
+  EXPECT_EQ(xodr(h.document), xodr_before);
+  EXPECT_FALSE(h.document.preview_active());
+}
+
+TEST(PropertiesPanel, AScrubThatEndsWhereItStartedPushesNothing) {
+  Harness h;
+  ASSERT_TRUE(h.document.load(kSample).has_value());
+  PropertiesPanel panel(h.document, h.selection);
+  LaneId lane;
+  ScrubLabel* label = scrub_lane_width(h, panel, lane);
+  ASSERT_NE(label, nullptr);
+
+  const std::string xodr_before = xodr(h.document);
+  const int base = h.document.undo_stack()->count();
+
+  QTest::mousePress(label, Qt::LeftButton, Qt::NoModifier, QPoint(30, 5));
+  QTest::mouseMove(label, QPoint(130, 5)); // out...
+  QTest::mouseMove(label, QPoint(30, 5));  // ...and back to the baseline
+  QTest::mouseRelease(label, Qt::LeftButton, Qt::NoModifier, QPoint(30, 5));
+
+  EXPECT_EQ(h.document.undo_stack()->count(), base) << "a net-zero drag is not an edit";
+  EXPECT_EQ(xodr(h.document), xodr_before);
+}
+
+// --- the Model slot (P1/GW-3 mechanics) --------------------------------------
+
+TEST(PropertiesPanel, DroppingOnTheModelSlotRetargetsThePropInOneCommand) {
+  Harness h;
+  ASSERT_TRUE(h.document.load(kSample).has_value());
+  PropertiesPanel panel(h.document, h.selection);
+  auto* slot = panel.findChild<SlotWidget*>(QStringLiteral("object_model_slot"));
+  ASSERT_NE(slot, nullptr);
+  EXPECT_FALSE(slot->isVisibleTo(&panel)); // nothing selected yet
+
+  const RoadId road = all_roads(h.document).front();
+  Object tree;
+  tree.odr_id = "s1";
+  tree.name = "tree_pine";
+  tree.type = ObjectType::Tree;
+  tree.s = 5.0;
+  ASSERT_TRUE(
+      h.document.push_command(edit::add_object(h.document.network(), road, tree)).has_value());
+  ObjectId object;
+  h.document.network().for_each_object([&](ObjectId id, const Object&) { object = id; });
+  h.selection.select({.road = road, .object = object});
+
+  ASSERT_TRUE(slot->isVisibleTo(&panel)) << "a selected prop shows the Prop section";
+  const int base = h.document.undo_stack()->count();
+
+  emit slot->item_dropped(QStringLiteral("shrub"));
+
+  EXPECT_EQ(h.document.undo_stack()->count(), base + 1);
+  EXPECT_EQ(h.document.network().object(object)->name, "shrub");
+
+  h.document.undo_stack()->undo();
+  EXPECT_EQ(h.document.network().object(object)->name, "tree_pine");
+}
+
+TEST(PropertiesPanel, AnUnknownDroppedModelIsRefusedWithoutAnUndoEntry) {
+  Harness h;
+  ASSERT_TRUE(h.document.load(kSample).has_value());
+  PropertiesPanel panel(h.document, h.selection);
+  auto* slot = panel.findChild<SlotWidget*>(QStringLiteral("object_model_slot"));
+  ASSERT_NE(slot, nullptr);
+
+  const RoadId road = all_roads(h.document).front();
+  Object tree;
+  tree.odr_id = "s1";
+  tree.name = "tree_pine";
+  tree.type = ObjectType::Tree;
+  ASSERT_TRUE(
+      h.document.push_command(edit::add_object(h.document.network(), road, tree)).has_value());
+  ObjectId object;
+  h.document.network().for_each_object([&](ObjectId id, const Object&) { object = id; });
+  h.selection.select({.road = road, .object = object});
+
+  const int base = h.document.undo_stack()->count();
+  emit slot->item_dropped(QStringLiteral("urban_sidewalk")); // a road style, not a prop model
+
+  EXPECT_EQ(h.document.undo_stack()->count(), base) << "a refusal must not reach the undo stack";
+  EXPECT_EQ(h.document.network().object(object)->name, "tree_pine");
 }
 
 // Editable Properties panel via manual binding (issue #15,
