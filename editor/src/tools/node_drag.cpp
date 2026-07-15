@@ -22,13 +22,12 @@ void update_node_drag(Document& document,
   // regeneration of every junction the arm touches, so the connecting roads
   // track the arm mid-drag instead of snapping into place on release. On a road
   // that touches no junction this is move_waypoint unchanged.
-  const Expected<void> moved =
-      document.preview_active()
-          ? document.update_preview([&](const RoadNetwork& base) {
-              return edit::move_waypoint_following_junctions(base, road, index, target);
-            })
-          : document.begin_preview(
-                edit::move_waypoint_following_junctions(document.network(), road, index, target));
+  const auto follow = [road, index, target](const RoadNetwork& base) {
+    return edit::move_waypoint_following_junctions(base, road, index, target);
+  };
+  const Expected<void> moved = document.preview_active()
+                                   ? document.update_preview(follow)
+                                   : document.begin_preview(follow(document.network()));
   if (moved.has_value()) {
     drag.current = target;
   }

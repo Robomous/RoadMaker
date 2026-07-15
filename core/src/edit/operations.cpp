@@ -2638,9 +2638,8 @@ std::unique_ptr<Command> move_waypoint_following_junctions(const RoadNetwork& ne
 
   std::vector<CompositeCommand::Builder> builders;
   builders.reserve(followed.size() + 1);
-  builders.push_back([road_id, index, to](RoadNetwork& net) {
-    return move_waypoint(net, road_id, index, to);
-  });
+  builders.push_back(
+      [road_id, index, to](RoadNetwork& net) { return move_waypoint(net, road_id, index, to); });
   for (const JunctionId junction_id : followed) {
     // Built lazily, so each regeneration plans against the network with the
     // move already applied — the whole point of following mid-drag.
