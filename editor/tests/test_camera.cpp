@@ -239,6 +239,256 @@ TEST(OrbitCamera, PanPixelsUsesExactDepthScale) {
   EXPECT_GT(std::abs((*far_after)[0] - (*far_before)[0]), std::abs(expected_dx));
 }
 
+// --- push-past-pivot zoom (GW-1 step 4) --------------------------------------
+
+namespace {
+
+/// Distance from the camera eye to a fixed world point — the thing that must
+/// keep changing smoothly as the zoom pushes through the pivot.
+float eye_distance_to(const OrbitCamera& camera, const std::array<float, 3>& point) {
+  const auto eye = camera.matrices(1.0F).eye;
+  const float dx = eye[0] - point[0];
+  const float dy = eye[1] - point[1];
+  const float dz = eye[2] - point[2];
+  return std::sqrt((dx * dx) + (dy * dy) + (dz * dz));
+}
+
+} // namespace
+
+// The headline behaviour: zooming in past the pivot must not stall. Before P1
+// the distance clamped at kMinDistance and the eye simply stopped.
+TEST(OrbitCamera, ZoomDoesNotStallAtThePivot) {
+  OrbitCamera camera;
+  const std::array<float, 3> landmark = camera.target();
+
+  float previous = eye_distance_to(camera, landmark);
+  for (int i = 0; i < 200; ++i) {
+    camera.zoom(1.0F);
+    const float now = eye_distance_to(camera, landmark);
+    // Either still approaching the landmark, or already past it and receding —
+    // what must never happen is the eye sitting still.
+    if (i > 60) {
+      EXPECT_NE(now, previous) << "the eye stopped moving at step " << i;
+    }
+    previous = now;
+  }
+  // 200 steps of ×0.9 from 80 m is astronomically far past the pivot: the eye
+  // must have gone through and out the other side.
+  const auto eye = camera.matrices(1.0F).eye;
+  EXPECT_GT(eye_distance_to(camera, landmark), 1.0F) << "eye " << eye[0] << "," << eye[1];
+}
+
+TEST(OrbitCamera, ZoomNeverPutsDistanceBelowTheMinimum) {
+  OrbitCamera camera;
+  for (int i = 0; i < 100; ++i) {
+    camera.zoom(1.0F);
+    EXPECT_GE(camera.distance(), 2.0F);
+  }
+}
+
+// Push-past moves the pivot ALONG THE VIEW DIRECTION only: it must never drift
+// sideways, or zooming in would slew the view off its subject.
+TEST(OrbitCamera, PushPastMovesTheTargetAlongTheViewAxisOnly) {
+  OrbitCamera camera;
+  camera.set_view(0.7F, 0.6F);
+  // 0.9^40 · 80 m ≈ 0.24 m — well under the 2 m minimum, so the next zoom is
+  // squarely in the push-past regime. (0.9^20 only reaches ~9.7 m: still a
+  // plain dolly.)
+  camera.zoom(40.0F);
+  ASSERT_FLOAT_EQ(camera.distance(), 2.0F);
+  const std::array<float, 3> before = camera.target();
+  const auto eye_before = camera.matrices(1.0F).eye;
+
+  camera.zoom(1.0F);
+  const std::array<float, 3> after = camera.target();
+
+  // The step vector must be parallel to the (unchanged) view direction.
+  const std::array<float, 3> step{after[0] - before[0], after[1] - before[1], after[2] - before[2]};
+  const std::array<float, 3> forward{
+      before[0] - eye_before[0], before[1] - eye_before[1], before[2] - eye_before[2]};
+  const float step_len = std::sqrt((step[0] * step[0]) + (step[1] * step[1]) + (step[2] * step[2]));
+  const float fwd_len =
+      std::sqrt((forward[0] * forward[0]) + (forward[1] * forward[1]) + (forward[2] * forward[2]));
+  ASSERT_GT(step_len, 1e-6F) << "the pivot must move once past the minimum";
+  const float cos_angle =
+      ((step[0] * forward[0]) + (step[1] * forward[1]) + (step[2] * forward[2])) /
+      (step_len * fwd_len);
+  EXPECT_NEAR(cos_angle, 1.0F, 1e-4F) << "the pivot slid off the view axis";
+}
+
+// Continuity across the boundary: the step the eye takes as it crosses into
+// push-past must match the step a plain dolly would have taken. A discontinuity
+// here is exactly the "dead stop then jump" the old clamp produced.
+TEST(OrbitCamera, EyeTravelIsContinuousAcrossThePushPastBoundary) {
+  OrbitCamera camera;
+  camera.set_view(0.0F, 0.5F);
+  // Walk down to just above the minimum distance.
+  while (camera.distance() > 2.0F / 0.9F) {
+    camera.zoom(1.0F);
+  }
+  ASSERT_GT(camera.distance(), 2.0F);
+  const float step = camera.distance() * (1.0F - 0.9F); // what this zoom should close
+  const auto eye_before = camera.matrices(1.0F).eye;
+
+  camera.zoom(1.0F); // crosses the boundary
+  const auto eye_after = camera.matrices(1.0F).eye;
+  const float travelled = std::sqrt(std::pow(eye_after[0] - eye_before[0], 2.0F) +
+                                    std::pow(eye_after[1] - eye_before[1], 2.0F) +
+                                    std::pow(eye_after[2] - eye_before[2], 2.0F));
+  EXPECT_NEAR(travelled, step, 1e-3F);
+}
+
+TEST(OrbitCamera, ZoomingOutNeverRelocatesThePivot) {
+  OrbitCamera camera;
+  camera.zoom(30.0F); // push past first, so the pivot has moved
+  const std::array<float, 3> pushed = camera.target();
+
+  for (int i = 0; i < 50; ++i) {
+    camera.zoom(-1.0F);
+    EXPECT_FLOAT_EQ(camera.target()[0], pushed[0]);
+    EXPECT_FLOAT_EQ(camera.target()[1], pushed[1]);
+    EXPECT_FLOAT_EQ(camera.target()[2], pushed[2]);
+  }
+}
+
+// --- projection (GW-1 step 11) -----------------------------------------------
+
+TEST(OrbitCamera, DefaultsToPerspective) {
+  EXPECT_EQ(OrbitCamera{}.projection(), ProjectionMode::Perspective);
+}
+
+// The no-jump O/P toggle: at the pivot depth both projections span the same
+// world height, which is what "no jump in the framed content" means.
+TEST(OrbitCamera, OrthoTogglePreservesPivotPlaneScale) {
+  constexpr double kFovY = 50.0 * 3.14159265358979 / 180.0;
+  OrbitCamera camera;
+  camera.frame({10.0F, -4.0F, 0.0F}, 30.0F);
+
+  const float perspective_half_height =
+      camera.distance() * static_cast<float>(std::tan(kFovY / 2.0));
+  camera.set_projection(ProjectionMode::Orthographic);
+  EXPECT_NEAR(camera.ortho_half_height(), perspective_half_height, 1e-3F);
+
+  // The toggle changes only the projection: pose and zoom are untouched.
+  const auto target = camera.target();
+  const float distance = camera.distance();
+  camera.set_projection(ProjectionMode::Perspective);
+  EXPECT_FLOAT_EQ(camera.distance(), distance);
+  EXPECT_FLOAT_EQ(camera.target()[0], target[0]);
+}
+
+TEST(OrbitCamera, OrthoProjectionIsParallelAndSpansTheHalfHeight) {
+  OrbitCamera camera;
+  camera.set_projection(ProjectionMode::Orthographic);
+  const CameraMatrices m = camera.matrices(2.0F);
+  // Column-major: an orthographic matrix has no perspective divide.
+  EXPECT_FLOAT_EQ(m.projection[11], 0.0F) << "w must not depend on view z";
+  EXPECT_FLOAT_EQ(m.projection[15], 1.0F);
+  EXPECT_NEAR(m.projection[5], 1.0F / camera.ortho_half_height(), 1e-6F);
+  EXPECT_NEAR(m.projection[0], 1.0F / (camera.ortho_half_height() * 2.0F), 1e-6F);
+}
+
+// Ortho zoom must pin the point under the cursor, or scrolling would slide the
+// scene out from under it (perspective gets this free from the eye dolly).
+TEST(OrbitCamera, OrthoZoomAboutPinsTheAnchorPoint) {
+  constexpr double kW = 800.0;
+  constexpr double kH = 600.0;
+  const float aspect = static_cast<float>(kW / kH);
+  constexpr double kPixelX = 620.0;
+  constexpr double kPixelY = 180.0;
+
+  OrbitCamera camera;
+  camera.set_view(0.0F, OrbitCamera::kTopDownPitch); // plan view: ground == view plane
+  camera.set_projection(ProjectionMode::Orthographic);
+
+  const auto before = ground_point(camera.matrices(aspect), kPixelX, kPixelY, kW, kH);
+  ASSERT_TRUE(before.has_value());
+
+  const std::array<float, 2> anchor_ndc{
+      static_cast<float>((2.0 * kPixelX / kW) - 1.0),
+      static_cast<float>(1.0 - (2.0 * kPixelY / kH)),
+  };
+  camera.zoom_about(3.0F, anchor_ndc, aspect);
+
+  const auto after = ground_point(camera.matrices(aspect), kPixelX, kPixelY, kW, kH);
+  ASSERT_TRUE(after.has_value());
+  EXPECT_NEAR((*after)[0], (*before)[0], 1e-2);
+  EXPECT_NEAR((*after)[1], (*before)[1], 1e-2);
+}
+
+TEST(OrbitCamera, ZoomAboutInPerspectiveIsAPlainZoom) {
+  OrbitCamera zoomed;
+  OrbitCamera about;
+  const std::array<float, 3> target = about.target();
+  zoomed.zoom(2.0F);
+  about.zoom_about(2.0F, {0.8F, -0.6F}, 1.6F);
+  EXPECT_FLOAT_EQ(about.distance(), zoomed.distance());
+  // Perspective must NOT shift the pivot — the eye already tracks the cursor ray.
+  EXPECT_FLOAT_EQ(about.target()[0], target[0]);
+  EXPECT_FLOAT_EQ(about.target()[1], target[1]);
+}
+
+// --- cardinal views (GW-1 steps 12-13) ---------------------------------------
+
+// Cardinals snap yaw only: pivot and distance survive, so pressing one
+// re-angles the view without losing your place.
+TEST(OrbitCamera, CardinalSnapKeepsPivotAndDistance) {
+  OrbitCamera camera;
+  camera.frame({12.0F, -7.0F, 3.0F}, 25.0F);
+  const auto target = camera.target();
+  const float distance = camera.distance();
+  const float pitch = camera.pitch();
+
+  camera.set_view(3.14159265F / 2.0F, camera.pitch()); // "north"
+  EXPECT_FLOAT_EQ(camera.distance(), distance);
+  EXPECT_FLOAT_EQ(camera.pitch(), pitch) << "a cardinal must not change the pitch";
+  EXPECT_FLOAT_EQ(camera.target()[0], target[0]);
+  EXPECT_FLOAT_EQ(camera.target()[1], target[1]);
+}
+
+// Looking from the north means the eye is north (+y) of the pivot, looking
+// south. Verified through the eye rather than the yaw literal, so the test
+// would catch a sign flip the convention comment couldn't.
+TEST(OrbitCamera, CardinalYawValuesPutTheEyeOnTheRightSide) {
+  constexpr float kHalfPi = 3.14159265F / 2.0F;
+  const float low_pitch = 0.2F; // near-level, so the horizontal offset dominates
+
+  const auto eye_for = [low_pitch](float yaw) {
+    OrbitCamera camera;
+    camera.frame({0.0F, 0.0F, 0.0F}, 20.0F);
+    camera.set_view(yaw, low_pitch);
+    return camera.matrices(1.0F).eye;
+  };
+
+  EXPECT_GT(eye_for(kHalfPi)[1], 5.0F) << "north: eye at +y";
+  EXPECT_LT(eye_for(-kHalfPi)[1], -5.0F) << "south: eye at -y";
+  EXPECT_LT(eye_for(3.14159265F)[0], -5.0F) << "west: eye at -x";
+  EXPECT_GT(eye_for(0.0F)[0], 5.0F) << "east: eye at +x";
+}
+
+// Top-down is near-vertical, not vertical: at exactly π/2 the look-at basis
+// degenerates (forward ∥ world up). GW-1 step 13 amendment.
+TEST(OrbitCamera, TopDownIsNearVerticalAndKeepsAWellFormedBasis) {
+  OrbitCamera camera;
+  camera.frame({0.0F, 0.0F, 0.0F}, 20.0F);
+  camera.set_view(-3.14159265F / 2.0F, OrbitCamera::kTopDownPitch);
+
+  const CameraMatrices m = camera.matrices(1.0F);
+  EXPECT_NEAR(m.eye[0], 0.0F, 0.5F);
+  EXPECT_NEAR(m.eye[1], 0.0F, 0.5F);
+  EXPECT_GT(m.eye[2], 19.0F) << "the eye is essentially overhead";
+
+  // North-up: world +y must project onto screen +y. The view matrix's up row
+  // (row 1) dotted with world +y is positive when north points up the screen.
+  EXPECT_GT(m.view[5], 0.9F);
+
+  // The basis stays orthonormal — the point of not using exactly π/2.
+  const auto rows = rotation_rows(m);
+  for (std::size_t i = 0; i < 3; ++i) {
+    EXPECT_NEAR(dot(rows[i], rows[i]), 1.0F, 1e-5F);
+  }
+}
+
 TEST(OrbitCamera, PitchStaysAboveGround) {
   OrbitCamera camera;
   camera.orbit(0.0F, -10.0F); // way below the clamp

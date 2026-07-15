@@ -96,6 +96,21 @@ MainWindow::MainWindow(QWidget* parent, bool restore_saved_layout)
   connect(actions_->reset_camera, &QAction::triggered, viewport_, &ViewportWidget::reset_camera);
   connect(
       actions_->frame_selection, &QAction::triggered, viewport_, &ViewportWidget::frame_selection);
+  connect(actions_->frame_cursor, &QAction::triggered, viewport_, &ViewportWidget::frame_cursor);
+  connect(actions_->view_perspective, &QAction::triggered, viewport_, [this] {
+    viewport_->set_projection(ProjectionMode::Perspective);
+  });
+  connect(actions_->view_orthographic, &QAction::triggered, viewport_, [this] {
+    viewport_->set_projection(ProjectionMode::Orthographic);
+  });
+  const auto bind_cardinal = [this](QAction* action, CardinalView view) {
+    connect(action, &QAction::triggered, viewport_, [this, view] { viewport_->look_from(view); });
+  };
+  bind_cardinal(actions_->view_north, CardinalView::North);
+  bind_cardinal(actions_->view_south, CardinalView::South);
+  bind_cardinal(actions_->view_west, CardinalView::West);
+  bind_cardinal(actions_->view_east, CardinalView::East);
+  bind_cardinal(actions_->view_top, CardinalView::Top);
   connect(actions_->add_from_library, &QAction::triggered, this, [this] {
     library_dock_->show();
     library_dock_->raise();
@@ -472,6 +487,19 @@ void MainWindow::build_menus() {
   view_menu->addSeparator();
   view_menu->addAction(actions_->reset_camera);
   view_menu->addAction(actions_->frame_selection);
+  view_menu->addAction(actions_->frame_cursor);
+  view_menu->addSeparator();
+  // Every camera capability gets a visible, labelled entry point; the keys are
+  // accelerators, not the only way in (product-parity discoverability rule).
+  view_menu->addAction(actions_->view_perspective);
+  view_menu->addAction(actions_->view_orthographic);
+  QMenu* cardinal_menu = view_menu->addMenu(tr("&Cardinal Views"));
+  cardinal_menu->addAction(actions_->view_north);
+  cardinal_menu->addAction(actions_->view_south);
+  cardinal_menu->addAction(actions_->view_west);
+  cardinal_menu->addAction(actions_->view_east);
+  cardinal_menu->addSeparator();
+  cardinal_menu->addAction(actions_->view_top);
   view_menu->addSeparator();
   view_menu->addAction(actions_->reset_layout);
 

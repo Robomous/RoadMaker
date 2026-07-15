@@ -74,6 +74,75 @@ TEST(PickRay, CenterPixelPassesThroughCameraTarget) {
   EXPECT_NEAR(std::sqrt((px * px) + (py * py) + (pz * pz)), 0.0, 1e-3);
 }
 
+// --- orthographic pick rays (P1/GW-1 step 11) --------------------------------
+// Unprojection goes through inverse(proj·view), so it is projection-agnostic —
+// but ortho is the case where the rays become PARALLEL instead of fanning from
+// the eye, so it gets its own guard.
+
+TEST(PickRay, OrthoRaysAreParallelInsteadOfFanningFromTheEye) {
+  OrbitCamera camera;
+  camera.set_projection(ProjectionMode::Orthographic);
+  const CameraMatrices matrices = camera.matrices(16.0F / 9.0F);
+
+  const Ray left = make_pick_ray(matrices, 100.0, 450.0, 1600.0, 900.0);
+  const Ray right = make_pick_ray(matrices, 1500.0, 450.0, 1600.0, 900.0);
+
+  // Same direction everywhere on screen...
+  for (std::size_t i = 0; i < 3; ++i) {
+    EXPECT_NEAR(left.direction[i], right.direction[i], 1e-6)
+        << "ortho rays must not converge on an eye point";
+  }
+  // ...but different origins, which is what makes them able to hit anything.
+  const double origin_gap = std::abs(left.origin[0] - right.origin[0]) +
+                            std::abs(left.origin[1] - right.origin[1]) +
+                            std::abs(left.origin[2] - right.origin[2]);
+  EXPECT_GT(origin_gap, 1.0);
+}
+
+TEST(PickRay, OrthoCenterPixelStillPassesThroughTheTarget) {
+  OrbitCamera camera;
+  camera.set_projection(ProjectionMode::Orthographic);
+  const std::array<float, 3> t3 = camera.target();
+  const Ray ray = make_pick_ray(camera.matrices(16.0F / 9.0F), 800.0, 450.0, 1600.0, 900.0);
+
+  const std::array<double, 3>& o = ray.origin;
+  const std::array<double, 3>& d = ray.direction;
+  const std::array<double, 3> to_target{t3[0] - o[0], t3[1] - o[1], t3[2] - o[2]};
+  const double t = (to_target[0] * d[0]) + (to_target[1] * d[1]) + (to_target[2] * d[2]);
+  const double px = o[0] + (t * d[0]) - t3[0];
+  const double py = o[1] + (t * d[1]) - t3[1];
+  const double pz = o[2] + (t * d[2]) - t3[2];
+  EXPECT_NEAR(std::sqrt((px * px) + (py * py) + (pz * pz)), 0.0, 1e-3);
+}
+
+// Picking must resolve the same lane under the same pixel in either projection
+// — the O/P toggle changes how the scene looks, never what a click hits.
+TEST(Pick, OrthoHitsTheSameQuadAsPerspective) {
+  RoadNetwork network;
+  NetworkMesh mesh;
+  mesh.roads.push_back(make_quad_road(network, "1", 0.0, 10.0));
+  const auto aabbs = compute_road_aabbs(mesh);
+
+  OrbitCamera camera;
+  camera.frame({5.0F, 5.0F, 0.0F}, 8.0F); // centred on the quad
+  camera.set_view(0.0F, OrbitCamera::kTopDownPitch);
+
+  constexpr double kW = 800.0;
+  constexpr double kH = 600.0;
+  const float aspect = static_cast<float>(kW / kH);
+  const Ray perspective_ray = make_pick_ray(camera.matrices(aspect), kW / 2.0, kH / 2.0, kW, kH);
+  const auto perspective_hit = pick(mesh, aabbs, perspective_ray);
+  ASSERT_TRUE(perspective_hit.has_value());
+
+  camera.set_projection(ProjectionMode::Orthographic);
+  const Ray ortho_ray = make_pick_ray(camera.matrices(aspect), kW / 2.0, kH / 2.0, kW, kH);
+  const auto ortho_hit = pick(mesh, aabbs, ortho_ray);
+  ASSERT_TRUE(ortho_hit.has_value()) << "the same pixel must still hit the quad";
+  EXPECT_EQ(ortho_hit->lane, perspective_hit->lane);
+  EXPECT_NEAR(ortho_hit->position[0], perspective_hit->position[0], 1e-2);
+  EXPECT_NEAR(ortho_hit->position[1], perspective_hit->position[1], 1e-2);
+}
+
 TEST(PickRay, PixelYAxisPointsDown) {
   OrbitCamera camera;
   const CameraMatrices matrices = camera.matrices(1.0F);

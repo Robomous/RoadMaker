@@ -57,7 +57,21 @@ public:
 
   QAction* reset_camera = nullptr;
   QAction* frame_selection = nullptr;
+  QAction* frame_cursor = nullptr;
   QAction* add_from_library = nullptr;
+
+  /// Projection: exclusive and checkable, Perspective checked at startup.
+  QActionGroup* projection_group = nullptr;
+  QAction* view_perspective = nullptr;
+  QAction* view_orthographic = nullptr;
+
+  /// Cardinal views. Bound to the numpad digits, with the top-row digits as
+  /// numpad-less alternates (setShortcuts, not setShortcut).
+  QAction* view_north = nullptr;
+  QAction* view_south = nullptr;
+  QAction* view_west = nullptr;
+  QAction* view_east = nullptr;
+  QAction* view_top = nullptr;
   QAction* merge_roads = nullptr;
   QAction* reset_layout = nullptr;
 
