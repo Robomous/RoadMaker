@@ -8,12 +8,15 @@
 // (docs/design/m2/03_junction_blending.md §3).
 //
 // The <boundary> (§12.10) is derived by build_junction_boundary below (M3a
-// phase 2b, #62): a CCW closed loop of lane/joint segments for gap-free
-// generated junctions. A residual gap that would need auxiliary boundary roads
-// (junctions.boundary.close_gap_with_new_roads) leaves the boundary unwritten
-// and keeps validate_network's warning — auxiliary-road generation and esmini
-// geometric validation are the #62 follow-up (esmini gate is #51). The
-// <elevationGrid> is spec-valid with or without a <boundary>.
+// phase 2b, #62): a CCW closed loop of lane/joint segments. Where an adjacent
+// arm pair has no bridging connecting road, the boundary is closed with a
+// synthesized auxiliary boundary road (junctions.boundary.close_gap_with_new_roads,
+// spec Fig. 99): a derived <road @junction> the writer emits among the real
+// roads (tagged rm:aux_boundary so the reader drops it — round-trip stays a
+// fixed point) whose outer edge provides the closing lane segment. Only a
+// foreign junction with no arm metadata still leaves the boundary unwritten and
+// keeps validate_network's warning. The <elevationGrid> is spec-valid with or
+// without a <boundary>.
 
 #include "roadmaker/geometry/reference_line.hpp"
 #include "roadmaker/road/network.hpp"
@@ -59,7 +62,7 @@ struct JunctionElevationGrid {
 
 /// The derived ≥1.8 surface export for one junction. `has_surface` is false
 /// when the junction has no usable footprint (no reference line / grid is
-/// written). No <boundary> is produced in M2 (see the file header).
+/// written). The <boundary> is a separate export (build_junction_boundary).
 struct JunctionSurfaceExport {
   bool has_surface = false;
   JunctionRefLine ref_line;
@@ -87,23 +90,48 @@ struct JunctionBoundarySegment {
   bool s_begin_to_end = true;
 };
 
+/// A synthesized auxiliary boundary road (§12.10, junctions.boundary.
+/// close_gap_with_new_roads, spec Fig. 99): a derived helper road that exists
+/// solely to provide the closing `<segment type="lane" boundaryLane="0">` where
+/// an adjacent arm pair leaves a gap no existing lane edge can close. It is not
+/// stored in the model — the writer emits it as a `<road @junction>` carrying a
+/// `rm:aux_boundary` userData marker, and the reader drops any road bearing that
+/// marker so write→parse→write is a byte-identical fixed point.
+struct AuxBoundaryRoad {
+  std::string odr_id;          ///< synthesized @id, deterministic per gap
+  std::string junction_odr_id; ///< @junction (the owning junction's id)
+  double x = 0.0;              ///< reference-line start (kernel frame, metres)
+  double y = 0.0;              ///<
+  double hdg = 0.0;            ///< heading of the single <line> [rad]
+  double length = 0.0;         ///< corner-to-corner length [m]
+  std::string pred_road;       ///< <link> predecessor road @id (arm a)
+  ContactPoint pred_contact = ContactPoint::Start;
+  std::string succ_road; ///< <link> successor road @id (arm b)
+  ContactPoint succ_contact = ContactPoint::Start;
+};
+
 /// The derived junction <boundary> (§12.10): a counter-clockwise, closed loop
-/// of lane/joint segments for a common junction. `has_boundary` is false when
-/// the boundary cannot be closed from the existing connecting roads (a gap
-/// needing auxiliary boundary roads, or a foreign junction with no arm
-/// metadata) — the writer then omits <boundary> and validate_network keeps the
-/// close_gap_with_new_roads warning.
+/// of lane/joint segments for a common junction. `aux_roads` carries any
+/// synthesized auxiliary boundary roads whose lane segments close gaps (the
+/// writer emits them among the real roads). `has_boundary` is false only when
+/// the boundary cannot be closed at all — a foreign junction with no arm
+/// metadata — and the writer then omits <boundary> and validate_network keeps
+/// the close_gap_with_new_roads warning.
 struct JunctionBoundaryExport {
   bool has_boundary = false;
   std::vector<JunctionBoundarySegment> segments;
+  std::vector<AuxBoundaryRoad> aux_roads;
 };
 
 /// Derives the junction <boundary> from its connecting roads: collects the
 /// arms, orders them counter-clockwise around the footprint centroid, and
 /// walks the outer connecting road between each adjacent arm pair (a `lane`
-/// segment) with a `joint` cap at each arm. Pure and deterministic. Returns
-/// has_boundary=false when any adjacent arm pair has no bridging connecting
-/// road (a gap) or the junction has no usable connecting roads.
+/// segment) with a `joint` cap at each arm. An adjacent pair with no bridging
+/// connecting road is closed by synthesizing an auxiliary boundary road along
+/// the outer edge between the two arm mouths (appended to `aux_roads`). Pure and
+/// deterministic. Returns has_boundary=false only when a connecting road has no
+/// arm metadata (a foreign junction) or the junction has no usable connecting
+/// roads.
 [[nodiscard]] JunctionBoundaryExport build_junction_boundary(const RoadNetwork& network,
                                                              const Junction& junction);
 

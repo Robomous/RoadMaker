@@ -171,6 +171,17 @@ private:
   // --- roads ---------------------------------------------------------------
 
   void parse_road(const pugi::xml_node& road_node, std::size_t index) {
+    // Auxiliary boundary roads are derived closure geometry the writer emits as
+    // <road @junction> tagged rm:aux_boundary (junction_export.hpp). They are
+    // not part of the model, so drop them on read — this keeps write→parse→write
+    // a byte-identical fixed point. The marker is RoadMaker-namespaced and only
+    // ever appears on a junction road, so no user road is silently eaten.
+    for (const pugi::xml_node node : road_node.children("userData")) {
+      if (std::string_view(node.attribute("code").value()) == "rm:aux_boundary") {
+        return;
+      }
+    }
+
     const std::string location = fmt::format("road[{}]", index);
     std::string odr_id = road_node.attribute("id").value();
     if (odr_id.empty()) {

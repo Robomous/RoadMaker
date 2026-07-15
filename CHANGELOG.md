@@ -64,6 +64,19 @@ through the M2 command layer (one undo step per edit, byte-identical undo) and
 is headless-testable.
 
 ### Added
+- **Auxiliary boundary roads close junction boundary gaps** (GS-1 WS-E,
+  [#62](https://github.com/Robomous/RoadMaker/issues/62)): when an adjacent arm
+  pair of a junction has no bridging connecting road, the writer now closes the
+  OpenDRIVE `<boundary>` (§12.10) by synthesizing an **auxiliary boundary road**
+  along the outer edge between the two arm mouths — a derived `<road @junction>`
+  whose lane-0 edge provides the missing `<segment type="lane" boundaryLane="0">`
+  (spec Fig. 99, `junctions.boundary.close_gap_with_new_roads`). The aux road is
+  not stored in the model (like the `<boundary>`/`<elevationGrid>` it is derived
+  on write) and is tagged `rm:aux_boundary` so the reader drops it — round-trip
+  stays a byte-identical fixed point while consumers such as esmini keep it and
+  close the boundary. The `close_gap_with_new_roads` warning now self-clears for
+  any junction that carries arm metadata; only a foreign junction with no arm
+  data still leaves the boundary unwritten.
 - **Signal properties panel** (GS-1 WS-C): selecting a traffic light or sign
   shows a **Signal** section in the Properties panel — its kind (dynamic/static),
   type/subtype, and country as read-only rows, plus editable **s / t / heading
