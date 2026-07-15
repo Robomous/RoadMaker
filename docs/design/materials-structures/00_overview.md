@@ -117,11 +117,17 @@ Ordered kernel → assets → render → editor, per the standing product-parity
 
 | Phase | Issue | Contents | Gate |
 |---|---|---|---|
-| WS-1 material engine | TBD | Renderer normal/roughness sampling, material param blocks, manifest-driven map sets, kernel `<material>` promotion | A road renders with flat colour vs PBR-lite side by side; old scenes unchanged; `<material>` round-trips |
-| WS-2 material library UX | TBD | Library category, drag-onto-surface, properties dropdown, variants, assignment commands + persistence | Assign asphalt_worn to a lane, save, reload, still worn; undo works |
-| WS-3 bridge generator | TBD | Grade-separation detection, Manifold solids, `<bridge>` records, auto-offer UX, regeneration | GS-4's overpass generates from a two-road crossing; `.xodr` validates zero-error |
-| WS-4 city props | TBD | CC0 kit import, category layout, licence rows | Props place from the Library; every asset has its ledger row |
-| WS-5 GS-4 assembly | TBD | Scene authoring, baseline, checklist walk | Same acceptance machinery as GS-1: one checklist, gaps filed, baseline committed, esmini clean |
+| WS-1 material engine | [#196] | Renderer normal/roughness sampling, material param blocks, manifest-driven map sets, kernel `<material>` promotion | A road renders with flat colour vs PBR-lite side by side; old scenes unchanged; `<material>` round-trips |
+| WS-2 material library UX | [#197] | Library category, drag-onto-surface, properties dropdown, variants, assignment commands + persistence | Assign asphalt_worn to a lane, save, reload, still worn; undo works |
+| WS-3 bridge generator | [#198] | Grade-separation detection, Manifold solids, `<bridge>` records, auto-offer UX, regeneration | GS-4's overpass generates from a two-road crossing; `.xodr` validates zero-error |
+| WS-4 city props | [#199] | CC0 kit import, category layout, licence rows | Props place from the Library; every asset has its ledger row |
+| WS-5 GS-4 assembly | [#200] | Scene authoring, baseline, checklist walk | Same acceptance machinery as GS-1: one checklist, gaps filed, baseline committed, esmini clean |
+
+[#196]: https://github.com/Robomous/RoadMaker/issues/196
+[#197]: https://github.com/Robomous/RoadMaker/issues/197
+[#198]: https://github.com/Robomous/RoadMaker/issues/198
+[#199]: https://github.com/Robomous/RoadMaker/issues/199
+[#200]: https://github.com/Robomous/RoadMaker/issues/200
 
 ### Execution order & dependencies
 
