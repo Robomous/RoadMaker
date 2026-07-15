@@ -21,7 +21,7 @@ A flat 4-arm junction of two urban two-way streets crossing at 90°:
   > lanes per direction". The scene was built one-lane-per-direction (the
   > `urban_sidewalk` profile), and the spec is corrected here to describe what
   > exists rather than a scene that was never authored. The consequence is
-  > recorded honestly as gaps 7 and 8 below — a single-lane carriageway has no
+  > recorded honestly as gap 8 below — a single-lane carriageway has no
   > same-direction lane boundary to draw a dashed line on.
 - **Speed regime:** 50 km/h urban; lane widths 3.5 m driving, 2.0 m
   sidewalks.
@@ -59,9 +59,9 @@ it. They are merged here into one.)*
 | 2 | Textured asphalt roadway | [x] | material/texture interface ([#165]) + textured asphalt surfaces ([#170]) |
 | 3 | Concrete sidewalks with curb offset | [x] | `urban_sidewalk` profile + concrete texture ([#170]) |
 | 4 | Crosswalks on all four arms | [x] | `edit::junction_crosswalks` ([#171]) |
-| 5 | Lane arrows | [x] | `edit::junction_lane_arrows` ([#173]) — straight arrows only; left/right turn glyphs are [GAP] 5a |
+| 5 | Lane arrows | [x] | `edit::junction_lane_arrows` ([#173]); per-lane turn glyphs ([#203]) — GS-1 authors straight, which is the correct glyph for a single lane serving all three movements |
 | 6 | Stop lines at each approach | [x] | `edit::junction_stop_lines` ([#172]) |
-| 7 | Center double-yellow lines | **[GAP]** | Single-line centre marking ships from the urban profile; true dual-geometry `solid solid` + yellow authoring never landed. → [#193] |
+| 7 | Center double-yellow lines | [x] | `edit::junction_center_marks` ([#203]) — `solid solid` + `color="yellow"` on lane 0 of each arm, rendered as true dual stripes |
 | 8 | Dashed white lane lines | **[GAP]** | Not representable in this scene: a one-lane-per-direction carriageway has no same-direction lane boundary to mark. Needs a multi-lane profile. → [#194] |
 | 9 | Traffic lights ×4 | [x] | `add_signal` commands ([#174]) + instanced signal meshes ([#185]) + Library placement ([#186]) |
 | 10 | Speed-limit + crossing signs | [x] | two static `<signal>`s, DE 274/50 + 133/10 ([#174], [#185]) |
@@ -70,19 +70,18 @@ it. They are merged here into one.)*
 | 13 | Sky and daytime lighting | [x] | daytime lighting + sky ([#166]) |
 | 14 | Sober mode still available | [x] | `View → Textured Rendering` toggle ([#166]); sober stays the default |
 
-**Score: 12 / 14 delivered, 2 gaps** (rows 7 and 8), plus one partial noted
-inline on row 5. Both gaps are marking-authoring work, both are filed, and
-neither blocks the milestone's acceptance claim: GS-1's purpose is to prove
-`<object>`/`<signal>`/road-mark/texture/terrain completeness end to end, and
-it does.
+**Score: 13 / 14 delivered, 1 gap** (row 8). Row 7 closed during the v0.6.0
+close-out, once [#203] added the centre-mark authoring op the scene was
+missing; gaps 5a and 7 are both retired below. The remaining gap needs a wider
+road profile, not marking work.
 
 ### Gaps and follow-ups
 
-| Gap | Issue | Why it did not land |
+| Gap | Issue | Status |
 |---|---|---|
-| 5a | [#193] | Lane arrows render the `straight` glyph on every approach; `arrowLeft`/`arrowRight` subtypes exist in the kernel but are not authored by `junction_lane_arrows`. Filed together with the dual-yellow work. |
-| 7 | [#193] | Dual-geometry `solid solid` marks + `roadMark` colour authoring — kernel support exists ([#69]); the authoring op and the profile default do not. |
-| 8 | [#194] | Requires a two-lane-per-direction urban profile, which GS-1 does not use. Deferred to whichever milestone brings the wider profile. |
+| 5a | [#203] | **Closed.** `edit::junction_lane_arrows` takes a per-approach-lane glyph chooser, so a turn-lane scene can author `arrowLeft`/`arrowRight`. GS-1 itself still authors `arrowStraight` — with one lane per direction serving left, straight and right at once, no single turn glyph is correct for it, and the normative combined subtype (`arrowStraightLeftRight`, §13.14.8 Table 117) does not mesh yet. |
+| 7 | [#203] | **Closed.** `edit::junction_center_marks` authors `solid solid` + `color="yellow"` on lane 0 of every arm; the mesh renders the two stripes from the mark's width. |
+| 8 | [#194] | **Open.** Requires a two-lane-per-direction urban profile, which GS-1 does not use — a single-lane carriageway has no same-direction lane boundary to draw a dashed line on. Deferred to whichever milestone brings the wider profile. |
 
 [#69]: https://github.com/Robomous/RoadMaker/issues/69
 [#139]: https://github.com/Robomous/RoadMaker/pull/139
@@ -101,6 +100,7 @@ it does.
 [#191]: https://github.com/Robomous/RoadMaker/pull/191
 [#193]: https://github.com/Robomous/RoadMaker/issues/193
 [#194]: https://github.com/Robomous/RoadMaker/issues/194
+[#203]: https://github.com/Robomous/RoadMaker/pull/203
 
 ## Fixed camera
 
@@ -177,3 +177,9 @@ the **Materials & Structures (v0.7.0)** milestone is the natural home for:
   one authoritative checklist (12/14 + 2 filed gaps); scene definition amended
   to the as-built one-lane-per-direction profile; trees raised 16 → 24 to clear
   row 11; baseline committed; honest render notes recorded above.
+- 2026-07-15 — **row 7 closed (13/14), still within v0.6.0.**
+  `edit::junction_center_marks` ([#203]) landed the centre-mark authoring the
+  scene had been missing, so the arms now carry the specified double-yellow
+  centre line; gap 5a retired with the per-lane arrow-glyph chooser in the same
+  PR. v0.6.0 had not been tagged, so the baseline was refreshed in place rather
+  than forked into a new release row. Row 8 stays open on [#194].

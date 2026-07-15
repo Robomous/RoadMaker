@@ -15,6 +15,17 @@ acceptance walk that closes the milestone.
 Released together with [0.4.0] and [0.5.0], which are also unreleased.
 
 ### Added
+- **Junction centre-line and turn-arrow authoring**
+  ([#193](https://github.com/Robomous/RoadMaker/issues/193)):
+  `edit::junction_center_marks` paints the double-yellow centre line
+  (`solid solid` + `color="yellow"`) down lane 0 of every arm of a junction,
+  and `edit::junction_lane_arrows` takes a per-approach-lane glyph chooser so
+  a turn-lane scene can author `arrowLeft`/`arrowRight` instead of straight
+  everywhere. Both are exposed in Python and as junction context-menu actions
+  ("Add centre lines to all arms"), each one undo step. This **closes GS-1
+  row 7** — the scene had specified a double-yellow centre since the start but
+  shipped the road template's single broken line, because the kernel could
+  model the mark and nothing could author it. GS-1 is now **13 / 14**.
 - **GS-1 baseline render, tracked release over release**
   ([#73](https://github.com/Robomous/RoadMaker/issues/73)): the golden scene's
   render from its fixed camera is committed as
@@ -83,6 +94,26 @@ Released together with [0.4.0] and [0.5.0], which are also unreleased.
   the maintainer's.
 
 ### Fixed
+- **`split_road` no longer drops a road mark's colour and line geometry**
+  ([#202](https://github.com/Robomous/RoadMaker/pull/202)): splitting a road
+  rebuilt the tail's marks field by field, keeping only `sOffset`/type/width, so
+  a dual-yellow centre line came back on the tail as a single standard-colour
+  stripe. Latent until now — nothing authored a coloured or dual-geometry mark;
+  the centre-mark op above is what made it reachable.
+- **The junction context menu was unreachable**
+  ([#205](https://github.com/Robomous/RoadMaker/pull/205)): the viewport built
+  its menu context without ever setting the junction, so the whole junction
+  block — add crosswalks / stop lines / lane arrows / centre lines, delete
+  junction — could only be reached from tests. Junction floors have been
+  pickable since the gate work; nothing forwarded the hit. Right-clicking the
+  junction floor now opens it.
+- **A prop dragged off its road no longer flies away**
+  ([#144](https://github.com/Robomous/RoadMaker/issues/144)): station lookup
+  bounds `s` to the road's length but leaves `t` unbounded, and `move_object`
+  validates `s` but not `t`, so dragging a prop into open grass succeeded and
+  took the prop with it. The drag now holds its last good station and hints,
+  using the same 12 m threshold the Library drop already applied — so dragging
+  and dropping agree on where the road ends. The gizmo path had the same hole.
 - **Drag-drop placement lands where you drop it**
   ([#175](https://github.com/Robomous/RoadMaker/issues/175)): a dragged library
   item (tree, assembly) now commits at the exact spot its ghost marks. The drag
@@ -95,11 +126,6 @@ Released together with [0.4.0] and [0.5.0], which are also unreleased.
   relocated. Controller tests assert ghost == commit across camera angles.
 
 ### Known gaps (GS-1)
-- **Centre double-yellow lines** ([#193](https://github.com/Robomous/RoadMaker/issues/193)):
-  kernel support for dual-geometry `solid solid` marks and `roadMark` colour
-  exists; the authoring op does not, so the urban profile's single-line centre
-  marking ships instead. Left/right lane-arrow glyphs are filed with it —
-  `junction_lane_arrows` authors only the straight glyph.
 - **Dashed white lane lines** ([#194](https://github.com/Robomous/RoadMaker/issues/194)):
   not representable in GS-1 — a one-lane-per-direction carriageway has no
   same-direction lane boundary to mark. Needs a two-lane-per-direction urban

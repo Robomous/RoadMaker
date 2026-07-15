@@ -66,13 +66,18 @@ def main() -> int:
     stack.push(network, rm.edit.assembly.x_intersection(network, rm.edit.assembly.Pose(0.0, 0.0, 0.0), params))
     junction = network.find_junction("1")
 
-    # 2. Junction marks on every arm — crosswalks, stop lines, lane arrows.
+    # 2. Junction marks on every arm — crosswalks, stop lines, lane arrows, and
+    #    the double-yellow centre line (row 7). The centre line is a lane
+    #    roadMark rather than an object, so it lands through set_road_mark and
+    #    replaces the single broken line the urban profile paints.
     for road, obj in rm.edit.junction_crosswalks(network, junction):
         stack.push(network, rm.edit.add_object(network, road, obj))
     for road, obj in rm.edit.junction_stop_lines(network, junction):
         stack.push(network, rm.edit.add_object(network, road, obj))
     for road, obj in rm.edit.junction_lane_arrows(network, junction):
         stack.push(network, rm.edit.add_object(network, road, obj))
+    for lane, mark in rm.edit.junction_center_marks(network, junction):
+        stack.push(network, rm.edit.set_road_mark(network, lane, mark))
 
     # 3. Signals: one traffic light on every arm, plus two static signs.
     arms = arm_roads(network)
