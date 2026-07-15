@@ -123,7 +123,13 @@ public:
   /// Ends the session pushing the previewed command as the single undo-stack
   /// entry (already applied — no re-apply, no re-mesh). No-op without a
   /// session (a click that never became a drag).
-  void commit_preview();
+  ///
+  /// `already_regenerated` says the previewed command carries its own junction
+  /// regeneration (a node drag's move_waypoint_following_junctions does), so
+  /// the commit must not regenerate a second time — the second pass would be a
+  /// byte-identical no-op, but it would still cost a re-plan and land an extra
+  /// child in the undo entry.
+  void commit_preview(bool already_regenerated = false);
 
   /// Ends the session reverting the previewed command: write_xodr() is
   /// byte-identical to the pre-session state. No-op without a session.
@@ -181,9 +187,12 @@ private:
   /// Pushes an already-applied command, folding regeneration of every
   /// junction it touched (recorded arms) into the same undo entry (02 §6).
   /// `already_meshed` skips the re-mesh when the caller (commit_preview)
-  /// already tessellated the primary edit. Shared by push_command and
-  /// commit_preview.
-  void push_applied_with_regeneration(std::unique_ptr<edit::Command> command, bool already_meshed);
+  /// already tessellated the primary edit; `already_regenerated` skips the
+  /// regeneration pass when the command already did it itself. Shared by
+  /// push_command and commit_preview.
+  void push_applied_with_regeneration(std::unique_ptr<edit::Command> command,
+                                      bool already_meshed,
+                                      bool already_regenerated = false);
 
   RoadNetwork network_;
   NetworkMesh mesh_;

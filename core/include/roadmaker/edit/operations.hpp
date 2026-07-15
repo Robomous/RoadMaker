@@ -49,6 +49,25 @@ namespace roadmaker::edit {
 [[nodiscard]] RM_API std::unique_ptr<Command>
 move_waypoint(const RoadNetwork& network, RoadId road, std::size_t index, Waypoint to);
 
+/// move_waypoint, plus in-place regeneration of every junction the road touches,
+/// as ONE command — so a mid-drag preview can show the connecting roads
+/// following the arm instead of snapping into place on release (#156).
+///
+/// Falls back to a plain move_waypoint when the road touches no junction that
+/// can regenerate, so a free-road drag keeps exactly its previous shape and
+/// cost. Junctions with no recorded arms (read from a foreign file) are skipped
+/// rather than refused: regenerate_junction treats them as an error, but a drag
+/// must not fail because some unrelated junction came from someone else's file.
+///
+/// Unlike the editor's commit-time regeneration, this is **atomic** — if a
+/// regeneration fails the whole move is refused and the network is untouched.
+/// That is the right trade mid-drag: the frame is simply rejected and the last
+/// good preview stands. It is also close to unreachable, since regeneration
+/// only fails when the turn set changes and a node drag moves geometry, not
+/// lanes.
+[[nodiscard]] RM_API std::unique_ptr<Command> move_waypoint_following_junctions(
+    const RoadNetwork& network, RoadId road, std::size_t index, Waypoint to);
+
 /// Inserts before `index` (index == waypoint count appends).
 [[nodiscard]] RM_API std::unique_ptr<Command>
 insert_waypoint(const RoadNetwork& network, RoadId road, std::size_t index, Waypoint at);

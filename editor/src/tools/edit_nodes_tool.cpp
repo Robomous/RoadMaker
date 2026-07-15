@@ -199,9 +199,10 @@ bool EditNodesTool::mouse_release(const ToolEvent& event) {
   if (!drag_.has_value()) {
     return false;
   }
-  // A grab that never previewed pushes nothing (commit is a no-op then).
+  // A grab that never previewed pushes nothing (commit is a no-op then). The
+  // drag regenerated the touched junctions per frame (#156); don't repeat it.
   const bool moved = document_.preview_active();
-  document_.commit_preview();
+  document_.commit_preview(/*already_regenerated=*/true);
   drag_.reset();
   if (moved) {
     emit status_message(tr("Node moved"));
