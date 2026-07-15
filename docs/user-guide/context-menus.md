@@ -16,7 +16,7 @@ What the menu offers depends on what you clicked:
 | a **road body** | Remove this lane _(when a lane is under the cursor)_ · Insert bend point here · Split road here · Merge selected roads · Link Ends · Edit lane profile · Edit elevation profile · Frame · Delete road |
 | a **node handle** (on a selected road) | Split at this node · Delete node · Frame |
 | **empty space** | Create road here · Paste _(coming soon)_ · Frame all |
-| a **junction** (from the scene tree) | Frame · Add crosswalks to all arms · Add stop lines to all arms · Add lane arrows to all arms · Delete junction |
+| a **junction floor** (the surface between the arms) | Frame · Add crosswalks to all arms · Add stop lines to all arms · Add lane arrows to all arms · Add centre lines to all arms · Delete junction |
 
 - **Remove this lane** appears when you right-click on a specific lane; it is
   enabled only for the outermost lane of a side (the OpenDRIVE numbering must
@@ -35,6 +35,10 @@ What the menu offers depends on what you clicked:
   approach lanes, set back to sit behind the crosswalk (also one undo step).
 - **Add lane arrows to all arms** paints a straight arrow on each approach lane,
   pointing into the junction, behind the stop line (also one undo step).
+- **Add centre lines to all arms** paints a double-yellow centre line down each
+  arm, replacing the one the road template laid down. Unlike the three above it
+  edits the arms' lane markings rather than adding objects — still one undo
+  step. See [Objects & signals](objects-signals.md#junction-markings).
 - **Split at this node** is disabled on a road's end nodes (there is nothing to
   split off).
 - **Edit lane / elevation profile** selects the road and switches to that tool.
