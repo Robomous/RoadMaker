@@ -30,33 +30,6 @@ Released together with [0.4.0] and [0.5.0], which are also unreleased.
   (no shadows, no IBL). The mode shipped in 0.5.0 and CI renders with it, but
   the guide never mentioned it existed.
 
-### Changed
-- **GS-1 acceptance walk — one authoritative checklist**
-  ([#73](https://github.com/Robomous/RoadMaker/issues/73)): the scene spec
-  carried two disagreeing tables (an all-unticked aspirational checklist and a
-  separate as-built table). They are merged into one, ticked against the
-  baseline and citing the PR that delivered each row: **12 / 14 delivered, 2
-  gaps filed**. Street trees raised **16 → 24** (36 objects, 0 diagnostics) to
-  clear the spec's "~20 vegetation props" target. The scene definition is
-  amended from "two driving lanes per direction" to the as-built
-  one-lane-per-direction profile — it described a scene that was never
-  authored, and gap 8 is the honest consequence. The spec also records what the
-  baseline actually looks like: the junction floor is an untextured grey slab
-  and the sky reads dark rather than daytime — both are v0.7.0 material work.
-- **README hero** is GS-1 in the themed editor window, rendered by CI
-  (`gs1_hero.png`) rather than the bare viewport render, so the hero carries the
-  product's chrome as well as the new golden scene.
-
-### Known gaps (GS-1)
-- **Centre double-yellow lines** ([#193](https://github.com/Robomous/RoadMaker/issues/193)):
-  kernel support for dual-geometry `solid solid` marks and `roadMark` colour
-  exists; the authoring op does not, so the urban profile's single-line centre
-  marking ships instead. Left/right lane-arrow glyphs are filed with it —
-  `junction_lane_arrows` authors only the straight glyph.
-- **Dashed white lane lines** ([#194](https://github.com/Robomous/RoadMaker/issues/194)):
-  not representable in GS-1 — a one-lane-per-direction carriageway has no
-  same-direction lane boundary to mark. Needs a two-lane-per-direction urban
-  profile.
 - **3D transform gizmo** ([#177](https://github.com/Robomous/RoadMaker/issues/177)):
   selecting an entity with the Move tool shows the classic axis gizmo — three
   colored axis arrows (X red, Y green, Z blue), a centre pad for free planar
@@ -89,6 +62,26 @@ Released together with [0.4.0] and [0.5.0], which are also unreleased.
   entry that arms the tool with the entity selected. Junction-member roads stay
   blocked with the same toast.
 
+### Changed
+- **GS-1 acceptance walk — one authoritative checklist**
+  ([#73](https://github.com/Robomous/RoadMaker/issues/73)): the scene spec
+  carried two disagreeing tables (an all-unticked aspirational checklist and a
+  separate as-built table). They are merged into one, ticked against the
+  baseline and citing the PR that delivered each row: **12 / 14 delivered, 2
+  gaps filed**. Street trees raised **16 → 24** (36 objects, 0 diagnostics) to
+  clear the spec's "~20 vegetation props" target. The scene definition is
+  amended from "two driving lanes per direction" to the as-built
+  one-lane-per-direction profile — it described a scene that was never
+  authored, and gap 8 is the honest consequence. The spec also records what the
+  baseline actually looks like: the junction floor is an untextured grey slab
+  and the sky reads dark rather than daytime — both are v0.7.0 material work.
+- **README hero** is GS-1 in the themed editor window, rendered by CI
+  (`gs1_hero.png`) rather than the bare viewport render, so the hero carries the
+  product's chrome as well as the new golden scene.
+- **Version bumped 0.3.0 → 0.6.0** (CMake + `pyproject.toml`): the repo still
+  reported 0.3.0 with three releases unreleased. Tagging and publishing remain
+  the maintainer's.
+
 ### Fixed
 - **Drag-drop placement lands where you drop it**
   ([#175](https://github.com/Robomous/RoadMaker/issues/175)): a dragged library
@@ -100,6 +93,17 @@ Released together with [0.4.0] and [0.5.0], which are also unreleased.
   plane only as a fallback) instead of a hidden `z = 0` plane. An off-road prop
   drop tints the ghost and is rejected with a toast rather than silently
   relocated. Controller tests assert ghost == commit across camera angles.
+
+### Known gaps (GS-1)
+- **Centre double-yellow lines** ([#193](https://github.com/Robomous/RoadMaker/issues/193)):
+  kernel support for dual-geometry `solid solid` marks and `roadMark` colour
+  exists; the authoring op does not, so the urban profile's single-line centre
+  marking ships instead. Left/right lane-arrow glyphs are filed with it —
+  `junction_lane_arrows` authors only the straight glyph.
+- **Dashed white lane lines** ([#194](https://github.com/Robomous/RoadMaker/issues/194)):
+  not representable in GS-1 — a one-lane-per-direction carriageway has no
+  same-direction lane boundary to mark. Needs a two-lane-per-direction urban
+  profile.
 
 ## [0.5.0] - Unreleased
 
