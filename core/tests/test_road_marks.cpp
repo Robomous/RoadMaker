@@ -3,6 +3,7 @@
 // byte-stable (M2 single-line unchanged), dual-strip + arrow meshes
 // deterministic.
 
+#include "roadmaker/edit/operations.hpp"
 #include "roadmaker/mesh/mesh_builder.hpp"
 #include "roadmaker/road/network.hpp"
 #include "roadmaker/xodr/reader.hpp"
@@ -59,6 +60,19 @@ roadmaker::XodrParseResult parse(std::string_view xml) {
   auto result = roadmaker::parse_xodr(xml, "test");
   EXPECT_TRUE(result.has_value());
   return std::move(*result);
+}
+
+/// Lane 0's first <roadMark> on `road`, or nullptr when it carries none.
+const RoadMark* center_mark(const RoadNetwork& network, RoadId road) {
+  const roadmaker::LaneSection& section =
+      *network.lane_section(network.road(road)->sections.front());
+  for (const roadmaker::LaneId id : section.lanes) {
+    const roadmaker::Lane* lane = network.lane(id);
+    if (lane->odr_id == 0 && !lane->road_marks.empty()) {
+      return &lane->road_marks.front();
+    }
+  }
+  return nullptr;
 }
 
 const SubMesh* find_marking(const NetworkMesh& mesh, std::string_view needle) {
@@ -129,6 +143,47 @@ TEST(RoadMarks, ColorAndExplicitLinesRoundTrip) {
   const auto rewritten = roadmaker::write_xodr(reparsed.network, "marks-test");
   ASSERT_TRUE(rewritten.has_value());
   EXPECT_EQ(*written, *rewritten);
+}
+
+TEST(RoadMarks, SplitRoadPreservesColorAndLinesOnBothHalves) {
+  auto parsed = parse(document_with_center_mark(R"(
+      <roadMark sOffset="0" type="solid solid" color="yellow" width="0.3">
+        <type name="solid solid" width="0.3">
+          <line length="0" space="0" tOffset="0.1" sOffset="0" width="0.12"/>
+          <line length="0" space="0" tOffset="-0.1" sOffset="0" width="0.12"/>
+        </type>
+      </roadMark>)"));
+  RoadNetwork& network = parsed.network;
+  const RoadId head = network.find_road("1");
+  ASSERT_TRUE(head.is_valid());
+
+  const auto before = roadmaker::write_xodr(network, "marks-test");
+  ASSERT_TRUE(before.has_value());
+
+  auto command = roadmaker::edit::split_road(network, head, 40.0);
+  ASSERT_NE(command, nullptr);
+  ASSERT_TRUE(command->apply(network).has_value());
+  const RoadId tail = network.find_road("2");
+  ASSERT_TRUE(tail.is_valid());
+
+  // Rebuilding the tail's marks field by field used to drop @color and the
+  // <line> block, silently reverting a dual-yellow centre line to a single
+  // standard-colour stripe.
+  for (const RoadId road : {head, tail}) {
+    const RoadMark* mark = center_mark(network, road);
+    ASSERT_NE(mark, nullptr);
+    EXPECT_EQ(mark->type, RoadMarkType::SolidSolid);
+    EXPECT_EQ(mark->color, RoadMarkColor::Yellow);
+    EXPECT_DOUBLE_EQ(mark->width, 0.3);
+    ASSERT_EQ(mark->lines.size(), 2U);
+    EXPECT_DOUBLE_EQ(mark->lines[0].t_offset, 0.1);
+    EXPECT_DOUBLE_EQ(mark->lines[1].t_offset, -0.1);
+  }
+
+  ASSERT_TRUE(command->revert(network).has_value());
+  const auto reverted = roadmaker::write_xodr(network, "marks-test");
+  ASSERT_TRUE(reverted.has_value());
+  EXPECT_EQ(*reverted, *before);
 }
 
 TEST(RoadMarks, UnknownColorSurvivesAsOtherWithDiagnostic) {
