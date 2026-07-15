@@ -1191,8 +1191,9 @@ void ViewportWidget::mouseReleaseEvent(QMouseEvent* event) {
 }
 
 MenuContext ViewportWidget::build_menu_context(const QPointF& pos) const {
-  MenuContext context;
   const Ray ray = ray_through(pos);
+  MenuContext context =
+      menu_context_for_pick(document_.network(), pick(document_.mesh(), road_aabbs_, ray));
 
   // World point on the ground plane, for node picking.
   if (std::abs(ray.direction[2]) > 1e-12) {
@@ -1205,13 +1206,6 @@ MenuContext ViewportWidget::build_menu_context(const QPointF& pos) const {
               pick_waypoint(document_.network(), selection_.selected_roads(), wx, wy, 2.0)) {
         context.node = node;
       }
-    }
-  }
-
-  if (const auto hit = pick(document_.mesh(), road_aabbs_, ray)) {
-    context.pick = hit;
-    if (const Road* road = document_.network().road(hit->road)) {
-      context.station = find_station(road->plan_view, hit->position[0], hit->position[1]).s;
     }
   }
   return context;
