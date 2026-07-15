@@ -365,6 +365,18 @@ StationCoord find_station(const ReferenceLine& line, double x, double y) {
   return StationCoord{.s = s, .t = t};
 }
 
+std::optional<StationCoord>
+station_within(const ReferenceLine& line, double x, double y, double max_abs_t) {
+  if (line.empty()) {
+    return std::nullopt;
+  }
+  const StationCoord station = find_station(line, x, y);
+  if (std::abs(station.t) > max_abs_t) {
+    return std::nullopt;
+  }
+  return station;
+}
+
 std::array<double, 2> station_to_world(const ReferenceLine& line, double s, double t) {
   if (line.empty()) {
     return {0.0, 0.0};

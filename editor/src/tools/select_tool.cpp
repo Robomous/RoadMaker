@@ -553,10 +553,28 @@ void SelectTool::update_object_move(const Waypoint& cursor) {
   }
   // Props are road-relative: re-project the cursor onto the owning road and
   // preview move_object at the new station. One command commits on release.
-  const StationCoord st = find_station(road->plan_view, cursor.x, cursor.y);
+  //
+  // A cursor dragged clear of the road holds the prop at its last good station
+  // instead of flinging it out into the grass: find_station bounds s to the
+  // road's length but leaves t unbounded, and move_object validates s but not
+  // t, so an unguarded frame out here would happily succeed. Same threshold as
+  // the Library drop, so dragging and dropping agree on where the road ends.
+  const std::optional<StationCoord> st =
+      station_within(road->plan_view, cursor.x, cursor.y, kObjectSnapThreshold);
+  if (!st.has_value()) {
+    if (!object_move_->off_road) {
+      object_move_->off_road = true;
+      emit status_message(tr("Keep the prop on or beside its road — Esc cancels"));
+    }
+    return;
+  }
+  if (object_move_->off_road) {
+    object_move_->off_road = false;
+    emit status_message(tr("Moving prop — release to place, Esc cancels"));
+  }
   const ObjectId object = object_move_->object;
-  const double s = st.s;
-  const double t = st.t;
+  const double s = st->s;
+  const double t = st->t;
   const Expected<void> moved =
       document_.preview_active()
           ? document_.update_preview([object, s, t](const RoadNetwork& base) {

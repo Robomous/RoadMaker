@@ -1006,8 +1006,15 @@ void ViewportWidget::update_gizmo_drag(const QPointF& pos, Qt::KeyboardModifiers
         if (r == nullptr) {
           return {};
         }
-        const StationCoord station = find_station(r->plan_view, nx, ny);
-        return edit::move_object(base, object, station.s, station.t);
+        // Same road-relative guard as the prop move-drag: a gizmo dragged clear
+        // of the road yields no command, so update_preview keeps the last good
+        // frame rather than flinging the prop out to a huge t.
+        const std::optional<StationCoord> station =
+            station_within(r->plan_view, nx, ny, kObjectSnapThreshold);
+        if (!station.has_value()) {
+          return {};
+        }
+        return edit::move_object(base, object, station->s, station->t);
       };
       drag.summary = tr("Moved prop");
     } else {
