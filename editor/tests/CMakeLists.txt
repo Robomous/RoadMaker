@@ -38,6 +38,7 @@ add_executable(roadmaker_editor_tests
   test_delete_tool.cpp
   test_diagnostics_model.cpp
   test_document.cpp
+  test_editor2d_host.cpp
   test_document_commands.cpp
   test_edit_nodes_tool.cpp
   test_junction_regen.cpp
@@ -67,6 +68,7 @@ add_executable(roadmaker_editor_tests
   test_slot_widget.cpp
   test_scene_tree_model.cpp
   test_selection_model.cpp
+  test_shortcut_registry.cpp
   test_soak_smoke.cpp
   test_theme.cpp
   test_toast_queue.cpp
@@ -77,7 +79,10 @@ add_executable(roadmaker_editor_tests
 
 target_compile_definitions(roadmaker_editor_tests
   PRIVATE RM_SAMPLES_DIR="${CMAKE_SOURCE_DIR}/assets/samples"
-          RM_ASSETS_DIR="${CMAKE_SOURCE_DIR}/assets")
+          RM_ASSETS_DIR="${CMAKE_SOURCE_DIR}/assets"
+          # The shortcut-map gate reads the committed page and compares it to
+          # what the registry renders (test_shortcut_registry.cpp).
+          RM_DOCS_DIR="${CMAKE_SOURCE_DIR}/docs")
 
 target_link_libraries(roadmaker_editor_tests PRIVATE
   roadmaker_editor_lib

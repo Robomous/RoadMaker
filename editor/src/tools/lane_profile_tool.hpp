@@ -22,6 +22,8 @@ public:
 
   [[nodiscard]] bool mouse_press(const ToolEvent& event) override;
 
+  [[nodiscard]] QString instruction() const override;
+
 private:
   SelectionModel& selection_;
 };

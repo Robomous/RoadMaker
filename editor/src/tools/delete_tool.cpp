@@ -9,9 +9,7 @@ namespace roadmaker::editor {
 
 DeleteTool::DeleteTool(Document& document, QObject* parent) : Tool(parent), document_(document) {}
 
-void DeleteTool::activate() {
-  emit status_message(tr("Click a road to delete it — Ctrl+Z restores"));
-}
+void DeleteTool::activate() {}
 
 bool DeleteTool::mouse_press(const ToolEvent& event) {
   if (!(event.buttons & Qt::LeftButton)) {
@@ -30,6 +28,10 @@ bool DeleteTool::mouse_press(const ToolEvent& event) {
     emit status_message(tr("Deleted road \"%1\" — Ctrl+Z restores").arg(name));
   }
   return true;
+}
+
+QString DeleteTool::instruction() const {
+  return tr("Click a road to delete it · Undo restores it");
 }
 
 } // namespace roadmaker::editor

@@ -161,9 +161,14 @@ private:
   QDockWidget* library_dock_;
   QDockWidget* properties_dock_;
   QDockWidget* diagnostics_dock_;
-  QDockWidget* profile_dock_;
+  QDockWidget* editor2d_dock_;
+  class Editor2DHost* editor2d_host_ = nullptr;
   QMenu* recent_menu_ = nullptr;
   QLabel* status_hover_;
+  /// Persistent per-tool instruction line (what click/drag/modifiers do right
+  /// now). Distinct from the transient status_message channel, which keeps its
+  /// 5 s showMessage lane for state-dependent guidance and results.
+  QLabel* status_instruction_ = nullptr;
   QLabel* status_entities_;
 
   /// Main toolbar — kept so the guided tour can locate an action's button to

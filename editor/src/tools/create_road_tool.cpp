@@ -51,10 +51,7 @@ void append_polyline_of(PreviewGeometry& geometry, const ReferenceLine& line) {
 CreateRoadTool::CreateRoadTool(Document& document, QObject* parent)
     : Tool(parent), document_(document) {}
 
-void CreateRoadTool::activate() {
-  emit status_message(tr("Click to place waypoints — Enter or double-click creates the road, "
-                         "Backspace removes the last point, Esc cancels"));
-}
+void CreateRoadTool::activate() {}
 
 void CreateRoadTool::deactivate() {
   reset_session();
@@ -272,6 +269,11 @@ PreviewGeometry CreateRoadTool::preview() const {
   }
 
   return geometry;
+}
+
+QString CreateRoadTool::instruction() const {
+  return tr("Click to place waypoints · Enter or double-click creates the road · Backspace removes "
+            "the last · Esc cancels");
 }
 
 } // namespace roadmaker::editor

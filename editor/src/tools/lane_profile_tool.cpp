@@ -7,10 +7,7 @@ namespace roadmaker::editor {
 LaneProfileTool::LaneProfileTool(SelectionModel& selection, QObject* parent)
     : Tool(parent), selection_(selection) {}
 
-void LaneProfileTool::activate() {
-  emit status_message(
-      tr("Lane Profile — click a lane to edit its cross-section in the Properties panel"));
-}
+void LaneProfileTool::activate() {}
 
 bool LaneProfileTool::mouse_press(const ToolEvent& event) {
   if (!(event.buttons & Qt::LeftButton)) {
@@ -22,6 +19,10 @@ bool LaneProfileTool::mouse_press(const ToolEvent& event) {
     selection_.clear();
   }
   return true; // LMB belongs to the tool even on a miss (M2 button map)
+}
+
+QString LaneProfileTool::instruction() const {
+  return tr("Click a lane, then edit its type, width, and road mark in the Properties panel");
 }
 
 } // namespace roadmaker::editor

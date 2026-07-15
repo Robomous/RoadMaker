@@ -44,6 +44,8 @@ public:
 
   [[nodiscard]] std::size_t selected_count() const { return ends_.size(); }
 
+  [[nodiscard]] QString instruction() const override;
+
 private:
   /// The road end nearest `cursor` within the snap radius (endpoints only),
   /// resolved to a RoadEnd (start/end by proximity).

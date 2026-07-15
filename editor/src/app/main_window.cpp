@@ -35,8 +35,8 @@
 #include "document/library_drop.hpp"
 #include "document/library_manifest.hpp"
 #include "panels/diagnostics_panel.hpp"
+#include "panels/editor2d_host.hpp"
 #include "panels/library_panel.hpp"
-#include "panels/profile_panel.hpp"
 #include "panels/properties_panel.hpp"
 #include "panels/scene_tree_panel.hpp"
 #include "tools/create_junction_tool.hpp"
@@ -284,11 +284,12 @@ MainWindow::MainWindow(QWidget* parent, bool restore_saved_layout)
   tool_manager_.register_tool(ToolId::Elevation, std::move(elevation_tool));
   connect(actions_->tool_elevation, &QAction::triggered, this, [this] {
     tool_manager_.set_active(ToolId::Elevation);
-    // Surface the Profile dock (vertical-profile handles + the overpass Cross
+    // Surface the 2D Editor pane (vertical-profile handles + the overpass Cross
     // Over/Under controls) when the elevation workflow starts — otherwise it
     // hides behind a View-menu toggle (discoverability rule, product-parity.md).
-    profile_dock_->show();
-    profile_dock_->raise();
+    editor2d_dock_->show();
+    editor2d_dock_->raise();
+    editor2d_host_->raise_relevant_page();
   });
   // The Properties panel edits the node the Elevation tool has made active.
   properties_panel_->set_elevation_tool(elevation_tool_);
@@ -419,11 +420,22 @@ void MainWindow::build_docks() {
   properties_dock_->widget()->setMinimumWidth(300);
   addDockWidget(Qt::RightDockWidgetArea, properties_dock_);
 
-  profile_dock_ = new QDockWidget(tr("Profile"), this);
-  profile_dock_->setObjectName(QStringLiteral("dock.profile"));
-  profile_dock_->setWidget(new ProfilePanel(document_, selection_, profile_dock_));
-  addDockWidget(Qt::BottomDockWidgetArea, profile_dock_);
-  profile_dock_->hide(); // opt-in via the View menu — vertical design is occasional
+  // The 2D Editor pane hosts the flat, per-entity editors. The vertical
+  // profile is the first page; the cross-section and Signal Phase Editor plug
+  // in later (GW-4 step 4, p4-s5).
+  //
+  // NOT "dock.profile": restoreState() matches saved geometry by objectName, so
+  // reusing the old name would drop this dock into the position a stale layout
+  // remembers for a different widget. The new name is simply unknown to old
+  // settings, which restoreState ignores — the default placement below wins.
+  editor2d_dock_ = new QDockWidget(tr("2D Editor"), this);
+  editor2d_dock_->setObjectName(QStringLiteral("dock.editor2d"));
+  editor2d_host_ = new Editor2DHost(selection_, editor2d_dock_);
+  editor2d_host_->register_page(
+      std::make_unique<ProfileEditorPage>(document_, selection_, editor2d_host_));
+  editor2d_dock_->setWidget(editor2d_host_);
+  addDockWidget(Qt::BottomDockWidgetArea, editor2d_dock_);
+  editor2d_dock_->hide(); // opt-in via the View menu — 2D editing is occasional
 
   diagnostics_dock_ = new QDockWidget(tr("Diagnostics"), this);
   diagnostics_dock_->setObjectName(QStringLiteral("dock.diagnostics"));
@@ -471,7 +483,7 @@ void MainWindow::build_menus() {
   view_menu->addAction(library_dock_->toggleViewAction());
   view_menu->addAction(properties_dock_->toggleViewAction());
   view_menu->addAction(diagnostics_dock_->toggleViewAction());
-  view_menu->addAction(profile_dock_->toggleViewAction());
+  view_menu->addAction(editor2d_dock_->toggleViewAction());
   view_menu->addSeparator();
   auto* textured_action = new QAction(tr("&Textured Rendering"), this);
   textured_action->setCheckable(true);
@@ -598,6 +610,27 @@ void MainWindow::update_tool_options() {
 
 void MainWindow::build_status_bar() {
   statusBar()->addWidget(status_hover_, 1);
+  // PERMANENT, not a normal widget: showMessage() hides the normal indications
+  // while a transient message is up, and the instruction must survive that —
+  // it answers "what can I do with this tool", which stays true while results
+  // and refusals come and go. Being permanent also lays it out clear of the
+  // message, so the two can never paint over each other.
+  status_instruction_ = new QLabel(this);
+  status_instruction_->setObjectName(QStringLiteral("status_instruction"));
+  statusBar()->addPermanentWidget(status_instruction_);
+  // Follow the active tool: its instruction() is the ONE source for "what does
+  // this tool do", shown both here and as the viewport corner hint (issue #103
+  // — during an interaction the user's eyes are on the viewport). Tools used to
+  // emit the same sentence transiently on activate(); they no longer do, so the
+  // transient channel carries only results and state-dependent guidance.
+  const auto show_instruction = [this] {
+    const Tool* tool = tool_manager_.active();
+    const QString text = tool == nullptr ? QString() : tool->instruction();
+    status_instruction_->setText(text);
+    viewport_->set_hint(text);
+  };
+  connect(&tool_manager_, &ToolManager::active_changed, this, show_instruction);
+  show_instruction(); // the startup tool
   statusBar()->addPermanentWidget(status_entities_);
   auto* version_label =
       new QLabel(tr("kernel %1")

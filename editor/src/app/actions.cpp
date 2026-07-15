@@ -1,6 +1,7 @@
 #include "app/actions.hpp"
 
 #include "app/icons.hpp"
+#include "app/shortcut_registry.hpp"
 
 namespace roadmaker::editor {
 
@@ -8,22 +9,22 @@ Actions::Actions(QUndoStack& undo_stack, QObject* parent) : QObject(parent) {
   // iconText carries the short label the labeled toolbar renders under the
   // icon (ToolButtonTextUnderIcon); the menu keeps the full text.
   new_file = new QAction(tr("&New"), this);
-  new_file->setShortcut(QKeySequence::New);
+  new_file->setShortcuts(shortcuts::sequences(shortcuts::Id::NewScene));
   new_file->setIconText(tr("New"));
   new_file->setToolTip(tr("New scene — start an empty road network"));
 
   open = new QAction(tr("&Open…"), this);
-  open->setShortcut(QKeySequence::Open);
+  open->setShortcuts(shortcuts::sequences(shortcuts::Id::Open));
   open->setIconText(tr("Open"));
   open->setToolTip(tr("Open an OpenDRIVE (.xodr) file"));
 
   save = new QAction(tr("&Save"), this);
-  save->setShortcut(QKeySequence::Save);
+  save->setShortcuts(shortcuts::sequences(shortcuts::Id::Save));
   save->setIconText(tr("Save"));
   save->setToolTip(tr("Save the scene as OpenDRIVE"));
 
   save_as = new QAction(tr("Save &As…"), this);
-  save_as->setShortcut(QKeySequence::SaveAs);
+  save_as->setShortcuts(shortcuts::sequences(shortcuts::Id::SaveAs));
 
   export_glb = new QAction(tr("&Export glTF…"), this);
   export_glb->setEnabled(false); // enabled once a file is loaded
@@ -36,20 +37,20 @@ Actions::Actions(QUndoStack& undo_stack, QObject* parent) : QObject(parent) {
 #endif
 
   quit = new QAction(tr("&Quit"), this);
-  quit->setShortcut(QKeySequence::Quit);
+  quit->setShortcuts(shortcuts::sequences(shortcuts::Id::Quit));
   quit->setMenuRole(QAction::QuitRole);
 
   undo = undo_stack.createUndoAction(this, tr("&Undo"));
-  undo->setShortcut(QKeySequence::Undo);
+  undo->setShortcuts(shortcuts::sequences(shortcuts::Id::Undo));
   redo = undo_stack.createRedoAction(this, tr("&Redo"));
-  redo->setShortcut(QKeySequence::Redo);
+  redo->setShortcuts(shortcuts::sequences(shortcuts::Id::Redo));
 
   tool_group = new QActionGroup(this);
   tool_select = new QAction(tr("&Select/Move"), this);
   tool_select->setCheckable(true);
   tool_select->setChecked(true); // the default tool
   // Q, not V: V is frame-on-cursor (GW-1 step 10). Rebound in p1-s2.
-  tool_select->setShortcut(Qt::Key_Q);
+  tool_select->setShortcuts(shortcuts::sequences(shortcuts::Id::ToolSelect));
   tool_select->setIconText(tr("Select"));
   tool_select->setToolTip(tr("Select/Move — click picks, drag spans a rubber band, "
                              "drag a node handle moves it (Q)"));
@@ -57,7 +58,7 @@ Actions::Actions(QUndoStack& undo_stack, QObject* parent) : QObject(parent) {
 
   tool_move = new QAction(tr("&Move"), this);
   tool_move->setCheckable(true);
-  tool_move->setShortcut(Qt::Key_M);
+  tool_move->setShortcuts(shortcuts::sequences(shortcuts::Id::ToolMove));
   tool_move->setIconText(tr("Move"));
   tool_move->setToolTip(tr("Move — hover shows the 4-arrow cursor; drag a road or a prop to "
                            "move it, or click to select and transform it (M)"));
@@ -65,7 +66,7 @@ Actions::Actions(QUndoStack& undo_stack, QObject* parent) : QObject(parent) {
 
   tool_create_road = new QAction(tr("&Create Road"), this);
   tool_create_road->setCheckable(true);
-  tool_create_road->setShortcut(Qt::Key_C);
+  tool_create_road->setShortcuts(shortcuts::sequences(shortcuts::Id::ToolCreateRoad));
   tool_create_road->setIconText(tr("Road"));
   tool_create_road->setToolTip(tr("Create Road — click places waypoints, Enter or double-click "
                                   "creates the road, Esc cancels (C)"));
@@ -73,7 +74,7 @@ Actions::Actions(QUndoStack& undo_stack, QObject* parent) : QObject(parent) {
 
   tool_edit_nodes = new QAction(tr("Edit &Nodes"), this);
   tool_edit_nodes->setCheckable(true);
-  tool_edit_nodes->setShortcut(Qt::Key_N);
+  tool_edit_nodes->setShortcuts(shortcuts::sequences(shortcuts::Id::ToolEditNodes));
   tool_edit_nodes->setIconText(tr("Nodes"));
   tool_edit_nodes->setToolTip(tr("Edit Nodes — drag a node to move it, click a midpoint "
                                  "marker to insert, Delete removes the active node (N)"));
@@ -81,7 +82,7 @@ Actions::Actions(QUndoStack& undo_stack, QObject* parent) : QObject(parent) {
 
   tool_lane_profile = new QAction(tr("&Lane Profile"), this);
   tool_lane_profile->setCheckable(true);
-  tool_lane_profile->setShortcut(Qt::Key_L);
+  tool_lane_profile->setShortcuts(shortcuts::sequences(shortcuts::Id::ToolLaneProfile));
   tool_lane_profile->setIconText(tr("Lanes"));
   tool_lane_profile->setToolTip(tr("Lane Profile — click a lane, then edit its type, width, and "
                                    "road mark in the Properties panel (L)"));
@@ -89,7 +90,7 @@ Actions::Actions(QUndoStack& undo_stack, QObject* parent) : QObject(parent) {
 
   tool_elevation = new QAction(tr("&Elevation"), this);
   tool_elevation->setCheckable(true);
-  tool_elevation->setShortcut(Qt::Key_E);
+  tool_elevation->setShortcuts(shortcuts::sequences(shortcuts::Id::ToolElevation));
   tool_elevation->setIconText(tr("Elevation"));
   tool_elevation->setToolTip(tr("Elevation — click a road node, then set its height in the "
                                 "Properties panel; the grade re-fits smoothly (E)"));
@@ -97,7 +98,7 @@ Actions::Actions(QUndoStack& undo_stack, QObject* parent) : QObject(parent) {
 
   tool_create_junction = new QAction(tr("Create &Junction"), this);
   tool_create_junction->setCheckable(true);
-  tool_create_junction->setShortcut(Qt::Key_J);
+  tool_create_junction->setShortcuts(shortcuts::sequences(shortcuts::Id::ToolCreateJunction));
   tool_create_junction->setIconText(tr("Junction"));
   tool_create_junction->setToolTip(tr("Create Junction — click 2+ road ends, or 1 end + a road "
                                       "body to tee into it; Enter generates, Esc cancels (J)"));
@@ -105,14 +106,14 @@ Actions::Actions(QUndoStack& undo_stack, QObject* parent) : QObject(parent) {
 
   tool_split = new QAction(tr("&Split"), this);
   tool_split->setCheckable(true);
-  tool_split->setShortcut(Qt::Key_K);
+  tool_split->setShortcuts(shortcuts::sequences(shortcuts::Id::ToolSplit));
   tool_split->setIconText(tr("Split"));
   tool_split->setToolTip(tr("Split — click a road to cut it in two at the marker (K)"));
   tool_group->addAction(tool_split);
 
   tool_delete = new QAction(tr("&Delete"), this);
   tool_delete->setCheckable(true);
-  tool_delete->setShortcut(Qt::Key_X);
+  tool_delete->setShortcuts(shortcuts::sequences(shortcuts::Id::ToolDelete));
   tool_delete->setIconText(tr("Delete"));
   tool_delete->setToolTip(tr("Delete — click a road to delete it, undo restores (X)"));
   tool_group->addAction(tool_delete);
@@ -144,12 +145,12 @@ Actions::Actions(QUndoStack& undo_stack, QObject* parent) : QObject(parent) {
   add_from_library->setToolTip(tr("Open the Library panel to drag in roads, intersections, "
                                   "and props"));
   frame_selection = new QAction(tr("&Frame Selection"), this);
-  frame_selection->setShortcut(Qt::Key_F);
+  frame_selection->setShortcuts(shortcuts::sequences(shortcuts::Id::FrameSelection));
   frame_selection->setIconText(tr("Frame"));
   frame_selection->setToolTip(tr("Frame the selection — the whole scene when "
                                  "nothing is selected (F)"));
   frame_cursor = new QAction(tr("Frame Under &Cursor"), this);
-  frame_cursor->setShortcut(Qt::Key_V);
+  frame_cursor->setShortcuts(shortcuts::sequences(shortcuts::Id::FrameCursor));
   frame_cursor->setIconText(tr("Frame Cursor"));
   frame_cursor->setToolTip(tr("Move the pivot to the point under the cursor, keeping the "
                               "zoom (V)"));
@@ -157,12 +158,12 @@ Actions::Actions(QUndoStack& undo_stack, QObject* parent) : QObject(parent) {
   // Projection (GW-1 step 11). Exclusive: the view is one or the other.
   projection_group = new QActionGroup(this);
   view_perspective = new QAction(tr("&Perspective"), this);
-  view_perspective->setShortcut(Qt::Key_P);
+  view_perspective->setShortcuts(shortcuts::sequences(shortcuts::Id::ViewPerspective));
   view_perspective->setCheckable(true);
   view_perspective->setChecked(true); // the startup projection
   view_perspective->setToolTip(tr("Perspective projection (P)"));
   view_orthographic = new QAction(tr("&Orthographic"), this);
-  view_orthographic->setShortcut(Qt::Key_O);
+  view_orthographic->setShortcuts(shortcuts::sequences(shortcuts::Id::ViewOrthographic));
   view_orthographic->setCheckable(true);
   view_orthographic->setToolTip(tr("Orthographic projection — parallel, no foreshortening (O)"));
   projection_group->addAction(view_perspective);
@@ -170,33 +171,27 @@ Actions::Actions(QUndoStack& undo_stack, QObject* parent) : QObject(parent) {
 
   // Cardinal views (GW-1 steps 12-13). The numpad digits are the primary
   // binding; the top-row digits are the alternate for keyboards without one.
-  const auto make_cardinal =
-      [this](const QString& text, const QString& tip, Qt::Key numpad, Qt::Key digit) {
-        auto* action = new QAction(text, this);
-        action->setShortcuts({QKeySequence(Qt::KeypadModifier | numpad), QKeySequence(digit)});
-        action->setToolTip(tip);
-        return action;
-      };
+  const auto make_cardinal = [this](const QString& text, const QString& tip, shortcuts::Id id) {
+    auto* action = new QAction(text, this);
+    action->setShortcuts(shortcuts::sequences(id)); // numpad + the top-row alternate
+    action->setToolTip(tip);
+    return action;
+  };
   view_north = make_cardinal(tr("Look from &North"),
                              tr("Look from the north, southward (numpad 8, or 8)"),
-                             Qt::Key_8,
-                             Qt::Key_8);
+                             shortcuts::Id::ViewNorth);
   view_south = make_cardinal(tr("Look from &South"),
                              tr("Look from the south, northward (numpad 2, or 2)"),
-                             Qt::Key_2,
-                             Qt::Key_2);
+                             shortcuts::Id::ViewSouth);
   view_west = make_cardinal(tr("Look from &West"),
                             tr("Look from the west, eastward (numpad 4, or 4)"),
-                            Qt::Key_4,
-                            Qt::Key_4);
+                            shortcuts::Id::ViewWest);
   view_east = make_cardinal(tr("Look from &East"),
                             tr("Look from the east, westward (numpad 6, or 6)"),
-                            Qt::Key_6,
-                            Qt::Key_6);
+                            shortcuts::Id::ViewEast);
   view_top = make_cardinal(tr("&Top-Down"),
                            tr("Plan view from directly above, north up (numpad 5, or 5)"),
-                           Qt::Key_5,
-                           Qt::Key_5);
+                           shortcuts::Id::ViewTop);
   merge_roads = new QAction(tr("&Merge Roads"), this);
   merge_roads->setIconText(tr("Merge"));
   merge_roads->setEnabled(false); // enabled only for a mergeable 2-road selection
