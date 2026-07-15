@@ -9,7 +9,7 @@
 Maintainer dogfooding of v0.3.0 surfaced an expectation gap: building a
 real map raises the question of "mountain-type" ground — terrain the roads
 sit *in*, not just the roads themselves. Today the
-[gap analysis](../roadmap/gap_analysis.md#known-exclusions) records
+[gap analysis](../roadmap/archive/2026-07-pre-reset/gap_analysis.md#known-exclusions) records
 "terrain sculpting beyond the road corridor" as a **backlog exclusion**,
 and M3a's scope is limited to a terrain *skirt* plus procedural ground
 around the network. Road **vertical profile** UX (hills, grades,
@@ -17,7 +17,7 @@ overpasses along the road) is separate and is being fixed in the hardening
 sprint's elevation workstream; this ADR is only about the ground surface.
 
 The question matters long-term because it decides whether RoadMaker's
-answer to the RoadRunner-visual expectation is "roads carry their own
+answer to the commercial-editor visual expectation is "roads carry their own
 elevation, the ground is presentation" or "there is a real height field
 the network conforms to" — with import (M3b, GDAL/PDAL/PROJ) being the
 natural place a height field would come from anyway.
@@ -44,7 +44,7 @@ system, no arbitrary meshes — one grid, one texture set.
   frame, a GDAL raster ingest path (M3b already pays the GDAL licensing
   and build cost), brush tools as commands, and a mesh/skirt integration
   pass. Roughly one M3b work package.
-- **Impact:** covers the RoadRunner-visual expectation for imported and
+- **Impact:** covers the commercial-editor visual expectation for imported and
   authored scenes; GS-2 ("imported district") gets believable ground for
   free from the same DEM the import brings in.
 - **Roadmap edits:** add a "heightmap terrain (DEM import + basic brush)"
@@ -107,8 +107,8 @@ built structures, not ground elevation.
 
 ## References
 
-- [Gap analysis — known exclusions](../roadmap/gap_analysis.md#known-exclusions)
-- [M3b seed](../roadmap/seeds/m3b.md) (GDAL/PDAL/PROJ import stack)
-- [GS-2 "Imported district"](../roadmap/golden_scenes/gs2_imported_district.md)
+- [Gap analysis — known exclusions](../roadmap/archive/2026-07-pre-reset/gap_analysis.md#known-exclusions)
+- [M3b seed](../roadmap/archive/2026-07-pre-reset/seeds/m3b.md) (GDAL/PDAL/PROJ import stack)
+- [GS-2 "Imported district"](../roadmap/archive/2026-07-pre-reset/golden_scenes/gs2_imported_district.md)
 - Hardening sprint tracking epic:
   [#81](https://github.com/Robomous/RoadMaker/issues/81)

@@ -1148,7 +1148,7 @@ void ViewportWidget::mouseMoveEvent(QMouseEvent* event) {
     }
   } else if ((event->buttons() & Qt::MiddleButton) != 0) {
     // Ground-anchored pan: keep the grabbed world point under the cursor at 1:1
-    // (RoadRunner/CAD/maps feel, zero tuning constants). Degenerate near-horizon
+    // (CAD/maps feel, zero tuning constants). Degenerate near-horizon
     // rays (no anchor, or the current ray misses / is capped) fall back to a
     // correctly-scaled view-plane pan.
     const std::optional<std::array<double, 3>> current =

@@ -1,7 +1,7 @@
 # Materials & Structures overview — v0.7.0
 
 Status: **proposed** — this planning pass runs against the gate in the
-[seed](../../roadmap/seeds/materials-structures.md) and epic
+[seed](../../roadmap/archive/2026-07-pre-reset/seeds/materials-structures.md) and epic
 [#183](https://github.com/Robomous/RoadMaker/issues/183) ("planning runs after
 GS-1 closes"). The maintainer approves it by merging this PR; on approval the
 scope **freezes** the way `docs/design/m2/` and `docs/design/m3a/` did — scope
@@ -11,9 +11,9 @@ recorded inline as **As-built** notes.
 This milestone gives RoadMaker *visual depth*: surfaces that read as real
 materials rather than tinted lane types, and built structures that carry a road
 over another road. The acceptance artifact is **golden scene GS-4 "Rural
-overpass"** ([spec](../../roadmap/golden_scenes/gs4_rural_overpass.md)). Release
+overpass"** ([spec](../../roadmap/archive/2026-07-pre-reset/golden_scenes/gs4_rural_overpass.md)). Release
 target: **v0.7.0**. Gap coverage:
-[gap 6](../../roadmap/gap_analysis.md). It is also the **prerequisite for GS-2's
+[gap 6](../../roadmap/archive/2026-07-pre-reset/gap_analysis.md). It is also the **prerequisite for GS-2's
 approval** — an imported district is unapprovable without buildings and material
 variety, so M3b depends on this landing first.
 

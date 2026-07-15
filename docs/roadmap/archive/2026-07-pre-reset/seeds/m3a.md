@@ -4,7 +4,7 @@
 written when M3a's own planning task runs, after M2 ships.*
 
 > **Planning pass done (2026-07-11).** M2 shipped (v0.3.0); the frozen M3a
-> design now lives in [docs/design/m3a/](../../design/m3a/00_overview.md)
+> design now lives in [docs/design/m3a/](../../../../design/m3a/00_overview.md)
 > (overview → kernel objects/signals → road marks → assets → render →
 > editor/docs). This seed remains the scope sketch and decision record; the
 > design docs are the implementation source of truth.
@@ -20,8 +20,8 @@ written when M3a's own planning task runs, after M2 ships.*
 > discoverability sweep. The sections below re-sequence as **phase 5+** of
 > the milestone; kernel groundwork (objects/signals/road marks) is already
 > merged. Strategy: visual experience now carries equal priority with
-> correctness — [product parity](../../standards/product-parity.md) /
-> [UI design standard](../../standards/ui-design.md).
+> correctness — [product parity](../../../../standards/product-parity.md) /
+> [UI design standard](../../../../standards/ui-design.md).
 
 - **Theme:** authored scenes look and validate like real road scenes.
 - **Golden scene:** [GS-1 "Urban intersection"](../golden_scenes/gs1_urban_intersection.md)
@@ -31,7 +31,7 @@ written when M3a's own planning task runs, after M2 ships.*
 ## Scope sketch
 
 Kernel first, then assets, then render
-([decomposition rule](../../standards/product-parity.md)):
+([decomposition rule](../../../../standards/product-parity.md)):
 
 ### Kernel
 
@@ -57,7 +57,7 @@ Kernel first, then assets, then render
 
 - Textured viewport mode becomes the **default** (sober mode kept as a
   toggle) — extends the optional textured mode scoped in the
-  [M2 assets design](../../design/m2/05_assets.md).
+  [M2 assets design](../../../../design/m2/05_assets.md).
 - Terrain skirt around the network + procedural ground.
 - Sky/lighting pass (procedural sky or CC0 HDRI): hemisphere + directional
   lighting, **no shadow maps** — shadows are M4+ polish (decided
@@ -78,7 +78,7 @@ Kernel first, then assets, then render
   (added 2026-07-10, then permanent): every golden scene's exported
   `.xodr` must load headless in esmini without errors. Verify esmini's
   current license and binary-distribution method at implementation time
-  ([dependency policy](../../standards/dependencies.md)). CARLA ingestion
+  ([dependency policy](../../../../standards/dependencies.md)). CARLA ingestion
   validation stays a manual release-checklist item until CI-feasible.
 
 ### Documentation
@@ -99,7 +99,7 @@ Kernel first, then assets, then render
 1. **`<objects>`/`<signals>` model breadth** — the OpenDRIVE object/signal
    chapters are large; scoping to what GS-1 needs without painting the data
    model into a corner requires reading the normative chapters first
-   ([references](../../domain/references.md)).
+   ([references](../../../../domain/references.md)).
 2. **Render-path growth** — instancing, textures, terrain, and sky in one
    milestone could destabilize the thin-renderer posture; mitigation:
    everything stays behind `Renderer`, sober mode remains the fallback and

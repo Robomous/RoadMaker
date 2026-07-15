@@ -5,7 +5,7 @@ urban junction that exercises every new kernel feature, asset class, and
 render capability of the milestone.*
 
 Specified purely from ASAM OpenDRIVE concepts, per the
-[product-parity rules](../../standards/product-parity.md).
+[product-parity rules](../../../../standards/product-parity.md).
 
 ## Scene definition
 
@@ -122,13 +122,13 @@ sky.
 
 - The scene's `.xodr` validates with zero errors; new elements carry
   normative rule-id citations in any diagnostics
-  ([references](../../domain/references.md)).
+  ([references](../../../../domain/references.md)).
 - Round-trip: write → parse → write is stable within `rm::tol` and loses no
   `<object>`/`<signal>`/road-mark data.
 - Scene loads and renders headless in the golden-screenshot CI workflow
   ([process](README.md)).
 - Every asset used has its `ASSETS_LICENSES.md` row
-  ([asset policy](../../standards/assets.md)).
+  ([asset policy](../../../../standards/assets.md)).
 
 ## Build
 

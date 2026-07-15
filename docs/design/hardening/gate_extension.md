@@ -6,7 +6,7 @@ re-gate evidence are filled in as each workstream lands (final report at the
 bottom, WS-4).*
 
 - **Epic:** [#147](https://github.com/Robomous/RoadMaker/issues/147)
-- **Verdict record:** [`../../roadmap/golden_workflows/gate-v0.4.0.md`](../../roadmap/golden_workflows/gate-v0.4.0.md)
+- **Verdict record:** [`../../roadmap/golden_workflows/gate-v0.4.0.md`](../../roadmap/archive/2026-07-pre-reset/golden_workflows/gate-v0.4.0.md)
 - **Trigger:** first GW-1/GW-2 gate run on `main` (`de5bd7c`) → **NO-GO**.
 
 ## Rule

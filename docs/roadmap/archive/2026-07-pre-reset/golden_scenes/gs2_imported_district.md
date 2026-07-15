@@ -5,7 +5,7 @@ road-network extract imported from OSM, meshed, and rendered with M3a's
 visual stack.*
 
 Specified from OpenDRIVE and OpenStreetMap concepts only, per the
-[product-parity rules](../../standards/product-parity.md).
+[product-parity rules](../../../../standards/product-parity.md).
 
 ## Scene definition
 

@@ -64,11 +64,10 @@ quickly. Extending the corpus is part of every parser change
 
 ### `esmini-roundtrip`
 
-The simulator round-trip quality gate
-([roadmap](../roadmap/roadmap.md#cross-cutting-quality-gates), owned by M3a
-and permanent from there): every tracked `.xodr` — the samples today, every
-golden-scene export as they land — must **load headless in esmini without
-errors**. The job fetches a pinned esmini release binary (cached; MPL-2.0,
+The simulator round-trip quality gate (a permanent cross-cutting gate;
+introduced by the
+[pre-reset roadmap](../roadmap/archive/2026-07-pre-reset/roadmap.md#cross-cutting-quality-gates)):
+every tracked `.xodr` must **load headless in esmini without errors**. The job fetches a pinned esmini release binary (cached; MPL-2.0,
 used strictly as an external smoke tool — never linked, never redistributed)
 and runs `scripts/esmini_smoke.py`, which wraps each `.xodr` in a minimal
 OpenSCENARIO scenario and fails on any parse/load error. A second step runs

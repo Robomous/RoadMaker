@@ -8,7 +8,7 @@ functional acceptance criterion of a milestone. Instead of "the viewport
 should look like a real editor", each milestone commits to rendering and
 round-tripping one specific scene, element by element. The idea and the
 governing IP rules live in the
-[product-parity standard](../../standards/product-parity.md); this folder
+[product-parity standard](../../../../standards/product-parity.md); this folder
 holds the specs.
 
 ## The scene set
@@ -93,7 +93,7 @@ Materials & Structures (v0.7.0).
 
 ## Rules for writing or changing a spec
 
-- Specs follow the [product-parity rules](../../standards/product-parity.md):
+- Specs follow the [product-parity rules](../../../../standards/product-parity.md):
   OpenDRIVE/OpenSCENARIO concepts only, no vendor screenshots, no imitation
   of sample scenes.
 - Changing a camera definition after a milestone has shipped renders breaks

@@ -94,7 +94,7 @@ on both sides of that equation, resolved by 3 fixed-point rounds.
 The original width-only formula was the GW-1 gate finding's root cause #1:
 it bounded the junction area by road *width* while the binding constraint is
 *turning geometry* — undersized gaps forced fitted turns to κ up to
-0.63 m⁻¹ (r ≈ 1.6 m). RoadRunner-class editors size junction areas from
+0.63 m⁻¹ (r ≈ 1.6 m). Commercial-grade road editors size junction areas from
 turn radii for the same reason.
 
 **Branch trimming.** The branch face needs the same clearance from the

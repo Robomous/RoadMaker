@@ -5,7 +5,7 @@ design.*
 
 > **Superseded by the design docs (2026-07-15).** The planning pass ran after
 > GS-1 closed, per the gate below. The scope source of truth is now
-> **[docs/design/materials-structures/](../../design/materials-structures/00_overview.md)**
+> **[docs/design/materials-structures/](../../../../design/materials-structures/00_overview.md)**
 > (overview · material system · bridge generator · city props · phases);
 > workstreams WS-1…WS-5 are issues #196–#200 under epic
 > [#183](https://github.com/Robomous/RoadMaker/issues/183). This seed stays as
@@ -22,7 +22,7 @@ design.*
 - **Golden scene:** [GS-4 "Rural overpass"](../golden_scenes/gs4_rural_overpass.md)
 - **Release target:** v0.7.0
 - **Gap coverage:** [gap 6 — material depth and built structures](../gap_analysis.md#gap-6--material-depth-and-built-structures)
-  (the three RoadRunner-benchmark clusters); **prerequisite for GS-2's approval**.
+  (the three commercial-benchmark clusters); **prerequisite for GS-2's approval**.
 
 ## Scope sketch
 
@@ -57,7 +57,7 @@ design.*
 
 - CC0 material texture sets (albedo/normal/roughness) and CC0 building/
   streetlight props. Preference order and provenance per
-  [assets standard](../../standards/assets.md) (CC0 first, then procedural, then
+  [assets standard](../../../../standards/assets.md) (CC0 first, then procedural, then
   AI-generated for missing variants). Repo-weight budget: **≤ 512 KB per map,
   ≤ 3 maps per material.**
 

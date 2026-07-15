@@ -17,7 +17,7 @@ M3a; the M4 browser must subsume it (§4 risk 4).
 
 ## 1. GS-1 asset inventory
 
-Scouted candidates: [asset_candidates.md](../../roadmap/asset_candidates.md).
+Scouted candidates: [asset_candidates.md](../../roadmap/archive/2026-07-pre-reset/asset_candidates.md).
 M3a selects **one primary low-poly kit family** for GS-1 to avoid the
 style-incoherence risk (`00` risk 3). Selection is made at fetch time and
 recorded; the design assumes Kenney (City + Nature kits, CC0) as primary with
@@ -38,7 +38,7 @@ Every selected file gets an `ASSETS_LICENSES.md` row and (if fetched) a
 ## 2. Sign faces — per-file verification (hard rule)
 
 Traffic-sign graphics are the licensing minefield. Mandate (from
-[asset_candidates](../../roadmap/asset_candidates.md)):
+[asset_candidates](../../roadmap/archive/2026-07-pre-reset/asset_candidates.md)):
 
 - **US MUTCD** graphics are US-federal public domain → CC0-equivalent, usable
   per file after verification.

@@ -37,7 +37,7 @@
 - Candidate kits: **Kenney.nl** and **Quaternius** packs (CC0). Sign
   graphics need per-file verification — Wikimedia Commons SVGs are licensed
   individually. The scouted list lives in
-  [roadmap/asset_candidates](../roadmap/asset_candidates.md).
+  [roadmap/asset_candidates](../roadmap/archive/2026-07-pre-reset/asset_candidates.md).
 
 ## AI-generated assets
 

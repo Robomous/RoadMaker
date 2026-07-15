@@ -95,7 +95,7 @@ Editor polish; design decided here (the seed left it to the planning task).
 ## 4. esmini round-trip CI gate (permanent from M3a)
 
 M3a owns the roadmap's
-[simulator round-trip gate](../../roadmap/roadmap.md#cross-cutting-quality-gates):
+[simulator round-trip gate](../../roadmap/archive/2026-07-pre-reset/roadmap.md#cross-cutting-quality-gates):
 every golden scene's exported `.xodr` must **load headless in esmini without
 errors**.
 

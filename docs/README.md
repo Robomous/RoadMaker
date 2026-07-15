@@ -60,20 +60,21 @@ OpenDRIVE scene in the editor: [Create Road](user-guide/create-road.md),
 
 ## Where is the project going?
 
-- [Roadmap](roadmap/roadmap.md) — milestone sequence M2 → Materials &
-  Structures → M5, themes and gates. The README table is a summary of this page.
-- [Gap analysis](roadmap/gap_analysis.md) — where RoadMaker stands against a
-  RoadRunner-class editing experience.
-- [Golden scenes](roadmap/golden_scenes/README.md) — the target scenes that
-  serve as visual acceptance criteria per milestone.
-- [Milestone seeds](roadmap/seeds/m3a.md) — scope sketches for M3a,
-  [Materials & Structures](roadmap/seeds/materials-structures.md), M3b, M4, M5.
+- [Roadmap — "Road to Parity"](roadmap/README.md) — the eight capability
+  pillars, their sequencing, the sprint conventions, and the
+  single-release gate. The README section is a summary of this page.
+- [Golden workflows](roadmap/golden_workflows/README.md) — the
+  hand-executed acceptance scripts (GW-1 … GW-5) that every pillar feeds;
+  the roadmap's only acceptance mechanism.
+- [Archive](roadmap/archive/2026-07-pre-reset/README.md) — the retired
+  milestone/version roadmap, golden scenes, seeds, and release notes,
+  kept as a historical record.
 
 ## Design documents and decisions
 
-- [design/](design/m2/00_overview.md) — full design docs per milestone
-  (currently M2). These are written when a milestone's planning task runs;
-  the [seeds](roadmap/seeds/m3a.md) are their precursors.
+- [design/](design/m2/00_overview.md) — full design docs per initiative
+  (M2 editing framework, hardening, UI revamp, materials & structures).
+  These are written when an initiative's planning task runs.
 - [decisions/](decisions/0001-cpp20-kernel.md) — Architecture Decision
   Records (ADRs): one page per significant, hard-to-reverse decision.
   Start new ones from the [template](decisions/template.md).

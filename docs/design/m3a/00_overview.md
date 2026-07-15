@@ -4,7 +4,7 @@ Status: **approved & frozen** — the maintainer approved this planning pass by
 merging PR [#66](https://github.com/Robomous/RoadMaker/pull/66) (2026-07-11);
 implementation may proceed phase by phase. This is the frozen-scope design for
 milestone **M3a**, written after M2 shipped (v0.3.0) per the gate in the
-[M3a seed](../../roadmap/seeds/m3a.md) and epic
+[M3a seed](../../roadmap/archive/2026-07-pre-reset/seeds/m3a.md) and epic
 [#38](https://github.com/Robomous/RoadMaker/issues/38). The docs are frozen the
 way `docs/design/m2/` was: scope does not grow during implementation, and
 deviations discovered while building are recorded inline as **As-built** notes
@@ -26,7 +26,7 @@ deviations discovered while building are recorded inline as **As-built** notes
 > ships with v0.5.0 after a themed-screenshot refresh in revamp Phase 4
 > (#114). Strategy record: [product parity](../../standards/product-parity.md)
 > / [UI design standard](../../standards/ui-design.md); rescoped
-> [roadmap](../../roadmap/roadmap.md) and [seed](../../roadmap/seeds/m3a.md).
+> [roadmap](../../roadmap/archive/2026-07-pre-reset/roadmap.md) and [seed](../../roadmap/archive/2026-07-pre-reset/seeds/m3a.md).
 
 M3a turns an authored network from a *correct* road graph into a *road scene
 that looks and validates like the real thing*: crosswalks, signals, signs, lane
@@ -34,9 +34,9 @@ arrows, and stop lines carry real ASAM OpenDRIVE semantics; a CC0 prop set and
 textured, lit viewport make the scene legible; and every exported `.xodr` still
 validates clean and survives a headless simulator load. The acceptance artifact
 is **golden scene GS-1 "Urban intersection"**
-([spec](../../roadmap/golden_scenes/gs1_urban_intersection.md)). Release target:
+([spec](../../roadmap/archive/2026-07-pre-reset/golden_scenes/gs1_urban_intersection.md)). Release target:
 **v0.5.0** (originally v0.4.0; shifted by the hardening sprint). Gap coverage:
-[gap 1 — viewport visual completeness](../../roadmap/gap_analysis.md#gap-1--viewport-visual-completeness).
+[gap 1 — viewport visual completeness](../../roadmap/archive/2026-07-pre-reset/gap_analysis.md#gap-1--viewport-visual-completeness).
 
 ## Baseline (what M2 shipped)
 
@@ -119,7 +119,7 @@ kernel cannot represent and validate first.
 ## Maintainer decisions (locked, 2026-07-10)
 
 Recorded in [#34](https://github.com/Robomous/RoadMaker/issues/34) and inline in
-the [seed](../../roadmap/seeds/m3a.md):
+the [seed](../../roadmap/archive/2026-07-pre-reset/seeds/m3a.md):
 
 1. **Signal-catalog depth** — GS-1 signal set only in M3a; country catalogs are
    backlog.
@@ -193,7 +193,7 @@ agents can safely work 2b or 3 in parallel with the kernel line.
 |---|---|---|---|---|
 | 1 | **`<objects>`/`<signals>` model breadth** — the object/signal chapters are large; over-modeling paints the data model into a corner, under-modeling drops foreign data | High | High | Scope the *authored* set to GS-1 (`01` §1); represent-and-round-trip (never drop) the rest via a raw-attribute passthrough; read the normative chapters first (done — `01` §7) |
 | 2 | **Render-path growth** — instancing, textures, terrain, and sky in one milestone could destabilize the thin-renderer posture | Medium | High | Everything stays behind `Renderer` (`04` §1); sober mode remains the fallback and the packaging smoke path; each render feature lands behind its own toggle before becoming default |
-| 3 | **Asset style incoherence** — mixed-style props read worse than none | Medium | Medium | One primary kit family for GS-1; style rule recorded in `03` §2 and [asset_candidates](../../roadmap/asset_candidates.md); poles are style-neutral, trees are not |
+| 3 | **Asset style incoherence** — mixed-style props read worse than none | Medium | Medium | One primary kit family for GS-1; style rule recorded in `03` §2 and [asset_candidates](../../roadmap/archive/2026-07-pre-reset/asset_candidates.md); poles are style-neutral, trees are not |
 | 4 | **Manifest lock-in** — the runtime library-manifest format is committed in M3a but the M4 browser must subsume it | Medium | Medium | Design the manifest as a superset-friendly schema (`03` §4) with a version field; document the M4 extension points; no editing semantics baked in |
 | 5 | **esmini license/distribution** drift blocks the CI gate | Low | Medium | Verify esmini's license + binary-distribution method at implementation time against the [dependency policy](../../standards/dependencies.md) (`05` §3); the gate is a smoke load, not a linked dependency |
 | 6 | **Crosswalk/arrow as objects vs. signals ambiguity** — OpenDRIVE splits road markings between `<object>` markings and `<signal>` | Medium | Low | Follow the spec split (`01` §1, `02` §3): crosswalks/arrows/stop-lines are object markings; only traffic-control signs/lights are signals; each cites its chapter |
