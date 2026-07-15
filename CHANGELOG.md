@@ -7,11 +7,56 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.6.0] - Unreleased
 
-Placement and transform corrections found while dogfooding GS-1
-([epic #178](https://github.com/Robomous/RoadMaker/issues/178)): the shared
-placement path GS-1 signal placement builds on.
+Closes **M3a**. Placement and transform corrections found while dogfooding GS-1
+([epic #178](https://github.com/Robomous/RoadMaker/issues/178)) — the shared
+placement path GS-1 signal placement builds on — plus the GS-1 golden-scene
+acceptance walk that closes the milestone.
+
+Released together with [0.4.0] and [0.5.0], which are also unreleased.
 
 ### Added
+- **GS-1 baseline render, tracked release over release**
+  ([#73](https://github.com/Robomous/RoadMaker/issues/73)): the golden scene's
+  render from its fixed camera is committed as
+  `docs/roadmap/golden_scenes/img/gs1_baseline_v0.6.0.png` and tracked in a
+  baseline table in the golden-scenes README (release · screenshot · checklist
+  % · notes), so drift between releases is a diff rather than a memory.
+  Baselines are captured from the branch's own CI artifact — macOS has no
+  offscreen GL context, so a dev machine cannot produce one.
+- **Textured-rendering user guide** ([#52](https://github.com/Robomous/RoadMaker/issues/52)):
+  `docs/user-guide/textured-rendering.md` documents the
+  `View ▸ Textured Rendering` toggle — what Sober and Textured are each for,
+  why Sober is the default, and what "textured" deliberately does not include
+  (no shadows, no IBL). The mode shipped in 0.5.0 and CI renders with it, but
+  the guide never mentioned it existed.
+
+### Changed
+- **GS-1 acceptance walk — one authoritative checklist**
+  ([#73](https://github.com/Robomous/RoadMaker/issues/73)): the scene spec
+  carried two disagreeing tables (an all-unticked aspirational checklist and a
+  separate as-built table). They are merged into one, ticked against the
+  baseline and citing the PR that delivered each row: **12 / 14 delivered, 2
+  gaps filed**. Street trees raised **16 → 24** (36 objects, 0 diagnostics) to
+  clear the spec's "~20 vegetation props" target. The scene definition is
+  amended from "two driving lanes per direction" to the as-built
+  one-lane-per-direction profile — it described a scene that was never
+  authored, and gap 8 is the honest consequence. The spec also records what the
+  baseline actually looks like: the junction floor is an untextured grey slab
+  and the sky reads dark rather than daytime — both are v0.7.0 material work.
+- **README hero** is GS-1 in the themed editor window, rendered by CI
+  (`gs1_hero.png`) rather than the bare viewport render, so the hero carries the
+  product's chrome as well as the new golden scene.
+
+### Known gaps (GS-1)
+- **Centre double-yellow lines** ([#193](https://github.com/Robomous/RoadMaker/issues/193)):
+  kernel support for dual-geometry `solid solid` marks and `roadMark` colour
+  exists; the authoring op does not, so the urban profile's single-line centre
+  marking ships instead. Left/right lane-arrow glyphs are filed with it —
+  `junction_lane_arrows` authors only the straight glyph.
+- **Dashed white lane lines** ([#194](https://github.com/Robomous/RoadMaker/issues/194)):
+  not representable in GS-1 — a one-lane-per-direction carriageway has no
+  same-direction lane boundary to mark. Needs a two-lane-per-direction urban
+  profile.
 - **3D transform gizmo** ([#177](https://github.com/Robomous/RoadMaker/issues/177)):
   selecting an entity with the Move tool shows the classic axis gizmo — three
   colored axis arrows (X red, Y green, Z blue), a centre pad for free planar

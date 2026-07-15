@@ -19,8 +19,10 @@ validates, junctions carry coherent lane logic, and meshes are watertight and
 robust. A C++20 kernel does the work; a Qt 6 Widgets editor and a Python
 package sit on top ([architecture](docs/architecture/overview.md)).
 
-![The RoadMaker editor: a T-junction lined with tree props, the Library
-catalogue open, in the graphite-amber theme](docs/standards/golden-look.png)
+![The RoadMaker editor: the GS-1 urban intersection — a signalized four-arm
+junction with crosswalks, stop lines, lane arrows, traffic lights, and street
+trees — in the graphite-amber theme with the Library catalogue
+open](docs/user-guide/img/gs1_hero.png)
 
 Drag a road assembly, an intersection, or a prop straight from the **Library**
 onto the scene — every drop is one undoable edit:
@@ -83,8 +85,9 @@ on the public [project board](https://github.com/Robomous/RoadMaker/projects):
 |---|---|---|
 | **M1** ✅ | Kernel + read-only viewer (OpenDRIVE I/O, clothoids, meshing, glTF, Python) | — |
 | **M2** ✅ | Editing core: tools, junction 3D surfaces, USD export (v0.2.0 → v0.3.0) | — |
-| **M3a** | Visual & standards completeness: `<objects>`, `<signals>`, full markings, textured viewport, props, terrain | GS-1 urban intersection |
-| **M3b** | Real-world import: GIS/lidar (PDAL/GDAL), OSM extraction | GS-2 imported district |
+| **M3a** ✅ | UI revamp & visual/standards completeness: `<objects>`, `<signals>`, markings, textured viewport, props, terrain skirt (v0.5.0 → v0.6.0) | GS-1 urban intersection |
+| **Materials & Structures** | Material system v2 (PBR-lite, assignable library, variants), bridge generator, city props (v0.7.0) | GS-4 rural overpass |
+| **M3b** | Real-world import: GIS/lidar (PDAL/GDAL), OSM extraction, heightmap terrain | GS-2 imported district |
 | **M4** | Scenario mode: OpenSCENARIO kernel, Map ↔ Scenario modes, actors & routes, Asset Library Browser | GS-3 ambulance run |
 | **M5** | Scenario logic: node-based logic editor, simulation preview (esmini) | GS-3 + logic graph |
 
