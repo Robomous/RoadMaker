@@ -23,6 +23,29 @@ void grow_bounds(SceneBounds& bounds, const std::vector<double>& positions) {
 
 } // namespace
 
+std::array<float, 4> mark_paint(RoadMarkColor color) {
+  // e_roadMarkColor (§11.9) → paint. `Standard` is "the standard colour for
+  // this mark type", which for every mark RoadMaker authors is white — so it
+  // and White share the slightly-off-white the markings have always used.
+  switch (color) {
+  case RoadMarkColor::Yellow:
+    return {0.90F, 0.75F, 0.16F, 1.0F};
+  case RoadMarkColor::Red:
+    return {0.72F, 0.16F, 0.14F, 1.0F};
+  case RoadMarkColor::Blue:
+    return {0.16F, 0.34F, 0.70F, 1.0F};
+  case RoadMarkColor::Green:
+    return {0.18F, 0.55F, 0.28F, 1.0F};
+  case RoadMarkColor::Orange:
+    return {0.88F, 0.48F, 0.12F, 1.0F};
+  case RoadMarkColor::Standard:
+  case RoadMarkColor::White:
+  case RoadMarkColor::Other:
+    break;
+  }
+  return {0.92F, 0.92F, 0.87F, 1.0F};
+}
+
 std::array<float, 4> lane_color(LaneType type) {
   switch (type) {
   case LaneType::Driving:
@@ -114,7 +137,7 @@ void append_road_items(const RoadMesh& road, Scene& scene) {
   for (const SubMesh& marking : road.markings) {
     scene.items.push_back(SceneItem{
         .data = to_render_data(
-            marking.positions, marking.normals, marking.indices, {0.92F, 0.92F, 0.87F, 1.0F}),
+            marking.positions, marking.normals, marking.indices, mark_paint(marking.mark_color)),
         .road = road.road,
         .lane = {},
         .surface = SurfaceKind::Paint,

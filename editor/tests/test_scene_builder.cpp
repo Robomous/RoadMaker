@@ -29,6 +29,40 @@ TEST(LaneColor, DistinguishesCoreMaterials) {
   EXPECT_EQ(lane_color(LaneType::None), lane_color(LaneType::Other));
 }
 
+TEST(MarkPaint, YellowIsDistinctFromTheWhiteDefault) {
+  // A yellow centre line painted white is the bug this closes: every marking
+  // used to take one hardcoded off-white regardless of its roadMark colour.
+  const auto white = mark_paint(RoadMarkColor::Standard);
+  EXPECT_NE(mark_paint(RoadMarkColor::Yellow), white);
+  EXPECT_GT(mark_paint(RoadMarkColor::Yellow)[0], mark_paint(RoadMarkColor::Yellow)[2]);
+
+  // Standard means "the standard colour for this mark type" — white for
+  // everything RoadMaker authors — so it and White agree, and an unknown
+  // colour falls back rather than rendering invisible.
+  EXPECT_EQ(mark_paint(RoadMarkColor::White), white);
+  EXPECT_EQ(mark_paint(RoadMarkColor::Other), white);
+}
+
+TEST(BuildScene, MarkingItemsTakeTheirRoadMarkColor) {
+  RoadNetwork network;
+  NetworkMesh mesh;
+  RoadMesh road;
+  road.road = network.create_road("r", "1");
+  SubMesh yellow;
+  yellow.positions = {0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 1.0, 1.0, 0.0};
+  yellow.normals = {0.0, 0.0, 1.0, 0.0, 0.0, 1.0, 0.0, 0.0, 1.0};
+  yellow.indices = {0, 1, 2};
+  yellow.mark_color = RoadMarkColor::Yellow;
+  yellow.name = "road 1 lane 0 marking";
+  road.markings.push_back(yellow);
+  mesh.roads.push_back(std::move(road));
+
+  const Scene scene = build_scene(mesh);
+  ASSERT_EQ(scene.items.size(), 1U);
+  EXPECT_EQ(scene.items.front().data.color, mark_paint(RoadMarkColor::Yellow));
+  EXPECT_EQ(scene.items.front().surface, SurfaceKind::Paint);
+}
+
 TEST(ToRenderData, NarrowsDoublesAndCopiesIndices) {
   const std::vector<double> positions{0.0, 1.5, -2.25};
   const std::vector<double> normals{0.0, 0.0, 1.0};

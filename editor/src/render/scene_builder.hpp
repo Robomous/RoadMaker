@@ -17,6 +17,11 @@ namespace roadmaker::editor {
 /// matches exported files.
 [[nodiscard]] std::array<float, 4> lane_color(LaneType type);
 
+/// Paint colour for a lane marking's e_roadMarkColor (§11.9). `Standard` means
+/// "the standard colour for this mark type" and resolves to white, which every
+/// mark RoadMaker authors uses.
+[[nodiscard]] std::array<float, 4> mark_paint(RoadMarkColor color);
+
 /// Explicit double -> float narrowing: this is the kernel -> render
 /// boundary, the one place precision is deliberately dropped.
 [[nodiscard]] RenderMeshData to_render_data(const std::vector<double>& positions,
