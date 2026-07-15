@@ -97,8 +97,9 @@ are grounded in normative text, not preference:
 
 ### Why `<userData>` and not a sidecar file
 
-The task framing proposed "a clearly-versioned editor sidecar next to the
-`.xodr`". Two pieces of evidence point the other way, and they agree:
+The obvious alternative — and the one considered first — is a clearly-versioned
+editor sidecar next to the `.xodr`, holding whatever the standard cannot express.
+Two pieces of evidence point the other way, and they agree:
 
 1. **The standard offers the hook, and names our exact use case.** OpenDRIVE
    §7.2 (`<userData>`, `t_userData`): *"Additional or ancillary data contains
