@@ -24,6 +24,7 @@
 #include "app/context_menu.hpp"
 #include "document/document.hpp"
 #include "document/selection_model.hpp"
+#include "viewport/picking.hpp"
 
 using roadmaker::LaneId;
 using roadmaker::RoadId;
@@ -33,10 +34,12 @@ using roadmaker::editor::assemble_context_menu;
 using roadmaker::editor::build_context_menu;
 using roadmaker::editor::ContextMenuDeps;
 using roadmaker::editor::Document;
+using roadmaker::editor::menu_context_for_pick;
 using roadmaker::editor::MenuContext;
 using roadmaker::editor::MenuItem;
 using roadmaker::editor::PickHit;
 using roadmaker::editor::SelectionModel;
+using roadmaker::editor::station_to_world;
 using roadmaker::editor::WaypointHit;
 
 namespace {
@@ -181,6 +184,41 @@ std::size_t object_count(const Fixture& fx) {
 }
 
 } // namespace
+
+TEST(ContextMenu, JunctionFloorPickReachesTheJunctionMenu) {
+  Fixture fx;
+  const roadmaker::JunctionId junction = build_junction(fx);
+  ASSERT_TRUE(junction.is_valid());
+
+  // What picking.cpp reports for a junction floor: the JunctionId, road/lane
+  // invalid. Nothing forwarded it into the MenuContext, so build_context_menu's
+  // junction block was unreachable in the shipped app.
+  const PickHit floor{.junction = junction, .position = {0.0, 0.0, 0.0}};
+  const MenuContext context = menu_context_for_pick(fx.document.network(), floor);
+  ASSERT_TRUE(context.junction.has_value());
+  EXPECT_EQ(*context.junction, junction);
+  EXPECT_FALSE(context.station.has_value()); // no road under a floor hit
+
+  const std::vector<MenuItem> items = build_context_menu(context, fx.deps);
+  EXPECT_NE(fx.find(items, "Add crosswalks to all arms"), nullptr);
+  EXPECT_NE(fx.find(items, "Add stop lines to all arms"), nullptr);
+  EXPECT_NE(fx.find(items, "Add lane arrows to all arms"), nullptr);
+  EXPECT_NE(fx.find(items, "Add centre lines to all arms"), nullptr);
+  EXPECT_NE(fx.find(items, "Delete junction"), nullptr);
+}
+
+TEST(ContextMenu, RoadPickCarriesTheStationAndNoJunction) {
+  Fixture fx;
+  const roadmaker::Road* road = fx.document.network().road(fx.road);
+  ASSERT_NE(road, nullptr);
+  const auto world = station_to_world(road->plan_view, 40.0, 0.0);
+
+  const PickHit hit{.road = fx.road, .position = {world[0], world[1], 0.0}};
+  const MenuContext context = menu_context_for_pick(fx.document.network(), hit);
+  EXPECT_FALSE(context.junction.has_value());
+  ASSERT_TRUE(context.station.has_value());
+  EXPECT_NEAR(*context.station, 40.0, 0.5);
+}
 
 TEST(ContextMenu, AddCrosswalksToAllArmsIsOneUndoableMacro) {
   Fixture fx;
