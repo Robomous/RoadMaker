@@ -54,6 +54,15 @@ struct ContextMenuDeps {
 
 /// The menu descriptor for `context`. Pure logic (no QMenu) — the seam the
 /// tests drive: assert on items/enabled and that invoke() lands the command.
+/// Maps a viewport pick onto the MenuContext fields build_context_menu keys off:
+/// a road/lane hit carries the station (s at the hit point), while a junction
+/// floor reports its JunctionId with road/lane invalid. Split out of the GL
+/// widget's right-click handler so the wiring has a test seam — the pure menu
+/// builder was covered while the code feeding it was not, which is how the
+/// junction menu stayed unreachable.
+[[nodiscard]] MenuContext menu_context_for_pick(const RoadNetwork& network,
+                                                const std::optional<PickHit>& hit);
+
 [[nodiscard]] std::vector<MenuItem> build_context_menu(const MenuContext& context,
                                                        ContextMenuDeps& deps);
 

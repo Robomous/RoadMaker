@@ -88,6 +88,21 @@ bool lane_removable(const RoadNetwork& network, LaneId lane_id) {
 
 } // namespace
 
+MenuContext menu_context_for_pick(const RoadNetwork& network, const std::optional<PickHit>& hit) {
+  MenuContext context;
+  if (!hit.has_value()) {
+    return context;
+  }
+  context.pick = hit;
+  if (hit->junction.is_valid()) {
+    context.junction = hit->junction;
+  }
+  if (const Road* road = network.road(hit->road)) {
+    context.station = find_station(road->plan_view, hit->position[0], hit->position[1]).s;
+  }
+  return context;
+}
+
 std::vector<MenuItem> build_context_menu(const MenuContext& context, ContextMenuDeps& deps) {
   std::vector<MenuItem> items;
   const RoadNetwork& network = deps.document.network();
