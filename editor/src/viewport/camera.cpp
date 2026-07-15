@@ -11,6 +11,17 @@ constexpr float kPi = 3.14159265358979F;
 constexpr float kMinDistance = 2.0F;
 constexpr float kMaxDistance = 5000.0F;
 
+/// Vertical field of view. The ONE definition: matrices() builds the
+/// projection from it and pan_pixels()/elevate_target_pixels() derive the
+/// per-pixel world scale from it, so they can never drift apart.
+constexpr float kFovY = 50.0F * kPi / 180.0F;
+
+/// World units per pixel at the target depth: the world height the viewport
+/// spans at `distance`, divided by its pixel height.
+float world_per_pixel(float distance, float viewport_height) {
+  return 2.0F * distance * std::tan(kFovY / 2.0F) / std::max(viewport_height, 1.0F);
+}
+
 } // namespace
 
 void OrbitCamera::orbit(float delta_yaw, float delta_pitch) {
@@ -33,10 +44,7 @@ void OrbitCamera::set_pose(const std::array<float, 3>& target,
 }
 
 void OrbitCamera::pan_pixels(float dx_pixels, float dy_pixels, float viewport_height) {
-  // Exact per-pixel world scale at the target depth. fov_y matches matrices().
-  const float fov_y = 50.0F * kPi / 180.0F;
-  const float world_per_px =
-      2.0F * distance_ * std::tan(fov_y / 2.0F) / std::max(viewport_height, 1.0F);
+  const float world_per_px = world_per_pixel(distance_, viewport_height);
   const float sin_yaw = std::sin(yaw_);
   const float cos_yaw = std::cos(yaw_);
   // Ground-projected camera axes: right = (-sin, cos), screen-up = (-cos, -sin).
@@ -44,6 +52,11 @@ void OrbitCamera::pan_pixels(float dx_pixels, float dy_pixels, float viewport_he
   // (Qt y grows downward).
   target_[0] += world_per_px * ((dx_pixels * sin_yaw) - (dy_pixels * cos_yaw));
   target_[1] += world_per_px * ((-dx_pixels * cos_yaw) - (dy_pixels * sin_yaw));
+}
+
+void OrbitCamera::elevate_target_pixels(float dy_pixels, float viewport_height) {
+  // Drag up (negative dy in Qt's downward y) raises the pivot.
+  target_[2] -= dy_pixels * world_per_pixel(distance_, viewport_height);
 }
 
 void OrbitCamera::zoom(float scroll) {
@@ -101,9 +114,8 @@ CameraMatrices OrbitCamera::matrices(float aspect) const {
               ((f[0] * eye[0]) + (f[1] * eye[1]) + (f[2] * eye[2])),
               1.0F};
 
-  // Perspective projection, 50 deg vertical FOV.
-  const float fov_y = 50.0F * kPi / 180.0F;
-  const float tan_half = std::tan(fov_y / 2.0F);
+  // Perspective projection (kFovY vertical FOV).
+  const float tan_half = std::tan(kFovY / 2.0F);
   const float near_plane = 0.1F;
   const float far_plane = 10000.0F;
   out.projection = {1.0F / (aspect * tan_half),

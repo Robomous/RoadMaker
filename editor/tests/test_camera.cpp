@@ -34,12 +34,98 @@ TEST(OrbitCamera, ViewRotationIsOrthonormal) {
 }
 
 TEST(OrbitCamera, ViewPlacesTargetOnNegativeZAxis) {
-  OrbitCamera camera; // target (0,0,0), distance 80
+  OrbitCamera camera;
   const CameraMatrices m = camera.matrices(1.0F);
-  // view * target(0,0,0,1) = translation column: (0, 0, -distance).
-  EXPECT_NEAR(m.view[12], 0.0F, 1e-4F);
-  EXPECT_NEAR(m.view[13], 0.0F, 1e-4F);
-  EXPECT_NEAR(m.view[14], -camera.distance(), 1e-3F);
+  // The pivot sits straight down the view axis at `distance`: view * target =
+  // (0, 0, -distance). Column-major, so column i is m.view[4i .. 4i+3].
+  const std::array<float, 3> t = camera.target();
+  const float vx = (m.view[0] * t[0]) + (m.view[4] * t[1]) + (m.view[8] * t[2]) + m.view[12];
+  const float vy = (m.view[1] * t[0]) + (m.view[5] * t[1]) + (m.view[9] * t[2]) + m.view[13];
+  const float vz = (m.view[2] * t[0]) + (m.view[6] * t[1]) + (m.view[10] * t[2]) + m.view[14];
+  EXPECT_NEAR(vx, 0.0F, 1e-4F);
+  EXPECT_NEAR(vy, 0.0F, 1e-4F);
+  EXPECT_NEAR(vz, -camera.distance(), 1e-3F);
+}
+
+// GW-1 step 1: an empty scene orbits a pivot 1.5 m above the origin, not a
+// point on the ground plane.
+TEST(OrbitCamera, DefaultPivotSitsAboveOrigin) {
+  const OrbitCamera camera;
+  EXPECT_FLOAT_EQ(camera.target()[0], 0.0F);
+  EXPECT_FLOAT_EQ(camera.target()[1], 0.0F);
+  EXPECT_FLOAT_EQ(camera.target()[2], 1.5F);
+  // The eye rides the orbit sphere around that raised pivot.
+  EXPECT_NEAR(camera.matrices(1.0F).eye[2], 1.5F + (80.0F * std::sin(0.9F)), 1e-3F);
+}
+
+// GW-1 step 6: ⌥+⇧+LMB+RMB lifts the pivot. The lift uses the SAME per-pixel
+// depth scale as the fallback pan (2·distance·tan(fov/2)/height), so a pivot
+// drag and a pan drag of the same length move the world by the same amount.
+TEST(OrbitCamera, ElevateTargetUsesExactDepthScale) {
+  constexpr float kH = 600.0F;
+  constexpr double kFovY = 50.0 * 3.14159265358979 / 180.0;
+
+  OrbitCamera camera;
+  const float base_z = camera.target()[2];
+  const double world_per_px = 2.0 * camera.distance() * std::tan(kFovY / 2.0) / kH;
+
+  constexpr float kDragPx = 120.0F;
+  camera.elevate_target_pixels(-kDragPx, kH); // drag up raises the pivot
+  EXPECT_NEAR(camera.target()[2] - base_z, kDragPx * world_per_px, 1e-3);
+  EXPECT_FLOAT_EQ(camera.target()[0], 0.0F) << "a pivot lift must not slide it in x/y";
+  EXPECT_FLOAT_EQ(camera.target()[1], 0.0F);
+
+  camera.elevate_target_pixels(kDragPx, kH); // and back down, symmetrically
+  EXPECT_NEAR(camera.target()[2], base_z, 1e-3);
+
+  // Depth-proportional, like the pan: farther out, the same drag lifts more.
+  OrbitCamera far_cam;
+  far_cam.zoom(-4.0F);
+  ASSERT_GT(far_cam.distance(), camera.distance());
+  far_cam.elevate_target_pixels(-kDragPx, kH);
+  EXPECT_GT(far_cam.target()[2] - base_z, kDragPx * world_per_px);
+}
+
+// A raised pivot must not change the ground-anchored pan: the 1:1 contract
+// depends on the orbit distance, not on how high the pivot floats. (Regression
+// guard for the new default z and for the ⌥+⇧ lift feeding back into panning.)
+TEST(OrbitCamera, AnchoredPanUnaffectedByRaisedPivot) {
+  constexpr double kW = 800.0;
+  constexpr double kH = 600.0;
+  const float aspect = static_cast<float>(kW / kH);
+
+  OrbitCamera ground_pivot;
+  ground_pivot.set_view(0.7F, 0.8F);
+  ground_pivot.move_target(0.0F, 0.0F, -1.5F); // pull the pivot back down to z=0
+  ASSERT_FLOAT_EQ(ground_pivot.target()[2], 0.0F);
+
+  OrbitCamera raised;
+  raised.set_view(0.7F, 0.8F);
+  raised.move_target(0.0F, 0.0F, 18.5F); // 20 m up
+  ASSERT_FLOAT_EQ(raised.target()[2], 20.0F);
+  ASSERT_FLOAT_EQ(raised.distance(), ground_pivot.distance());
+
+  // Same drag, same world shift of the pivot in x/y.
+  const auto before_ground = ground_pivot.target();
+  const auto before_raised = raised.target();
+  ground_pivot.pan_pixels(35.0F, -70.0F, static_cast<float>(kH));
+  raised.pan_pixels(35.0F, -70.0F, static_cast<float>(kH));
+  EXPECT_FLOAT_EQ(raised.target()[0] - before_raised[0],
+                  ground_pivot.target()[0] - before_ground[0]);
+  EXPECT_FLOAT_EQ(raised.target()[1] - before_raised[1],
+                  ground_pivot.target()[1] - before_ground[1]);
+  EXPECT_FLOAT_EQ(raised.target()[2], 20.0F) << "a pan must never change the pivot height";
+
+  // And the anchored pan still pins its grabbed ground point at 1:1.
+  const auto anchor = ground_point(raised.matrices(aspect), 500.0, 380.0, kW, kH);
+  const auto current = ground_point(raised.matrices(aspect), 320.0, 250.0, kW, kH);
+  ASSERT_TRUE(anchor.has_value() && current.has_value());
+  raised.move_target(static_cast<float>((*anchor)[0] - (*current)[0]),
+                     static_cast<float>((*anchor)[1] - (*current)[1]));
+  const auto after = ground_point(raised.matrices(aspect), 320.0, 250.0, kW, kH);
+  ASSERT_TRUE(after.has_value());
+  EXPECT_NEAR((*after)[0], (*anchor)[0], 1e-2);
+  EXPECT_NEAR((*after)[1], (*anchor)[1], 1e-2);
 }
 
 TEST(OrbitCamera, FrameSetsClampedDistance) {

@@ -89,6 +89,14 @@ map editor.
   numbers where applicable).
 - No milestones, no version labels, no release tasks.
 
+### Discovery reports
+
+A pillar's sprints are cut from the roadmap; a **discovery report** records
+what the code turned out to look like, and which sprint scopes that changed.
+Written once per pillar, before its first sprint lands:
+
+- [P1 — Interaction & Navigation](pillars/p1_discovery.md)
+
 ## Release gate
 
 v0.1.0 may be published only when **all** of the following hold:
