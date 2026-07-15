@@ -54,11 +54,35 @@ type / subtype and country, and lets you nudge its road-relative pose —
 `s` along the road, `t` across it, and the heading offset — each edit an
 undoable command.
 
-The remaining painted and structural families — **crosswalks**, **stop
-lines**, **lane arrows**, and **poles** — still author from the Python package
-(above) or another OpenDRIVE tool; open the result in the editor to inspect it.
-Their in-editor placement follows in the M3a standards track
-([#72](https://github.com/Robomous/RoadMaker/issues/72)).
+### Junction markings
+
+The painted markings a junction needs on every arm author in one action each.
+Right-click the **junction floor** — the blended surface in the middle, between
+the arms — and pick from:
+
+| Action | Authors |
+|---|---|
+| **Add crosswalks to all arms** | one zebra `<object type="crosswalk">` per arm, spanning its driving lanes just inside the junction |
+| **Add stop lines to all arms** | a solid `<object type="roadMark" subtype="signalLines">` across each arm's approach lanes, set back behind the crosswalk |
+| **Add lane arrows to all arms** | a straight arrow on each approach lane, pointing into the junction and set back behind the stop line |
+| **Add centre lines to all arms** | a double-yellow centre line (`roadMark` `solid solid`, yellow) on lane 0 of each arm, replacing the one the road template laid down |
+
+Each action covers **every arm at once and is a single undo step** — Ctrl+Z
+takes the whole batch back. An action is greyed out when the junction has no
+arms it can resolve (a junction read from another tool's file, say), so it
+never silently does nothing.
+
+The two-way arms of a plain crossing get a stop line and an arrow **per
+approach** — one for each direction of travel — since each side approaches the
+junction on its own lanes.
+
+> **Turn arrows.** The editor authors the straight glyph. The `arrowLeft` and
+> `arrowRight` variants are modelled and render, but choosing which lane gets
+> which is Python-side for now — `edit.junction_lane_arrows(network, junction,
+> glyph)` takes a callable that picks the subtype per approach lane.
+
+**Poles** still author from the Python package (above) or another OpenDRIVE
+tool; open the result in the editor to inspect it.
 
 ## Reference
 
