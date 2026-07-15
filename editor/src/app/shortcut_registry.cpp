@@ -162,7 +162,7 @@ QList<QKeySequence> sequences(Id id) {
   }
   QList<QKeySequence> out;
   out.append(QKeySequence(row.primary));
-  if (row.alternate != 0) {
+  if (row.alternate.key() != Qt::Key_unknown) {
     out.append(QKeySequence(row.alternate));
   }
   return out;

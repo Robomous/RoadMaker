@@ -60,8 +60,16 @@ struct Entry {
   /// Actions binds, so each OS gets its native keys.
   QKeySequence::StandardKey standard = QKeySequence::UnknownKey;
 
-  int primary = 0;   ///< a Qt::Key (optionally OR-ed with modifiers)
-  int alternate = 0; ///< 0 = none — e.g. the numpad-less digit for a cardinal
+  /// The binding, as QKeyCombination — NOT int. `Qt::KeypadModifier | Qt::Key_8`
+  /// already yields a QKeyCombination, and storing it in an int would go through
+  /// QKeyCombination::operator int(), which Qt deprecated in 6.0 (MSVC flags it
+  /// and CI's /WX turns that into a build failure). A plain `Qt::Key` converts
+  /// implicitly, so unmodified rows still read as `.primary = Qt::Key_Q`.
+  QKeyCombination primary = Qt::Key_unknown;
+
+  /// A second binding for the same action — the numpad-less digit on a cardinal.
+  /// Qt::Key_unknown = none.
+  QKeyCombination alternate = Qt::Key_unknown;
 
   /// What the PAGE says, for `standard` rows only.
   ///
