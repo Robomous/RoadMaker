@@ -12,6 +12,12 @@ Expected<void> EditStack::push(RoadNetwork& network, std::unique_ptr<Command> co
   if (auto applied = command->apply(network); !applied.has_value()) {
     return applied;
   }
+  // Truncating the redo tail destroys those commands; each is reverted (they
+  // sit past the cursor), so discard releases the reserved slots their created
+  // objects would otherwise leak (#271).
+  for (std::size_t i = cursor_; i < commands_.size(); ++i) {
+    commands_[i]->discard(network);
+  }
   commands_.erase(commands_.begin() + static_cast<std::ptrdiff_t>(cursor_), commands_.end());
   commands_.push_back(std::move(command));
   cursor_ = commands_.size();
@@ -42,6 +48,11 @@ Expected<void> EditStack::redo(RoadNetwork& network) {
 }
 
 void EditStack::clear() {
+  // No RoadNetwork& here (this signature is bound to Python), so undone
+  // commands past the cursor cannot discard their reserved slots — a residual
+  // leak, bounded by the redo-tail depth at clear time and accepted (#271).
+  // The editor's own QUndoStack path (KernelEditorCommand's destructor) does
+  // release them; this is the headless/Python parity stack only.
   commands_.clear();
   cursor_ = 0;
 }
@@ -52,6 +63,12 @@ void EditStack::set_depth_limit(std::size_t limit) {
 }
 
 void EditStack::enforce_depth_limit() {
+  // Must NOT discard the commands it drops: these are the OLDEST entries, all
+  // APPLIED (below the cursor), so their created objects are live in occupied
+  // slots — discarding would try to release live slots (a no-op by the guard,
+  // but the intent would be wrong) and, worse, invites the symmetric bug of
+  // discarding applied history. Dropping an applied command simply forgets how
+  // to undo it; its objects stay in the network. (#271)
   if (commands_.size() <= depth_limit_) {
     return;
   }

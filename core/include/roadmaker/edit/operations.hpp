@@ -349,12 +349,13 @@ enum class TurnSetPolicy {
 /// connecting roads, turns that vanished have theirs erased.
 ///
 /// `policy` exists for ONE caller. A preview session reverts and DESTROYS its
-/// command on every frame (Document::update_preview), and revert frees created
-/// ids with erase_exact, which reserves the slot rather than recycling it — so
-/// a discarded command's created slots can never be reused. A per-frame
-/// regeneration that creates connecting roads therefore leaks slots for the
-/// rest of the session, which is why move_waypoint_following_junctions asks
-/// for InPlaceOnly and takes the stale junction (as it does today) instead.
+/// command on every frame (Document::update_preview); revert frees created ids
+/// with erase_exact, which reserves the slot rather than recycling it. Those
+/// reserved slots are now recycled when the dropped command is discarded
+/// (Command::discard, #271), so a per-frame regeneration no longer leaks —
+/// but move_waypoint_following_junctions still asks for InPlaceOnly and takes
+/// the stale junction, because regenerating a junction mid-drag is expensive
+/// and the arm poses have not settled until the drag commits.
 [[nodiscard]] RM_API std::unique_ptr<Command>
 regenerate_junction(const RoadNetwork& network,
                     JunctionId junction,

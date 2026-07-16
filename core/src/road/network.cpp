@@ -196,6 +196,34 @@ Expected<void> RoadNetwork::erase_surface_exact(SurfaceId id) {
   return surfaces_.erase_exact(id);
 }
 
+Expected<void> RoadNetwork::release_road_reserved(RoadId id) {
+  return roads_.release_reserved(id);
+}
+
+Expected<void> RoadNetwork::release_lane_section_reserved(LaneSectionId id) {
+  return sections_.release_reserved(id);
+}
+
+Expected<void> RoadNetwork::release_lane_reserved(LaneId id) {
+  return lanes_.release_reserved(id);
+}
+
+Expected<void> RoadNetwork::release_junction_reserved(JunctionId id) {
+  return junctions_.release_reserved(id);
+}
+
+Expected<void> RoadNetwork::release_object_reserved(ObjectId id) {
+  return objects_.release_reserved(id);
+}
+
+Expected<void> RoadNetwork::release_signal_reserved(SignalId id) {
+  return signals_.release_reserved(id);
+}
+
+Expected<void> RoadNetwork::release_surface_reserved(SurfaceId id) {
+  return surfaces_.release_reserved(id);
+}
+
 RoadId RoadNetwork::find_road(std::string_view odr_id) const {
   RoadId found;
   roads_.for_each([&](RoadId id, const Road& road) {

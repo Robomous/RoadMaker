@@ -424,6 +424,66 @@ TEST(LaneSections, SplittingBothEndsOfASpanYieldsThreeSections) {
   }
 }
 
+// --- discard: reserved-slot recycling (#271) --------------------------------
+
+/// A command that CREATED objects reserves their arena slots when reverted
+/// (erase_exact keeps them off the free list for a restore that may never
+/// come). discard() — called when the reverted command is dropped rather than
+/// reapplied — recycles those slots so a preview redoing the same edit every
+/// frame does not leak them.
+TEST(LaneSections, DiscardAfterRevertRecyclesCreatedSlots) {
+  RoadNetwork network;
+  const RoadId road_id = author_straight(network, "1");
+
+  auto first = roadmaker::edit::split_lane_section(network, road_id, 50.0);
+  ASSERT_TRUE(first->apply(network).has_value());
+  // The split created one section and duplicated the cross-section's lanes.
+  const std::size_t sections = network.lane_section_slot_count();
+  const std::size_t lanes = network.lane_slot_count();
+
+  ASSERT_TRUE(first->revert(network).has_value());
+  // Revert erased the created objects with erase_exact — the slots are reserved
+  // (still counted), awaiting a restore.
+  EXPECT_EQ(network.lane_section_slot_count(), sections);
+  EXPECT_EQ(network.lane_slot_count(), lanes);
+
+  // Discard recycles those reserved slots. A second discard is a no-op (the
+  // generation was already bumped) — the precondition is self-enforcing.
+  first->discard(network);
+  first->discard(network);
+  EXPECT_EQ(network.lane_section_slot_count(), sections);
+  EXPECT_EQ(network.lane_slot_count(), lanes);
+
+  // An identical split now REUSES the recycled indices — slot counts hold.
+  auto second = roadmaker::edit::split_lane_section(network, road_id, 50.0);
+  ASSERT_TRUE(second->apply(network).has_value());
+  EXPECT_EQ(network.lane_section_slot_count(), sections);
+  EXPECT_EQ(network.lane_slot_count(), lanes);
+}
+
+/// The same guarantee through a CompositeCommand: add_lane_span composes two
+/// splits plus the pocket lanes, so discard must forward to its children.
+TEST(LaneSections, DiscardForwardsThroughACompositeCommand) {
+  RoadNetwork network;
+  const RoadId road_id = author_straight(network, "1");
+
+  auto first = roadmaker::edit::add_lane_span(network, road_id, -1, 40.0, 90.0, LaneType::Driving);
+  ASSERT_NE(first, nullptr);
+  ASSERT_TRUE(first->apply(network).has_value());
+  const std::size_t sections = network.lane_section_slot_count();
+  const std::size_t lanes = network.lane_slot_count();
+
+  ASSERT_TRUE(first->revert(network).has_value());
+  first->discard(network); // CompositeCommand::discard fans out to children
+  first->discard(network); // idempotent
+
+  auto second = roadmaker::edit::add_lane_span(network, road_id, -1, 40.0, 90.0, LaneType::Driving);
+  ASSERT_NE(second, nullptr);
+  ASSERT_TRUE(second->apply(network).has_value());
+  EXPECT_EQ(network.lane_section_slot_count(), sections);
+  EXPECT_EQ(network.lane_slot_count(), lanes);
+}
+
 TEST(LaneSections, SplitSurvivesAnXodrRoundTrip) {
   RoadNetwork network;
   const RoadId road_id = author_straight(network, "1");

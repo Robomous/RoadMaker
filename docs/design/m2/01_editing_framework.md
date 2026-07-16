@@ -138,6 +138,44 @@ Invariant: `restore`/`erase_exact` are for the command layer only (documented;
 normal `erase` still bumps generations). Round-trip tests assert that IDs held
 by other objects (links, junction connections) remain valid across undo/redo.
 
+### 2.2.1 Discarding a reverted command (#271)
+
+`erase_exact` deliberately keeps a slot off the free list so a paired `restore`
+can resurrect its object. That is exactly right while a command lives on the
+undo stack: after `revert`, a created object's slot sits reserved, waiting for
+the redo that will `restore` it. But a command is not always redone — it can be
+**dropped in the reverted state**:
+
+- a preview session replaces its command every drag frame (§3);
+- a new push truncates the redo tail (headless `EditStack::push`, and the
+  editor's `QUndoStack`);
+- the document (and its stack) is torn down or reset.
+
+For those paths the reserved slots would leak — reserved forever, never
+restored, never recycled — once per frame for a creator preview. `Command`
+gains a third lifecycle verb:
+
+```cpp
+virtual void discard(RoadNetwork&);   // release the reserved slots of created
+                                      // objects; only valid on a REVERTED command
+```
+
+`discard` recycles the created objects' slots via `Arena::release_reserved`
+(bumps the generation, returns the index to the free list; `alive_` is
+untouched — `erase_exact` already decremented it). It is `void`, not
+`Expected`: the drop/teardown callers cannot act on an error, and the arena
+guards make every misuse a safe no-op — a double-discard fails the generation
+check, and a discard of an *applied* command fails the occupied-slot check. Only
+created objects need releasing (erased values are live again after revert;
+before-values overwrote live objects). `enforce_depth_limit` drops the OLDEST,
+still-*applied* commands and must NOT discard them — their objects are live.
+
+Because `push` must apply the new command before it can truncate a
+now-invalidated redo tail (discarding ahead of a possibly-failing apply would
+corrupt the tail), a creator preview holds one extra reserved slot set between
+apply and the trailing discard — a bounded steady state, not a leak; the arena
+storage never grows past that first-frame high-water mark.
+
 ### 2.3 Edit operations (kernel factories, all `RM_API`, all return `Expected`)
 
 ```cpp

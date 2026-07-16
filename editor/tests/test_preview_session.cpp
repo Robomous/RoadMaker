@@ -8,6 +8,7 @@
 #include <gtest/gtest.h>
 
 #include <QObject>
+#include <cstddef>
 #include <filesystem>
 #include <memory>
 #include <stdexcept>
@@ -262,6 +263,106 @@ TEST(PreviewSession, SessionlessCallsAreSafe) {
 
   EXPECT_EQ(scene.document.undo_stack()->count(), scene.base_count);
   EXPECT_EQ(xodr(scene.document), scene.base_xodr);
+}
+
+// --- creator previews: reserved-slot recycling (#271) -----------------------
+//
+// split_lane_section CREATES a section and lanes, so its command reserves
+// arena slots when reverted. A preview that redraws it every drag frame — the
+// shape #218 Lane Carve takes — must recycle those slots via discard, or the
+// arenas grow without bound for the life of the session.
+
+TEST(PreviewSession, CreatorPreviewDoesNotGrowArenasAcrossFrames) {
+  Scene scene;
+  ASSERT_TRUE(scene.document
+                  .begin_preview(roadmaker::edit::split_lane_section(
+                      scene.document.network(), scene.road, 40.0))
+                  .has_value());
+
+  const auto split_frame = [&](double s) {
+    return scene.document.update_preview([&, s](const RoadNetwork& base) {
+      return roadmaker::edit::split_lane_section(base, scene.road, s);
+    });
+  };
+
+  // The first update sets the steady-state high-water mark: the outgoing
+  // preview's slots are still reserved while the replacement applies, so the
+  // arena carries one extra section/lane set until the trailing discard
+  // recycles it onto the free list for the next frame. slots_ never shrinks,
+  // so THIS is the leak-free bound — not the pre-session count.
+  ASSERT_TRUE(split_frame(30.0).has_value());
+  const std::size_t sections = scene.document.network().lane_section_slot_count();
+  const std::size_t lanes = scene.document.network().lane_slot_count();
+
+  for (int i = 0; i < 100; ++i) {
+    ASSERT_TRUE(split_frame(31.0 + 0.4 * i).has_value());
+    ASSERT_EQ(scene.document.network().lane_section_slot_count(), sections);
+    ASSERT_EQ(scene.document.network().lane_slot_count(), lanes);
+  }
+
+  scene.document.cancel_preview();
+  EXPECT_FALSE(scene.document.preview_active());
+  EXPECT_EQ(xodr(scene.document), scene.base_xodr);
+  EXPECT_EQ(scene.document.network().lane_section_slot_count(), sections);
+  EXPECT_EQ(scene.document.network().lane_slot_count(), lanes);
+}
+
+TEST(PreviewSession, CommittedCreatorPreviewUndoRedoRoundTrips) {
+  Scene scene;
+  ASSERT_TRUE(scene.document
+                  .begin_preview(roadmaker::edit::split_lane_section(
+                      scene.document.network(), scene.road, 40.0))
+                  .has_value());
+  for (const double s : {50.0, 60.0, 70.0}) {
+    ASSERT_TRUE(scene.document
+                    .update_preview([&, s](const RoadNetwork& base) {
+                      return roadmaker::edit::split_lane_section(base, scene.road, s);
+                    })
+                    .has_value());
+  }
+
+  scene.document.commit_preview();
+  EXPECT_FALSE(scene.document.preview_active());
+  EXPECT_EQ(scene.document.undo_stack()->count(), scene.base_count + 1);
+  const std::string committed = xodr(scene.document);
+  EXPECT_NE(committed, scene.base_xodr);
+
+  // A committed command keeps its slots legitimately — discard never fires on
+  // this path, and undo/redo round-trips byte-identically.
+  scene.document.undo_stack()->undo();
+  EXPECT_EQ(xodr(scene.document), scene.base_xodr);
+  scene.document.undo_stack()->redo();
+  EXPECT_EQ(xodr(scene.document), committed);
+}
+
+TEST(PreviewSession, EditorRedoTailDiscardsCreatedSlots) {
+  Scene scene;
+  const auto commit_split = [&](double s) {
+    ASSERT_TRUE(scene.document
+                    .push_command(roadmaker::edit::split_lane_section(
+                        scene.document.network(), scene.road, s))
+                    .has_value());
+  };
+
+  // A creator command on the stack, then undo it (its slots become reserved).
+  commit_split(40.0);
+  scene.document.undo_stack()->undo();
+
+  // Push past the undo: QUndoStack truncates the redo tail, destroying the
+  // undone split's KernelEditorCommand, whose destructor discards the reverted
+  // kernel command. The new split's apply already grew the arena by one (it
+  // runs before that destructor), so this is the steady-state bound.
+  commit_split(50.0);
+  const std::size_t sections = scene.document.network().lane_section_slot_count();
+  const std::size_t lanes = scene.document.network().lane_slot_count();
+
+  // A second undo+push cycle REUSES the recycled slots — no growth. Without the
+  // destructor discard the first cycle's slots would have leaked and this apply
+  // would allocate fresh ones instead.
+  scene.document.undo_stack()->undo();
+  commit_split(60.0);
+  EXPECT_EQ(scene.document.network().lane_section_slot_count(), sections);
+  EXPECT_EQ(scene.document.network().lane_slot_count(), lanes);
 }
 
 TEST(PreviewSession, LoadCancelsTheSession) {

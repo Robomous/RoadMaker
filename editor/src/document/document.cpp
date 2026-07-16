@@ -65,10 +65,14 @@ Expected<void> Document::load(const std::filesystem::path& path) {
     return tl::unexpected(result.error());
   }
 
+  // Clear the stack (destroying its commands, which may discard against the
+  // current network) BEFORE swapping in the loaded one, so no undone command
+  // ever discards against a network it never touched (#271). The arena guards
+  // would no-op anyway; this makes it safe by construction.
+  undo_stack_.clear();
   network_ = std::move(result->network);
   diagnostics_ = std::move(result->diagnostics);
   file_path_ = QString::fromStdString(path.string());
-  undo_stack_.clear();
   mesh_ = build_network_mesh(network_);
 
   spdlog::info("loaded {} ({} roads, {} diagnostics)",
@@ -84,10 +88,11 @@ Expected<void> Document::load(const std::filesystem::path& path) {
 
 void Document::reset() {
   cancel_preview();
+  // Clear the stack before replacing the network — see the note in load().
+  undo_stack_.clear();
   network_ = RoadNetwork{};
   diagnostics_.clear();
   file_path_.clear();
-  undo_stack_.clear();
   mesh_ = build_network_mesh(network_);
 
   emit loaded();
@@ -297,15 +302,28 @@ Expected<void> Document::update_preview(const PreviewFactory& factory) {
                                                            "preview factory returned no command"));
   if (applied.has_value()) {
     const edit::DirtySet dirty = replacement->dirty();
+    // The outgoing preview is reverted and about to be destroyed by the move
+    // — release the slots its created objects reserved, or every drag frame
+    // with a creator (e.g. Lane Carve previewing split_lane_section) leaks
+    // them for the rest of the session (#271).
+    preview_command_->discard(network_);
     preview_command_ = std::move(replacement);
     after_kernel_mutation(dirty);
     return {};
   }
 
   // A failed apply leaves the network untouched (base state): restore the
-  // last good preview so the session degrades gracefully mid-drag.
+  // last good preview so the session degrades gracefully mid-drag. The failed
+  // replacement may still hold reserved slots — a CompositeCommand unwinds its
+  // applied prefix via child reverts — so discard it before it goes out of
+  // scope.
+  if (replacement != nullptr) {
+    replacement->discard(network_);
+  }
   if (auto restored = preview_command_->apply(network_); !restored.has_value()) {
+    // The original is still reverted and about to be dropped — discard it too.
     spdlog::error("preview restore failed: {}", restored.error().message);
+    preview_command_->discard(network_);
     preview_command_.reset();
     return restored;
   }
@@ -330,7 +348,12 @@ void Document::cancel_preview() {
   }
   const edit::DirtySet dirty = preview_command_->dirty();
   spdlog::info("preview cancelled: {} {}", preview_command_->name(), describe_dirty(dirty));
-  if (auto reverted = preview_command_->revert(network_); !reverted.has_value()) {
+  if (auto reverted = preview_command_->revert(network_); reverted.has_value()) {
+    // Reverted cleanly — release the created objects' reserved slots before
+    // the command is destroyed (#271). On a failed revert the state is
+    // indeterminate, so skip the discard and just drop the command.
+    preview_command_->discard(network_);
+  } else {
     spdlog::error("preview cancel failed to revert: {}", reverted.error().message);
   }
   preview_command_.reset();

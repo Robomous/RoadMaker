@@ -112,6 +112,18 @@ public:
   RM_API Expected<SurfaceId> restore_surface(SurfaceId id, Surface value);
   RM_API Expected<void> erase_surface_exact(SurfaceId id);
 
+  // Recycles a slot reserved by an erase_*_exact whose restore never comes,
+  // because the command that created the object was DISCARDED rather than
+  // reverted-then-reapplied (Command::discard). Command-layer only; guards
+  // make a misuse (occupied or already-released slot) a safe no-op error.
+  RM_API Expected<void> release_road_reserved(RoadId id);
+  RM_API Expected<void> release_lane_section_reserved(LaneSectionId id);
+  RM_API Expected<void> release_lane_reserved(LaneId id);
+  RM_API Expected<void> release_junction_reserved(JunctionId id);
+  RM_API Expected<void> release_object_reserved(ObjectId id);
+  RM_API Expected<void> release_signal_reserved(SignalId id);
+  RM_API Expected<void> release_surface_reserved(SurfaceId id);
+
   // --- lookup (nullptr on stale/invalid ids) ------------------------------
 
   [[nodiscard]] Road* road(RoadId id) { return roads_.get(id); }
@@ -163,6 +175,23 @@ public:
   [[nodiscard]] std::size_t signal_count() const { return signals_.size(); }
 
   [[nodiscard]] std::size_t surface_count() const { return surfaces_.size(); }
+
+  // Total slots ever allocated per arena (live + erased + reserved). Never
+  // shrinks. Observability for reserved-slot leaks: byte-identical xodr cannot
+  // see a slot leak (slots are not serialized), so tests watch these instead.
+  [[nodiscard]] std::size_t road_slot_count() const { return roads_.slot_count(); }
+
+  [[nodiscard]] std::size_t lane_section_slot_count() const { return sections_.slot_count(); }
+
+  [[nodiscard]] std::size_t lane_slot_count() const { return lanes_.slot_count(); }
+
+  [[nodiscard]] std::size_t junction_slot_count() const { return junctions_.slot_count(); }
+
+  [[nodiscard]] std::size_t object_slot_count() const { return objects_.slot_count(); }
+
+  [[nodiscard]] std::size_t signal_slot_count() const { return signals_.slot_count(); }
+
+  [[nodiscard]] std::size_t surface_slot_count() const { return surfaces_.slot_count(); }
 
   /// fn(RoadId, Road&) over live roads, in creation order.
   template <class Fn>

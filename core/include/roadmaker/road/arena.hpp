@@ -100,7 +100,37 @@ public:
     return id;
   }
 
+  /// Recycles a slot that `erase_exact` reserved but whose paired `restore`
+  /// will never come — a command that created the object was discarded rather
+  /// than reverted-then-reapplied. Bumps the generation and returns the index
+  /// to the free list so `emplace` can reuse it; `alive_` is untouched
+  /// (`erase_exact` already decremented it). Command-layer (roadmaker::edit)
+  /// only, paired with `erase_exact`. Guards make every misuse a no-op error:
+  /// an occupied slot (the command was never reverted), an out-of-range or
+  /// generation-mismatched id (already released, or a plain `erase`).
+  Expected<void> release_reserved(IdT id) {
+    if (id.index >= slots_.size()) {
+      return make_error(ErrorCode::InvalidArgument, "release_reserved: slot was never allocated");
+    }
+    Slot& slot = slots_[id.index];
+    if (slot.gen != id.gen) {
+      return make_error(ErrorCode::InvalidArgument, "release_reserved: generation mismatch");
+    }
+    if (slot.value.has_value()) {
+      return make_error(ErrorCode::InvalidArgument, "release_reserved: slot is occupied");
+    }
+    ++slot.gen;
+    free_.push_back(id.index);
+    return {};
+  }
+
   [[nodiscard]] std::size_t size() const { return alive_; }
+
+  /// Total slots ever allocated (live + erased + reserved). Never shrinks —
+  /// `erase`/`release_reserved` recycle indices, they do not pop storage. The
+  /// observability hook for slot leaks: a reserved slot that can never be
+  /// reused shows up here (and nowhere in the serialized xodr).
+  [[nodiscard]] std::size_t slot_count() const { return slots_.size(); }
 
   [[nodiscard]] bool empty() const { return alive_ == 0; }
 

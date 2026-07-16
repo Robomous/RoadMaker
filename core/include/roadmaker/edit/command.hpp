@@ -71,6 +71,20 @@ public:
 
   /// Valid after a successful apply() or revert().
   [[nodiscard]] virtual DirtySet dirty() const = 0;
+
+  /// Releases the reserved arena slots this command still holds because it
+  /// created objects and is being DROPPED rather than reverted-then-reapplied:
+  /// a per-frame preview replacement, a truncated redo tail, or teardown. A
+  /// reverted command's created ids sit in slots that `erase_exact` reserved
+  /// (no generation bump, off the free list) for a `restore` that will never
+  /// come — `discard` recycles them (network.release_*_reserved).
+  ///
+  /// Contract: only valid on a REVERTED (or never-applied) command; `apply`
+  /// after `discard` is undefined. Signature is `void`, not Expected — the
+  /// drop/teardown callers cannot act on an error, and the arena guards make
+  /// every misuse (double-discard, discard of an applied command) a safe
+  /// no-op. Default: nothing to release.
+  virtual void discard(RoadNetwork&) {}
 };
 
 } // namespace roadmaker::edit
