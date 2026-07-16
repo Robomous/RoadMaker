@@ -46,7 +46,7 @@ manifest-driven Library panel.
 | Pillar | Name | Scope (delta from current state) | Feeds |
 |---|---|---|---|
 | P1 | Interaction & Navigation | Orbit-pivot camera model (pivot point of interest, push-past-pivot zoom, frame-selected / frame-on-cursor, orthographic/perspective toggle, cardinal views); Attributes pane as universal editor (scrub-editing on attribute names, drag-targets for assets/materials); 2D Editor pane as a host for profile, cross-section, and future editors; status-bar tool instructions; documented shortcut map | GW-1, all |
-| P2 | Roads & Lanes | Road-plan authoring parity: extend-from-endpoint with geometric-constraint fit, enclosed-area ground surfaces (supersedes #95/#97); lane tool suite: Lane, Lane Width, Lane Add, Lane Form, Lane Carve (tapering cut → turn lane); road styles as draggable assets preserving prior attributes (supersedes #194) | GW-2 |
+| P2 | Roads & Lanes | Road-plan authoring parity: extend-from-endpoint with geometric-constraint fit, forming a junction on commit (supersedes #95/#97); enclosed-area ground surfaces as a first-class `Surface` entity P5 extends; lane tool suite: Lane, Lane Width, Lane Add, Lane Form, Lane Carve (tapering cut → turn lane) over new kernel lane-section operations; road styles as draggable assets that **replace** the lane profile and boundary marks while preserving everything orthogonal to the cross section — reference-line geometry, elevation, junction connectivity (supersedes #194). Also seeds the **in-app Help system** (Qt Help Framework), permanent cross-pillar infrastructure every later pillar grows | GW-2 |
 | P3 | Markings | Crosswalk & Stop Line tool (chevron placement affordance); parametric crosswalk assets; Marking Curve + Marking Point tools; drag marking assets onto lane boundaries; stencil assets (arrows); marking materials with per-instance override | GW-2, GW-5 |
 | P4 | Junctions & Signals | Corner tool full parity (control-vertex/extent reshape, per-corner radius + materials, junction-wide attributes); custom-junction and junction-surface groundwork; Signal tool with auto-signalize templates (incl. protected-left); Signal Phase Editor hosted in the 2D Editor pane; maneuver roads; signal/prop assemblies auto-linked to signals; Sign tool with editable text | GW-3, GW-4 |
 | P5 | Terrain & Structures | Surface tool as a node graph with tangents; elevation ↔ terrain coupling; Road Construction tool with automatic bridge-span assignment and span inflation (supersedes #198); heightmap terrain (DEM import + brushes) as a later sprint | GW-2 |
@@ -88,6 +88,10 @@ map editor.
   steps it unblocks), **Out of scope**, and **Supersedes** (old issue
   numbers where applicable).
 - No milestones, no version labels, no release tasks.
+- A **cross-pillar workstream** — infrastructure seeded by one pillar and
+  grown by every later one — is titled for the workstream rather than the
+  pillar (`help-sM: …`) and carries its own label alongside the owning
+  pillar's (`help` + `pillar:P2`). The in-app Help system is the first.
 
 ### Discovery reports
 

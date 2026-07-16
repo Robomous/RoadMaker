@@ -21,6 +21,23 @@ markings, props by all four techniques, and export previews.
 
 ## Steps
 
+**Amendments note (P2 discovery, 2026-07-15).** Two steps were corrected
+against the code rather than left describing a product that does not exist
+— see the [P2 discovery report](../pillars/p2_discovery.md):
+
+- **Step 3** claimed a junction is created *"automatically at the overlap"*.
+  Nothing does that today: the Create Road tool only authors a road, and the
+  snap set has no side or crossing candidate, so junctions are made solely
+  with the Create Junction tool. The kernel operations to form one on commit
+  do exist, so P2 wires them up
+  ([#214](https://github.com/Robomous/RoadMaker/issues/214)) and the step now
+  says *when* the junction forms.
+- **Step 11** was self-contradictory: a road style *defines* the lane
+  profile, yet the step asked for *"lane count edits"* to be preserved
+  through it. The preservation contract is now explicit — a style replaces
+  the cross section and keeps everything orthogonal to it
+  ([#219](https://github.com/Robomous/RoadMaker/issues/219)).
+
 ### Project and roads
 
 1. [ ] Create a new project, then a new scene inside it. **Expected:** a
@@ -29,8 +46,10 @@ markings, props by all four techniques, and export previews.
 2. [ ] With the Road Plan tool, click control points to lay a straight
    road; right-click to finish. **Expected:** a road with the default
    style; control points remain editable.
-3. [ ] Draw a second road crossing the first. **Expected:** a junction is
-   created automatically at the overlap, with connecting lanes.
+3. [ ] Draw a second road across the first, finishing beyond it.
+   **Expected:** on commit, a junction forms at the crossing with
+   connecting lanes — the crossing is detected when the road is finished,
+   not while it is being drawn.
 4. [ ] Draw a curved road, then extend one of its endpoints by clicking
    beyond it. **Expected:** the extension fits with geometric-constraint
    continuity (no tangent kink at the join).
@@ -63,8 +82,11 @@ markings, props by all four techniques, and export previews.
 ### Road styles
 
 11. [ ] Drag a different road style from the Library onto an existing
-    road. **Expected:** the style applies; previously edited attributes
-    (e.g. the elevation profile, lane count edits) are preserved.
+    road. **Expected:** the style replaces the lane profile and the
+    boundary markings, while everything orthogonal to the cross section
+    survives — the reference-line geometry, the elevation profile edited
+    in step 7, superelevation, junction connectivity, the road's name,
+    and any props or signals already placed on it.
 
 ### Turn lane, markings, stencils
 

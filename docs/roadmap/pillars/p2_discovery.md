@@ -143,7 +143,8 @@ Promote it rather than rewriting it.
 Dependency state, checked rather than assumed: **Clipper2 and CDT are live**
 in production. **Manifold is linked but used only in a smoke test. libigl is
 declared and never linked or included at all** — both cost build time for
-nothing (worth a cleanup issue outside P2). Note `CLIPPER2_USINGZ` is **OFF**
+nothing ([#268](https://github.com/Robomous/RoadMaker/issues/268), outside P2
+and deliberately unscheduled). Note `CLIPPER2_USINGZ` is **OFF**
 ("plan-view 2D only") — Clipper2 carries no Z, so elevation is reconstructed
 separately, as the junction surface does.
 
@@ -234,7 +235,10 @@ Constraints P2 must design around:
 ## GW-2 amendments these findings propose
 
 GW-2 is marked draft ("steps are refined as the owning pillar sprints land").
-The proposed amendments, landing with the sprints that implement them:
+Both amendments were approved and **have landed** — they are documentation
+defects rather than implementation-dependent wording, so leaving them in place
+would have meant nine sprints running against an acceptance script that
+described a feature nobody had built:
 
 1. **Step 3 describes a feature that does not exist.** It says *"a junction
    is created automatically at the overlap"*. The Create Road tool only calls
@@ -261,15 +265,20 @@ Step 6 (Surface node graph) and 7–8 (terrain, bridges) are P5; 9 is P4;
 
 | Sprint | Reality-adjusted scope |
 |---|---|
-| p2-s1 | **New.** Kernel lane-section foundations: `split_lane_section`, `set_lane_width_profile` (fixes the §3 data-loss bug), interior `add_lane` with renumber+remap, public `section_at`/`section_end`, multi-section fixtures first |
-| p2-s2 | **New.** Junction regen learns turn-set changes (§4) — highest risk in the pillar; gates Carve |
+| [#262](https://github.com/Robomous/RoadMaker/issues/262) p2-s1 | **New.** Kernel lane-section foundations: `split_lane_section`, `set_lane_width_profile` (fixes the §3 data-loss bug), public `section_at`/`section_end`, the writer's missing predecessor validation, multi-section fixtures first |
+| [#263](https://github.com/Robomous/RoadMaker/issues/263) p2-s2 | **New.** Junction regen learns turn-set changes (§4) — highest risk in the pillar; gates Carve. Also owns interior `add_lane` with renumber + link remap: renumbering must remap `JunctionConnection::lane_links`, which is the same contract this sprint rewrites (§4), so one sprint owns it |
 | [#214](https://github.com/Robomous/RoadMaker/issues/214) p2-s3 | Extend-from-endpoint (new solver math, §7) **+ tee-on-commit (#95) + cross-on-commit (GW-2 step 3) + grade match (#97)** |
 | [#216](https://github.com/Robomous/RoadMaker/issues/216) p2-s4 | Lane tool = **fill the 28-line stub**; Lane Width as a new `Editor2DPage` |
 | [#217](https://github.com/Robomous/RoadMaker/issues/217) p2-s5 | Lane Add + Lane Form as viewport tools over s1's ops |
 | [#218](https://github.com/Robomous/RoadMaker/issues/218) p2-s6 | Lane Carve + lane-boundary hit-testing; depends on s1 **and s2** |
 | [#215](https://github.com/Robomous/RoadMaker/issues/215) p2-s7 | Enclosed-area ground surfaces — scope unchanged, but the **representation is now decided**: a `Surface` entity with a derived boundary (§5), not a render-side by-product |
 | [#219](https://github.com/Robomous/RoadMaker/issues/219) p2-s8 | Road styles: new `RoadStyle` type (§6), `apply_road_style`, drop-target widening, urban two-lane style (#194) |
-| p2-s9 | **New.** GW-2 P2-steps self-check, tool docs, GW-2 amendments |
-| help-s1/s2 | **New.** In-app Help (Qt Help Framework) — pipeline + viewer, then F1 context help + coverage test + seed tutorials |
+| [#264](https://github.com/Robomous/RoadMaker/issues/264) p2-s9 | **New.** GW-2 P2-steps self-check, tool docs |
+| [#265](https://github.com/Robomous/RoadMaker/issues/265) / [#266](https://github.com/Robomous/RoadMaker/issues/266) help-s1/s2 | **New.** In-app Help (Qt Help Framework) — pipeline + viewer, then F1 context help + coverage test + seed tutorials |
 
 Critical path: **s1 → s2 → s6**. s3 and s7 are independent.
+
+The two GW-2 amendments this report proposed landed straight away rather than
+waiting for p2-s9: both are documentation defects (a step describing a feature
+that does not exist, and a step contradicting itself), so they were not
+implementation-dependent.
