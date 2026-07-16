@@ -30,8 +30,21 @@ struct DirtySet {
   /// pass in phase 2 (#69); phase 4 (#71) reuses it for instanced props.
   std::vector<RoadId> objects;
 
-  /// Roads or junctions were added or removed (drives tree-model resets).
+  /// Roads or junctions were added or removed. Drives the editor's wholesale
+  /// mesh re-upload (a partial per-road upload cannot add or drop an item) and
+  /// prunes selections that named a now-erased id.
   bool topology = false;
+
+  /// This command already brought `junctions` up to date itself; the editor
+  /// must not regenerate them again. Set by the commands that build or tear
+  /// down junction structure (create/delete junction, split_road, delete_road)
+  /// — a second regeneration would double-work or fight them.
+  ///
+  /// Default false is the safe direction: a command that forgets the flag gets
+  /// a redundant regeneration (slow, correct) rather than a stale junction
+  /// (fast, wrong). Kept separate from `topology` deliberately — a lane
+  /// appearing is topology AND needs regeneration, which one flag cannot say.
+  bool junctions_are_current = false;
 };
 
 /// One undoable kernel mutation (docs/m2/01_editing_framework.md §1.1).

@@ -68,6 +68,7 @@ void SoakDriver::step(int index) {
       {1, &SoakDriver::op_attach_t, "attach_t"},
       {1, &SoakDriver::op_assembly_drop_on_road, "assembly_drop_on_road"},
       {1, &SoakDriver::op_remove_lane, "remove_lane"},
+      {2, &SoakDriver::op_insert_lane, "insert_lane"},
       {1, &SoakDriver::op_overpass, "overpass"},
       {1, &SoakDriver::op_delete_crossing_road, "delete_crossing_road"},
       {1, &SoakDriver::op_delete_junction, "delete_junction"},
@@ -697,6 +698,36 @@ void SoakDriver::op_remove_lane() {
     return;
   }
   push(edit::remove_lane(document_.network(), outermost));
+}
+
+void SoakDriver::op_insert_lane() {
+  // Interior insert with renumbering — the path Lane Form/Carve build on. Picks
+  // a random existing non-center lane as the insert point so the renumbering,
+  // adjacent-section link remap, and junction lane_link remap all run; the
+  // kernel refuses the center and any empty position (recorded, not fatal).
+  const std::vector<RoadId> roads = live_roads(/*editable_only=*/true);
+  if (roads.empty()) {
+    return;
+  }
+  const RoadId road_id = roads[static_cast<std::size_t>(rand_int(0, int(roads.size()) - 1))];
+  const Road* road = document_.network().road(road_id);
+  if (road == nullptr || road->sections.empty()) {
+    return;
+  }
+  const LaneSectionId section_id =
+      road->sections[static_cast<std::size_t>(rand_int(0, int(road->sections.size()) - 1))];
+  const LaneSection* section = document_.network().lane_section(section_id);
+  if (section == nullptr || section->lanes.empty()) {
+    return;
+  }
+  const LaneId at =
+      section->lanes[static_cast<std::size_t>(rand_int(0, int(section->lanes.size()) - 1))];
+  const Lane* lane = document_.network().lane(at);
+  if (lane == nullptr) {
+    return;
+  }
+  const LaneType type = chance(0.5) ? LaneType::Driving : LaneType::Shoulder;
+  push(edit::insert_lane(document_.network(), section_id, lane->odr_id, type));
 }
 
 void SoakDriver::op_overpass() {

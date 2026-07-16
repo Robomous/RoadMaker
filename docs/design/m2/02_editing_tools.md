@@ -253,6 +253,20 @@ restore-in-place so undo stays valid).
 > the count (a lane added/removed on an arm) returns an error asking for a
 > recreate rather than reallocating IDs. Kernel surface: `preview_junction`
 > (non-mutating count + dropped-turn report) and `regenerate_junction`.
+>
+> **Amended (P2, #263 — maintainer decision 2026-07-15).** The count-must-be-
+> unchanged restriction is lifted. `regenerate_junction` now takes a
+> `TurnSetPolicy`: under `AllowChange` (default) a lane added to, removed from,
+> or retyped on an arm grows or shrinks the turn set — new connecting roads are
+> created, vanished ones erased, and the turns that survive keep their IDs
+> (keyed matching). The old refusal remains under `InPlaceOnly`, which the
+> per-frame node-drag preview uses because creating connecting roads on a
+> command that is reverted and discarded every frame would leak arena slots.
+> The dirty-set contract gained `junctions_are_current` to distinguish "this
+> command already built its junctions" (create/delete/split) from "this
+> command is topology **and** needs the junction regenerated" (a lane
+> appearing) — a distinction `topology` alone could not express. Detail: the
+> [P2 discovery report](../../roadmap/pillars/p2_discovery.md) §4.
 
 **Edge cases.** Ends too far apart (> configurable 50 m): factory error. Arms
 nearly parallel: connecting-road fit may loop — generator drops turn pairs whose

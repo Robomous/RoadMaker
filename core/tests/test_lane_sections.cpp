@@ -586,3 +586,68 @@ TEST(LaneSections, SetLaneWidthRefusesToFlattenAWidthThatVariesAlongS) {
   expect_rejected(network, roadmaker::edit::set_lane_width(network, driving_id, 4.0));
   EXPECT_EQ(network.lane(driving_id)->widths.size(), 2U) << "the second record must survive";
 }
+
+// --- insert_lane: interior insert with renumbering (P2 #263) ----------------
+
+/// odr ids present on a section, in the section's stored (descending) order.
+std::vector<int> odr_ids(const RoadNetwork& network, LaneSectionId section_id) {
+  std::vector<int> ids;
+  for (const LaneId lane_id : network.lane_section(section_id)->lanes) {
+    ids.push_back(network.lane(lane_id)->odr_id);
+  }
+  return ids;
+}
+
+TEST(LaneSections, InsertLaneRenumbersTheOuterBlockAndRoundTrips) {
+  RoadNetwork network;
+  const RoadId road_id = author_straight(network, "1");
+  const LaneSectionId first = network.road(road_id)->sections[0];
+  ASSERT_EQ(odr_ids(network, first), (std::vector<int>{1, 0, -1, -2}));
+
+  // Insert at -1: the old -1 and -2 step out to -2 and -3, and a fresh lane
+  // takes -1. The left side and center are untouched.
+  auto command = roadmaker::edit::insert_lane(network, first, -1, LaneType::Driving);
+  expect_command_round_trip(network, *command);
+  ASSERT_TRUE(command->apply(network).has_value());
+  EXPECT_EQ(odr_ids(network, first), (std::vector<int>{1, 0, -1, -2, -3}));
+}
+
+TEST(LaneSections, InsertLaneLeavesTheNewLaneUnlinkedAndRemapsNeighbourLinks) {
+  RoadNetwork network;
+  const RoadId road_id = author_straight(network, "1");
+  ASSERT_TRUE(
+      roadmaker::edit::split_lane_section(network, road_id, 60.0)->apply(network).has_value());
+  const LaneSectionId head = network.road(road_id)->sections[0];
+  const LaneSectionId tail = network.road(road_id)->sections[1];
+
+  // Before: the head's -1 continues into the tail's -1, both ways.
+  ASSERT_EQ(lane_by_odr(network, head, -1)->successor, -1);
+  ASSERT_EQ(lane_by_odr(network, tail, -1)->predecessor, -1);
+
+  auto command = roadmaker::edit::insert_lane(network, head, -1, LaneType::Driving);
+  expect_command_round_trip(network, *command);
+  ASSERT_TRUE(command->apply(network).has_value());
+
+  // The inserted lane appears mid-road: no continuation into either neighbour.
+  const Lane* inserted = lane_by_odr(network, head, -1);
+  EXPECT_FALSE(inserted->predecessor.has_value());
+  EXPECT_FALSE(inserted->successor.has_value());
+
+  // The lane that used to be -1 is now -2 and still continues into the tail's
+  // -1 (the tail was not renumbered); the tail's predecessor link followed the
+  // renumbering from -1 to -2.
+  EXPECT_EQ(lane_by_odr(network, head, -2)->successor, -1);
+  EXPECT_EQ(lane_by_odr(network, tail, -1)->predecessor, -2);
+}
+
+TEST(LaneSections, InsertLaneRejectsBadPositions) {
+  RoadNetwork network;
+  const RoadId road_id = author_straight(network, "1");
+  const LaneSectionId first = network.road(road_id)->sections[0];
+
+  expect_rejected(network, roadmaker::edit::insert_lane(network, first, 0, LaneType::Driving));
+  // No lane at -5: appending past the outermost is add_lane's job.
+  expect_rejected(network, roadmaker::edit::insert_lane(network, first, -5, LaneType::Driving));
+  expect_rejected(network,
+                  roadmaker::edit::insert_lane(network, LaneSectionId{}, -1, LaneType::Driving));
+}

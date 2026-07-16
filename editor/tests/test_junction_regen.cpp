@@ -194,3 +194,32 @@ TEST(JunctionRegen, DirectCommitPathMatchesTheDragResult) {
   ASSERT_TRUE(welds.has_value());
   EXPECT_FALSE(welds->breaches);
 }
+
+// The P2 case: a lane added to a junction arm used to make the regeneration
+// refuse ("changed the connection count") and the editor swallow it into a
+// warning toast, freezing the junction. It must now regenerate silently, and
+// the junction must genuinely grow.
+TEST(JunctionRegen, AddingADrivingLaneToAnArmRegeneratesWithoutAToast) {
+  JunctionScene scene;
+  const std::size_t before = scene.document.network().junction(scene.junction)->connections.size();
+  QSignalSpy skipped(&scene.document, &Document::regeneration_skipped);
+
+  // One extra outgoing lane on east and one extra incoming lane on west open a
+  // second west->east movement; the min(incoming, outgoing) pairing needs both.
+  const auto add = [&](RoadId road, int side) {
+    return scene.document.push_command(
+        roadmaker::edit::add_lane(scene.document.network(),
+                                  scene.document.network().road(road)->sections.front(),
+                                  side,
+                                  roadmaker::LaneType::Driving));
+  };
+  ASSERT_TRUE(add(scene.west, -1).has_value());
+  ASSERT_TRUE(add(scene.east, 1).has_value());
+
+  EXPECT_EQ(skipped.count(), 0) << "no 'junction not updated' toast";
+  EXPECT_GT(scene.document.network().junction(scene.junction)->connections.size(), before);
+  const auto welds =
+      roadmaker::edit::verify_junction_welds(scene.document.network(), scene.junction);
+  ASSERT_TRUE(welds.has_value());
+  EXPECT_FALSE(welds->breaches);
+}

@@ -95,6 +95,7 @@ private:
   void op_attach_t();
   void op_assembly_drop_on_road();
   void op_remove_lane();
+  void op_insert_lane();
   void op_overpass();
   void op_delete_crossing_road();
   void op_delete_junction();

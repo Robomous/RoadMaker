@@ -34,7 +34,13 @@ std::string describe_dirty(const edit::DirtySet& dirty) {
   for (std::size_t i = 0; i < dirty.junctions.size(); ++i) {
     text += (i == 0 ? "" : ",") + std::to_string(dirty.junctions[i].index);
   }
-  text += dirty.topology ? "] topology" : "]";
+  text += "]";
+  if (dirty.topology) {
+    text += " topology";
+  }
+  if (dirty.junctions_are_current) {
+    text += " junctions_are_current";
+  }
   return text;
 }
 
@@ -167,17 +173,22 @@ void Document::push_applied_with_regeneration(std::unique_ptr<edit::Command> com
   last_dirty_ = dirty; // the primary edit's dirty set (before regenerations)
   spdlog::info("command: {} {}", command->name(), describe_dirty(dirty));
 
-  // Editing an incoming road (geometry, elevation) regenerates every junction
-  // it touches (02 §6): re-run the generator from each junction's recorded
-  // arms, replacing the connecting-road geometry in place. Junctions loaded
-  // from foreign files have no recorded arms and are left untouched.
-  // Topology commands (create/delete junction, split, delete road) are
-  // skipped: they list their own junction as dirty but must not self- or
-  // double-regenerate — the create already built the connecting roads.
+  // Editing an incoming road (geometry, elevation, or its lanes) regenerates
+  // every junction it touches (02 §6): re-run the generator from each
+  // junction's recorded arms, replacing the connecting-road geometry — and,
+  // since P2, the turn set — in place. Junctions loaded from foreign files
+  // have no recorded arms and are left untouched.
+  //
+  // Commands that built their own junction structure (create/delete junction,
+  // split, delete road) say so with junctions_are_current and are skipped:
+  // they list their junction as dirty for re-meshing, but regenerating it
+  // would fight the structure they just wrote. That used to key off
+  // `topology`, which cannot express "a lane appeared AND the junction needs
+  // regenerating" — the case Lane Add and Lane Carve are made of.
   std::vector<std::unique_ptr<edit::Command>> regenerations;
   bool announced = false;
   for (const JunctionId junction_id : dirty.junctions) {
-    if (dirty.topology || already_regenerated) {
+    if (dirty.junctions_are_current || already_regenerated) {
       break;
     }
     const Junction* junction = network_.junction(junction_id);
@@ -218,6 +229,12 @@ void Document::push_applied_with_regeneration(std::unique_ptr<edit::Command> com
         dirty.roads.push_back(road);
       }
     }
+    // A regeneration that changed the turn set created or erased connecting
+    // roads, so it is topology in its own right — and the primary edit (a lane
+    // added, say) never said so. Without this the mesh takes the partial
+    // per-road path, which cannot add or drop an item, and prune_stale never
+    // runs, leaving a selection pointing at an erased road.
+    dirty.topology = dirty.topology || regen_dirty.topology;
     regenerations.push_back(std::move(regen));
   }
 
