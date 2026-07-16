@@ -47,6 +47,8 @@ conventions below.
 | Create Junction tool | `J` |  |
 | Split tool | `K` |  |
 | Delete tool | `X` |  |
+| Lane Add tool | `A` |  |
+| Lane Form tool | `Shift+A` |  |
 | Lane Width editor (2D) | `Shift+L` |  |
 
 ## View

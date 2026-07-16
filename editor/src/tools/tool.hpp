@@ -26,6 +26,8 @@ enum class ToolId {
   CreateJunction,
   Split,
   Delete,
+  LaneAdd,
+  LaneForm,
 };
 
 struct ToolEvent {

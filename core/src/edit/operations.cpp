@@ -3873,6 +3873,212 @@ std::unique_ptr<Command> split_lane_section(const RoadNetwork& network, RoadId r
   return command;
 }
 
+namespace {
+
+// The taper length each ramp spans, in metres (p2-s5). Long enough to read as
+// a lane change rather than a spike; clamped down when the section is short.
+constexpr double kTaperLen = 15.0;
+
+// Section-local width records for a lane that ramps up from zero to `W` over
+// the first `t` metres of a section of length `L`. When `ramp_down` is true
+// (Lane Add pocket) it plateaus, then ramps back to zero over the last `t`
+// metres — width zero at BOTH seams, so the lane needs no cross-section link.
+// When false (Lane Form) it holds `W` to the section end.
+//
+// A record at sOffset 0 is always present and records ascend, matching the
+// set_lane_width_profile contract; the caller checks back().s < L - tol.
+std::vector<Poly3> taper_records(double L, double W, double t, bool ramp_down) {
+  const double slope = t > tol::kLength ? W / t : 0.0;
+  std::vector<Poly3> records;
+  records.push_back(Poly3{.s = 0.0, .a = 0.0, .b = slope}); // 0 -> W over [0, t]
+  if (ramp_down) {
+    // A plateau only where the two ramps do not already meet (L > 2t); a
+    // shorter span is a triangle straight from up-ramp to down-ramp.
+    if (L - 2.0 * t > tol::kLength) {
+      records.push_back(Poly3{.s = t, .a = W});
+    }
+    records.push_back(Poly3{.s = L - t, .a = W, .b = -slope}); // W -> 0 over [L-t, L]
+  } else {
+    records.push_back(Poly3{.s = t, .a = W}); // hold W to the section end
+  }
+  return records;
+}
+
+// The outermost lane on `side` in `section` (the most extreme odr id), or an
+// invalid id when the side carries no lane. add_lane appends beyond it and
+// insert_lane's fresh lane becomes it, so this is how a composite stage finds
+// the lane a previous stage just produced.
+LaneId outermost_lane_on_side(const RoadNetwork& network, LaneSectionId section_id, int side) {
+  LaneId found{};
+  int extreme = 0;
+  const LaneSection* section = network.lane_section(section_id);
+  if (section == nullptr) {
+    return found;
+  }
+  for (const LaneId lane_id : section->lanes) {
+    const int odr = network.lane(lane_id)->odr_id;
+    if (side > 0 ? odr > extreme : odr < extreme) {
+      extreme = odr;
+      found = lane_id;
+    }
+  }
+  return found;
+}
+
+LaneId lane_with_odr(const RoadNetwork& network, LaneSectionId section_id, int odr_id) {
+  const LaneSection* section = network.lane_section(section_id);
+  if (section == nullptr) {
+    return LaneId{};
+  }
+  for (const LaneId lane_id : section->lanes) {
+    if (network.lane(lane_id)->odr_id == odr_id) {
+      return lane_id;
+    }
+  }
+  return LaneId{};
+}
+
+} // namespace
+
+std::unique_ptr<Command> add_lane_span(
+    const RoadNetwork& network, RoadId road_id, int side, double s0, double s1, LaneType type) {
+  static constexpr std::string_view kName = "Add Lane Span";
+  const auto fail = [&](std::string message) {
+    return invalid_command(
+        std::string(kName),
+        Error{.code = ErrorCode::InvalidArgument, .message = std::move(message)});
+  };
+  if (side != 1 && side != -1) {
+    return fail("side must be +1 (left) or -1 (right)");
+  }
+  const Road* road = network.road(road_id);
+  if (road == nullptr) {
+    return fail("stale road id");
+  }
+  if (s0 >= s1 - tol::kLength) {
+    return fail("lane span must have s0 < s1");
+  }
+  const double length = road->plan_view.length();
+  // Clamp the span inward so a seam never abuts a road end: splits refuse a
+  // station within tol of the ends, and — the load-bearing part — a pocket
+  // that stays strictly interior needs no cross-section links at all.
+  constexpr double kEndInset = 0.5;
+  const double lo = std::max(s0, kEndInset);
+  const double hi = std::min(s1, length - kEndInset);
+  if (hi - lo <= tol::kLength) {
+    return fail("lane span collapses once clamped inside the road");
+  }
+
+  std::vector<CompositeCommand::Builder> builders;
+  builders.push_back(
+      [road_id, lo](RoadNetwork& net) { return split_lane_section(net, road_id, lo); });
+  builders.push_back(
+      [road_id, hi](RoadNetwork& net) { return split_lane_section(net, road_id, hi); });
+  builders.push_back([road_id, lo, side, type](RoadNetwork& net) -> std::unique_ptr<Command> {
+    const LaneSectionId mid = section_at(net, road_id, lo + tol::kLength);
+    return add_lane(net, mid, side, type);
+  });
+  builders.push_back([road_id, lo, side](RoadNetwork& net) -> std::unique_ptr<Command> {
+    const LaneSectionId mid = section_at(net, road_id, lo + tol::kLength);
+    const LaneId lane = outermost_lane_on_side(net, mid, side);
+    if (!lane.is_valid()) {
+      return invalid_command(
+          std::string(kName),
+          Error{.code = ErrorCode::InvalidArgument,
+                .message = "the pocket lane vanished before it could be shaped"});
+    }
+    auto span = section_end(net, mid);
+    if (!span.has_value()) {
+      return invalid_command(std::string(kName), span.error());
+    }
+    const double L = *span - net.lane_section(mid)->s0;
+    // Mirror add_lane: the plateau matches the (now second-outermost) lane's
+    // width, which add_lane already copied onto the fresh lane, else 3.5 m.
+    const std::vector<Poly3>& seed = net.lane(lane)->widths;
+    const double W = seed.empty() ? 3.5 : seed.front().a;
+    const double t = std::min(kTaperLen, L / 2.0 - tol::kLength);
+    return set_lane_width_profile(net, lane, taper_records(L, W, t, /*ramp_down=*/true));
+  });
+
+  // SEED the touched junctions so an arm regenerates even for an interior
+  // section, and leave junctions_are_current false so the editor's regen loop
+  // still runs (add_lane on an interior section is a byte-identical no-op).
+  DirtySet base{
+      .roads = {road_id}, .junctions = junctions_touching(network, road_id), .topology = true};
+  return std::make_unique<CompositeCommand>(
+      std::string(kName), std::move(base), std::move(builders));
+}
+
+std::unique_ptr<Command> form_lane(const RoadNetwork& network,
+                                   RoadId road_id,
+                                   int side,
+                                   double s_start,
+                                   int at_odr_id,
+                                   LaneType type) {
+  static constexpr std::string_view kName = "Form Lane";
+  const auto fail = [&](std::string message) {
+    return invalid_command(
+        std::string(kName),
+        Error{.code = ErrorCode::InvalidArgument, .message = std::move(message)});
+  };
+  if (side != 1 && side != -1) {
+    return fail("side must be +1 (left) or -1 (right)");
+  }
+  const Road* road = network.road(road_id);
+  if (road == nullptr) {
+    return fail("stale road id");
+  }
+  const double length = road->plan_view.length();
+  if (s_start <= tol::kLength || s_start >= length - tol::kLength) {
+    return fail("form station must lie strictly inside the road");
+  }
+  if ((at_odr_id > 0 ? 1 : -1) != side || at_odr_id == 0) {
+    return fail("at_odr_id must be non-zero and share the sign of side");
+  }
+
+  std::vector<CompositeCommand::Builder> builders;
+  builders.push_back(
+      [road_id, s_start](RoadNetwork& net) { return split_lane_section(net, road_id, s_start); });
+  builders.push_back(
+      [road_id, s_start, at_odr_id, type](RoadNetwork& net) -> std::unique_ptr<Command> {
+        const LaneSectionId target = section_at(net, road_id, s_start + tol::kLength);
+        // Forward-linking a formed lane across a downstream seam is out of
+        // scope (p2-s5): only form into the FINAL section, where the lane can
+        // run to the road terminus with nothing downstream to link.
+        if (target != net.road(road_id)->sections.back()) {
+          return invalid_command(std::string(kName),
+                                 Error{.code = ErrorCode::InvalidArgument,
+                                       .message =
+                                           "Lane Form reaches a downstream lane-section boundary; "
+                                           "form nearer the road end"});
+        }
+        return insert_lane(net, target, at_odr_id, type);
+      });
+  builders.push_back([road_id, s_start, at_odr_id](RoadNetwork& net) -> std::unique_ptr<Command> {
+    const LaneSectionId target = section_at(net, road_id, s_start + tol::kLength);
+    const LaneId lane = lane_with_odr(net, target, at_odr_id);
+    if (!lane.is_valid()) {
+      return invalid_command(
+          std::string(kName),
+          Error{.code = ErrorCode::InvalidArgument,
+                .message = "the formed lane vanished before it could be shaped"});
+    }
+    auto span = section_end(net, target);
+    if (!span.has_value()) {
+      return invalid_command(std::string(kName), span.error());
+    }
+    const double L = *span - net.lane_section(target)->s0;
+    constexpr double W = 3.5; // insert_lane gives the fresh lane width 3.5
+    const double t = std::min(kTaperLen, L - tol::kLength);
+    return set_lane_width_profile(net, lane, taper_records(L, W, t, /*ramp_down=*/false));
+  });
+
+  DirtySet base{
+      .roads = {road_id}, .junctions = junctions_touching(network, road_id), .topology = true};
+  return std::make_unique<CompositeCommand>(
+      std::string(kName), std::move(base), std::move(builders));
+}
+
 std::unique_ptr<Command> set_road_mark(const RoadNetwork& network, LaneId lane_id, RoadMark mark) {
   static constexpr std::string_view kName = "Set Road Mark";
   auto context = lane_context(network, lane_id);

@@ -118,6 +118,22 @@ Actions::Actions(QUndoStack& undo_stack, QObject* parent) : QObject(parent) {
   tool_delete->setToolTip(tr("Delete — click a road to delete it, undo restores (X)"));
   tool_group->addAction(tool_delete);
 
+  tool_lane_add = new QAction(tr("Lane &Add"), this);
+  tool_lane_add->setCheckable(true);
+  tool_lane_add->setShortcuts(shortcuts::sequences(shortcuts::Id::ToolLaneAdd));
+  tool_lane_add->setIconText(tr("Lane Add"));
+  tool_lane_add->setToolTip(
+      tr("Lane Add — drag along a road to add a lane pocket over that span (A)"));
+  tool_group->addAction(tool_lane_add);
+
+  tool_lane_form = new QAction(tr("Lane &Form"), this);
+  tool_lane_form->setCheckable(true);
+  tool_lane_form->setShortcuts(shortcuts::sequences(shortcuts::Id::ToolLaneForm));
+  tool_lane_form->setIconText(tr("Lane Form"));
+  tool_lane_form->setToolTip(
+      tr("Lane Form — click a road to form a lane from there to its end (⇧A)"));
+  tool_group->addAction(tool_lane_form);
+
   // Not a tool — a command that surfaces the 2D Editor's Lane Width tab for the
   // selected lane. Standalone so ⇧L works whatever tool is active.
   lane_width_editor = new QAction(tr("Lane &Width Editor"), this);
@@ -237,6 +253,8 @@ void Actions::apply_icons() {
   tool_split->setIcon(Icons::get(QStringLiteral("scissors")));
   merge_roads->setIcon(Icons::get(QStringLiteral("git-merge")));
   tool_delete->setIcon(Icons::get(QStringLiteral("trash-2")));
+  tool_lane_add->setIcon(Icons::get(QStringLiteral("lane-section")));
+  tool_lane_form->setIcon(Icons::get(QStringLiteral("lane-section")));
   template_rural->setIcon(Icons::get(QStringLiteral("template-rural")));
   template_urban->setIcon(Icons::get(QStringLiteral("template-urban")));
   template_highway->setIcon(Icons::get(QStringLiteral("template-highway")));
