@@ -341,6 +341,21 @@ add_lane(const RoadNetwork& network, LaneSectionId section, int side, LaneType t
 /// referencing the lane are cleared (and restored exactly on undo).
 [[nodiscard]] RM_API std::unique_ptr<Command> remove_lane(const RoadNetwork& network, LaneId lane);
 
+/// Inserts a lane at `at_odr_id`, renumbering every lane already at or outside
+/// that position one step further out — where add_lane only ever appends the
+/// outermost. `at_odr_id` must name a lane that exists (numbering stays
+/// contiguous) and share its sign with the side it lands on; the center lane
+/// (0) cannot be displaced.
+///
+/// The inserted lane does NOT link to the neighbouring sections: a lane that
+/// appears mid-road is a new lane, not a continuation
+/// (asam.net:xodr:1.4.0:road.lane.link.new_lane_appear). The lanes it pushes
+/// outward keep their own links, and everything that named them by id —
+/// adjacent-section predecessor/successor and junction lane_links — is
+/// remapped to the new numbering (restored exactly on undo).
+[[nodiscard]] RM_API std::unique_ptr<Command>
+insert_lane(const RoadNetwork& network, LaneSectionId section, int at_odr_id, LaneType type);
+
 [[nodiscard]] RM_API std::unique_ptr<Command>
 set_lane_type(const RoadNetwork& network, LaneId lane, LaneType type);
 

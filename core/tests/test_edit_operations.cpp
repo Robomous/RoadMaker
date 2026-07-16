@@ -1136,10 +1136,8 @@ void retype_lane(RoadNetwork& network, RoadId road, int odr_id, roadmaker::LaneT
 }
 
 void add_outermost_lane(RoadNetwork& network, RoadId road, int side) {
-  ASSERT_TRUE(roadmaker::edit::add_lane(network,
-                                        network.road(road)->sections.front(),
-                                        side,
-                                        roadmaker::LaneType::Driving)
+  ASSERT_TRUE(roadmaker::edit::add_lane(
+                  network, network.road(road)->sections.front(), side, roadmaker::LaneType::Driving)
                   ->apply(network)
                   .has_value());
 }
@@ -1233,7 +1231,8 @@ TEST(EditOperations, RegenerateJunctionShrinksTheTurnSetAndUndoResurrectsTheExac
 /// The connecting road serving the `from`→`to` movement, or an invalid id.
 /// The outgoing road is not stored on the connection — it lives only on the
 /// connecting road's successor link.
-RoadId connecting_road_for(const RoadNetwork& network, JunctionId junction, RoadId from, RoadId to) {
+RoadId
+connecting_road_for(const RoadNetwork& network, JunctionId junction, RoadId from, RoadId to) {
   for (const JunctionConnection& connection : network.junction(junction)->connections) {
     if (connection.incoming_road != from) {
       continue;
@@ -1286,10 +1285,9 @@ TEST(EditOperations, RegenerateJunctionInPlaceOnlyStillRefusesAChangedTurnSet) {
   // The per-frame preview path (move_waypoint_following_junctions) asks for
   // this: creating connecting roads there would reserve arena slots on every
   // discarded drag frame.
-  expect_command_rejected(
-      network,
-      roadmaker::edit::regenerate_junction(
-          network, junction, {}, roadmaker::edit::TurnSetPolicy::InPlaceOnly));
+  expect_command_rejected(network,
+                          roadmaker::edit::regenerate_junction(
+                              network, junction, {}, roadmaker::edit::TurnSetPolicy::InPlaceOnly));
 }
 
 TEST(EditOperations, AddLaneNamesTheJunctionsItsRoadFeeds) {
@@ -1306,6 +1304,39 @@ TEST(EditOperations, AddLaneNamesTheJunctionsItsRoadFeeds) {
   ASSERT_EQ(dirty.junctions.size(), 1U);
   EXPECT_EQ(dirty.junctions[0], junction);
   EXPECT_FALSE(dirty.junctions_are_current) << "add_lane does not regenerate; the editor does";
+}
+
+TEST(EditOperations, InsertLaneRemapsTheJunctionLaneLinksThatNamedTheShiftedLane) {
+  RoadNetwork network;
+  const TJunction t = make_t_junction(network);
+  ASSERT_TRUE(roadmaker::edit::create_junction(network, t.ends)->apply(network).has_value());
+  const JunctionId junction = network.find_junction("1");
+
+  // Every generated connection off an End-contact arm links its incoming lane
+  // -1. Inserting a lane at -1 pushes that lane to -2, so the lane_links naming
+  // it must follow — otherwise, even before the editor regenerates, the
+  // junction references a lane that has moved.
+  const auto west_links_name = [&](int odr) {
+    for (const JunctionConnection& connection : network.junction(junction)->connections) {
+      if (connection.incoming_road == t.west) {
+        for (const auto& [from, to] : connection.lane_links) {
+          if (from == odr) {
+            return true;
+          }
+        }
+      }
+    }
+    return false;
+  };
+  ASSERT_TRUE(west_links_name(-1));
+
+  auto insert = roadmaker::edit::insert_lane(
+      network, network.road(t.west)->sections.front(), -1, roadmaker::LaneType::Driving);
+  expect_command_round_trip(network, *insert);
+  ASSERT_TRUE(insert->apply(network).has_value());
+
+  EXPECT_TRUE(west_links_name(-2)) << "the lane_link followed the renumbering";
+  EXPECT_FALSE(west_links_name(-1)) << "nothing still names the old id (now the new lane)";
 }
 
 TEST(EditOperations, RegenerateJunctionTracksMovedIncomingEnd) {

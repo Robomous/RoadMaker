@@ -355,7 +355,8 @@ public:
       // One child that built its own junctions speaks for the composite: the
       // assemblies and attach_t_junction end in create_junction, so the
       // junctions they name are already generated.
-      dirty.junctions_are_current = dirty.junctions_are_current || child_dirty.junctions_are_current;
+      dirty.junctions_are_current =
+          dirty.junctions_are_current || child_dirty.junctions_are_current;
     }
     return dirty;
   }
@@ -2585,8 +2586,7 @@ std::unique_ptr<Command> regenerate_junction(const RoadNetwork& network,
   if (!plan.has_value()) {
     return invalid_command(std::string(kName), plan.error());
   }
-  if (policy == TurnSetPolicy::InPlaceOnly &&
-      plan->roads.size() != junction->connections.size()) {
+  if (policy == TurnSetPolicy::InPlaceOnly && plan->roads.size() != junction->connections.size()) {
     return fail("regeneration changed the connection count; delete and recreate the junction");
   }
 
@@ -2639,6 +2639,7 @@ std::unique_ptr<Command> regenerate_junction(const RoadNetwork& network,
     ConnectingPlan cp;
     RoadId road;
   };
+
   std::vector<Matched> matched_turns;
   std::vector<ConnectingPlan> new_turns;
   std::vector<bool> claimed(junction->connections.size(), false);
@@ -2822,10 +2823,8 @@ std::unique_ptr<Command> delete_junction(const RoadNetwork& network, JunctionId 
   // junctions_are_current: the junction named here is the one being deleted,
   // and capture_deletion strips the doomed connections from every survivor —
   // there is nothing left to regenerate against.
-  DirtySet dirty{.roads = doomed,
-                 .junctions = {junction_id},
-                 .topology = true,
-                 .junctions_are_current = true};
+  DirtySet dirty{
+      .roads = doomed, .junctions = {junction_id}, .topology = true, .junctions_are_current = true};
   for (const RoadId doomed_id : doomed) {
     for (const JunctionId touched : junctions_touching(network, doomed_id)) {
       if (std::ranges::find(dirty.junctions, touched) == dirty.junctions.end()) {
@@ -3258,6 +3257,152 @@ std::unique_ptr<Command> remove_lane(const RoadNetwork& network, LaneId lane_id)
   if (here != road.sections.end() && std::next(here) != road.sections.end()) {
     clear_links(*std::next(here), /*forward=*/false);
   }
+  return command;
+}
+
+std::unique_ptr<Command>
+insert_lane(const RoadNetwork& network, LaneSectionId section_id, int at_odr_id, LaneType type) {
+  static constexpr std::string_view kName = "Insert Lane";
+  const auto fail = [&](std::string message) {
+    return invalid_command(
+        std::string(kName),
+        Error{.code = ErrorCode::InvalidArgument, .message = std::move(message)});
+  };
+  const LaneSection* section = network.lane_section(section_id);
+  if (section == nullptr) {
+    return fail("stale lane-section id");
+  }
+  if (at_odr_id == 0) {
+    return fail("cannot insert at the center lane");
+  }
+  const int side = at_odr_id > 0 ? 1 : -1;
+  bool occupied = false;
+  for (const LaneId lane_id : section->lanes) {
+    if (network.lane(lane_id)->odr_id == at_odr_id) {
+      occupied = true;
+      break;
+    }
+  }
+  if (!occupied) {
+    // Numbering stays contiguous; appending past the outermost is add_lane.
+    return fail("no lane at that position to insert before; use add_lane to append");
+  }
+
+  // Everything at or outside the insert point on this side steps one further
+  // out. `new = old + side` for both sides (more negative on the right, more
+  // positive on the left), and since it is a contiguous outer block the shift
+  // preserves the section's descending lane order.
+  const auto shifted = [&](int odr) {
+    return odr != 0 && (side > 0 ? odr >= at_odr_id : odr <= at_odr_id);
+  };
+
+  const RoadId road_id = section->road;
+  DirtySet dirty{
+      .roads = {road_id}, .junctions = junctions_touching(network, road_id), .topology = true};
+  auto command = std::make_unique<GenericCommand>(std::string(kName), std::move(dirty));
+
+  // `before` snapshots everything the creator mutates so the engine can revert
+  // it and re-read `after` from the network. The section's lane list gains the
+  // new lane; the shifted lanes change odr id.
+  command->before.sections.emplace_back(section_id, *section);
+  for (const LaneId lane_id : section->lanes) {
+    if (shifted(network.lane(lane_id)->odr_id)) {
+      command->before.lanes.emplace_back(lane_id, *network.lane(lane_id));
+    }
+  }
+
+  // Adjacent-section links that named a shifted lane by id are remapped, not
+  // cleared — the lanes still continue, just under new numbers. The writer
+  // refuses a dangling intra-road link in either direction.
+  const Road& road = *network.road(road_id);
+  const auto here = std::ranges::find(road.sections, section_id);
+  const auto capture_neighbor = [&](LaneSectionId neighbor_id, bool forward) {
+    for (const LaneId neighbor_lane_id : network.lane_section(neighbor_id)->lanes) {
+      const Lane& lane = *network.lane(neighbor_lane_id);
+      const std::optional<int>& link = forward ? lane.successor : lane.predecessor;
+      if (link.has_value() && shifted(*link)) {
+        command->before.lanes.emplace_back(neighbor_lane_id, lane);
+      }
+    }
+  };
+  if (here != road.sections.begin()) {
+    capture_neighbor(*std::prev(here), /*forward=*/true);
+  }
+  if (here != road.sections.end() && std::next(here) != road.sections.end()) {
+    capture_neighbor(*std::next(here), /*forward=*/false);
+  }
+
+  // Junction lane_links that named a shifted lane by id are remapped too.
+  std::vector<JunctionId> touched_junctions;
+  network.for_each_junction([&](JunctionId junction_id, const Junction& junction) {
+    const bool touched = std::ranges::any_of(junction.connections, [&](const auto& connection) {
+      return std::ranges::any_of(connection.lane_links, [&](const std::pair<int, int>& link) {
+        return (connection.incoming_road == road_id && shifted(link.first)) ||
+               (connection.connecting_road == road_id && shifted(link.second));
+      });
+    });
+    if (touched) {
+      command->before.junctions.emplace_back(junction_id, junction);
+      touched_junctions.push_back(junction_id);
+    }
+  });
+
+  command->creator = [section_id,
+                      at_odr_id,
+                      side,
+                      type,
+                      road_id,
+                      touched_junctions = std::move(touched_junctions)](
+                         RoadNetwork& target, Values& created) -> Expected<void> {
+    const auto shift = [&](int odr) {
+      return odr != 0 && (side > 0 ? odr >= at_odr_id : odr <= at_odr_id) ? odr + side : odr;
+    };
+    // 1. Renumber the outer block. Mutating odr id in place keeps the section's
+    // descending order because the block is contiguous.
+    for (const LaneId lane_id : target.lane_section(section_id)->lanes) {
+      Lane& lane = *target.lane(lane_id);
+      lane.odr_id = shift(lane.odr_id);
+    }
+    // 2. Add the new lane at the now-free position. It appears mid-road, so it
+    // is not linked back to either neighbouring section.
+    const LaneId lane_id = target.add_lane(section_id, at_odr_id, type);
+    if (!lane_id.is_valid()) {
+      return make_error(ErrorCode::InvalidArgument, "insert position is still occupied");
+    }
+    target.lane(lane_id)->widths = {Poly3{.a = 3.5}};
+    created.lanes.emplace_back(lane_id, Lane{});
+    // 3. Remap every link that named a shifted lane by id.
+    const Road& road = *target.road(road_id);
+    const auto here = std::ranges::find(road.sections, section_id);
+    const auto remap_neighbor = [&](LaneSectionId neighbor_id, bool forward) {
+      for (const LaneId neighbor_lane_id : target.lane_section(neighbor_id)->lanes) {
+        Lane& lane = *target.lane(neighbor_lane_id);
+        std::optional<int>& link = forward ? lane.successor : lane.predecessor;
+        if (link.has_value()) {
+          *link = shift(*link);
+        }
+      }
+    };
+    if (here != road.sections.begin()) {
+      remap_neighbor(*std::prev(here), /*forward=*/true);
+    }
+    if (here != road.sections.end() && std::next(here) != road.sections.end()) {
+      remap_neighbor(*std::next(here), /*forward=*/false);
+    }
+    for (const JunctionId junction_id : touched_junctions) {
+      for (JunctionConnection& connection : target.junction(junction_id)->connections) {
+        for (std::pair<int, int>& link : connection.lane_links) {
+          if (connection.incoming_road == road_id) {
+            link.first = shift(link.first);
+          }
+          if (connection.connecting_road == road_id) {
+            link.second = shift(link.second);
+          }
+        }
+      }
+    }
+    return {};
+  };
   return command;
 }
 

@@ -201,8 +201,7 @@ TEST(JunctionRegen, DirectCommitPathMatchesTheDragResult) {
 // the junction must genuinely grow.
 TEST(JunctionRegen, AddingADrivingLaneToAnArmRegeneratesWithoutAToast) {
   JunctionScene scene;
-  const std::size_t before =
-      scene.document.network().junction(scene.junction)->connections.size();
+  const std::size_t before = scene.document.network().junction(scene.junction)->connections.size();
   QSignalSpy skipped(&scene.document, &Document::regeneration_skipped);
 
   // One extra outgoing lane on east and one extra incoming lane on west open a

@@ -180,3 +180,54 @@ def test_split_survives_an_xodr_round_trip(network):
     assert not [d for d in diagnostics if d.severity == rm.Severity.ERROR]
     assert len(back.road(back.find_road("1")).sections) == 2
     assert rm.write_xodr(back) == text
+
+
+def odr_ids(net, section):
+    return sorted(net.lane(lane_id).odr_id for lane_id in net.lane_section(section).lanes)
+
+
+def test_insert_lane_renumbers_the_outer_block(network):
+    road = network.find_road("1")
+    section = network.road(road).sections[0]
+    assert odr_ids(network, section) == [-2, -1, 0, 1]
+    before = rm.write_xodr(network)
+    stack = rm.edit.EditStack()
+
+    # Insert at -1: the old -1 and -2 step out, a fresh lane takes -1.
+    stack.push(network, rm.edit.insert_lane(network, section, -1, rm.LaneType.DRIVING))
+    assert odr_ids(network, section) == [-3, -2, -1, 0, 1]
+
+    # apply -> revert is byte-identical by contract.
+    stack.undo(network)
+    assert rm.write_xodr(network) == before
+
+
+def test_insert_lane_leaves_the_new_lane_unlinked(network):
+    road = network.find_road("1")
+    stack = rm.edit.EditStack()
+    stack.push(network, rm.edit.split_lane_section(network, road, 60.0))
+    head = network.road(road).sections[0]
+    tail = network.road(road).sections[1]
+
+    stack.push(network, rm.edit.insert_lane(network, head, -1, rm.LaneType.DRIVING))
+
+    inserted = network.lane(lane_by_odr_id(network, head, -1))
+    assert inserted.predecessor is None
+    assert inserted.successor is None
+    # The tail's predecessor followed the renumbering from -1 to -2.
+    assert network.lane(lane_by_odr_id(network, tail, -1)).predecessor == -2
+
+
+@pytest.mark.parametrize(
+    "at_odr_id",
+    [
+        0,  # the center lane cannot be displaced
+        -5,  # no lane there — appending past the outermost is add_lane
+    ],
+)
+def test_insert_lane_rejects_bad_positions(network, at_odr_id):
+    road = network.find_road("1")
+    section = network.road(road).sections[0]
+    stack = rm.edit.EditStack()
+    with pytest.raises(ValueError):
+        stack.push(network, rm.edit.insert_lane(network, section, at_odr_id, rm.LaneType.DRIVING))

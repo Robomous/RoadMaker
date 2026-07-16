@@ -836,7 +836,8 @@ NB_MODULE(_roadmaker, m) {
   nb::class_<roadmaker::edit::DirtySet>(edit, "DirtySet")
       .def_ro("roads", &roadmaker::edit::DirtySet::roads)
       .def_ro("junctions", &roadmaker::edit::DirtySet::junctions)
-      .def_ro("topology", &roadmaker::edit::DirtySet::topology);
+      .def_ro("topology", &roadmaker::edit::DirtySet::topology)
+      .def_ro("junctions_are_current", &roadmaker::edit::DirtySet::junctions_are_current);
 
   nb::class_<roadmaker::edit::Command>(edit, "Command")
       .def_prop_ro(
@@ -1249,18 +1250,25 @@ NB_MODULE(_roadmaker, m) {
       "T-junction workflow: splits the target around s, deletes the middle "
       "stub, and generates a junction from the three ends (all legal turns). "
       "One undoable command.");
+  nb::enum_<roadmaker::edit::TurnSetPolicy>(edit, "TurnSetPolicy")
+      .value("ALLOW_CHANGE", roadmaker::edit::TurnSetPolicy::AllowChange)
+      .value("IN_PLACE_ONLY", roadmaker::edit::TurnSetPolicy::InPlaceOnly);
   edit.def(
       "regenerate_junction",
       [](const roadmaker::RoadNetwork& network,
          roadmaker::JunctionId junction,
-         const roadmaker::edit::JunctionGenOptions& options) {
-        return roadmaker::edit::regenerate_junction(network, junction, options);
+         const roadmaker::edit::JunctionGenOptions& options,
+         roadmaker::edit::TurnSetPolicy policy) {
+        return roadmaker::edit::regenerate_junction(network, junction, options, policy);
       },
       "network"_a,
       "junction"_a,
       "options"_a = roadmaker::edit::JunctionGenOptions{},
-      "Re-runs the generator from the junction's recorded arms, replacing "
-      "connecting-road geometry in place (ids preserved).");
+      "policy"_a = roadmaker::edit::TurnSetPolicy::AllowChange,
+      "Re-runs the generator from the junction's recorded arms. Under "
+      "ALLOW_CHANGE (default) a lane added, removed, or retyped on an incoming "
+      "road grows or shrinks the turn set; the turns that survive keep their "
+      "connecting-road ids. IN_PLACE_ONLY refuses any turn-set change.");
   edit.def("delete_junction", &roadmaker::edit::delete_junction, "network"_a, "junction"_a);
 
   // --- parametric intersection assemblies (rm.edit.assembly) ---
@@ -1351,6 +1359,17 @@ NB_MODULE(_roadmaker, m) {
            "lane"_a,
            "Outermost lane of its side only; adjacent-section links and junction "
            "lane_links referencing the lane are cleared (undo restores them).");
+  edit.def("insert_lane",
+           &roadmaker::edit::insert_lane,
+           "network"_a,
+           "section"_a,
+           "at_odr_id"_a,
+           "type"_a,
+           "Inserts a lane at at_odr_id, renumbering every lane already at or "
+           "outside it one step further out (add_lane only appends the "
+           "outermost). The new lane does not link to the neighbouring sections; "
+           "adjacent-section links and junction lane_links that named a shifted "
+           "lane are remapped to the new numbering.");
   edit.def("set_lane_type", &roadmaker::edit::set_lane_type, "network"_a, "lane"_a, "type"_a);
   edit.def("set_lane_width",
            &roadmaker::edit::set_lane_width,
