@@ -150,4 +150,35 @@ TEST(FitClothoidPath, SharpSpikeWaypointsReturnErrorInsteadOfThrowing) {
   EXPECT_FALSE(locked.has_value());
 }
 
+// --- fit_forward_clothoid: fixed start pose+curvature, free end -------------
+
+TEST(FitForwardClothoid, MatchesStartPoseAndCurvature) {
+  const Waypoint start{.x = 0.0, .y = 0.0};
+  const double heading = 0.0;
+  const double curvature = 0.02;
+  const Waypoint to{.x = 50.0, .y = 10.0};
+
+  const auto line = roadmaker::fit_forward_clothoid(start, heading, curvature, to);
+  ASSERT_TRUE(line.has_value());
+
+  const roadmaker::PathPoint at_start = line->evaluate(0.0);
+  EXPECT_NEAR(at_start.x, start.x, roadmaker::tol::kLength);
+  EXPECT_NEAR(at_start.y, start.y, roadmaker::tol::kLength);
+  expect_angle_near(at_start.hdg, heading, 1e-6);
+  EXPECT_NEAR(at_start.curvature, curvature, 1e-6);
+
+  // The free end passes through the target.
+  const roadmaker::PathPoint at_end = line->evaluate(line->length());
+  EXPECT_NEAR(at_end.x, to.x, 1e-3);
+  EXPECT_NEAR(at_end.y, to.y, 1e-3);
+}
+
+TEST(FitForwardClothoid, RejectsPointBehindStartWithoutThrowing) {
+  // Heading points along +x; a target strictly behind cannot be reached by a
+  // clothoid leaving the fixed start pose. Must return an error, never throw.
+  const auto line = roadmaker::fit_forward_clothoid(
+      Waypoint{.x = 0.0, .y = 0.0}, 0.0, 0.0, Waypoint{.x = -25.0, .y = 0.0});
+  EXPECT_FALSE(line.has_value());
+}
+
 } // namespace

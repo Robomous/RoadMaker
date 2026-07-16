@@ -4,6 +4,7 @@
 #include "roadmaker/edit/assembly.hpp"
 #include "roadmaker/edit/connection.hpp"
 #include "roadmaker/geometry/profile_fit.hpp"
+#include "roadmaker/geometry/road_intersection.hpp"
 #include "roadmaker/road/authoring.hpp"
 #include "roadmaker/road/network.hpp"
 #include "roadmaker/tol.hpp"
@@ -2565,6 +2566,150 @@ std::unique_ptr<Command> create_linked_road(const RoadNetwork& network,
       std::string(kName), DirtySet{.topology = true}, std::move(builders));
 }
 
+std::unique_ptr<Command> extend_road(const RoadNetwork& network, RoadEnd end, Waypoint to) {
+  static constexpr std::string_view kName = "Extend Road";
+  const auto fail = [&](std::string message) {
+    return invalid_command(
+        std::string(kName),
+        Error{.code = ErrorCode::InvalidArgument, .message = std::move(message)});
+  };
+  const Road* road = network.road(end.road);
+  if (road == nullptr) {
+    return fail("stale road id");
+  }
+  if (end.contact == ContactPoint::Start) {
+    return fail("extending from a road's start is out of scope; extend the end");
+  }
+  if (road->successor.has_value()) {
+    return fail("cannot extend a road end that is already linked");
+  }
+  if (!road->authoring_waypoints.has_value()) {
+    return fail("road has no authoring waypoints to extend");
+  }
+  auto contact = contact_state(network, end);
+  if (!contact.has_value()) {
+    return invalid_command(std::string(kName), contact.error());
+  }
+  const ContactState& cs = *contact;
+  // Forward clothoid from the end pose (into_hdg is the +s tangent at an END
+  // contact) honouring the end curvature — the join is curvature-continuous by
+  // construction.
+  auto extension =
+      fit_forward_clothoid(Waypoint{.x = cs.x, .y = cs.y}, cs.into_hdg, cs.curvature, to);
+  if (!extension.has_value()) {
+    return invalid_command(std::string(kName), extension.error());
+  }
+
+  const double old_length = road->plan_view.length();
+  Road after = *road;
+  for (const GeometryRecord& record : extension->records()) {
+    after.plan_view.append(record); // append() re-derives contiguous s
+  }
+  after.length = after.plan_view.length();
+  const double new_length = after.length;
+  after.authoring_waypoints->push_back(to);
+
+  // Continue the vertical profile so BOTH z and grade stay continuous at the
+  // join: pin the end node to the contact (z, grade) and extend linearly at the
+  // same grade to the new end (set_elevation_profile's C1 Hermite semantics).
+  std::vector<ElevationPoint> points = elevation_profile_points(*road);
+  if (!points.empty()) {
+    points.back().s = old_length;
+    points.back().z = cs.z;
+    points.back().grade = cs.grade;
+  }
+  points.push_back(ElevationPoint{
+      .s = new_length, .z = cs.z + (cs.grade * (new_length - old_length)), .grade = cs.grade});
+  std::vector<double> s_values;
+  std::vector<double> z_values;
+  std::vector<double> grades;
+  s_values.reserve(points.size());
+  z_values.reserve(points.size());
+  grades.reserve(points.size());
+  for (const ElevationPoint& point : points) {
+    s_values.push_back(point.s);
+    z_values.push_back(point.z);
+    grades.push_back(point.grade.value_or(0.0));
+  }
+  const bool all_zero = std::ranges::all_of(points, [](const ElevationPoint& p) {
+    return std::abs(p.z) < 1e-12 && std::abs(p.grade.value_or(0.0)) < 1e-12;
+  });
+  after.elevation =
+      all_zero ? std::vector<Poly3>{} : fit_elevation_profile(s_values, z_values, grades);
+
+  auto command = std::make_unique<GenericCommand>(std::string(kName),
+                                                  DirtySet{.roads = {end.road}, .topology = true});
+  command->before.roads.emplace_back(end.road, *road);
+  command->after.roads.emplace_back(end.road, std::move(after));
+  return command;
+}
+
+std::unique_ptr<Command> create_teed_road(const RoadNetwork& network,
+                                          std::vector<Waypoint> waypoints,
+                                          LaneProfile profile,
+                                          std::string name,
+                                          RoadId target,
+                                          double s,
+                                          ContactPoint teed_end,
+                                          EndpointHeadings locked) {
+  static constexpr std::string_view kName = "Create Teed Road";
+  std::vector<RoadId> existing;
+  network.for_each_road([&](RoadId id, const Road&) { existing.push_back(id); });
+
+  std::vector<CompositeCommand::Builder> builders;
+  builders.push_back([waypoints = std::move(waypoints),
+                      profile = std::move(profile),
+                      name = std::move(name),
+                      locked](RoadNetwork& net) {
+    (void)net;
+    return create_road(waypoints, profile, name, locked);
+  });
+  builders.push_back([existing = std::move(existing), target, s, teed_end](
+                         RoadNetwork& net) -> std::unique_ptr<Command> {
+    RoadId created;
+    net.for_each_road([&](RoadId id, const Road&) {
+      if (std::ranges::find(existing, id) == existing.end()) {
+        created = id;
+      }
+    });
+    return attach_t_junction(net, RoadEnd{.road = created, .contact = teed_end}, target, s);
+  });
+  return std::make_unique<CompositeCommand>(
+      std::string(kName), DirtySet{.topology = true}, std::move(builders));
+}
+
+std::unique_ptr<Command> create_crossing_road(const RoadNetwork& network,
+                                              std::vector<Waypoint> waypoints,
+                                              LaneProfile profile,
+                                              std::string name,
+                                              RoadId target,
+                                              EndpointHeadings locked) {
+  static constexpr std::string_view kName = "Create Crossing Road";
+  std::vector<RoadId> existing;
+  network.for_each_road([&](RoadId id, const Road&) { existing.push_back(id); });
+
+  std::vector<CompositeCommand::Builder> builders;
+  builders.push_back([waypoints = std::move(waypoints),
+                      profile = std::move(profile),
+                      name = std::move(name),
+                      locked](RoadNetwork& net) {
+    (void)net;
+    return create_road(waypoints, profile, name, locked);
+  });
+  builders.push_back(
+      [existing = std::move(existing), target](RoadNetwork& net) -> std::unique_ptr<Command> {
+        RoadId created;
+        net.for_each_road([&](RoadId id, const Road&) {
+          if (std::ranges::find(existing, id) == existing.end()) {
+            created = id;
+          }
+        });
+        return assembly::cross_roads(net, created, target);
+      });
+  return std::make_unique<CompositeCommand>(
+      std::string(kName), DirtySet{.topology = true}, std::move(builders));
+}
+
 std::unique_ptr<Command> regenerate_junction(const RoadNetwork& network,
                                              JunctionId junction_id,
                                              const JunctionGenOptions& options,
@@ -3117,6 +3262,102 @@ cross_onto_road(const RoadNetwork& network, RoadId target, double s, Intersectio
   });
   return std::make_unique<CompositeCommand>(
       std::string(kName), DirtySet{.topology = true}, std::move(builders));
+}
+
+std::unique_ptr<Command>
+cross_roads(const RoadNetwork& network, RoadId a, RoadId b, IntersectionParams params) {
+  static constexpr std::string_view kName = "Cross Roads";
+  const auto fail = [&](std::string message) {
+    return invalid_command(
+        std::string(kName),
+        Error{.code = ErrorCode::InvalidArgument, .message = std::move(message)});
+  };
+  const Road* road_a = network.road(a);
+  const Road* road_b = network.road(b);
+  if (road_a == nullptr || road_b == nullptr) {
+    return fail("stale road id");
+  }
+  if (a == b) {
+    return fail("a road cannot cross itself");
+  }
+  if (road_a->junction.is_valid() || road_b->junction.is_valid()) {
+    return fail("a road already inside a junction cannot be crossed");
+  }
+
+  auto crossings = road_intersections(network, a, b);
+  if (!crossings.has_value()) {
+    return invalid_command(std::string(kName), crossings.error());
+  }
+  // The first crossing whose junction area (station ± gap) fits strictly inside
+  // BOTH roads. gap follows onto_road_gap: clear the wider pavement and give the
+  // tightest turn room.
+  const double length_a = road_a->plan_view.length();
+  const double length_b = road_b->plan_view.length();
+  std::optional<RoadCrossing> chosen;
+  double gap = 0.0;
+  for (const RoadCrossing& crossing : *crossings) {
+    const double g = params.gap_m > 0.0
+                         ? params.gap_m
+                         : std::max(std::max(half_width_at(network, *road_a, crossing.s_a),
+                                             half_width_at(network, *road_b, crossing.s_b)) +
+                                        1.0,
+                                    params.generation.min_turn_radius_m + 1.0);
+    if (crossing.s_a - g > tol::kLength && crossing.s_a + g < length_a - tol::kLength &&
+        crossing.s_b - g > tol::kLength && crossing.s_b + g < length_b - tol::kLength) {
+      chosen = crossing;
+      gap = g;
+      break;
+    }
+  }
+  if (!chosen.has_value()) {
+    return fail("the roads do not cross with room for a junction — no interior crossing, or one "
+                "too near a road end");
+  }
+
+  // Split each road at its crossing station ± gap and remove the middle stub;
+  // the four surviving ends form the 4-way junction. Split-created ids are read
+  // off the mutated network at apply, exactly as cross_onto_road does.
+  struct Stages {
+    RoadId a_tail;
+    RoadId b_tail;
+    RoadId a_middle;
+    RoadId b_middle;
+  };
+
+  auto stages = std::make_shared<Stages>();
+  const double s_a = chosen->s_a;
+  const double s_b = chosen->s_b;
+
+  std::vector<CompositeCommand::Builder> builders;
+  builders.push_back([a, cut = s_a + gap](RoadNetwork& net) { return split_road(net, a, cut); });
+  builders.push_back([a, cut = s_a - gap, stages](RoadNetwork& net) {
+    stages->a_tail = std::get<RoadId>(net.road(a)->successor->target);
+    return split_road(net, a, cut);
+  });
+  builders.push_back([a, stages](RoadNetwork& net) {
+    stages->a_middle = std::get<RoadId>(net.road(a)->successor->target);
+    return delete_road(net, stages->a_middle);
+  });
+  builders.push_back([b, cut = s_b + gap](RoadNetwork& net) { return split_road(net, b, cut); });
+  builders.push_back([b, cut = s_b - gap, stages](RoadNetwork& net) {
+    stages->b_tail = std::get<RoadId>(net.road(b)->successor->target);
+    return split_road(net, b, cut);
+  });
+  builders.push_back([b, stages](RoadNetwork& net) {
+    stages->b_middle = std::get<RoadId>(net.road(b)->successor->target);
+    return delete_road(net, stages->b_middle);
+  });
+  builders.push_back([a, b, stages, generation = params.generation](RoadNetwork& net) {
+    const std::array<RoadEnd, 4> ends{
+        RoadEnd{.road = a, .contact = ContactPoint::End},
+        RoadEnd{.road = stages->a_tail, .contact = ContactPoint::Start},
+        RoadEnd{.road = b, .contact = ContactPoint::End},
+        RoadEnd{.road = stages->b_tail, .contact = ContactPoint::Start},
+    };
+    return create_junction(net, ends, generation);
+  });
+  return std::make_unique<CompositeCommand>(
+      std::string(kName), DirtySet{.roads = {a, b}, .topology = true}, std::move(builders));
 }
 
 } // namespace assembly
