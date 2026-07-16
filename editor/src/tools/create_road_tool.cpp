@@ -2,6 +2,7 @@
 
 #include "roadmaker/edit/operations.hpp"
 #include "roadmaker/geometry/reference_line.hpp"
+#include "roadmaker/geometry/road_intersection.hpp"
 #include "roadmaker/tol.hpp"
 
 #include <algorithm>
@@ -33,6 +34,11 @@ void append_diamond(PreviewGeometry& geometry, double x, double y, double radius
   append_segment(geometry, x, y + radius, x + radius, y);
   append_segment(geometry, x + radius, y, x, y - radius);
   append_segment(geometry, x, y - radius, x - radius, y);
+}
+
+void append_cross(PreviewGeometry& geometry, double x, double y, double radius) {
+  append_segment(geometry, x - radius, y - radius, x + radius, y + radius);
+  append_segment(geometry, x - radius, y + radius, x + radius, y - radius);
 }
 
 void append_polyline_of(PreviewGeometry& geometry, const ReferenceLine& line) {
@@ -95,11 +101,35 @@ void CreateRoadTool::place_point(const ToolEvent& event) {
     }
   }
 
+  // A side snap (near a road's body, not its end) tees the new road's end into
+  // that road; an endpoint snap takes priority (that end welds/chains instead).
+  std::optional<edit::SideSnap> side_snap;
+  if (!snapped.has_value() || snapped->kind != edit::SnapKind::RoadEndpoint) {
+    side_snap = edit::snap_to_road_side(document_.network(), raw, snap_options_);
+  }
+
+  const bool first_point = points_.empty();
   points_.push_back(PlacedPoint{
       .position = position,
       .heading = snapped.has_value() ? snapped->heading : std::nullopt,
       .snap_road = snapped.has_value() ? snapped->road : std::nullopt,
+      .side_snap = side_snap,
   });
+
+  // Extend-from-endpoint: the first point anchored on the SELECTED road's END
+  // lengthens that road (same id) to the final point, rather than authoring a
+  // new welded road. Only the END extends (the kernel refuses Start).
+  if (first_point && selected_road_.has_value() && snapped.has_value() &&
+      snapped->kind == edit::SnapKind::RoadEndpoint && snapped->road == *selected_road_) {
+    if (const Road* road = document_.network().road(*selected_road_); road != nullptr) {
+      const PathPoint end = road->plan_view.evaluate(road->plan_view.length());
+      if (std::hypot(position.x - end.x, position.y - end.y) < tol::kLength * 1e3) {
+        extend_end_ = RoadEnd{.road = *selected_road_, .contact = ContactPoint::End};
+        emit status_message(tr("Extending the selected road — click ahead, then Enter"));
+      }
+    }
+  }
+
   if (points_.size() == 1 && points_.front().heading.has_value()) {
     emit status_message(tr("Start locked to the road end — the new road chains tangentially"));
   } else {
@@ -163,17 +193,36 @@ void CreateRoadTool::commit() {
     emit status_message(tr("A road needs at least two waypoints"));
     return;
   }
+  const RoadNetwork& network = document_.network();
+
+  // Extend-from-endpoint: lengthen the selected road to the final point. One
+  // command, same road id — not a new road.
+  if (extend_end_.has_value()) {
+    auto command = edit::extend_road(network, *extend_end_, points_.back().position);
+    const Expected<void> pushed = document_.push_command(std::move(command));
+    if (!pushed.has_value()) {
+      emit status_message(
+          tr("Cannot extend road: %1").arg(QString::fromStdString(pushed.error().message)));
+      return;
+    }
+    reset_session();
+    emit status_message(tr("Road extended"));
+    return;
+  }
+
   std::vector<Waypoint> waypoints;
   waypoints.reserve(points_.size());
   for (const PlacedPoint& point : points_) {
     waypoints.push_back(point.position);
   }
-  // When the first point snapped onto an existing road's end, weld the new road
-  // to it (create + link in one undo step) so a continued road is genuinely
-  // linked, not merely adjacent (gate finding 3); create_linked_road no-ops the
-  // weld if that end can't link, so plain creation never fails on it.
-  const RoadNetwork& network = document_.network();
   const PlacedPoint& first = points_.front();
+  const PlacedPoint& last = points_.back();
+
+  // Which assembly fires, in priority order (02_editing_tools.md §2):
+  //   (i)   first point on a road END  → create_linked_road (weld/chain);
+  //   (ii)  first/last point on a road SIDE → create_teed_road (T-junction);
+  //   (iii) the fitted line crosses a road interior → create_crossing_road (X);
+  //   (iv)  otherwise → plain create_road.
   std::unique_ptr<edit::Command> command;
   if (first.snap_road.has_value() && network.road(*first.snap_road) != nullptr) {
     const auto& plan = network.road(*first.snap_road)->plan_view;
@@ -185,8 +234,24 @@ void CreateRoadTool::commit() {
                          .contact = to_start <= to_end ? ContactPoint::Start : ContactPoint::End};
     command = edit::create_linked_road(
         network, std::move(waypoints), profile_, {}, source, locked_headings());
+  } else if (first.side_snap.has_value() || last.side_snap.has_value()) {
+    const bool tee_first = first.side_snap.has_value();
+    const edit::SideSnap& snap = tee_first ? *first.side_snap : *last.side_snap;
+    const ContactPoint teed = tee_first ? ContactPoint::Start : ContactPoint::End;
+    command = edit::create_teed_road(
+        network, std::move(waypoints), profile_, {}, snap.road, snap.s, teed, locked_headings());
   } else {
-    command = edit::create_road(std::move(waypoints), profile_, {}, locked_headings());
+    // Does the fitted reference line cross an existing road's interior?
+    std::optional<BodyCrossing> crossing;
+    if (const auto line = fit_clothoid_path(waypoints, locked_headings()); line.has_value()) {
+      crossing = first_body_crossing(network, *line, RoadId{});
+    }
+    if (crossing.has_value()) {
+      command = edit::create_crossing_road(
+          network, std::move(waypoints), profile_, {}, crossing->road, locked_headings());
+    } else {
+      command = edit::create_road(std::move(waypoints), profile_, {}, locked_headings());
+    }
   }
   const Expected<void> pushed = document_.push_command(std::move(command));
   if (!pushed.has_value()) {
@@ -203,6 +268,7 @@ void CreateRoadTool::reset_session() {
   points_.clear();
   hover_snap_.reset();
   cursor_.reset();
+  extend_end_.reset();
   emit preview_changed();
 }
 
@@ -250,6 +316,29 @@ PreviewGeometry CreateRoadTool::preview() const {
     }
     if (const auto line = fit_clothoid_path(candidate, locked); line.has_value()) {
       append_polyline_of(geometry, *line);
+      // Cross hint: an X where the fitted line would cross a road interior, so
+      // the user sees the 4-way will fire before committing.
+      if (!points_.front().side_snap.has_value() && !points_.front().snap_road.has_value()) {
+        if (const auto crossing = first_body_crossing(document_.network(), *line, RoadId{});
+            crossing.has_value()) {
+          append_cross(geometry, crossing->point.x, crossing->point.y, kSnapMarkerRadius * 1.5);
+        }
+      }
+    }
+  }
+
+  // Tee hint: a diamond at any endpoint (placed or hovered) that snapped onto a
+  // road's side — the T-junction that will form there.
+  for (const PlacedPoint& point : points_) {
+    if (point.side_snap.has_value()) {
+      append_diamond(
+          geometry, point.side_snap->position.x, point.side_snap->position.y, kSnapMarkerRadius);
+    }
+  }
+  if (hover_snap_.has_value() && cursor_.has_value() && !points_.empty()) {
+    if (const auto side = edit::snap_to_road_side(document_.network(), *cursor_, snap_options_);
+        side.has_value() && hover_snap_->kind != edit::SnapKind::RoadEndpoint) {
+      append_diamond(geometry, side->position.x, side->position.y, kSnapMarkerRadius);
     }
   }
 

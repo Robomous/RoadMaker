@@ -1,5 +1,6 @@
 #include "roadmaker/edit/assembly.hpp"
 #include "roadmaker/edit/connection.hpp"
+#include "roadmaker/geometry/road_intersection.hpp"
 #include "roadmaker/road/authoring.hpp"
 #include "roadmaker/road/network.hpp"
 #include "roadmaker/tol.hpp"
@@ -23,6 +24,7 @@ using roadmaker::validate_network;
 using roadmaker::Waypoint;
 using roadmaker::edit::Command;
 using roadmaker::edit::assembly::cross_onto_road;
+using roadmaker::edit::assembly::cross_roads;
 using roadmaker::edit::assembly::IntersectionParams;
 using roadmaker::edit::assembly::Pose;
 using roadmaker::edit::assembly::t_intersection;
@@ -182,6 +184,117 @@ TEST(Assembly, OntoRoadRefusesADropTooNearAnEnd) {
   expect_network_matches(network, before);
   auto cross = cross_onto_road(network, target, 1.0);
   EXPECT_FALSE(cross->apply(network).has_value());
+  expect_network_matches(network, before);
+}
+
+// --- cross_roads: 4-way where two EXISTING roads cross ----------------------
+
+namespace {
+
+/// A horizontal road on y=0 and a vertical road on x=0, crossing at the origin
+/// (station 100 on each). Returns their ids {horizontal, vertical}.
+std::pair<roadmaker::RoadId, roadmaker::RoadId> crossing_pair(RoadNetwork& network) {
+  auto horizontal = roadmaker::author_clothoid_road(
+      network,
+      std::vector<Waypoint>{Waypoint{.x = -100.0, .y = 0.0}, Waypoint{.x = 100.0, .y = 0.0}},
+      LaneProfile::two_lane_rural(),
+      "",
+      "1");
+  auto vertical = roadmaker::author_clothoid_road(
+      network,
+      std::vector<Waypoint>{Waypoint{.x = 0.0, .y = -100.0}, Waypoint{.x = 0.0, .y = 100.0}},
+      LaneProfile::two_lane_rural(),
+      "",
+      "2");
+  if (!horizontal.has_value() || !vertical.has_value()) {
+    throw std::runtime_error("crossing pair author failed");
+  }
+  return {*horizontal, *vertical};
+}
+
+} // namespace
+
+TEST(Assembly, RoadIntersectionsFindsInteriorCrossing) {
+  RoadNetwork network;
+  const auto [horizontal, vertical] = crossing_pair(network);
+  const auto crossings = roadmaker::road_intersections(network, horizontal, vertical);
+  ASSERT_TRUE(crossings.has_value());
+  ASSERT_EQ(crossings->size(), 1U);
+  EXPECT_NEAR(crossings->front().s_a, 100.0, 1e-3);
+  EXPECT_NEAR(crossings->front().s_b, 100.0, 1e-3);
+  EXPECT_NEAR(crossings->front().point.x, 0.0, 1e-3);
+  EXPECT_NEAR(crossings->front().point.y, 0.0, 1e-3);
+}
+
+TEST(Assembly, RoadIntersectionsReturnsNoneWhenDisjoint) {
+  RoadNetwork network;
+  auto a = roadmaker::author_clothoid_road(
+      network,
+      std::vector<Waypoint>{Waypoint{.x = 0.0, .y = 0.0}, Waypoint{.x = 100.0, .y = 0.0}},
+      LaneProfile::two_lane_rural(),
+      "",
+      "1");
+  auto b = roadmaker::author_clothoid_road(
+      network,
+      std::vector<Waypoint>{Waypoint{.x = 0.0, .y = 20.0}, Waypoint{.x = 100.0, .y = 20.0}},
+      LaneProfile::two_lane_rural(),
+      "",
+      "2");
+  ASSERT_TRUE(a.has_value() && b.has_value());
+  const auto crossings = roadmaker::road_intersections(network, *a, *b);
+  ASSERT_TRUE(crossings.has_value());
+  EXPECT_TRUE(crossings->empty());
+}
+
+TEST(Assembly, CrossRoadsFormsFourWayJunctionAtCrossing) {
+  RoadNetwork network;
+  const auto [horizontal, vertical] = crossing_pair(network);
+  auto command = cross_roads(network, horizontal, vertical);
+  ASSERT_TRUE(command->apply(network).has_value());
+
+  EXPECT_EQ(count_errors(validate_network(network)), 0U);
+  ASSERT_EQ(network.junction_count(), 1U);
+  const roadmaker::JunctionId junction = only_junction(network);
+  EXPECT_EQ(network.junction(junction)->arms.size(), 4U);        // four arms
+  EXPECT_FALSE(network.junction(junction)->connections.empty()); // connecting lanes
+  const auto welds = roadmaker::edit::verify_junction_welds(network, junction);
+  ASSERT_TRUE(welds.has_value());
+  EXPECT_FALSE(welds->breaches);
+}
+
+TEST(Assembly, CrossRoadsRoundTripsByteIdentical) {
+  RoadNetwork network;
+  const auto [horizontal, vertical] = crossing_pair(network);
+  auto command = cross_roads(network, horizontal, vertical);
+  expect_round_trip(network, *command);
+}
+
+TEST(Assembly, CrossRoadsRejectsRoadAlreadyInJunction) {
+  RoadNetwork network;
+  const auto [horizontal, vertical] = crossing_pair(network);
+  auto first = cross_roads(network, horizontal, vertical);
+  ASSERT_TRUE(first->apply(network).has_value());
+
+  // A generated connecting road lives inside the junction (road.junction set).
+  roadmaker::RoadId connecting;
+  network.for_each_road([&](roadmaker::RoadId id, const roadmaker::Road& road) {
+    if (road.junction.is_valid()) {
+      connecting = id;
+    }
+  });
+  ASSERT_TRUE(connecting.is_valid());
+
+  auto fresh = roadmaker::author_clothoid_road(
+      network,
+      std::vector<Waypoint>{Waypoint{.x = -50.0, .y = 50.0}, Waypoint{.x = 50.0, .y = 50.0}},
+      LaneProfile::two_lane_rural(),
+      "",
+      ""); // auto id — the cross above already consumed several numeric ids
+  ASSERT_TRUE(fresh.has_value());
+
+  const std::string before = snapshot_xodr(network);
+  auto command = cross_roads(network, connecting, *fresh);
+  EXPECT_FALSE(command->apply(network).has_value());
   expect_network_matches(network, before);
 }
 

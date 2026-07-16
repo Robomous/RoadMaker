@@ -65,6 +65,18 @@ t_intersection(const RoadNetwork& network, Pose pose, IntersectionParams params 
 [[nodiscard]] RM_API std::unique_ptr<Command>
 x_intersection(const RoadNetwork& network, Pose pose, IntersectionParams params = {});
 
+/// Forms a 4-way junction where two EXISTING roads `a` and `b` cross — the
+/// two-road crossing assembly (unlike cross_onto_road, which builds its own
+/// perpendicular stems from a single target). Computes the plan-view crossing
+/// (road_intersections), splits each road at its crossing station ± gap,
+/// deletes the two middle stubs (the junction area), then generates a common
+/// junction from the four resulting ends — ONE command (apply→revert
+/// byte-identical). Errors (invalid_command): the roads do not cross interior
+/// to both, a road already participates in a junction, or a paramPoly3 record
+/// at a cut (M2 split restrictions), surfaced at apply.
+[[nodiscard]] RM_API std::unique_ptr<Command>
+cross_roads(const RoadNetwork& network, RoadId a, RoadId b, IntersectionParams params = {});
+
 /// Tees a new perpendicular stem road INTO the side of `target` at station `s`
 /// — the on-road drop of a T assembly (gate finding 1). Projects the drop onto
 /// the road, aligns the stem to the road tangent (perpendicular, to the left),

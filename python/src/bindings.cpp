@@ -814,6 +814,28 @@ NB_MODULE(_roadmaker, m) {
       "chaining). Returns its RoadId. Raises ValueError on invalid input.");
 
   m.def(
+      "fit_forward_clothoid",
+      [](std::pair<double, double> start,
+         double heading,
+         double curvature,
+         std::pair<double, double> to) {
+        return unwrap(roadmaker::fit_forward_clothoid(
+            roadmaker::Waypoint{.x = start.first, .y = start.second},
+            heading,
+            curvature,
+            roadmaker::Waypoint{.x = to.first, .y = to.second}));
+      },
+      "start"_a,
+      "heading"_a,
+      "curvature"_a,
+      "to"_a,
+      "Fits a single clothoid leaving `start` at a fixed heading [rad] AND "
+      "curvature [1/m] and passing through `to` (the forward problem). The result "
+      "is curvature-continuous at the start — the connector edit.extend_road "
+      "appends. Returns a ReferenceLine; raises ValueError when `to` cannot be "
+      "reached (behind the start pose).");
+
+  m.def(
       "fit_elevation_profile",
       [](const std::vector<double>& s, const std::vector<double>& z) {
         return roadmaker::fit_elevation_profile(s, z);
@@ -1026,6 +1048,76 @@ NB_MODULE(_roadmaker, m) {
       "Authors a clothoid road AND welds its start to the free road end "
       "`link_start` in one undoable command (the weld is skipped when that end "
       "can't link, so creation never fails on it).");
+  edit.def(
+      "extend_road",
+      [](const roadmaker::RoadNetwork& network,
+         const roadmaker::RoadEnd& end,
+         std::pair<double, double> to) {
+        return roadmaker::edit::extend_road(
+            network, end, roadmaker::Waypoint{.x = to.first, .y = to.second});
+      },
+      "network"_a,
+      "end"_a,
+      "to"_a,
+      "Extends a road past its END by appending a curvature-continuous forward "
+      "clothoid through `to` (elevation continued with matching z and grade). "
+      "START-end extension is out of scope.");
+  edit.def(
+      "create_teed_road",
+      [](const roadmaker::RoadNetwork& network,
+         const std::vector<std::pair<double, double>>& waypoints,
+         const roadmaker::LaneProfile& profile,
+         std::string name,
+         roadmaker::RoadId target,
+         double s,
+         roadmaker::ContactPoint teed_end,
+         std::optional<double> start_heading,
+         std::optional<double> end_heading) {
+        return roadmaker::edit::create_teed_road(network,
+                                                 to_waypoints(waypoints),
+                                                 profile,
+                                                 std::move(name),
+                                                 target,
+                                                 s,
+                                                 teed_end,
+                                                 {.start = start_heading, .end = end_heading});
+      },
+      "network"_a,
+      "waypoints"_a,
+      "profile"_a,
+      "name"_a = "",
+      "target"_a,
+      "s"_a,
+      "teed_end"_a,
+      "start_heading"_a = nb::none(),
+      "end_heading"_a = nb::none(),
+      "Authors a clothoid road AND tees its `teed_end` into the side of `target` "
+      "at station s in one undoable command (create + attach_t_junction).");
+  edit.def(
+      "create_crossing_road",
+      [](const roadmaker::RoadNetwork& network,
+         const std::vector<std::pair<double, double>>& waypoints,
+         const roadmaker::LaneProfile& profile,
+         std::string name,
+         roadmaker::RoadId target,
+         std::optional<double> start_heading,
+         std::optional<double> end_heading) {
+        return roadmaker::edit::create_crossing_road(network,
+                                                     to_waypoints(waypoints),
+                                                     profile,
+                                                     std::move(name),
+                                                     target,
+                                                     {.start = start_heading, .end = end_heading});
+      },
+      "network"_a,
+      "waypoints"_a,
+      "profile"_a,
+      "name"_a = "",
+      "target"_a,
+      "start_heading"_a = nb::none(),
+      "end_heading"_a = nb::none(),
+      "Authors a clothoid road that crosses `target`, then forms a 4-way junction "
+      "at the crossing in one undoable command (create + assembly.cross_roads).");
   edit.def("split_road", &roadmaker::edit::split_road, "network"_a, "road"_a, "s"_a);
   edit.def(
       "check_mergeable",
@@ -1345,6 +1437,21 @@ NB_MODULE(_roadmaker, m) {
       "params"_a = roadmaker::edit::assembly::IntersectionParams{},
       "Crosses a 4-way junction OVER `target` at station s (the two halves are "
       "the collinear through arms + two perpendicular stems). One undoable command.");
+  assembly.def(
+      "cross_roads",
+      [](const roadmaker::RoadNetwork& network,
+         roadmaker::RoadId a,
+         roadmaker::RoadId b,
+         roadmaker::edit::assembly::IntersectionParams params) {
+        return roadmaker::edit::assembly::cross_roads(network, a, b, params);
+      },
+      "network"_a,
+      "a"_a,
+      "b"_a,
+      "params"_a = roadmaker::edit::assembly::IntersectionParams{},
+      "Forms a 4-way junction where two EXISTING roads `a` and `b` cross (split "
+      "each at the crossing ± gap, remove the middle stubs, generate the "
+      "junction). One undoable command.");
 
   edit.def("add_lane",
            &roadmaker::edit::add_lane,

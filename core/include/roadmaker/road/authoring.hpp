@@ -95,6 +95,20 @@ struct EndpointHeadings {
 [[nodiscard]] RM_API Expected<ReferenceLine> fit_clothoid_path(std::span<const Waypoint> waypoints,
                                                                const EndpointHeadings& locked);
 
+/// Fits a single clothoid that leaves `start` at a fixed pose AND curvature
+/// (`heading` [rad], `curvature` [1/m]) and passes through `to` — the forward
+/// problem (Clothoids ClothoidCurve::build_forward). The result is
+/// curvature-continuous at the start by construction, which is why it is the
+/// extend-a-road connector: appended to a road end it introduces no kink and
+/// no curvature step at the join. The end pose is whatever the single clothoid
+/// through the target requires (free heading/curvature there).
+///
+/// Errors (InvalidArgument): the forward solve failed — `to` cannot be reached
+/// by a clothoid leaving the fixed start pose (e.g. it lies behind the road
+/// end), or the target coincides with the start.
+[[nodiscard]] RM_API Expected<ReferenceLine>
+fit_forward_clothoid(Waypoint start, double heading, double curvature, Waypoint to);
+
 /// Fits a G2 (curvature-continuous) three-arc clothoid path between two poses,
 /// matching position, heading [rad], AND curvature [1/m] at both ends (the
 /// Clothoids G2solve3arc interpolant). This is the smooth connector the

@@ -5,6 +5,7 @@
 // §4).
 
 #include "roadmaker/edit/operations.hpp"
+#include "roadmaker/road/network.hpp"
 #include "roadmaker/road/road.hpp"
 #include "roadmaker/tol.hpp"
 #include "roadmaker/xodr/writer.hpp"
@@ -259,6 +260,124 @@ TEST(CreateRoadTool, TemplateProfileIsAppliedOnCommit) {
   ASSERT_EQ(road->sections.size(), 1U);
   // highway(): 3 left + center + 3 right.
   EXPECT_EQ(document.network().lane_section(road->sections.front())->lanes.size(), 7U);
+}
+
+// --- tee / cross / extend on commit -----------------------------------------
+
+namespace {
+
+/// A straight target road on y=0 from x=-100 to x=100 (id "1").
+RoadId make_target(Document& document) {
+  const bool pushed = document
+                          .push_command(roadmaker::edit::create_road(
+                              {Waypoint{.x = -100.0, .y = 0.0}, Waypoint{.x = 100.0, .y = 0.0}},
+                              LaneProfile::two_lane_rural(),
+                              "Target"))
+                          .has_value();
+  EXPECT_TRUE(pushed);
+  return document.network().find_road("1");
+}
+
+} // namespace
+
+TEST(CreateRoadTool, DrawingAcrossARoadFormsACrossJunctionOnCommit) {
+  Document document;
+  make_target(document);
+  ASSERT_EQ(document.network().junction_count(), 0U);
+
+  CreateRoadTool tool(document);
+  tool.activate();
+  // A vertical road crossing the target's interior at the origin.
+  click(tool, 0.0, -60.0);
+  click(tool, 0.0, 60.0);
+  ASSERT_TRUE(tool.key_press(Qt::Key_Return, Qt::NoModifier));
+
+  EXPECT_EQ(document.network().junction_count(), 1U); // the 4-way formed
+  EXPECT_EQ(document.undo_stack()->count(), 2);       // target + cross, one macro each
+}
+
+TEST(CreateRoadTool, EndpointSideSnapTeesOnCommit) {
+  Document document;
+  make_target(document);
+
+  CreateRoadTool tool(document);
+  tool.set_snap_options({.radius = 2.0});
+  tool.activate();
+  // Draw down toward the target; the last point lands on its side (within the
+  // snap radius of y=0) so the end tees in.
+  click(tool, 0.0, 50.0);
+  click(tool, 0.0, 1.5);
+  ASSERT_TRUE(tool.key_press(Qt::Key_Return, Qt::NoModifier));
+
+  EXPECT_EQ(document.network().junction_count(), 1U); // a T-junction formed
+  EXPECT_EQ(document.undo_stack()->count(), 2);
+}
+
+TEST(CreateRoadTool, TeeAndCrossAreEachOneUndoMacro) {
+  // Cross.
+  {
+    Document document;
+    make_target(document);
+    const std::string before = xodr(document);
+    CreateRoadTool tool(document);
+    tool.activate();
+    click(tool, 0.0, -60.0);
+    click(tool, 0.0, 60.0);
+    ASSERT_TRUE(tool.key_press(Qt::Key_Return, Qt::NoModifier));
+    ASSERT_EQ(document.network().junction_count(), 1U);
+    document.undo_stack()->undo(); // ONE undo restores pre-commit exactly
+    EXPECT_EQ(xodr(document), before);
+  }
+  // Tee.
+  {
+    Document document;
+    make_target(document);
+    const std::string before = xodr(document);
+    CreateRoadTool tool(document);
+    tool.set_snap_options({.radius = 2.0});
+    tool.activate();
+    click(tool, 0.0, 50.0);
+    click(tool, 0.0, 1.5);
+    ASSERT_TRUE(tool.key_press(Qt::Key_Return, Qt::NoModifier));
+    ASSERT_EQ(document.network().junction_count(), 1U);
+    document.undo_stack()->undo();
+    EXPECT_EQ(xodr(document), before);
+  }
+}
+
+TEST(CreateRoadTool, ExtendEndpointClickAddsCurvatureContinuousExtension) {
+  Document document;
+  ASSERT_TRUE(document
+                  .push_command(roadmaker::edit::create_road({Waypoint{.x = 0.0, .y = 0.0},
+                                                              Waypoint{.x = 60.0, .y = 8.0},
+                                                              Waypoint{.x = 120.0, .y = 0.0}},
+                                                             LaneProfile::two_lane_rural(),
+                                                             "Bend"))
+                  .has_value());
+  const RoadId road = document.network().find_road("1");
+  ASSERT_TRUE(road.is_valid());
+  const auto& plan = document.network().road(road)->plan_view;
+  const double join_s = plan.length();
+  const PathPoint end = plan.evaluate(join_s);
+
+  CreateRoadTool tool(document);
+  tool.set_snap_options({.radius = 2.0});
+  tool.set_selected_road(road); // the SelectionModel would wire this in the app
+  tool.activate();
+  // First click snaps to the road END (arms extend); second is the target.
+  click(tool, end.x + 0.3, end.y - 0.2);
+  click(tool, end.x + 40.0 * std::cos(end.hdg), end.y + 40.0 * std::sin(end.hdg));
+  ASSERT_TRUE(tool.key_press(Qt::Key_Return, Qt::NoModifier));
+
+  EXPECT_EQ(document.network().road_count(), 1U); // same road, no new one
+  EXPECT_EQ(document.undo_stack()->count(), 2);   // create + extend
+  const auto& extended = document.network().road(road)->plan_view;
+  EXPECT_GT(extended.length(), join_s + 1.0); // it grew
+  const PathPoint below = extended.evaluate(join_s - 1e-3);
+  const PathPoint above = extended.evaluate(join_s + 1e-3);
+  EXPECT_LT(std::abs(above.curvature - below.curvature), roadmaker::tol::kWeldCurvature);
+  EXPECT_LT(std::abs(std::remainder(above.hdg - below.hdg, 2.0 * std::numbers::pi)),
+            roadmaker::tol::kWeldHeading);
 }
 
 } // namespace

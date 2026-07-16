@@ -117,6 +117,47 @@ insert_node_at(const RoadNetwork& network, RoadId road, double s);
                                                                  RoadEnd link_start,
                                                                  EndpointHeadings locked = {});
 
+/// Extends a road past its END by fitting a forward clothoid from the end
+/// pose through `to` and appending it to the plan view — the "keep drawing off
+/// the end" gesture. The appended geometry is curvature-continuous with the old
+/// end by construction (fit_forward_clothoid honours the end pose AND curvature),
+/// so no kink and no curvature step appears at the join; elevation is continued
+/// with matching z and grade. The last lane section (and its widths) simply
+/// spans the new length. ONE command over the single road (apply→revert
+/// byte-identical). START-end extension is out of scope.
+/// Errors (invalid_command): a stale road, `end.contact == Start`, an END that
+/// is already linked, a road with no authoring waypoints, or a `to` the forward
+/// clothoid cannot reach (behind the end).
+[[nodiscard]] RM_API std::unique_ptr<Command>
+extend_road(const RoadNetwork& network, RoadEnd end, Waypoint to);
+
+/// Authors a new clothoid road AND tees its `teed_end` into the SIDE of
+/// `target` at station `s` in one undoable command — Create Road's side-snap
+/// path (create + attach_t_junction, mirroring create_linked_road's create +
+/// weld). Errors surface attach_t_junction's guards (target already in a
+/// junction, a paramPoly3 record at a cut, the drop too near a road end) at
+/// apply.
+[[nodiscard]] RM_API std::unique_ptr<Command> create_teed_road(const RoadNetwork& network,
+                                                               std::vector<Waypoint> waypoints,
+                                                               LaneProfile profile,
+                                                               std::string name,
+                                                               RoadId target,
+                                                               double s,
+                                                               ContactPoint teed_end,
+                                                               EndpointHeadings locked = {});
+
+/// Authors a new clothoid road that crosses `target`, then forms a 4-way
+/// junction at the crossing in one undoable command — Create Road's
+/// draw-across path (create + assembly::cross_roads). Errors surface
+/// cross_roads's guards (no interior crossing, a road already in a junction, a
+/// paramPoly3 at a cut) at apply.
+[[nodiscard]] RM_API std::unique_ptr<Command> create_crossing_road(const RoadNetwork& network,
+                                                                   std::vector<Waypoint> waypoints,
+                                                                   LaneProfile profile,
+                                                                   std::string name,
+                                                                   RoadId target,
+                                                                   EndpointHeadings locked = {});
+
 /// Translates whole roads by (dx, dy) [m] in the plan-view plane: shifts every
 /// geometry-record start position and every authoring waypoint; headings,
 /// lengths, s-values, lanes, elevation and marks are untouched, so undo is

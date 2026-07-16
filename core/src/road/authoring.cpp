@@ -167,6 +167,39 @@ Expected<ReferenceLine> fit_clothoid_path(std::span<const Waypoint> waypoints,
   return build_g1_path(xs, ys, headings.data(), "clothoid G1 Hermite fit failed");
 }
 
+Expected<ReferenceLine>
+fit_forward_clothoid(Waypoint start, double heading, double curvature, Waypoint to) {
+  if (std::hypot(to.x - start.x, to.y - start.y) < tol::kLength) {
+    return make_error(ErrorCode::InvalidArgument, "extend target coincides with the road end");
+  }
+  try {
+    G2lib::ClothoidCurve curve("rm_forward");
+    // Fixed start position, heading and curvature; free end through `to`.
+    const bool ok = curve.build_forward(start.x, start.y, heading, curvature, to.x, to.y);
+    if (!ok) {
+      return make_error(ErrorCode::InvalidArgument, "cannot extend to a point behind the road end");
+    }
+    // build_forward can still reach a point behind the start pose by looping the
+    // clothoid all the way around — geometrically valid but never what "extend
+    // the road to here" means. Reject a fit far longer than the straight-line
+    // reach (the fit_connector max_loop_factor guard).
+    constexpr double kMaxLoopFactor = 4.0;
+    const double chord = std::hypot(to.x - start.x, to.y - start.y);
+    if (curve.length() > kMaxLoopFactor * chord) {
+      return make_error(ErrorCode::InvalidArgument, "cannot extend to a point behind the road end");
+    }
+    ReferenceLine line;
+    line.append(to_record(curve));
+    return line;
+  } catch (const std::exception& e) {
+    return make_error(
+        ErrorCode::InvalidArgument, "forward clothoid fit failed", std::string(e.what()));
+  } catch (...) {
+    return make_error(
+        ErrorCode::InvalidArgument, "forward clothoid fit failed", "unknown exception");
+  }
+}
+
 Expected<ReferenceLine> fit_g2_three_arc(Waypoint a,
                                          double heading_a,
                                          double curvature_a,
