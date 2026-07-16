@@ -178,9 +178,9 @@ TEST(LaneSpan, AddLaneSpanRoundTrips) {
   const double L = *section_end(network, mid) - network.lane_section(mid)->s0;
   EXPECT_NEAR(roadmaker::eval_profile(pocket->widths, 0.0), 0.0, roadmaker::tol::kLength);
   EXPECT_NEAR(roadmaker::eval_profile(pocket->widths, L), 0.0, 1e-6);
-  // ...and its full plateau width in the middle mirrors add_lane's copy of the
-  // outermost lane (the 1.0 m shoulder on two_lane_default).
-  EXPECT_NEAR(roadmaker::eval_profile(pocket->widths, L / 2.0), 1.0, 1e-6);
+  // ...and its full plateau width in the middle is a real driving-lane width
+  // (the -1 driving lane's 3.5 m on two_lane_default), not the -2 shoulder.
+  EXPECT_NEAR(roadmaker::eval_profile(pocket->widths, L / 2.0), 3.5, 1e-6);
 
   ASSERT_TRUE(roadmaker::write_xodr(network, "ok").has_value());
   EXPECT_EQ(roadmaker::count_errors(roadmaker::validate_network(network)), 0U);

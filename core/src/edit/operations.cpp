@@ -3938,6 +3938,40 @@ LaneId lane_with_odr(const RoadNetwork& network, LaneSectionId section_id, int o
   return LaneId{};
 }
 
+// The width of the driving lane on `side` nearest to `exclude` (the freshly
+// added pocket lane), or 3.5 m when the side carries no other driving lane.
+// add_lane copies the literal outermost lane — which is often a shoulder — so a
+// pocket meant as a travel lane takes a real driving-lane width instead.
+double driving_lane_width_on_side(const RoadNetwork& network,
+                                  LaneSectionId section_id,
+                                  int side,
+                                  LaneId exclude) {
+  const LaneSection* section = network.lane_section(section_id);
+  if (section == nullptr) {
+    return 3.5;
+  }
+  const Lane* nearest = nullptr;
+  for (const LaneId lane_id : section->lanes) {
+    if (lane_id == exclude) {
+      continue;
+    }
+    const Lane* lane = network.lane(lane_id);
+    const bool on_side = side > 0 ? lane->odr_id > 0 : lane->odr_id < 0;
+    if (!on_side || lane->type != LaneType::Driving) {
+      continue;
+    }
+    // Prefer the outermost driving lane — the one the pocket sits against.
+    if (nearest == nullptr ||
+        (side > 0 ? lane->odr_id > nearest->odr_id : lane->odr_id < nearest->odr_id)) {
+      nearest = lane;
+    }
+  }
+  if (nearest == nullptr || nearest->widths.empty()) {
+    return 3.5;
+  }
+  return nearest->widths.front().a;
+}
+
 } // namespace
 
 std::unique_ptr<Command> add_lane_span(
@@ -3992,10 +4026,10 @@ std::unique_ptr<Command> add_lane_span(
       return invalid_command(std::string(kName), span.error());
     }
     const double L = *span - net.lane_section(mid)->s0;
-    // Mirror add_lane: the plateau matches the (now second-outermost) lane's
-    // width, which add_lane already copied onto the fresh lane, else 3.5 m.
-    const std::vector<Poly3>& seed = net.lane(lane)->widths;
-    const double W = seed.empty() ? 3.5 : seed.front().a;
+    // The pocket is a travel lane: shape it to the nearest driving lane's width
+    // (3.5 m default), not add_lane's copy of the outermost lane, which is often
+    // a narrow shoulder.
+    const double W = driving_lane_width_on_side(net, mid, side, lane);
     const double t = std::min(kTaperLen, L / 2.0 - tol::kLength);
     return set_lane_width_profile(net, lane, taper_records(L, W, t, /*ramp_down=*/true));
   });
