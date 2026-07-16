@@ -17,6 +17,7 @@
 
 #include "junction_surface.hpp"
 #include "mesh_detail.hpp"
+#include "surface_fill.hpp"
 
 namespace roadmaker {
 
@@ -531,6 +532,20 @@ JunctionFloor build_one_junction_floor(const RoadNetwork& network,
                        .mesh = build_junction_surface(network, junction, sampling)};
 }
 
+/// One enclosed-area ground surface, keyed by id; empty mesh (no indices) when
+/// the ring encloses no area — callers drop empty results. The pipeline itself
+/// lives in surface_fill.cpp.
+SurfaceMesh build_one_surface(const RoadNetwork& network,
+                              SurfaceId surface_id,
+                              const Surface& surface,
+                              const SamplingOptions& sampling) {
+  SubMesh mesh = build_surface_mesh(network, surface, sampling);
+  if (!mesh.indices.empty()) {
+    mesh.name = fmt::format("surface {}", surface_id.index);
+  }
+  return SurfaceMesh{.surface = surface_id, .mesh = std::move(mesh)};
+}
+
 bool road_mesh_is_empty(const RoadMesh& mesh) {
   return mesh.lanes.empty() && mesh.markings.empty();
 }
@@ -556,6 +571,14 @@ NetworkMesh build_network_mesh(const RoadNetwork& network, const MeshOptions& op
       }
     });
   }
+  // Enclosed-area ground surfaces: mesh whatever surfaces already exist in the
+  // arena (derive_surfaces owns them; meshing stays const on the network).
+  network.for_each_surface([&](SurfaceId surface_id, const Surface& surface) {
+    SurfaceMesh built = build_one_surface(network, surface_id, surface, options.sampling);
+    if (!built.mesh.indices.empty()) {
+      result.surfaces.push_back(std::move(built));
+    }
+  });
   return result;
 }
 
@@ -650,6 +673,30 @@ void remesh_junctions(const RoadNetwork& network,
       *existing = std::move(rebuilt);
     } else {
       mesh.junction_floors.push_back(std::move(rebuilt));
+    }
+  }
+}
+
+void remesh_surfaces(const RoadNetwork& network,
+                     NetworkMesh& mesh,
+                     std::span<const SurfaceId> surfaces,
+                     const MeshOptions& options) {
+  for (const SurfaceId surface_id : surfaces) {
+    const auto existing = std::ranges::find(mesh.surfaces, surface_id, &SurfaceMesh::surface);
+    const Surface* surface = network.surface(surface_id);
+    SurfaceMesh rebuilt = surface != nullptr
+                              ? build_one_surface(network, surface_id, *surface, options.sampling)
+                              : SurfaceMesh{.surface = surface_id, .mesh = {}};
+    if (rebuilt.mesh.indices.empty()) {
+      if (existing != mesh.surfaces.end()) {
+        mesh.surfaces.erase(existing);
+      }
+      continue;
+    }
+    if (existing != mesh.surfaces.end()) {
+      *existing = std::move(rebuilt);
+    } else {
+      mesh.surfaces.push_back(std::move(rebuilt));
     }
   }
 }

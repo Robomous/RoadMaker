@@ -54,4 +54,13 @@ RM_API void remesh_junctions(const RoadNetwork& network,
                              std::span<const JunctionId> junctions,
                              const MeshOptions& options = {});
 
+/// Same contract for enclosed-area ground surfaces (#215), keyed by SurfaceId:
+/// existing entries are replaced, new surfaces appended, and surfaces that no
+/// longer exist or enclose no area removed. Surfaces are const-meshed from the
+/// arena derive_surfaces owns — this never re-derives the ring topology.
+RM_API void remesh_surfaces(const RoadNetwork& network,
+                            NetworkMesh& mesh,
+                            std::span<const SurfaceId> surfaces,
+                            const MeshOptions& options = {});
+
 } // namespace roadmaker

@@ -74,6 +74,14 @@ struct JunctionFloor {
   SubMesh mesh;
 };
 
+/// One enclosed-area ground surface (#215), keyed by its SurfaceId so
+/// incremental re-meshing can replace exactly the affected entry and the
+/// editor/framing can resolve a SurfaceId back to its geometry.
+struct SurfaceMesh {
+  SurfaceId surface;
+  SubMesh mesh;
+};
+
 /// A placed prop (tree/vegetation) as an INSTANCE of a bundled prop model
 /// (roadmaker::props). The renderer and the glTF/USD exporters draw
 /// props::model(model_id) at this world transform — no per-prop geometry is
@@ -110,6 +118,14 @@ struct NetworkMesh {
   /// field, stitched watertight to the road meshes). Built by
   /// junction_surface.cpp — docs/design/m2/03_junction_blending.md.
   std::vector<JunctionFloor> junction_floors;
+
+  /// Enclosed-area ground surfaces (#215): the ground that fills areas ringed
+  /// by roads, built by surface_fill.cpp — same Clipper2 union → CDT → harmonic
+  /// field → watertight-stitch backend as junction floors, but keeping the
+  /// union's interior HOLE. Populated from whatever surfaces already exist in
+  /// the arena (derive_surfaces owns that arena); build_network_mesh never
+  /// derives them itself.
+  std::vector<SurfaceMesh> surfaces;
 
   /// Placed props (trees/vegetation), instanced from the bundled prop library
   /// — regenerated per owning road via the DirtySet::objects channel
