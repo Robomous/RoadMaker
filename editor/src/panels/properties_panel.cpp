@@ -216,22 +216,27 @@ PropertiesPanel::PropertiesPanel(Document& document,
   // lane width, 0.2 m of mark width, 5 m of height, 10 m along s.
   auto* lane_form = new QFormLayout;
   lane_form->addRow(tr("Type"), type_combo_);
-  lane_form->addRow(install_scrub(new ScrubLabel(tr("Width"), this),
-                                  {.spin = width_spin_,
-                                   .units_per_pixel = 0.02,
-                                   .baseline = [this]() -> std::optional<double> {
-                                     const Lane* lane = primary_lane();
-                                     if (lane == nullptr || lane->widths.empty()) {
-                                       return std::nullopt;
-                                     }
-                                     return lane->widths.front().a;
-                                   },
-                                   .factory =
-                                       [this](const RoadNetwork& network, double value) {
-                                         return edit::set_lane_width(
-                                             network, selection_.primary().lane, value);
-                                       }}),
-                    width_spin_);
+  width_scrub_label_ = install_scrub(
+      new ScrubLabel(tr("Width"), this),
+      {.spin = width_spin_,
+       .units_per_pixel = 0.02,
+       .baseline = [this]() -> std::optional<double> {
+         const Lane* lane = primary_lane();
+         // A tapered lane's width is edited on the 2D Width curve, not
+         // here: a nullopt baseline makes begin_scrub treat the drag
+         // as inert, so set_lane_width (which would refuse anyway) is
+         // never reached and no taper is flattened.
+         if (lane == nullptr || lane->widths.empty() || !lane_width_is_constant(*lane)) {
+           return std::nullopt;
+         }
+         return lane->widths.front().a;
+       },
+       .factory =
+           [this](const RoadNetwork& network, double value) {
+             return edit::set_lane_width(network, selection_.primary().lane, value);
+           }});
+  width_scrub_label_->setObjectName(QStringLiteral("lane_width_scrub"));
+  lane_form->addRow(width_scrub_label_, width_spin_);
   lane_form->addRow(tr("Road mark"), mark_combo_);
   lane_form->addRow(
       install_scrub(new ScrubLabel(tr("Mark width"), this),
@@ -414,6 +419,12 @@ PropertiesPanel::PropertiesPanel(Document& document,
   connect(width_spin_, &QDoubleSpinBox::editingFinished, this, [this] {
     const Lane* lane = primary_lane();
     if (lane == nullptr || lane->widths.empty()) {
+      return;
+    }
+    // set_lane_width refuses a lane whose width varies along s; the spin is
+    // disabled in that case, but guard here too so a stray editingFinished
+    // (focus-out) never reaches the kernel with a doomed command.
+    if (!lane_width_is_constant(*lane)) {
       return;
     }
     if (std::abs(width_spin_->value() - lane->widths.front().a) < 1e-9) {
@@ -769,8 +780,20 @@ void PropertiesPanel::refresh_lane_section() {
   add_right_->setEnabled(true);
 
   type_combo_->setEnabled(lane_selected && !center);
-  // The center lane is width-less by rule …road.lane.center_lane_no_width.
-  width_spin_->setEnabled(lane_selected && !center && !lane->widths.empty());
+  // The center lane is width-less by rule …road.lane.center_lane_no_width, and
+  // a lane whose width varies along s is edited on the 2D Width curve — the
+  // constant-width spin/scrub here would only be refused by set_lane_width.
+  const bool width_constant =
+      lane_selected && !center && !lane->widths.empty() && lane_width_is_constant(*lane);
+  const bool width_tapered =
+      lane_selected && !center && !lane->widths.empty() && !lane_width_is_constant(*lane);
+  width_spin_->setEnabled(width_constant);
+  if (width_scrub_label_ != nullptr) {
+    width_scrub_label_->setEnabled(width_constant);
+  }
+  width_spin_->setToolTip(width_tapered
+                              ? tr("Width varies along s — edit the curve in the 2D Editor (Width)")
+                              : QString());
   // Per-side Remove acts on the section's outermost lane on that side — no
   // lane selection required (the discoverable lane-removal affordance, gate
   // finding 6). The kernel only removes the outermost lane; the editor also
@@ -837,6 +860,17 @@ void PropertiesPanel::push(std::unique_ptr<edit::Command> command) {
 
 const Lane* PropertiesPanel::primary_lane() const {
   return document_.network().lane(selection_.primary().lane);
+}
+
+bool PropertiesPanel::lane_width_is_constant(const Lane& lane) {
+  // VERBATIM from edit::set_lane_width (core/src/edit/operations.cpp): a lane's
+  // width is constant iff it has at most one record, and that record (if any)
+  // has zero b/c/d. Kept identical so the UI's enable/disable and the kernel's
+  // accept/refuse can never diverge.
+  const std::vector<Poly3>& widths = lane.widths;
+  return widths.size() <= 1 &&
+         (widths.empty() ||
+          (widths.front().b == 0.0 && widths.front().c == 0.0 && widths.front().d == 0.0));
 }
 
 LaneSectionId PropertiesPanel::target_section() const {

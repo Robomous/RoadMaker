@@ -1,30 +1,37 @@
 #pragma once
 
-// Lane Profile tool (issue #14, docs/design/m2/02_editing_tools.md §4). The
-// editing itself is panel-based (PropertiesPanel's lane-profile section
-// follows the primary selection); the tool exists for toolbar consistency
-// and lane-granular viewport highlighting: a click selects the picked LANE,
-// empty space clears.
+// Lane tool (issue #14 / p2-s4). The editing itself is panel-based: type edits
+// in the Properties panel, width-along-s in the 2D Editor's Lane Width tab; the
+// tool exists for toolbar consistency, lane-granular viewport highlighting, and
+// the one direct gesture it owns — Delete removes the selected lane. A click
+// selects the picked LANE, empty space clears.
 
 #include "tools/tool.hpp"
 
 namespace roadmaker::editor {
 
+class Document;
 class SelectionModel;
 
 class LaneProfileTool : public Tool {
   Q_OBJECT
 
 public:
-  explicit LaneProfileTool(SelectionModel& selection, QObject* parent = nullptr);
+  LaneProfileTool(Document& document, SelectionModel& selection, QObject* parent = nullptr);
 
   void activate() override;
 
   [[nodiscard]] bool mouse_press(const ToolEvent& event) override;
 
+  /// Delete/Backspace removes the primary lane through edit::remove_lane (ONE
+  /// undo step). A null/center/non-outermost lane can't be removed — the
+  /// gesture then emits a status message rather than doing nothing silently.
+  [[nodiscard]] bool key_press(int key, Qt::KeyboardModifiers modifiers) override;
+
   [[nodiscard]] QString instruction() const override;
 
 private:
+  Document& document_;
   SelectionModel& selection_;
 };
 

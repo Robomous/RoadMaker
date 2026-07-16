@@ -119,6 +119,13 @@ private:
   /// The primary selection's lane (invalid id when road-level or empty).
   [[nodiscard]] const Lane* primary_lane() const;
 
+  /// Whether a lane's width is a single constant record — the EXACT predicate
+  /// edit::set_lane_width uses to accept or refuse (operations.cpp). Kept
+  /// verbatim so the panel and the kernel never disagree about which lanes the
+  /// constant-width editors (width_spin_ / its scrub) may touch. A tapered lane
+  /// is edited in the 2D Editor's Lane Width tab instead.
+  [[nodiscard]] static bool lane_width_is_constant(const Lane& lane);
+
   /// The section lane edits act on: the primary lane's, or the road's first.
   [[nodiscard]] LaneSectionId target_section() const;
 
@@ -133,6 +140,9 @@ private:
   QGroupBox* lane_group_;
   QComboBox* type_combo_;
   QDoubleSpinBox* width_spin_;
+  /// The "Width" scrub handle — kept so it can be disabled alongside width_spin_
+  /// on a lane whose width varies along s (that edit belongs in the 2D Editor).
+  ScrubLabel* width_scrub_label_ = nullptr;
   QComboBox* mark_combo_;
   QDoubleSpinBox* mark_width_spin_;
   QPushButton* add_left_;

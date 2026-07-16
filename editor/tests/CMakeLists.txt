@@ -75,6 +75,7 @@ add_executable(roadmaker_editor_tests
   test_tour_controller.cpp
   test_tools.cpp
   test_welcome_widget.cpp
+  test_width_panel.cpp
 )
 
 target_compile_definitions(roadmaker_editor_tests

@@ -21,6 +21,21 @@ bool ProfileEditorPage::relevant(const SelectionModel& selection) const {
   return selection.primary().road.is_valid();
 }
 
+WidthEditorPage::WidthEditorPage(Document& document, SelectionModel& selection, QWidget* parent)
+    : panel_(new WidthPanel(document, selection, parent)) {}
+
+QString WidthEditorPage::title() const {
+  return QObject::tr("Lane Width");
+}
+
+QWidget* WidthEditorPage::widget() {
+  return panel_;
+}
+
+bool WidthEditorPage::relevant(const SelectionModel& selection) const {
+  return selection.primary().lane.is_valid();
+}
+
 Editor2DHost::Editor2DHost(const SelectionModel& selection, QWidget* parent)
     : QWidget(parent), selection_(selection), tabs_(new QTabWidget(this)) {
   setObjectName(QStringLiteral("editor2d_host"));
@@ -58,6 +73,16 @@ void Editor2DHost::raise_relevant_page() {
     }
   }
   // Nothing relevant: leave the tab where it is rather than pick arbitrarily.
+}
+
+bool Editor2DHost::show_page(const QString& title) {
+  for (int i = 0; i < tabs_->count(); ++i) {
+    if (tabs_->tabText(i) == title) {
+      tabs_->setCurrentIndex(i);
+      return true;
+    }
+  }
+  return false;
 }
 
 } // namespace roadmaker::editor

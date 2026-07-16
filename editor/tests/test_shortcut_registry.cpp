@@ -44,6 +44,16 @@ TEST(ShortcutRegistry, SequencesPutThePrimaryFirstAndKeepTheAlternate) {
   EXPECT_EQ(select.at(0), QKeySequence(Qt::Key_Q)) << "Select rebound to Q in p1-s2";
 }
 
+// The Lane Width editor (p2-s4) is ⇧L — a QKeyCombination, never an int (that
+// would hit QKeyCombination::operator int() and only MSVC/​/WX would notice).
+TEST(ShortcutRegistry, LaneWidthEditorIsShiftL) {
+  EXPECT_EQ(shortcuts::entry(Id::LaneWidthEditor).primary,
+            QKeyCombination(Qt::ShiftModifier, Qt::Key_L));
+  const QList<QKeySequence> keys = shortcuts::sequences(Id::LaneWidthEditor);
+  ASSERT_EQ(keys.size(), 1);
+  EXPECT_EQ(keys.at(0), QKeySequence(QKeyCombination(Qt::ShiftModifier, Qt::Key_L)));
+}
+
 // Two actions sharing a key would leave one silently dead. The numpad/top-row
 // pairs are the same ACTION's two bindings, so they are not a conflict.
 TEST(ShortcutRegistry, NoDuplicateActiveBindings) {
