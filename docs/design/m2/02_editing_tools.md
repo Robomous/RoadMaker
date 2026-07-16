@@ -266,7 +266,7 @@ restore-in-place so undo stays valid).
 > command already built its junctions" (create/delete/split) from "this
 > command is topology **and** needs the junction regenerated" (a lane
 > appearing) — a distinction `topology` alone could not express. Detail: the
-> [P2 discovery report](../../../roadmap/pillars/p2_discovery.md) §4.
+> [P2 discovery report](../../roadmap/pillars/p2_discovery.md) §4.
 
 **Edge cases.** Ends too far apart (> configurable 50 m): factory error. Arms
 nearly parallel: connecting-road fit may loop — generator drops turn pairs whose
