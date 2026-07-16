@@ -214,7 +214,8 @@ bool SelectTool::mouse_release(const ToolEvent& event) {
                            .lane = event.pick->lane,
                            .object = event.pick->object,
                            .signal = event.pick->signal,
-                           .junction = event.pick->junction},
+                           .junction = event.pick->junction,
+                           .surface = event.pick->surface},
                           mode);
       } else if (mode == SelectMode::Replace) {
         selection_.clear();

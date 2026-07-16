@@ -19,6 +19,8 @@ constexpr JunctionId kJctA{.index = 30, .gen = 0};
 constexpr JunctionId kJctB{.index = 31, .gen = 0};
 constexpr SignalId kSignalA{.index = 40, .gen = 0};
 constexpr SignalId kSignalB{.index = 41, .gen = 0};
+constexpr SurfaceId kSurfaceA{.index = 50, .gen = 0};
+constexpr SurfaceId kSurfaceB{.index = 51, .gen = 0};
 
 // Convenience wrappers so each test reads at the level it cares about — a road/
 // lane/prop mesh (no junction) or a junction floor (road/lane/object invalid).
@@ -29,20 +31,40 @@ HighlightState road_state(RoadId road,
                           RoadId hovered_road = {},
                           LaneId hovered_lane = {},
                           ObjectId hovered_object = {}) {
-  return highlight_state_for(
-      road, lane, object, {}, {}, selection, hovered_road, hovered_lane, hovered_object, {}, {});
+  return highlight_state_for(road,
+                             lane,
+                             object,
+                             {},
+                             {},
+                             {},
+                             selection,
+                             hovered_road,
+                             hovered_lane,
+                             hovered_object,
+                             {},
+                             {},
+                             {});
 }
 
 HighlightState floor_state(JunctionId junction,
                            std::span<const SelectionEntry> selection,
                            JunctionId hovered_junction = {}) {
-  return highlight_state_for({}, {}, {}, {}, junction, selection, {}, {}, {}, {}, hovered_junction);
+  return highlight_state_for(
+      {}, {}, {}, {}, junction, {}, selection, {}, {}, {}, {}, hovered_junction, {});
 }
 
 HighlightState signal_state(SignalId signal,
                             std::span<const SelectionEntry> selection,
                             SignalId hovered_signal = {}) {
-  return highlight_state_for({}, {}, {}, signal, {}, selection, {}, {}, {}, hovered_signal, {});
+  return highlight_state_for(
+      {}, {}, {}, signal, {}, {}, selection, {}, {}, {}, hovered_signal, {}, {});
+}
+
+HighlightState surface_state(SurfaceId surface,
+                             std::span<const SelectionEntry> selection,
+                             SurfaceId hovered_surface = {}) {
+  return highlight_state_for(
+      {}, {}, {}, {}, {}, surface, selection, {}, {}, {}, {}, {}, hovered_surface);
 }
 
 TEST(HighlightState, NoneWhenNeitherSelectedNorHovered) {
@@ -121,6 +143,19 @@ TEST(HighlightState, HoverHighlightsTheHoveredFloor) {
   const std::vector<SelectionEntry> selection;
   EXPECT_EQ(floor_state(kJctA, selection, kJctA), HighlightState::Hover);
   EXPECT_EQ(floor_state(kJctB, selection, kJctA), HighlightState::None);
+}
+
+TEST(HighlightState, SurfaceSelectionAndHover) {
+  // A ground surface (#215) matches only by surface id — never a road or floor,
+  // and vice versa. Selected beats Hover, same as every other kind.
+  const std::vector<SelectionEntry> selection{{.surface = kSurfaceA}};
+  EXPECT_EQ(surface_state(kSurfaceA, selection), HighlightState::Selected);
+  EXPECT_EQ(surface_state(kSurfaceB, selection), HighlightState::None);
+  EXPECT_EQ(road_state(kRoadA, {}, {}, selection), HighlightState::None);
+
+  const std::vector<SelectionEntry> none;
+  EXPECT_EQ(surface_state(kSurfaceA, none, kSurfaceA), HighlightState::Hover);
+  EXPECT_EQ(surface_state(kSurfaceB, none, kSurfaceA), HighlightState::None);
 }
 
 TEST(HighlightState, SelectionWinsOverHover) {

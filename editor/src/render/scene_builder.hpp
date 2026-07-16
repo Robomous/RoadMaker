@@ -38,6 +38,7 @@ enum class SurfaceKind {
   Asphalt,    ///< driving/shoulder/junction-floor road surface
   Concrete,   ///< sidewalks and curbs
   Paint,      ///< lane markings — bright unlit paint, no texture
+  Grass,      ///< enclosed-area ground surface (#215) — lit flat grass-green
 };
 
 /// The textured-mode surface class for a lane by its type (asphalt for the
@@ -55,6 +56,7 @@ struct SceneItem {
   ObjectId object;
   SignalId signal;                               // valid for a signal-instance part
   JunctionId junction;                           // valid for a junction-floor item
+  SurfaceId surface_id;                          // valid for a ground-surface item (#215)
   SurfaceKind surface = SurfaceKind::Untextured; // textured-mode material class
 };
 
@@ -100,7 +102,8 @@ void append_object_items(const ObjectInstance& instance, Scene& scene);
 void append_signal_items(const SignalInstance& instance, Scene& scene);
 
 /// Flattens a NetworkMesh into upload-ready items: one per lane patch (with
-/// road+lane ids), one per marking (road id only), one per junction floor.
+/// road+lane ids), one per marking (road id only), one per junction floor, and
+/// one per enclosed-area ground surface (with its SurfaceId).
 [[nodiscard]] Scene build_scene(const NetworkMesh& mesh);
 
 } // namespace roadmaker::editor

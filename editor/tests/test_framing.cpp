@@ -62,6 +62,27 @@ JunctionFloor make_floor(RoadNetwork& network, std::string odr_id, double origin
   return floor;
 }
 
+/// A ground surface (#215) quad [origin, origin+size]² at z=0, keyed to a fresh
+/// surface id. Only positions matter to framing (it grows over them).
+SurfaceMesh make_surface(RoadNetwork& network, double origin, double size) {
+  const SurfaceId surface_id = network.create_surface(Surface{});
+  SurfaceMesh surface;
+  surface.surface = surface_id;
+  surface.mesh.positions = {origin,
+                            origin,
+                            0.0,
+                            origin + size,
+                            origin,
+                            0.0,
+                            origin + size,
+                            origin + size,
+                            0.0,
+                            origin,
+                            origin + size,
+                            0.0};
+  return surface;
+}
+
 TEST(SelectionBounds, RoadSelectionFramesTheWholeRoad) {
   RoadNetwork network;
   NetworkMesh mesh;
@@ -113,6 +134,23 @@ TEST(SelectionBounds, JunctionSelectionFramesItsFloor) {
   const SceneBounds bounds = selection_bounds(mesh, entries);
   ASSERT_TRUE(bounds.valid());
   EXPECT_FLOAT_EQ(bounds.lo[0], 100.0F) << "the junction floor, not the road at the origin";
+  EXPECT_FLOAT_EQ(bounds.hi[0], 108.0F);
+}
+
+TEST(SelectionBounds, SurfaceSelectionBounds) {
+  // #215: framing a ground surface grows the bounds over its mesh — the
+  // surface analog of framing a junction floor, and it must win over the road
+  // at the origin the same way.
+  RoadNetwork network;
+  NetworkMesh mesh;
+  mesh.roads.push_back(make_two_lane_road(network, "1", 20.0));
+  mesh.surfaces.push_back(make_surface(network, 100.0, 8.0));
+  const SurfaceId surface = mesh.surfaces[0].surface;
+
+  const std::vector<SelectionEntry> entries{{.surface = surface}};
+  const SceneBounds bounds = selection_bounds(mesh, entries);
+  ASSERT_TRUE(bounds.valid());
+  EXPECT_FLOAT_EQ(bounds.lo[0], 100.0F) << "the surface, not the road at the origin";
   EXPECT_FLOAT_EQ(bounds.hi[0], 108.0F);
 }
 

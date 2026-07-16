@@ -86,6 +86,14 @@ SceneBounds selection_bounds(const NetworkMesh& mesh, std::span<const SelectionE
       }
       continue;
     }
+    if (entry.surface.is_valid()) {
+      for (const SurfaceMesh& surface : mesh.surfaces) {
+        if (surface.surface == entry.surface) {
+          grow_positions(bounds, surface.mesh.positions);
+        }
+      }
+      continue;
+    }
     for (const RoadMesh& road : mesh.roads) {
       if (road.road != entry.road) {
         continue;

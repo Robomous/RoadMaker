@@ -9,6 +9,8 @@
 #include <QVBoxLayout>
 #include <array>
 #include <cmath>
+#include <cstddef>
+#include <cstdint>
 #include <utility>
 
 #include "tools/elevation_tool.hpp"
@@ -33,6 +35,31 @@ constexpr std::array<std::pair<RoadMarkType, const char*>, 3> kMarkChoices{{
     {RoadMarkType::Broken, "Broken"},
     {RoadMarkType::None, "None"},
 }};
+
+/// Total surface area [m²] of a triangle mesh: half the summed magnitude of each
+/// triangle's edge cross product. Read-only display for a ground surface (#215).
+double mesh_area(const SubMesh& mesh) {
+  double area = 0.0;
+  const auto pos = [&](std::uint32_t i, std::size_t axis) {
+    return mesh.positions[(static_cast<std::size_t>(i) * 3) + axis];
+  };
+  for (std::size_t i = 0; i + 2 < mesh.indices.size(); i += 3) {
+    const std::uint32_t a = mesh.indices[i];
+    const std::uint32_t b = mesh.indices[i + 1];
+    const std::uint32_t c = mesh.indices[i + 2];
+    const double e1x = pos(b, 0) - pos(a, 0);
+    const double e1y = pos(b, 1) - pos(a, 1);
+    const double e1z = pos(b, 2) - pos(a, 2);
+    const double e2x = pos(c, 0) - pos(a, 0);
+    const double e2y = pos(c, 1) - pos(a, 1);
+    const double e2z = pos(c, 2) - pos(a, 2);
+    const double cx = (e1y * e2z) - (e1z * e2y);
+    const double cy = (e1z * e2x) - (e1x * e2z);
+    const double cz = (e1x * e2y) - (e1y * e2x);
+    area += 0.5 * std::sqrt((cx * cx) + (cy * cy) + (cz * cz));
+  }
+  return area;
+}
 
 QString lane_type_name(LaneType type) {
   for (const auto& [value, name] : kTypeChoices) {
@@ -527,6 +554,23 @@ void PropertiesPanel::refresh() {
     name_row_->hide();
     lane_group_->hide();
     elevation_group_->hide();
+    // A selected ground surface (#215) has no road but is a real entity — show
+    // its read-only stats. It is auto-managed by the enclosing road loop, so
+    // there is nothing to edit here. Placed before the road fallback.
+    if (const Surface* surface = document_.network().surface(primary.surface)) {
+      placeholder_->hide();
+      add_row(tr("Type"), tr("Ground surface"));
+      double area = 0.0;
+      for (const SurfaceMesh& sm : document_.mesh().surfaces) {
+        if (sm.surface == primary.surface) {
+          area = mesh_area(sm.mesh);
+          break;
+        }
+      }
+      add_row(tr("Area"), tr("%1 m²").arg(area, 0, 'f', 1));
+      add_row(tr("Bounding roads"), QString::number(surface->bounding_roads.size()));
+      return;
+    }
     // A selected junction floor has no road but is a real entity — show its
     // topology instead of the empty placeholder (gate finding 4).
     if (const Junction* junction = document_.network().junction(primary.junction)) {

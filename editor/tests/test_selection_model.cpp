@@ -296,5 +296,75 @@ TEST(SelectionModel, SignalEntrySelectsClassifiesAndPrunesOnDelete) {
   EXPECT_TRUE(selection.empty());
 }
 
+/// A ~20 m square loop of four roads whose coincident endpoints enclose exactly
+/// one area. Pushing the loop through the Document runs derive_surfaces (from
+/// after_kernel_mutation on the topology change), so a Surface exists in the
+/// live network — returns its id.
+SurfaceId author_square_loop(Document& document) {
+  const auto seg = [&](double x0, double y0, double x1, double y1, const char* name) {
+    return edit::create_road({Waypoint{.x = x0, .y = y0}, Waypoint{.x = x1, .y = y1}},
+                             LaneProfile::two_lane_default(),
+                             name);
+  };
+  EXPECT_TRUE(document.push_command(seg(0.0, 0.0, 20.0, 0.0, "a")).has_value());
+  EXPECT_TRUE(document.push_command(seg(20.0, 0.0, 20.0, 20.0, "b")).has_value());
+  EXPECT_TRUE(document.push_command(seg(20.0, 20.0, 0.0, 20.0, "c")).has_value());
+  EXPECT_TRUE(document.push_command(seg(0.0, 20.0, 0.0, 0.0, "d")).has_value());
+  SurfaceId found;
+  document.network().for_each_surface([&](SurfaceId id, const Surface&) {
+    if (!found.is_valid()) {
+      found = id;
+    }
+  });
+  return found;
+}
+
+TEST(SelectionModel, SurfaceEntrySelectsAndClassifies) {
+  // #215: an enclosed-area ground surface pick lands as a surface entry —
+  // selectable, reported by selected_surfaces(), never mistaken for a junction
+  // or object.
+  Document document;
+  const SurfaceId surface = author_square_loop(document);
+  ASSERT_TRUE(surface.is_valid());
+  SelectionModel selection(document);
+
+  selection.select({.surface = surface});
+  ASSERT_EQ(selection.entries().size(), 1U);
+  EXPECT_EQ(selection.primary().surface, surface);
+  ASSERT_EQ(selection.selected_surfaces().size(), 1U);
+  EXPECT_EQ(selection.selected_surfaces().front(), surface);
+  EXPECT_TRUE(selection.selected_junctions().empty());
+  EXPECT_TRUE(selection.selected_objects().empty());
+  expect_invariants(selection);
+}
+
+TEST(SelectionModel, SelectedRoadsExcludesSurface) {
+  // The guard fix: a surface entry carries an INVALID road, so it must never
+  // feed a (nonexistent) road to the editing tools through selected_roads().
+  Document document;
+  const SurfaceId surface = author_square_loop(document);
+  ASSERT_TRUE(surface.is_valid());
+  SelectionModel selection(document);
+
+  selection.select({.surface = surface});
+  ASSERT_EQ(selection.entries().size(), 1U);
+  EXPECT_TRUE(selection.selected_roads().empty());
+}
+
+TEST(SelectionModel, StaleSurfaceEntryIsPrunedWhenItsLoopBreaks) {
+  // A surface entry is view state: undoing a bounding road opens the loop, so
+  // derive_surfaces erases the surface and topology_changed prunes the entry.
+  Document document;
+  const SurfaceId surface = author_square_loop(document);
+  ASSERT_TRUE(surface.is_valid());
+  SelectionModel selection(document);
+  selection.select({.surface = surface});
+  ASSERT_EQ(selection.entries().size(), 1U);
+
+  document.undo_stack()->undo(); // reverts road "d" — the loop opens
+  EXPECT_EQ(document.network().surface(surface), nullptr);
+  EXPECT_TRUE(selection.empty());
+}
+
 } // namespace
 } // namespace roadmaker::editor
