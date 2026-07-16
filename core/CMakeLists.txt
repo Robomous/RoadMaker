@@ -14,6 +14,7 @@ add_library(roadmaker_core ${_rm_core_type}
   src/geometry/road_intersection.cpp
   src/road/network.cpp
   src/road/authoring.cpp
+  src/road/surface_derivation.cpp
   src/edit/edit_stack.cpp
   src/edit/connection.cpp
   src/edit/markings.cpp
