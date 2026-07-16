@@ -28,6 +28,7 @@ add_executable(roadmaker_core_tests
   test_lane_span.cpp
   test_surface_derivation.cpp
   test_surface_mesh.cpp
+  test_surface_roundtrip.cpp
   test_assembly.cpp
   test_translate_road.cpp
   test_rotate_road.cpp

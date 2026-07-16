@@ -76,6 +76,7 @@ public:
       parse_junction(junction_node);
     }
     resolve_references();
+    parse_surfaces(root);
     warn_unsupported_root_children(root);
 
     return std::move(result_);
@@ -1019,6 +1020,43 @@ private:
     }
   }
 
+  /// Root-level <userData code="rm:surface"> ("roadOdrId;…"): a derived ground
+  /// surface, reconstructed from its bounding-road ids. Roads parse before this
+  /// pass so the ids resolve. Geometry is re-derived from the roads, not stored.
+  /// A malformed value or fewer than 3 valid roads drops the surface (it cannot
+  /// enclose an area anyway), mirroring the writer's guard.
+  void parse_surfaces(const pugi::xml_node& root) {
+    for (const pugi::xml_node node : root.children("userData")) {
+      const std::string code = node.attribute("code").value();
+      if (code != "rm:surface") {
+        continue;
+      }
+      std::vector<RoadId> roads;
+      bool malformed = false;
+      const std::string value = node.attribute("value").value();
+      for (std::size_t begin = 0; begin <= value.size();) {
+        std::size_t end = value.find(';', begin);
+        if (end == std::string::npos) {
+          end = value.size();
+        }
+        const std::string_view entry = std::string_view(value).substr(begin, end - begin);
+        const RoadId road_id = network().find_road(std::string(entry));
+        if (!road_id.is_valid()) {
+          malformed = true;
+          break;
+        }
+        roads.push_back(road_id);
+        begin = end + 1;
+      }
+      if (malformed || roads.size() < 3) {
+        diag(Severity::Warning, "OpenDRIVE", "malformed rm:surface userData ignored");
+        continue;
+      }
+      network().create_surface(
+          Surface{.source = BoundarySource::Derived, .bounding_roads = std::move(roads)});
+    }
+  }
+
   // --- pass 2: reference resolution ---------------------------------------
 
   struct PendingLink {
@@ -1114,7 +1152,9 @@ private:
   void warn_unsupported_root_children(const pugi::xml_node& root) {
     for (const pugi::xml_node child : root.children()) {
       const std::string_view name = child.name();
-      if (name != "header" && name != "road" && name != "junction") {
+      // Root <userData> carries RoadMaker extensions (rm:surface); it is parsed
+      // by parse_surfaces, not unsupported.
+      if (name != "header" && name != "road" && name != "junction" && name != "userData") {
         warn_unsupported(std::string(name), "OpenDRIVE");
       }
     }
