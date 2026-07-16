@@ -3372,22 +3372,22 @@ insert_lane(const RoadNetwork& network, LaneSectionId section_id, int at_odr_id,
     target.lane(lane_id)->widths = {Poly3{.a = 3.5}};
     created.lanes.emplace_back(lane_id, Lane{});
     // 3. Remap every link that named a shifted lane by id.
-    const Road& road = *target.road(road_id);
-    const auto here = std::ranges::find(road.sections, section_id);
+    const Road& owner = *target.road(road_id);
+    const auto pos = std::ranges::find(owner.sections, section_id);
     const auto remap_neighbor = [&](LaneSectionId neighbor_id, bool forward) {
       for (const LaneId neighbor_lane_id : target.lane_section(neighbor_id)->lanes) {
-        Lane& lane = *target.lane(neighbor_lane_id);
-        std::optional<int>& link = forward ? lane.successor : lane.predecessor;
+        Lane& neighbor = *target.lane(neighbor_lane_id);
+        std::optional<int>& link = forward ? neighbor.successor : neighbor.predecessor;
         if (link.has_value()) {
           *link = shift(*link);
         }
       }
     };
-    if (here != road.sections.begin()) {
-      remap_neighbor(*std::prev(here), /*forward=*/true);
+    if (pos != owner.sections.begin()) {
+      remap_neighbor(*std::prev(pos), /*forward=*/true);
     }
-    if (here != road.sections.end() && std::next(here) != road.sections.end()) {
-      remap_neighbor(*std::next(here), /*forward=*/false);
+    if (pos != owner.sections.end() && std::next(pos) != owner.sections.end()) {
+      remap_neighbor(*std::next(pos), /*forward=*/false);
     }
     for (const JunctionId junction_id : touched_junctions) {
       for (JunctionConnection& connection : target.junction(junction_id)->connections) {
