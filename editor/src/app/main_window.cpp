@@ -272,11 +272,22 @@ MainWindow::MainWindow(QWidget* parent, bool restore_saved_layout)
             tool_manager_.set_active(ToolId::EditNodes);
             edit_nodes_ptr->adopt_node(road, index);
           });
-  auto lane_profile_tool = std::make_unique<LaneProfileTool>(selection_);
+  auto lane_profile_tool = std::make_unique<LaneProfileTool>(document_, selection_);
   wire_status(lane_profile_tool.get());
   tool_manager_.register_tool(ToolId::LaneProfile, std::move(lane_profile_tool));
   connect(actions_->tool_lane_profile, &QAction::triggered, this, [this] {
     tool_manager_.set_active(ToolId::LaneProfile);
+    // Surface the 2D Editor pane so the Lane Width tab is reachable when the
+    // lane workflow starts (mirrors the Elevation tool; discoverability rule).
+    editor2d_dock_->show();
+    editor2d_dock_->raise();
+    editor2d_host_->raise_relevant_page();
+  });
+  // ⇧L: jump straight to the Lane Width tab (whatever tool is active).
+  connect(actions_->lane_width_editor, &QAction::triggered, this, [this] {
+    editor2d_dock_->show();
+    editor2d_dock_->raise();
+    editor2d_host_->show_page(tr("Lane Width"));
   });
   auto elevation_tool = std::make_unique<ElevationTool>(document_, selection_);
   elevation_tool_ = elevation_tool.get();
@@ -433,6 +444,8 @@ void MainWindow::build_docks() {
   editor2d_host_ = new Editor2DHost(selection_, editor2d_dock_);
   editor2d_host_->register_page(
       std::make_unique<ProfileEditorPage>(document_, selection_, editor2d_host_));
+  editor2d_host_->register_page(
+      std::make_unique<WidthEditorPage>(document_, selection_, editor2d_host_));
   editor2d_dock_->setWidget(editor2d_host_);
   addDockWidget(Qt::BottomDockWidgetArea, editor2d_dock_);
   editor2d_dock_->hide(); // opt-in via the View menu — 2D editing is occasional
@@ -547,6 +560,7 @@ void MainWindow::build_toolbar() {
   toolbar->addAction(actions_->tool_create_junction);
   toolbar->addAction(actions_->tool_split);
   toolbar->addAction(actions_->tool_delete);
+  toolbar->addAction(actions_->lane_width_editor);
   toolbar->addSeparator();
   toolbar->addAction(actions_->merge_roads);
   toolbar->addAction(actions_->add_from_library);

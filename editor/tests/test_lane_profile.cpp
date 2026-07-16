@@ -4,6 +4,7 @@
 // into the SelectionModel. Headless: widget signals are invoked directly.
 
 #include "roadmaker/edit/operations.hpp"
+#include "roadmaker/geometry/poly3.hpp"
 #include "roadmaker/road/authoring.hpp"
 #include "roadmaker/road/lane.hpp"
 #include "roadmaker/xodr/writer.hpp"
@@ -12,6 +13,7 @@
 
 #include <QComboBox>
 #include <QDoubleSpinBox>
+#include <QGroupBox>
 #include <QPushButton>
 #include <QSignalSpy>
 #include <stdexcept>
@@ -20,6 +22,7 @@
 #include "document/document.hpp"
 #include "document/selection_model.hpp"
 #include "panels/properties_panel.hpp"
+#include "panels/scrub_label.hpp"
 #include "tools/lane_profile_tool.hpp"
 
 using roadmaker::Lane;
@@ -255,9 +258,77 @@ TEST(LaneProfilePanel, RoadLevelSelectionOffersAddAndPerSideRemove) {
   EXPECT_EQ(scene.document.undo_stack()->count(), scene.base_count + 1);
 }
 
+TEST(LaneProfilePanel, WidthSpinDisabledOnTaperedLane) {
+  Scene scene;
+  // Author a width that varies along s on lane -1 (a taper) — set_lane_width
+  // refuses it, so the constant-width spin must disable itself.
+  ASSERT_TRUE(scene.document
+                  .push_command(roadmaker::edit::set_lane_width_profile(
+                      scene.document.network(),
+                      scene.lane(-1),
+                      {roadmaker::Poly3{.s = 0.0, .a = 3.0, .b = 0.02}}))
+                  .has_value());
+  scene.select_lane(-1);
+
+  auto* spin = scene.editor<QDoubleSpinBox>("lane_width_spin");
+  auto* scrub = scene.editor<roadmaker::editor::ScrubLabel>("lane_width_scrub");
+  EXPECT_FALSE(spin->isEnabled()) << "a tapered lane's width is edited in the 2D Editor";
+  EXPECT_FALSE(scrub->isEnabled());
+  EXPECT_TRUE(spin->toolTip().contains(QStringLiteral("varies")));
+  EXPECT_NEAR(spin->value(), 3.0, 1e-9); // shows widths.front().a
+
+  // editingFinished must push nothing (the guard fires before set_lane_width).
+  const int before = scene.document.undo_stack()->count();
+  spin->setValue(5.0);
+  emit spin->editingFinished();
+  EXPECT_EQ(scene.document.undo_stack()->count(), before);
+
+  // The scrub's baseline is nullopt on a tapered lane, so a drag is inert: no
+  // preview session opens and nothing lands on the stack.
+  emit scrub->scrub_started();
+  emit scrub->scrub_moved(40.0);
+  EXPECT_FALSE(scene.document.preview_active());
+  EXPECT_EQ(scene.document.undo_stack()->count(), before);
+  // The taper is untouched.
+  EXPECT_NEAR(scene.document.network().lane(scene.lane(-1))->widths.front().b, 0.02, 1e-12);
+}
+
+TEST(LaneProfilePanel, WidthSpinEditsConstantLaneAndSkipsUnchanged) {
+  Scene scene;
+  scene.select_lane(-1);
+  auto* spin = scene.editor<QDoubleSpinBox>("lane_width_spin");
+  ASSERT_TRUE(spin->isEnabled());
+  EXPECT_TRUE(spin->toolTip().isEmpty());
+
+  const int before = scene.document.undo_stack()->count();
+  spin->setValue(4.0);
+  emit spin->editingFinished();
+  EXPECT_EQ(scene.document.undo_stack()->count(), before + 1);
+  EXPECT_NEAR(scene.document.network().lane(scene.lane(-1))->widths.front().a, 4.0, 1e-12);
+
+  // Unchanged value skips the push (the re-entrancy guard).
+  emit spin->editingFinished();
+  EXPECT_EQ(scene.document.undo_stack()->count(), before + 1);
+}
+
+TEST(LaneProfilePanel, LaneEditorsDisabledWithoutPrimaryLane) {
+  Scene scene;
+  // A road selected but no lane: the group stays visible and its road-level
+  // Add/Remove buttons keep working; the per-lane editors disable.
+  scene.selection.select({.road = scene.road, .lane = LaneId{}});
+  EXPECT_TRUE(scene.panel.findChild<QGroupBox*>() != nullptr);
+  EXPECT_TRUE(scene.editor<QPushButton>("add_left_lane_button")->isEnabled());
+  EXPECT_TRUE(scene.editor<QPushButton>("add_right_lane_button")->isEnabled());
+  EXPECT_TRUE(scene.editor<QPushButton>("remove_right_lane_button")->isEnabled());
+  EXPECT_FALSE(scene.editor<QComboBox>("lane_type_combo")->isEnabled());
+  EXPECT_FALSE(scene.editor<QDoubleSpinBox>("lane_width_spin")->isEnabled());
+  EXPECT_FALSE(scene.editor<QComboBox>("road_mark_combo")->isEnabled());
+  EXPECT_FALSE(scene.editor<QDoubleSpinBox>("road_mark_width_spin")->isEnabled());
+}
+
 TEST(LaneProfileTool, ClickSelectsThePickedLaneAndEmptySpaceClears) {
   Scene scene;
-  LaneProfileTool tool(scene.selection);
+  LaneProfileTool tool(scene.document, scene.selection);
   tool.activate();
 
   ToolEvent click;
@@ -275,4 +346,50 @@ TEST(LaneProfileTool, ClickSelectsThePickedLaneAndEmptySpaceClears) {
   ToolEvent right_button;
   right_button.buttons = Qt::RightButton;
   EXPECT_FALSE(tool.mouse_press(right_button)); // camera keeps RMB
+}
+
+TEST(LaneProfileTool, DeleteKeyRemovesTheOutermostSelectedLane) {
+  Scene scene;
+  LaneProfileTool tool(scene.document, scene.selection);
+  tool.activate();
+  // -2 is the outermost right lane (the shoulder) — removable.
+  scene.select_lane(-2);
+  const int before = scene.document.undo_stack()->count();
+
+  ASSERT_TRUE(tool.key_press(Qt::Key_Delete, Qt::NoModifier));
+  EXPECT_EQ(scene.document.undo_stack()->count(), before + 1);
+  // The shoulder is gone; the driving lane remains.
+  const auto& section = *scene.document.network().lane_section(
+      scene.document.network().road(scene.road)->sections[0]);
+  for (const LaneId id : section.lanes) {
+    EXPECT_NE(scene.document.network().lane(id)->odr_id, -2);
+  }
+}
+
+TEST(LaneProfileTool, DeleteOnACenterOrInteriorLaneEmitsStatusAndPushesNothing) {
+  Scene scene;
+  LaneProfileTool tool(scene.document, scene.selection);
+  tool.activate();
+  QSignalSpy spy(&tool, &roadmaker::editor::Tool::status_message);
+
+  // The center lane cannot be removed.
+  scene.select_lane(0);
+  const int before = scene.document.undo_stack()->count();
+  ASSERT_TRUE(tool.key_press(Qt::Key_Delete, Qt::NoModifier)); // consumed
+  EXPECT_EQ(scene.document.undo_stack()->count(), before) << "no command pushed";
+  EXPECT_EQ(spy.count(), 1) << "the gesture explains why it did nothing";
+
+  // An interior (non-outermost) lane: -1 with -2 further out.
+  scene.select_lane(-1);
+  ASSERT_TRUE(tool.key_press(Qt::Key_Backspace, Qt::NoModifier));
+  EXPECT_EQ(scene.document.undo_stack()->count(), before) << "still nothing pushed";
+  EXPECT_EQ(spy.count(), 2);
+}
+
+TEST(LaneProfileTool, InstructionMentionsDeleteAndWidth) {
+  Scene scene;
+  LaneProfileTool tool(scene.document, scene.selection);
+  const QString instruction = tool.instruction();
+  EXPECT_TRUE(instruction.contains(QStringLiteral("Delete"), Qt::CaseInsensitive));
+  EXPECT_TRUE(instruction.contains(QStringLiteral("Width"), Qt::CaseInsensitive));
 }

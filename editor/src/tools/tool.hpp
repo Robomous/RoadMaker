@@ -33,6 +33,10 @@ struct ToolEvent {
   double world_x = 0.0;
   double world_y = 0.0;
   std::optional<PickHit> pick;
+  // Road-relative station of the cursor, present only when `pick` names a valid
+  // road (the cursor is over a road body). The Lane Width page's
+  // split-at-cursor consumes it; a click on empty space leaves it unset.
+  std::optional<StationCoord> station;
   Qt::MouseButtons buttons = Qt::NoButton;
   Qt::KeyboardModifiers modifiers = Qt::NoModifier;
 };

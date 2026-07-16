@@ -42,11 +42,12 @@ conventions below.
 | Move tool | `M` |  |
 | Create Road tool | `C` |  |
 | Edit Nodes tool | `N` |  |
-| Lane Profile tool | `L` |  |
+| Lane tool | `L` |  |
 | Elevation tool | `E` |  |
 | Create Junction tool | `J` |  |
 | Split tool | `K` |  |
 | Delete tool | `X` |  |
+| Lane Width editor (2D) | `Shift+L` |  |
 
 ## View
 

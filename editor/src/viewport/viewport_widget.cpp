@@ -1289,6 +1289,13 @@ ToolEvent ViewportWidget::make_tool_event(const QMouseEvent* event) const {
     tool_event.world_y = (*ground)[1];
   }
   tool_event.pick = pick(document_.mesh(), road_aabbs_, ray);
+  // Station of the cursor along the picked road's reference line — only when a
+  // road was hit (a lane/road body); empty-space clicks carry no station.
+  if (tool_event.pick.has_value()) {
+    if (const Road* road = document_.network().road(tool_event.pick->road)) {
+      tool_event.station = find_station(road->plan_view, tool_event.world_x, tool_event.world_y);
+    }
+  }
   tool_event.buttons = event->buttons(); // press events include their button
   tool_event.modifiers = event->modifiers();
   return tool_event;

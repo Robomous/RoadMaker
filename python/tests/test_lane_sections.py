@@ -182,6 +182,29 @@ def test_split_survives_an_xodr_round_trip(network):
     assert rm.write_xodr(back) == text
 
 
+def test_width_profile_survives_an_xodr_round_trip(network):
+    """A taper authored with set_lane_width_profile writes and re-reads intact."""
+    road = network.find_road("1")
+    section = network.road(road).sections[0]
+    lane = lane_by_odr_id(network, section, -1)
+    stack = rm.edit.EditStack()
+    records = [rm.Poly3(s=0.0, a=3.0, b=0.02), rm.Poly3(s=60.0, a=4.2)]
+    stack.push(network, rm.edit.set_lane_width_profile(network, lane, records))
+
+    text = rm.write_xodr(network)
+    back, diagnostics = rm.parse_xodr(text)
+    assert not [d for d in diagnostics if d.severity == rm.Severity.ERROR]
+    assert rm.write_xodr(back) == text
+
+    back_lane = lane_by_odr_id(back, back.road(back.find_road("1")).sections[0], -1)
+    widths = back.lane(back_lane).widths
+    assert len(widths) == len(records)
+    for got, want in zip(widths, records):
+        assert got.s == pytest.approx(want.s)
+        assert got.a == pytest.approx(want.a)
+        assert got.b == pytest.approx(want.b)
+
+
 def odr_ids(net, section):
     return sorted(net.lane(lane_id).odr_id for lane_id in net.lane_section(section).lanes)
 

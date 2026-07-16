@@ -15,6 +15,7 @@
 #include <vector>
 
 #include "panels/profile_panel.hpp"
+#include "panels/width_panel.hpp"
 
 namespace roadmaker::editor {
 
@@ -64,6 +65,25 @@ private:
   ProfilePanel* panel_;
 };
 
+/// Hosts a WidthPanel — the per-lane width-along-s editor (p2-s4). Like the
+/// profile page, the panel keeps its own selection subscription; this adapter
+/// only supplies the tab label and relevance.
+class WidthEditorPage : public Editor2DPage {
+public:
+  WidthEditorPage(Document& document, SelectionModel& selection, QWidget* parent = nullptr);
+
+  [[nodiscard]] QString title() const override;
+  [[nodiscard]] QWidget* widget() override;
+
+  /// Relevant whenever a lane is selected — the panel edits w(s) of a lane.
+  [[nodiscard]] bool relevant(const SelectionModel& selection) const override;
+
+  [[nodiscard]] WidthPanel* panel() { return panel_; }
+
+private:
+  WidthPanel* panel_;
+};
+
 /// Tabbed container for Editor2DPages.
 class Editor2DHost : public QWidget {
   Q_OBJECT
@@ -83,6 +103,11 @@ public:
   /// no-op when the current tab is already relevant — switching tabs out from
   /// under someone mid-edit would be worse than showing a stale one.
   void raise_relevant_page();
+
+  /// Raises the page whose title() equals `title`, if any (the dedicated
+  /// shortcut path — e.g. ⇧L jumps straight to Lane Width). Returns whether a
+  /// matching tab was found.
+  bool show_page(const QString& title);
 
 private:
   const SelectionModel& selection_;

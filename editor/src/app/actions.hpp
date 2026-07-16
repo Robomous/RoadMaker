@@ -48,6 +48,10 @@ public:
   QAction* tool_split = nullptr;
   QAction* tool_delete = nullptr;
 
+  /// Not a tool: raises the 2D Editor's Lane Width tab for the selected lane
+  /// (⇧L). Standalone so it works from any active tool.
+  QAction* lane_width_editor = nullptr;
+
   /// Create Road cross-section templates (exclusive, one always checked);
   /// the toolbar presents them as a dropdown next to the tool button.
   QActionGroup* template_group = nullptr;

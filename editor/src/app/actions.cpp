@@ -80,12 +80,12 @@ Actions::Actions(QUndoStack& undo_stack, QObject* parent) : QObject(parent) {
                                  "marker to insert, Delete removes the active node (N)"));
   tool_group->addAction(tool_edit_nodes);
 
-  tool_lane_profile = new QAction(tr("&Lane Profile"), this);
+  tool_lane_profile = new QAction(tr("&Lane"), this);
   tool_lane_profile->setCheckable(true);
   tool_lane_profile->setShortcuts(shortcuts::sequences(shortcuts::Id::ToolLaneProfile));
   tool_lane_profile->setIconText(tr("Lanes"));
-  tool_lane_profile->setToolTip(tr("Lane Profile — click a lane, then edit its type, width, and "
-                                   "road mark in the Properties panel (L)"));
+  tool_lane_profile->setToolTip(tr("Lane — click a lane to select it; Delete removes it. Edit "
+                                   "type in Properties, width along s in the 2D Editor (L)"));
   tool_group->addAction(tool_lane_profile);
 
   tool_elevation = new QAction(tr("&Elevation"), this);
@@ -117,6 +117,14 @@ Actions::Actions(QUndoStack& undo_stack, QObject* parent) : QObject(parent) {
   tool_delete->setIconText(tr("Delete"));
   tool_delete->setToolTip(tr("Delete — click a road to delete it, undo restores (X)"));
   tool_group->addAction(tool_delete);
+
+  // Not a tool — a command that surfaces the 2D Editor's Lane Width tab for the
+  // selected lane. Standalone so ⇧L works whatever tool is active.
+  lane_width_editor = new QAction(tr("Lane &Width Editor"), this);
+  lane_width_editor->setShortcuts(shortcuts::sequences(shortcuts::Id::LaneWidthEditor));
+  lane_width_editor->setIconText(tr("Width"));
+  lane_width_editor->setToolTip(tr("Open the 2D Editor's Lane Width tab for the selected "
+                                   "lane — drag the width curve along s (⇧L)"));
 
   // Road templates for the Create Road tool (02_editing_tools.md §2):
   // exclusive and always checked; the toolbar shows them as a dropdown.
@@ -223,6 +231,7 @@ void Actions::apply_icons() {
   tool_create_road->setIcon(Icons::get(QStringLiteral("clothoid-road")));
   tool_edit_nodes->setIcon(Icons::get(QStringLiteral("waypoints")));
   tool_lane_profile->setIcon(Icons::get(QStringLiteral("lane-section")));
+  lane_width_editor->setIcon(Icons::get(QStringLiteral("lane-section")));
   tool_elevation->setIcon(Icons::get(QStringLiteral("mountain")));
   tool_create_junction->setIcon(Icons::get(QStringLiteral("junction-connect")));
   tool_split->setIcon(Icons::get(QStringLiteral("scissors")));
