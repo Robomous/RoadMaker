@@ -1502,6 +1502,28 @@ NB_MODULE(_roadmaker, m) {
            "Splits the lane section covering s in two, duplicating the cross section "
            "and partitioning each lane's width profile and road marks at the cut. "
            "Idempotent where a section already starts.");
+  edit.def("add_lane_span",
+           &roadmaker::edit::add_lane_span,
+           "network"_a,
+           "road"_a,
+           "side"_a,
+           "s0"_a,
+           "s1"_a,
+           "type"_a,
+           "Lane Add: a self-contained pocket lane on `side` (+1 left, -1 right) that "
+           "tapers 0 -> full -> 0 within [s0, s1]. The span is clamped inside the road so "
+           "the pocket stays interior and needs no cross-section links; one undo step.");
+  edit.def("form_lane",
+           &roadmaker::edit::form_lane,
+           "network"_a,
+           "road"_a,
+           "side"_a,
+           "s_start"_a,
+           "at_odr_id"_a,
+           "type"_a,
+           "Lane Form: an interior lane that starts at zero width at s_start and holds full "
+           "width to the road end, taking numbering position at_odr_id (sign must match side). "
+           "Backward-unlinked; refuses if s_start is not in the road's final lane section.");
   edit.def("set_road_mark",
            &roadmaker::edit::set_road_mark,
            "network"_a,

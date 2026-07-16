@@ -38,6 +38,8 @@ enum class Id {
   ToolCreateJunction,
   ToolSplit,
   ToolDelete,
+  ToolLaneAdd,
+  ToolLaneForm,
   LaneWidthEditor,
   // View
   FrameSelection,

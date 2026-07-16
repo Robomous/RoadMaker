@@ -72,6 +72,8 @@ void SoakDriver::step(int index) {
       {1, &SoakDriver::op_tee_commit, "tee_commit"},
       {1, &SoakDriver::op_remove_lane, "remove_lane"},
       {2, &SoakDriver::op_insert_lane, "insert_lane"},
+      {2, &SoakDriver::op_lane_add_span, "lane_add_span"},
+      {2, &SoakDriver::op_lane_form, "lane_form"},
       {1, &SoakDriver::op_overpass, "overpass"},
       {1, &SoakDriver::op_delete_crossing_road, "delete_crossing_road"},
       {1, &SoakDriver::op_delete_junction, "delete_junction"},
@@ -798,6 +800,59 @@ void SoakDriver::op_insert_lane() {
   }
   const LaneType type = chance(0.5) ? LaneType::Driving : LaneType::Shoulder;
   push(edit::insert_lane(document_.network(), section_id, lane->odr_id, type));
+}
+
+/// Lane Add: a pocket lane over a random span. Deliberately does not clamp the
+/// span itself — the kernel clamps inward, and a degenerate span is refused and
+/// recorded (never fatal), matching op_split_lane_section.
+void SoakDriver::op_lane_add_span() {
+  const std::vector<RoadId> roads = live_roads(/*editable_only=*/true);
+  if (roads.empty()) {
+    return;
+  }
+  const RoadId road_id = roads[static_cast<std::size_t>(rand_int(0, int(roads.size()) - 1))];
+  const Road* road = document_.network().road(road_id);
+  if (road == nullptr || road->length <= 0.0) {
+    return;
+  }
+  const double a = rand_range(-1.0, road->length + 1.0);
+  const double b = rand_range(-1.0, road->length + 1.0);
+  const int side = chance(0.5) ? 1 : -1;
+  push(edit::add_lane_span(
+      document_.network(), road_id, side, std::min(a, b), std::max(a, b), LaneType::Driving));
+}
+
+/// Lane Form: an interior lane from a random station to the road end. Picks an
+/// existing lane's numbering position so the sign matches; the kernel refuses a
+/// station that is not in the final section (recorded, not fatal).
+void SoakDriver::op_lane_form() {
+  const std::vector<RoadId> roads = live_roads(/*editable_only=*/true);
+  if (roads.empty()) {
+    return;
+  }
+  const RoadId road_id = roads[static_cast<std::size_t>(rand_int(0, int(roads.size()) - 1))];
+  const Road* road = document_.network().road(road_id);
+  if (road == nullptr || road->sections.empty() || road->length <= 0.0) {
+    return;
+  }
+  const LaneSectionId last = road->sections.back();
+  const LaneSection* section = document_.network().lane_section(last);
+  if (section == nullptr || section->lanes.empty()) {
+    return;
+  }
+  const LaneId at =
+      section->lanes[static_cast<std::size_t>(rand_int(0, int(section->lanes.size()) - 1))];
+  const Lane* lane = document_.network().lane(at);
+  if (lane == nullptr || lane->odr_id == 0) {
+    return; // the centre lane has no side; try again next step
+  }
+  const int side = lane->odr_id > 0 ? 1 : -1;
+  push(edit::form_lane(document_.network(),
+                       road_id,
+                       side,
+                       rand_range(-1.0, road->length + 1.0),
+                       lane->odr_id,
+                       LaneType::Driving));
 }
 
 void SoakDriver::op_overpass() {

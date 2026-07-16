@@ -44,6 +44,8 @@
 #include "tools/delete_tool.hpp"
 #include "tools/edit_nodes_tool.hpp"
 #include "tools/elevation_tool.hpp"
+#include "tools/lane_add_tool.hpp"
+#include "tools/lane_form_tool.hpp"
 #include "tools/lane_profile_tool.hpp"
 #include "tools/select_tool.hpp"
 #include "tools/split_tool.hpp"
@@ -332,6 +334,18 @@ MainWindow::MainWindow(QWidget* parent, bool restore_saved_layout)
   connect(actions_->tool_delete, &QAction::triggered, this, [this] {
     tool_manager_.set_active(ToolId::Delete);
   });
+  auto lane_add_tool = std::make_unique<LaneAddTool>(document_, selection_);
+  wire_status(lane_add_tool.get());
+  tool_manager_.register_tool(ToolId::LaneAdd, std::move(lane_add_tool));
+  connect(actions_->tool_lane_add, &QAction::triggered, this, [this] {
+    tool_manager_.set_active(ToolId::LaneAdd);
+  });
+  auto lane_form_tool = std::make_unique<LaneFormTool>(document_, selection_);
+  wire_status(lane_form_tool.get());
+  tool_manager_.register_tool(ToolId::LaneForm, std::move(lane_form_tool));
+  connect(actions_->tool_lane_form, &QAction::triggered, this, [this] {
+    tool_manager_.set_active(ToolId::LaneForm);
+  });
   tool_manager_.set_active(ToolId::Select);
 
   // Merge Roads: enabled only for exactly two selected roads mergeable in some
@@ -566,6 +580,8 @@ void MainWindow::build_toolbar() {
   toolbar->addAction(actions_->tool_create_road);
   toolbar->addAction(actions_->tool_edit_nodes);
   toolbar->addAction(actions_->tool_lane_profile);
+  toolbar->addAction(actions_->tool_lane_add);
+  toolbar->addAction(actions_->tool_lane_form);
   toolbar->addAction(actions_->tool_elevation);
   toolbar->addAction(actions_->tool_create_junction);
   toolbar->addAction(actions_->tool_split);
@@ -703,6 +719,8 @@ void MainWindow::activate_tool_for_capture(const QString& tool_id) {
       {QStringLiteral("create-junction"), ToolId::CreateJunction},
       {QStringLiteral("split"), ToolId::Split},
       {QStringLiteral("delete"), ToolId::Delete},
+      {QStringLiteral("lane-add"), ToolId::LaneAdd},
+      {QStringLiteral("lane-form"), ToolId::LaneForm},
   };
   if (const auto found = kTools.find(tool_id); found != kTools.end()) {
     tool_manager_.set_active(found->second);

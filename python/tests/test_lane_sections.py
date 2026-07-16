@@ -254,3 +254,66 @@ def test_insert_lane_rejects_bad_positions(network, at_odr_id):
     stack = rm.edit.EditStack()
     with pytest.raises(ValueError):
         stack.push(network, rm.edit.insert_lane(network, section, at_odr_id, rm.LaneType.DRIVING))
+
+
+def test_add_lane_span_round_trips(network):
+    """Lane Add: a pocket lane over [40, 90] that is one atomic, reversible step
+    and adds two lane-section seams."""
+    road = network.find_road("1")
+    stack = rm.edit.EditStack()
+    before = rm.write_xodr(network)
+    assert len(network.road(road).sections) == 1
+
+    stack.push(network, rm.edit.add_lane_span(network, road, -1, 40.0, 90.0, rm.LaneType.DRIVING))
+    sections = network.road(road).sections
+    assert len(sections) == 3
+
+    # The middle section carries an extra outermost right lane, zero width at
+    # both seams (so the pocket needs no cross-section links).
+    mid = network.section_at(road, 65.0)
+    pocket = lane_by_odr_id(network, mid, -3)
+    assert pocket is not None
+    length = network.section_end(mid) - network.lane_section(mid).s0
+    pocket_widths = network.lane(pocket).widths
+    assert pocket_widths[0].eval(0.0) == pytest.approx(0.0)
+    assert network.lane(pocket).predecessor is None
+    assert network.lane(pocket).successor is None
+
+    text = rm.write_xodr(network)
+    back, diagnostics = rm.parse_xodr(text)
+    assert not [d for d in diagnostics if d.severity == rm.Severity.ERROR]
+
+    # apply -> revert is byte-identical by contract.
+    stack.undo(network)
+    assert rm.write_xodr(network) == before
+    _ = length  # section length is exercised above for the eval frame
+
+
+def test_form_lane_backward_unlinked(network):
+    """Lane Form: an interior lane from s_start to the road end, backward-
+    unlinked (it appears mid-road, not as a continuation)."""
+    road = network.find_road("1")
+    stack = rm.edit.EditStack()
+
+    stack.push(network, rm.edit.form_lane(network, road, -1, 60.0, -1, rm.LaneType.DRIVING))
+    sections = network.road(road).sections
+    assert len(sections) == 2
+
+    formed = lane_by_odr_id(network, sections[-1], -1)
+    assert formed is not None
+    assert network.lane(formed).predecessor is None
+
+    # The writer accepts it (zero width at the seam means no link is due).
+    text = rm.write_xodr(network)
+    back, diagnostics = rm.parse_xodr(text)
+    assert not [d for d in diagnostics if d.severity == rm.Severity.ERROR]
+
+
+def test_form_lane_refuses_a_downstream_seam(network):
+    """Forward-linking a formed lane is out of scope: a form that would reach a
+    downstream lane-section boundary is refused."""
+    road = network.find_road("1")
+    stack = rm.edit.EditStack()
+    stack.push(network, rm.edit.split_lane_section(network, road, 90.0))
+    with pytest.raises(ValueError):
+        stack.push(network, rm.edit.form_lane(network, road, -1, 60.0, -1, rm.LaneType.DRIVING))

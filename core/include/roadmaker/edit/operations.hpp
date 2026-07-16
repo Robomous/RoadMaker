@@ -457,6 +457,41 @@ set_lane_width_profile(const RoadNetwork& network, LaneId lane, std::vector<Poly
 [[nodiscard]] RM_API std::unique_ptr<Command>
 split_lane_section(const RoadNetwork& network, RoadId road, double s);
 
+/// Lane Add (p2-s5): adds a self-contained POCKET lane that tapers 0 -> full
+/// -> 0 within the station span [s0, s1] on `side` (+1 left, -1 right). The
+/// span is clamped inward to [0.5, length-0.5] so both seams stay strictly
+/// interior — the pocket therefore needs NO cross-section links (it is zero
+/// width at both section boundaries) and is a single undo step.
+///
+/// Composes the p2-s1 lane primitives: split_lane_section at each end
+/// (idempotent at an existing boundary), add_lane on the middle section, then
+/// set_lane_width_profile with the taper. The plateau width mirrors add_lane
+/// (the current outermost lane's width, else 3.5 m). Fails (invalid_command)
+/// for a stale road, a bad side, or a degenerate span (s0 >= s1).
+[[nodiscard]] RM_API std::unique_ptr<Command> add_lane_span(
+    const RoadNetwork& network, RoadId road, int side, double s0, double s1, LaneType type);
+
+/// Lane Form (p2-s5): forms an interior lane that starts at zero width at
+/// `s_start` and tapers up to full width, holding it to the road terminus.
+/// `side` is +1/-1 and `at_odr_id` (whose sign must match `side`) names the
+/// numbering position the formed lane takes — every lane already at or outside
+/// it steps one further out (insert_lane).
+///
+/// Composes split_lane_section at `s_start` then insert_lane on the LAST
+/// section then set_lane_width_profile with an up-only taper. The lane is
+/// backward-unlinked (it appears mid-road, a new lane — not a continuation).
+/// Forward-linking a formed lane into a downstream section is out of scope, so
+/// the op GUARDS: if `s_start` does not land in the road's final lane section
+/// it refuses (invalid_command) rather than leave a full-width lane dangling at
+/// a downstream seam. Also fails for a stale road, a bad side, an `s_start`
+/// outside the road, or a sign-mismatched `at_odr_id`.
+[[nodiscard]] RM_API std::unique_ptr<Command> form_lane(const RoadNetwork& network,
+                                                        RoadId road,
+                                                        int side,
+                                                        double s_start,
+                                                        int at_odr_id,
+                                                        LaneType type);
+
 /// Edits the FIRST of the lane's outer-boundary marking records; later
 /// records survive untouched (the M2 editor edits the sOffset-0 entry only)
 /// but the edit must keep ascending sOffset order

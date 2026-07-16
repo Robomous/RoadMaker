@@ -99,6 +99,8 @@ private:
   void op_tee_commit();
   void op_remove_lane();
   void op_insert_lane();
+  void op_lane_add_span();
+  void op_lane_form();
   void op_overpass();
   void op_delete_crossing_road();
   void op_delete_junction();
