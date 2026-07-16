@@ -239,6 +239,16 @@ MainWindow::MainWindow(QWidget* parent, bool restore_saved_layout)
   connect(actions_->tool_create_road, &QAction::triggered, this, [this] {
     tool_manager_.set_active(ToolId::CreateRoad);
   });
+  // Feed the single-road selection to Create Road so a first click on that
+  // road's END extends it (instead of authoring a new welded road).
+  connect(&selection_, &SelectionModel::selection_changed, this, [this] {
+    if (create_road_tool_ == nullptr) {
+      return;
+    }
+    const std::vector<RoadId> roads = selection_.selected_roads();
+    create_road_tool_->set_selected_road(roads.size() == 1 ? std::optional<RoadId>(roads.front())
+                                                           : std::nullopt);
+  });
   // Picking a template arms the Create Road tool with it and switches to
   // the tool — choosing a cross section IS the intent to draw one.
   const auto arm_template = [this](const LaneProfile& profile) {

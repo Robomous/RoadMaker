@@ -67,6 +67,9 @@ void SoakDriver::step(int index) {
       {1, &SoakDriver::op_duplicate_junction_attempt, "duplicate_junction_attempt"},
       {1, &SoakDriver::op_attach_t, "attach_t"},
       {1, &SoakDriver::op_assembly_drop_on_road, "assembly_drop_on_road"},
+      {1, &SoakDriver::op_extend_road, "extend_road"},
+      {1, &SoakDriver::op_cross_commit, "cross_commit"},
+      {1, &SoakDriver::op_tee_commit, "tee_commit"},
       {1, &SoakDriver::op_remove_lane, "remove_lane"},
       {2, &SoakDriver::op_insert_lane, "insert_lane"},
       {1, &SoakDriver::op_overpass, "overpass"},
@@ -658,6 +661,73 @@ void SoakDriver::op_assembly_drop_on_road() {
   } else {
     push(edit::assembly::cross_onto_road(document_.network(), target, s));
   }
+}
+
+void SoakDriver::op_extend_road() {
+  // Keep drawing off a road's END (Create Road extend). Refusals (a linked or
+  // unauthored end, a point behind) are data.
+  const std::vector<RoadId> roads = live_roads(/*editable_only=*/true);
+  if (roads.empty()) {
+    return;
+  }
+  const RoadId road_id = roads[static_cast<std::size_t>(rand_int(0, int(roads.size()) - 1))];
+  const Road* road = document_.network().road(road_id);
+  if (road == nullptr) {
+    return;
+  }
+  const PathPoint end = road->plan_view.evaluate(road->plan_view.length());
+  const double reach = rand_range(20.0, 80.0);
+  const double heading = end.hdg + rand_range(-0.5, 0.5); // mostly forward, some off-axis
+  const Waypoint to{.x = end.x + (reach * std::cos(heading)),
+                    .y = end.y + (reach * std::sin(heading))};
+  push(edit::extend_road(
+      document_.network(), RoadEnd{.road = road_id, .contact = ContactPoint::End}, to));
+}
+
+void SoakDriver::op_cross_commit() {
+  // Author a new road straight across a target's interior — the Create Road
+  // draw-across commit (create + cross_roads). Refusals are data.
+  const std::vector<RoadId> roads = live_roads(/*editable_only=*/true);
+  if (roads.empty()) {
+    return;
+  }
+  const RoadId target = roads[static_cast<std::size_t>(rand_int(0, int(roads.size()) - 1))];
+  const Road* road = document_.network().road(target);
+  if (road == nullptr || road->length < 40.0) {
+    return;
+  }
+  const double s = rand_range(15.0, road->length - 15.0);
+  const PathPoint pose = road->plan_view.evaluate(s);
+  const double perp = pose.hdg + (std::numbers::pi / 2.0);
+  const double reach = rand_range(30.0, 60.0);
+  std::vector<Waypoint> waypoints{
+      Waypoint{.x = pose.x - (reach * std::cos(perp)), .y = pose.y - (reach * std::sin(perp))},
+      Waypoint{.x = pose.x + (reach * std::cos(perp)), .y = pose.y + (reach * std::sin(perp))}};
+  push(edit::create_crossing_road(
+      document_.network(), std::move(waypoints), random_profile(), {}, target));
+}
+
+void SoakDriver::op_tee_commit() {
+  // Author a new stem onto a target's side — the Create Road side-snap commit
+  // (create + attach_t_junction). Refusals are data.
+  const std::vector<RoadId> roads = live_roads(/*editable_only=*/true);
+  if (roads.empty()) {
+    return;
+  }
+  const RoadId target = roads[static_cast<std::size_t>(rand_int(0, int(roads.size()) - 1))];
+  const Road* road = document_.network().road(target);
+  if (road == nullptr || road->length < 40.0) {
+    return;
+  }
+  const double s = rand_range(15.0, road->length - 15.0);
+  const PathPoint pose = road->plan_view.evaluate(s);
+  const double perp = pose.hdg + (std::numbers::pi / 2.0);
+  const double reach = rand_range(30.0, 60.0);
+  std::vector<Waypoint> stem{
+      Waypoint{.x = pose.x, .y = pose.y},
+      Waypoint{.x = pose.x + (reach * std::cos(perp)), .y = pose.y + (reach * std::sin(perp))}};
+  push(edit::create_teed_road(
+      document_.network(), std::move(stem), random_profile(), {}, target, s, ContactPoint::Start));
 }
 
 void SoakDriver::op_remove_lane() {

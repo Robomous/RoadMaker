@@ -35,6 +35,11 @@ public:
 
   void set_snap_options(edit::SnapOptions options) { snap_options_ = options; }
 
+  /// The single currently-selected road (nullopt when zero or several are
+  /// selected). Wired from the SelectionModel; a first click snapped onto this
+  /// road's END arms an extend-from-endpoint gesture instead of a new road.
+  void set_selected_road(std::optional<RoadId> road) { selected_road_ = road; }
+
   void activate() override;
   void deactivate() override;
 
@@ -61,7 +66,8 @@ private:
   struct PlacedPoint {
     Waypoint position;
     std::optional<double> heading;
-    std::optional<RoadId> snap_road; ///< source road when snapped to its end
+    std::optional<RoadId> snap_road;         ///< source road when snapped to its end
+    std::optional<edit::SideSnap> side_snap; ///< target road body when snapped to a side
   };
 
   [[nodiscard]] std::optional<edit::SnapResult> snap(const Waypoint& cursor) const;
@@ -81,6 +87,10 @@ private:
   std::vector<PlacedPoint> points_;
   std::optional<edit::SnapResult> hover_snap_;
   std::optional<Waypoint> cursor_;
+  std::optional<RoadId> selected_road_;
+  /// Set when the first placed point anchored on the selected road's END: the
+  /// session extends that road to the last point instead of authoring a new one.
+  std::optional<RoadEnd> extend_end_;
 };
 
 } // namespace roadmaker::editor

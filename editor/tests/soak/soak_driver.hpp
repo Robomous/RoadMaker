@@ -94,6 +94,9 @@ private:
   void op_duplicate_junction_attempt();
   void op_attach_t();
   void op_assembly_drop_on_road();
+  void op_extend_road();
+  void op_cross_commit();
+  void op_tee_commit();
   void op_remove_lane();
   void op_insert_lane();
   void op_overpass();
