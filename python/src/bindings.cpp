@@ -190,6 +190,18 @@ NB_MODULE(_roadmaker, m) {
 
   nb::class_<roadmaker::Poly3>(m, "Poly3")
       .def(nb::init<>())
+      .def(
+          "__init__",
+          [](roadmaker::Poly3* self, double s, double a, double b, double c, double d) {
+            new (self) roadmaker::Poly3{.s = s, .a = a, .b = b, .c = c, .d = d};
+          },
+          "s"_a = 0.0,
+          "a"_a = 0.0,
+          "b"_a = 0.0,
+          "c"_a = 0.0,
+          "d"_a = 0.0,
+          "value(ds) = a + b*ds + c*ds^2 + d*ds^3, ds = query - s. Whether `s` "
+          "is global or section-local depends on the owning profile.")
       .def_rw("s", &roadmaker::Poly3::s)
       .def_rw("a", &roadmaker::Poly3::a)
       .def_rw("b", &roadmaker::Poly3::b)
@@ -594,6 +606,24 @@ NB_MODULE(_roadmaker, m) {
            nb::rv_policy::reference_internal,
            "Road for id, or None if the id is stale. The reference is valid "
            "only until the network is mutated.")
+      .def(
+          "section_at",
+          [](const roadmaker::RoadNetwork& network, roadmaker::RoadId road, double s) {
+            return roadmaker::section_at(network, road, s);
+          },
+          "road"_a,
+          "s"_a,
+          "The LaneSectionId governing global station s: the last section "
+          "starting at or before it. Invalid id if the road is stale or has "
+          "no sections.")
+      .def(
+          "section_end",
+          [](const roadmaker::RoadNetwork& network, roadmaker::LaneSectionId section) {
+            return unwrap(roadmaker::section_end(network, section));
+          },
+          "section"_a,
+          "End station of the section: the next section's s0, or the road "
+          "length for the last one. Raises ValueError on a stale id.")
       .def("lane_section",
            nb::overload_cast<roadmaker::LaneSectionId>(&roadmaker::RoadNetwork::lane_section),
            "id"_a,
@@ -1322,7 +1352,30 @@ NB_MODULE(_roadmaker, m) {
            "Outermost lane of its side only; adjacent-section links and junction "
            "lane_links referencing the lane are cleared (undo restores them).");
   edit.def("set_lane_type", &roadmaker::edit::set_lane_type, "network"_a, "lane"_a, "type"_a);
-  edit.def("set_lane_width", &roadmaker::edit::set_lane_width, "network"_a, "lane"_a, "width_m"_a);
+  edit.def("set_lane_width",
+           &roadmaker::edit::set_lane_width,
+           "network"_a,
+           "lane"_a,
+           "width_m"_a,
+           "Sets a CONSTANT width. Refuses a lane whose width already varies along s "
+           "(flattening an authored taper is data loss) — use set_lane_width_profile.");
+  edit.def("set_lane_width_profile",
+           &roadmaker::edit::set_lane_width_profile,
+           "network"_a,
+           "lane"_a,
+           "widths"_a,
+           "Replaces the lane's width profile: a list of Poly3 with SECTION-LOCAL "
+           "sOffsets, w(ds) = a + b*ds + c*ds^2 + d*ds^3. Needs a record at sOffset 0, "
+           "ascending sOffsets inside the section, and width >= 0 — zero is legal, and "
+           "is how a turn lane tapers up from nothing.");
+  edit.def("split_lane_section",
+           &roadmaker::edit::split_lane_section,
+           "network"_a,
+           "road"_a,
+           "s"_a,
+           "Splits the lane section covering s in two, duplicating the cross section "
+           "and partitioning each lane's width profile and road marks at the cut. "
+           "Idempotent where a section already starts.");
   edit.def("set_road_mark",
            &roadmaker::edit::set_road_mark,
            "network"_a,

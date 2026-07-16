@@ -56,6 +56,8 @@ void SoakDriver::step(int index) {
       {1, &SoakDriver::op_insert_waypoint, "insert_waypoint"},
       {1, &SoakDriver::op_delete_waypoint, "delete_waypoint"},
       {2, &SoakDriver::op_lane_edit, "lane_edit"},
+      {2, &SoakDriver::op_split_lane_section, "split_lane_section"},
+      {2, &SoakDriver::op_lane_width_profile, "lane_width_profile"},
       {1, &SoakDriver::op_elevation, "elevation"},
       {1, &SoakDriver::op_split_road, "split_road"},
       {2, &SoakDriver::op_translate_road, "translate_road"},
@@ -352,6 +354,60 @@ void SoakDriver::op_delete_waypoint() {
   push(edit::delete_waypoint(document_.network(),
                              road_id,
                              static_cast<std::size_t>(rand_int(0, int(waypoints.size()) - 1))));
+}
+
+/// Cuts a lane section at a random station. Splitting where a section already
+/// starts is a legal no-op, so the driver deliberately does not avoid
+/// boundaries — hitting one exercises the idempotent path.
+void SoakDriver::op_split_lane_section() {
+  const std::vector<RoadId> roads = live_roads(true);
+  if (roads.empty()) {
+    return;
+  }
+  const RoadId road_id = roads[static_cast<std::size_t>(rand_int(0, int(roads.size()) - 1))];
+  const Road* road = document_.network().road(road_id);
+  if (road == nullptr || road->length <= 0.0) {
+    return;
+  }
+  // Deliberately unclamped at the ends: the kernel must refuse a degenerate
+  // station rather than produce a zero-length section.
+  push(
+      edit::split_lane_section(document_.network(), road_id, rand_range(-1.0, road->length + 1.0)));
+}
+
+/// Authors a width profile that varies along s — the shape Lane Carve
+/// produces. Profiles are built to be conformant about as often as not, so
+/// both the accept and the refuse path get exercised.
+void SoakDriver::op_lane_width_profile() {
+  const std::vector<RoadId> roads = live_roads(true);
+  if (roads.empty()) {
+    return;
+  }
+  const RoadId road_id = roads[static_cast<std::size_t>(rand_int(0, int(roads.size()) - 1))];
+  const Road* road = document_.network().road(road_id);
+  if (road == nullptr || road->sections.empty()) {
+    return;
+  }
+  const LaneSectionId section_id =
+      road->sections[static_cast<std::size_t>(rand_int(0, int(road->sections.size()) - 1))];
+  const LaneSection* section = document_.network().lane_section(section_id);
+  if (section == nullptr || section->lanes.empty()) {
+    return;
+  }
+  const LaneId lane =
+      section->lanes[static_cast<std::size_t>(rand_int(0, int(section->lanes.size()) - 1))];
+
+  std::vector<roadmaker::Poly3> widths;
+  // Zero width is legal and is how a turn lane starts, so `a` may be 0.
+  widths.push_back(roadmaker::Poly3{.s = 0.0,
+                                    .a = chance(0.2) ? 0.0 : rand_range(1.0, 4.0),
+                                    .b = chance(0.5) ? rand_range(-0.05, 0.05) : 0.0});
+  if (chance(0.5)) {
+    widths.push_back(roadmaker::Poly3{.s = rand_range(-5.0, road->length),
+                                      .a = rand_range(-0.5, 4.0),
+                                      .b = rand_range(-0.05, 0.05)});
+  }
+  push(edit::set_lane_width_profile(document_.network(), lane, std::move(widths)));
 }
 
 void SoakDriver::op_lane_edit() {

@@ -207,4 +207,22 @@ private:
 /// small at GS-1 scale (docs/design/m3a/01 §2.1).
 [[nodiscard]] RM_API std::vector<SignalId> signals_of(const RoadNetwork& network, RoadId road);
 
+/// The lane section governing global station `s` on `road`: the last section
+/// whose s0 is <= s. A section is valid from its s0 until the next one
+/// begins (OpenDRIVE 1.9.0 §11.4 / 1.8.1 §11.4), so a station before the
+/// first section still resolves to it rather than to nothing.
+///
+/// Returns an invalid id if `road` is stale or has no sections. Linear scan:
+/// section counts per road stay small, and `Road::sections` is sorted.
+[[nodiscard]] RM_API LaneSectionId section_at(const RoadNetwork& network, RoadId road, double s);
+
+/// End station of `section` along its road: the next section's s0, or the
+/// road length for the last section.
+///
+/// `LaneSection` deliberately stores only s0 — the end is implied. Deriving
+/// it is a three-line loop that was open-coded at every call site, so it
+/// lives here once. Fails on a stale id or a broken road back-reference.
+[[nodiscard]] RM_API Expected<double> section_end(const RoadNetwork& network,
+                                                  LaneSectionId section);
+
 } // namespace roadmaker

@@ -96,6 +96,7 @@ what the code turned out to look like, and which sprint scopes that changed.
 Written once per pillar, before its first sprint lands:
 
 - [P1 — Interaction & Navigation](pillars/p1_discovery.md)
+- [P2 — Roads & Lanes](pillars/p2_discovery.md)
 
 ## Release gate
 

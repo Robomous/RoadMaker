@@ -1,6 +1,9 @@
 #include "roadmaker/road/network.hpp"
 
+#include "roadmaker/tol.hpp"
+
 #include <algorithm>
+#include <iterator>
 #include <utility>
 
 namespace roadmaker {
@@ -247,6 +250,51 @@ std::vector<SignalId> signals_of(const RoadNetwork& network, RoadId road_id) {
     }
   });
   return owned;
+}
+
+LaneSectionId section_at(const RoadNetwork& network, RoadId road_id, double s) {
+  const Road* road = network.road(road_id);
+  if (road == nullptr || road->sections.empty()) {
+    return LaneSectionId{};
+  }
+  // Sections are sorted ascending by s0, so the last one starting at or
+  // before s governs it. Seeding with the first section makes a query before
+  // the road start resolve to it instead of returning nothing.
+  LaneSectionId result = road->sections.front();
+  for (const LaneSectionId id : road->sections) {
+    const LaneSection* section = network.lane_section(id);
+    if (section == nullptr) {
+      continue;
+    }
+    if (section->s0 <= s + tol::kLength) {
+      result = id;
+    }
+  }
+  return result;
+}
+
+Expected<double> section_end(const RoadNetwork& network, LaneSectionId section_id) {
+  const LaneSection* section = network.lane_section(section_id);
+  if (section == nullptr) {
+    return make_error(ErrorCode::InvalidArgument, "stale lane-section id");
+  }
+  const Road* road = network.road(section->road);
+  if (road == nullptr) {
+    return make_error(ErrorCode::InvalidArgument, "lane section has a stale road back-reference");
+  }
+  const auto here = std::ranges::find(road->sections, section_id);
+  if (here == road->sections.end()) {
+    return make_error(ErrorCode::InvalidArgument, "lane section is not listed on its road");
+  }
+  const auto next = std::next(here);
+  if (next == road->sections.end()) {
+    return road->length;
+  }
+  const LaneSection* following = network.lane_section(*next);
+  if (following == nullptr) {
+    return make_error(ErrorCode::InvalidArgument, "the following lane section is stale");
+  }
+  return following->s0;
 }
 
 } // namespace roadmaker
