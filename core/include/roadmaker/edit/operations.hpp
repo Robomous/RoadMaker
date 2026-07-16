@@ -282,17 +282,43 @@ struct TAttachOptions {
                                                                 double s,
                                                                 const TAttachOptions& options = {});
 
+/// Whether a regeneration may change the junction's turn set.
+enum class TurnSetPolicy {
+  /// Turns may be added and dropped: new connecting roads are created, ones
+  /// whose turn disappeared are erased, and the connection table is rewritten.
+  /// The turns that survive keep their connecting-road IDs.
+  AllowChange,
+  /// Only geometry and widths may change; a different turn set is an error.
+  /// For the per-frame preview path ONLY — see regenerate_junction.
+  InPlaceOnly,
+};
+
 /// Re-runs the generator from a junction's recorded arm list and replaces its
-/// connecting-road geometry and lane widths in place — connecting-road IDs
-/// and the connection table survive, so held references and the undo stack
-/// stay valid (02 §6 "Dependency tracking"). The editor triggers this after
-/// any edit to an incoming road (via junctions_touching). M2 restriction: the
-/// connection COUNT must be unchanged (a lane added/removed on an incoming
-/// road changes the turn set — recreate the junction); an empty arm list
-/// (foreign junction) is an error. A no-op regeneration writes byte-identical
-/// output.
-[[nodiscard]] RM_API std::unique_ptr<Command> regenerate_junction(
-    const RoadNetwork& network, JunctionId junction, const JunctionGenOptions& options = {});
+/// connecting-road geometry and lane widths in place (02 §6 "Dependency
+/// tracking"). The editor triggers this after any edit to an incoming road
+/// (via junctions_touching). An empty arm list (foreign junction) is an error.
+/// A no-op regeneration writes byte-identical output.
+///
+/// A turn that survives keeps its connecting-road ID — matching is by the
+/// (incoming road+contact+lane, outgoing road+contact+lane) key, not by order
+/// — so held references and the undo stack stay valid across a regeneration.
+///
+/// Under AllowChange (the default) a lane added to, removed from, or retyped
+/// on an incoming road regenerates the junction: turns that appeared get fresh
+/// connecting roads, turns that vanished have theirs erased.
+///
+/// `policy` exists for ONE caller. A preview session reverts and DESTROYS its
+/// command on every frame (Document::update_preview), and revert frees created
+/// ids with erase_exact, which reserves the slot rather than recycling it — so
+/// a discarded command's created slots can never be reused. A per-frame
+/// regeneration that creates connecting roads therefore leaks slots for the
+/// rest of the session, which is why move_waypoint_following_junctions asks
+/// for InPlaceOnly and takes the stale junction (as it does today) instead.
+[[nodiscard]] RM_API std::unique_ptr<Command>
+regenerate_junction(const RoadNetwork& network,
+                    JunctionId junction,
+                    const JunctionGenOptions& options = {},
+                    TurnSetPolicy policy = TurnSetPolicy::AllowChange);
 
 /// Deletes the junction AND its connecting roads (the §7 closure); incoming
 /// roads survive with their predecessor/successor links into the junction

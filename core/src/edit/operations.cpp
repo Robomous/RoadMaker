@@ -352,6 +352,10 @@ public:
         }
       }
       dirty.topology = dirty.topology || child_dirty.topology;
+      // One child that built its own junctions speaks for the composite: the
+      // assemblies and attach_t_junction end in create_junction, so the
+      // junctions they name are already generated.
+      dirty.junctions_are_current = dirty.junctions_are_current || child_dirty.junctions_are_current;
     }
     return dirty;
   }
@@ -595,18 +599,22 @@ std::vector<RoadId> deletion_closure(const RoadNetwork& network, std::vector<Roa
   return doomed;
 }
 
-/// Captures onto `command` everything the closure deletion touches: the
-/// doomed roads with their sections and lanes (plus `doomed_junction` when
-/// set) as erasures, and — as before/after value edits — surviving junctions
-/// whose connections reference a doomed road, and surviving roads whose
-/// links (or junction back-reference) point into the deleted set. Undo
-/// restores every removed object and link exactly.
-void capture_deletion(const RoadNetwork& network,
-                      GenericCommand& command,
-                      std::span<const RoadId> doomed,
-                      std::optional<JunctionId> doomed_junction) {
+/// Captures `doomed` roads onto `command->erased`, with everything they own:
+/// sections, lanes, and the objects and signals anchored to them.
+///
+/// The ownership walk has to be explicit because erase_road_exact does NOT
+/// cascade the way erase_road does — it frees exactly the slot it is given.
+/// Anything owned but not captured here would survive its road holding a
+/// RoadId into an emptied slot. erase_values_exact erases leaf-to-root, so the
+/// order things are added in does not matter.
+void capture_road_erasure(const RoadNetwork& network,
+                          GenericCommand& command,
+                          std::span<const RoadId> doomed) {
   for (const RoadId road_id : doomed) {
     const Road* road = network.road(road_id);
+    if (road == nullptr) {
+      continue;
+    }
     command.erased.roads.emplace_back(road_id, *road);
     for (const LaneSectionId section_id : road->sections) {
       const LaneSection* section = network.lane_section(section_id);
@@ -615,7 +623,26 @@ void capture_deletion(const RoadNetwork& network,
         command.erased.lanes.emplace_back(lane_id, *network.lane(lane_id));
       }
     }
+    for (const ObjectId object_id : objects_of(network, road_id)) {
+      command.erased.objects.emplace_back(object_id, *network.object(object_id));
+    }
+    for (const SignalId signal_id : signals_of(network, road_id)) {
+      command.erased.signals.emplace_back(signal_id, *network.signal(signal_id));
+    }
   }
+}
+
+/// Captures onto `command` everything the closure deletion touches: the
+/// doomed roads with everything they own (plus `doomed_junction` when set) as
+/// erasures, and — as before/after value edits — surviving junctions whose
+/// connections reference a doomed road, and surviving roads whose links (or
+/// junction back-reference) point into the deleted set. Undo restores every
+/// removed object and link exactly.
+void capture_deletion(const RoadNetwork& network,
+                      GenericCommand& command,
+                      std::span<const RoadId> doomed,
+                      std::optional<JunctionId> doomed_junction) {
+  capture_road_erasure(network, command, doomed);
   if (doomed_junction.has_value()) {
     command.erased.junctions.emplace_back(*doomed_junction, *network.junction(*doomed_junction));
   }
@@ -1154,7 +1181,10 @@ std::unique_ptr<Command> delete_road(const RoadNetwork& network, RoadId road_id)
 
   // Every doomed road is dirty so incremental re-mesh drops (and, on undo,
   // restores) its mesh entry; every junction touching one re-floors.
-  DirtySet dirty{.roads = doomed, .topology = true};
+  // junctions_are_current: capture_deletion strips the doomed connections AND
+  // arms itself, so a survivor's arm list is already correct — regenerating it
+  // here would replan a junction the user just tore an arm off of.
+  DirtySet dirty{.roads = doomed, .topology = true, .junctions_are_current = true};
   for (const RoadId doomed_id : doomed) {
     for (const JunctionId junction_id : junctions_touching(network, doomed_id)) {
       if (std::ranges::find(dirty.junctions, junction_id) == dirty.junctions.end()) {
@@ -1548,7 +1578,11 @@ std::unique_ptr<Command> split_road(const RoadNetwork& network, RoadId road_id, 
     duplicated_lanes.push_back(LaneBlueprint{.value = std::move(copy)});
   }
 
-  DirtySet split_dirty{.roads = {road_id}, .topology = true};
+  // junctions_are_current: the split remaps the junction's arms and
+  // incoming_road onto the tail itself (below), so the connection table is
+  // already correct — a regeneration would only re-fit geometry that did not
+  // move.
+  DirtySet split_dirty{.roads = {road_id}, .topology = true, .junctions_are_current = true};
   if (succ_junction.has_value()) {
     split_dirty.junctions.push_back(*succ_junction);
   }
@@ -2268,19 +2302,63 @@ Expected<JunctionPreview> preview_junction(const RoadNetwork& network,
                          .dropped_turns = std::move(plan->dropped)};
 }
 
+/// Builds ONE connecting road for `cp` into `target`, registering everything it
+/// creates in `created`, and returns the connection table entry for it. The
+/// single authority for what a connecting road is: shared by
+/// materialize_junction (a fresh junction) and regenerate_junction (a turn that
+/// appeared on an existing one).
+///
+/// Holds no reference across a create_* call — every arena insert may
+/// reallocate (arena.hpp "never store pointers across mutations").
+JunctionConnection materialize_connection(RoadNetwork& target,
+                                          Values& created,
+                                          JunctionId junction_id,
+                                          const ConnectingPlan& cp) {
+  const RoadId road_id = target.create_road("", next_free_road_odr_id(target));
+  created.roads.emplace_back(road_id, Road{});
+  {
+    Road& road = *target.road(road_id);
+    road.plan_view = cp.line;
+    road.length = road.plan_view.length();
+    road.elevation = connecting_elevation(cp, road.length);
+    road.junction = junction_id;
+    // Connecting roads run in driving direction: start touches the incoming
+    // arm, end the outgoing arm (12.4.1 laneLink direction rules).
+    road.predecessor = RoadLink{.target = cp.from.road, .contact = cp.from.contact};
+    road.successor = RoadLink{.target = cp.to.road, .contact = cp.to.contact};
+  }
+
+  const LaneSectionId section_id = target.add_lane_section(road_id, 0.0);
+  created.sections.emplace_back(section_id, LaneSection{});
+  const LaneId center = target.add_lane(section_id, 0, LaneType::None);
+  created.lanes.emplace_back(center, Lane{});
+  // Single right-hand driving lane carrying the +s (driving-direction) flow.
+  const LaneId drive = target.add_lane(section_id, -1, LaneType::Driving);
+  created.lanes.emplace_back(drive, Lane{});
+  const double length = target.road(road_id)->length;
+  Lane& lane = *target.lane(drive);
+  lane.widths.push_back(connecting_lane_width(cp, length));
+  lane.predecessor = cp.from_lane;
+  lane.successor = cp.to_lane;
+
+  return JunctionConnection{.incoming_road = cp.from.road,
+                            .connecting_road = road_id,
+                            .contact_point = ContactPoint::Start,
+                            .lane_links = {{cp.from_lane, -1}}};
+}
+
 /// Builds the junction record, its connecting roads and the connection table
 /// into `target` from `plan`, registering every created object in `created`;
 /// also links each incoming end to the junction. Shared by create_junction's
-/// creator (regeneration edits existing roads in place instead). Assumes the
-/// arm link slots are free — validated at factory time.
+/// creator (regeneration reuses materialize_connection per turn instead).
+/// Assumes the arm link slots are free — validated at factory time.
 Expected<void> materialize_junction(RoadNetwork& target,
                                     Values& created,
                                     std::span<const RoadEnd> ends,
                                     const JunctionPlan& plan) {
   const JunctionId junction_id = target.create_junction(next_free_junction_odr_id(target), "");
   created.junctions.emplace_back(junction_id, Junction{});
-  Junction& junction = *target.junction(junction_id);
-  junction.arms.assign(ends.begin(), ends.end());
+  target.junction(junction_id)->arms.assign(ends.begin(), ends.end());
 
   for (const RoadEnd& end : ends) {
     Road& road = *target.road(end.road);
@@ -2292,36 +2370,14 @@ Expected<void> materialize_junction(RoadNetwork& target,
     }
   }
 
+  std::vector<JunctionConnection> connections;
+  connections.reserve(plan.roads.size());
   for (const ConnectingPlan& cp : plan.roads) {
-    const RoadId road_id = target.create_road("", next_free_road_odr_id(target));
-    created.roads.emplace_back(road_id, Road{});
-    Road& road = *target.road(road_id);
-    road.plan_view = cp.line;
-    road.length = road.plan_view.length();
-    road.elevation = connecting_elevation(cp, road.length);
-    road.junction = junction_id;
-    // Connecting roads run in driving direction: start touches the incoming
-    // arm, end the outgoing arm (12.4.1 laneLink direction rules).
-    road.predecessor = RoadLink{.target = cp.from.road, .contact = cp.from.contact};
-    road.successor = RoadLink{.target = cp.to.road, .contact = cp.to.contact};
-
-    const LaneSectionId section_id = target.add_lane_section(road_id, 0.0);
-    created.sections.emplace_back(section_id, LaneSection{});
-    const LaneId center = target.add_lane(section_id, 0, LaneType::None);
-    created.lanes.emplace_back(center, Lane{});
-    // Single right-hand driving lane carrying the +s (driving-direction) flow.
-    const LaneId drive = target.add_lane(section_id, -1, LaneType::Driving);
-    created.lanes.emplace_back(drive, Lane{});
-    Lane& lane = *target.lane(drive);
-    lane.widths.push_back(connecting_lane_width(cp, road.length));
-    lane.predecessor = cp.from_lane;
-    lane.successor = cp.to_lane;
-
-    junction.connections.push_back(JunctionConnection{.incoming_road = cp.from.road,
-                                                      .connecting_road = road_id,
-                                                      .contact_point = ContactPoint::Start,
-                                                      .lane_links = {{cp.from_lane, -1}}});
+    connections.push_back(materialize_connection(target, created, junction_id, cp));
   }
+  // Re-fetch: every create_road above may have reallocated the road arena, and
+  // create_junction the junction arena.
+  target.junction(junction_id)->connections = std::move(connections);
   return {};
 }
 
@@ -2355,7 +2411,11 @@ std::unique_ptr<Command> create_junction(const RoadNetwork& network,
     return invalid_command(std::string(kName), plan.error());
   }
 
-  auto command = std::make_unique<GenericCommand>(std::string(kName), DirtySet{.topology = true});
+  // junctions_are_current: materialize_junction below IS the generator — it
+  // builds the connection table and the connecting roads. Regenerating on top
+  // of a fresh build would re-plan what was just planned.
+  auto command = std::make_unique<GenericCommand>(
+      std::string(kName), DirtySet{.topology = true, .junctions_are_current = true});
   for (const RoadEnd& end : ends) {
     const bool already_touched = std::ranges::any_of(
         command->before.roads, [&](const auto& entry) { return entry.first == end.road; });
@@ -2506,7 +2566,8 @@ std::unique_ptr<Command> create_linked_road(const RoadNetwork& network,
 
 std::unique_ptr<Command> regenerate_junction(const RoadNetwork& network,
                                              JunctionId junction_id,
-                                             const JunctionGenOptions& options) {
+                                             const JunctionGenOptions& options,
+                                             TurnSetPolicy policy) {
   static constexpr std::string_view kName = "Regenerate Junction";
   const auto fail = [&](std::string message) {
     return invalid_command(
@@ -2524,19 +2585,10 @@ std::unique_ptr<Command> regenerate_junction(const RoadNetwork& network,
   if (!plan.has_value()) {
     return invalid_command(std::string(kName), plan.error());
   }
-  // M2 restriction: only geometry/width may change; a different turn set
-  // (a lane added or removed on an incoming road) needs a full recreate so
-  // ids can be freed. Regeneration edits the existing connecting roads in
-  // place, preserving their ids and the connection table.
-  if (plan->roads.size() != junction->connections.size()) {
+  if (policy == TurnSetPolicy::InPlaceOnly &&
+      plan->roads.size() != junction->connections.size()) {
     return fail("regeneration changed the connection count; delete and recreate the junction");
   }
-
-  DirtySet dirty{.junctions = {junction_id}};
-  for (const JunctionConnection& connection : junction->connections) {
-    dirty.roads.push_back(connection.connecting_road);
-  }
-  auto command = std::make_unique<GenericCommand>(std::string(kName), std::move(dirty));
 
   // Match each freshly planned turn to its existing connecting road by KEY —
   // the (incoming road+contact+lane, outgoing road+contact+lane) it links — not
@@ -2580,7 +2632,16 @@ std::unique_ptr<Command> regenerate_junction(const RoadNetwork& network,
                    .to_lane = to_lane};
   };
 
-  std::vector<bool> matched(junction->connections.size(), false);
+  // Partition the plan against the existing table. `matched` pairs a planned
+  // turn with the connecting road that already serves it (id reused); what is
+  // left over on each side is a turn that appeared or one that vanished.
+  struct Matched {
+    ConnectingPlan cp;
+    RoadId road;
+  };
+  std::vector<Matched> matched_turns;
+  std::vector<ConnectingPlan> new_turns;
+  std::vector<bool> claimed(junction->connections.size(), false);
   for (const ConnectingPlan& cp : plan->roads) {
     const TurnKey want{.from_road = cp.from.road,
                        .from_contact = cp.from.contact,
@@ -2590,7 +2651,7 @@ std::unique_ptr<Command> regenerate_junction(const RoadNetwork& network,
                        .to_lane = cp.to_lane};
     std::size_t found = junction->connections.size();
     for (std::size_t i = 0; i < junction->connections.size(); ++i) {
-      if (matched[i]) {
+      if (claimed[i]) {
         continue;
       }
       if (const auto key = connection_key(junction->connections[i]);
@@ -2600,32 +2661,91 @@ std::unique_ptr<Command> regenerate_junction(const RoadNetwork& network,
       }
     }
     if (found == junction->connections.size()) {
-      // Same count but a different turn set (e.g. a lane retyped so a turn moved
-      // to a different lane): the ids can't be reused in place.
-      return fail("regeneration changed the turn set; delete and recreate the junction");
-    }
-    matched[found] = true;
-    const RoadId road_id = junction->connections[found].connecting_road;
-    const Road* road = network.road(road_id);
-    Road after = *road;
-    after.plan_view = cp.line;
-    after.length = after.plan_view.length();
-    after.elevation = connecting_elevation(cp, after.length);
-    command->before.roads.emplace_back(road_id, *road);
-    command->after.roads.emplace_back(road_id, std::move(after));
-
-    const LaneSection& section = *network.lane_section(road->sections.front());
-    for (const LaneId lane_id : section.lanes) {
-      const Lane* lane = network.lane(lane_id);
-      if (lane->odr_id != -1) {
-        continue;
+      if (policy == TurnSetPolicy::InPlaceOnly) {
+        // Same count but a different turn set (e.g. a lane retyped so a turn
+        // moved to a different lane): the ids can't be reused in place.
+        return fail("regeneration changed the turn set; delete and recreate the junction");
       }
-      Lane lane_after = *lane;
-      lane_after.widths = {connecting_lane_width(cp, after.length)};
-      command->before.lanes.emplace_back(lane_id, *lane);
-      command->after.lanes.emplace_back(lane_id, std::move(lane_after));
+      new_turns.push_back(cp);
+      continue;
+    }
+    claimed[found] = true;
+    matched_turns.push_back(
+        Matched{.cp = cp, .road = junction->connections[found].connecting_road});
+  }
+
+  // Unclaimed connections serve a turn the plan no longer contains. NOTE: a
+  // connection whose key could not be read at all (a malformed connecting road
+  // — no sections, missing links, empty lane_links) lands here too and is
+  // rebuilt from the plan rather than reported. That repairs it, but silently.
+  std::vector<RoadId> dropped;
+  for (std::size_t i = 0; i < junction->connections.size(); ++i) {
+    if (!claimed[i]) {
+      dropped.push_back(junction->connections[i].connecting_road);
     }
   }
+
+  // Every connecting road is dirty so incremental re-mesh re-tessellates the
+  // survivors and drops the mesh entries of the erased ones.
+  DirtySet dirty{.junctions = {junction_id},
+                 .topology = !new_turns.empty() || !dropped.empty(),
+                 .junctions_are_current = true};
+  for (const JunctionConnection& connection : junction->connections) {
+    dirty.roads.push_back(connection.connecting_road);
+  }
+  auto command = std::make_unique<GenericCommand>(std::string(kName), std::move(dirty));
+
+  // The junction record itself changes (the connection table is rewritten), so
+  // it belongs in `before` — the creator mutates it in the network and
+  // GenericCommand re-reads `after` from there once the creator has run.
+  command->before.junctions.emplace_back(junction_id, *junction);
+  for (const Matched& match : matched_turns) {
+    const Road* road = network.road(match.road);
+    command->before.roads.emplace_back(match.road, *road);
+    for (const LaneId lane_id : network.lane_section(road->sections.front())->lanes) {
+      const Lane* lane = network.lane(lane_id);
+      if (lane->odr_id == -1) {
+        command->before.lanes.emplace_back(lane_id, *lane);
+      }
+    }
+  }
+  capture_road_erasure(network, *command, dropped);
+
+  command->creator = [junction_id,
+                      matched_turns = std::move(matched_turns),
+                      new_turns = std::move(new_turns),
+                      dropped](RoadNetwork& target, Values& created) -> Expected<void> {
+    // Pass 1: rewrite the turns that survive. No creation happens here, so
+    // references stay valid within an iteration.
+    std::vector<JunctionConnection> table;
+    table.reserve(matched_turns.size() + new_turns.size());
+    for (const Matched& match : matched_turns) {
+      Road& road = *target.road(match.road);
+      road.plan_view = match.cp.line;
+      road.length = road.plan_view.length();
+      road.elevation = connecting_elevation(match.cp, road.length);
+      const double length = road.length;
+      for (const LaneId lane_id : target.lane_section(road.sections.front())->lanes) {
+        Lane& lane = *target.lane(lane_id);
+        if (lane.odr_id == -1) {
+          lane.widths = {connecting_lane_width(match.cp, length)};
+        }
+      }
+      table.push_back(JunctionConnection{.incoming_road = match.cp.from.road,
+                                         .connecting_road = match.road,
+                                         .contact_point = ContactPoint::Start,
+                                         .lane_links = {{match.cp.from_lane, -1}}});
+    }
+    // Pass 2: build the turns that appeared. Every create_* here may realloc
+    // an arena, which is why no reference from pass 1 survives into it.
+    for (const ConnectingPlan& cp : new_turns) {
+      table.push_back(materialize_connection(target, created, junction_id, cp));
+    }
+    // The dropped roads are erased by `erased` after this returns; dropping
+    // them from the table first means they are never referenced when they go.
+    target.junction(junction_id)->connections = std::move(table);
+    return {};
+  };
   return command;
 }
 
@@ -2663,8 +2783,17 @@ std::unique_ptr<Command> move_waypoint_following_junctions(const RoadNetwork& ne
   for (const JunctionId junction_id : followed) {
     // Built lazily, so each regeneration plans against the network with the
     // move already applied — the whole point of following mid-drag.
-    builders.push_back(
-        [junction_id](RoadNetwork& net) { return regenerate_junction(net, junction_id); });
+    //
+    // InPlaceOnly: this command is a preview factory, rebuilt and discarded on
+    // every drag frame. A regeneration that created connecting roads would have
+    // them erase_exact'd by the frame's revert and then lose the only handle
+    // that could restore those slots when the command is destroyed — reserving
+    // arena slots, per frame, for the rest of the session. A drag that changes
+    // the turn set therefore leaves the junction stale (and toasts) exactly as
+    // it does today; lane edits, which are not previewed, regenerate normally.
+    builders.push_back([junction_id](RoadNetwork& net) {
+      return regenerate_junction(net, junction_id, {}, TurnSetPolicy::InPlaceOnly);
+    });
   }
   // Same undo-menu text as the plain move: whether the drag happened to touch a
   // junction is not something the user should read in the Edit menu.
@@ -2690,7 +2819,13 @@ std::unique_ptr<Command> delete_junction(const RoadNetwork& network, JunctionId 
   });
   const std::vector<RoadId> doomed = deletion_closure(network, std::move(seeds));
 
-  DirtySet dirty{.roads = doomed, .junctions = {junction_id}, .topology = true};
+  // junctions_are_current: the junction named here is the one being deleted,
+  // and capture_deletion strips the doomed connections from every survivor —
+  // there is nothing left to regenerate against.
+  DirtySet dirty{.roads = doomed,
+                 .junctions = {junction_id},
+                 .topology = true,
+                 .junctions_are_current = true};
   for (const RoadId doomed_id : doomed) {
     for (const JunctionId touched : junctions_touching(network, doomed_id)) {
       if (std::ranges::find(dirty.junctions, touched) == dirty.junctions.end()) {
@@ -3017,8 +3152,16 @@ add_lane(const RoadNetwork& network, LaneSectionId section_id, int side, LaneTyp
                                   ? outermost_lane->widths
                                   : std::vector<Poly3>{Poly3{.a = 3.5}};
 
+  // A lane on an end section changes what driving_lanes_at reports, and so the
+  // junction's turn set: name the junctions so the editor regenerates them.
+  // A lane on an interior section leaves the turn set alone and regeneration
+  // is a byte-identical no-op — cheaper than deciding here which sections are
+  // ends.
   auto command = std::make_unique<GenericCommand>(
-      std::string(kName), DirtySet{.roads = {section->road}, .topology = true});
+      std::string(kName),
+      DirtySet{.roads = {section->road},
+               .junctions = junctions_touching(network, section->road),
+               .topology = true});
   command->before.sections.emplace_back(section_id, *section);
   command->creator = [section_id, new_odr_id, type, widths = std::move(widths)](
                          RoadNetwork& target, Values& created) -> Expected<void> {
@@ -3076,10 +3219,12 @@ std::unique_ptr<Command> remove_lane(const RoadNetwork& network, LaneId lane_id)
     }
   });
 
-  DirtySet dirty{.roads = {context->road_id}, .topology = true};
-  for (const auto& [junction_id, value] : junctions_before) {
-    dirty.junctions.push_back(junction_id);
-  }
+  // Every junction the road touches, not just those whose lane_links this
+  // command pruned: losing a lane drops a turn from the plan even where no
+  // lane_link named it, and regeneration is what rebuilds the turn set.
+  DirtySet dirty{.roads = {context->road_id},
+                 .junctions = junctions_touching(network, context->road_id),
+                 .topology = true};
   auto command = std::make_unique<GenericCommand>(std::string(kName), std::move(dirty));
   command->erased.lanes.emplace_back(lane_id, context->lane);
   command->before.junctions = std::move(junctions_before);
@@ -3124,8 +3269,13 @@ std::unique_ptr<Command> set_lane_type(const RoadNetwork& network, LaneId lane_i
   }
   Lane after = context->lane;
   after.type = type;
-  auto command =
-      std::make_unique<GenericCommand>(std::string(kName), DirtySet{.roads = {context->road_id}});
+  // Retyping to or from Driving changes what driving_lanes_at reports, so a
+  // turn appears, disappears, or moves to a different lane — name the
+  // junctions so regeneration rebuilds the turn set.
+  auto command = std::make_unique<GenericCommand>(
+      std::string(kName),
+      DirtySet{.roads = {context->road_id},
+               .junctions = junctions_touching(network, context->road_id)});
   command->before.lanes.emplace_back(lane_id, context->lane);
   command->after.lanes.emplace_back(lane_id, std::move(after));
   return command;
