@@ -5,6 +5,7 @@ and glTF export. See https://github.com/robomous/roadmaker.
 """
 
 from ._roadmaker import (  # noqa: F401
+    BoundarySource,
     ContactPoint,
     Diagnostic,
     Junction,
@@ -40,10 +41,13 @@ from ._roadmaker import (  # noqa: F401
     Severity,
     Signal,
     SignalId,
+    Surface,
+    SurfaceId,
     Waypoint,
     XodrVersion,
     author_clothoid_road,
     build_network_mesh,
+    derive_surfaces,
     edit,
     export_glb,
     fit_elevation_profile,

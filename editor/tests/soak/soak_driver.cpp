@@ -9,6 +9,7 @@
 
 #include <QElapsedTimer>
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <fstream>
 #include <numbers>
@@ -74,6 +75,7 @@ void SoakDriver::step(int index) {
       {2, &SoakDriver::op_insert_lane, "insert_lane"},
       {2, &SoakDriver::op_lane_add_span, "lane_add_span"},
       {2, &SoakDriver::op_lane_form, "lane_form"},
+      {2, &SoakDriver::op_ground_surface, "ground_surface"},
       {1, &SoakDriver::op_overpass, "overpass"},
       {1, &SoakDriver::op_delete_crossing_road, "delete_crossing_road"},
       {1, &SoakDriver::op_delete_junction, "delete_junction"},
@@ -853,6 +855,28 @@ void SoakDriver::op_lane_form() {
                        rand_range(-1.0, road->length + 1.0),
                        lane->odr_id,
                        LaneType::Driving));
+}
+
+void SoakDriver::op_ground_surface() {
+  // Author a closed square loop as four straight roads welded corner-to-corner
+  // (the derive_surfaces "one enclosed area = one Surface" path). No command
+  // sets a surface flag: each create_road is a topology change, so the
+  // Document's after_kernel_mutation hook re-derives the surface arena; once
+  // the fourth edge closes the ring a Surface appears, and the round-trip and
+  // save/reload invariants then exercise its rm:surface userData markers.
+  // Each push is independently a valid-ish command — a refusal just leaves the
+  // loop open (no surface), which the invariants still hold for.
+  const double ox = rand_range(-400.0, 400.0);
+  const double oy = rand_range(-400.0, 400.0);
+  const double side = rand_range(20.0, 60.0); // corners stay exactly coincident
+  const std::array<Waypoint, 4> corners{Waypoint{.x = ox, .y = oy},
+                                        Waypoint{.x = ox + side, .y = oy},
+                                        Waypoint{.x = ox + side, .y = oy + side},
+                                        Waypoint{.x = ox, .y = oy + side}};
+  for (std::size_t i = 0; i < corners.size(); ++i) {
+    std::vector<Waypoint> edge{corners[i], corners[(i + 1) % corners.size()]};
+    push(edit::create_road(std::move(edge), random_profile(), {}));
+  }
 }
 
 void SoakDriver::op_overpass() {
