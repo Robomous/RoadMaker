@@ -318,9 +318,62 @@ add_lane(const RoadNetwork& network, LaneSectionId section, int side, LaneType t
 [[nodiscard]] RM_API std::unique_ptr<Command>
 set_lane_type(const RoadNetwork& network, LaneId lane, LaneType type);
 
-/// Constant width in M2 (replaces the width profile with one record).
+/// Sets a CONSTANT width, replacing the profile with a single record at
+/// sOffset 0.
+///
+/// Refuses a lane whose width already varies along s (more than one record,
+/// or one with a non-zero b/c/d): flattening an authored taper to a constant
+/// is data loss, and such a caller wants set_lane_width_profile. Before P2
+/// this op replaced the profile unconditionally, which silently destroyed
+/// every width record of any lane it touched.
 [[nodiscard]] RM_API std::unique_ptr<Command>
 set_lane_width(const RoadNetwork& network, LaneId lane, double width_m);
+
+/// Replaces the lane's width profile outright — the general form of
+/// set_lane_width, and the only way to author width that varies along s
+/// (w(ds) = a + b·ds + c·ds² + d·ds³, §11.7.1).
+///
+/// `widths` are section-LOCAL sOffsets, matching Lane::widths. Validated
+/// against the normative width rules, identical in OpenDRIVE 1.8.1 §11.7.1
+/// and 1.9.0 §11.7.1:
+///   - a record at sOffset 0 must exist
+///     (asam.net:xodr:1.7.0:road.lane.width.width_defined_whole_section);
+///   - records ascend by sOffset
+///     (asam.net:xodr:1.4.0:road.lane.width.elem_asc_order);
+///   - every record starts inside the owning section;
+///   - the center lane takes no width at all
+///     (asam.net:xodr:1.4.0:road.lane.center_lane_no_width).
+///
+/// Zero width is LEGAL and deliberately allowed — the rule is only that
+/// width be >= 0 (asam.net:xodr:1.4.0:road.lane.width.lane_width_validity),
+/// and a lane tapering from 0 is exactly how a turn lane begins. Only the
+/// record coefficients are checked for a negative `a`; a cubic that dips
+/// below zero mid-record is not detected here.
+[[nodiscard]] RM_API std::unique_ptr<Command>
+set_lane_width_profile(const RoadNetwork& network, LaneId lane, std::vector<Poly3> widths);
+
+/// Splits the lane section covering `s` into two at `s`, duplicating the
+/// cross section: every lane is copied into the new section with the same
+/// OpenDRIVE id and type, and its width profile and road marks are
+/// PARTITIONED at the cut — the original keeps [s0, s), the copy takes
+/// [s, end) re-expressed about its own origin. Nothing about the road's
+/// shape changes; only where the kernel is allowed to vary it.
+///
+/// Lanes that continue across the seam are linked in both directions
+/// (asam.net:xodr:1.4.0:road.lane.link.lanes_across_laneSections). A lane
+/// whose width has already reached zero at the cut is NOT linked: linkage
+/// requires a physical connection with non-zero width on both sides
+/// (§11.6). The center lane always continues — it carries no width by rule.
+///
+/// Idempotent: splitting where a section already starts succeeds and changes
+/// nothing, so a caller may cut both ends of a span without special-casing
+/// the boundaries. `s` must lie strictly inside the road.
+///
+/// The foundation of the lane tools: Lane Add, Lane Form and Lane Carve all
+/// cut sections through this one op rather than re-deriving the rebasing
+/// rules (the rules are subtle — see rebase_profile/rebase_marks).
+[[nodiscard]] RM_API std::unique_ptr<Command>
+split_lane_section(const RoadNetwork& network, RoadId road, double s);
 
 /// Edits the FIRST of the lane's outer-boundary marking records; later
 /// records survive untouched (the M2 editor edits the sOffset-0 entry only)

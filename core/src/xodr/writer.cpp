@@ -209,6 +209,27 @@ void check_road_structure(const RoadNetwork& network,
         return;
       }
     }
+    // The mirror direction. A lane continuing across sections is linked both
+    // ways (asam.net:xodr:1.4.0:road.lane.link.lanes_across_laneSections), so
+    // a dangling predecessor is exactly as broken as a dangling successor —
+    // but until P2 only the successor side was checked, and a section split
+    // that mis-set predecessors would pass validation and write a subtly
+    // wrong file.
+    for (const LaneId lane_id : next.lanes) {
+      const Lane& lane = *network.lane(lane_id);
+      if (lane.predecessor && !lane_exists(here, *lane.predecessor)) {
+        findings.push_back(
+            Diagnostic{.severity = Severity::Error,
+                       .location = location,
+                       .message = fmt::format("lane {} predecessor {} missing in previous section",
+                                              lane.odr_id,
+                                              *lane.predecessor),
+                       .rule_id = std::string(rules::kOnlyRefDefinedIds),
+                       .road = road_id,
+                       .lane = lane_id});
+        return;
+      }
+    }
   }
 }
 

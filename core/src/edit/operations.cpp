@@ -476,6 +476,45 @@ std::vector<Poly3> rebase_profile(std::span<const Poly3> profile, double split) 
   return out;
 }
 
+/// Rebases the tail of a lane's road marks onto a section starting at
+/// `split` (RoadMark::s_offset is section-local). Every mark already active
+/// at the split collapses to offset 0 and the last one wins, matching
+/// evaluation semantics; marks after it keep their spacing.
+///
+/// Records are copied and only s_offset is rewritten: rebuilding one field
+/// by field would drop @color, the <type>/<line> block, and silently any
+/// field added to RoadMark later.
+std::vector<RoadMark> rebase_marks(std::span<const RoadMark> marks, double split) {
+  std::vector<RoadMark> out;
+  for (const RoadMark& mark : marks) {
+    RoadMark rebased = mark;
+    if (mark.s_offset <= split + tol::kLength) {
+      rebased.s_offset = 0.0;
+      if (!out.empty() && out.front().s_offset == 0.0) {
+        out.front() = std::move(rebased);
+        continue;
+      }
+      out.insert(out.begin(), std::move(rebased));
+    } else {
+      rebased.s_offset = mark.s_offset - split;
+      out.push_back(std::move(rebased));
+    }
+  }
+  return out;
+}
+
+/// Keeps the marks starting before `split`; the rest belong to the section
+/// beginning there (rebase_marks moves them). Mirrors truncate_profile.
+std::vector<RoadMark> truncate_marks(std::span<const RoadMark> marks, double split) {
+  std::vector<RoadMark> out;
+  for (const RoadMark& mark : marks) {
+    if (mark.s_offset < split - tol::kLength) {
+      out.push_back(mark);
+    }
+  }
+  return out;
+}
+
 /// Head part of a geometry record cut at local arc length ds (0 < ds < len).
 GeometryRecord record_head(const GeometryRecord& record, double ds) {
   GeometryRecord head = record;
@@ -1505,27 +1544,7 @@ std::unique_ptr<Command> split_road(const RoadNetwork& network, RoadId road_id, 
   for (const LaneId lane_id : network.lane_section(*spanning)->lanes) {
     Lane copy = *network.lane(lane_id);
     copy.widths = rebase_profile(copy.widths, spanning_local);
-    std::vector<RoadMark> marks;
-    for (const RoadMark& mark : copy.road_marks) {
-      // Copy the record and rebase only s_offset: rebuilding it field by field
-      // drops @color and the <type>/<line> block (and would silently drop any
-      // field added to RoadMark later).
-      RoadMark rebased = mark;
-      if (mark.s_offset <= spanning_local + tol::kLength) {
-        rebased.s_offset = 0.0;
-        // Collapses every mark active before the split to offset 0; the last
-        // one wins, matching eval semantics.
-        if (!marks.empty() && marks.front().s_offset == 0.0) {
-          marks.front() = std::move(rebased);
-          continue;
-        }
-        marks.insert(marks.begin(), std::move(rebased));
-      } else {
-        rebased.s_offset = mark.s_offset - spanning_local;
-        marks.push_back(std::move(rebased));
-      }
-    }
-    copy.road_marks = std::move(marks);
+    copy.road_marks = rebase_marks(copy.road_marks, spanning_local);
     duplicated_lanes.push_back(LaneBlueprint{.value = std::move(copy)});
   }
 
@@ -3129,12 +3148,192 @@ set_lane_width(const RoadNetwork& network, LaneId lane_id, double width_m) {
         std::string(kName),
         Error{.code = ErrorCode::InvalidArgument, .message = "lane width must be > 0"});
   }
+  // Refuse to flatten a width that varies along s. This op used to overwrite
+  // `widths` unconditionally, so a single constant-width edit silently
+  // destroyed every taper on the lane — including one the user had just
+  // carved, and any authored by a foreign .xodr.
+  const std::vector<Poly3>& widths = context->lane.widths;
+  const bool constant = widths.size() <= 1 &&
+                        (widths.empty() || (widths.front().b == 0.0 && widths.front().c == 0.0 &&
+                                            widths.front().d == 0.0));
+  if (!constant) {
+    return invalid_command(std::string(kName),
+                           Error{.code = ErrorCode::InvalidArgument,
+                                 .message = "this lane's width varies along s; use "
+                                            "set_lane_width_profile to edit it"});
+  }
   Lane after = context->lane;
   after.widths = {Poly3{.a = width_m}};
   auto command =
       std::make_unique<GenericCommand>(std::string(kName), DirtySet{.roads = {context->road_id}});
   command->before.lanes.emplace_back(lane_id, context->lane);
   command->after.lanes.emplace_back(lane_id, std::move(after));
+  return command;
+}
+
+std::unique_ptr<Command>
+set_lane_width_profile(const RoadNetwork& network, LaneId lane_id, std::vector<Poly3> widths) {
+  static constexpr std::string_view kName = "Set Lane Width Profile";
+  const auto fail = [&](std::string message) {
+    return invalid_command(
+        std::string(kName),
+        Error{.code = ErrorCode::InvalidArgument, .message = std::move(message)});
+  };
+  auto context = lane_context(network, lane_id);
+  if (!context.has_value()) {
+    return invalid_command(std::string(kName), context.error());
+  }
+  // asam.net:xodr:1.4.0:road.lane.center_lane_no_width
+  if (context->lane.odr_id == 0) {
+    return fail("the center lane has no width");
+  }
+  if (widths.empty()) {
+    return fail("width profile must have at least one record");
+  }
+  // asam.net:xodr:1.7.0:road.lane.width.width_defined_whole_section — the
+  // width must cover the whole section, so a record at sOffset 0 must exist.
+  if (std::abs(widths.front().s) > tol::kLength) {
+    return fail("width profile must start with a record at sOffset 0");
+  }
+  for (std::size_t i = 0; i < widths.size(); ++i) {
+    // asam.net:xodr:1.4.0:road.lane.width.lane_width_validity — width shall
+    // be >= 0. Zero is legal and load-bearing: a turn lane tapers up from 0.
+    if (widths[i].a < 0.0) {
+      return fail("width must be >= 0 at every record start");
+    }
+    // asam.net:xodr:1.4.0:road.lane.width.elem_asc_order
+    if (i > 0 && widths[i].s <= widths[i - 1].s + tol::kLength) {
+      return fail("width records must ascend by sOffset");
+    }
+  }
+  auto span = section_end(network, context->section_id);
+  if (!span.has_value()) {
+    return invalid_command(std::string(kName), span.error());
+  }
+  const double length = *span - network.lane_section(context->section_id)->s0;
+  if (widths.back().s >= length - tol::kLength) {
+    return fail("every width record must start inside the lane section");
+  }
+
+  Lane after = context->lane;
+  after.widths = std::move(widths);
+  auto command =
+      std::make_unique<GenericCommand>(std::string(kName), DirtySet{.roads = {context->road_id}});
+  command->before.lanes.emplace_back(lane_id, context->lane);
+  command->after.lanes.emplace_back(lane_id, std::move(after));
+  return command;
+}
+
+std::unique_ptr<Command> split_lane_section(const RoadNetwork& network, RoadId road_id, double s) {
+  static constexpr std::string_view kName = "Split Lane Section";
+  const auto fail = [&](std::string message) {
+    return invalid_command(
+        std::string(kName),
+        Error{.code = ErrorCode::InvalidArgument, .message = std::move(message)});
+  };
+  const Road* road = network.road(road_id);
+  if (road == nullptr) {
+    return fail("stale road id");
+  }
+  if (road->sections.empty()) {
+    return fail("road has no lane sections");
+  }
+  if (s <= tol::kLength || s >= road->plan_view.length() - tol::kLength) {
+    return fail("split station must lie strictly inside the road");
+  }
+  const LaneSectionId covering_id = section_at(network, road_id, s);
+  if (!covering_id.is_valid()) {
+    return fail("no lane section covers the split station");
+  }
+  const LaneSection& covering = *network.lane_section(covering_id);
+
+  // Idempotent at an existing boundary: Carve cuts both ends of a span and
+  // must not have to special-case a taper that starts where a section does.
+  // An empty command applies and reverts as a no-op, keeping the
+  // byte-identical contract trivially.
+  if (std::abs(covering.s0 - s) <= tol::kLength) {
+    return std::make_unique<GenericCommand>(std::string(kName), DirtySet{});
+  }
+  const double local = s - covering.s0;
+
+  // The copy that takes [s, end). Captured now, replayed by the creator.
+  struct LaneCopy {
+    int odr_id = 0;
+    LaneType type = LaneType::None;
+    std::vector<Poly3> widths;
+    std::vector<RoadMark> marks;
+    std::optional<int> predecessor; // unset when the lane does not continue
+    std::optional<int> successor;   // the original's successor moves here
+  };
+
+  std::vector<LaneCopy> copies;
+  copies.reserve(covering.lanes.size());
+
+  auto command = std::make_unique<GenericCommand>(std::string(kName),
+                                                  DirtySet{.roads = {road_id}, .topology = true});
+  command->before.roads.emplace_back(road_id, *road);
+
+  // The originals keep [s0, s); `after` is recomputed from the network once a
+  // creator runs, so the creator writes these rather than command->after.
+  std::vector<std::pair<LaneId, Lane>> truncated_originals;
+  truncated_originals.reserve(covering.lanes.size());
+
+  for (const LaneId lane_id : covering.lanes) {
+    const Lane& lane = *network.lane(lane_id);
+    // A lane continues across the seam only if it is physically there on both
+    // sides (§11.6: "Both lanes have a non-zero width at the connection
+    // point"). The center lane always continues — it carries no width by
+    // rule, so evaluating its (empty) profile would wrongly say zero.
+    const bool continues = lane.odr_id == 0 || eval_profile(lane.widths, local) > tol::kLength;
+    // asam.net:xodr:1.4.0:road.lane.link.lanes_across_laneSections — a
+    // continuing lane is connected in BOTH directions. The ids are identical
+    // across the seam, so the next section's predecessors already name the
+    // copy correctly and need no rewrite.
+    const std::optional<int> seam = continues ? std::optional<int>{lane.odr_id} : std::nullopt;
+    copies.push_back(LaneCopy{.odr_id = lane.odr_id,
+                              .type = lane.type,
+                              .widths = rebase_profile(lane.widths, local),
+                              .marks = rebase_marks(lane.road_marks, local),
+                              .predecessor = seam,
+                              .successor = lane.successor});
+
+    Lane truncated = lane;
+    truncated.widths = truncate_profile(lane.widths, local);
+    truncated.road_marks = truncate_marks(lane.road_marks, local);
+    truncated.successor = seam;
+    command->before.lanes.emplace_back(lane_id, lane);
+    truncated_originals.emplace_back(lane_id, std::move(truncated));
+  }
+
+  command->creator = [road_id,
+                      s,
+                      copies = std::move(copies),
+                      truncated_originals = std::move(truncated_originals)](
+                         RoadNetwork& target, Values& created) -> Expected<void> {
+    const LaneSectionId new_section = target.add_lane_section(road_id, s);
+    if (!new_section.is_valid()) {
+      return make_error(ErrorCode::InvalidArgument,
+                        "a lane section already starts at this station");
+    }
+    for (const LaneCopy& copy : copies) {
+      const LaneId new_lane = target.add_lane(new_section, copy.odr_id, copy.type);
+      if (!new_lane.is_valid()) {
+        return make_error(ErrorCode::InvalidArgument,
+                          "lane id already occupied in the new section");
+      }
+      Lane& value = *target.lane(new_lane);
+      value.widths = copy.widths;
+      value.road_marks = copy.marks;
+      value.predecessor = copy.predecessor;
+      value.successor = copy.successor;
+      created.lanes.emplace_back(new_lane, Lane{});
+    }
+    for (const auto& [lane_id, value] : truncated_originals) {
+      *target.lane(lane_id) = value;
+    }
+    created.sections.emplace_back(new_section, LaneSection{});
+    return {};
+  };
   return command;
 }
 
