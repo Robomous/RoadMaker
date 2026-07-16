@@ -9,6 +9,7 @@
 #include "roadmaker/road/object.hpp"
 #include "roadmaker/road/road.hpp"
 #include "roadmaker/road/signal.hpp"
+#include "roadmaker/road/surface.hpp"
 
 #include <string>
 #include <string_view>
@@ -53,6 +54,11 @@ public:
   /// overwritten with `road`. Returns an invalid id if `road` is stale.
   RM_API SignalId add_signal(RoadId road, Signal value);
 
+  /// Creates a ground surface (#215). Unlike add_object, a Surface is not
+  /// owned by a single road, so this is a free create. derive_surfaces owns
+  /// the surface arena and reconciles it against the enclosed areas.
+  RM_API SurfaceId create_surface(Surface value);
+
   // --- destruction (cascading) --------------------------------------------
 
   /// Erases the road with its sections, lanes, and objects, and removes
@@ -71,6 +77,11 @@ public:
   /// Road::junction becomes invalid). Connecting roads themselves survive.
   /// Returns false on a stale id.
   RM_API bool erase_junction(JunctionId junction);
+
+  /// Surfaces are leaves — nothing references them, so erasing cascades
+  /// nothing. Returns false on a stale id. NOTE: erase_road deliberately
+  /// does NOT cascade surfaces; they are reconciled by derive_surfaces.
+  RM_API bool erase_surface(SurfaceId surface);
 
   // --- command-layer restore-in-place (roadmaker::edit only) ---------------
   //
@@ -97,6 +108,9 @@ public:
 
   RM_API Expected<SignalId> restore_signal(SignalId id, Signal value);
   RM_API Expected<void> erase_signal_exact(SignalId id);
+
+  RM_API Expected<SurfaceId> restore_surface(SurfaceId id, Surface value);
+  RM_API Expected<void> erase_surface_exact(SurfaceId id);
 
   // --- lookup (nullptr on stale/invalid ids) ------------------------------
 
@@ -126,6 +140,10 @@ public:
 
   [[nodiscard]] const Signal* signal(SignalId id) const { return signals_.get(id); }
 
+  [[nodiscard]] Surface* surface(SurfaceId id) { return surfaces_.get(id); }
+
+  [[nodiscard]] const Surface* surface(SurfaceId id) const { return surfaces_.get(id); }
+
   /// Linear search by OpenDRIVE id; invalid id if absent.
   [[nodiscard]] RM_API RoadId find_road(std::string_view odr_id) const;
   [[nodiscard]] RM_API JunctionId find_junction(std::string_view odr_id) const;
@@ -143,6 +161,8 @@ public:
   [[nodiscard]] std::size_t object_count() const { return objects_.size(); }
 
   [[nodiscard]] std::size_t signal_count() const { return signals_.size(); }
+
+  [[nodiscard]] std::size_t surface_count() const { return surfaces_.size(); }
 
   /// fn(RoadId, Road&) over live roads, in creation order.
   template <class Fn>
@@ -182,6 +202,17 @@ public:
     signals_.for_each(fn);
   }
 
+  /// fn(SurfaceId, Surface&) over live surfaces, in creation order.
+  template <class Fn>
+  void for_each_surface(Fn fn) {
+    surfaces_.for_each(fn);
+  }
+
+  template <class Fn>
+  void for_each_surface(Fn fn) const {
+    surfaces_.for_each(fn);
+  }
+
 private:
   Arena<Road, RoadId> roads_;
   Arena<LaneSection, LaneSectionId> sections_;
@@ -189,6 +220,7 @@ private:
   Arena<Junction, JunctionId> junctions_;
   Arena<Object, ObjectId> objects_;
   Arena<Signal, SignalId> signals_;
+  Arena<Surface, SurfaceId> surfaces_;
 };
 
 /// Junctions the road participates in: as a connecting road
@@ -206,6 +238,12 @@ private:
 /// Signals the road owns, in arena order. Linear scan — signal counts stay
 /// small at GS-1 scale (docs/design/m3a/01 §2.1).
 [[nodiscard]] RM_API std::vector<SignalId> signals_of(const RoadNetwork& network, RoadId road);
+
+/// Surfaces whose `bounding_roads` ring contains `road`, in arena order. The
+/// regen layer uses this to find the surfaces a road change may disturb.
+/// Linear scan — surface counts stay small at P2 scale.
+[[nodiscard]] RM_API std::vector<SurfaceId> surfaces_touching(const RoadNetwork& network,
+                                                              RoadId road);
 
 /// The lane section governing global station `s` on `road`: the last section
 /// whose s0 is <= s. A section is valid from its s0 until the next one

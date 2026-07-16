@@ -55,6 +55,7 @@ struct PickHit {
   ObjectId object;     // valid when the hit is a placed prop (nearer than any road)
   SignalId signal;     // valid when the hit is a placed signal (nearer than any road)
   JunctionId junction; // valid when a junction floor was hit (road/lane invalid)
+  SurfaceId surface;   // valid when a ground surface was hit (road/lane/junction invalid)
   std::array<double, 3> position{};
   double distance = 0.0; // along the ray [m]
 };

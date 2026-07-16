@@ -16,6 +16,7 @@
 #include "roadmaker/mesh/mesh_builder.hpp"
 #include "roadmaker/road/authoring.hpp"
 #include "roadmaker/road/network.hpp"
+#include "roadmaker/road/surface_derivation.hpp"
 #include "roadmaker/version.hpp"
 #include "roadmaker/xodr/reader.hpp"
 #include "roadmaker/xodr/writer.hpp"
@@ -172,6 +173,9 @@ NB_MODULE(_roadmaker, m) {
       .value("MINUS", roadmaker::ObjectOrientation::Minus)
       .value("NONE", roadmaker::ObjectOrientation::None);
 
+  nb::enum_<roadmaker::BoundarySource>(m, "BoundarySource")
+      .value("DERIVED", roadmaker::BoundarySource::Derived);
+
   nb::enum_<roadmaker::Severity>(m, "Severity")
       .value("INFO", roadmaker::Severity::Info)
       .value("WARNING", roadmaker::Severity::Warning)
@@ -185,6 +189,7 @@ NB_MODULE(_roadmaker, m) {
   bind_id<roadmaker::JunctionId>(m, "JunctionId");
   bind_id<roadmaker::ObjectId>(m, "ObjectId");
   bind_id<roadmaker::SignalId>(m, "SignalId");
+  bind_id<roadmaker::SurfaceId>(m, "SurfaceId");
 
   // --- value types -----------------------------------------------------------
 
@@ -516,6 +521,20 @@ NB_MODULE(_roadmaker, m) {
                ", t=" + std::to_string(object.t) + ")";
       });
 
+  nb::class_<roadmaker::Surface>(m, "Surface")
+      .def(nb::init<>())
+      .def_rw("source", &roadmaker::Surface::source)
+      .def_rw("bounding_roads",
+              &roadmaker::Surface::bounding_roads,
+              "Ordered ring of RoadIds enclosing the area; deterministic.")
+      .def("__eq__",
+           [](const roadmaker::Surface& a, nb::object b) {
+             return nb::isinstance<roadmaker::Surface>(b) && a == nb::cast<roadmaker::Surface>(b);
+           })
+      .def("__repr__", [](const roadmaker::Surface& surface) {
+        return "Surface(bounding_roads=" + std::to_string(surface.bounding_roads.size()) + ")";
+      });
+
   nb::class_<roadmaker::Signal>(m, "Signal")
       .def(nb::init<>())
       .def_ro("road", &roadmaker::Signal::road, "Owning road (back-reference).")
@@ -570,10 +589,17 @@ NB_MODULE(_roadmaker, m) {
            "value"_a,
            "Adds an OpenDRIVE <signal> to `road`; returns an invalid id if "
            "`road` is stale.")
+      .def("create_surface",
+           &roadmaker::RoadNetwork::create_surface,
+           "value"_a,
+           "Creates a ground surface. derive_surfaces owns the surface arena "
+           "and reconciles it against enclosed areas; prefer that over hand "
+           "authoring.")
       .def("erase_road", &roadmaker::RoadNetwork::erase_road, "road"_a)
       .def("erase_junction", &roadmaker::RoadNetwork::erase_junction, "junction"_a)
       .def("erase_object", &roadmaker::RoadNetwork::erase_object, "object"_a)
       .def("erase_signal", &roadmaker::RoadNetwork::erase_signal, "signal"_a)
+      .def("erase_surface", &roadmaker::RoadNetwork::erase_surface, "surface"_a)
       .def("object",
            nb::overload_cast<roadmaker::ObjectId>(&roadmaker::RoadNetwork::object),
            "id"_a,
@@ -593,6 +619,19 @@ NB_MODULE(_roadmaker, m) {
            nb::rv_policy::reference_internal,
            "Signal for id, or None if the id is stale. The reference is valid "
            "only until the network is mutated.")
+      .def("surface",
+           nb::overload_cast<roadmaker::SurfaceId>(&roadmaker::RoadNetwork::surface),
+           "id"_a,
+           nb::rv_policy::reference_internal,
+           "Surface for id, or None if the id is stale. The reference is valid "
+           "only until the network is mutated.")
+      .def(
+          "surfaces_touching",
+          [](const roadmaker::RoadNetwork& network, roadmaker::RoadId road) {
+            return roadmaker::surfaces_touching(network, road);
+          },
+          "road"_a,
+          "SurfaceIds whose bounding-road ring contains `road`, in arena order.")
       .def(
           "signals_of",
           [](const roadmaker::RoadNetwork& network, roadmaker::RoadId road) {
@@ -669,11 +708,20 @@ NB_MODULE(_roadmaker, m) {
                      });
                      return ids;
                    })
+      .def_prop_ro(
+          "surface_ids",
+          [](const roadmaker::RoadNetwork& network) {
+            std::vector<roadmaker::SurfaceId> ids;
+            network.for_each_surface(
+                [&](roadmaker::SurfaceId id, const roadmaker::Surface&) { ids.push_back(id); });
+            return ids;
+          })
       .def_prop_ro("road_count", &roadmaker::RoadNetwork::road_count)
       .def_prop_ro("lane_count", &roadmaker::RoadNetwork::lane_count)
       .def_prop_ro("junction_count", &roadmaker::RoadNetwork::junction_count)
       .def_prop_ro("object_count", &roadmaker::RoadNetwork::object_count)
       .def_prop_ro("signal_count", &roadmaker::RoadNetwork::signal_count)
+      .def_prop_ro("surface_count", &roadmaker::RoadNetwork::surface_count)
       .def("__repr__", [](const roadmaker::RoadNetwork& network) {
         return "RoadNetwork(roads=" + std::to_string(network.road_count()) +
                ", junctions=" + std::to_string(network.junction_count()) + ")";
@@ -741,6 +789,13 @@ NB_MODULE(_roadmaker, m) {
       "a list of Diagnostic citing normative rule UIDs; rules present in only "
       "one version's catalog are cited only for that target. Findings never "
       "block write_xodr/save_xodr.");
+
+  m.def("derive_surfaces",
+        &roadmaker::derive_surfaces,
+        "network"_a,
+        "Reconciles the surface arena so that, after the call, the set of "
+        "surfaces exactly matches the areas enclosed by roads. Id-stable across "
+        "calls and idempotent when the topology is unchanged.");
 
   // --- authoring -----------------------------------------------------------------
 

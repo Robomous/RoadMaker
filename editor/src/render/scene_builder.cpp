@@ -238,6 +238,21 @@ Scene build_scene(const NetworkMesh& mesh) {
     });
     grow_bounds(scene.bounds, floor.mesh.positions);
   }
+  for (const SurfaceMesh& surface : mesh.surfaces) {
+    // Enclosed-area ground (#215): a lit flat grass-green, carrying its SurfaceId
+    // so a pick maps back to the selectable entity. The distinct color (and the
+    // Grass material class in textured mode) sets it apart from the asphalt
+    // floors while staying cheap — acceptance is renders + selectable + frameable.
+    scene.items.push_back(SceneItem{
+        .data = to_render_data(surface.mesh.positions,
+                               surface.mesh.normals,
+                               surface.mesh.indices,
+                               {0.28F, 0.42F, 0.20F, 1.0F}),
+        .surface_id = surface.surface,
+        .surface = SurfaceKind::Grass,
+    });
+    grow_bounds(scene.bounds, surface.mesh.positions);
+  }
   for (const ObjectInstance& instance : mesh.objects) {
     append_object_items(instance, scene);
   }

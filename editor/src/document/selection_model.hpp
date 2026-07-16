@@ -23,6 +23,7 @@ struct SelectionEntry {
   ObjectId object;     // valid = a placed object/prop selection
   SignalId signal;     // valid = a placed signal selection (road = its owning road)
   JunctionId junction; // valid = a junction floor selection (road invalid)
+  SurfaceId surface;   // valid = an enclosed-area ground surface (road/lane invalid)
 
   friend bool operator==(const SelectionEntry&, const SelectionEntry&) = default;
 };
@@ -86,6 +87,11 @@ public:
   /// pick or a Junctions-tree click lands here; selecting a junction never
   /// puts its arms/connecting roads in play (they are selected as roads).
   [[nodiscard]] std::vector<JunctionId> selected_junctions() const;
+
+  /// Ground surfaces (#215) present in the selection, in selection order. A
+  /// surface floor pick lands here; a surface is auto-managed by its enclosing
+  /// road loop, so this never puts a road (or its lanes) in play.
+  [[nodiscard]] std::vector<SurfaceId> selected_surfaces() const;
 
 signals:
   /// Emitted only when the selection actually changes. Carries no payload —

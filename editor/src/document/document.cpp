@@ -5,6 +5,7 @@
 #include "roadmaker/io/gltf_exporter.hpp"
 #include "roadmaker/io/usd_exporter.hpp"
 #include "roadmaker/mesh/mesh_builder.hpp"
+#include "roadmaker/road/surface_derivation.hpp"
 #include "roadmaker/xodr/reader.hpp"
 #include "roadmaker/xodr/writer.hpp"
 
@@ -344,11 +345,47 @@ void Document::after_kernel_mutation(const edit::DirtySet& dirty) {
   if (!dirty.objects.empty()) {
     remesh_objects(network_, mesh_, dirty.objects);
   }
-  // Topology and junction-floor changes reshape the item list wholesale;
-  // only pure road-geometry edits ride the partial-upload path. An
-  // objects-only edit (roads empty) rebuilds wholesale via the empty list,
-  // which now re-reads the prop instances too.
-  const bool partial = !dirty.topology && dirty.junctions.empty() && !dirty.roads.empty();
+
+  // Enclosed-area ground surfaces (#215) follow the roads, driven off the SAME
+  // dirty fields — no command sets a surface flag. A topology change can add or
+  // remove an enclosed area, so re-derive the surface set and mesh all of them;
+  // otherwise the surface SET is unchanged but a bounding road may have moved,
+  // so re-mesh only the surfaces touching a changed road. derive_surfaces runs
+  // on redo AND undo (both route through this hook) — that is what keeps undo
+  // exact: the surface tracks the roads either way.
+  bool surfaces_changed = false;
+  if (dirty.topology) {
+    derive_surfaces(network_);
+    // remesh_surfaces only rebuilds the SurfaceIds it is handed — an empty span
+    // is a no-op, NOT "all" — so gather every surface derive_surfaces left in
+    // the arena and rebuild the channel from scratch, dropping any entry whose
+    // loop vanished (the cleared channel keeps no stale surface).
+    std::vector<SurfaceId> all;
+    network_.for_each_surface([&](SurfaceId id, const Surface&) { all.push_back(id); });
+    mesh_.surfaces.clear();
+    remesh_surfaces(network_, mesh_, all);
+    surfaces_changed = true;
+  } else if (!dirty.roads.empty()) {
+    std::vector<SurfaceId> touched;
+    for (const RoadId road : dirty.roads) {
+      for (const SurfaceId surface : surfaces_touching(network_, road)) {
+        if (std::ranges::find(touched, surface) == touched.end()) {
+          touched.push_back(surface);
+        }
+      }
+    }
+    if (!touched.empty()) {
+      remesh_surfaces(network_, mesh_, touched);
+      surfaces_changed = true;
+    }
+  }
+
+  // Topology, junction-floor, AND surface changes reshape the item list
+  // wholesale; only pure road-geometry edits with no surface touched ride the
+  // partial-upload path. An objects-only edit (roads empty) rebuilds wholesale
+  // via the empty list, which now re-reads the prop instances too.
+  const bool partial =
+      !dirty.topology && dirty.junctions.empty() && !surfaces_changed && !dirty.roads.empty();
   emit mesh_changed(partial ? dirty.roads : std::vector<RoadId>{});
   if (!dirty.objects.empty()) {
     emit objects_changed(dirty.objects); // prunes stale prop selections

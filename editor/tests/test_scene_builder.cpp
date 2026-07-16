@@ -155,6 +155,31 @@ TEST(BuildScene, FlattensPatchesMarkingsAndFloors) {
   EXPECT_FLOAT_EQ(scene.bounds.hi[2], 2.0F);
 }
 
+TEST(BuildScene, EmitsGroundSurfaceItemTaggedWithSurfaceId) {
+  // #215: a ground surface becomes one render item carrying its SurfaceId (for
+  // pick-back) and the Grass material class, with road/lane/junction invalid.
+  RoadNetwork network;
+  const SurfaceId surface_id = network.create_surface(Surface{});
+
+  NetworkMesh mesh;
+  mesh.surfaces.push_back(
+      SurfaceMesh{.surface = surface_id,
+                  .mesh = SubMesh{.positions = {0, 0, 0, 8, 0, 0, 8, 8, 0, 0, 8, 0},
+                                  .normals = {0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1},
+                                  .indices = {0, 1, 2, 0, 2, 3}}});
+
+  const Scene scene = build_scene(mesh);
+  ASSERT_EQ(scene.items.size(), 1U);
+  const SceneItem& ground = scene.items[0];
+  EXPECT_EQ(ground.surface_id, surface_id);
+  EXPECT_EQ(ground.surface, SurfaceKind::Grass);
+  EXPECT_FALSE(ground.road.is_valid());
+  EXPECT_FALSE(ground.lane.is_valid());
+  EXPECT_FALSE(ground.junction.is_valid());
+  ASSERT_TRUE(scene.bounds.valid());
+  EXPECT_FLOAT_EQ(scene.bounds.hi[0], 8.0F);
+}
+
 // The Sober preset must reproduce the M2 `0.35 + 0.65*lambert` grey shading:
 // a white, normal-independent ambient (sky == ground) at 0.35 plus a white
 // directional term at 0.65 along the original hardcoded light direction.

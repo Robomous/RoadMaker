@@ -69,6 +69,10 @@ SignalId RoadNetwork::add_signal(RoadId road_id, Signal value) {
   return signals_.emplace(std::move(value));
 }
 
+SurfaceId RoadNetwork::create_surface(Surface value) {
+  return surfaces_.emplace(std::move(value));
+}
+
 bool RoadNetwork::erase_road(RoadId road_id) {
   Road* doomed = roads_.get(road_id);
   if (doomed == nullptr) {
@@ -132,6 +136,10 @@ bool RoadNetwork::erase_junction(JunctionId junction_id) {
   return junctions_.erase(junction_id);
 }
 
+bool RoadNetwork::erase_surface(SurfaceId surface_id) {
+  return surfaces_.erase(surface_id);
+}
+
 Expected<RoadId> RoadNetwork::restore_road(RoadId id, Road value) {
   return roads_.restore(id, std::move(value));
 }
@@ -178,6 +186,14 @@ Expected<SignalId> RoadNetwork::restore_signal(SignalId id, Signal value) {
 
 Expected<void> RoadNetwork::erase_signal_exact(SignalId id) {
   return signals_.erase_exact(id);
+}
+
+Expected<SurfaceId> RoadNetwork::restore_surface(SurfaceId id, Surface value) {
+  return surfaces_.restore(id, std::move(value));
+}
+
+Expected<void> RoadNetwork::erase_surface_exact(SurfaceId id) {
+  return surfaces_.erase_exact(id);
 }
 
 RoadId RoadNetwork::find_road(std::string_view odr_id) const {
@@ -250,6 +266,16 @@ std::vector<SignalId> signals_of(const RoadNetwork& network, RoadId road_id) {
     }
   });
   return owned;
+}
+
+std::vector<SurfaceId> surfaces_touching(const RoadNetwork& network, RoadId road_id) {
+  std::vector<SurfaceId> touched;
+  network.for_each_surface([&](SurfaceId id, const Surface& surface) {
+    if (std::ranges::find(surface.bounding_roads, road_id) != surface.bounding_roads.end()) {
+      touched.push_back(id);
+    }
+  });
+  return touched;
 }
 
 LaneSectionId section_at(const RoadNetwork& network, RoadId road_id, double s) {

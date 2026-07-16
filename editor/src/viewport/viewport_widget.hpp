@@ -182,6 +182,7 @@ private:
     ObjectId object;
     SignalId signal;
     JunctionId junction;
+    SurfaceId surface_id;
     SurfaceKind surface = SurfaceKind::Untextured;
   };
 
@@ -237,6 +238,11 @@ private:
   /// Sets the hovered junction floor (repainting only on change). Mutually
   /// exclusive with the road/object hover; pass an invalid id to clear.
   void set_hovered_junction(JunctionId junction);
+
+  /// Sets the hovered ground surface (#215, repainting only on change).
+  /// Mutually exclusive with the road/object/junction hover; pass an invalid
+  /// id to clear.
+  void set_hovered_surface(SurfaceId surface);
 
   /// Builds the right-click MenuContext under a viewport pixel: node handle of
   /// a selected road (priority), else the road/lane pick + its station.
@@ -440,6 +446,10 @@ private:
   /// Junction floor under the cursor (invalid = none). Mutually exclusive with
   /// the road/object hover.
   JunctionId hovered_junction_;
+
+  /// Ground surface under the cursor (invalid = none, #215). Mutually exclusive
+  /// with the road/object/junction hover.
+  SurfaceId hovered_surface_;
 
   /// Set by set_hover_preview (screenshot mode): update_hover then leaves the
   /// forced hover in place so a capture isn't wiped by a spurious event.

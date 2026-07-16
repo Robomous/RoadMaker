@@ -5,6 +5,8 @@
 
 #include <QSignalSpy>
 #include <QTemporaryDir>
+#include <algorithm>
+#include <cstddef>
 #include <fstream>
 #include <sstream>
 
@@ -184,6 +186,74 @@ TEST(Document, SaveEmptyDocumentIsValidAndReloads) {
   ASSERT_TRUE(reloaded.load(path).has_value());
   EXPECT_EQ(reloaded.network().road_count(), 0U);
   EXPECT_TRUE(reloaded.diagnostics().empty());
+}
+
+// #215 Scope C: after_kernel_mutation reconciles enclosed-area ground surfaces
+// off the existing dirty fields — derive on a topology change, remesh on a
+// bounding-road move — and it runs on redo AND undo, keeping undo exact.
+std::unique_ptr<edit::Command> seg(double x0, double y0, double x1, double y1, const char* name) {
+  return edit::create_road({Waypoint{.x = x0, .y = y0}, Waypoint{.x = x1, .y = y1}},
+                           LaneProfile::two_lane_default(),
+                           name);
+}
+
+TEST(Document, DerivesGroundSurfaceForAnEnclosedLoop) {
+  Document document;
+  ASSERT_TRUE(document.push_command(seg(0.0, 0.0, 20.0, 0.0, "a")).has_value());
+  ASSERT_TRUE(document.push_command(seg(20.0, 0.0, 20.0, 20.0, "b")).has_value());
+  ASSERT_TRUE(document.push_command(seg(20.0, 20.0, 0.0, 20.0, "c")).has_value());
+  EXPECT_EQ(document.network().surface_count(), 0U) << "three roads enclose nothing";
+
+  // Closing the loop derives one surface, and build_network_mesh's surface
+  // channel is populated so it renders.
+  ASSERT_TRUE(document.push_command(seg(0.0, 20.0, 0.0, 0.0, "d")).has_value());
+  EXPECT_EQ(document.network().surface_count(), 1U);
+  EXPECT_EQ(document.mesh().surfaces.size(), 1U);
+
+  // Undo opens the loop → the surface vanishes (undo stays exact); redo brings
+  // it back. Both route through after_kernel_mutation, which re-derives.
+  document.undo_stack()->undo();
+  EXPECT_EQ(document.network().surface_count(), 0U);
+  EXPECT_TRUE(document.mesh().surfaces.empty());
+
+  document.undo_stack()->redo();
+  EXPECT_EQ(document.network().surface_count(), 1U);
+  EXPECT_EQ(document.mesh().surfaces.size(), 1U);
+}
+
+double surface_max_z(const Document& document) {
+  double max_z = -1e9;
+  for (const SurfaceMesh& sm : document.mesh().surfaces) {
+    for (std::size_t i = 2; i < sm.mesh.positions.size(); i += 3) {
+      max_z = std::max(max_z, sm.mesh.positions[i]);
+    }
+  }
+  return max_z;
+}
+
+TEST(Document, RaisingABoundingRoadRemeshesTheSurface) {
+  Document document;
+  ASSERT_TRUE(document.push_command(seg(0.0, 0.0, 20.0, 0.0, "a")).has_value());
+  ASSERT_TRUE(document.push_command(seg(20.0, 0.0, 20.0, 20.0, "b")).has_value());
+  ASSERT_TRUE(document.push_command(seg(20.0, 20.0, 0.0, 20.0, "c")).has_value());
+  ASSERT_TRUE(document.push_command(seg(0.0, 20.0, 0.0, 0.0, "d")).has_value());
+  ASSERT_EQ(document.mesh().surfaces.size(), 1U);
+  EXPECT_NEAR(surface_max_z(document), 0.0, 1e-6) << "flat loop, flat surface";
+
+  // A pure geometry edit (elevation — no topology change) keeps the plan-view
+  // ring closed, so the surface SET is unchanged, but a bounding road moved:
+  // after_kernel_mutation must remesh the surfaces touching it. The height
+  // field follows the raised road, so the surface's peak z climbs.
+  RoadId first;
+  document.network().for_each_road([&](RoadId id, const Road&) {
+    if (!first.is_valid()) {
+      first = id;
+    }
+  });
+  ASSERT_TRUE(document.push_command(edit::set_node_elevation(document.network(), first, 0, 5.0))
+                  .has_value());
+  EXPECT_EQ(document.mesh().surfaces.size(), 1U);
+  EXPECT_GT(surface_max_z(document), 0.5) << "the surface remeshed to follow the raised road";
 }
 
 } // namespace

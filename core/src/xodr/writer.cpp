@@ -1186,6 +1186,38 @@ Expected<std::string> write_xodr(const RoadNetwork& network,
     write_junction(root, network, junction, boundaries[junction_index++]);
   });
 
+  // Derived ground surfaces round-trip through <userData code="rm:surface">
+  // (OpenDRIVE 1.9.0 §7.2): value is the ";"-joined bounding-road odr ids in
+  // the surface's derived ring order. The mesh is re-derived from the roads and
+  // never serialized. Surfaces are emitted value-sorted so arena slot churn
+  // (create/erase during reconciliation) cannot perturb the byte-identical
+  // round-trip. A bounded face needs >= 3 roads; anything less (or a stale road
+  // reference) is not written, mirroring the rm:arms < 2 guard.
+  std::vector<std::string> surface_values;
+  network.for_each_surface([&](SurfaceId, const Surface& surface) {
+    if (surface.bounding_roads.size() < 3) {
+      return;
+    }
+    std::string value;
+    for (const RoadId road_id : surface.bounding_roads) {
+      const Road* road = network.road(road_id);
+      if (road == nullptr) {
+        return; // stale reference — drop the whole surface
+      }
+      if (!value.empty()) {
+        value += ';';
+      }
+      value += road->odr_id;
+    }
+    surface_values.push_back(std::move(value));
+  });
+  std::ranges::sort(surface_values);
+  for (const std::string& value : surface_values) {
+    pugi::xml_node user_data = root.append_child("userData");
+    user_data.append_attribute("code").set_value("rm:surface");
+    user_data.append_attribute("value").set_value(value.c_str());
+  }
+
   std::ostringstream out;
   doc.save(out, "  ", pugi::format_default, pugi::encoding_utf8);
   return std::move(out).str();

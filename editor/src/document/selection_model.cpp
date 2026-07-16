@@ -60,8 +60,9 @@ bool SelectionModel::contains(const SelectionEntry& entry) const {
 std::vector<RoadId> SelectionModel::selected_roads() const {
   std::vector<RoadId> roads;
   for (const SelectionEntry& entry : entries_) {
-    if (entry.object.is_valid() || entry.signal.is_valid() || entry.junction.is_valid()) {
-      continue; // a prop/signal/junction selection puts no road in play
+    if (entry.object.is_valid() || entry.signal.is_valid() || entry.junction.is_valid() ||
+        entry.surface.is_valid()) {
+      continue; // a prop/signal/junction/surface selection puts no road in play
     }
     if (std::ranges::find(roads, entry.road) == roads.end()) {
       roads.push_back(entry.road);
@@ -78,6 +79,16 @@ std::vector<JunctionId> SelectionModel::selected_junctions() const {
     }
   }
   return junctions;
+}
+
+std::vector<SurfaceId> SelectionModel::selected_surfaces() const {
+  std::vector<SurfaceId> surfaces;
+  for (const SelectionEntry& entry : entries_) {
+    if (entry.surface.is_valid()) {
+      surfaces.push_back(entry.surface);
+    }
+  }
+  return surfaces;
 }
 
 std::vector<ObjectId> SelectionModel::selected_objects() const {
@@ -109,6 +120,9 @@ bool SelectionModel::is_live(const SelectionEntry& entry) const {
   }
   if (entry.junction.is_valid()) {
     return document_.network().junction(entry.junction) != nullptr;
+  }
+  if (entry.surface.is_valid()) {
+    return document_.network().surface(entry.surface) != nullptr;
   }
   if (document_.network().road(entry.road) == nullptr) {
     return false;

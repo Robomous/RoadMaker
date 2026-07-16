@@ -148,6 +148,10 @@ Material ViewportWidget::material_for(SurfaceKind surface) const {
   case SurfaceKind::Paint:
     material.unlit = true; // markings read as bright flat paint, not shaded
     break;
+  case SurfaceKind::Grass:
+    // Ground surface (#215): no bundled grass texture, so it stays a lit flat
+    // grass-green (the mesh color) — distinct from the asphalt/concrete way.
+    break;
   case SurfaceKind::Untextured:
     break;
   }
@@ -169,6 +173,7 @@ void ViewportWidget::rebuild_scene() {
                                   .object = item.object,
                                   .signal = item.signal,
                                   .junction = item.junction,
+                                  .surface_id = item.surface_id,
                                   .surface = item.surface});
   }
   scene_bounds_ = scene.bounds;
@@ -273,12 +278,14 @@ HighlightState ViewportWidget::item_state(const UploadedItem& item) const {
                              item.object,
                              item.signal,
                              item.junction,
+                             item.surface_id,
                              selection_.entries(),
                              hovered_road_,
                              hovered_lane_,
                              hovered_object_,
                              hovered_signal_,
-                             hovered_junction_);
+                             hovered_junction_,
+                             hovered_surface_);
 }
 
 void ViewportWidget::paintGL() {
@@ -568,8 +575,17 @@ void ViewportWidget::update_hover(const QPointF& pos) {
   ObjectId new_hover_object;     // invalid = no prop under the cursor
   SignalId new_hover_signal;     // invalid = no signal under the cursor
   JunctionId new_hover_junction; // invalid = no junction floor under the cursor
+  SurfaceId new_hover_surface;   // invalid = no ground surface under the cursor
   if (const auto hit = pick(document_.mesh(), road_aabbs_, ray)) {
-    if (hit->junction.is_valid()) {
+    if (hit->surface.is_valid()) {
+      if (document_.network().surface(hit->surface) != nullptr) {
+        info.valid = true;
+        info.world_x = hit->position[0];
+        info.world_y = hit->position[1];
+        info.entity = tr("ground surface");
+        new_hover_surface = hit->surface;
+      }
+    } else if (hit->junction.is_valid()) {
       if (const Junction* junction = document_.network().junction(hit->junction)) {
         info.valid = true;
         info.world_x = hit->position[0];
@@ -617,6 +633,7 @@ void ViewportWidget::update_hover(const QPointF& pos) {
   set_hovered_object(new_hover_object);
   set_hovered_signal(new_hover_signal);
   set_hovered_junction(new_hover_junction);
+  set_hovered_surface(new_hover_surface);
   emit hover_changed(info);
 }
 
@@ -659,12 +676,21 @@ void ViewportWidget::set_hovered_junction(JunctionId junction) {
   update();
 }
 
+void ViewportWidget::set_hovered_surface(SurfaceId surface) {
+  if (hover_locked_ || hovered_surface_ == surface) {
+    return;
+  }
+  hovered_surface_ = surface;
+  update();
+}
+
 void ViewportWidget::leaveEvent(QEvent* event) {
   // Cursor left the viewport — drop every hover highlight.
   set_hovered_road({});
   set_hovered_object({});
   set_hovered_signal({});
   set_hovered_junction({});
+  set_hovered_surface({});
   QOpenGLWidget::leaveEvent(event);
 }
 

@@ -234,6 +234,31 @@ pick(const NetworkMesh& mesh, std::span<const RoadAabb> road_aabbs, const Ray& r
     }
   }
 
+  // Enclosed-area ground surfaces (#215): the area a ring of roads surrounds is
+  // its own selectable entity, the render/select analog of a junction floor.
+  // Tested after roads (and sharing best_t) so a road patch over the surface
+  // still wins on a tie — the surface only claims the open interior no road
+  // covers. Reports the SurfaceId with road/lane/junction invalid.
+  for (const SurfaceMesh& surface : mesh.surfaces) {
+    const std::vector<std::uint32_t>& indices = surface.mesh.indices;
+    for (std::size_t i = 0; i + 2 < indices.size(); i += 3) {
+      const auto t = intersect_triangle(ray,
+                                        vertex(surface.mesh.positions, indices[i]),
+                                        vertex(surface.mesh.positions, indices[i + 1]),
+                                        vertex(surface.mesh.positions, indices[i + 2]));
+      if (t && *t < best_t) {
+        best_t = *t;
+        best = PickHit{
+            .surface = surface.surface,
+            .position = {ray.origin[0] + (ray.direction[0] * *t),
+                         ray.origin[1] + (ray.direction[1] * *t),
+                         ray.origin[2] + (ray.direction[2] * *t)},
+            .distance = *t,
+        };
+      }
+    }
+  }
+
   // Placed props, bounding-sphere tested and sharing best_t so a prop in front
   // of a road wins the pick. A generous whole-tree sphere makes trunks (thin)
   // as easy to grab as crowns.
