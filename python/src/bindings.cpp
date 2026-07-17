@@ -1852,6 +1852,16 @@ NB_MODULE(_roadmaker, m) {
                    [](const roadmaker::NetworkMesh& mesh) { return mesh.roads.size(); })
       .def_prop_ro("junction_floor_count",
                    [](const roadmaker::NetworkMesh& mesh) { return mesh.junction_floors.size(); })
+      .def_prop_ro("surface_count",
+                   [](const roadmaker::NetworkMesh& mesh) { return mesh.surfaces.size(); })
+      .def_prop_ro("surface_vertex_count",
+                   [](const roadmaker::NetworkMesh& mesh) {
+                     std::size_t count = 0;
+                     for (const auto& surface : mesh.surfaces) {
+                       count += surface.mesh.positions.size() / 3;
+                     }
+                     return count;
+                   })
       .def_prop_ro("object_count",
                    [](const roadmaker::NetworkMesh& mesh) { return mesh.objects.size(); })
       .def_prop_ro("signal_count",

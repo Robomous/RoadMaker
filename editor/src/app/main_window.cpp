@@ -742,6 +742,9 @@ void MainWindow::activate_tool_for_capture(const QString& tool_id) {
 void MainWindow::raise_dock_for_capture(const QString& object_name) {
   for (QDockWidget* dock : findChildren<QDockWidget*>()) {
     if (dock->objectName() == object_name) {
+      // Docks that are opt-in (hidden by default, e.g. the 2D Editor) must be
+      // shown before raise() can bring them to the front of a capture.
+      dock->show();
       dock->raise();
       return;
     }

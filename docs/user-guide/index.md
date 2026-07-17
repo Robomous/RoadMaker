@@ -51,7 +51,12 @@ not undoable.
 | [Bend Points](bend-points.md) | Double-click a road to add a bend node without reshaping it |
 | [Merge & Split](merge-split.md) | Cut a road in two, or weld two adjacent roads into one |
 | [Right-Click Menus](context-menus.md) | The context actions for roads, nodes, junctions, and empty space |
-| [Lane Profile](lane-profile.md) | Add, remove, and retype lanes across a road's cross-section |
+| [Lane](lane-profile.md) | Add, remove, and retype lanes and set travel direction across a road's cross-section |
+| [Lane Width](lane-width.md) | Shape a lane's width along the road as a 2D curve |
+| [Lane Add](lane-add.md) | Drop a self-contained pocket lane into the middle of a road |
+| [Lane Form](lane-form.md) | Grow a new lane from a point to the road's end, linked across seams |
+| [Lane Carve](lane-carve.md) | Carve a tapering turn lane on a junction approach |
+| [Road Styles](road-styles.md) | Restyle a whole road by dropping a style from the Library |
 | [Elevation](elevation.md) | Give a road a vertical profile |
 | [Junction](junction.md) | Connect road ends into a junction with generated turning lanes |
 | [T-junction](t-junction.md) | Tee a road's end into another road's body |
@@ -62,9 +67,10 @@ not undoable.
 ## About the screenshots
 
 Screenshots are captured from the themed (graphite-amber) editor with
-`scripts/editor_screenshot.py` as original works, listed in `ASSETS_LICENSES.md`.
-The Library, Create Road, Junction, Elevation, and Objects pages carry them
-today; the remaining tool pages gain theirs as the sweep continues
+`scripts/editor_screenshot.py` as original works of this project. The Library,
+Create Road, Junction, Elevation, Objects, Lane, Lane Width, Lane Add, Lane
+Form, Lane Carve, and Road Styles pages carry them today; the remaining tool
+pages gain theirs as the sweep continues
 ([#52](https://github.com/Robomous/RoadMaker/issues/52)).
 
 ## See also
