@@ -1170,9 +1170,11 @@ NB_MODULE(_roadmaker, m) {
       "network"_a,
       "end"_a,
       "to"_a,
-      "Extends a road past its END by appending a curvature-continuous forward "
-      "clothoid through `to` (elevation continued with matching z and grade). "
-      "START-end extension is out of scope.");
+      "Extends a road past `end` with a curvature-continuous forward clothoid "
+      "through `to` (elevation continued with matching z and grade). An END "
+      "extension appends the fit; a START extension prepends the reversed fit "
+      "and re-bases every s-indexed thing (sections, elevation, superelevation, "
+      "lane_offset, objects, signals, waypoints) by the extension length.");
   edit.def(
       "create_teed_road",
       [](const roadmaker::RoadNetwork& network,

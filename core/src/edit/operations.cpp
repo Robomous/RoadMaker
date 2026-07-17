@@ -1812,6 +1812,39 @@ double profile_grade_at(std::span<const Poly3> profile, double s) {
   return covering != nullptr ? covering->eval_derivative(s) : 0.0;
 }
 
+/// Reverses a single plan-view record so it runs from the record's far end
+/// back to its near end. Used by extend_road's START path: the forward fit
+/// grows the road backward from the old start (start pose, heading `into_hdg`,
+/// curvature `cs.curvature`), and this flips it to run start→old-start along
+/// +s. Curvature is linear in s within any primitive, so reversing and negating
+/// the two endpoints is EXACT (line/arc/spiral alike). `join_curvature` is the
+/// contact-state curvature the fit honoured at the old start (signed along the
+/// backward travel); the reversed record's END curvature is `-join_curvature`,
+/// which equals the road's own +s curvature there — a G2 (curvature-continuous)
+/// join by construction.
+GeometryRecord reversed_record(const GeometryRecord& forward, double join_curvature) {
+  ReferenceLine one;
+  one.append(forward);
+  const double length = one.length();
+  const PathPoint far = one.evaluate(length);
+  GeometryRecord out;
+  out.x = far.x;
+  out.y = far.y;
+  out.hdg = std::remainder(far.hdg + std::numbers::pi, 2.0 * std::numbers::pi);
+  out.length = length;
+  const double curv_start = -far.curvature;
+  const double curv_end = -join_curvature;
+  const bool constant = std::abs(curv_end - curv_start) < tol::kCurvatureEpsilon;
+  if (constant && std::abs(curv_start) < tol::kCurvatureEpsilon) {
+    out.shape = LineGeom{};
+  } else if (constant) {
+    out.shape = ArcGeom{.curvature = curv_start};
+  } else {
+    out.shape = SpiralGeom{.curv_start = curv_start, .curv_end = curv_end};
+  }
+  return out;
+}
+
 /// The road mark active at section-local offset `offset` (the last one starting
 /// at or before it), or a default mark.
 RoadMark active_mark(std::span<const RoadMark> marks, double offset) {
@@ -2624,10 +2657,12 @@ std::unique_ptr<Command> extend_road(const RoadNetwork& network, RoadEnd end, Wa
   if (road == nullptr) {
     return fail("stale road id");
   }
-  if (end.contact == ContactPoint::Start) {
-    return fail("extending from a road's start is out of scope; extend the end");
-  }
-  if (road->successor.has_value()) {
+  const bool at_start = end.contact == ContactPoint::Start;
+  // The link on the end being extended must be free. A connecting road or a
+  // junction arm carries a predecessor/successor here, so this also refuses
+  // extending an end that is part of a junction.
+  const std::optional<RoadLink>& link = at_start ? road->predecessor : road->successor;
+  if (link.has_value()) {
     return fail("cannot extend a road end that is already linked");
   }
   if (!road->authoring_waypoints.has_value()) {
@@ -2638,9 +2673,10 @@ std::unique_ptr<Command> extend_road(const RoadNetwork& network, RoadEnd end, Wa
     return invalid_command(std::string(kName), contact.error());
   }
   const ContactState& cs = *contact;
-  // Forward clothoid from the end pose (into_hdg is the +s tangent at an END
-  // contact) honouring the end curvature — the join is curvature-continuous by
-  // construction.
+  // Forward clothoid from the contact pose honouring its curvature: at an END
+  // `into_hdg` is the +s tangent (grows the road forward); at a START it is the
+  // reverse tangent (grows the road backward from s = 0). Either way the fit is
+  // curvature-continuous with the old end by construction.
   auto extension =
       fit_forward_clothoid(Waypoint{.x = cs.x, .y = cs.y}, cs.into_hdg, cs.curvature, to);
   if (!extension.has_value()) {
@@ -2649,24 +2685,80 @@ std::unique_ptr<Command> extend_road(const RoadNetwork& network, RoadEnd end, Wa
 
   const double old_length = road->plan_view.length();
   Road after = *road;
-  for (const GeometryRecord& record : extension->records()) {
-    after.plan_view.append(record); // append() re-derives contiguous s
-  }
-  after.length = after.plan_view.length();
-  const double new_length = after.length;
-  after.authoring_waypoints->push_back(to);
 
-  // Continue the vertical profile so BOTH z and grade stay continuous at the
-  // join: pin the end node to the contact (z, grade) and extend linearly at the
-  // same grade to the new end (set_elevation_profile's C1 Hermite semantics).
-  std::vector<ElevationPoint> points = elevation_profile_points(*road);
-  if (!points.empty()) {
-    points.back().s = old_length;
-    points.back().z = cs.z;
-    points.back().grade = cs.grade;
+  auto command = std::make_unique<GenericCommand>(std::string(kName),
+                                                  DirtySet{.roads = {end.road}, .topology = true});
+
+  if (!at_start) {
+    // --- END: append the forward fit; everything s-indexed stays put. --------
+    for (const GeometryRecord& record : extension->records()) {
+      after.plan_view.append(record); // append() re-derives contiguous s
+    }
+    after.length = after.plan_view.length();
+    const double new_length = after.length;
+    after.authoring_waypoints->push_back(to);
+
+    // Continue the vertical profile so BOTH z and grade stay continuous at the
+    // join: pin the end node to the contact (z, grade) and extend linearly at
+    // the same grade to the new end (set_elevation_profile's C1 semantics).
+    std::vector<ElevationPoint> points = elevation_profile_points(*road);
+    if (!points.empty()) {
+      points.back().s = old_length;
+      points.back().z = cs.z;
+      points.back().grade = cs.grade;
+    }
+    points.push_back(ElevationPoint{
+        .s = new_length, .z = cs.z + (cs.grade * (new_length - old_length)), .grade = cs.grade});
+    std::vector<double> s_values;
+    std::vector<double> z_values;
+    std::vector<double> grades;
+    s_values.reserve(points.size());
+    z_values.reserve(points.size());
+    grades.reserve(points.size());
+    for (const ElevationPoint& point : points) {
+      s_values.push_back(point.s);
+      z_values.push_back(point.z);
+      grades.push_back(point.grade.value_or(0.0));
+    }
+    const bool all_zero = std::ranges::all_of(points, [](const ElevationPoint& p) {
+      return std::abs(p.z) < 1e-12 && std::abs(p.grade.value_or(0.0)) < 1e-12;
+    });
+    after.elevation =
+        all_zero ? std::vector<Poly3>{} : fit_elevation_profile(s_values, z_values, grades);
+
+    command->before.roads.emplace_back(end.road, *road);
+    command->after.roads.emplace_back(end.road, std::move(after));
+    return command;
   }
-  points.push_back(ElevationPoint{
-      .s = new_length, .z = cs.z + (cs.grade * (new_length - old_length)), .grade = cs.grade});
+
+  // --- START: prepend the reversed fit, then re-base every s-indexed thing. --
+  // The fit runs backward from s = 0 to `to`; reversing it gives one record
+  // start→old-start with a G2 join, and its length L_ext shifts the whole road.
+  const double l_ext = extension->length();
+
+  ReferenceLine rebuilt;
+  rebuilt.append(reversed_record(extension->records().front(), cs.curvature));
+  for (const GeometryRecord& record : road->plan_view.records()) {
+    rebuilt.append(record); // append() re-derives contiguous s
+  }
+  after.plan_view = std::move(rebuilt);
+  after.length = after.plan_view.length();
+
+  // The authored point becomes the new FIRST waypoint (count == records + 1).
+  after.authoring_waypoints->insert(after.authoring_waypoints->begin(), to);
+
+  // Elevation: shift every node forward by L_ext, pin the join (old first node,
+  // now at s = L_ext) to the contact (z, grade), and prepend a new start node
+  // that reaches back at the SAME grade so both z and grade stay continuous.
+  std::vector<ElevationPoint> points = elevation_profile_points(*road);
+  for (ElevationPoint& point : points) {
+    point.s += l_ext;
+  }
+  points.front().s = l_ext;
+  points.front().z = cs.z;
+  points.front().grade = cs.grade;
+  points.insert(points.begin(),
+                ElevationPoint{.s = 0.0, .z = cs.z - (cs.grade * l_ext), .grade = cs.grade});
   std::vector<double> s_values;
   std::vector<double> z_values;
   std::vector<double> grades;
@@ -2684,10 +2776,64 @@ std::unique_ptr<Command> extend_road(const RoadNetwork& network, RoadEnd end, Wa
   after.elevation =
       all_zero ? std::vector<Poly3>{} : fit_elevation_profile(s_values, z_values, grades);
 
-  auto command = std::make_unique<GenericCommand>(std::string(kName),
-                                                  DirtySet{.roads = {end.road}, .topology = true});
+  // Superelevation and lane_offset are global-s Poly3 lists: shift them forward
+  // (coefficients unchanged, so every value at an OLD station is preserved at
+  // that station + L_ext) and, when non-empty, hold the boundary value flat
+  // across the new head [0, L_ext]. Unlike the END path — which extrapolates the
+  // profile past the end — the START path holds a constant so a superelevated
+  // start does not run away backward past the old origin.
+  after.superelevation = shift_profile(road->superelevation, l_ext);
+  if (!after.superelevation.empty()) {
+    after.superelevation.insert(
+        after.superelevation.begin(),
+        Poly3{.s = 0.0, .a = profile_value_at(road->superelevation, 0.0), .b = 0.0});
+  }
+  after.lane_offset = shift_profile(road->lane_offset, l_ext);
+  if (!after.lane_offset.empty()) {
+    after.lane_offset.insert(
+        after.lane_offset.begin(),
+        Poly3{.s = 0.0, .a = profile_value_at(road->lane_offset, 0.0), .b = 0.0});
+  }
+
   command->before.roads.emplace_back(end.road, *road);
   command->after.roads.emplace_back(end.road, std::move(after));
+
+  // Sections: interior boundaries slide forward by L_ext (widths/marks are
+  // section-local, so they ride along untouched). The FIRST section stays
+  // anchored at s0 = 0 and simply spans the new head [0, L_ext] — the mirror of
+  // the END path, where the LAST section's s0 is unchanged and spans the new
+  // tail. Shifting the first section too would leave [0, L_ext) with no lane
+  // section, which is invalid (a road's first lane section must start at s = 0).
+  for (std::size_t i = 1; i < road->sections.size(); ++i) {
+    const LaneSectionId section_id = road->sections[i];
+    const LaneSection* section = network.lane_section(section_id);
+    command->before.sections.emplace_back(section_id, *section);
+    LaneSection shifted = *section;
+    shifted.s0 += l_ext;
+    command->after.sections.emplace_back(section_id, std::move(shifted));
+  }
+
+  // Objects and signals ride the same shift: s += L_ext keeps each one at the
+  // SAME world point, since the reference line grew by exactly L_ext in front.
+  network.for_each_object([&](ObjectId id, const Object& object) {
+    if (object.road != end.road) {
+      return;
+    }
+    command->before.objects.emplace_back(id, object);
+    Object shifted = object;
+    shifted.s += l_ext;
+    command->after.objects.emplace_back(id, std::move(shifted));
+  });
+  network.for_each_signal([&](SignalId id, const Signal& signal) {
+    if (signal.road != end.road) {
+      return;
+    }
+    command->before.signals.emplace_back(id, signal);
+    Signal shifted = signal;
+    shifted.s += l_ext;
+    command->after.signals.emplace_back(id, std::move(shifted));
+  });
+
   return command;
 }
 
