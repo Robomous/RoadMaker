@@ -1876,9 +1876,94 @@ TEST(EditOperations, ExtendRoadStartShiftsObjectsAndSignals) {
   EXPECT_NEAR(world_after.y, world_before.y, 1e-3);
 }
 
+TEST(EditOperations, ExtendRoadStartShiftsObjectOutlineAndRepeat) {
+  RoadNetwork network;
+  const RoadId road = author_default(network, "1");
+  const double old_length = network.road(road)->plan_view.length();
+  // A crosswalk-style object whose <outline> uses absolute-s <cornerRoad>
+  // corners, plus a local-coordinate outline that must NOT move.
+  roadmaker::Object outlined{.road = road, .odr_id = "o1", .s = 30.0, .t = 0.0};
+  outlined.outlines.push_back(
+      roadmaker::ObjectOutline{.road_coords = true,
+                               .corners = {roadmaker::OutlineCorner{.a = 28.0, .b = -2.0},
+                                           roadmaker::OutlineCorner{.a = 32.0, .b = -2.0},
+                                           roadmaker::OutlineCorner{.a = 32.0, .b = 2.0},
+                                           roadmaker::OutlineCorner{.a = 28.0, .b = 2.0}}});
+  outlined.outlines.push_back(
+      roadmaker::ObjectOutline{.road_coords = false,
+                               .outer = false,
+                               .corners = {roadmaker::OutlineCorner{.a = -1.0, .b = -1.0},
+                                           roadmaker::OutlineCorner{.a = 1.0, .b = 1.0}}});
+  const roadmaker::ObjectId outlined_id = network.add_object(road, std::move(outlined));
+  // A tree line whose <repeat> starts at its own absolute s.
+  roadmaker::Object repeated{.road = road, .odr_id = "o2", .s = 10.0, .t = 4.0};
+  repeated.repeats.push_back(roadmaker::ObjectRepeat{.s = 12.0, .length = 40.0, .distance = 8.0});
+  const roadmaker::ObjectId repeated_id = network.add_object(road, std::move(repeated));
+
+  const Waypoint to = behind_start(network, road, 40.0);
+  auto command = roadmaker::edit::extend_road(
+      network, RoadEnd{.road = road, .contact = ContactPoint::Start}, to);
+  ASSERT_TRUE(command->apply(network).has_value());
+
+  const double l_ext = network.road(road)->plan_view.length() - old_length;
+  EXPECT_GT(l_ext, 1.0);
+  const roadmaker::Object* result = network.object(outlined_id);
+  EXPECT_NEAR(result->s, 30.0 + l_ext, 1e-9);
+  const std::array<double, 4> corner_s{28.0, 32.0, 32.0, 28.0};
+  ASSERT_EQ(result->outlines[0].corners.size(), corner_s.size());
+  for (std::size_t i = 0; i < corner_s.size(); ++i) {
+    EXPECT_NEAR(result->outlines[0].corners[i].a, corner_s[i] + l_ext, 1e-9);
+  }
+  // The local (u/v) outline is relative to the origin and must be untouched.
+  EXPECT_NEAR(result->outlines[1].corners[0].a, -1.0, 1e-12);
+  EXPECT_NEAR(result->outlines[1].corners[1].a, 1.0, 1e-12);
+  EXPECT_NEAR(network.object(repeated_id)->s, 10.0 + l_ext, 1e-9);
+  EXPECT_NEAR(network.object(repeated_id)->repeats[0].s, 12.0 + l_ext, 1e-9);
+  EXPECT_NEAR(network.object(repeated_id)->repeats[0].length, 40.0, 1e-12);
+}
+
+TEST(EditOperations, ExtendRoadEndLeavesObjectOutlineAndRepeatAlone) {
+  RoadNetwork network;
+  const RoadId road = author_default(network, "1");
+  roadmaker::Object outlined{.road = road, .odr_id = "o1", .s = 30.0, .t = 0.0};
+  outlined.outlines.push_back(
+      roadmaker::ObjectOutline{.road_coords = true,
+                               .corners = {roadmaker::OutlineCorner{.a = 28.0, .b = -2.0},
+                                           roadmaker::OutlineCorner{.a = 32.0, .b = 2.0}}});
+  outlined.repeats.push_back(roadmaker::ObjectRepeat{.s = 12.0, .length = 40.0, .distance = 8.0});
+  const roadmaker::ObjectId object = network.add_object(road, std::move(outlined));
+
+  const Waypoint to = ahead_of_end(network, road, 40.0);
+  auto command = roadmaker::edit::extend_road(
+      network, RoadEnd{.road = road, .contact = ContactPoint::End}, to);
+  ASSERT_TRUE(command->apply(network).has_value());
+
+  const roadmaker::Object* result = network.object(object);
+  EXPECT_NEAR(result->s, 30.0, 1e-12);
+  EXPECT_NEAR(result->outlines[0].corners[0].a, 28.0, 1e-12);
+  EXPECT_NEAR(result->outlines[0].corners[1].a, 32.0, 1e-12);
+  EXPECT_NEAR(result->repeats[0].s, 12.0, 1e-12);
+}
+
 TEST(EditOperations, ExtendRoadStartUndoIsByteIdentical) {
   RoadNetwork network;
   const RoadId road = author_default(network, "1");
+  const Waypoint to = behind_start(network, road, 40.0);
+  auto command = roadmaker::edit::extend_road(
+      network, RoadEnd{.road = road, .contact = ContactPoint::Start}, to);
+  expect_command_round_trip(network, *command);
+}
+
+TEST(EditOperations, ExtendRoadStartWithOutlinedObjectUndoIsByteIdentical) {
+  RoadNetwork network;
+  const RoadId road = author_default(network, "1");
+  roadmaker::Object outlined{.road = road, .odr_id = "o1", .s = 30.0, .t = 0.0};
+  outlined.outlines.push_back(
+      roadmaker::ObjectOutline{.road_coords = true,
+                               .corners = {roadmaker::OutlineCorner{.a = 28.0, .b = -2.0},
+                                           roadmaker::OutlineCorner{.a = 32.0, .b = 2.0}}});
+  outlined.repeats.push_back(roadmaker::ObjectRepeat{.s = 12.0, .length = 40.0, .distance = 8.0});
+  network.add_object(road, std::move(outlined));
   const Waypoint to = behind_start(network, road, 40.0);
   auto command = roadmaker::edit::extend_road(
       network, RoadEnd{.road = road, .contact = ContactPoint::Start}, to);
