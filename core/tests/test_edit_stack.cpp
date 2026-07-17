@@ -1,21 +1,41 @@
 #include "roadmaker/edit/edit_stack.hpp"
+#include "roadmaker/edit/operations.hpp"
+#include "roadmaker/road/authoring.hpp"
+#include "roadmaker/road/lane.hpp"
 #include "roadmaker/road/network.hpp"
 
 #include <gtest/gtest.h>
 
 #include <memory>
+#include <stdexcept>
 #include <string>
 #include <utility>
+#include <vector>
 
 using roadmaker::ErrorCode;
 using roadmaker::Expected;
+using roadmaker::LaneProfile;
 using roadmaker::RoadId;
 using roadmaker::RoadNetwork;
+using roadmaker::Waypoint;
 using roadmaker::edit::Command;
 using roadmaker::edit::DirtySet;
 using roadmaker::edit::EditStack;
 
 namespace {
+
+/// A straight 120 m road on the default two-lane profile (creates the sections
+/// and lanes a split can then duplicate — the objects whose slots leak).
+RoadId author_straight(RoadNetwork& network, const char* odr_id) {
+  const std::vector<Waypoint> waypoints{
+      Waypoint{.x = 0.0, .y = 0.0}, Waypoint{.x = 60.0, .y = 0.0}, Waypoint{.x = 120.0, .y = 0.0}};
+  auto road = roadmaker::author_clothoid_road(
+      network, waypoints, LaneProfile::two_lane_default(), "", odr_id);
+  if (!road.has_value()) {
+    throw std::runtime_error("author_straight: " + road.error().message);
+  }
+  return *road;
+}
 
 /// Renames a road; the network mutation makes apply/revert observable.
 class RenameCommand final : public Command {
@@ -109,6 +129,41 @@ TEST(EditStack, PushTruncatesTheRedoTail) {
   EXPECT_FALSE(stack.can_redo());
   EXPECT_EQ(stack.size(), 2U);
   EXPECT_EQ(network.road(road)->name, "z");
+}
+
+TEST(EditStack, PushTruncationDiscardsRedoTailSlots) {
+  RoadNetwork network;
+  const RoadId road = author_straight(network, "1");
+  EditStack stack;
+
+  // push() applies the new command BEFORE truncating the redo tail (a discard
+  // ahead of a possibly-failing apply would corrupt the tail), so the FIRST
+  // truncating push grows the arena by one split's worth while the tail is
+  // still reserved, then discards. That is the steady-state bound.
+  ASSERT_TRUE(
+      stack.push(network, roadmaker::edit::split_lane_section(network, road, 50.0)).has_value());
+  ASSERT_TRUE(stack.undo(network).has_value()); // split reverted → slots reserved
+  ASSERT_TRUE(
+      stack.push(network, roadmaker::edit::split_lane_section(network, road, 60.0)).has_value());
+  EXPECT_FALSE(stack.can_redo());
+  const std::size_t sections = network.lane_section_slot_count();
+  const std::size_t lanes = network.lane_slot_count();
+
+  // A second undo+push cycle must REUSE the slots the first truncation
+  // recycled — no growth. Without the discard the first tail's slots would have
+  // leaked and this split would allocate fresh ones.
+  ASSERT_TRUE(stack.undo(network).has_value());
+  ASSERT_TRUE(
+      stack.push(network, roadmaker::edit::split_lane_section(network, road, 70.0)).has_value());
+  EXPECT_EQ(network.lane_section_slot_count(), sections);
+  EXPECT_EQ(network.lane_slot_count(), lanes);
+
+  // The surviving history still undoes and redoes.
+  ASSERT_EQ(network.road(road)->sections.size(), 2U);
+  ASSERT_TRUE(stack.undo(network).has_value());
+  EXPECT_EQ(network.road(road)->sections.size(), 1U);
+  ASSERT_TRUE(stack.redo(network).has_value());
+  EXPECT_EQ(network.road(road)->sections.size(), 2U);
 }
 
 TEST(EditStack, FailedApplyIsNotRecorded) {

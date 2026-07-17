@@ -196,6 +196,33 @@ Expected<void> erase_values_exact(RoadNetwork& network, const Values& values) {
   return {};
 }
 
+/// Recycles the reserved slots of everything in `values` — the leaf→root
+/// mirror of erase_values_exact, for a command being DISCARDED. Every id here
+/// names a slot `erase_values_exact` reserved on the last revert; the guards
+/// in release_*_reserved turn a wrong id (already released, or an occupied
+/// slot from a not-actually-reverted command) into a harmless no-op, so the
+/// void-return, ignore-each-result contract is safe.
+void release_values_reserved(RoadNetwork& network, const Values& values) {
+  for (const auto& [id, value] : values.signals) {
+    (void)network.release_signal_reserved(id);
+  }
+  for (const auto& [id, value] : values.objects) {
+    (void)network.release_object_reserved(id);
+  }
+  for (const auto& [id, value] : values.lanes) {
+    (void)network.release_lane_reserved(id);
+  }
+  for (const auto& [id, value] : values.sections) {
+    (void)network.release_lane_section_reserved(id);
+  }
+  for (const auto& [id, value] : values.roads) {
+    (void)network.release_road_reserved(id);
+  }
+  for (const auto& [id, value] : values.junctions) {
+    (void)network.release_junction_reserved(id);
+  }
+}
+
 /// First-apply hook for commands that create objects. Must either mutate the
 /// network fully (registering every created id in `created`) or fail without
 /// mutating at all — the validate-first-mutate-after contract.
@@ -263,6 +290,16 @@ public:
   std::string_view name() const override { return name_; }
 
   DirtySet dirty() const override { return dirty_; }
+
+  void discard(RoadNetwork& network) override {
+    // Only `created_` reserves slots after a revert: `erased` values were
+    // restored (live again) and `before` values overwrote live objects — both
+    // sit in occupied slots. `created_` is deliberately NOT cleared: the gen
+    // bump makes a double-discard no-op, and the occupied-slot guard makes a
+    // misuse-discard on an applied command a no-op, so the precondition is
+    // self-enforcing.
+    release_values_reserved(network, created_);
+  }
 
 private:
   bool applied_once_ = false;
@@ -334,6 +371,16 @@ public:
   }
 
   std::string_view name() const override { return name_; }
+
+  void discard(RoadNetwork& network) override {
+    // Reverse index order, mirroring revert: a later child's created objects
+    // are released before an earlier child's, matching leaf→root teardown.
+    for (std::size_t i = children_.size(); i-- > 0;) {
+      if (children_[i] != nullptr) {
+        children_[i]->discard(network);
+      }
+    }
+  }
 
   DirtySet dirty() const override {
     DirtySet dirty = base_dirty_;

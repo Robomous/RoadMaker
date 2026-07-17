@@ -107,6 +107,61 @@ TEST(Arena, EraseExactSlotIsNeverRecycledByEmplace) {
   EXPECT_EQ(arena.size(), 2U);
 }
 
+TEST(Arena, ReleaseReservedRecyclesSlotWithFreshGeneration) {
+  WidgetArena arena;
+  const WidgetId reserved = arena.emplace(Widget{.name = "reserved"});
+  ASSERT_TRUE(arena.erase_exact(reserved).has_value());
+  EXPECT_EQ(arena.size(), 0U);
+  EXPECT_EQ(arena.slot_count(), 1U); // slot still reserved, not recycled
+
+  ASSERT_TRUE(arena.release_reserved(reserved).has_value());
+  EXPECT_EQ(arena.size(), 0U);       // alive_ untouched (erase_exact decremented)
+  EXPECT_EQ(arena.slot_count(), 1U); // storage never shrinks
+
+  // The released slot is now reusable — next emplace takes its index with a
+  // fresh generation, and no new storage grows.
+  const WidgetId fresh = arena.emplace(Widget{.name = "fresh"});
+  EXPECT_EQ(fresh.index, reserved.index);
+  EXPECT_NE(fresh.gen, reserved.gen);
+  EXPECT_EQ(arena.size(), 1U);
+  EXPECT_EQ(arena.slot_count(), 1U);
+}
+
+TEST(Arena, ReleaseReservedRejectsOccupiedUnknownAndGenMismatchedSlots) {
+  WidgetArena arena;
+  const WidgetId occupied = arena.emplace(Widget{.name = "here"});
+  EXPECT_FALSE(arena.release_reserved(occupied).has_value()); // slot is live
+
+  EXPECT_FALSE(arena.release_reserved(WidgetId{.index = 42, .gen = 0}).has_value()); // out of range
+
+  // A slot freed by plain erase already recycled its index and bumped the
+  // generation, so the old handle fails the generation check.
+  const WidgetId erased = arena.emplace(Widget{.name = "gone"});
+  arena.erase(erased);
+  EXPECT_FALSE(arena.release_reserved(erased).has_value());
+
+  // Double release: the first bumped the generation, so the second no-ops.
+  const WidgetId twice = arena.emplace(Widget{.name = "twice"});
+  ASSERT_TRUE(arena.erase_exact(twice).has_value());
+  ASSERT_TRUE(arena.release_reserved(twice).has_value());
+  EXPECT_FALSE(arena.release_reserved(twice).has_value());
+}
+
+TEST(Arena, RestoreAfterReleaseFails) {
+  WidgetArena arena;
+  const WidgetId id = arena.emplace(Widget{.name = "w"});
+  ASSERT_TRUE(arena.erase_exact(id).has_value());
+  ASSERT_TRUE(arena.release_reserved(id).has_value());
+
+  // release_reserved bumped the generation, so the paired restore now fails.
+  EXPECT_FALSE(arena.restore(id, Widget{.name = "w"}).has_value());
+
+  // The slot is still a normal free slot — emplace reuses it.
+  const WidgetId reused = arena.emplace(Widget{.name = "next"});
+  EXPECT_EQ(reused.index, id.index);
+  EXPECT_NE(reused.gen, id.gen);
+}
+
 TEST(Arena, EraseExactRejectsInvalidAndStaleIds) {
   WidgetArena arena;
   EXPECT_FALSE(arena.erase_exact(WidgetId{}).has_value());

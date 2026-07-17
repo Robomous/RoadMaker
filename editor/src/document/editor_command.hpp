@@ -46,6 +46,12 @@ class KernelEditorCommand final : public EditorCommand {
 public:
   KernelEditorCommand(Document& document, std::unique_ptr<roadmaker::edit::Command> command);
 
+  // Releases the kernel command's reserved slots when it is destroyed in the
+  // REVERTED (undone) state — QUndoStack truncating the redo tail on a new
+  // push, clear(), or Document teardown. A command destroyed while applied
+  // keeps its slots legitimately (its objects are live). (#271)
+  ~KernelEditorCommand() override;
+
 protected:
   void apply() override;
   void revert() override;
@@ -53,6 +59,10 @@ protected:
 private:
   Document& document_;
   std::unique_ptr<roadmaker::edit::Command> command_;
+  // Whether the kernel command is currently in its APPLIED state. Constructed
+  // already-applied; flipped only on a SUCCESSFUL redo()/undo() (the failure
+  // branches return early, leaving it correct).
+  bool applied_ = true;
 };
 
 } // namespace roadmaker::editor
