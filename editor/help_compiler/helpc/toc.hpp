@@ -45,4 +45,8 @@ struct Toc {
 /// links. Anchors are preserved on each target.
 [[nodiscard]] std::vector<std::string> extract_links(const std::string& markdown);
 
+/// Ordered markdown image targets (`![alt](target)`) in `markdown`, verbatim.
+/// The coverage tests use this to assert every referenced image is shipped.
+[[nodiscard]] std::vector<std::string> extract_image_links(const std::string& markdown);
+
 } // namespace roadmaker::helpc

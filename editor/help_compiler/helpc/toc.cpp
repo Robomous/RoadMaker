@@ -79,6 +79,26 @@ std::vector<std::string> extract_links(const std::string& markdown) {
   return links;
 }
 
+std::vector<std::string> extract_image_links(const std::string& markdown) {
+  std::vector<std::string> links;
+  for (std::size_t i = 0; i + 1 < markdown.size(); ++i) {
+    if (markdown[i] != '!' || markdown[i + 1] != '[') {
+      continue;
+    }
+    const auto close = markdown.find(']', i + 1);
+    if (close == std::string::npos || close + 1 >= markdown.size() || markdown[close + 1] != '(') {
+      continue;
+    }
+    const auto paren = markdown.find(')', close + 2);
+    if (paren == std::string::npos) {
+      continue;
+    }
+    links.push_back(trim(markdown.substr(close + 2, paren - (close + 2))));
+    i = paren;
+  }
+  return links;
+}
+
 Toc build_toc(const std::filesystem::path& guide_dir) {
   Toc toc;
 

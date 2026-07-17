@@ -206,7 +206,8 @@ set(_rm_help_css ${CMAKE_CURRENT_SOURCE_DIR}/resources/help/help.css)
 file(GLOB _rm_help_inputs CONFIGURE_DEPENDS
   ${_rm_guide_dir}/*.md
   ${_rm_guide_dir}/tutorials/*.md
-  ${_rm_guide_dir}/img/*)
+  ${_rm_guide_dir}/img/*
+  ${_rm_guide_dir}/tutorials/img/*)
 
 set(_rm_qhp ${_rm_help_out}/html/roadmaker.qhp)
 set(_rm_qhcp ${_rm_help_out}/roadmaker.qhcp)

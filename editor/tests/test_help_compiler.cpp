@@ -92,6 +92,31 @@ TEST_F(HelpCompiler, MdLinksRewriteToHtmlAndExternalLinksToGitHub) {
       << html;
 }
 
+TEST_F(HelpCompiler, ExtractImageLinksFindsTargets) {
+  const std::string md = "# T\n\n![Wrapped\nalt text](img/a.png)\n\n"
+                         "A [page link](other.md) is not an image.\n\n"
+                         "![b](../shared/b.gif)\n";
+  const std::vector<std::string> images = extract_image_links(md);
+  ASSERT_EQ(images.size(), 2U);
+  EXPECT_EQ(images[0], "img/a.png");
+  EXPECT_EQ(images[1], "../shared/b.gif");
+}
+
+// qhelpgenerator expands <file> wildcards per directory (never recursively),
+// so tutorials/ pages and their tutorials/img/ assets each need their own
+// pattern or the in-app viewer cannot serve them (#292).
+TEST_F(HelpCompiler, QhpRegistersTutorialPagesAndImages) {
+  Toc toc;
+  toc.index.slug = "index";
+  toc.index.title = "Guide";
+
+  const std::string qhp = build_qhp(toc, {});
+  EXPECT_NE(qhp.find("<file>tutorials/*.html</file>"), std::string::npos) << qhp;
+  EXPECT_NE(qhp.find("<file>tutorials/img/*.png</file>"), std::string::npos) << qhp;
+  EXPECT_NE(qhp.find("<file>tutorials/img/*.gif</file>"), std::string::npos) << qhp;
+  EXPECT_NE(qhp.find("<file>tutorials/img/*.jpg</file>"), std::string::npos) << qhp;
+}
+
 TEST_F(HelpCompiler, QhpEscapesXmlSpecials) {
   Toc toc;
   toc.index.slug = "index";
