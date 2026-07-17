@@ -11,6 +11,7 @@ from ._roadmaker import (  # noqa: F401
     Junction,
     JunctionId,
     Lane,
+    LaneDirection,
     LaneId,
     LaneProfile,
     LaneSection,

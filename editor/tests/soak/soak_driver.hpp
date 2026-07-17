@@ -83,6 +83,7 @@ private:
   void op_insert_waypoint();
   void op_delete_waypoint();
   void op_lane_edit();
+  void op_set_lane_direction();
   void op_split_lane_section();
   void op_lane_width_profile();
   void op_elevation();

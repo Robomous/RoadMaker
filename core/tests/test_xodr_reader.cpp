@@ -183,6 +183,54 @@ TEST(XodrReader, UnsupportedElementsWarnOnceAndAreNeverSilent) {
   EXPECT_EQ(network.lane(section.lanes.back())->type, LaneType::Other);
 }
 
+TEST(XodrReader, LaneDirectionParsesAndUnknownWarns) {
+  constexpr const char* kXml = R"(<?xml version="1.0"?>
+<OpenDRIVE>
+  <header revMajor="1" revMinor="8"/>
+  <road id="1" length="10">
+    <planView>
+      <geometry s="0" x="0" y="0" hdg="0" length="10"><line/></geometry>
+    </planView>
+    <lanes>
+      <laneSection s="0">
+        <center><lane id="0" type="none"/></center>
+        <right>
+          <lane id="-1" type="driving" direction="reversed">
+            <width sOffset="0" a="3" b="0" c="0" d="0"/>
+          </lane>
+          <lane id="-2" type="driving" direction="both">
+            <width sOffset="0" a="3" b="0" c="0" d="0"/>
+          </lane>
+          <lane id="-3" type="driving" direction="sideways">
+            <width sOffset="0" a="3" b="0" c="0" d="0"/>
+          </lane>
+        </right>
+      </laneSection>
+    </lanes>
+  </road>
+</OpenDRIVE>)";
+  const auto result = roadmaker::parse_xodr(kXml);
+  ASSERT_TRUE(result.has_value());
+  // The bogus spelling warns but is never dropped — it defaults to Standard.
+  EXPECT_TRUE(has_warning_containing(result->diagnostics, "unknown lane direction 'sideways'"));
+
+  const roadmaker::RoadNetwork& network = result->network;
+  const roadmaker::Road& road = *network.road(network.find_road("1"));
+  const roadmaker::LaneSection& section = *network.lane_section(road.sections[0]);
+  const auto direction_of = [&](int odr_id) {
+    for (const roadmaker::LaneId lane_id : section.lanes) {
+      if (network.lane(lane_id)->odr_id == odr_id) {
+        return network.lane(lane_id)->direction;
+      }
+    }
+    ADD_FAILURE() << "lane " << odr_id << " missing";
+    return roadmaker::LaneDirection::Standard;
+  };
+  EXPECT_EQ(direction_of(-1), roadmaker::LaneDirection::Reversed);
+  EXPECT_EQ(direction_of(-2), roadmaker::LaneDirection::Both);
+  EXPECT_EQ(direction_of(-3), roadmaker::LaneDirection::Standard); // bogus -> default
+}
+
 TEST(XodrReader, UserDataWaypointsParseAndBadOnesAreDiagnosed) {
   constexpr const char* kXml = R"(<OpenDRIVE>
   <header revMajor="1" revMinor="7"/>

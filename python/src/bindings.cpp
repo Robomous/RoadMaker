@@ -153,6 +153,11 @@ NB_MODULE(_roadmaker, m) {
       .value("ORANGE", roadmaker::RoadMarkColor::Orange)
       .value("OTHER", roadmaker::RoadMarkColor::Other);
 
+  nb::enum_<roadmaker::LaneDirection>(m, "LaneDirection")
+      .value("STANDARD", roadmaker::LaneDirection::Standard)
+      .value("REVERSED", roadmaker::LaneDirection::Reversed)
+      .value("BOTH", roadmaker::LaneDirection::Both);
+
   nb::enum_<roadmaker::ContactPoint>(m, "ContactPoint")
       .value("START", roadmaker::ContactPoint::Start)
       .value("END", roadmaker::ContactPoint::End);
@@ -344,6 +349,10 @@ NB_MODULE(_roadmaker, m) {
   nb::class_<roadmaker::Lane>(m, "Lane")
       .def_ro("odr_id", &roadmaker::Lane::odr_id)
       .def_rw("type", &roadmaker::Lane::type)
+      .def_rw("direction",
+              &roadmaker::Lane::direction,
+              "Travel direction (e_lane_direction, §11). Standard writes nothing; "
+              "edit via rm.edit.set_lane_direction.")
       .def_ro("widths", &roadmaker::Lane::widths)
       .def_rw("road_marks",
               &roadmaker::Lane::road_marks,
@@ -1580,6 +1589,12 @@ NB_MODULE(_roadmaker, m) {
            "adjacent-section links and junction lane_links that named a shifted "
            "lane are remapped to the new numbering.");
   edit.def("set_lane_type", &roadmaker::edit::set_lane_type, "network"_a, "lane"_a, "type"_a);
+  edit.def("set_lane_direction",
+           &roadmaker::edit::set_lane_direction,
+           "network"_a,
+           "lane"_a,
+           "direction"_a,
+           "Sets a lane's travel direction (e_lane_direction). Refuses the center lane.");
   edit.def("set_lane_width",
            &roadmaker::edit::set_lane_width,
            "network"_a,

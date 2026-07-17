@@ -53,7 +53,39 @@ bool LaneProfileTool::mouse_press(const ToolEvent& event) {
   return true; // LMB belongs to the tool even on a miss (M2 button map)
 }
 
-bool LaneProfileTool::key_press(int key, Qt::KeyboardModifiers /*modifiers*/) {
+namespace {
+
+/// Cycles the lane travel direction Standard -> Reversed -> Both -> Standard.
+LaneDirection next_direction(LaneDirection current) {
+  switch (current) {
+  case LaneDirection::Standard:
+    return LaneDirection::Reversed;
+  case LaneDirection::Reversed:
+    return LaneDirection::Both;
+  case LaneDirection::Both:
+    return LaneDirection::Standard;
+  }
+  return LaneDirection::Standard;
+}
+
+QString direction_label(LaneDirection direction) {
+  switch (direction) {
+  case LaneDirection::Standard:
+    return LaneProfileTool::tr("standard");
+  case LaneDirection::Reversed:
+    return LaneProfileTool::tr("reversed");
+  case LaneDirection::Both:
+    return LaneProfileTool::tr("both");
+  }
+  return LaneProfileTool::tr("standard");
+}
+
+} // namespace
+
+bool LaneProfileTool::key_press(int key, Qt::KeyboardModifiers modifiers) {
+  if (key == Qt::Key_D && (modifiers & Qt::ShiftModifier)) {
+    return cycle_direction();
+  }
   if (key != Qt::Key_Delete && key != Qt::Key_Backspace) {
     return false;
   }
@@ -76,9 +108,30 @@ bool LaneProfileTool::key_press(int key, Qt::KeyboardModifiers /*modifiers*/) {
   return true;
 }
 
+bool LaneProfileTool::cycle_direction() {
+  const LaneId lane_id = selection_.primary().lane;
+  if (!lane_id.is_valid()) {
+    emit status_message(tr("Select a lane to change its travel direction."));
+    return true;
+  }
+  const Lane* lane = document_.network().lane(lane_id);
+  if (lane == nullptr || lane->odr_id == 0) {
+    // The kernel refuses the center lane (it has no travel direction); say so
+    // rather than push a command that would be rejected.
+    emit status_message(tr("The centre lane has no travel direction."));
+    return true;
+  }
+  const LaneDirection next = next_direction(lane->direction);
+  const int odr = lane->odr_id;
+  if (document_.push_command(edit::set_lane_direction(document_.network(), lane_id, next))) {
+    emit status_message(tr("Lane %1 direction: %2.").arg(odr).arg(direction_label(next)));
+  }
+  return true;
+}
+
 QString LaneProfileTool::instruction() const {
-  return tr("Click a lane to select it. Delete removes it. Edit type in Properties; "
-            "edit width along s in the 2D Editor (Width).");
+  return tr("Click a lane to select it. Delete removes it. Shift+D cycles its travel "
+            "direction. Edit type in Properties; edit width along s in the 2D Editor (Width).");
 }
 
 } // namespace roadmaker::editor
