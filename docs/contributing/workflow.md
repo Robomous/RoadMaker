@@ -79,6 +79,33 @@ These are not optional extras; reviewers and CI check for them:
   allowed) are defined in the
   [architecture overview](../architecture/overview.md); PRs that cross them
   are rejected regardless of how green CI is.
+- **A new tool or panel ships its user-guide page.** Every editor tool and
+  dockable panel must have a page under `docs/user-guide/`, linked from
+  `index.md`, and mapped in `editor/src/help/help_registry.cpp` so F1 opens it.
+  This is enforced: the `HelpRegistry.EveryPageResolvesToACommittedGuidePage`
+  gate (`editor/tests/test_help_registry.cpp`) fails the build when a mapped
+  slug has no committed, index-linked page, and the `roadmaker_help` build
+  compiles every page. Add the row and the page in the same PR.
+
+## Writing a tutorial
+
+Tool pages answer "what does this tool do"; tutorials string several tools into
+one end-to-end task ("draw a road, tee in a second, export"). They live under
+`docs/user-guide/tutorials/` and the help pipeline auto-nests them under a
+synthetic **Tutorials** node — you only need to add a row to the Tutorials table
+in `index.md`.
+
+- **User voice, task order.** Write to the reader ("pick the Create Road tool"),
+  in the order they act. No checkboxes — numbered steps.
+- **Follow the page skeleton.** An H1, a one-line italic summary, then short
+  `##` sections. The H1 is required (the TOC and the keyword gate read it).
+- **Link, don't duplicate.** Point at the tool pages for the details rather than
+  restating them; a tutorial is the glue between tools.
+- **Every image must exist.** Capture screenshots with
+  `scripts/editor_screenshot.py` into `docs/user-guide/tutorials/img/` and
+  reference them relatively (`img/name.png`). The docs link-check gates broken
+  image and page links. Do not add `ASSETS_LICENSES.md` rows for doc images —
+  the asset checker scans only `assets/` and `editor/resources/`.
 
 ## Agent PR discipline
 

@@ -61,6 +61,7 @@ add_executable(roadmaker_editor_tests
   test_gizmo.cpp
   test_help_collection.cpp
   test_help_compiler.cpp
+  test_help_registry.cpp
   test_help_style.cpp
   test_help_viewer.cpp
   test_picking.cpp

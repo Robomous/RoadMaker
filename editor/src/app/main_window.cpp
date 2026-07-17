@@ -7,6 +7,7 @@
 #include <QCloseEvent>
 #include <QDateTime>
 #include <QDesktopServices>
+#include <QDockWidget>
 #include <QDragEnterEvent>
 #include <QDropEvent>
 #include <QFile>
@@ -34,6 +35,7 @@
 #include "app/tour_overlay.hpp"
 #include "document/library_drop.hpp"
 #include "document/library_manifest.hpp"
+#include "help/help_registry.hpp"
 #include "help/help_viewer.hpp"
 #include "panels/diagnostics_panel.hpp"
 #include "panels/editor2d_host.hpp"
@@ -562,7 +564,12 @@ void MainWindow::build_menus() {
 
   QMenu* help_menu = menuBar()->addMenu(tr("&Help"));
   help_menu->addAction(actions_->help_contents);
-  connect(actions_->help_contents, &QAction::triggered, this, [this] { show_help(); });
+  // F1 / Help ▸ User Guide is context-sensitive: it opens the page for the
+  // focused dock, else the active tool, else the guide index
+  // (help::context_page, help_registry.hpp).
+  connect(actions_->help_contents, &QAction::triggered, this, [this] {
+    show_help(help::context_page(tool_manager_.active_id(), help_context_dock()));
+  });
   QAction* tour_action = help_menu->addAction(tr("&Guided Tour"));
   tour_action->setToolTip(tr("Replay the 5-step first-run tour"));
   connect(tour_action, &QAction::triggered, this, &MainWindow::start_tour);
@@ -1094,6 +1101,19 @@ void MainWindow::show_help(const QString& slug) {
   help_viewer_->show();
   help_viewer_->raise();
   help_viewer_->activateWindow();
+}
+
+QString MainWindow::help_context_dock() const {
+  // Walk up from the focused widget to the enclosing QDockWidget. The dock's
+  // objectName is the key help::page_for_dock maps; an empty string (focus in
+  // the viewport, a toolbar, or nowhere) makes context help fall through to the
+  // active tool.
+  for (const QWidget* w = QApplication::focusWidget(); w != nullptr; w = w->parentWidget()) {
+    if (const auto* dock = qobject_cast<const QDockWidget*>(w)) {
+      return dock->objectName();
+    }
+  }
+  return {};
 }
 
 void MainWindow::update_recent_files_menu() {

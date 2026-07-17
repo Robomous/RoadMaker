@@ -44,6 +44,8 @@ not undoable.
 | [Camera & navigation](camera-navigation.md) | Orbit, zoom, and pan the viewport around its pivot |
 | [Keyboard shortcuts](shortcuts.md) | Every binding, generated from the editor's own table |
 | [Editing attributes](attributes.md) | Scrub numeric fields by dragging their name; drop assets into slots |
+| [Scene tree](scene-tree.md) | Find and select any road, lane, or junction from the structural list |
+| [Diagnostics](diagnostics.md) | Read parser and validator findings, each citing its ASAM rule |
 | [Library](library.md) | Drag ready-made roads, intersections, and props into the scene |
 | [Create Road](create-road.md) | Lay a new clothoid road through waypoints with a lane template |
 | [Moving and transforming](moving-and-transforming.md) | Move and rotate roads and props with the Move tool and its 3D transform gizmo |
@@ -63,6 +65,18 @@ not undoable.
 | [Objects & signals](objects-signals.md) | Add crosswalks, props, traffic lights, and signs |
 | [Textured rendering](textured-rendering.md) | Switch the viewport between the Sober working look and the daytime textured look |
 | [Save & export](save-export.md) | Write OpenDRIVE and export meshes (glTF, USD) |
+
+## Tutorials
+
+End-to-end walkthroughs that string the tools above together. Each one builds a
+small scene from an empty window and points at the tool pages for the details.
+
+| Tutorial | You will |
+|---|---|
+| [Your first road network](tutorials/first-road-network.md) | Draw a road, tee in a second, and export OpenDRIVE |
+| [Shaping lanes](tutorials/shaping-lanes.md) | Add, retype, widen, and pocket lanes across a road |
+| [Working with road styles](tutorials/working-with-road-styles.md) | Restyle a whole road by dropping a style from the Library |
+| [Getting around](tutorials/getting-around.md) | Orbit, frame, and switch views to work quickly |
 
 ## About the screenshots
 
