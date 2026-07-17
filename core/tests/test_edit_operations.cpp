@@ -1637,6 +1637,15 @@ Waypoint ahead_of_end(const RoadNetwork& network, RoadId road, double distance) 
                   .y = end.y + (distance * std::sin(end.hdg))};
 }
 
+/// A point `distance` m BEHIND the road's START, opposite the start tangent —
+/// the reachable side for a backward (START-contact) extension.
+Waypoint behind_start(const RoadNetwork& network, RoadId road, double distance) {
+  const auto& plan = network.road(road)->plan_view;
+  const roadmaker::PathPoint start = plan.evaluate(0.0);
+  return Waypoint{.x = start.x - (distance * std::cos(start.hdg)),
+                  .y = start.y - (distance * std::sin(start.hdg))};
+}
+
 } // namespace
 
 TEST(EditOperations, ExtendRoadHasCurvatureContinuityAtJoin) {
@@ -1716,10 +1725,206 @@ TEST(EditOperations, ExtendRoadRoundTripsThroughXodr) {
   roadmaker::test::expect_same_geometry(*network.road(road), *reparsed->network.road(reread));
 }
 
-TEST(EditOperations, ExtendRoadRejectsStartContact) {
+// --- extend_road: keep drawing off a road's START --------------------------
+
+TEST(EditOperations, ExtendRoadStartHasCurvatureContinuityAtJoin) {
+  RoadNetwork network;
+  const RoadId road = author_default(network, "1"); // an S-bend: curved at both ends
+  const double old_length = network.road(road)->plan_view.length();
+  const Waypoint to = behind_start(network, road, 40.0);
+
+  auto command = roadmaker::edit::extend_road(
+      network, RoadEnd{.road = road, .contact = ContactPoint::Start}, to);
+  ASSERT_TRUE(command->apply(network).has_value());
+
+  const auto& plan = network.road(road)->plan_view;
+  const double join_s = plan.length() - old_length; // the old start now sits here
+  EXPECT_GT(join_s, 1.0);
+  constexpr double kEps = 1e-3;
+  const roadmaker::PathPoint below = plan.evaluate(join_s - kEps);
+  const roadmaker::PathPoint above = plan.evaluate(join_s + kEps);
+  EXPECT_LT(std::abs(above.curvature - below.curvature), roadmaker::tol::kWeldCurvature);
+  EXPECT_LT(std::abs(std::remainder(above.hdg - below.hdg, 2.0 * std::numbers::pi)),
+            roadmaker::tol::kWeldHeading);
+}
+
+TEST(EditOperations, ExtendRoadStartMatchesGrade) {
   RoadNetwork network;
   const RoadId road = author_default(network, "1");
-  const Waypoint to{.x = -40.0, .y = 0.0};
+  const double old_length = network.road(road)->plan_view.length();
+  // A sloped profile so the start grade is non-zero and must carry backward.
+  {
+    std::vector<roadmaker::edit::ElevationPoint> points{{.s = 0.0, .z = 2.0},
+                                                        {.s = old_length, .z = 8.0}};
+    auto elev = roadmaker::edit::set_elevation_profile(network, road, std::move(points));
+    ASSERT_TRUE(elev->apply(network).has_value());
+  }
+  const Waypoint to = behind_start(network, road, 40.0);
+  auto command = roadmaker::edit::extend_road(
+      network, RoadEnd{.road = road, .contact = ContactPoint::Start}, to);
+  ASSERT_TRUE(command->apply(network).has_value());
+
+  const std::vector<roadmaker::Poly3>& elevation = network.road(road)->elevation;
+  ASSERT_FALSE(elevation.empty());
+  const double join_s = network.road(road)->plan_view.length() - old_length;
+  constexpr double kEps = 0.05;
+  const double z_before = roadmaker::eval_profile(elevation, join_s - kEps);
+  const double z_after = roadmaker::eval_profile(elevation, join_s + kEps);
+  EXPECT_LT(std::abs(z_after - z_before), 1e-2); // z continuous at the join
+
+  const double grade_before = (roadmaker::eval_profile(elevation, join_s - kEps) -
+                               roadmaker::eval_profile(elevation, join_s - 3.0 * kEps)) /
+                              (2.0 * kEps);
+  const double grade_after = (roadmaker::eval_profile(elevation, join_s + 3.0 * kEps) -
+                              roadmaker::eval_profile(elevation, join_s + kEps)) /
+                             (2.0 * kEps);
+  EXPECT_LT(std::abs(grade_after - grade_before), 1e-2); // dz/ds continuous
+  EXPECT_GT(grade_after, 1e-3);                          // the slope carries past the start
+}
+
+TEST(EditOperations, ExtendRoadStartRebasesEverything) {
+  RoadNetwork network;
+  const RoadId road = author_default(network, "1");
+  // A second lane section so the interior-boundary shift is exercised.
+  ASSERT_TRUE(roadmaker::edit::split_lane_section(network, road, 50.0)->apply(network).has_value());
+  ASSERT_GE(network.road(road)->sections.size(), 2U);
+  // A superelevation and a lane offset so the shift-invariance is exercised.
+  {
+    roadmaker::Road* mutable_road = network.road(road);
+    mutable_road->superelevation = {roadmaker::Poly3{.s = 0.0, .a = 0.02, .b = 0.001},
+                                    roadmaker::Poly3{.s = 20.0, .a = 0.04, .b = -0.001}};
+    mutable_road->lane_offset = {roadmaker::Poly3{.s = 0.0, .a = 0.5, .b = 0.0}};
+  }
+  const double old_length = network.road(road)->plan_view.length();
+
+  std::vector<double> old_s0;
+  for (const LaneSectionId sid : network.road(road)->sections) {
+    old_s0.push_back(network.lane_section(sid)->s0);
+  }
+  // Lane widths (section-local) must survive the shift byte-for-byte.
+  const LaneSectionId first_section = network.road(road)->sections.front();
+  std::vector<std::vector<roadmaker::Poly3>> old_widths;
+  for (const LaneId lane : network.lane_section(first_section)->lanes) {
+    old_widths.push_back(network.lane(lane)->widths);
+  }
+  const std::array<double, 3> probes{5.0, 20.0, old_length - 5.0};
+  std::array<double, 3> super_before{};
+  std::array<double, 3> offset_before{};
+  for (std::size_t i = 0; i < probes.size(); ++i) {
+    super_before[i] = roadmaker::eval_profile(network.road(road)->superelevation, probes[i]);
+    offset_before[i] = roadmaker::eval_profile(network.road(road)->lane_offset, probes[i]);
+  }
+  const std::size_t old_waypoints = network.road(road)->authoring_waypoints->size();
+  const Waypoint to = behind_start(network, road, 40.0);
+
+  auto command = roadmaker::edit::extend_road(
+      network, RoadEnd{.road = road, .contact = ContactPoint::Start}, to);
+  ASSERT_TRUE(command->apply(network).has_value());
+
+  const roadmaker::Road* result = network.road(road);
+  const double l_ext = result->plan_view.length() - old_length;
+  EXPECT_GT(l_ext, 1.0);
+
+  // The first section stays anchored at s0 = 0 (it spans the new head); every
+  // interior boundary slides forward by exactly L_ext.
+  ASSERT_EQ(result->sections.size(), old_s0.size());
+  EXPECT_NEAR(network.lane_section(result->sections.front())->s0, 0.0, 1e-9);
+  for (std::size_t i = 1; i < result->sections.size(); ++i) {
+    EXPECT_NEAR(network.lane_section(result->sections[i])->s0, old_s0[i] + l_ext, 1e-9);
+  }
+  // Lane widths unchanged.
+  const std::vector<LaneId>& lanes = network.lane_section(result->sections.front())->lanes;
+  ASSERT_EQ(lanes.size(), old_widths.size());
+  for (std::size_t i = 0; i < lanes.size(); ++i) {
+    EXPECT_EQ(network.lane(lanes[i])->widths, old_widths[i]);
+  }
+  // Waypoint prepended; the authored point is now the first.
+  ASSERT_EQ(result->authoring_waypoints->size(), old_waypoints + 1);
+  EXPECT_EQ(result->authoring_waypoints->front(), to);
+  // Superelevation / lane_offset VALUES at the old stations survive at s + L_ext.
+  for (std::size_t i = 0; i < probes.size(); ++i) {
+    EXPECT_NEAR(
+        roadmaker::eval_profile(result->superelevation, probes[i] + l_ext), super_before[i], 1e-9);
+    EXPECT_NEAR(
+        roadmaker::eval_profile(result->lane_offset, probes[i] + l_ext), offset_before[i], 1e-9);
+  }
+}
+
+TEST(EditOperations, ExtendRoadStartShiftsObjectsAndSignals) {
+  RoadNetwork network;
+  const RoadId road = author_default(network, "1");
+  const double old_length = network.road(road)->plan_view.length();
+  const double place_s = 30.0;
+  const roadmaker::ObjectId object = network.add_object(
+      road, roadmaker::Object{.road = road, .odr_id = "o1", .s = place_s, .t = 1.5});
+  const roadmaker::SignalId signal = network.add_signal(
+      road, roadmaker::Signal{.road = road, .odr_id = "s1", .s = place_s, .t = -1.5});
+  const roadmaker::PathPoint world_before = network.road(road)->plan_view.evaluate(place_s);
+
+  const Waypoint to = behind_start(network, road, 40.0);
+  auto command = roadmaker::edit::extend_road(
+      network, RoadEnd{.road = road, .contact = ContactPoint::Start}, to);
+  ASSERT_TRUE(command->apply(network).has_value());
+
+  const double l_ext = network.road(road)->plan_view.length() - old_length;
+  EXPECT_NEAR(network.object(object)->s, place_s + l_ext, 1e-9);
+  EXPECT_NEAR(network.signal(signal)->s, place_s + l_ext, 1e-9);
+  // The origin resolves to the SAME world point (s shifted with the geometry).
+  const roadmaker::PathPoint world_after =
+      network.road(road)->plan_view.evaluate(network.object(object)->s);
+  EXPECT_NEAR(world_after.x, world_before.x, 1e-3);
+  EXPECT_NEAR(world_after.y, world_before.y, 1e-3);
+}
+
+TEST(EditOperations, ExtendRoadStartUndoIsByteIdentical) {
+  RoadNetwork network;
+  const RoadId road = author_default(network, "1");
+  const Waypoint to = behind_start(network, road, 40.0);
+  auto command = roadmaker::edit::extend_road(
+      network, RoadEnd{.road = road, .contact = ContactPoint::Start}, to);
+  expect_command_round_trip(network, *command);
+}
+
+TEST(EditOperations, ExtendRoadStartRoundTripsThroughXodr) {
+  RoadNetwork network;
+  const RoadId road = author_default(network, "1");
+  const Waypoint to = behind_start(network, road, 40.0);
+  auto command = roadmaker::edit::extend_road(
+      network, RoadEnd{.road = road, .contact = ContactPoint::Start}, to);
+  ASSERT_TRUE(command->apply(network).has_value());
+
+  const std::string written = snapshot_xodr(network);
+  auto reparsed = roadmaker::parse_xodr(written);
+  ASSERT_TRUE(reparsed.has_value());
+  const RoadId reread = reparsed->network.find_road("1");
+  ASSERT_TRUE(reparsed->network.road(reread) != nullptr);
+  roadmaker::test::expect_same_geometry(*network.road(road), *reparsed->network.road(reread));
+}
+
+TEST(EditOperations, ExtendRoadStartRejectsLinkedStart) {
+  RoadNetwork network;
+  const RoadId road = author_default(network, "1");
+  // Weld a second road onto the START so the predecessor link is occupied.
+  const RoadId neighbor =
+      author(network, {Waypoint{.x = 0.0, .y = 0.0}, Waypoint{.x = -60.0, .y = -8.0}}, "2");
+  (void)neighbor;
+  network.road(road)->predecessor =
+      roadmaker::RoadLink{.target = network.find_road("2"), .contact = ContactPoint::Start};
+
+  const Waypoint to = behind_start(network, road, 40.0);
+  auto command = roadmaker::edit::extend_road(
+      network, RoadEnd{.road = road, .contact = ContactPoint::Start}, to);
+  expect_command_rejected(network, std::move(command));
+}
+
+TEST(EditOperations, ExtendRoadStartRejectsPointBehind) {
+  RoadNetwork network;
+  const RoadId road = author_default(network, "1");
+  // A target just AHEAD of the start along the road's own +s tangent is "behind"
+  // the backward fit and cannot be reached (it loops past max_loop_factor).
+  const roadmaker::PathPoint start = network.road(road)->plan_view.evaluate(0.0);
+  const Waypoint to{.x = start.x + (5.0 * std::cos(start.hdg)),
+                    .y = start.y + (5.0 * std::sin(start.hdg))};
   auto command = roadmaker::edit::extend_road(
       network, RoadEnd{.road = road, .contact = ContactPoint::Start}, to);
   expect_command_rejected(network, std::move(command));

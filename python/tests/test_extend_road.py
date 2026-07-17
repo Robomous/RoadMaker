@@ -26,6 +26,12 @@ def _ahead_of_end(network, road, distance):
     return (end.x + distance * math.cos(end.hdg), end.y + distance * math.sin(end.hdg))
 
 
+def _behind_start(network, road, distance):
+    plan = network.road(road).plan_view
+    start = plan.evaluate(0.0)
+    return (start.x - distance * math.cos(start.hdg), start.y - distance * math.sin(start.hdg))
+
+
 def test_extend_is_curvature_continuous_at_join(network):
     stack = rm.edit.EditStack()
     road = network.find_road("1")
@@ -77,10 +83,35 @@ def test_extend_round_trips_through_xodr(network):
         assert pb.y == pytest.approx(pa.y, abs=1e-3)
 
 
-def test_extend_rejects_start_contact(network):
+def test_extend_start_is_one_command_undo(network):
     stack = rm.edit.EditStack()
     road = network.find_road("1")
     before = rm.write_xodr(network)
-    with pytest.raises(ValueError):
-        stack.push(network, rm.edit.extend_road(network, rm.RoadEnd(road, rm.ContactPoint.START), (-40.0, 0.0)))
+    to = _behind_start(network, road, 40.0)
+
+    stack.push(network, rm.edit.extend_road(network, rm.RoadEnd(road, rm.ContactPoint.START), to))
+    assert rm.write_xodr(network) != before
+    assert network.road_count == 1  # same road, re-based in place
+
+    stack.undo(network)  # ONE undo restores the pre-extend document byte-for-byte
     assert rm.write_xodr(network) == before
+
+
+def test_extend_start_round_trips_through_xodr(network):
+    stack = rm.edit.EditStack()
+    road = network.find_road("1")
+    to = _behind_start(network, road, 40.0)
+    stack.push(network, rm.edit.extend_road(network, rm.RoadEnd(road, rm.ContactPoint.START), to))
+
+    written = rm.write_xodr(network)
+    reparsed, _ = rm.parse_xodr(written)
+    reread = reparsed.find_road("1")
+    a = network.road(road).plan_view
+    b = reparsed.road(reread).plan_view
+    assert b.length == pytest.approx(a.length, abs=1e-3)
+    for i in range(0, 41):
+        s = a.length * i / 40.0
+        pa = a.evaluate(s)
+        pb = b.evaluate(s)
+        assert pb.x == pytest.approx(pa.x, abs=1e-3)
+        assert pb.y == pytest.approx(pa.y, abs=1e-3)

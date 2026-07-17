@@ -380,4 +380,41 @@ TEST(CreateRoadTool, ExtendEndpointClickAddsCurvatureContinuousExtension) {
             roadmaker::tol::kWeldHeading);
 }
 
+TEST(CreateRoadTool, ExtendStartEndpointClickExtendsBackward) {
+  Document document;
+  ASSERT_TRUE(document
+                  .push_command(roadmaker::edit::create_road({Waypoint{.x = 0.0, .y = 0.0},
+                                                              Waypoint{.x = 60.0, .y = 8.0},
+                                                              Waypoint{.x = 120.0, .y = 0.0}},
+                                                             LaneProfile::two_lane_rural(),
+                                                             "Bend"))
+                  .has_value());
+  const RoadId road = document.network().find_road("1");
+  ASSERT_TRUE(road.is_valid());
+  const auto& plan = document.network().road(road)->plan_view;
+  const double old_length = plan.length();
+  const PathPoint start = plan.evaluate(0.0);
+
+  CreateRoadTool tool(document);
+  tool.set_snap_options({.radius = 2.0});
+  tool.set_selected_road(road); // the SelectionModel would wire this in the app
+  tool.activate();
+  // First click snaps to the road START (the NEARER endpoint arms extension);
+  // the second click aims BEHIND the start, opposite its tangent.
+  click(tool, start.x + 0.3, start.y - 0.2);
+  click(tool, start.x - 40.0 * std::cos(start.hdg), start.y - 40.0 * std::sin(start.hdg));
+  ASSERT_TRUE(tool.key_press(Qt::Key_Return, Qt::NoModifier));
+
+  EXPECT_EQ(document.network().road_count(), 1U); // same road, no new one
+  EXPECT_EQ(document.undo_stack()->count(), 2);   // create + extend
+  const auto& extended = document.network().road(road)->plan_view;
+  EXPECT_GT(extended.length(), old_length + 1.0); // it grew at the front
+  const double join_s = extended.length() - old_length;
+  const PathPoint below = extended.evaluate(join_s - 1e-3);
+  const PathPoint above = extended.evaluate(join_s + 1e-3);
+  EXPECT_LT(std::abs(above.curvature - below.curvature), roadmaker::tol::kWeldCurvature);
+  EXPECT_LT(std::abs(std::remainder(above.hdg - below.hdg, 2.0 * std::numbers::pi)),
+            roadmaker::tol::kWeldHeading);
+}
+
 } // namespace
