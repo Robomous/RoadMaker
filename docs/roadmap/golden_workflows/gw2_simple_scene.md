@@ -38,12 +38,34 @@ against the code rather than left describing a product that does not exist
   the cross section and keeps everything orthogonal to it
   ([#219](https://github.com/Robomous/RoadMaker/issues/219)).
 
+**Closeout self-check (P2 sprint 9, 2026-07-17).** A headless replay,
+`scripts/gw2_replay.py`, now drives the automatable slice through the kernel
+command layer and asserts each outcome: step 2 (Create Road, default two-lane
+profile, editable authoring waypoints), step 3 (a crossing forms one junction
+with connections and consumed lane links via `cross_roads`), step 4 (a curved
+road extended at BOTH endpoints with heading + curvature continuity at each
+join), step 5 (an enclosing ring derives one ground surface with a non-empty
+surface mesh channel), step 11 (a road style replaces the profile while name,
+elevation, links, and a placed object are preserved), step 12 (Lane Carve tapers
+0 → full and holds to the terminus), and the step-23 persistence slice (save →
+reload → write is byte-identical; `validate_network(V1_8_1)` reports zero
+errors). The P2 lane tools the official steps don't touch — Lane
+(type + direction), Lane Width, Lane Add, and Lane Form across a seam — are
+exercised as supplementary evidence. The replay runs undo ×10 / redo ×10
+byte-identically, exits 0, and its exported `.xodr` loads cleanly in esmini.
+One authoring nicety surfaced: a placed `<object>` needs a real `@type` (not an
+empty one) for esmini to accept it without an error line — the replay sets it,
+and this is a scene-authoring note, not a kernel defect. The user-guide tool
+pages (Lane, Lane Width, Lane Add, Lane Form, Lane Carve, Road Styles) landed in
+the same change. `Road Plan tool` in step 2 was corrected to its real name,
+`Create Road tool`.
+
 ### Project and roads
 
 1. [ ] Create a new project, then a new scene inside it. **Expected:** a
    project is a folder of shared assets; the scene lives in the project;
    both appear on the welcome screen's recent list on next launch.
-2. [ ] With the Road Plan tool, click control points to lay a straight
+2. [ ] With the Create Road tool, click control points to lay a straight
    road; right-click to finish. **Expected:** a road with the default
    style; control points remain editable.
 3. [ ] Draw a second road across the first, finishing beyond it.
