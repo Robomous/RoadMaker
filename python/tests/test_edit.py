@@ -96,6 +96,47 @@ def test_waypoint_and_lane_edits(network):
     assert network.road(road).elevation == []
 
 
+def test_set_lane_direction_round_trips(network):
+    stack = rm.edit.EditStack()
+    road = network.find_road("1")
+    section = network.road(road).sections[0]
+    outer = network.lane_section(section).lanes[-1]  # outermost, non-center
+    assert network.lane(outer).direction == rm.LaneDirection.STANDARD
+    before = rm.write_xodr(network)
+
+    stack.push(network, rm.edit.set_lane_direction(network, outer, rm.LaneDirection.REVERSED))
+    assert network.lane(outer).direction == rm.LaneDirection.REVERSED
+
+    stack.undo(network)
+    assert rm.write_xodr(network) == before  # byte-identical restore
+    assert network.lane(outer).direction == rm.LaneDirection.STANDARD
+
+    # The center lane has no travel direction — the factory refuses it.
+    center = next(
+        lane for lane in network.lane_section(section).lanes if network.lane(lane).odr_id == 0
+    )
+    with pytest.raises(ValueError):
+        stack.push(network, rm.edit.set_lane_direction(network, center, rm.LaneDirection.BOTH))
+
+
+def test_lane_direction_survives_save_load(network, tmp_path):
+    road = network.find_road("1")
+    section = network.road(road).sections[0]
+    outer = network.lane_section(section).lanes[-1]
+    rm.edit.EditStack().push(
+        network, rm.edit.set_lane_direction(network, outer, rm.LaneDirection.BOTH)
+    )
+
+    out = tmp_path / "direction.xodr"
+    rm.save_xodr(network, out, "direction")
+    assert 'direction="both"' in out.read_text()
+
+    reloaded, _ = rm.load_xodr(out)
+    reloaded_section = reloaded.road(reloaded.find_road("1")).sections[0]
+    reloaded_outer = reloaded.lane_section(reloaded_section).lanes[-1]
+    assert reloaded.lane(reloaded_outer).direction == rm.LaneDirection.BOTH
+
+
 def test_fit_elevation_profile_interpolates_nodes_and_ascends():
     s = [0.0, 50.0, 100.0]
     z = [0.0, 10.0, 0.0]

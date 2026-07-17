@@ -26,6 +26,7 @@
 #include "tools/lane_profile_tool.hpp"
 
 using roadmaker::Lane;
+using roadmaker::LaneDirection;
 using roadmaker::LaneId;
 using roadmaker::LaneProfile;
 using roadmaker::LaneType;
@@ -384,6 +385,47 @@ TEST(LaneProfileTool, DeleteOnACenterOrInteriorLaneEmitsStatusAndPushesNothing) 
   ASSERT_TRUE(tool.key_press(Qt::Key_Backspace, Qt::NoModifier));
   EXPECT_EQ(scene.document.undo_stack()->count(), before) << "still nothing pushed";
   EXPECT_EQ(spy.count(), 2);
+}
+
+TEST(LaneProfileTool, ShiftDCyclesLaneDirection) {
+  Scene scene;
+  LaneProfileTool tool(scene.document, scene.selection);
+  tool.activate();
+  scene.select_lane(-1);
+  const LaneId lane = scene.lane(-1);
+  ASSERT_EQ(scene.document.network().lane(lane)->direction, LaneDirection::Standard);
+  const int before = scene.document.undo_stack()->count();
+
+  // Standard -> Reversed -> Both -> Standard: three presses, three commands.
+  ASSERT_TRUE(tool.key_press(Qt::Key_D, Qt::ShiftModifier));
+  EXPECT_EQ(scene.document.network().lane(lane)->direction, LaneDirection::Reversed);
+  ASSERT_TRUE(tool.key_press(Qt::Key_D, Qt::ShiftModifier));
+  EXPECT_EQ(scene.document.network().lane(lane)->direction, LaneDirection::Both);
+  ASSERT_TRUE(tool.key_press(Qt::Key_D, Qt::ShiftModifier));
+  EXPECT_EQ(scene.document.network().lane(lane)->direction, LaneDirection::Standard);
+
+  EXPECT_EQ(scene.document.undo_stack()->count(), before + 3);
+  // Three undo entries walk the cycle back.
+  scene.document.undo_stack()->undo();
+  EXPECT_EQ(scene.document.network().lane(lane)->direction, LaneDirection::Both);
+  scene.document.undo_stack()->undo();
+  EXPECT_EQ(scene.document.network().lane(lane)->direction, LaneDirection::Reversed);
+  scene.document.undo_stack()->undo();
+  EXPECT_EQ(scene.document.network().lane(lane)->direction, LaneDirection::Standard);
+}
+
+TEST(LaneProfileTool, ShiftDOnCenterLaneOnlyMessages) {
+  Scene scene;
+  LaneProfileTool tool(scene.document, scene.selection);
+  tool.activate();
+  QSignalSpy spy(&tool, &roadmaker::editor::Tool::status_message);
+
+  scene.select_lane(0); // the center lane has no travel direction
+  const int before = scene.document.undo_stack()->count();
+  ASSERT_TRUE(tool.key_press(Qt::Key_D, Qt::ShiftModifier)); // consumed
+  EXPECT_EQ(scene.document.undo_stack()->count(), before) << "no command pushed";
+  EXPECT_EQ(spy.count(), 1) << "the gesture explains why it did nothing";
+  EXPECT_EQ(scene.document.network().lane(scene.lane(0))->direction, LaneDirection::Standard);
 }
 
 TEST(LaneProfileTool, InstructionMentionsDeleteAndWidth) {

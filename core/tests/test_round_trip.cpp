@@ -211,6 +211,53 @@ TEST(RoundTrip, AuthoringWaypointsSurviveWriteParse) {
             (std::vector<Waypoint>(waypoints.begin(), waypoints.end())));
 }
 
+TEST(RoundTrip, LaneDirectionSurvivesWriteParseWrite) {
+  RoadNetwork authored;
+  const std::array<Waypoint, 3> waypoints{
+      Waypoint{.x = 0.0, .y = 0.0},
+      Waypoint{.x = 60.0, .y = 8.0},
+      Waypoint{.x = 120.0, .y = 0.0},
+  };
+  const auto road_id = roadmaker::author_clothoid_road(
+      authored, waypoints, LaneProfile::two_lane_default(), "Dir", "1");
+  ASSERT_TRUE(road_id.has_value());
+
+  // Give the two non-center lanes distinct non-Standard directions.
+  const roadmaker::LaneSection& section =
+      *authored.lane_section(authored.road(*road_id)->sections.front());
+  for (const roadmaker::LaneId lane_id : section.lanes) {
+    roadmaker::Lane& lane = *authored.lane(lane_id);
+    if (lane.odr_id == -1) {
+      lane.direction = roadmaker::LaneDirection::Reversed;
+    } else if (lane.odr_id == 1) {
+      lane.direction = roadmaker::LaneDirection::Both;
+    }
+  }
+
+  const auto xml = roadmaker::write_xodr(authored, "dir");
+  ASSERT_TRUE(xml.has_value());
+  const auto reparsed = roadmaker::parse_xodr(*xml, "dir");
+  ASSERT_TRUE(reparsed.has_value());
+
+  const roadmaker::Road& round = *reparsed->network.road(reparsed->network.find_road("1"));
+  const roadmaker::LaneSection& round_section = *reparsed->network.lane_section(round.sections[0]);
+  for (const roadmaker::LaneId lane_id : round_section.lanes) {
+    const roadmaker::Lane& lane = *reparsed->network.lane(lane_id);
+    if (lane.odr_id == -1) {
+      EXPECT_EQ(lane.direction, roadmaker::LaneDirection::Reversed);
+    } else if (lane.odr_id == 1) {
+      EXPECT_EQ(lane.direction, roadmaker::LaneDirection::Both);
+    } else {
+      EXPECT_EQ(lane.direction, roadmaker::LaneDirection::Standard);
+    }
+  }
+
+  // Byte-stable second pass: write→parse→write reproduces the same bytes.
+  const auto again = roadmaker::write_xodr(reparsed->network, "dir");
+  ASSERT_TRUE(again.has_value());
+  EXPECT_EQ(*xml, *again);
+}
+
 TEST(RoundTrip, ForeignRoadsLoadWithoutAuthoringWaypoints) {
   auto loaded = roadmaker::load_xodr(std::filesystem::path(RM_SAMPLES_DIR) / "t_junction.xodr");
   ASSERT_TRUE(loaded.has_value());

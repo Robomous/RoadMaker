@@ -402,6 +402,14 @@ insert_lane(const RoadNetwork& network, LaneSectionId section, int at_odr_id, La
 [[nodiscard]] RM_API std::unique_ptr<Command>
 set_lane_type(const RoadNetwork& network, LaneId lane, LaneType type);
 
+/// Sets the lane's travel direction (e_lane_direction, §11 — introduced in
+/// OpenDRIVE 1.8.0, legal under both writer targets). Refuses the center lane
+/// (odr id 0): a width-less separator has no travel of its own. Marks only the
+/// owning road dirty — the connection engine does not read @direction, so no
+/// junction regeneration is needed.
+[[nodiscard]] RM_API std::unique_ptr<Command>
+set_lane_direction(const RoadNetwork& network, LaneId lane, LaneDirection direction);
+
 /// Sets a CONSTANT width, replacing the profile with a single record at
 /// sOffset 0.
 ///

@@ -65,6 +65,18 @@ const char* lane_type_name(LaneType type) {
   return "none";
 }
 
+const char* lane_direction_name(LaneDirection direction) {
+  switch (direction) {
+  case LaneDirection::Standard:
+    return "standard";
+  case LaneDirection::Reversed:
+    return "reversed";
+  case LaneDirection::Both:
+    return "both";
+  }
+  return "standard";
+}
+
 const char* object_type_name(ObjectType type) {
   switch (type) {
   case ObjectType::Crosswalk:
@@ -294,6 +306,12 @@ void write_lane(pugi::xml_node side, const Lane& lane) {
   lane_node.append_attribute("id").set_value(lane.odr_id);
   lane_node.append_attribute("type").set_value(lane_type_name(lane.type));
   lane_node.append_attribute("level").set_value("false");
+  // @direction (e_lane_direction, §11) is written explicitly only when not
+  // Standard: the default keeps every existing fixture byte-identical (§11
+  // says an absent @direction means the reference-line-derived standard).
+  if (lane.direction != LaneDirection::Standard) {
+    lane_node.append_attribute("direction").set_value(lane_direction_name(lane.direction));
+  }
   if (lane.predecessor || lane.successor) {
     pugi::xml_node link = lane_node.append_child("link");
     if (lane.predecessor) {
@@ -951,6 +969,17 @@ std::vector<Diagnostic> validate_network(const RoadNetwork& network, const Write
                          .rule_id = std::string(rules::kWidthDefinedWholeSection),
                          .road = road_id,
                          .lane = lane_id});
+        }
+        // RoadMaker advisory (no normative ASAM rule id — rule_id stays empty):
+        // the center lane (id 0) has no travel of its own, so a @direction on
+        // it (e_lane_direction, §11) is meaningless. Warn rather than drop.
+        if (lane.odr_id == 0 && lane.direction != LaneDirection::Standard) {
+          findings.push_back(Diagnostic{.severity = Severity::Warning,
+                                        .location = fmt::format("road id={}", road.odr_id),
+                                        .message = "advisory: the center lane (id 0) carries a "
+                                                   "non-standard travel direction",
+                                        .road = road_id,
+                                        .lane = lane_id});
         }
         // RoadMaker advisory (NOT a normative ASAM rule — rule_id stays empty
         // so it is never spoofed as one): a solid_solid-family mark authored

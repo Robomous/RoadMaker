@@ -57,6 +57,7 @@ void SoakDriver::step(int index) {
       {1, &SoakDriver::op_insert_waypoint, "insert_waypoint"},
       {1, &SoakDriver::op_delete_waypoint, "delete_waypoint"},
       {2, &SoakDriver::op_lane_edit, "lane_edit"},
+      {1, &SoakDriver::op_set_lane_direction, "set_lane_direction"},
       {2, &SoakDriver::op_split_lane_section, "split_lane_section"},
       {2, &SoakDriver::op_lane_width_profile, "lane_width_profile"},
       {1, &SoakDriver::op_elevation, "elevation"},
@@ -472,6 +473,32 @@ void SoakDriver::op_lane_edit() {
     break;
   }
   }
+}
+
+void SoakDriver::op_set_lane_direction() {
+  // Travel direction on a random lane (issue #274). The kernel refuses the
+  // center lane (recorded, not fatal); a non-Standard direction round-trips
+  // through @direction, exercised by the save/reload byte check.
+  const std::vector<RoadId> roads = live_roads(/*editable_only=*/true);
+  if (roads.empty()) {
+    return;
+  }
+  const RoadId road_id = roads[static_cast<std::size_t>(rand_int(0, int(roads.size()) - 1))];
+  const Road* road = document_.network().road(road_id);
+  if (road == nullptr || road->sections.empty()) {
+    return;
+  }
+  const LaneSectionId section_id =
+      road->sections[static_cast<std::size_t>(rand_int(0, int(road->sections.size()) - 1))];
+  const LaneSection* section = document_.network().lane_section(section_id);
+  if (section == nullptr || section->lanes.empty()) {
+    return;
+  }
+  const LaneId lane =
+      section->lanes[static_cast<std::size_t>(rand_int(0, int(section->lanes.size()) - 1))];
+  static constexpr LaneDirection kDirs[] = {
+      LaneDirection::Standard, LaneDirection::Reversed, LaneDirection::Both};
+  push(edit::set_lane_direction(document_.network(), lane, kDirs[rand_int(0, 2)]));
 }
 
 void SoakDriver::op_elevation() {

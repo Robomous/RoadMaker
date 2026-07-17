@@ -26,6 +26,7 @@
 #include "support/network_compare.hpp"
 
 using roadmaker::Lane;
+using roadmaker::LaneDirection;
 using roadmaker::LaneId;
 using roadmaker::LaneProfile;
 using roadmaker::LaneSection;
@@ -292,6 +293,36 @@ TEST(LaneSections, SplitCreatesASecondSectionAndRoundTrips) {
   EXPECT_NEAR(network.lane_section(sections[1])->s0, 50.0, roadmaker::tol::kLength);
   // The cross section is duplicated, not invented.
   EXPECT_EQ(network.lane_section(sections[1])->lanes.size(), lanes);
+}
+
+/// split_lane_section copies lanes field-by-field, so a field it forgets is
+/// silently reset on the new-section copy. Direction is such a field.
+TEST(LaneSections, SplitPreservesLaneDirection) {
+  RoadNetwork network;
+  const RoadId road_id = author_straight(network, "1");
+  const LaneSectionId first = network.road(road_id)->sections[0];
+
+  LaneId reversed_id{};
+  for (const LaneId lane_id : network.lane_section(first)->lanes) {
+    if (network.lane(lane_id)->odr_id == -1) {
+      reversed_id = lane_id;
+    }
+  }
+  ASSERT_TRUE(reversed_id.is_valid());
+  auto set_dir = roadmaker::edit::set_lane_direction(network, reversed_id, LaneDirection::Reversed);
+  ASSERT_TRUE(set_dir->apply(network).has_value());
+
+  auto command = roadmaker::edit::split_lane_section(network, road_id, 50.0);
+  ASSERT_TRUE(command->apply(network).has_value());
+
+  const auto& sections = network.road(road_id)->sections;
+  ASSERT_EQ(sections.size(), 2U);
+  // Both the truncated original and the fresh [s, end) copy keep Reversed.
+  for (const LaneSectionId section_id : sections) {
+    const Lane* lane = lane_by_odr(network, section_id, -1);
+    ASSERT_NE(lane, nullptr);
+    EXPECT_EQ(lane->direction, LaneDirection::Reversed);
+  }
 }
 
 /// The split only changes where the kernel may vary the width — never the

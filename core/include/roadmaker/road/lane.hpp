@@ -25,6 +25,20 @@ enum class LaneType {
   Other,
 };
 
+/// Lane travel direction relative to the reference-line-derived standard
+/// (e_lane_direction). Introduced in OpenDRIVE 1.8.0, so it is legal under
+/// both writer targets (1.8.1 and 1.9.0) with no version gating. The
+/// enumeration is exactly standard | reversed | both — there is NO `same`
+/// literal (1.8.1 §11 + Annex A.3.10 Table 173; 1.9.0 §11.2/§11.3.1 + Annex
+/// A.3.11 Table 180). `Standard` means "determined by the <left>/<right>
+/// grouping and the road @rule (LHT/RHT)"; the @direction attribute overrides
+/// that. Written explicitly only when not Standard (byte-stable default).
+enum class LaneDirection {
+  Standard,
+  Reversed,
+  Both,
+};
+
 /// Lane marking types RoadMaker renders in M1; exotic ones map to Other
 /// (with a diagnostic).
 enum class RoadMarkType {
@@ -101,6 +115,10 @@ struct Lane {
   int odr_id = 0;
 
   LaneType type = LaneType::None;
+
+  /// Travel direction (e_lane_direction, §11). Defaults to Standard, which
+  /// emits nothing on write; only Reversed/Both are serialized.
+  LaneDirection direction = LaneDirection::Standard;
 
   /// Width polynomials. Poly3::s is the sOffset LOCAL to the owning lane
   /// section's start (per OpenDRIVE), sorted ascending. Empty for lane 0.

@@ -24,13 +24,19 @@ public:
   [[nodiscard]] bool mouse_press(const ToolEvent& event) override;
 
   /// Delete/Backspace removes the primary lane through edit::remove_lane (ONE
-  /// undo step). A null/center/non-outermost lane can't be removed — the
-  /// gesture then emits a status message rather than doing nothing silently.
+  /// undo step). Shift+D cycles the primary lane's travel direction
+  /// (Standard->Reversed->Both->Standard) through edit::set_lane_direction. A
+  /// null/center/non-outermost lane can't be removed, and the center lane has
+  /// no direction — the gesture then emits a status message rather than doing
+  /// nothing silently.
   [[nodiscard]] bool key_press(int key, Qt::KeyboardModifiers modifiers) override;
 
   [[nodiscard]] QString instruction() const override;
 
 private:
+  /// Shift+D handler: cycles the selected lane's @direction via ONE command.
+  [[nodiscard]] bool cycle_direction();
+
   Document& document_;
   SelectionModel& selection_;
 };

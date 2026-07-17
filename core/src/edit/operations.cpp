@@ -3715,6 +3715,30 @@ std::unique_ptr<Command> set_lane_type(const RoadNetwork& network, LaneId lane_i
 }
 
 std::unique_ptr<Command>
+set_lane_direction(const RoadNetwork& network, LaneId lane_id, LaneDirection direction) {
+  static constexpr std::string_view kName = "Set Lane Direction";
+  auto context = lane_context(network, lane_id);
+  if (!context.has_value()) {
+    return invalid_command(std::string(kName), context.error());
+  }
+  if (context->lane.odr_id == 0) {
+    return invalid_command(std::string(kName),
+                           Error{.code = ErrorCode::InvalidArgument,
+                                 .message = "the center lane has no travel direction"});
+  }
+  Lane after = context->lane;
+  after.direction = direction;
+  // Only the owning road is dirty: the connection engine does not read
+  // @direction (unlike set_lane_type, which can add/remove a turn), so no
+  // junctions need naming for regeneration.
+  auto command =
+      std::make_unique<GenericCommand>(std::string(kName), DirtySet{.roads = {context->road_id}});
+  command->before.lanes.emplace_back(lane_id, context->lane);
+  command->after.lanes.emplace_back(lane_id, std::move(after));
+  return command;
+}
+
+std::unique_ptr<Command>
 set_lane_width(const RoadNetwork& network, LaneId lane_id, double width_m) {
   static constexpr std::string_view kName = "Set Lane Width";
   auto context = lane_context(network, lane_id);
@@ -3843,6 +3867,7 @@ std::unique_ptr<Command> split_lane_section(const RoadNetwork& network, RoadId r
   struct LaneCopy {
     int odr_id = 0;
     LaneType type = LaneType::None;
+    LaneDirection direction = LaneDirection::Standard;
     std::vector<Poly3> widths;
     std::vector<RoadMark> marks;
     std::optional<int> predecessor; // unset when the lane does not continue
@@ -3875,6 +3900,7 @@ std::unique_ptr<Command> split_lane_section(const RoadNetwork& network, RoadId r
     const std::optional<int> seam = continues ? std::optional<int>{lane.odr_id} : std::nullopt;
     copies.push_back(LaneCopy{.odr_id = lane.odr_id,
                               .type = lane.type,
+                              .direction = lane.direction,
                               .widths = rebase_profile(lane.widths, local),
                               .marks = rebase_marks(lane.road_marks, local),
                               .predecessor = seam,
@@ -3905,6 +3931,7 @@ std::unique_ptr<Command> split_lane_section(const RoadNetwork& network, RoadId r
                           "lane id already occupied in the new section");
       }
       Lane& value = *target.lane(new_lane);
+      value.direction = copy.direction;
       value.widths = copy.widths;
       value.road_marks = copy.marks;
       value.predecessor = copy.predecessor;
@@ -4336,6 +4363,8 @@ apply_road_style(const RoadNetwork& network, RoadId road_id, const RoadStyle& st
         for (std::size_t i = 0; i < lanes.size(); ++i) {
           const StyleLane& spec = lanes[i];
           const int odr_id = sign * (static_cast<int>(i) + 1);
+          // Fresh lanes get LaneDirection::Standard (the add_lane default), so a
+          // styled road always writes with no @direction until explicitly set.
           const LaneId lane = t.add_lane(section, odr_id, spec.type);
           if (!lane.is_valid()) {
             return make_error(ErrorCode::InvalidArgument, "lane id occupied");

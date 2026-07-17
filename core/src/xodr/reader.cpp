@@ -453,6 +453,17 @@ private:
     Lane& lane = *network().lane(lane_id);
     current_lane_ = lane_id;
 
+    // @direction (e_lane_direction, §11). Absent -> Standard; unknown spelling
+    // -> Standard + a Warning, mirroring the unknown-lane-type pattern above.
+    const std::string direction_name = lane_node.attribute("direction").value();
+    if (const auto direction = lane_direction_from_string(direction_name)) {
+      lane.direction = *direction;
+    } else {
+      diag(Severity::Warning,
+           location,
+           fmt::format("unknown lane direction '{}' mapped to 'standard'", direction_name));
+    }
+
     std::size_t width_index = 0;
     for (const pugi::xml_node width : lane_node.children("width")) {
       lane.widths.push_back(
@@ -576,6 +587,19 @@ private:
     if (name == "orange")
       return RoadMarkColor::Orange;
     return RoadMarkColor::Other;
+  }
+
+  /// e_lane_direction (1.8.1 Annex A.3.10 Table 173 / 1.9.0 Annex A.3.11
+  /// Table 180). Empty/absent -> Standard; an unknown spelling -> nullopt so
+  /// the caller can default to Standard AND warn (never dropped).
+  static std::optional<LaneDirection> lane_direction_from_string(std::string_view name) {
+    if (name == "standard" || name.empty())
+      return LaneDirection::Standard;
+    if (name == "reversed")
+      return LaneDirection::Reversed;
+    if (name == "both")
+      return LaneDirection::Both;
+    return std::nullopt;
   }
 
   // --- objects (OpenDRIVE §13) ----------------------------------------------

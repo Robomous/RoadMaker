@@ -10,6 +10,7 @@
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <array>
 #include <string>
 #include <vector>
@@ -136,6 +137,54 @@ TEST(XodrWriter, MissingLaneWidthCitesTheWidthRule) {
   ASSERT_EQ(matched.size(), 1U);
   EXPECT_EQ(matched.front().severity, Severity::Error);
   EXPECT_EQ(matched.front().road, road_id);
+}
+
+TEST(XodrWriter, LaneDirectionEmittedOnlyWhenNotStandard) {
+  RoadNetwork network;
+  const RoadId road_id = author_default(network, "1");
+  const roadmaker::LaneSection& section =
+      *network.lane_section(network.road(road_id)->sections.front());
+
+  // Fresh lanes are Standard, so @direction must be absent for every lane.
+  {
+    const auto text = roadmaker::write_xodr(network);
+    ASSERT_TRUE(text.has_value());
+    EXPECT_EQ(text->find("direction="), std::string::npos);
+  }
+
+  // Set a non-center lane to Reversed and expect exactly that spelling.
+  roadmaker::LaneId outer;
+  for (const roadmaker::LaneId lane_id : section.lanes) {
+    if (network.lane(lane_id)->odr_id == -1) {
+      outer = lane_id;
+    }
+  }
+  ASSERT_TRUE(outer.is_valid());
+  network.lane(outer)->direction = roadmaker::LaneDirection::Reversed;
+
+  const auto text = roadmaker::write_xodr(network);
+  ASSERT_TRUE(text.has_value());
+  EXPECT_NE(text->find("direction=\"reversed\""), std::string::npos);
+  EXPECT_EQ(text->find("direction=\"standard\""), std::string::npos);
+}
+
+TEST(XodrWriter, CenterLaneDirectionIsAdvised) {
+  RoadNetwork network;
+  const RoadId road_id = author_default(network, "1");
+  const roadmaker::LaneSection& section =
+      *network.lane_section(network.road(road_id)->sections.front());
+  for (const roadmaker::LaneId lane_id : section.lanes) {
+    if (network.lane(lane_id)->odr_id == 0) {
+      network.lane(lane_id)->direction = roadmaker::LaneDirection::Both;
+    }
+  }
+
+  const auto findings = roadmaker::validate_network(network);
+  const bool warned = std::any_of(findings.begin(), findings.end(), [](const Diagnostic& d) {
+    return d.severity == Severity::Warning && d.message.find("center lane") != std::string::npos &&
+           d.message.find("travel direction") != std::string::npos;
+  });
+  EXPECT_TRUE(warned);
 }
 
 TEST(XodrWriter, StructuralDefectsCarryRuleIdsAndRefuseTheWrite) {

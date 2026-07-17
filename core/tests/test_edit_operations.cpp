@@ -26,6 +26,7 @@
 using roadmaker::ContactPoint;
 using roadmaker::JunctionConnection;
 using roadmaker::JunctionId;
+using roadmaker::LaneDirection;
 using roadmaker::LaneId;
 using roadmaker::LaneProfile;
 using roadmaker::LaneSectionId;
@@ -145,6 +146,42 @@ TEST(EditOperations, LaneEditsRejectBadInput) {
   expect_command_rejected(network, roadmaker::edit::set_lane_width(network, outer, 0.0));
   expect_command_rejected(network,
                           roadmaker::edit::set_lane_type(network, LaneId{}, LaneType::Driving));
+}
+
+TEST(EditOperations, SetLaneDirectionRoundTripsAndSets) {
+  RoadNetwork network;
+  const RoadId road = author_default(network, "1");
+  const LaneSectionId section = network.road(road)->sections[0];
+  const LaneId outer_right = network.lane_section(section)->lanes.back();
+  ASSERT_NE(network.lane(outer_right)->odr_id, 0);
+
+  // Reversed is not the fresh default (Standard), so the round-trip oracle —
+  // which rejects a no-op command — has a real change to observe.
+  auto set_dir = roadmaker::edit::set_lane_direction(network, outer_right, LaneDirection::Reversed);
+  expect_command_round_trip(network, *set_dir);
+
+  ASSERT_TRUE(set_dir->apply(network).has_value());
+  EXPECT_EQ(network.lane(outer_right)->direction, LaneDirection::Reversed);
+  EXPECT_FALSE(set_dir->dirty().topology);
+  EXPECT_TRUE(set_dir->dirty().junctions.empty()); // direction never regens junctions
+}
+
+TEST(EditOperations, SetLaneDirectionRejectsCenterLaneAndStaleId) {
+  RoadNetwork network;
+  const RoadId road = author_default(network, "1");
+  const LaneSectionId section = network.road(road)->sections[0];
+  LaneId center;
+  for (const LaneId lane_id : network.lane_section(section)->lanes) {
+    if (network.lane(lane_id)->odr_id == 0) {
+      center = lane_id;
+    }
+  }
+  ASSERT_TRUE(center.is_valid());
+
+  expect_command_rejected(
+      network, roadmaker::edit::set_lane_direction(network, center, LaneDirection::Both));
+  expect_command_rejected(
+      network, roadmaker::edit::set_lane_direction(network, LaneId{}, LaneDirection::Reversed));
 }
 
 // --- waypoint edits ------------------------------------------------------------
