@@ -13,7 +13,11 @@
 #include <QTemporaryDir>
 #include <QUrl>
 #include <filesystem>
+#include <fstream>
+#include <sstream>
+#include <string>
 
+#include "helpc/render.hpp"
 #include "helpc/toc.hpp"
 
 namespace roadmaker::editor {
@@ -47,6 +51,81 @@ TEST(HelpCollection, StagedQchRegistersAndServesIndex) {
   const QByteArray index =
       engine.fileData(QUrl(QStringLiteral("qthelp://ai.robomous.roadmaker/doc/index.html")));
   EXPECT_FALSE(index.isEmpty()) << "index.html not served from the collection";
+}
+
+std::string read_file(const std::filesystem::path& path) {
+  std::ifstream file(path, std::ios::binary);
+  std::ostringstream buffer;
+  buffer << file.rdbuf();
+  return buffer.str();
+}
+
+QByteArray served(QHelpEngineCore& engine, const std::string& rel) {
+  return engine.fileData(
+      QUrl(QStringLiteral("qthelp://ai.robomous.roadmaker/doc/") + QString::fromStdString(rel)));
+}
+
+// Data-driven off the committed guide: every TOC page's rendered HTML must be
+// servable from the collection. qhelpgenerator's <file> wildcards do not
+// recurse, so tutorials/ pages regress silently without their own pattern
+// (#292) — a keyword can exist while its file blob is missing.
+TEST(HelpCollection, EveryTocPageIsServed) {
+  QTemporaryDir dir;
+  ASSERT_TRUE(dir.isValid());
+  const QString collection = stage_collection(dir);
+  ASSERT_FALSE(collection.isEmpty());
+
+  QHelpEngineCore engine(collection);
+  ASSERT_TRUE(engine.setupData()) << engine.error().toStdString();
+
+  const helpc::Toc toc = helpc::build_toc(std::filesystem::path(RM_DOCS_DIR) / "user-guide");
+  ASSERT_FALSE(toc.pages.empty());
+  for (const helpc::TocEntry& page : helpc::all_pages(toc)) {
+    EXPECT_FALSE(served(engine, page.slug + ".html").isEmpty())
+        << page.slug << ".html not served from the collection";
+  }
+}
+
+// Every image a guide page references must exist in the docs tree AND be
+// servable from the collection at the location the page's relative src
+// resolves to (tutorials/ pages resolve img/foo.png as tutorials/img/foo.png,
+// so the shipped layout must preserve that structure) (#292).
+TEST(HelpCollection, EveryReferencedImageIsServed) {
+  QTemporaryDir dir;
+  ASSERT_TRUE(dir.isValid());
+  const QString collection = stage_collection(dir);
+  ASSERT_FALSE(collection.isEmpty());
+
+  QHelpEngineCore engine(collection);
+  ASSERT_TRUE(engine.setupData()) << engine.error().toStdString();
+
+  const std::filesystem::path guide = std::filesystem::path(RM_DOCS_DIR) / "user-guide";
+  const helpc::Toc toc = helpc::build_toc(guide);
+  int image_count = 0;
+  for (const helpc::TocEntry& page : helpc::all_pages(toc)) {
+    const std::string markdown = read_file(guide / page.rel_path);
+    const std::filesystem::path page_dir = std::filesystem::path(page.rel_path).parent_path();
+    for (const std::string& target : helpc::extract_image_links(markdown)) {
+      if (target.empty() || target.find("://") != std::string::npos) {
+        continue; // remote image — nothing to ship
+      }
+      ++image_count;
+
+      // The committed source the page points at, resolved page-relative.
+      const std::filesystem::path source = (guide / page_dir / target).lexically_normal();
+      EXPECT_TRUE(std::filesystem::exists(source))
+          << page.rel_path << " references missing image " << target;
+
+      // Where the rendered page's <img src> resolves inside the collection.
+      std::string copied;
+      const std::string rewritten =
+          helpc::rewrite_target(target, helpc::RenderOptions{}, /*is_image=*/true, copied);
+      const std::string rel = (page_dir / rewritten).lexically_normal().generic_string();
+      EXPECT_FALSE(served(engine, rel).isEmpty()) << page.rel_path << " shows " << target << " but "
+                                                  << rel << " is not served from the collection";
+    }
+  }
+  EXPECT_GT(image_count, 0) << "coverage test found no image references — extractor broken?";
 }
 
 TEST(HelpCollection, EveryTocPageHasAKeyword) {

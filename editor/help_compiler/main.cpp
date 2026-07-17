@@ -79,13 +79,20 @@ int main(int argc, char** argv) {
   // Stylesheet.
   fs::copy_file(css, html_dir / "help.css", fs::copy_options::overwrite_existing);
 
-  // The guide's own img/ directory ships wholesale.
-  const fs::path guide_img = guide / "img";
-  if (fs::exists(guide_img)) {
-    for (const auto& entry : fs::directory_iterator(guide_img)) {
+  // The guide's img/ directories ship wholesale. tutorials/ pages render under
+  // tutorials/, so tutorials/img/ must keep the same relative layout for the
+  // pages' img/... references to resolve inside the collection (#292).
+  for (const char* rel : {"img", "tutorials/img"}) {
+    const fs::path src_dir = guide / rel;
+    if (!fs::exists(src_dir)) {
+      continue;
+    }
+    const fs::path dst_dir = html_dir / rel;
+    fs::create_directories(dst_dir);
+    for (const auto& entry : fs::directory_iterator(src_dir)) {
       if (entry.is_regular_file()) {
         fs::copy_file(
-            entry.path(), img_dir / entry.path().filename(), fs::copy_options::overwrite_existing);
+            entry.path(), dst_dir / entry.path().filename(), fs::copy_options::overwrite_existing);
       }
     }
   }

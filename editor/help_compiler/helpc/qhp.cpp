@@ -81,12 +81,19 @@ std::string build_qhp(const Toc& toc, const QhpOptions& opts) {
   }
   out += "    </keywords>\n";
 
+  // qhelpgenerator expands <file> wildcards per directory, never recursively:
+  // tutorials/ pages render under tutorials/ (their slug keeps the subdir), so
+  // both the pages and their img/ assets need their own patterns (#292).
   out += "    <files>\n";
   out += "      <file>*.html</file>\n";
   out += "      <file>help.css</file>\n";
   out += "      <file>img/*.png</file>\n";
   out += "      <file>img/*.gif</file>\n";
   out += "      <file>img/*.jpg</file>\n";
+  out += "      <file>tutorials/*.html</file>\n";
+  out += "      <file>tutorials/img/*.png</file>\n";
+  out += "      <file>tutorials/img/*.gif</file>\n";
+  out += "      <file>tutorials/img/*.jpg</file>\n";
   out += "    </files>\n";
 
   out += "  </filterSection>\n";
