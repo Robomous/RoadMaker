@@ -205,7 +205,9 @@ PropertiesPanel::PropertiesPanel(Document& document,
       object_kind_label_(new QLabel(this)),
       model_slot_(new SlotWidget(QStringLiteral("Props"), this)),
       style_group_(new QGroupBox(tr("Road style"), this)),
-      style_slot_(new SlotWidget(QStringLiteral("Road styles"), this)) {
+      style_slot_(new SlotWidget(QStringLiteral("Road styles"), this)),
+      surface_group_(new QGroupBox(tr("Ground surface"), this)),
+      material_slot_(new SlotWidget(QStringLiteral("Materials"), this)) {
   placeholder_->setWordWrap(true);
   placeholder_->setEnabled(false);
 
@@ -428,6 +430,19 @@ PropertiesPanel::PropertiesPanel(Document& document,
           this,
           &PropertiesPanel::library_category_requested);
 
+  // Ground-surface Materials slot: drop a material here (or click to jump to the
+  // Library) to re-texture the selected surface. The read-only stat rows are
+  // rebuilt into form_ by refresh(); this group only carries the slot.
+  material_slot_->setObjectName(QStringLiteral("surface_material_slot"));
+  material_slot_->setToolTip(tr("Drop a material to pave this ground surface"));
+  auto* surface_form = new QFormLayout(surface_group_);
+  surface_form->addRow(tr("Material"), material_slot_);
+  connect(material_slot_, &SlotWidget::item_dropped, this, &PropertiesPanel::push_surface_material);
+  connect(material_slot_,
+          &SlotWidget::engage_requested,
+          this,
+          &PropertiesPanel::library_category_requested);
+
   auto* layout = new QVBoxLayout(this);
   layout->addWidget(placeholder_);
   layout->addWidget(name_row_);
@@ -437,6 +452,7 @@ PropertiesPanel::PropertiesPanel(Document& document,
   layout->addWidget(signal_group_);
   layout->addWidget(object_group_);
   layout->addWidget(style_group_);
+  layout->addWidget(surface_group_);
   layout->addStretch();
 
   // One command per discrete action (spec 01 §7). Combos commit on
@@ -539,6 +555,8 @@ void PropertiesPanel::refresh() {
 
   // Shown only on the road path below; every early return leaves it hidden.
   style_group_->hide();
+  // Shown only on the ground-surface path below; hidden everywhere else.
+  surface_group_->hide();
 
   // The primary entry (most recently selected) drives the panel.
   const SelectionEntry primary = selection_.primary();
@@ -588,6 +606,10 @@ void PropertiesPanel::refresh() {
       }
       add_row(tr("Area"), tr("%1 m²").arg(area, 0, 'f', 1));
       add_row(tr("Bounding roads"), QString::number(surface->bounding_roads.size()));
+      // The Materials slot reflects the surface's stored material (empty →
+      // placeholder = default grass).
+      material_slot_->set_item(QString::fromStdString(surface->material));
+      surface_group_->show();
       return;
     }
     // A selected junction floor has no road but is a real entity — show its
@@ -763,6 +785,44 @@ void PropertiesPanel::push_road_style(const QString& key) {
   // item-key and the style-name vocabularies to a RoadStyle (like the prop slot,
   // this passes the dropped key straight through — no library lookup here).
   push(edit::apply_road_style(document_.network(), roads.back(), style_for(key)));
+}
+
+namespace {
+
+/// The material name for a dropped Materials library item, or nullopt for a key
+/// this build does not recognise. Accepts both the item key ("material.asphalt")
+/// and the bare name ("asphalt") so the slot can pass the dropped key straight
+/// through — mirroring style_for, but returning an optional so an unknown key is
+/// rejected with a toast instead of silently defaulting.
+[[nodiscard]] std::optional<std::string> material_for_key(const QString& key) {
+  if (key == QStringLiteral("material.asphalt") || key == QStringLiteral("asphalt")) {
+    return "asphalt";
+  }
+  if (key == QStringLiteral("material.concrete") || key == QStringLiteral("concrete")) {
+    return "concrete";
+  }
+  return std::nullopt;
+}
+
+} // namespace
+
+void PropertiesPanel::push_surface_material(const QString& key) {
+  const std::vector<SurfaceId> surfaces = selection_.selected_surfaces();
+  if (surfaces.empty() || key.isEmpty()) {
+    return;
+  }
+  const std::optional<std::string> material = material_for_key(key);
+  if (!material.has_value()) {
+    // Unknown material key: hint rather than silently applying a default (the
+    // style slot's silent fallback is wrong for a slot that reflects a value).
+    emit status_message(tr("“%1” isn't a known material").arg(key));
+    return;
+  }
+  const Surface* surface = document_.network().surface(surfaces.back());
+  if (surface != nullptr && surface->material == *material) {
+    return; // no change — a drop that changes nothing pushes no command
+  }
+  push(edit::set_surface_material(document_.network(), surfaces.back(), *material));
 }
 
 void PropertiesPanel::refresh_signal(const Signal& signal) {

@@ -4701,6 +4701,59 @@ std::unique_ptr<Command> set_road_mark(const RoadNetwork& network, LaneId lane_i
   return command;
 }
 
+namespace {
+
+/// Sets a Surface's material string. Bespoke (not GenericCommand) because
+/// `Values` carries no surface channel — a surface has no geometry to snapshot,
+/// only the single material field, so apply/revert just swap two strings on the
+/// live surface. The SurfaceId is captured by value; a stale id fails apply.
+class SetSurfaceMaterialCommand final : public Command {
+public:
+  SetSurfaceMaterialCommand(SurfaceId surface, std::string material)
+      : surface_(surface), after_(std::move(material)) {}
+
+  Expected<void> apply(RoadNetwork& network) override {
+    Surface* surface = network.surface(surface_);
+    if (surface == nullptr) {
+      return make_error(ErrorCode::InvalidArgument, "surface no longer exists");
+    }
+    before_ = surface->material;
+    surface->material = after_;
+    return {};
+  }
+
+  Expected<void> revert(RoadNetwork& network) override {
+    Surface* surface = network.surface(surface_);
+    if (surface == nullptr) {
+      return make_error(ErrorCode::InvalidArgument, "surface no longer exists");
+    }
+    surface->material = before_;
+    return {};
+  }
+
+  std::string_view name() const override { return "Set Surface Material"; }
+
+  DirtySet dirty() const override { return DirtySet{.surfaces = {surface_}}; }
+
+private:
+  SurfaceId surface_;
+  std::string after_;
+  std::string before_;
+};
+
+} // namespace
+
+std::unique_ptr<Command>
+set_surface_material(const RoadNetwork& network, SurfaceId surface, std::string material) {
+  static constexpr std::string_view kName = "Set Surface Material";
+  if (network.surface(surface) == nullptr) {
+    return invalid_command(
+        std::string(kName),
+        Error{.code = ErrorCode::InvalidArgument, .message = "surface id is stale or unknown"});
+  }
+  return std::make_unique<SetSurfaceMaterialCommand>(surface, std::move(material));
+}
+
 std::vector<ElevationPoint> elevation_profile_points(const Road& road) {
   std::vector<ElevationPoint> points;
   const double length = road.plan_view.length();

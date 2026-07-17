@@ -23,7 +23,7 @@ class RoadNetwork;
 
 namespace roadmaker::editor {
 
-enum class LibraryDropKind { None, RoadTemplate, RoadStyle, Assembly, Tree, Signal };
+enum class LibraryDropKind { None, RoadTemplate, RoadStyle, Assembly, Tree, Signal, Marking };
 
 /// Where a resolved drop lands in the world (x, y) and whether it is valid
 /// there. The drag ghost renders at this point, so what the user sees while

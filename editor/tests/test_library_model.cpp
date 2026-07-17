@@ -2,6 +2,9 @@
 
 #include <QAbstractItemModelTester>
 #include <QByteArray>
+#include <QFile>
+#include <QIcon>
+#include <QTemporaryDir>
 #include <filesystem>
 
 #include "document/library_list_model.hpp"
@@ -22,15 +25,19 @@ TEST(LibraryManifest, ParsesTheShippedManifest) {
   ASSERT_TRUE(manifest.has_value()) << (manifest ? "" : manifest.error().message);
   EXPECT_EQ(manifest->version(), 1);
   EXPECT_EQ(manifest->items().size(),
-            13U); // 3 road templates + 1 road style + 2 assemblies + 5 tree props + 2 signals
+            17U); // 3 road templates + 1 road style + 2 assemblies + 5 tree props
+                  // + 2 signals + 2 markings + 2 materials
 
   // Road templates resolve to a profile, road styles to a style name, assemblies
-  // to a t/x kind, trees to a bundled prop model id, signals to a light/sign tag.
+  // to a t/x kind, trees to a bundled prop model id, signals to a light/sign tag,
+  // markings to a mark type/color, materials to a material name.
   int templates = 0;
   int styles = 0;
   int assemblies = 0;
   int trees = 0;
   int signal_items = 0;
+  int markings = 0;
+  int materials = 0;
   for (const LibraryItem& item : manifest->items()) {
     EXPECT_FALSE(item.key.isEmpty());
     EXPECT_FALSE(item.label.isEmpty());
@@ -52,6 +59,14 @@ TEST(LibraryManifest, ParsesTheShippedManifest) {
       ++signal_items;
       EXPECT_TRUE(item.signal == "light" || item.signal == "sign");
       EXPECT_EQ(item.category, "Signals");
+    } else if (item.kind == LibraryItem::Kind::Marking) {
+      ++markings;
+      EXPECT_FALSE(item.mark_type.isEmpty());
+      EXPECT_EQ(item.category, "Markings");
+    } else if (item.kind == LibraryItem::Kind::Material) {
+      ++materials;
+      EXPECT_FALSE(item.material.isEmpty());
+      EXPECT_EQ(item.category, "Materials");
     }
   }
   EXPECT_EQ(templates, 3);
@@ -59,6 +74,8 @@ TEST(LibraryManifest, ParsesTheShippedManifest) {
   EXPECT_EQ(assemblies, 2);
   EXPECT_EQ(trees, 5);
   EXPECT_EQ(signal_items, 2);
+  EXPECT_EQ(markings, 2);
+  EXPECT_EQ(materials, 2);
 }
 
 TEST(LibraryManifest, ParsesFieldsAndCreateKinds) {
@@ -132,7 +149,7 @@ TEST(LibraryListModel, PassesQtModelSanityChecksEmptyAndPopulated) {
   const auto manifest = LibraryManifest::load(kManifest);
   ASSERT_TRUE(manifest.has_value());
   model.set_manifest(*manifest);
-  EXPECT_EQ(model.rowCount(), 13);
+  EXPECT_EQ(model.rowCount(), 17);
 }
 
 TEST(LibraryListModel, ExposesRolesAndItemLookup) {
@@ -150,7 +167,7 @@ TEST(LibraryListModel, ExposesRolesAndItemLookup) {
   ASSERT_NE(item, nullptr);
   EXPECT_EQ(model.data(first, LibraryListModel::KeyRole).toString(), item->key);
   EXPECT_EQ(model.item(-1), nullptr);
-  EXPECT_EQ(model.item(13), nullptr);
+  EXPECT_EQ(model.item(17), nullptr);
 }
 
 // The per-project overlay (p6-s1): project items merge into the built-in
@@ -226,8 +243,100 @@ TEST(LibraryListModel, SetManifestRemergesAnActiveOverlay) {
   const auto base = LibraryManifest::load(kManifest);
   ASSERT_TRUE(base.has_value());
   model.set_manifest(*base); // the overlay survives a base reload
-  EXPECT_EQ(model.rowCount(), 14);
+  EXPECT_EQ(model.rowCount(), 18);
   EXPECT_NE(model.item_for_key(QStringLiteral("project.only")), nullptr);
+}
+
+TEST(LibraryManifest, ParsesMarkingCreateKind) {
+  const auto manifest = LibraryManifest::parse(json(R"({
+    "manifest_version": 1,
+    "items": [
+      {"key": "marking.double_yellow", "label": "Double yellow", "category": "Markings",
+       "create": {"kind": "marking", "mark_type": "solid_solid", "mark_color": "yellow",
+                  "mark_width": 0.15}}
+    ]
+  })"));
+  ASSERT_TRUE(manifest.has_value());
+  ASSERT_EQ(manifest->items().size(), 1U);
+  const LibraryItem& mark = manifest->items()[0];
+  EXPECT_EQ(mark.kind, LibraryItem::Kind::Marking);
+  EXPECT_EQ(mark.mark_type, "solid_solid");
+  EXPECT_EQ(mark.mark_color, "yellow");
+  EXPECT_DOUBLE_EQ(mark.mark_width, 0.15);
+}
+
+TEST(LibraryManifest, ParsesMaterialCreateKind) {
+  const auto manifest = LibraryManifest::parse(json(R"({
+    "manifest_version": 1,
+    "items": [
+      {"key": "material.asphalt", "label": "Asphalt", "category": "Materials",
+       "create": {"kind": "material", "material": "asphalt"}}
+    ]
+  })"));
+  ASSERT_TRUE(manifest.has_value());
+  ASSERT_EQ(manifest->items().size(), 1U);
+  const LibraryItem& material = manifest->items()[0];
+  EXPECT_EQ(material.kind, LibraryItem::Kind::Material);
+  EXPECT_EQ(material.material, "asphalt");
+  EXPECT_DOUBLE_EQ(material.mark_width, 0.12); // default when absent
+}
+
+// Drift gate (p6-s2): every built-in item's manifest thumbnail resolves to a
+// bundled qrc icon that actually loads. Guards the manifest name ↔ PNG ↔ qrc
+// alias triple against a rename touching only one of the three.
+TEST(LibraryListModel, ServesABundledThumbnailForEveryBuiltInItem) {
+  LibraryListModel model;
+  const auto manifest = LibraryManifest::load(kManifest);
+  ASSERT_TRUE(manifest.has_value());
+  model.set_manifest(*manifest);
+  for (int row = 0; row < model.rowCount(); ++row) {
+    const QModelIndex index = model.index(row, 0);
+    const QString key = model.data(index, LibraryListModel::KeyRole).toString();
+    const QString path = model.data(index, LibraryListModel::ThumbnailRole).toString();
+    EXPECT_TRUE(path.startsWith(QStringLiteral(":/library/thumbnails/")))
+        << key.toStdString() << " -> " << path.toStdString();
+    const QVariant decoration = model.data(index, Qt::DecorationRole);
+    ASSERT_TRUE(decoration.isValid()) << "no decoration for " << key.toStdString();
+    EXPECT_FALSE(decoration.value<QIcon>().isNull())
+        << "thumbnail failed to load for " << key.toStdString() << " at " << path.toStdString();
+  }
+}
+
+// A project-overlay item's thumbnail is resolved on disk against the project
+// directory; the loaded icon proves the resolution and read work end to end.
+TEST(LibraryListModel, ResolvesOverlayThumbnailsAgainstTheProjectDir) {
+  QTemporaryDir project_dir;
+  ASSERT_TRUE(project_dir.isValid());
+  // Reuse a bundled PNG as the overlay's on-disk thumbnail.
+  QFile source(QStringLiteral(":/library/thumbnails/material_asphalt.png"));
+  const QString on_disk = project_dir.filePath(QStringLiteral("custom.png"));
+  ASSERT_TRUE(source.copy(on_disk));
+
+  LibraryListModel model;
+  const auto overlay = LibraryManifest::parse(json(R"({
+    "manifest_version": 1,
+    "items": [{"key": "project.custom", "label": "Custom", "category": "Project assets",
+               "thumbnail": "custom.png", "create": {"kind": "material", "material": "gravel"}}]
+  })"));
+  ASSERT_TRUE(overlay.has_value());
+  model.set_overlay(*overlay, project_dir.path());
+  const QModelIndex index = model.index(0, 0);
+  EXPECT_EQ(model.data(index, LibraryListModel::ThumbnailRole).toString(), on_disk);
+  EXPECT_FALSE(model.data(index, Qt::DecorationRole).value<QIcon>().isNull());
+}
+
+// An item with no thumbnail (empty path, or a path that fails to load) yields an
+// invalid decoration variant so the panel's proxy can fall back to a glyph.
+TEST(LibraryListModel, MissingThumbnailYieldsNullDecoration) {
+  LibraryListModel model;
+  const auto overlay = LibraryManifest::parse(json(R"({
+    "manifest_version": 1,
+    "items": [{"key": "project.nothumb", "label": "No thumb", "category": "Project assets",
+               "create": {"kind": "material", "material": "gravel"}}]
+  })"));
+  ASSERT_TRUE(overlay.has_value());
+  model.set_overlay(*overlay, QStringLiteral("/nonexistent"));
+  EXPECT_FALSE(model.data(model.index(0, 0), Qt::DecorationRole).isValid());
 }
 
 } // namespace

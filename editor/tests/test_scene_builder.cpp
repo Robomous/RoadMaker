@@ -180,6 +180,30 @@ TEST(BuildScene, EmitsGroundSurfaceItemTaggedWithSurfaceId) {
   EXPECT_FLOAT_EQ(scene.bounds.hi[0], 8.0F);
 }
 
+TEST(BuildScene, SurfaceMaterialSelectsTheRenderClass) {
+  // p6-s2: a surface with a stored material takes the matching SurfaceKind when
+  // build_scene is given the network; a null network keeps the default Grass.
+  RoadNetwork network;
+  const SurfaceId surface_id = network.create_surface(Surface{});
+  network.surface(surface_id)->material = "asphalt";
+
+  NetworkMesh mesh;
+  mesh.surfaces.push_back(
+      SurfaceMesh{.surface = surface_id,
+                  .mesh = SubMesh{.positions = {0, 0, 0, 8, 0, 0, 8, 8, 0, 0, 8, 0},
+                                  .normals = {0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1},
+                                  .indices = {0, 1, 2, 0, 2, 3}}});
+
+  EXPECT_EQ(build_scene(mesh).items.at(0).surface, SurfaceKind::Grass); // no network
+  EXPECT_EQ(build_scene(mesh, &network).items.at(0).surface, SurfaceKind::Asphalt);
+
+  network.surface(surface_id)->material = "concrete";
+  EXPECT_EQ(build_scene(mesh, &network).items.at(0).surface, SurfaceKind::Concrete);
+
+  network.surface(surface_id)->material = "unknown_stuff";
+  EXPECT_EQ(build_scene(mesh, &network).items.at(0).surface, SurfaceKind::Grass); // paved fallback
+}
+
 // The Sober preset must reproduce the M2 `0.35 + 0.65*lambert` grey shading:
 // a white, normal-independent ambient (sky == ground) at 0.35 plus a white
 // directional term at 0.65 along the original hardcoded light direction.

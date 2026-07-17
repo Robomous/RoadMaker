@@ -376,7 +376,10 @@ void Document::after_kernel_mutation(const edit::DirtySet& dirty) {
   // so re-mesh only the surfaces touching a changed road. derive_surfaces runs
   // on redo AND undo (both route through this hook) — that is what keeps undo
   // exact: the surface tracks the roads either way.
-  bool surfaces_changed = false;
+  // A surface-only edit (e.g. set_surface_material) changes no geometry, so it
+  // remeshes nothing — but the scene must be rebuilt so the render re-reads the
+  // surface's material class. Seed surfaces_changed to force the wholesale path.
+  bool surfaces_changed = !dirty.surfaces.empty();
   if (dirty.topology) {
     derive_surfaces(network_);
     // remesh_surfaces only rebuilds the SurfaceIds it is handed — an empty span

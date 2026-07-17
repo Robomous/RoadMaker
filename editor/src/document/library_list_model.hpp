@@ -7,6 +7,9 @@
 // dragged key back to its LibraryItem via item().
 
 #include <QAbstractListModel>
+#include <QHash>
+#include <QIcon>
+#include <QString>
 
 #include "document/library_manifest.hpp"
 
@@ -23,7 +26,8 @@ public:
   enum Roles {
     KeyRole = Qt::UserRole + 1, ///< stable id (QString) — the drag payload
     CategoryRole,               ///< grouping header (QString)
-    ThumbnailRole,              ///< manifest-relative image path (QString)
+    ThumbnailRole,              ///< RESOLVED image path (qrc for built-ins, absolute
+                                ///< for overlay items); empty when none on disk
   };
 
   explicit LibraryListModel(QObject* parent = nullptr);
@@ -37,8 +41,10 @@ public:
   /// an overlay item whose key matches a built-in item REPLACES it in place
   /// (the project wins, the row keeps its position); keys the base doesn't
   /// have are appended, so new project categories appear in the panel. Full
-  /// model reset.
-  void set_overlay(LibraryManifest manifest);
+  /// model reset. `base_dir` is the project directory a project-relative
+  /// overlay thumbnail path resolves against (p6-s2); empty leaves overlay
+  /// thumbnails unresolved.
+  void set_overlay(LibraryManifest manifest, const QString& base_dir = {});
 
   /// Removes the project overlay (project close/switch) — the model returns
   /// to the built-in catalogue alone. No-op when no overlay is set.
@@ -72,6 +78,12 @@ private:
   std::vector<LibraryItem> base_items_;
   std::vector<LibraryItem> overlay_items_;
   std::vector<LibraryItem> items_; ///< the merged rows the view sees
+
+  /// Lazy path -> QIcon cache for DecorationRole, including a NEGATIVE cache (a
+  /// null QIcon for a path that failed to load) so a missing thumbnail is not
+  /// re-probed every paint. Cleared on every rebuild(). `mutable` because it is
+  /// a pure read-through cache populated from the const data().
+  mutable QHash<QString, QIcon> icon_cache_;
 };
 
 } // namespace roadmaker::editor

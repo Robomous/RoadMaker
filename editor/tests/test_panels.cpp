@@ -3,6 +3,8 @@
 // offscreen platform) — the ViewportWidget is deliberately absent here.
 
 #include "roadmaker/edit/operations.hpp"
+#include "roadmaker/road/authoring.hpp"
+#include "roadmaker/road/surface_derivation.hpp"
 #include "roadmaker/xodr/writer.hpp"
 
 #include <gtest/gtest.h>
@@ -516,6 +518,92 @@ TEST(DiagnosticsPanel, DoubleClickResolvableRowSelectsEntity) {
   emit panel.view()->doubleClicked(h.diagnostics_model.index(no_entity_row, 0));
   EXPECT_EQ(h.selection.primary().road, lane_diag.road);
   EXPECT_EQ(h.selection.primary().lane, lane_diag.lane);
+}
+
+// --- the Materials slot (p6-s2) ---------------------------------------------
+
+// Loads `h.document` from a square of four roads enclosing one ground surface.
+void load_square_surface(Harness& h, const QTemporaryDir& dir) {
+  RoadNetwork net;
+  const auto seg = [&](const char* id, double x0, double y0, double x1, double y1) {
+    const std::vector<Waypoint> wps{Waypoint{.x = x0, .y = y0}, Waypoint{.x = x1, .y = y1}};
+    ASSERT_TRUE(roadmaker::author_clothoid_road(net, wps, LaneProfile::two_lane_rural(), "", id)
+                    .has_value());
+  };
+  seg("a", 0.0, 0.0, 20.0, 0.0);
+  seg("b", 20.0, 0.0, 20.0, 20.0);
+  seg("c", 20.0, 20.0, 0.0, 20.0);
+  seg("d", 0.0, 20.0, 0.0, 0.0);
+  roadmaker::derive_surfaces(net);
+  const auto xml = roadmaker::write_xodr(net);
+  ASSERT_TRUE(xml.has_value());
+  const auto path = std::filesystem::path(dir.path().toStdString()) / "square.xodr";
+  std::ofstream(path) << *xml;
+  ASSERT_TRUE(h.document.load(path).has_value());
+}
+
+SurfaceId the_surface(const Document& document) {
+  SurfaceId id{};
+  document.network().for_each_surface([&](SurfaceId sid, const Surface&) { id = sid; });
+  return id;
+}
+
+TEST(PropertiesPanel, DroppingOnTheMaterialSlotSetsSurfaceMaterialInOneCommand) {
+  Harness h;
+  QTemporaryDir dir;
+  ASSERT_TRUE(dir.isValid());
+  load_square_surface(h, dir);
+  PropertiesPanel panel(h.document, h.selection);
+  auto* slot = panel.findChild<SlotWidget*>(QStringLiteral("surface_material_slot"));
+  ASSERT_NE(slot, nullptr);
+  EXPECT_EQ(slot->category(), QStringLiteral("Materials"));
+  EXPECT_FALSE(slot->isVisibleTo(&panel)); // nothing selected yet
+
+  const SurfaceId surface = the_surface(h.document);
+  ASSERT_TRUE(surface.is_valid());
+  h.selection.select({.surface = surface});
+  ASSERT_TRUE(slot->isVisibleTo(&panel)) << "a selected ground surface shows the Materials slot";
+
+  const int base = h.document.undo_stack()->count();
+  emit slot->item_dropped(QStringLiteral("material.asphalt"));
+  EXPECT_EQ(h.document.undo_stack()->count(), base + 1);
+  EXPECT_EQ(h.document.network().surface(surface)->material, "asphalt");
+
+  h.document.undo_stack()->undo();
+  EXPECT_EQ(h.document.network().surface(surface)->material, "");
+}
+
+TEST(PropertiesPanel, AnUnknownDroppedMaterialIsRefusedWithoutAnUndoEntry) {
+  Harness h;
+  QTemporaryDir dir;
+  ASSERT_TRUE(dir.isValid());
+  load_square_surface(h, dir);
+  PropertiesPanel panel(h.document, h.selection);
+  auto* slot = panel.findChild<SlotWidget*>(QStringLiteral("surface_material_slot"));
+  ASSERT_NE(slot, nullptr);
+
+  const SurfaceId surface = the_surface(h.document);
+  h.selection.select({.surface = surface});
+
+  const int base = h.document.undo_stack()->count();
+  emit slot->item_dropped(QStringLiteral("tree_pine")); // a prop model, not a material
+  EXPECT_EQ(h.document.undo_stack()->count(), base) << "a refusal must not reach the undo stack";
+  EXPECT_EQ(h.document.network().surface(surface)->material, "");
+}
+
+TEST(PropertiesPanel, EngagingTheMaterialSlotRequestsTheMaterialsCategory) {
+  Harness h;
+  QTemporaryDir dir;
+  ASSERT_TRUE(dir.isValid());
+  load_square_surface(h, dir);
+  PropertiesPanel panel(h.document, h.selection);
+  auto* slot = panel.findChild<SlotWidget*>(QStringLiteral("surface_material_slot"));
+  ASSERT_NE(slot, nullptr);
+
+  QSignalSpy spy(&panel, &PropertiesPanel::library_category_requested);
+  emit slot->engage_requested(slot->category());
+  ASSERT_EQ(spy.count(), 1);
+  EXPECT_EQ(spy.front().front().toString(), QStringLiteral("Materials"));
 }
 
 } // namespace

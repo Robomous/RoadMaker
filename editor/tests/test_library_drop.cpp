@@ -1,5 +1,7 @@
 #include "roadmaker/edit/assembly.hpp"
 #include "roadmaker/road/authoring.hpp"
+#include "roadmaker/road/lane.hpp"
+#include "roadmaker/road/lane_section.hpp"
 #include "roadmaker/road/network.hpp"
 #include "roadmaker/road/object.hpp"
 #include "roadmaker/road/road.hpp"
@@ -9,6 +11,7 @@
 #include <gtest/gtest.h>
 
 #include <QString>
+#include <optional>
 #include <vector>
 
 #include "document/library_drop.hpp"
@@ -373,6 +376,136 @@ TEST(LibraryDrop, StyleForMapsNamesAndItemKeysWithAnUrbanDefault) {
   EXPECT_EQ(style_for("style.highway").left.size(), RoadStyle::highway().left.size());
   EXPECT_EQ(style_for("style.urban").left.size(), RoadStyle::urban_two_lane().left.size());
   EXPECT_EQ(style_for("anything else").left.size(), RoadStyle::urban_two_lane().left.size());
+}
+
+// --- markings (p6-s2) --------------------------------------------------------
+
+LibraryItem marking(const char* type, const char* color, double width = 0.12) {
+  LibraryItem item;
+  item.key = QStringLiteral("marking.x");
+  item.label = QStringLiteral("Marking");
+  item.kind = LibraryItem::Kind::Marking;
+  item.mark_type = QString::fromLatin1(type);
+  item.mark_color = QString::fromLatin1(color);
+  item.mark_width = width;
+  return item;
+}
+
+LibraryItem material_item(const char* name) {
+  LibraryItem item;
+  item.key = QStringLiteral("material.x");
+  item.label = QStringLiteral("Material");
+  item.kind = LibraryItem::Kind::Material;
+  item.material = QString::fromLatin1(name);
+  return item;
+}
+
+// The first road-mark record of the lane with OpenDRIVE `odr_id` in the first
+// section of the (single) road, or nullopt when unmarked.
+std::optional<RoadMark> first_mark_for_odr(const RoadNetwork& network, int odr_id) {
+  std::optional<RoadMark> result;
+  network.for_each_road([&](RoadId, const Road& road) {
+    if (road.sections.empty()) {
+      return;
+    }
+    const LaneSection* section = network.lane_section(road.sections.front());
+    if (section == nullptr) {
+      return;
+    }
+    for (const LaneId lid : section->lanes) {
+      const Lane* lane = network.lane(lid);
+      if (lane != nullptr && lane->odr_id == odr_id && !lane->road_marks.empty()) {
+        result = lane->road_marks.front();
+      }
+    }
+  });
+  return result;
+}
+
+TEST(LibraryDrop, MarkingDropOnLaneBoundaryPushesSetRoadMark) {
+  RoadNetwork network = with_straight_road(); // (0,0)-(100,0), heading +x
+  // Drop toward the right carriageway edge (heading +x → -t is right).
+  LibraryDropAction action =
+      resolve_library_drop(marking("solid_solid", "yellow"), network, 50.0, -3.0);
+  ASSERT_EQ(action.kind, LibraryDropKind::Marking);
+  ASSERT_NE(action.command, nullptr);
+  EXPECT_EQ(action.command->name(), "Set Road Mark");
+  EXPECT_FALSE(action.toast.isEmpty());
+  ASSERT_TRUE(action.command->apply(network).has_value());
+  EXPECT_EQ(count_errors(validate_network(network)), 0U);
+  // The mutated network still writes valid xodr.
+  const auto xodr = roadmaker::write_xodr(network, "marking test");
+  ASSERT_TRUE(xodr.has_value());
+  // Undo restores the pre-drop mark exactly.
+  ASSERT_TRUE(action.command->revert(network).has_value());
+  EXPECT_EQ(count_errors(validate_network(network)), 0U);
+}
+
+// Regression for the LaneBoundaryHit::centre flag: a drop on the centre line
+// must paint lane 0, not the ±1 lane nearest_lane_boundary reports for inserts.
+TEST(LibraryDrop, DoubleYellowOnCentreTargetsLaneZero) {
+  RoadNetwork network = with_straight_road();
+  LibraryDropAction action =
+      resolve_library_drop(marking("solid_solid", "yellow"), network, 50.0, 0.0);
+  ASSERT_EQ(action.kind, LibraryDropKind::Marking);
+  ASSERT_TRUE(action.command->apply(network).has_value());
+
+  const auto centre_mark = first_mark_for_odr(network, 0);
+  ASSERT_TRUE(centre_mark.has_value()); // lane 0 (the centre line) got it
+  EXPECT_EQ(centre_mark->type, RoadMarkType::SolidSolid);
+  EXPECT_EQ(centre_mark->color, RoadMarkColor::Yellow);
+}
+
+TEST(LibraryDrop, MarkingGhostSitsOnTheBoundary) {
+  RoadNetwork network = with_straight_road();
+  // Drop on the centre line: the ghost lands on it (t = 0 → y ≈ 0).
+  const LibraryDropAction action =
+      resolve_library_drop(marking("solid", "white"), network, 50.0, 0.0);
+  ASSERT_EQ(action.kind, LibraryDropKind::Marking);
+  EXPECT_TRUE(action.preview.valid);
+  EXPECT_NEAR(action.preview.x, 50.0, 1.0);
+  EXPECT_NEAR(action.preview.y, 0.0, 0.01);
+}
+
+TEST(LibraryDrop, MarkingDroppedOffAnyRoadIsRejectedWithAHint) {
+  RoadNetwork network = with_straight_road();
+  const LibraryDropAction action =
+      resolve_library_drop(marking("solid", "white"), network, 50.0, 200.0);
+  EXPECT_EQ(action.kind, LibraryDropKind::None);
+  EXPECT_EQ(action.command, nullptr);
+  EXPECT_FALSE(action.toast.isEmpty());
+}
+
+TEST(LibraryDrop, IdenticalMarkingIsANoOpWithAToast) {
+  RoadNetwork network = with_straight_road();
+  LibraryDropAction first =
+      resolve_library_drop(marking("solid_solid", "yellow"), network, 50.0, 0.0);
+  ASSERT_EQ(first.kind, LibraryDropKind::Marking);
+  ASSERT_TRUE(first.command->apply(network).has_value());
+  // The same marking on the same boundary now changes nothing → rejected.
+  const LibraryDropAction again =
+      resolve_library_drop(marking("solid_solid", "yellow"), network, 50.0, 0.0);
+  EXPECT_EQ(again.kind, LibraryDropKind::None);
+  EXPECT_EQ(again.command, nullptr);
+  EXPECT_TRUE(again.toast.contains(QStringLiteral("already")));
+}
+
+TEST(LibraryDrop, UnknownMarkTypeIsRejected) {
+  RoadNetwork network = with_straight_road();
+  const LibraryDropAction action =
+      resolve_library_drop(marking("dotted", "white"), network, 50.0, 0.0);
+  EXPECT_EQ(action.kind, LibraryDropKind::None);
+  EXPECT_EQ(action.command, nullptr);
+  EXPECT_FALSE(action.toast.isEmpty());
+}
+
+TEST(LibraryDrop, MaterialViewportDropHintsAtTheSlot) {
+  RoadNetwork network = with_straight_road();
+  const LibraryDropAction action =
+      resolve_library_drop(material_item("asphalt"), network, 50.0, 0.0);
+  EXPECT_EQ(action.kind, LibraryDropKind::None);
+  EXPECT_EQ(action.command, nullptr);
+  EXPECT_TRUE(action.toast.contains(QStringLiteral("Material slot")));
 }
 
 } // namespace

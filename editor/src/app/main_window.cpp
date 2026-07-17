@@ -824,7 +824,10 @@ void MainWindow::apply_project_overlay() {
     library_model_.clear_overlay();
     return;
   }
-  library_model_.set_overlay(std::move(*manifest));
+  // Overlay thumbnails are project-relative — resolve them against the project
+  // directory (p6-s2) so a project's own PNGs load from disk.
+  library_model_.set_overlay(std::move(*manifest),
+                             QString::fromStdString(project_->dir().string()));
 }
 
 void MainWindow::set_capture_highlights(const QString& select_odr, const QString& hover_odr) {
@@ -903,6 +906,7 @@ void MainWindow::on_library_drop(const QString& key, double world_x, double worl
   case LibraryDropKind::Assembly:
   case LibraryDropKind::Tree:
   case LibraryDropKind::Signal:
+  case LibraryDropKind::Marking:
     if (document_.push_command(std::move(action.command)).has_value()) {
       viewport_->show_toast(action.toast, ToastSeverity::Success);
     } else {

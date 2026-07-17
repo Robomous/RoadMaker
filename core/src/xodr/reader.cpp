@@ -1076,8 +1076,9 @@ private:
         diag(Severity::Warning, "OpenDRIVE", "malformed rm:surface userData ignored");
         continue;
       }
-      network().create_surface(
-          Surface{.source = BoundarySource::Derived, .bounding_roads = std::move(roads)});
+      network().create_surface(Surface{.source = BoundarySource::Derived,
+                                       .bounding_roads = std::move(roads),
+                                       .material = node.attribute("material").value()});
     }
   }
 

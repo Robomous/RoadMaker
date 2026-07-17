@@ -30,6 +30,12 @@ struct DirtySet {
   /// pass in phase 2 (#69); phase 4 (#71) reuses it for instanced props.
   std::vector<RoadId> objects;
 
+  /// Ground surfaces whose stored data (e.g. material) changed WITHOUT any
+  /// geometry change — the mesh is untouched but the scene must be rebuilt so
+  /// the render re-reads the surface's material class (p6-s2). Empty for the
+  /// usual road-driven surface re-derivation, which rides `roads`/`topology`.
+  std::vector<SurfaceId> surfaces;
+
   /// Roads or junctions were added or removed. Drives the editor's wholesale
   /// mesh re-upload (a partial per-road upload cannot add or drop an item) and
   /// prunes selections that named a now-erased id.

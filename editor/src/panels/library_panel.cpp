@@ -48,6 +48,15 @@ LibraryFilterProxy::LibraryFilterProxy(QObject* parent) : QSortFilterProxyModel(
 
 QVariant LibraryFilterProxy::data(const QModelIndex& index, int role) const {
   if (role == Qt::DecorationRole) {
+    // Prefer the bundled/overlay thumbnail (p6-s2); fall back to a themed glyph
+    // only when the item has none (an overlay item without a thumbnail, or an
+    // Unknown kind). Thumbnail icons are static — unlike the glyphs, they are
+    // NOT retinted on a palette change, so nothing hooks them into cache
+    // clearing.
+    const QVariant thumbnail = QSortFilterProxyModel::data(index, Qt::DecorationRole);
+    if (thumbnail.isValid()) {
+      return thumbnail;
+    }
     const QString key = QSortFilterProxyModel::data(index, LibraryListModel::KeyRole).toString();
     return Icons::get(icon_name_for(key));
   }

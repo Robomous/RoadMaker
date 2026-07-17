@@ -28,6 +28,12 @@ LibraryItem::Kind parse_kind(const QString& kind) {
   if (kind == QStringLiteral("signal")) {
     return LibraryItem::Kind::Signal;
   }
+  if (kind == QStringLiteral("marking")) {
+    return LibraryItem::Kind::Marking;
+  }
+  if (kind == QStringLiteral("material")) {
+    return LibraryItem::Kind::Material;
+  }
   return LibraryItem::Kind::Unknown;
 }
 
@@ -84,6 +90,10 @@ Expected<LibraryManifest> LibraryManifest::parse(const QByteArray& json) {
     item.assembly = create.value(QStringLiteral("assembly")).toString();
     item.model = create.value(QStringLiteral("model")).toString();
     item.signal = create.value(QStringLiteral("signal")).toString();
+    item.mark_type = create.value(QStringLiteral("mark_type")).toString();
+    item.mark_color = create.value(QStringLiteral("mark_color")).toString();
+    item.mark_width = create.value(QStringLiteral("mark_width")).toDouble(0.12);
+    item.material = create.value(QStringLiteral("material")).toString();
     manifest.items_.push_back(std::move(item));
   }
   return manifest;

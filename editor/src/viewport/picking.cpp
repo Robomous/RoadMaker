@@ -458,6 +458,7 @@ nearest_lane_boundary(const RoadNetwork& network, RoadId road, double s, double 
     }
     hit.side = side;
     hit.at_odr_id = side;
+    hit.centre = true; // the picked boundary is the centre line itself (lane 0)
   }
   return hit;
 }

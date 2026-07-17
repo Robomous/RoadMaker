@@ -2,6 +2,7 @@
 
 #include "roadmaker/road/id.hpp"
 
+#include <string>
 #include <vector>
 
 namespace roadmaker {
@@ -16,6 +17,13 @@ enum class BoundarySource { Derived };
 struct Surface {
   BoundarySource source = BoundarySource::Derived;
   std::vector<RoadId> bounding_roads; ///< ordered ring; deterministic
+
+  /// Ground material name ("" = default grass; e.g. "asphalt", "concrete").
+  /// A derived surface can never carry a lane-level OpenDRIVE <material>, so
+  /// this is its permanent home (p6-s2). Round-trips as a `material` attribute
+  /// on the surface's `<userData code="rm:surface">`, written only when set.
+  std::string material;
+
   friend bool operator==(const Surface&, const Surface&) = default;
 };
 

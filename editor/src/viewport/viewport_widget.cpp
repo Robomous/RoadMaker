@@ -164,7 +164,7 @@ void ViewportWidget::rebuild_scene() {
   pending_roads_.clear();
   preview_handles_.clear(); // clear_meshes() dropped them; re-uploaded this paint
 
-  Scene scene = build_scene(document_.mesh());
+  Scene scene = build_scene(document_.mesh(), &document_.network());
   items_.reserve(scene.items.size());
   for (const SceneItem& item : scene.items) {
     items_.push_back(UploadedItem{.handle = renderer_->upload(item.data),

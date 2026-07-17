@@ -99,6 +99,94 @@ std::string next_signal_odr_id(const RoadNetwork& network) {
 /// the user can retype in the properties panel. Orientation "+" faces the
 /// signal along increasing s (the reference-line direction); the mesh builder
 /// resolves the world heading from the road tangent.
+/// A marking snaps to a lane boundary within this lateral distance [m] of a
+/// road's reference line — the whole carriageway is in reach so a drop anywhere
+/// across it grabs the nearest boundary; a drop in open space is rejected.
+constexpr double kMarkingSnapThreshold = 12.0;
+
+/// The RoadMarkType for a manifest mark_type string, or nullopt for a spelling
+/// this build does not paint (forward-compatible with #220 variants: an unknown
+/// type rejects the drop rather than silently mis-marking).
+std::optional<RoadMarkType> mark_type_from_string(const QString& type) {
+  if (type == QStringLiteral("solid")) {
+    return RoadMarkType::Solid;
+  }
+  if (type == QStringLiteral("broken")) {
+    return RoadMarkType::Broken;
+  }
+  if (type == QStringLiteral("solid_solid")) {
+    return RoadMarkType::SolidSolid;
+  }
+  if (type == QStringLiteral("solid_broken")) {
+    return RoadMarkType::SolidBroken;
+  }
+  if (type == QStringLiteral("broken_solid")) {
+    return RoadMarkType::BrokenSolid;
+  }
+  return std::nullopt;
+}
+
+/// The RoadMarkColor for a manifest mark_color string, or nullopt for an unknown
+/// spelling. An empty/absent color means "the standard color for this type".
+std::optional<RoadMarkColor> mark_color_from_string(const QString& color) {
+  if (color.isEmpty() || color == QStringLiteral("standard")) {
+    return RoadMarkColor::Standard;
+  }
+  if (color == QStringLiteral("white")) {
+    return RoadMarkColor::White;
+  }
+  if (color == QStringLiteral("yellow")) {
+    return RoadMarkColor::Yellow;
+  }
+  if (color == QStringLiteral("red")) {
+    return RoadMarkColor::Red;
+  }
+  if (color == QStringLiteral("blue")) {
+    return RoadMarkColor::Blue;
+  }
+  if (color == QStringLiteral("green")) {
+    return RoadMarkColor::Green;
+  }
+  if (color == QStringLiteral("orange")) {
+    return RoadMarkColor::Orange;
+  }
+  return std::nullopt;
+}
+
+/// The RoadMark a Marking library item authors, or nullopt when its type/color
+/// spelling is unknown. `lines` stays empty (compact form — the mesher
+/// synthesizes multi-stripe geometry for solid_solid etc.), mirroring the
+/// junction centre-double-yellow precedent.
+std::optional<RoadMark> mark_from_item(const LibraryItem& item) {
+  const auto type = mark_type_from_string(item.mark_type);
+  const auto color = mark_color_from_string(item.mark_color);
+  if (!type.has_value() || !color.has_value()) {
+    return std::nullopt;
+  }
+  RoadMark mark;
+  mark.s_offset = 0.0;
+  mark.type = *type;
+  mark.width = item.mark_width;
+  mark.color = *color;
+  return mark;
+}
+
+/// The LaneId of the lane with OpenDRIVE `odr_id` in the section governing
+/// station `s` on `road` (odr 0 = centre line). Invalid id when not found.
+LaneId lane_for_odr_id(const RoadNetwork& network, RoadId road, double s, int odr_id) {
+  const LaneSection* section = network.lane_section(section_at(network, road, s));
+  if (section == nullptr) {
+    return {};
+  }
+  for (const LaneId lane_id : section->lanes) {
+    const Lane* lane = network.lane(lane_id);
+    if (lane != nullptr && lane->odr_id == odr_id) {
+      return lane_id;
+    }
+  }
+  return {};
+}
+
 Signal make_dropped_signal(const RoadNetwork& network, bool light, double s, double t) {
   Signal signal;
   signal.odr_id = next_signal_odr_id(network);
@@ -283,6 +371,59 @@ LibraryDropAction resolve_library_drop(const LibraryItem& item,
     }
     return action;
   }
+  case LibraryItem::Kind::Marking: {
+    // A marking paints one lane boundary in the section under the cursor. Snap
+    // to the nearest road, then to the nearest lane boundary within it; a drop
+    // in open space is rejected with a hint.
+    const auto on_road = nearest_road_station(network, world_x, world_y, kMarkingSnapThreshold);
+    if (!on_road.has_value()) {
+      action.toast = QStringLiteral("Drop a marking onto a lane boundary");
+      return action; // kind None, preview invalid at cursor — caller hints
+    }
+    const std::optional<RoadMark> mark = mark_from_item(item);
+    if (!mark.has_value()) {
+      action.toast = QStringLiteral("That marking style isn't supported yet");
+      return action;
+    }
+    const Road* road = network.road(on_road->road);
+    if (road == nullptr) {
+      return action;
+    }
+    const auto boundary = nearest_lane_boundary(network, on_road->road, on_road->s, on_road->t);
+    if (!boundary.has_value()) {
+      action.toast = QStringLiteral("Drop a marking onto a lane boundary");
+      return action;
+    }
+    // A lane's mark list describes its OUTER boundary; the centre line is lane
+    // odr 0 (nearest_lane_boundary reports at_odr_id = ±1 there for insert
+    // semantics, so the centre flag re-targets it to lane 0).
+    const int target_odr = boundary->centre ? 0 : boundary->at_odr_id;
+    const LaneId lane = lane_for_odr_id(network, on_road->road, on_road->s, target_odr);
+    if (!lane.is_valid()) {
+      return action;
+    }
+    // A drop that changes nothing pushes no command.
+    if (const Lane* target = network.lane(lane);
+        target != nullptr && !target->road_marks.empty() && target->road_marks.front() == *mark) {
+      action.toast = QStringLiteral("That boundary already has this marking");
+      return action;
+    }
+    action.command = edit::set_road_mark(network, lane, *mark);
+    if (action.command != nullptr) {
+      action.kind = LibraryDropKind::Marking;
+      // Ghost sits ON the picked boundary (ghost==commit): the same station the
+      // mark applies at, offset to the boundary's lateral t.
+      const auto p = station_to_world(road->plan_view, on_road->s, boundary->t);
+      action.preview = {p[0], p[1], true};
+      action.toast = QStringLiteral("Painted %1 — Ctrl+Z to undo").arg(item.label);
+    }
+    return action;
+  }
+  case LibraryItem::Kind::Material:
+    // Materials attach to a Surface via the Attributes-pane slot, not a world
+    // point — a viewport drop can't resolve a target, so hint at the slot.
+    action.toast = QStringLiteral("Drop the material onto a Material slot in the Attributes pane");
+    return action;
   case LibraryItem::Kind::Unknown:
     break;
   }

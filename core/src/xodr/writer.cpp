@@ -1222,7 +1222,12 @@ Expected<std::string> write_xodr(const RoadNetwork& network,
   // (create/erase during reconciliation) cannot perturb the byte-identical
   // round-trip. A bounded face needs >= 3 roads; anything less (or a stale road
   // reference) is not written, mirroring the rm:arms < 2 guard.
-  std::vector<std::string> surface_values;
+  struct SurfaceRecord {
+    std::string value;    ///< ";"-joined bounding-road odr ids (the sort key)
+    std::string material; ///< empty = default; written as a `material` attribute
+  };
+
+  std::vector<SurfaceRecord> surface_records;
   network.for_each_surface([&](SurfaceId, const Surface& surface) {
     if (surface.bounding_roads.size() < 3) {
       return;
@@ -1238,13 +1243,22 @@ Expected<std::string> write_xodr(const RoadNetwork& network,
       }
       value += road->odr_id;
     }
-    surface_values.push_back(std::move(value));
+    surface_records.push_back(SurfaceRecord{std::move(value), surface.material});
   });
-  std::ranges::sort(surface_values);
-  for (const std::string& value : surface_values) {
+  // Sort on `value` alone: a bounding-road ring is unique per surface, so this
+  // stays deterministic while carrying the paired material along.
+  std::ranges::sort(surface_records, [](const SurfaceRecord& a, const SurfaceRecord& b) {
+    return a.value < b.value;
+  });
+  for (const SurfaceRecord& record : surface_records) {
     pugi::xml_node user_data = root.append_child("userData");
     user_data.append_attribute("code").set_value("rm:surface");
-    user_data.append_attribute("value").set_value(value.c_str());
+    user_data.append_attribute("value").set_value(record.value.c_str());
+    // The material attribute is written ONLY when set, so every existing file
+    // (no material) round-trips byte-identically.
+    if (!record.material.empty()) {
+      user_data.append_attribute("material").set_value(record.material.c_str());
+    }
   }
 
   std::ostringstream out;

@@ -178,6 +178,17 @@ private:
   QGroupBox* style_group_;
   SlotWidget* style_slot_;
 
+  /// Ground-surface section (shown for a selected derived surface, p6-s2): the
+  /// read-only stat rows live in form_; this group hosts the Materials slot that
+  /// re-points the surface's material. It reflects the stored value.
+  QGroupBox* surface_group_;
+  SlotWidget* material_slot_;
+
+  /// Commits the dropped Materials library item onto the primary selected
+  /// surface. Unknown keys toast without pushing (no silent default); an
+  /// unchanged material pushes nothing.
+  void push_surface_material(const QString& key);
+
   /// Populates the Prop section from the primary selection's object, and shows
   /// it.
   void refresh_object(const Object& object);
