@@ -845,6 +845,43 @@ NB_MODULE(_roadmaker, m) {
                   &roadmaker::LaneProfile::two_lane_default,
                   "Historical alias of two_lane_rural().");
 
+  nb::class_<roadmaker::StyleLane>(m, "StyleLane")
+      .def(nb::init<>())
+      .def(
+          "__init__",
+          [](roadmaker::StyleLane* self,
+             roadmaker::LaneType type,
+             roadmaker::Poly3 width,
+             std::optional<roadmaker::RoadMark> outer_mark) {
+            new (self) roadmaker::StyleLane{
+                .type = type, .width = width, .outer_mark = std::move(outer_mark)};
+          },
+          "type"_a = roadmaker::LaneType::Driving,
+          "width"_a = roadmaker::Poly3{.a = 3.5},
+          "outer_mark"_a = std::nullopt)
+      .def_rw("type", &roadmaker::StyleLane::type)
+      .def_rw("width", &roadmaker::StyleLane::width)
+      .def_rw("outer_mark",
+              &roadmaker::StyleLane::outer_mark,
+              "RoadMark on this lane's OUTER boundary; None paints nothing.");
+
+  nb::class_<roadmaker::RoadStyle>(m, "RoadStyle")
+      .def(nb::init<>())
+      .def_rw("left", &roadmaker::RoadStyle::left)
+      .def_rw("right", &roadmaker::RoadStyle::right)
+      .def_rw("center_mark", &roadmaker::RoadStyle::center_mark)
+      .def_static("urban_two_lane",
+                  &roadmaker::RoadStyle::urban_two_lane,
+                  "Two driving lanes each way, dashed white same-direction lines, solid "
+                  "white edges, solid yellow center.")
+      .def_static("two_lane_rural",
+                  &roadmaker::RoadStyle::two_lane_rural,
+                  "One driving lane each way, solid white edges, right-hand shoulder.")
+      .def_static("highway",
+                  &roadmaker::RoadStyle::highway,
+                  "Two driving lanes each way, dashed lane lines, wide shoulders, no "
+                  "center mark.");
+
   m.def(
       "author_clothoid_road",
       [](roadmaker::RoadNetwork& network,
@@ -1608,6 +1645,15 @@ NB_MODULE(_roadmaker, m) {
            "lane"_a,
            "mark"_a,
            "Edits the FIRST road-mark record; later records survive untouched.");
+  edit.def("apply_road_style",
+           &roadmaker::edit::apply_road_style,
+           "network"_a,
+           "road"_a,
+           "style"_a,
+           "Replaces road's lane profile and boundary marks with style, flattening it to "
+           "a single lane section. Preserves reference-line geometry, elevation, "
+           "superelevation, name, links, and placed objects/signals. Refuses a connecting "
+           "road or a style with no lanes.");
   edit.def("set_node_elevation",
            &roadmaker::edit::set_node_elevation,
            "network"_a,

@@ -16,6 +16,9 @@ LibraryItem::Kind parse_kind(const QString& kind) {
   if (kind == QStringLiteral("road_template")) {
     return LibraryItem::Kind::RoadTemplate;
   }
+  if (kind == QStringLiteral("road_style")) {
+    return LibraryItem::Kind::RoadStyle;
+  }
   if (kind == QStringLiteral("assembly")) {
     return LibraryItem::Kind::Assembly;
   }
@@ -77,6 +80,7 @@ Expected<LibraryManifest> LibraryManifest::parse(const QByteArray& json) {
     item.thumbnail = object.value(QStringLiteral("thumbnail")).toString();
     item.kind = parse_kind(create.value(QStringLiteral("kind")).toString());
     item.profile = create.value(QStringLiteral("profile")).toString();
+    item.style = create.value(QStringLiteral("style")).toString();
     item.assembly = create.value(QStringLiteral("assembly")).toString();
     item.model = create.value(QStringLiteral("model")).toString();
     item.signal = create.value(QStringLiteral("signal")).toString();

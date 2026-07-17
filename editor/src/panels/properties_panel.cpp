@@ -13,6 +13,7 @@
 #include <cstdint>
 #include <utility>
 
+#include "document/library_drop.hpp"
 #include "tools/elevation_tool.hpp"
 
 namespace roadmaker::editor {
@@ -202,7 +203,9 @@ PropertiesPanel::PropertiesPanel(Document& document,
       signal_t_spin_(new QDoubleSpinBox), signal_h_spin_(new QDoubleSpinBox),
       signal_kind_label_(new QLabel(this)), object_group_(new QGroupBox(tr("Prop"), this)),
       object_kind_label_(new QLabel(this)),
-      model_slot_(new SlotWidget(QStringLiteral("Props"), this)) {
+      model_slot_(new SlotWidget(QStringLiteral("Props"), this)),
+      style_group_(new QGroupBox(tr("Road style"), this)),
+      style_slot_(new SlotWidget(QStringLiteral("Road styles"), this)) {
   placeholder_->setWordWrap(true);
   placeholder_->setEnabled(false);
 
@@ -413,6 +416,18 @@ PropertiesPanel::PropertiesPanel(Document& document,
           this,
           &PropertiesPanel::library_category_requested);
 
+  // Road style: a write-only Library slot that re-styles the selected road.
+  // Drop a style here or onto the road in the viewport — both apply it.
+  style_slot_->setObjectName(QStringLiteral("road_style_slot"));
+  style_slot_->setToolTip(tr("Drop a road style to replace this road's lane profile and markings"));
+  auto* style_form = new QFormLayout(style_group_);
+  style_form->addRow(tr("Style"), style_slot_);
+  connect(style_slot_, &SlotWidget::item_dropped, this, &PropertiesPanel::push_road_style);
+  connect(style_slot_,
+          &SlotWidget::engage_requested,
+          this,
+          &PropertiesPanel::library_category_requested);
+
   auto* layout = new QVBoxLayout(this);
   layout->addWidget(placeholder_);
   layout->addWidget(name_row_);
@@ -421,6 +436,7 @@ PropertiesPanel::PropertiesPanel(Document& document,
   layout->addWidget(elevation_group_);
   layout->addWidget(signal_group_);
   layout->addWidget(object_group_);
+  layout->addWidget(style_group_);
   layout->addStretch();
 
   // One command per discrete action (spec 01 §7). Combos commit on
@@ -521,6 +537,9 @@ PropertiesPanel::PropertiesPanel(Document& document,
 void PropertiesPanel::refresh() {
   clear_rows();
 
+  // Shown only on the road path below; every early return leaves it hidden.
+  style_group_->hide();
+
   // The primary entry (most recently selected) drives the panel.
   const SelectionEntry primary = selection_.primary();
 
@@ -610,6 +629,11 @@ void PropertiesPanel::refresh() {
   lane_group_->show();
   refresh_lane_section();
   refresh_elevation();
+
+  // The road-style slot is write-only: a road stores no style identity, so it
+  // shows a placeholder rather than reflecting a value.
+  style_slot_->set_item(QString());
+  style_group_->show();
 }
 
 // --- scrub-editing -----------------------------------------------------------
@@ -728,6 +752,17 @@ void PropertiesPanel::push_object_model(const QString& key) {
     return;
   }
   push(edit::set_object_model(document_.network(), objects.back(), key.toStdString()));
+}
+
+void PropertiesPanel::push_road_style(const QString& key) {
+  const std::vector<RoadId> roads = selection_.selected_roads();
+  if (roads.empty() || key.isEmpty()) {
+    return;
+  }
+  // The slot emits the library item key ("style.urban"); style_for maps both the
+  // item-key and the style-name vocabularies to a RoadStyle (like the prop slot,
+  // this passes the dropped key straight through — no library lookup here).
+  push(edit::apply_road_style(document_.network(), roads.back(), style_for(key)));
 }
 
 void PropertiesPanel::refresh_signal(const Signal& signal) {

@@ -23,6 +23,11 @@ namespace {
   if (key == QStringLiteral("road.highway")) {
     return QStringLiteral("template-highway");
   }
+  if (key.startsWith(QStringLiteral("style."))) {
+    // Road styles reuse the road-template glyph family (a dedicated style icon
+    // is a Library-polish follow-up, P6).
+    return QStringLiteral("template-urban");
+  }
   if (key.startsWith(QStringLiteral("assembly."))) {
     return QStringLiteral("junction-connect");
   }

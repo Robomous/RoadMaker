@@ -4250,6 +4250,118 @@ std::unique_ptr<Command> form_lane(const RoadNetwork& network,
       std::string(kName), std::move(base), std::move(builders));
 }
 
+std::unique_ptr<Command>
+apply_road_style(const RoadNetwork& network, RoadId road_id, const RoadStyle& style) {
+  static constexpr std::string_view kName = "Apply Road Style";
+  const auto fail = [&](std::string message) {
+    return invalid_command(
+        std::string(kName),
+        Error{.code = ErrorCode::InvalidArgument, .message = std::move(message)});
+  };
+  const Road* road = network.road(road_id);
+  if (road == nullptr) {
+    return fail("stale road id");
+  }
+  if (road->junction.is_valid()) {
+    // A connecting road is assumed single-section by the connection engine
+    // (connection.cpp); re-laning it would break that. Style incoming roads,
+    // not the turns inside a junction.
+    return fail("road styles cannot be applied to junction connecting roads");
+  }
+  if (style.left.empty() && style.right.empty()) {
+    return fail("road style has no lanes");
+  }
+  for (const auto* side : {&style.left, &style.right}) {
+    for (const StyleLane& spec : *side) {
+      if (spec.width.a <= 0.0) {
+        return fail("style lane width must be > 0");
+      }
+    }
+  }
+
+  // A constant cross section applied to a possibly multi-section road: strip the
+  // road bare, then build one fresh section. Two stages because the fresh
+  // section reuses s=0 and lane ids 0/+-1..., which collide with the old ones
+  // until they are gone — and GenericCommand erases only AFTER its creator runs.
+  std::vector<CompositeCommand::Builder> builders;
+
+  // Stage 1 — erase every section and lane and clear road.sections. Undo
+  // restores them in place (same ids), so links into these lanes survive.
+  builders.push_back([road_id](RoadNetwork& net) -> std::unique_ptr<Command> {
+    const Road* target = net.road(road_id);
+    if (target == nullptr) {
+      return invalid_command(std::string(kName),
+                             Error{.code = ErrorCode::InvalidArgument, .message = "stale road id"});
+    }
+    auto strip = std::make_unique<GenericCommand>(std::string(kName), DirtySet{.roads = {road_id}});
+    Road after = *target;
+    after.sections.clear();
+    strip->before.roads.emplace_back(road_id, *target);
+    strip->after.roads.emplace_back(road_id, std::move(after));
+    for (const LaneSectionId section_id : target->sections) {
+      const LaneSection* section = net.lane_section(section_id);
+      strip->erased.sections.emplace_back(section_id, *section);
+      for (const LaneId lane_id : section->lanes) {
+        strip->erased.lanes.emplace_back(lane_id, *net.lane(lane_id));
+      }
+    }
+    return strip;
+  });
+
+  // Stage 2 — build the single styled section (the road is bare here). Mirrors
+  // author_clothoid_road's construction, generalised to full RoadMarks.
+  builders.push_back([road_id, style](RoadNetwork& net) -> std::unique_ptr<Command> {
+    const Road* target = net.road(road_id);
+    if (target == nullptr) {
+      return invalid_command(std::string(kName),
+                             Error{.code = ErrorCode::InvalidArgument, .message = "stale road id"});
+    }
+    auto build = std::make_unique<GenericCommand>(std::string(kName), DirtySet{.roads = {road_id}});
+    build->before.roads.emplace_back(road_id, *target);
+    build->creator = [road_id, style](RoadNetwork& t, Values& created) -> Expected<void> {
+      const LaneSectionId section = t.add_lane_section(road_id, 0.0);
+      if (!section.is_valid()) {
+        return make_error(ErrorCode::InvalidArgument, "could not create lane section");
+      }
+      created.sections.emplace_back(section, LaneSection{});
+      const LaneId center = t.add_lane(section, 0, LaneType::None);
+      if (!center.is_valid()) {
+        return make_error(ErrorCode::InvalidArgument, "center lane id occupied");
+      }
+      if (style.center_mark.has_value()) {
+        t.lane(center)->road_marks.push_back(*style.center_mark);
+      }
+      created.lanes.emplace_back(center, Lane{});
+      const auto build_side = [&](const std::vector<StyleLane>& lanes, int sign) -> Expected<void> {
+        for (std::size_t i = 0; i < lanes.size(); ++i) {
+          const StyleLane& spec = lanes[i];
+          const int odr_id = sign * (static_cast<int>(i) + 1);
+          const LaneId lane = t.add_lane(section, odr_id, spec.type);
+          if (!lane.is_valid()) {
+            return make_error(ErrorCode::InvalidArgument, "lane id occupied");
+          }
+          t.lane(lane)->widths.push_back(spec.width);
+          if (spec.outer_mark.has_value()) {
+            t.lane(lane)->road_marks.push_back(*spec.outer_mark);
+          }
+          created.lanes.emplace_back(lane, Lane{});
+        }
+        return {};
+      };
+      if (auto ok = build_side(style.left, +1); !ok.has_value()) {
+        return ok;
+      }
+      return build_side(style.right, -1);
+    };
+    return build;
+  });
+
+  DirtySet base{
+      .roads = {road_id}, .junctions = junctions_touching(network, road_id), .topology = true};
+  return std::make_unique<CompositeCommand>(
+      std::string(kName), std::move(base), std::move(builders));
+}
+
 std::unique_ptr<Command> set_road_mark(const RoadNetwork& network, LaneId lane_id, RoadMark mark) {
   static constexpr std::string_view kName = "Set Road Mark";
   auto context = lane_context(network, lane_id);

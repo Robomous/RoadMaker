@@ -770,6 +770,7 @@ void MainWindow::on_library_drop(const QString& key, double world_x, double worl
     }
     viewport_->show_toast(tr("Create Road armed — click to add points"), ToastSeverity::Info);
     break;
+  case LibraryDropKind::RoadStyle:
   case LibraryDropKind::Assembly:
   case LibraryDropKind::Tree:
   case LibraryDropKind::Signal:
@@ -778,12 +779,14 @@ void MainWindow::on_library_drop(const QString& key, double world_x, double worl
     } else {
       viewport_->show_toast(tr("Couldn't place that here"), ToastSeverity::Warning);
     }
+    viewport_->clear_drag_target_road();
     break;
   case LibraryDropKind::None:
     // A resolver may reject with a hint (e.g. a tree dropped away from any road).
     if (!action.toast.isEmpty()) {
       viewport_->show_toast(action.toast, ToastSeverity::Info);
     }
+    viewport_->clear_drag_target_road();
     break;
   }
 }
@@ -800,6 +803,13 @@ void MainWindow::on_library_drag_moved(const QString& key, double world_x, doubl
   const LibraryDropAction action =
       resolve_library_drop(*item, document_.network(), world_x, world_y);
   viewport_->set_drop_preview(action.preview.x, action.preview.y, action.preview.valid);
+  // A road-style drag highlights the road it would apply to (ghost==target);
+  // every other item kind clears any lingering highlight.
+  if (action.kind == LibraryDropKind::RoadStyle) {
+    viewport_->set_drag_target_road(action.target_road);
+  } else {
+    viewport_->clear_drag_target_road();
+  }
 }
 
 void MainWindow::start_tour() {

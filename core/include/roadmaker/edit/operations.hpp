@@ -6,6 +6,7 @@
 #include "roadmaker/road/lane.hpp"
 #include "roadmaker/road/object.hpp"
 #include "roadmaker/road/road.hpp"
+#include "roadmaker/road/road_style.hpp"
 
 #include <cstddef>
 #include <memory>
@@ -518,6 +519,26 @@ split_lane_section(const RoadNetwork& network, RoadId road, double s);
                                                          double s_end,
                                                          int at_odr_id,
                                                          LaneType type);
+
+/// Road styles (p2-s8): replaces `road`'s entire lane profile and boundary
+/// road marks with `style`, flattening the road to a SINGLE lane section at
+/// s=0 (a prior carve/split/form taper is intentionally replaced — the contract
+/// lists lane count, types, and widths as replaced). Everything orthogonal to
+/// the cross section is preserved: reference-line geometry, elevation and
+/// superelevation profiles, lane offset, name and odr id, the road's
+/// predecessor/successor links, and any placed objects and signals.
+///
+/// The command names the junctions the road feeds (junctions_touching) with
+/// junctions_are_current=false, so the editor regenerates them against the new
+/// lane count — a styled arm reaches its junction the same way a carved lane
+/// does. Undo restores the previous sections and lanes in place, so junction
+/// lane links snap back exactly (byte-identical round trip).
+///
+/// Fails (invalid_command, network untouched) for a stale road, a CONNECTING
+/// road (one owned by a junction — connection.cpp assumes a single section
+/// there), a style with no lanes, or a non-positive lane width.
+[[nodiscard]] RM_API std::unique_ptr<Command>
+apply_road_style(const RoadNetwork& network, RoadId road, const RoadStyle& style);
 
 /// Edits the FIRST of the lane's outer-boundary marking records; later
 /// records survive untouched (the M2 editor edits the sOffset-0 entry only)

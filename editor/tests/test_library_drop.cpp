@@ -1,3 +1,4 @@
+#include "roadmaker/edit/assembly.hpp"
 #include "roadmaker/road/authoring.hpp"
 #include "roadmaker/road/network.hpp"
 #include "roadmaker/road/object.hpp"
@@ -307,6 +308,71 @@ TEST(LibraryDrop, ProfileForMapsNamesWithARuralDefault) {
   EXPECT_EQ(profile_for("urban_sidewalk").left.size(), LaneProfile::urban_sidewalk().left.size());
   EXPECT_EQ(profile_for("highway").right.size(), LaneProfile::highway().right.size());
   EXPECT_EQ(profile_for("nonsense").right.size(), LaneProfile::two_lane_rural().right.size());
+}
+
+// --- road styles (p2-s8) ----------------------------------------------------
+
+LibraryItem road_style(const char* style) {
+  LibraryItem item;
+  item.key = QStringLiteral("style.urban");
+  item.label = QStringLiteral("Urban 2-lane");
+  item.kind = LibraryItem::Kind::RoadStyle;
+  item.style = QString::fromLatin1(style);
+  return item;
+}
+
+TEST(LibraryDrop, RoadStyleDropAppliesToTheNearestRoadAndNamesItForTheHighlight) {
+  RoadNetwork network = with_straight_road(); // (0,0)-(100,0), two_lane_rural
+  const roadmaker::RoadId road = network.find_road("1");
+  LibraryDropAction action = resolve_library_drop(road_style("urban_two_lane"), network, 50.0, 4.0);
+  ASSERT_EQ(action.kind, LibraryDropKind::RoadStyle);
+  ASSERT_NE(action.command, nullptr);
+  EXPECT_EQ(action.target_road, road); // drives the drag highlight
+  EXPECT_TRUE(action.preview.valid);
+  EXPECT_FALSE(action.toast.isEmpty());
+
+  ASSERT_TRUE(action.command->apply(network).has_value());
+  EXPECT_EQ(network.road(road)->sections.size(), 1U);
+  EXPECT_EQ(count_errors(validate_network(network)), 0U);
+}
+
+TEST(LibraryDrop, RoadStyleDroppedOffAnyRoadIsRejectedWithAHint) {
+  RoadNetwork network = with_straight_road();
+  LibraryDropAction action =
+      resolve_library_drop(road_style("urban_two_lane"), network, 50.0, 200.0);
+  EXPECT_EQ(action.kind, LibraryDropKind::None);
+  EXPECT_EQ(action.command, nullptr);
+  EXPECT_FALSE(action.toast.isEmpty());
+}
+
+TEST(LibraryDrop, RoadStyleRefusesAConnectingRoad) {
+  RoadNetwork network = with_straight_road();
+  // Tee a junction onto the road — that builds connecting roads (junction set).
+  auto tee = edit::assembly::tee_onto_road(network, network.find_road("1"), 50.0);
+  ASSERT_TRUE(tee->apply(network).has_value());
+  roadmaker::RoadId connecting;
+  network.for_each_road([&](roadmaker::RoadId id, const Road& road) {
+    if (road.junction.is_valid()) {
+      connecting = id;
+    }
+  });
+  ASSERT_TRUE(connecting.is_valid());
+  // Drop at the connecting road's own midpoint, where it is the nearest road.
+  const Road* road = network.road(connecting);
+  const auto mid = station_to_world(road->plan_view, road->plan_view.length() * 0.5, 0.0);
+  const LibraryDropAction action =
+      resolve_library_drop(road_style("urban_two_lane"), network, mid[0], mid[1]);
+  EXPECT_EQ(action.kind, LibraryDropKind::None);
+  EXPECT_TRUE(action.toast.contains(QStringLiteral("connecting")));
+}
+
+TEST(LibraryDrop, StyleForMapsNamesAndItemKeysWithAnUrbanDefault) {
+  EXPECT_EQ(style_for("two_lane_rural").left.size(), RoadStyle::two_lane_rural().left.size());
+  EXPECT_EQ(style_for("highway").left.size(), RoadStyle::highway().left.size());
+  // The Attributes slot passes the item key straight through.
+  EXPECT_EQ(style_for("style.highway").left.size(), RoadStyle::highway().left.size());
+  EXPECT_EQ(style_for("style.urban").left.size(), RoadStyle::urban_two_lane().left.size());
+  EXPECT_EQ(style_for("anything else").left.size(), RoadStyle::urban_two_lane().left.size());
 }
 
 } // namespace

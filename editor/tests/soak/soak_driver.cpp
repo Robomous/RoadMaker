@@ -76,6 +76,7 @@ void SoakDriver::step(int index) {
       {2, &SoakDriver::op_lane_add_span, "lane_add_span"},
       {2, &SoakDriver::op_lane_form, "lane_form"},
       {2, &SoakDriver::op_lane_carve, "lane_carve"},
+      {2, &SoakDriver::op_apply_road_style, "apply_road_style"},
       {2, &SoakDriver::op_ground_surface, "ground_surface"},
       {1, &SoakDriver::op_overpass, "overpass"},
       {1, &SoakDriver::op_delete_crossing_road, "delete_crossing_road"},
@@ -892,6 +893,21 @@ void SoakDriver::op_lane_carve() {
                         std::max(a, b),
                         lane->odr_id,
                         LaneType::Driving));
+}
+
+/// Road style: re-style a random road with one of the starter styles. The
+/// kernel refuses a connecting road (recorded, not fatal), so no filter is
+/// needed; a styled arm marks its junction for regeneration.
+void SoakDriver::op_apply_road_style() {
+  const std::vector<RoadId> roads = live_roads(/*editable_only=*/true);
+  if (roads.empty()) {
+    return;
+  }
+  const RoadId road_id = roads[static_cast<std::size_t>(rand_int(0, int(roads.size()) - 1))];
+  const std::array<RoadStyle, 3> styles{
+      RoadStyle::urban_two_lane(), RoadStyle::two_lane_rural(), RoadStyle::highway()};
+  push(edit::apply_road_style(
+      document_.network(), road_id, styles[static_cast<std::size_t>(rand_int(0, 2))]));
 }
 
 void SoakDriver::op_ground_surface() {
