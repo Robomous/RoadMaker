@@ -697,8 +697,8 @@ void SoakDriver::op_assembly_drop_on_road() {
 }
 
 void SoakDriver::op_extend_road() {
-  // Keep drawing off a road's END (Create Road extend). Refusals (a linked or
-  // unauthored end, a point behind) are data.
+  // Keep drawing off EITHER of a road's endpoints (Create Road extend). Refusals
+  // (a linked or unauthored end, a point behind) are data.
   const std::vector<RoadId> roads = live_roads(/*editable_only=*/true);
   if (roads.empty()) {
     return;
@@ -708,13 +708,20 @@ void SoakDriver::op_extend_road() {
   if (road == nullptr) {
     return;
   }
-  const PathPoint end = road->plan_view.evaluate(road->plan_view.length());
+  const bool at_start = chance(0.5);
   const double reach = rand_range(20.0, 80.0);
-  const double heading = end.hdg + rand_range(-0.5, 0.5); // mostly forward, some off-axis
-  const Waypoint to{.x = end.x + (reach * std::cos(heading)),
-                    .y = end.y + (reach * std::sin(heading))};
+  // At an END aim forward off the end tangent; at a START aim BEHIND the start
+  // pose (the reverse tangent) so the backward fit is reachable.
+  const PathPoint pose =
+      at_start ? road->plan_view.evaluate(0.0) : road->plan_view.evaluate(road->plan_view.length());
+  const double base = at_start ? pose.hdg + std::numbers::pi : pose.hdg;
+  const double heading = base + rand_range(-0.5, 0.5); // mostly on-axis, some off-axis
+  const Waypoint to{.x = pose.x + (reach * std::cos(heading)),
+                    .y = pose.y + (reach * std::sin(heading))};
   push(edit::extend_road(
-      document_.network(), RoadEnd{.road = road_id, .contact = ContactPoint::End}, to));
+      document_.network(),
+      RoadEnd{.road = road_id, .contact = at_start ? ContactPoint::Start : ContactPoint::End},
+      to));
 }
 
 void SoakDriver::op_cross_commit() {

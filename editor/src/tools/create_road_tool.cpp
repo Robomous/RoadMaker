@@ -116,16 +116,22 @@ void CreateRoadTool::place_point(const ToolEvent& event) {
       .side_snap = side_snap,
   });
 
-  // Extend-from-endpoint: the first point anchored on the SELECTED road's END
-  // lengthens that road (same id) to the final point, rather than authoring a
-  // new welded road. Only the END extends (the kernel refuses Start).
+  // Extend-from-endpoint: the first point anchored on the SELECTED road's
+  // NEARER endpoint lengthens that road (same id) to the final point, rather
+  // than authoring a new welded road. Either end extends now (#275) — the
+  // kernel prepends/reverses for a Start, appends for an End.
   if (first_point && selected_road_.has_value() && snapped.has_value() &&
       snapped->kind == edit::SnapKind::RoadEndpoint && snapped->road == *selected_road_) {
     if (const Road* road = document_.network().road(*selected_road_); road != nullptr) {
+      const PathPoint start = road->plan_view.evaluate(0.0);
       const PathPoint end = road->plan_view.evaluate(road->plan_view.length());
-      if (std::hypot(position.x - end.x, position.y - end.y) < tol::kLength * 1e3) {
-        extend_end_ = RoadEnd{.road = *selected_road_, .contact = ContactPoint::End};
-        emit status_message(tr("Extending the selected road — click ahead, then Enter"));
+      const double to_start = std::hypot(position.x - start.x, position.y - start.y);
+      const double to_end = std::hypot(position.x - end.x, position.y - end.y);
+      if (std::min(to_start, to_end) < tol::kLength * 1e3) {
+        extend_end_ =
+            RoadEnd{.road = *selected_road_,
+                    .contact = to_start <= to_end ? ContactPoint::Start : ContactPoint::End};
+        emit status_message(tr("Extending the selected road — click, then Enter"));
       }
     }
   }

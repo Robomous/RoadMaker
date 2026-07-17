@@ -118,17 +118,25 @@ insert_node_at(const RoadNetwork& network, RoadId road, double s);
                                                                  RoadEnd link_start,
                                                                  EndpointHeadings locked = {});
 
-/// Extends a road past its END by fitting a forward clothoid from the end
-/// pose through `to` and appending it to the plan view — the "keep drawing off
-/// the end" gesture. The appended geometry is curvature-continuous with the old
-/// end by construction (fit_forward_clothoid honours the end pose AND curvature),
-/// so no kink and no curvature step appears at the join; elevation is continued
-/// with matching z and grade. The last lane section (and its widths) simply
-/// spans the new length. ONE command over the single road (apply→revert
-/// byte-identical). START-end extension is out of scope.
-/// Errors (invalid_command): a stale road, `end.contact == Start`, an END that
-/// is already linked, a road with no authoring waypoints, or a `to` the forward
-/// clothoid cannot reach (behind the end).
+/// Extends a road past `end` by fitting a forward clothoid from the contact
+/// pose through `to` — the "keep drawing off an endpoint" gesture. The fit is
+/// curvature-continuous with the old end by construction (fit_forward_clothoid
+/// honours the pose AND curvature), so no kink and no curvature step appears at
+/// the join; elevation is continued with matching z and grade.
+///
+/// An END extension appends the fit to the plan view; the last lane section (and
+/// its widths) simply spans the new length, and nothing s-indexed moves. A START
+/// extension prepends the REVERSED fit and re-bases everything by the extension
+/// length L_ext: interior lane-section boundaries += L_ext while the first
+/// section stays at s0 = 0 and spans the new head (widths ride along untouched),
+/// elevation/superelevation/lane_offset shift forward (values at the old
+/// stations preserved; the head holds the boundary value flat rather than
+/// extrapolating), objects/signals s += L_ext (world position invariant), and
+/// `to` becomes the first authoring waypoint. Either way it is ONE command over
+/// the single road (apply→revert byte-identical).
+/// Errors (invalid_command): a stale road, the extended end already linked (a
+/// junction arm or connecting road), a road with no authoring waypoints, or a
+/// `to` the forward clothoid cannot reach (behind the endpoint).
 [[nodiscard]] RM_API std::unique_ptr<Command>
 extend_road(const RoadNetwork& network, RoadEnd end, Waypoint to);
 
