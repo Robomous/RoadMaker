@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<OpenDRIVE>
+  <header revMajor="1" revMinor="8" name="objects-outline-and-repeat"/>
+  <road name="r" length="100" id="1" junction="-1">
+    <planView>
+      <geometry s="0" x="0" y="0" hdg="0" length="100"><line/></geometry>
+    </planView>
+    <lanes>
+      <laneSection s="0">
+        <center><lane id="0" type="none" level="false"/></center>
+        <right><lane id="-1" type="driving" level="false"><width sOffset="0" a="3.5" b="0" c="0" d="0"/></lane></right>
+      </laneSection>
+    </lanes>
+    <objects>
+      <object type="crosswalk" id="10" s="30" t="0" zOffset="0" orientation="none" length="8" width="4">
+        <outlines>
+          <outline id="0" outer="true" closed="true" fillType="paint">
+            <cornerRoad s="28" t="-2" dz="0" height="0" id="0"/>
+            <cornerRoad s="32" t="-2" dz="0" height="0" id="1"/>
+            <cornerRoad s="32" t="2" dz="0" height="0" id="2"/>
+            <cornerRoad s="28" t="2" dz="0" height="0" id="3"/>
+          </outline>
+          <outline id="1" outer="false">
+            <cornerLocal u="-1" v="-1" z="0" height="0" id="0"/>
+            <cornerLocal u="1" v="1" z="0" height="0" id="1"/>
+          </outline>
+        </outlines>
+      </object>
+      <object type="tree" id="11" s="10" t="4" zOffset="0" orientation="none" radius="0.4" height="6">
+        <repeat s="12" length="40" distance="8" tStart="4" tEnd="4" zOffsetStart="0" zOffsetEnd="0" heightStart="6" heightEnd="6"/>
+      </object>
+    </objects>
+  </road>
+</OpenDRIVE>

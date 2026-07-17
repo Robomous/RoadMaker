@@ -2815,6 +2815,11 @@ std::unique_ptr<Command> extend_road(const RoadNetwork& network, RoadEnd end, Wa
 
   // Objects and signals ride the same shift: s += L_ext keeps each one at the
   // SAME world point, since the reference line grew by exactly L_ext in front.
+  // Inside the object, every road-s sub-field shifts with the origin:
+  // <cornerRoad> corners are in absolute road s/t (§13.2.1, Table 87) and
+  // <repeat> @s is an absolute start station that overrides the origin (§13.4,
+  // Table 95) — identical in 1.8.1 and 1.9.0. <cornerLocal> corners are
+  // relative to the object's origin (§13.2.2) and stay put.
   network.for_each_object([&](ObjectId id, const Object& object) {
     if (object.road != end.road) {
       return;
@@ -2822,6 +2827,17 @@ std::unique_ptr<Command> extend_road(const RoadNetwork& network, RoadEnd end, Wa
     command->before.objects.emplace_back(id, object);
     Object shifted = object;
     shifted.s += l_ext;
+    for (ObjectOutline& outline : shifted.outlines) {
+      if (!outline.road_coords) {
+        continue;
+      }
+      for (OutlineCorner& corner : outline.corners) {
+        corner.a += l_ext;
+      }
+    }
+    for (ObjectRepeat& repeat : shifted.repeats) {
+      repeat.s += l_ext;
+    }
     command->after.objects.emplace_back(id, std::move(shifted));
   });
   network.for_each_signal([&](SignalId id, const Signal& signal) {
