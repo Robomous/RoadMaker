@@ -292,4 +292,23 @@ private:
 [[nodiscard]] RM_API Expected<double> section_end(const RoadNetwork& network,
                                                   LaneSectionId section);
 
+/// Lateral t of every lane boundary of `section` at global station `s`,
+/// leftmost first: the center boundary sits at laneOffset(s), each left lane
+/// adds its width outward (t increases), each right lane subtracts it. Widths
+/// are clamped at 0, so a lane already tapered to zero contributes a coincident
+/// boundary. Boundary count = lanes + 1.
+///
+/// This is the one routine that turns a cross section into lane edges; the
+/// mesher builds its vertex grid from it and the editor's boundary pick reads
+/// it, so lane edges can never drift between what is drawn and what is picked.
+[[nodiscard]] RM_API std::vector<double> lane_boundary_offsets(const RoadNetwork& network,
+                                                               const Road& road,
+                                                               const LaneSection& section,
+                                                               double s);
+
+/// Convenience overload resolving the section governing global station `s`
+/// (section_at). Returns an empty vector if `road` is stale or has no sections.
+[[nodiscard]] RM_API std::vector<double>
+lane_boundary_offsets(const RoadNetwork& network, RoadId road, double s);
+
 } // namespace roadmaker

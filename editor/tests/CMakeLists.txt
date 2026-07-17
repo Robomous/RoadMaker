@@ -44,6 +44,7 @@ add_executable(roadmaker_editor_tests
   test_junction_regen.cpp
   test_elevation_tool.cpp
   test_lane_add_tool.cpp
+  test_lane_carve_tool.cpp
   test_lane_form_tool.cpp
   test_editor_command.cpp
   test_highlight.cpp

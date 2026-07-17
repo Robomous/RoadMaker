@@ -1,0 +1,86 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<OpenDRIVE>
+  <header revMajor="1" revMinor="8" name="carve_turn_lane demo" vendor="RoadMaker" />
+  <road name="Turn Lane Demo" length="120" id="1" junction="-1">
+    <planView>
+      <geometry s="0" x="0" y="0" hdg="0" length="120">
+        <line />
+      </geometry>
+    </planView>
+    <lanes>
+      <laneSection s="0">
+        <left>
+          <lane id="1" type="driving" level="false">
+            <link>
+              <successor id="1" />
+            </link>
+            <width sOffset="0" a="3.5" b="0" c="0" d="0" />
+            <roadMark sOffset="0" type="solid" width="0.12" />
+          </lane>
+        </left>
+        <center>
+          <lane id="0" type="none" level="false">
+            <link>
+              <successor id="0" />
+            </link>
+            <roadMark sOffset="0" type="broken" width="0.12" />
+          </lane>
+        </center>
+        <right>
+          <lane id="-1" type="driving" level="false">
+            <link>
+              <successor id="-2" />
+            </link>
+            <width sOffset="0" a="3.5" b="0" c="0" d="0" />
+            <roadMark sOffset="0" type="solid" width="0.12" />
+          </lane>
+          <lane id="-2" type="shoulder" level="false">
+            <link>
+              <successor id="-3" />
+            </link>
+            <width sOffset="0" a="1" b="0" c="0" d="0" />
+          </lane>
+        </right>
+      </laneSection>
+      <laneSection s="60">
+        <left>
+          <lane id="1" type="driving" level="false">
+            <link>
+              <predecessor id="1" />
+            </link>
+            <width sOffset="0" a="3.5" b="0" c="0" d="0" />
+            <roadMark sOffset="0" type="solid" width="0.12" />
+          </lane>
+        </left>
+        <center>
+          <lane id="0" type="none" level="false">
+            <link>
+              <predecessor id="0" />
+            </link>
+            <roadMark sOffset="0" type="broken" width="0.12" />
+          </lane>
+        </center>
+        <right>
+          <lane id="-1" type="driving" level="false">
+            <width sOffset="0" a="0" b="0.0875" c="0" d="0" />
+            <width sOffset="40" a="3.5" b="0" c="0" d="0" />
+          </lane>
+          <lane id="-2" type="driving" level="false">
+            <link>
+              <predecessor id="-1" />
+            </link>
+            <width sOffset="0" a="3.5" b="0" c="0" d="0" />
+            <roadMark sOffset="0" type="solid" width="0.12" />
+          </lane>
+          <lane id="-3" type="shoulder" level="false">
+            <link>
+              <predecessor id="-2" />
+            </link>
+            <width sOffset="0" a="1" b="0" c="0" d="0" />
+          </lane>
+        </right>
+      </laneSection>
+    </lanes>
+    <userData code="rm:waypoints" value="0,0;120,0" />
+  </road>
+</OpenDRIVE>

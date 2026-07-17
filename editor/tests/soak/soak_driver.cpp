@@ -75,6 +75,7 @@ void SoakDriver::step(int index) {
       {2, &SoakDriver::op_insert_lane, "insert_lane"},
       {2, &SoakDriver::op_lane_add_span, "lane_add_span"},
       {2, &SoakDriver::op_lane_form, "lane_form"},
+      {2, &SoakDriver::op_lane_carve, "lane_carve"},
       {2, &SoakDriver::op_ground_surface, "ground_surface"},
       {1, &SoakDriver::op_overpass, "overpass"},
       {1, &SoakDriver::op_delete_crossing_road, "delete_crossing_road"},
@@ -855,6 +856,42 @@ void SoakDriver::op_lane_form() {
                        rand_range(-1.0, road->length + 1.0),
                        lane->odr_id,
                        LaneType::Driving));
+}
+
+/// Lane Carve: a turn lane over a random dragged span. Like Lane Form it targets
+/// an existing lane in the final section (sign match); the kernel refuses a
+/// start outside that section or a non-positive span (recorded, not fatal).
+void SoakDriver::op_lane_carve() {
+  const std::vector<RoadId> roads = live_roads(/*editable_only=*/true);
+  if (roads.empty()) {
+    return;
+  }
+  const RoadId road_id = roads[static_cast<std::size_t>(rand_int(0, int(roads.size()) - 1))];
+  const Road* road = document_.network().road(road_id);
+  if (road == nullptr || road->sections.empty() || road->length <= 0.0) {
+    return;
+  }
+  const LaneSectionId last = road->sections.back();
+  const LaneSection* section = document_.network().lane_section(last);
+  if (section == nullptr || section->lanes.empty()) {
+    return;
+  }
+  const LaneId at =
+      section->lanes[static_cast<std::size_t>(rand_int(0, int(section->lanes.size()) - 1))];
+  const Lane* lane = document_.network().lane(at);
+  if (lane == nullptr || lane->odr_id == 0) {
+    return; // the centre lane has no side; try again next step
+  }
+  const int side = lane->odr_id > 0 ? 1 : -1;
+  const double a = rand_range(-1.0, road->length + 1.0);
+  const double b = rand_range(-1.0, road->length + 1.0);
+  push(edit::carve_lane(document_.network(),
+                        road_id,
+                        side,
+                        std::min(a, b),
+                        std::max(a, b),
+                        lane->odr_id,
+                        LaneType::Driving));
 }
 
 void SoakDriver::op_ground_surface() {

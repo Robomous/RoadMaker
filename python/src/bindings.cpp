@@ -663,6 +663,16 @@ NB_MODULE(_roadmaker, m) {
           "section"_a,
           "End station of the section: the next section's s0, or the road "
           "length for the last one. Raises ValueError on a stale id.")
+      .def(
+          "lane_boundary_offsets",
+          [](const roadmaker::RoadNetwork& network, roadmaker::RoadId road, double s) {
+            return roadmaker::lane_boundary_offsets(network, road, s);
+          },
+          "road"_a,
+          "s"_a,
+          "Lateral t of every lane boundary at global station s, leftmost first "
+          "(the centre boundary at laneOffset(s)). The same routine the mesher "
+          "uses. Empty if the road is stale or has no sections.")
       .def("lane_section",
            nb::overload_cast<roadmaker::LaneSectionId>(&roadmaker::RoadNetwork::lane_section),
            "id"_a,
@@ -1579,6 +1589,19 @@ NB_MODULE(_roadmaker, m) {
            "Lane Form: an interior lane that starts at zero width at s_start and holds full "
            "width to the road end, taking numbering position at_odr_id (sign must match side). "
            "Backward-unlinked; refuses if s_start is not in the road's final lane section.");
+  edit.def("carve_lane",
+           &roadmaker::edit::carve_lane,
+           "network"_a,
+           "road"_a,
+           "side"_a,
+           "s_start"_a,
+           "s_end"_a,
+           "at_odr_id"_a,
+           "type"_a,
+           "Lane Carve: a turn lane whose width ramps 0 -> full over the dragged span "
+           "[s_start, s_end] and then holds full to the road terminus, where junction "
+           "regeneration absorbs it. Takes numbering position at_odr_id (sign must match "
+           "side); refuses if s_start is not in the road's final lane section.");
   edit.def("set_road_mark",
            &roadmaker::edit::set_road_mark,
            "network"_a,

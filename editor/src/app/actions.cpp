@@ -134,6 +134,14 @@ Actions::Actions(QUndoStack& undo_stack, QObject* parent) : QObject(parent) {
       tr("Lane Form — click a road to form a lane from there to its end (⇧A)"));
   tool_group->addAction(tool_lane_form);
 
+  tool_lane_carve = new QAction(tr("Lane &Carve"), this);
+  tool_lane_carve->setCheckable(true);
+  tool_lane_carve->setShortcuts(shortcuts::sequences(shortcuts::Id::ToolLaneCarve));
+  tool_lane_carve->setIconText(tr("Lane Carve"));
+  tool_lane_carve->setToolTip(
+      tr("Lane Carve — drag along a lane toward a junction to carve a tapering turn lane (⇧C)"));
+  tool_group->addAction(tool_lane_carve);
+
   // Not a tool — a command that surfaces the 2D Editor's Lane Width tab for the
   // selected lane. Standalone so ⇧L works whatever tool is active.
   lane_width_editor = new QAction(tr("Lane &Width Editor"), this);
@@ -255,6 +263,7 @@ void Actions::apply_icons() {
   tool_delete->setIcon(Icons::get(QStringLiteral("trash-2")));
   tool_lane_add->setIcon(Icons::get(QStringLiteral("lane-section")));
   tool_lane_form->setIcon(Icons::get(QStringLiteral("lane-section")));
+  tool_lane_carve->setIcon(Icons::get(QStringLiteral("lane-section")));
   template_rural->setIcon(Icons::get(QStringLiteral("template-rural")));
   template_urban->setIcon(Icons::get(QStringLiteral("template-urban")));
   template_highway->setIcon(Icons::get(QStringLiteral("template-highway")));

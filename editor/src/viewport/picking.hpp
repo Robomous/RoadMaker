@@ -118,6 +118,24 @@ station_within(const ReferenceLine& line, double x, double y, double max_abs_t);
 /// (the drag ghost and the committed object share this projection: ghost==commit).
 [[nodiscard]] std::array<double, 2> station_to_world(const ReferenceLine& line, double s, double t);
 
+/// The lane boundary (lane edge) nearest a cursor's road-relative t, resolved
+/// from the promoted kernel query lane_boundary_offsets — so a picked edge lands
+/// exactly where the mesher drew it. Used by Lane Carve to choose where a turn
+/// lane is inserted.
+struct LaneBoundaryHit {
+  int at_odr_id = 0; ///< insert position: an existing lane on `side` (valid for insert_lane)
+  int side = 0;      ///< +1 left of the reference line, -1 right
+  double t = 0.0;    ///< lateral offset [m] of the picked boundary, for the preview
+};
+
+/// Nearest lane boundary to `cursor_t` in the section governing station `s` on
+/// `road`. A carve inserts its turn lane at the returned `at_odr_id` (the lane
+/// whose outer edge was picked), widening the carriageway on `side`. When the
+/// cursor lands nearest the centre line the innermost lane on the cursor's side
+/// is chosen. nullopt if `road` is stale, has no section, or carries no lanes.
+[[nodiscard]] std::optional<LaneBoundaryHit>
+nearest_lane_boundary(const RoadNetwork& network, RoadId road, double s, double cursor_t);
+
 /// A hovered authoring waypoint of one of `roads`: which road, its index, and
 /// position. The shared node hit-test behind SelectTool, EditNodesTool, and the
 /// context menu — nearest effective waypoint within `radius` [m], ties keep the

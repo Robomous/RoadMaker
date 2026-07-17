@@ -73,48 +73,13 @@ inline std::array<double, 3> surface_normal(const StationFrame& f) {
 }
 
 /// Lateral boundary offsets (leftmost first) of a section at station s.
-/// Boundary count = lanes-left-of-center + lanes-right-of-center + 1; the
-/// center boundary sits at laneOffset(s).
+/// Thin alias for the public roadmaker::lane_boundary_offsets so the mesher and
+/// the editor's boundary pick share one implementation (see network.hpp).
 inline std::vector<double> boundary_offsets(const RoadNetwork& network,
                                             const Road& road,
                                             const LaneSection& section,
                                             double s) {
-  const double ds = s - section.s0;
-  const double center = eval_profile(road.lane_offset, s);
-
-  std::vector<double> left; // innermost -> outermost
-  std::vector<double> right;
-  for (const LaneId lane_id : section.lanes) {
-    const Lane& lane = *network.lane(lane_id);
-    if (lane.odr_id == 0) {
-      continue;
-    }
-    const double width = std::max(0.0, eval_profile(lane.widths, ds));
-    if (lane.odr_id > 0) {
-      left.push_back(width);
-    } else {
-      right.push_back(width);
-    }
-  }
-  // section.lanes is sorted leftmost-first, so `left` was collected
-  // outermost-first; accumulate from the center outwards.
-  std::vector<double> offsets;
-  offsets.reserve(left.size() + right.size() + 1);
-
-  double t = center;
-  std::vector<double> left_out(left.size());
-  for (std::size_t i = left.size(); i-- > 0;) { // innermost (+1) first
-    t += left[i];
-    left_out[i] = t;
-  }
-  offsets.insert(offsets.end(), left_out.begin(), left_out.end());
-  offsets.push_back(center);
-  t = center;
-  for (const double width : right) {
-    t -= width;
-    offsets.push_back(t);
-  }
-  return offsets;
+  return lane_boundary_offsets(network, road, section, s);
 }
 
 /// Stations every profile of this road must sample (record joints are added

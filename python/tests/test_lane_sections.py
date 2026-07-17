@@ -317,3 +317,51 @@ def test_form_lane_refuses_a_downstream_seam(network):
     stack.push(network, rm.edit.split_lane_section(network, road, 90.0))
     with pytest.raises(ValueError):
         stack.push(network, rm.edit.form_lane(network, road, -1, 60.0, -1, rm.LaneType.DRIVING))
+
+
+def test_carve_lane_round_trips(network):
+    """Lane Carve: a turn lane whose width ramps 0 -> full over the dragged span
+    [60, 100] and holds full to the terminus; one atomic, reversible step."""
+    road = network.find_road("1")
+    stack = rm.edit.EditStack()
+    before = rm.write_xodr(network)
+
+    stack.push(network, rm.edit.carve_lane(network, road, -1, 60.0, 100.0, -1, rm.LaneType.DRIVING))
+    sections = network.road(road).sections
+    assert len(sections) == 2  # one split at s_start; the carved lane runs in the final section
+
+    carved = lane_by_odr_id(network, sections[-1], -1)
+    assert carved is not None
+    s0 = network.lane_section(sections[-1]).s0
+    widths = network.lane(carved).widths
+    assert widths[0].eval(0.0) == pytest.approx(0.0)          # zero width at s_start
+    assert network.lane(carved).predecessor is None           # appears mid-road
+    assert network.lane(carved).successor is None             # runs to the terminus
+
+    text = rm.write_xodr(network)
+    _, diagnostics = rm.parse_xodr(text)
+    assert not [d for d in diagnostics if d.severity == rm.Severity.ERROR]
+
+    # apply -> revert is byte-identical by contract.
+    stack.undo(network)
+    assert rm.write_xodr(network) == before
+
+
+def test_carve_lane_refuses_a_downstream_seam(network):
+    """A carve must land in the road's final lane section (forward-linking is out
+    of scope) — carving upstream of a downstream boundary is refused."""
+    road = network.find_road("1")
+    stack = rm.edit.EditStack()
+    stack.push(network, rm.edit.split_lane_section(network, road, 90.0))
+    with pytest.raises(ValueError):
+        stack.push(network, rm.edit.carve_lane(network, road, -1, 70.0, 90.0, -1, rm.LaneType.DRIVING))
+
+
+def test_lane_boundary_offsets(network):
+    """The lane edges across the cross section, leftmost first — the same routine
+    the mesher uses, exposed for boundary picking."""
+    road = network.find_road("1")
+    offsets = network.lane_boundary_offsets(road, 30.0)
+    # two_lane_default: +1 (3.5) | centre | -1 (3.5) | -2 shoulder (1.0).
+    assert offsets == pytest.approx([3.5, 0.0, -3.5, -4.5])
+    assert network.lane_boundary_offsets(rm.RoadId(), 30.0) == []
