@@ -52,6 +52,8 @@ enum class Id {
   ViewWest,
   ViewEast,
   ViewTop,
+  // Help
+  Help,
 };
 
 /// One row of the map.

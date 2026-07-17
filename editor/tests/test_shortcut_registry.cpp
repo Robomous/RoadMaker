@@ -28,7 +28,7 @@ TEST(ShortcutRegistry, EveryIdHasExactlyOneRow) {
     EXPECT_STRNE(row.description, "") << "every row must describe itself for the page";
   }
   // The last enumerator; every value below it must be covered.
-  for (int i = 0; i <= static_cast<int>(Id::ViewTop); ++i) {
+  for (int i = 0; i <= static_cast<int>(Id::Help); ++i) {
     EXPECT_TRUE(seen.contains(i)) << "shortcuts::Id " << i << " has no table row";
   }
 }
@@ -87,6 +87,7 @@ TEST(ShortcutRegistry, ActionsBindWhatTheTableDocuments) {
   EXPECT_EQ(actions.view_orthographic->shortcuts(), shortcuts::sequences(Id::ViewOrthographic));
   EXPECT_EQ(actions.view_top->shortcuts(), shortcuts::sequences(Id::ViewTop));
   EXPECT_EQ(actions.tool_delete->shortcuts(), shortcuts::sequences(Id::ToolDelete));
+  EXPECT_EQ(actions.help_contents->shortcuts(), shortcuts::sequences(Id::Help));
 }
 
 // The gate: the committed page must be what the table renders. A binding

@@ -59,6 +59,10 @@ add_executable(roadmaker_editor_tests
   test_panels.cpp
   test_framing.cpp
   test_gizmo.cpp
+  test_help_collection.cpp
+  test_help_compiler.cpp
+  test_help_style.cpp
+  test_help_viewer.cpp
   test_picking.cpp
   test_preview_session.cpp
   test_profile_panel.cpp
@@ -86,15 +90,27 @@ target_compile_definitions(roadmaker_editor_tests
           RM_ASSETS_DIR="${CMAKE_SOURCE_DIR}/assets"
           # The shortcut-map gate reads the committed page and compares it to
           # what the registry renders (test_shortcut_registry.cpp).
-          RM_DOCS_DIR="${CMAKE_SOURCE_DIR}/docs")
+          RM_DOCS_DIR="${CMAKE_SOURCE_DIR}/docs"
+          # The help-style gate compares the committed help.css to the
+          # generator (test_help_style.cpp).
+          RM_EDITOR_RESOURCES_DIR="${CMAKE_SOURCE_DIR}/editor/resources"
+          # Where the build stages the compiled .qch/.qhc collection
+          # (test_help_collection.cpp / test_help_viewer.cpp).
+          RM_HELP_STAGE_DIR="${CMAKE_BINARY_DIR}/help")
 
 target_link_libraries(roadmaker_editor_tests PRIVATE
   roadmaker_editor_lib
   roadmaker_soak_lib
   roadmaker::core
+  helpc_lib
   Qt6::Test
+  Qt6::Help
   GTest::gtest
 )
+
+# The collection/viewer tests read the staged .qch/.qhc, so it must be built
+# first (the help target is ALL, but discovery runs the exe at build time).
+add_dependencies(roadmaker_editor_tests roadmaker_help)
 
 rm_apply_warnings(roadmaker_editor_tests)
 

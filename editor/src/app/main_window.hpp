@@ -7,6 +7,7 @@
 #include <QDockWidget>
 #include <QLabel>
 #include <QMainWindow>
+#include <QPointer>
 #include <QStackedWidget>
 #include <QToolBar>
 #include <QToolButton>
@@ -25,6 +26,10 @@
 #include "viewport/viewport_widget.hpp"
 
 namespace roadmaker::editor {
+
+namespace help {
+class HelpViewer;
+}
 
 class MainWindow : public QMainWindow {
   Q_OBJECT
@@ -103,6 +108,8 @@ private:
   void export_usd_dialog();
 #endif
   void show_about_dialog();
+  /// Opens (creating on first use) the in-app user guide, on the given slug.
+  void show_help(const QString& slug = QStringLiteral("index"));
   /// Startup scan for another session's crashed recovery set; prompts
   /// Recover (load + re-point at the original path, dirty) or Discard.
   void check_recovery();
@@ -177,6 +184,8 @@ private:
   /// First-run guided-tour overlay; created lazily on first show / Help menu.
   class TourOverlay* tour_overlay_ = nullptr;
   bool tour_checked_ = false; // first-run tour prompt fires at most once
+  /// In-app user-guide window; created lazily on first Help ▸ User Guide / F1.
+  QPointer<help::HelpViewer> help_viewer_;
   /// Only interactive launches auto-run the tour — screenshot/capture windows
   /// (restore_saved_layout=false) must never pop it over a render.
   bool allow_first_run_tour_ = false;

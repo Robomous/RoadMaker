@@ -18,6 +18,7 @@ BSL-1.0, Unlicense/CC0. License files verified in each upstream archive.
 | Clipper2 | 2.0.1 | BSL-1.0 | https://github.com/AngusJohnson/Clipper2 | 2D polygon offsets/unions for plan-view lane logic |
 | pugixml | 1.16 | MIT | https://github.com/zeux/pugixml | XML parsing/writing for OpenDRIVE |
 | tinygltf | 3.0.0 | MIT | https://github.com/syoyo/tinygltf | glTF 2.0 export (bundles nlohmann/json, MIT; stb, MIT/public-domain) |
+| md4c | 0.5.2 (release-0.5.2) | MIT | https://github.com/mity/md4c | Markdown→HTML for the editor's build-time help compiler (rm_helpc); host tool only, never linked into the shipped editor (editor builds only) |
 | tinyusdz | v0.9.1 | Apache-2.0 | https://github.com/lighttransport/tinyusdz | OpenUSD ASCII (.usda) export backend (editor/optional builds only, gated on `RM_BUILD_USD`; `.usdc`/`.usdz` crate output unsupported — documented M2 limitation) |
 | mapbox/eternal | vendored in tinyusdz v0.9.1 | ISC | https://github.com/mapbox/eternal | Compile-time hash map used internally by tinyusdz. ISC is not in the enumerated allow-list but is more permissive than MIT — maintainer-approved 2026-07-10 |
 | linalg.h | vendored in tinyusdz v0.9.1 | Unlicense | https://github.com/sgorsten/linalg | Small linear-algebra header used internally by tinyusdz — maintainer-approved 2026-07-10 |

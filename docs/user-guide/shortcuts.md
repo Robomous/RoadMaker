@@ -65,3 +65,9 @@ conventions below.
 | Look from the west | `Num+4` or `4` | Numpad; the top-row digit is the alternate |
 | Look from the east | `Num+6` or `6` | Numpad; the top-row digit is the alternate |
 | Top-down view, north up | `Num+5` or `5` | Numpad; the top-row digit is the alternate |
+
+## Help
+
+| Action | Shortcut | Notes |
+|---|---|---|
+| Open the user guide | `F1` |  |

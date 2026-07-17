@@ -56,6 +56,10 @@ def pinned_version() -> str:
 REQUIRED_MODULE_MARKERS = {
     "qtbase": "lib/cmake/Qt6/Qt6Config.cmake",
     "qtsvg": "lib/cmake/Qt6Svg/Qt6SvgConfig.cmake",
+    # qttools carries the Help module (QHelpEngine) and qhelpgenerator, which
+    # the editor's build-time help pipeline needs. A tree provisioned before
+    # this marker existed lacks Qt6Help and is re-provisioned.
+    "qttools": "lib/cmake/Qt6Help/Qt6HelpConfig.cmake",
 }
 
 
@@ -88,9 +92,10 @@ def ensure_aqt(venv_dir: Path) -> Path:
 
 
 def install_qt(aqt: Path, host: str, version: str, arch: str, output: Path) -> None:
-    # qttools ships windeployqt/macdeployqt; qtsvg backs the editor's bundled
-    # SVG icon set (Qt6::Svg). Adding a module here also means updating the
-    # editor find_package() and checking the deploy expectations.
+    # qttools ships windeployqt/macdeployqt, the Help module (QHelpEngine), and
+    # qhelpgenerator (the editor's build-time help pipeline); qtsvg backs the
+    # editor's bundled SVG icon set (Qt6::Svg). Adding a module here also means
+    # updating the editor find_package() and checking the deploy expectations.
     archives = ["qtbase", "qttools", "qtsvg"]
     if host == "linux":
         archives.append("icu")  # Qt on Linux links a bundled ICU

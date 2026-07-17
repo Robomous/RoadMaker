@@ -82,6 +82,8 @@ public:
   QAction* merge_roads = nullptr;
   QAction* reset_layout = nullptr;
 
+  /// Opens the in-app user guide (Help menu, F1).
+  QAction* help_contents = nullptr;
   QAction* about = nullptr;
 };
 

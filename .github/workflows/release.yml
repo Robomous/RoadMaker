@@ -128,24 +128,44 @@ jobs:
           # above must match cmake/QtVersion.cmake's pin.
           NO_STRIP: "1"
 
-      - name: Smoke test packaged binary (--version)
+      - name: Smoke test packaged binary (--version + bundled help)
         shell: bash
         env:
           QT_QPA_PLATFORM: offscreen
         run: |
           set -euo pipefail
+          # The in-app help viewer needs the compiled collection plus QtSql and
+          # its qsqlite driver (QHelpEngine is SQLite-backed). macdeployqt /
+          # windeployqt / linuxdeploy pull QtSql in via Qt6::Help; assert every
+          # piece actually shipped in the packaged artifact.
           case "${{ runner.os }}" in
             macOS)
               hdiutil attach dist/roadmaker-*-Darwin-*.dmg -mountpoint /tmp/rmdmg -nobrowse
-              /tmp/rmdmg/roadmaker-editor.app/Contents/MacOS/roadmaker-editor --version
+              app=/tmp/rmdmg/roadmaker-editor.app
+              "$app/Contents/MacOS/roadmaker-editor" --version
+              test -f "$app/Contents/Resources/help/roadmaker.qch"
+              test -f "$app/Contents/Resources/help/roadmaker.qhc"
+              test -e "$app/Contents/Frameworks/QtSql.framework"
+              ls "$app/Contents/PlugIns/sqldrivers/"libqsqlite*.dylib
               hdiutil detach /tmp/rmdmg
               ;;
             Linux)
-              ./dist/RoadMaker*.AppImage --appimage-extract-and-run --version
+              ./dist/RoadMaker*.AppImage --appimage-extract > /dev/null
+              root=squashfs-root
+              "$root/AppRun" --version
+              test -f "$root/usr/bin/help/roadmaker.qch"
+              test -f "$root/usr/bin/help/roadmaker.qhc"
+              ls "$root"/usr/lib/libQt6Sql.so*
+              ls "$root"/usr/plugins/sqldrivers/libqsqlite.so
               ;;
             Windows)
               7z x dist/roadmaker-*-Windows-*.zip -osmoke -y > /dev/null
-              ./smoke/*/bin/roadmaker-editor.exe --version
+              root=$(dirname "$(ls smoke/*/bin/roadmaker-editor.exe)")
+              "$root/roadmaker-editor.exe" --version
+              test -f "$root/help/roadmaker.qch"
+              test -f "$root/help/roadmaker.qhc"
+              ls "$root"/Qt6Sql.dll
+              ls "$root"/sqldrivers/qsqlite.dll
               ;;
           esac
 

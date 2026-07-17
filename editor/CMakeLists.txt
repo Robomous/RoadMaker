@@ -3,11 +3,24 @@
 # only, confined to editor targets.
 # Svg backs the bundled monochrome icon set (Icons::get tinting); it is part
 # of the provisioned tree — scripts/setup_qt.py fetches the qtsvg archive.
-find_package(Qt6 ${RM_QT_VERSION} QUIET COMPONENTS Widgets OpenGLWidgets Svg)
+# Help provides the QHelpEngine the in-app viewer serves the guide from; Tools
+# provides qhelpgenerator (an IMPORTED target, Qt6::qhelpgenerator), which
+# compiles the .qhp/.qhcp into the shipped .qch/.qhc at build time. Both ride
+# in qttools, provisioned by scripts/setup_qt.py.
+find_package(Qt6 ${RM_QT_VERSION} QUIET COMPONENTS Widgets OpenGLWidgets Svg Help Tools)
 if(NOT Qt6_FOUND)
   message(FATAL_ERROR
     "Qt ${RM_QT_VERSION} not found. Run `python3 scripts/setup_qt.py` to "
     "provision it into ./.qt/, then re-configure.")
+endif()
+
+# qhelpgenerator is an IMPORTED executable in Qt6ToolsTools — using it abstracts
+# over its libexec/ (macOS) vs bin/ (Windows/Linux) location. A tree missing it
+# was provisioned before qttools carried the Help module.
+if(NOT TARGET Qt6::qhelpgenerator)
+  message(FATAL_ERROR
+    "Qt6::qhelpgenerator not found (the qttools Help module is missing). "
+    "Re-run `python3 scripts/setup_qt.py` to re-provision Qt into ./.qt/.")
 endif()
 
 # macOS: Qt 6.8's FindWrapOpenGL still links the AGL framework (either as a
@@ -28,6 +41,9 @@ endif()
 # Sets the deploy-support variables qt_generate_deploy_app_script needs
 # (and directory-scope AUTOMOC, which our targets set explicitly anyway).
 qt_standard_project_setup()
+
+# The (Qt-free) help compiler: rm_helpc + its testable helpc_lib.
+add_subdirectory(help_compiler)
 
 # Everything testable lives in the lib; the executable stays a thin shell so
 # editor tests can link the same objects and run headless (offscreen QPA).
@@ -53,6 +69,9 @@ add_library(roadmaker_editor_lib STATIC
   src/document/editor_command.cpp
   src/document/scene_tree_model.cpp
   src/document/selection_model.cpp
+  src/help/help_browser.cpp
+  src/help/help_locator.cpp
+  src/help/help_viewer.cpp
   src/panels/diagnostics_panel.cpp
   src/panels/editor2d_host.cpp
   src/panels/library_panel.cpp
@@ -65,6 +84,7 @@ add_library(roadmaker_editor_lib STATIC
   src/render/gl_functions.cpp
   src/render/gl_renderer.cpp
   src/render/scene_builder.cpp
+  src/theme/help_style.cpp
   src/theme/theme.cpp
   src/tools/create_junction_tool.cpp
   src/tools/create_road_tool.cpp
@@ -105,9 +125,13 @@ target_link_libraries(roadmaker_editor_lib
     Qt6::OpenGLWidgets
   PRIVATE
     Qt6::Svg
+    Qt6::Help
     Eigen3::Eigen
     spdlog::spdlog
 )
+
+# The in-app help viewer versions its writable collection copy by this string.
+target_compile_definitions(roadmaker_editor_lib PRIVATE RM_HELP_VERSION="${PROJECT_VERSION}")
 
 rm_apply_warnings(roadmaker_editor_lib)
 
@@ -166,6 +190,74 @@ endif()
 
 rm_apply_warnings(roadmaker-editor)
 
+# ---------------------------------------------------------------------------
+# Qt Help pipeline: compile the committed Markdown guide into a .qch/.qhc
+# collection at build time, then stage it into the app. rm_helpc renders the
+# guide to HTML + .qhp + .qhcp; Qt6::qhelpgenerator compiles those into the
+# binary collection. The GLOB with CONFIGURE_DEPENDS means adding a guide page
+# needs no CMake edit — CMake re-runs when the glob result changes. The output
+# lives under the build tree only; nothing here is committed.
+set(_rm_help_out ${CMAKE_BINARY_DIR}/help)
+set(_rm_guide_dir ${CMAKE_SOURCE_DIR}/docs/user-guide)
+set(_rm_help_css ${CMAKE_CURRENT_SOURCE_DIR}/resources/help/help.css)
+
+file(GLOB _rm_help_inputs CONFIGURE_DEPENDS
+  ${_rm_guide_dir}/*.md
+  ${_rm_guide_dir}/tutorials/*.md
+  ${_rm_guide_dir}/img/*)
+
+set(_rm_qhp ${_rm_help_out}/html/roadmaker.qhp)
+set(_rm_qhcp ${_rm_help_out}/roadmaker.qhcp)
+set(_rm_qch ${_rm_help_out}/roadmaker.qch)
+set(_rm_qhc ${_rm_help_out}/roadmaker.qhc)
+
+# 1. Markdown -> HTML + .qhp + .qhcp
+add_custom_command(
+  OUTPUT ${_rm_qhp} ${_rm_qhcp}
+  COMMAND rm_helpc
+          --guide ${_rm_guide_dir}
+          --css ${_rm_help_css}
+          --out ${_rm_help_out}
+          --namespace ai.robomous.roadmaker
+          --folder doc
+          --version ${PROJECT_VERSION}
+  DEPENDS rm_helpc ${_rm_help_inputs} ${_rm_help_css}
+  COMMENT "Compiling user guide -> HTML/.qhp (rm_helpc)"
+  VERBATIM)
+
+# 2. .qhp -> .qch
+add_custom_command(
+  OUTPUT ${_rm_qch}
+  COMMAND Qt6::qhelpgenerator ${_rm_qhp} -o ${_rm_qch}
+  DEPENDS ${_rm_qhp}
+  COMMENT "Generating roadmaker.qch (qhelpgenerator)"
+  VERBATIM)
+
+# 3. .qhcp -> .qhc (registers the .qch; the two ship side by side)
+add_custom_command(
+  OUTPUT ${_rm_qhc}
+  COMMAND Qt6::qhelpgenerator ${_rm_qhcp} -o ${_rm_qhc}
+  DEPENDS ${_rm_qhcp} ${_rm_qch}
+  COMMENT "Generating roadmaker.qhc (qhelpgenerator)"
+  VERBATIM)
+
+add_custom_target(roadmaker_help ALL DEPENDS ${_rm_qch} ${_rm_qhc})
+
+# Build the collection before the app so the POST_BUILD staging has it.
+add_dependencies(roadmaker-editor roadmaker_help)
+
+# Stage the collection into the app: macOS bundle Resources, or a help/ dir
+# beside the binary on Windows/Linux.
+if(APPLE)
+  set(_rm_app_help_dir $<TARGET_BUNDLE_CONTENT_DIR:roadmaker-editor>/Resources/help)
+else()
+  set(_rm_app_help_dir $<TARGET_FILE_DIR:roadmaker-editor>/help)
+endif()
+add_custom_command(TARGET roadmaker-editor POST_BUILD
+  COMMAND ${CMAKE_COMMAND} -E make_directory ${_rm_app_help_dir}
+  COMMAND ${CMAKE_COMMAND} -E copy_if_different ${_rm_qch} ${_rm_qhc} ${_rm_app_help_dir}
+  COMMENT "Staging help collection into the app")
+
 # Install + Qt runtime deployment must live HERE (not in cmake/Packaging.cmake):
 # qt_generate_deploy_app_script reads directory-scoped Qt variables
 # (QT_DEPLOY_SUPPORT, QT6_IS_SHARED_LIBS_BUILD) that only exist where
@@ -183,6 +275,13 @@ if(RM_INSTALL)
     BUNDLE DESTINATION .
     RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
   )
+
+  # Ship the help collection beside the binary (Win/Linux; the AppImage
+  # inherits it). macOS carries it inside the bundle via the POST_BUILD stage
+  # above, which `BUNDLE DESTINATION .` copies wholesale.
+  if(NOT APPLE)
+    install(FILES ${_rm_qch} ${_rm_qhc} DESTINATION bin/help)
+  endif()
 
   # Linux desktop integration: the .desktop entry (app menu / launcher) plus
   # the hicolor icon theme the entry's `Icon=roadmaker` resolves against.

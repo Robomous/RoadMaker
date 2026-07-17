@@ -34,6 +34,7 @@
 #include "app/tour_overlay.hpp"
 #include "document/library_drop.hpp"
 #include "document/library_manifest.hpp"
+#include "help/help_viewer.hpp"
 #include "panels/diagnostics_panel.hpp"
 #include "panels/editor2d_host.hpp"
 #include "panels/library_panel.hpp"
@@ -560,6 +561,8 @@ void MainWindow::build_menus() {
   view_menu->addAction(actions_->reset_layout);
 
   QMenu* help_menu = menuBar()->addMenu(tr("&Help"));
+  help_menu->addAction(actions_->help_contents);
+  connect(actions_->help_contents, &QAction::triggered, this, [this] { show_help(); });
   QAction* tour_action = help_menu->addAction(tr("&Guided Tour"));
   tour_action->setToolTip(tr("Replay the 5-step first-run tour"));
   connect(tour_action, &QAction::triggered, this, &MainWindow::start_tour);
@@ -1076,6 +1079,18 @@ void MainWindow::show_about_dialog() {
                                            static_cast<qsizetype>(roadmaker::version().size())),
                          QStringLiteral(QT_VERSION_STR)));
   about.exec();
+}
+
+void MainWindow::show_help(const QString& slug) {
+  if (help_viewer_.isNull()) {
+    // Top-level window (no parent) so it lives beside the editor, not inside it.
+    help_viewer_ = new help::HelpViewer(nullptr);
+    help_viewer_->setAttribute(Qt::WA_DeleteOnClose);
+  }
+  help_viewer_->open_page(slug);
+  help_viewer_->show();
+  help_viewer_->raise();
+  help_viewer_->activateWindow();
 }
 
 void MainWindow::update_recent_files_menu() {

@@ -181,6 +181,18 @@ if(RM_BUILD_USD)
 endif()
 
 # ---------------------------------------------------------------------------
+# md4c 0.5.2 (MIT) — Markdown→HTML for the editor's build-time help compiler
+# (rm_helpc). C99, tiny, no dependencies. Editor-only, and never linked into
+# the shipped editor — it lives in the host tool that produces the .qch.
+if(RM_BUILD_EDITOR)
+  FetchContent_Declare(md4c
+    URL https://github.com/mity/md4c/archive/refs/tags/release-0.5.2.tar.gz
+    URL_HASH SHA256=55d0111d48fb11883aaee91465e642b8b640775a4d6993c2d0e7a8092758ef21
+  )
+  set(BUILD_MD2HTML_EXECUTABLE OFF CACHE BOOL "" FORCE) # library only, no CLI
+endif()
+
+# ---------------------------------------------------------------------------
 # NOTE: the editor's UI toolkit (Qt 6, LGPLv3, dynamic linking only) is NOT a
 # FetchContent dependency — it is provisioned by scripts/setup_qt.py and
 # discovered via cmake/QtVersion.cmake. See THIRD_PARTY_LICENSES.md.
@@ -203,6 +215,18 @@ FetchContent_MakeAvailable(
   clothoids utilslite quartic gencon tlexpected fastfloat)
 if(RM_BUILD_TESTS)
   FetchContent_MakeAvailable(googletest)
+endif()
+if(RM_BUILD_EDITOR)
+  # Force a static md4c (upstream defaults to a shared lib on non-Windows) so
+  # the help compiler is a self-contained host tool with nothing to deploy.
+  set(_rm_saved_build_shared "${BUILD_SHARED_LIBS}")
+  set(BUILD_SHARED_LIBS OFF)
+  FetchContent_MakeAvailable(md4c)
+  set(BUILD_SHARED_LIBS "${_rm_saved_build_shared}")
+  # As an in-tree subdirectory, md4c-html exposes no INTERFACE include dir. Wrap
+  # it in BUILD_INTERFACE: md4c carries install(EXPORT) rules that reject a bare
+  # build/source-tree path on an exported target.
+  target_include_directories(md4c-html INTERFACE $<BUILD_INTERFACE:${md4c_SOURCE_DIR}/src>)
 endif()
 if(RM_BUILD_USD)
   FetchContent_MakeAvailable(tinyusdz)
