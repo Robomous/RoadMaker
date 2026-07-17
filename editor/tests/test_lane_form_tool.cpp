@@ -1,8 +1,8 @@
 // Lane Form tool (p2-s5): a click forms an interior lane from the click station
 // to the road end through edit::form_lane — press begins a preview, release
-// commits ONE undo entry. The kernel guard (a form that would reach a downstream
-// seam) is surfaced as a status message with no state left behind, and a tool
-// switch mid-preview must not leak the session (acceptance-critical).
+// commits ONE undo entry. A form upstream of a downstream seam is carried across
+// it by the kernel and still commits as one step, and a tool switch mid-preview
+// must not leak the session (acceptance-critical).
 
 #include "roadmaker/edit/operations.hpp"
 #include "roadmaker/road/network.hpp"
@@ -104,23 +104,29 @@ TEST(LaneFormTool, LaneFormClickGrowsInteriorLane) {
   EXPECT_EQ(scene.document.network().road(scene.road)->sections.size(), 1U);
 }
 
-TEST(LaneFormTool, LaneFormOnNonLastSectionRefusesWithMessage) {
+TEST(LaneFormTool, LaneFormAcrossDownstreamSeamCommitsOneUndoStep) {
   Scene scene;
-  // A boundary at 90 makes a form at 60 land in a non-final section, which the
-  // kernel refuses (forward-linking is out of scope for p2-s5).
+  // A boundary at 90 makes a form at 60 land upstream of a downstream seam. The
+  // kernel now carries the lane across it, so the tool commits normally — one
+  // undo entry, with the lane present in the final section past the seam.
   ASSERT_TRUE(scene.document.push_command(
       roadmaker::edit::split_lane_section(scene.document.network(), scene.road, 90.0)));
   const int before = scene.document.undo_stack()->count();
 
   LaneFormTool tool(scene.document, scene.selection);
-  QString message;
-  QObject::connect(
-      &tool, &LaneFormTool::status_message, [&](const QString& text) { message = text; });
 
   ASSERT_TRUE(tool.mouse_press(scene.at(60.0, Qt::LeftButton)));
-  EXPECT_FALSE(scene.document.preview_active()) << "a refused form leaves no session";
-  EXPECT_FALSE(message.isEmpty()) << "the guard message must surface";
-  EXPECT_EQ(scene.document.undo_stack()->count(), before);
+  EXPECT_TRUE(scene.document.preview_active());
+  ASSERT_TRUE(tool.mouse_release(scene.at(60.0, Qt::NoButton)));
+
+  EXPECT_FALSE(scene.document.preview_active());
+  EXPECT_EQ(scene.document.undo_stack()->count(), before + 1);
+  // The carried lane reaches the final section past the 90 seam.
+  const Lane* formed = scene.lane_in_last_section(-1);
+  ASSERT_NE(formed, nullptr);
+  EXPECT_TRUE(formed->predecessor.has_value()) << "the lane is linked across the carried seam";
+
+  scene.document.undo_stack()->undo();
 }
 
 TEST(LaneFormTool, DeactivateMidDragCancelsPreview) {

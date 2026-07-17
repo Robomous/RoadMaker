@@ -489,26 +489,53 @@ split_lane_section(const RoadNetwork& network, RoadId road, double s);
 [[nodiscard]] RM_API std::unique_ptr<Command> add_lane_span(
     const RoadNetwork& network, RoadId road, int side, double s0, double s1, LaneType type);
 
-/// Lane Form (p2-s5): forms an interior lane that starts at zero width at
-/// `s_start` and tapers up to full width, holding it to the road terminus.
-/// `side` is +1/-1 and `at_odr_id` (whose sign must match `side`) names the
-/// numbering position the formed lane takes — every lane already at or outside
-/// it steps one further out (insert_lane).
+/// Lane Form (p2-s5, p2-s8 seam-linking): forms an interior lane that starts at
+/// zero width at `s_start` and tapers up to full width, holding it to the road
+/// terminus. `side` is +1/-1 and `at_odr_id` (whose sign must match `side`)
+/// names the numbering position the formed lane takes — every lane already at
+/// or outside it steps one further out (insert_lane).
 ///
-/// Composes split_lane_section at `s_start` then insert_lane on the LAST
-/// section then set_lane_width_profile with an up-only taper. The lane is
+/// Composes split_lane_section at `s_start`, insert_lane on the START section,
+/// then set_lane_width_profile with an up-only taper. The formed lane is
 /// backward-unlinked (it appears mid-road, a new lane — not a continuation).
-/// Forward-linking a formed lane into a downstream section is out of scope, so
-/// the op GUARDS: if `s_start` does not land in the road's final lane section
-/// it refuses (invalid_command) rather than leave a full-width lane dangling at
-/// a downstream seam. Also fails for a stale road, a bad side, an `s_start`
-/// outside the road, or a sign-mismatched `at_odr_id`.
+///
+/// When `s_start` is upstream of one or more lane-section boundaries, the lane
+/// is CARRIED across every downstream seam so it runs to the road end as a
+/// properly linked carriageway: in each downstream section it is inserted where
+/// the position already exists, else appended one lane outward (add_lane), and
+/// the two sides of each seam are joined with link_lane_across_seam — the
+/// matched predecessor/successor pair the writer requires
+/// (asam.net:xodr:1.4.0:road.lane.link.lanes_across_laneSections, §11.6). If a
+/// downstream section is too narrow to host the position (more than one lane
+/// short of it) the chain stops there and the lane ends unlinked at that seam,
+/// which is legal. A terminus welded to another road likewise ends unlinked
+/// across the ROAD boundary — the writer validates intra-road links only.
+///
+/// Fails (invalid_command) for a stale road, a bad side, an `s_start` outside
+/// the road, or a sign-mismatched `at_odr_id`.
 [[nodiscard]] RM_API std::unique_ptr<Command> form_lane(const RoadNetwork& network,
                                                         RoadId road,
                                                         int side,
                                                         double s_start,
                                                         int at_odr_id,
                                                         LaneType type);
+
+/// Joins one lane across a single lane-section seam by setting the matched
+/// predecessor/successor pair the writer requires
+/// (asam.net:xodr:1.4.0:road.lane.link.lanes_across_laneSections, §11.6): the
+/// upstream lane's successor becomes `downstream_odr` and the downstream lane's
+/// predecessor becomes `upstream_odr`. `upstream_section` is the section on the
+/// low-`s` side of the seam; the downstream section is the one immediately
+/// after it in road order (so the two are always CONSECUTIVE on ONE road).
+///
+/// Fails (invalid_command) for a stale `upstream_section`, a center-lane odr
+/// (`upstream_odr` or `downstream_odr` == 0), an `upstream_section` that has no
+/// following section (nothing to link across — a non-adjacent request), or a
+/// named lane that does not exist on its side of the seam.
+[[nodiscard]] RM_API std::unique_ptr<Command> link_lane_across_seam(const RoadNetwork& network,
+                                                                    LaneSectionId upstream_section,
+                                                                    int upstream_odr,
+                                                                    int downstream_odr);
 
 /// Lane Carve (p2-s6): carves a turn lane approaching a junction. Like Lane
 /// Form it inserts an interior lane that starts at zero width at `s_start` and

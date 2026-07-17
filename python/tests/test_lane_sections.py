@@ -309,14 +309,36 @@ def test_form_lane_backward_unlinked(network):
     assert not [d for d in diagnostics if d.severity == rm.Severity.ERROR]
 
 
-def test_form_lane_refuses_a_downstream_seam(network):
-    """Forward-linking a formed lane is out of scope: a form that would reach a
-    downstream lane-section boundary is refused."""
+def test_form_lane_links_across_downstream_seams(network):
+    """A form upstream of a downstream seam carries the lane across it: the seam
+    becomes a matched predecessor/successor pair, the writer accepts it, and the
+    whole step undoes byte-identically."""
     road = network.find_road("1")
     stack = rm.edit.EditStack()
+    before = rm.write_xodr(network)
+
+    # A boundary at 90 sits downstream of a form at 60.
     stack.push(network, rm.edit.split_lane_section(network, road, 90.0))
-    with pytest.raises(ValueError):
-        stack.push(network, rm.edit.form_lane(network, road, -1, 60.0, -1, rm.LaneType.DRIVING))
+    stack.push(network, rm.edit.form_lane(network, road, -1, 60.0, -1, rm.LaneType.DRIVING))
+
+    sections = network.road(road).sections
+    assert len(sections) == 3  # [0,60), [60,90), [90,120)
+    upstream = lane_by_odr_id(network, network.section_at(road, 75.0), -1)
+    downstream = lane_by_odr_id(network, network.section_at(road, 105.0), -1)
+    assert upstream is not None and downstream is not None
+    assert network.lane(upstream).successor == -1
+    assert network.lane(downstream).predecessor == -1
+
+    # The writer is the dangling-link detector: it accepting the network proves
+    # the pair matches.
+    text = rm.write_xodr(network)
+    _, diagnostics = rm.parse_xodr(text)
+    assert not [d for d in diagnostics if d.severity == rm.Severity.ERROR]
+
+    # Undo the form, then the split: byte-identical back to the start.
+    stack.undo(network)
+    stack.undo(network)
+    assert rm.write_xodr(network) == before
 
 
 def test_carve_lane_round_trips(network):
