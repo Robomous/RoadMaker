@@ -92,6 +92,34 @@
       "category": "Signals",
       "thumbnail": "assets/library/thumbnails/signal_sign.png",
       "create": { "kind": "signal", "signal": "sign" }
+    },
+    {
+      "key": "marking.solid_white",
+      "label": "Solid single white",
+      "category": "Markings",
+      "thumbnail": "assets/library/thumbnails/marking_solid_white.png",
+      "create": { "kind": "marking", "mark_type": "solid", "mark_color": "white", "mark_width": 0.12 }
+    },
+    {
+      "key": "marking.double_yellow",
+      "label": "Double yellow",
+      "category": "Markings",
+      "thumbnail": "assets/library/thumbnails/marking_double_yellow.png",
+      "create": { "kind": "marking", "mark_type": "solid_solid", "mark_color": "yellow", "mark_width": 0.12 }
+    },
+    {
+      "key": "material.asphalt",
+      "label": "Asphalt",
+      "category": "Materials",
+      "thumbnail": "assets/library/thumbnails/material_asphalt.png",
+      "create": { "kind": "material", "material": "asphalt" }
+    },
+    {
+      "key": "material.concrete",
+      "label": "Concrete",
+      "category": "Materials",
+      "thumbnail": "assets/library/thumbnails/material_concrete.png",
+      "create": { "kind": "material", "material": "concrete" }
     }
   ]
 }

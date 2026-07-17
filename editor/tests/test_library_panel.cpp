@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 
+#include <QIcon>
 #include <QLineEdit>
 #include <QListView>
 #include <filesystem>
@@ -25,8 +26,8 @@ TEST(LibraryPanel, ShowsEveryCatalogueItem) {
   LibraryPanel panel(populated_model());
   ASSERT_NE(panel.view()->model(), nullptr);
   EXPECT_EQ(panel.view()->model()->rowCount(),
-            13); // 3 templates + 1 style + T/X + 5 props + 2 signals
-  // The grid gives every item a themed icon (the filter proxy injects it).
+            17); // 3 templates + 1 style + T/X + 5 props + 2 signals + 2 markings + 2 materials
+  // The grid gives every item an icon (the proxy prefers the bundled thumbnail).
   const QModelIndex first = panel.view()->model()->index(0, 0);
   EXPECT_FALSE(panel.view()->model()->data(first, Qt::DecorationRole).isNull());
 }
@@ -49,7 +50,7 @@ TEST(LibraryPanel, SearchFiltersByLabel) {
   EXPECT_EQ(panel.view()->model()->rowCount(), 2); // traffic light + traffic sign
 
   search->clear();
-  EXPECT_EQ(panel.view()->model()->rowCount(), 13);
+  EXPECT_EQ(panel.view()->model()->rowCount(), 17);
 }
 
 // An engaged Attributes-pane slot asks the Library to show its category
@@ -75,7 +76,7 @@ TEST(LibraryPanel, FocusCategoryClearsAFilterThatWouldHideIt) {
   panel.focus_category(QStringLiteral("Props"));
 
   EXPECT_TRUE(search->text().isEmpty());
-  EXPECT_EQ(panel.view()->model()->rowCount(), 13);
+  EXPECT_EQ(panel.view()->model()->rowCount(), 17);
   ASSERT_TRUE(panel.view()->currentIndex().isValid());
   EXPECT_EQ(panel.view()
                 ->model()
@@ -88,6 +89,28 @@ TEST(LibraryPanel, FocusCategoryLeavesAnUnknownCategoryAlone) {
   LibraryPanel panel(populated_model());
   panel.focus_category(QStringLiteral("Nonexistent"));
   EXPECT_FALSE(panel.view()->currentIndex().isValid());
+}
+
+// An overlay item with no thumbnail has a null source decoration; the proxy
+// falls back to a themed glyph so the grid still shows an icon (p6-s2).
+TEST(LibraryPanel, FallsBackToAThemedGlyphWhenAnItemHasNoThumbnail) {
+  LibraryListModel model;
+  const auto overlay = LibraryManifest::parse(QByteArray(R"({
+    "manifest_version": 1,
+    "items": [{"key": "project.nothumb", "label": "No thumb", "category": "Project assets",
+               "create": {"kind": "material", "material": "gravel"}}]
+  })"));
+  ASSERT_TRUE(overlay.has_value());
+  model.set_overlay(*overlay, QString());
+  // Source model: no decoration (null path).
+  EXPECT_FALSE(model.data(model.index(0, 0), Qt::DecorationRole).isValid());
+
+  LibraryPanel panel(model);
+  const QModelIndex proxied = panel.view()->model()->index(0, 0);
+  // Proxy: a glyph fills in — a valid, non-null decoration.
+  const QVariant decoration = panel.view()->model()->data(proxied, Qt::DecorationRole);
+  ASSERT_TRUE(decoration.isValid());
+  EXPECT_FALSE(decoration.value<QIcon>().isNull());
 }
 
 } // namespace

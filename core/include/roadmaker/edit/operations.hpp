@@ -590,6 +590,13 @@ apply_road_style(const RoadNetwork& network, RoadId road, const RoadStyle& style
 [[nodiscard]] RM_API std::unique_ptr<Command>
 set_road_mark(const RoadNetwork& network, LaneId lane, RoadMark mark);
 
+/// Sets a derived ground surface's material name ("" clears it back to the
+/// default grass; "asphalt"/"concrete" pick a paved look). A stale SurfaceId
+/// yields an invalid command. The surface geometry is untouched — only the
+/// stored material and its render class change (p6-s2).
+[[nodiscard]] RM_API std::unique_ptr<Command>
+set_surface_material(const RoadNetwork& network, SurfaceId surface, std::string material);
+
 // --- profiles ---------------------------------------------------------------
 
 /// Sets the elevation at one authoring waypoint; the road's elevation

@@ -46,8 +46,18 @@ def main() -> int:
     rm.derive_surfaces(network)
     assert network.surface_count == 1
 
+    # Give the surface a paved material through the undoable command layer — the
+    # kernel behind dropping "Asphalt" from the editor Library onto the surface.
+    surface_id = network.surface_ids[0]
+    stack = rm.edit.EditStack()
+    stack.push(network, rm.edit.set_surface_material(network, surface_id, "asphalt"))
+    print(f"material after set:  {network.surface(surface_id).material!r}")
+    stack.undo(network)
+    print(f"material after undo: {network.surface(surface_id).material!r}")
+    stack.redo(network)
+
     rm.save_xodr(network, out_path)
-    print(f"wrote {out_path} (carries rm:surface userData markers)")
+    print(f"wrote {out_path} (rm:surface userData carries material={network.surface(surface_id).material!r})")
     return 0
 
 

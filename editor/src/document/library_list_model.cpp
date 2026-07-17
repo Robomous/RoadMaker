@@ -1,20 +1,52 @@
 #include "document/library_list_model.hpp"
 
+#include <QDir>
+#include <QFileInfo>
 #include <QMimeData>
 #include <QStringList>
 #include <algorithm>
 
 namespace roadmaker::editor {
 
+namespace {
+
+/// A built-in item's bundled thumbnail lives in the qresource under
+/// `:/library/thumbnails/<basename>`; the manifest stores a repo-relative path
+/// (e.g. `assets/library/thumbnails/road_rural.png`) whose basename picks the
+/// alias. Empty in → empty out (no thumbnail).
+QString resolve_builtin_thumbnail(const QString& manifest_path) {
+  if (manifest_path.isEmpty()) {
+    return {};
+  }
+  return QStringLiteral(":/library/thumbnails/") + QFileInfo(manifest_path).fileName();
+}
+
+/// A project overlay's thumbnail path is resolved on disk, relative to the
+/// project directory. Empty path or no project dir → unresolved (empty).
+QString resolve_overlay_thumbnail(const QString& manifest_path, const QString& base_dir) {
+  if (manifest_path.isEmpty() || base_dir.isEmpty()) {
+    return {};
+  }
+  return QDir(base_dir).filePath(manifest_path);
+}
+
+} // namespace
+
 LibraryListModel::LibraryListModel(QObject* parent) : QAbstractListModel(parent) {}
 
 void LibraryListModel::set_manifest(LibraryManifest manifest) {
   base_items_ = manifest.items();
+  for (LibraryItem& item : base_items_) {
+    item.thumbnail = resolve_builtin_thumbnail(item.thumbnail);
+  }
   rebuild();
 }
 
-void LibraryListModel::set_overlay(LibraryManifest manifest) {
+void LibraryListModel::set_overlay(LibraryManifest manifest, const QString& base_dir) {
   overlay_items_ = manifest.items();
+  for (LibraryItem& item : overlay_items_) {
+    item.thumbnail = resolve_overlay_thumbnail(item.thumbnail, base_dir);
+  }
   rebuild();
 }
 
@@ -28,6 +60,7 @@ void LibraryListModel::clear_overlay() {
 
 void LibraryListModel::rebuild() {
   beginResetModel();
+  icon_cache_.clear(); // resolved paths may change; drop stale (incl. negative) icons
   items_ = base_items_;
   for (const LibraryItem& overlay : overlay_items_) {
     const auto match =
@@ -57,6 +90,23 @@ QVariant LibraryListModel::data(const QModelIndex& index, int role) const {
   case Qt::DisplayRole:
   case Qt::ToolTipRole:
     return entry->label;
+  case Qt::DecorationRole: {
+    // The resolved thumbnail as a QIcon, read through a lazy cache (a null icon
+    // for a path that failed to load is cached too, so a missing thumbnail is
+    // not re-probed each paint). An item with no thumbnail returns a null
+    // variant; the panel's proxy falls back to a themed glyph there.
+    if (entry->thumbnail.isEmpty()) {
+      return {};
+    }
+    auto it = icon_cache_.constFind(entry->thumbnail);
+    if (it == icon_cache_.constEnd()) {
+      it = icon_cache_.insert(entry->thumbnail, QIcon(entry->thumbnail));
+    }
+    if (it.value().isNull()) {
+      return {};
+    }
+    return it.value();
+  }
   case KeyRole:
     return entry->key;
   case CategoryRole:

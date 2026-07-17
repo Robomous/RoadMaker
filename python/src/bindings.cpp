@@ -536,6 +536,9 @@ NB_MODULE(_roadmaker, m) {
       .def_rw("bounding_roads",
               &roadmaker::Surface::bounding_roads,
               "Ordered ring of RoadIds enclosing the area; deterministic.")
+      .def_rw("material",
+              &roadmaker::Surface::material,
+              "Ground material name (\"\" = default grass; e.g. \"asphalt\", \"concrete\").")
       .def("__eq__",
            [](const roadmaker::Surface& a, nb::object b) {
              return nb::isinstance<roadmaker::Surface>(b) && a == nb::cast<roadmaker::Surface>(b);
@@ -1675,6 +1678,19 @@ NB_MODULE(_roadmaker, m) {
            "lane"_a,
            "mark"_a,
            "Edits the FIRST road-mark record; later records survive untouched.");
+  edit.def(
+      "set_surface_material",
+      [](const roadmaker::RoadNetwork& network,
+         roadmaker::SurfaceId surface,
+         std::string material) {
+        return roadmaker::edit::set_surface_material(network, surface, std::move(material));
+      },
+      "network"_a,
+      "surface"_a,
+      "material"_a,
+      "Sets a derived ground surface's material name (\"\" clears to default grass). "
+      "Round-trips as a `material` attribute on the surface's rm:surface userData. "
+      "A stale SurfaceId yields an invalid command.");
   edit.def("apply_road_style",
            &roadmaker::edit::apply_road_style,
            "network"_a,

@@ -11,6 +11,10 @@
 
 #include "render/renderer.hpp"
 
+namespace roadmaker {
+class RoadNetwork;
+} // namespace roadmaker
+
 namespace roadmaker::editor {
 
 /// Same palette as the glTF exporter, kept in the editor so the viewport
@@ -103,7 +107,9 @@ void append_signal_items(const SignalInstance& instance, Scene& scene);
 
 /// Flattens a NetworkMesh into upload-ready items: one per lane patch (with
 /// road+lane ids), one per marking (road id only), one per junction floor, and
-/// one per enclosed-area ground surface (with its SurfaceId).
-[[nodiscard]] Scene build_scene(const NetworkMesh& mesh);
+/// one per enclosed-area ground surface (with its SurfaceId). When `network` is
+/// non-null, each ground surface's stored material selects its render class
+/// (asphalt/concrete vs. the default grass); a null network keeps grass.
+[[nodiscard]] Scene build_scene(const NetworkMesh& mesh, const RoadNetwork* network = nullptr);
 
 } // namespace roadmaker::editor

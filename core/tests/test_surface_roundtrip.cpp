@@ -3,6 +3,7 @@
 // the two contracts the soak driver also enforces: write->parse->write is
 // byte-identical, and a surface reconstructs from its marker.
 
+#include "roadmaker/edit/operations.hpp"
 #include "roadmaker/road/authoring.hpp"
 #include "roadmaker/road/network.hpp"
 #include "roadmaker/road/surface.hpp"
@@ -105,4 +106,76 @@ TEST(SurfaceRoundTrip, NoSurfaceNoMarker) {
 
   const std::string xml = write(network);
   EXPECT_EQ(xml.find("rm:surface"), std::string::npos);
+}
+
+// --- surface material (p6-s2) ------------------------------------------------
+
+namespace {
+
+SurfaceId the_surface(const RoadNetwork& network) {
+  SurfaceId id{};
+  network.for_each_surface([&](SurfaceId sid, const Surface&) { id = sid; });
+  return id;
+}
+
+} // namespace
+
+TEST(SurfaceMaterial, SetSurfaceMaterialApplyRevertIsByteIdentical) {
+  RoadNetwork network;
+  author_square(network);
+  derive_surfaces(network);
+  ASSERT_EQ(network.surface_count(), 1U);
+  const std::string baseline = write(network);
+
+  auto command = roadmaker::edit::set_surface_material(network, the_surface(network), "asphalt");
+  ASSERT_NE(command, nullptr);
+  ASSERT_TRUE(command->apply(network).has_value());
+  const std::string with_material = write(network);
+  EXPECT_NE(with_material.find("material=\"asphalt\""), std::string::npos);
+
+  ASSERT_TRUE(command->revert(network).has_value());
+  EXPECT_EQ(write(network), baseline); // apply -> revert restores byte-for-byte
+}
+
+TEST(SurfaceMaterial, SetSurfaceMaterialStaleIdIsInvalid) {
+  RoadNetwork network;
+  author_square(network);
+  derive_surfaces(network);
+  auto command = roadmaker::edit::set_surface_material(network, SurfaceId{}, "asphalt");
+  ASSERT_NE(command, nullptr);
+  EXPECT_FALSE(command->apply(network).has_value()); // a stale id fails apply
+}
+
+TEST(SurfaceMaterial, XodrRoundTripsSurfaceMaterial) {
+  RoadNetwork network;
+  author_square(network);
+  derive_surfaces(network);
+  auto command = roadmaker::edit::set_surface_material(network, the_surface(network), "concrete");
+  ASSERT_TRUE(command->apply(network).has_value());
+
+  const std::string first = write(network);
+  auto reparsed = parse_xodr(first);
+  ASSERT_TRUE(reparsed.has_value());
+  const RoadNetwork& loaded = reparsed->network;
+  ASSERT_EQ(loaded.surface_count(), 1U);
+  const Surface* surface = loaded.surface(the_surface(loaded));
+  ASSERT_NE(surface, nullptr);
+  EXPECT_EQ(surface->material, "concrete");
+  EXPECT_EQ(write(loaded), first); // stable across the round trip
+}
+
+TEST(SurfaceMaterial, DeriveSurfacesPreservesMaterialOnSurvivingRing) {
+  RoadNetwork network;
+  author_square(network);
+  derive_surfaces(network);
+  auto command = roadmaker::edit::set_surface_material(network, the_surface(network), "asphalt");
+  ASSERT_TRUE(command->apply(network).has_value());
+
+  // Re-deriving with no topology change keeps the surface id-stable AND its
+  // material — a survivor's Surface object is left untouched.
+  derive_surfaces(network);
+  ASSERT_EQ(network.surface_count(), 1U);
+  const Surface* surface = network.surface(the_surface(network));
+  ASSERT_NE(surface, nullptr);
+  EXPECT_EQ(surface->material, "asphalt");
 }

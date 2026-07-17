@@ -63,6 +63,20 @@ changes *what the prop is*, not *where it is*.
 Dropping something that isn't a prop model — a road template, say — is refused,
 and nothing lands in the undo history.
 
+### Ground surface material
+
+Selecting a [ground surface](scene-tree.md) (an area enclosed by roads) shows a
+**Ground surface** section with a **Materials** slot. Drop **Asphalt** or
+**Concrete** from the Library on it — or click the slot to jump to the Materials
+category — and the surface re-textures to that paved look; the slot reflects the
+current material and clears back to the default grass on **Undo**. Dropping
+something that isn't a material is refused with no undo entry.
+
+The material is stored on the surface and round-trips through save/reload. One
+caveat: a surface's identity follows the roads that enclose it, so reshaping the
+bounding ring re-derives the surface and drops its material (the same lifecycle
+as the surface itself) — re-apply the material after a big topology change.
+
 ## See also
 
 - [Library](library.md) — the catalogue slots draw from

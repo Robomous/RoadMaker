@@ -123,9 +123,10 @@ station_within(const ReferenceLine& line, double x, double y, double max_abs_t);
 /// exactly where the mesher drew it. Used by Lane Carve to choose where a turn
 /// lane is inserted.
 struct LaneBoundaryHit {
-  int at_odr_id = 0; ///< insert position: an existing lane on `side` (valid for insert_lane)
-  int side = 0;      ///< +1 left of the reference line, -1 right
-  double t = 0.0;    ///< lateral offset [m] of the picked boundary, for the preview
+  int at_odr_id = 0;   ///< insert position: an existing lane on `side` (valid for insert_lane)
+  int side = 0;        ///< +1 left of the reference line, -1 right
+  double t = 0.0;      ///< lateral offset [m] of the picked boundary, for the preview
+  bool centre = false; ///< the picked boundary IS the centre line (lane odr 0)
 };
 
 /// Nearest lane boundary to `cursor_t` in the section governing station `s` on

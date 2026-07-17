@@ -1,6 +1,7 @@
 #include "render/scene_builder.hpp"
 
 #include "roadmaker/assets/prop_library.hpp"
+#include "roadmaker/road/network.hpp"
 
 #include <algorithm>
 #include <array>
@@ -218,7 +219,7 @@ void append_signal_items(const SignalInstance& instance, Scene& scene) {
                      scene);
 }
 
-Scene build_scene(const NetworkMesh& mesh) {
+Scene build_scene(const NetworkMesh& mesh, const RoadNetwork* network) {
   Scene scene;
   for (const RoadMesh& road : mesh.roads) {
     append_road_items(road, scene);
@@ -239,17 +240,30 @@ Scene build_scene(const NetworkMesh& mesh) {
     grow_bounds(scene.bounds, floor.mesh.positions);
   }
   for (const SurfaceMesh& surface : mesh.surfaces) {
-    // Enclosed-area ground (#215): a lit flat grass-green, carrying its SurfaceId
-    // so a pick maps back to the selectable entity. The distinct color (and the
-    // Grass material class in textured mode) sets it apart from the asphalt
-    // floors while staying cheap — acceptance is renders + selectable + frameable.
+    // Enclosed-area ground (#215): a lit flat grass-green by default, carrying
+    // its SurfaceId so a pick maps back to the selectable entity. When the
+    // surface stores a material (p6-s2), it takes the matching render class and
+    // a neutral pavement base color instead of the grass green.
+    SurfaceKind kind = SurfaceKind::Grass;
+    std::array<float, 4> color{0.28F, 0.42F, 0.20F, 1.0F};
+    if (network != nullptr) {
+      if (const Surface* entity = network->surface(surface.surface);
+          entity != nullptr && !entity->material.empty()) {
+        // Neutral mid-grey pavement so the color reads as paved even in Sober
+        // mode; textured mode overlays the asphalt/concrete texture.
+        color = {0.34F, 0.34F, 0.35F, 1.0F};
+        if (entity->material == "asphalt") {
+          kind = SurfaceKind::Asphalt;
+        } else if (entity->material == "concrete") {
+          kind = SurfaceKind::Concrete;
+        }
+      }
+    }
     scene.items.push_back(SceneItem{
-        .data = to_render_data(surface.mesh.positions,
-                               surface.mesh.normals,
-                               surface.mesh.indices,
-                               {0.28F, 0.42F, 0.20F, 1.0F}),
+        .data = to_render_data(
+            surface.mesh.positions, surface.mesh.normals, surface.mesh.indices, color),
         .surface_id = surface.surface,
-        .surface = SurfaceKind::Grass,
+        .surface = kind,
     });
     grow_bounds(scene.bounds, surface.mesh.positions);
   }
