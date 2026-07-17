@@ -28,9 +28,24 @@ public:
 
   explicit LibraryListModel(QObject* parent = nullptr);
 
-  /// Replaces the catalogue (full model reset). The panel calls this once the
-  /// manifest is loaded; passing an empty manifest clears the model.
+  /// Replaces the built-in catalogue (full model reset). The panel calls this
+  /// once the manifest is loaded; passing an empty manifest clears the base
+  /// items. Any project overlay in effect is re-merged on top.
   void set_manifest(LibraryManifest manifest);
+
+  /// Applies a per-project overlay on top of the built-in catalogue (p6-s1):
+  /// an overlay item whose key matches a built-in item REPLACES it in place
+  /// (the project wins, the row keeps its position); keys the base doesn't
+  /// have are appended, so new project categories appear in the panel. Full
+  /// model reset.
+  void set_overlay(LibraryManifest manifest);
+
+  /// Removes the project overlay (project close/switch) — the model returns
+  /// to the built-in catalogue alone. No-op when no overlay is set.
+  void clear_overlay();
+
+  /// True while a project overlay is merged into the catalogue.
+  [[nodiscard]] bool has_overlay() const { return !overlay_items_.empty(); }
 
   [[nodiscard]] int rowCount(const QModelIndex& parent = {}) const override;
   [[nodiscard]] QVariant data(const QModelIndex& index, int role) const override;
@@ -50,7 +65,13 @@ public:
   [[nodiscard]] const LibraryItem* item_for_key(const QString& key) const;
 
 private:
-  std::vector<LibraryItem> items_;
+  /// Rebuilds items_ = base + overlay (overlay wins on key collision) under a
+  /// model reset.
+  void rebuild();
+
+  std::vector<LibraryItem> base_items_;
+  std::vector<LibraryItem> overlay_items_;
+  std::vector<LibraryItem> items_; ///< the merged rows the view sees
 };
 
 } // namespace roadmaker::editor

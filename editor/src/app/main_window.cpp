@@ -2,6 +2,8 @@
 
 #include "roadmaker/version.hpp"
 
+#include <spdlog/spdlog.h>
+
 #include <QApplication>
 #include <QCheckBox>
 #include <QCloseEvent>
@@ -13,6 +15,7 @@
 #include <QFile>
 #include <QFileDialog>
 #include <QFileInfo>
+#include <QInputDialog>
 #include <QLocale>
 #include <QMenu>
 #include <QMenuBar>
@@ -81,6 +84,10 @@ MainWindow::MainWindow(QWidget* parent, bool restore_saved_layout)
   connect(welcome_, &WelcomeWidget::file_requested, this, [this](const QString& path) {
     load_file(std::filesystem::path(path.toStdString()));
   });
+  // A project tile opens the project (Library overlay, recents, title) and
+  // repopulates the welcome view with that project's scenes — no document
+  // loads until the user picks one.
+  connect(welcome_, &WelcomeWidget::project_requested, this, &MainWindow::open_project_dir);
   connect(
       &document_, &Document::loaded, this, [this] { central_stack_->setCurrentWidget(viewport_); });
 
@@ -499,6 +506,15 @@ void MainWindow::build_menus() {
   recent_menu_ = file_menu->addMenu(tr("Open &Recent"));
   update_recent_files_menu();
   file_menu->addSeparator();
+  // Projects (p6-s1): plain directory pickers — a project is a folder with a
+  // project.json, nothing heavier, so the flows stay two clicks.
+  auto* new_project_action = new QAction(tr("New &Project…"), this);
+  connect(new_project_action, &QAction::triggered, this, &MainWindow::new_project_dialog);
+  file_menu->addAction(new_project_action);
+  auto* open_project_action = new QAction(tr("Open Pro&ject…"), this);
+  connect(open_project_action, &QAction::triggered, this, &MainWindow::open_project_dialog);
+  file_menu->addAction(open_project_action);
+  file_menu->addSeparator();
   file_menu->addAction(actions_->save);
   file_menu->addAction(actions_->save_as);
   file_menu->addSeparator();
@@ -709,6 +725,106 @@ void MainWindow::load_file(const std::filesystem::path& path) {
   }
   settings_.add_recent_file(document_.file_path());
   update_recent_files_menu();
+  associate_project_for(path);
+}
+
+void MainWindow::associate_project_for(const std::filesystem::path& scene_path) {
+  // Auto-associate the containing project (GW-2 step 1): a scene inside a
+  // project directory adopts that project (Library overlay and all); a
+  // standalone scene drops any project association.
+  if (const auto project_dir = Project::find_project_for(scene_path)) {
+    if (!project_.has_value() || project_->dir() != *project_dir) {
+      if (auto opened = Project::open(*project_dir); opened.has_value()) {
+        adopt_project(std::move(*opened));
+      } else {
+        clear_project();
+      }
+    }
+  } else {
+    clear_project();
+  }
+}
+
+void MainWindow::new_project_dialog() {
+  const QString dir = QFileDialog::getExistingDirectory(this, tr("Choose the project folder"));
+  if (dir.isEmpty()) {
+    return;
+  }
+  bool accepted = false;
+  const QString name = QInputDialog::getText(this,
+                                             tr("New Project"),
+                                             tr("Project name:"),
+                                             QLineEdit::Normal,
+                                             QFileInfo(dir).fileName(),
+                                             &accepted);
+  if (!accepted || name.trimmed().isEmpty()) {
+    return;
+  }
+  auto project = Project::create(std::filesystem::path(dir.toStdString()), name.trimmed());
+  if (!project.has_value()) {
+    QMessageBox::warning(this,
+                         tr("New Project failed"),
+                         tr("%1\n%2").arg(QString::fromStdString(project.error().message),
+                                          QString::fromStdString(project.error().context)));
+    return;
+  }
+  adopt_project(std::move(*project));
+}
+
+void MainWindow::open_project_dialog() {
+  const QString dir = QFileDialog::getExistingDirectory(this, tr("Open project folder"));
+  if (!dir.isEmpty()) {
+    open_project_dir(dir);
+  }
+}
+
+void MainWindow::open_project_dir(const QString& dir) {
+  auto project = Project::open(std::filesystem::path(dir.toStdString()));
+  if (!project.has_value()) {
+    QMessageBox::warning(this,
+                         tr("Open Project failed"),
+                         tr("%1\n%2").arg(QString::fromStdString(project.error().message),
+                                          QString::fromStdString(project.error().context)));
+    return;
+  }
+  adopt_project(std::move(*project));
+}
+
+void MainWindow::adopt_project(Project project) {
+  project_ = std::move(project);
+  settings_.add_recent_project(QString::fromStdString(project_->dir().string()));
+  apply_project_overlay();
+  update_window_title();
+  welcome_->set_active_project(QString::fromStdString(project_->dir().string()));
+}
+
+void MainWindow::clear_project() {
+  if (!project_.has_value()) {
+    return;
+  }
+  project_.reset();
+  library_model_.clear_overlay(); // the overlay leaves with its project
+  update_window_title();
+  welcome_->set_active_project(QString());
+}
+
+void MainWindow::apply_project_overlay() {
+  const auto manifest_path =
+      project_.has_value() ? project_->library_manifest_path() : std::nullopt;
+  if (!manifest_path.has_value()) {
+    library_model_.clear_overlay();
+    return;
+  }
+  auto manifest = LibraryManifest::load(*manifest_path);
+  if (!manifest.has_value()) {
+    // A broken overlay must not take the built-in catalogue down with it.
+    spdlog::warn("project library overlay rejected: {} ({})",
+                 manifest.error().message,
+                 manifest.error().context);
+    library_model_.clear_overlay();
+    return;
+  }
+  library_model_.set_overlay(std::move(*manifest));
 }
 
 void MainWindow::set_capture_highlights(const QString& select_odr, const QString& hover_odr) {
@@ -885,8 +1001,12 @@ bool MainWindow::save_file() {
 }
 
 bool MainWindow::save_file_as() {
-  const QString suggested =
-      document_.has_file() ? document_.file_path() : QStringLiteral("untitled.xodr");
+  // An unsaved scene defaults into the active project's directory, so "New
+  // Scene in Project" lands where the project globs its scenes from.
+  const QString untitled =
+      project_.has_value() ? QString::fromStdString((project_->dir() / "untitled.xodr").string())
+                           : QStringLiteral("untitled.xodr");
+  const QString suggested = document_.has_file() ? document_.file_path() : untitled;
   // QFileDialog owns the overwrite prompt (§8 edge cases).
   const QString path = QFileDialog::getSaveFileName(
       this, tr("Save OpenDRIVE file"), suggested, tr("OpenDRIVE (*.xodr);;All files (*)"));
@@ -911,6 +1031,7 @@ bool MainWindow::save_to(const std::filesystem::path& path) {
   }
   settings_.add_recent_file(document_.file_path());
   update_recent_files_menu();
+  associate_project_for(path); // Save As into a project folder joins it
   save_welcome_thumbnail();
   viewport_->show_toast(tr("Saved %1").arg(document_.file_path()), ToastSeverity::Success);
   return true;
@@ -945,8 +1066,11 @@ bool MainWindow::confirm_discard() {
 }
 
 void MainWindow::open_file_dialog() {
+  // With a project open, browsing starts among its scenes.
+  const QString start_dir =
+      project_.has_value() ? QString::fromStdString(project_->dir().string()) : QString();
   const QString path = QFileDialog::getOpenFileName(
-      this, tr("Open OpenDRIVE file"), QString(), tr("OpenDRIVE (*.xodr);;All files (*)"));
+      this, tr("Open OpenDRIVE file"), start_dir, tr("OpenDRIVE (*.xodr);;All files (*)"));
   if (!path.isEmpty()) {
     load_file(std::filesystem::path(path.toStdString()));
   }
@@ -1132,7 +1256,11 @@ void MainWindow::update_window_title() {
   // [*] renders the QUndoStack dirty flag (setWindowModified).
   const QString name =
       document_.has_file() ? QFileInfo(document_.file_path()).fileName() : tr("Untitled");
-  setWindowTitle(tr("%1[*] — RoadMaker").arg(name));
+  if (project_.has_value()) {
+    setWindowTitle(tr("%1[*] — %2 — RoadMaker").arg(name, project_->name()));
+  } else {
+    setWindowTitle(tr("%1[*] — RoadMaker").arg(name));
+  }
 }
 
 void MainWindow::update_status_entities() {

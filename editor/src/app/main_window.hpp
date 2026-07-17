@@ -12,6 +12,7 @@
 #include <QToolBar>
 #include <QToolButton>
 #include <filesystem>
+#include <optional>
 
 #include "app/actions.hpp"
 #include "app/settings.hpp"
@@ -20,6 +21,7 @@
 #include "document/diagnostics_model.hpp"
 #include "document/document.hpp"
 #include "document/library_list_model.hpp"
+#include "document/project.hpp"
 #include "document/scene_tree_model.hpp"
 #include "document/selection_model.hpp"
 #include "tools/tool_manager.hpp"
@@ -95,6 +97,25 @@ private:
   void save_welcome_thumbnail();
   void new_file();
   void open_file_dialog();
+  /// File ▸ New Project…: directory picker + name prompt, then Project::create.
+  void new_project_dialog();
+  /// File ▸ Open Project…: directory picker, then open_project_dir.
+  void open_project_dialog();
+  /// Opens the project at `dir` (error box on failure) and adopts it.
+  void open_project_dir(const QString& dir);
+  /// Makes `project` the active project: records it in recent projects,
+  /// applies its Library overlay, and updates the title + welcome screen.
+  void adopt_project(Project project);
+  /// Drops the active project association: removes the Library overlay and
+  /// reverts the title + welcome screen. No-op when no project is active.
+  void clear_project();
+  /// (Re)loads the active project's assets/library/manifest.json into the
+  /// Library model as an overlay; clears the overlay when the project has
+  /// none (or none parses).
+  void apply_project_overlay();
+  /// Adopts the project containing `scene_path` (or clears the association
+  /// for a standalone scene). Runs after every load and save.
+  void associate_project_for(const std::filesystem::path& scene_path);
   /// Save / Save As… — return false when the user cancels or the write
   /// fails, so confirm_discard() can abort the enclosing New/close.
   bool save_file();
@@ -139,6 +160,11 @@ private:
 
   Document document_;
   AutosaveManager autosave_; // after document_: connects to its signals
+  /// The active project (p6-s1): a directory association, not a document —
+  /// opening a scene inside a project directory auto-adopts it, opening a
+  /// standalone scene drops it. Drives the Library overlay, the window
+  /// title, and where the file dialogs default.
+  std::optional<Project> project_;
   SelectionModel selection_;
   SceneTreeModel scene_tree_model_;
   LibraryListModel library_model_;

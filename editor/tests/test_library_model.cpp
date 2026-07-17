@@ -153,5 +153,82 @@ TEST(LibraryListModel, ExposesRolesAndItemLookup) {
   EXPECT_EQ(model.item(13), nullptr);
 }
 
+// The per-project overlay (p6-s1): project items merge into the built-in
+// catalogue — a colliding key REPLACES the built-in item in place, a new key
+// (and category) appends — and the overlay leaves with its project.
+TEST(LibraryListModel, OverlayMergesProjectItemsOverBuiltIns) {
+  LibraryListModel model;
+  QAbstractItemModelTester tester(&model, QAbstractItemModelTester::FailureReportingMode::Fatal);
+
+  const auto base = LibraryManifest::parse(json(R"({
+    "manifest_version": 1,
+    "items": [
+      {"key": "road.rural", "label": "Rural", "category": "Road templates",
+       "create": {"kind": "road_template", "profile": "two_lane_rural"}},
+      {"key": "prop.tree.pine", "label": "Pine", "category": "Props",
+       "create": {"kind": "tree", "model": "tree_pine"}}
+    ]
+  })"));
+  ASSERT_TRUE(base.has_value());
+  model.set_manifest(*base);
+  ASSERT_EQ(model.rowCount(), 2);
+  EXPECT_FALSE(model.has_overlay());
+
+  const auto overlay = LibraryManifest::parse(json(R"({
+    "manifest_version": 1,
+    "items": [
+      {"key": "prop.tree.pine", "label": "Project Pine", "category": "Props",
+       "create": {"kind": "tree", "model": "tree_pine"}},
+      {"key": "project.special", "label": "Special", "category": "Project assets",
+       "create": {"kind": "tree", "model": "tree_oak"}}
+    ]
+  })"));
+  ASSERT_TRUE(overlay.has_value());
+  model.set_overlay(*overlay);
+  EXPECT_TRUE(model.has_overlay());
+  ASSERT_EQ(model.rowCount(), 3); // 2 base, 1 collided in place, 1 appended
+
+  // The collision keeps the built-in item's row but shows the project's data.
+  EXPECT_EQ(model.data(model.index(1, 0), Qt::DisplayRole).toString(),
+            QStringLiteral("Project Pine"));
+  const LibraryItem* collided = model.item_for_key(QStringLiteral("prop.tree.pine"));
+  ASSERT_NE(collided, nullptr);
+  EXPECT_EQ(collided->label, QStringLiteral("Project Pine"));
+  // The new key (and its new category) appended after the built-ins.
+  EXPECT_EQ(model.data(model.index(2, 0), LibraryListModel::KeyRole).toString(),
+            QStringLiteral("project.special"));
+  EXPECT_EQ(model.data(model.index(2, 0), LibraryListModel::CategoryRole).toString(),
+            QStringLiteral("Project assets"));
+
+  // Project close: the catalogue returns to the built-ins alone.
+  model.clear_overlay();
+  EXPECT_FALSE(model.has_overlay());
+  ASSERT_EQ(model.rowCount(), 2);
+  const LibraryItem* restored = model.item_for_key(QStringLiteral("prop.tree.pine"));
+  ASSERT_NE(restored, nullptr);
+  EXPECT_EQ(restored->label, QStringLiteral("Pine"));
+  EXPECT_EQ(model.item_for_key(QStringLiteral("project.special")), nullptr);
+  model.clear_overlay(); // idempotent
+  EXPECT_EQ(model.rowCount(), 2);
+}
+
+TEST(LibraryListModel, SetManifestRemergesAnActiveOverlay) {
+  LibraryListModel model;
+  const auto overlay = LibraryManifest::parse(json(R"({
+    "manifest_version": 1,
+    "items": [{"key": "project.only", "label": "Only", "category": "Project assets",
+               "create": {"kind": "tree", "model": "tree_oak"}}]
+  })"));
+  ASSERT_TRUE(overlay.has_value());
+  model.set_overlay(*overlay);
+  ASSERT_EQ(model.rowCount(), 1);
+
+  const auto base = LibraryManifest::load(kManifest);
+  ASSERT_TRUE(base.has_value());
+  model.set_manifest(*base); // the overlay survives a base reload
+  EXPECT_EQ(model.rowCount(), 14);
+  EXPECT_NE(model.item_for_key(QStringLiteral("project.only")), nullptr);
+}
+
 } // namespace
 } // namespace roadmaker::editor

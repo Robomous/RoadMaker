@@ -67,6 +67,7 @@ add_executable(roadmaker_editor_tests
   test_picking.cpp
   test_preview_session.cpp
   test_profile_panel.cpp
+  test_project.cpp
   test_projection.cpp
   test_context_menu.cpp
   test_select_tool.cpp

@@ -22,6 +22,13 @@ public:
   /// Prepends `path` (deduplicated, capped at kMaxRecentFiles).
   void add_recent_file(const QString& path);
 
+  /// Recently opened project directories, most recent first (p6-s1).
+  [[nodiscard]] QStringList recent_projects() const;
+
+  /// Prepends the project directory `path` (deduplicated, capped at
+  /// kMaxRecentFiles — the same cap as scenes).
+  void add_recent_project(const QString& path);
+
   /// Theme id (docs/standards/ui-design.md). Empty = default_theme(); the
   /// --theme CLI flag overrides without persisting.
   [[nodiscard]] QString theme_name() const;

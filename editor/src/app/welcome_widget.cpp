@@ -17,6 +17,7 @@
 
 #include "app/icons.hpp"
 #include "app/settings.hpp"
+#include "document/project.hpp"
 
 namespace roadmaker::editor {
 
@@ -35,6 +36,21 @@ QPixmap placeholder_thumbnail(const QPalette& palette) {
   painter.setBrush(palette.color(QPalette::Base));
   painter.drawRoundedRect(QRect(QPoint(0, 0), kThumbSize), 6, 6);
   const QPixmap glyph = Icons::get(QStringLiteral("clothoid-road")).pixmap(48, 48);
+  painter.drawPixmap(QPoint((kThumbSize.width() - 48) / 2, (kThumbSize.height() - 48) / 2), glyph);
+  return pixmap;
+}
+
+/// Rounded tile for a project — same construction as the scene placeholder,
+/// with the folder glyph marking it as a directory of scenes.
+QPixmap project_thumbnail(const QPalette& palette) {
+  QPixmap pixmap(kThumbSize);
+  pixmap.fill(Qt::transparent);
+  QPainter painter(&pixmap);
+  painter.setRenderHint(QPainter::Antialiasing);
+  painter.setPen(Qt::NoPen);
+  painter.setBrush(palette.color(QPalette::Base));
+  painter.drawRoundedRect(QRect(QPoint(0, 0), kThumbSize), 6, 6);
+  const QPixmap glyph = Icons::get(QStringLiteral("folder-open")).pixmap(48, 48);
   painter.drawPixmap(QPoint((kThumbSize.width() - 48) / 2, (kThumbSize.height() - 48) / 2), glyph);
   return pixmap;
 }
@@ -111,6 +127,7 @@ WelcomeWidget::WelcomeWidget(Settings& settings, QWidget* parent)
   connect(new_button, &QPushButton::clicked, this, &WelcomeWidget::new_scene_requested);
   intro->addWidget(new_button);
   auto* open_button = new QPushButton(tr("Open…"), this);
+  open_button->setObjectName(QStringLiteral("welcomeOpen"));
   open_button->setMinimumHeight(36);
   connect(open_button, &QPushButton::clicked, this, &WelcomeWidget::open_requested);
   intro->addWidget(open_button);
@@ -125,9 +142,43 @@ WelcomeWidget::WelcomeWidget(Settings& settings, QWidget* parent)
   intro->addStretch(1);
   outer->addLayout(intro, 0);
 
-  // Right column: recent scenes, then samples.
+  // Right column: the active project (when one is open), recent projects,
+  // recent scenes, then samples.
   auto* content = new QVBoxLayout;
   content->setSpacing(8);
+
+  project_section_ = new QWidget(this);
+  auto* project_layout = new QVBoxLayout(project_section_);
+  project_layout->setContentsMargins(0, 0, 0, 0);
+  project_layout->setSpacing(8);
+  project_label_ = make_section_label(QString(), project_section_);
+  project_layout->addWidget(project_label_);
+  project_scenes_list_ = make_scene_list(project_section_);
+  project_scenes_list_->setObjectName(QStringLiteral("welcomeProjectScenesList"));
+  project_layout->addWidget(project_scenes_list_);
+  connect(
+      project_scenes_list_, &QListWidget::itemClicked, this, [this](const QListWidgetItem* item) {
+        emit file_requested(item->data(Qt::UserRole).toString());
+      });
+  auto* project_new_scene = new QPushButton(tr("New Scene in Project"), project_section_);
+  project_new_scene->setObjectName(QStringLiteral("welcomeProjectNewScene"));
+  connect(project_new_scene, &QPushButton::clicked, this, &WelcomeWidget::new_scene_requested);
+  project_layout->addWidget(project_new_scene, 0, Qt::AlignLeft);
+  project_section_->setVisible(false); // until a project is opened
+  content->addWidget(project_section_, 3);
+
+  projects_section_ = new QWidget(this);
+  auto* projects_layout = new QVBoxLayout(projects_section_);
+  projects_layout->setContentsMargins(0, 0, 0, 0);
+  projects_layout->setSpacing(8);
+  projects_layout->addWidget(make_section_label(tr("Recent projects"), projects_section_));
+  projects_list_ = make_scene_list(projects_section_);
+  projects_list_->setObjectName(QStringLiteral("welcomeProjectsList"));
+  projects_layout->addWidget(projects_list_);
+  connect(projects_list_, &QListWidget::itemClicked, this, [this](const QListWidgetItem* item) {
+    emit project_requested(item->data(Qt::UserRole).toString());
+  });
+  content->addWidget(projects_section_, 2);
 
   recent_section_ = new QWidget(this);
   auto* recent_layout = new QVBoxLayout(recent_section_);
@@ -182,6 +233,55 @@ void WelcomeWidget::refresh() {
         make_scene_item(QFileInfo(path).fileName(), path, thumbnail_path_for(path)));
   }
   recent_section_->setVisible(recent_list_->count() > 0);
+  populate_projects();
+  populate_active_project();
+}
+
+void WelcomeWidget::set_active_project(const QString& dir) {
+  active_project_dir_ = dir;
+  populate_active_project();
+}
+
+void WelcomeWidget::populate_projects() {
+  projects_list_->clear();
+  const QStringList recent = settings_.recent_projects();
+  for (const QString& dir : recent) {
+    // Re-open the manifest for each tile: a moved/deleted project would only
+    // click into an error box, and the name + scene count must reflect the
+    // directory as it is now.
+    const auto project = Project::open(std::filesystem::path(dir.toStdString()));
+    if (!project.has_value()) {
+      continue;
+    }
+    const qsizetype scene_count = project->scenes().size();
+    auto* item = new QListWidgetItem(
+        QIcon(project_thumbnail(palette())),
+        tr("%1 — %n scene(s)", "", static_cast<int>(scene_count)).arg(project->name()));
+    item->setData(Qt::UserRole, dir);
+    item->setToolTip(dir);
+    projects_list_->addItem(item);
+  }
+  projects_section_->setVisible(projects_list_->count() > 0);
+}
+
+void WelcomeWidget::populate_active_project() {
+  project_scenes_list_->clear();
+  if (active_project_dir_.isEmpty()) {
+    project_section_->setVisible(false);
+    return;
+  }
+  const auto project = Project::open(std::filesystem::path(active_project_dir_.toStdString()));
+  if (!project.has_value()) {
+    project_section_->setVisible(false);
+    return;
+  }
+  project_label_->setText(tr("Project — %1").arg(project->name()).toUpper());
+  const QStringList scenes = project->scenes();
+  for (const QString& path : scenes) {
+    project_scenes_list_->addItem(
+        make_scene_item(QFileInfo(path).fileName(), path, thumbnail_path_for(path)));
+  }
+  project_section_->setVisible(true);
 }
 
 void WelcomeWidget::populate_samples() {
