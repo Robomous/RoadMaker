@@ -71,6 +71,7 @@ add_library(roadmaker_editor_lib STATIC
   src/document/selection_model.cpp
   src/help/help_browser.cpp
   src/help/help_locator.cpp
+  src/help/help_registry.cpp
   src/help/help_viewer.cpp
   src/panels/diagnostics_panel.cpp
   src/panels/editor2d_host.cpp

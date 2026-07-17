@@ -110,6 +110,10 @@ private:
   void show_about_dialog();
   /// Opens (creating on first use) the in-app user guide, on the given slug.
   void show_help(const QString& slug = QStringLiteral("index"));
+  /// The objectName of the QDockWidget that owns the keyboard focus, or an
+  /// empty string when focus is not inside a dock. F1 feeds this to
+  /// help::context_page so the focused panel's page wins over the active tool.
+  [[nodiscard]] QString help_context_dock() const;
   /// Startup scan for another session's crashed recovery set; prompts
   /// Recover (load + re-point at the original path, dirty) or Discard.
   void check_recovery();
