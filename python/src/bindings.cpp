@@ -1642,7 +1642,20 @@ NB_MODULE(_roadmaker, m) {
            "type"_a,
            "Lane Form: an interior lane that starts at zero width at s_start and holds full "
            "width to the road end, taking numbering position at_odr_id (sign must match side). "
-           "Backward-unlinked; refuses if s_start is not in the road's final lane section.");
+           "Backward-unlinked; carried across every downstream lane-section seam (inserted or "
+           "appended per section, seams joined with matched predecessor/successor links) so it "
+           "runs to the road end as a properly linked carriageway.");
+  edit.def("link_lane_across_seam",
+           &roadmaker::edit::link_lane_across_seam,
+           "network"_a,
+           "upstream_section"_a,
+           "upstream_odr"_a,
+           "downstream_odr"_a,
+           "Joins one lane across a single lane-section seam by setting the matched pair "
+           "(asam.net:xodr:1.4.0:road.lane.link.lanes_across_laneSections, §11.6): the upstream "
+           "lane's successor becomes downstream_odr and the downstream lane's predecessor becomes "
+           "upstream_odr. The downstream section is the one after upstream_section in road order. "
+           "Refuses a center-lane odr, a missing lane, or an upstream section with no follower.");
   edit.def("carve_lane",
            &roadmaker::edit::carve_lane,
            "network"_a,

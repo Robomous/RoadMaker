@@ -4302,8 +4302,9 @@ std::unique_ptr<Command> carve_lane(const RoadNetwork& network,
         const LaneSectionId target = section_at(net, road_id, s_start + tol::kLength);
         // A carved turn lane reaches the junction at the road terminus, so it
         // must run in the FINAL section. Carving upstream of a downstream
-        // boundary would strand a full-width lane at that seam (forward-linking
-        // is out of scope, p2-s5) — the same guard Lane Form makes.
+        // boundary would strand a full-width turn lane that the junction can no
+        // longer absorb, so — unlike Lane Form, which now carries a formed lane
+        // across downstream seams — Lane Carve deliberately keeps this guard.
         if (target != net.road(road_id)->sections.back()) {
           return invalid_command(std::string(kName),
                                  Error{.code = ErrorCode::InvalidArgument,
@@ -4353,6 +4354,62 @@ std::unique_ptr<Command> carve_lane(const RoadNetwork& network,
       std::string(kName), std::move(base), std::move(builders));
 }
 
+std::unique_ptr<Command> link_lane_across_seam(const RoadNetwork& network,
+                                               LaneSectionId upstream_section,
+                                               int upstream_odr,
+                                               int downstream_odr) {
+  static constexpr std::string_view kName = "Link Lane Across Seam";
+  const auto fail = [&](std::string message) {
+    return invalid_command(
+        std::string(kName),
+        Error{.code = ErrorCode::InvalidArgument, .message = std::move(message)});
+  };
+  const LaneSection* upstream = network.lane_section(upstream_section);
+  if (upstream == nullptr) {
+    return fail("stale lane-section id");
+  }
+  // asam.net:xodr:1.4.0:road.lane.link.lanes_across_laneSections — only real
+  // (non-center) lanes carry a cross-section link; the center lane never does.
+  if (upstream_odr == 0 || downstream_odr == 0) {
+    return fail("cannot link the center lane across a seam");
+  }
+  const Road* road = network.road(upstream->road);
+  if (road == nullptr) {
+    return fail("lane section has a stale road back-reference");
+  }
+  // The downstream section is the one immediately after the upstream one in
+  // road order, so the pair is always CONSECUTIVE on ONE road. No next section
+  // means there is nothing to link across (a non-adjacent request).
+  const auto here = std::ranges::find(road->sections, upstream_section);
+  if (here == road->sections.end() || std::next(here) == road->sections.end()) {
+    return fail("upstream section has no following lane section to link across");
+  }
+  const LaneSectionId downstream_section = *std::next(here);
+  const LaneId upstream_lane = lane_with_odr(network, upstream_section, upstream_odr);
+  if (!upstream_lane.is_valid()) {
+    return fail("no upstream lane at that position");
+  }
+  const LaneId downstream_lane = lane_with_odr(network, downstream_section, downstream_odr);
+  if (!downstream_lane.is_valid()) {
+    return fail("no downstream lane at that position");
+  }
+
+  // The matched pair the writer's dangling-link detector requires (§11.6): the
+  // upstream lane continues into `downstream_odr` and vice versa.
+  Lane upstream_after = *network.lane(upstream_lane);
+  upstream_after.successor = downstream_odr;
+  Lane downstream_after = *network.lane(downstream_lane);
+  downstream_after.predecessor = upstream_odr;
+
+  auto command = std::make_unique<GenericCommand>(
+      std::string(kName), DirtySet{.roads = {upstream->road}, .topology = true});
+  command->before.lanes.emplace_back(upstream_lane, *network.lane(upstream_lane));
+  command->after.lanes.emplace_back(upstream_lane, std::move(upstream_after));
+  command->before.lanes.emplace_back(downstream_lane, *network.lane(downstream_lane));
+  command->after.lanes.emplace_back(downstream_lane, std::move(downstream_after));
+  return command;
+}
+
 std::unique_ptr<Command> form_lane(const RoadNetwork& network,
                                    RoadId road_id,
                                    int side,
@@ -4380,22 +4437,39 @@ std::unique_ptr<Command> form_lane(const RoadNetwork& network,
     return fail("at_odr_id must be non-zero and share the sign of side");
   }
 
+  // The downstream sections the formed lane must be CARRIED across, in road
+  // order. The lane can continue into a section only where it can host the
+  // position: it already exists there (insert_lane), or the side's outermost
+  // lane is exactly one step inboard of it (add_lane appends one lane outward).
+  // A section more than one lane too narrow ends the chain — the lane stops at
+  // that seam, unlinked, which is legal. Downstream sections are untouched by
+  // the split/insert/taper on the START section, so this decision (taken here
+  // against the original network) still holds when each stage runs; the stages
+  // re-derive live ids as they go (the carve_lane builder pattern).
+  const LaneSectionId covering = section_at(network, road_id, s_start + tol::kLength);
+  const auto covering_pos = std::ranges::find(road->sections, covering);
+  std::vector<LaneSectionId> chain; // downstream sections that host the lane
+  if (covering_pos != road->sections.end()) {
+    for (auto it = std::next(covering_pos); it != road->sections.end(); ++it) {
+      const bool has = lane_with_odr(network, *it, at_odr_id).is_valid();
+      int outermost_odr = 0; // an empty side reads as 0 (add_lane appends ±1)
+      if (const LaneId out = outermost_lane_on_side(network, *it, side); out.is_valid()) {
+        outermost_odr = network.lane(out)->odr_id;
+      }
+      const bool appendable = outermost_odr == at_odr_id - side;
+      if (!has && !appendable) {
+        break; // more than one lane short of the position — chain stops here
+      }
+      chain.push_back(*it);
+    }
+  }
+
   std::vector<CompositeCommand::Builder> builders;
   builders.push_back(
       [road_id, s_start](RoadNetwork& net) { return split_lane_section(net, road_id, s_start); });
   builders.push_back(
       [road_id, s_start, at_odr_id, type](RoadNetwork& net) -> std::unique_ptr<Command> {
         const LaneSectionId target = section_at(net, road_id, s_start + tol::kLength);
-        // Forward-linking a formed lane across a downstream seam is out of
-        // scope (p2-s5): only form into the FINAL section, where the lane can
-        // run to the road terminus with nothing downstream to link.
-        if (target != net.road(road_id)->sections.back()) {
-          return invalid_command(std::string(kName),
-                                 Error{.code = ErrorCode::InvalidArgument,
-                                       .message =
-                                           "Lane Form reaches a downstream lane-section boundary; "
-                                           "form nearer the road end"});
-        }
         return insert_lane(net, target, at_odr_id, type);
       });
   builders.push_back([road_id, s_start, at_odr_id](RoadNetwork& net) -> std::unique_ptr<Command> {
@@ -4416,6 +4490,45 @@ std::unique_ptr<Command> form_lane(const RoadNetwork& network,
     const double t = std::min(kTaperLen, L - tol::kLength);
     return set_lane_width_profile(net, lane, taper_records(L, W, t, /*ramp_down=*/false));
   });
+
+  // Carry the lane into each downstream section: first host it (insert where
+  // the position exists, else append the ACTUAL new lane one step outward —
+  // add_lane returns a fresh id, so the following stage re-derives it by odr),
+  // then hold it at full width. All hosting happens before any linking so a
+  // later insert's link remap never disturbs a seam we have already joined.
+  for (const LaneSectionId section : chain) {
+    builders.push_back(
+        [section, at_odr_id, side, type](RoadNetwork& net) -> std::unique_ptr<Command> {
+          if (lane_with_odr(net, section, at_odr_id).is_valid()) {
+            return insert_lane(net, section, at_odr_id, type);
+          }
+          return add_lane(net, section, side, type);
+        });
+    builders.push_back([section, at_odr_id](RoadNetwork& net) -> std::unique_ptr<Command> {
+      const LaneId lane = lane_with_odr(net, section, at_odr_id);
+      if (!lane.is_valid()) {
+        return invalid_command(
+            std::string(kName),
+            Error{.code = ErrorCode::InvalidArgument,
+                  .message = "the carried lane vanished before it could be shaped"});
+      }
+      // insert_lane already gives its fresh lane width 3.5; add_lane copies the
+      // outermost (often a shoulder), so set 3.5 explicitly — a no-op on the
+      // insert path, load-bearing on the append path.
+      return set_lane_width_profile(net, lane, {Poly3{.a = 3.5}});
+    });
+  }
+  // Join every seam START -> D_1 -> ... -> D_n with the matched pair. Each
+  // seam's upstream section is derived live: the START section for the first,
+  // else the previous downstream section.
+  for (std::size_t i = 0; i < chain.size(); ++i) {
+    builders.push_back(
+        [road_id, s_start, at_odr_id, i, chain](RoadNetwork& net) -> std::unique_ptr<Command> {
+          const LaneSectionId upstream =
+              i == 0 ? section_at(net, road_id, s_start + tol::kLength) : chain[i - 1];
+          return link_lane_across_seam(net, upstream, at_odr_id, at_odr_id);
+        });
+  }
 
   DirtySet base{
       .roads = {road_id}, .junctions = junctions_touching(network, road_id), .topology = true};

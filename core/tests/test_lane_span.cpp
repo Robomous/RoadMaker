@@ -5,7 +5,8 @@
 //   - Lane Add is a self-contained POCKET (0 -> full -> 0) that stays interior,
 //     so it needs no cross-section links and the carriageway stays continuous;
 //   - Lane Form runs an interior lane to the road end, backward-unlinked, and
-//     REFUSES rather than dangle a full-width lane at a downstream seam.
+//     is CARRIED across every downstream lane-section seam as a matched-pair
+//     linked carriageway (link_lane_across_seam), rather than refusing.
 
 #include "roadmaker/edit/connection.hpp"
 #include "roadmaker/edit/operations.hpp"
@@ -14,6 +15,7 @@
 #include "roadmaker/road/network.hpp"
 #include "roadmaker/tol.hpp"
 #include "roadmaker/xodr/diagnostic.hpp"
+#include "roadmaker/xodr/reader.hpp"
 #include "roadmaker/xodr/writer.hpp"
 
 #include <gtest/gtest.h>
@@ -78,14 +80,18 @@ void expect_rejected(RoadNetwork& network, std::unique_ptr<Command> command) {
   expect_network_matches(network, before); // a failed apply must not mutate
 }
 
-const Lane* lane_by_odr(const RoadNetwork& network, LaneSectionId section_id, int odr_id) {
+LaneId lane_id_by_odr(const RoadNetwork& network, LaneSectionId section_id, int odr_id) {
   for (const LaneId lane_id : network.lane_section(section_id)->lanes) {
-    const Lane* lane = network.lane(lane_id);
-    if (lane->odr_id == odr_id) {
-      return lane;
+    if (network.lane(lane_id)->odr_id == odr_id) {
+      return lane_id;
     }
   }
-  return nullptr;
+  return LaneId{};
+}
+
+const Lane* lane_by_odr(const RoadNetwork& network, LaneSectionId section_id, int odr_id) {
+  const LaneId lane_id = lane_id_by_odr(network, section_id, odr_id);
+  return lane_id.is_valid() ? network.lane(lane_id) : nullptr;
 }
 
 /// Total width of one side at global station s, each lane evaluated in its own
@@ -375,14 +381,153 @@ TEST(LaneSpan, FormLaneBackwardUnlinked) {
   ASSERT_TRUE(roadmaker::write_xodr(network, "ok").has_value());
 }
 
-TEST(LaneSpan, FormLaneRejectsDownstreamSeam) {
+TEST(LaneSpan, FormLaneAcrossOneSeamLinksMatchedPair) {
   RoadNetwork network;
   const RoadId road = author_straight(network, "1");
-  // Put a section boundary at 90 so a form at 60 no longer lands in the last
-  // section — forward-linking the formed lane is out of scope, so it refuses.
+  // A boundary at 90 puts a downstream seam ahead of a form at 60. The lane is
+  // now carried across it; the writer (the dangling-link detector) accepting
+  // the network is proof the predecessor/successor pair is matched.
   ASSERT_TRUE(roadmaker::edit::split_lane_section(network, road, 90.0)->apply(network).has_value());
+  auto command = roadmaker::edit::form_lane(network, road, -1, 60.0, -1, LaneType::Driving);
+  ASSERT_TRUE(command->apply(network).has_value());
+
+  const auto& sections = network.road(road)->sections;
+  ASSERT_EQ(sections.size(), 3U); // [0,60), [60,90), [90,120)
+  const LaneSectionId upstream = section_at(network, road, 75.0);
+  const LaneSectionId downstream = section_at(network, road, 105.0);
+  const Lane* up = lane_by_odr(network, upstream, -1);
+  const Lane* down = lane_by_odr(network, downstream, -1);
+  ASSERT_NE(up, nullptr);
+  ASSERT_NE(down, nullptr);
+  EXPECT_EQ(up->successor, -1); // matched pair, both ways
+  EXPECT_EQ(down->predecessor, -1);
+
+  ASSERT_TRUE(roadmaker::write_xodr(network, "ok").has_value());
+  EXPECT_EQ(roadmaker::count_errors(roadmaker::validate_network(network)), 0U);
+}
+
+TEST(LaneSpan, FormLaneAcrossManySeamsRunsToRoadEnd) {
+  RoadNetwork network;
+  const RoadId road = author_straight(network, "1");
+  for (const double s : {40.0, 70.0, 100.0}) {
+    ASSERT_TRUE(roadmaker::edit::split_lane_section(network, road, s)->apply(network).has_value());
+  }
+  // Form at 20 (START section [20,40) is longer than the taper), upstream of
+  // THREE downstream seams (40/70/100).
+  auto command = roadmaker::edit::form_lane(network, road, -1, 20.0, -1, LaneType::Driving);
+  ASSERT_TRUE(command->apply(network).has_value());
+
+  const auto& sections = network.road(road)->sections;
+  ASSERT_EQ(sections.size(), 5U); // split at 20 adds one to the four boundaries
+  // The formed lane is present and full width at the terminus in the LAST
+  // section, and every seam from the start section on is a matched pair.
+  const LaneSectionId last = sections.back();
+  const Lane* formed_last = lane_by_odr(network, last, -1);
+  ASSERT_NE(formed_last, nullptr);
+  const double L = *section_end(network, last) - network.lane_section(last)->s0;
+  EXPECT_NEAR(roadmaker::eval_profile(formed_last->widths, L), 3.5, 1e-6);
+  EXPECT_FALSE(formed_last->successor.has_value()); // road end: unlinked, legal
+
+  ASSERT_TRUE(roadmaker::write_xodr(network, "ok").has_value());
+  EXPECT_EQ(roadmaker::count_errors(roadmaker::validate_network(network)), 0U);
+}
+
+TEST(LaneSpan, FormLaneAcrossSeamRevertByteIdentical) {
+  RoadNetwork network;
+  const RoadId road = author_straight(network, "1");
+  ASSERT_TRUE(roadmaker::edit::split_lane_section(network, road, 90.0)->apply(network).has_value());
+  auto command = roadmaker::edit::form_lane(network, road, -1, 60.0, -1, LaneType::Driving);
+  expect_command_round_trip(network, *command);
+}
+
+TEST(LaneSpan, FormLaneAcrossSeamRoundTripsThroughXodr) {
+  RoadNetwork network;
+  const RoadId road = author_straight(network, "1");
+  ASSERT_TRUE(roadmaker::edit::split_lane_section(network, road, 90.0)->apply(network).has_value());
+  ASSERT_TRUE(roadmaker::edit::form_lane(network, road, -1, 60.0, -1, LaneType::Driving)
+                  ->apply(network)
+                  .has_value());
+
+  const auto text = roadmaker::write_xodr(network, "ok");
+  ASSERT_TRUE(text.has_value());
+  auto reparsed = roadmaker::parse_xodr(*text);
+  ASSERT_TRUE(reparsed.has_value());
+  EXPECT_EQ(roadmaker::count_errors(reparsed->diagnostics), 0U);
+  EXPECT_EQ(roadmaker::count_errors(roadmaker::validate_network(reparsed->network)), 0U);
+  // Byte-stable through a write/parse/write cycle.
+  const auto rewritten = roadmaker::write_xodr(reparsed->network, "ok");
+  ASSERT_TRUE(rewritten.has_value());
+  EXPECT_EQ(*rewritten, *text);
+}
+
+TEST(LaneSpan, FormLaneSeamCarriagewayWidthContinuous) {
+  RoadNetwork network;
+  const RoadId road = author_straight(network, "1");
+  ASSERT_TRUE(roadmaker::edit::split_lane_section(network, road, 60.0)->apply(network).has_value());
+  ASSERT_TRUE(roadmaker::edit::form_lane(network, road, -1, 30.0, -1, LaneType::Driving)
+                  ->apply(network)
+                  .has_value());
+
+  // Across the carried seam at 60 the right-side width does not jump: the formed
+  // lane holds full width into the seam and continues at full width past it.
+  constexpr double kEps = 1e-3;
+  const double before = side_width_at(network, road, 60.0 - kEps, -1);
+  const double after = side_width_at(network, road, 60.0 + kEps, -1);
+  EXPECT_NEAR(before, after, 1e-2) << "carriageway width is discontinuous at the carried seam";
+}
+
+TEST(LaneSpan, FormLaneIntoNarrowerDownstreamSection) {
+  RoadNetwork network;
+  const RoadId road = author_straight(network, "1"); // right side -1 driving, -2 shoulder
+  ASSERT_TRUE(roadmaker::edit::split_lane_section(network, road, 60.0)->apply(network).has_value());
+  // Make the downstream section NARROWER: drop its -2 shoulder so its outermost
+  // right lane is -1. A form at position -2 must then APPEND (add_lane), not
+  // insert, and link the ACTUAL freshly-appended lane id.
+  const LaneSectionId last = network.road(road)->sections.back();
+  const LaneId shoulder = lane_id_by_odr(network, last, -2);
+  ASSERT_TRUE(shoulder.is_valid());
+  ASSERT_TRUE(roadmaker::edit::remove_lane(network, shoulder)->apply(network).has_value());
+  ASSERT_EQ(lane_by_odr(network, network.road(road)->sections.back(), -2), nullptr);
+
+  auto command = roadmaker::edit::form_lane(network, road, -1, 30.0, -2, LaneType::Driving);
+  ASSERT_TRUE(command->apply(network).has_value());
+
+  const auto& sections = network.road(road)->sections;
+  ASSERT_EQ(sections.size(), 3U); // [0,30), [30,60), [60,120)
+  const LaneSectionId upstream = section_at(network, road, 45.0);
+  const LaneSectionId downstream = section_at(network, road, 90.0);
+  const LaneId up_id = lane_id_by_odr(network, upstream, -2);
+  const LaneId down_id = lane_id_by_odr(network, downstream, -2);
+  ASSERT_TRUE(up_id.is_valid());
+  ASSERT_TRUE(down_id.is_valid());
+  // Non-identity: the appended downstream lane is a DIFFERENT arena lane, linked
+  // by odr to the upstream formed lane, not assumed to be the same object.
+  EXPECT_NE(up_id, down_id);
+  const Lane* up = network.lane(up_id);
+  const Lane* down = network.lane(down_id);
+  EXPECT_EQ(up->successor, -2);
+  EXPECT_EQ(down->predecessor, -2);
+  EXPECT_NEAR(roadmaker::eval_profile(down->widths, 0.0), 3.5, 1e-6); // appended at full width
+
+  ASSERT_TRUE(roadmaker::write_xodr(network, "ok").has_value());
+  EXPECT_EQ(roadmaker::count_errors(roadmaker::validate_network(network)), 0U);
+}
+
+TEST(LaneSpan, LinkLaneAcrossSeamRejectsNonAdjacentAndCenter) {
+  RoadNetwork network;
+  const RoadId road = author_straight(network, "1");
+  ASSERT_TRUE(roadmaker::edit::split_lane_section(network, road, 60.0)->apply(network).has_value());
+  const auto& sections = network.road(road)->sections;
+  const LaneSectionId first = sections.front();
+  const LaneSectionId last = sections.back();
+  // The last section has no follower — nothing to link across (non-adjacent).
+  expect_rejected(network, roadmaker::edit::link_lane_across_seam(network, last, -1, -1));
+  // The center lane never carries a cross-section link.
+  expect_rejected(network, roadmaker::edit::link_lane_across_seam(network, first, 0, -1));
+  expect_rejected(network, roadmaker::edit::link_lane_across_seam(network, first, -1, 0));
+  // A stale section id is rejected too.
   expect_rejected(network,
-                  roadmaker::edit::form_lane(network, road, -1, 60.0, -1, LaneType::Driving));
+                  roadmaker::edit::link_lane_across_seam(network, LaneSectionId{}, -1, -1));
 }
 
 TEST(LaneSpan, FormLaneRejectsBadArguments) {
