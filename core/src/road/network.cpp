@@ -351,4 +351,59 @@ Expected<double> section_end(const RoadNetwork& network, LaneSectionId section_i
   return following->s0;
 }
 
+std::vector<double> lane_boundary_offsets(const RoadNetwork& network,
+                                          const Road& road,
+                                          const LaneSection& section,
+                                          double s) {
+  const double ds = s - section.s0;
+  const double center = eval_profile(road.lane_offset, s);
+
+  std::vector<double> left; // outermost -> innermost, as section.lanes is sorted
+  std::vector<double> right;
+  for (const LaneId lane_id : section.lanes) {
+    const Lane* lane = network.lane(lane_id);
+    if (lane == nullptr || lane->odr_id == 0) {
+      continue;
+    }
+    const double width = std::max(0.0, eval_profile(lane->widths, ds));
+    if (lane->odr_id > 0) {
+      left.push_back(width);
+    } else {
+      right.push_back(width);
+    }
+  }
+
+  std::vector<double> offsets;
+  offsets.reserve(left.size() + right.size() + 1);
+
+  // Accumulate the left boundaries from the center outwards, then write them
+  // outermost-first so the whole vector reads left-to-right.
+  double t = center;
+  std::vector<double> left_out(left.size());
+  for (std::size_t i = left.size(); i-- > 0;) { // innermost (+1) first
+    t += left[i];
+    left_out[i] = t;
+  }
+  offsets.insert(offsets.end(), left_out.begin(), left_out.end());
+  offsets.push_back(center);
+  t = center;
+  for (const double width : right) {
+    t -= width;
+    offsets.push_back(t);
+  }
+  return offsets;
+}
+
+std::vector<double> lane_boundary_offsets(const RoadNetwork& network, RoadId road_id, double s) {
+  const Road* road = network.road(road_id);
+  if (road == nullptr) {
+    return {};
+  }
+  const LaneSection* section = network.lane_section(section_at(network, road_id, s));
+  if (section == nullptr) {
+    return {};
+  }
+  return lane_boundary_offsets(network, *road, *section, s);
+}
+
 } // namespace roadmaker

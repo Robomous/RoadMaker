@@ -49,6 +49,7 @@ conventions below.
 | Delete tool | `X` |  |
 | Lane Add tool | `A` |  |
 | Lane Form tool | `Shift+A` |  |
+| Lane Carve tool | `Shift+C` |  |
 | Lane Width editor (2D) | `Shift+L` |  |
 
 ## View

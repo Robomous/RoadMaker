@@ -402,6 +402,66 @@ station_within(const ReferenceLine& line, double x, double y, double max_abs_t) 
   return station;
 }
 
+std::optional<LaneBoundaryHit>
+nearest_lane_boundary(const RoadNetwork& network, RoadId road, double s, double cursor_t) {
+  // The boundary t-values come from the same kernel routine the mesher uses, so
+  // a picked edge sits exactly on the drawn one.
+  const std::vector<double> offsets = lane_boundary_offsets(network, road, s);
+  if (offsets.empty()) {
+    return std::nullopt;
+  }
+  const LaneSection* section = network.lane_section(section_at(network, road, s));
+  if (section == nullptr) {
+    return std::nullopt;
+  }
+  // `offsets` is built leftmost-first (left outer edges, the centre boundary,
+  // then right edges), so the centre boundary sits at index = the lane count
+  // left of the reference line.
+  int nleft = 0;
+  for (const LaneId lane_id : section->lanes) {
+    const Lane* lane = network.lane(lane_id);
+    if (lane != nullptr && lane->odr_id > 0) {
+      ++nleft;
+    }
+  }
+
+  std::size_t best = 0;
+  double best_dist = std::abs(offsets[0] - cursor_t);
+  for (std::size_t i = 1; i < offsets.size(); ++i) {
+    const double d = std::abs(offsets[i] - cursor_t);
+    if (d < best_dist) {
+      best_dist = d;
+      best = i;
+    }
+  }
+
+  const auto centre = static_cast<std::size_t>(nleft);
+  LaneBoundaryHit hit{.t = offsets[best]};
+  if (best < centre) {
+    // Left boundary at index i is the outer edge of lane +(nleft - i).
+    hit.side = 1;
+    hit.at_odr_id = nleft - static_cast<int>(best);
+  } else if (best > centre) {
+    // Right boundary at index i is the outer edge of lane -(i - nleft).
+    hit.side = -1;
+    hit.at_odr_id = -(static_cast<int>(best) - nleft);
+  } else {
+    // The centre line itself: carve on the cursor's side, innermost lane,
+    // falling back to whichever side actually carries lanes.
+    const bool has_left = nleft > 0;
+    const bool has_right = offsets.size() > centre + 1;
+    int side = cursor_t >= offsets[best] ? 1 : -1;
+    if (side == 1 && !has_left) {
+      side = -1;
+    } else if (side == -1 && !has_right) {
+      side = 1;
+    }
+    hit.side = side;
+    hit.at_odr_id = side;
+  }
+  return hit;
+}
+
 std::array<double, 2> station_to_world(const ReferenceLine& line, double s, double t) {
   if (line.empty()) {
     return {0.0, 0.0};

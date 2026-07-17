@@ -493,6 +493,32 @@ split_lane_section(const RoadNetwork& network, RoadId road, double s);
                                                         int at_odr_id,
                                                         LaneType type);
 
+/// Lane Carve (p2-s6): carves a turn lane approaching a junction. Like Lane
+/// Form it inserts an interior lane that starts at zero width at `s_start` and
+/// runs to the road terminus, but the width ramps 0 -> full over the DRAGGED
+/// span `[s_start, s_end]` (the taper the user pulled) and then holds full to
+/// the terminus, where the junction absorbs it. Drag the whole way to the
+/// junction end and `s_end` reaches the terminus: the ramp spans the entire
+/// lane and there is no plateau — a single diagonal, GW-2 step 12.
+///
+/// Composes split_lane_section at `s_start` then insert_lane on the road's
+/// FINAL section then set_lane_width_profile with the span-length up-taper.
+/// `side` is +1/-1 and `at_odr_id` (sign must match `side`) is the numbering
+/// position the carved lane takes; the width is the nearest driving lane's
+/// (3.5 m default). Carving away from the final section would strand a
+/// full-width lane at a downstream seam (forward-linking is out of scope,
+/// p2-s5), so — exactly like form_lane — the op GUARDS: `s_start` must land in
+/// the final lane section. Also fails (invalid_command) for a stale road, a bad
+/// side, a sign-mismatched `at_odr_id`, an `s_start` outside the road, or a
+/// non-positive dragged span (`s_end <= s_start`).
+[[nodiscard]] RM_API std::unique_ptr<Command> carve_lane(const RoadNetwork& network,
+                                                         RoadId road,
+                                                         int side,
+                                                         double s_start,
+                                                         double s_end,
+                                                         int at_odr_id,
+                                                         LaneType type);
+
 /// Edits the FIRST of the lane's outer-boundary marking records; later
 /// records survive untouched (the M2 editor edits the sOffset-0 entry only)
 /// but the edit must keep ascending sOffset order

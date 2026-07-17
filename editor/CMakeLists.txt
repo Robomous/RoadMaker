@@ -72,6 +72,7 @@ add_library(roadmaker_editor_lib STATIC
   src/tools/edit_nodes_tool.cpp
   src/tools/elevation_tool.cpp
   src/tools/lane_add_tool.cpp
+  src/tools/lane_carve_tool.cpp
   src/tools/lane_form_tool.cpp
   src/tools/lane_profile_tool.cpp
   src/tools/node_drag.cpp

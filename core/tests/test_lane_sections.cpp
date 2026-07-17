@@ -255,6 +255,25 @@ TEST(LaneSections, SectionEndComesFromTheNextSectionOrTheRoadLength) {
   EXPECT_FALSE(section_end(network, LaneSectionId{}).has_value());
 }
 
+TEST(LaneSections, LaneBoundaryOffsetsAccumulateWidthsFromTheCenter) {
+  RoadNetwork network;
+  const RoadId road_id = author_straight(network, "1");
+  // two_lane_default: +1 driving (3.5), centre 0, -1 driving (3.5), -2 shoulder
+  // (1.0), lane offset 0 — four boundaries accumulating outward from the centre.
+  const auto offsets = roadmaker::lane_boundary_offsets(network, road_id, 30.0);
+  ASSERT_EQ(offsets.size(), 4U);
+  EXPECT_NEAR(offsets[0], 3.5, 1e-9);  // outer edge of +1
+  EXPECT_NEAR(offsets[1], 0.0, 1e-9);  // the centre boundary sits at laneOffset(s)
+  EXPECT_NEAR(offsets[2], -3.5, 1e-9); // -1 | -2 boundary
+  EXPECT_NEAR(offsets[3], -4.5, 1e-9); // outer edge of the -2 shoulder
+  for (std::size_t i = 1; i < offsets.size(); ++i) {
+    EXPECT_LT(offsets[i], offsets[i - 1]) << "boundaries must read left-to-right";
+  }
+  // A stale road yields an empty vector rather than a crash — the editor pick
+  // calls this every mouse-move.
+  EXPECT_TRUE(roadmaker::lane_boundary_offsets(network, RoadId{}, 30.0).empty());
+}
+
 // --- split_lane_section -----------------------------------------------------
 
 TEST(LaneSections, SplitCreatesASecondSectionAndRoundTrips) {

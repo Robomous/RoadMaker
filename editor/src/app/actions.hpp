@@ -49,6 +49,7 @@ public:
   QAction* tool_delete = nullptr;
   QAction* tool_lane_add = nullptr;
   QAction* tool_lane_form = nullptr;
+  QAction* tool_lane_carve = nullptr;
 
   /// Not a tool: raises the 2D Editor's Lane Width tab for the selected lane
   /// (⇧L). Standalone so it works from any active tool.

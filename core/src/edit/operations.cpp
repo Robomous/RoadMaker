@@ -4090,6 +4090,96 @@ std::unique_ptr<Command> add_lane_span(
       std::string(kName), std::move(base), std::move(builders));
 }
 
+std::unique_ptr<Command> carve_lane(const RoadNetwork& network,
+                                    RoadId road_id,
+                                    int side,
+                                    double s_start,
+                                    double s_end,
+                                    int at_odr_id,
+                                    LaneType type) {
+  static constexpr std::string_view kName = "Carve Lane";
+  const auto fail = [&](std::string message) {
+    return invalid_command(
+        std::string(kName),
+        Error{.code = ErrorCode::InvalidArgument, .message = std::move(message)});
+  };
+  if (side != 1 && side != -1) {
+    return fail("side must be +1 (left) or -1 (right)");
+  }
+  const Road* road = network.road(road_id);
+  if (road == nullptr) {
+    return fail("stale road id");
+  }
+  const double length = road->plan_view.length();
+  if (s_start <= tol::kLength || s_start >= length - tol::kLength) {
+    return fail("carve start must lie strictly inside the road");
+  }
+  if (s_end - s_start <= tol::kLength) {
+    return fail("carve span must have s_start < s_end");
+  }
+  if ((at_odr_id > 0 ? 1 : -1) != side || at_odr_id == 0) {
+    return fail("at_odr_id must be non-zero and share the sign of side");
+  }
+
+  std::vector<CompositeCommand::Builder> builders;
+  builders.push_back(
+      [road_id, s_start](RoadNetwork& net) { return split_lane_section(net, road_id, s_start); });
+  builders.push_back(
+      [road_id, s_start, at_odr_id, type](RoadNetwork& net) -> std::unique_ptr<Command> {
+        const LaneSectionId target = section_at(net, road_id, s_start + tol::kLength);
+        // A carved turn lane reaches the junction at the road terminus, so it
+        // must run in the FINAL section. Carving upstream of a downstream
+        // boundary would strand a full-width lane at that seam (forward-linking
+        // is out of scope, p2-s5) — the same guard Lane Form makes.
+        if (target != net.road(road_id)->sections.back()) {
+          return invalid_command(std::string(kName),
+                                 Error{.code = ErrorCode::InvalidArgument,
+                                       .message =
+                                           "Lane Carve reaches a downstream lane-section boundary; "
+                                           "carve nearer the junction end"});
+        }
+        return insert_lane(net, target, at_odr_id, type);
+      });
+  builders.push_back(
+      [road_id, s_start, s_end, side, at_odr_id](RoadNetwork& net) -> std::unique_ptr<Command> {
+        const LaneSectionId target = section_at(net, road_id, s_start + tol::kLength);
+        const LaneId lane = lane_with_odr(net, target, at_odr_id);
+        if (!lane.is_valid()) {
+          return invalid_command(
+              std::string(kName),
+              Error{.code = ErrorCode::InvalidArgument,
+                    .message = "the carved lane vanished before it could be shaped"});
+        }
+        auto span = section_end(net, target);
+        if (!span.has_value()) {
+          return invalid_command(std::string(kName), span.error());
+        }
+        const double L = *span - net.lane_section(target)->s0;
+        // A real travel lane's width (nearest driving lane, 3.5 m default) —
+        // not insert_lane's placeholder.
+        const double W = driving_lane_width_on_side(net, target, side, lane);
+        // The taper occupies the dragged distance, capped at the section length.
+        const double taper = std::min(s_end - s_start, L);
+        std::vector<Poly3> widths;
+        if (taper >= L - tol::kLength) {
+          // Dragged to the junction end: one diagonal 0 -> W over the whole
+          // lane, reaching full width exactly at the terminus. No plateau
+          // record (which would have to sit strictly inside the section).
+          widths.push_back(Poly3{.s = 0.0, .a = 0.0, .b = W / L});
+        } else {
+          // Dragged short: ramp 0 -> W over the taper, then hold W to the end.
+          widths.push_back(Poly3{.s = 0.0, .a = 0.0, .b = W / taper});
+          widths.push_back(Poly3{.s = taper, .a = W});
+        }
+        return set_lane_width_profile(net, lane, std::move(widths));
+      });
+
+  DirtySet base{
+      .roads = {road_id}, .junctions = junctions_touching(network, road_id), .topology = true};
+  return std::make_unique<CompositeCommand>(
+      std::string(kName), std::move(base), std::move(builders));
+}
+
 std::unique_ptr<Command> form_lane(const RoadNetwork& network,
                                    RoadId road_id,
                                    int side,

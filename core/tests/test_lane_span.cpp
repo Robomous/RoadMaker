@@ -397,3 +397,176 @@ TEST(LaneSpan, FormLaneRejectsBadArguments) {
   expect_rejected(network,
                   roadmaker::edit::form_lane(network, RoadId{}, -1, 60.0, -1, LaneType::Driving));
 }
+
+// --- Lane Carve (carve_lane) ------------------------------------------------
+// Like Lane Form, a carve runs an interior lane to the road terminus (where the
+// junction absorbs it), but the width ramps 0 -> full over the DRAGGED span
+// [s_start, s_end] rather than a fixed taper. Dragging to the terminus makes the
+// whole lane one diagonal; a shorter drag tapers then holds full to the end.
+
+TEST(LaneSpan, CarveLaneIsSingleUndoStep) {
+  RoadNetwork network;
+  const RoadId road = author_straight(network, "1");
+  auto command = roadmaker::edit::carve_lane(network, road, -1, 60.0, 90.0, -1, LaneType::Driving);
+  ASSERT_TRUE(command->apply(network).has_value());
+  ASSERT_TRUE(command->revert(network).has_value());
+  EXPECT_EQ(network.road(road)->sections.size(), 1U);
+}
+
+TEST(LaneSpan, CarveLaneRevertByteIdentical) {
+  RoadNetwork network;
+  const RoadId road = author_straight(network, "1");
+  auto command = roadmaker::edit::carve_lane(network, road, -1, 60.0, 90.0, -1, LaneType::Driving);
+  expect_command_round_trip(network, *command);
+}
+
+TEST(LaneSpan, CarveLaneTapersOverTheDraggedSpanThenHoldsFull) {
+  RoadNetwork network;
+  const RoadId road = author_straight(network, "1");
+  // Drag [60, 90] on a 120 m road: the taper occupies exactly the dragged span,
+  // then the lane holds full width to the terminus.
+  auto command = roadmaker::edit::carve_lane(network, road, -1, 60.0, 90.0, -1, LaneType::Driving);
+  ASSERT_TRUE(command->apply(network).has_value());
+
+  const auto& sections = network.road(road)->sections;
+  ASSERT_EQ(sections.size(), 2U); // one split at s_start
+  const LaneSectionId last = sections.back();
+  EXPECT_NEAR(network.lane_section(last)->s0, 60.0, roadmaker::tol::kLength);
+
+  const Lane* carved = lane_by_odr(network, last, -1);
+  ASSERT_NE(carved, nullptr);
+  EXPECT_EQ(carved->type, LaneType::Driving);
+  // section-local: 0 at s_start (60), full at the end of the dragged span (90 ->
+  // local 30), and still full at the terminus (120 -> local 60).
+  EXPECT_NEAR(roadmaker::eval_profile(carved->widths, 0.0), 0.0, roadmaker::tol::kLength);
+  EXPECT_NEAR(roadmaker::eval_profile(carved->widths, 30.0), 3.5, 1e-6);
+  EXPECT_NEAR(roadmaker::eval_profile(carved->widths, 60.0), 3.5, 1e-6);
+  // Half-way up the taper the lane is roughly half width — it is a real ramp.
+  EXPECT_NEAR(roadmaker::eval_profile(carved->widths, 15.0), 1.75, 1e-6);
+
+  ASSERT_TRUE(roadmaker::write_xodr(network, "ok").has_value());
+  EXPECT_EQ(roadmaker::count_errors(roadmaker::validate_network(network)), 0U);
+}
+
+TEST(LaneSpan, CarveLaneDraggedToTerminusIsASingleDiagonal) {
+  RoadNetwork network;
+  const RoadId road = author_straight(network, "1");
+  const double length = network.road(road)->length;
+  // Drag the whole way to the junction end: the ramp spans the entire lane, so
+  // half-way along it is still climbing (~half width), not yet full.
+  auto command =
+      roadmaker::edit::carve_lane(network, road, -1, 60.0, length, -1, LaneType::Driving);
+  ASSERT_TRUE(command->apply(network).has_value());
+
+  const LaneSectionId last = network.road(road)->sections.back();
+  const Lane* carved = lane_by_odr(network, last, -1);
+  ASSERT_NE(carved, nullptr);
+  const double L = *section_end(network, last) - network.lane_section(last)->s0;
+  EXPECT_NEAR(roadmaker::eval_profile(carved->widths, 0.0), 0.0, roadmaker::tol::kLength);
+  EXPECT_NEAR(roadmaker::eval_profile(carved->widths, L / 2.0), 1.75, 1e-2); // still ramping
+  EXPECT_NEAR(roadmaker::eval_profile(carved->widths, L), 3.5, 1e-2);        // full at the end
+  ASSERT_TRUE(roadmaker::write_xodr(network, "ok").has_value());
+  EXPECT_EQ(roadmaker::count_errors(roadmaker::validate_network(network)), 0U);
+}
+
+TEST(LaneSpan, CarveLaneCarriagewayWidthContinuousAndNoDanglingLink) {
+  RoadNetwork network;
+  const RoadId road = author_straight(network, "1");
+  auto command = roadmaker::edit::carve_lane(network, road, -1, 60.0, 90.0, -1, LaneType::Driving);
+  ASSERT_TRUE(command->apply(network).has_value());
+
+  // Densely sample the right side: an unlinked full-width lane at the s_start
+  // seam would jump ~3.5 m. The carve tapers up from zero there, so no jump.
+  constexpr int kSamples = 600;
+  const double length = network.road(road)->length;
+  double previous = side_width_at(network, road, 0.0, -1);
+  for (int i = 1; i <= kSamples; ++i) {
+    const double s = length * i / kSamples;
+    const double here = side_width_at(network, road, s, -1);
+    SCOPED_TRACE("s=" + std::to_string(s));
+    EXPECT_LT(std::abs(here - previous), 1.0) << "carriageway width is discontinuous";
+    previous = here;
+  }
+
+  // The carved lane runs to the terminus, so it carries no successor and nothing
+  // downstream references it (there is no downstream section). The writer's
+  // link validator — which checks the successor direction — accepts it.
+  const LaneSectionId last = network.road(road)->sections.back();
+  const Lane* carved = lane_by_odr(network, last, -1);
+  ASSERT_NE(carved, nullptr);
+  EXPECT_FALSE(carved->successor.has_value());
+  EXPECT_FALSE(carved->predecessor.has_value()) << "a carved lane appears mid-road, not linked";
+}
+
+TEST(LaneSpan, CarveLaneIsIdempotentAtAnExistingBoundary) {
+  RoadNetwork network;
+  const RoadId road = author_straight(network, "1");
+  // A section already starts at 60; carving there reuses it instead of cutting a
+  // duplicate seam (split_lane_section is idempotent at a boundary).
+  ASSERT_TRUE(roadmaker::edit::split_lane_section(network, road, 60.0)->apply(network).has_value());
+  ASSERT_EQ(network.road(road)->sections.size(), 2U);
+
+  auto command = roadmaker::edit::carve_lane(network, road, -1, 60.0, 90.0, -1, LaneType::Driving);
+  ASSERT_TRUE(command->apply(network).has_value());
+  EXPECT_EQ(network.road(road)->sections.size(), 2U); // no new seam
+  ASSERT_TRUE(roadmaker::write_xodr(network, "ok").has_value());
+  EXPECT_EQ(roadmaker::count_errors(roadmaker::validate_network(network)), 0U);
+}
+
+TEST(LaneSpan, CarveLaneRejectsDownstreamSeam) {
+  RoadNetwork network;
+  const RoadId road = author_straight(network, "1");
+  // A boundary at 90 means a carve at 60 no longer lands in the last section —
+  // forward-linking a carved lane across a downstream seam is out of scope.
+  ASSERT_TRUE(roadmaker::edit::split_lane_section(network, road, 90.0)->apply(network).has_value());
+  expect_rejected(
+      network, roadmaker::edit::carve_lane(network, road, -1, 60.0, 90.0, -1, LaneType::Driving));
+}
+
+TEST(LaneSpan, CarveLaneRejectsBadArguments) {
+  RoadNetwork network;
+  const RoadId road = author_straight(network, "1");
+  expect_rejected(network,
+                  roadmaker::edit::carve_lane(network, road, 0, 60.0, 90.0, -1, LaneType::Driving));
+  expect_rejected(network,
+                  roadmaker::edit::carve_lane(network, road, -1, 60.0, 90.0, 1, LaneType::Driving));
+  expect_rejected(network,
+                  roadmaker::edit::carve_lane(network, road, -1, 0.0, 90.0, -1, LaneType::Driving));
+  expect_rejected( // non-positive dragged span
+      network,
+      roadmaker::edit::carve_lane(network, road, -1, 90.0, 60.0, -1, LaneType::Driving));
+  expect_rejected(
+      network,
+      roadmaker::edit::carve_lane(network, RoadId{}, -1, 60.0, 90.0, -1, LaneType::Driving));
+}
+
+TEST(LaneSpan, CarveLaneOnJunctionArmRegeneratesTheJunction) {
+  RoadNetwork network;
+  const TJunction t = make_t_junction(network);
+  ASSERT_TRUE(t.junction.is_valid());
+  const double length = network.road(t.west)->length;
+
+  // Carve a turn lane approaching the junction along the west arm. The command
+  // must NAME the junction (so the editor's regen loop visits it) without
+  // claiming the junction structure is already current.
+  auto command =
+      roadmaker::edit::carve_lane(network, t.west, -1, length * 0.4, length, -1, LaneType::Driving);
+  const roadmaker::edit::DirtySet dirty = command->dirty();
+  ASSERT_EQ(dirty.junctions.size(), 1U);
+  EXPECT_EQ(dirty.junctions[0], t.junction);
+  EXPECT_FALSE(dirty.junctions_are_current);
+
+  const auto applied = command->apply(network);
+  ASSERT_TRUE(applied.has_value()) << applied.error().message;
+
+  // The carve widens the arm to full width AT the junction boundary, so the
+  // stale connecting roads no longer weld. Regeneration — taught turn-set
+  // changes in p2-s2 — rebuilds them, which is how a carved turn lane reaches
+  // the junction (the editor runs exactly this on commit).
+  auto regen = roadmaker::edit::regenerate_junction(network, t.junction);
+  const auto regenerated = regen->apply(network);
+  ASSERT_TRUE(regenerated.has_value()) << regenerated.error().message;
+  auto welds = roadmaker::edit::verify_junction_welds(network, t.junction);
+  ASSERT_TRUE(welds.has_value());
+  EXPECT_FALSE(welds->breaches);
+}

@@ -45,6 +45,7 @@
 #include "tools/edit_nodes_tool.hpp"
 #include "tools/elevation_tool.hpp"
 #include "tools/lane_add_tool.hpp"
+#include "tools/lane_carve_tool.hpp"
 #include "tools/lane_form_tool.hpp"
 #include "tools/lane_profile_tool.hpp"
 #include "tools/select_tool.hpp"
@@ -346,6 +347,12 @@ MainWindow::MainWindow(QWidget* parent, bool restore_saved_layout)
   connect(actions_->tool_lane_form, &QAction::triggered, this, [this] {
     tool_manager_.set_active(ToolId::LaneForm);
   });
+  auto lane_carve_tool = std::make_unique<LaneCarveTool>(document_, selection_);
+  wire_status(lane_carve_tool.get());
+  tool_manager_.register_tool(ToolId::LaneCarve, std::move(lane_carve_tool));
+  connect(actions_->tool_lane_carve, &QAction::triggered, this, [this] {
+    tool_manager_.set_active(ToolId::LaneCarve);
+  });
   tool_manager_.set_active(ToolId::Select);
 
   // Merge Roads: enabled only for exactly two selected roads mergeable in some
@@ -582,6 +589,7 @@ void MainWindow::build_toolbar() {
   toolbar->addAction(actions_->tool_lane_profile);
   toolbar->addAction(actions_->tool_lane_add);
   toolbar->addAction(actions_->tool_lane_form);
+  toolbar->addAction(actions_->tool_lane_carve);
   toolbar->addAction(actions_->tool_elevation);
   toolbar->addAction(actions_->tool_create_junction);
   toolbar->addAction(actions_->tool_split);
@@ -721,6 +729,7 @@ void MainWindow::activate_tool_for_capture(const QString& tool_id) {
       {QStringLiteral("delete"), ToolId::Delete},
       {QStringLiteral("lane-add"), ToolId::LaneAdd},
       {QStringLiteral("lane-form"), ToolId::LaneForm},
+      {QStringLiteral("lane-carve"), ToolId::LaneCarve},
   };
   if (const auto found = kTools.find(tool_id); found != kTools.end()) {
     tool_manager_.set_active(found->second);
