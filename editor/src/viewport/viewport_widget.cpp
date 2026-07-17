@@ -273,6 +273,9 @@ QImage ViewportWidget::capture_frame() {
 }
 
 HighlightState ViewportWidget::item_state(const UploadedItem& item) const {
+  // A road-style drag highlights its target road through the Hover state; it and
+  // a live mouse hover are mutually exclusive (Qt suppresses hover during a drag).
+  const RoadId hovered_road = drag_target_road_.is_valid() ? drag_target_road_ : hovered_road_;
   return highlight_state_for(item.road,
                              item.lane,
                              item.object,
@@ -280,7 +283,7 @@ HighlightState ViewportWidget::item_state(const UploadedItem& item) const {
                              item.junction,
                              item.surface_id,
                              selection_.entries(),
-                             hovered_road_,
+                             hovered_road,
                              hovered_lane_,
                              hovered_object_,
                              hovered_signal_,
@@ -716,11 +719,13 @@ void ViewportWidget::dragMoveEvent(QDragMoveEvent* event) {
 
 void ViewportWidget::dragLeaveEvent(QDragLeaveEvent* event) {
   clear_drop_preview();
+  clear_drag_target_road();
   QOpenGLWidget::dragLeaveEvent(event);
 }
 
 void ViewportWidget::dropEvent(QDropEvent* event) {
   drop_preview_.reset();
+  clear_drag_target_road();
   if (!has_library_mime(event)) {
     update();
     return;
@@ -753,6 +758,21 @@ void ViewportWidget::set_drop_preview(double world_x, double world_y, bool valid
 void ViewportWidget::clear_drop_preview() {
   if (drop_preview_.has_value()) {
     drop_preview_.reset();
+    update();
+  }
+}
+
+void ViewportWidget::set_drag_target_road(RoadId road) {
+  if (drag_target_road_ == road) {
+    return;
+  }
+  drag_target_road_ = road;
+  update();
+}
+
+void ViewportWidget::clear_drag_target_road() {
+  if (drag_target_road_.is_valid()) {
+    drag_target_road_ = {};
     update();
   }
 }

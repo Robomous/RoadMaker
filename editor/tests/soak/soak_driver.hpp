@@ -102,6 +102,7 @@ private:
   void op_lane_add_span();
   void op_lane_form();
   void op_lane_carve();
+  void op_apply_road_style();
   void op_ground_surface();
   void op_overpass();
   void op_delete_crossing_road();

@@ -102,6 +102,11 @@ private:
   /// Commits the dropped library item into the primary prop's model slot.
   void push_object_model(const QString& key);
 
+  /// Applies the dropped road-style library item to the primary selected road.
+  /// The slot is write-only (a road stores no style identity), so this is an
+  /// apply action, not a stored reference like the prop Model slot.
+  void push_road_style(const QString& key);
+
   /// Height of the Elevation tool's active node, or nullopt when no tool, no
   /// active node, or a stale road/index. Shared by the Height spin box and its
   /// scrub binding so both agree on what "current" means.
@@ -166,6 +171,12 @@ private:
   QGroupBox* object_group_;
   QLabel* object_kind_label_;
   SlotWidget* model_slot_;
+
+  /// Road-style section (shown for a selected road): a write-only Library slot
+  /// that applies a dropped road style to the road (p2-s8). Unlike the prop
+  /// Model slot it reflects no stored value — a road keeps no style identity.
+  QGroupBox* style_group_;
+  SlotWidget* style_slot_;
 
   /// Populates the Prop section from the primary selection's object, and shows
   /// it.

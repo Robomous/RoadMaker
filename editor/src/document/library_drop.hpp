@@ -9,6 +9,8 @@
 
 #include "roadmaker/edit/command.hpp"
 #include "roadmaker/road/authoring.hpp"
+#include "roadmaker/road/id.hpp"
+#include "roadmaker/road/road_style.hpp"
 
 #include <QString>
 #include <memory>
@@ -21,7 +23,7 @@ class RoadNetwork;
 
 namespace roadmaker::editor {
 
-enum class LibraryDropKind { None, RoadTemplate, Assembly, Tree, Signal };
+enum class LibraryDropKind { None, RoadTemplate, RoadStyle, Assembly, Tree, Signal };
 
 /// Where a resolved drop lands in the world (x, y) and whether it is valid
 /// there. The drag ghost renders at this point, so what the user sees while
@@ -36,13 +38,18 @@ struct PlacementPreview {
 struct LibraryDropAction {
   LibraryDropKind kind = LibraryDropKind::None;
   LaneProfile profile;                    ///< RoadTemplate: arm Create Road with this
-  std::unique_ptr<edit::Command> command; ///< Assembly/Tree: push this (one undo unit)
+  std::unique_ptr<edit::Command> command; ///< Assembly/Tree/RoadStyle: push this (one undo unit)
+  RoadId target_road;                     ///< RoadStyle: the road under the cursor (for highlight)
   QString toast;                          ///< success message, or (kind None) a reject hint
   PlacementPreview preview;               ///< where the ghost/commit lands (ghost==commit)
 };
 
 /// The LaneProfile for a road-template profile name (two_lane_rural default).
 [[nodiscard]] LaneProfile profile_for(const QString& name);
+
+/// The RoadStyle for a road-style name (urban_two_lane default). Shared with the
+/// Attributes-pane road-style slot so the drop and the slot agree.
+[[nodiscard]] RoadStyle style_for(const QString& name);
 
 /// Resolves a dropped `item` at (world_x, world_y) to a LibraryDropAction.
 /// Unknown items / create kinds yield LibraryDropKind::None.

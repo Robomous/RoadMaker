@@ -28,6 +28,12 @@ constexpr double kTreeSnapThreshold = kObjectSnapThreshold;
 /// a standalone intersection at the cursor.
 constexpr double kAssemblySnapThreshold = 8.0;
 
+/// A road style applies to the nearest road whose reference line passes within
+/// this lateral distance [m] of the drop — wide enough to grab a road by
+/// dropping anywhere across its carriageway, since the style targets the whole
+/// road, not a point on it.
+constexpr double kRoadStyleSnapThreshold = 20.0;
+
 /// The drop must sit at least this far [m] from a road end to leave room for
 /// the junction area; closer than this, the on-road attach would refuse, so the
 /// drop falls back to a standalone assembly. Comfortably above the auto gap for
@@ -124,6 +130,19 @@ LaneProfile profile_for(const QString& name) {
   return LaneProfile::two_lane_rural();
 }
 
+RoadStyle style_for(const QString& name) {
+  // Accepts both the manifest style name ("urban_two_lane", from the drop
+  // resolver) and the library item key ("style.urban", from the Attributes
+  // slot, which passes the dropped key straight through). urban is the default.
+  if (name == QStringLiteral("two_lane_rural") || name == QStringLiteral("style.rural")) {
+    return RoadStyle::two_lane_rural();
+  }
+  if (name == QStringLiteral("highway") || name == QStringLiteral("style.highway")) {
+    return RoadStyle::highway();
+  }
+  return RoadStyle::urban_two_lane();
+}
+
 LibraryDropAction resolve_library_drop(const LibraryItem& item,
                                        const RoadNetwork& network,
                                        double world_x,
@@ -138,6 +157,32 @@ LibraryDropAction resolve_library_drop(const LibraryItem& item,
     action.profile = profile_for(item.profile);
     action.preview.valid = true; // armed at the cursor
     return action;
+  case LibraryItem::Kind::RoadStyle: {
+    // Drop ONTO a road applies the style to it. Resolve the road under the
+    // cursor; report it in target_road so the drag can highlight it. A style
+    // never targets a junction connecting road (apply_road_style refuses it).
+    const auto on_road = nearest_road_station(network, world_x, world_y, kRoadStyleSnapThreshold);
+    if (!on_road.has_value()) {
+      action.toast = QStringLiteral("Drop a road style onto a road");
+      return action; // kind None, preview invalid at the cursor — caller hints
+    }
+    const Road* road = network.road(on_road->road);
+    if (road != nullptr && road->junction.is_valid()) {
+      action.toast = QStringLiteral("Road styles can't be applied to junction connecting roads");
+      return action;
+    }
+    action.command = edit::apply_road_style(network, on_road->road, style_for(item.style));
+    if (action.command != nullptr) {
+      action.kind = LibraryDropKind::RoadStyle;
+      action.target_road = on_road->road;
+      if (road != nullptr) {
+        const auto p = station_to_world(road->plan_view, on_road->s, 0.0);
+        action.preview = {p[0], p[1], true};
+      }
+      action.toast = QStringLiteral("Applied %1 — Ctrl+Z to undo").arg(item.label);
+    }
+    return action;
+  }
   case LibraryItem::Kind::Assembly: {
     const bool is_t = item.assembly == QStringLiteral("t");
     const bool is_x = item.assembly == QStringLiteral("x");

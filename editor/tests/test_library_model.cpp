@@ -22,11 +22,12 @@ TEST(LibraryManifest, ParsesTheShippedManifest) {
   ASSERT_TRUE(manifest.has_value()) << (manifest ? "" : manifest.error().message);
   EXPECT_EQ(manifest->version(), 1);
   EXPECT_EQ(manifest->items().size(),
-            12U); // 3 road templates + 2 assemblies + 5 tree props + 2 signals
+            13U); // 3 road templates + 1 road style + 2 assemblies + 5 tree props + 2 signals
 
-  // Road templates resolve to a profile, assemblies to a t/x kind, trees to a
-  // bundled prop model id, signals to a light/sign create tag.
+  // Road templates resolve to a profile, road styles to a style name, assemblies
+  // to a t/x kind, trees to a bundled prop model id, signals to a light/sign tag.
   int templates = 0;
+  int styles = 0;
   int assemblies = 0;
   int trees = 0;
   int signal_items = 0;
@@ -36,6 +37,10 @@ TEST(LibraryManifest, ParsesTheShippedManifest) {
     if (item.kind == LibraryItem::Kind::RoadTemplate) {
       ++templates;
       EXPECT_FALSE(item.profile.isEmpty());
+    } else if (item.kind == LibraryItem::Kind::RoadStyle) {
+      ++styles;
+      EXPECT_FALSE(item.style.isEmpty());
+      EXPECT_EQ(item.category, "Road styles");
     } else if (item.kind == LibraryItem::Kind::Assembly) {
       ++assemblies;
       EXPECT_TRUE(item.assembly == "t" || item.assembly == "x");
@@ -50,6 +55,7 @@ TEST(LibraryManifest, ParsesTheShippedManifest) {
     }
   }
   EXPECT_EQ(templates, 3);
+  EXPECT_EQ(styles, 1);
   EXPECT_EQ(assemblies, 2);
   EXPECT_EQ(trees, 5);
   EXPECT_EQ(signal_items, 2);
@@ -126,7 +132,7 @@ TEST(LibraryListModel, PassesQtModelSanityChecksEmptyAndPopulated) {
   const auto manifest = LibraryManifest::load(kManifest);
   ASSERT_TRUE(manifest.has_value());
   model.set_manifest(*manifest);
-  EXPECT_EQ(model.rowCount(), 12);
+  EXPECT_EQ(model.rowCount(), 13);
 }
 
 TEST(LibraryListModel, ExposesRolesAndItemLookup) {
@@ -144,7 +150,7 @@ TEST(LibraryListModel, ExposesRolesAndItemLookup) {
   ASSERT_NE(item, nullptr);
   EXPECT_EQ(model.data(first, LibraryListModel::KeyRole).toString(), item->key);
   EXPECT_EQ(model.item(-1), nullptr);
-  EXPECT_EQ(model.item(12), nullptr);
+  EXPECT_EQ(model.item(13), nullptr);
 }
 
 } // namespace

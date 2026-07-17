@@ -24,6 +24,13 @@
       "create": { "kind": "road_template", "profile": "highway" }
     },
     {
+      "key": "style.urban",
+      "label": "Urban 2-lane",
+      "category": "Road styles",
+      "thumbnail": "assets/library/thumbnails/style_urban.png",
+      "create": { "kind": "road_style", "style": "urban_two_lane" }
+    },
+    {
       "key": "assembly.t",
       "label": "T-intersection",
       "category": "Assemblies",

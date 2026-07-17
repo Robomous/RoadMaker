@@ -114,6 +114,16 @@ public slots:
   /// Clears the drop ghost (drag left the viewport or completed).
   void clear_drop_preview();
 
+  /// Highlights `road` as the target of an in-flight road-style drag (the road
+  /// the style would apply to). Rendered through the same Hover feedback state
+  /// as a live hover; a mouse-move hover does not fire during a Qt drag, so
+  /// MainWindow drives this explicitly from the drag-move handler.
+  void set_drag_target_road(RoadId road);
+
+  /// Clears the road-style drag highlight (drag left the viewport, dropped, or
+  /// moved off any road).
+  void clear_drag_target_road();
+
 public:
   [[nodiscard]] QString hint() const { return hint_text_; }
 
@@ -434,6 +444,11 @@ private:
   /// over these when both apply to the same mesh.
   RoadId hovered_road_;
   LaneId hovered_lane_;
+
+  /// The road a road-style drag is currently over (invalid = none). Drives the
+  /// same Hover highlight as hovered_road_ but is set from the drag-move handler
+  /// (Qt does not deliver mouse-move hover during a drag).
+  RoadId drag_target_road_;
 
   /// Prop/object under the cursor (invalid = none). Mutually exclusive with
   /// the road/lane hover — an object hit clears the road hover and vice versa.

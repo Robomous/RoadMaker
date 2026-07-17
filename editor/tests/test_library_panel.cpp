@@ -24,7 +24,8 @@ LibraryListModel& populated_model() {
 TEST(LibraryPanel, ShowsEveryCatalogueItem) {
   LibraryPanel panel(populated_model());
   ASSERT_NE(panel.view()->model(), nullptr);
-  EXPECT_EQ(panel.view()->model()->rowCount(), 12); // 3 templates + T/X + 5 props + 2 signals
+  EXPECT_EQ(panel.view()->model()->rowCount(),
+            13); // 3 templates + 1 style + T/X + 5 props + 2 signals
   // The grid gives every item a themed icon (the filter proxy injects it).
   const QModelIndex first = panel.view()->model()->index(0, 0);
   EXPECT_FALSE(panel.view()->model()->data(first, Qt::DecorationRole).isNull());
@@ -48,7 +49,7 @@ TEST(LibraryPanel, SearchFiltersByLabel) {
   EXPECT_EQ(panel.view()->model()->rowCount(), 2); // traffic light + traffic sign
 
   search->clear();
-  EXPECT_EQ(panel.view()->model()->rowCount(), 12);
+  EXPECT_EQ(panel.view()->model()->rowCount(), 13);
 }
 
 // An engaged Attributes-pane slot asks the Library to show its category
@@ -74,7 +75,7 @@ TEST(LibraryPanel, FocusCategoryClearsAFilterThatWouldHideIt) {
   panel.focus_category(QStringLiteral("Props"));
 
   EXPECT_TRUE(search->text().isEmpty());
-  EXPECT_EQ(panel.view()->model()->rowCount(), 12);
+  EXPECT_EQ(panel.view()->model()->rowCount(), 13);
   ASSERT_TRUE(panel.view()->currentIndex().isValid());
   EXPECT_EQ(panel.view()
                 ->model()

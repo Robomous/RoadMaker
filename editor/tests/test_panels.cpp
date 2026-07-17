@@ -365,6 +365,59 @@ TEST(PropertiesPanel, AnUnknownDroppedModelIsRefusedWithoutAnUndoEntry) {
   EXPECT_EQ(h.document.network().object(object)->name, "tree_pine");
 }
 
+// --- the Road-style slot (p2-s8) --------------------------------------------
+
+// The first non-connecting road (a road not owned by a junction).
+RoadId first_plain_road(const Document& document) {
+  RoadId plain;
+  document.network().for_each_road([&](RoadId id, const Road& road) {
+    if (!plain.is_valid() && !road.junction.is_valid()) {
+      plain = id;
+    }
+  });
+  return plain;
+}
+
+TEST(PropertiesPanel, DroppingOnTheRoadStyleSlotRestylesTheRoadInOneCommand) {
+  Harness h;
+  ASSERT_TRUE(h.document.load(kSample).has_value());
+  PropertiesPanel panel(h.document, h.selection);
+  auto* slot = panel.findChild<SlotWidget*>(QStringLiteral("road_style_slot"));
+  ASSERT_NE(slot, nullptr);
+  EXPECT_FALSE(slot->isVisibleTo(&panel)); // nothing selected yet
+
+  const RoadId road = first_plain_road(h.document);
+  ASSERT_TRUE(road.is_valid());
+  h.selection.select({.road = road});
+  ASSERT_TRUE(slot->isVisibleTo(&panel)) << "a selected road shows the Road-style section";
+
+  const int base = h.document.undo_stack()->count();
+  emit slot->item_dropped(QStringLiteral("style.urban"));
+
+  EXPECT_EQ(h.document.undo_stack()->count(), base + 1);
+  // Urban two-lane flattens the road to one section with 5 lanes (centre + 2/side).
+  ASSERT_EQ(h.document.network().road(road)->sections.size(), 1U);
+  const LaneSectionId section = h.document.network().road(road)->sections.front();
+  EXPECT_EQ(h.document.network().lane_section(section)->lanes.size(), 5U);
+
+  h.document.undo_stack()->undo();
+  EXPECT_GT(h.document.network().road(road)->sections.size(), 0U);
+}
+
+TEST(PropertiesPanel, TheRoadStyleSlotIsHiddenWithoutARoadSelection) {
+  Harness h;
+  ASSERT_TRUE(h.document.load(kSample).has_value());
+  PropertiesPanel panel(h.document, h.selection);
+  auto* slot = panel.findChild<SlotWidget*>(QStringLiteral("road_style_slot"));
+  ASSERT_NE(slot, nullptr);
+  EXPECT_FALSE(slot->isVisibleTo(&panel));
+
+  // Dropping with no road selected is a no-op (no crash, no undo entry).
+  const int base = h.document.undo_stack()->count();
+  emit slot->item_dropped(QStringLiteral("style.urban"));
+  EXPECT_EQ(h.document.undo_stack()->count(), base);
+}
+
 // Editable Properties panel via manual binding (issue #15,
 // docs/design/m2/01_editing_framework.md §7): the road-name line edit
 // commits ONE rename command on editingFinished, skips no-op commits, and

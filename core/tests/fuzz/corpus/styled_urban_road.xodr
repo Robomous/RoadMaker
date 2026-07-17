@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<OpenDRIVE>
+  <header revMajor="1" revMinor="8" name="apply_road_style demo" vendor="RoadMaker" />
+  <road name="Elm Street" length="123.77992311735365" id="1" junction="-1">
+    <planView>
+      <geometry s="0" x="0" y="0" hdg="-0.15656409401901217" length="60.245825967618">
+        <arc curvature="0.005197508425004094" />
+      </geometry>
+      <geometry s="60.245825967618" x="60" y="0" hdg="0.15656409401901208" length="63.53409714973564">
+        <arc curvature="0.005199930991018015" />
+      </geometry>
+    </planView>
+    <lanes>
+      <laneSection s="0">
+        <left>
+          <lane id="2" type="driving" level="false">
+            <width sOffset="0" a="3.5" b="0" c="0" d="0" />
+            <roadMark sOffset="0" type="solid" color="white" width="0.12" />
+          </lane>
+          <lane id="1" type="driving" level="false">
+            <width sOffset="0" a="3.5" b="0" c="0" d="0" />
+            <roadMark sOffset="0" type="broken" color="white" width="0.12" />
+          </lane>
+        </left>
+        <center>
+          <lane id="0" type="none" level="false">
+            <roadMark sOffset="0" type="solid" color="yellow" width="0.12" />
+          </lane>
+        </center>
+        <right>
+          <lane id="-1" type="driving" level="false">
+            <width sOffset="0" a="3.5" b="0" c="0" d="0" />
+            <roadMark sOffset="0" type="broken" color="white" width="0.12" />
+          </lane>
+          <lane id="-2" type="driving" level="false">
+            <width sOffset="0" a="3.5" b="0" c="0" d="0" />
+            <roadMark sOffset="0" type="solid" color="white" width="0.12" />
+          </lane>
+        </right>
+      </laneSection>
+    </lanes>
+    <userData code="rm:waypoints" value="0,0;60,0;120,20" />
+  </road>
+</OpenDRIVE>
