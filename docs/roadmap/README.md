@@ -101,6 +101,7 @@ Written once per pillar, before its first sprint lands:
 
 - [P1 — Interaction & Navigation](pillars/p1_discovery.md)
 - [P2 — Roads & Lanes](pillars/p2_discovery.md)
+- [P6 — Assets, Props & Materials](pillars/p6_discovery.md)
 
 ## Release gate
 
