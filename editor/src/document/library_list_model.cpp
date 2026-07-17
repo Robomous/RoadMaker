@@ -2,14 +2,44 @@
 
 #include <QMimeData>
 #include <QStringList>
+#include <algorithm>
 
 namespace roadmaker::editor {
 
 LibraryListModel::LibraryListModel(QObject* parent) : QAbstractListModel(parent) {}
 
 void LibraryListModel::set_manifest(LibraryManifest manifest) {
+  base_items_ = manifest.items();
+  rebuild();
+}
+
+void LibraryListModel::set_overlay(LibraryManifest manifest) {
+  overlay_items_ = manifest.items();
+  rebuild();
+}
+
+void LibraryListModel::clear_overlay() {
+  if (overlay_items_.empty()) {
+    return; // avoid a spurious full reset when nothing was overlaid
+  }
+  overlay_items_.clear();
+  rebuild();
+}
+
+void LibraryListModel::rebuild() {
   beginResetModel();
-  items_ = manifest.items();
+  items_ = base_items_;
+  for (const LibraryItem& overlay : overlay_items_) {
+    const auto match =
+        std::find_if(items_.begin(), items_.end(), [&overlay](const LibraryItem& existing) {
+          return existing.key == overlay.key;
+        });
+    if (match != items_.end()) {
+      *match = overlay; // project wins on key collision; the row keeps its place
+    } else {
+      items_.push_back(overlay); // new keys (and categories) append
+    }
+  }
   endResetModel();
 }
 

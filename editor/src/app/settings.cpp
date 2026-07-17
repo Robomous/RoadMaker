@@ -7,6 +7,7 @@ namespace {
 const auto* kGeometryKey = "window/geometry";
 const auto* kStateKey = "window/state";
 const auto* kRecentKey = "files/recent";
+const auto* kRecentProjectsKey = "files/recent_projects";
 
 } // namespace
 
@@ -36,6 +37,20 @@ void Settings::add_recent_file(const QString& path) {
     recent.removeLast();
   }
   settings_.setValue(kRecentKey, recent);
+}
+
+QStringList Settings::recent_projects() const {
+  return settings_.value(kRecentProjectsKey).toStringList();
+}
+
+void Settings::add_recent_project(const QString& path) {
+  QStringList recent = recent_projects();
+  recent.removeAll(path);
+  recent.prepend(path);
+  while (recent.size() > kMaxRecentFiles) {
+    recent.removeLast();
+  }
+  settings_.setValue(kRecentProjectsKey, recent);
 }
 
 QString Settings::theme_name() const {
