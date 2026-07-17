@@ -231,6 +231,10 @@ Actions::Actions(QUndoStack& undo_stack, QObject* parent) : QObject(parent) {
 
   reset_layout = new QAction(tr("Reset &Layout"), this);
 
+  help_contents = new QAction(tr("&User Guide"), this);
+  help_contents->setShortcuts(shortcuts::sequences(shortcuts::Id::Help));
+  help_contents->setToolTip(tr("Open the RoadMaker user guide (F1)"));
+
   about = new QAction(tr("&About RoadMaker"), this);
   about->setMenuRole(QAction::AboutRole);
 

@@ -1,0 +1,35 @@
+/* RoadMaker in-app help stylesheet — GENERATED from theme tokens by
+   help_style::css() (editor/src/theme/help_style.cpp). Do not edit by hand:
+   the CssMatchesCommittedHelpCss gate regenerates it. QTextBrowser rich-text
+   subset only — no flex, no grid, no media queries. */
+
+body { background-color: #1b1d21; color: #e8eaed;
+       font-family: -apple-system, "Segoe UI", "Noto Sans", sans-serif;
+       font-size: 15px; }
+
+h1 { color: #e8eaed; font-size: 26px; font-weight: 700;
+     border-bottom: 1px solid #2e3238; padding-bottom: 6px; }
+h2 { color: #e8eaed; font-size: 20px; font-weight: 600;
+     border-bottom: 1px solid #2e3238; padding-bottom: 4px; }
+h3 { color: #e8eaed; font-size: 16px; font-weight: 600; }
+h4, h5, h6 { color: #a7adb5; font-weight: 600; }
+
+p, li { color: #e8eaed; line-height: 150%; }
+em { color: #a7adb5; }
+strong { color: #e8eaed; font-weight: 700; }
+
+a { color: #f5a623; text-decoration: none; }
+
+code { background-color: #22252a; color: #e8eaed;
+       font-family: "SF Mono", "Consolas", monospace; font-size: 13px; }
+pre { background-color: #22252a; color: #e8eaed; border: 1px solid #2e3238;
+      padding: 8px; font-family: "SF Mono", "Consolas", monospace;
+      font-size: 13px; }
+
+blockquote { color: #a7adb5; border-left: 3px solid #434951;
+             padding-left: 10px; }
+
+table { border: 1px solid #2e3238; }
+th { background-color: #22252a; color: #e8eaed; border: 1px solid #2e3238;
+     padding: 4px 8px; text-align: left; }
+td { color: #e8eaed; border: 1px solid #2e3238; padding: 4px 8px; }

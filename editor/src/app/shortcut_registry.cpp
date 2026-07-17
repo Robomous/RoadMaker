@@ -151,6 +151,12 @@ constexpr std::array kTable{
           .primary = Qt::KeypadModifier | Qt::Key_5,
           .alternate = Qt::Key_5,
           .note = "Numpad; the top-row digit is the alternate"},
+
+    Entry{.id = Id::Help,
+          .category = "Help",
+          .description = "Open the user guide",
+          .standard = QKeySequence::HelpContents,
+          .documented = "F1"},
 };
 
 /// PortableText so the page is platform-stable; the StandardKey rows still
