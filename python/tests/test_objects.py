@@ -97,6 +97,92 @@ def test_objects_round_trip_through_xodr(network_with_road, tmp_path):
     assert objects["2"].repeats[0].distance == pytest.approx(15.0)
 
 
+def test_object_markings_round_trip(network_with_road, tmp_path):
+    network, road_id = network_with_road
+    crosswalk = rm.Object()
+    crosswalk.odr_id = "1"
+    crosswalk.type = rm.ObjectType.CROSSWALK
+    crosswalk.s, crosswalk.t = 50.0, 0.0
+    corners = []
+    for i, (a, b) in enumerate([(48.0, -2.0), (52.0, -2.0), (52.0, 2.0), (48.0, 2.0)]):
+        corner = rm.OutlineCorner(a, b)
+        corner.id = i
+        corners.append(corner)
+    marking = rm.ObjectMarking()
+    marking.color = "white"
+    marking.line_length = 0.2
+    marking.space_length = 0.05
+    marking.corner_refs = [0, 1, 2, 3]
+    outline = rm.ObjectOutline()
+    outline.closed = True
+    outline.fill_type = "paint"
+    outline.corners = corners
+    outline.markings = [marking]
+    crosswalk.outlines = [outline]
+    network.add_object(road_id, crosswalk)
+
+    path = tmp_path / "markings.xodr"
+    rm.save_xodr(network, path, name="markings")
+    reloaded, diagnostics = rm.load_xodr(path)
+    assert not [d for d in diagnostics if d.severity == rm.Severity.ERROR]
+    obj = reloaded.object(reloaded.object_ids[0])
+    # The default writer targets 1.8.1, which demotes the outline-nested marking
+    # to object level; either placement is a faithful round-trip.
+    markings = list(obj.markings) + list(obj.outlines[0].markings)
+    assert len(markings) == 1
+    assert markings[0].color == "white"
+    assert markings[0].corner_refs == [0, 1, 2, 3]
+
+
+def test_crosswalk_data_round_trip_and_override(network_with_road, tmp_path):
+    network, road_id = network_with_road
+    crosswalk = make_crosswalk()
+    data = rm.CrosswalkData()
+    data.asset = "crosswalk.zebra"
+    data.dash_length = 0.4
+    data.dash_gap = 0.6
+    data.material = "material.paint_white"
+    data.material_override = True
+    crosswalk.crosswalk = data
+    network.add_object(road_id, crosswalk)
+
+    path = tmp_path / "crosswalk.xodr"
+    rm.save_xodr(network, path, name="crosswalk")
+    reloaded, diagnostics = rm.load_xodr(path)
+    assert not [d for d in diagnostics if d.severity == rm.Severity.ERROR]
+    obj = reloaded.object(reloaded.object_ids[0])
+    assert obj.crosswalk is not None
+    assert obj.crosswalk.asset == "crosswalk.zebra"
+    assert obj.crosswalk.dash_length == pytest.approx(0.4)
+    assert obj.crosswalk.material_override is True
+
+
+def test_update_objects_undo_parity(network_with_road):
+    network, road_id = network_with_road
+    crosswalk = make_crosswalk()
+    data = rm.CrosswalkData()
+    data.asset = "crosswalk.zebra"
+    data.dash_length = 0.5
+    crosswalk.crosswalk = data
+    object_id = network.add_object(road_id, crosswalk)
+    before = rm.write_xodr(network, name="cw")
+
+    # Copy the live object (keeps its read-only road), edit the copy, and pass it
+    # as the new value — the live object is untouched until the command applies.
+    updated = rm.Object(network.object(object_id))
+    new_data = updated.crosswalk
+    new_data.dash_length = 0.3
+    updated.crosswalk = new_data
+    stack = rm.edit.EditStack()
+    stack.push(network, rm.edit.update_objects(network, [(object_id, updated)], "Edit Asset"))
+    assert network.object(object_id).crosswalk.dash_length == pytest.approx(0.3)
+
+    stack.undo(network)
+    assert rm.write_xodr(network, name="cw") == before
+    stack.redo(network)
+    assert network.object(object_id).crosswalk.dash_length == pytest.approx(0.3)
+
+
 def test_validate_cites_object_rules(network_with_road):
     network, road_id = network_with_road
     bad = rm.Object()

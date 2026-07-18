@@ -42,7 +42,27 @@ public:
   /// Unknown categories leave the panel alone.
   void focus_category(const QString& category);
 
+  /// Selects the item with `key` and emits asset_selected for it (used after a
+  /// "New crosswalk asset…" so its editor opens straight away). No-op if the
+  /// key is not present.
+  void select_asset(const QString& key);
+
+signals:
+  /// A parametric asset (currently Kind::Crosswalk) was selected — MainWindow
+  /// routes it to the Attributes-pane asset editor (PropertiesPanel::edit_asset).
+  /// Fires only for editable-asset kinds, never for droppable geometry items.
+  void asset_selected(const QString& key);
+
+  /// The context menu's "New crosswalk asset…" was chosen — MainWindow creates
+  /// a project-overlay crosswalk asset and opens its editor.
+  void new_crosswalk_asset_requested();
+
 private:
+  /// Emits asset_selected when `index` (proxy space) is a parametric asset.
+  void handle_current_changed(const QModelIndex& index);
+  void show_context_menu(const QPoint& pos);
+
+  LibraryListModel& model_;
   LibraryFilterProxy proxy_;
   QLineEdit* search_;
   QListView* view_;

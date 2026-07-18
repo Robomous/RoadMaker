@@ -3,8 +3,11 @@
 #include <QDir>
 #include <QFileInfo>
 #include <QMimeData>
+#include <QSize>
 #include <QStringList>
 #include <algorithm>
+
+#include "document/crosswalk_item.hpp"
 
 namespace roadmaker::editor {
 
@@ -60,7 +63,8 @@ void LibraryListModel::clear_overlay() {
 
 void LibraryListModel::rebuild() {
   beginResetModel();
-  icon_cache_.clear(); // resolved paths may change; drop stale (incl. negative) icons
+  icon_cache_.clear();           // resolved paths may change; drop stale (incl. negative) icons
+  crosswalk_icon_cache_.clear(); // params may change; re-render edited asset previews
   items_ = base_items_;
   for (const LibraryItem& overlay : overlay_items_) {
     const auto match =
@@ -81,6 +85,12 @@ int LibraryListModel::rowCount(const QModelIndex& parent) const {
   return parent.isValid() ? 0 : static_cast<int>(items_.size());
 }
 
+bool LibraryListModel::has_overlay_item(const QString& key) const {
+  return std::any_of(overlay_items_.begin(), overlay_items_.end(), [&](const LibraryItem& item) {
+    return item.key == key;
+  });
+}
+
 QVariant LibraryListModel::data(const QModelIndex& index, int role) const {
   const LibraryItem* entry = item(index.row());
   if (entry == nullptr || index.column() != 0) {
@@ -91,6 +101,16 @@ QVariant LibraryListModel::data(const QModelIndex& index, int role) const {
   case Qt::ToolTipRole:
     return entry->label;
   case Qt::DecorationRole: {
+    // Crosswalk assets have no PNG thumbnail — paint their preview at runtime
+    // from the stripe/material params, cached by key (cleared on rebuild()).
+    if (entry->kind == LibraryItem::Kind::Crosswalk) {
+      auto it = crosswalk_icon_cache_.constFind(entry->key);
+      if (it == crosswalk_icon_cache_.constEnd()) {
+        it = crosswalk_icon_cache_.insert(
+            entry->key, QIcon(render_crosswalk_preview(*entry, QSize(64, 48), materials_)));
+      }
+      return it.value();
+    }
     // The resolved thumbnail as a QIcon, read through a lazy cache (a null icon
     // for a path that failed to load is cached too, so a missing thumbnail is
     // not re-probed each paint). An item with no thumbnail returns a null

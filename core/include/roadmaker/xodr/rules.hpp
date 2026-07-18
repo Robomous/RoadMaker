@@ -137,6 +137,24 @@ inline constexpr std::string_view kCornerLocalMinAmount =
 inline constexpr std::string_view kCornerRoadLocalExcl =
     "asam.net:xodr:1.9.0:road.corner_road.corner_road_local_exclusivity";
 
+/// "The @id attribute of a <cornerRoad> element shall be mandatory when the
+/// parent also has a <markings> element." (1.9.0, §13.2.1.)
+inline constexpr std::string_view kCornerRoadIdWithMarkings =
+    "asam.net:xodr:1.9.0:road.corner_road.mandatory_id_with_markings";
+
+/// "The @id attribute of a <cornerLocal> element shall be mandatory when the
+/// parent also has a <markings> element." (1.9.0, §13.2.2.)
+inline constexpr std::string_view kCornerLocalIdWithMarkings =
+    "asam.net:xodr:1.9.0:road.corner_local.mandatory_id_with_markings";
+
+/// "The color of the marking shall be defined." (§13.8.)
+inline constexpr std::string_view kObjectMarkingColour =
+    "asam.net:xodr:1.7.0:road.object.marking.colour";
+
+/// "If no outline is used, the @side attribute is mandatory." (§13.8.)
+inline constexpr std::string_view kObjectMarkingNoOutlineSide =
+    "asam.net:xodr:1.7.0:road.object.marking.no_outline_side_attr";
+
 /// "Signals shall have a specific type and subtype." (§14.1.)
 inline constexpr std::string_view kSignalType = "asam.net:xodr:1.7.0:road.signal.signal_type";
 

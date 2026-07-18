@@ -1,7 +1,9 @@
 #include "panels/library_panel.hpp"
 
+#include <QItemSelectionModel>
 #include <QLineEdit>
 #include <QListView>
+#include <QMenu>
 #include <QVBoxLayout>
 
 #include "app/icons.hpp"
@@ -63,7 +65,8 @@ QVariant LibraryFilterProxy::data(const QModelIndex& index, int role) const {
   return QSortFilterProxyModel::data(index, role);
 }
 
-LibraryPanel::LibraryPanel(LibraryListModel& model, QWidget* parent) : QWidget(parent) {
+LibraryPanel::LibraryPanel(LibraryListModel& model, QWidget* parent)
+    : QWidget(parent), model_(model) {
   proxy_.setSourceModel(&model);
   proxy_.sort(0);
 
@@ -88,12 +91,50 @@ LibraryPanel::LibraryPanel(LibraryListModel& model, QWidget* parent) : QWidget(p
   view_->setDragDropMode(QAbstractItemView::DragOnly);
 
   connect(search_, &QLineEdit::textChanged, &proxy_, &QSortFilterProxyModel::setFilterFixedString);
+  connect(
+      view_->selectionModel(),
+      &QItemSelectionModel::currentChanged,
+      this,
+      [this](const QModelIndex& current, const QModelIndex&) { handle_current_changed(current); });
+
+  view_->setContextMenuPolicy(Qt::CustomContextMenu);
+  connect(view_, &QListView::customContextMenuRequested, this, &LibraryPanel::show_context_menu);
 
   auto* layout = new QVBoxLayout(this);
   layout->setContentsMargins(6, 6, 6, 6);
   layout->setSpacing(6);
   layout->addWidget(search_);
   layout->addWidget(view_, 1);
+}
+
+void LibraryPanel::handle_current_changed(const QModelIndex& index) {
+  if (!index.isValid()) {
+    return;
+  }
+  const LibraryItem* item = model_.item(proxy_.mapToSource(index).row());
+  if (item != nullptr && item->kind == LibraryItem::Kind::Crosswalk) {
+    emit asset_selected(item->key);
+  }
+}
+
+void LibraryPanel::show_context_menu(const QPoint& pos) {
+  QMenu menu(this);
+  QAction* new_crosswalk = menu.addAction(tr("New crosswalk asset…"));
+  connect(new_crosswalk, &QAction::triggered, this, &LibraryPanel::new_crosswalk_asset_requested);
+  menu.exec(view_->viewport()->mapToGlobal(pos));
+}
+
+void LibraryPanel::select_asset(const QString& key) {
+  for (int row = 0; row < proxy_.rowCount(); ++row) {
+    const QModelIndex index = proxy_.index(row, 0);
+    if (proxy_.data(index, LibraryListModel::KeyRole).toString() == key) {
+      search_->clear();
+      view_->setCurrentIndex(index);
+      view_->scrollTo(index, QAbstractItemView::PositionAtCenter);
+      emit asset_selected(key);
+      return;
+    }
+  }
 }
 
 void LibraryPanel::focus_category(const QString& category) {

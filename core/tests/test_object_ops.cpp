@@ -210,5 +210,74 @@ TEST(ObjectOps, NonPropObjectEmitsNoInstance) {
   EXPECT_TRUE(mesh.objects.empty()) << "a pole is not a bundled prop model";
 }
 
+// --- update_objects (batch replace behind an asset edit) --------------------
+
+TEST(UpdateObjects, RewritesInstancesWithByteIdenticalUndo) {
+  RoadNetwork network;
+  const RoadId road = author_street(network);
+  Object cw;
+  cw.odr_id = "cw1";
+  cw.type = ObjectType::Crosswalk;
+  cw.s = 30.0;
+  cw.crosswalk = CrosswalkData{.asset = "crosswalk.zebra", .dash_length = 0.5, .dash_gap = 0.5};
+  const ObjectId id = network.add_object(road, cw);
+  const std::string before = snapshot_xodr(network);
+
+  Object updated = *network.object(id);
+  updated.crosswalk->dash_length = 0.3; // asset width edit re-materialized
+  auto command = edit::update_objects(network, {{id, updated}}, "Edit Crosswalk Asset");
+  ASSERT_NE(command, nullptr);
+  EXPECT_EQ(command->name(), "Edit Crosswalk Asset");
+  ASSERT_TRUE(command->apply(network).has_value());
+
+  EXPECT_EQ(network.object(id)->crosswalk->dash_length, 0.3); // same id, new value
+  EXPECT_NE(snapshot_xodr(network), before);
+  const edit::DirtySet dirty = command->dirty();
+  EXPECT_TRUE(std::ranges::find(dirty.objects, road) != dirty.objects.end());
+
+  ASSERT_TRUE(command->revert(network).has_value());
+  EXPECT_EQ(snapshot_xodr(network), before) << "undo byte-identical";
+  ASSERT_TRUE(command->apply(network).has_value()); // redo parity
+  EXPECT_EQ(network.object(id)->crosswalk->dash_length, 0.3);
+}
+
+TEST(UpdateObjects, StaleIdIsCleanError) {
+  RoadNetwork network;
+  const RoadId road = author_street(network);
+  const ObjectId id = network.add_object(road, make_tree("1", 10.0, 4.0));
+  Object updated = *network.object(id);
+  network.erase_object(id);
+  const std::string before = snapshot_xodr(network);
+  auto command = edit::update_objects(network, {{id, updated}}, "");
+  ASSERT_NE(command, nullptr);
+  EXPECT_FALSE(command->apply(network).has_value()); // stale id refused
+  EXPECT_EQ(snapshot_xodr(network), before) << "failed apply leaves network untouched";
+}
+
+TEST(UpdateObjects, RefusesChangingOwningRoad) {
+  RoadNetwork network;
+  const RoadId road = author_street(network);
+  const std::vector<Waypoint> other_wp{Waypoint{0.0, 40.0}, Waypoint{120.0, 40.0}};
+  const RoadId other =
+      author_clothoid_road(network, other_wp, LaneProfile::two_lane_default(), "", "2").value();
+  const ObjectId id = network.add_object(road, make_tree("1", 10.0, 4.0));
+  Object moved = *network.object(id);
+  moved.road = other; // illegal: update_objects never re-parents
+  auto command = edit::update_objects(network, {{id, moved}}, "");
+  ASSERT_NE(command, nullptr);
+  EXPECT_FALSE(command->apply(network).has_value());
+}
+
+TEST(UpdateObjects, EmptyBatchIsANoOp) {
+  RoadNetwork network;
+  author_street(network);
+  const std::string before = snapshot_xodr(network);
+  auto command = edit::update_objects(network, {}, "");
+  ASSERT_NE(command, nullptr);
+  ASSERT_TRUE(command->apply(network).has_value());
+  EXPECT_EQ(snapshot_xodr(network), before);
+  EXPECT_TRUE(command->dirty().objects.empty());
+}
+
 } // namespace
 } // namespace roadmaker

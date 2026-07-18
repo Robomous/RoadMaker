@@ -36,6 +36,7 @@
 #include "app/log_setup.hpp"
 #include "app/tour_controller.hpp"
 #include "app/tour_overlay.hpp"
+#include "document/crosswalk_item.hpp"
 #include "document/library_drop.hpp"
 #include "document/library_manifest.hpp"
 #include "help/help_registry.hpp"
@@ -140,6 +141,7 @@ MainWindow::MainWindow(QWidget* parent, bool restore_saved_layout)
           this,
           [this](const MenuContext& context, const QPoint& global_pos) {
             ContextMenuDeps deps{document_, selection_, *actions_};
+            deps.default_crosswalk_params = [this] { return resolve_default_crosswalk_params(); };
             if (QMenu* menu = assemble_context_menu(context, deps, this)) {
               menu->popup(global_pos);
             }
@@ -468,6 +470,24 @@ void MainWindow::build_docks() {
             library_dock_->raise(); // it shares a tab stack with the Scene tree
             library_panel_->focus_category(category);
           });
+  // Crosswalk asset authoring (p3-s2): the Library routes an asset selection to
+  // the Attributes-pane editor; the editor's commits flow back through
+  // MainWindow, which owns the project-overlay manifest and the propagation.
+  properties_panel_->set_library_model(&library_model_);
+  connect(library_panel_, &LibraryPanel::asset_selected, this, [this](const QString& key) {
+    const bool editable = project_.has_value() && library_model_.has_overlay_item(key);
+    properties_dock_->show();
+    properties_dock_->raise();
+    properties_panel_->edit_asset(key, editable);
+  });
+  connect(library_panel_,
+          &LibraryPanel::new_crosswalk_asset_requested,
+          this,
+          &MainWindow::create_crosswalk_asset);
+  connect(properties_panel_,
+          &PropertiesPanel::crosswalk_asset_committed,
+          this,
+          &MainWindow::commit_crosswalk_asset);
   properties_dock_->setWidget(properties_panel_);
   properties_dock_->widget()->setMinimumWidth(300);
   addDockWidget(Qt::RightDockWidgetArea, properties_dock_);
@@ -828,6 +848,90 @@ void MainWindow::apply_project_overlay() {
   // directory (p6-s2) so a project's own PNGs load from disk.
   library_model_.set_overlay(std::move(*manifest),
                              QString::fromStdString(project_->dir().string()));
+}
+
+edit::CrosswalkParams MainWindow::resolve_default_crosswalk_params() const {
+  // The first Kind::Crosswalk in the merged Library (an overlay asset shadows
+  // the built-in); crosswalk.zebra is always present as the base fallback.
+  for (int row = 0; row < library_model_.rowCount(); ++row) {
+    const LibraryItem* item = library_model_.item(row);
+    if (item != nullptr && item->kind == LibraryItem::Kind::Crosswalk) {
+      return crosswalk_params_from_item(*item, crosswalk_materials_);
+    }
+  }
+  return {};
+}
+
+LibraryManifest MainWindow::load_or_create_overlay_manifest() const {
+  if (project_.has_value()) {
+    if (const auto path = project_->library_manifest_path()) {
+      if (auto loaded = LibraryManifest::load(*path); loaded.has_value()) {
+        return std::move(*loaded);
+      }
+    }
+  }
+  return {}; // a fresh manifest at the supported version
+}
+
+void MainWindow::create_crosswalk_asset() {
+  if (!project_.has_value()) {
+    viewport_->show_toast(tr("Open or create a project to author assets"), ToastSeverity::Info);
+    return;
+  }
+  const auto path = project_->library_manifest_path();
+  if (!path.has_value()) {
+    return;
+  }
+  LibraryManifest manifest = load_or_create_overlay_manifest();
+  // A unique key across base + overlay so the new asset never shadows a built-in.
+  QString key;
+  for (int n = 1;; ++n) {
+    key = QStringLiteral("crosswalk.custom%1").arg(n);
+    if (library_model_.item_for_key(key) == nullptr) {
+      break;
+    }
+  }
+  LibraryItem item;
+  item.key = key;
+  item.label = tr("Crosswalk %1").arg(key.mid(QStringLiteral("crosswalk.custom").size()));
+  item.category = QStringLiteral("Crosswalks");
+  item.kind = LibraryItem::Kind::Crosswalk;
+  item.crosswalk_material = QStringLiteral("material.paint_white");
+  item.crosswalk_segmentation = QStringLiteral("crosswalk");
+  manifest.upsert(item);
+  if (!manifest.save(*path).has_value()) {
+    viewport_->show_toast(tr("Couldn't write the project library"), ToastSeverity::Warning);
+    return;
+  }
+  apply_project_overlay(); // reload the overlay so the model sees the new asset
+  library_dock_->show();
+  library_dock_->raise();
+  library_panel_->select_asset(key); // selects it and opens its editor
+}
+
+void MainWindow::commit_crosswalk_asset(const LibraryItem& item) {
+  if (!project_.has_value()) {
+    return;
+  }
+  const auto path = project_->library_manifest_path();
+  if (!path.has_value()) {
+    return;
+  }
+  LibraryManifest manifest = load_or_create_overlay_manifest();
+  manifest.upsert(item);
+  if (!manifest.save(*path).has_value()) {
+    viewport_->show_toast(tr("Couldn't write the project library"), ToastSeverity::Warning);
+    return;
+  }
+  apply_project_overlay(); // refresh the Library preview/icons for the edited asset
+  // Propagate the asset change to every following instance in one undoable
+  // command (the manifest write itself is not undoable — documented follow-up).
+  if (auto command = propagate_crosswalk_asset(document_.network(),
+                                               item,
+                                               crosswalk_materials_,
+                                               tr("Edit crosswalk asset").toStdString())) {
+    (void)document_.push_command(std::move(command));
+  }
 }
 
 void MainWindow::set_capture_highlights(const QString& select_odr, const QString& hover_odr) {

@@ -7,6 +7,7 @@ and glTF export. See https://github.com/robomous/roadmaker.
 from ._roadmaker import (  # noqa: F401
     BoundarySource,
     ContactPoint,
+    CrosswalkData,
     Diagnostic,
     Junction,
     JunctionId,
@@ -23,6 +24,7 @@ from ._roadmaker import (  # noqa: F401
     NetworkMesh,
     Object,
     ObjectId,
+    ObjectMarking,
     ObjectOrientation,
     ObjectOutline,
     ObjectRepeat,

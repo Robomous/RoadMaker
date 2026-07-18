@@ -22,6 +22,8 @@
 
 #include "document/diagnostics_model.hpp"
 #include "document/document.hpp"
+#include "document/library_list_model.hpp"
+#include "document/library_manifest.hpp"
 #include "document/scene_tree_model.hpp"
 #include "document/selection_model.hpp"
 #include "panels/diagnostics_panel.hpp"
@@ -682,6 +684,43 @@ TEST(PropertiesPanel, EngagingTheMarkingSlotRequestsTheMarkingsCategory) {
   emit slot->engage_requested(slot->category());
   ASSERT_EQ(spy.count(), 1);
   EXPECT_EQ(spy.front().front().toString(), QStringLiteral("Markings"));
+}
+
+// --- crosswalk asset editor (p3-s2) -----------------------------------------
+
+TEST(PropertiesPanel, EditAssetPopulatesAndCommitsCrosswalkParams) {
+  qRegisterMetaType<LibraryItem>();
+  Harness harness;
+  LibraryListModel model;
+  const auto manifest = LibraryManifest::parse(QByteArrayLiteral(R"({
+    "manifest_version": 1,
+    "items": [{"key": "crosswalk.zebra", "label": "Zebra", "category": "Crosswalks",
+               "create": {"kind": "crosswalk", "width": 3.0, "dash_length": 0.5,
+                          "dash_gap": 0.5, "material": "material.paint_white"}}]
+  })"));
+  ASSERT_TRUE(manifest.has_value());
+  model.set_manifest(*manifest);
+
+  PropertiesPanel panel(harness.document, harness.selection);
+  panel.set_library_model(&model);
+  QSignalSpy spy(&panel, &PropertiesPanel::crosswalk_asset_committed);
+
+  panel.edit_asset(QStringLiteral("crosswalk.zebra"), /*editable=*/true);
+  auto* width = panel.findChild<QDoubleSpinBox*>(QStringLiteral("asset_width_spin"));
+  ASSERT_NE(width, nullptr);
+  EXPECT_DOUBLE_EQ(width->value(), 3.0); // populated from the manifest
+
+  width->setValue(4.5);
+  emit width->editingFinished();
+  ASSERT_EQ(spy.count(), 1);
+  const auto committed = qvariant_cast<LibraryItem>(spy.front().front());
+  EXPECT_DOUBLE_EQ(committed.crosswalk_width, 4.5);
+  EXPECT_EQ(committed.key, QStringLiteral("crosswalk.zebra"));
+  EXPECT_EQ(committed.kind, LibraryItem::Kind::Crosswalk);
+
+  // A read-only (built-in) asset disables editing and does not commit.
+  panel.edit_asset(QStringLiteral("crosswalk.zebra"), /*editable=*/false);
+  EXPECT_FALSE(width->isEnabled());
 }
 
 } // namespace

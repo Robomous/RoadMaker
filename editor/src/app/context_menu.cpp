@@ -153,21 +153,26 @@ std::vector<MenuItem> build_context_menu(const MenuContext& context, ContextMenu
     // the junction — all in one undo step (§WS-B). Disabled when the junction has
     // no resolvable arms (foreign/degenerate) so it can't no-op silently.
     const bool has_arms = !edit::junction_crosswalks(network, junction).empty();
-    items.push_back(
-        MenuItem{.text = QObject::tr("Add crosswalks to all arms"),
-                 .enabled = has_arms,
-                 .invoke = [deps, junction] {
-                   auto crosswalks = edit::junction_crosswalks(deps.document.network(), junction);
-                   if (crosswalks.empty()) {
-                     return;
-                   }
-                   deps.document.undo_stack()->beginMacro(QObject::tr("Add crosswalks"));
-                   for (auto& [road, object] : crosswalks) {
-                     (void)deps.document.push_command(
-                         edit::add_object(deps.document.network(), road, std::move(object)));
-                   }
-                   deps.document.undo_stack()->endMacro();
-                 }});
+    items.push_back(MenuItem{
+        .text = QObject::tr("Add crosswalks to all arms"),
+        .enabled = has_arms,
+        .invoke = [deps, junction] {
+          // Born linked to the default crosswalk asset (p3-s2), so a
+          // later asset edit re-materializes these instances.
+          const edit::CrosswalkParams params = deps.default_crosswalk_params
+                                                   ? deps.default_crosswalk_params()
+                                                   : edit::CrosswalkParams{};
+          auto crosswalks = edit::junction_crosswalks(deps.document.network(), junction, params);
+          if (crosswalks.empty()) {
+            return;
+          }
+          deps.document.undo_stack()->beginMacro(QObject::tr("Add crosswalks"));
+          for (auto& [road, object] : crosswalks) {
+            (void)deps.document.push_command(
+                edit::add_object(deps.document.network(), road, std::move(object)));
+          }
+          deps.document.undo_stack()->endMacro();
+        }});
     // A solid stop line across each arm's approach lanes, just behind the
     // crosswalk — again one undo step.
     const bool has_stop_arms = !edit::junction_stop_lines(network, junction).empty();

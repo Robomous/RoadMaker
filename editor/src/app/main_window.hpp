@@ -4,6 +4,8 @@
 // viewport, status bar, drag-and-drop, layout persistence. Arrangement only —
 // all state lives in Document/SelectionModel, all logic in the models.
 
+#include "roadmaker/edit/markings.hpp"
+
 #include <QDockWidget>
 #include <QLabel>
 #include <QMainWindow>
@@ -113,6 +115,19 @@ private:
   /// Library model as an overlay; clears the overlay when the project has
   /// none (or none parses).
   void apply_project_overlay();
+  /// Loads the active project's overlay manifest, or a fresh one when none
+  /// exists yet — the base for a crosswalk-asset create/edit write (p3-s2).
+  [[nodiscard]] LibraryManifest load_or_create_overlay_manifest() const;
+  /// The CrosswalkParams the junction "Add crosswalks" op uses — the default
+  /// crosswalk asset from the merged Library (p3-s2).
+  [[nodiscard]] edit::CrosswalkParams resolve_default_crosswalk_params() const;
+  /// Creates a new project-overlay crosswalk asset (from library defaults),
+  /// saves it, refreshes the Library, and opens its editor. Toasts when no
+  /// project is open.
+  void create_crosswalk_asset();
+  /// Persists an edited crosswalk asset into the project overlay and propagates
+  /// the change to every following instance in one undoable command.
+  void commit_crosswalk_asset(const LibraryItem& item);
   /// Adopts the project containing `scene_path` (or clears the association
   /// for a standalone scene). Runs after every load and save.
   void associate_project_for(const std::filesystem::path& scene_path);
@@ -168,6 +183,9 @@ private:
   SelectionModel selection_;
   SceneTreeModel scene_tree_model_;
   LibraryListModel library_model_;
+  /// Resolves a crosswalk asset's material to a paint tint when propagating an
+  /// asset edit to its instances (p3-s2).
+  MaterialCatalog crosswalk_materials_;
   DiagnosticsModel diagnostics_model_;
   ToolManager tool_manager_; // declared before viewport_, which references it
 

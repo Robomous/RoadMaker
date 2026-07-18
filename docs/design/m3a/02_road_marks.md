@@ -145,4 +145,41 @@ Determinism (stable vertex order) is required, matching the M2 mesh tests.
   ([`01`](01_kernel_objects_signals.md) §4).
 - **Golden:** GS-1 rows 4–8 (crosswalks, arrows, stop lines, double-yellow,
   dashed white) check against the fixed-camera render.
+
+## 6. Parametric crosswalk assets (p3-s2, #221)
+
+A crosswalk is a *parametric asset* (Library `kind: "crosswalk"`) whose
+`{width, border_width, dash_length, dash_gap, material, segmentation}` are
+materialized into each placed `<object>`. The authoring source of truth is a
+`<userData code="rm:crosswalk">` record (the `rm:surface` precedent); the
+OpenDRIVE `<outline>` + `<markings>` are the *interop projection*, authored by
+one shared function (`edit::apply_crosswalk_asset`, called by both
+`junction_crosswalks` and the editor's asset re-materialization). On reload the
+mesher renders from `CrosswalkData`; a foreign crosswalk with no `rm:crosswalk`
+keeps the fallback synthesized zebra (`kZebraStripe`/`kZebraGap`).
+
+**Object-marking encoding contract** (schema-valid, visually approximate — the
+`<marking>` line primitive cannot express zebra bars faithfully; the mesher
+owns the picture, follow-up: generic object-marking mesher + esmini visual
+cross-check):
+
+- Outline: a closed `cornerRoad` ring, ids **0..3 in CCW order** — `(s0,t_min)`,
+  `(s1,t_min)`, `(s1,t_max)`, `(s0,t_max)` — with `fillType="paint"`. `s0/s1` =
+  centre `s` ± depth/2; `t_min/t_max` = centre `t` ± span/2. `@id` on every
+  corner is mandatory once markings are present
+  (`road.corner_road.mandatory_id_with_markings`).
+- Markings order: the **stripes marking first** (cornerReferences `0,1,2,3`
+  over the full ring; `dash_length == 0` ⇒ `spaceLength = 0`, `lineLength` = the
+  crossing span, i.e. a solid run — `lineLength` stays `> 0`, `t_grZero`), then,
+  when `border_width > 0`, **two solid border markings** on the road-parallel
+  edges (cornerReferences `{0,1}` and `{2,3}`).
+- **Version placement / demotion:** 1.9.0 nests `<markings>` inside the
+  `<outline>` (§13.2.4/§13.8); a 1.8.1 target *demotes* them to object level
+  (§13.8 places `<markings>` only under `<object>`, still referencing outline
+  points via `<cornerReference>`). Round-trip is a fixed point at each version.
+- **Default vs override:** an instance follows its asset's Default Material
+  unless `material_override = true`, which pins a per-instance material through
+  asset-material changes (GW-5 steps 7/9). Asset edits propagate to every
+  following instance as ONE `edit::update_objects` command; the manifest write
+  itself is not undoable (follow-up if maintainer wants asset-edit undo).
 </content>

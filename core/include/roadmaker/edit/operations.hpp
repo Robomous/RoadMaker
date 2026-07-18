@@ -709,6 +709,20 @@ move_signal(const RoadNetwork& network,
 [[nodiscard]] RM_API std::unique_ptr<Command>
 set_object_model(const RoadNetwork& network, ObjectId object, std::string model_id);
 
+/// Replaces each listed object with its new value in one undoable command — the
+/// batch behind an asset edit that re-materializes every instance following the
+/// changed asset (p3-s2 crosswalk assets). `updates` pairs each ObjectId with
+/// its full replacement Object; ids keep their generation (in-place value
+/// assignment, so held references survive) and undo is byte-identical from the
+/// before-snapshot. Refuses (invalid_command) a stale id or an update that
+/// changes an object's owning road (`Object::road`); an empty `updates` is a
+/// valid no-op. DirtySet::objects lists the deduped owning roads. `name` is the
+/// undo-menu label (defaults to "Update Objects" when empty).
+[[nodiscard]] RM_API std::unique_ptr<Command>
+update_objects(const RoadNetwork& network,
+               std::vector<std::pair<ObjectId, Object>> updates,
+               std::string name = {});
+
 // --- document ---------------------------------------------------------------
 
 [[nodiscard]] RM_API std::unique_ptr<Command>

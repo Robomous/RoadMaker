@@ -35,6 +35,7 @@ add_executable(roadmaker_editor_tests
   test_crash_handler.cpp
   test_create_junction_tool.cpp
   test_create_road_tool.cpp
+  test_crosswalk_item.cpp
   test_delete_tool.cpp
   test_diagnostics_model.cpp
   test_document.cpp

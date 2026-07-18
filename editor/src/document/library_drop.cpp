@@ -448,6 +448,10 @@ LibraryDropAction resolve_library_drop(const LibraryItem& item,
     }
     return action;
   }
+  case LibraryItem::Kind::Crosswalk:
+    // A crosswalk is a parametric asset edited in the Attributes pane, not
+    // dropped onto the viewport (the placing tools are p3-s3/s4). Instances
+    // come from the junction generator, so a drop is a no-op here.
   case LibraryItem::Kind::Unknown:
     break;
   }

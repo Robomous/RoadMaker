@@ -34,6 +34,13 @@ struct SubMesh {
   /// property, not a roadMark one.
   RoadMarkColor mark_color = RoadMarkColor::Standard;
 
+  /// Assigned material code for painted object markings (§13.8), e.g.
+  /// "material.paint_white" from a crosswalk asset's Default Material — lets the
+  /// viewport/exporter tint the marking from the material library. Empty when
+  /// the marking carries no material (the renderer then uses its paint colour).
+  /// Parallel to RoadMesh::LanePatch::surface.
+  std::string surface;
+
   std::string name;
 };
 

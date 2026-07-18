@@ -7,6 +7,8 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QJsonParseError>
+#include <QSaveFile>
+#include <algorithm>
 
 namespace roadmaker::editor {
 
@@ -34,7 +36,34 @@ LibraryItem::Kind parse_kind(const QString& kind) {
   if (kind == QStringLiteral("material")) {
     return LibraryItem::Kind::Material;
   }
+  if (kind == QStringLiteral("crosswalk")) {
+    return LibraryItem::Kind::Crosswalk;
+  }
   return LibraryItem::Kind::Unknown;
+}
+
+/// The `create` JSON block for one item. A parsed item re-emits its verbatim
+/// create_raw (round-trips unknown kinds + forward-compat fields); a
+/// programmatically built crosswalk item is serialized from its fields.
+QJsonObject create_object(const LibraryItem& item) {
+  if (!item.create_raw.isEmpty()) {
+    return item.create_raw;
+  }
+  QJsonObject create;
+  if (item.kind == LibraryItem::Kind::Crosswalk) {
+    create[QStringLiteral("kind")] = QStringLiteral("crosswalk");
+    create[QStringLiteral("width")] = item.crosswalk_width;
+    create[QStringLiteral("border_width")] = item.crosswalk_border;
+    create[QStringLiteral("dash_length")] = item.crosswalk_dash;
+    create[QStringLiteral("dash_gap")] = item.crosswalk_gap;
+    if (!item.crosswalk_material.isEmpty()) {
+      create[QStringLiteral("material")] = item.crosswalk_material;
+    }
+    if (!item.crosswalk_segmentation.isEmpty()) {
+      create[QStringLiteral("segmentation")] = item.crosswalk_segmentation;
+    }
+  }
+  return create;
 }
 
 } // namespace
@@ -94,9 +123,77 @@ Expected<LibraryManifest> LibraryManifest::parse(const QByteArray& json) {
     item.mark_color = create.value(QStringLiteral("mark_color")).toString();
     item.mark_width = create.value(QStringLiteral("mark_width")).toDouble(0.12);
     item.material = create.value(QStringLiteral("material")).toString();
+    item.crosswalk_width = create.value(QStringLiteral("width")).toDouble(3.0);
+    item.crosswalk_border = create.value(QStringLiteral("border_width")).toDouble(0.0);
+    item.crosswalk_dash = create.value(QStringLiteral("dash_length")).toDouble(0.5);
+    item.crosswalk_gap = create.value(QStringLiteral("dash_gap")).toDouble(0.5);
+    item.crosswalk_material = create.value(QStringLiteral("material")).toString();
+    item.crosswalk_segmentation = create.value(QStringLiteral("segmentation")).toString();
+    // Capture the verbatim create block so unknown kinds and forward-compat
+    // fields survive to_json() untouched (the never-drop contract for the
+    // manifest schema).
+    item.create_raw = create;
     manifest.items_.push_back(std::move(item));
   }
   return manifest;
+}
+
+QByteArray LibraryManifest::to_json() const {
+  QJsonArray items;
+  for (const LibraryItem& item : items_) {
+    QJsonObject object;
+    object[QStringLiteral("key")] = item.key;
+    if (!item.label.isEmpty()) {
+      object[QStringLiteral("label")] = item.label;
+    }
+    if (!item.category.isEmpty()) {
+      object[QStringLiteral("category")] = item.category;
+    }
+    if (!item.thumbnail.isEmpty()) {
+      object[QStringLiteral("thumbnail")] = item.thumbnail;
+    }
+    object[QStringLiteral("create")] = create_object(item);
+    items.push_back(object);
+  }
+  QJsonObject root;
+  root[QStringLiteral("manifest_version")] = version_;
+  root[QStringLiteral("items")] = items;
+  return QJsonDocument(root).toJson(QJsonDocument::Indented);
+}
+
+Expected<void> LibraryManifest::save(const std::filesystem::path& path) const {
+  // QSaveFile: the manifest appears atomically or not at all (Project::create
+  // pattern) — a half-written overlay would break the next load.
+  QSaveFile file(QString::fromStdString(path.string()));
+  if (!file.open(QIODevice::WriteOnly)) {
+    return make_error(
+        ErrorCode::IoFailure, "cannot open library manifest for writing", path.string());
+  }
+  file.write(to_json());
+  if (!file.commit()) {
+    return make_error(ErrorCode::IoFailure, "cannot commit library manifest", path.string());
+  }
+  return {};
+}
+
+void LibraryManifest::upsert(LibraryItem item) {
+  for (LibraryItem& existing : items_) {
+    if (existing.key == item.key) {
+      existing = std::move(item);
+      return;
+    }
+  }
+  items_.push_back(std::move(item));
+}
+
+bool LibraryManifest::remove(const QString& key) {
+  const auto it = std::find_if(
+      items_.begin(), items_.end(), [&](const LibraryItem& item) { return item.key == key; });
+  if (it == items_.end()) {
+    return false;
+  }
+  items_.erase(it);
+  return true;
 }
 
 Expected<LibraryManifest> LibraryManifest::load(const std::filesystem::path& path) {

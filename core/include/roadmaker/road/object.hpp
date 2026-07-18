@@ -33,6 +33,33 @@ enum class ObjectOrientation {
   None,  ///< valid in both directions
 };
 
+/// One <marking> line of an object (§13.8, Table 99): a dashed or solid painted
+/// line either attached to a side of the object's bounding volume (@side, no
+/// <cornerReference>) or running between referenced outline points
+/// (`corner_refs`). RoadMaker authors crosswalks as outline-referenced markings
+/// (1.9.0, inside <outline>); the same struct models the 1.8.1 object-level form
+/// (@side, directly under <object>) so both round-trip. A solid line is
+/// `space_length == 0` with `line_length` the run length (>0, spec t_grZero).
+struct ObjectMarking {
+  std::string color;                 ///< e_roadMarkColor (required, §13.8)
+  double line_length = 0.0;          ///< length of the visible part [m] (>0, required)
+  double space_length = 0.0;         ///< gap between visible parts [m] (>=0); 0 = solid
+  double start_offset = 0.0;         ///< lateral u-offset where the marking starts [m]
+  double stop_offset = 0.0;          ///< lateral u-offset where the marking ends [m]
+  std::optional<std::string> side;   ///< e_sideType (bounding-volume marking)
+  std::optional<std::string> weight; ///< e_roadMarkWeight (optical weight)
+  std::optional<double> width;       ///< marking width [m] (>0)
+  std::optional<double> z_offset;    ///< thickness above the road [m] (>=0)
+  /// <cornerReference @id> values, in outline order (§13.8.1.3). Empty for a
+  /// bounding-volume (@side) marking.
+  std::vector<int> corner_refs;
+
+  /// Unknown @marking attributes preserved verbatim (never-drop contract).
+  RawXml preserved;
+
+  friend bool operator==(const ObjectMarking&, const ObjectMarking&) = default;
+};
+
 /// One <cornerRoad> or <cornerLocal> outline vertex (§13.2.1/§13.2.2).
 /// ObjectOutline::road_coords selects which coordinate pair `a`/`b` holds —
 /// the two corner kinds are mutually exclusive within an outline
@@ -59,6 +86,10 @@ struct ObjectOutline {
   std::optional<std::string> fill_type; ///< e_outlineFillType, e.g. "paint"
   std::optional<std::string> lane_type; ///< e_laneType the object is treated as
   std::vector<OutlineCorner> corners;
+  /// <markings> referencing this outline's points (§13.2.4/§13.8). Populated
+  /// for 1.9.0 outline-nested markings (crosswalk stripes). Each marking's
+  /// `corner_refs` index into `corners` by @id.
+  std::vector<ObjectMarking> markings;
 
   /// Verbatim fallback: when the outline cannot be modeled faithfully
   /// (<curveLocal> children, mixed corner kinds), the whole <outline>
@@ -87,6 +118,25 @@ struct ObjectRepeat {
   bool detach_from_reference_line = false;
 
   friend bool operator==(const ObjectRepeat&, const ObjectRepeat&) = default;
+};
+
+/// RoadMaker's authoring truth for a parametric crosswalk asset instance,
+/// carried in `<userData code="rm:crosswalk">` (the rm:surface precedent). The
+/// OpenDRIVE outline + <markings> are the interop projection authored from
+/// these params; on reload this is the source of truth the mesher renders,
+/// while a foreign crosswalk without it falls back to the synthesized zebra.
+/// Instances follow their asset's Default Material unless `material_override`
+/// pins a per-instance choice (GW-5 steps 7/9).
+struct CrosswalkData {
+  std::string asset;              ///< Library asset key this instance follows
+  double border_width = 0.0;      ///< edge-line width [m]; 0 = no border lines
+  double dash_length = 0.5;       ///< stripe length along the crossing [m]; 0 = solid
+  double dash_gap = 0.5;          ///< gap between stripes [m]
+  std::string material;           ///< material code, e.g. "material.paint_white"
+  bool material_override = false; ///< true = keep `material` on asset changes
+  std::string category;           ///< segmentation category tag
+
+  friend bool operator==(const CrosswalkData&, const CrosswalkData&) = default;
 };
 
 /// <object> (§13.1, Table 85). Placement is in road s/t/zOffset, resolved to
@@ -130,9 +180,20 @@ struct Object {
   std::vector<ObjectOutline> outlines; ///< crosswalks / painted markings
   std::vector<ObjectRepeat> repeats;   ///< tree lines etc. (<repeat> is 0..*)
 
-  /// Unknown attributes and unmodeled children (<skeleton>, <markings>,
-  /// <material>, <parkingSpace>, <borders>, <userData>, ...) — preserved
-  /// verbatim per the never-drop contract (docs/design/m3a/01 §5).
+  /// Object-level <markings> (§13.8): markings attached to the bounding volume
+  /// via @side, with no <outline> (the 1.8.1 crosswalk/parking-space form).
+  /// The 1.9.0 outline-nested form lives on ObjectOutline::markings instead.
+  std::vector<ObjectMarking> markings;
+
+  /// RoadMaker parametric-crosswalk authoring data (§7.2 userData
+  /// "rm:crosswalk"). Present on crosswalks authored by the editor; absent for
+  /// foreign crosswalks, which mesh from the fallback zebra.
+  std::optional<CrosswalkData> crosswalk;
+
+  /// Unknown attributes and unmodeled children (<skeleton>, <material>,
+  /// <parkingSpace>, <borders>, <userData>, ...) — preserved verbatim per the
+  /// never-drop contract (docs/design/m3a/01 §5). <markings> is modeled above
+  /// and no longer lands here.
   RawXml preserved;
 };
 

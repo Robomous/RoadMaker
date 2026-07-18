@@ -5,6 +5,14 @@ assets authored in the Library Browser and consumed by the marking tools.*
 
 **Status: draft** — steps are refined as the owning pillar sprints land.
 
+> **Sprint coverage (p3-s2, #221):** the crosswalk asset model, Library entry,
+> Attributes-pane editor, default-vs-override propagation, and OpenDRIVE
+> round-trip land here (steps 1–4, 7, 9–10). The *placing* tools — the
+> Crosswalk & Stop Line tool (steps 5, 8) and the Marking Curve tool (step 6) —
+> are p3-s3/p3-s4; until then, instances come from the existing junction
+> "Add crosswalks to all arms" generator, which authors them linked to the
+> default crosswalk asset.
+
 ## Purpose
 
 Verify that crosswalk assets can be created and edited in the Library with

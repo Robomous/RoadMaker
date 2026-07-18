@@ -490,6 +490,26 @@ NB_MODULE(_roadmaker, m) {
       .def_rw("dz_or_z", &roadmaker::OutlineCorner::dz_or_z)
       .def_rw("id", &roadmaker::OutlineCorner::id);
 
+  nb::class_<roadmaker::ObjectMarking>(m, "ObjectMarking")
+      .def(nb::init<>())
+      .def_rw("color", &roadmaker::ObjectMarking::color, "e_roadMarkColor (required).")
+      .def_rw("line_length",
+              &roadmaker::ObjectMarking::line_length,
+              "Length of the visible part [m] (>0); solid = full run, space_length 0.")
+      .def_rw("space_length",
+              &roadmaker::ObjectMarking::space_length,
+              "Gap between visible parts [m] (>=0); 0 = solid line.")
+      .def_rw("start_offset", &roadmaker::ObjectMarking::start_offset)
+      .def_rw("stop_offset", &roadmaker::ObjectMarking::stop_offset)
+      .def_rw("side", &roadmaker::ObjectMarking::side, "e_sideType (bounding-volume marking).")
+      .def_rw("weight", &roadmaker::ObjectMarking::weight)
+      .def_rw("width", &roadmaker::ObjectMarking::width)
+      .def_rw("z_offset", &roadmaker::ObjectMarking::z_offset)
+      .def_rw("corner_refs",
+              &roadmaker::ObjectMarking::corner_refs,
+              "<cornerReference @id> values in outline order (empty for @side markings).")
+      .def_ro("preserved", &roadmaker::ObjectMarking::preserved);
+
   nb::class_<roadmaker::ObjectOutline>(m, "ObjectOutline")
       .def(nb::init<>())
       .def_rw("road_coords",
@@ -501,6 +521,9 @@ NB_MODULE(_roadmaker, m) {
       .def_rw("fill_type", &roadmaker::ObjectOutline::fill_type)
       .def_rw("lane_type", &roadmaker::ObjectOutline::lane_type)
       .def_rw("corners", &roadmaker::ObjectOutline::corners)
+      .def_rw("markings",
+              &roadmaker::ObjectOutline::markings,
+              "<markings> referencing this outline's corner points (§13.8).")
       .def_ro("raw",
               &roadmaker::ObjectOutline::raw,
               "Verbatim <outline> XML when the outline is preserved, not modeled.");
@@ -529,8 +552,32 @@ NB_MODULE(_roadmaker, m) {
       .def_rw("d_t", &roadmaker::ObjectRepeat::d_t)
       .def_rw("detach_from_reference_line", &roadmaker::ObjectRepeat::detach_from_reference_line);
 
+  nb::class_<roadmaker::CrosswalkData>(m, "CrosswalkData")
+      .def(nb::init<>())
+      .def_rw("asset", &roadmaker::CrosswalkData::asset, "Library asset key this instance follows.")
+      .def_rw(
+          "border_width", &roadmaker::CrosswalkData::border_width, "Edge-line width [m]; 0 = none.")
+      .def_rw("dash_length",
+              &roadmaker::CrosswalkData::dash_length,
+              "Stripe length along the crossing [m]; 0 = solid.")
+      .def_rw("dash_gap", &roadmaker::CrosswalkData::dash_gap, "Gap between stripes [m].")
+      .def_rw("material",
+              &roadmaker::CrosswalkData::material,
+              "Material code (e.g. 'material.paint_white').")
+      .def_rw("material_override",
+              &roadmaker::CrosswalkData::material_override,
+              "True keeps `material` when the asset's Default Material changes.")
+      .def_rw("category", &roadmaker::CrosswalkData::category, "Segmentation category tag.")
+      .def("__eq__", [](const roadmaker::CrosswalkData& a, nb::object b) {
+        return nb::isinstance<roadmaker::CrosswalkData>(b) &&
+               a == nb::cast<roadmaker::CrosswalkData>(b);
+      });
+
   nb::class_<roadmaker::Object>(m, "Object")
       .def(nb::init<>())
+      .def(nb::init<const roadmaker::Object&>(),
+           "Copy an object (keeps the read-only `road`), e.g. to build the "
+           "modified value edit.update_objects expects.")
       .def_ro("road", &roadmaker::Object::road, "Owning road (back-reference).")
       .def_rw("odr_id", &roadmaker::Object::odr_id)
       .def_rw("name", &roadmaker::Object::name)
@@ -558,6 +605,12 @@ NB_MODULE(_roadmaker, m) {
       .def_rw("invalidated", &roadmaker::Object::invalidated)
       .def_rw("outlines", &roadmaker::Object::outlines)
       .def_rw("repeats", &roadmaker::Object::repeats)
+      .def_rw("markings",
+              &roadmaker::Object::markings,
+              "Object-level <markings> (the 1.8.1 @side bounding-volume form).")
+      .def_rw("crosswalk",
+              &roadmaker::Object::crosswalk,
+              "Parametric-crosswalk authoring data (rm:crosswalk userData); None if absent.")
       .def_ro("preserved", &roadmaker::Object::preserved)
       .def("__repr__", [](const roadmaker::Object& object) {
         return "Object(odr_id='" + object.odr_id + "', s=" + std::to_string(object.s) +
@@ -1077,16 +1130,46 @@ NB_MODULE(_roadmaker, m) {
       "index"_a,
       "at"_a);
   edit.def("delete_waypoint", &roadmaker::edit::delete_waypoint, "network"_a, "road"_a, "index"_a);
+  nb::class_<roadmaker::edit::CrosswalkParams>(edit, "CrosswalkParams")
+      .def(nb::init<>())
+      .def_rw("depth_m", &roadmaker::edit::CrosswalkParams::depth_m)
+      .def_rw("setback_m", &roadmaker::edit::CrosswalkParams::setback_m)
+      .def_rw("border_width_m", &roadmaker::edit::CrosswalkParams::border_width_m)
+      .def_rw("dash_length_m",
+              &roadmaker::edit::CrosswalkParams::dash_length_m,
+              "Stripe length [m]; 0 = solid.")
+      .def_rw("dash_gap_m", &roadmaker::edit::CrosswalkParams::dash_gap_m)
+      .def_rw("material", &roadmaker::edit::CrosswalkParams::material)
+      .def_rw("color", &roadmaker::edit::CrosswalkParams::color)
+      .def_rw("asset", &roadmaker::edit::CrosswalkParams::asset)
+      .def_rw("category", &roadmaker::edit::CrosswalkParams::category);
   edit.def(
       "junction_crosswalks",
-      [](const roadmaker::RoadNetwork& network, roadmaker::JunctionId junction) {
-        return roadmaker::edit::junction_crosswalks(network, junction);
+      [](const roadmaker::RoadNetwork& network,
+         roadmaker::JunctionId junction,
+         const roadmaker::edit::CrosswalkParams& params) {
+        return roadmaker::edit::junction_crosswalks(network, junction, params);
       },
       "network"_a,
       "junction"_a,
+      "params"_a = roadmaker::edit::CrosswalkParams{},
       "One zebra crosswalk Object per arm of the junction, spanning its driving "
-      "lanes just inside it. Returns a list of (RoadId, Object); add each with "
-      "edit.add_object (the editor groups them into one undo step).");
+      "lanes just inside it. `params` carries the parametric-asset fields "
+      "(stripe geometry, material, asset key) materialized into the object's "
+      "outline + <markings> + rm:crosswalk userData. Returns a list of "
+      "(RoadId, Object); add each with edit.add_object (one undo step).");
+  edit.def(
+      "apply_crosswalk_asset",
+      [](roadmaker::Object object, const roadmaker::edit::CrosswalkParams& params) {
+        roadmaker::edit::apply_crosswalk_asset(object, params);
+        return object;
+      },
+      "object"_a,
+      "params"_a,
+      "Rebuilds a copy of `object`'s crosswalk outline + <markings> + "
+      "rm:crosswalk userData from `params` (reads s/t/length placement, writes "
+      "@width = depth) and returns it — the authoring path shared by "
+      "junction_crosswalks and the editor's asset re-materialization.");
   edit.def(
       "junction_stop_lines",
       [](const roadmaker::RoadNetwork& network, roadmaker::JunctionId junction) {
@@ -1779,6 +1862,21 @@ NB_MODULE(_roadmaker, m) {
       "Re-points a placed object at another bundled prop model (the id also set "
       "as Object.name, e.g. 'tree_pine'), refreshing its radius/height from that "
       "model. Fails for an unknown id.");
+  edit.def(
+      "update_objects",
+      [](const roadmaker::RoadNetwork& network,
+         std::vector<std::pair<roadmaker::ObjectId, roadmaker::Object>> updates,
+         std::string name) {
+        return roadmaker::edit::update_objects(network, std::move(updates), std::move(name));
+      },
+      "network"_a,
+      "updates"_a,
+      "name"_a = std::string{},
+      "Replaces each listed object with its new value in one undoable command "
+      "(the batch behind an asset edit). `updates` is a list of (ObjectId, "
+      "Object); ids keep their generation and undo is byte-identical. Refuses a "
+      "stale id or an update that changes an object's owning road; an empty list "
+      "is a no-op.");
   edit.def(
       "add_signal",
       [](const roadmaker::RoadNetwork& network, roadmaker::RoadId road, roadmaker::Signal signal) {
