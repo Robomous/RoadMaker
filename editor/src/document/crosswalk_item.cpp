@@ -23,7 +23,7 @@ namespace {
 QColor paint_color(const QString& material_code, const MaterialCatalog& materials) {
   if (!material_code.isEmpty()) {
     if (const MaterialDef* def = materials.find_material(material_code.toStdString())) {
-      return QColor::fromRgbF(def->tint[0], def->tint[1], def->tint[2], 1.0);
+      return QColor::fromRgbF(def->tint[0], def->tint[1], def->tint[2], 1.0F);
     }
   }
   return QColor(Qt::white);

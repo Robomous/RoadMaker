@@ -89,7 +89,7 @@ void apply_crosswalk_asset(Object& object, const CrosswalkParams& params) {
   outline.markings.push_back(std::move(stripes));
 
   if (params.border_width_m > tol::kLength) {
-    for (const std::pair<int, int> edge : {std::pair{0, 1}, std::pair{2, 3}}) {
+    for (const auto& edge : {std::pair{0, 1}, std::pair{2, 3}}) {
       ObjectMarking border;
       border.color = params.color;
       border.width = params.border_width_m;
