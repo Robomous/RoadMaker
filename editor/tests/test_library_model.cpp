@@ -5,6 +5,7 @@
 #include <QFile>
 #include <QIcon>
 #include <QTemporaryDir>
+#include <algorithm>
 #include <filesystem>
 
 #include "document/library_list_model.hpp"
@@ -25,8 +26,8 @@ TEST(LibraryManifest, ParsesTheShippedManifest) {
   ASSERT_TRUE(manifest.has_value()) << (manifest ? "" : manifest.error().message);
   EXPECT_EQ(manifest->version(), 1);
   EXPECT_EQ(manifest->items().size(),
-            25U); // 3 road templates + 1 road style + 2 assemblies + 5 tree props
-                  // + 2 signals + 9 markings + 3 materials (asphalt/asphalt_worn/concrete)
+            26U); // 3 road templates + 1 road style + 2 assemblies + 5 tree props
+                  // + 2 signals + 9 markings + 3 materials + 1 crosswalk
 
   // Road templates resolve to a profile, road styles to a style name, assemblies
   // to a t/x kind, trees to a bundled prop model id, signals to a light/sign tag,
@@ -38,6 +39,7 @@ TEST(LibraryManifest, ParsesTheShippedManifest) {
   int signal_items = 0;
   int markings = 0;
   int materials = 0;
+  int crosswalks = 0;
   for (const LibraryItem& item : manifest->items()) {
     EXPECT_FALSE(item.key.isEmpty());
     EXPECT_FALSE(item.label.isEmpty());
@@ -67,6 +69,10 @@ TEST(LibraryManifest, ParsesTheShippedManifest) {
       ++materials;
       EXPECT_FALSE(item.material.isEmpty());
       EXPECT_EQ(item.category, "Materials");
+    } else if (item.kind == LibraryItem::Kind::Crosswalk) {
+      ++crosswalks;
+      EXPECT_EQ(item.category, "Crosswalks");
+      EXPECT_GT(item.crosswalk_width, 0.0);
     }
   }
   EXPECT_EQ(templates, 3);
@@ -76,6 +82,96 @@ TEST(LibraryManifest, ParsesTheShippedManifest) {
   EXPECT_EQ(signal_items, 2);
   EXPECT_EQ(markings, 9);
   EXPECT_EQ(materials, 3);
+  EXPECT_EQ(crosswalks, 1);
+}
+
+TEST(LibraryManifest, ParsesCrosswalkCreateKind) {
+  const auto manifest = LibraryManifest::parse(json(R"({
+    "manifest_version": 1,
+    "items": [
+      {"key": "crosswalk.zebra", "label": "Zebra", "category": "Crosswalks",
+       "create": {"kind": "crosswalk", "width": 3.5, "border_width": 0.2,
+                  "dash_length": 0.4, "dash_gap": 0.6, "material": "material.paint_white",
+                  "segmentation": "crosswalk"}}
+    ]
+  })"));
+  ASSERT_TRUE(manifest.has_value());
+  ASSERT_EQ(manifest->items().size(), 1U);
+  const LibraryItem& cw = manifest->items()[0];
+  EXPECT_EQ(cw.kind, LibraryItem::Kind::Crosswalk);
+  EXPECT_DOUBLE_EQ(cw.crosswalk_width, 3.5);
+  EXPECT_DOUBLE_EQ(cw.crosswalk_border, 0.2);
+  EXPECT_DOUBLE_EQ(cw.crosswalk_dash, 0.4);
+  EXPECT_DOUBLE_EQ(cw.crosswalk_gap, 0.6);
+  EXPECT_EQ(cw.crosswalk_material, "material.paint_white");
+  EXPECT_EQ(cw.crosswalk_segmentation, "crosswalk");
+}
+
+TEST(LibraryManifest, ToJsonRoundTripsParsedManifest) {
+  const auto manifest = LibraryManifest::load(kManifest);
+  ASSERT_TRUE(manifest.has_value());
+  // to_json -> parse yields an item set equal in count, keys and kinds (each
+  // item re-emits its verbatim create block).
+  const auto reparsed = LibraryManifest::parse(manifest->to_json());
+  ASSERT_TRUE(reparsed.has_value());
+  ASSERT_EQ(reparsed->items().size(), manifest->items().size());
+  for (std::size_t i = 0; i < manifest->items().size(); ++i) {
+    EXPECT_EQ(reparsed->items()[i].key, manifest->items()[i].key);
+    EXPECT_EQ(reparsed->items()[i].kind, manifest->items()[i].kind);
+    EXPECT_EQ(reparsed->items()[i].create_raw, manifest->items()[i].create_raw);
+  }
+}
+
+TEST(LibraryManifest, UnknownKindCreateRoundTripsVerbatim) {
+  const auto manifest = LibraryManifest::parse(json(R"({
+    "manifest_version": 1,
+    "items": [{"key": "future", "label": "L",
+               "create": {"kind": "prop_from_the_future", "magic": 42, "nested": {"a": 1}}}]
+  })"));
+  ASSERT_TRUE(manifest.has_value());
+  const auto reparsed = LibraryManifest::parse(manifest->to_json());
+  ASSERT_TRUE(reparsed.has_value());
+  ASSERT_EQ(reparsed->items().size(), 1U);
+  EXPECT_EQ(reparsed->items()[0].kind, LibraryItem::Kind::Unknown);
+  EXPECT_EQ(reparsed->items()[0].create_raw, manifest->items()[0].create_raw); // verbatim
+}
+
+TEST(LibraryManifest, UpsertRemoveAndSaveLoadRoundTrip) {
+  const auto loaded = LibraryManifest::load(kManifest);
+  ASSERT_TRUE(loaded.has_value());
+  LibraryManifest manifest = *loaded;
+  const std::size_t original = manifest.items().size();
+
+  LibraryItem cw;
+  cw.key = "crosswalk.custom";
+  cw.label = "Custom crossing";
+  cw.category = "Crosswalks";
+  cw.kind = LibraryItem::Kind::Crosswalk;
+  cw.crosswalk_width = 4.0;
+  cw.crosswalk_dash = 0.0; // solid
+  cw.crosswalk_material = "material.paint_white";
+  manifest.upsert(cw);
+  EXPECT_EQ(manifest.items().size(), original + 1);
+  cw.label = "Renamed";
+  manifest.upsert(cw); // replace in place, not append
+  EXPECT_EQ(manifest.items().size(), original + 1);
+
+  const std::filesystem::path out =
+      std::filesystem::temp_directory_path() / "rm_library_manifest_test.json";
+  ASSERT_TRUE(manifest.save(out).has_value());
+  const auto reloaded = LibraryManifest::load(out);
+  std::filesystem::remove(out);
+  ASSERT_TRUE(reloaded.has_value());
+  const auto it = std::ranges::find_if(
+      reloaded->items(), [](const LibraryItem& item) { return item.key == "crosswalk.custom"; });
+  ASSERT_NE(it, reloaded->items().end());
+  EXPECT_EQ(it->label, "Renamed");
+  EXPECT_DOUBLE_EQ(it->crosswalk_width, 4.0);
+  EXPECT_DOUBLE_EQ(it->crosswalk_dash, 0.0);
+
+  EXPECT_TRUE(manifest.remove("crosswalk.custom"));
+  EXPECT_FALSE(manifest.remove("crosswalk.custom")); // already gone
+  EXPECT_EQ(manifest.items().size(), original);
 }
 
 TEST(LibraryManifest, ParsesFieldsAndCreateKinds) {
@@ -149,7 +245,7 @@ TEST(LibraryListModel, PassesQtModelSanityChecksEmptyAndPopulated) {
   const auto manifest = LibraryManifest::load(kManifest);
   ASSERT_TRUE(manifest.has_value());
   model.set_manifest(*manifest);
-  EXPECT_EQ(model.rowCount(), 25);
+  EXPECT_EQ(model.rowCount(), 26);
 }
 
 TEST(LibraryListModel, ExposesRolesAndItemLookup) {
@@ -167,7 +263,7 @@ TEST(LibraryListModel, ExposesRolesAndItemLookup) {
   ASSERT_NE(item, nullptr);
   EXPECT_EQ(model.data(first, LibraryListModel::KeyRole).toString(), item->key);
   EXPECT_EQ(model.item(-1), nullptr);
-  EXPECT_EQ(model.item(25), nullptr);
+  EXPECT_EQ(model.item(26), nullptr);
 }
 
 // The per-project overlay (p6-s1): project items merge into the built-in
@@ -243,7 +339,7 @@ TEST(LibraryListModel, SetManifestRemergesAnActiveOverlay) {
   const auto base = LibraryManifest::load(kManifest);
   ASSERT_TRUE(base.has_value());
   model.set_manifest(*base);       // the overlay survives a base reload
-  EXPECT_EQ(model.rowCount(), 26); // 25 base items + 1 overlay
+  EXPECT_EQ(model.rowCount(), 27); // 26 base items + 1 overlay
   EXPECT_NE(model.item_for_key(QStringLiteral("project.only")), nullptr);
 }
 
@@ -293,12 +389,21 @@ TEST(LibraryListModel, ServesABundledThumbnailForEveryBuiltInItem) {
     const QModelIndex index = model.index(row, 0);
     const QString key = model.data(index, LibraryListModel::KeyRole).toString();
     const QString path = model.data(index, LibraryListModel::ThumbnailRole).toString();
-    EXPECT_TRUE(path.startsWith(QStringLiteral(":/library/thumbnails/")))
-        << key.toStdString() << " -> " << path.toStdString();
+    const LibraryItem* entry = model.item(row);
+    ASSERT_NE(entry, nullptr);
+    // Crosswalk assets carry no bundled PNG — their DecorationRole is a runtime
+    // QPainter preview, so they are exempt from the qrc-thumbnail drift gate but
+    // must still serve a non-null decoration.
+    if (entry->kind == LibraryItem::Kind::Crosswalk) {
+      EXPECT_TRUE(path.isEmpty()) << key.toStdString();
+    } else {
+      EXPECT_TRUE(path.startsWith(QStringLiteral(":/library/thumbnails/")))
+          << key.toStdString() << " -> " << path.toStdString();
+    }
     const QVariant decoration = model.data(index, Qt::DecorationRole);
     ASSERT_TRUE(decoration.isValid()) << "no decoration for " << key.toStdString();
     EXPECT_FALSE(decoration.value<QIcon>().isNull())
-        << "thumbnail failed to load for " << key.toStdString() << " at " << path.toStdString();
+        << "decoration failed to load for " << key.toStdString() << " at " << path.toStdString();
   }
 }
 

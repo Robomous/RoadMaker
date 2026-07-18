@@ -11,6 +11,8 @@
 #include "roadmaker/error.hpp"
 
 #include <QByteArray>
+#include <QJsonObject>
+#include <QMetaType>
 #include <QString>
 #include <filesystem>
 #include <vector>
@@ -22,7 +24,17 @@ namespace roadmaker::editor {
 /// (`assembly` = "t" | "x"). Kind::Unknown = a create kind from a newer
 /// manifest this build can't act on (shown but not droppable).
 struct LibraryItem {
-  enum class Kind { RoadTemplate, RoadStyle, Assembly, Tree, Signal, Marking, Material, Unknown };
+  enum class Kind {
+    RoadTemplate,
+    RoadStyle,
+    Assembly,
+    Tree,
+    Signal,
+    Marking,
+    Material,
+    Crosswalk,
+    Unknown
+  };
 
   QString key;       ///< stable id (drag payload / scene reference)
   QString label;     ///< shown in the panel
@@ -40,6 +52,22 @@ struct LibraryItem {
   QString mark_color;       ///< Marking: "white" | "yellow" | …
   double mark_width = 0.12; ///< Marking: painted width [m] (OpenDRIVE default)
   QString material;         ///< Material: "asphalt" | "concrete" | …
+
+  /// Crosswalk (parametric asset, p3-s2): stripe geometry + paint material +
+  /// segmentation category. Materialized into each placed instance's object.
+  double crosswalk_width = 3.0;   ///< walking depth along the road [m]
+  double crosswalk_border = 0.0;  ///< edge-line width [m]; 0 = no border
+  double crosswalk_dash = 0.5;    ///< stripe length along the crossing [m]; 0 = solid
+  double crosswalk_gap = 0.5;     ///< gap between stripes [m]
+  QString crosswalk_material;     ///< paint material code (e.g. "material.paint_white")
+  QString crosswalk_segmentation; ///< segmentation category tag
+
+  /// The item's verbatim `create` JSON block. Captured on parse so an unknown
+  /// create kind — or a modeled one carrying forward-compat fields this build
+  /// doesn't understand — round-trips byte-for-byte through to_json(). Empty
+  /// for a programmatically built item, which to_json() then serializes from
+  /// the modeled fields above.
+  QJsonObject create_raw;
 };
 
 class LibraryManifest {
@@ -59,9 +87,29 @@ public:
 
   [[nodiscard]] const std::vector<LibraryItem>& items() const { return items_; }
 
+  /// Serializes the manifest back to JSON bytes. A parsed item re-emits its
+  /// verbatim `create` block (create_raw), so unknown kinds and forward-compat
+  /// fields survive the round-trip; a programmatically built item (empty
+  /// create_raw) is serialized from its modeled fields.
+  [[nodiscard]] QByteArray to_json() const;
+
+  /// Atomically writes to_json() to `path` (QSaveFile, temp-then-rename — the
+  /// Project::create pattern). Errors on a write/commit failure.
+  [[nodiscard]] Expected<void> save(const std::filesystem::path& path) const;
+
+  /// Adds `item`, or replaces the item with the same key in place.
+  void upsert(LibraryItem item);
+
+  /// Removes the item with `key`; returns true if one was removed.
+  bool remove(const QString& key);
+
 private:
-  int version_ = 0;
+  int version_ = kSupportedVersion;
   std::vector<LibraryItem> items_;
 };
 
 } // namespace roadmaker::editor
+
+// Lets a LibraryItem cross a queued/introspected signal (PropertiesPanel's
+// crosswalk_asset_committed) and be recorded by QSignalSpy in tests.
+Q_DECLARE_METATYPE(roadmaker::editor::LibraryItem)

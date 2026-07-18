@@ -157,6 +157,12 @@
       "create": { "kind": "marking", "mark_type": "solid", "mark_color": "white", "mark_width": 0.30 }
     },
     {
+      "key": "crosswalk.zebra",
+      "label": "Zebra crosswalk",
+      "category": "Crosswalks",
+      "create": { "kind": "crosswalk", "width": 3.0, "border_width": 0.0, "dash_length": 0.5, "dash_gap": 0.5, "material": "material.paint_white", "segmentation": "crosswalk" }
+    },
+    {
       "key": "material.asphalt",
       "label": "Asphalt",
       "category": "Materials",

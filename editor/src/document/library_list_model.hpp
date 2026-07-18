@@ -12,6 +12,7 @@
 #include <QString>
 
 #include "document/library_manifest.hpp"
+#include "render/material_catalog.hpp"
 
 namespace roadmaker::editor {
 
@@ -53,6 +54,11 @@ public:
   /// True while a project overlay is merged into the catalogue.
   [[nodiscard]] bool has_overlay() const { return !overlay_items_.empty(); }
 
+  /// True when the project overlay defines an item with `key` — i.e. the item
+  /// is project-owned and editable, not a read-only built-in (p3-s2 asset
+  /// editor).
+  [[nodiscard]] bool has_overlay_item(const QString& key) const;
+
   [[nodiscard]] int rowCount(const QModelIndex& parent = {}) const override;
   [[nodiscard]] QVariant data(const QModelIndex& index, int role) const override;
   [[nodiscard]] QHash<int, QByteArray> roleNames() const override;
@@ -84,6 +90,14 @@ private:
   /// re-probed every paint. Cleared on every rebuild(). `mutable` because it is
   /// a pure read-through cache populated from the const data().
   mutable QHash<QString, QIcon> icon_cache_;
+
+  /// Crosswalk assets carry no PNG thumbnail — their DecorationRole icon is
+  /// painted at runtime from the item's stripe/material params (crosswalk_item).
+  /// Cached by key; cleared on rebuild() so an edited asset re-renders.
+  mutable QHash<QString, QIcon> crosswalk_icon_cache_;
+
+  /// Resolves a crosswalk asset's material code to a paint tint for the preview.
+  MaterialCatalog materials_;
 };
 
 } // namespace roadmaker::editor

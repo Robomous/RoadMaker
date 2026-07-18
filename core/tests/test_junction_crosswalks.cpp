@@ -111,6 +111,85 @@ TEST(JunctionCrosswalks, AddedObjectsMeshAsZebra) {
   EXPECT_EQ(zebra_meshes, 3); // one zebra marking per arm
 }
 
+TEST(JunctionCrosswalks, ParametricAssetAuthorsOutlineMarkingsAndUserData) {
+  ArmedJunction fx;
+  roadmaker::edit::CrosswalkParams params;
+  params.dash_length_m = 0.4;
+  params.dash_gap_m = 0.6;
+  params.border_width_m = 0.2;
+  params.material = "material.paint_white";
+  params.color = "white";
+  params.asset = "crosswalk.zebra";
+  params.category = "crosswalk";
+  const auto crosswalks = roadmaker::edit::junction_crosswalks(fx.network, fx.junction, params);
+  ASSERT_FALSE(crosswalks.empty());
+  const roadmaker::Object& cw = crosswalks.front().second;
+
+  // Closed cornerRoad outline, ids 0..3 CCW, painted.
+  ASSERT_EQ(cw.outlines.size(), 1U);
+  const roadmaker::ObjectOutline& outline = cw.outlines.front();
+  EXPECT_TRUE(outline.road_coords);
+  ASSERT_TRUE(outline.closed.has_value());
+  EXPECT_TRUE(*outline.closed);
+  ASSERT_TRUE(outline.fill_type.has_value());
+  EXPECT_EQ(*outline.fill_type, "paint");
+  ASSERT_EQ(outline.corners.size(), 4U);
+  for (std::size_t i = 0; i < 4; ++i) {
+    ASSERT_TRUE(outline.corners[i].id.has_value());
+    EXPECT_EQ(*outline.corners[i].id, static_cast<int>(i));
+  }
+  // One dashed stripes marking (full ring) + two solid border markings.
+  ASSERT_EQ(outline.markings.size(), 3U);
+  EXPECT_EQ(outline.markings[0].corner_refs, (std::vector<int>{0, 1, 2, 3}));
+  EXPECT_DOUBLE_EQ(outline.markings[0].line_length, 0.4);
+  EXPECT_DOUBLE_EQ(outline.markings[0].space_length, 0.6);
+  for (std::size_t i = 1; i < 3; ++i) {
+    ASSERT_TRUE(outline.markings[i].width.has_value());
+    EXPECT_DOUBLE_EQ(*outline.markings[i].width, 0.2);       // border width
+    EXPECT_DOUBLE_EQ(outline.markings[i].space_length, 0.0); // solid
+  }
+  // rm:crosswalk userData carries the asset params.
+  ASSERT_TRUE(cw.crosswalk.has_value());
+  EXPECT_EQ(cw.crosswalk->asset, "crosswalk.zebra");
+  EXPECT_DOUBLE_EQ(cw.crosswalk->dash_length, 0.4);
+  EXPECT_DOUBLE_EQ(cw.crosswalk->dash_gap, 0.6);
+  EXPECT_DOUBLE_EQ(cw.crosswalk->border_width, 0.2);
+  EXPECT_EQ(cw.crosswalk->material, "material.paint_white");
+  EXPECT_FALSE(cw.crosswalk->material_override);
+}
+
+TEST(JunctionCrosswalks, SolidAssetEncodesZeroSpaceLength) {
+  ArmedJunction fx;
+  roadmaker::edit::CrosswalkParams params;
+  params.dash_length_m = 0.0; // solid
+  params.border_width_m = 0.0;
+  const auto crosswalks = roadmaker::edit::junction_crosswalks(fx.network, fx.junction, params);
+  ASSERT_FALSE(crosswalks.empty());
+  const roadmaker::ObjectOutline& outline = crosswalks.front().second.outlines.front();
+  ASSERT_EQ(outline.markings.size(), 1U);                  // no borders
+  EXPECT_DOUBLE_EQ(outline.markings[0].space_length, 0.0); // solid: no gap
+  EXPECT_GT(outline.markings[0].line_length, 0.0);         // lineLength stays > 0 (t_grZero)
+  ASSERT_TRUE(crosswalks.front().second.crosswalk.has_value());
+  EXPECT_DOUBLE_EQ(crosswalks.front().second.crosswalk->dash_length, 0.0);
+}
+
+TEST(JunctionCrosswalks, AuthoredCrosswalkExportValidatesBothVersions) {
+  ArmedJunction fx;
+  roadmaker::edit::CrosswalkParams params;
+  params.border_width_m = 0.15;
+  auto crosswalks = roadmaker::edit::junction_crosswalks(fx.network, fx.junction, params);
+  ASSERT_FALSE(crosswalks.empty());
+  for (auto& [road, cw] : crosswalks) {
+    ASSERT_TRUE(roadmaker::edit::add_object(fx.network, road, cw)->apply(fx.network).has_value());
+  }
+  for (const auto version : {roadmaker::XodrVersion::v1_9_0, roadmaker::XodrVersion::v1_8_1}) {
+    const auto written = roadmaker::write_xodr(fx.network, "cw", {.target_version = version});
+    ASSERT_TRUE(written.has_value());
+    EXPECT_NE(written->find("rm:crosswalk"), std::string::npos);
+    EXPECT_NE(written->find("<marking"), std::string::npos);
+  }
+}
+
 TEST(JunctionCrosswalks, StaleJunctionYieldsNone) {
   ArmedJunction fx;
   fx.network.erase_junction(fx.junction);

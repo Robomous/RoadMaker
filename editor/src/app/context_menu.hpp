@@ -8,6 +8,7 @@
 // QMenu for the viewport and the scene tree to popup. The single source of
 // truth the guided tour (#114) will also consume.
 
+#include "roadmaker/edit/markings.hpp"
 #include "roadmaker/road/id.hpp"
 
 #include <QString>
@@ -50,6 +51,12 @@ struct ContextMenuDeps {
   Document& document;
   SelectionModel& selection;
   Actions& actions;
+
+  /// Resolves the crosswalk asset "Add crosswalks to all arms" places (p3-s2):
+  /// the first Kind::Crosswalk in the merged Library, else the built-in
+  /// crosswalk.zebra defaults. Empty (the default) uses plain CrosswalkParams —
+  /// the pre-p3-s2 behaviour and what headless tests without a Library get.
+  std::function<edit::CrosswalkParams()> default_crosswalk_params;
 };
 
 /// The menu descriptor for `context`. Pure logic (no QMenu) — the seam the

@@ -437,7 +437,70 @@ void append_fragment(pugi::xml_node parent, const std::string& fragment) {
   parent.append_buffer(fragment.data(), fragment.size());
 }
 
+/// One <marking> line (§13.8, Table 99). Canonical attribute order is fixed so
+/// the writer output is idempotent; @side/@weight/@width/@zOffset omit when
+/// unset. cornerReferences (§13.8.1.3) follow, then any preserved unknowns.
+void write_marking(pugi::xml_node markings_node, const ObjectMarking& marking) {
+  pugi::xml_node node = markings_node.append_child("marking");
+  node.append_attribute("color").set_value(marking.color.c_str());
+  if (marking.side.has_value()) {
+    node.append_attribute("side").set_value(marking.side->c_str());
+  }
+  if (marking.weight.has_value()) {
+    node.append_attribute("weight").set_value(marking.weight->c_str());
+  }
+  set_optional_num(node, "width", marking.width);
+  set_optional_num(node, "zOffset", marking.z_offset);
+  set_num(node, "spaceLength", marking.space_length);
+  set_num(node, "lineLength", marking.line_length);
+  set_num(node, "startOffset", marking.start_offset);
+  set_num(node, "stopOffset", marking.stop_offset);
+  for (const auto& [name, value] : marking.preserved.attributes) {
+    node.append_attribute(name.c_str()).set_value(value.c_str());
+  }
+  for (const int ref : marking.corner_refs) {
+    node.append_child("cornerReference").append_attribute("id").set_value(ref);
+  }
+  for (const std::string& fragment : marking.preserved.children) {
+    append_fragment(node, fragment);
+  }
+}
+
+/// <userData code="rm:crosswalk"> (§7.2): RoadMaker's parametric-crosswalk
+/// authoring record. Attributes carry the asset key + params; spec-neutral
+/// defaults (borderWidth 0, dashLength/dashGap 0.5, no override, empty strings)
+/// are omitted so a canonical instance stays compact and round-trips.
+void write_crosswalk_data(pugi::xml_node object_node, const CrosswalkData& crosswalk) {
+  pugi::xml_node node = object_node.append_child("userData");
+  node.append_attribute("code").set_value("rm:crosswalk");
+  if (!crosswalk.asset.empty()) {
+    node.append_attribute("asset").set_value(crosswalk.asset.c_str());
+  }
+  if (crosswalk.border_width != 0.0) {
+    set_num(node, "borderWidth", crosswalk.border_width);
+  }
+  if (crosswalk.dash_length != 0.5) {
+    set_num(node, "dashLength", crosswalk.dash_length);
+  }
+  if (crosswalk.dash_gap != 0.5) {
+    set_num(node, "dashGap", crosswalk.dash_gap);
+  }
+  if (!crosswalk.material.empty()) {
+    node.append_attribute("material").set_value(crosswalk.material.c_str());
+  }
+  if (crosswalk.material_override) {
+    node.append_attribute("materialOverride").set_value("true");
+  }
+  if (!crosswalk.category.empty()) {
+    node.append_attribute("category").set_value(crosswalk.category.c_str());
+  }
+}
+
 void write_object(pugi::xml_node objects_node, const Object& object, const WriterOptions& options) {
+  // 1.8.1 §13.8 places <markings> only under <object>; 1.9.0 §13.2.4 also
+  // allows them inside <outline>. Demote outline markings to object level when
+  // targeting 1.8.1 (see the outline-writing loop below).
+  const bool demote_markings = options.target_version == XodrVersion::v1_8_1;
   pugi::xml_node node = objects_node.append_child("object");
   // type_str keeps the file's exact spelling (incl. values outside the
   // ObjectType enum); authored objects without it derive from the enum.
@@ -533,7 +596,42 @@ void write_object(pugi::xml_node objects_node, const Object& object, const Write
           corner_node.append_attribute("id").set_value(*corner.id);
         }
       }
+      // §13.2.4/§13.8: outline-nested <markings> (1.9.0). Targeting 1.8.1
+      // demotes them to object level below — 1.8.1 §13.8 only places <markings>
+      // directly under <object>, referencing outline points via
+      // <cornerReference> (which round-trips unchanged).
+      if (!demote_markings && !outline.markings.empty()) {
+        pugi::xml_node outline_markings = outline_node.append_child("markings");
+        for (const ObjectMarking& marking : outline.markings) {
+          write_marking(outline_markings, marking);
+        }
+      }
     }
+  }
+  // Object-level <markings> (§13.8): the 1.8.1 bounding-volume form always, plus
+  // — when demoting for a 1.8.1 target — every outline's markings hoisted here.
+  std::vector<const ObjectMarking*> object_level_markings;
+  for (const ObjectMarking& marking : object.markings) {
+    object_level_markings.push_back(&marking);
+  }
+  if (demote_markings) {
+    for (const ObjectOutline& outline : object.outlines) {
+      for (const ObjectMarking& marking : outline.markings) {
+        object_level_markings.push_back(&marking);
+      }
+    }
+  }
+  if (!object_level_markings.empty()) {
+    pugi::xml_node markings_node = node.append_child("markings");
+    for (const ObjectMarking* marking : object_level_markings) {
+      write_marking(markings_node, *marking);
+    }
+  }
+  // RoadMaker parametric-crosswalk authoring data (§7.2 userData
+  // "rm:crosswalk"): the interop-projection outline/markings above are derived
+  // from these params; on reload this is the source of truth.
+  if (object.crosswalk.has_value()) {
+    write_crosswalk_data(node, *object.crosswalk);
   }
   for (const std::string& fragment : object.preserved.children) {
     append_fragment(node, fragment);
@@ -1075,6 +1173,30 @@ std::vector<Diagnostic> validate_network(const RoadNetwork& network, const Write
                 rules::kOutlineExactlyOneOuter);
       }
     }
+    // Object markings (§13.8): color/geometry integrity plus corner-reference
+    // resolution. Applies to both the 1.9.0 outline-nested form and the 1.8.1
+    // object-level form; `corner_ids` is the set of referenceable outline
+    // point ids (nullptr for object-level markings, which use @side instead).
+    const auto check_marking = [&](const ObjectMarking& marking, const std::set<int>* corner_ids) {
+      if (marking.color.empty()) {
+        finding("object marking has no color", rules::kObjectMarkingColour);
+      }
+      if (marking.line_length <= 0.0) {
+        finding("object marking lineLength must be greater than 0", {});
+      }
+      if (marking.space_length < 0.0) {
+        finding("object marking spaceLength must not be negative", {});
+      }
+      if (corner_ids != nullptr) {
+        for (const int ref : marking.corner_refs) {
+          if (!corner_ids->contains(ref)) {
+            finding(
+                fmt::format("marking cornerReference id {} has no matching outline corner", ref),
+                {});
+          }
+        }
+      }
+    };
     for (const ObjectOutline& outline : object.outlines) {
       if (!outline.raw.empty()) {
         continue; // preserved verbatim — not interpreted, not re-validated
@@ -1085,6 +1207,18 @@ std::vector<Diagnostic> validate_network(const RoadNetwork& network, const Write
         finding("outline has fewer than 2 corner elements",
                 outline.road_coords ? rules::kCornerRoadMinAmount : rules::kCornerLocalMinAmount);
       }
+      std::set<int> corner_ids;
+      for (const OutlineCorner& corner : outline.corners) {
+        if (corner.id.has_value()) {
+          corner_ids.insert(*corner.id);
+        }
+      }
+      for (const ObjectMarking& marking : outline.markings) {
+        check_marking(marking, &corner_ids);
+      }
+    }
+    for (const ObjectMarking& marking : object.markings) {
+      check_marking(marking, nullptr);
     }
   });
 

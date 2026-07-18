@@ -21,13 +21,16 @@
 #include <vector>
 
 #include "document/document.hpp"
+#include "document/library_manifest.hpp"
 #include "document/selection_model.hpp"
 #include "panels/scrub_label.hpp"
 #include "panels/slot_widget.hpp"
+#include "render/material_catalog.hpp"
 
 namespace roadmaker::editor {
 
 class ElevationTool;
+class LibraryListModel;
 
 class PropertiesPanel : public QWidget {
   Q_OBJECT
@@ -45,7 +48,23 @@ signals:
   /// panel does not know the Library exists.
   void library_category_requested(const QString& category);
 
+  /// A crosswalk asset's params were edited in the Attributes pane (p3-s2).
+  /// MainWindow upserts `item` into the project-overlay manifest, saves it,
+  /// refreshes the Library, and propagates the change to every following
+  /// instance. Emitted once per discrete edit (editingFinished / material drop).
+  void crosswalk_asset_committed(const LibraryItem& item);
+
 public:
+  /// Read-only handle used to populate the crosswalk asset editor from the
+  /// merged manifest. The panel never mutates it (MainWindow owns the overlay).
+  void set_library_model(const LibraryListModel* model) { library_model_ = model; }
+
+  /// Opens the crosswalk asset editor in the Attributes pane for `key`,
+  /// bypassing the scene selection (LibraryPanel::asset_selected routes here).
+  /// `editable` false renders the fields read-only with a hint (a built-in
+  /// asset — create a project copy to edit). No-op for a non-crosswalk key.
+  void edit_asset(const QString& key, bool editable);
+
   /// Wires the Elevation editing section to the Elevation tool's active node
   /// (issue #16). Until a tool is attached the section stays hidden; the
   /// panel never owns the tool. Call once, after both exist.
@@ -215,6 +234,42 @@ private:
 
   /// Commits a move_signal from the spinbox values for the primary signal.
   void push_signal_move();
+
+  // --- crosswalk asset editor (p3-s2) ----------------------------------------
+
+  /// Builds the current asset_group_ widget values into a LibraryItem (keyed by
+  /// asset_key_) and emits crosswalk_asset_committed. No-op when not editable or
+  /// not in asset mode.
+  void commit_asset_edit();
+
+  /// Repaints the embedded asset preview from the current widget values.
+  void refresh_asset_preview();
+
+  /// Read-only lookup into the merged Library manifest (set by MainWindow).
+  const LibraryListModel* library_model_ = nullptr;
+
+  /// Resolves an asset's material to a tint for the embedded preview.
+  MaterialCatalog materials_;
+
+  /// True while the crosswalk asset editor owns the panel — set by edit_asset(),
+  /// cleared on the next scene selection change. refresh() early-returns while
+  /// set so a propagate command's mesh_changed does not close the editor.
+  bool asset_mode_ = false;
+  bool asset_editable_ = false;
+  QString asset_key_;
+  /// The asset's current Default Material key (the SlotWidget only shows a
+  /// label, so the authoritative value is tracked here).
+  QString asset_material_key_;
+
+  QGroupBox* asset_group_;
+  QDoubleSpinBox* asset_width_spin_;
+  QDoubleSpinBox* asset_border_spin_;
+  QDoubleSpinBox* asset_dash_spin_;
+  QDoubleSpinBox* asset_gap_spin_;
+  SlotWidget* asset_material_slot_;
+  QLineEdit* asset_category_edit_;
+  QLabel* asset_preview_;
+  QLabel* asset_hint_;
 };
 
 } // namespace roadmaker::editor

@@ -260,7 +260,8 @@ constexpr double kZebraStripe = 0.5;
 constexpr double kZebraGap = 0.5;
 
 /// Alternating painted bars across the crossing: `length` along u (crossing
-/// direction), `width` along v. Deterministic bar layout from -length/2.
+/// direction), `width` along v. Deterministic bar layout from -length/2. Used
+/// as the fallback for foreign crosswalks that carry no CrosswalkData.
 void emit_zebra(const ObjectFrame& frame, double length, double width, SubMesh& out) {
   const double hv = width / 2.0;
   const double cycle = kZebraStripe + kZebraGap;
@@ -268,6 +269,42 @@ void emit_zebra(const ObjectFrame& frame, double length, double width, SubMesh& 
     const double u_end = std::min(u + kZebraStripe, length / 2.0);
     const std::array<std::array<double, 2>, 4> bar{{{u, -hv}, {u_end, -hv}, {u_end, hv}, {u, hv}}};
     emit_object_polygon(frame, bar, out);
+  }
+}
+
+/// A parametric crosswalk from its CrosswalkData (p3-s2). `length` is the
+/// crossing span along u, `width` the walking depth along v. dash_length<=0
+/// paints one solid quad; otherwise bars of `dash_length` repeat every
+/// dash_length+dash_gap. With border_width>0, two solid border quads frame the
+/// two road-parallel edges (the u-extremes). Matches the outline/markings the
+/// generator authors (edit::author_crosswalk).
+void emit_crosswalk(const ObjectFrame& frame,
+                    double length,
+                    double width,
+                    const CrosswalkData& data,
+                    SubMesh& out) {
+  const double hv = width / 2.0;
+  const double hu = length / 2.0;
+  if (data.dash_length <= tol::kLength) {
+    emit_object_quad(frame, length, width, out); // solid crossing
+  } else {
+    const double cycle = data.dash_length + data.dash_gap;
+    for (double u = -hu; u < hu - tol::kLength; u += cycle) {
+      const double u_end = std::min(u + data.dash_length, hu);
+      const std::array<std::array<double, 2>, 4> bar{
+          {{u, -hv}, {u_end, -hv}, {u_end, hv}, {u, hv}}};
+      emit_object_polygon(frame, bar, out);
+    }
+  }
+  if (data.border_width > tol::kLength) {
+    const double bw = std::min(data.border_width, length); // clamp to the span
+    for (const double u_center : {-hu + (bw / 2.0), hu - (bw / 2.0)}) {
+      const std::array<std::array<double, 2>, 4> border{{{u_center - (bw / 2.0), -hv},
+                                                         {u_center + (bw / 2.0), -hv},
+                                                         {u_center + (bw / 2.0), hv},
+                                                         {u_center - (bw / 2.0), hv}}};
+      emit_object_polygon(frame, border, out);
+    }
   }
 }
 
@@ -315,7 +352,14 @@ void build_object_markings(const RoadNetwork& network,
       const double length = object.length.value_or(4.0);
       const double width = object.width.value_or(2.0);
       marking.name = fmt::format("road {} object {} crosswalk", road.odr_id, object.odr_id);
-      emit_zebra(frame, length, width, marking);
+      if (object.crosswalk.has_value()) {
+        // Parametric asset instance: render exactly from CrosswalkData and
+        // carry its material code so the viewport can tint the paint.
+        emit_crosswalk(frame, length, width, *object.crosswalk, marking);
+        marking.surface = object.crosswalk->material;
+      } else {
+        emit_zebra(frame, length, width, marking); // foreign crosswalk fallback
+      }
     } else if (object.type_str == "roadMark" && object.subtype == "signalLines") {
       const double length = object.length.value_or(0.3);
       const double width = object.width.value_or(3.5);

@@ -6,6 +6,7 @@
 
 #include <QFile>
 #include <QHBoxLayout>
+#include <QPixmap>
 #include <QSignalBlocker>
 #include <QVBoxLayout>
 #include <array>
@@ -14,7 +15,9 @@
 #include <cstdint>
 #include <utility>
 
+#include "document/crosswalk_item.hpp"
 #include "document/library_drop.hpp"
+#include "document/library_list_model.hpp"
 #include "document/library_manifest.hpp"
 #include "document/marking_item.hpp"
 #include "render/material_catalog.hpp"
@@ -213,7 +216,13 @@ PropertiesPanel::PropertiesPanel(Document& document,
       style_group_(new QGroupBox(tr("Road style"), this)),
       style_slot_(new SlotWidget(QStringLiteral("Road styles"), this)),
       surface_group_(new QGroupBox(tr("Ground surface"), this)),
-      material_slot_(new SlotWidget(QStringLiteral("Materials"), this)) {
+      material_slot_(new SlotWidget(QStringLiteral("Materials"), this)),
+      asset_group_(new QGroupBox(tr("Crosswalk asset"), this)),
+      asset_width_spin_(new QDoubleSpinBox), asset_border_spin_(new QDoubleSpinBox),
+      asset_dash_spin_(new QDoubleSpinBox), asset_gap_spin_(new QDoubleSpinBox),
+      asset_material_slot_(new SlotWidget(QStringLiteral("Materials"), this)),
+      asset_category_edit_(new QLineEdit), asset_preview_(new QLabel(this)),
+      asset_hint_(new QLabel(this)) {
   placeholder_->setWordWrap(true);
   placeholder_->setEnabled(false);
 
@@ -473,6 +482,52 @@ PropertiesPanel::PropertiesPanel(Document& document,
           this,
           &PropertiesPanel::library_category_requested);
 
+  // Crosswalk asset editor (p3-s2): a second panel mode reached via the Library
+  // (not the scene selection), so it is built here but hidden until edit_asset().
+  auto* asset_form = new QFormLayout(asset_group_);
+  const auto configure_asset_spin = [](QDoubleSpinBox* spin, double max, double step) {
+    spin->setRange(0.0, max);
+    spin->setSingleStep(step);
+    spin->setDecimals(2);
+    spin->setSuffix(QStringLiteral(" m"));
+  };
+  configure_asset_spin(asset_width_spin_, 20.0, 0.1); // walking depth
+  configure_asset_spin(asset_border_spin_, 2.0, 0.05);
+  configure_asset_spin(asset_dash_spin_, 5.0, 0.05); // 0 = solid
+  configure_asset_spin(asset_gap_spin_, 5.0, 0.05);
+  asset_width_spin_->setObjectName(QStringLiteral("asset_width_spin"));
+  asset_dash_spin_->setObjectName(QStringLiteral("asset_dash_spin"));
+  asset_form->addRow(tr("Depth"), asset_width_spin_);
+  asset_form->addRow(tr("Border width"), asset_border_spin_);
+  asset_form->addRow(tr("Dash length"), asset_dash_spin_);
+  asset_form->addRow(tr("Dash gap"), asset_gap_spin_);
+  asset_material_slot_->setObjectName(QStringLiteral("asset_material_slot"));
+  asset_material_slot_->setToolTip(tr("Drop a material to set this crosswalk's paint"));
+  asset_form->addRow(tr("Material"), asset_material_slot_);
+  asset_category_edit_->setObjectName(QStringLiteral("asset_category_edit"));
+  asset_form->addRow(tr("Category"), asset_category_edit_);
+  asset_preview_->setObjectName(QStringLiteral("asset_preview"));
+  asset_preview_->setMinimumHeight(48);
+  asset_form->addRow(tr("Preview"), asset_preview_);
+  asset_hint_->setWordWrap(true);
+  asset_hint_->setStyleSheet(QStringLiteral("color: palette(mid);"));
+  asset_form->addRow(asset_hint_);
+  asset_group_->hide();
+
+  for (QDoubleSpinBox* spin :
+       {asset_width_spin_, asset_border_spin_, asset_dash_spin_, asset_gap_spin_}) {
+    connect(spin, &QDoubleSpinBox::editingFinished, this, [this] { commit_asset_edit(); });
+  }
+  connect(asset_category_edit_, &QLineEdit::editingFinished, this, [this] { commit_asset_edit(); });
+  connect(asset_material_slot_, &SlotWidget::item_dropped, this, [this](const QString& key) {
+    asset_material_key_ = key;
+    asset_material_slot_->set_item(key);
+    commit_asset_edit();
+  });
+  connect(asset_material_slot_, &SlotWidget::engage_requested, this, [this] {
+    emit library_category_requested(QStringLiteral("Materials"));
+  });
+
   auto* layout = new QVBoxLayout(this);
   layout->addWidget(placeholder_);
   layout->addWidget(name_row_);
@@ -483,6 +538,7 @@ PropertiesPanel::PropertiesPanel(Document& document,
   layout->addWidget(object_group_);
   layout->addWidget(style_group_);
   layout->addWidget(surface_group_);
+  layout->addWidget(asset_group_);
   layout->addStretch();
 
   // One command per discrete action (spec 01 §7). Combos commit on
@@ -572,7 +628,12 @@ PropertiesPanel::PropertiesPanel(Document& document,
     connect(spin, &QDoubleSpinBox::editingFinished, this, [this] { push_signal_move(); });
   }
 
-  connect(&selection_, &SelectionModel::selection_changed, this, &PropertiesPanel::refresh);
+  // A scene selection change leaves the crosswalk asset editor (dual-mode
+  // flag), then rebuilds the normal view.
+  connect(&selection_, &SelectionModel::selection_changed, this, [this] {
+    asset_mode_ = false;
+    refresh();
+  });
   connect(&document_, &Document::loaded, this, &PropertiesPanel::refresh);
   // Commands and undo/redo change lane values without touching the
   // selection — re-sync the editors from the network.
@@ -581,8 +642,15 @@ PropertiesPanel::PropertiesPanel(Document& document,
 }
 
 void PropertiesPanel::refresh() {
+  // The crosswalk asset editor owns the panel until the selection changes; a
+  // propagate command's mesh_changed must not tear it down mid-edit.
+  if (asset_mode_) {
+    return;
+  }
   clear_rows();
 
+  // The asset editor is a Library-driven mode; any scene selection closes it.
+  asset_group_->hide();
   // Shown only on the road path below; every early return leaves it hidden.
   style_group_->hide();
   // Shown only on the ground-surface path below; hidden everywhere else.
@@ -1139,6 +1207,111 @@ void PropertiesPanel::clear_rows() {
   while (form_->rowCount() > 0) {
     form_->removeRow(0);
   }
+}
+
+namespace {
+/// The asset editor's current widget values as a LibraryItem (for preview and
+/// commit). `key`/material/category come from the tracked state; the geometry
+/// from the spin boxes.
+LibraryItem item_from_widgets(const QString& key,
+                              const QString& material,
+                              double width,
+                              double border,
+                              double dash,
+                              double gap,
+                              const QString& category) {
+  LibraryItem item;
+  item.key = key;
+  item.kind = LibraryItem::Kind::Crosswalk;
+  item.category = QStringLiteral("Crosswalks");
+  item.crosswalk_width = width;
+  item.crosswalk_border = border;
+  item.crosswalk_dash = dash;
+  item.crosswalk_gap = gap;
+  item.crosswalk_material = material;
+  item.crosswalk_segmentation = category;
+  return item;
+}
+} // namespace
+
+void PropertiesPanel::edit_asset(const QString& key, bool editable) {
+  if (library_model_ == nullptr) {
+    return;
+  }
+  const LibraryItem* item = library_model_->item_for_key(key);
+  if (item == nullptr || item->kind != LibraryItem::Kind::Crosswalk) {
+    return; // a non-crosswalk key never opens the asset editor
+  }
+  asset_mode_ = true;
+  asset_editable_ = editable;
+  asset_key_ = key;
+  asset_material_key_ = item->crosswalk_material;
+
+  clear_rows();
+  placeholder_->hide();
+  name_row_->hide();
+  lane_group_->hide();
+  elevation_group_->hide();
+  signal_group_->hide();
+  object_group_->hide();
+  style_group_->hide();
+  surface_group_->hide();
+
+  {
+    const QSignalBlocker b1(asset_width_spin_);
+    const QSignalBlocker b2(asset_border_spin_);
+    const QSignalBlocker b3(asset_dash_spin_);
+    const QSignalBlocker b4(asset_gap_spin_);
+    const QSignalBlocker b5(asset_category_edit_);
+    asset_width_spin_->setValue(item->crosswalk_width);
+    asset_border_spin_->setValue(item->crosswalk_border);
+    asset_dash_spin_->setValue(item->crosswalk_dash);
+    asset_gap_spin_->setValue(item->crosswalk_gap);
+    asset_category_edit_->setText(item->crosswalk_segmentation);
+  }
+  asset_material_slot_->set_item(item->crosswalk_material);
+
+  for (QWidget* widget : {static_cast<QWidget*>(asset_width_spin_),
+                          static_cast<QWidget*>(asset_border_spin_),
+                          static_cast<QWidget*>(asset_dash_spin_),
+                          static_cast<QWidget*>(asset_gap_spin_),
+                          static_cast<QWidget*>(asset_category_edit_),
+                          static_cast<QWidget*>(asset_material_slot_)}) {
+    widget->setEnabled(editable);
+  }
+  asset_group_->setTitle(tr("Crosswalk asset — %1").arg(item->label));
+  asset_hint_->setText(
+      editable
+          ? QString()
+          : tr("Built-in asset (read-only). Use “New crosswalk asset…” to make an editable copy."));
+  asset_hint_->setVisible(!editable);
+  refresh_asset_preview();
+  asset_group_->show();
+}
+
+void PropertiesPanel::refresh_asset_preview() {
+  const LibraryItem item = item_from_widgets(asset_key_,
+                                             asset_material_key_,
+                                             asset_width_spin_->value(),
+                                             asset_border_spin_->value(),
+                                             asset_dash_spin_->value(),
+                                             asset_gap_spin_->value(),
+                                             asset_category_edit_->text());
+  asset_preview_->setPixmap(render_crosswalk_preview(item, QSize(96, 48), materials_));
+}
+
+void PropertiesPanel::commit_asset_edit() {
+  if (!asset_mode_ || !asset_editable_) {
+    return;
+  }
+  refresh_asset_preview();
+  emit crosswalk_asset_committed(item_from_widgets(asset_key_,
+                                                   asset_material_key_,
+                                                   asset_width_spin_->value(),
+                                                   asset_border_spin_->value(),
+                                                   asset_dash_spin_->value(),
+                                                   asset_gap_spin_->value(),
+                                                   asset_category_edit_->text()));
 }
 
 } // namespace roadmaker::editor

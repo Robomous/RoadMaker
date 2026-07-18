@@ -788,6 +788,15 @@ private:
       parse_repeat(repeat, object, fmt::format("{}/repeat[{}]", location, repeat_index++));
     }
 
+    // Object-level <markings> (§13.8): the 1.8.1 bounding-volume form, direct
+    // under <object>. Outline-nested markings (1.9.0) are parsed into the
+    // outline above; @side is mandatory here (no outline to reference).
+    if (const pugi::xml_node markings_node = node.child("markings")) {
+      object.markings = parse_markings(markings_node,
+                                       /*has_outline=*/!object.outlines.empty(),
+                                       fmt::format("{}/markings", location));
+    }
+
     // Preserved tier: unknown attributes and unmodeled children survive
     // verbatim (never dropped) — docs/design/m3a/01 §5.
     static constexpr std::string_view kModeledAttrs[] = {
@@ -803,12 +812,122 @@ private:
     }
     for (const pugi::xml_node child : node.children()) {
       const std::string_view name = child.name();
-      if (name != "outline" && name != "outlines" && name != "repeat") {
+      // <userData code="rm:crosswalk"> is RoadMaker's own extension: parsed
+      // into CrosswalkData, not preserved. Other userData codes and unmodeled
+      // children round-trip verbatim.
+      if (name == "userData" &&
+          std::string_view(child.attribute("code").value()) == "rm:crosswalk") {
+        if (auto data = parse_crosswalk_data(child, fmt::format("{}/userData", location))) {
+          object.crosswalk = std::move(*data);
+        }
+        continue;
+      }
+      if (name != "outline" && name != "outlines" && name != "repeat" && name != "markings") {
         object.preserved.children.push_back(node_to_string(child));
       }
     }
 
     network().add_object(road_id, std::move(object));
+  }
+
+  /// <markings> (§13.8): an object's painted lines, either attached to the
+  /// bounding volume (@side, no outline) or referencing outline points
+  /// (<cornerReference>). Returns the parsed markings; unknown @marking
+  /// attributes and children survive verbatim. `has_outline` selects the @side
+  /// diagnostic (mandatory only when no outline is used).
+  std::vector<ObjectMarking> parse_markings(const pugi::xml_node& markings_node,
+                                            bool has_outline,
+                                            const std::string& location) {
+    std::vector<ObjectMarking> markings;
+    std::size_t index = 0;
+    for (const pugi::xml_node marking_node : markings_node.children("marking")) {
+      const std::string ml = fmt::format("{}/marking[{}]", location, index++);
+      ObjectMarking marking;
+      marking.color = marking_node.attribute("color").value();
+      if (!marking_node.attribute("color")) {
+        diag(Severity::Warning,
+             ml,
+             "marking without 'color' attribute",
+             rules::kObjectMarkingColour);
+      }
+      marking.line_length = attr_double(marking_node, "lineLength", ml);
+      marking.space_length = attr_double(marking_node, "spaceLength", ml);
+      marking.start_offset = attr_double(marking_node, "startOffset", ml);
+      marking.stop_offset = attr_double(marking_node, "stopOffset", ml);
+      if (const pugi::xml_attribute side = marking_node.attribute("side")) {
+        marking.side = side.value();
+      }
+      if (const pugi::xml_attribute weight = marking_node.attribute("weight")) {
+        marking.weight = weight.value();
+      }
+      marking.width = attr_optional_double(marking_node, "width", ml);
+      marking.z_offset = attr_optional_double(marking_node, "zOffset", ml);
+      for (const pugi::xml_node ref : marking_node.children("cornerReference")) {
+        marking.corner_refs.push_back(ref.attribute("id").as_int());
+      }
+      if (!has_outline && !marking.side.has_value()) {
+        diag(Severity::Warning,
+             ml,
+             "object marking without an outline requires a 'side' attribute",
+             rules::kObjectMarkingNoOutlineSide);
+      }
+      static constexpr std::string_view kModeledMarkingAttrs[] = {"color",
+                                                                  "lineLength",
+                                                                  "spaceLength",
+                                                                  "startOffset",
+                                                                  "stopOffset",
+                                                                  "side",
+                                                                  "weight",
+                                                                  "width",
+                                                                  "zOffset"};
+      for (const pugi::xml_attribute attr : marking_node.attributes()) {
+        const std::string_view name = attr.name();
+        if (std::find(std::begin(kModeledMarkingAttrs), std::end(kModeledMarkingAttrs), name) ==
+            std::end(kModeledMarkingAttrs)) {
+          marking.preserved.attributes.emplace_back(std::string(name), attr.value());
+        }
+      }
+      for (const pugi::xml_node child : marking_node.children()) {
+        if (std::string_view(child.name()) != "cornerReference") {
+          marking.preserved.children.push_back(node_to_string(child));
+        }
+      }
+      markings.push_back(std::move(marking));
+    }
+    return markings;
+  }
+
+  /// <userData code="rm:crosswalk"> on an <object> (§7.2): RoadMaker's
+  /// parametric-crosswalk authoring record. A non-numeric numeric attribute is
+  /// diagnosed and the whole record ignored (rm:waypoints precedent), leaving
+  /// the crosswalk to mesh from its outline/markings fallback.
+  std::optional<CrosswalkData> parse_crosswalk_data(const pugi::xml_node& node,
+                                                    const std::string& location) {
+    CrosswalkData data;
+    data.asset = node.attribute("asset").value();
+    data.material = node.attribute("material").value();
+    data.category = node.attribute("category").value();
+    data.material_override = node.attribute("materialOverride").as_bool(false);
+    bool ok = true;
+    const auto num = [&](const char* name, double fallback) {
+      const pugi::xml_attribute attr = node.attribute(name);
+      if (!attr) {
+        return fallback;
+      }
+      if (const auto v = to_double(attr.value())) {
+        return *v;
+      }
+      ok = false;
+      return fallback;
+    };
+    data.border_width = num("borderWidth", 0.0);
+    data.dash_length = num("dashLength", 0.5);
+    data.dash_gap = num("dashGap", 0.5);
+    if (!ok) {
+      diag(Severity::Warning, location, "malformed rm:crosswalk userData ignored");
+      return std::nullopt;
+    }
+    return data;
   }
 
   void parse_outline(const pugi::xml_node& node, Object& object, const std::string& location) {
@@ -874,6 +993,21 @@ private:
            fmt::format("outline has {} corner element(s), expected at least 2",
                        outline.corners.size()),
            outline.road_coords ? rules::kCornerRoadMinAmount : rules::kCornerLocalMinAmount);
+    }
+    // §13.2.4/§13.8: markings referencing this outline's corner points. When
+    // present, every corner @id becomes mandatory (mandatory_id_with_markings).
+    if (const pugi::xml_node markings_node = node.child("markings")) {
+      outline.markings = parse_markings(markings_node, /*has_outline=*/true, location);
+      for (const OutlineCorner& corner : outline.corners) {
+        if (!corner.id.has_value()) {
+          diag(Severity::Warning,
+               location,
+               "outline with <markings> requires @id on every corner",
+               outline.road_coords ? rules::kCornerRoadIdWithMarkings
+                                   : rules::kCornerLocalIdWithMarkings);
+          break;
+        }
+      }
     }
     object.outlines.push_back(std::move(outline));
   }

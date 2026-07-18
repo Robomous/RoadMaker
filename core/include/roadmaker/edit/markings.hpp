@@ -22,10 +22,21 @@ class RoadNetwork;
 
 namespace roadmaker::edit {
 
-/// Parameters for junction-arm crosswalk authoring.
+/// Parameters for junction-arm crosswalk authoring. Beyond placement (depth,
+/// setback), these carry the parametric-asset fields materialized into the
+/// authored crosswalk's outline + <markings> + rm:crosswalk userData (p3-s2):
+/// stripe geometry, paint material/colour, and the source asset/category tags.
 struct CrosswalkParams {
   double depth_m = 3.0;   ///< crosswalk extent ALONG the road (walking depth)
   double setback_m = 1.0; ///< gap from the junction edge to the near stripe
+
+  double border_width_m = 0.0; ///< edge-line width [m]; 0 = no border lines
+  double dash_length_m = 0.5;  ///< stripe length along the crossing [m]; 0 = solid
+  double dash_gap_m = 0.5;     ///< gap between stripes [m]
+  std::string material;        ///< paint material code (e.g. "material.paint_white")
+  std::string color = "white"; ///< e_roadMarkColor for the <marking>s
+  std::string asset;           ///< source Library asset key (rm:crosswalk)
+  std::string category;        ///< segmentation category tag
 };
 
 /// A zebra crosswalk `Object` for each distinct arm road of `junction`, spanning
@@ -37,6 +48,17 @@ struct CrosswalkParams {
 /// is headless-testable and Python-bindable.
 [[nodiscard]] RM_API std::vector<std::pair<RoadId, Object>> junction_crosswalks(
     const RoadNetwork& network, JunctionId junction, const CrosswalkParams& params = {});
+
+/// Rebuilds `object`'s crosswalk outline + <markings> + rm:crosswalk userData
+/// from `params`, in place — the single authoring path shared by
+/// junction_crosswalks and the editor's asset re-materialization, so both
+/// produce identical geometry. Reads the object's placement (@s = centre along
+/// the road, @t = centre across, @length = crossing span across the road) and
+/// writes the walking depth (params.depth_m) into @width; also sets the object
+/// type/subtype to a zebra crosswalk when unset. A closed cornerRoad outline
+/// (ids 0..3) plus a stripes marking (dash 0 ⇒ solid) and, when
+/// border_width>0, two border markings.
+RM_API void apply_crosswalk_asset(Object& object, const CrosswalkParams& params);
 
 /// Parameters for junction-arm stop-line authoring.
 struct StopLineParams {

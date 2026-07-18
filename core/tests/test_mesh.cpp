@@ -9,6 +9,7 @@
 #include <array>
 #include <cmath>
 #include <filesystem>
+#include <numbers>
 #include <stdexcept>
 
 using roadmaker::NetworkMesh;
@@ -113,6 +114,86 @@ TEST(Mesh, StraightRoadMeshesWithCorrectExtentsAndAreas) {
   ASSERT_NE(solid, road.markings.end());
   // Solid strip area ~ width x length.
   EXPECT_NEAR(patch_area_xy(solid->positions, solid->indices), 0.12 * 100.0, 1e-3);
+}
+
+namespace {
+/// A straight 100 m road carrying one crosswalk object with `data` at s=50,
+/// spanning 6 m across (u) x 3 m deep (v). Returns the built network mesh.
+roadmaker::NetworkMesh mesh_with_crosswalk(const roadmaker::CrosswalkData& data) {
+  roadmaker::RoadNetwork network;
+  const std::vector<roadmaker::Waypoint> waypoints{roadmaker::Waypoint{0.0, 0.0},
+                                                   roadmaker::Waypoint{100.0, 0.0}};
+  auto road = roadmaker::author_clothoid_road(
+      network, waypoints, roadmaker::LaneProfile::two_lane_default(), "", "1");
+  if (!road.has_value()) {
+    throw std::runtime_error("author road");
+  }
+  roadmaker::Object cw;
+  cw.odr_id = "cw";
+  cw.type = roadmaker::ObjectType::Crosswalk;
+  cw.s = 50.0;
+  cw.t = 0.0;
+  cw.hdg = std::numbers::pi / 2.0;
+  cw.length = 6.0; // crossing span along u
+  cw.width = 3.0;  // walking depth along v
+  cw.crosswalk = data;
+  if (!roadmaker::edit::add_object(network, *road, cw)->apply(network).has_value()) {
+    throw std::runtime_error("add crosswalk");
+  }
+  return roadmaker::build_network_mesh(network);
+}
+
+const roadmaker::SubMesh* find_crosswalk(const roadmaker::NetworkMesh& mesh) {
+  for (const auto& road : mesh.roads) {
+    for (const auto& marking : road.markings) {
+      if (marking.name.find("crosswalk") != std::string::npos) {
+        return &marking;
+      }
+    }
+  }
+  return nullptr;
+}
+} // namespace
+
+TEST(Mesh, ParametricCrosswalkBarCountFollowsDashAndGap) {
+  // 6 m span, 0.5 dash + 0.5 gap => cycle 1.0 => 6 bars, one quad (6 idx) each.
+  const auto mesh = mesh_with_crosswalk(roadmaker::CrosswalkData{
+      .dash_length = 0.5, .dash_gap = 0.5, .material = "material.paint_white"});
+  const roadmaker::SubMesh* cw = find_crosswalk(mesh);
+  ASSERT_NE(cw, nullptr);
+  EXPECT_EQ(cw->indices.size() / 6U, 6U);
+  EXPECT_EQ(cw->surface, "material.paint_white"); // material code carried for tint
+}
+
+TEST(Mesh, ParametricCrosswalkSolidIsOneQuadPlusBorders) {
+  // dash 0 => one solid quad; border_width>0 => two border quads. 3 quads total.
+  const auto mesh =
+      mesh_with_crosswalk(roadmaker::CrosswalkData{.border_width = 0.2, .dash_length = 0.0});
+  const roadmaker::SubMesh* cw = find_crosswalk(mesh);
+  ASSERT_NE(cw, nullptr);
+  EXPECT_EQ(cw->indices.size() / 6U, 3U); // 1 solid + 2 borders
+}
+
+TEST(Mesh, ForeignCrosswalkWithoutDataFallsBackToZebra) {
+  roadmaker::RoadNetwork network;
+  const std::vector<roadmaker::Waypoint> waypoints{roadmaker::Waypoint{0.0, 0.0},
+                                                   roadmaker::Waypoint{100.0, 0.0}};
+  auto road = roadmaker::author_clothoid_road(
+      network, waypoints, roadmaker::LaneProfile::two_lane_default(), "", "1");
+  ASSERT_TRUE(road.has_value());
+  roadmaker::Object cw;
+  cw.odr_id = "cw";
+  cw.type = roadmaker::ObjectType::Crosswalk;
+  cw.s = 50.0;
+  cw.hdg = std::numbers::pi / 2.0;
+  cw.length = 6.0;
+  cw.width = 3.0; // no CrosswalkData → fallback zebra
+  ASSERT_TRUE(roadmaker::edit::add_object(network, *road, cw)->apply(network).has_value());
+  const auto mesh = roadmaker::build_network_mesh(network);
+  const roadmaker::SubMesh* found = find_crosswalk(mesh);
+  ASSERT_NE(found, nullptr);
+  EXPECT_FALSE(found->indices.empty()); // still meshes as bars
+  EXPECT_TRUE(found->surface.empty());  // no material code without CrosswalkData
 }
 
 TEST(Mesh, RoadGridCarriesContinuousPlanarUVs) {

@@ -60,6 +60,7 @@ add_library(roadmaker_editor_lib STATIC
   src/app/tour_overlay.cpp
   src/app/welcome_widget.cpp
   src/document/autosave.cpp
+  src/document/crosswalk_item.cpp
   src/document/diagnostics_model.cpp
   src/document/document.cpp
   src/document/library_drop.cpp

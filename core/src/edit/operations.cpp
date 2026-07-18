@@ -5125,6 +5125,37 @@ set_object_model(const RoadNetwork& network, ObjectId object, std::string model_
   return command;
 }
 
+std::unique_ptr<Command> update_objects(const RoadNetwork& network,
+                                        std::vector<std::pair<ObjectId, Object>> updates,
+                                        std::string name) {
+  const std::string label = name.empty() ? std::string("Update Objects") : std::move(name);
+  // Validate before mutating (commands mutate only after validation) and
+  // collect the deduped owning roads for the object-layer dirty channel.
+  DirtySet dirty;
+  for (const auto& [id, updated] : updates) {
+    const Object* current = network.object(id);
+    if (current == nullptr) {
+      return invalid_command(
+          label, Error{.code = ErrorCode::InvalidArgument, .message = "stale object id"});
+    }
+    if (updated.road != current->road) {
+      return invalid_command(
+          label,
+          Error{.code = ErrorCode::InvalidArgument,
+                .message = "update_objects cannot move an object to another road"});
+    }
+    if (std::ranges::find(dirty.objects, current->road) == dirty.objects.end()) {
+      dirty.objects.push_back(current->road);
+    }
+  }
+  auto command = std::make_unique<GenericCommand>(label, std::move(dirty));
+  for (auto& [id, updated] : updates) {
+    command->before.objects.emplace_back(id, *network.object(id));
+    command->after.objects.emplace_back(id, std::move(updated));
+  }
+  return command;
+}
+
 std::unique_ptr<Command> rename_road(const RoadNetwork& network, RoadId road_id, std::string name) {
   static constexpr std::string_view kName = "Rename Road";
   const Road* road = network.road(road_id);
