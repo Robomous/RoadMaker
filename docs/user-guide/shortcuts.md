@@ -50,6 +50,7 @@ conventions below.
 | Lane Add tool | `A` |  |
 | Lane Form tool | `Shift+A` |  |
 | Lane Carve tool | `Shift+C` |  |
+| Crosswalk & Stop Line tool | `W` |  |
 | Lane Width editor (2D) | `Shift+L` |  |
 
 ## View

@@ -1,4 +1,6 @@
 #include "roadmaker/edit/assembly.hpp"
+#include "roadmaker/edit/connection.hpp"
+#include "roadmaker/edit/operations.hpp"
 #include "roadmaker/road/authoring.hpp"
 #include "roadmaker/road/lane.hpp"
 #include "roadmaker/road/lane_section.hpp"
@@ -628,6 +630,85 @@ TEST(LibraryDrop, UnknownMaterialIsRejected) {
       resolve_library_drop(material_item("granite"), network, 50.0, -2.0);
   EXPECT_EQ(action.kind, LibraryDropKind::None);
   EXPECT_EQ(action.command, nullptr);
+  EXPECT_FALSE(action.toast.isEmpty());
+}
+
+// --- crosswalk placement (p3-s3) --------------------------------------------
+
+LibraryItem crosswalk_item() {
+  LibraryItem item;
+  item.key = QStringLiteral("crosswalk.zebra");
+  item.label = QStringLiteral("Zebra crosswalk");
+  item.kind = LibraryItem::Kind::Crosswalk;
+  item.crosswalk_width = 3.0; // walking depth along the road
+  item.crosswalk_dash = 0.5;
+  item.crosswalk_gap = 0.5;
+  item.crosswalk_material = QStringLiteral("material.paint_white");
+  item.crosswalk_segmentation = QStringLiteral("crosswalk");
+  return item;
+}
+
+/// Three straight two-lane arms welded into one junction near the origin — the
+/// signalized approach layout a crosswalk drop targets.
+RoadNetwork crosswalk_junction() {
+  RoadNetwork network;
+  const auto arm = [&](Waypoint a, Waypoint b) {
+    auto command = edit::create_road({a, b}, LaneProfile::two_lane_rural(), "");
+    if (command == nullptr || !command->apply(network).has_value()) {
+      throw std::runtime_error("arm setup failed");
+    }
+  };
+  arm(Waypoint{-40.0, 0.0}, Waypoint{-6.0, 0.0});
+  arm(Waypoint{40.0, 0.0}, Waypoint{6.0, 0.0});
+  arm(Waypoint{0.0, -40.0}, Waypoint{0.0, -6.0});
+  const std::vector<roadmaker::RoadEnd> ends{
+      {network.find_road("1"), roadmaker::ContactPoint::End},
+      {network.find_road("2"), roadmaker::ContactPoint::End},
+      {network.find_road("3"), roadmaker::ContactPoint::End}};
+  auto junction = edit::create_junction(network, ends);
+  if (junction == nullptr || !junction->apply(network).has_value()) {
+    throw std::runtime_error("junction setup failed");
+  }
+  return network;
+}
+
+TEST(LibraryDrop, CrosswalkDropOnAnApproachPlacesPairOnThatArm) {
+  RoadNetwork network = crosswalk_junction();
+  // Drop over the west approach, 10 m out from the junction.
+  LibraryDropAction action = resolve_library_drop(crosswalk_item(), network, -10.0, 0.0);
+  ASSERT_EQ(action.kind, LibraryDropKind::Crosswalk);
+  EXPECT_EQ(action.command, nullptr); // the pair goes through action.objects
+  EXPECT_TRUE(action.preview.valid);
+  EXPECT_NEAR(action.preview.x, -6.0, 1e-6); // ghost at the arm/junction anchor
+  EXPECT_NEAR(action.preview.y, 0.0, 1e-6);
+  EXPECT_FALSE(action.toast.isEmpty());
+
+  // A crosswalk AND its stop line, both on the west arm; adding them stays valid.
+  const RoadId west = network.find_road("1");
+  int crosswalks = 0;
+  int stop_lines = 0;
+  for (auto& [road, object] : action.objects) {
+    EXPECT_EQ(road, west);
+    if (object.type == ObjectType::Crosswalk) {
+      ++crosswalks;
+    } else if (object.type_str == "roadMark" && object.subtype == "signalLines") {
+      ++stop_lines;
+    }
+    auto command = edit::add_object(network, road, object);
+    ASSERT_NE(command, nullptr);
+    ASSERT_TRUE(command->apply(network).has_value());
+  }
+  EXPECT_EQ(crosswalks, 1);
+  EXPECT_EQ(stop_lines, 1);
+  EXPECT_EQ(count_errors(validate_network(network)), 0U);
+}
+
+TEST(LibraryDrop, CrosswalkDroppedInOpenSpaceIsRejectedWithAHint) {
+  RoadNetwork network = crosswalk_junction();
+  const LibraryDropAction action = resolve_library_drop(crosswalk_item(), network, 0.0, 50.0);
+  EXPECT_EQ(action.kind, LibraryDropKind::None);
+  EXPECT_TRUE(action.objects.empty());
+  EXPECT_FALSE(action.preview.valid);
   EXPECT_FALSE(action.toast.isEmpty());
 }
 

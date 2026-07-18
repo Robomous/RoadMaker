@@ -29,6 +29,7 @@ enum class ToolId {
   LaneAdd,
   LaneForm,
   LaneCarve,
+  Crosswalk,
 };
 
 struct ToolEvent {

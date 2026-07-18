@@ -29,6 +29,7 @@ models, fonts, images). Policy — see [`docs/standards/assets.md`](docs/standar
 | `assets/textures/concrete/brushed_concrete_nor_gl_512.png` | [Poly Haven — brushed_concrete](https://polyhaven.com/a/brushed_concrete) (resized to 512, PNG — normals kept lossless) | Poly Haven (Rob Tuytel, Sergej Majboroda) | CC0 | 2026-07-17 |
 | `assets/textures/concrete/brushed_concrete_rough_512.jpg` | [Poly Haven — brushed_concrete](https://polyhaven.com/a/brushed_concrete) (resized to 512, re-encoded JPEG q85) | Poly Haven (Rob Tuytel, Sergej Majboroda) | CC0 | 2026-07-17 |
 | `editor/resources/icons/custom/clothoid-road.svg` | original work (this repository) | RoadMaker contributors | MIT | 2026-07-10 |
+| `editor/resources/icons/custom/crosswalk.svg` | original work (this repository) | RoadMaker contributors | MIT | 2026-07-18 |
 | `editor/resources/icons/custom/junction-connect.svg` | original work (this repository) | RoadMaker contributors | MIT | 2026-07-10 |
 | `editor/resources/icons/custom/lane-section.svg` | original work (this repository) | RoadMaker contributors | MIT | 2026-07-10 |
 | `editor/resources/icons/custom/template-highway.svg` | original work (this repository) | RoadMaker contributors | MIT | 2026-07-10 |

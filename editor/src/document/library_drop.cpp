@@ -12,6 +12,8 @@
 #include <set>
 #include <string>
 
+#include "document/crosswalk_item.hpp"
+#include "document/crosswalk_placement.hpp"
 #include "document/marking_item.hpp"
 #include "render/material_catalog.hpp"
 #include "viewport/picking.hpp"
@@ -448,10 +450,30 @@ LibraryDropAction resolve_library_drop(const LibraryItem& item,
     }
     return action;
   }
-  case LibraryItem::Kind::Crosswalk:
-    // A crosswalk is a parametric asset edited in the Attributes pane, not
-    // dropped onto the viewport (the placing tools are p3-s3/s4). Instances
-    // come from the junction generator, so a drop is a no-op here.
+  case LibraryItem::Kind::Crosswalk: {
+    // A crosswalk asset dropped onto a junction approach places a crosswalk +
+    // its stop line along that arm's lane cross-section (GW-2 step 10). The arm
+    // is resolved from the cursor exactly as the interactive tool does, so both
+    // paths land the same objects. A drop away from any approach is rejected.
+    const auto arm = nearest_junction_arm(network, world_x, world_y, kCrosswalkSnapThreshold);
+    if (!arm.has_value()) {
+      action.toast = QStringLiteral("Drop a crosswalk onto a junction approach");
+      return action; // kind None, preview invalid at the cursor — caller hints
+    }
+    const MaterialCatalog catalog;
+    const edit::CrosswalkParams params = crosswalk_params_from_item(item, catalog);
+    action.objects = crosswalk_pair_for_arm(network, arm->junction, arm->arm_road, params);
+    if (action.objects.empty()) {
+      action.toast = QStringLiteral("That approach has no lanes to cross");
+      return action;
+    }
+    action.kind = LibraryDropKind::Crosswalk;
+    // Ghost sits where the arm meets the junction (ghost==commit); the tool's
+    // chevron marks the same spot while the drag is live.
+    action.preview = {arm->anchor_x, arm->anchor_y, true};
+    action.toast = QStringLiteral("Placed %1 + stop line — Ctrl+Z to undo").arg(item.label);
+    return action;
+  }
   case LibraryItem::Kind::Unknown:
     break;
   }

@@ -10,10 +10,13 @@
 #include "roadmaker/edit/command.hpp"
 #include "roadmaker/road/authoring.hpp"
 #include "roadmaker/road/id.hpp"
+#include "roadmaker/road/object.hpp"
 #include "roadmaker/road/road_style.hpp"
 
 #include <QString>
 #include <memory>
+#include <utility>
+#include <vector>
 
 #include "document/library_manifest.hpp"
 
@@ -32,6 +35,7 @@ enum class LibraryDropKind {
   Signal,
   Marking,
   Material,
+  Crosswalk,
 };
 
 /// Where a resolved drop lands in the world (x, y) and whether it is valid
@@ -48,9 +52,11 @@ struct LibraryDropAction {
   LibraryDropKind kind = LibraryDropKind::None;
   LaneProfile profile;                    ///< RoadTemplate: arm Create Road with this
   std::unique_ptr<edit::Command> command; ///< Assembly/Tree/RoadStyle: push this (one undo unit)
-  RoadId target_road;                     ///< RoadStyle: the road under the cursor (for highlight)
-  QString toast;                          ///< success message, or (kind None) a reject hint
-  PlacementPreview preview;               ///< where the ghost/commit lands (ghost==commit)
+  std::vector<std::pair<RoadId, Object>>
+      objects;              ///< Crosswalk: the crosswalk + stop-line pair, added as one macro
+  RoadId target_road;       ///< RoadStyle: the road under the cursor (for highlight)
+  QString toast;            ///< success message, or (kind None) a reject hint
+  PlacementPreview preview; ///< where the ghost/commit lands (ghost==commit)
 };
 
 /// The LaneProfile for a road-template profile name (two_lane_rural default).

@@ -84,6 +84,7 @@ TEST(Icons, EveryMappedIconIsBundled) {
                                "waypoints",
                                // custom, drawn on the Lucide grid
                                "clothoid-road",
+                               "crosswalk",
                                "junction-connect",
                                "lane-section",
                                "template-highway",
