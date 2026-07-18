@@ -606,5 +606,83 @@ TEST(PropertiesPanel, EngagingTheMaterialSlotRequestsTheMaterialsCategory) {
   EXPECT_EQ(spy.front().front().toString(), QStringLiteral("Materials"));
 }
 
+// --- the lane Marking slot (p3-s1) ------------------------------------------
+
+// The LaneId with OpenDRIVE `odr_id` in the first section of `road`.
+LaneId lane_on_road(const Document& document, RoadId road, int odr_id) {
+  const Road* r = document.network().road(road);
+  if (r == nullptr || r->sections.empty()) {
+    return {};
+  }
+  const LaneSection* section = document.network().lane_section(r->sections.front());
+  if (section == nullptr) {
+    return {};
+  }
+  for (const LaneId lid : section->lanes) {
+    const Lane* lane = document.network().lane(lid);
+    if (lane != nullptr && lane->odr_id == odr_id) {
+      return lid;
+    }
+  }
+  return {};
+}
+
+TEST(PropertiesPanel, DroppingOnTheMarkingSlotSetsLaneRoadMarkInOneCommand) {
+  Harness h;
+  ASSERT_TRUE(h.document.load(kSample).has_value());
+  PropertiesPanel panel(h.document, h.selection);
+  auto* slot = panel.findChild<SlotWidget*>(QStringLiteral("lane_marking_slot"));
+  ASSERT_NE(slot, nullptr);
+  EXPECT_EQ(slot->category(), QStringLiteral("Markings"));
+
+  const RoadId road = first_plain_road(h.document);
+  const LaneId lane = lane_on_road(h.document, road, -1);
+  ASSERT_TRUE(lane.is_valid());
+  h.selection.select({.road = road, .lane = lane});
+
+  // Capture the lane's mark before the drop so undo can be checked against it.
+  const std::vector<RoadMark> before = h.document.network().lane(lane)->road_marks;
+  const int base = h.document.undo_stack()->index();
+  emit slot->item_dropped(QStringLiteral("marking.double_dashed_yellow"));
+  EXPECT_EQ(h.document.undo_stack()->index(), base + 1);
+  ASSERT_FALSE(h.document.network().lane(lane)->road_marks.empty());
+  EXPECT_EQ(h.document.network().lane(lane)->road_marks.front().type, RoadMarkType::BrokenBroken);
+  EXPECT_EQ(h.document.network().lane(lane)->road_marks.front().color, RoadMarkColor::Yellow);
+
+  h.document.undo_stack()->undo();
+  EXPECT_EQ(h.document.undo_stack()->index(), base);
+  EXPECT_EQ(h.document.network().lane(lane)->road_marks.size(), before.size());
+}
+
+TEST(PropertiesPanel, AnUnknownDroppedMarkingIsRefusedWithoutAnUndoEntry) {
+  Harness h;
+  ASSERT_TRUE(h.document.load(kSample).has_value());
+  PropertiesPanel panel(h.document, h.selection);
+  auto* slot = panel.findChild<SlotWidget*>(QStringLiteral("lane_marking_slot"));
+  ASSERT_NE(slot, nullptr);
+
+  const RoadId road = first_plain_road(h.document);
+  const LaneId lane = lane_on_road(h.document, road, -1);
+  ASSERT_TRUE(lane.is_valid());
+  h.selection.select({.road = road, .lane = lane});
+
+  const int base = h.document.undo_stack()->count();
+  emit slot->item_dropped(QStringLiteral("material.asphalt")); // a material, not a marking
+  EXPECT_EQ(h.document.undo_stack()->count(), base) << "a refusal must not reach the undo stack";
+}
+
+TEST(PropertiesPanel, EngagingTheMarkingSlotRequestsTheMarkingsCategory) {
+  Harness h;
+  ASSERT_TRUE(h.document.load(kSample).has_value());
+  PropertiesPanel panel(h.document, h.selection);
+  auto* slot = panel.findChild<SlotWidget*>(QStringLiteral("lane_marking_slot"));
+  ASSERT_NE(slot, nullptr);
+
+  QSignalSpy spy(&panel, &PropertiesPanel::library_category_requested);
+  emit slot->engage_requested(slot->category());
+  ASSERT_EQ(spy.count(), 1);
+  EXPECT_EQ(spy.front().front().toString(), QStringLiteral("Markings"));
+}
+
 } // namespace
 } // namespace roadmaker::editor

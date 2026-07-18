@@ -20,7 +20,7 @@ model, while templates, markings, and materials show a stylised swatch.
 | **Assemblies** | T-intersection, X-intersection | a pre-built junction |
 | **Props** | Pine / Oak / Birch / Poplar tree, Shrub | an OpenDRIVE `<object type="tree">` on the nearest road |
 | **Signals** | Traffic light, Traffic sign | an OpenDRIVE `<signal>` on the nearest road — the light is a dynamic control, the sign a static one |
-| **Markings** | Solid single white, Double yellow | a `<roadMark>` on the lane boundary you drop it on |
+| **Markings** | Solid single white, Double yellow, Dashed white / yellow, Double white, Solid–broken / Broken–solid yellow, Double dashed yellow, Wide edge white | a `<roadMark>` on the lane boundary you drop it on |
 | **Materials** | Asphalt, Asphalt (worn), Concrete | a `<material>` on the lane (or ground surface) you drop it on ([materials](materials.md)) |
 
 ## Placing an item
@@ -58,6 +58,13 @@ it lands. Drop one away from any road and the editor places nothing and hints to
 drop it onto a boundary; dropping the same marking a boundary already carries is
 a no-op. A marking is a lane's outer-boundary `<roadMark>` — see
 [lane markings](lane-form.md).
+
+The Markings catalogue covers the common line styles: single solid, dashed
+(broken), the double families (double white/yellow, double dashed, and the
+solid–broken and broken–solid combinations), and a wide edge line. You can also
+drop a marking onto the **Marking** slot in the Properties panel to set the
+selected lane's road mark without aiming in the viewport — see
+[lane profile](lane-profile.md).
 
 ## Materials drop on a surface slot
 

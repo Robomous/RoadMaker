@@ -123,6 +123,8 @@ std::vector<RoadMarkLine> resolve_stripes(const RoadMark& mark) {
     return {at(solid, +w), at(broken, -w)};
   case RoadMarkType::BrokenSolid:
     return {at(broken, +w), at(solid, -w)};
+  case RoadMarkType::BrokenBroken:
+    return {at(broken, +w), at(broken, -w)};
   case RoadMarkType::Solid:
   case RoadMarkType::Other:
   case RoadMarkType::None:

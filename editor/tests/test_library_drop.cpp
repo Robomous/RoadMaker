@@ -499,6 +499,50 @@ TEST(LibraryDrop, UnknownMarkTypeIsRejected) {
   EXPECT_FALSE(action.toast.isEmpty());
 }
 
+TEST(LibraryDrop, BrokenBrokenDropSetsTypeAndWritesSpaceSpelling) {
+  RoadNetwork network = with_straight_road();
+  const LibraryDropAction action =
+      resolve_library_drop(marking("broken_broken", "yellow"), network, 50.0, 0.0);
+  ASSERT_EQ(action.kind, LibraryDropKind::Marking);
+  ASSERT_TRUE(action.command->apply(network).has_value());
+
+  const auto centre_mark = first_mark_for_odr(network, 0);
+  ASSERT_TRUE(centre_mark.has_value());
+  EXPECT_EQ(centre_mark->type, RoadMarkType::BrokenBroken);
+  EXPECT_EQ(centre_mark->color, RoadMarkColor::Yellow);
+
+  // The manifest spelling is underscored; the xodr writer emits the ASAM space
+  // form (Annex A.3.4 Table 173).
+  const auto xodr = roadmaker::write_xodr(network, "marking test");
+  ASSERT_TRUE(xodr.has_value());
+  EXPECT_NE(xodr->find("broken broken"), std::string::npos);
+  EXPECT_EQ(count_errors(validate_network(network)), 0U);
+}
+
+TEST(LibraryDrop, DashedMarkingDropSetsBrokenType) {
+  RoadNetwork network = with_straight_road();
+  const LibraryDropAction action =
+      resolve_library_drop(marking("broken", "white"), network, 50.0, 0.0);
+  ASSERT_EQ(action.kind, LibraryDropKind::Marking);
+  ASSERT_TRUE(action.command->apply(network).has_value());
+  const auto centre_mark = first_mark_for_odr(network, 0);
+  ASSERT_TRUE(centre_mark.has_value());
+  EXPECT_EQ(centre_mark->type, RoadMarkType::Broken);
+  EXPECT_EQ(centre_mark->color, RoadMarkColor::White);
+}
+
+TEST(LibraryDrop, EdgeWidthPropagatesToTheMark) {
+  RoadNetwork network = with_straight_road();
+  // A wide edge line: the 0.30 m width must reach the authored mark.
+  const LibraryDropAction action =
+      resolve_library_drop(marking("solid", "white", 0.30), network, 50.0, -3.0);
+  ASSERT_EQ(action.kind, LibraryDropKind::Marking);
+  ASSERT_TRUE(action.command->apply(network).has_value());
+  const auto mark = first_mark_for_odr(network, -1);
+  ASSERT_TRUE(mark.has_value());
+  EXPECT_DOUBLE_EQ(mark->width, 0.30);
+}
+
 // The <material> records of the lane with OpenDRIVE `odr_id` in the first
 // section of the (single) road.
 std::vector<LaneMaterial> materials_for_odr(const RoadNetwork& network, int odr_id) {

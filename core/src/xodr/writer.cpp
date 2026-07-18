@@ -126,6 +126,8 @@ const char* road_mark_name(RoadMarkType type) {
     return "solid broken";
   case RoadMarkType::BrokenSolid:
     return "broken solid";
+  case RoadMarkType::BrokenBroken:
+    return "broken broken";
   case RoadMarkType::Other:
     return "solid";
   }
@@ -1020,9 +1022,9 @@ std::vector<Diagnostic> validate_network(const RoadNetwork& network, const Write
         // with explicit <line> geometry should carry exactly two stripes
         // (docs/design/m3a/02 §2). Bare marks (lines empty) keep the M2 path.
         for (const RoadMark& mark : lane.road_marks) {
-          const bool multi = mark.type == RoadMarkType::SolidSolid ||
-                             mark.type == RoadMarkType::SolidBroken ||
-                             mark.type == RoadMarkType::BrokenSolid;
+          const bool multi =
+              mark.type == RoadMarkType::SolidSolid || mark.type == RoadMarkType::SolidBroken ||
+              mark.type == RoadMarkType::BrokenSolid || mark.type == RoadMarkType::BrokenBroken;
           if (multi && !mark.lines.empty() && mark.lines.size() != 2) {
             findings.push_back(Diagnostic{
                 .severity = Severity::Warning,

@@ -12,6 +12,7 @@
 #include <set>
 #include <string>
 
+#include "document/marking_item.hpp"
 #include "render/material_catalog.hpp"
 #include "viewport/picking.hpp"
 
@@ -105,73 +106,6 @@ std::string next_signal_odr_id(const RoadNetwork& network) {
 /// road's reference line — the whole carriageway is in reach so a drop anywhere
 /// across it grabs the nearest boundary; a drop in open space is rejected.
 constexpr double kMarkingSnapThreshold = 12.0;
-
-/// The RoadMarkType for a manifest mark_type string, or nullopt for a spelling
-/// this build does not paint (forward-compatible with #220 variants: an unknown
-/// type rejects the drop rather than silently mis-marking).
-std::optional<RoadMarkType> mark_type_from_string(const QString& type) {
-  if (type == QStringLiteral("solid")) {
-    return RoadMarkType::Solid;
-  }
-  if (type == QStringLiteral("broken")) {
-    return RoadMarkType::Broken;
-  }
-  if (type == QStringLiteral("solid_solid")) {
-    return RoadMarkType::SolidSolid;
-  }
-  if (type == QStringLiteral("solid_broken")) {
-    return RoadMarkType::SolidBroken;
-  }
-  if (type == QStringLiteral("broken_solid")) {
-    return RoadMarkType::BrokenSolid;
-  }
-  return std::nullopt;
-}
-
-/// The RoadMarkColor for a manifest mark_color string, or nullopt for an unknown
-/// spelling. An empty/absent color means "the standard color for this type".
-std::optional<RoadMarkColor> mark_color_from_string(const QString& color) {
-  if (color.isEmpty() || color == QStringLiteral("standard")) {
-    return RoadMarkColor::Standard;
-  }
-  if (color == QStringLiteral("white")) {
-    return RoadMarkColor::White;
-  }
-  if (color == QStringLiteral("yellow")) {
-    return RoadMarkColor::Yellow;
-  }
-  if (color == QStringLiteral("red")) {
-    return RoadMarkColor::Red;
-  }
-  if (color == QStringLiteral("blue")) {
-    return RoadMarkColor::Blue;
-  }
-  if (color == QStringLiteral("green")) {
-    return RoadMarkColor::Green;
-  }
-  if (color == QStringLiteral("orange")) {
-    return RoadMarkColor::Orange;
-  }
-  return std::nullopt;
-}
-
-/// The RoadMark a Marking library item authors, or nullopt when its type/color
-/// spelling is unknown. `lines` stays empty (compact form — the mesher
-/// synthesizes multi-stripe geometry for solid_solid etc.), mirroring the
-/// junction centre-double-yellow precedent.
-std::optional<RoadMark> mark_from_item(const LibraryItem& item) {
-  const auto type = mark_type_from_string(item.mark_type);
-  const auto color = mark_color_from_string(item.mark_color);
-  if (!type.has_value() || !color.has_value()) {
-    return std::nullopt;
-  }
-  RoadMark mark;
-  mark.s_offset = 0.0;
-  mark.type = *type;
-  mark.width = item.mark_width;
-  mark.color = *color;
-  return mark;
-}
 
 /// The LaneId of the lane with OpenDRIVE `odr_id` in the section governing
 /// station `s` on `road` (odr 0 = centre line). Invalid id when not found.

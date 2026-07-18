@@ -150,6 +150,10 @@ private:
   ScrubLabel* width_scrub_label_ = nullptr;
   QComboBox* mark_combo_;
   QDoubleSpinBox* mark_width_spin_;
+  /// Lane marking slot (p3-s1): a Library slot that sets the selected lane's
+  /// road mark from a dropped Markings item (parity with the viewport drop).
+  /// Enabled on any lane, centre included — lane 0 carries the centre-line mark.
+  SlotWidget* marking_slot_;
   /// Lane Materials slot (p6-s3): a write-only Library slot that paves the
   /// selected lane's surface. Disabled for the centre lane (no material by rule).
   SlotWidget* lane_material_slot_;
@@ -196,6 +200,10 @@ private:
   /// as a single constant <material> record (§11.8.2). Refuses the centre lane,
   /// toasts an unknown key, and pushes nothing when the material is unchanged.
   void push_lane_material(const QString& key);
+
+  /// Sets the primary selected lane's road mark from the dropped Markings item
+  /// (§11.9). Toasts an unknown key; pushes nothing when the mark is unchanged.
+  void push_marking(const QString& key);
 
   /// Populates the Prop section from the primary selection's object, and shows
   /// it.

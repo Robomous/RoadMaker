@@ -141,6 +141,7 @@ NB_MODULE(_roadmaker, m) {
       .value("SOLID_SOLID", roadmaker::RoadMarkType::SolidSolid)
       .value("SOLID_BROKEN", roadmaker::RoadMarkType::SolidBroken)
       .value("BROKEN_SOLID", roadmaker::RoadMarkType::BrokenSolid)
+      .value("BROKEN_BROKEN", roadmaker::RoadMarkType::BrokenBroken)
       .value("OTHER", roadmaker::RoadMarkType::Other);
 
   nb::enum_<roadmaker::RoadMarkColor>(m, "RoadMarkColor")

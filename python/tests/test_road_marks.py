@@ -52,6 +52,26 @@ def test_road_mark_color_and_lines_round_trip(network_with_road, tmp_path):
     assert restored.lines[1].t_offset == pytest.approx(-0.1)
 
 
+def test_broken_broken_round_trips(network_with_road, tmp_path):
+    # "broken broken" (Annex A.3.4 Table 173) is the double-dashed family member.
+    network, road_id = network_with_road
+    lane = _center_lane(network, road_id)
+    lane.road_marks = [
+        rm.RoadMark(type=rm.RoadMarkType.BROKEN_BROKEN, width=0.12, color=rm.RoadMarkColor.YELLOW)
+    ]
+
+    xml = rm.write_xodr(network, "broken-broken")
+    assert 'type="broken broken"' in xml
+
+    path = tmp_path / "bb.xodr"
+    rm.save_xodr(network, path, name="bb")
+    reloaded, diagnostics = rm.load_xodr(path)
+    assert not [d for d in diagnostics if d.severity == rm.Severity.ERROR]
+    lane2 = _center_lane(reloaded, reloaded.find_road(network.road(road_id).odr_id))
+    assert lane2.road_marks[0].type == rm.RoadMarkType.BROKEN_BROKEN
+    assert lane2.road_marks[0].color == rm.RoadMarkColor.YELLOW
+
+
 def test_simple_mark_keeps_empty_lines(network_with_road):
     network, road_id = network_with_road
     lane = _center_lane(network, road_id)
