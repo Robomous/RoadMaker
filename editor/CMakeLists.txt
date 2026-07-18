@@ -61,6 +61,7 @@ add_library(roadmaker_editor_lib STATIC
   src/app/welcome_widget.cpp
   src/document/autosave.cpp
   src/document/crosswalk_item.cpp
+  src/document/crosswalk_placement.cpp
   src/document/diagnostics_model.cpp
   src/document/document.cpp
   src/document/library_drop.cpp
@@ -93,6 +94,7 @@ add_library(roadmaker_editor_lib STATIC
   src/theme/theme.cpp
   src/tools/create_junction_tool.cpp
   src/tools/create_road_tool.cpp
+  src/tools/crosswalk_stop_line_tool.cpp
   src/tools/delete_tool.cpp
   src/tools/edit_nodes_tool.cpp
   src/tools/elevation_tool.cpp

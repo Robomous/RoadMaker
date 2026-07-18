@@ -1,5 +1,6 @@
 #include "app/main_window.hpp"
 
+#include "roadmaker/edit/operations.hpp"
 #include "roadmaker/version.hpp"
 
 #include <spdlog/spdlog.h>
@@ -48,6 +49,7 @@
 #include "panels/scene_tree_panel.hpp"
 #include "tools/create_junction_tool.hpp"
 #include "tools/create_road_tool.hpp"
+#include "tools/crosswalk_stop_line_tool.hpp"
 #include "tools/delete_tool.hpp"
 #include "tools/edit_nodes_tool.hpp"
 #include "tools/elevation_tool.hpp"
@@ -365,6 +367,15 @@ MainWindow::MainWindow(QWidget* parent, bool restore_saved_layout)
   connect(actions_->tool_lane_carve, &QAction::triggered, this, [this] {
     tool_manager_.set_active(ToolId::LaneCarve);
   });
+  auto crosswalk_tool = std::make_unique<CrosswalkStopLineTool>(document_, selection_);
+  wire_status(crosswalk_tool.get());
+  // The tool places the merged Library's default crosswalk asset, so a click on
+  // an approach carries the same parameters the context-menu generator uses.
+  crosswalk_tool->set_params_provider([this] { return resolve_default_crosswalk_params(); });
+  tool_manager_.register_tool(ToolId::Crosswalk, std::move(crosswalk_tool));
+  connect(actions_->tool_crosswalk, &QAction::triggered, this, [this] {
+    tool_manager_.set_active(ToolId::Crosswalk);
+  });
   tool_manager_.set_active(ToolId::Select);
 
   // Merge Roads: enabled only for exactly two selected roads mergeable in some
@@ -636,6 +647,7 @@ void MainWindow::build_toolbar() {
   toolbar->addAction(actions_->tool_lane_add);
   toolbar->addAction(actions_->tool_lane_form);
   toolbar->addAction(actions_->tool_lane_carve);
+  toolbar->addAction(actions_->tool_crosswalk);
   toolbar->addAction(actions_->tool_elevation);
   toolbar->addAction(actions_->tool_create_junction);
   toolbar->addAction(actions_->tool_split);
@@ -963,6 +975,7 @@ void MainWindow::activate_tool_for_capture(const QString& tool_id) {
       {QStringLiteral("lane-add"), ToolId::LaneAdd},
       {QStringLiteral("lane-form"), ToolId::LaneForm},
       {QStringLiteral("lane-carve"), ToolId::LaneCarve},
+      {QStringLiteral("crosswalk"), ToolId::Crosswalk},
   };
   if (const auto found = kTools.find(tool_id); found != kTools.end()) {
     tool_manager_.set_active(found->second);
@@ -1017,6 +1030,17 @@ void MainWindow::on_library_drop(const QString& key, double world_x, double worl
     } else {
       viewport_->show_toast(tr("Couldn't place that here"), ToastSeverity::Warning);
     }
+    viewport_->clear_drag_target_road();
+    break;
+  case LibraryDropKind::Crosswalk:
+    // The crosswalk + stop line add as ONE undo unit (the placement helper's
+    // pair), so a single Ctrl+Z removes the whole drop.
+    document_.undo_stack()->beginMacro(tr("Place crosswalk"));
+    for (auto& [road, object] : action.objects) {
+      (void)document_.push_command(edit::add_object(document_.network(), road, std::move(object)));
+    }
+    document_.undo_stack()->endMacro();
+    viewport_->show_toast(action.toast, ToastSeverity::Success);
     viewport_->clear_drag_target_road();
     break;
   case LibraryDropKind::None:

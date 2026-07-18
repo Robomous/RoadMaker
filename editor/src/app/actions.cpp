@@ -142,6 +142,15 @@ Actions::Actions(QUndoStack& undo_stack, QObject* parent) : QObject(parent) {
       tr("Lane Carve — drag along a lane toward a junction to carve a tapering turn lane (⇧C)"));
   tool_group->addAction(tool_lane_carve);
 
+  tool_crosswalk = new QAction(tr("&Crosswalk && Stop Line"), this);
+  tool_crosswalk->setCheckable(true);
+  tool_crosswalk->setShortcuts(shortcuts::sequences(shortcuts::Id::ToolCrosswalk));
+  tool_crosswalk->setIconText(tr("Crosswalk"));
+  tool_crosswalk->setToolTip(
+      tr("Crosswalk & Stop Line — click a junction approach to place a crosswalk and its "
+         "stop line, or drag a crosswalk asset from the Library onto an approach (W)"));
+  tool_group->addAction(tool_crosswalk);
+
   // Not a tool — a command that surfaces the 2D Editor's Lane Width tab for the
   // selected lane. Standalone so ⇧L works whatever tool is active.
   lane_width_editor = new QAction(tr("Lane &Width Editor"), this);
@@ -268,6 +277,7 @@ void Actions::apply_icons() {
   tool_lane_add->setIcon(Icons::get(QStringLiteral("lane-section")));
   tool_lane_form->setIcon(Icons::get(QStringLiteral("lane-section")));
   tool_lane_carve->setIcon(Icons::get(QStringLiteral("lane-section")));
+  tool_crosswalk->setIcon(Icons::get(QStringLiteral("crosswalk")));
   template_rural->setIcon(Icons::get(QStringLiteral("template-rural")));
   template_urban->setIcon(Icons::get(QStringLiteral("template-urban")));
   template_highway->setIcon(Icons::get(QStringLiteral("template-highway")));
