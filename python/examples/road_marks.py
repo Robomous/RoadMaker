@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 """Author road-mark completions (OpenDRIVE §11.9): color + multi-line geometry.
 
-Puts a true double-yellow (two stripes) on the center line and a dashed white
-edge line on a straight street, then writes OpenDRIVE and meshes it.
+Puts a true double-yellow (two stripes) on the center line, a double-dashed
+(broken broken, Annex A.3.4) yellow line on the left lane, and a dashed white
+edge line on the right lane of a straight street, then writes OpenDRIVE and
+meshes it.
 
 Usage:
     python road_marks.py output.xodr
@@ -41,6 +43,14 @@ def main() -> int:
                 rm.RoadMarkLine(width=0.12, t_offset=-0.1),
             ]
             lane.road_marks = [center]
+        elif lane.odr_id > 0:
+            # Left lane boundary: double-dashed yellow (e.g. a reversible-lane
+            # divider) — the "broken broken" family member.
+            lane.road_marks = [
+                rm.RoadMark(
+                    type=rm.RoadMarkType.BROKEN_BROKEN, width=0.24, color=rm.RoadMarkColor.YELLOW
+                )
+            ]
         else:
             # Edge lines: dashed white.
             lane.road_marks = [

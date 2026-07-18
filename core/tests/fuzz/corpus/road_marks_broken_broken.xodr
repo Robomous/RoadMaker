@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<OpenDRIVE>
+  <header revMajor="1" revMinor="9" name="road-marks-broken-broken"/>
+  <road name="r" length="100" id="1" junction="-1">
+    <planView>
+      <geometry s="0" x="0" y="0" hdg="0" length="100"><line/></geometry>
+    </planView>
+    <lanes>
+      <laneSection s="0">
+        <center>
+          <lane id="0" type="none" level="false">
+            <roadMark sOffset="0" type="broken broken" color="yellow" width="0.24">
+              <type name="broken broken" width="0.24">
+                <line length="3" space="6" tOffset="0.12" sOffset="0" width="0.12"/>
+                <line length="3" space="6" tOffset="-0.12" sOffset="0" width="0.12"/>
+              </type>
+            </roadMark>
+          </lane>
+        </center>
+        <right>
+          <lane id="-1" type="driving" level="false">
+            <width sOffset="0" a="3.5" b="0" c="0" d="0"/>
+            <roadMark sOffset="0" type="broken" color="white" width="0.12"/>
+          </lane>
+        </right>
+      </laneSection>
+    </lanes>
+  </road>
+</OpenDRIVE>

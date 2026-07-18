@@ -630,6 +630,8 @@ private:
       return RoadMarkType::SolidBroken;
     if (name == "broken solid")
       return RoadMarkType::BrokenSolid;
+    if (name == "broken broken")
+      return RoadMarkType::BrokenBroken;
     return RoadMarkType::Other;
   }
 

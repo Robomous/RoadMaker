@@ -108,6 +108,55 @@
       "create": { "kind": "marking", "mark_type": "solid_solid", "mark_color": "yellow", "mark_width": 0.12 }
     },
     {
+      "key": "marking.dashed_white",
+      "label": "Dashed white",
+      "category": "Markings",
+      "thumbnail": "assets/library/thumbnails/marking_dashed_white.png",
+      "create": { "kind": "marking", "mark_type": "broken", "mark_color": "white", "mark_width": 0.12 }
+    },
+    {
+      "key": "marking.dashed_yellow",
+      "label": "Dashed yellow",
+      "category": "Markings",
+      "thumbnail": "assets/library/thumbnails/marking_dashed_yellow.png",
+      "create": { "kind": "marking", "mark_type": "broken", "mark_color": "yellow", "mark_width": 0.12 }
+    },
+    {
+      "key": "marking.double_white",
+      "label": "Double white",
+      "category": "Markings",
+      "thumbnail": "assets/library/thumbnails/marking_double_white.png",
+      "create": { "kind": "marking", "mark_type": "solid_solid", "mark_color": "white", "mark_width": 0.12 }
+    },
+    {
+      "key": "marking.solid_broken_yellow",
+      "label": "Solid–broken yellow",
+      "category": "Markings",
+      "thumbnail": "assets/library/thumbnails/marking_solid_broken_yellow.png",
+      "create": { "kind": "marking", "mark_type": "solid_broken", "mark_color": "yellow", "mark_width": 0.12 }
+    },
+    {
+      "key": "marking.broken_solid_yellow",
+      "label": "Broken–solid yellow",
+      "category": "Markings",
+      "thumbnail": "assets/library/thumbnails/marking_broken_solid_yellow.png",
+      "create": { "kind": "marking", "mark_type": "broken_solid", "mark_color": "yellow", "mark_width": 0.12 }
+    },
+    {
+      "key": "marking.double_dashed_yellow",
+      "label": "Double dashed yellow",
+      "category": "Markings",
+      "thumbnail": "assets/library/thumbnails/marking_double_dashed_yellow.png",
+      "create": { "kind": "marking", "mark_type": "broken_broken", "mark_color": "yellow", "mark_width": 0.12 }
+    },
+    {
+      "key": "marking.edge_white",
+      "label": "Wide edge white",
+      "category": "Markings",
+      "thumbnail": "assets/library/thumbnails/marking_edge_white.png",
+      "create": { "kind": "marking", "mark_type": "solid", "mark_color": "white", "mark_width": 0.30 }
+    },
+    {
       "key": "material.asphalt",
       "label": "Asphalt",
       "category": "Materials",

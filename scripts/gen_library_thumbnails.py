@@ -238,12 +238,23 @@ def assembly_x() -> bytearray:
     return buf
 
 
-def marking_swatch(stripes, color) -> bytearray:
-    """Asphalt background with one or more vertical paint stripes."""
+def marking_swatch(stripes, color, half_width=3) -> bytearray:
+    """Asphalt background with one or more vertical paint stripes.
+
+    Each stripe is (cx, dashed): a solid column, or a dashed one drawn as
+    segmented rects (3 m paint / 6 m gap, scaled). `half_width` widens every
+    stripe for the wide edge line.
+    """
     buf = new_canvas()
     fill_rect(buf, 10, 10, 86, 86, ASPHALT)
-    for cx in stripes:
-        fill_rect(buf, cx - 3, 14, cx + 3, 82, color)
+    for cx, dashed in stripes:
+        if dashed:
+            y = 14
+            while y < 82:
+                fill_rect(buf, cx - half_width, y, cx + half_width, min(y + 10, 82), color)
+                y += 24  # 10 px paint + 14 px gap, echoing the 3 m / 6 m cadence
+        else:
+            fill_rect(buf, cx - half_width, 14, cx + half_width, 82, color)
     return buf
 
 
@@ -287,8 +298,15 @@ THUMBNAILS = {
     "style_urban": style_urban,
     "assembly_t": assembly_t,
     "assembly_x": assembly_x,
-    "marking_solid_white": lambda: marking_swatch([48], WHITE_PAINT),
-    "marking_double_yellow": lambda: marking_swatch([42, 54], YELLOW_PAINT),
+    "marking_solid_white": lambda: marking_swatch([(48, False)], WHITE_PAINT),
+    "marking_double_yellow": lambda: marking_swatch([(42, False), (54, False)], YELLOW_PAINT),
+    "marking_dashed_white": lambda: marking_swatch([(48, True)], WHITE_PAINT),
+    "marking_dashed_yellow": lambda: marking_swatch([(48, True)], YELLOW_PAINT),
+    "marking_double_white": lambda: marking_swatch([(42, False), (54, False)], WHITE_PAINT),
+    "marking_solid_broken_yellow": lambda: marking_swatch([(42, False), (54, True)], YELLOW_PAINT),
+    "marking_broken_solid_yellow": lambda: marking_swatch([(42, True), (54, False)], YELLOW_PAINT),
+    "marking_double_dashed_yellow": lambda: marking_swatch([(42, True), (54, True)], YELLOW_PAINT),
+    "marking_edge_white": lambda: marking_swatch([(48, False)], WHITE_PAINT, half_width=6),
     "material_asphalt": lambda: material_swatch(ASPHALT),
     "material_asphalt_worn": lambda: material_swatch(WORN_ASPHALT),
     "material_concrete": lambda: material_swatch(CONCRETE),

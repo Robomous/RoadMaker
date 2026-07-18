@@ -65,6 +65,7 @@ add_library(roadmaker_editor_lib STATIC
   src/document/library_drop.cpp
   src/document/library_list_model.cpp
   src/document/library_manifest.cpp
+  src/document/marking_item.cpp
   src/document/project.cpp
   src/document/elevation_utils.cpp
   src/document/editor_command.cpp

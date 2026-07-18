@@ -41,6 +41,11 @@ junctions are updated. Removing a lane and undoing restores the very same lane
   the marking type and colour (including true double-yellow) in the Properties
   panel; see [Objects & signals](objects-signals.md) for painted markings that
   are objects rather than lane marks.
+- The **Marking** slot in the lane's Properties reaches the full marking
+  catalogue (dashed, double, edge, and the solid/broken combinations) that the
+  Road-mark shortlist above does not: drop a Markings library item onto the slot
+  to set the selected lane's `<roadMark>` — the same result as dropping it onto
+  the lane boundary in the viewport ([Library](library.md)).
 - To shape a lane's width *along* the road (a taper rather than a constant
   width), use the [Lane Width](lane-width.md) tab of the 2D Editor. To add a new
   lane over just part of a road, see [Lane Add](lane-add.md),

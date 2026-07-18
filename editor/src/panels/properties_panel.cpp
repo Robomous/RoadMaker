@@ -4,6 +4,7 @@
 #include "roadmaker/geometry/poly3.hpp"
 #include "roadmaker/road/network.hpp"
 
+#include <QFile>
 #include <QHBoxLayout>
 #include <QSignalBlocker>
 #include <QVBoxLayout>
@@ -14,6 +15,8 @@
 #include <utility>
 
 #include "document/library_drop.hpp"
+#include "document/library_manifest.hpp"
+#include "document/marking_item.hpp"
 #include "render/material_catalog.hpp"
 #include "tools/elevation_tool.hpp"
 
@@ -195,6 +198,7 @@ PropertiesPanel::PropertiesPanel(Document& document,
       name_edit_(new QLineEdit), lane_group_(new QGroupBox(tr("Lane profile"), this)),
       type_combo_(new QComboBox), width_spin_(new QDoubleSpinBox), mark_combo_(new QComboBox),
       mark_width_spin_(new QDoubleSpinBox),
+      marking_slot_(new SlotWidget(QStringLiteral("Markings"), this)),
       lane_material_slot_(new SlotWidget(QStringLiteral("Materials"), this)),
       add_left_(new QPushButton(tr("Add left"))), add_right_(new QPushButton(tr("Add right"))),
       remove_left_(new QPushButton(tr("Remove left lane"))),
@@ -296,6 +300,18 @@ PropertiesPanel::PropertiesPanel(Document& document,
                            return edit::set_road_mark(network, selection_.primary().lane, mark);
                          }}),
       mark_width_spin_);
+  // Lane marking slot (p3-s1): drop a Markings item here (or onto the lane
+  // boundary in the viewport) to set this lane's road mark — the slot and the
+  // combo edit the same <roadMark>, but the slot reaches variants the combo's
+  // Solid/Broken/None shortlist does not (double-yellow, dashed, edge lines).
+  marking_slot_->setObjectName(QStringLiteral("lane_marking_slot"));
+  marking_slot_->setToolTip(tr("Drop a marking to set this lane's road mark"));
+  lane_form->addRow(tr("Marking"), marking_slot_);
+  connect(marking_slot_, &SlotWidget::item_dropped, this, &PropertiesPanel::push_marking);
+  connect(marking_slot_,
+          &SlotWidget::engage_requested,
+          this,
+          &PropertiesPanel::library_category_requested);
   // Lane Materials slot (p6-s3): drop a material here (or onto the lane in the
   // viewport) to pave the selected lane's surface. Write-only, like the road-
   // style slot; disabled for the centre lane in refresh_lane_section.
@@ -816,6 +832,35 @@ namespace {
   return std::nullopt;
 }
 
+/// The RoadMark a dropped Markings library `key` authors, or nullopt for a key
+/// this build does not know. Resolves the key against the bundled manifest
+/// (`:/library/manifest.json`, parsed once) and reuses mark_from_item — the same
+/// item→mark path the viewport drop takes, so the slot and the drop never
+/// disagree. Like the material slot it consults only the built-in catalogue; a
+/// project overlay defines no markings in this build.
+[[nodiscard]] std::optional<RoadMark> mark_for_key(const QString& key) {
+  static const std::optional<LibraryManifest> manifest = []() -> std::optional<LibraryManifest> {
+    QFile file(QStringLiteral(":/library/manifest.json"));
+    if (!file.open(QIODevice::ReadOnly)) {
+      return std::nullopt;
+    }
+    auto parsed = LibraryManifest::parse(file.readAll());
+    if (!parsed.has_value()) {
+      return std::nullopt;
+    }
+    return std::move(*parsed);
+  }();
+  if (!manifest.has_value()) {
+    return std::nullopt;
+  }
+  for (const LibraryItem& item : manifest->items()) {
+    if (item.kind == LibraryItem::Kind::Marking && item.key == key) {
+      return mark_from_item(item);
+    }
+  }
+  return std::nullopt;
+}
+
 } // namespace
 
 void PropertiesPanel::push_surface_material(const QString& key) {
@@ -862,6 +907,25 @@ void PropertiesPanel::push_lane_material(const QString& key) {
     return; // no change — a drop that changes nothing pushes no command
   }
   push(edit::set_lane_material(document_.network(), selection_.primary().lane, {record}));
+}
+
+void PropertiesPanel::push_marking(const QString& key) {
+  const Lane* lane = primary_lane();
+  if (lane == nullptr || key.isEmpty()) {
+    return;
+  }
+  const std::optional<RoadMark> mark = mark_for_key(key);
+  if (!mark.has_value()) {
+    emit status_message(tr("“%1” isn't a known marking").arg(key));
+    return;
+  }
+  // A drop that changes nothing pushes no command (mirrors the material slot).
+  const RoadMark current = lane->road_marks.empty() ? RoadMark{} : lane->road_marks.front();
+  if (!lane->road_marks.empty() && current.type == mark->type && current.color == mark->color &&
+      std::abs(current.width - mark->width) < 1e-9) {
+    return;
+  }
+  push(edit::set_road_mark(document_.network(), selection_.primary().lane, *mark));
 }
 
 void PropertiesPanel::refresh_signal(const Signal& signal) {
@@ -1000,9 +1064,12 @@ void PropertiesPanel::refresh_lane_section() {
   };
   configure_remove(remove_left_, +1);
   configure_remove(remove_right_, -1);
-  // Lane 0's mark IS the center-line style — always editable on a lane.
+  // Lane 0's mark IS the center-line style — always editable on a lane, so the
+  // marking slot (a write-only drop target for the variants beyond the combo's
+  // Solid/Broken/None shortlist) is enabled on the centre lane too.
   mark_combo_->setEnabled(lane_selected);
   mark_width_spin_->setEnabled(lane_selected);
+  marking_slot_->setEnabled(lane_selected);
 
   if (!lane_selected) {
     return;

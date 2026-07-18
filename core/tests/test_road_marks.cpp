@@ -186,6 +186,26 @@ TEST(RoadMarks, SplitRoadPreservesColorAndLinesOnBothHalves) {
   EXPECT_EQ(*reverted, *before);
 }
 
+TEST(RoadMarks, BrokenBrokenRoundTripsAsDoubleDashed) {
+  // "broken broken" (§11.9, Annex A.3.4 Table 173 — the double-dashed family
+  // member) parses to BrokenBroken and writes back with the space spelling,
+  // byte-stable on the fixed point.
+  const auto parsed = parse(document_with_center_mark(
+      R"(<roadMark sOffset="0" type="broken broken" color="yellow" width="0.12"/>)"));
+  const RoadMark* mark = center_mark(parsed.network, parsed.network.find_road("1"));
+  ASSERT_NE(mark, nullptr);
+  EXPECT_EQ(mark->type, RoadMarkType::BrokenBroken);
+  EXPECT_EQ(mark->color, RoadMarkColor::Yellow);
+
+  const auto written = roadmaker::write_xodr(parsed.network, "marks-test");
+  ASSERT_TRUE(written.has_value());
+  EXPECT_NE(written->find(R"(type="broken broken")"), std::string::npos);
+  const auto reparsed = parse(*written);
+  const auto rewritten = roadmaker::write_xodr(reparsed.network, "marks-test");
+  ASSERT_TRUE(rewritten.has_value());
+  EXPECT_EQ(*written, *rewritten);
+}
+
 TEST(RoadMarks, UnknownColorSurvivesAsOtherWithDiagnostic) {
   const auto parsed = parse(document_with_center_mark(
       R"(<roadMark sOffset="0" type="solid" color="chartreuse" width="0.12"/>)"));
@@ -218,6 +238,38 @@ TEST(RoadMarks, SolidSolidRendersTwoStrips) {
   EXPECT_GT(max_y - min_y, 0.15 * 1.5);
   EXPECT_GT(max_y, 0.0);
   EXPECT_LT(min_y, 0.0);
+}
+
+TEST(RoadMarks, BrokenBrokenRendersTwoDashedStrips) {
+  // A synthesized broken_broken mark spreads two stripes to y ~ +/-width (like
+  // solid_solid), but each stripe is dashed (3 m paint / 6 m gap) so the road
+  // decomposes into many quads — unlike the two continuous quads of solid_solid.
+  const auto dashed = parse(document_with_center_mark(
+      R"(<roadMark sOffset="0" type="broken broken" color="yellow" width="0.15"/>)"));
+  const NetworkMesh mesh = roadmaker::build_network_mesh(dashed.network);
+  const SubMesh* center = find_marking(mesh, "lane 0");
+  ASSERT_NE(center, nullptr);
+
+  double min_y = 1e9;
+  double max_y = -1e9;
+  for (std::size_t i = 1; i < center->positions.size(); i += 3) {
+    min_y = std::min(min_y, center->positions[i]);
+    max_y = std::max(max_y, center->positions[i]);
+  }
+  EXPECT_GT(max_y - min_y, 0.15 * 1.5); // two stripes, spread apart
+  EXPECT_GT(max_y, 0.0);
+  EXPECT_LT(min_y, 0.0);
+
+  // solid_solid over the same road paints two continuous stripes; dashing the
+  // pair into 3 m paint / 6 m gap cycles omits the gaps, so broken_broken has
+  // strictly fewer painted quads than the continuous double.
+  const auto solid = parse(document_with_center_mark(
+      R"(<roadMark sOffset="0" type="solid solid" color="yellow" width="0.15"/>)"));
+  const NetworkMesh solid_mesh = roadmaker::build_network_mesh(solid.network);
+  const SubMesh* solid_center = find_marking(solid_mesh, "lane 0");
+  ASSERT_NE(solid_center, nullptr);
+  EXPECT_LT(center->indices.size(), solid_center->indices.size());
+  EXPECT_GT(center->indices.size(), 0U);
 }
 
 TEST(RoadMarks, MarkColorReachesTheSubMesh) {

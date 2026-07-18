@@ -50,6 +50,7 @@ enum class RoadMarkType {
   SolidSolid,
   SolidBroken,
   BrokenSolid,
+  BrokenBroken,
   Other,
 };
 

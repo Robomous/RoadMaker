@@ -59,6 +59,13 @@
     <file alias="thumbnails/signal_sign.png">../../assets/library/thumbnails/signal_sign.png</file>
     <file alias="thumbnails/marking_solid_white.png">../../assets/library/thumbnails/marking_solid_white.png</file>
     <file alias="thumbnails/marking_double_yellow.png">../../assets/library/thumbnails/marking_double_yellow.png</file>
+    <file alias="thumbnails/marking_dashed_white.png">../../assets/library/thumbnails/marking_dashed_white.png</file>
+    <file alias="thumbnails/marking_dashed_yellow.png">../../assets/library/thumbnails/marking_dashed_yellow.png</file>
+    <file alias="thumbnails/marking_double_white.png">../../assets/library/thumbnails/marking_double_white.png</file>
+    <file alias="thumbnails/marking_solid_broken_yellow.png">../../assets/library/thumbnails/marking_solid_broken_yellow.png</file>
+    <file alias="thumbnails/marking_broken_solid_yellow.png">../../assets/library/thumbnails/marking_broken_solid_yellow.png</file>
+    <file alias="thumbnails/marking_double_dashed_yellow.png">../../assets/library/thumbnails/marking_double_dashed_yellow.png</file>
+    <file alias="thumbnails/marking_edge_white.png">../../assets/library/thumbnails/marking_edge_white.png</file>
     <file alias="thumbnails/material_asphalt.png">../../assets/library/thumbnails/material_asphalt.png</file>
     <file alias="thumbnails/material_asphalt_worn.png">../../assets/library/thumbnails/material_asphalt_worn.png</file>
     <file alias="thumbnails/material_concrete.png">../../assets/library/thumbnails/material_concrete.png</file>
