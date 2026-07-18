@@ -21,7 +21,7 @@ model, while templates, markings, and materials show a stylised swatch.
 | **Props** | Pine / Oak / Birch / Poplar tree, Shrub | an OpenDRIVE `<object type="tree">` on the nearest road |
 | **Signals** | Traffic light, Traffic sign | an OpenDRIVE `<signal>` on the nearest road — the light is a dynamic control, the sign a static one |
 | **Markings** | Solid single white, Double yellow | a `<roadMark>` on the lane boundary you drop it on |
-| **Materials** | Asphalt, Concrete | the ground material of the surface slot you drop it on ([attributes](attributes.md)) |
+| **Materials** | Asphalt, Asphalt (worn), Concrete | a `<material>` on the lane (or ground surface) you drop it on ([materials](materials.md)) |
 
 ## Placing an item
 

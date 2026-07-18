@@ -56,6 +56,12 @@ struct RoadMesh {
     LaneId lane;
     int odr_lane_id = 0;
     LaneType material = LaneType::None;
+    /// Assigned surface material code from the covering <material> record
+    /// (§11.8.2), e.g. "rm:asphalt_worn". Empty when the lane carries no
+    /// material there — the renderer then falls back to the `material` lane
+    /// type palette. A lane whose material varies along s is split into one
+    /// patch per record so each patch carries a single code.
+    std::string surface;
     /// Triangles into RoadMesh::positions/normals.
     std::vector<std::uint32_t> indices;
   };

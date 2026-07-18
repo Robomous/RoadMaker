@@ -64,6 +64,7 @@ not undoable.
 | [Junction](junction.md) | Connect road ends into a junction with generated turning lanes |
 | [T-junction](t-junction.md) | Tee a road's end into another road's body |
 | [Objects & signals](objects-signals.md) | Add crosswalks, props, traffic lights, and signs |
+| [Materials](materials.md) | Pave a lane or surface with asphalt or concrete, textured and saved into the file |
 | [Textured rendering](textured-rendering.md) | Switch the viewport between the Sober working look and the daytime textured look |
 | [Save & export](save-export.md) | Write OpenDRIVE and export meshes (glTF, USD) |
 

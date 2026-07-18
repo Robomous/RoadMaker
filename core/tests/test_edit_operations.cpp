@@ -28,6 +28,7 @@ using roadmaker::JunctionConnection;
 using roadmaker::JunctionId;
 using roadmaker::LaneDirection;
 using roadmaker::LaneId;
+using roadmaker::LaneMaterial;
 using roadmaker::LaneProfile;
 using roadmaker::LaneSectionId;
 using roadmaker::LaneType;
@@ -182,6 +183,80 @@ TEST(EditOperations, SetLaneDirectionRejectsCenterLaneAndStaleId) {
       network, roadmaker::edit::set_lane_direction(network, center, LaneDirection::Both));
   expect_command_rejected(
       network, roadmaker::edit::set_lane_direction(network, LaneId{}, LaneDirection::Reversed));
+}
+
+TEST(EditOperations, SetLaneMaterialRoundTripsAssignReplaceClear) {
+  RoadNetwork network;
+  const RoadId road = author_default(network, "1");
+  const LaneSectionId section = network.road(road)->sections[0];
+  const LaneId outer_right = network.lane_section(section)->lanes.back();
+  ASSERT_NE(network.lane(outer_right)->odr_id, 0);
+
+  // Assign one record onto a fresh (material-less) lane — a real change.
+  auto assign = roadmaker::edit::set_lane_material(
+      network,
+      outer_right,
+      {LaneMaterial{.s_offset = 0.0, .friction = 0.9, .surface = "rm:asphalt"}});
+  expect_command_round_trip(network, *assign);
+  ASSERT_TRUE(assign->apply(network).has_value());
+  ASSERT_EQ(network.lane(outer_right)->materials.size(), 1U);
+  EXPECT_EQ(*network.lane(outer_right)->materials.front().surface, "rm:asphalt");
+  EXPECT_FALSE(assign->dirty().topology);
+  EXPECT_TRUE(assign->dirty().junctions.empty());
+
+  // Replace with a two-record profile — the lane already carries one record.
+  auto replace = roadmaker::edit::set_lane_material(
+      network,
+      outer_right,
+      {LaneMaterial{.s_offset = 0.0, .friction = 0.9, .surface = "rm:asphalt"},
+       LaneMaterial{.s_offset = 40.0, .friction = 0.7, .surface = "rm:asphalt_worn"}});
+  expect_command_round_trip(network, *replace);
+  ASSERT_TRUE(replace->apply(network).has_value());
+  ASSERT_EQ(network.lane(outer_right)->materials.size(), 2U);
+
+  // Clear — empty vector removes every record.
+  auto clear = roadmaker::edit::set_lane_material(network, outer_right, {});
+  expect_command_round_trip(network, *clear);
+}
+
+TEST(EditOperations, SetLaneMaterialRejects) {
+  RoadNetwork network;
+  const RoadId road = author_default(network, "1");
+  const LaneSectionId section = network.road(road)->sections[0];
+  const LaneId outer_right = network.lane_section(section)->lanes.back();
+  LaneId center;
+  for (const LaneId lane_id : network.lane_section(section)->lanes) {
+    if (network.lane(lane_id)->odr_id == 0) {
+      center = lane_id;
+    }
+  }
+  ASSERT_TRUE(center.is_valid());
+
+  // Center lane may not carry material (center_lane_no_material).
+  expect_command_rejected(network,
+                          roadmaker::edit::set_lane_material(
+                              network, center, {LaneMaterial{.s_offset = 0.0, .friction = 0.9}}));
+  // Descending sOffset (elem_asc_order).
+  expect_command_rejected(
+      network,
+      roadmaker::edit::set_lane_material(network,
+                                         outer_right,
+                                         {LaneMaterial{.s_offset = 40.0, .friction = 0.8},
+                                          LaneMaterial{.s_offset = 10.0, .friction = 0.8}}));
+  // Negative friction (t_grEqZero).
+  expect_command_rejected(
+      network,
+      roadmaker::edit::set_lane_material(
+          network, outer_right, {LaneMaterial{.s_offset = 0.0, .friction = -0.1}}));
+  // Record beyond the section end.
+  expect_command_rejected(
+      network,
+      roadmaker::edit::set_lane_material(
+          network, outer_right, {LaneMaterial{.s_offset = 1.0e6, .friction = 0.8}}));
+  // Stale lane id.
+  expect_command_rejected(
+      network,
+      roadmaker::edit::set_lane_material(network, LaneId{}, {LaneMaterial{.friction = 0.8}}));
 }
 
 // --- waypoint edits ------------------------------------------------------------

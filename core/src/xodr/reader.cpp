@@ -12,6 +12,7 @@
 #include <algorithm>
 #include <cmath>
 #include <fstream>
+#include <limits>
 #include <optional>
 #include <set>
 #include <sstream>
@@ -487,6 +488,12 @@ private:
           .width = attr_double(mark_node, "width", location, 0.12, false),
           .color = road_mark_color_from_string(mark_node.attribute("color").value()),
       };
+      // @material (§11.9, Table 47) — kept verbatim whenever present (incl. an
+      // explicit "standard") so a foreign file round-trips; RoadMaker writes
+      // "rm:<id>" here for GW-2 step 15. Absent stays absent (byte-stable).
+      if (const pugi::xml_attribute material_attr = mark_node.attribute("material")) {
+        mark.material = material_attr.value();
+      }
       if (mark.type == RoadMarkType::Other) {
         diag(Severity::Warning,
              location,
@@ -522,6 +529,63 @@ private:
       }
       if (const pugi::xml_node succ = link.child("successor")) {
         lane.successor = succ.attribute("id").as_int();
+      }
+    }
+
+    // <material> records (§11.8.2, Table 44). Promoted out of the Preserved
+    // tier: modeled attrs are typed, unknown attrs survive on the record's
+    // preserved tier (risk-3). Diagnose-but-keep for both rules (mirrors the
+    // width treatment), so a foreign file round-trips.
+    static constexpr std::string_view kMaterialModeledAttrs[] = {
+        "sOffset", "friction", "roughness", "surface"};
+    double last_material_s = -std::numeric_limits<double>::infinity();
+    std::size_t material_index = 0;
+    for (const pugi::xml_node material_node : lane_node.children("material")) {
+      const std::string mat_location = fmt::format("{}/material[{}]", location, material_index++);
+      LaneMaterial material;
+      material.s_offset = attr_double(material_node, "sOffset", mat_location, 0.0, false);
+      material.friction = attr_optional_double(material_node, "friction", mat_location);
+      material.roughness = attr_optional_double(material_node, "roughness", mat_location);
+      if (const pugi::xml_attribute surface = material_node.attribute("surface")) {
+        material.surface = surface.value();
+      }
+      for (const pugi::xml_attribute attr : material_node.attributes()) {
+        const std::string_view name = attr.name();
+        if (std::find(std::begin(kMaterialModeledAttrs), std::end(kMaterialModeledAttrs), name) ==
+            std::end(kMaterialModeledAttrs)) {
+          material.preserved.attributes.emplace_back(std::string(name), attr.value());
+        }
+      }
+      if (!material.friction.has_value()) {
+        diag(Severity::Warning,
+             mat_location,
+             "lane <material> without required @friction (Table 44)");
+      }
+      if (odr_lane_id == 0) {
+        diag(Severity::Error,
+             mat_location,
+             "center lane (id 0) shall have no <material> elements",
+             rules::kMaterialCenterLaneNone);
+      }
+      if (material.s_offset < last_material_s) {
+        diag(Severity::Error,
+             mat_location,
+             "<material> elements are not in ascending sOffset order",
+             rules::kMaterialElemAscOrder);
+      }
+      last_material_s = material.s_offset;
+      lane.materials.push_back(std::move(material));
+    }
+
+    // Preserved tier: unmodeled lane children (<speed>/<access>/<height>/
+    // <rule>/<userData>/…) survive verbatim in document order — the parser
+    // never silently drops input (the Object precedent, docs/design/m3a/01 §5).
+    // <border> keeps its own warn-and-skip above; modeled children are excluded.
+    for (const pugi::xml_node child : lane_node.children()) {
+      const std::string_view name = child.name();
+      if (name != "link" && name != "width" && name != "border" && name != "roadMark" &&
+          name != "material") {
+        lane.preserved.children.push_back(node_to_string(child));
       }
     }
     current_lane_ = {};

@@ -418,6 +418,23 @@ set_lane_type(const RoadNetwork& network, LaneId lane, LaneType type);
 [[nodiscard]] RM_API std::unique_ptr<Command>
 set_lane_direction(const RoadNetwork& network, LaneId lane, LaneDirection direction);
 
+/// Replaces the lane's <material> records outright (§11.8.2) — an empty vector
+/// clears them. `records` carry section-LOCAL sOffsets, matching
+/// Lane::materials. Validated against the normative material rules, identical
+/// in OpenDRIVE 1.8.1 §11.7.2 and 1.9.0 §11.8.2:
+///   - the center lane takes no material at all
+///     (asam.net:xodr:1.4.0:road.lane.material.center_lane_no_material);
+///   - records ascend by sOffset
+///     (asam.net:xodr:1.4.0:road.lane.material.elem_asc_order);
+///   - every record starts inside the owning section;
+///   - friction/roughness, when present, are >= 0 (t_grEqZero, Table 44).
+///
+/// Marks only the owning road dirty (re-mesh feeds the surface code to the
+/// renderer); the connection engine does not read material, so no junction
+/// regeneration is needed. Feeds GW-3 (lane-level material application).
+[[nodiscard]] RM_API std::unique_ptr<Command>
+set_lane_material(const RoadNetwork& network, LaneId lane, std::vector<LaneMaterial> records);
+
 /// Sets a CONSTANT width, replacing the profile with a single record at
 /// sOffset 0.
 ///

@@ -7,6 +7,7 @@
 #include "roadmaker/mesh/mesh.hpp"
 
 #include <array>
+#include <string>
 #include <vector>
 
 #include "render/renderer.hpp"
@@ -61,7 +62,11 @@ struct SceneItem {
   SignalId signal;                               // valid for a signal-instance part
   JunctionId junction;                           // valid for a junction-floor item
   SurfaceId surface_id;                          // valid for a ground-surface item (#215)
-  SurfaceKind surface = SurfaceKind::Untextured; // textured-mode material class
+  SurfaceKind surface = SurfaceKind::Untextured; // textured-mode material class fallback
+  /// Assigned material code (p6-s3): the lane <material> surface code, or a
+  /// surface's stored material. Empty → resolve by SurfaceKind. The viewport
+  /// resolves this through MaterialCatalog to a textured Material.
+  std::string material;
 };
 
 /// Axis-aligned bounds of the built scene (kernel frame, meters).

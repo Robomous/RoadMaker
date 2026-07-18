@@ -499,13 +499,92 @@ TEST(LibraryDrop, UnknownMarkTypeIsRejected) {
   EXPECT_FALSE(action.toast.isEmpty());
 }
 
-TEST(LibraryDrop, MaterialViewportDropHintsAtTheSlot) {
+// The <material> records of the lane with OpenDRIVE `odr_id` in the first
+// section of the (single) road.
+std::vector<LaneMaterial> materials_for_odr(const RoadNetwork& network, int odr_id) {
+  std::vector<LaneMaterial> result;
+  network.for_each_road([&](RoadId, const Road& road) {
+    if (road.sections.empty()) {
+      return;
+    }
+    const LaneSection* section = network.lane_section(road.sections.front());
+    if (section == nullptr) {
+      return;
+    }
+    for (const LaneId lid : section->lanes) {
+      const Lane* lane = network.lane(lid);
+      if (lane != nullptr && lane->odr_id == odr_id) {
+        result = lane->materials;
+      }
+    }
+  });
+  return result;
+}
+
+TEST(LibraryDrop, MaterialDropOnLanePushesSetLaneMaterial) {
+  RoadNetwork network = with_straight_road(); // (0,0)-(100,0), heading +x
+  // Drop into the right driving lane (-1): heading +x → -t is right.
+  LibraryDropAction action =
+      resolve_library_drop(material_item("asphalt_worn"), network, 50.0, -2.0);
+  ASSERT_EQ(action.kind, LibraryDropKind::Material);
+  ASSERT_NE(action.command, nullptr);
+  EXPECT_EQ(action.command->name(), "Set Lane Material");
+  EXPECT_TRUE(action.preview.valid);
+  ASSERT_TRUE(action.command->apply(network).has_value());
+  EXPECT_EQ(count_errors(validate_network(network)), 0U);
+
+  const std::vector<LaneMaterial> records = materials_for_odr(network, -1);
+  ASSERT_EQ(records.size(), 1U);
+  EXPECT_DOUBLE_EQ(records.front().s_offset, 0.0);
+  ASSERT_TRUE(records.front().surface.has_value());
+  EXPECT_EQ(*records.front().surface, "rm:asphalt_worn"); // rm: prefix authored
+  EXPECT_TRUE(records.front().friction.has_value());      // nominal catalog friction
+
+  // Round-trips to valid xodr; undo restores the unmarked lane.
+  const auto xodr = roadmaker::write_xodr(network, "material test");
+  ASSERT_TRUE(xodr.has_value());
+  ASSERT_TRUE(action.command->revert(network).has_value());
+  EXPECT_TRUE(materials_for_odr(network, -1).empty());
+}
+
+TEST(LibraryDrop, MaterialDropOnCentreLineIsRejected) {
   RoadNetwork network = with_straight_road();
   const LibraryDropAction action =
       resolve_library_drop(material_item("asphalt"), network, 50.0, 0.0);
   EXPECT_EQ(action.kind, LibraryDropKind::None);
   EXPECT_EQ(action.command, nullptr);
-  EXPECT_TRUE(action.toast.contains(QStringLiteral("Material slot")));
+  EXPECT_FALSE(action.toast.isEmpty());
+}
+
+TEST(LibraryDrop, MaterialDropOffAnyRoadIsRejectedWithAHint) {
+  RoadNetwork network = with_straight_road();
+  const LibraryDropAction action =
+      resolve_library_drop(material_item("asphalt"), network, 50.0, 200.0);
+  EXPECT_EQ(action.kind, LibraryDropKind::None);
+  EXPECT_EQ(action.command, nullptr);
+  EXPECT_FALSE(action.toast.isEmpty());
+}
+
+TEST(LibraryDrop, IdenticalMaterialIsANoOpWithAToast) {
+  RoadNetwork network = with_straight_road();
+  LibraryDropAction first = resolve_library_drop(material_item("asphalt"), network, 50.0, -2.0);
+  ASSERT_EQ(first.kind, LibraryDropKind::Material);
+  ASSERT_TRUE(first.command->apply(network).has_value());
+  // The same material on the same lane now changes nothing → rejected.
+  const LibraryDropAction again =
+      resolve_library_drop(material_item("asphalt"), network, 50.0, -2.0);
+  EXPECT_EQ(again.kind, LibraryDropKind::None);
+  EXPECT_EQ(again.command, nullptr);
+  EXPECT_TRUE(again.toast.contains(QStringLiteral("already")));
+}
+
+TEST(LibraryDrop, UnknownMaterialIsRejected) {
+  RoadNetwork network = with_straight_road();
+  const LibraryDropAction action =
+      resolve_library_drop(material_item("granite"), network, 50.0, -2.0);
+  EXPECT_EQ(action.kind, LibraryDropKind::None);
+  EXPECT_EQ(action.command, nullptr);
+  EXPECT_FALSE(action.toast.isEmpty());
 }
 
 } // namespace

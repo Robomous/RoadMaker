@@ -6,11 +6,13 @@
 #include "roadmaker/road/network.hpp"
 #include "roadmaker/road/object.hpp"
 
+#include <algorithm>
 #include <cmath>
 #include <optional>
 #include <set>
 #include <string>
 
+#include "render/material_catalog.hpp"
 #include "viewport/picking.hpp"
 
 namespace roadmaker::editor {
@@ -185,6 +187,54 @@ LaneId lane_for_odr_id(const RoadNetwork& network, RoadId road, double s, int od
     }
   }
   return {};
+}
+
+/// A material drop snaps to a road this far [m] from its reference line, then
+/// resolves the containing lane below; wide enough to grab a road by dropping
+/// anywhere across its carriageway (lane_containing_t rejects off-lane drops).
+constexpr double kMaterialSnapThreshold = 20.0;
+
+/// A material drop closer than this [m] to the centre line is treated as "on
+/// the centre line" and rejected: the centre lane carries no material by rule,
+/// and both adjacent lanes are equally near, so ask the user to aim at a lane.
+/// Far narrower than any real lane, so it never eats a genuine lane drop.
+constexpr double kCentreDeadZone = 0.2;
+
+/// The LaneId of the non-centre lane whose lateral band contains `cursor_t` at
+/// station `s`, or an invalid id when the cursor is on the centre line or off
+/// the carriageway. Bands come from lane_boundary_offsets (leftmost-first: left
+/// outer edges, the centre boundary, then right edges); band [i, i+1] is lane
+/// +(nleft - i) on the left and lane -(i - nleft + 1) on the right.
+LaneId lane_containing_t(const RoadNetwork& network, RoadId road, double s, double cursor_t) {
+  const std::vector<double> offsets = lane_boundary_offsets(network, road, s);
+  if (offsets.size() < 2) {
+    return {};
+  }
+  const LaneSection* section = network.lane_section(section_at(network, road, s));
+  if (section == nullptr) {
+    return {};
+  }
+  int nleft = 0;
+  for (const LaneId lane_id : section->lanes) {
+    const Lane* lane = network.lane(lane_id);
+    if (lane != nullptr && lane->odr_id > 0) {
+      ++nleft;
+    }
+  }
+  // Reject a drop hugging the centre line (the centre boundary is offsets[nleft]).
+  if (std::abs(cursor_t - offsets[static_cast<std::size_t>(nleft)]) < kCentreDeadZone) {
+    return {};
+  }
+  for (std::size_t i = 0; i + 1 < offsets.size(); ++i) {
+    const double hi = std::max(offsets[i], offsets[i + 1]);
+    const double lo = std::min(offsets[i], offsets[i + 1]);
+    if (cursor_t <= hi && cursor_t >= lo) {
+      const int index = static_cast<int>(i);
+      const int odr = index < nleft ? nleft - index : -(index - nleft + 1);
+      return lane_for_odr_id(network, road, s, odr); // odr is never 0 here
+    }
+  }
+  return {}; // off the carriageway
 }
 
 Signal make_dropped_signal(const RoadNetwork& network, bool light, double s, double t) {
@@ -419,11 +469,51 @@ LibraryDropAction resolve_library_drop(const LibraryItem& item,
     }
     return action;
   }
-  case LibraryItem::Kind::Material:
-    // Materials attach to a Surface via the Attributes-pane slot, not a world
-    // point — a viewport drop can't resolve a target, so hint at the slot.
-    action.toast = QStringLiteral("Drop the material onto a Material slot in the Attributes pane");
+  case LibraryItem::Kind::Material: {
+    // A material paints the lane surface under the cursor: snap to the nearest
+    // road, then to the lane whose band contains the cursor t. A drop on the
+    // centre line or in open space is rejected with a hint.
+    const auto on_road = nearest_road_station(network, world_x, world_y, kMaterialSnapThreshold);
+    if (!on_road.has_value()) {
+      action.toast = QStringLiteral("Drop a material onto a lane");
+      return action;
+    }
+    const MaterialCatalog catalog;
+    const MaterialDef* def = catalog.find_material(item.material.toStdString());
+    if (def == nullptr) {
+      action.toast = QStringLiteral("That material isn't available yet");
+      return action;
+    }
+    const Road* road = network.road(on_road->road);
+    if (road == nullptr) {
+      return action;
+    }
+    const LaneId lane = lane_containing_t(network, on_road->road, on_road->s, on_road->t);
+    if (!lane.is_valid()) {
+      action.toast = QStringLiteral("Drop a material onto a lane (not the centre line)");
+      return action;
+    }
+    // One record replaces the whole profile — the same first-record
+    // simplification set_road_mark uses (documented on the op): a viewport drop
+    // authors a single constant material, not a multi-record profile. Author
+    // "rm:<name>" + the catalog's nominal friction.
+    const LaneMaterial record{
+        .s_offset = 0.0, .friction = def->friction, .surface = "rm:" + item.material.toStdString()};
+    if (const Lane* target = network.lane(lane);
+        target != nullptr && target->materials.size() == 1 && target->materials.front() == record) {
+      action.toast = QStringLiteral("That lane already has this material");
+      return action;
+    }
+    action.command = edit::set_lane_material(network, lane, {record});
+    if (action.command != nullptr) {
+      action.kind = LibraryDropKind::Material;
+      // Ghost sits ON the picked lane point (ghost==commit).
+      const auto p = station_to_world(road->plan_view, on_road->s, on_road->t);
+      action.preview = {p[0], p[1], true};
+      action.toast = QStringLiteral("Applied %1 — Ctrl+Z to undo").arg(item.label);
+    }
     return action;
+  }
   case LibraryItem::Kind::Unknown:
     break;
   }

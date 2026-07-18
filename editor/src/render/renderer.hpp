@@ -41,9 +41,16 @@ struct TextureData {
 /// to a shader uniform set by the GL backend — no GL here.
 struct Material {
   TextureHandle base_color;                          ///< invalid → use RenderMeshData::color
+  TextureHandle normal;                              ///< invalid → geometric normal
+  TextureHandle roughness;                           ///< invalid → roughness_value scalar
   std::array<float, 4> tint{1.0F, 1.0F, 1.0F, 1.0F}; ///< multiplies the sample
   float uv_scale = 0.25F;                            ///< texels per meter: 0.25 = 4 m tile
-  bool unlit = false;                                ///< markings/sky bypass lighting
+  /// Scalar roughness fallback/modulator. DEFAULT 1.0 is fully rough: the sun
+  /// specular lobe is scaled by (1 - roughness), so a default-constructed
+  /// Material adds ZERO specular and reproduces the pre-PBR output exactly.
+  float roughness_value = 1.0F;
+  float normal_strength = 1.0F; ///< perturbation scale for the normal map
+  bool unlit = false;           ///< markings/sky bypass lighting
 };
 
 /// Per-instance transform for prop instancing (many props share one mesh).

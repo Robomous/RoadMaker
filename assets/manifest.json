@@ -232,6 +232,104 @@
         "resize to 512x512 (Lanczos)",
         "re-encode JPEG quality 85, optimize"
       ]
+    },
+    {
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/png/1k/asphalt_02/asphalt_02_nor_gl_1k.png",
+      "destination": "assets/textures/asphalt/asphalt_02_nor_gl_512.png",
+      "license": "CC0",
+      "license_url": "https://polyhaven.com/license",
+      "author": "Poly Haven (Rob Tuytel, Sergej Majboroda)",
+      "postprocess": [
+        "resize to 512x512 (Lanczos)",
+        "re-encode PNG (normals kept lossless \u2014 JPEG chroma subsampling corrupts normal vectors)"
+      ],
+      "sha256": "eeef866ad84546e9270454cbb4cb91deb539ed8293eac86efb047d51fa0e470c",
+      "source_sha256": "b2069741070f0107c81d001eabfffd6d6644f249cd4ffdf52852e4b5e746a959",
+      "retrieved": "2026-07-17"
+    },
+    {
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/asphalt_02/asphalt_02_rough_1k.jpg",
+      "destination": "assets/textures/asphalt/asphalt_02_rough_512.jpg",
+      "license": "CC0",
+      "license_url": "https://polyhaven.com/license",
+      "author": "Poly Haven (Rob Tuytel, Sergej Majboroda)",
+      "postprocess": [
+        "resize to 512x512 (Lanczos)",
+        "re-encode JPEG quality 85, optimize"
+      ],
+      "sha256": "c66e76486e1c37086445f70cd2d3fabbe45215008dacdb9624660e7d4eced3ee",
+      "source_sha256": "70ba3edc65525eb4dc366cf010ca7ae0bd34e0251ff0225c2dad627a873d0712",
+      "retrieved": "2026-07-17"
+    },
+    {
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/png/1k/brushed_concrete/brushed_concrete_nor_gl_1k.png",
+      "destination": "assets/textures/concrete/brushed_concrete_nor_gl_512.png",
+      "license": "CC0",
+      "license_url": "https://polyhaven.com/license",
+      "author": "Poly Haven (Rob Tuytel, Sergej Majboroda)",
+      "postprocess": [
+        "resize to 512x512 (Lanczos)",
+        "re-encode PNG (normals kept lossless \u2014 JPEG chroma subsampling corrupts normal vectors)"
+      ],
+      "sha256": "84d8dffe86137e06c73b5fe0213f893370e38f863490a32c939e31af2d9b1dbc",
+      "source_sha256": "dc39a146451f173f871568a6d02f0459f8250c1a6d51b06c3a906b5f6b7329fd",
+      "retrieved": "2026-07-17"
+    },
+    {
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/brushed_concrete/brushed_concrete_rough_1k.jpg",
+      "destination": "assets/textures/concrete/brushed_concrete_rough_512.jpg",
+      "license": "CC0",
+      "license_url": "https://polyhaven.com/license",
+      "author": "Poly Haven (Rob Tuytel, Sergej Majboroda)",
+      "postprocess": [
+        "resize to 512x512 (Lanczos)",
+        "re-encode JPEG quality 85, optimize"
+      ],
+      "sha256": "ec6a38634fc873239c129a102dbaeb6e4fc09f2a3e03ab1dc95e5be2cd3940a9",
+      "source_sha256": "24da5e4c3d17b7db1b4764b3cd1fd5c5680c27ef2c86e0d6a312f74d2d0599bd",
+      "retrieved": "2026-07-17"
+    },
+    {
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/worn_asphalt/worn_asphalt_diff_1k.jpg",
+      "destination": "assets/textures/asphalt/worn_asphalt_diff_512.jpg",
+      "license": "CC0",
+      "license_url": "https://polyhaven.com/license",
+      "author": "Poly Haven (Amal Kumar)",
+      "postprocess": [
+        "resize to 512x512 (Lanczos)",
+        "re-encode JPEG quality 85, optimize"
+      ],
+      "sha256": "8269cbcc931020e26f3461fa6521f1018bbb6cad44f2d1731a68254bb4f0d11e",
+      "source_sha256": "3bf71ad290730092ad2aee85e246b2e43318bc1f32261826ba91250e815b5f72",
+      "retrieved": "2026-07-17"
+    },
+    {
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/png/1k/worn_asphalt/worn_asphalt_nor_gl_1k.png",
+      "destination": "assets/textures/asphalt/worn_asphalt_nor_gl_512.png",
+      "license": "CC0",
+      "license_url": "https://polyhaven.com/license",
+      "author": "Poly Haven (Amal Kumar)",
+      "postprocess": [
+        "resize to 512x512 (Lanczos)",
+        "re-encode PNG (normals kept lossless \u2014 JPEG chroma subsampling corrupts normal vectors)"
+      ],
+      "sha256": "42dd87fa5dafc7695d426715d625e14b31f3b9c03869977c043816fef7546d10",
+      "source_sha256": "24352b64f5a6cce1ea8075be2b7ce5161b9ce6c69305fd0e3111693280c17ec4",
+      "retrieved": "2026-07-17"
+    },
+    {
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/worn_asphalt/worn_asphalt_rough_1k.jpg",
+      "destination": "assets/textures/asphalt/worn_asphalt_rough_512.jpg",
+      "license": "CC0",
+      "license_url": "https://polyhaven.com/license",
+      "author": "Poly Haven (Amal Kumar)",
+      "postprocess": [
+        "resize to 512x512 (Lanczos)",
+        "re-encode JPEG quality 85, optimize"
+      ],
+      "sha256": "4c8dfc43f7c460bfcea4e5d5234d64263a1e4e1e7d208c09e70ec50ac3d25a7f",
+      "source_sha256": "ad63ece01a94cb43f57a9d628fa9d28a560bffc8878749998ad3601831ab843f",
+      "retrieved": "2026-07-17"
     }
   ]
 }

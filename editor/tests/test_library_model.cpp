@@ -25,8 +25,8 @@ TEST(LibraryManifest, ParsesTheShippedManifest) {
   ASSERT_TRUE(manifest.has_value()) << (manifest ? "" : manifest.error().message);
   EXPECT_EQ(manifest->version(), 1);
   EXPECT_EQ(manifest->items().size(),
-            17U); // 3 road templates + 1 road style + 2 assemblies + 5 tree props
-                  // + 2 signals + 2 markings + 2 materials
+            18U); // 3 road templates + 1 road style + 2 assemblies + 5 tree props
+                  // + 2 signals + 2 markings + 3 materials (asphalt/asphalt_worn/concrete)
 
   // Road templates resolve to a profile, road styles to a style name, assemblies
   // to a t/x kind, trees to a bundled prop model id, signals to a light/sign tag,
@@ -75,7 +75,7 @@ TEST(LibraryManifest, ParsesTheShippedManifest) {
   EXPECT_EQ(trees, 5);
   EXPECT_EQ(signal_items, 2);
   EXPECT_EQ(markings, 2);
-  EXPECT_EQ(materials, 2);
+  EXPECT_EQ(materials, 3);
 }
 
 TEST(LibraryManifest, ParsesFieldsAndCreateKinds) {
@@ -149,7 +149,7 @@ TEST(LibraryListModel, PassesQtModelSanityChecksEmptyAndPopulated) {
   const auto manifest = LibraryManifest::load(kManifest);
   ASSERT_TRUE(manifest.has_value());
   model.set_manifest(*manifest);
-  EXPECT_EQ(model.rowCount(), 17);
+  EXPECT_EQ(model.rowCount(), 18);
 }
 
 TEST(LibraryListModel, ExposesRolesAndItemLookup) {
@@ -167,7 +167,7 @@ TEST(LibraryListModel, ExposesRolesAndItemLookup) {
   ASSERT_NE(item, nullptr);
   EXPECT_EQ(model.data(first, LibraryListModel::KeyRole).toString(), item->key);
   EXPECT_EQ(model.item(-1), nullptr);
-  EXPECT_EQ(model.item(17), nullptr);
+  EXPECT_EQ(model.item(18), nullptr);
 }
 
 // The per-project overlay (p6-s1): project items merge into the built-in
@@ -242,8 +242,8 @@ TEST(LibraryListModel, SetManifestRemergesAnActiveOverlay) {
 
   const auto base = LibraryManifest::load(kManifest);
   ASSERT_TRUE(base.has_value());
-  model.set_manifest(*base); // the overlay survives a base reload
-  EXPECT_EQ(model.rowCount(), 18);
+  model.set_manifest(*base);       // the overlay survives a base reload
+  EXPECT_EQ(model.rowCount(), 19); // 18 base items + 1 overlay
   EXPECT_NE(model.item_for_key(QStringLiteral("project.only")), nullptr);
 }
 

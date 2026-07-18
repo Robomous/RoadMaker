@@ -133,6 +133,8 @@ void append_road_items(const RoadMesh& road, Scene& scene) {
         .road = road.road,
         .lane = patch.lane,
         .surface = surface_for(patch.material),
+        // Assigned lane <material> code (empty → the surface-kind fallback).
+        .material = patch.surface,
     });
   }
   for (const SubMesh& marking : road.markings) {
@@ -259,11 +261,15 @@ Scene build_scene(const NetworkMesh& mesh, const RoadNetwork* network) {
         }
       }
     }
+    const Surface* entity = network != nullptr ? network->surface(surface.surface) : nullptr;
     scene.items.push_back(SceneItem{
         .data = to_render_data(
             surface.mesh.positions, surface.mesh.normals, surface.mesh.indices, color),
         .surface_id = surface.surface,
         .surface = kind,
+        // A surface's stored material (p6-s2) resolves through the same catalog
+        // as lane materials, so asphalt_worn works here for free.
+        .material = entity != nullptr ? entity->material : std::string{},
     });
     grow_bounds(scene.bounds, surface.mesh.positions);
   }

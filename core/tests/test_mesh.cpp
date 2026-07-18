@@ -340,3 +340,68 @@ TEST(Mesh, DegenerateNetworksProduceEmptyMeshes) {
   EXPECT_TRUE(mesh.roads.empty());
   EXPECT_TRUE(mesh.junction_floors.empty());
 }
+
+// WP3 (#237): a lane whose material varies along s splits into one patch per
+// <material> record, each carrying its surface code, with a shared boundary
+// row at the record start; a record-less lane stays one patch, empty surface.
+TEST(Mesh, LaneMaterialSplitsPatchesBySurfaceCode) {
+  roadmaker::RoadNetwork network;
+  const std::array<roadmaker::Waypoint, 2> waypoints{roadmaker::Waypoint{.x = 0.0, .y = 0.0},
+                                                     roadmaker::Waypoint{.x = 60.0, .y = 0.0}};
+  const auto road_id = roadmaker::author_clothoid_road(
+      network, waypoints, roadmaker::LaneProfile::two_lane_default(), "", "1");
+  ASSERT_TRUE(road_id.has_value());
+
+  const roadmaker::LaneSectionId section = network.road(*road_id)->sections[0];
+  roadmaker::LaneId inner_right;
+  for (const roadmaker::LaneId lane_id : network.lane_section(section)->lanes) {
+    if (network.lane(lane_id)->odr_id == -1) {
+      inner_right = lane_id;
+    }
+  }
+  ASSERT_TRUE(inner_right.is_valid());
+
+  // New asphalt for [0, 30), worn for [30, end).
+  auto command = roadmaker::edit::set_lane_material(
+      network,
+      inner_right,
+      {roadmaker::LaneMaterial{.s_offset = 0.0, .friction = 0.9, .surface = "rm:asphalt"},
+       roadmaker::LaneMaterial{.s_offset = 30.0, .friction = 0.7, .surface = "rm:asphalt_worn"}});
+  ASSERT_TRUE(command->apply(network).has_value());
+
+  const NetworkMesh mesh = roadmaker::build_network_mesh(network);
+  const auto road = std::ranges::find(mesh.roads, *road_id, &RoadMesh::road);
+  ASSERT_NE(road, mesh.roads.end());
+
+  std::vector<const RoadMesh::LanePatch*> right_patches;
+  for (const RoadMesh::LanePatch& patch : road->lanes) {
+    if (patch.odr_lane_id == -1) {
+      right_patches.push_back(&patch);
+    }
+  }
+  ASSERT_EQ(right_patches.size(), 2U);
+  // Ordered by the station rows, so the new-asphalt patch comes first.
+  const auto x_span = [&](const RoadMesh::LanePatch& patch) {
+    double min_x = 1e9;
+    double max_x = -1e9;
+    for (const std::uint32_t index : patch.indices) {
+      min_x = std::min(min_x, road->positions[index * 3]);
+      max_x = std::max(max_x, road->positions[index * 3]);
+    }
+    return std::pair{min_x, max_x};
+  };
+  const auto [first_min, first_max] = x_span(*right_patches[0]);
+  const auto [second_min, second_max] = x_span(*right_patches[1]);
+  EXPECT_EQ(right_patches[0]->surface, "rm:asphalt");
+  EXPECT_EQ(right_patches[1]->surface, "rm:asphalt_worn");
+  // Shared boundary row at s=30: first patch ends where the second begins.
+  EXPECT_NEAR(first_max, 30.0, 1e-6);
+  EXPECT_NEAR(second_min, 30.0, 1e-6);
+  EXPECT_NEAR(first_min, 0.0, 1e-6);
+  EXPECT_NEAR(second_max, 60.0, 1e-6);
+
+  // The other (record-less) driving lane stays one patch with an empty code.
+  const auto inner_left = std::ranges::find(road->lanes, 1, &RoadMesh::LanePatch::odr_lane_id);
+  ASSERT_NE(inner_left, road->lanes.end());
+  EXPECT_TRUE(inner_left->surface.empty());
+}
