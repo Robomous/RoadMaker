@@ -60,13 +60,22 @@
     <file alias="thumbnails/marking_solid_white.png">../../assets/library/thumbnails/marking_solid_white.png</file>
     <file alias="thumbnails/marking_double_yellow.png">../../assets/library/thumbnails/marking_double_yellow.png</file>
     <file alias="thumbnails/material_asphalt.png">../../assets/library/thumbnails/material_asphalt.png</file>
+    <file alias="thumbnails/material_asphalt_worn.png">../../assets/library/thumbnails/material_asphalt_worn.png</file>
     <file alias="thumbnails/material_concrete.png">../../assets/library/thumbnails/material_concrete.png</file>
   </qresource>
-  <!-- Surface textures (CC0, Poly Haven) for the textured render mode. Aliased
-       from the committed, re-encoded files; rows in ASSETS_LICENSES.md. -->
+  <!-- Surface textures (CC0, Poly Haven) for the textured render mode: albedo +
+       normal (nor_gl, PNG — lossless) + roughness maps. Aliased from the
+       committed, re-encoded files; rows in ASSETS_LICENSES.md. -->
   <qresource prefix="/textures">
     <file alias="asphalt.jpg">../../assets/textures/asphalt/asphalt_02_diff_512.jpg</file>
+    <file alias="asphalt_nor.png">../../assets/textures/asphalt/asphalt_02_nor_gl_512.png</file>
+    <file alias="asphalt_rough.jpg">../../assets/textures/asphalt/asphalt_02_rough_512.jpg</file>
+    <file alias="asphalt_worn.jpg">../../assets/textures/asphalt/worn_asphalt_diff_512.jpg</file>
+    <file alias="asphalt_worn_nor.png">../../assets/textures/asphalt/worn_asphalt_nor_gl_512.png</file>
+    <file alias="asphalt_worn_rough.jpg">../../assets/textures/asphalt/worn_asphalt_rough_512.jpg</file>
     <file alias="concrete.jpg">../../assets/textures/concrete/brushed_concrete_diff_512.jpg</file>
+    <file alias="concrete_nor.png">../../assets/textures/concrete/brushed_concrete_nor_gl_512.png</file>
+    <file alias="concrete_rough.jpg">../../assets/textures/concrete/brushed_concrete_rough_512.jpg</file>
   </qresource>
   <qresource prefix="/branding">
     <file alias="icon_16.png">branding/icon_16.png</file>

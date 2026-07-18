@@ -71,6 +71,14 @@ private:
   std::int32_t u_base_color_ = -1;
   std::int32_t u_uv_scale_ = -1;
   std::int32_t u_tint_ = -1;
+  // PBR-lite material uniforms (normal + roughness maps, per-draw specular).
+  std::int32_t u_has_normal_ = -1;
+  std::int32_t u_normal_ = -1;
+  std::int32_t u_normal_strength_ = -1;
+  std::int32_t u_has_roughness_ = -1;
+  std::int32_t u_roughness_map_ = -1;
+  std::int32_t u_roughness_ = -1;
+  std::int32_t u_camera_pos_ = -1;
   // Environment lighting uniforms (driven by set_environment).
   std::int32_t u_sun_dir_ = -1;
   std::int32_t u_sun_color_ = -1;

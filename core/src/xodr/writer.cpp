@@ -339,6 +339,11 @@ void write_lane(pugi::xml_node side, const Lane& lane) {
       mark_node.append_attribute("color").set_value(road_mark_color_name(mark.color));
     }
     set_num(mark_node, "width", mark.width);
+    // @material (§11.9, Table 47) — emitted only when assigned; the byte-stable
+    // default is no attribute (spec default "standard"), so unset writes nothing.
+    if (mark.material.has_value()) {
+      mark_node.append_attribute("material").set_value(mark.material->c_str());
+    }
     // Explicit multi-line geometry (§11.9.1): a <type>/<line> block when the
     // mark carries stripes; @name is the mark type spelling, @width the mark
     // width (Table 49 requires both, and @width supersedes @roadMark/width).
@@ -355,6 +360,35 @@ void write_lane(pugi::xml_node side, const Lane& lane) {
         set_num(line_node, "width", line.width);
       }
     }
+  }
+  // <material> records (§11.8.2) — XSD sequence puts them after <roadMark>
+  // and before the g_additionalData (speed/access/…/userData) group. Canonical
+  // attr order sOffset, friction?, roughness?, surface?, then preserved attrs;
+  // optionals omit when unset so a foreign file that lacked @friction stays
+  // byte-identical. (set_optional_num/append_fragment are defined below this
+  // function, so the optional writes are inlined here.)
+  for (const LaneMaterial& material : lane.materials) {
+    pugi::xml_node material_node = lane_node.append_child("material");
+    set_num(material_node, "sOffset", material.s_offset);
+    if (material.friction.has_value()) {
+      set_num(material_node, "friction", *material.friction);
+    }
+    if (material.roughness.has_value()) {
+      set_num(material_node, "roughness", *material.roughness);
+    }
+    if (material.surface.has_value()) {
+      material_node.append_attribute("surface").set_value(material.surface->c_str());
+    }
+    for (const auto& [name, value] : material.preserved.attributes) {
+      material_node.append_attribute(name.c_str()).set_value(value.c_str());
+    }
+  }
+  // Preserved tier: unmodeled lane children re-emitted verbatim after the
+  // modeled content (the Object precedent). A foreign file whose <speed>/etc.
+  // preceded <material> re-canonicalizes to this order — the accepted
+  // limitation shared by every modeled element.
+  for (const std::string& fragment : lane.preserved.children) {
+    lane_node.append_buffer(fragment.data(), fragment.size());
   }
 }
 

@@ -14,6 +14,7 @@
 #include <utility>
 
 #include "document/library_drop.hpp"
+#include "render/material_catalog.hpp"
 #include "tools/elevation_tool.hpp"
 
 namespace roadmaker::editor {
@@ -193,8 +194,9 @@ PropertiesPanel::PropertiesPanel(Document& document,
       placeholder_(new QLabel(tr("Select a road or lane."), this)), name_row_(new QWidget(this)),
       name_edit_(new QLineEdit), lane_group_(new QGroupBox(tr("Lane profile"), this)),
       type_combo_(new QComboBox), width_spin_(new QDoubleSpinBox), mark_combo_(new QComboBox),
-      mark_width_spin_(new QDoubleSpinBox), add_left_(new QPushButton(tr("Add left"))),
-      add_right_(new QPushButton(tr("Add right"))),
+      mark_width_spin_(new QDoubleSpinBox),
+      lane_material_slot_(new SlotWidget(QStringLiteral("Materials"), this)),
+      add_left_(new QPushButton(tr("Add left"))), add_right_(new QPushButton(tr("Add right"))),
       remove_left_(new QPushButton(tr("Remove left lane"))),
       remove_right_(new QPushButton(tr("Remove right lane"))),
       elevation_group_(new QGroupBox(tr("Elevation"), this)),
@@ -294,6 +296,18 @@ PropertiesPanel::PropertiesPanel(Document& document,
                            return edit::set_road_mark(network, selection_.primary().lane, mark);
                          }}),
       mark_width_spin_);
+  // Lane Materials slot (p6-s3): drop a material here (or onto the lane in the
+  // viewport) to pave the selected lane's surface. Write-only, like the road-
+  // style slot; disabled for the centre lane in refresh_lane_section.
+  lane_material_slot_->setObjectName(QStringLiteral("lane_material_slot"));
+  lane_material_slot_->setToolTip(tr("Drop a material to pave this lane's surface"));
+  lane_form->addRow(tr("Material"), lane_material_slot_);
+  connect(
+      lane_material_slot_, &SlotWidget::item_dropped, this, &PropertiesPanel::push_lane_material);
+  connect(lane_material_slot_,
+          &SlotWidget::engage_requested,
+          this,
+          &PropertiesPanel::library_category_requested);
   auto* buttons = new QHBoxLayout;
   buttons->addWidget(add_left_);
   buttons->addWidget(add_right_);
@@ -789,17 +803,15 @@ void PropertiesPanel::push_road_style(const QString& key) {
 
 namespace {
 
-/// The material name for a dropped Materials library item, or nullopt for a key
-/// this build does not recognise. Accepts both the item key ("material.asphalt")
-/// and the bare name ("asphalt") so the slot can pass the dropped key straight
-/// through — mirroring style_for, but returning an optional so an unknown key is
-/// rejected with a toast instead of silently defaulting.
+/// The canonical material name for a dropped Materials library item, or nullopt
+/// for a key this build does not recognise. Delegates to the MaterialCatalog so
+/// every catalog spelling — "material.asphalt", "asphalt", "rm:asphalt" — and
+/// every material (asphalt_worn included) resolves without a hardcoded list;
+/// returns an optional so an unknown key is rejected with a toast, not a default.
 [[nodiscard]] std::optional<std::string> material_for_key(const QString& key) {
-  if (key == QStringLiteral("material.asphalt") || key == QStringLiteral("asphalt")) {
-    return "asphalt";
-  }
-  if (key == QStringLiteral("material.concrete") || key == QStringLiteral("concrete")) {
-    return "concrete";
+  static const MaterialCatalog catalog;
+  if (const MaterialDef* def = catalog.find_material(key.toStdString()); def != nullptr) {
+    return def->name;
   }
   return std::nullopt;
 }
@@ -823,6 +835,33 @@ void PropertiesPanel::push_surface_material(const QString& key) {
     return; // no change — a drop that changes nothing pushes no command
   }
   push(edit::set_surface_material(document_.network(), surfaces.back(), *material));
+}
+
+void PropertiesPanel::push_lane_material(const QString& key) {
+  const Lane* lane = primary_lane();
+  if (lane == nullptr || key.isEmpty()) {
+    return;
+  }
+  if (lane->odr_id == 0) {
+    emit status_message(tr("The centre lane can't carry a material"));
+    return;
+  }
+  const std::optional<std::string> material = material_for_key(key);
+  if (!material.has_value()) {
+    emit status_message(tr("“%1” isn't a known material").arg(key));
+    return;
+  }
+  static const MaterialCatalog catalog;
+  const MaterialDef* def = catalog.find_material(*material);
+  const double friction = def != nullptr ? def->friction : 0.9;
+  // A slot/drop authors ONE constant record covering the lane (the first-record
+  // simplification set_road_mark uses); a multi-record profile comes from the
+  // kernel API. surface = "rm:<name>" marks it as RoadMaker-authored.
+  const LaneMaterial record{.s_offset = 0.0, .friction = friction, .surface = "rm:" + *material};
+  if (lane->materials.size() == 1 && lane->materials.front() == record) {
+    return; // no change — a drop that changes nothing pushes no command
+  }
+  push(edit::set_lane_material(document_.network(), selection_.primary().lane, {record}));
 }
 
 void PropertiesPanel::refresh_signal(const Signal& signal) {
@@ -919,6 +958,9 @@ void PropertiesPanel::refresh_lane_section() {
   add_right_->setEnabled(true);
 
   type_combo_->setEnabled(lane_selected && !center);
+  // The centre lane carries no material by rule (center_lane_no_material), so
+  // the Materials slot only accepts a drop on a real lane.
+  lane_material_slot_->setEnabled(lane_selected && !center);
   // The center lane is width-less by rule …road.lane.center_lane_no_width, and
   // a lane whose width varies along s is edited on the 2D Width curve — the
   // constant-width spin/scrub here would only be refused by set_lane_width.

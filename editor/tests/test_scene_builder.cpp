@@ -14,7 +14,18 @@ namespace {
 // and the /textures alias resolves) so a broken bundle fails here, not silently
 // at render time as untextured surfaces.
 TEST(SurfaceTextures, BundledJpegsDecodeFromQrc) {
-  for (const char* path : {":/textures/asphalt.jpg", ":/textures/concrete.jpg"}) {
+  // Albedo + normal (PNG, lossless) + roughness for each catalog material,
+  // including the new worn-asphalt variant. A broken bundle fails here, not
+  // silently at render time as untextured surfaces.
+  for (const char* path : {":/textures/asphalt.jpg",
+                           ":/textures/asphalt_nor.png",
+                           ":/textures/asphalt_rough.jpg",
+                           ":/textures/asphalt_worn.jpg",
+                           ":/textures/asphalt_worn_nor.png",
+                           ":/textures/asphalt_worn_rough.jpg",
+                           ":/textures/concrete.jpg",
+                           ":/textures/concrete_nor.png",
+                           ":/textures/concrete_rough.jpg"}) {
     const QImage image{QString::fromLatin1(path)};
     ASSERT_FALSE(image.isNull()) << path;
     EXPECT_EQ(image.width(), 512);
@@ -101,9 +112,18 @@ TEST(Material, DefaultsAreFlatAndUninstanced) {
   EXPECT_FALSE(mat.base_color.valid());
   EXPECT_FLOAT_EQ(mat.uv_scale, 0.25F); // 4 m tile
   EXPECT_FALSE(mat.unlit);
+  // PBR-lite compatibility gate: no maps and full roughness, so the sun
+  // specular lobe (scaled by 1 - roughness) contributes nothing — a default
+  // Material renders pixel-identically to the pre-material shader.
+  EXPECT_FALSE(mat.normal.valid());
+  EXPECT_FALSE(mat.roughness.valid());
+  EXPECT_FLOAT_EQ(mat.roughness_value, 1.0F);
 
   const DrawItem item;
   EXPECT_FALSE(item.material.base_color.valid());
+  EXPECT_FALSE(item.material.normal.valid());
+  EXPECT_FALSE(item.material.roughness.valid());
+  EXPECT_FLOAT_EQ(item.material.roughness_value, 1.0F);
   EXPECT_TRUE(item.instances.empty());
 }
 
@@ -153,6 +173,39 @@ TEST(BuildScene, FlattensPatchesMarkingsAndFloors) {
   EXPECT_FLOAT_EQ(scene.bounds.hi[0], 10.0F);
   EXPECT_FLOAT_EQ(scene.bounds.lo[2], -1.0F);
   EXPECT_FLOAT_EQ(scene.bounds.hi[2], 2.0F);
+}
+
+// WP6 (#237): a LanePatch's surface code flows onto the SceneItem so the
+// viewport can resolve it through the MaterialCatalog; a code-less patch leaves
+// the field empty (the SurfaceKind fallback then applies).
+TEST(BuildScene, LanePatchSurfaceCodeBecomesSceneItemMaterial) {
+  RoadNetwork network;
+  const RoadId road_id = network.create_road("r", "1");
+  const LaneSectionId section = network.add_lane_section(road_id, 0.0);
+  const LaneId paved = network.add_lane(section, -1, LaneType::Driving);
+  const LaneId bare = network.add_lane(section, -2, LaneType::Driving);
+
+  NetworkMesh mesh;
+  RoadMesh road;
+  road.road = road_id;
+  road.positions = {0, 0, 0, 10, 0, 0, 10, 5, 0, 0, 5, 0};
+  road.normals = {0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1};
+  road.lanes.push_back(RoadMesh::LanePatch{.lane = paved,
+                                           .odr_lane_id = -1,
+                                           .material = LaneType::Driving,
+                                           .surface = "rm:asphalt_worn",
+                                           .indices = {0, 1, 2}});
+  road.lanes.push_back(RoadMesh::LanePatch{.lane = bare,
+                                           .odr_lane_id = -2,
+                                           .material = LaneType::Driving,
+                                           .surface = "",
+                                           .indices = {0, 2, 3}});
+  mesh.roads.push_back(std::move(road));
+
+  const Scene scene = build_scene(mesh);
+  ASSERT_EQ(scene.items.size(), 2U);
+  EXPECT_EQ(scene.items[0].material, "rm:asphalt_worn");
+  EXPECT_TRUE(scene.items[1].material.empty());
 }
 
 TEST(BuildScene, EmitsGroundSurfaceItemTaggedWithSurfaceId) {

@@ -110,6 +110,7 @@ def write_png(path: Path, buf: bytearray) -> None:
 # --------------------------------------------------------------------------- #
 
 ASPHALT = (0.27, 0.28, 0.30)
+WORN_ASPHALT = (0.36, 0.35, 0.33)  # lighter, browner — sun-bleached and dusty
 CONCRETE = (0.60, 0.60, 0.58)
 WHITE_PAINT = (0.93, 0.93, 0.91)
 YELLOW_PAINT = (0.91, 0.73, 0.17)
@@ -289,6 +290,7 @@ THUMBNAILS = {
     "marking_solid_white": lambda: marking_swatch([48], WHITE_PAINT),
     "marking_double_yellow": lambda: marking_swatch([42, 54], YELLOW_PAINT),
     "material_asphalt": lambda: material_swatch(ASPHALT),
+    "material_asphalt_worn": lambda: material_swatch(WORN_ASPHALT),
     "material_concrete": lambda: material_swatch(CONCRETE),
 }
 

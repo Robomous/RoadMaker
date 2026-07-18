@@ -487,11 +487,32 @@ RoadMesh build_one_road(const RoadNetwork& network,
       const std::size_t col_left = lane.odr_id > 0 ? center_col - p : center_col + p - 1;
       const std::size_t col_right = col_left + 1;
 
-      RoadMesh::LanePatch patch;
-      patch.lane = lane_id;
-      patch.odr_lane_id = lane.odr_id;
-      patch.material = lane.type;
+      // Surface code covering a section-local station: the <material> record
+      // with the greatest sOffset <= s (§11.8.2, "valid until the next element
+      // starts"). Empty when the lane has no record there — the renderer then
+      // uses the lane-type palette. Material boundaries are mandatory stations,
+      // so each quad resolves to a single code with an exact edge.
+      const auto surface_at = [&lane](double s_local) -> std::string {
+        const LaneMaterial* best = nullptr;
+        for (const LaneMaterial& material : lane.materials) {
+          if (material.s_offset <= s_local + tol::kLength &&
+              (best == nullptr || material.s_offset > best->s_offset)) {
+            best = &material;
+          }
+        }
+        return best != nullptr ? best->surface.value_or(std::string{}) : std::string{};
+      };
+      const auto new_patch = [&](std::string surface) {
+        RoadMesh::LanePatch patch;
+        patch.lane = lane_id;
+        patch.odr_lane_id = lane.odr_id;
+        patch.material = lane.type;
+        patch.surface = std::move(surface);
+        return patch;
+      };
 
+      RoadMesh::LanePatch patch = new_patch(std::string{});
+      bool patch_open = false;
       for (std::uint32_t row = 0; row + 1 < rows.size(); ++row) {
         const double width_here =
             std::abs(row_offsets[row][col_left] - row_offsets[row][col_right]);
@@ -499,6 +520,16 @@ RoadMesh build_one_road(const RoadNetwork& network,
             std::abs(row_offsets[row + 1][col_left] - row_offsets[row + 1][col_right]);
         if (width_here < tol::kLength && width_next < tol::kLength) {
           continue; // fully pinched-off quad
+        }
+        // Contiguous quads sharing a record merge into one patch; a change of
+        // surface code flushes the current patch and opens a new one.
+        std::string surface = surface_at(rows[row] - section.s0);
+        if (patch_open && surface != patch.surface) {
+          mesh.lanes.push_back(std::move(patch));
+          patch = new_patch(std::move(surface));
+        } else if (!patch_open) {
+          patch.surface = std::move(surface);
+          patch_open = true;
         }
         const std::uint32_t a = grid_base + (row * static_cast<std::uint32_t>(columns)) +
                                 static_cast<std::uint32_t>(col_left);

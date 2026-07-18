@@ -85,6 +85,7 @@ add_library(roadmaker_editor_lib STATIC
   src/panels/width_panel.cpp
   src/render/gl_functions.cpp
   src/render/gl_renderer.cpp
+  src/render/material_catalog.cpp
   src/render/scene_builder.cpp
   src/theme/help_style.cpp
   src/theme/theme.cpp

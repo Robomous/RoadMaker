@@ -115,6 +115,13 @@
       "create": { "kind": "material", "material": "asphalt" }
     },
     {
+      "key": "material.asphalt_worn",
+      "label": "Asphalt (worn)",
+      "category": "Materials",
+      "thumbnail": "assets/library/thumbnails/material_asphalt_worn.png",
+      "create": { "kind": "material", "material": "asphalt_worn" }
+    },
+    {
       "key": "material.concrete",
       "label": "Concrete",
       "category": "Materials",

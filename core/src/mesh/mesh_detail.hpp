@@ -103,6 +103,11 @@ inline std::vector<double> mandatory_stations(const RoadNetwork& network, const 
       for (const RoadMark& mark : lane.road_marks) {
         stations.push_back(section.s0 + mark.s_offset);
       }
+      // Material boundaries (§11.8.2) land on station rows so each lane patch
+      // carries a single surface code with an exact edge at the record start.
+      for (const LaneMaterial& material : lane.materials) {
+        stations.push_back(section.s0 + material.s_offset);
+      }
     }
   }
   return stations;

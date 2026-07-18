@@ -53,6 +53,16 @@ inline constexpr std::string_view kLaneSectionValidLength =
 inline constexpr std::string_view kWidthDefinedWholeSection =
     "asam.net:xodr:1.7.0:road.lane.width.width_defined_whole_section";
 
+/// "The center lane shall have no material elements." (§11.8.2 rules.)
+/// Identical in 1.8.1 §11.7.2 and 1.9.0 §11.8.2, so no version gating.
+inline constexpr std::string_view kMaterialCenterLaneNone =
+    "asam.net:xodr:1.4.0:road.lane.material.center_lane_no_material";
+
+/// "<material> elements shall be defined in ascending order according to the
+/// s-coordinate." (§11.8.2 rules.)
+inline constexpr std::string_view kMaterialElemAscOrder =
+    "asam.net:xodr:1.4.0:road.lane.material.elem_asc_order";
+
 /// "For a road as successor or predecessor the @elementType, @elementId and
 /// @contactPoint attributes shall be used."
 inline constexpr std::string_view kRoadLinkAttributeUsage =

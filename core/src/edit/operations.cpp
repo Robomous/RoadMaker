@@ -3901,6 +3901,58 @@ set_lane_direction(const RoadNetwork& network, LaneId lane_id, LaneDirection dir
 }
 
 std::unique_ptr<Command>
+set_lane_material(const RoadNetwork& network, LaneId lane_id, std::vector<LaneMaterial> records) {
+  static constexpr std::string_view kName = "Set Lane Material";
+  const auto fail = [&](std::string message) {
+    return invalid_command(
+        std::string(kName),
+        Error{.code = ErrorCode::InvalidArgument, .message = std::move(message)});
+  };
+  auto context = lane_context(network, lane_id);
+  if (!context.has_value()) {
+    return invalid_command(std::string(kName), context.error());
+  }
+  // asam.net:xodr:1.4.0:road.lane.material.center_lane_no_material — the center
+  // lane carries no material (an empty vector still clears it, so only a
+  // non-empty assignment is refused).
+  if (context->lane.odr_id == 0 && !records.empty()) {
+    return fail("the center lane has no material");
+  }
+  auto span = section_end(network, context->section_id);
+  if (!span.has_value()) {
+    return invalid_command(std::string(kName), span.error());
+  }
+  const double length = *span - network.lane_section(context->section_id)->s0;
+  for (std::size_t i = 0; i < records.size(); ++i) {
+    // t_grEqZero (Table 44): friction/roughness are >= 0 when present.
+    if (records[i].friction.has_value() && *records[i].friction < 0.0) {
+      return fail("material friction must be >= 0");
+    }
+    if (records[i].roughness.has_value() && *records[i].roughness < 0.0) {
+      return fail("material roughness must be >= 0");
+    }
+    // asam.net:xodr:1.4.0:road.lane.material.elem_asc_order
+    if (i > 0 && records[i].s_offset <= records[i - 1].s_offset + tol::kLength) {
+      return fail("material records must ascend by sOffset");
+    }
+    // Every record must start inside the owning lane section.
+    if (records[i].s_offset < -tol::kLength || records[i].s_offset >= length - tol::kLength) {
+      return fail("every material record must start inside the lane section");
+    }
+  }
+
+  Lane after = context->lane;
+  after.materials = std::move(records);
+  // Only the owning road is dirty: re-mesh carries the surface code to the
+  // renderer; the connection engine does not read material.
+  auto command =
+      std::make_unique<GenericCommand>(std::string(kName), DirtySet{.roads = {context->road_id}});
+  command->before.lanes.emplace_back(lane_id, context->lane);
+  command->after.lanes.emplace_back(lane_id, std::move(after));
+  return command;
+}
+
+std::unique_ptr<Command>
 set_lane_width(const RoadNetwork& network, LaneId lane_id, double width_m) {
   static constexpr std::string_view kName = "Set Lane Width";
   auto context = lane_context(network, lane_id);

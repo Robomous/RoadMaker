@@ -19,16 +19,20 @@ uniform mat4 u_projection;
 uniform mat4 u_model; // per-instance transform; identity for single draws
 out vec3 v_normal;
 out vec2 v_uv;
+out vec3 v_world_pos;
 void main() {
+  vec4 world = u_model * vec4(in_position, 1.0);
+  v_world_pos = world.xyz;
   v_normal = mat3(u_model) * in_normal;
   v_uv = in_uv;
-  gl_Position = u_projection * u_view * u_model * vec4(in_position, 1.0);
+  gl_Position = u_projection * u_view * world;
 }
 )";
 
 constexpr const char* kFragmentShader = R"(#version 330 core
 in vec3 v_normal;
 in vec2 v_uv;
+in vec3 v_world_pos;
 uniform vec4 u_color;
 uniform float u_highlight;  // accent mix strength: 0 none, hover < selected
 uniform vec3 u_accent;      // theme accent token (hover/selection emphasis)
@@ -37,6 +41,17 @@ uniform int u_has_texture;  // 1 = sample u_base_color, 0 = flat u_color
 uniform sampler2D u_base_color;
 uniform float u_uv_scale;   // texels per meter (material tiling)
 uniform vec4 u_tint;        // multiplies the texture sample
+// PBR-lite maps (design doc §5). Absent → the fallbacks keep a mapless material
+// pixel-identical to before: no normal map = geometric normal, no roughness map
+// = the u_roughness scalar. A default Material has u_roughness = 1 (fully rough)
+// so the specular lobe below scales by (1 - rough) = 0 and adds nothing.
+uniform int u_has_normal;
+uniform sampler2D u_normal;     // tangent-space, GL (Y+) convention
+uniform float u_normal_strength;
+uniform int u_has_roughness;
+uniform sampler2D u_roughness_map; // .r channel
+uniform float u_roughness;         // scalar fallback / modulator
+uniform vec3 u_camera_pos;      // world-space eye (specular half-vector)
 // Environment lighting (hemisphere ambient + one directional sun). The Sober
 // preset sets sky == ground == white and intensity 0.65 so this reduces to the
 // old 0.35 + 0.65*lambert grey shading exactly.
@@ -47,16 +62,48 @@ uniform vec3 u_sky_light;
 uniform vec3 u_ground_light;
 uniform float u_ambient;
 out vec4 frag_color;
+
+// Per-fragment cotangent frame from screen-space derivatives (design doc §5:
+// no vertex-format/tangent change). Stable for the planar-UV road/deck geometry
+// this milestone maps.
+vec3 perturb_normal(vec3 geom_n, vec2 uv) {
+  vec3 dp1 = dFdx(v_world_pos);
+  vec3 dp2 = dFdy(v_world_pos);
+  vec2 duv1 = dFdx(uv);
+  vec2 duv2 = dFdy(uv);
+  vec3 dp2perp = cross(dp2, geom_n);
+  vec3 dp1perp = cross(geom_n, dp1);
+  vec3 t = dp2perp * duv1.x + dp1perp * duv2.x;
+  vec3 b = dp2perp * duv1.y + dp1perp * duv2.y;
+  float inv_max = inversesqrt(max(dot(t, t), dot(b, b)));
+  mat3 tbn = mat3(t * inv_max, b * inv_max, geom_n);
+  vec3 sample_n = texture(u_normal, uv).xyz * 2.0 - 1.0;
+  sample_n.xy *= u_normal_strength;
+  return normalize(tbn * sample_n);
+}
+
 void main() {
+  vec2 uv = v_uv * u_uv_scale;
   // A default Material carries no texture, so u_has_texture stays 0 and the
   // flat u_color path is used.
-  vec4 albedo = u_has_texture == 1
-      ? texture(u_base_color, v_uv * u_uv_scale) * u_tint
-      : u_color;
-  vec3 n = normalize(v_normal);
+  vec4 albedo = u_has_texture == 1 ? texture(u_base_color, uv) * u_tint : u_color;
+  vec3 geom_n = normalize(v_normal);
+  vec3 n = u_has_normal == 1 ? perturb_normal(geom_n, uv) : geom_n;
+  float rough =
+      u_has_roughness == 1 ? texture(u_roughness_map, uv).r * u_roughness : u_roughness;
+
   vec3 hemi = mix(u_ground_light, u_sky_light, 0.5 * (n.z + 1.0)) * u_ambient;
-  float lambert = max(dot(n, normalize(u_sun_dir)), 0.0);
+  vec3 sun_dir = normalize(u_sun_dir);
+  float lambert = max(dot(n, sun_dir), 0.0);
   vec3 direct = u_sun_color * (u_sun_intensity * lambert);
+  // Sun-only Blinn-Phong lobe scaled by (1 - rough): zero at the default full
+  // roughness, so a mapless/default material is unchanged. Gated on u_lit so
+  // lines (and the Sober-flat path via rough=1) never gain a highlight.
+  float gloss = 1.0 - rough;
+  vec3 half_v = normalize(sun_dir + normalize(u_camera_pos - v_world_pos));
+  float spec = pow(max(dot(n, half_v), 0.0), mix(8.0, 96.0, gloss)) * gloss;
+  direct += u_sun_color * (u_sun_intensity * spec);
+
   vec3 lighting = hemi + direct;                // colored light multiplier
   vec3 shade = mix(vec3(1.0), lighting, u_lit); // lines (u_lit=0) stay unlit
   vec3 base = albedo.rgb * shade;
@@ -278,6 +325,13 @@ bool GLRenderer::init() {
   u_base_color_ = gl::GetUniformLocation(program_, "u_base_color");
   u_uv_scale_ = gl::GetUniformLocation(program_, "u_uv_scale");
   u_tint_ = gl::GetUniformLocation(program_, "u_tint");
+  u_has_normal_ = gl::GetUniformLocation(program_, "u_has_normal");
+  u_normal_ = gl::GetUniformLocation(program_, "u_normal");
+  u_normal_strength_ = gl::GetUniformLocation(program_, "u_normal_strength");
+  u_has_roughness_ = gl::GetUniformLocation(program_, "u_has_roughness");
+  u_roughness_map_ = gl::GetUniformLocation(program_, "u_roughness_map");
+  u_roughness_ = gl::GetUniformLocation(program_, "u_roughness");
+  u_camera_pos_ = gl::GetUniformLocation(program_, "u_camera_pos");
   u_sun_dir_ = gl::GetUniformLocation(program_, "u_sun_dir");
   u_sun_color_ = gl::GetUniformLocation(program_, "u_sun_color");
   u_sun_intensity_ = gl::GetUniformLocation(program_, "u_sun_intensity");
@@ -570,6 +624,8 @@ void GLRenderer::render(const std::vector<DrawItem>& items,
                 environment_.ground_color[1],
                 environment_.ground_color[2]);
   gl::Uniform1f(u_ambient_, environment_.ambient);
+  // World-space eye for the specular half-vector (fed the same way sun_dir is).
+  gl::Uniform3f(u_camera_pos_, camera.eye[0], camera.eye[1], camera.eye[2]);
 
   // Accent mix strength per feedback state: a subtle brighten on hover, a
   // stronger tint on selection (both toward the theme accent).
@@ -585,7 +641,9 @@ void GLRenderer::render(const std::vector<DrawItem>& items,
     return 0.0F;
   };
 
-  gl::Uniform1i(u_base_color_, 0); // sampler bound to texture unit 0
+  gl::Uniform1i(u_base_color_, 0);    // sampler bound to texture unit 0
+  gl::Uniform1i(u_normal_, 1);        // normal map on unit 1
+  gl::Uniform1i(u_roughness_map_, 2); // roughness map on unit 2
 
   for (const DrawItem& item : items) {
     const auto found = meshes_.find(item.mesh.id);
@@ -598,13 +656,41 @@ void GLRenderer::render(const std::vector<DrawItem>& items,
     // carries one, else fall back to the mesh's flat color — a
     // default-constructed Material reproduces the pre-material output exactly.
     const Material& mat = item.material;
-    const auto tex = textures_.find(mat.base_color.id);
-    const bool has_tex = mat.base_color.valid() && tex != textures_.end();
+    const auto find_tex = [this](TextureHandle handle) -> std::uint32_t {
+      if (!handle.valid()) {
+        return 0;
+      }
+      const auto it = textures_.find(handle.id);
+      return it == textures_.end() ? 0 : it->second;
+    };
+    const std::uint32_t base_tex = find_tex(mat.base_color);
+    const std::uint32_t normal_tex = find_tex(mat.normal);
+    const std::uint32_t roughness_tex = find_tex(mat.roughness);
+
+    // Normal (unit 1) + roughness (unit 2) bind first; base color binds LAST on
+    // unit 0 so the active unit is reset to 0 for any later fixed-unit-0 code.
+    gl::Uniform1i(u_has_normal_, normal_tex != 0 ? 1 : 0);
+    if (normal_tex != 0) {
+      gl::ActiveTexture(gl::kTexture1);
+      gl::BindTexture(gl::kTexture2D, normal_tex);
+      gl::Uniform1f(u_normal_strength_, mat.normal_strength);
+    }
+    gl::Uniform1i(u_has_roughness_, roughness_tex != 0 ? 1 : 0);
+    if (roughness_tex != 0) {
+      gl::ActiveTexture(gl::kTexture2);
+      gl::BindTexture(gl::kTexture2D, roughness_tex);
+    }
+    // Scalar roughness fallback/modulator: default 1.0 → zero specular, so an
+    // untextured/default Material stays pixel-identical to the pre-PBR output.
+    gl::Uniform1f(u_roughness_, mat.roughness_value);
+
+    const bool has_tex = base_tex != 0;
     gl::Uniform1i(u_has_texture_, has_tex ? 1 : 0);
+    // uv_scale drives all three samplers, so set it whenever any map is bound.
+    gl::Uniform1f(u_uv_scale_, mat.uv_scale);
+    gl::ActiveTexture(gl::kTexture0);
     if (has_tex) {
-      gl::ActiveTexture(gl::kTexture0);
-      gl::BindTexture(gl::kTexture2D, tex->second);
-      gl::Uniform1f(u_uv_scale_, mat.uv_scale);
+      gl::BindTexture(gl::kTexture2D, base_tex);
       gl::Uniform4f(u_tint_, mat.tint[0], mat.tint[1], mat.tint[2], mat.tint[3]);
     }
     gl::Uniform4f(u_color_, mesh.color[0], mesh.color[1], mesh.color[2], mesh.color[3]);

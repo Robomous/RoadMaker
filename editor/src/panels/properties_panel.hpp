@@ -150,6 +150,9 @@ private:
   ScrubLabel* width_scrub_label_ = nullptr;
   QComboBox* mark_combo_;
   QDoubleSpinBox* mark_width_spin_;
+  /// Lane Materials slot (p6-s3): a write-only Library slot that paves the
+  /// selected lane's surface. Disabled for the centre lane (no material by rule).
+  SlotWidget* lane_material_slot_;
   QPushButton* add_left_;
   QPushButton* add_right_;
   QPushButton* remove_left_;
@@ -188,6 +191,11 @@ private:
   /// surface. Unknown keys toast without pushing (no silent default); an
   /// unchanged material pushes nothing.
   void push_surface_material(const QString& key);
+
+  /// Commits the dropped Materials library item onto the primary selected lane
+  /// as a single constant <material> record (§11.8.2). Refuses the centre lane,
+  /// toasts an unknown key, and pushes nothing when the material is unchanged.
+  void push_lane_material(const QString& key);
 
   /// Populates the Prop section from the primary selection's object, and shows
   /// it.

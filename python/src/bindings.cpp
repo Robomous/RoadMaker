@@ -288,10 +288,39 @@ NB_MODULE(_roadmaker, m) {
       .def_rw("type", &roadmaker::RoadMark::type)
       .def_rw("width", &roadmaker::RoadMark::width)
       .def_rw("color", &roadmaker::RoadMark::color)
+      .def_rw("material",
+              &roadmaker::RoadMark::material,
+              "@material code (§11.9); None writes nothing (spec default "
+              "'standard'). RoadMaker authors 'rm:<id>'.")
       .def_rw("lines",
               &roadmaker::RoadMark::lines,
               "Explicit multi-line stripes (<type>/<line>); empty for a simple "
               "single-stripe mark.");
+
+  nb::class_<roadmaker::LaneMaterial>(m, "LaneMaterial")
+      .def(nb::init<>())
+      .def(
+          "__init__",
+          [](roadmaker::LaneMaterial* self,
+             double s_offset,
+             std::optional<double> friction,
+             std::optional<double> roughness,
+             std::optional<std::string> surface) {
+            new (self) roadmaker::LaneMaterial{.s_offset = s_offset,
+                                               .friction = friction,
+                                               .roughness = roughness,
+                                               .surface = std::move(surface)};
+          },
+          "s_offset"_a = 0.0,
+          "friction"_a = nb::none(),
+          "roughness"_a = nb::none(),
+          "surface"_a = nb::none())
+      .def_rw("s_offset", &roadmaker::LaneMaterial::s_offset)
+      .def_rw("friction", &roadmaker::LaneMaterial::friction)
+      .def_rw("roughness", &roadmaker::LaneMaterial::roughness)
+      .def_rw("surface",
+              &roadmaker::LaneMaterial::surface,
+              "Surface material code (§11.8.2); RoadMaker writes 'rm:<id>'.");
 
   nb::class_<roadmaker::Waypoint>(m, "Waypoint")
       .def(nb::init<>())
@@ -358,6 +387,10 @@ NB_MODULE(_roadmaker, m) {
               &roadmaker::Lane::road_marks,
               "Marks on this lane's OUTER boundary, ascending s_offset "
               "(rm.edit.set_road_mark edits the first record only).")
+      .def_ro("materials",
+              &roadmaker::Lane::materials,
+              "<material> records (§11.8.2), ascending s_offset; edit via "
+              "rm.edit.set_lane_material. Empty for the center lane.")
       .def_ro("predecessor", &roadmaker::Lane::predecessor)
       .def_ro("successor", &roadmaker::Lane::successor)
       .def("__repr__", [](const roadmaker::Lane& lane) {
@@ -1616,6 +1649,15 @@ NB_MODULE(_roadmaker, m) {
            "sOffsets, w(ds) = a + b*ds + c*ds^2 + d*ds^3. Needs a record at sOffset 0, "
            "ascending sOffsets inside the section, and width >= 0 — zero is legal, and "
            "is how a turn lane tapers up from nothing.");
+  edit.def("set_lane_material",
+           &roadmaker::edit::set_lane_material,
+           "network"_a,
+           "lane"_a,
+           "records"_a,
+           "Replaces the lane's <material> records (§11.8.2): a list of LaneMaterial "
+           "with SECTION-LOCAL sOffsets; an empty list clears them. Refuses the center "
+           "lane, non-ascending sOffsets, negative friction/roughness, and records "
+           "outside the section. RoadMaker writes surface='rm:<id>'.");
   edit.def("split_lane_section",
            &roadmaker::edit::split_lane_section,
            "network"_a,

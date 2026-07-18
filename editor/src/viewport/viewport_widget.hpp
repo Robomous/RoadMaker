@@ -14,11 +14,14 @@
 #include <limits>
 #include <memory>
 #include <optional>
+#include <string>
+#include <unordered_map>
 #include <vector>
 
 #include "app/context_menu.hpp"
 #include "document/document.hpp"
 #include "document/selection_model.hpp"
+#include "render/material_catalog.hpp"
 #include "render/renderer.hpp"
 #include "render/scene_builder.hpp"
 #include "tools/tool_manager.hpp"
@@ -194,12 +197,20 @@ private:
     JunctionId junction;
     SurfaceId surface_id;
     SurfaceKind surface = SurfaceKind::Untextured;
+    std::string material; ///< assigned material code (empty → SurfaceKind fallback)
   };
 
-  /// The textured-mode Material for an item: the resolved surface texture
-  /// (asphalt/concrete) or bright unlit paint for markings. Returns a default
-  /// (flat) Material in Sober mode or when the textures failed to load.
-  [[nodiscard]] Material material_for(SurfaceKind surface) const;
+  /// The textured-mode Material for an item: the assigned `material` code
+  /// resolved through the MaterialCatalog (albedo + normal + roughness), falling
+  /// back to the SurfaceKind default when the code is empty/unknown, or bright
+  /// unlit paint for markings. Returns a default (flat) Material in Sober mode
+  /// or when the textures failed to load. Lazily uploads catalog textures into
+  /// texture_cache_ — MUST be called with the GL context current (paintGL).
+  [[nodiscard]] Material material_for(SurfaceKind surface, const std::string& material) const;
+
+  /// Lazily uploads the texture at a qrc path (or returns the cached handle);
+  /// an invalid handle on load failure so material_for falls back to flat color.
+  [[nodiscard]] TextureHandle texture_for(const std::string& resource) const;
 
   void rebuild_scene();
 
@@ -374,10 +385,11 @@ private:
   /// Drives the renderer Environment/ground/grid via apply_render_mode().
   bool textured_rendering_ = false;
 
-  /// Surface textures uploaded once at GL init (from the :/textures qrc). Invalid
-  /// if loading failed — material_for then falls back to the flat mesh color.
-  TextureHandle asphalt_texture_;
-  TextureHandle concrete_texture_;
+  /// Compiled-in material definitions (surface code → textures + PBR params).
+  MaterialCatalog material_catalog_;
+  /// Lazy per-qrc-path texture upload cache (populated on the GL thread from
+  /// material_for/texture_for). `mutable` so those const methods can fill it.
+  mutable std::unordered_map<std::string, TextureHandle> texture_cache_;
 
   /// Roads awaiting a partial re-upload on the next paint (deduplicated
   /// there); ignored while a full rebuild is pending.

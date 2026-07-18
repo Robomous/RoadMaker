@@ -103,15 +103,25 @@ void ViewportWidget::initializeGL() {
     qFatal("Failed to initialize OpenGL 3.3 core renderer");
   }
 
-  // Upload the surface textures once (bundled in the :/textures qrc). A failed
-  // load leaves an invalid handle and material_for() falls back to flat color,
-  // so a runner without the JPEG image handler still renders (untextured).
-  const auto upload_texture = [this](const char* resource) -> TextureHandle {
-    QImage image(QString::fromLatin1(resource));
-    if (image.isNull()) {
-      qWarning("viewport: could not load surface texture %s", resource);
-      return {};
-    }
+  // Surface textures upload lazily on first use (material_for/texture_for),
+  // bundled in the :/textures qrc. A failed load leaves an invalid handle and
+  // material_for falls back to flat color, so a runner without the image
+  // handlers still renders (untextured).
+  scene_dirty_ = true;
+}
+
+TextureHandle ViewportWidget::texture_for(const std::string& resource) const {
+  if (resource.empty()) {
+    return {};
+  }
+  if (const auto cached = texture_cache_.find(resource); cached != texture_cache_.end()) {
+    return cached->second;
+  }
+  TextureHandle handle;
+  QImage image(QString::fromStdString(resource));
+  if (image.isNull()) {
+    qWarning("viewport: could not load surface texture %s", resource.c_str());
+  } else {
     image = image.convertToFormat(QImage::Format_RGBA8888);
     TextureData tex;
     tex.width = image.width();
@@ -125,37 +135,41 @@ void ViewportWidget::initializeGL() {
                   image.constScanLine(y),
                   row_bytes);
     }
-    return renderer_->upload(tex);
-  };
-  asphalt_texture_ = upload_texture(":/textures/asphalt.jpg");
-  concrete_texture_ = upload_texture(":/textures/concrete.jpg");
-
-  scene_dirty_ = true;
+    handle = renderer_->upload(tex);
+  }
+  texture_cache_.emplace(resource, handle); // cache the miss too (don't retry)
+  return handle;
 }
 
-Material ViewportWidget::material_for(SurfaceKind surface) const {
-  Material material;
+Material ViewportWidget::material_for(SurfaceKind surface, const std::string& material) const {
+  Material result;
   if (!textured_rendering_) {
-    return material; // Sober mode: flat per-mesh color, no textures/paint.
+    return result; // Sober mode: flat per-mesh color, no textures/paint.
   }
-  switch (surface) {
-  case SurfaceKind::Asphalt:
-    material.base_color = asphalt_texture_; // invalid → renderer uses mesh color
-    break;
-  case SurfaceKind::Concrete:
-    material.base_color = concrete_texture_;
-    break;
-  case SurfaceKind::Paint:
-    material.unlit = true; // markings read as bright flat paint, not shaded
-    break;
-  case SurfaceKind::Grass:
-    // Ground surface (#215): no bundled grass texture, so it stays a lit flat
-    // grass-green (the mesh color) — distinct from the asphalt/concrete way.
-    break;
-  case SurfaceKind::Untextured:
-    break;
+  if (surface == SurfaceKind::Paint) {
+    result.unlit = true; // markings read as bright flat paint, not shaded
+    return result;
   }
-  return material;
+  // Resolve the assigned code, else map the SurfaceKind to a catalog name so the
+  // fallback goes through the same PBR-lite path (Grass/Untextured stay flat).
+  const MaterialDef* def = material.empty() ? nullptr : material_catalog_.find_material(material);
+  if (def == nullptr) {
+    const char* fallback = surface == SurfaceKind::Asphalt    ? "asphalt"
+                           : surface == SurfaceKind::Concrete ? "concrete"
+                                                              : "";
+    def = material_catalog_.find_material(fallback);
+  }
+  if (def == nullptr) {
+    return result; // Grass/Untextured, or an unknown code: flat mesh color.
+  }
+  result.base_color = texture_for(def->albedo);
+  result.normal = texture_for(def->normal);
+  result.roughness = texture_for(def->roughness);
+  result.tint = def->tint;
+  result.uv_scale = def->uv_scale;
+  result.roughness_value = def->roughness_value;
+  result.normal_strength = def->normal_strength;
+  return result;
 }
 
 void ViewportWidget::rebuild_scene() {
@@ -174,7 +188,8 @@ void ViewportWidget::rebuild_scene() {
                                   .signal = item.signal,
                                   .junction = item.junction,
                                   .surface_id = item.surface_id,
-                                  .surface = item.surface});
+                                  .surface = item.surface,
+                                  .material = item.material});
   }
   scene_bounds_ = scene.bounds;
   // Keep the ground plane just under the (possibly changed) network floor.
@@ -217,7 +232,8 @@ void ViewportWidget::apply_pending_road_updates() {
                                       .road = item.road,
                                       .lane = item.lane,
                                       .object = item.object,
-                                      .surface = item.surface});
+                                      .surface = item.surface,
+                                      .material = item.material});
       }
       break;
     }
@@ -302,8 +318,9 @@ void ViewportWidget::paintGL() {
   std::vector<DrawItem> draw_items;
   draw_items.reserve(items_.size() + preview_handles_.size());
   for (const UploadedItem& item : items_) {
-    draw_items.push_back(DrawItem{
-        .mesh = item.handle, .state = item_state(item), .material = material_for(item.surface)});
+    draw_items.push_back(DrawItem{.mesh = item.handle,
+                                  .state = item_state(item),
+                                  .material = material_for(item.surface, item.material)});
   }
   for (const RenderMeshHandle handle : preview_handles_) {
     draw_items.push_back(DrawItem{.mesh = handle});

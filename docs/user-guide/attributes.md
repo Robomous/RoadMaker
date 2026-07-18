@@ -63,14 +63,25 @@ changes *what the prop is*, not *where it is*.
 Dropping something that isn't a prop model — a road template, say — is refused,
 and nothing lands in the undo history.
 
+### Lane material
+
+Selecting a lane shows a **Material** slot in the **Lane profile** section. Drop
+a material — **Asphalt**, **Asphalt (worn)**, or **Concrete** — on it, or click
+it to jump to the Materials category, and the whole lane takes that surface
+material (texture in [textured mode](textured-rendering.md), friction in the
+file). The slot is disabled for the centre lane, which carries no material by
+rule. You can also drag a material straight onto the lane in the viewport. See
+[Materials](materials.md) for what gets stored and how it round-trips.
+
 ### Ground surface material
 
 Selecting a [ground surface](scene-tree.md) (an area enclosed by roads) shows a
-**Ground surface** section with a **Materials** slot. Drop **Asphalt** or
-**Concrete** from the Library on it — or click the slot to jump to the Materials
-category — and the surface re-textures to that paved look; the slot reflects the
-current material and clears back to the default grass on **Undo**. Dropping
-something that isn't a material is refused with no undo entry.
+**Ground surface** section with a **Materials** slot. Drop **Asphalt**,
+**Asphalt (worn)**, or **Concrete** from the Library on it — or click the slot
+to jump to the Materials category — and the surface re-textures to that paved
+look; the slot reflects the current material and clears back to the default
+grass on **Undo**. Dropping something that isn't a material is refused with no
+undo entry.
 
 The material is stored on the surface and round-trips through save/reload. One
 caveat: a surface's identity follows the roads that enclose it, so reshaping the

@@ -2,8 +2,10 @@
 
 #include "roadmaker/geometry/poly3.hpp"
 #include "roadmaker/road/id.hpp"
+#include "roadmaker/xodr/raw_xml.hpp"
 
 #include <optional>
+#include <string>
 #include <vector>
 
 namespace roadmaker {
@@ -93,6 +95,12 @@ struct RoadMark {
   /// e_roadMarkColor (§11.9). Written explicitly only when not Standard.
   RoadMarkColor color = RoadMarkColor::Standard;
 
+  /// @material (§11.9, Table 47): "Identifiers to be defined by the user, use
+  /// standard as default value." Held as an optional so the byte-stable
+  /// default (unset) writes nothing; RoadMaker authors "rm:<id>" when a
+  /// marking material is assigned (GW-2 step 15 plumbing).
+  std::optional<std::string> material;
+
   /// Explicit multi-line geometry (<type>/<line>, §11.9.1). Empty for the
   /// simple single-stripe mark; populated (two stripes with symmetric
   /// t_offset) for solid_solid / solid_broken / broken_solid so the mark
@@ -100,6 +108,36 @@ struct RoadMark {
   std::vector<RoadMarkLine> lines;
 
   friend bool operator==(const RoadMark&, const RoadMark&) = default;
+};
+
+/// One <material> record on a lane — ASAM OpenDRIVE 1.9.0 §11.8.2, Table 44
+/// (identical in 1.8.1 §11.7.2; only the chapter number moved, so no version
+/// gating). Promoted out of the Preserved tier so the parser stops silently
+/// dropping it. `surface` is the standard's "Surface material code, depending
+/// on application" — an application-defined string; RoadMaker writes "rm:<id>".
+struct LaneMaterial {
+  /// s-coordinate of start position, LOCAL to the owning lane section [m]
+  /// (Table 44 @sOffset, required).
+  double s_offset = 0.0;
+
+  /// @friction (Table 44, required). Modeled optional so a foreign file that
+  /// omits it round-trips byte-identically (parse warns; write omits when
+  /// unset). RoadMaker-authored records set it from the catalog nominal value.
+  std::optional<double> friction;
+
+  /// @roughness (Table 44, optional) — "for example, for sound and motion
+  /// systems". Written only when present.
+  std::optional<double> roughness;
+
+  /// @surface (Table 44, optional) — application-defined code. RoadMaker
+  /// writes "rm:<id>"; foreign codes survive verbatim.
+  std::optional<std::string> surface;
+
+  /// Attributes we do not model, preserved verbatim (risk-3 mitigation: a
+  /// foreign file's extra @attrs survive a round-trip).
+  RawXml preserved;
+
+  friend bool operator==(const LaneMaterial&, const LaneMaterial&) = default;
 };
 
 /// A single lane within a lane section.
@@ -128,10 +166,22 @@ struct Lane {
   /// local). On lane 0 this is the center line marking.
   std::vector<RoadMark> road_marks;
 
+  /// <material> records (§11.8.2), sorted ascending by s_offset (section-
+  /// local). Empty for lane 0 (the center lane shall have no material,
+  /// asam.net:xodr:1.4.0:road.lane.material.center_lane_no_material).
+  std::vector<LaneMaterial> materials;
+
   /// OpenDRIVE lane ids of the linked lanes in the previous/next lane
   /// section (or road, across road boundaries).
   std::optional<int> predecessor;
   std::optional<int> successor;
+
+  /// Preserved tier: unmodeled lane children (<speed>/<access>/<height>/
+  /// <rule>/<userData>/…) captured verbatim in document order and re-emitted
+  /// after the modeled content, so the parser never silently drops input
+  /// (the Object precedent; docs/design/m3a/01 §5). Also carries centre-lane
+  /// surface <userData> for P3/P4.
+  RawXml preserved;
 };
 
 } // namespace roadmaker
