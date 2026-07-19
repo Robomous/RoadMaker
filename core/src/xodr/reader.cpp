@@ -822,6 +822,22 @@ private:
         }
         continue;
       }
+      if (name == "userData" &&
+          std::string_view(child.attribute("code").value()) == "rm:markingCurve") {
+        if (auto data = parse_marking_curve_data(child, fmt::format("{}/userData", location))) {
+          object.marking_curve = std::move(*data);
+        }
+        continue;
+      }
+      if (name == "userData" && std::string_view(child.attribute("code").value()) == "rm:stencil") {
+        StencilData stencil;
+        stencil.asset = child.attribute("asset").value();
+        stencil.material = child.attribute("material").value();
+        stencil.category = child.attribute("category").value();
+        stencil.material_override = child.attribute("materialOverride").as_bool(false);
+        object.stencil = std::move(stencil);
+        continue;
+      }
       if (name != "outline" && name != "outlines" && name != "repeat" && name != "markings") {
         object.preserved.children.push_back(node_to_string(child));
       }
@@ -925,6 +941,66 @@ private:
     data.dash_gap = num("dashGap", 0.5);
     if (!ok) {
       diag(Severity::Warning, location, "malformed rm:crosswalk userData ignored");
+      return std::nullopt;
+    }
+    return data;
+  }
+
+  /// <userData code="rm:markingCurve"> on an <object> (§7.2): RoadMaker's
+  /// free-form marking-curve authoring record. `samples` is a "s,t;s,t;..."
+  /// centreline; a malformed sample list or a non-numeric numeric attribute is
+  /// diagnosed and the whole record ignored, leaving the object to mesh from its
+  /// outline/markings fallback.
+  std::optional<MarkingCurveData> parse_marking_curve_data(const pugi::xml_node& node,
+                                                           const std::string& location) {
+    MarkingCurveData data;
+    data.asset = node.attribute("asset").value();
+    data.material = node.attribute("material").value();
+    data.category = node.attribute("category").value();
+    data.material_override = node.attribute("materialOverride").as_bool(false);
+    data.striped = node.attribute("striped").as_bool(false);
+    bool ok = true;
+    const auto num = [&](const char* name, double fallback) {
+      const pugi::xml_attribute attr = node.attribute(name);
+      if (!attr) {
+        return fallback;
+      }
+      if (const auto v = to_double(attr.value())) {
+        return *v;
+      }
+      ok = false;
+      return fallback;
+    };
+    data.width = num("width", 0.12);
+    data.dash_length = num("dashLength", 0.0);
+    data.dash_gap = num("dashGap", 0.0);
+
+    // samples="s,t;s,t;..." — at least two well-formed pairs.
+    const std::string_view samples = node.attribute("samples").value();
+    std::size_t pos = 0;
+    while (pos < samples.size() && ok) {
+      std::size_t semi = samples.find(';', pos);
+      const std::string_view pair =
+          samples.substr(pos, semi == std::string_view::npos ? std::string_view::npos : semi - pos);
+      const std::size_t comma = pair.find(',');
+      if (comma == std::string_view::npos) {
+        ok = false;
+        break;
+      }
+      const auto s = to_double(pair.substr(0, comma));
+      const auto t = to_double(pair.substr(comma + 1));
+      if (!s || !t) {
+        ok = false;
+        break;
+      }
+      data.samples.push_back({*s, *t});
+      if (semi == std::string_view::npos) {
+        break;
+      }
+      pos = semi + 1;
+    }
+    if (!ok || data.samples.size() < 2) {
+      diag(Severity::Warning, location, "malformed rm:markingCurve userData ignored");
       return std::nullopt;
     }
     return data;

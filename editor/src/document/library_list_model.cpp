@@ -8,6 +8,7 @@
 #include <algorithm>
 
 #include "document/crosswalk_item.hpp"
+#include "document/stencil_item.hpp"
 
 namespace roadmaker::editor {
 
@@ -65,6 +66,7 @@ void LibraryListModel::rebuild() {
   beginResetModel();
   icon_cache_.clear();           // resolved paths may change; drop stale (incl. negative) icons
   crosswalk_icon_cache_.clear(); // params may change; re-render edited asset previews
+  stencil_icon_cache_.clear();   // glyph params may change; re-render edited previews
   items_ = base_items_;
   for (const LibraryItem& overlay : overlay_items_) {
     const auto match =
@@ -108,6 +110,15 @@ QVariant LibraryListModel::data(const QModelIndex& index, int role) const {
       if (it == crosswalk_icon_cache_.constEnd()) {
         it = crosswalk_icon_cache_.insert(
             entry->key, QIcon(render_crosswalk_preview(*entry, QSize(64, 48), materials_)));
+      }
+      return it.value();
+    }
+    // Stencil (arrow) assets likewise carry no PNG — paint the glyph at runtime.
+    if (entry->kind == LibraryItem::Kind::Stencil) {
+      auto it = stencil_icon_cache_.constFind(entry->key);
+      if (it == stencil_icon_cache_.constEnd()) {
+        it = stencil_icon_cache_.insert(
+            entry->key, QIcon(render_stencil_preview(*entry, QSize(64, 48), materials_)));
       }
       return it.value();
     }

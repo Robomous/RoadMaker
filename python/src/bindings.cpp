@@ -22,6 +22,7 @@
 #include "roadmaker/xodr/writer.hpp"
 
 #include <nanobind/nanobind.h>
+#include <nanobind/stl/array.h>
 #include <nanobind/stl/filesystem.h>
 #include <nanobind/stl/function.h>
 #include <nanobind/stl/optional.h>
@@ -573,6 +574,48 @@ NB_MODULE(_roadmaker, m) {
                a == nb::cast<roadmaker::CrosswalkData>(b);
       });
 
+  nb::class_<roadmaker::MarkingCurveData>(m, "MarkingCurveData")
+      .def(nb::init<>())
+      .def_rw(
+          "asset", &roadmaker::MarkingCurveData::asset, "Library asset key this instance follows.")
+      .def_rw("width", &roadmaker::MarkingCurveData::width, "Band width across the curve [m].")
+      .def_rw("dash_length",
+              &roadmaker::MarkingCurveData::dash_length,
+              "Visible run along the curve [m]; 0 = solid.")
+      .def_rw("dash_gap", &roadmaker::MarkingCurveData::dash_gap, "Gap between runs [m].")
+      .def_rw("material",
+              &roadmaker::MarkingCurveData::material,
+              "Material code (e.g. 'material.paint_white').")
+      .def_rw("material_override",
+              &roadmaker::MarkingCurveData::material_override,
+              "True keeps `material` when the asset's Default Material changes.")
+      .def_rw("category", &roadmaker::MarkingCurveData::category, "Segmentation category tag.")
+      .def_rw("striped",
+              &roadmaker::MarkingCurveData::striped,
+              "True paints a striped crosswalk band; False a plain line marking.")
+      .def_rw("samples",
+              &roadmaker::MarkingCurveData::samples,
+              "Centreline as road-frame (s,t) sample pairs, in draw order.")
+      .def("__eq__", [](const roadmaker::MarkingCurveData& a, nb::object b) {
+        return nb::isinstance<roadmaker::MarkingCurveData>(b) &&
+               a == nb::cast<roadmaker::MarkingCurveData>(b);
+      });
+
+  nb::class_<roadmaker::StencilData>(m, "StencilData")
+      .def(nb::init<>())
+      .def_rw("asset", &roadmaker::StencilData::asset, "Library asset key this instance follows.")
+      .def_rw("material",
+              &roadmaker::StencilData::material,
+              "Material code (e.g. 'material.paint_white').")
+      .def_rw("material_override",
+              &roadmaker::StencilData::material_override,
+              "True keeps `material` when the asset's Default Material changes.")
+      .def_rw("category", &roadmaker::StencilData::category, "Segmentation category tag.")
+      .def("__eq__", [](const roadmaker::StencilData& a, nb::object b) {
+        return nb::isinstance<roadmaker::StencilData>(b) &&
+               a == nb::cast<roadmaker::StencilData>(b);
+      });
+
   nb::class_<roadmaker::Object>(m, "Object")
       .def(nb::init<>())
       .def(nb::init<const roadmaker::Object&>(),
@@ -611,6 +654,12 @@ NB_MODULE(_roadmaker, m) {
       .def_rw("crosswalk",
               &roadmaker::Object::crosswalk,
               "Parametric-crosswalk authoring data (rm:crosswalk userData); None if absent.")
+      .def_rw("marking_curve",
+              &roadmaker::Object::marking_curve,
+              "Free-form marking-curve authoring data (rm:markingCurve userData); None if absent.")
+      .def_rw("stencil",
+              &roadmaker::Object::stencil,
+              "Point-stencil authoring data (rm:stencil userData); None if absent.")
       .def_ro("preserved", &roadmaker::Object::preserved)
       .def("__repr__", [](const roadmaker::Object& object) {
         return "Object(odr_id='" + object.odr_id + "', s=" + std::to_string(object.s) +
@@ -1170,6 +1219,66 @@ NB_MODULE(_roadmaker, m) {
       "rm:crosswalk userData from `params` (reads s/t/length placement, writes "
       "@width = depth) and returns it — the authoring path shared by "
       "junction_crosswalks and the editor's asset re-materialization.");
+  nb::class_<roadmaker::edit::MarkingCurveParams>(edit, "MarkingCurveParams")
+      .def(nb::init<>())
+      .def_rw("width_m", &roadmaker::edit::MarkingCurveParams::width_m)
+      .def_rw("dash_length_m",
+              &roadmaker::edit::MarkingCurveParams::dash_length_m,
+              "Visible run [m]; 0 = solid.")
+      .def_rw("dash_gap_m", &roadmaker::edit::MarkingCurveParams::dash_gap_m)
+      .def_rw("material", &roadmaker::edit::MarkingCurveParams::material)
+      .def_rw("color", &roadmaker::edit::MarkingCurveParams::color)
+      .def_rw("asset", &roadmaker::edit::MarkingCurveParams::asset)
+      .def_rw("category", &roadmaker::edit::MarkingCurveParams::category)
+      .def_rw("striped",
+              &roadmaker::edit::MarkingCurveParams::striped,
+              "True paints a striped crosswalk band; False a plain line marking.");
+  edit.def(
+      "apply_marking_curve_asset",
+      [](roadmaker::Object object,
+         std::vector<std::array<double, 2>> centerline,
+         const roadmaker::edit::MarkingCurveParams& params) {
+        unwrap(roadmaker::edit::apply_marking_curve_asset(object, centerline, params));
+        return object;
+      },
+      "object"_a,
+      "centerline"_a,
+      "params"_a,
+      "Authors a copy of `object` as a free-form marking curve from a road-frame "
+      "(s,t) `centerline` polyline (outline + <markings> + rm:markingCurve "
+      "userData) and returns it. Raises ValueError for fewer than two samples or "
+      "a bend tighter than half the width.");
+  nb::class_<roadmaker::edit::StencilParams>(edit, "StencilParams")
+      .def(nb::init<>())
+      .def_rw(
+          "subtype", &roadmaker::edit::StencilParams::subtype, "One of the 6 core arrow subtypes.")
+      .def_rw("length_m", &roadmaker::edit::StencilParams::length_m)
+      .def_rw("width_m", &roadmaker::edit::StencilParams::width_m)
+      .def_rw("material", &roadmaker::edit::StencilParams::material)
+      .def_rw("color", &roadmaker::edit::StencilParams::color)
+      .def_rw("asset", &roadmaker::edit::StencilParams::asset)
+      .def_rw("category", &roadmaker::edit::StencilParams::category);
+  edit.def(
+      "apply_stencil_asset",
+      [](roadmaker::Object object, const roadmaker::edit::StencilParams& params) {
+        unwrap(roadmaker::edit::apply_stencil_asset(object, params));
+        return object;
+      },
+      "object"_a,
+      "params"_a,
+      "Authors a copy of `object` as a point stencil (one closed cornerLocal arrow "
+      "outline + <material> + rm:stencil userData) and returns it. Raises "
+      "ValueError for a subtype outside the 6-arrow core set.");
+  edit.def(
+      "arrow_glyph_outline",
+      [](std::string_view subtype, double length_m, double width_m) {
+        return roadmaker::edit::arrow_glyph_outline(subtype, length_m, width_m);
+      },
+      "subtype"_a,
+      "length_m"_a,
+      "width_m"_a,
+      "The closed cornerLocal outline of one arrow glyph in the object's local "
+      "(u,v) frame. Empty for a subtype outside the 6-arrow core set.");
   edit.def(
       "junction_stop_lines",
       [](const roadmaker::RoadNetwork& network, roadmaker::JunctionId junction) {

@@ -496,6 +496,68 @@ void write_crosswalk_data(pugi::xml_node object_node, const CrosswalkData& cross
   }
 }
 
+/// <userData code="rm:markingCurve"> (§7.2): RoadMaker's free-form marking-curve
+/// authoring record. `samples` is the centreline as a "s,t;s,t;..." list (the
+/// mesher's source of truth); spec-neutral defaults (dash 0, no override, empty
+/// strings, striped false) are omitted so a canonical instance stays compact.
+void write_marking_curve_data(pugi::xml_node object_node, const MarkingCurveData& curve) {
+  pugi::xml_node node = object_node.append_child("userData");
+  node.append_attribute("code").set_value("rm:markingCurve");
+  if (!curve.asset.empty()) {
+    node.append_attribute("asset").set_value(curve.asset.c_str());
+  }
+  set_num(node, "width", curve.width);
+  if (curve.dash_length != 0.0) {
+    set_num(node, "dashLength", curve.dash_length);
+  }
+  if (curve.dash_gap != 0.0) {
+    set_num(node, "dashGap", curve.dash_gap);
+  }
+  if (!curve.material.empty()) {
+    node.append_attribute("material").set_value(curve.material.c_str());
+  }
+  if (curve.material_override) {
+    node.append_attribute("materialOverride").set_value("true");
+  }
+  if (!curve.category.empty()) {
+    node.append_attribute("category").set_value(curve.category.c_str());
+  }
+  if (curve.striped) {
+    node.append_attribute("striped").set_value("true");
+  }
+  std::string samples;
+  for (const std::array<double, 2>& p : curve.samples) {
+    if (!samples.empty()) {
+      samples += ';';
+    }
+    samples += num(p[0]);
+    samples += ',';
+    samples += num(p[1]);
+  }
+  node.append_attribute("samples").set_value(samples.c_str());
+}
+
+/// <userData code="rm:stencil"> (§7.2): keys a placed arrow stencil to its
+/// Library asset (and its paint material) so per-instance overrides can match
+/// instance↔asset exactly. Empty tags are omitted so a canonical instance stays
+/// compact.
+void write_stencil_data(pugi::xml_node object_node, const StencilData& stencil) {
+  pugi::xml_node node = object_node.append_child("userData");
+  node.append_attribute("code").set_value("rm:stencil");
+  if (!stencil.asset.empty()) {
+    node.append_attribute("asset").set_value(stencil.asset.c_str());
+  }
+  if (!stencil.material.empty()) {
+    node.append_attribute("material").set_value(stencil.material.c_str());
+  }
+  if (stencil.material_override) {
+    node.append_attribute("materialOverride").set_value("true");
+  }
+  if (!stencil.category.empty()) {
+    node.append_attribute("category").set_value(stencil.category.c_str());
+  }
+}
+
 void write_object(pugi::xml_node objects_node, const Object& object, const WriterOptions& options) {
   // 1.8.1 §13.8 places <markings> only under <object>; 1.9.0 §13.2.4 also
   // allows them inside <outline>. Demote outline markings to object level when
@@ -632,6 +694,17 @@ void write_object(pugi::xml_node objects_node, const Object& object, const Write
   // from these params; on reload this is the source of truth.
   if (object.crosswalk.has_value()) {
     write_crosswalk_data(node, *object.crosswalk);
+  }
+  // RoadMaker free-form marking-curve authoring data (§7.2 userData
+  // "rm:markingCurve"): the interop outline/markings above are derived from
+  // these params; on reload this is the source of truth the mesher walks.
+  if (object.marking_curve.has_value()) {
+    write_marking_curve_data(node, *object.marking_curve);
+  }
+  // RoadMaker point-stencil authoring data (§7.2 userData "rm:stencil"): keys the
+  // placed arrow to its Library asset for per-instance overrides.
+  if (object.stencil.has_value()) {
+    write_stencil_data(node, *object.stencil);
   }
   for (const std::string& fragment : object.preserved.children) {
     append_fragment(node, fragment);

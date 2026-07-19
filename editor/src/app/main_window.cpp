@@ -57,6 +57,8 @@
 #include "tools/lane_carve_tool.hpp"
 #include "tools/lane_form_tool.hpp"
 #include "tools/lane_profile_tool.hpp"
+#include "tools/marking_curve_tool.hpp"
+#include "tools/marking_point_tool.hpp"
 #include "tools/select_tool.hpp"
 #include "tools/split_tool.hpp"
 
@@ -376,6 +378,23 @@ MainWindow::MainWindow(QWidget* parent, bool restore_saved_layout)
   connect(actions_->tool_crosswalk, &QAction::triggered, this, [this] {
     tool_manager_.set_active(ToolId::Crosswalk);
   });
+  auto marking_point_tool = std::make_unique<MarkingPointTool>(document_, selection_);
+  wire_status(marking_point_tool.get());
+  // The tool places the merged Library's default Stencil asset, so a click on a
+  // lane carries the same glyph the Library drag-drop path lands.
+  marking_point_tool->set_params_provider([this] { return resolve_default_stencil_item(); });
+  tool_manager_.register_tool(ToolId::MarkingPoint, std::move(marking_point_tool));
+  connect(actions_->tool_marking_point, &QAction::triggered, this, [this] {
+    tool_manager_.set_active(ToolId::MarkingPoint);
+  });
+  auto marking_curve_tool = std::make_unique<MarkingCurveTool>(document_, selection_);
+  wire_status(marking_curve_tool.get());
+  // The tool authors the merged Library's default crosswalk/marking asset.
+  marking_curve_tool->set_params_provider([this] { return resolve_default_marking_curve_item(); });
+  tool_manager_.register_tool(ToolId::MarkingCurve, std::move(marking_curve_tool));
+  connect(actions_->tool_marking_curve, &QAction::triggered, this, [this] {
+    tool_manager_.set_active(ToolId::MarkingCurve);
+  });
   tool_manager_.set_active(ToolId::Select);
 
   // Merge Roads: enabled only for exactly two selected roads mergeable in some
@@ -648,6 +667,8 @@ void MainWindow::build_toolbar() {
   toolbar->addAction(actions_->tool_lane_form);
   toolbar->addAction(actions_->tool_lane_carve);
   toolbar->addAction(actions_->tool_crosswalk);
+  toolbar->addAction(actions_->tool_marking_point);
+  toolbar->addAction(actions_->tool_marking_curve);
   toolbar->addAction(actions_->tool_elevation);
   toolbar->addAction(actions_->tool_create_junction);
   toolbar->addAction(actions_->tool_split);
@@ -874,6 +895,32 @@ edit::CrosswalkParams MainWindow::resolve_default_crosswalk_params() const {
   return {};
 }
 
+LibraryItem MainWindow::resolve_default_stencil_item() const {
+  // The first Kind::Stencil in the merged Library (an overlay asset shadows the
+  // built-in). An empty item makes the Marking Point tool toast on click.
+  for (int row = 0; row < library_model_.rowCount(); ++row) {
+    const LibraryItem* item = library_model_.item(row);
+    if (item != nullptr && item->kind == LibraryItem::Kind::Stencil) {
+      return *item;
+    }
+  }
+  return {};
+}
+
+LibraryItem MainWindow::resolve_default_marking_curve_item() const {
+  // The first crosswalk OR plain marking asset in the merged Library — either
+  // authors a marking curve. An empty item makes the tool toast on the first
+  // click.
+  for (int row = 0; row < library_model_.rowCount(); ++row) {
+    const LibraryItem* item = library_model_.item(row);
+    if (item != nullptr &&
+        (item->kind == LibraryItem::Kind::Crosswalk || item->kind == LibraryItem::Kind::Marking)) {
+      return *item;
+    }
+  }
+  return {};
+}
+
 LibraryManifest MainWindow::load_or_create_overlay_manifest() const {
   if (project_.has_value()) {
     if (const auto path = project_->library_manifest_path()) {
@@ -976,6 +1023,8 @@ void MainWindow::activate_tool_for_capture(const QString& tool_id) {
       {QStringLiteral("lane-form"), ToolId::LaneForm},
       {QStringLiteral("lane-carve"), ToolId::LaneCarve},
       {QStringLiteral("crosswalk"), ToolId::Crosswalk},
+      {QStringLiteral("markingPoint"), ToolId::MarkingPoint},
+      {QStringLiteral("markingCurve"), ToolId::MarkingCurve},
   };
   if (const auto found = kTools.find(tool_id); found != kTools.end()) {
     tool_manager_.set_active(found->second);
@@ -1025,6 +1074,7 @@ void MainWindow::on_library_drop(const QString& key, double world_x, double worl
   case LibraryDropKind::Signal:
   case LibraryDropKind::Marking:
   case LibraryDropKind::Material:
+  case LibraryDropKind::Stencil:
     if (document_.push_command(std::move(action.command)).has_value()) {
       viewport_->show_toast(action.toast, ToastSeverity::Success);
     } else {

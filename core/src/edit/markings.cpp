@@ -7,10 +7,15 @@
 #include "roadmaker/tol.hpp"
 
 #include <algorithm>
+#include <array>
+#include <cmath>
+#include <limits>
 #include <numbers>
 #include <optional>
 #include <set>
+#include <span>
 #include <string>
+#include <vector>
 
 namespace roadmaker::edit {
 
@@ -109,6 +114,270 @@ void apply_crosswalk_asset(Object& object, const CrosswalkParams& params) {
                                       .material = params.material,
                                       .material_override = false,
                                       .category = params.category};
+}
+
+namespace {
+
+/// Circumradius of the triangle (p0,p1,p2) in the (s,t) plane, or +inf when the
+/// three points are (near-)collinear. Used to reject a marking curve whose
+/// tightest bend would fold the ±width/2 offset band onto itself.
+double circumradius(const std::array<double, 2>& p0,
+                    const std::array<double, 2>& p1,
+                    const std::array<double, 2>& p2) {
+  const auto dist = [](const std::array<double, 2>& a, const std::array<double, 2>& b) {
+    return std::hypot(a[0] - b[0], a[1] - b[1]);
+  };
+  const double a = dist(p1, p2);
+  const double b = dist(p0, p2);
+  const double c = dist(p0, p1);
+  const double twice_area =
+      std::abs(((p1[0] - p0[0]) * (p2[1] - p0[1])) - ((p1[1] - p0[1]) * (p2[0] - p0[0])));
+  if (twice_area <= tol::kLength) {
+    return std::numeric_limits<double>::infinity(); // collinear — no bend
+  }
+  return (a * b * c) / (2.0 * twice_area);
+}
+
+} // namespace
+
+Expected<void> apply_marking_curve_asset(Object& object,
+                                         std::span<const std::array<double, 2>> centerline,
+                                         const MarkingCurveParams& params) {
+  if (centerline.size() < 2) {
+    return make_error(ErrorCode::InvalidArgument,
+                      "marking curve needs at least two samples",
+                      "apply_marking_curve_asset");
+  }
+  const double half = std::max(params.width_m, tol::kLength) / 2.0;
+  for (std::size_t i = 1; i + 1 < centerline.size(); ++i) {
+    if (circumradius(centerline[i - 1], centerline[i], centerline[i + 1]) < half) {
+      return make_error(ErrorCode::InvalidArgument,
+                        "marking curve bends tighter than its half-width — the band would "
+                        "self-intersect; draw a gentler curve or reduce the width",
+                        "apply_marking_curve_asset");
+    }
+  }
+
+  // The left (+90°) unit normal of the (s,t) polyline at sample i, from the
+  // averaged direction of the adjacent segments so the offset band stays smooth
+  // across joints.
+  const auto left_normal = [&](std::size_t i) -> std::array<double, 2> {
+    std::array<double, 2> dir{0.0, 0.0};
+    if (i > 0) {
+      dir[0] += centerline[i][0] - centerline[i - 1][0];
+      dir[1] += centerline[i][1] - centerline[i - 1][1];
+    }
+    if (i + 1 < centerline.size()) {
+      dir[0] += centerline[i + 1][0] - centerline[i][0];
+      dir[1] += centerline[i + 1][1] - centerline[i][1];
+    }
+    const double len = std::hypot(dir[0], dir[1]);
+    if (len <= tol::kLength) {
+      return {0.0, 0.0};
+    }
+    return {-dir[1] / len, dir[0] / len}; // rotate the unit tangent by +90°
+  };
+
+  const std::size_t n = centerline.size();
+  object.outlines.clear();
+  object.markings.clear();
+  object.crosswalk.reset();
+  object.s = centerline.front()[0];
+  object.t = centerline.front()[1];
+  object.hdg = 0.0;
+  object.length.reset();
+  object.width = params.width_m;
+  if (params.striped) {
+    object.type = ObjectType::Crosswalk;
+    if (object.type_str.empty()) {
+      object.type_str = "crosswalk";
+    }
+    if (object.subtype.empty()) {
+      object.subtype = "zebra";
+    }
+  } else {
+    object.type = ObjectType::None;
+    object.type_str = "roadMark";
+  }
+
+  ObjectOutline outline;
+  outline.road_coords = true;
+  outline.closed = true;
+  outline.outer = true;
+  outline.id = 0;
+  outline.fill_type = "paint";
+  int corner_id = 0;
+  std::vector<int> ring; // corner ids in ring order for the marking reference
+  ring.reserve(2 * n);
+  for (std::size_t i = 0; i < n; ++i) { // forward, left edge (+half)
+    const std::array<double, 2> nrm = left_normal(i);
+    outline.corners.push_back(OutlineCorner{.a = centerline[i][0] + (half * nrm[0]),
+                                            .b = centerline[i][1] + (half * nrm[1]),
+                                            .height = 0.0,
+                                            .dz_or_z = 0.0,
+                                            .id = corner_id});
+    ring.push_back(corner_id);
+    ++corner_id;
+  }
+  for (std::size_t k = 0; k < n; ++k) { // backward, right edge (-half)
+    const std::size_t i = n - 1 - k;
+    const std::array<double, 2> nrm = left_normal(i);
+    outline.corners.push_back(OutlineCorner{.a = centerline[i][0] - (half * nrm[0]),
+                                            .b = centerline[i][1] - (half * nrm[1]),
+                                            .height = 0.0,
+                                            .dz_or_z = 0.0,
+                                            .id = corner_id});
+    ring.push_back(corner_id);
+    ++corner_id;
+  }
+
+  // The interop stripe marking spans the whole ring. Fill only for a striped
+  // crosswalk band; a plain marking is a single line along the curve.
+  const bool solid = params.dash_length_m <= tol::kLength;
+  ObjectMarking stripes;
+  stripes.color = params.color;
+  stripes.width = params.striped ? kStripePaintWidth : params.width_m;
+  stripes.z_offset = kMarkingZOffset;
+  stripes.line_length = solid ? std::max(params.width_m, kStripePaintWidth) : params.dash_length_m;
+  stripes.space_length = solid ? 0.0 : params.dash_gap_m;
+  stripes.corner_refs = std::move(ring);
+  outline.markings.push_back(std::move(stripes));
+
+  object.outlines.push_back(std::move(outline));
+
+  MarkingCurveData data;
+  data.asset = params.asset;
+  data.width = params.width_m;
+  data.dash_length = params.dash_length_m;
+  data.dash_gap = params.dash_gap_m;
+  data.material = params.material;
+  data.material_override = false;
+  data.category = params.category;
+  data.striped = params.striped;
+  data.samples.assign(centerline.begin(), centerline.end());
+  object.marking_curve = std::move(data);
+  return {};
+}
+
+namespace {
+
+/// The 6 core road-arrow glyphs as simple closed polygons in a normalized local
+/// frame: u ∈ [-0.5, 0.5] along travel, v in fractions of the glyph width
+/// (leftward positive). arrow_glyph_outline scales u by length and v by width.
+/// left/right and straightLeft/straightRight are one authored shape mirrored in
+/// v. Grounded in the ASAM road-arrow examples (OpenDRIVE 1.9.0 §13.14.8;
+/// 1.8.1 Table 115 has the same subtypes).
+std::vector<std::array<double, 2>> normalized_arrow(std::string_view subtype) {
+  // A straight arrow: narrow shaft + triangular head pointing +u.
+  const std::vector<std::array<double, 2>> straight{
+      {-0.5, -0.15}, {0.1, -0.15}, {0.1, -0.5}, {0.5, 0.0}, {0.1, 0.5}, {0.1, 0.15}, {-0.5, 0.15}};
+  // A turn arrow: shaft + head skewed fully to the turn side (+v = left).
+  const std::vector<std::array<double, 2>> left_turn{
+      {-0.5, -0.15}, {0.1, -0.15}, {0.1, -0.5}, {0.5, 0.5}, {0.1, 0.5}, {0.1, 0.15}, {-0.5, 0.15}};
+  // A combined arrow: a straight head and a left barb branching off the shaft
+  // (concave valley between the two heads).
+  const std::vector<std::array<double, 2>> straight_left{{-0.5, -0.12},
+                                                         {0.1, -0.12},
+                                                         {0.1, -0.30},
+                                                         {0.5, 0.0},
+                                                         {0.2, 0.15},
+                                                         {0.35, 0.45},
+                                                         {0.12, 0.40},
+                                                         {0.1, 0.12},
+                                                         {-0.5, 0.12}};
+  const auto mirror = [](const std::vector<std::array<double, 2>>& src) {
+    std::vector<std::array<double, 2>> out;
+    out.reserve(src.size());
+    for (const std::array<double, 2>& p : src) {
+      out.push_back({p[0], -p[1]});
+    }
+    return out;
+  };
+  if (subtype == "arrowStraight") {
+    return straight;
+  }
+  if (subtype == "arrowLeft") {
+    return left_turn;
+  }
+  if (subtype == "arrowRight") {
+    return mirror(left_turn);
+  }
+  if (subtype == "arrowStraightLeft") {
+    return straight_left;
+  }
+  if (subtype == "arrowStraightRight") {
+    return mirror(straight_left);
+  }
+  if (subtype == "arrowLeftRight") {
+    // A double turn arrow: barbs to both sides off a common shaft, with a small
+    // forward nose keeping the loop simple (non-self-intersecting).
+    return {{-0.5, -0.12},
+            {0.1, -0.12},
+            {0.12, -0.40},
+            {0.35, -0.45},
+            {0.2, -0.15},
+            {0.4, 0.0},
+            {0.2, 0.15},
+            {0.35, 0.45},
+            {0.12, 0.40},
+            {0.1, 0.12},
+            {-0.5, 0.12}};
+  }
+  return {}; // unknown subtype — caller falls back to the straight glyph
+}
+
+} // namespace
+
+std::vector<OutlineCorner>
+arrow_glyph_outline(std::string_view subtype, double length_m, double width_m) {
+  const std::vector<std::array<double, 2>> shape = normalized_arrow(subtype);
+  std::vector<OutlineCorner> corners;
+  corners.reserve(shape.size());
+  int id = 0;
+  for (const std::array<double, 2>& p : shape) {
+    corners.push_back(OutlineCorner{
+        .a = p[0] * length_m, .b = p[1] * width_m, .height = 0.0, .dz_or_z = 0.0, .id = id++});
+  }
+  return corners;
+}
+
+Expected<void> apply_stencil_asset(Object& object, const StencilParams& params) {
+  std::vector<OutlineCorner> corners =
+      arrow_glyph_outline(params.subtype, params.length_m, params.width_m);
+  if (corners.size() < 3) {
+    return make_error(ErrorCode::InvalidArgument,
+                      "unknown arrow stencil subtype '" + params.subtype + "'",
+                      "apply_stencil_asset");
+  }
+  object.type = ObjectType::None;
+  object.type_str = "roadMark";
+  object.subtype = params.subtype;
+  object.length = params.length_m;
+  object.width = params.width_m;
+  object.hdg = object.hdg; // heading is the caller's (travel direction)
+  object.outlines.clear();
+  object.markings.clear();
+  object.crosswalk.reset();
+  object.marking_curve.reset();
+
+  ObjectOutline outline;
+  outline.road_coords = false; // cornerLocal (u,v) — no mixed corner kinds
+  outline.closed = true;
+  outline.outer = true;
+  outline.id = 0;
+  outline.fill_type = "paint";
+  outline.corners = std::move(corners);
+  object.outlines.push_back(std::move(outline));
+
+  // A <material roadMarkColor="..."/> child, preserved verbatim (the never-drop
+  // slot round-trips it; a foreign viewer reads the paint colour).
+  object.preserved.children.push_back("<material roadMarkColor=\"" + params.color + "\"/>");
+
+  object.stencil = StencilData{.asset = params.asset,
+                               .material = params.material,
+                               .material_override = false,
+                               .category = params.category};
+  return {};
 }
 
 namespace {

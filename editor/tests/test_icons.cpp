@@ -87,6 +87,8 @@ TEST(Icons, EveryMappedIconIsBundled) {
                                "crosswalk",
                                "junction-connect",
                                "lane-section",
+                               "marking-point",
+                               "marking-curve",
                                "template-highway",
                                "template-rural",
                                "template-urban"};

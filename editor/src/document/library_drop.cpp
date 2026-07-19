@@ -15,6 +15,7 @@
 #include "document/crosswalk_item.hpp"
 #include "document/crosswalk_placement.hpp"
 #include "document/marking_item.hpp"
+#include "document/stencil_placement.hpp"
 #include "render/material_catalog.hpp"
 #include "viewport/picking.hpp"
 
@@ -472,6 +473,32 @@ LibraryDropAction resolve_library_drop(const LibraryItem& item,
     // chevron marks the same spot while the drag is live.
     action.preview = {arm->anchor_x, arm->anchor_y, true};
     action.toast = QStringLiteral("Placed %1 + stop line — Ctrl+Z to undo").arg(item.label);
+    return action;
+  }
+  case LibraryItem::Kind::Stencil: {
+    // A stencil asset dropped onto a lane places ONE arrow glyph at the picked
+    // station, oriented to the lane's travel direction (GW-5 step 6). The lane
+    // is resolved from the cursor exactly as the interactive Marking Point tool
+    // does, so both paths land the same object. A drop off any lane is rejected.
+    const MaterialCatalog catalog;
+    std::optional<std::pair<RoadId, Object>> placed =
+        stencil_for_point(network, world_x, world_y, item, catalog);
+    if (!placed.has_value()) {
+      action.toast = QStringLiteral("Drop an arrow stencil onto a lane");
+      return action; // kind None, preview invalid at the cursor — caller hints
+    }
+    const RoadId road = placed->first;
+    // Ghost at the exact station the object occupies (ghost==commit), captured
+    // before the object moves into add_object.
+    if (const Road* r = network.road(road)) {
+      const auto p = station_to_world(r->plan_view, placed->second.s, placed->second.t);
+      action.preview = {p[0], p[1], true};
+    }
+    action.command = edit::add_object(network, road, std::move(placed->second));
+    if (action.command != nullptr) {
+      action.kind = LibraryDropKind::Stencil;
+      action.toast = QStringLiteral("Placed %1 — Ctrl+Z to undo").arg(item.label);
+    }
     return action;
   }
   case LibraryItem::Kind::Unknown:

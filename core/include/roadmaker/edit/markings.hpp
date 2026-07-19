@@ -11,8 +11,11 @@
 #include "roadmaker/road/lane.hpp"
 #include "roadmaker/road/object.hpp"
 
+#include <array>
 #include <functional>
+#include <span>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
 
@@ -59,6 +62,77 @@ struct CrosswalkParams {
 /// (ids 0..3) plus a stripes marking (dash 0 ⇒ solid) and, when
 /// border_width>0, two border markings.
 RM_API void apply_crosswalk_asset(Object& object, const CrosswalkParams& params);
+
+/// Parameters for free-form marking-curve authoring (p3-s4). Beyond geometry
+/// (width, dash pattern) these carry the parametric-asset fields materialized
+/// into the curve's outline + <markings> + rm:markingCurve userData: paint
+/// material/colour and the source asset/category tags. `striped` selects a
+/// crosswalk-asset band (striped, `<object type="crosswalk">`) versus a plain
+/// line marking (`<object type="roadMark">`).
+struct MarkingCurveParams {
+  double width_m = 0.12;       ///< band width across the curve [m] (>0)
+  double dash_length_m = 0.0;  ///< visible run along the curve [m]; 0 = solid
+  double dash_gap_m = 0.0;     ///< gap between runs [m]
+  std::string material;        ///< paint material code (e.g. "material.paint_white")
+  std::string color = "white"; ///< e_roadMarkColor for the <marking>s
+  std::string asset;           ///< source Library asset key (rm:markingCurve)
+  std::string category;        ///< segmentation category tag
+  bool striped = false;        ///< crosswalk-asset band vs. plain line marking
+};
+
+/// Authors the OpenDRIVE interop projection of a free-form marking curve onto
+/// `object` from a road-frame (s,t) `centerline` polyline: a closed cornerRoad
+/// band outline (the centreline offset ±width/2, ~0.5 m samples), the
+/// <markings> (a dashed/solid stripes marking; fill only for a striped
+/// crosswalk asset), and the rm:markingCurve userData that is the render-time
+/// source of truth (the mesher walks `centerline` by arc length). Sets the
+/// object type to crosswalk (striped) or an untyped roadMark, and its @s/@t to
+/// the first sample so foreign viewers place the object sensibly.
+///
+/// Errors (InvalidArgument): fewer than two samples, or a turn radius tighter
+/// than width/2 (the ±width/2 offset band would self-intersect). The tool
+/// surfaces the message as status text.
+[[nodiscard]] RM_API Expected<void>
+apply_marking_curve_asset(Object& object,
+                          std::span<const std::array<double, 2>> centerline,
+                          const MarkingCurveParams& params);
+
+/// The closed outline of one road-arrow glyph in the object's local (u,v) frame
+/// (u = along travel, v = leftward), for the 6-arrow stencil set (p3-s4). The
+/// polygon is a single simple concave loop sized to `length_m` along u and
+/// `width_m` across v; the caller wraps it in a cornerLocal <outline>. Returns
+/// empty for a subtype outside the core set (arrowStraight, arrowLeft,
+/// arrowRight, arrowLeftRight, arrowStraightLeft, arrowStraightRight) — the
+/// merge/double subtypes keep the mesher's straight-glyph fallback. Shapes are
+/// grounded in the ASAM road-arrow examples (OpenDRIVE 1.9.0 §13.14.8;
+/// 1.8.1 Table 115 lists the same subtypes).
+[[nodiscard]] RM_API std::vector<OutlineCorner>
+arrow_glyph_outline(std::string_view subtype, double length_m, double width_m);
+
+/// Parameters for point-stencil authoring (p3-s4). The glyph is the arrow
+/// subtype sized to length/width; the rest are the parametric-asset tags carried
+/// into rm:stencil userData + a <material roadMarkColor> child.
+struct StencilParams {
+  std::string subtype = "arrowStraight"; ///< one of the 6 core arrow subtypes
+  double length_m = 4.0;                 ///< glyph extent along travel [m]
+  double width_m = 1.75;                 ///< glyph extent across the lane [m]
+  std::string material;                  ///< paint material code
+  std::string color = "white";           ///< e_roadMarkColor for <material>
+  std::string asset;                     ///< source Library asset key (rm:stencil)
+  std::string category;                  ///< segmentation category tag
+};
+
+/// Authors a point stencil onto `object`: ONE closed cornerLocal arrow outline
+/// (no mixed corner kinds — satisfies road.corner_road.corner_road_local_
+/// exclusivity), a `<material roadMarkColor>` child preserved verbatim, and the
+/// rm:stencil userData that keys the instance to its asset. Sets the object to
+/// an untyped roadMark with @subtype = params.subtype and @length/@width. The
+/// mesher tessellates the outline (concave CDT); a foreign viewer draws it too.
+///
+/// Errors (InvalidArgument): a subtype outside the core arrow set (its outline
+/// would be empty). The tool surfaces the message as status text.
+[[nodiscard]] RM_API Expected<void> apply_stencil_asset(Object& object,
+                                                        const StencilParams& params);
 
 /// Parameters for junction-arm stop-line authoring.
 struct StopLineParams {

@@ -121,6 +121,12 @@ private:
   /// The CrosswalkParams the junction "Add crosswalks" op uses — the default
   /// crosswalk asset from the merged Library (p3-s2).
   [[nodiscard]] edit::CrosswalkParams resolve_default_crosswalk_params() const;
+  /// The default Stencil asset from the merged Library — the glyph the Marking
+  /// Point tool places (p3-s4). An empty item when the Library has none.
+  [[nodiscard]] LibraryItem resolve_default_stencil_item() const;
+  /// The default crosswalk/marking asset from the merged Library — the asset the
+  /// Marking Curve tool authors (p3-s4). An empty item when the Library has none.
+  [[nodiscard]] LibraryItem resolve_default_marking_curve_item() const;
   /// Creates a new project-overlay crosswalk asset (from library defaults),
   /// saves it, refreshes the Library, and opens its editor. Toasts when no
   /// project is open.

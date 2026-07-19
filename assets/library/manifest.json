@@ -163,6 +163,42 @@
       "create": { "kind": "crosswalk", "width": 3.0, "border_width": 0.0, "dash_length": 0.5, "dash_gap": 0.5, "material": "material.paint_white", "segmentation": "crosswalk" }
     },
     {
+      "key": "stencil.arrow_left",
+      "label": "Left-turn arrow",
+      "category": "Stencils",
+      "create": { "kind": "stencil", "subtype": "arrowLeft", "length": 4.0, "width_frac": 0.5, "material": "material.paint_white", "segmentation": "road_marking" }
+    },
+    {
+      "key": "stencil.arrow_straight",
+      "label": "Straight arrow",
+      "category": "Stencils",
+      "create": { "kind": "stencil", "subtype": "arrowStraight", "length": 4.0, "width_frac": 0.5, "material": "material.paint_white", "segmentation": "road_marking" }
+    },
+    {
+      "key": "stencil.arrow_right",
+      "label": "Right-turn arrow",
+      "category": "Stencils",
+      "create": { "kind": "stencil", "subtype": "arrowRight", "length": 4.0, "width_frac": 0.5, "material": "material.paint_white", "segmentation": "road_marking" }
+    },
+    {
+      "key": "stencil.arrow_left_right",
+      "label": "Left-right arrow",
+      "category": "Stencils",
+      "create": { "kind": "stencil", "subtype": "arrowLeftRight", "length": 4.0, "width_frac": 0.5, "material": "material.paint_white", "segmentation": "road_marking" }
+    },
+    {
+      "key": "stencil.arrow_straight_left",
+      "label": "Straight-left arrow",
+      "category": "Stencils",
+      "create": { "kind": "stencil", "subtype": "arrowStraightLeft", "length": 4.0, "width_frac": 0.5, "material": "material.paint_white", "segmentation": "road_marking" }
+    },
+    {
+      "key": "stencil.arrow_straight_right",
+      "label": "Straight-right arrow",
+      "category": "Stencils",
+      "create": { "kind": "stencil", "subtype": "arrowStraightRight", "length": 4.0, "width_frac": 0.5, "material": "material.paint_white", "segmentation": "road_marking" }
+    },
+    {
       "key": "material.asphalt",
       "label": "Asphalt",
       "category": "Materials",

@@ -30,6 +30,8 @@
     <file alias="crosswalk.svg">icons/custom/crosswalk.svg</file>
     <file alias="junction-connect.svg">icons/custom/junction-connect.svg</file>
     <file alias="lane-section.svg">icons/custom/lane-section.svg</file>
+    <file alias="marking-point.svg">icons/custom/marking-point.svg</file>
+    <file alias="marking-curve.svg">icons/custom/marking-curve.svg</file>
     <file alias="template-highway.svg">icons/custom/template-highway.svg</file>
     <file alias="template-rural.svg">icons/custom/template-rural.svg</file>
     <file alias="template-urban.svg">icons/custom/template-urban.svg</file>

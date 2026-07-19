@@ -151,6 +151,24 @@ Actions::Actions(QUndoStack& undo_stack, QObject* parent) : QObject(parent) {
          "stop line, or drag a crosswalk asset from the Library onto an approach (W)"));
   tool_group->addAction(tool_crosswalk);
 
+  tool_marking_point = new QAction(tr("Marking &Point"), this);
+  tool_marking_point->setCheckable(true);
+  tool_marking_point->setShortcuts(shortcuts::sequences(shortcuts::Id::ToolMarkingPoint));
+  tool_marking_point->setIconText(tr("Marking Point"));
+  tool_marking_point->setToolTip(
+      tr("Marking Point — click a lane to place the selected arrow stencil, or drag a stencil "
+         "asset from the Library onto a lane (S)"));
+  tool_group->addAction(tool_marking_point);
+
+  tool_marking_curve = new QAction(tr("Marking Cur&ve"), this);
+  tool_marking_curve->setCheckable(true);
+  tool_marking_curve->setShortcuts(shortcuts::sequences(shortcuts::Id::ToolMarkingCurve));
+  tool_marking_curve->setIconText(tr("Marking Curve"));
+  tool_marking_curve->setToolTip(
+      tr("Marking Curve — click along a road to draw a free-form line marking or crossing; "
+         "Enter commits, Backspace undoes a point, Esc cancels (⇧W)"));
+  tool_group->addAction(tool_marking_curve);
+
   // Not a tool — a command that surfaces the 2D Editor's Lane Width tab for the
   // selected lane. Standalone so ⇧L works whatever tool is active.
   lane_width_editor = new QAction(tr("Lane &Width Editor"), this);
@@ -278,6 +296,8 @@ void Actions::apply_icons() {
   tool_lane_form->setIcon(Icons::get(QStringLiteral("lane-section")));
   tool_lane_carve->setIcon(Icons::get(QStringLiteral("lane-section")));
   tool_crosswalk->setIcon(Icons::get(QStringLiteral("crosswalk")));
+  tool_marking_point->setIcon(Icons::get(QStringLiteral("marking-point")));
+  tool_marking_curve->setIcon(Icons::get(QStringLiteral("marking-curve")));
   template_rural->setIcon(Icons::get(QStringLiteral("template-rural")));
   template_urban->setIcon(Icons::get(QStringLiteral("template-urban")));
   template_highway->setIcon(Icons::get(QStringLiteral("template-highway")));

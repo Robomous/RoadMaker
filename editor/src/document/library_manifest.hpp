@@ -33,6 +33,7 @@ struct LibraryItem {
     Marking,
     Material,
     Crosswalk,
+    Stencil,
     Unknown
   };
 
@@ -61,6 +62,15 @@ struct LibraryItem {
   double crosswalk_gap = 0.5;     ///< gap between stripes [m]
   QString crosswalk_material;     ///< paint material code (e.g. "material.paint_white")
   QString crosswalk_segmentation; ///< segmentation category tag
+
+  /// Stencil (point arrow asset, p3-s4): glyph subtype + geometry + paint
+  /// material + segmentation category. Materialized into each placed instance's
+  /// cornerLocal outline; the width scales to the picked lane by `stencil_width_frac`.
+  QString stencil_subtype;         ///< one of the 6 core arrow subtypes
+  double stencil_length = 4.0;     ///< glyph extent along travel [m]
+  double stencil_width_frac = 0.5; ///< glyph width as a fraction of the lane width
+  QString stencil_material;        ///< paint material code (e.g. "material.paint_white")
+  QString stencil_segmentation;    ///< segmentation category tag
 
   /// The item's verbatim `create` JSON block. Captured on parse so an unknown
   /// create kind — or a modeled one carrying forward-compat fields this build

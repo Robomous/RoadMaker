@@ -426,6 +426,30 @@ inline std::optional<CompactMesh> triangulate_region(const std::vector<CDT::V2d<
   return compact(cdt);
 }
 
+/// Constrained-Delaunay tessellation of ONE simple closed polygon given as
+/// planar (x,y) points in any winding (may be concave). Returns the compacted
+/// triangles (vertices carry z=0) or nullopt when the polygon has fewer than
+/// three points or CDT refuses it. A thin wrapper over triangulate_region for
+/// callers outside the surface/junction fill (p3-s4 arrow stencils); it adds no
+/// Steiner points, so the output vertices are the polygon's own corners.
+inline std::optional<CompactMesh>
+tessellate_polygon(const std::vector<std::array<double, 2>>& polygon) {
+  if (polygon.size() < 3) {
+    return std::nullopt;
+  }
+  std::vector<CDT::V2d<double>> vertices;
+  std::vector<CDT::Edge> edges;
+  vertices.reserve(polygon.size());
+  for (const std::array<double, 2>& p : polygon) {
+    vertices.push_back(CDT::V2d<double>{p[0], p[1]});
+  }
+  for (std::size_t i = 0; i < polygon.size(); ++i) {
+    const std::size_t next = (i + 1 < polygon.size()) ? i + 1 : 0;
+    edges.emplace_back(static_cast<CDT::VertInd>(i), static_cast<CDT::VertInd>(next));
+  }
+  return triangulate_region(vertices, edges);
+}
+
 /// Watertight stitch (BEFORE elevation): snap each boundary vertex onto the
 /// exact road border vertex it approximates (bitwise-equal doubles, §5), then
 /// cluster-weld sub-feature debris and rebuild the mesh in place, dropping the
