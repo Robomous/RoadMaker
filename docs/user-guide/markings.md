@@ -62,6 +62,10 @@ gentler curve, add intermediate points, or reduce the marking width.
   approach, use the [Crosswalk & Stop Line](objects-signals.md) tool instead.
 - Selecting a placed marking shows its width and dash fields in the
   [Properties panel](attributes.md), each editable as an undoable command.
+- **Per-instance material override:** drop a material from the Library onto a
+  selected marking's **Material** slot in the Attributes pane to repaint *that
+  instance only*. The override is pinned — changing the asset's Default Material
+  later updates every other instance but leaves the overridden one alone.
 
 ## Reference
 

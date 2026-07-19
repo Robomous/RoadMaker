@@ -369,6 +369,114 @@ TEST(PropertiesPanel, AnUnknownDroppedModelIsRefusedWithoutAnUndoEntry) {
   EXPECT_EQ(h.document.network().object(object)->name, "tree_pine");
 }
 
+// --- per-instance marking material override (p3-s5, GW-2 s15 / GW-5 s8) ------
+
+namespace {
+
+// Adds a crosswalk instance carrying CrosswalkData and returns its id.
+ObjectId add_crosswalk(Document& document, RoadId road, const char* odr_id, const char* material) {
+  Object cw;
+  cw.odr_id = odr_id;
+  cw.type = ObjectType::Crosswalk;
+  cw.s = 20.0;
+  cw.length = 7.0;
+  cw.crosswalk = CrosswalkData{.asset = "crosswalk.zebra", .material = material};
+  if (!document.push_command(edit::add_object(document.network(), road, cw)).has_value()) {
+    throw std::runtime_error("add_crosswalk failed");
+  }
+  ObjectId id;
+  document.network().for_each_object([&](ObjectId oid, const Object& o) {
+    if (o.odr_id == odr_id) {
+      id = oid;
+    }
+  });
+  return id;
+}
+
+} // namespace
+
+TEST(PropertiesPanel, DroppingAMaterialOverridesOneCrosswalkInstanceInOneCommand) {
+  Harness h;
+  ASSERT_TRUE(h.document.load(kSample).has_value());
+  PropertiesPanel panel(h.document, h.selection);
+  auto* slot = panel.findChild<SlotWidget*>(QStringLiteral("object_material_slot"));
+  ASSERT_NE(slot, nullptr);
+
+  const RoadId road = all_roads(h.document).front();
+  const ObjectId a = add_crosswalk(h.document, road, "cw_a", "material.paint_white");
+  const ObjectId b = add_crosswalk(h.document, road, "cw_b", "material.paint_white");
+  h.selection.select({.road = road, .object = a});
+  ASSERT_TRUE(slot->isVisibleTo(&panel)) << "a selected marking shows the Material slot";
+
+  const std::string before = xodr(h.document);
+  const int base = h.document.undo_stack()->count();
+  emit slot->item_dropped(QStringLiteral("material.asphalt"));
+
+  EXPECT_EQ(h.document.undo_stack()->count(), base + 1) << "one undo entry";
+  ASSERT_TRUE(h.document.network().object(a)->crosswalk.has_value());
+  EXPECT_EQ(h.document.network().object(a)->crosswalk->material, "material.asphalt");
+  EXPECT_TRUE(h.document.network().object(a)->crosswalk->material_override) << "override pinned";
+  // The sibling instance is untouched.
+  EXPECT_EQ(h.document.network().object(b)->crosswalk->material, "material.paint_white");
+  EXPECT_FALSE(h.document.network().object(b)->crosswalk->material_override);
+
+  h.document.undo_stack()->undo();
+  EXPECT_EQ(xodr(h.document), before) << "undo is byte-identical";
+  EXPECT_FALSE(h.document.network().object(a)->crosswalk->material_override);
+}
+
+TEST(PropertiesPanel, DroppingAMaterialOverridesAStencilInstance) {
+  Harness h;
+  ASSERT_TRUE(h.document.load(kSample).has_value());
+  PropertiesPanel panel(h.document, h.selection);
+  auto* slot = panel.findChild<SlotWidget*>(QStringLiteral("object_material_slot"));
+  ASSERT_NE(slot, nullptr);
+
+  const RoadId road = all_roads(h.document).front();
+  Object arrow;
+  arrow.odr_id = "arrow1";
+  arrow.type_str = "roadMark";
+  arrow.subtype = "arrowLeft";
+  arrow.s = 15.0;
+  arrow.stencil = StencilData{.asset = "stencil.arrow_left", .material = "material.paint_white"};
+  ASSERT_TRUE(
+      h.document.push_command(edit::add_object(h.document.network(), road, arrow)).has_value());
+  ObjectId id;
+  h.document.network().for_each_object([&](ObjectId oid, const Object& o) {
+    if (o.odr_id == "arrow1") {
+      id = oid;
+    }
+  });
+  h.selection.select({.road = road, .object = id});
+  ASSERT_TRUE(slot->isVisibleTo(&panel));
+
+  const int base = h.document.undo_stack()->count();
+  emit slot->item_dropped(QStringLiteral("material.asphalt"));
+
+  EXPECT_EQ(h.document.undo_stack()->count(), base + 1);
+  ASSERT_TRUE(h.document.network().object(id)->stencil.has_value());
+  EXPECT_EQ(h.document.network().object(id)->stencil->material, "material.asphalt");
+  EXPECT_TRUE(h.document.network().object(id)->stencil->material_override);
+}
+
+TEST(PropertiesPanel, AnUnknownMaterialDropIsRefusedWithoutAnUndoEntry) {
+  Harness h;
+  ASSERT_TRUE(h.document.load(kSample).has_value());
+  PropertiesPanel panel(h.document, h.selection);
+  auto* slot = panel.findChild<SlotWidget*>(QStringLiteral("object_material_slot"));
+  ASSERT_NE(slot, nullptr);
+
+  const RoadId road = all_roads(h.document).front();
+  const ObjectId a = add_crosswalk(h.document, road, "cw_a", "material.paint_white");
+  h.selection.select({.road = road, .object = a});
+
+  const int base = h.document.undo_stack()->count();
+  emit slot->item_dropped(QStringLiteral("not_a_material"));
+
+  EXPECT_EQ(h.document.undo_stack()->count(), base) << "a refusal must not reach the undo stack";
+  EXPECT_EQ(h.document.network().object(a)->crosswalk->material, "material.paint_white");
+}
+
 // --- the Road-style slot (p2-s8) --------------------------------------------
 
 // The first non-connecting road (a road not owned by a junction).
