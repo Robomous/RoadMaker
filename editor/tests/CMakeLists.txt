@@ -41,6 +41,9 @@ add_executable(roadmaker_editor_tests
   test_marking_curve_placement.cpp
   test_marking_curve_tool.cpp
   test_marking_point_tool.cpp
+  test_prop_placement.cpp
+  test_prop_point_tool.cpp
+  test_prop_curve_tool.cpp
   test_stencil_item.cpp
   test_stencil_placement.cpp
   test_delete_tool.cpp

@@ -44,6 +44,8 @@ enum class Id {
   ToolCrosswalk,
   ToolMarkingPoint,
   ToolMarkingCurve,
+  ToolPropPoint,
+  ToolPropCurve,
   LaneWidthEditor,
   // View
   FrameSelection,

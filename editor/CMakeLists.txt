@@ -71,6 +71,7 @@ add_library(roadmaker_editor_lib STATIC
   src/document/library_manifest.cpp
   src/document/marking_curve_placement.cpp
   src/document/marking_item.cpp
+  src/document/prop_placement.cpp
   src/document/project.cpp
   src/document/elevation_utils.cpp
   src/document/editor_command.cpp
@@ -106,6 +107,8 @@ add_library(roadmaker_editor_lib STATIC
   src/tools/lane_form_tool.cpp
   src/tools/marking_curve_tool.cpp
   src/tools/marking_point_tool.cpp
+  src/tools/prop_curve_tool.cpp
+  src/tools/prop_point_tool.cpp
   src/tools/lane_profile_tool.cpp
   src/tools/node_drag.cpp
   src/tools/select_tool.cpp

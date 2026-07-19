@@ -15,6 +15,7 @@
 #include "document/crosswalk_item.hpp"
 #include "document/crosswalk_placement.hpp"
 #include "document/marking_item.hpp"
+#include "document/prop_placement.hpp"
 #include "document/stencil_placement.hpp"
 #include "render/material_catalog.hpp"
 #include "viewport/picking.hpp"
@@ -46,41 +47,9 @@ constexpr double kRoadStyleSnapThreshold = 20.0;
 /// typical profiles/turn radii.
 constexpr double kAssemblyEndMargin = 15.0;
 
-struct RoadStation {
-  RoadId road;
-  double s = 0.0;
-  double t = 0.0;
-};
-
-/// The nearest road to (x, y) whose reference line passes within `max_t`, with
-/// the drop's road-relative (s, t). nullopt when no road is close enough.
-std::optional<RoadStation>
-nearest_road_station(const RoadNetwork& network, double x, double y, double max_t) {
-  std::optional<RoadStation> best;
-  double best_abs_t = max_t;
-  network.for_each_road([&](RoadId id, const Road& road) {
-    if (road.plan_view.empty()) {
-      return;
-    }
-    const StationCoord station = find_station(road.plan_view, x, y);
-    if (std::abs(station.t) < best_abs_t) {
-      best_abs_t = std::abs(station.t);
-      best = RoadStation{.road = id, .s = station.s, .t = station.t};
-    }
-  });
-  return best;
-}
-
-/// Lowest positive integer odr id not already used by an object (id-unique).
-std::string next_object_odr_id(const RoadNetwork& network) {
-  std::set<std::string> taken;
-  network.for_each_object([&](ObjectId, const Object& object) { taken.insert(object.odr_id); });
-  int candidate = 1;
-  while (taken.contains(std::to_string(candidate))) {
-    ++candidate;
-  }
-  return std::to_string(candidate);
-}
+/// RoadStation, nearest_road_station, and next_object_odr_id now live in
+/// document/prop_placement.hpp (shared with the prop tools); this TU uses them
+/// via that include so the drop and the tools snap and mint ids identically.
 
 /// A signal snaps to a road within this lateral distance [m] of its reference
 /// line — same rationale as the tree threshold (OpenDRIVE signals are

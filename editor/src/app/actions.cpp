@@ -169,6 +169,24 @@ Actions::Actions(QUndoStack& undo_stack, QObject* parent) : QObject(parent) {
          "Enter commits, Backspace undoes a point, Esc cancels (⇧W)"));
   tool_group->addAction(tool_marking_curve);
 
+  tool_prop_point = new QAction(tr("Prop Poin&t"), this);
+  tool_prop_point->setCheckable(true);
+  tool_prop_point->setShortcuts(shortcuts::sequences(shortcuts::Id::ToolPropPoint));
+  tool_prop_point->setIconText(tr("Prop Point"));
+  tool_prop_point->setToolTip(
+      tr("Prop Point — click on or beside a road to place the selected tree/shrub, or drag a "
+         "prop asset from the Library onto a road; drag a placed prop to move it (T)"));
+  tool_group->addAction(tool_prop_point);
+
+  tool_prop_curve = new QAction(tr("Prop Cur&ve"), this);
+  tool_prop_curve->setCheckable(true);
+  tool_prop_curve->setShortcuts(shortcuts::sequences(shortcuts::Id::ToolPropCurve));
+  tool_prop_curve->setIconText(tr("Prop Curve"));
+  tool_prop_curve->setToolTip(
+      tr("Prop Curve — click along a road to distribute props at a fixed spacing; "
+         "[ / ] adjust spacing, Enter bakes them into individual props, Esc cancels (⇧T)"));
+  tool_group->addAction(tool_prop_curve);
+
   // Not a tool — a command that surfaces the 2D Editor's Lane Width tab for the
   // selected lane. Standalone so ⇧L works whatever tool is active.
   lane_width_editor = new QAction(tr("Lane &Width Editor"), this);
@@ -298,6 +316,8 @@ void Actions::apply_icons() {
   tool_crosswalk->setIcon(Icons::get(QStringLiteral("crosswalk")));
   tool_marking_point->setIcon(Icons::get(QStringLiteral("marking-point")));
   tool_marking_curve->setIcon(Icons::get(QStringLiteral("marking-curve")));
+  tool_prop_point->setIcon(Icons::get(QStringLiteral("prop-point")));
+  tool_prop_curve->setIcon(Icons::get(QStringLiteral("prop-curve")));
   template_rural->setIcon(Icons::get(QStringLiteral("template-rural")));
   template_urban->setIcon(Icons::get(QStringLiteral("template-urban")));
   template_highway->setIcon(Icons::get(QStringLiteral("template-highway")));

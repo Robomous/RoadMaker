@@ -124,6 +124,9 @@ private:
   /// The default Stencil asset from the merged Library — the glyph the Marking
   /// Point tool places (p3-s4). An empty item when the Library has none.
   [[nodiscard]] LibraryItem resolve_default_stencil_item() const;
+  /// The default Tree asset from the merged Library — the prop the Prop Point and
+  /// Prop Curve tools place (p6-s4). An empty item when the Library has none.
+  [[nodiscard]] LibraryItem resolve_default_prop_item() const;
   /// The default crosswalk/marking asset from the merged Library — the asset the
   /// Marking Curve tool authors (p3-s4). An empty item when the Library has none.
   [[nodiscard]] LibraryItem resolve_default_marking_curve_item() const;

@@ -59,6 +59,8 @@
 #include "tools/lane_profile_tool.hpp"
 #include "tools/marking_curve_tool.hpp"
 #include "tools/marking_point_tool.hpp"
+#include "tools/prop_curve_tool.hpp"
+#include "tools/prop_point_tool.hpp"
 #include "tools/select_tool.hpp"
 #include "tools/split_tool.hpp"
 
@@ -395,6 +397,23 @@ MainWindow::MainWindow(QWidget* parent, bool restore_saved_layout)
   connect(actions_->tool_marking_curve, &QAction::triggered, this, [this] {
     tool_manager_.set_active(ToolId::MarkingCurve);
   });
+  auto prop_point_tool = std::make_unique<PropPointTool>(document_, selection_);
+  wire_status(prop_point_tool.get());
+  // The tool places the merged Library's default prop asset, so a click carries
+  // the same tree/shrub the Library drag-drop path lands.
+  prop_point_tool->set_params_provider([this] { return resolve_default_prop_item(); });
+  tool_manager_.register_tool(ToolId::PropPoint, std::move(prop_point_tool));
+  connect(actions_->tool_prop_point, &QAction::triggered, this, [this] {
+    tool_manager_.set_active(ToolId::PropPoint);
+  });
+  auto prop_curve_tool = std::make_unique<PropCurveTool>(document_, selection_);
+  wire_status(prop_curve_tool.get());
+  // The tool distributes the merged Library's default prop asset along the curve.
+  prop_curve_tool->set_params_provider([this] { return resolve_default_prop_item(); });
+  tool_manager_.register_tool(ToolId::PropCurve, std::move(prop_curve_tool));
+  connect(actions_->tool_prop_curve, &QAction::triggered, this, [this] {
+    tool_manager_.set_active(ToolId::PropCurve);
+  });
   tool_manager_.set_active(ToolId::Select);
 
   // Merge Roads: enabled only for exactly two selected roads mergeable in some
@@ -669,6 +688,8 @@ void MainWindow::build_toolbar() {
   toolbar->addAction(actions_->tool_crosswalk);
   toolbar->addAction(actions_->tool_marking_point);
   toolbar->addAction(actions_->tool_marking_curve);
+  toolbar->addAction(actions_->tool_prop_point);
+  toolbar->addAction(actions_->tool_prop_curve);
   toolbar->addAction(actions_->tool_elevation);
   toolbar->addAction(actions_->tool_create_junction);
   toolbar->addAction(actions_->tool_split);
@@ -907,6 +928,18 @@ LibraryItem MainWindow::resolve_default_stencil_item() const {
   return {};
 }
 
+LibraryItem MainWindow::resolve_default_prop_item() const {
+  // The first Kind::Tree in the merged Library (an overlay asset shadows the
+  // built-in). An empty item makes the prop tools toast on the first click.
+  for (int row = 0; row < library_model_.rowCount(); ++row) {
+    const LibraryItem* item = library_model_.item(row);
+    if (item != nullptr && item->kind == LibraryItem::Kind::Tree) {
+      return *item;
+    }
+  }
+  return {};
+}
+
 LibraryItem MainWindow::resolve_default_marking_curve_item() const {
   // The first crosswalk OR plain marking asset in the merged Library — either
   // authors a marking curve. An empty item makes the tool toast on the first
@@ -1025,6 +1058,8 @@ void MainWindow::activate_tool_for_capture(const QString& tool_id) {
       {QStringLiteral("crosswalk"), ToolId::Crosswalk},
       {QStringLiteral("markingPoint"), ToolId::MarkingPoint},
       {QStringLiteral("markingCurve"), ToolId::MarkingCurve},
+      {QStringLiteral("propPoint"), ToolId::PropPoint},
+      {QStringLiteral("propCurve"), ToolId::PropCurve},
   };
   if (const auto found = kTools.find(tool_id); found != kTools.end()) {
     tool_manager_.set_active(found->second);
