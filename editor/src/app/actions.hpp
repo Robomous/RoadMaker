@@ -55,6 +55,8 @@ public:
   QAction* tool_marking_curve = nullptr;
   QAction* tool_prop_point = nullptr;
   QAction* tool_prop_curve = nullptr;
+  QAction* tool_prop_span = nullptr;
+  QAction* tool_prop_polygon = nullptr;
 
   /// Not a tool: raises the 2D Editor's Lane Width tab for the selected lane
   /// (⇧L). Standalone so it works from any active tool.

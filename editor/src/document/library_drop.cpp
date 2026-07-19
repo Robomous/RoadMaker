@@ -470,6 +470,10 @@ LibraryDropAction resolve_library_drop(const LibraryItem& item,
     }
     return action;
   }
+  case LibraryItem::Kind::PropSet:
+    // A prop set is authored/scattered through the prop tools (p6-s5), not
+    // dropped straight onto the viewport — no direct drop action this round.
+    break;
   case LibraryItem::Kind::Unknown:
     break;
   }

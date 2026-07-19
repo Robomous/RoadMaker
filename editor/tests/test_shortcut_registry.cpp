@@ -89,6 +89,8 @@ TEST(ShortcutRegistry, ActionsBindWhatTheTableDocuments) {
   EXPECT_EQ(actions.tool_delete->shortcuts(), shortcuts::sequences(Id::ToolDelete));
   EXPECT_EQ(actions.tool_prop_point->shortcuts(), shortcuts::sequences(Id::ToolPropPoint));
   EXPECT_EQ(actions.tool_prop_curve->shortcuts(), shortcuts::sequences(Id::ToolPropCurve));
+  EXPECT_EQ(actions.tool_prop_span->shortcuts(), shortcuts::sequences(Id::ToolPropSpan));
+  EXPECT_EQ(actions.tool_prop_polygon->shortcuts(), shortcuts::sequences(Id::ToolPropPolygon));
   EXPECT_EQ(actions.help_contents->shortcuts(), shortcuts::sequences(Id::Help));
 }
 

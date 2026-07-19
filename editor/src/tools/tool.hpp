@@ -34,6 +34,8 @@ enum class ToolId {
   MarkingCurve,
   PropPoint,
   PropCurve,
+  PropSpan,
+  PropPolygon,
 };
 
 struct ToolEvent {

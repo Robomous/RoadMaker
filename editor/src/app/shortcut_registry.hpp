@@ -46,6 +46,8 @@ enum class Id {
   ToolMarkingCurve,
   ToolPropPoint,
   ToolPropCurve,
+  ToolPropSpan,
+  ToolPropPolygon,
   LaneWidthEditor,
   // View
   FrameSelection,

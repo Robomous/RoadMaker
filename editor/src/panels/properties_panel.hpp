@@ -15,6 +15,7 @@
 #include <QLabel>
 #include <QLineEdit>
 #include <QPushButton>
+#include <QVBoxLayout>
 #include <QWidget>
 #include <functional>
 #include <optional>
@@ -53,6 +54,12 @@ signals:
   /// refreshes the Library, and propagates the change to every following
   /// instance. Emitted once per discrete edit (editingFinished / material drop).
   void crosswalk_asset_committed(const LibraryItem& item);
+
+  /// A prop-set asset's entries were edited in the Attributes pane (p6-s5).
+  /// MainWindow upserts `item` into the project-overlay manifest and saves it.
+  /// Unlike a crosswalk edit there is no propagation — baked props never
+  /// reference the set. Emitted once per Save.
+  void prop_set_asset_committed(const LibraryItem& item);
 
 public:
   /// Read-only handle used to populate the crosswalk asset editor from the
@@ -285,6 +292,44 @@ private:
   QLineEdit* asset_category_edit_;
   QLabel* asset_preview_;
   QLabel* asset_hint_;
+
+  // --- prop-set asset editor (p6-s5) -----------------------------------------
+
+  /// Opens the prop-set asset editor for `item` in the Attributes pane. A
+  /// variable-length list of weighted model entries, saved explicitly (unlike
+  /// the crosswalk editor's per-field auto-commit).
+  void edit_prop_set_asset(const LibraryItem& item, bool editable);
+
+  /// Appends one entry row (model combo + portion spin + remove button).
+  void add_prop_set_row(const QString& model, double portion, bool editable);
+
+  /// Drops every entry row and clears the tracking vector.
+  void clear_prop_set_rows();
+
+  /// Builds the current rows into a PropSet LibraryItem and emits
+  /// prop_set_asset_committed. No-op when not editable / not in prop-set mode.
+  void commit_prop_set_edit();
+
+  /// One entry's widgets, so commit can read every row's model + portion and
+  /// remove can drop a specific row.
+  struct PropSetRow {
+    QWidget* container = nullptr;
+    QComboBox* model = nullptr;
+    QDoubleSpinBox* portion = nullptr;
+  };
+
+  QGroupBox* prop_set_group_;
+  QVBoxLayout* prop_set_entries_layout_ = nullptr;
+  QPushButton* prop_set_add_button_ = nullptr;
+  QPushButton* prop_set_save_button_ = nullptr;
+  QLabel* prop_set_hint_;
+  std::vector<PropSetRow> prop_set_rows_;
+  /// The asset's label + category, tracked so a Save rebuilds the item without
+  /// re-reading the (about-to-be-overwritten) manifest.
+  QString prop_set_label_;
+  QString prop_set_category_;
+  /// True while the prop-set editor owns the panel (a subtype of asset_mode_).
+  bool prop_set_mode_ = false;
 };
 
 } // namespace roadmaker::editor
