@@ -196,3 +196,73 @@ def test_validate_cites_object_rules(network_with_road):
     assert any(
         f.rule_id == "asam.net:xodr:1.7.0:road.object.circular_vs_angular" for f in findings
     )
+
+
+# --- free-form marking curves + arrow stencils (p3-s4) -----------------------
+
+
+def test_marking_curve_authoring_round_trip(network_with_road, tmp_path):
+    network, road_id = network_with_road
+    centerline = [(10.0, 0.0), (12.0, 0.5), (14.0, 1.0), (16.0, 1.5)]
+    params = rm.edit.MarkingCurveParams()
+    params.width_m = 0.2
+    params.asset = "marking.solid_white"
+    params.material = "material.paint_white"
+
+    curve = rm.Object()
+    curve.odr_id = "1"
+    curve = rm.edit.apply_marking_curve_asset(curve, centerline, params)
+    assert curve.marking_curve is not None
+    assert curve.marking_curve.asset == "marking.solid_white"
+    assert len(curve.marking_curve.samples) == len(centerline)
+    network.add_object(road_id, curve)
+
+    path = tmp_path / "curve.xodr"
+    rm.save_xodr(network, str(path), name="curve")
+    reloaded, _ = rm.load_xodr(str(path))
+    obj = next(iter(reloaded.objects_of(reloaded.road_ids[0])))
+    data = reloaded.object(obj).marking_curve
+    assert data is not None
+    assert data.width == pytest.approx(0.2)
+    assert len(data.samples) == len(centerline)
+
+
+def test_marking_curve_rejects_degenerate():
+    params = rm.edit.MarkingCurveParams()
+    with pytest.raises(ValueError):
+        rm.edit.apply_marking_curve_asset(rm.Object(), [(0.0, 0.0)], params)
+
+
+def test_stencil_authoring_and_round_trip(network_with_road, tmp_path):
+    network, road_id = network_with_road
+    params = rm.edit.StencilParams()
+    params.subtype = "arrowLeft"
+    params.material = "material.paint_white"
+    params.asset = "stencil.arrow_left"
+
+    stencil = rm.Object()
+    stencil.odr_id = "1"
+    stencil = rm.edit.apply_stencil_asset(stencil, params)
+    stencil.s, stencil.t = 40.0, -1.75
+    assert stencil.stencil is not None
+    assert stencil.stencil.asset == "stencil.arrow_left"
+    assert not stencil.outlines[0].road_coords  # cornerLocal
+    network.add_object(road_id, stencil)
+
+    path = tmp_path / "stencil.xodr"
+    rm.save_xodr(network, str(path), name="stencil")
+    reloaded, _ = rm.load_xodr(str(path))
+    obj = next(iter(reloaded.objects_of(reloaded.road_ids[0])))
+    assert reloaded.object(obj).stencil.asset == "stencil.arrow_left"
+
+
+def test_arrow_glyph_outline_unknown_is_empty():
+    assert rm.edit.arrow_glyph_outline("arrowStraight", 4.0, 1.75)
+    assert rm.edit.arrow_glyph_outline("arrowMergeLeft", 4.0, 1.75) == []
+
+
+def test_stencil_rejects_unknown_subtype():
+    params = rm.edit.StencilParams()
+    params.subtype = "arrowMergeLeft"
+    with pytest.raises(ValueError):
+        rm.edit.apply_stencil_asset(rm.Object(), params)

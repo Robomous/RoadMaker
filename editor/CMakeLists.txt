@@ -61,12 +61,15 @@ add_library(roadmaker_editor_lib STATIC
   src/app/welcome_widget.cpp
   src/document/autosave.cpp
   src/document/crosswalk_item.cpp
+  src/document/stencil_item.cpp
+  src/document/stencil_placement.cpp
   src/document/crosswalk_placement.cpp
   src/document/diagnostics_model.cpp
   src/document/document.cpp
   src/document/library_drop.cpp
   src/document/library_list_model.cpp
   src/document/library_manifest.cpp
+  src/document/marking_curve_placement.cpp
   src/document/marking_item.cpp
   src/document/project.cpp
   src/document/elevation_utils.cpp
@@ -101,6 +104,8 @@ add_library(roadmaker_editor_lib STATIC
   src/tools/lane_add_tool.cpp
   src/tools/lane_carve_tool.cpp
   src/tools/lane_form_tool.cpp
+  src/tools/marking_curve_tool.cpp
+  src/tools/marking_point_tool.cpp
   src/tools/lane_profile_tool.cpp
   src/tools/node_drag.cpp
   src/tools/select_tool.cpp

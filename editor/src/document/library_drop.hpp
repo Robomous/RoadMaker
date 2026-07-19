@@ -36,6 +36,7 @@ enum class LibraryDropKind {
   Marking,
   Material,
   Crosswalk,
+  Stencil,
 };
 
 /// Where a resolved drop lands in the world (x, y) and whether it is valid

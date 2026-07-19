@@ -39,6 +39,9 @@ LibraryItem::Kind parse_kind(const QString& kind) {
   if (kind == QStringLiteral("crosswalk")) {
     return LibraryItem::Kind::Crosswalk;
   }
+  if (kind == QStringLiteral("stencil")) {
+    return LibraryItem::Kind::Stencil;
+  }
   return LibraryItem::Kind::Unknown;
 }
 
@@ -61,6 +64,18 @@ QJsonObject create_object(const LibraryItem& item) {
     }
     if (!item.crosswalk_segmentation.isEmpty()) {
       create[QStringLiteral("segmentation")] = item.crosswalk_segmentation;
+    }
+  }
+  if (item.kind == LibraryItem::Kind::Stencil) {
+    create[QStringLiteral("kind")] = QStringLiteral("stencil");
+    create[QStringLiteral("subtype")] = item.stencil_subtype;
+    create[QStringLiteral("length")] = item.stencil_length;
+    create[QStringLiteral("width_frac")] = item.stencil_width_frac;
+    if (!item.stencil_material.isEmpty()) {
+      create[QStringLiteral("material")] = item.stencil_material;
+    }
+    if (!item.stencil_segmentation.isEmpty()) {
+      create[QStringLiteral("segmentation")] = item.stencil_segmentation;
     }
   }
   return create;
@@ -129,6 +144,11 @@ Expected<LibraryManifest> LibraryManifest::parse(const QByteArray& json) {
     item.crosswalk_gap = create.value(QStringLiteral("dash_gap")).toDouble(0.5);
     item.crosswalk_material = create.value(QStringLiteral("material")).toString();
     item.crosswalk_segmentation = create.value(QStringLiteral("segmentation")).toString();
+    item.stencil_subtype = create.value(QStringLiteral("subtype")).toString();
+    item.stencil_length = create.value(QStringLiteral("length")).toDouble(4.0);
+    item.stencil_width_frac = create.value(QStringLiteral("width_frac")).toDouble(0.5);
+    item.stencil_material = create.value(QStringLiteral("material")).toString();
+    item.stencil_segmentation = create.value(QStringLiteral("segmentation")).toString();
     // Capture the verbatim create block so unknown kinds and forward-compat
     // fields survive to_json() untouched (the never-drop contract for the
     // manifest schema).

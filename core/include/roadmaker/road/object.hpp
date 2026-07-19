@@ -3,6 +3,7 @@
 #include "roadmaker/road/id.hpp"
 #include "roadmaker/xodr/raw_xml.hpp"
 
+#include <array>
 #include <optional>
 #include <string>
 #include <vector>
@@ -139,6 +140,46 @@ struct CrosswalkData {
   friend bool operator==(const CrosswalkData&, const CrosswalkData&) = default;
 };
 
+/// RoadMaker's authoring truth for a free-form marking-curve instance (p3-s4),
+/// carried in `<userData code="rm:markingCurve">`. Mirrors CrosswalkData but the
+/// geometry is an open polyline centreline rather than a rectangular band: the
+/// drawn curve is stored as (s,t) sample pairs (~0.5 m spacing) in the owning
+/// road's frame, which is the source of truth the mesher renders and the record
+/// asset re-materialization re-runs authoring over. The OpenDRIVE outline +
+/// <markings> are the interop projection authored from these params. A curve
+/// consuming a crosswalk asset paints a striped band (`striped == true`), a
+/// plain marking asset a solid/dashed line.
+struct MarkingCurveData {
+  std::string asset;              ///< Library asset key this instance follows
+  double width = 0.12;            ///< band width across the curve [m] (>0)
+  double dash_length = 0.0;       ///< visible run along the curve [m]; 0 = solid
+  double dash_gap = 0.0;          ///< gap between runs [m]
+  std::string material;           ///< material code, e.g. "material.paint_white"
+  bool material_override = false; ///< true = keep `material` on asset changes
+  std::string category;           ///< segmentation category tag
+  bool striped = false;           ///< crosswalk-asset band vs. plain line marking
+  /// Centreline as road-frame (s,t) sample pairs, in draw order (~0.5 m apart).
+  /// At least two; the mesher walks this by arc length.
+  std::vector<std::array<double, 2>> samples;
+
+  friend bool operator==(const MarkingCurveData&, const MarkingCurveData&) = default;
+};
+
+/// RoadMaker's authoring truth for a point-stencil asset instance (p3-s4),
+/// carried in `<userData code="rm:stencil">`. A stencil authors ONE closed
+/// cornerLocal arrow outline; this record keys the instance to its Library asset
+/// so p3-s5's per-instance material override can match instance↔asset exactly
+/// (like `object.crosswalk->asset == key`). The glyph itself is the object's
+/// subtype + outline; this carries only asset/material/category tags.
+struct StencilData {
+  std::string asset;              ///< Library asset key this instance follows
+  std::string material;           ///< material code, e.g. "material.paint_white"
+  bool material_override = false; ///< true = keep `material` on asset changes
+  std::string category;           ///< segmentation category tag
+
+  friend bool operator==(const StencilData&, const StencilData&) = default;
+};
+
 /// <object> (§13.1, Table 85). Placement is in road s/t/zOffset, resolved to
 /// world through the owning road's reference line + elevation; objects never
 /// move or re-orient (§13.1). Owned by RoadNetwork's object arena; `road` is
@@ -189,6 +230,15 @@ struct Object {
   /// "rm:crosswalk"). Present on crosswalks authored by the editor; absent for
   /// foreign crosswalks, which mesh from the fallback zebra.
   std::optional<CrosswalkData> crosswalk;
+
+  /// RoadMaker free-form marking-curve authoring data (§7.2 userData
+  /// "rm:markingCurve"). Present on curves drawn with the Marking Curve tool;
+  /// absent for every other object. Mutually exclusive with `crosswalk`.
+  std::optional<MarkingCurveData> marking_curve;
+
+  /// RoadMaker point-stencil authoring data (§7.2 userData "rm:stencil").
+  /// Present on stencils placed by the Marking Point tool; absent otherwise.
+  std::optional<StencilData> stencil;
 
   /// Unknown attributes and unmodeled children (<skeleton>, <material>,
   /// <parkingSpace>, <borders>, <userData>, ...) — preserved verbatim per the

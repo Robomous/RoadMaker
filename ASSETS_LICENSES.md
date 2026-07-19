@@ -32,6 +32,8 @@ models, fonts, images). Policy — see [`docs/standards/assets.md`](docs/standar
 | `editor/resources/icons/custom/crosswalk.svg` | original work (this repository) | RoadMaker contributors | MIT | 2026-07-18 |
 | `editor/resources/icons/custom/junction-connect.svg` | original work (this repository) | RoadMaker contributors | MIT | 2026-07-10 |
 | `editor/resources/icons/custom/lane-section.svg` | original work (this repository) | RoadMaker contributors | MIT | 2026-07-10 |
+| `editor/resources/icons/custom/marking-point.svg` | original work (this repository) | RoadMaker contributors | MIT | 2026-07-18 |
+| `editor/resources/icons/custom/marking-curve.svg` | original work (this repository) | RoadMaker contributors | MIT | 2026-07-18 |
 | `editor/resources/icons/custom/template-highway.svg` | original work (this repository) | RoadMaker contributors | MIT | 2026-07-10 |
 | `editor/resources/icons/custom/template-rural.svg` | original work (this repository) | RoadMaker contributors | MIT | 2026-07-10 |
 | `editor/resources/icons/custom/template-urban.svg` | original work (this repository) | RoadMaker contributors | MIT | 2026-07-10 |

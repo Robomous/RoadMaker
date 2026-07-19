@@ -15,6 +15,7 @@
 #include <utility>
 #include <vector>
 
+#include "fill_backend.hpp"
 #include "junction_surface.hpp"
 #include "mesh_detail.hpp"
 #include "surface_fill.hpp"
@@ -335,6 +336,143 @@ void emit_arrow(
   emit_object_polygon(frame, head, out);
 }
 
+/// A free-form marking curve from its MarkingCurveData (p3-s4): a band of the
+/// stored width painted along the (s,t) centreline, walked by arc length so a
+/// dash pattern (dash_length>0) breaks into runs. Each sample maps through the
+/// road reference line to a world point; the band edges are the centreline
+/// offset ±width/2 along the XY-perpendicular of the local tangent. Solid when
+/// dash_length<=0. Meshed from the userData, mirroring emit_crosswalk (the
+/// outline/markings are only the foreign-tool projection).
+void emit_marking_curve(const Road& road, const MarkingCurveData& data, SubMesh& out) {
+  const std::vector<std::array<double, 2>>& samples = data.samples;
+  if (samples.size() < 2) {
+    return;
+  }
+  const double half = std::max(data.width, tol::kLength) / 2.0;
+
+  struct Node {
+    std::array<double, 3> p;    // world point (surface-lifted)
+    std::array<double, 2> left; // unit XY perpendicular, pointing left
+    std::array<double, 3> n;    // surface normal
+  };
+
+  std::vector<Node> nodes(samples.size());
+  for (std::size_t i = 0; i < samples.size(); ++i) {
+    const StationFrame f = make_frame(road, samples[i][0]);
+    std::array<double, 3> p = lateral_point(f, samples[i][1]);
+    p[2] += kMarkingLift;
+    nodes[i].p = p;
+    nodes[i].n = surface_normal(f);
+  }
+  for (std::size_t i = 0; i < nodes.size(); ++i) {
+    double dx = 0.0;
+    double dy = 0.0;
+    if (i > 0) {
+      dx += nodes[i].p[0] - nodes[i - 1].p[0];
+      dy += nodes[i].p[1] - nodes[i - 1].p[1];
+    }
+    if (i + 1 < nodes.size()) {
+      dx += nodes[i + 1].p[0] - nodes[i].p[0];
+      dy += nodes[i + 1].p[1] - nodes[i].p[1];
+    }
+    const double len = std::hypot(dx, dy);
+    nodes[i].left = len > tol::kLength ? std::array<double, 2>{-dy / len, dx / len}
+                                       : std::array<double, 2>{0.0, 0.0};
+  }
+
+  // Push a band quad between the interpolated cross-sections at local arc
+  // lengths la..lb of segment [A,B]; left/normal are lerped and re-normalized.
+  const auto emit_span = [&](const Node& a, const Node& b, double seglen, double la, double lb) {
+    const auto cross = [&](double frac) {
+      std::array<double, 3> centre{a.p[0] + ((b.p[0] - a.p[0]) * frac),
+                                   a.p[1] + ((b.p[1] - a.p[1]) * frac),
+                                   a.p[2] + ((b.p[2] - a.p[2]) * frac)};
+      double lx = a.left[0] + ((b.left[0] - a.left[0]) * frac);
+      double ly = a.left[1] + ((b.left[1] - a.left[1]) * frac);
+      const double llen = std::hypot(lx, ly);
+      if (llen > tol::kLength) {
+        lx /= llen;
+        ly /= llen;
+      }
+      const std::array<double, 3> l{centre[0] - (half * lx), centre[1] - (half * ly), centre[2]};
+      const std::array<double, 3> r{centre[0] + (half * lx), centre[1] + (half * ly), centre[2]};
+      return std::pair{l, r};
+    };
+    const auto [la_l, la_r] = cross(la / seglen);
+    const auto [lb_l, lb_r] = cross(lb / seglen);
+    const std::array<double, 3> n{
+        (a.n[0] + b.n[0]) / 2.0, (a.n[1] + b.n[1]) / 2.0, (a.n[2] + b.n[2]) / 2.0};
+    const std::uint32_t base = static_cast<std::uint32_t>(out.positions.size() / 3);
+    for (const std::array<double, 3>& v : {la_r, lb_r, lb_l, la_l}) {
+      out.positions.insert(out.positions.end(), v.begin(), v.end());
+      out.normals.insert(out.normals.end(), n.begin(), n.end());
+    }
+    out.indices.insert(out.indices.end(), {base, base + 1, base + 2, base, base + 2, base + 3});
+  };
+
+  const bool solid = data.dash_length <= tol::kLength;
+  const double cycle = data.dash_length + data.dash_gap;
+  double dist = 0.0;
+  for (std::size_t i = 0; i + 1 < nodes.size(); ++i) {
+    const Node& a = nodes[i];
+    const Node& b = nodes[i + 1];
+    const double seglen = std::hypot(b.p[0] - a.p[0], b.p[1] - a.p[1]);
+    if (seglen <= tol::kLength) {
+      continue;
+    }
+    if (solid) {
+      emit_span(a, b, seglen, 0.0, seglen);
+    } else if (cycle > tol::kLength) {
+      const long kstart = static_cast<long>(std::floor(dist / cycle));
+      for (long k = kstart; static_cast<double>(k) * cycle < dist + seglen; ++k) {
+        const double pa = std::max(dist, static_cast<double>(k) * cycle);
+        const double pb =
+            std::min(dist + seglen, (static_cast<double>(k) * cycle) + data.dash_length);
+        if (pb > pa) {
+          emit_span(a, b, seglen, pa - dist, pb - dist);
+        }
+      }
+    }
+    dist += seglen;
+  }
+}
+
+/// Tessellates a closed cornerLocal outline (u,v) with the in-tree CDT and
+/// emits the triangles in the object's frame — the concave-glyph path for
+/// authored arrow stencils (p3-s4). No-op when CDT refuses the polygon.
+void emit_tessellated_outline(const ObjectFrame& frame,
+                              const ObjectOutline& outline,
+                              SubMesh& out) {
+  std::vector<std::array<double, 2>> polygon;
+  polygon.reserve(outline.corners.size());
+  for (const OutlineCorner& corner : outline.corners) {
+    polygon.push_back({corner.a, corner.b}); // (u, v) local
+  }
+  const std::optional<fill_backend::CompactMesh> mesh = fill_backend::tessellate_polygon(polygon);
+  if (!mesh.has_value()) {
+    return;
+  }
+  const std::uint32_t base = static_cast<std::uint32_t>(out.positions.size() / 3);
+  for (const fill_backend::Vec3& v : mesh->vertices) {
+    out.positions.insert(out.positions.end(),
+                         {frame.center[0] + (v.x * frame.ux) + (v.y * frame.vx),
+                          frame.center[1] + (v.x * frame.uy) + (v.y * frame.vy),
+                          frame.center[2]});
+    out.normals.insert(out.normals.end(), frame.normal.begin(), frame.normal.end());
+  }
+  for (const std::array<std::uint32_t, 3>& tri : mesh->triangles) {
+    out.indices.insert(out.indices.end(), {base + tri[0], base + tri[1], base + tri[2]});
+  }
+}
+
+/// True when `object` carries an authored stencil outline (one closed cornerLocal
+/// loop) the mesher should tessellate instead of drawing the parametric glyph.
+bool has_local_glyph_outline(const Object& object) {
+  return !object.outlines.empty() && !object.outlines.front().road_coords &&
+         object.outlines.front().closed.value_or(false) &&
+         object.outlines.front().corners.size() >= 3;
+}
+
 /// Object-based road markings a road owns (crosswalks, stop lines, arrows —
 /// docs/design/m3a/02 §3). Emitted as paint submeshes; unresolved object
 /// types are left to the render-side placeholder box (phase 4).
@@ -348,7 +486,13 @@ void build_object_markings(const RoadNetwork& network,
     SubMesh marking;
     marking.material = LaneType::None;
 
-    if (object.type == ObjectType::Crosswalk) {
+    if (object.marking_curve.has_value()) {
+      // Free-form curve: render exactly from MarkingCurveData (dispatched before
+      // the crosswalk branch — a striped curve is typed as a crosswalk).
+      marking.name = fmt::format("road {} object {} marking curve", road.odr_id, object.odr_id);
+      emit_marking_curve(road, *object.marking_curve, marking);
+      marking.surface = object.marking_curve->material;
+    } else if (object.type == ObjectType::Crosswalk) {
       const double length = object.length.value_or(4.0);
       const double width = object.width.value_or(2.0);
       marking.name = fmt::format("road {} object {} crosswalk", road.odr_id, object.odr_id);
@@ -366,10 +510,18 @@ void build_object_markings(const RoadNetwork& network,
       marking.name = fmt::format("road {} object {} stop line", road.odr_id, object.odr_id);
       emit_object_quad(frame, length, width, marking);
     } else if (object.type_str == "roadMark" && object.subtype.starts_with("arrow")) {
-      const double length = object.length.value_or(4.0);
-      const double width = object.width.value_or(1.75);
       marking.name = fmt::format("road {} object {} arrow", road.odr_id, object.odr_id);
-      emit_arrow(frame, length, width, object.subtype, marking);
+      if (has_local_glyph_outline(object)) {
+        // Authored stencil: tessellate the object's own concave glyph outline.
+        emit_tessellated_outline(frame, object.outlines.front(), marking);
+      } else {
+        const double length = object.length.value_or(4.0);
+        const double width = object.width.value_or(1.75);
+        emit_arrow(frame, length, width, object.subtype, marking); // legacy/merge fallback
+      }
+      if (object.stencil.has_value()) {
+        marking.surface = object.stencil->material; // tint from the asset material
+      }
     } else {
       continue; // not a painted marking — render-side placeholder (phase 4)
     }

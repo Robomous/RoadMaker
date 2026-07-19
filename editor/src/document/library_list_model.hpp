@@ -95,6 +95,7 @@ private:
   /// painted at runtime from the item's stripe/material params (crosswalk_item).
   /// Cached by key; cleared on rebuild() so an edited asset re-renders.
   mutable QHash<QString, QIcon> crosswalk_icon_cache_;
+  mutable QHash<QString, QIcon> stencil_icon_cache_;
 
   /// Resolves a crosswalk asset's material code to a paint tint for the preview.
   MaterialCatalog materials_;

@@ -51,6 +51,8 @@ conventions below.
 | Lane Form tool | `Shift+A` |  |
 | Lane Carve tool | `Shift+C` |  |
 | Crosswalk & Stop Line tool | `W` |  |
+| Marking Point tool | `S` |  |
+| Marking Curve tool | `Shift+W` |  |
 | Lane Width editor (2D) | `Shift+L` |  |
 
 ## View

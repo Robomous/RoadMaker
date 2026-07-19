@@ -38,6 +38,11 @@ add_executable(roadmaker_editor_tests
   test_crosswalk_item.cpp
   test_crosswalk_placement.cpp
   test_crosswalk_stop_line_tool.cpp
+  test_marking_curve_placement.cpp
+  test_marking_curve_tool.cpp
+  test_marking_point_tool.cpp
+  test_stencil_item.cpp
+  test_stencil_placement.cpp
   test_delete_tool.cpp
   test_diagnostics_model.cpp
   test_document.cpp
