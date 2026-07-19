@@ -32,6 +32,8 @@ enum class ToolId {
   Crosswalk,
   MarkingPoint,
   MarkingCurve,
+  PropPoint,
+  PropCurve,
 };
 
 struct ToolEvent {

@@ -53,6 +53,8 @@ conventions below.
 | Crosswalk & Stop Line tool | `W` |  |
 | Marking Point tool | `S` |  |
 | Marking Curve tool | `Shift+W` |  |
+| Prop Point tool | `T` |  |
+| Prop Curve tool | `Shift+T` |  |
 | Lane Width editor (2D) | `Shift+L` |  |
 
 ## View

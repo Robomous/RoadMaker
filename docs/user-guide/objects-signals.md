@@ -54,6 +54,35 @@ type / subtype and country, and lets you nudge its road-relative pose —
 `s` along the road, `t` across it, and the heading offset — each edit an
 undoable command.
 
+### Placing props: Prop Point & Prop Curve
+
+Two tools place the selected [**Library**](library.md) prop (a tree or shrub)
+without leaving the viewport. Both snap to the nearest road in `s`/`t` — props
+are road-relative, so a click in open space, away from any road, is rejected
+with a hint rather than placed at a floating world position.
+
+**Prop Point** (`T`) places one prop per click:
+
+- Click on or beside a road and the prop lands under the cursor, snapped to the
+  road (the verge is fine — any `t` within reach). It is a single undo step.
+- A ghost circle of the model's footprint previews where the click will land.
+- Drag a prop already in the scene to move it along its road; the whole drag
+  commits as exactly **one** `move` on release, and `Esc` cancels it cleanly.
+
+**Prop Curve** (`⇧T`) distributes a run of props along a path:
+
+- Click waypoints along a road — the first click anchors the run to the road
+  under it. A live preview fits a smooth curve through the points and shows one
+  ghost per prop at the current spacing.
+- `[` and `]` adjust the spacing (default 5 m) in half-metre steps; the current
+  value is shown in the status bar.
+- `Enter` or a double-click **bakes** the run: every previewed prop becomes an
+  individual `<object>`, added as a **single** undo step. Samples that would
+  leave the anchor road are skipped (the toast reports how many). `Backspace`
+  removes the last point; `Esc` cancels before the bake.
+- Because the bake produces plain props, each one afterwards selects, moves, and
+  deletes on its own — there is no group to break apart.
+
 ### Junction markings
 
 The painted markings a junction needs on every arm author in one action each.

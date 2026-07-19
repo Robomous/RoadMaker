@@ -53,6 +53,8 @@ public:
   QAction* tool_crosswalk = nullptr;
   QAction* tool_marking_point = nullptr;
   QAction* tool_marking_curve = nullptr;
+  QAction* tool_prop_point = nullptr;
+  QAction* tool_prop_curve = nullptr;
 
   /// Not a tool: raises the 2D Editor's Lane Width tab for the selected lane
   /// (⇧L). Standalone so it works from any active tool.
