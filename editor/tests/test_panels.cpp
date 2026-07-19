@@ -12,6 +12,7 @@
 #include <QDoubleSpinBox>
 #include <QItemSelectionModel>
 #include <QLineEdit>
+#include <QPushButton>
 #include <QSignalSpy>
 #include <QTemporaryDir>
 #include <QTest>
@@ -829,6 +830,51 @@ TEST(PropertiesPanel, EditAssetPopulatesAndCommitsCrosswalkParams) {
   // A read-only (built-in) asset disables editing and does not commit.
   panel.edit_asset(QStringLiteral("crosswalk.zebra"), /*editable=*/false);
   EXPECT_FALSE(width->isEnabled());
+}
+
+TEST(PropertiesPanel, PropSetEditorEmitsCommittedItem) {
+  qRegisterMetaType<LibraryItem>();
+  Harness harness;
+  LibraryListModel model;
+  const auto manifest = LibraryManifest::parse(QByteArrayLiteral(R"({
+    "manifest_version": 1,
+    "items": [{"key": "prop_set.mixed", "label": "Mixed", "category": "Prop sets",
+               "create": {"kind": "prop_set",
+                          "entries": [{"model": "tree_pine", "portion": 3},
+                                      {"model": "tree_birch", "portion": 1}]}}]
+  })"));
+  ASSERT_TRUE(manifest.has_value());
+  model.set_manifest(*manifest);
+
+  PropertiesPanel panel(harness.document, harness.selection);
+  panel.set_library_model(&model);
+  QSignalSpy spy(&panel, &PropertiesPanel::prop_set_asset_committed);
+
+  panel.edit_asset(QStringLiteral("prop_set.mixed"), /*editable=*/true);
+  // Two rows were built from the manifest's two entries.
+  const auto portions = panel.findChildren<QDoubleSpinBox*>(QStringLiteral("prop_set_portion"));
+  ASSERT_EQ(portions.size(), 2);
+  EXPECT_DOUBLE_EQ(portions[0]->value(), 3.0);
+  EXPECT_DOUBLE_EQ(portions[1]->value(), 1.0);
+
+  // Edit a weight and Save.
+  portions[1]->setValue(2.5);
+  auto* save = panel.findChild<QPushButton*>(QStringLiteral("prop_set_save"));
+  ASSERT_NE(save, nullptr);
+  save->click();
+
+  ASSERT_EQ(spy.count(), 1);
+  const auto committed = qvariant_cast<LibraryItem>(spy.front().front());
+  EXPECT_EQ(committed.kind, LibraryItem::Kind::PropSet);
+  EXPECT_EQ(committed.key, QStringLiteral("prop_set.mixed"));
+  ASSERT_EQ(committed.prop_entries.size(), 2U);
+  EXPECT_EQ(committed.prop_entries[0].model, QStringLiteral("tree_pine"));
+  EXPECT_DOUBLE_EQ(committed.prop_entries[0].portion, 3.0);
+  EXPECT_DOUBLE_EQ(committed.prop_entries[1].portion, 2.5);
+
+  // A read-only asset disables the entry widgets and the Save button.
+  panel.edit_asset(QStringLiteral("prop_set.mixed"), /*editable=*/false);
+  EXPECT_FALSE(save->isEnabled());
 }
 
 } // namespace

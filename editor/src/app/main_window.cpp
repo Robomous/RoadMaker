@@ -61,6 +61,8 @@
 #include "tools/marking_point_tool.hpp"
 #include "tools/prop_curve_tool.hpp"
 #include "tools/prop_point_tool.hpp"
+#include "tools/prop_polygon_tool.hpp"
+#include "tools/prop_span_tool.hpp"
 #include "tools/select_tool.hpp"
 #include "tools/split_tool.hpp"
 
@@ -414,6 +416,22 @@ MainWindow::MainWindow(QWidget* parent, bool restore_saved_layout)
   connect(actions_->tool_prop_curve, &QAction::triggered, this, [this] {
     tool_manager_.set_active(ToolId::PropCurve);
   });
+  auto prop_span_tool = std::make_unique<PropSpanTool>(document_, selection_);
+  wire_status(prop_span_tool.get());
+  // The tool repeats the merged Library's default prop along the span.
+  prop_span_tool->set_params_provider([this] { return resolve_default_prop_item(); });
+  tool_manager_.register_tool(ToolId::PropSpan, std::move(prop_span_tool));
+  connect(actions_->tool_prop_span, &QAction::triggered, this, [this] {
+    tool_manager_.set_active(ToolId::PropSpan);
+  });
+  auto prop_polygon_tool = std::make_unique<PropPolygonTool>(document_, selection_);
+  wire_status(prop_polygon_tool.get());
+  // The tool scatters the merged Library's default prop across the region.
+  prop_polygon_tool->set_params_provider([this] { return resolve_default_prop_item(); });
+  tool_manager_.register_tool(ToolId::PropPolygon, std::move(prop_polygon_tool));
+  connect(actions_->tool_prop_polygon, &QAction::triggered, this, [this] {
+    tool_manager_.set_active(ToolId::PropPolygon);
+  });
   tool_manager_.set_active(ToolId::Select);
 
   // Merge Roads: enabled only for exactly two selected roads mergeable in some
@@ -537,6 +555,14 @@ void MainWindow::build_docks() {
           &PropertiesPanel::crosswalk_asset_committed,
           this,
           &MainWindow::commit_crosswalk_asset);
+  connect(library_panel_,
+          &LibraryPanel::new_prop_set_requested,
+          this,
+          &MainWindow::create_prop_set_asset);
+  connect(properties_panel_,
+          &PropertiesPanel::prop_set_asset_committed,
+          this,
+          &MainWindow::commit_prop_set_asset);
   properties_dock_->setWidget(properties_panel_);
   properties_dock_->widget()->setMinimumWidth(300);
   addDockWidget(Qt::RightDockWidgetArea, properties_dock_);
@@ -690,6 +716,8 @@ void MainWindow::build_toolbar() {
   toolbar->addAction(actions_->tool_marking_curve);
   toolbar->addAction(actions_->tool_prop_point);
   toolbar->addAction(actions_->tool_prop_curve);
+  toolbar->addAction(actions_->tool_prop_span);
+  toolbar->addAction(actions_->tool_prop_polygon);
   toolbar->addAction(actions_->tool_elevation);
   toolbar->addAction(actions_->tool_create_junction);
   toolbar->addAction(actions_->tool_split);
@@ -1026,6 +1054,65 @@ void MainWindow::commit_crosswalk_asset(const LibraryItem& item) {
   }
 }
 
+void MainWindow::create_prop_set_asset() {
+  if (!project_.has_value()) {
+    viewport_->show_toast(tr("Open or create a project to author assets"), ToastSeverity::Info);
+    return;
+  }
+  const auto path = project_->library_manifest_path();
+  if (!path.has_value()) {
+    return;
+  }
+  LibraryManifest manifest = load_or_create_overlay_manifest();
+  // A unique key across base + overlay so the new set never shadows a built-in.
+  QString key;
+  for (int n = 1;; ++n) {
+    key = QStringLiteral("prop_set.custom%1").arg(n);
+    if (library_model_.item_for_key(key) == nullptr) {
+      break;
+    }
+  }
+  LibraryItem item;
+  item.key = key;
+  item.label = tr("Prop set %1").arg(key.mid(QStringLiteral("prop_set.custom").size()));
+  item.category = QStringLiteral("Prop sets");
+  item.kind = LibraryItem::Kind::PropSet;
+  // Default mixed set (real bundled ids): mostly pines with a few shrubs.
+  item.prop_entries.push_back(
+      LibraryItem::PropSetEntry{.model = QStringLiteral("tree_pine"), .portion = 3.0});
+  item.prop_entries.push_back(
+      LibraryItem::PropSetEntry{.model = QStringLiteral("shrub"), .portion = 1.0});
+  manifest.upsert(item);
+  if (!manifest.save(*path).has_value()) {
+    viewport_->show_toast(tr("Couldn't write the project library"), ToastSeverity::Warning);
+    return;
+  }
+  apply_project_overlay(); // reload the overlay so the model sees the new asset
+  library_dock_->show();
+  library_dock_->raise();
+  library_panel_->select_asset(key); // selects it and opens its editor
+}
+
+void MainWindow::commit_prop_set_asset(const LibraryItem& item) {
+  if (!project_.has_value()) {
+    return;
+  }
+  const auto path = project_->library_manifest_path();
+  if (!path.has_value()) {
+    return;
+  }
+  LibraryManifest manifest = load_or_create_overlay_manifest();
+  manifest.upsert(item);
+  if (!manifest.save(*path).has_value()) {
+    viewport_->show_toast(tr("Couldn't write the project library"), ToastSeverity::Warning);
+    return;
+  }
+  // No propagation: a scatter bakes independent prop objects that never
+  // reference the set, so editing the set only changes future scatters (unlike
+  // commit_crosswalk_asset, whose instances carry the asset's geometry).
+  apply_project_overlay(); // refresh the Library entry for the edited set
+}
+
 void MainWindow::set_capture_highlights(const QString& select_odr, const QString& hover_odr) {
   if (!select_odr.isEmpty()) {
     const RoadId road = document_.network().find_road(select_odr.toStdString());
@@ -1060,6 +1147,8 @@ void MainWindow::activate_tool_for_capture(const QString& tool_id) {
       {QStringLiteral("markingCurve"), ToolId::MarkingCurve},
       {QStringLiteral("propPoint"), ToolId::PropPoint},
       {QStringLiteral("propCurve"), ToolId::PropCurve},
+      {QStringLiteral("propSpan"), ToolId::PropSpan},
+      {QStringLiteral("propPolygon"), ToolId::PropPolygon},
   };
   if (const auto found = kTools.find(tool_id); found != kTools.end()) {
     tool_manager_.set_active(found->second);

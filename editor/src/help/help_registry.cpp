@@ -10,7 +10,7 @@ namespace {
 // both live on Moving and transforming; Delete's behaviour is documented with
 // the right-click menus. Keep this exhaustive — the coverage test loops the
 // whole ToolId enum and fails the build on a hole.
-constexpr std::array<ToolPage, 17> kToolPages{{
+constexpr std::array<ToolPage, 19> kToolPages{{
     {ToolId::Select, "moving-and-transforming"},
     {ToolId::Move, "moving-and-transforming"},
     {ToolId::CreateRoad, "create-road"},
@@ -28,6 +28,8 @@ constexpr std::array<ToolPage, 17> kToolPages{{
     {ToolId::MarkingCurve, "markings"},
     {ToolId::PropPoint, "objects-signals"}, // props are objects & signals content
     {ToolId::PropCurve, "objects-signals"},
+    {ToolId::PropSpan, "objects-signals"},
+    {ToolId::PropPolygon, "objects-signals"},
 }};
 
 // Every dockable panel, keyed by the QDockWidget objectName set in

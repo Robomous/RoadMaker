@@ -1,5 +1,7 @@
 #include "document/library_manifest.hpp"
 
+#include "roadmaker/assets/prop_library.hpp"
+
 #include <spdlog/spdlog.h>
 
 #include <QFile>
@@ -42,6 +44,9 @@ LibraryItem::Kind parse_kind(const QString& kind) {
   if (kind == QStringLiteral("stencil")) {
     return LibraryItem::Kind::Stencil;
   }
+  if (kind == QStringLiteral("prop_set")) {
+    return LibraryItem::Kind::PropSet;
+  }
   return LibraryItem::Kind::Unknown;
 }
 
@@ -77,6 +82,17 @@ QJsonObject create_object(const LibraryItem& item) {
     if (!item.stencil_segmentation.isEmpty()) {
       create[QStringLiteral("segmentation")] = item.stencil_segmentation;
     }
+  }
+  if (item.kind == LibraryItem::Kind::PropSet) {
+    create[QStringLiteral("kind")] = QStringLiteral("prop_set");
+    QJsonArray entries;
+    for (const LibraryItem::PropSetEntry& entry : item.prop_entries) {
+      QJsonObject object;
+      object[QStringLiteral("model")] = entry.model;
+      object[QStringLiteral("portion")] = entry.portion;
+      entries.push_back(object);
+    }
+    create[QStringLiteral("entries")] = entries;
   }
   return create;
 }
@@ -149,6 +165,18 @@ Expected<LibraryManifest> LibraryManifest::parse(const QByteArray& json) {
     item.stencil_width_frac = create.value(QStringLiteral("width_frac")).toDouble(0.5);
     item.stencil_material = create.value(QStringLiteral("material")).toString();
     item.stencil_segmentation = create.value(QStringLiteral("segmentation")).toString();
+    // PropSet entries: drop any whose model doesn't resolve to a bundled prop or
+    // whose portion is not positive (a zero/negative weight can never be drawn).
+    // The verbatim create_raw below still round-trips the authored array intact.
+    for (const QJsonValue& entry_value : create.value(QStringLiteral("entries")).toArray()) {
+      const QJsonObject entry_object = entry_value.toObject();
+      const QString model = entry_object.value(QStringLiteral("model")).toString();
+      const double portion = entry_object.value(QStringLiteral("portion")).toDouble(1.0);
+      if (portion <= 0.0 || props::model(model.toStdString()) == nullptr) {
+        continue;
+      }
+      item.prop_entries.push_back(LibraryItem::PropSetEntry{.model = model, .portion = portion});
+    }
     // Capture the verbatim create block so unknown kinds and forward-compat
     // fields survive to_json() untouched (the never-drop contract for the
     // manifest schema).

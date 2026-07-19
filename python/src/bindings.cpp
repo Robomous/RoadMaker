@@ -16,6 +16,7 @@
 #include "roadmaker/mesh/mesh_builder.hpp"
 #include "roadmaker/road/authoring.hpp"
 #include "roadmaker/road/network.hpp"
+#include "roadmaker/road/repeat_expansion.hpp"
 #include "roadmaker/road/surface_derivation.hpp"
 #include "roadmaker/version.hpp"
 #include "roadmaker/xodr/reader.hpp"
@@ -552,6 +553,24 @@ NB_MODULE(_roadmaker, m) {
       .def_rw("c_t", &roadmaker::ObjectRepeat::c_t)
       .def_rw("d_t", &roadmaker::ObjectRepeat::d_t)
       .def_rw("detach_from_reference_line", &roadmaker::ObjectRepeat::detach_from_reference_line);
+
+  nb::class_<roadmaker::RepeatInstance>(m, "RepeatInstance")
+      .def(nb::init<>())
+      .def_rw("s", &roadmaker::RepeatInstance::s, "Absolute s of the instance origin [m].")
+      .def_rw("t", &roadmaker::RepeatInstance::t, "Lateral offset of the instance origin [m].")
+      .def_rw("z_offset",
+              &roadmaker::RepeatInstance::z_offset,
+              "Height above the reference-line elevation [m].");
+
+  m.def("expand_repeat",
+        &roadmaker::expand_repeat,
+        "repeat"_a,
+        "Expands one <repeat> section (§13.4) into its discrete object "
+        "instances. distance <= 0 (a continuous object) yields an empty list; "
+        "otherwise floor(length / distance) + 1 instances are placed at ds = 0, "
+        "distance, ... rounded down (no incomplete trailing instance). t is a "
+        "cubic in ds when any of bT/cT/dT is set (1.9.0), else a linear "
+        "tStart->tEnd lerp (1.8.1); z_offset is always a linear lerp.");
 
   nb::class_<roadmaker::CrosswalkData>(m, "CrosswalkData")
       .def(nb::init<>())

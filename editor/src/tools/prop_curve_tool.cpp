@@ -5,6 +5,7 @@
 #include "roadmaker/road/object.hpp"
 #include "roadmaker/tol.hpp"
 
+#include <QRandomGenerator>
 #include <QUndoStack>
 #include <algorithm>
 #include <cmath>
@@ -37,7 +38,8 @@ void append_segment(PreviewGeometry& geometry, double x0, double y0, double x1, 
 } // namespace
 
 PropCurveTool::PropCurveTool(Document& document, SelectionModel& selection, QObject* parent)
-    : Tool(parent), document_(document), selection_(selection) {}
+    : Tool(parent), document_(document), selection_(selection),
+      session_seed_(QRandomGenerator::global()->generate()) {}
 
 void PropCurveTool::set_params_provider(std::function<LibraryItem()> provider) {
   params_provider_ = std::move(provider);
@@ -146,7 +148,7 @@ void PropCurveTool::bake() {
   // Non-const so the props can be MOVED into add_object below (a const binding
   // would make std::move a redundant copy — GCC's -Werror=redundant-move).
   Expected<PropCurveDistribution> distribution = distribute_props_along_curve(
-      document_.network(), *anchor_, points_, current_item(), spacing_m_);
+      document_.network(), *anchor_, points_, current_item(), spacing_m_, session_seed_);
   if (!distribution.has_value()) {
     // Session kept: the points are the user's work; fix and retry.
     emit status_message(tr("Cannot distribute props: %1")
@@ -177,6 +179,8 @@ void PropCurveTool::reset_session() {
   points_.clear();
   anchor_.reset();
   cursor_.reset();
+  // A fresh seed for the next curve, so two curves of a mixed set differ.
+  session_seed_ = QRandomGenerator::global()->generate();
   emit preview_changed();
 }
 
@@ -207,7 +211,7 @@ PreviewGeometry PropCurveTool::preview() const {
     }
     if (candidate.size() >= 2) {
       const Expected<PropCurveDistribution> distribution = distribute_props_along_curve(
-          document_.network(), *anchor_, candidate, current_item(), spacing_m_);
+          document_.network(), *anchor_, candidate, current_item(), spacing_m_, session_seed_);
       if (distribution.has_value()) {
         for (const std::array<double, 2>& point : distribution->preview_points) {
           geometry.add_handle(point[0], point[1], 0.0, HandleKind::Node, HandleState::Hovered);

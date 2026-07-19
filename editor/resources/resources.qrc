@@ -34,6 +34,8 @@
     <file alias="marking-curve.svg">icons/custom/marking-curve.svg</file>
     <file alias="prop-point.svg">icons/custom/prop-point.svg</file>
     <file alias="prop-curve.svg">icons/custom/prop-curve.svg</file>
+    <file alias="prop-span.svg">icons/custom/prop-span.svg</file>
+    <file alias="prop-polygon.svg">icons/custom/prop-polygon.svg</file>
     <file alias="template-highway.svg">icons/custom/template-highway.svg</file>
     <file alias="template-rural.svg">icons/custom/template-rural.svg</file>
     <file alias="template-urban.svg">icons/custom/template-urban.svg</file>

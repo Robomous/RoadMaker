@@ -187,6 +187,24 @@ Actions::Actions(QUndoStack& undo_stack, QObject* parent) : QObject(parent) {
          "[ / ] adjust spacing, Enter bakes them into individual props, Esc cancels (⇧T)"));
   tool_group->addAction(tool_prop_curve);
 
+  tool_prop_span = new QAction(tr("Prop Spa&n"), this);
+  tool_prop_span->setCheckable(true);
+  tool_prop_span->setShortcuts(shortcuts::sequences(shortcuts::Id::ToolPropSpan));
+  tool_prop_span->setIconText(tr("Prop Span"));
+  tool_prop_span->setToolTip(
+      tr("Prop Span — click two stations on one road to place a repeating run of the selected "
+         "prop; [ / ] adjust spacing, Enter commits, Esc cancels (⇧S)"));
+  tool_group->addAction(tool_prop_span);
+
+  tool_prop_polygon = new QAction(tr("Prop Pol&ygon"), this);
+  tool_prop_polygon->setCheckable(true);
+  tool_prop_polygon->setShortcuts(shortcuts::sequences(shortcuts::Id::ToolPropPolygon));
+  tool_prop_polygon->setIconText(tr("Prop Polygon"));
+  tool_prop_polygon->setToolTip(
+      tr("Prop Polygon — outline a region to scatter the selected prop across it; [ / ] adjust "
+         "density, R re-scatters, Enter bakes them into individual props, Esc cancels (⇧P)"));
+  tool_group->addAction(tool_prop_polygon);
+
   // Not a tool — a command that surfaces the 2D Editor's Lane Width tab for the
   // selected lane. Standalone so ⇧L works whatever tool is active.
   lane_width_editor = new QAction(tr("Lane &Width Editor"), this);
@@ -318,6 +336,8 @@ void Actions::apply_icons() {
   tool_marking_curve->setIcon(Icons::get(QStringLiteral("marking-curve")));
   tool_prop_point->setIcon(Icons::get(QStringLiteral("prop-point")));
   tool_prop_curve->setIcon(Icons::get(QStringLiteral("prop-curve")));
+  tool_prop_span->setIcon(Icons::get(QStringLiteral("prop-span")));
+  tool_prop_polygon->setIcon(Icons::get(QStringLiteral("prop-polygon")));
   template_rural->setIcon(Icons::get(QStringLiteral("template-rural")));
   template_urban->setIcon(Icons::get(QStringLiteral("template-urban")));
   template_highway->setIcon(Icons::get(QStringLiteral("template-highway")));

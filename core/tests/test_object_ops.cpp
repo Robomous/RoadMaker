@@ -13,6 +13,7 @@
 #include <gtest/gtest.h>
 
 #include <algorithm>
+#include <cmath>
 #include <string>
 #include <vector>
 
@@ -208,6 +209,79 @@ TEST(ObjectOps, NonPropObjectEmitsNoInstance) {
 
   const NetworkMesh mesh = build_network_mesh(network, {});
   EXPECT_TRUE(mesh.objects.empty()) << "a pole is not a bundled prop model";
+}
+
+TEST(ObjectOps, RepeatExpandsToMeshInstances) {
+  // A <repeat> with distance>0 places a SERIES and suppresses the base single
+  // instance (§13.4 "the <repeat> element takes precedence"). length=100,
+  // distance=20 -> floor(100/20)=5 -> 6 instances; the road is 120 m so every
+  // origin (s = 10,30,...,110) is on it.
+  RoadNetwork network;
+  const RoadId road = author_street(network);
+  Object tree = make_tree("1", 10.0, 4.0);
+  ObjectRepeat repeat;
+  repeat.s = 10.0;
+  repeat.length = 100.0;
+  repeat.distance = 20.0;
+  repeat.t_start = repeat.t_end = 4.0;
+  tree.repeats = {repeat};
+  network.add_object(road, tree);
+
+  const NetworkMesh mesh = build_network_mesh(network, {});
+  ASSERT_EQ(mesh.objects.size(), 6U);
+  EXPECT_NEAR(mesh.objects.front().position[0], 10.0, 1.0);
+  EXPECT_NEAR(mesh.objects.back().position[0], 110.0, 1.0);
+  for (const ObjectInstance& instance : mesh.objects) {
+    EXPECT_EQ(instance.model_id, "tree_pine");
+    EXPECT_NEAR(instance.position[1], 4.0, 1e-6); // constant t on a +x road
+  }
+}
+
+TEST(ObjectOps, ContinuousRepeatFallsBackToSingleInstance) {
+  // distance == 0 is a continuous (extruded) object, not a series: expand_repeat
+  // yields nothing and the object keeps its single-instance placement.
+  RoadNetwork network;
+  const RoadId road = author_street(network);
+  Object tree = make_tree("1", 40.0, 6.0);
+  ObjectRepeat repeat;
+  repeat.s = 5.0;
+  repeat.length = 100.0;
+  repeat.distance = 0.0; // continuous
+  tree.repeats = {repeat};
+  network.add_object(road, tree);
+
+  const NetworkMesh mesh = build_network_mesh(network, {});
+  ASSERT_EQ(mesh.objects.size(), 1U);
+  EXPECT_NEAR(mesh.objects.front().position[0], 40.0, 1.0); // the object's own s/t
+  EXPECT_NEAR(mesh.objects.front().position[1], 6.0, 1.0);
+}
+
+TEST(ObjectOps, DetachedRepeatFollowsChord) {
+  // detachFromReferenceLine draws instances along the straight chord between the
+  // section's start/end anchors. length=100, distance=50 -> 3 instances at
+  // ds=0,50,100; the middle sits at the chord midpoint.
+  RoadNetwork network;
+  const RoadId road = author_street(network);
+  Object tree = make_tree("1", 0.0, 0.0);
+  ObjectRepeat repeat;
+  repeat.s = 10.0;
+  repeat.length = 100.0;
+  repeat.distance = 50.0;
+  repeat.t_start = 2.0;
+  repeat.t_end = 8.0;
+  repeat.detach_from_reference_line = true;
+  tree.repeats = {repeat};
+  network.add_object(road, tree);
+
+  const NetworkMesh mesh = build_network_mesh(network, {});
+  ASSERT_EQ(mesh.objects.size(), 3U);
+  // Chord runs from (10, 2) to (110, 8) on this straight +x road; the midpoint
+  // is (60, 5) and the chord heading is atan2(6, 100) about +x.
+  EXPECT_NEAR(mesh.objects[1].position[0], 60.0, 1e-6);
+  EXPECT_NEAR(mesh.objects[1].position[1], 5.0, 1e-6);
+  EXPECT_NEAR(mesh.objects.front().position[0], 10.0, 1e-6);
+  EXPECT_NEAR(mesh.objects.back().position[1], 8.0, 1e-6);
+  EXPECT_NEAR(mesh.objects.front().heading, std::atan2(6.0, 100.0), 1e-6);
 }
 
 // --- update_objects (batch replace behind an asset edit) --------------------

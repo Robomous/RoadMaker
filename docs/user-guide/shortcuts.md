@@ -55,6 +55,8 @@ conventions below.
 | Marking Curve tool | `Shift+W` |  |
 | Prop Point tool | `T` |  |
 | Prop Curve tool | `Shift+T` |  |
+| Prop Span tool | `Shift+S` |  |
+| Prop Polygon tool | `Shift+P` |  |
 | Lane Width editor (2D) | `Shift+L` |  |
 
 ## View

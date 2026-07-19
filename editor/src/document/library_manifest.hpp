@@ -34,7 +34,15 @@ struct LibraryItem {
     Material,
     Crosswalk,
     Stencil,
+    PropSet,
     Unknown
+  };
+
+  /// One weighted choice in a PropSet: a bundled prop model plus its relative
+  /// draw weight. A scatter draws one entry per instance weighted by `portion`.
+  struct PropSetEntry {
+    QString model;        ///< a bundled prop model id (props::model)
+    double portion = 1.0; ///< relative draw weight (must be > 0)
   };
 
   QString key;       ///< stable id (drag payload / scene reference)
@@ -71,6 +79,12 @@ struct LibraryItem {
   double stencil_width_frac = 0.5; ///< glyph width as a fraction of the lane width
   QString stencil_material;        ///< paint material code (e.g. "material.paint_white")
   QString stencil_segmentation;    ///< segmentation category tag
+
+  /// PropSet (weighted scatter asset, p6-s5): the model choices a scatter draws
+  /// from. Entries that don't resolve to a bundled model, or whose portion is
+  /// not positive, are dropped on parse. A resolved draw yields a synthetic
+  /// Tree item (see prop_placement::resolve_prop_asset).
+  std::vector<PropSetEntry> prop_entries;
 
   /// The item's verbatim `create` JSON block. Captured on parse so an unknown
   /// create kind — or a modeled one carrying forward-compat fields this build

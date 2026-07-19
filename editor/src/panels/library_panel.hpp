@@ -57,6 +57,10 @@ signals:
   /// a project-overlay crosswalk asset and opens its editor.
   void new_crosswalk_asset_requested();
 
+  /// The context menu's "New prop set…" was chosen — MainWindow creates a
+  /// project-overlay prop-set asset and opens its editor.
+  void new_prop_set_requested();
+
 private:
   /// Emits asset_selected when `index` (proxy space) is a parametric asset.
   void handle_current_changed(const QModelIndex& index);

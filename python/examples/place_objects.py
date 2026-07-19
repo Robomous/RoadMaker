@@ -68,6 +68,13 @@ def main() -> int:
     tree.repeats = [repeat]
     network.add_object(road_id, tree)
 
+    # Expand that <repeat> into the discrete instances it places (§13.4): a
+    # 110 m section every 15 m rounds down to floor(110/15)+1 = 8 trees, the
+    # last at ds=105 (no incomplete instance is placed at the 110 m end).
+    instances = rm.expand_repeat(repeat)
+    print(f"tree line expands to {len(instances)} instances")
+    print(f"  first at s={instances[0].s:.1f}, last at s={instances[-1].s:.1f}")
+
     # The undoable command path (parity with the editor): place a single tree
     # prop through the edit layer so it participates in undo/redo. `add_object`
     # returns a Command; an EditStack applies it and can revert it exactly.

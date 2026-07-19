@@ -137,6 +137,14 @@ private:
   /// Persists an edited crosswalk asset into the project overlay and propagates
   /// the change to every following instance in one undoable command.
   void commit_crosswalk_asset(const LibraryItem& item);
+  /// Creates a new project-overlay prop-set asset (default mixed entries),
+  /// saves it, refreshes the Library, and opens its editor. Toasts when no
+  /// project is open.
+  void create_prop_set_asset();
+  /// Persists an edited prop-set asset into the project overlay. No propagation:
+  /// baked props never reference the set, so an edit only affects future
+  /// scatters (contrast commit_crosswalk_asset, which re-materializes instances).
+  void commit_prop_set_asset(const LibraryItem& item);
   /// Adopts the project containing `scene_path` (or clears the association
   /// for a standalone scene). Runs after every load and save.
   void associate_project_for(const std::filesystem::path& scene_path);

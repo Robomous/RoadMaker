@@ -26,8 +26,9 @@ TEST(LibraryManifest, ParsesTheShippedManifest) {
   ASSERT_TRUE(manifest.has_value()) << (manifest ? "" : manifest.error().message);
   EXPECT_EQ(manifest->version(), 1);
   EXPECT_EQ(manifest->items().size(),
-            32U); // 3 road templates + 1 road style + 2 assemblies + 5 tree props
+            33U); // 3 road templates + 1 road style + 2 assemblies + 5 tree props
                   // + 2 signals + 9 markings + 3 materials + 1 crosswalk + 6 stencils
+                  // + 1 prop set
 
   // Road templates resolve to a profile, road styles to a style name, assemblies
   // to a t/x kind, trees to a bundled prop model id, signals to a light/sign tag,
@@ -41,6 +42,7 @@ TEST(LibraryManifest, ParsesTheShippedManifest) {
   int materials = 0;
   int crosswalks = 0;
   int stencils = 0;
+  int prop_sets = 0;
   for (const LibraryItem& item : manifest->items()) {
     EXPECT_FALSE(item.key.isEmpty());
     EXPECT_FALSE(item.label.isEmpty());
@@ -79,6 +81,10 @@ TEST(LibraryManifest, ParsesTheShippedManifest) {
       EXPECT_EQ(item.category, "Stencils");
       EXPECT_FALSE(item.stencil_subtype.isEmpty());
       EXPECT_GT(item.stencil_width_frac, 0.0);
+    } else if (item.kind == LibraryItem::Kind::PropSet) {
+      ++prop_sets;
+      EXPECT_EQ(item.category, "Prop sets");
+      EXPECT_FALSE(item.prop_entries.empty());
     }
   }
   EXPECT_EQ(templates, 3);
@@ -90,6 +96,7 @@ TEST(LibraryManifest, ParsesTheShippedManifest) {
   EXPECT_EQ(materials, 3);
   EXPECT_EQ(crosswalks, 1);
   EXPECT_EQ(stencils, 6);
+  EXPECT_EQ(prop_sets, 1);
 }
 
 TEST(LibraryManifest, ParsesCrosswalkCreateKind) {
@@ -112,6 +119,90 @@ TEST(LibraryManifest, ParsesCrosswalkCreateKind) {
   EXPECT_DOUBLE_EQ(cw.crosswalk_gap, 0.6);
   EXPECT_EQ(cw.crosswalk_material, "material.paint_white");
   EXPECT_EQ(cw.crosswalk_segmentation, "crosswalk");
+}
+
+TEST(LibraryManifest, ParsesPropSetEntries) {
+  const auto manifest = LibraryManifest::parse(json(R"({
+    "manifest_version": 1,
+    "items": [
+      {"key": "prop_set.mixed", "label": "Mixed", "category": "Prop sets",
+       "create": {"kind": "prop_set",
+                  "entries": [{"model": "tree_pine", "portion": 3},
+                              {"model": "tree_birch", "portion": 1}]}}
+    ]
+  })"));
+  ASSERT_TRUE(manifest.has_value());
+  ASSERT_EQ(manifest->items().size(), 1U);
+  const LibraryItem& set = manifest->items()[0];
+  EXPECT_EQ(set.kind, LibraryItem::Kind::PropSet);
+  ASSERT_EQ(set.prop_entries.size(), 2U);
+  EXPECT_EQ(set.prop_entries[0].model, "tree_pine");
+  EXPECT_DOUBLE_EQ(set.prop_entries[0].portion, 3.0);
+  EXPECT_EQ(set.prop_entries[1].model, "tree_birch");
+  EXPECT_DOUBLE_EQ(set.prop_entries[1].portion, 1.0);
+}
+
+TEST(LibraryManifest, DropsInvalidPropSetEntries) {
+  const auto manifest = LibraryManifest::parse(json(R"({
+    "manifest_version": 1,
+    "items": [
+      {"key": "prop_set.dodgy", "label": "Dodgy", "category": "Prop sets",
+       "create": {"kind": "prop_set",
+                  "entries": [{"model": "tree_pine", "portion": 2},
+                              {"model": "not_a_model", "portion": 1},
+                              {"model": "shrub", "portion": 0},
+                              {"model": "tree_oak", "portion": -5}]}}
+    ]
+  })"));
+  ASSERT_TRUE(manifest.has_value());
+  ASSERT_EQ(manifest->items().size(), 1U);
+  const LibraryItem& set = manifest->items()[0];
+  // Only the resolvable, positive-weight entry survives.
+  ASSERT_EQ(set.prop_entries.size(), 1U);
+  EXPECT_EQ(set.prop_entries[0].model, "tree_pine");
+}
+
+TEST(LibraryManifest, PropSetRoundTripsVerbatim) {
+  const auto manifest = LibraryManifest::parse(json(R"({
+    "manifest_version": 1,
+    "items": [
+      {"key": "prop_set.mixed", "label": "Mixed", "category": "Prop sets",
+       "create": {"kind": "prop_set",
+                  "entries": [{"model": "tree_pine", "portion": 3},
+                              {"model": "tree_birch", "portion": 1}]}}
+    ]
+  })"));
+  ASSERT_TRUE(manifest.has_value());
+  const auto reparsed = LibraryManifest::parse(manifest->to_json());
+  ASSERT_TRUE(reparsed.has_value());
+  ASSERT_EQ(reparsed->items().size(), 1U);
+  EXPECT_EQ(reparsed->items()[0].kind, LibraryItem::Kind::PropSet);
+  // A parsed item re-emits its verbatim create block.
+  EXPECT_EQ(reparsed->items()[0].create_raw, manifest->items()[0].create_raw);
+}
+
+TEST(LibraryManifest, ProgrammaticPropSetSerializes) {
+  // No create_raw (built in code): to_json serializes from prop_entries.
+  LibraryItem set;
+  set.key = "prop_set.custom1";
+  set.label = "Custom";
+  set.category = "Prop sets";
+  set.kind = LibraryItem::Kind::PropSet;
+  set.prop_entries.push_back({.model = "tree_oak", .portion = 2.0});
+  set.prop_entries.push_back({.model = "shrub", .portion = 0.5});
+  LibraryManifest manifest;
+  manifest.upsert(set);
+
+  const auto reparsed = LibraryManifest::parse(manifest.to_json());
+  ASSERT_TRUE(reparsed.has_value());
+  ASSERT_EQ(reparsed->items().size(), 1U);
+  const LibraryItem& out = reparsed->items()[0];
+  EXPECT_EQ(out.kind, LibraryItem::Kind::PropSet);
+  ASSERT_EQ(out.prop_entries.size(), 2U);
+  EXPECT_EQ(out.prop_entries[0].model, "tree_oak");
+  EXPECT_DOUBLE_EQ(out.prop_entries[0].portion, 2.0);
+  EXPECT_EQ(out.prop_entries[1].model, "shrub");
+  EXPECT_DOUBLE_EQ(out.prop_entries[1].portion, 0.5);
 }
 
 TEST(LibraryManifest, ToJsonRoundTripsParsedManifest) {
@@ -252,7 +343,7 @@ TEST(LibraryListModel, PassesQtModelSanityChecksEmptyAndPopulated) {
   const auto manifest = LibraryManifest::load(kManifest);
   ASSERT_TRUE(manifest.has_value());
   model.set_manifest(*manifest);
-  EXPECT_EQ(model.rowCount(), 32);
+  EXPECT_EQ(model.rowCount(), 33);
 }
 
 TEST(LibraryListModel, ExposesRolesAndItemLookup) {
@@ -270,7 +361,7 @@ TEST(LibraryListModel, ExposesRolesAndItemLookup) {
   ASSERT_NE(item, nullptr);
   EXPECT_EQ(model.data(first, LibraryListModel::KeyRole).toString(), item->key);
   EXPECT_EQ(model.item(-1), nullptr);
-  EXPECT_EQ(model.item(32), nullptr);
+  EXPECT_EQ(model.item(33), nullptr);
 }
 
 // The per-project overlay (p6-s1): project items merge into the built-in
@@ -346,7 +437,7 @@ TEST(LibraryListModel, SetManifestRemergesAnActiveOverlay) {
   const auto base = LibraryManifest::load(kManifest);
   ASSERT_TRUE(base.has_value());
   model.set_manifest(*base);       // the overlay survives a base reload
-  EXPECT_EQ(model.rowCount(), 33); // 32 base items + 1 overlay
+  EXPECT_EQ(model.rowCount(), 34); // 33 base items + 1 overlay
   EXPECT_NE(model.item_for_key(QStringLiteral("project.only")), nullptr);
 }
 
@@ -398,6 +489,13 @@ TEST(LibraryListModel, ServesABundledThumbnailForEveryBuiltInItem) {
     const QString path = model.data(index, LibraryListModel::ThumbnailRole).toString();
     const LibraryItem* entry = model.item(row);
     ASSERT_NE(entry, nullptr);
+    // A PropSet carries neither a bundled PNG nor a model-level preview — its
+    // grid icon is the LibraryPanel's glyph fallback (p6-s5), so it is exempt
+    // from both the qrc-thumbnail drift gate and the decoration check.
+    if (entry->kind == LibraryItem::Kind::PropSet) {
+      EXPECT_TRUE(path.isEmpty()) << key.toStdString();
+      continue;
+    }
     // Crosswalk and Stencil assets carry no bundled PNG — their DecorationRole
     // is a runtime QPainter preview, so they are exempt from the qrc-thumbnail
     // drift gate but must still serve a non-null decoration.

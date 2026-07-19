@@ -83,6 +83,52 @@ with a hint rather than placed at a floating world position.
 - Because the bake produces plain props, each one afterwards selects, moves, and
   deletes on its own — there is no group to break apart.
 
+**Prop Span** (`⇧S`) places a repeating run of one prop as a single object:
+
+- Click two stations on the **same** road — the first anchors the span and pins
+  its lateral offset, the second sets the far end (a click that leaves the anchor
+  road is ignored). A live preview shows one ghost per instance.
+- `[` and `]` adjust the spacing between instances (default 5 m) in half-metre
+  steps.
+- `Enter` or a double-click commits the span as **one** `<object>` carrying one
+  `<repeat>` — a single undo step. The kernel expands the repeat when it meshes
+  and exports, so the file stays compact.
+- A span carries exactly **one model**: a [prop set](#prop-sets) is resolved to a
+  single tree or shrub for the whole run (a `<repeat>` cannot mix models). Use
+  Prop Curve or Prop Polygon to scatter a mix.
+- **Known limitation:** a committed span cannot be dragged to a new position yet
+  — moving its object relocates the object's own origin, not the repeat. To
+  reposition a span, delete it and draw a new one. A span editor is planned.
+
+**Prop Polygon** (`⇧P`) scatters props to fill a region:
+
+- Click three or more vertices to outline a region; the interior may sit well off
+  the road (a park, a wide verge). Each scattered prop still anchors to the
+  nearest road within reach, so the region need not hug the carriageway.
+- `[` and `]` adjust the density (props per 100 m²); `R` re-scatters with a fresh
+  random layout at the same density. The preview updates in place.
+- `Enter` or a double-click **bakes** the scatter: every previewed prop becomes an
+  individual `<object>`, added as a **single** undo step. Samples with no road in
+  reach are skipped (the toast reports how many). `Backspace` removes the last
+  vertex; `Esc` cancels before the bake.
+- A [prop set](#prop-sets) scatters a **mix** — one model is drawn per instance by
+  the set's portions.
+
+### Prop sets
+
+A **prop set** is a Library asset that names several tree/shrub models with
+relative *portions* (for example three pines to one birch). Placing a set draws
+a model from those weighted portions:
+
+- **Prop Point** draws one model per click; **Prop Curve** and **Prop Polygon**
+  draw one per placed instance, so a run or region shows the mix.
+- **Prop Span** draws **once** for the whole span — a repeating run is a single
+  object with a single model.
+
+Create or edit a set from the Library (right-click → *New prop set…*); the baked
+props are plain objects and never reference the set, so editing the set later
+does not disturb props already placed.
+
 ### Junction markings
 
 The painted markings a junction needs on every arm author in one action each.

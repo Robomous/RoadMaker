@@ -33,6 +33,11 @@ namespace {
   if (key.startsWith(QStringLiteral("assembly."))) {
     return QStringLiteral("junction-connect");
   }
+  if (key.startsWith(QStringLiteral("prop_set."))) {
+    // Prop sets reuse the vegetation glyph (Icons::get falls back to it — no
+    // per-set thumbnail this sprint).
+    return QStringLiteral("trees");
+  }
   if (key.startsWith(QStringLiteral("prop."))) {
     return QStringLiteral("trees");
   }
@@ -112,7 +117,8 @@ void LibraryPanel::handle_current_changed(const QModelIndex& index) {
     return;
   }
   const LibraryItem* item = model_.item(proxy_.mapToSource(index).row());
-  if (item != nullptr && item->kind == LibraryItem::Kind::Crosswalk) {
+  if (item != nullptr &&
+      (item->kind == LibraryItem::Kind::Crosswalk || item->kind == LibraryItem::Kind::PropSet)) {
     emit asset_selected(item->key);
   }
 }
@@ -121,6 +127,8 @@ void LibraryPanel::show_context_menu(const QPoint& pos) {
   QMenu menu(this);
   QAction* new_crosswalk = menu.addAction(tr("New crosswalk asset…"));
   connect(new_crosswalk, &QAction::triggered, this, &LibraryPanel::new_crosswalk_asset_requested);
+  QAction* new_prop_set = menu.addAction(tr("New prop set…"));
+  connect(new_prop_set, &QAction::triggered, this, &LibraryPanel::new_prop_set_requested);
   menu.exec(view_->viewport()->mapToGlobal(pos));
 }
 

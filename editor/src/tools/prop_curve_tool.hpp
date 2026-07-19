@@ -14,6 +14,7 @@
 #include "roadmaker/road/id.hpp"
 
 #include <cstddef>
+#include <cstdint>
 #include <functional>
 #include <optional>
 #include <vector>
@@ -68,6 +69,11 @@ private:
   std::optional<RoadId> anchor_;
   std::optional<Waypoint> cursor_;
   double spacing_m_ = 5.0; ///< distance between props [m]
+  /// Seeds the PropSet draw (one per placed instance). Held for the whole
+  /// session and re-rolled per session in reset_session, so a mixed set scatters
+  /// the SAME models in the preview and the bake (preview == commit); a plain
+  /// Tree ignores it.
+  std::uint32_t session_seed_ = 0;
 };
 
 } // namespace roadmaker::editor

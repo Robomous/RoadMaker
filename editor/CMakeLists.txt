@@ -109,6 +109,8 @@ add_library(roadmaker_editor_lib STATIC
   src/tools/marking_point_tool.cpp
   src/tools/prop_curve_tool.cpp
   src/tools/prop_point_tool.cpp
+  src/tools/prop_polygon_tool.cpp
+  src/tools/prop_span_tool.cpp
   src/tools/lane_profile_tool.cpp
   src/tools/node_drag.cpp
   src/tools/select_tool.cpp

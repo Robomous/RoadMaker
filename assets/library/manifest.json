@@ -218,6 +218,12 @@
       "category": "Materials",
       "thumbnail": "assets/library/thumbnails/material_concrete.png",
       "create": { "kind": "material", "material": "concrete" }
+    },
+    {
+      "key": "prop_set.mixed",
+      "label": "Mixed trees",
+      "category": "Prop sets",
+      "create": { "kind": "prop_set", "entries": [ { "model": "tree_pine", "portion": 3 }, { "model": "tree_birch", "portion": 1 } ] }
     }
   ]
 }

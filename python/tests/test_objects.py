@@ -97,6 +97,43 @@ def test_objects_round_trip_through_xodr(network_with_road, tmp_path):
     assert objects["2"].repeats[0].distance == pytest.approx(15.0)
 
 
+def test_expand_repeat_rounds_down_and_keeps_endpoint():
+    # §13.4: floor(length / distance) + 1 instances, no incomplete trailing one.
+    repeat = rm.ObjectRepeat()
+    repeat.s, repeat.length, repeat.distance = 5.0, 110.0, 15.0
+    repeat.t_start = repeat.t_end = 8.0
+
+    instances = rm.expand_repeat(repeat)
+    assert len(instances) == 8  # floor(110/15)=7 -> 8 instances at ds 0..105
+    assert instances[0].s == pytest.approx(5.0)
+    assert instances[-1].s == pytest.approx(5.0 + 105.0)  # last origin inside section
+    assert all(inst.t == pytest.approx(8.0) for inst in instances)
+
+    # Exact fit keeps the endpoint instance (length == k*distance).
+    repeat.length = 30.0
+    exact = rm.expand_repeat(repeat)
+    assert len(exact) == 3  # ds = 0, 15, 30
+    assert exact[-1].s == pytest.approx(5.0 + 30.0)
+
+    # A continuous object (distance == 0) is extruded, not instanced.
+    repeat.distance = 0.0
+    assert rm.expand_repeat(repeat) == []
+
+
+def test_expand_repeat_cubic_t_overrides_linear():
+    # §13.4: any of bT/cT/dT present selects the cubic t(ds); 1.8.1 has no cubic.
+    repeat = rm.ObjectRepeat()
+    repeat.s, repeat.length, repeat.distance = 0.0, 20.0, 10.0
+    repeat.t_start, repeat.t_end = 1.0, 99.0  # tEnd is ignored under the cubic
+    repeat.b_t = 0.5
+
+    instances = rm.expand_repeat(repeat)
+    assert len(instances) == 3  # ds = 0, 10, 20
+    assert instances[0].t == pytest.approx(1.0)  # t_start + 0.5*0
+    assert instances[1].t == pytest.approx(1.0 + 0.5 * 10.0)
+    assert instances[2].t == pytest.approx(1.0 + 0.5 * 20.0)
+
+
 def test_object_markings_round_trip(network_with_road, tmp_path):
     network, road_id = network_with_road
     crosswalk = rm.Object()

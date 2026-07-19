@@ -1,5 +1,6 @@
 #include "panels/properties_panel.hpp"
 
+#include "roadmaker/assets/prop_library.hpp"
 #include "roadmaker/edit/operations.hpp"
 #include "roadmaker/geometry/poly3.hpp"
 #include "roadmaker/road/network.hpp"
@@ -9,10 +10,12 @@
 #include <QPixmap>
 #include <QSignalBlocker>
 #include <QVBoxLayout>
+#include <algorithm>
 #include <array>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <string>
 #include <utility>
 
 #include "document/crosswalk_item.hpp"
@@ -223,7 +226,8 @@ PropertiesPanel::PropertiesPanel(Document& document,
       asset_dash_spin_(new QDoubleSpinBox), asset_gap_spin_(new QDoubleSpinBox),
       asset_material_slot_(new SlotWidget(QStringLiteral("Materials"), this)),
       asset_category_edit_(new QLineEdit), asset_preview_(new QLabel(this)),
-      asset_hint_(new QLabel(this)) {
+      asset_hint_(new QLabel(this)), prop_set_group_(new QGroupBox(tr("Prop set"), this)),
+      prop_set_hint_(new QLabel(this)) {
   placeholder_->setWordWrap(true);
   placeholder_->setEnabled(false);
 
@@ -542,6 +546,35 @@ PropertiesPanel::PropertiesPanel(Document& document,
     emit library_category_requested(QStringLiteral("Materials"));
   });
 
+  // Prop-set asset editor (p6-s5): a variable-length list of weighted model
+  // entries, built here and hidden until edit_prop_set_asset(). Saved
+  // explicitly (the Save button) rather than per-field, since add/remove
+  // reshapes the form.
+  auto* prop_set_layout = new QVBoxLayout(prop_set_group_);
+  auto* entries_container = new QWidget(prop_set_group_);
+  prop_set_entries_layout_ = new QVBoxLayout(entries_container);
+  prop_set_entries_layout_->setContentsMargins(0, 0, 0, 0);
+  prop_set_layout->addWidget(entries_container);
+  prop_set_add_button_ = new QPushButton(tr("Add entry"), prop_set_group_);
+  prop_set_add_button_->setObjectName(QStringLiteral("prop_set_add_entry"));
+  prop_set_save_button_ = new QPushButton(tr("Save"), prop_set_group_);
+  prop_set_save_button_->setObjectName(QStringLiteral("prop_set_save"));
+  auto* prop_set_buttons = new QHBoxLayout;
+  prop_set_buttons->addWidget(prop_set_add_button_);
+  prop_set_buttons->addStretch();
+  prop_set_buttons->addWidget(prop_set_save_button_);
+  prop_set_layout->addLayout(prop_set_buttons);
+  prop_set_hint_->setWordWrap(true);
+  prop_set_hint_->setStyleSheet(QStringLiteral("color: palette(mid);"));
+  prop_set_layout->addWidget(prop_set_hint_);
+  prop_set_group_->hide();
+  connect(prop_set_add_button_, &QPushButton::clicked, this, [this] {
+    // A fresh row defaults to the first bundled model at weight 1.
+    const auto& ids = props::ids();
+    add_prop_set_row(ids.empty() ? QString() : QString::fromStdString(ids.front()), 1.0, true);
+  });
+  connect(prop_set_save_button_, &QPushButton::clicked, this, [this] { commit_prop_set_edit(); });
+
   auto* layout = new QVBoxLayout(this);
   layout->addWidget(placeholder_);
   layout->addWidget(name_row_);
@@ -553,6 +586,7 @@ PropertiesPanel::PropertiesPanel(Document& document,
   layout->addWidget(style_group_);
   layout->addWidget(surface_group_);
   layout->addWidget(asset_group_);
+  layout->addWidget(prop_set_group_);
   layout->addStretch();
 
   // One command per discrete action (spec 01 §7). Combos commit on
@@ -646,6 +680,7 @@ PropertiesPanel::PropertiesPanel(Document& document,
   // flag), then rebuilds the normal view.
   connect(&selection_, &SelectionModel::selection_changed, this, [this] {
     asset_mode_ = false;
+    prop_set_mode_ = false;
     refresh();
   });
   connect(&document_, &Document::loaded, this, &PropertiesPanel::refresh);
@@ -663,8 +698,9 @@ void PropertiesPanel::refresh() {
   }
   clear_rows();
 
-  // The asset editor is a Library-driven mode; any scene selection closes it.
+  // The asset editors are Library-driven modes; any scene selection closes them.
   asset_group_->hide();
+  prop_set_group_->hide();
   // Shown only on the road path below; every early return leaves it hidden.
   style_group_->hide();
   // Shown only on the ground-surface path below; hidden everywhere else.
@@ -1318,8 +1354,12 @@ void PropertiesPanel::edit_asset(const QString& key, bool editable) {
     return;
   }
   const LibraryItem* item = library_model_->item_for_key(key);
+  if (item != nullptr && item->kind == LibraryItem::Kind::PropSet) {
+    edit_prop_set_asset(*item, editable);
+    return;
+  }
   if (item == nullptr || item->kind != LibraryItem::Kind::Crosswalk) {
-    return; // a non-crosswalk key never opens the asset editor
+    return; // a non-crosswalk / non-prop-set key never opens the asset editor
   }
   asset_mode_ = true;
   asset_editable_ = editable;
@@ -1335,6 +1375,7 @@ void PropertiesPanel::edit_asset(const QString& key, bool editable) {
   object_group_->hide();
   style_group_->hide();
   surface_group_->hide();
+  prop_set_group_->hide();
 
   {
     const QSignalBlocker b1(asset_width_spin_);
@@ -1391,6 +1432,112 @@ void PropertiesPanel::commit_asset_edit() {
                                                    asset_dash_spin_->value(),
                                                    asset_gap_spin_->value(),
                                                    asset_category_edit_->text()));
+}
+
+void PropertiesPanel::clear_prop_set_rows() {
+  for (const PropSetRow& row : prop_set_rows_) {
+    row.container->deleteLater();
+  }
+  prop_set_rows_.clear();
+}
+
+void PropertiesPanel::add_prop_set_row(const QString& model, double portion, bool editable) {
+  auto* container = new QWidget(prop_set_group_);
+  auto* row_layout = new QHBoxLayout(container);
+  row_layout->setContentsMargins(0, 0, 0, 0);
+
+  auto* model_combo = new QComboBox(container);
+  model_combo->setObjectName(QStringLiteral("prop_set_model"));
+  for (const std::string& id : props::ids()) {
+    model_combo->addItem(QString::fromStdString(id));
+  }
+  const int index = model_combo->findText(model);
+  if (index >= 0) {
+    model_combo->setCurrentIndex(index);
+  }
+
+  auto* portion_spin = new QDoubleSpinBox(container);
+  portion_spin->setObjectName(QStringLiteral("prop_set_portion"));
+  portion_spin->setRange(0.1, 100.0);
+  portion_spin->setSingleStep(0.5);
+  portion_spin->setDecimals(1);
+  portion_spin->setValue(portion);
+
+  auto* remove_button = new QPushButton(tr("Remove"), container);
+  remove_button->setObjectName(QStringLiteral("prop_set_remove"));
+
+  row_layout->addWidget(model_combo, 1);
+  row_layout->addWidget(portion_spin);
+  row_layout->addWidget(remove_button);
+
+  model_combo->setEnabled(editable);
+  portion_spin->setEnabled(editable);
+  remove_button->setEnabled(editable);
+
+  prop_set_entries_layout_->addWidget(container);
+  prop_set_rows_.push_back(
+      PropSetRow{.container = container, .model = model_combo, .portion = portion_spin});
+
+  connect(remove_button, &QPushButton::clicked, this, [this, container] {
+    const auto it =
+        std::find_if(prop_set_rows_.begin(),
+                     prop_set_rows_.end(),
+                     [container](const PropSetRow& row) { return row.container == container; });
+    if (it != prop_set_rows_.end()) {
+      it->container->deleteLater();
+      prop_set_rows_.erase(it);
+    }
+  });
+}
+
+void PropertiesPanel::edit_prop_set_asset(const LibraryItem& item, bool editable) {
+  // A subtype of asset mode: refresh() early-returns on asset_mode_ so a
+  // background mesh_changed never tears the editor down mid-edit.
+  asset_mode_ = true;
+  prop_set_mode_ = true;
+  asset_key_ = item.key;
+  prop_set_label_ = item.label;
+  prop_set_category_ = item.category;
+
+  clear_rows();
+  clear_prop_set_rows();
+  placeholder_->hide();
+  name_row_->hide();
+  lane_group_->hide();
+  elevation_group_->hide();
+  signal_group_->hide();
+  object_group_->hide();
+  style_group_->hide();
+  surface_group_->hide();
+  asset_group_->hide();
+
+  for (const LibraryItem::PropSetEntry& entry : item.prop_entries) {
+    add_prop_set_row(entry.model, entry.portion, editable);
+  }
+  prop_set_add_button_->setEnabled(editable);
+  prop_set_save_button_->setEnabled(editable);
+  prop_set_group_->setTitle(tr("Prop set — %1").arg(item.label));
+  prop_set_hint_->setText(
+      editable ? tr("Weighted scatter set: props are drawn per instance in proportion to "
+                    "each entry's weight.")
+               : tr("Built-in asset (read-only). Use “New prop set…” to make an editable copy."));
+  prop_set_group_->show();
+}
+
+void PropertiesPanel::commit_prop_set_edit() {
+  if (!prop_set_mode_) {
+    return;
+  }
+  LibraryItem item;
+  item.key = asset_key_;
+  item.label = prop_set_label_;
+  item.category = prop_set_category_;
+  item.kind = LibraryItem::Kind::PropSet;
+  for (const PropSetRow& row : prop_set_rows_) {
+    item.prop_entries.push_back(LibraryItem::PropSetEntry{.model = row.model->currentText(),
+                                                          .portion = row.portion->value()});
+  }
+  emit prop_set_asset_committed(item);
 }
 
 } // namespace roadmaker::editor
