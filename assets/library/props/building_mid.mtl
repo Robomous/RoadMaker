@@ -1,0 +1,7 @@
+# Materials for building_mid (linear RGB).
+newmtl body
+Kd 0.6000 0.6200 0.6600
+newmtl roof
+Kd 0.3300 0.3400 0.3600
+newmtl rooftop_unit
+Kd 0.4600 0.4700 0.4900

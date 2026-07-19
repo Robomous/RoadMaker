@@ -55,6 +55,22 @@ kit, do not hand-author"*, say so and step 3 goes away. The evidence suggests
 otherwise, but this is a taste call about how the product looks, which is the
 maintainer's.
 
+### As-built (p6-s6, #240)
+
+**Path 3 taken — procedural, in-repo.** The maintainer confirmed the seed's
+intent as "generate them in-repo like the trees" rather than "download a CC0
+kit", so `gen_prop_meshes.py` was extended with `building_low` / `building_mid` /
+`building_tower` (stepped boxes), `streetlight_single` / `streetlight_double`
+(cylinder pole + arm + lamp head), and `sign_stop` / `sign_yield` (pole +
+regular-polygon plate). All are boxy low-poly flat-color meshes that sit with
+the existing trees — the style tiebreak (step 2) is satisfied by construction
+because every prop now comes from the same generator. No Kenney kit was fetched;
+no runtime asset loader was added. The two paint materials (`paint_white`,
+`paint_yellow`) are texture-less `MaterialDef`s. Buildings carry
+`ObjectType::Building`, streetlights `ObjectType::Pole`, and the mesh builder's
+prop-instancing gate widened to Tree/Vegetation/Pole/Building (Crosswalk stays
+excluded — it meshes as paint). The comparison render is in the PR.
+
 ## 2. The kit
 
 | Prop | Purpose | Source (candidate) |

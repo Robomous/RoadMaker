@@ -28,11 +28,13 @@ constexpr double kDragTolerance = 0.5;
 /// flooding the overlay line buffer.
 constexpr int kGhostSegments = 24;
 
-/// Is `object` a prop this tool may drag? Props are the Tree/Vegetation classes;
-/// a press on a stencil, crosswalk, or signal never starts a prop move.
+/// Is `object` a prop this tool may drag? Props are the instanced classes —
+/// Tree/Vegetation plus Pole (streetlights) and Building; a press on a stencil,
+/// crosswalk, or signal never starts a prop move.
 bool is_prop(const RoadNetwork& network, ObjectId object) {
   const Object* obj = network.object(object);
-  return obj != nullptr && (obj->type == ObjectType::Tree || obj->type == ObjectType::Vegetation);
+  return obj != nullptr && (obj->type == ObjectType::Tree || obj->type == ObjectType::Vegetation ||
+                            obj->type == ObjectType::Pole || obj->type == ObjectType::Building);
 }
 
 /// A closed ring of `radius` [m] around world (cx, cy), appended to `geometry` as

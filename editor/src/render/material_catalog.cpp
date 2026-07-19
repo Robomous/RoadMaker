@@ -38,6 +38,26 @@ MaterialCatalog::MaterialCatalog() {
       .normal_strength = 1.0F,
       .friction = 0.85,
   });
+  // Road-paint materials: texture-less flat colours (empty map paths → the
+  // shader's flat-colour path, u_has_texture = 0, tinted by `tint`). These are
+  // the surfaces crosswalk/stencil library items already reference by
+  // "material.paint_white", so those assets now resolve to a real definition.
+  materials_.push_back(MaterialDef{
+      .name = "paint_white",
+      .uv_scale = 0.25F,
+      .tint = {1.0F, 1.0F, 1.0F, 1.0F},
+      .roughness_value = 0.6F,
+      .normal_strength = 1.0F,
+      .friction = 0.7,
+  });
+  materials_.push_back(MaterialDef{
+      .name = "paint_yellow",
+      .uv_scale = 0.25F,
+      .tint = {0.95F, 0.78F, 0.12F, 1.0F},
+      .roughness_value = 0.6F,
+      .normal_strength = 1.0F,
+      .friction = 0.7,
+  });
 }
 
 const MaterialDef* MaterialCatalog::find_material(std::string_view code) const {

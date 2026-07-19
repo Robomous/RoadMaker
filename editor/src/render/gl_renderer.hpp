@@ -44,6 +44,9 @@ private:
     std::uint32_t vao = 0;
     std::uint32_t vbo = 0;
     std::uint32_t ebo = 0;
+    // Per-instance transform buffer (attribs 3-6), created lazily on the first
+    // instanced draw of this mesh; 0 = never instanced. Deleted in destroy().
+    std::uint32_t instance_vbo = 0;
     std::int32_t index_count = 0;
     std::array<float, 4> color{};
     PrimitiveKind kind = PrimitiveKind::Triangles;
@@ -63,6 +66,7 @@ private:
   std::int32_t u_view_ = -1;
   std::int32_t u_projection_ = -1;
   std::int32_t u_model_ = -1;
+  std::int32_t u_use_instancing_ = -1;
   std::int32_t u_color_ = -1;
   std::int32_t u_highlight_ = -1;
   std::int32_t u_accent_ = -1;

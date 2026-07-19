@@ -80,6 +80,41 @@
       "create": { "kind": "tree", "model": "shrub" }
     },
     {
+      "key": "prop.streetlight",
+      "label": "Streetlight",
+      "category": "Props",
+      "thumbnail": "assets/library/thumbnails/streetlight_single.png",
+      "create": { "kind": "tree", "model": "streetlight_single" }
+    },
+    {
+      "key": "prop.streetlight_double",
+      "label": "Streetlight (double)",
+      "category": "Props",
+      "thumbnail": "assets/library/thumbnails/streetlight_double.png",
+      "create": { "kind": "tree", "model": "streetlight_double" }
+    },
+    {
+      "key": "building.low",
+      "label": "Low building",
+      "category": "Buildings",
+      "thumbnail": "assets/library/thumbnails/building_low.png",
+      "create": { "kind": "tree", "model": "building_low" }
+    },
+    {
+      "key": "building.mid",
+      "label": "Mid-rise building",
+      "category": "Buildings",
+      "thumbnail": "assets/library/thumbnails/building_mid.png",
+      "create": { "kind": "tree", "model": "building_mid" }
+    },
+    {
+      "key": "building.tower",
+      "label": "Tower building",
+      "category": "Buildings",
+      "thumbnail": "assets/library/thumbnails/building_tower.png",
+      "create": { "kind": "tree", "model": "building_tower" }
+    },
+    {
       "key": "signal.traffic_light",
       "label": "Traffic light",
       "category": "Signals",
@@ -92,6 +127,20 @@
       "category": "Signals",
       "thumbnail": "assets/library/thumbnails/signal_sign.png",
       "create": { "kind": "signal", "signal": "sign" }
+    },
+    {
+      "key": "signal.stop",
+      "label": "Stop sign",
+      "category": "Signals",
+      "thumbnail": "assets/library/thumbnails/sign_stop.png",
+      "create": { "kind": "signal", "signal": "sign_stop" }
+    },
+    {
+      "key": "signal.yield",
+      "label": "Yield sign",
+      "category": "Signals",
+      "thumbnail": "assets/library/thumbnails/sign_yield.png",
+      "create": { "kind": "signal", "signal": "sign_yield" }
     },
     {
       "key": "marking.solid_white",
@@ -220,10 +269,30 @@
       "create": { "kind": "material", "material": "concrete" }
     },
     {
+      "key": "material.paint_white",
+      "label": "White paint",
+      "category": "Materials",
+      "thumbnail": "assets/library/thumbnails/material_paint_white.png",
+      "create": { "kind": "material", "material": "paint_white" }
+    },
+    {
+      "key": "material.paint_yellow",
+      "label": "Yellow paint",
+      "category": "Materials",
+      "thumbnail": "assets/library/thumbnails/material_paint_yellow.png",
+      "create": { "kind": "material", "material": "paint_yellow" }
+    },
+    {
       "key": "prop_set.mixed",
       "label": "Mixed trees",
       "category": "Prop sets",
       "create": { "kind": "prop_set", "entries": [ { "model": "tree_pine", "portion": 3 }, { "model": "tree_birch", "portion": 1 } ] }
+    },
+    {
+      "key": "prop_set.city",
+      "label": "City buildings",
+      "category": "Prop sets",
+      "create": { "kind": "prop_set", "entries": [ { "model": "building_low", "portion": 3 }, { "model": "building_mid", "portion": 2 }, { "model": "building_tower", "portion": 1 } ] }
     }
   ]
 }

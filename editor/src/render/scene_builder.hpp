@@ -69,6 +69,31 @@ struct SceneItem {
   std::string material;
 };
 
+/// One placed prop/signal in an instanced batch: the shared model's per-instance
+/// transform plus the entity ids a pick/hover addresses. Exactly one of `object`
+/// / `signal` is valid (the other is a null id), mirroring the source
+/// ObjectInstance / SignalInstance; `road` is the owning road.
+struct ScenePropInstance {
+  RoadId road;
+  ObjectId object;
+  SignalId signal;
+  InstanceData transform; ///< model-space -> world (column-major mat4)
+};
+
+/// All placed instances of ONE prop model, sharing a single uploaded mesh set.
+/// `parts` is the model geometry in MODEL space (baked ONCE, drawn via the GL
+/// instanced fast path); `instances` carries the per-instance transforms + ids.
+struct ScenePropBatch {
+  std::string model_id;
+  std::vector<RenderMeshData> parts;        ///< model-space part meshes
+  std::vector<ScenePropInstance> instances; ///< one per placed prop/signal
+};
+
+/// Column-major model matrix for a prop at `position` rotated by `heading` about
+/// +Z. Pure and header-declared so both the scene builder and its tests share
+/// the one bake definition. Matches the pre-instancing world-space bake exactly.
+[[nodiscard]] InstanceData prop_transform(const std::array<double, 3>& position, double heading);
+
 /// Axis-aligned bounds of the built scene (kernel frame, meters).
 struct SceneBounds {
   std::array<float, 3> lo{1e9F, 1e9F, 1e9F};
@@ -91,6 +116,9 @@ struct SceneBounds {
 
 struct Scene {
   std::vector<SceneItem> items;
+  /// Instanced props/signals: one batch per model, each drawn with a single
+  /// instanced call instead of one baked SceneItem per placement.
+  std::vector<ScenePropBatch> prop_batches;
   SceneBounds bounds;
 };
 
@@ -98,16 +126,17 @@ struct Scene {
 /// its bounds — the unit of work for partial viewport re-uploads.
 void append_road_items(const RoadMesh& road, Scene& scene);
 
-/// Appends a placed prop's parts (trunk, crown, …) to `scene` as one SceneItem
-/// each, baking the bundled model geometry into world space at the instance's
-/// pose and tagging every part with the owning road + ObjectId (so hover,
-/// selection, and picking address the whole tree). Grows the scene bounds.
+/// Adds a placed prop to `scene` as an instance of its shared model batch
+/// (find-or-create by model id): the model parts are converted to model-space
+/// RenderMeshData ONCE per batch, and the placement contributes one
+/// ScenePropInstance carrying its transform + owning road + ObjectId (so hover,
+/// selection, and picking address the whole tree). Grows the scene bounds from
+/// the model bounding cylinder.
 void append_object_items(const ObjectInstance& instance, Scene& scene);
 
-/// Appends a placed signal's parts (pole, housing, lamps / plate) to `scene`,
-/// baking the bundled signal model into world space at the instance pose and
-/// tagging every part with the owning road + SignalId (so hover, selection, and
-/// picking address the whole signal). Grows the scene bounds.
+/// Adds a placed signal to `scene` as an instance of its shared model batch
+/// (as append_object_items, but tagged with the owning road + SignalId). Grows
+/// the scene bounds from the model bounding cylinder.
 void append_signal_items(const SignalInstance& instance, Scene& scene);
 
 /// Flattens a NetworkMesh into upload-ready items: one per lane patch (with

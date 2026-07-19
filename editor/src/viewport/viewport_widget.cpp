@@ -27,6 +27,8 @@
 #include <functional>
 #include <numbers>
 #include <numeric>
+#include <span>
+#include <utility>
 
 #include "document/highlight.hpp"
 #include "document/library_list_model.hpp"
@@ -175,6 +177,7 @@ Material ViewportWidget::material_for(SurfaceKind surface, const std::string& ma
 void ViewportWidget::rebuild_scene() {
   renderer_->clear_meshes();
   items_.clear();
+  prop_batches_.clear(); // clear_meshes() dropped their GL meshes; re-upload below
   pending_roads_.clear();
   preview_handles_.clear(); // clear_meshes() dropped them; re-uploaded this paint
 
@@ -190,6 +193,22 @@ void ViewportWidget::rebuild_scene() {
                                   .surface_id = item.surface_id,
                                   .surface = item.surface,
                                   .material = item.material});
+  }
+  // Props/signals: upload each model's parts ONCE, then keep the per-instance
+  // transforms for the instanced draw. They do NOT flow through items_.
+  prop_batches_.reserve(scene.prop_batches.size());
+  for (const ScenePropBatch& batch : scene.prop_batches) {
+    UploadedPropBatch uploaded;
+    uploaded.parts.reserve(batch.parts.size());
+    for (const RenderMeshData& part : batch.parts) {
+      uploaded.parts.push_back(renderer_->upload(part));
+    }
+    uploaded.instances = batch.instances;
+    uploaded.transforms.reserve(batch.instances.size());
+    for (const ScenePropInstance& inst : batch.instances) {
+      uploaded.transforms.push_back(inst.transform);
+    }
+    prop_batches_.push_back(std::move(uploaded));
   }
   scene_bounds_ = scene.bounds;
   // Keep the ground plane just under the (possibly changed) network floor.
@@ -315,13 +334,75 @@ void ViewportWidget::paintGL() {
   }
   upload_tool_preview();
 
+  // Span-lifetime rule: DrawItem::instances is a view, so the buffers it points
+  // into must live until render() and never reallocate. Reserve both up front —
+  // one kept-transform vector per batch, and one highlight slot per instance.
+  std::size_t prop_part_count = 0;
+  std::size_t instance_count = 0;
+  for (const UploadedPropBatch& batch : prop_batches_) {
+    prop_part_count += batch.parts.size();
+    instance_count += batch.instances.size();
+  }
+  std::vector<std::vector<InstanceData>> kept_transforms;
+  kept_transforms.reserve(prop_batches_.size());
+  std::vector<InstanceData> highlight_scratch;
+  highlight_scratch.reserve(instance_count);
+
   std::vector<DrawItem> draw_items;
-  draw_items.reserve(items_.size() + preview_handles_.size());
+  draw_items.reserve(items_.size() + prop_part_count + instance_count + preview_handles_.size());
   for (const UploadedItem& item : items_) {
     draw_items.push_back(DrawItem{.mesh = item.handle,
                                   .state = item_state(item),
                                   .material = material_for(item.surface, item.material)});
   }
+
+  // Prop/signal batches: draw all non-highlighted instances of a batch with ONE
+  // instanced call per part; each highlighted instance is a separate 1-instance
+  // draw so it can carry its own accent state. A road-style drag highlights a
+  // road via drag_target_road_, mirrored here for parity (it never lights props).
+  const RoadId hovered_road = drag_target_road_.is_valid() ? drag_target_road_ : hovered_road_;
+  const Material prop_material = material_for(SurfaceKind::Untextured, {});
+  for (const UploadedPropBatch& batch : prop_batches_) {
+    std::vector<HighlightState> states;
+    states.reserve(batch.instances.size());
+    for (const ScenePropInstance& inst : batch.instances) {
+      states.push_back(highlight_state_for(inst.road,
+                                           {},
+                                           inst.object,
+                                           inst.signal,
+                                           {},
+                                           {},
+                                           selection_.entries(),
+                                           hovered_road,
+                                           hovered_lane_,
+                                           hovered_object_,
+                                           hovered_signal_,
+                                           hovered_junction_,
+                                           hovered_surface_));
+    }
+    PropPartition split = partition_prop_batch(states, batch.transforms);
+
+    kept_transforms.push_back(std::move(split.kept));
+    const std::span<const InstanceData> kept_span{kept_transforms.back()};
+    if (!kept_span.empty()) {
+      for (const RenderMeshHandle handle : batch.parts) {
+        draw_items.push_back(DrawItem{.mesh = handle,
+                                      .state = HighlightState::None,
+                                      .material = prop_material,
+                                      .instances = kept_span});
+      }
+    }
+    for (const std::size_t idx : split.highlighted) {
+      highlight_scratch.push_back(batch.transforms[idx]);
+      const std::span<const InstanceData> one{&highlight_scratch.back(), 1};
+      const HighlightState state = states[idx];
+      for (const RenderMeshHandle handle : batch.parts) {
+        draw_items.push_back(
+            DrawItem{.mesh = handle, .state = state, .material = prop_material, .instances = one});
+      }
+    }
+  }
+
   for (const RenderMeshHandle handle : preview_handles_) {
     draw_items.push_back(DrawItem{.mesh = handle});
   }

@@ -26,9 +26,9 @@ TEST(LibraryManifest, ParsesTheShippedManifest) {
   ASSERT_TRUE(manifest.has_value()) << (manifest ? "" : manifest.error().message);
   EXPECT_EQ(manifest->version(), 1);
   EXPECT_EQ(manifest->items().size(),
-            33U); // 3 road templates + 1 road style + 2 assemblies + 5 tree props
-                  // + 2 signals + 9 markings + 3 materials + 1 crosswalk + 6 stencils
-                  // + 1 prop set
+            43U); // 3 road templates + 1 road style + 2 assemblies + 10 tree props
+                  // (5 trees/shrub + 2 streetlights + 3 buildings) + 4 signals
+                  // + 9 markings + 5 materials + 1 crosswalk + 6 stencils + 2 prop sets
 
   // Road templates resolve to a profile, road styles to a style name, assemblies
   // to a t/x kind, trees to a bundled prop model id, signals to a light/sign tag,
@@ -59,10 +59,12 @@ TEST(LibraryManifest, ParsesTheShippedManifest) {
     } else if (item.kind == LibraryItem::Kind::Tree) {
       ++trees;
       EXPECT_FALSE(item.model.isEmpty());
-      EXPECT_EQ(item.category, "Props");
+      // Point props (kind "tree") span the Props and Buildings categories.
+      EXPECT_TRUE(item.category == "Props" || item.category == "Buildings");
     } else if (item.kind == LibraryItem::Kind::Signal) {
       ++signal_items;
-      EXPECT_TRUE(item.signal == "light" || item.signal == "sign");
+      EXPECT_TRUE(item.signal == "light" || item.signal == "sign" || item.signal == "sign_stop" ||
+                  item.signal == "sign_yield");
       EXPECT_EQ(item.category, "Signals");
     } else if (item.kind == LibraryItem::Kind::Marking) {
       ++markings;
@@ -90,13 +92,13 @@ TEST(LibraryManifest, ParsesTheShippedManifest) {
   EXPECT_EQ(templates, 3);
   EXPECT_EQ(styles, 1);
   EXPECT_EQ(assemblies, 2);
-  EXPECT_EQ(trees, 5);
-  EXPECT_EQ(signal_items, 2);
+  EXPECT_EQ(trees, 10);
+  EXPECT_EQ(signal_items, 4);
   EXPECT_EQ(markings, 9);
-  EXPECT_EQ(materials, 3);
+  EXPECT_EQ(materials, 5);
   EXPECT_EQ(crosswalks, 1);
   EXPECT_EQ(stencils, 6);
-  EXPECT_EQ(prop_sets, 1);
+  EXPECT_EQ(prop_sets, 2);
 }
 
 TEST(LibraryManifest, ParsesCrosswalkCreateKind) {
@@ -343,7 +345,7 @@ TEST(LibraryListModel, PassesQtModelSanityChecksEmptyAndPopulated) {
   const auto manifest = LibraryManifest::load(kManifest);
   ASSERT_TRUE(manifest.has_value());
   model.set_manifest(*manifest);
-  EXPECT_EQ(model.rowCount(), 33);
+  EXPECT_EQ(model.rowCount(), 43);
 }
 
 TEST(LibraryListModel, ExposesRolesAndItemLookup) {
@@ -361,7 +363,7 @@ TEST(LibraryListModel, ExposesRolesAndItemLookup) {
   ASSERT_NE(item, nullptr);
   EXPECT_EQ(model.data(first, LibraryListModel::KeyRole).toString(), item->key);
   EXPECT_EQ(model.item(-1), nullptr);
-  EXPECT_EQ(model.item(33), nullptr);
+  EXPECT_EQ(model.item(43), nullptr);
 }
 
 // The per-project overlay (p6-s1): project items merge into the built-in
@@ -437,7 +439,7 @@ TEST(LibraryListModel, SetManifestRemergesAnActiveOverlay) {
   const auto base = LibraryManifest::load(kManifest);
   ASSERT_TRUE(base.has_value());
   model.set_manifest(*base);       // the overlay survives a base reload
-  EXPECT_EQ(model.rowCount(), 34); // 33 base items + 1 overlay
+  EXPECT_EQ(model.rowCount(), 44); // 43 base items + 1 overlay
   EXPECT_NE(model.item_for_key(QStringLiteral("project.only")), nullptr);
 }
 

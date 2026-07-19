@@ -14,16 +14,29 @@ constexpr const char* kVertexShader = R"(#version 330 core
 layout(location = 0) in vec3 in_position;
 layout(location = 1) in vec3 in_normal;
 layout(location = 2) in vec2 in_uv;
+// Per-instance model matrix (attrib divisor 1), the four columns of a
+// column-major mat4. Only read when u_use_instancing == 1.
+layout(location = 3) in vec4 in_model_0;
+layout(location = 4) in vec4 in_model_1;
+layout(location = 5) in vec4 in_model_2;
+layout(location = 6) in vec4 in_model_3;
 uniform mat4 u_view;
 uniform mat4 u_projection;
-uniform mat4 u_model; // per-instance transform; identity for single draws
+uniform mat4 u_model; // single-draw transform; identity for non-instanced draws
+uniform int u_use_instancing; // 1 = per-instance attribs, 0 = u_model
 out vec3 v_normal;
 out vec2 v_uv;
 out vec3 v_world_pos;
 void main() {
-  vec4 world = u_model * vec4(in_position, 1.0);
+  // Uniform-controlled switch keeps the non-instanced path bit-identical (it
+  // still runs through u_model); instanced draws build the matrix from the
+  // per-instance columns. Rigid transforms → mat3(model) stays valid for normals.
+  mat4 model = u_use_instancing == 1
+      ? mat4(in_model_0, in_model_1, in_model_2, in_model_3)
+      : u_model;
+  vec4 world = model * vec4(in_position, 1.0);
   v_world_pos = world.xyz;
-  v_normal = mat3(u_model) * in_normal;
+  v_normal = mat3(model) * in_normal;
   v_uv = in_uv;
   gl_Position = u_projection * u_view * world;
 }
@@ -317,6 +330,7 @@ bool GLRenderer::init() {
   u_view_ = gl::GetUniformLocation(program_, "u_view");
   u_projection_ = gl::GetUniformLocation(program_, "u_projection");
   u_model_ = gl::GetUniformLocation(program_, "u_model");
+  u_use_instancing_ = gl::GetUniformLocation(program_, "u_use_instancing");
   u_color_ = gl::GetUniformLocation(program_, "u_color");
   u_highlight_ = gl::GetUniformLocation(program_, "u_highlight");
   u_accent_ = gl::GetUniformLocation(program_, "u_accent");
@@ -450,6 +464,9 @@ RenderMeshHandle GLRenderer::upload(const RenderMeshData& data) {
 void GLRenderer::destroy(GpuMesh& mesh) {
   gl::DeleteBuffers(1, &mesh.vbo);
   gl::DeleteBuffers(1, &mesh.ebo);
+  if (mesh.instance_vbo != 0) {
+    gl::DeleteBuffers(1, &mesh.instance_vbo);
+  }
   gl::DeleteVertexArrays(1, &mesh.vao);
 }
 
@@ -650,7 +667,8 @@ void GLRenderer::render(const std::vector<DrawItem>& items,
     if (found == meshes_.end()) {
       continue;
     }
-    const GpuMesh& mesh = found->second;
+    // Non-const: the instanced path lazily creates mesh.instance_vbo on first use.
+    GpuMesh& mesh = found->second;
 
     // Material resolution: sample the base-color texture when the material
     // carries one, else fall back to the mesh's flat color — a
@@ -705,17 +723,45 @@ void GLRenderer::render(const std::vector<DrawItem>& items,
 
     const gl::GLenum primitive =
         mesh.kind == PrimitiveKind::Triangles ? gl::kTriangles : gl::kLines;
-    // Instancing: one draw per InstanceData transform (grouped by shared mesh);
-    // empty span = a single draw at identity. The instanced GL fast path
-    // (glDrawElementsInstanced) lands with prop instancing in a later PR.
     if (item.instances.empty()) {
+      // Non-instanced: the u_model path, bit-identical to before instancing.
+      gl::Uniform1i(u_use_instancing_, 0);
       gl::UniformMatrix4fv(u_model_, 1, 0, kIdentity.data());
       gl::DrawElements(primitive, mesh.index_count, gl::kUnsignedInt, nullptr);
     } else {
-      for (const InstanceData& inst : item.instances) {
-        gl::UniformMatrix4fv(u_model_, 1, 0, inst.model.data());
-        gl::DrawElements(primitive, mesh.index_count, gl::kUnsignedInt, nullptr);
+      // Instanced fast path: one glDrawElementsInstanced for the whole span.
+      // Per-instance mat4 columns feed attribs 3-6 (divisor 1). The instance
+      // VBO is created lazily, then re-uploaded per draw (1k instances = 64 KB).
+      static_assert(sizeof(InstanceData) == 64, "instance stride must be a column-major mat4");
+      if (mesh.instance_vbo == 0) {
+        gl::GenBuffers(1, &mesh.instance_vbo);
       }
+      gl::BindBuffer(gl::kArrayBuffer, mesh.instance_vbo);
+      // Fill the buffer BEFORE enabling attribs 3-6 so they never point at an
+      // empty store.
+      gl::BufferData(gl::kArrayBuffer,
+                     static_cast<gl::GLsizeiptr>(item.instances.size() * sizeof(InstanceData)),
+                     item.instances.data(),
+                     gl::kDynamicDraw);
+      const auto stride = static_cast<gl::GLsizei>(sizeof(InstanceData));
+      for (gl::GLuint col = 0; col < 4; ++col) {
+        const gl::GLuint loc = 3 + col;
+        gl::EnableVertexAttribArray(loc);
+        gl::VertexAttribPointer(
+            loc,
+            4,
+            gl::kFloat,
+            0,
+            stride,
+            reinterpret_cast<const void*>(static_cast<std::uintptr_t>(col * 4 * sizeof(float))));
+        gl::VertexAttribDivisor(loc, 1);
+      }
+      gl::Uniform1i(u_use_instancing_, 1);
+      gl::DrawElementsInstanced(primitive,
+                                mesh.index_count,
+                                gl::kUnsignedInt,
+                                nullptr,
+                                static_cast<gl::GLsizei>(item.instances.size()));
     }
   }
   gl::BindVertexArray(0);

@@ -41,9 +41,11 @@ true dual stripes.
 [**Library**](library.md) onto a road and RoadMaker adds it, snapped to the
 nearest road in `s`/`t`:
 
-- **Props** (trees, shrub) become an `<object type="tree">`.
-- **Traffic lights** become a dynamic `<signal>`; **traffic signs** a static
-  one.
+- **Props** become an `<object>` typed by what they are — vegetation (trees,
+  shrub) as `type="tree"`, streetlights as `type="pole"`, buildings as
+  `type="building"`.
+- **Traffic lights** become a dynamic `<signal>`; **traffic signs** (generic,
+  stop, yield) a static one.
 
 ![Trees placed along a road, with the Library catalogue open](img/library.png)
 

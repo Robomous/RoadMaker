@@ -1,0 +1,7 @@
+# Materials for building_tower (linear RGB).
+newmtl base
+Kd 0.7800 0.7100 0.6000
+newmtl mid
+Kd 0.7200 0.6900 0.6300
+newmtl cap
+Kd 0.6000 0.6200 0.6600

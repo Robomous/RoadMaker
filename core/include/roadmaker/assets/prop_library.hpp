@@ -1,6 +1,7 @@
 #pragma once
 
 #include "roadmaker/export.hpp"
+#include "roadmaker/road/object.hpp" // ObjectType
 
 #include <array>
 #include <cstdint>
@@ -33,6 +34,11 @@ struct PropModel {
   std::vector<PropPart> parts;
   double height = 0.0; ///< bounding height, meters (maps to OpenDRIVE @height)
   double radius = 0.0; ///< crown radius, meters (maps to OpenDRIVE @radius)
+  /// The OpenDRIVE object class a placed instance of this model carries — the
+  /// single source of truth for prop classification (the placement/drop code
+  /// reads it instead of hardcoding per-id). Signal models (traffic lights and
+  /// sign plates) are placed as <signal>s, not <object>s, so they carry None.
+  ObjectType type = ObjectType::Tree;
 };
 
 /// Stable ids of every bundled prop model (e.g. "tree_pine"), in catalogue

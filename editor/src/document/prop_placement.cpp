@@ -107,12 +107,14 @@ Object make_prop_object(const LibraryItem& item, std::string odr_id, double s, d
   Object prop;
   prop.odr_id = std::move(odr_id);
   prop.name = item.model.toStdString();
-  // A shrub is Vegetation; every other bundled model is a Tree (the Library
-  // tree-drop classification, kept identical so a click and a drop agree).
-  prop.type = item.model == QStringLiteral("shrub") ? ObjectType::Vegetation : ObjectType::Tree;
+  // The bundled model is the single source of truth for the object class (Tree,
+  // Vegetation, Pole, Building) and dimensions — a click and a drop agree
+  // because both read it here. An unknown model falls back to Tree.
+  prop.type = ObjectType::Tree;
   prop.s = s;
   prop.t = t;
   if (const props::PropModel* model = props::model(prop.name)) {
+    prop.type = model->type;
     prop.radius = model->radius;
     prop.height = model->height;
   }
