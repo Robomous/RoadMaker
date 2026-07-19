@@ -22,6 +22,7 @@
 #include "document/document.hpp"
 #include "document/selection_model.hpp"
 #include "render/material_catalog.hpp"
+#include "render/prop_batching.hpp"
 #include "render/renderer.hpp"
 #include "render/scene_builder.hpp"
 #include "tools/tool_manager.hpp"
@@ -200,6 +201,15 @@ private:
     std::string material; ///< assigned material code (empty → SurfaceKind fallback)
   };
 
+  /// One uploaded prop batch: the model parts uploaded ONCE, the source
+  /// instances (for per-instance hover/selection state), and the parallel
+  /// per-instance transforms fed to the GL instanced draw.
+  struct UploadedPropBatch {
+    std::vector<RenderMeshHandle> parts;
+    std::vector<ScenePropInstance> instances;
+    std::vector<InstanceData> transforms; ///< index-parallel to `instances`
+  };
+
   /// The textured-mode Material for an item: the assigned `material` code
   /// resolved through the MaterialCatalog (albedo + normal + roughness), falling
   /// back to the SurfaceKind default when the code is empty/unknown, or bright
@@ -374,6 +384,9 @@ private:
   std::unique_ptr<Renderer> renderer_;
   OrbitCamera camera_;
   std::vector<UploadedItem> items_;
+  /// Instanced prop/signal batches (one per model), uploaded ONCE per rebuild.
+  /// Props no longer flow through items_; they draw via the GL instanced path.
+  std::vector<UploadedPropBatch> prop_batches_;
   std::vector<RoadAabb> road_aabbs_;
   SceneBounds scene_bounds_;
 

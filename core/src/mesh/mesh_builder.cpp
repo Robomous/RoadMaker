@@ -545,7 +545,11 @@ void build_object_instances(const RoadNetwork& network,
                             std::vector<ObjectInstance>& out) {
   for (const ObjectId object_id : objects_of(network, road_id)) {
     const Object& object = *network.object(object_id);
-    if (object.type != ObjectType::Tree && object.type != ObjectType::Vegetation) {
+    // Instanced prop classes: trees, vegetation, poles (streetlights), and
+    // buildings all resolve their @name to a bundled prop model. Crosswalks are
+    // excluded — they mesh as paint in build_object_markings, not as props.
+    if (object.type != ObjectType::Tree && object.type != ObjectType::Vegetation &&
+        object.type != ObjectType::Pole && object.type != ObjectType::Building) {
       continue;
     }
     if (props::model(object.name) == nullptr) {
@@ -630,7 +634,18 @@ void build_object_instances(const RoadNetwork& network,
 /// optional in the schema; an absent value is treated as static (a sign) — the
 /// conservative default, and the reader already warns on the missing attribute.
 std::string_view signal_model_id(const Signal& signal) {
-  return signal.dynamic.value_or(false) ? "signal_light" : "sign_generic";
+  if (signal.dynamic.value_or(false)) {
+    return "signal_light";
+  }
+  // A couple of common German StVO (VzKat) regulatory plates render as their own
+  // bundled silhouette; every other static sign falls back to the generic plate.
+  if (signal.type == "206") { // StVO 206: Halt! Vorfahrt gewähren — STOP
+    return "sign_stop";
+  }
+  if (signal.type == "205") { // StVO 205: Vorfahrt gewähren — yield/give way
+    return "sign_yield";
+  }
+  return "sign_generic";
 }
 
 /// Placed signals a road owns, as INSTANCES of bundled signal models — the

@@ -41,6 +41,7 @@ inline constexpr GLenum kFloat = 0x1406;
 inline constexpr GLenum kArrayBuffer = 0x8892;
 inline constexpr GLenum kElementArrayBuffer = 0x8893;
 inline constexpr GLenum kStaticDraw = 0x88E4;
+inline constexpr GLenum kDynamicDraw = 0x88E8;
 inline constexpr GLenum kVertexShader = 0x8B31;
 inline constexpr GLenum kFragmentShader = 0x8B30;
 inline constexpr GLenum kCompileStatus = 0x8B81;
@@ -108,6 +109,8 @@ inline constexpr GLenum kRepeat = 0x2901;
   X(void, EnableVertexAttribArray, GLuint)                                                         \
   X(void, VertexAttribPointer, GLuint, GLint, GLenum, GLboolean, GLsizei, const void*)             \
   X(void, DrawElements, GLenum, GLsizei, GLenum, const void*)                                      \
+  X(void, DrawElementsInstanced, GLenum, GLsizei, GLenum, const void*, GLsizei)                    \
+  X(void, VertexAttribDivisor, GLuint, GLuint)                                                     \
   X(void, DrawArrays, GLenum, GLint, GLsizei)                                                      \
   X(void, Uniform1i, GLint, GLint)                                                                 \
   X(void, ActiveTexture, GLenum)                                                                   \

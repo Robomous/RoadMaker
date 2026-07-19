@@ -226,6 +226,34 @@ TEST(LibraryDrop, TrafficSignMapsToAStaticSignal) {
   EXPECT_EQ(count_errors(validate_network(network)), 0U);
 }
 
+TEST(LibraryDrop, StopSignMapsToStaticGermanStVo206) {
+  RoadNetwork network = with_straight_road();
+  LibraryDropAction action = resolve_library_drop(signal("sign_stop"), network, 40.0, -6.0);
+  ASSERT_EQ(action.kind, LibraryDropKind::Signal);
+  ASSERT_TRUE(action.command->apply(network).has_value());
+  roadmaker::SignalId id;
+  network.for_each_signal([&](roadmaker::SignalId sid, const roadmaker::Signal&) { id = sid; });
+  const roadmaker::Signal* sig = network.signal(id);
+  EXPECT_FALSE(sig->dynamic.value_or(true)); // static sign, not a traffic light
+  EXPECT_EQ(sig->type, "206");               // StVO 206: STOP
+  EXPECT_EQ(sig->country, "DE");
+  EXPECT_EQ(count_errors(validate_network(network)), 0U);
+}
+
+TEST(LibraryDrop, YieldSignMapsToStaticGermanStVo205) {
+  RoadNetwork network = with_straight_road();
+  LibraryDropAction action = resolve_library_drop(signal("sign_yield"), network, 40.0, -6.0);
+  ASSERT_EQ(action.kind, LibraryDropKind::Signal);
+  ASSERT_TRUE(action.command->apply(network).has_value());
+  roadmaker::SignalId id;
+  network.for_each_signal([&](roadmaker::SignalId sid, const roadmaker::Signal&) { id = sid; });
+  const roadmaker::Signal* sig = network.signal(id);
+  EXPECT_FALSE(sig->dynamic.value_or(true));
+  EXPECT_EQ(sig->type, "205"); // StVO 205: yield/give way
+  EXPECT_EQ(sig->country, "DE");
+  EXPECT_EQ(count_errors(validate_network(network)), 0U);
+}
+
 TEST(LibraryDrop, SignalDroppedAwayFromAnyRoadIsRejectedWithAHint) {
   RoadNetwork network = with_straight_road();
   const LibraryDropAction action = resolve_library_drop(signal("light"), network, 50.0, 200.0);

@@ -291,6 +291,13 @@ THUMBNAILS = {
     "prop_shrub": lambda: render_model(_model("shrub")),
     "signal_traffic_light": lambda: render_model(_model("signal_light")),
     "signal_sign": lambda: render_model(_model("sign_generic")),
+    "sign_stop": lambda: render_model(_model("sign_stop")),
+    "sign_yield": lambda: render_model(_model("sign_yield")),
+    "streetlight_single": lambda: render_model(_model("streetlight_single")),
+    "streetlight_double": lambda: render_model(_model("streetlight_double")),
+    "building_low": lambda: render_model(_model("building_low")),
+    "building_mid": lambda: render_model(_model("building_mid")),
+    "building_tower": lambda: render_model(_model("building_tower")),
     # Stylised swatches.
     "road_rural": road_rural,
     "road_urban": road_urban,
@@ -310,6 +317,8 @@ THUMBNAILS = {
     "material_asphalt": lambda: material_swatch(ASPHALT),
     "material_asphalt_worn": lambda: material_swatch(WORN_ASPHALT),
     "material_concrete": lambda: material_swatch(CONCRETE),
+    "material_paint_white": lambda: material_swatch(WHITE_PAINT),
+    "material_paint_yellow": lambda: material_swatch(YELLOW_PAINT),
 }
 
 

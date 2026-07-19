@@ -1,9 +1,15 @@
+#include "roadmaker/assets/prop_library.hpp"
 #include "roadmaker/road/network.hpp"
 
 #include <gtest/gtest.h>
 
 #include <QImage>
+#include <cmath>
+#include <cstddef>
+#include <cstdint>
+#include <vector>
 
+#include "render/prop_batching.hpp"
 #include "render/scene_builder.hpp"
 
 namespace roadmaker::editor {
@@ -367,7 +373,10 @@ TEST(SceneBounds, FramingRadiusUsesPlanExtentWithFloor) {
   EXPECT_FLOAT_EQ(tiny.framing_radius(), 5.0F); // 10 m floor
 }
 
-TEST(BuildScene, EmitsPropItemsTaggedWithObjectAndRoad) {
+// A placed prop no longer bakes per-part SceneItems; it becomes an instance in a
+// shared model batch (the instanced fast path). The batch carries the model
+// parts ONCE and one ScenePropInstance per placement tagged with object + road.
+TEST(BuildScene, EmitsPropInstanceTaggedWithObjectAndRoad) {
   constexpr ObjectId kObject{.index = 5, .gen = 0};
   constexpr RoadId kRoad{.index = 2, .gen = 0};
   NetworkMesh mesh;
@@ -378,12 +387,16 @@ TEST(BuildScene, EmitsPropItemsTaggedWithObjectAndRoad) {
                                         .heading = 0.0});
 
   const Scene scene = build_scene(mesh);
-  ASSERT_FALSE(scene.items.empty()); // trunk + crown parts
-  for (const SceneItem& item : scene.items) {
-    EXPECT_EQ(item.object, kObject);
-    EXPECT_EQ(item.road, kRoad);
-    EXPECT_FALSE(item.lane.is_valid());
-  }
+  EXPECT_TRUE(scene.items.empty()); // props travel in prop_batches, not items
+  ASSERT_EQ(scene.prop_batches.size(), 1U);
+  const ScenePropBatch& batch = scene.prop_batches.front();
+  EXPECT_EQ(batch.model_id, "tree_pine");
+  ASSERT_FALSE(batch.parts.empty()); // trunk + crown parts, baked once
+  ASSERT_EQ(batch.instances.size(), 1U);
+  const ScenePropInstance& inst = batch.instances.front();
+  EXPECT_EQ(inst.object, kObject);
+  EXPECT_EQ(inst.road, kRoad);
+  EXPECT_FALSE(inst.signal.is_valid());
   ASSERT_TRUE(scene.bounds.valid());
   EXPECT_NEAR(scene.bounds.center()[0], 10.0F, 2.0F);
   EXPECT_NEAR(scene.bounds.center()[1], 20.0F, 2.0F);
@@ -396,7 +409,147 @@ TEST(BuildScene, UnknownPropModelEmitsNothing) {
                                         .model_id = "not_a_prop",
                                         .position = {0.0, 0.0, 0.0},
                                         .heading = 0.0});
-  EXPECT_TRUE(build_scene(mesh).items.empty());
+  const Scene scene = build_scene(mesh);
+  EXPECT_TRUE(scene.items.empty());
+  EXPECT_TRUE(scene.prop_batches.empty());
+}
+
+// Perf proxy for "1k props interactive": 1000 placements of one model collapse
+// to a SINGLE batch (2 uploads + 2 instanced draws, not 2000/2000). No per-prop
+// SceneItem leaks into items, and the model parts are baked exactly once.
+TEST(BuildScene, ManyInstancesOfOneModelShareOneBatch) {
+  NetworkMesh mesh;
+  for (std::uint32_t i = 0; i < 1000U; ++i) {
+    mesh.objects.push_back(ObjectInstance{.object = ObjectId{.index = i + 1U, .gen = 0},
+                                          .road = RoadId{.index = 1U, .gen = 0},
+                                          .model_id = "tree_pine",
+                                          .position = {static_cast<double>(i), 0.0, 0.0},
+                                          .heading = 0.0});
+  }
+
+  const Scene scene = build_scene(mesh);
+  EXPECT_TRUE(scene.items.empty()); // zero per-prop SceneItems
+  ASSERT_EQ(scene.prop_batches.size(), 1U);
+  const ScenePropBatch& batch = scene.prop_batches.front();
+  EXPECT_EQ(batch.instances.size(), 1000U);
+  const props::PropModel* model = props::model("tree_pine");
+  ASSERT_NE(model, nullptr);
+  EXPECT_EQ(batch.parts.size(), model->parts.size()); // parts baked once, not per prop
+}
+
+// prop_transform must reproduce the pre-instancing world-space bake exactly for a
+// nonzero (x, y, z, heading): apply the column-major matrix to a known model
+// vertex and compare against x' = c*x - s*y + px, y' = s*x + c*y + py, z' = z+pz.
+TEST(PropTransform, MatchesWorldSpaceBake) {
+  const std::array<double, 3> origin{3.0, -4.0, 1.5};
+  const double heading = 0.7;
+  const InstanceData m = prop_transform(origin, heading);
+
+  const double vx = 2.0;
+  const double vy = 1.0;
+  const double vz = 0.5;
+  const double c = std::cos(heading);
+  const double s = std::sin(heading);
+  const double wx = (c * vx) - (s * vy) + origin[0];
+  const double wy = (s * vx) + (c * vy) + origin[1];
+  const double wz = vz + origin[2];
+
+  // Column-major: element(row r, col k) = model[k*4 + r].
+  const auto& a = m.model;
+  const double rx = (a[0] * vx) + (a[4] * vy) + (a[8] * vz) + a[12];
+  const double ry = (a[1] * vx) + (a[5] * vy) + (a[9] * vz) + a[13];
+  const double rz = (a[2] * vx) + (a[6] * vy) + (a[10] * vz) + a[14];
+  EXPECT_NEAR(rx, wx, 1e-4);
+  EXPECT_NEAR(ry, wy, 1e-4);
+  EXPECT_NEAR(rz, wz, 1e-4);
+  // Bottom row of an affine transform is (0,0,0,1).
+  EXPECT_FLOAT_EQ(a[3], 0.0F);
+  EXPECT_FLOAT_EQ(a[7], 0.0F);
+  EXPECT_FLOAT_EQ(a[11], 0.0F);
+  EXPECT_FLOAT_EQ(a[15], 1.0F);
+}
+
+// Distinct models form separate batches in first-encounter order; an
+// object-backed instance carries an ObjectId, a signal-backed one a SignalId; and
+// the scene bounds cover every instance.
+TEST(BuildScene, DistinctModelsFormSeparateBatches) {
+  NetworkMesh mesh;
+  mesh.objects.push_back(ObjectInstance{.object = ObjectId{.index = 1, .gen = 0},
+                                        .road = RoadId{.index = 1, .gen = 0},
+                                        .model_id = "tree_pine",
+                                        .position = {0.0, 0.0, 0.0},
+                                        .heading = 0.0});
+  mesh.objects.push_back(ObjectInstance{.object = ObjectId{.index = 2, .gen = 0},
+                                        .road = RoadId{.index = 1, .gen = 0},
+                                        .model_id = "tree_oak",
+                                        .position = {40.0, 0.0, 0.0},
+                                        .heading = 0.0});
+  mesh.signal_instances.push_back(SignalInstance{.signal = SignalId{.index = 7, .gen = 0},
+                                                 .road = RoadId{.index = 1, .gen = 0},
+                                                 .model_id = "signal_light",
+                                                 .position = {0.0, 40.0, 0.0},
+                                                 .heading = 0.0});
+
+  const Scene scene = build_scene(mesh);
+  ASSERT_EQ(scene.prop_batches.size(), 3U);
+  EXPECT_EQ(scene.prop_batches[0].model_id, "tree_pine"); // first encounter
+  EXPECT_EQ(scene.prop_batches[1].model_id, "tree_oak");
+  EXPECT_EQ(scene.prop_batches[2].model_id, "signal_light");
+
+  // Object-backed instance carries an ObjectId, not a SignalId.
+  const ScenePropInstance& tree = scene.prop_batches[0].instances.front();
+  EXPECT_TRUE(tree.object.is_valid());
+  EXPECT_FALSE(tree.signal.is_valid());
+  // Signal-backed instance carries a SignalId, not an ObjectId.
+  const ScenePropInstance& light = scene.prop_batches[2].instances.front();
+  EXPECT_TRUE(light.signal.is_valid());
+  EXPECT_FALSE(light.object.is_valid());
+
+  // Bounds cover the spread of instance origins (0..40 in x and y).
+  ASSERT_TRUE(scene.bounds.valid());
+  EXPECT_LE(scene.bounds.lo[0], 0.0F);
+  EXPECT_GE(scene.bounds.hi[0], 40.0F);
+  EXPECT_LE(scene.bounds.lo[1], 0.0F);
+  EXPECT_GE(scene.bounds.hi[1], 40.0F);
+}
+
+// The pure partition helper (prop_batching.hpp) splits a batch by highlight
+// state: None → kept transforms (drawn together), anything else → highlighted
+// indices (drawn individually), including the all- and none-highlighted edges.
+TEST(PartitionPropBatch, SplitsByHighlightState) {
+  std::vector<InstanceData> transforms(4);
+  transforms[0].model[12] = 0.0F;
+  transforms[1].model[12] = 1.0F;
+  transforms[2].model[12] = 2.0F;
+  transforms[3].model[12] = 3.0F;
+  const std::vector<HighlightState> states{
+      HighlightState::None, HighlightState::Hover, HighlightState::None, HighlightState::Selected};
+
+  const PropPartition split = partition_prop_batch(states, transforms);
+  ASSERT_EQ(split.kept.size(), 2U);
+  EXPECT_FLOAT_EQ(split.kept[0].model[12], 0.0F); // instance 0
+  EXPECT_FLOAT_EQ(split.kept[1].model[12], 2.0F); // instance 2
+  ASSERT_EQ(split.highlighted.size(), 2U);
+  EXPECT_EQ(split.highlighted[0], 1U);
+  EXPECT_EQ(split.highlighted[1], 3U);
+}
+
+TEST(PartitionPropBatch, NoneHighlightedKeepsAll) {
+  std::vector<InstanceData> transforms(3);
+  const std::vector<HighlightState> states(3, HighlightState::None);
+  const PropPartition split = partition_prop_batch(states, transforms);
+  EXPECT_EQ(split.kept.size(), 3U);
+  EXPECT_TRUE(split.highlighted.empty());
+}
+
+TEST(PartitionPropBatch, AllHighlightedKeepsNone) {
+  std::vector<InstanceData> transforms(3);
+  const std::vector<HighlightState> states(3, HighlightState::Selected);
+  const PropPartition split = partition_prop_batch(states, transforms);
+  EXPECT_TRUE(split.kept.empty());
+  ASSERT_EQ(split.highlighted.size(), 3U);
+  EXPECT_EQ(split.highlighted[0], 0U);
+  EXPECT_EQ(split.highlighted[2], 2U);
 }
 
 } // namespace

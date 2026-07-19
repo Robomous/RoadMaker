@@ -28,6 +28,10 @@ struct LibraryItem {
     RoadTemplate,
     RoadStyle,
     Assembly,
+    /// The create-intent tag for EVERY point prop — trees, shrubs, streetlights
+    /// and buildings alike (create.kind == "tree" in the manifest). The actual
+    /// OpenDRIVE object class each places (Tree/Vegetation/Pole/Building) comes
+    /// from the bundled model (props::model(id)->type), not from this tag.
     Tree,
     Signal,
     Marking,

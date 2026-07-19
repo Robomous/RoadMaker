@@ -6,7 +6,9 @@ or concrete — that renders under light and saves into the `.xodr`.*
 A **material** describes what a surface is made of: its texture (colour, surface
 normal, roughness) for the [textured render mode](textured-rendering.md), and
 its **friction** coefficient, stored in the file for downstream simulation.
-RoadMaker ships three: **Asphalt**, **Asphalt (worn)**, and **Concrete**.
+RoadMaker ships five: **Asphalt**, **Asphalt (worn)**, **Concrete**, and two
+texture-less paints — **Paint (white)** and **Paint (yellow)** — for markings
+and painted surfaces.
 
 Materials are project assets — the textures live in the app, not in your scene.
 The `.xodr` records only the *assignment* (which lane got which material),

@@ -1,0 +1,7 @@
+# Materials for sign_yield (linear RGB).
+newmtl pole
+Kd 0.3200 0.3400 0.3600
+newmtl rim
+Kd 0.8000 0.1300 0.1300
+newmtl face
+Kd 0.9200 0.9200 0.9000

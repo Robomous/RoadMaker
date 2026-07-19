@@ -40,12 +40,15 @@ TEST(MaterialCatalog, UnknownCodeIsNull) {
   EXPECT_EQ(catalog.find_material("material.gold"), nullptr);
 }
 
-TEST(MaterialCatalog, ShipsAsphaltWornAndConcrete) {
+TEST(MaterialCatalog, ShipsAsphaltWornConcreteAndPaints) {
   const MaterialCatalog catalog;
   EXPECT_NE(catalog.find_material("asphalt"), nullptr);
   EXPECT_NE(catalog.find_material("asphalt_worn"), nullptr);
   EXPECT_NE(catalog.find_material("concrete"), nullptr);
-  EXPECT_EQ(catalog.materials().size(), 3U);
+  // Texture-less road paints (p6-s6): flat-colour, no maps.
+  EXPECT_NE(catalog.find_material("paint_white"), nullptr);
+  EXPECT_NE(catalog.find_material("paint_yellow"), nullptr);
+  EXPECT_EQ(catalog.materials().size(), 5U);
 }
 
 } // namespace

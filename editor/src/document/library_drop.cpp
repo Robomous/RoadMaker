@@ -68,12 +68,6 @@ std::string next_signal_odr_id(const RoadNetwork& network) {
   return std::to_string(candidate);
 }
 
-/// The Signal a "light"/"sign" library item authors at (s, t). A traffic light
-/// is dynamic with the OpenDRIVE catalog type; a static sign defaults to a
-/// German speed-limit-50 plate (type 274/50) — a recognisable regulatory sign
-/// the user can retype in the properties panel. Orientation "+" faces the
-/// signal along increasing s (the reference-line direction); the mesh builder
-/// resolves the world heading from the road tangent.
 /// A marking snaps to a lane boundary within this lateral distance [m] of a
 /// road's reference line — the whole carriageway is in reach so a drop anywhere
 /// across it grabs the nearest boundary; a drop in open space is rejected.
@@ -143,18 +137,35 @@ LaneId lane_containing_t(const RoadNetwork& network, RoadId road, double s, doub
   return {}; // off the carriageway
 }
 
-Signal make_dropped_signal(const RoadNetwork& network, bool light, double s, double t) {
+/// The Signal a library item authors at (s, t), by its manifest `signal` tag.
+/// "light" is a dynamic traffic light (OpenDRIVE catalog type); the sign tags
+/// are static German StVO (VzKat) regulatory plates the mesh builder renders by
+/// their catalog type: "sign_stop" → 206 (STOP), "sign_yield" → 205 (yield),
+/// and the generic "sign" → 274/50 (speed-limit-50, a recognisable default the
+/// user can retype). Orientation "+" faces the signal along increasing s.
+Signal make_dropped_signal(const RoadNetwork& network, const QString& tag, double s, double t) {
   Signal signal;
   signal.odr_id = next_signal_odr_id(network);
-  signal.dynamic = light;
   signal.orientation = ObjectOrientation::Plus;
   signal.s = s;
   signal.t = t;
-  if (light) {
+  if (tag == QStringLiteral("light")) {
+    signal.dynamic = true;
     signal.type = "1000001"; // OpenDRIVE traffic-light catalog type
     signal.subtype = "-1";
     signal.country = "OpenDRIVE";
-  } else {
+  } else if (tag == QStringLiteral("sign_stop")) {
+    signal.dynamic = false;
+    signal.type = "206"; // StVO 206: Halt! Vorfahrt gewähren — STOP
+    signal.subtype = "-1";
+    signal.country = "DE";
+  } else if (tag == QStringLiteral("sign_yield")) {
+    signal.dynamic = false;
+    signal.type = "205"; // StVO 205: Vorfahrt gewähren — yield/give way
+    signal.subtype = "-1";
+    signal.country = "DE";
+  } else { // "sign" — generic regulatory plate (speed-limit 50)
+    signal.dynamic = false;
     signal.type = "274"; // German regulatory speed-limit sign
     signal.subtype = "50";
     signal.country = "DE";
@@ -284,10 +295,13 @@ LibraryDropAction resolve_library_drop(const LibraryItem& item,
     Object tree;
     tree.odr_id = next_object_odr_id(network);
     tree.name = item.model.toStdString();
-    tree.type = item.model == QStringLiteral("shrub") ? ObjectType::Vegetation : ObjectType::Tree;
+    // The bundled model is the single source of truth for the object class
+    // (Tree/Vegetation/Pole/Building) and dimensions; an unknown model → Tree.
+    tree.type = ObjectType::Tree;
     tree.s = placement->s;
     tree.t = placement->t;
     if (const props::PropModel* model = props::model(tree.name)) {
+      tree.type = model->type;
       tree.radius = model->radius;
       tree.height = model->height;
     }
@@ -314,8 +328,7 @@ LibraryDropAction resolve_library_drop(const LibraryItem& item,
       action.toast = QStringLiteral("Drop a signal onto or beside a road");
       return action; // kind stays None, preview invalid — caller hints
     }
-    const bool light = item.signal != QStringLiteral("sign");
-    Signal signal = make_dropped_signal(network, light, placement->s, placement->t);
+    Signal signal = make_dropped_signal(network, item.signal, placement->s, placement->t);
     action.command = edit::add_signal(network, placement->road, std::move(signal));
     if (action.command != nullptr) {
       action.kind = LibraryDropKind::Signal;

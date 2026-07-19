@@ -164,6 +164,44 @@ def box(cx: float, cy: float, cz: float,
     return _orient_outward(tris, (cx, cy, cz))
 
 
+def _regular_polygon(sides: int, radius: float,
+                     rot: float = 0.0) -> list[tuple[float, float]]:
+    """`sides` (y, z) vertices of a regular polygon of `radius`, rotated by
+    `rot` radians — the cross-section of a sign plate in its local y-z plane."""
+    return [(radius * math.cos(2.0 * math.pi * i / sides + rot),
+             radius * math.sin(2.0 * math.pi * i / sides + rot))
+            for i in range(sides)]
+
+
+def extruded_polygon(verts_yz: list[tuple[float, float]],
+                     x_front: float, x_back: float,
+                     cy: float = 0.0, cz: float = 0.0) -> list[Tri]:
+    """A thin convex prism: a polygon authored in the local y-z plane (its face
+    looks down +x), extruded between x_back and x_front. Sign plates (octagons,
+    triangles) are these prisms so a plate reads as its true silhouette rather
+    than a box. verts_yz are (y, z) offsets from (cy, cz)."""
+    n = len(verts_yz)
+    front = [(x_front, cy + vy, cz + vz) for vy, vz in verts_yz]
+    back = [(x_back, cy + vy, cz + vz) for vy, vz in verts_yz]
+    tris: list[Tri] = []
+    for i in range(1, n - 1):  # front cap fan
+        tris.append((front[0], front[i], front[i + 1]))
+    for i in range(1, n - 1):  # back cap fan
+        tris.append((back[0], back[i], back[i + 1]))
+    for i in range(n):  # side walls
+        j = (i + 1) % n
+        tris.append((front[i], back[i], back[j]))
+        tris.append((front[i], back[j], front[j]))
+    centroid: Vec3 = ((x_front + x_back) / 2.0, cy, cz)
+    return _orient_outward(tris, centroid)
+
+
+def _footprint_radius(*half_extents: tuple[float, float]) -> float:
+    """Circumscribed footprint radius (m) — the largest box's half-diagonal, so
+    a building's bounding sphere covers its plan silhouette for picking."""
+    return max(math.hypot(hx, hy) for hx, hy in half_extents)
+
+
 # --------------------------------------------------------------------------- #
 # Tree definitions — each part is (name, color, triangles).
 # --------------------------------------------------------------------------- #
@@ -177,7 +215,7 @@ def tree_pine() -> dict:
     crown = (cone(1.2, 1.0, 2.4) + cone(0.95, 1.9, 3.2)
              + cone(0.65, 2.8, 4.2))
     return {
-        "id": "tree_pine", "label": "Pine tree", "otype": "Tree",
+        "id": "tree_pine", "label": "Pine tree", "type": "Tree",
         "height": 4.2, "radius": 1.2,
         "parts": [("trunk", BROWN, trunk),
                   ("crown", (0.16, 0.38, 0.22), crown)],
@@ -188,7 +226,7 @@ def tree_oak() -> dict:
     trunk = cylinder(0.22, 0.0, 1.9)
     crown = blob(0.0, 0.0, 3.0, 1.8, 1.8, 1.6)
     return {
-        "id": "tree_oak", "label": "Oak tree", "otype": "Tree",
+        "id": "tree_oak", "label": "Oak tree", "type": "Tree",
         "height": 4.6, "radius": 1.8,
         "parts": [("trunk", BROWN, trunk),
                   ("crown", (0.24, 0.50, 0.24), crown)],
@@ -199,7 +237,7 @@ def tree_birch() -> dict:
     trunk = cylinder(0.12, 0.0, 2.4)
     crown = blob(0.0, 0.0, 3.3, 1.0, 1.0, 1.4)
     return {
-        "id": "tree_birch", "label": "Birch tree", "otype": "Tree",
+        "id": "tree_birch", "label": "Birch tree", "type": "Tree",
         "height": 4.7, "radius": 1.0,
         "parts": [("trunk", BIRCH_BARK, trunk),
                   ("crown", (0.44, 0.63, 0.32), crown)],
@@ -210,7 +248,7 @@ def tree_poplar() -> dict:
     trunk = cylinder(0.15, 0.0, 1.0)
     crown = blob(0.0, 0.0, 3.4, 0.85, 0.85, 2.6)
     return {
-        "id": "tree_poplar", "label": "Poplar tree", "otype": "Tree",
+        "id": "tree_poplar", "label": "Poplar tree", "type": "Tree",
         "height": 6.0, "radius": 0.85,
         "parts": [("trunk", BROWN, trunk),
                   ("crown", (0.30, 0.52, 0.26), crown)],
@@ -223,7 +261,7 @@ def shrub() -> dict:
     crown = (blob(0.0, 0.0, 0.56, 1.1, 1.1, 0.6)
              + blob(0.6, 0.2, 0.42, 0.6, 0.6, 0.45))
     return {
-        "id": "shrub", "label": "Shrub", "otype": "Vegetation",
+        "id": "shrub", "label": "Shrub", "type": "Vegetation",
         "height": 1.2, "radius": 1.1,
         "parts": [("foliage", (0.28, 0.46, 0.24), crown)],
     }
@@ -259,7 +297,7 @@ def signal_light() -> dict:
     lamp_a = box(0.10, 0.0, 3.42, 0.05, 0.14, 0.14)
     lamp_g = box(0.10, 0.0, 3.18, 0.05, 0.14, 0.14)
     return {
-        "id": "signal_light", "label": "Traffic light", "otype": "Signal",
+        "id": "signal_light", "label": "Traffic light", "type": "None",
         "height": 3.9, "radius": 0.26,
         "parts": [("pole", POLE_GREY, pole),
                   ("housing", HOUSING_BLACK, housing),
@@ -278,7 +316,7 @@ def sign_generic() -> dict:
     rim = box(0.02, 0.0, 2.32, 0.03, 0.64, 0.64)
     face = box(0.04, 0.0, 2.32, 0.03, 0.52, 0.52)
     return {
-        "id": "sign_generic", "label": "Traffic sign", "otype": "Signal",
+        "id": "sign_generic", "label": "Traffic sign", "type": "None",
         "height": 2.7, "radius": 0.32,
         "parts": [("pole", POLE_GREY, pole),
                   ("rim", PLATE_RIM, rim),
@@ -286,10 +324,166 @@ def sign_generic() -> dict:
     }
 
 
-SIGNALS = [signal_light(), sign_generic()]
+STOP_RED = (0.78, 0.11, 0.12)
+YIELD_RED = (0.80, 0.13, 0.13)
+
+
+def sign_stop() -> dict:
+    """A STOP sign: a red octagonal plate with a white border on a pole, plate
+    face down +x (German StVO 206 / MUTCD R1-1 silhouette). The white rim sits
+    just behind the red face so the plate reads as a bordered octagon."""
+    pole = cylinder(0.05, 0.0, 2.2)
+    octagon = _regular_polygon(8, 0.42, math.pi / 8.0)  # flat top + bottom
+    inner = _regular_polygon(8, 0.36, math.pi / 8.0)
+    rim = extruded_polygon(octagon, 0.03, 0.00, cz=2.35)   # white border, behind
+    face = extruded_polygon(inner, 0.06, 0.03, cz=2.35)    # red face, in front
+    return {
+        "id": "sign_stop", "label": "Stop sign", "type": "None",
+        "height": 2.77, "radius": 0.42,
+        "parts": [("pole", POLE_GREY, pole),
+                  ("rim", PLATE_WHITE, rim),
+                  ("face", STOP_RED, face)],
+    }
+
+
+def sign_yield() -> dict:
+    """A YIELD sign: a downward-pointing triangular plate, white face with a red
+    border, on a pole (German StVO 205 / MUTCD R1-2 silhouette). Plate face down
+    +x; the red rim triangle sits just behind the white face."""
+    pole = cylinder(0.05, 0.0, 2.2)
+    outer = [(-0.50, 0.42), (0.50, 0.42), (0.0, -0.52)]  # red rim (down-point)
+    inner = [(-0.38, 0.34), (0.38, 0.34), (0.0, -0.38)]  # white face
+    rim = extruded_polygon(outer, 0.03, 0.00, cz=2.45)
+    face = extruded_polygon(inner, 0.06, 0.03, cz=2.45)
+    return {
+        "id": "sign_yield", "label": "Yield sign", "type": "None",
+        "height": 2.87, "radius": 0.52,
+        "parts": [("pole", POLE_GREY, pole),
+                  ("rim", YIELD_RED, rim),
+                  ("face", PLATE_WHITE, face)],
+    }
+
+
+SIGNALS = [signal_light(), sign_generic(), sign_stop(), sign_yield()]
+
+
+# --------------------------------------------------------------------------- #
+# Building definitions — low-poly stacked boxes, base centre at ground. Same
+# procedurally-authored original-work provenance (no fetched art). A placed
+# instance is an OpenDRIVE <object type="building">; radius is the circumscribed
+# footprint radius so bounding-sphere picking covers the plan silhouette.
+# --------------------------------------------------------------------------- #
+
+WALL_WARM = (0.72, 0.69, 0.63)
+WALL_COOL = (0.60, 0.62, 0.66)
+WALL_TAN = (0.78, 0.71, 0.60)
+ROOF_GREY = (0.33, 0.34, 0.36)
+ROOFTOP_UNIT = (0.46, 0.47, 0.49)
+
+
+def building_low() -> dict:
+    """A small commercial box: a body with a flat roof slab overhanging it."""
+    body = box(0.0, 0.0, 3.5, 10.0, 8.0, 7.0)          # 0..7
+    roof = box(0.0, 0.0, 7.25, 10.4, 8.4, 0.5)         # 7..7.5, slight overhang
+    return {
+        "id": "building_low", "label": "Low building", "type": "Building",
+        "height": 7.5,
+        "radius": _footprint_radius((5.2, 4.2)),
+        "parts": [("body", WALL_WARM, body),
+                  ("roof", ROOF_GREY, roof)],
+    }
+
+
+def building_mid() -> dict:
+    """A mid-rise block: a tall body, a roof slab, and a rooftop plant unit."""
+    body = box(0.0, 0.0, 9.0, 12.0, 12.0, 18.0)        # 0..18
+    roof = box(0.0, 0.0, 18.25, 12.6, 12.6, 0.5)       # 18..18.5
+    unit = box(-1.5, 1.5, 19.4, 4.0, 4.0, 1.8)         # rooftop HVAC, 18.5..20.3
+    return {
+        "id": "building_mid", "label": "Mid-rise building", "type": "Building",
+        "height": 20.3,
+        "radius": _footprint_radius((6.3, 6.3)),
+        "parts": [("body", WALL_COOL, body),
+                  ("roof", ROOF_GREY, roof),
+                  ("rooftop_unit", ROOFTOP_UNIT, unit)],
+    }
+
+
+def building_tower() -> dict:
+    """A stepped tower: three set-back box stages, each narrower than the last."""
+    base = box(0.0, 0.0, 9.0, 14.0, 14.0, 18.0)        # 0..18
+    mid = box(0.0, 0.0, 25.5, 11.0, 11.0, 15.0)        # 18..33
+    cap = box(0.0, 0.0, 36.5, 8.0, 8.0, 7.0)           # 33..40
+    return {
+        "id": "building_tower", "label": "Tower building", "type": "Building",
+        "height": 40.0,
+        "radius": _footprint_radius((7.0, 7.0)),
+        "parts": [("base", WALL_TAN, base),
+                  ("mid", WALL_WARM, mid),
+                  ("cap", WALL_COOL, cap)],
+    }
+
+
+BUILDINGS = [building_low(), building_mid(), building_tower()]
+
+
+# --------------------------------------------------------------------------- #
+# Streetlight definitions — a pole with one or two lamp arms. A placed instance
+# is an OpenDRIVE <object type="pole">. The arm reaches out +x (local heading 0)
+# and the lamp head hangs at its end; the mesh builder rotates the whole model
+# to the world heading, so the lamp overhangs the road per the placed hdg.
+# --------------------------------------------------------------------------- #
+
+LAMP_HOUSING = (0.15, 0.16, 0.17)
+LAMP_LENS = (0.98, 0.90, 0.66)
+
+
+def _lamp_arm(direction: float) -> list:
+    """One horizontal arm + lamp head reaching `direction` (+1 → +x, -1 → -x)
+    from the pole top. Returns (arm_tris, head_tris, lens_tris)."""
+    tip = 1.2 * direction
+    arm = box(0.6 * direction, 0.0, 5.4, 1.2, 0.10, 0.10)
+    head = box(tip, 0.0, 5.32, 0.44, 0.24, 0.18)
+    lens = box(tip, 0.0, 5.21, 0.40, 0.20, 0.04)  # downward-facing lens
+    return arm, head, lens
+
+
+def streetlight_single() -> dict:
+    """A single-arm streetlight: pole r0.12 h5.5, one arm + lamp head."""
+    pole = cylinder(0.12, 0.0, 5.5)
+    arm, head, lens = _lamp_arm(1.0)
+    return {
+        "id": "streetlight_single", "label": "Streetlight", "type": "Pole",
+        "height": 5.5, "radius": 1.4,
+        "parts": [("pole", POLE_GREY, pole),
+                  ("arm", POLE_GREY, arm),
+                  ("head", LAMP_HOUSING, head),
+                  ("lens", LAMP_LENS, lens)],
+    }
+
+
+def streetlight_double() -> dict:
+    """A double-arm streetlight: two opposed arms + lamp heads on one pole."""
+    pole = cylinder(0.12, 0.0, 5.5)
+    arm_a, head_a, lens_a = _lamp_arm(1.0)
+    arm_b, head_b, lens_b = _lamp_arm(-1.0)
+    return {
+        "id": "streetlight_double", "label": "Streetlight (double)",
+        "type": "Pole", "height": 5.5, "radius": 1.4,
+        "parts": [("pole", POLE_GREY, pole),
+                  ("arm_a", POLE_GREY, arm_a),
+                  ("head_a", LAMP_HOUSING, head_a),
+                  ("lens_a", LAMP_LENS, lens_a),
+                  ("arm_b", POLE_GREY, arm_b),
+                  ("head_b", LAMP_HOUSING, head_b),
+                  ("lens_b", LAMP_LENS, lens_b)],
+    }
+
+
+STREETLIGHTS = [streetlight_single(), streetlight_double()]
 
 # Everything the kernel embeds and the library/exporters resolve by id.
-MODELS = TREES + SIGNALS
+MODELS = TREES + SIGNALS + BUILDINGS + STREETLIGHTS
 
 
 # --------------------------------------------------------------------------- #
@@ -386,6 +580,7 @@ def write_cpp() -> None:
         lines.append("    },")
         lines.append(f"    {tree['height']:.4f},")
         lines.append(f"    {tree['radius']:.4f},")
+        lines.append(f"    ObjectType::{tree['type']},")
         lines.append("};")
         lines.append("")
     lines.append("const std::array<const PropModel*, "

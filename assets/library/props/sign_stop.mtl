@@ -1,0 +1,7 @@
+# Materials for sign_stop (linear RGB).
+newmtl pole
+Kd 0.3200 0.3400 0.3600
+newmtl rim
+Kd 0.9200 0.9200 0.9000
+newmtl face
+Kd 0.7800 0.1100 0.1200

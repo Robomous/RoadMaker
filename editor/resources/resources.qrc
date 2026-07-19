@@ -64,6 +64,13 @@
     <file alias="thumbnails/prop_shrub.png">../../assets/library/thumbnails/prop_shrub.png</file>
     <file alias="thumbnails/signal_traffic_light.png">../../assets/library/thumbnails/signal_traffic_light.png</file>
     <file alias="thumbnails/signal_sign.png">../../assets/library/thumbnails/signal_sign.png</file>
+    <file alias="thumbnails/sign_stop.png">../../assets/library/thumbnails/sign_stop.png</file>
+    <file alias="thumbnails/sign_yield.png">../../assets/library/thumbnails/sign_yield.png</file>
+    <file alias="thumbnails/streetlight_single.png">../../assets/library/thumbnails/streetlight_single.png</file>
+    <file alias="thumbnails/streetlight_double.png">../../assets/library/thumbnails/streetlight_double.png</file>
+    <file alias="thumbnails/building_low.png">../../assets/library/thumbnails/building_low.png</file>
+    <file alias="thumbnails/building_mid.png">../../assets/library/thumbnails/building_mid.png</file>
+    <file alias="thumbnails/building_tower.png">../../assets/library/thumbnails/building_tower.png</file>
     <file alias="thumbnails/marking_solid_white.png">../../assets/library/thumbnails/marking_solid_white.png</file>
     <file alias="thumbnails/marking_double_yellow.png">../../assets/library/thumbnails/marking_double_yellow.png</file>
     <file alias="thumbnails/marking_dashed_white.png">../../assets/library/thumbnails/marking_dashed_white.png</file>
@@ -76,6 +83,8 @@
     <file alias="thumbnails/material_asphalt.png">../../assets/library/thumbnails/material_asphalt.png</file>
     <file alias="thumbnails/material_asphalt_worn.png">../../assets/library/thumbnails/material_asphalt_worn.png</file>
     <file alias="thumbnails/material_concrete.png">../../assets/library/thumbnails/material_concrete.png</file>
+    <file alias="thumbnails/material_paint_white.png">../../assets/library/thumbnails/material_paint_white.png</file>
+    <file alias="thumbnails/material_paint_yellow.png">../../assets/library/thumbnails/material_paint_yellow.png</file>
   </qresource>
   <!-- Surface textures (CC0, Poly Haven) for the textured render mode: albedo +
        normal (nor_gl, PNG — lossless) + roughness maps. Aliased from the

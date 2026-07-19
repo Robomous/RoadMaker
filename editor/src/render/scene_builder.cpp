@@ -111,6 +111,34 @@ RenderMeshData to_render_data(const std::vector<double>& positions,
   return data;
 }
 
+InstanceData prop_transform(const std::array<double, 3>& position, double heading) {
+  // Column-major mat4: col0=(c,s,0,0) col1=(-s,c,0,0) col2=(0,0,1,0)
+  // col3=(x,y,z,1) — a +Z rotation by `heading` then a translate to `position`.
+  // Applied to (x,y,z,1) this reproduces the pre-instancing world-space bake:
+  //   x' = c*x - s*y + px,  y' = s*x + c*y + py,  z' = z + pz.
+  const auto c = static_cast<float>(std::cos(heading));
+  const auto s = static_cast<float>(std::sin(heading));
+  const auto px = static_cast<float>(position[0]);
+  const auto py = static_cast<float>(position[1]);
+  const auto pz = static_cast<float>(position[2]);
+  return InstanceData{{c,
+                       s,
+                       0.0F,
+                       0.0F, //
+                       -s,
+                       c,
+                       0.0F,
+                       0.0F, //
+                       0.0F,
+                       0.0F,
+                       1.0F,
+                       0.0F, //
+                       px,
+                       py,
+                       pz,
+                       1.0F}};
+}
+
 float SceneBounds::framing_radius() const {
   const float dx = hi[0] - lo[0];
   const float dy = hi[1] - lo[1];
@@ -150,10 +178,12 @@ void append_road_items(const RoadMesh& road, Scene& scene) {
 
 namespace {
 
-// Bakes a bundled model (props::model(model_id)) into world-space SceneItems at
-// the given pose — one item per part, each tagged with the owning road plus the
-// source entity id (object OR signal; the other stays invalid). Shared by the
-// prop and signal instance paths so both draw through the identical bake.
+// Adds one placed instance of a bundled model (props::model(model_id)) to its
+// shared batch (find-or-create by model id). The model parts are converted to
+// model-space RenderMeshData ONCE per batch; each placement contributes a single
+// ScenePropInstance (transform + owning road + source entity id — object OR
+// signal, the other stays invalid). Shared by the prop and signal paths so both
+// draw through the identical instanced batch.
 void append_model_items(std::string_view model_id,
                         const std::array<double, 3>& origin,
                         double heading,
@@ -165,38 +195,49 @@ void append_model_items(std::string_view model_id,
   if (model == nullptr) {
     return;
   }
-  const double cos_h = std::cos(heading);
-  const double sin_h = std::sin(heading);
-  for (const props::PropPart& part : model->parts) {
-    // Bake the model-space part to world space (rotate about +Z by heading,
-    // translate to the instance origin); the renderer draws pre-baked world
-    // positions with no model matrix.
-    std::vector<double> world_pos(part.positions.size());
-    std::vector<double> world_nrm(part.normals.size());
-    for (std::size_t i = 0; i + 2 < part.positions.size(); i += 3) {
-      const double x = part.positions[i];
-      const double y = part.positions[i + 1];
-      world_pos[i] = (cos_h * x) - (sin_h * y) + origin[0];
-      world_pos[i + 1] = (sin_h * x) + (cos_h * y) + origin[1];
-      world_pos[i + 2] = part.positions[i + 2] + origin[2];
-      const double nx = part.normals[i];
-      const double ny = part.normals[i + 1];
-      world_nrm[i] = (cos_h * nx) - (sin_h * ny);
-      world_nrm[i + 1] = (sin_h * nx) + (cos_h * ny);
-      world_nrm[i + 2] = part.normals[i + 2];
+  // Find-or-create the batch for this model (linear scan; ~14 bundled models,
+  // so O(models) is fine). First-encounter order is preserved and deterministic.
+  ScenePropBatch* batch = nullptr;
+  for (ScenePropBatch& existing : scene.prop_batches) {
+    if (existing.model_id == model_id) {
+      batch = &existing;
+      break;
     }
-    scene.items.push_back(SceneItem{
-        .data = to_render_data(world_pos,
-                               world_nrm,
-                               part.indices,
-                               {part.color[0], part.color[1], part.color[2], 1.0F}),
-        .road = road,
-        .lane = {},
-        .object = object,
-        .signal = signal,
-    });
-    grow_bounds(scene.bounds, world_pos);
   }
+  if (batch == nullptr) {
+    ScenePropBatch created;
+    created.model_id = std::string(model_id);
+    created.parts.reserve(model->parts.size());
+    for (const props::PropPart& part : model->parts) {
+      // MODEL-space geometry (the instanced draw applies the per-instance matrix).
+      created.parts.push_back(to_render_data(part.positions,
+                                             part.normals,
+                                             part.indices,
+                                             {part.color[0], part.color[1], part.color[2], 1.0F}));
+    }
+    scene.prop_batches.push_back(std::move(created));
+    batch = &scene.prop_batches.back();
+  }
+  batch->instances.push_back(ScenePropInstance{
+      .road = road,
+      .object = object,
+      .signal = signal,
+      .transform = prop_transform(origin, heading),
+  });
+
+  // Grow scene bounds from the model bounding cylinder (radius/height) at the
+  // instance origin — cheap and pose-independent (heading only spins the crown).
+  const auto radius = static_cast<float>(model->radius);
+  const auto height = static_cast<float>(model->height);
+  const auto ox = static_cast<float>(origin[0]);
+  const auto oy = static_cast<float>(origin[1]);
+  const auto oz = static_cast<float>(origin[2]);
+  scene.bounds.lo[0] = std::min(scene.bounds.lo[0], ox - radius);
+  scene.bounds.lo[1] = std::min(scene.bounds.lo[1], oy - radius);
+  scene.bounds.lo[2] = std::min(scene.bounds.lo[2], oz);
+  scene.bounds.hi[0] = std::max(scene.bounds.hi[0], ox + radius);
+  scene.bounds.hi[1] = std::max(scene.bounds.hi[1], oy + radius);
+  scene.bounds.hi[2] = std::max(scene.bounds.hi[2], oz + height);
 }
 
 } // namespace

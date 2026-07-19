@@ -1,0 +1,15 @@
+# Materials for streetlight_double (linear RGB).
+newmtl pole
+Kd 0.3200 0.3400 0.3600
+newmtl arm_a
+Kd 0.3200 0.3400 0.3600
+newmtl head_a
+Kd 0.1500 0.1600 0.1700
+newmtl lens_a
+Kd 0.9800 0.9000 0.6600
+newmtl arm_b
+Kd 0.3200 0.3400 0.3600
+newmtl head_b
+Kd 0.1500 0.1600 0.1700
+newmtl lens_b
+Kd 0.9800 0.9000 0.6600

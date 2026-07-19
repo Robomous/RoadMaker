@@ -1,0 +1,5 @@
+# Materials for building_low (linear RGB).
+newmtl body
+Kd 0.7200 0.6900 0.6300
+newmtl roof
+Kd 0.3300 0.3400 0.3600
