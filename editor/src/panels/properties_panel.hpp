@@ -121,6 +121,13 @@ private:
   /// Commits the dropped library item into the primary prop's model slot.
   void push_object_model(const QString& key);
 
+  /// Pins the dropped Materials item onto the primary selected marking instance
+  /// (crosswalk / stencil / marking-curve) as a per-instance override
+  /// (material_override), in ONE update_objects command. Toasts an unknown key;
+  /// pushes nothing when the material is unchanged or the object carries no
+  /// marking material.
+  void push_instance_material(const QString& key);
+
   /// Applies the dropped road-style library item to the primary selected road.
   /// The slot is write-only (a road stores no style identity), so this is an
   /// apply action, not a stored reference like the prop Model slot.
@@ -192,11 +199,19 @@ private:
   QDoubleSpinBox* signal_h_spin_;
   QLabel* signal_kind_label_;
 
-  /// Prop section: a selected object used to show its owning ROAD's fields.
-  /// The Model slot is the first slot consumer (GW-3 mechanics).
+  /// Object section: a selected <object>. A prop shows the Model slot; a marking
+  /// instance (crosswalk / stencil / marking-curve) shows the Material slot
+  /// instead — refresh_object toggles the two rows and the group title.
   QGroupBox* object_group_;
   QLabel* object_kind_label_;
   SlotWidget* model_slot_;
+  /// Per-instance marking material override (p3-s5): dropping a Materials item
+  /// here pins this instance's paint (material_override), so a later change to
+  /// the asset's Default Material leaves it alone (GW-2 s15, GW-5 s8/s9).
+  SlotWidget* instance_material_slot_;
+  /// The object group's form — kept so refresh_object can setRowVisible the
+  /// Model vs Material rows per object kind.
+  QFormLayout* object_form_ = nullptr;
 
   /// Road-style section (shown for a selected road): a write-only Library slot
   /// that applies a dropped road style to the road (p2-s8). Unlike the prop

@@ -213,6 +213,7 @@ PropertiesPanel::PropertiesPanel(Document& document,
       signal_kind_label_(new QLabel(this)), object_group_(new QGroupBox(tr("Prop"), this)),
       object_kind_label_(new QLabel(this)),
       model_slot_(new SlotWidget(QStringLiteral("Props"), this)),
+      instance_material_slot_(new SlotWidget(QStringLiteral("Materials"), this)),
       style_group_(new QGroupBox(tr("Road style"), this)),
       style_slot_(new SlotWidget(QStringLiteral("Road styles"), this)),
       surface_group_(new QGroupBox(tr("Ground surface"), this)),
@@ -448,11 +449,24 @@ PropertiesPanel::PropertiesPanel(Document& document,
   object_kind_label_->setObjectName(QStringLiteral("object_kind_label"));
   object_kind_label_->setWordWrap(true);
   model_slot_->setObjectName(QStringLiteral("object_model_slot"));
+  instance_material_slot_->setObjectName(QStringLiteral("object_material_slot"));
+  instance_material_slot_->setToolTip(
+      tr("Drop a material to override this marking's paint on this instance only"));
   auto* object_form = new QFormLayout(object_group_);
   object_form->addRow(object_kind_label_);
   object_form->addRow(tr("Model"), model_slot_);
+  object_form->addRow(tr("Material"), instance_material_slot_);
+  object_form_ = object_form;
   connect(model_slot_, &SlotWidget::item_dropped, this, &PropertiesPanel::push_object_model);
   connect(model_slot_,
+          &SlotWidget::engage_requested,
+          this,
+          &PropertiesPanel::library_category_requested);
+  connect(instance_material_slot_,
+          &SlotWidget::item_dropped,
+          this,
+          &PropertiesPanel::push_instance_material);
+  connect(instance_material_slot_,
           &SlotWidget::engage_requested,
           this,
           &PropertiesPanel::library_category_requested);
@@ -856,13 +870,30 @@ std::optional<double> PropertiesPanel::active_node_height() const {
 
 void PropertiesPanel::refresh_object(const Object& object) {
   add_row(tr("OpenDRIVE id"), tr("object %1").arg(QString::fromStdString(object.odr_id)));
-  // The group box already says "Prop"; this line says which KIND of one, from
-  // the OpenDRIVE @type (§13.1) the object actually carries.
+  // This line says which KIND of object it is, from the OpenDRIVE @type (§13.1).
   object_kind_label_->setText(object_type_name(object.type));
   add_row(tr("Position"), tr("s %1 m, t %2 m").arg(object.s, 0, 'f', 2).arg(object.t, 0, 'f', 2));
-  // Object::name IS the prop model id the mesher renders (mesh.hpp
-  // ObjectInstance::model_id) — that is what the slot shows and replaces.
-  model_slot_->set_item(QString::fromStdString(object.name));
+
+  // A marking instance (crosswalk / stencil / marking-curve) exposes the paint
+  // Material override slot; every other object (a prop) exposes the Model slot.
+  // The two share the object group — toggle the rows and the title per kind.
+  const std::optional<std::string> marking_material =
+      object.crosswalk.has_value()       ? std::optional(object.crosswalk->material)
+      : object.stencil.has_value()       ? std::optional(object.stencil->material)
+      : object.marking_curve.has_value() ? std::optional(object.marking_curve->material)
+                                         : std::nullopt;
+  const bool is_marking = marking_material.has_value();
+  object_form_->setRowVisible(model_slot_, !is_marking);
+  object_form_->setRowVisible(instance_material_slot_, is_marking);
+  if (is_marking) {
+    instance_material_slot_->set_item(QString::fromStdString(*marking_material));
+    object_group_->setTitle(tr("Marking"));
+  } else {
+    // Object::name IS the prop model id the mesher renders (mesh.hpp
+    // ObjectInstance::model_id) — that is what the slot shows and replaces.
+    model_slot_->set_item(QString::fromStdString(object.name));
+    object_group_->setTitle(tr("Prop"));
+  }
   object_group_->show();
 }
 
@@ -948,6 +979,54 @@ void PropertiesPanel::push_surface_material(const QString& key) {
     return; // no change — a drop that changes nothing pushes no command
   }
   push(edit::set_surface_material(document_.network(), surfaces.back(), *material));
+}
+
+void PropertiesPanel::push_instance_material(const QString& key) {
+  const std::vector<ObjectId> objects = selection_.selected_objects();
+  if (objects.empty() || key.isEmpty()) {
+    return;
+  }
+  // Validate against the catalog (reject an unknown key with a hint, no silent
+  // default), but store the dropped library key form so it matches the asset's
+  // Default Material spelling and round-trips verbatim.
+  if (!material_for_key(key).has_value()) {
+    emit status_message(tr("“%1” isn't a known material").arg(key));
+    return;
+  }
+  const ObjectId id = objects.back();
+  const Object* object = document_.network().object(id);
+  if (object == nullptr) {
+    return;
+  }
+  const std::string code = key.toStdString();
+  Object updated = *object;
+  // Pin the paint on THIS instance (material_override), so a later asset
+  // Default-Material change skips it (materialize_* honors the flag).
+  if (updated.crosswalk.has_value()) {
+    if (updated.crosswalk->material == code && updated.crosswalk->material_override) {
+      return; // no change
+    }
+    updated.crosswalk->material = code;
+    updated.crosswalk->material_override = true;
+  } else if (updated.stencil.has_value()) {
+    if (updated.stencil->material == code && updated.stencil->material_override) {
+      return;
+    }
+    updated.stencil->material = code;
+    updated.stencil->material_override = true;
+  } else if (updated.marking_curve.has_value()) {
+    if (updated.marking_curve->material == code && updated.marking_curve->material_override) {
+      return;
+    }
+    updated.marking_curve->material = code;
+    updated.marking_curve->material_override = true;
+  } else {
+    emit status_message(tr("This object has no marking material to override"));
+    return;
+  }
+  push(edit::update_objects(
+      document_.network(), {{id, std::move(updated)}}, "Override Marking Material"));
+  emit status_message(tr("Overrode this marking's material"));
 }
 
 void PropertiesPanel::push_lane_material(const QString& key) {
