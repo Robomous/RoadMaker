@@ -15,7 +15,7 @@ highlighting.
 ## Preconditions
 
 - A dev build of `roadmaker-editor` at the commit under test.
-- A scene with a four-arm junction with maneuver roads (P4-s3) and the
+- A scene with a four-arm junction with maneuver roads (p4-s6) and the
   starter signal/prop assembly assets.
 
 ## Steps

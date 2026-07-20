@@ -48,11 +48,11 @@ manifest-driven Library panel.
 | P1 | Interaction & Navigation | Orbit-pivot camera model (pivot point of interest, push-past-pivot zoom, frame-selected / frame-on-cursor, orthographic/perspective toggle, cardinal views); Attributes pane as universal editor (scrub-editing on attribute names, drag-targets for assets/materials); 2D Editor pane as a host for profile, cross-section, and future editors; status-bar tool instructions; documented shortcut map | GW-1, all |
 | P2 | Roads & Lanes | Road-plan authoring parity: extend-from-endpoint with geometric-constraint fit, forming a junction on commit (supersedes #95/#97); enclosed-area ground surfaces as a first-class `Surface` entity P5 extends; lane tool suite: Lane, Lane Width, Lane Add, Lane Form, Lane Carve (tapering cut → turn lane) over new kernel lane-section operations; road styles as draggable assets that **replace** the lane profile and boundary marks while preserving everything orthogonal to the cross section — reference-line geometry, elevation, junction connectivity (supersedes #194). Also seeds the **in-app Help system** (Qt Help Framework), permanent cross-pillar infrastructure every later pillar grows | GW-2 |
 | P3 | Markings | Crosswalk & Stop Line tool (chevron placement affordance); parametric crosswalk assets; Marking Curve + Marking Point tools; drag marking assets onto lane boundaries; stencil assets (arrows); marking materials with per-instance override | GW-2, GW-5 |
-| P4 | Junctions & Signals | Corner tool full parity (control-vertex/extent reshape, per-corner radius + materials, junction-wide attributes); custom-junction and junction-surface groundwork; Signal tool with auto-signalize templates (incl. protected-left); Signal Phase Editor hosted in the 2D Editor pane; maneuver roads; signal/prop assemblies auto-linked to signals; Sign tool with editable text | GW-3, GW-4 |
+| P4 | Junctions & Signals | Corner tool full parity (control-vertex/extent reshape, per-corner radius + materials, junction-wide attributes); **junction control**: a first-class stopline entity (per-road Distance, flippable, draggable — designed once, shared with P3 crosswalk stop lines and maneuver termination) and locked/custom junctions (manual creation between non-overlapping roads, convert automatic↔locked, add/remove member roads, merge junctions, junctions over parallel-road s-spans and along a single road, corner re-derivation); **junction interior surface control**: per-span sample visualization, Include Samples toggle, Sort Index with Raise/Lower; **maneuvers + signalization + signs**: maneuver roads (auto-derived per junction, editable with Lock Geometry and Convert-to-Explicit, semantic Turn Type) exporting as OpenDRIVE connecting roads; Signal tool with auto-signalize templates (incl. protected-left, static and dynamic); Signal Phase Editor hosted in the 2D Editor pane; signal/prop assemblies auto-linked to signals; Sign tool with editable text. All non-ASAM carriers per [ADR-0008](../decisions/0008-persistence-layers-asam-first.md) | GW-3, GW-4 |
 | P5 | Terrain & Structures | Surface tool as a node graph with tangents; elevation ↔ terrain coupling; Road Construction tool with automatic bridge-span assignment and span inflation (supersedes #198); heightmap terrain (DEM import + brushes) as a later sprint | GW-2 |
-| P6 | Assets, Props & Materials | Project model (a project is a folder of shared assets; scenes live in projects; recent scenes on the welcome screen); Library Browser with asset previews and universal drag-and-drop; Prop Point / Prop Curve (+ Bake) / Prop Span / Prop Polygon (density, randomize) tools; Prop Sets (multi-asset, portions); PBR-lite material engine + material library (supersedes #196/#197); curated CC0 starter library incl. city props (supersedes #199); instanced-rendering fast path (supersedes #201) | GW-2, GW-3, GW-5 |
-| P7 | Import & Export | Scene Export Preview + OpenDRIVE Export Preview tools; GIS vector/raster import (GDAL/PROJ); lidar (PDAL); OSM road-network extraction with diagnostics-first fitting (supersedes #54 scale targets) | GW-2 (previews) |
-| P8 | Scenarios | OpenSCENARIO model; Map ↔ Scenario mode; actor placement; lane-anchored routes; storyboard/condition logic editor; esmini preview hooks. GW-6 is drafted as part of P8 planning | GW-6 |
+| P6 | Assets, Props & Materials | Project model (a project is a folder of shared assets; scenes live in projects; recent scenes on the welcome screen); Library Browser with asset previews and universal drag-and-drop; Prop Point / Prop Curve (+ Bake) / Prop Span / Prop Polygon (density, randomize) tools; Prop Sets (multi-asset, portions); PBR-lite material engine + material library (supersedes #196/#197); curated CC0 starter library incl. city props (supersedes #199); instanced-rendering fast path (supersedes #201); Library Browser doubling as a **file explorer over the project's asset folders** (live tree, filesystem watcher, per-type thumbnails); **import pipelines** for user assets — images → PBR-lite materials and glTF/GLB → props (FBX permanently excluded; OBJ/USD read deferred past v0.1.0) — with drag-in from the OS file manager; **assemblies** as composite prop assets (model + Library here; signal linkage in P4). Also seeds the **fmt** persistence workstream ([ADR-0008](../decisions/0008-persistence-layers-asam-first.md)) | GW-2, GW-3, GW-5 |
+| P7 | Import & Export | Scene Export Preview + OpenDRIVE Export Preview tools; **world georeference settings** — a world projection from standard CRS descriptions (WKT / proj-string), a world origin (latitude/longitude), workspace extents, and center/fit-to-selection in that frame; imports reproject into the world frame and exports record `<header><geoReference>` (OpenDRIVE §8.5); GIS vector/raster import (GDAL/PROJ); lidar (PDAL); OSM road-network extraction with diagnostics-first fitting (supersedes #54 scale targets) | GW-2 (previews) |
+| P8 | Scenarios | Internal scenario model exporting **OpenSCENARIO 1.x XML** first (validation-friendly, esmini-compatible), with **OpenSCENARIO 2.x as an explicit later sprint** — an export-only concrete-scenario subset at v0.1.0, no OSC2 import or parser dependency; Map ↔ Scenario mode; actor placement; lane-anchored routes; storyboard/condition logic editor; esmini preview hooks. GW-6 is drafted as part of P8 planning | GW-6 |
 
 ## Sequencing
 
@@ -66,9 +66,12 @@ graph TD
     P2 --> P5[P5 Terrain & Structures]
     P3 --> P4[P4 Junctions & Signals]
     P6 --> P4
+    P6 --> FMT[fmt — persistence layers]
     P5 --> P7[P7 Import & Export]
+    FMT --> P7
     P4 --> P8[P8 Scenarios]
     P7 --> P8
+    FMT --> P8
     P8 --> GATE{{Release gate:<br/>GW-1..6 pass on<br/>macOS + Linux + Windows<br/>+ maintainer approval}}
     GATE --> R[(v0.1.0 — first and only release)]
 ```
@@ -76,7 +79,12 @@ graph TD
 Rationale: P1 comes first because every golden workflow depends on the
 interaction model; P6 early because the Library/Attributes drag model is a
 dependency of P3 and P4; P8 last because scenarios sit on top of a finished
-map editor.
+map editor. The `fmt` workstream (seeded by P6, per
+[ADR-0008](../decisions/0008-persistence-layers-asam-first.md)) feeds P7
+(georeference/workspace state) and P8 (scenario files live in the project
+container). The P1 follow-up sprint `p1-s5` (toolbar information
+architecture) lands **before** P4's tool wave so the new tools arrive into
+a categorized toolbar.
 
 ## Sprints and issues
 
@@ -94,7 +102,11 @@ map editor.
 - A **cross-pillar workstream** — infrastructure seeded by one pillar and
   grown by every later one — is titled for the workstream rather than the
   pillar (`help-sM: …`) and carries its own label alongside the owning
-  pillar's (`help` + `pillar:P2`). The in-app Help system is the first.
+  pillar's (`help` + `pillar:P2`). The in-app Help system is the first;
+  the **fmt** persistence workstream — the ASAM-first persistence layers
+  and the native project container of
+  [ADR-0008](../decisions/0008-persistence-layers-asam-first.md)
+  (`fmt` + `pillar:P6`) — is the second.
 
 ### Tracking on GitHub
 
@@ -129,7 +141,19 @@ Written once per pillar, before its first sprint lands:
 
 - [P1 — Interaction & Navigation](pillars/p1_discovery.md)
 - [P2 — Roads & Lanes](pillars/p2_discovery.md)
+- [P4 — Junctions & Signals](pillars/p4_discovery.md)
 - [P6 — Assets, Props & Materials](pillars/p6_discovery.md)
+
+### Roadmap updates
+
+Substantial mid-flight changes to pillar scope are recorded as dated
+update documents under [updates/](updates/):
+
+- [2026-07 realignment](updates/2026-07-realignment.md) — P4 restructured
+  around three behavior areas; toolbar information architecture (p1-s5);
+  asset-import and file-explorer sprints in P6; georeferencing named in
+  P7; OpenSCENARIO 1.x/2.x named in P8; the `fmt` persistence workstream
+  and [ADR-0008](../decisions/0008-persistence-layers-asam-first.md).
 
 ## Release gate
 
