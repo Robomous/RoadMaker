@@ -436,6 +436,8 @@ MainWindow::MainWindow(QWidget* parent, bool restore_saved_layout)
   // Corner: junction fillets. No params provider — it edits what it picks.
   auto corner_tool = std::make_unique<CornerTool>(document_, selection_);
   wire_status(corner_tool.get());
+  // The Properties pane edits the corner the tool has made active.
+  properties_panel_->set_corner_tool(corner_tool.get());
   tool_manager_.register_tool(ToolId::Corner, std::move(corner_tool));
   connect(actions_->tool_corner, &QAction::triggered, this, [this] {
     tool_manager_.set_active(ToolId::Corner);

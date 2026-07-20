@@ -24,6 +24,7 @@
 #include "document/library_manifest.hpp"
 #include "document/marking_item.hpp"
 #include "render/material_catalog.hpp"
+#include "tools/corner_tool.hpp"
 #include "tools/elevation_tool.hpp"
 
 namespace roadmaker::editor {
@@ -194,6 +195,22 @@ std::size_t lane_count_on_side(const RoadNetwork& network, LaneSectionId section
   return count;
 }
 
+/// Smallest fillet radius the Corner spin box offers [m]. Below this the fillet
+/// stops reading as a corner at all; the UPPER bound is per-corner geometry
+/// (JunctionCornerInfo::max_radius) and is applied on every refresh.
+constexpr double kCornerRadiusMin = 0.5;
+
+/// Human-readable name of one junction arm: its road's OpenDRIVE id plus the
+/// end that contacts the junction. A corner is named by its arm PAIR, and both
+/// ends of one road can be arms of the same junction, so the contact point is
+/// part of the identity, not decoration.
+QString arm_name(const RoadNetwork& network, const RoadEnd& end) {
+  const Road* road = network.road(end.road);
+  const QString id = road == nullptr ? QObject::tr("(gone)") : QString::fromStdString(road->odr_id);
+  return end.contact == ContactPoint::Start ? QObject::tr("road %1 start").arg(id)
+                                            : QObject::tr("road %1 end").arg(id);
+}
+
 } // namespace
 
 PropertiesPanel::PropertiesPanel(Document& document,
@@ -211,10 +228,11 @@ PropertiesPanel::PropertiesPanel(Document& document,
       remove_right_(new QPushButton(tr("Remove right lane"))),
       elevation_group_(new QGroupBox(tr("Elevation"), this)),
       elevation_node_label_(new QLabel(this)), elevation_spin_(new QDoubleSpinBox),
-      signal_group_(new QGroupBox(tr("Signal"), this)), signal_s_spin_(new QDoubleSpinBox),
-      signal_t_spin_(new QDoubleSpinBox), signal_h_spin_(new QDoubleSpinBox),
-      signal_kind_label_(new QLabel(this)), object_group_(new QGroupBox(tr("Prop"), this)),
-      object_kind_label_(new QLabel(this)),
+      corner_group_(new QGroupBox(tr("Corner"), this)), corner_arms_label_(new QLabel(this)),
+      corner_radius_spin_(new QDoubleSpinBox), signal_group_(new QGroupBox(tr("Signal"), this)),
+      signal_s_spin_(new QDoubleSpinBox), signal_t_spin_(new QDoubleSpinBox),
+      signal_h_spin_(new QDoubleSpinBox), signal_kind_label_(new QLabel(this)),
+      object_group_(new QGroupBox(tr("Prop"), this)), object_kind_label_(new QLabel(this)),
       model_slot_(new SlotWidget(QStringLiteral("Props"), this)),
       instance_material_slot_(new SlotWidget(QStringLiteral("Materials"), this)),
       style_group_(new QGroupBox(tr("Road style"), this)),
@@ -372,6 +390,39 @@ PropertiesPanel::PropertiesPanel(Document& document,
                                network, node->first, node->second, value);
                          }}),
       elevation_spin_);
+
+  // Corner: the fillet radius of whichever junction corner the Corner tool has
+  // made active (p4-s1, GW-2 s9 / GW-3 s5). The tool's sub-selection is not a
+  // SelectionModel entry, so the arm-pair row is the only place the pane can
+  // say WHICH corner these numbers belong to.
+  corner_arms_label_->setObjectName(QStringLiteral("corner_arms_label"));
+  corner_arms_label_->setWordWrap(true);
+  corner_radius_spin_->setObjectName(QStringLiteral("corner_radius_spin"));
+  // The upper bound is per-corner geometry (refresh_corner re-ranges it); this
+  // is just the floor a fillet stays meaningful at.
+  corner_radius_spin_->setRange(kCornerRadiusMin, kCornerRadiusMin);
+  corner_radius_spin_->setSingleStep(0.5);
+  corner_radius_spin_->setDecimals(2);
+  corner_radius_spin_->setSuffix(tr(" m"));
+  corner_form_ = new QFormLayout(corner_group_);
+  corner_form_->addRow(tr("Arms"), corner_arms_label_);
+  corner_radius_scrub_label_ =
+      install_scrub(new ScrubLabel(tr("Corner radius"), this),
+                    {.spin = corner_radius_spin_,
+                     .units_per_pixel = 0.05,
+                     .baseline = [this]() -> std::optional<double> {
+                       const std::optional<JunctionCornerInfo> info = active_corner_info();
+                       return info.has_value() ? std::optional<double>(info->radius) : std::nullopt;
+                     },
+                     .factory =
+                         [this](const RoadNetwork& network, double value) {
+                           const auto corner = corner_tool_->active_corner();
+                           return edit::set_corner_radius(
+                               network, corner->junction, corner->arm_a, corner->arm_b, value);
+                         }});
+  corner_radius_scrub_label_->setObjectName(QStringLiteral("corner_radius_scrub"));
+  corner_form_->addRow(corner_radius_scrub_label_, corner_radius_spin_);
+  corner_group_->hide();
 
   // Signal: a placed <signal>'s road-relative pose. s/t/heading edit through
   // move_signal (one command each); type/subtype stay read-only for now (a
@@ -581,6 +632,7 @@ PropertiesPanel::PropertiesPanel(Document& document,
   layout->addLayout(form_);
   layout->addWidget(lane_group_);
   layout->addWidget(elevation_group_);
+  layout->addWidget(corner_group_);
   layout->addWidget(signal_group_);
   layout->addWidget(object_group_);
   layout->addWidget(style_group_);
@@ -670,6 +722,22 @@ PropertiesPanel::PropertiesPanel(Document& document,
         document_.network(), node->first, node->second, elevation_spin_->value()));
   });
 
+  // Commit the active corner's radius on focus-out, skipping the push when the
+  // value is unchanged — the same re-entrancy guard every other editor here
+  // uses, so refresh_corner() re-seeding the spin box never echoes a command.
+  connect(corner_radius_spin_, &QDoubleSpinBox::editingFinished, this, [this] {
+    const std::optional<JunctionCornerInfo> info = active_corner_info();
+    if (!info.has_value() || std::abs(corner_radius_spin_->value() - info->radius) < 1e-9) {
+      return;
+    }
+    const auto corner = corner_tool_->active_corner();
+    push(edit::set_corner_radius(document_.network(),
+                                 corner->junction,
+                                 corner->arm_a,
+                                 corner->arm_b,
+                                 corner_radius_spin_->value()));
+  });
+
   // Signal pose: commit s/t/heading on focus-out through move_signal, with the
   // same unchanged-value skip guard so refresh() after undo never re-commits.
   for (QDoubleSpinBox* spin : {signal_s_spin_, signal_t_spin_, signal_h_spin_}) {
@@ -697,6 +765,11 @@ void PropertiesPanel::refresh() {
     return;
   }
   clear_rows();
+
+  // The Corner section follows the tool's sub-selection, not the row layout
+  // below, and every path through this function (road, lane, junction, empty)
+  // is covered by its own predicate — so decide it once, up front.
+  refresh_corner();
 
   // The asset editors are Library-driven modes; any scene selection closes them.
   asset_group_->hide();
@@ -1193,6 +1266,63 @@ void PropertiesPanel::refresh_elevation() {
   }
   elevation_spin_->setEnabled(false);
   elevation_node_label_->setText(tr("Click a road node to edit its elevation."));
+}
+
+void PropertiesPanel::set_corner_tool(CornerTool* tool) {
+  corner_tool_ = tool;
+  if (corner_tool_ != nullptr) {
+    connect(corner_tool_,
+            &CornerTool::corner_selection_changed,
+            this,
+            &PropertiesPanel::refresh_corner);
+  }
+  refresh_corner();
+}
+
+std::optional<JunctionCornerInfo> PropertiesPanel::active_corner_info() const {
+  if (corner_tool_ == nullptr) {
+    return std::nullopt;
+  }
+  const auto corner = corner_tool_->active_corner();
+  // The pane edits the corner of the junction it is SHOWING: a stale active
+  // corner from a junction the user has since deselected must not be editable
+  // through rows describing something else.
+  if (!corner.has_value() || corner->junction != selection_.primary().junction) {
+    return std::nullopt;
+  }
+  return corner_tool_->active_corner_info();
+}
+
+void PropertiesPanel::refresh_corner() {
+  const std::optional<JunctionCornerInfo> info = active_corner_info();
+  if (!info.has_value()) {
+    corner_group_->hide();
+    return;
+  }
+  corner_group_->show();
+
+  corner_arms_label_->setText(tr("%1 ↔ %2")
+                                  .arg(arm_name(document_.network(), info->arm_a))
+                                  .arg(arm_name(document_.network(), info->arm_b)));
+
+  // A corner whose arm faces leave no room below the floor cannot be edited
+  // here — the row goes away rather than offering an empty range.
+  const bool editable = info->max_radius >= kCornerRadiusMin;
+  corner_form_->setRowVisible(corner_radius_spin_, editable);
+  if (!editable) {
+    return;
+  }
+  corner_radius_spin_->setRange(kCornerRadiusMin, info->max_radius);
+  // On a geometrically tight corner the DERIVED radius already equals
+  // max_radius, so the box opens at its own ceiling and typing a larger number
+  // does nothing. That is the truth about the junction, not a bug: a value
+  // above the bound is clamped when the floor is meshed. Say so.
+  corner_radius_spin_->setToolTip(
+      tr("Fillet radius. The arm faces leave room for at most %1 m at this corner; a larger "
+         "value is clamped when the junction is meshed. Drag the attribute name to scrub.")
+          .arg(info->max_radius, 0, 'f', 2));
+  const QSignalBlocker blocker(corner_radius_spin_);
+  corner_radius_spin_->setValue(info->radius);
 }
 
 void PropertiesPanel::refresh_lane_section() {

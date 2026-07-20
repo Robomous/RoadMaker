@@ -8,6 +8,8 @@
 // editingFinished only and skip the push when the value did not change, so
 // refresh-on-undo never echoes a command back.
 
+#include "roadmaker/mesh/junction_corners.hpp"
+
 #include <QComboBox>
 #include <QDoubleSpinBox>
 #include <QFormLayout>
@@ -30,6 +32,7 @@
 
 namespace roadmaker::editor {
 
+class CornerTool;
 class ElevationTool;
 class LibraryListModel;
 
@@ -77,6 +80,12 @@ public:
   /// panel never owns the tool. Call once, after both exist.
   void set_elevation_tool(ElevationTool* tool);
 
+  /// Wires the Corner section to the Corner tool's active corner (p4-s1,
+  /// issue #225). The section only appears when the panel's primary selection
+  /// is a junction AND the tool's active corner belongs to that junction, so
+  /// until a tool is attached it stays hidden. The panel never owns the tool.
+  void set_corner_tool(CornerTool* tool);
+
   /// The editor's road-mark width conventions [m]. OpenDRIVE's @width has no
   /// normative values (weight standard/bold is the spec's coarse axis) —
   /// these presets are RoadMaker conventions (docs/domain/opendrive.md).
@@ -87,6 +96,7 @@ private:
   void refresh();
   void refresh_lane_section();
   void refresh_elevation();
+  void refresh_corner();
   void add_row(const QString& label, const QString& value);
   void clear_rows();
 
@@ -145,6 +155,13 @@ private:
   /// scrub binding so both agree on what "current" means.
   [[nodiscard]] std::optional<double> active_node_height() const;
 
+  /// The Corner tool's active corner solved against the current network, but
+  /// ONLY while the panel's primary selection is that same junction — the
+  /// single predicate the Corner section, its spin box and its scrub binding
+  /// all agree on. nullopt when no tool, no active corner, a different
+  /// primary selection, or a pair that no longer solves (an arm moved away).
+  [[nodiscard]] std::optional<JunctionCornerInfo> active_corner_info() const;
+
   /// Removes the outermost lane on `side` (>0 left, <0 right) of the target
   /// section — no lane selection needed. Emits status_message on success.
   void remove_outermost_lane(int side);
@@ -199,6 +216,18 @@ private:
   QLabel* elevation_node_label_;
   QDoubleSpinBox* elevation_spin_;
   ElevationTool* elevation_tool_ = nullptr;
+
+  /// Corner section (p4-s1): the active junction fillet's radius. The arm-pair
+  /// row names WHICH corner is being edited (the tool's sub-selection is not a
+  /// SelectionModel entry, so the pane has to say it in words).
+  QGroupBox* corner_group_;
+  QFormLayout* corner_form_ = nullptr;
+  QLabel* corner_arms_label_;
+  QDoubleSpinBox* corner_radius_spin_;
+  /// The "Corner radius" scrub handle — kept so the row can be hidden when the
+  /// active pair no longer solves (GW-2 s9 drags this label).
+  ScrubLabel* corner_radius_scrub_label_ = nullptr;
+  CornerTool* corner_tool_ = nullptr;
 
   QGroupBox* signal_group_;
   QDoubleSpinBox* signal_s_spin_;
