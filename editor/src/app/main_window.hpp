@@ -243,9 +243,11 @@ private:
   QLabel* status_instruction_ = nullptr;
   QLabel* status_entities_;
 
-  /// Main toolbar — kept so the guided tour can locate an action's button to
-  /// highlight (widgetForAction).
+  /// The two generated toolbar rows (p1-s5): row 1 authors the network, row 2
+  /// holds the scene layers. Kept so the guided tour can locate an action's
+  /// button to highlight (widgetForAction) — it must search BOTH.
   QToolBar* main_toolbar_ = nullptr;
+  QToolBar* layers_toolbar_ = nullptr;
   /// First-run guided-tour overlay; created lazily on first show / Help menu.
   class TourOverlay* tour_overlay_ = nullptr;
   bool tour_checked_ = false; // first-run tour prompt fires at most once

@@ -27,9 +27,24 @@ TEST(ShortcutRegistry, EveryIdHasExactlyOneRow) {
     seen.insert(static_cast<int>(row.id));
     EXPECT_STRNE(row.description, "") << "every row must describe itself for the page";
   }
-  // The last enumerator; every value below it must be covered.
-  for (int i = 0; i <= static_cast<int>(Id::Help); ++i) {
+  // Every value below the sentinel must be covered. Bounded by kIdCount, not
+  // by whichever Id happens to be declared last.
+  for (int i = 0; i < static_cast<int>(Id::kIdCount); ++i) {
     EXPECT_TRUE(seen.contains(i)) << "shortcuts::Id " << i << " has no table row";
+  }
+}
+
+// p1-s5 admitted toolbar-only rows (no key binding) so the toolbar could be
+// generated from one table. They must stay INVISIBLE to the shortcuts page —
+// that is what keeps the committed page byte-identical across this change.
+TEST(ShortcutRegistry, UnboundEntriesStayOffThePage) {
+  const QString page = shortcuts::markdown();
+  for (const Id id : {Id::ExportGlb, Id::MergeRoads, Id::AddFromLibrary, Id::ResetCamera}) {
+    const shortcuts::Entry& row = shortcuts::entry(id);
+    EXPECT_TRUE(shortcuts::sequences(id).isEmpty())
+        << "'" << row.description << "' has no binding, so sequences() must be empty";
+    EXPECT_FALSE(page.contains(QString::fromUtf8(row.description)))
+        << "'" << row.description << "' is unbound but reached the rendered page";
   }
 }
 

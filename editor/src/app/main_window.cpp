@@ -35,6 +35,7 @@
 #include "app/crash_handler.hpp"
 #include "app/icons.hpp"
 #include "app/log_setup.hpp"
+#include "app/shortcut_registry.hpp"
 #include "app/tour_controller.hpp"
 #include "app/tour_overlay.hpp"
 #include "document/crosswalk_item.hpp"
@@ -88,6 +89,10 @@ MainWindow::MainWindow(QWidget* parent, bool restore_saved_layout)
   central_stack_->setCurrentWidget(welcome_);
   setCentralWidget(central_stack_);
   resize(1600, 1000);
+  // Two toolbar rows need more width before they start collapsing into the
+  // extension arrow. Set on the WINDOW, never on the toolbars: QToolBar's tiny
+  // minimumSizeHint is exactly what makes that arrow work.
+  setMinimumSize(QSize(920, 600));
 
   connect(welcome_, &WelcomeWidget::new_scene_requested, this, [this] { new_file(); });
   connect(welcome_, &WelcomeWidget::open_requested, this, &MainWindow::open_file_dialog);
@@ -699,47 +704,59 @@ void MainWindow::build_menus() {
 }
 
 void MainWindow::build_toolbar() {
-  // Labeled toolbar (ui-design.md): 28 px icons with the action's iconText
-  // under each, grouped File | Tools | View — a new user can read what
-  // every button does.
-  QToolBar* toolbar = addToolBar(tr("Main"));
-  main_toolbar_ = toolbar; // the guided tour highlights buttons via this
-  toolbar->setObjectName(QStringLiteral("toolbar.main"));
-  toolbar->setIconSize(QSize(28, 28));
-  toolbar->setToolButtonStyle(Qt::ToolButtonTextUnderIcon);
-  toolbar->setMovable(false);
-  toolbar->addAction(actions_->new_file);
-  toolbar->addAction(actions_->open);
-  toolbar->addAction(actions_->save);
-  toolbar->addAction(actions_->export_glb);
-  toolbar->addSeparator();
-  toolbar->addAction(actions_->tool_select);
-  toolbar->addAction(actions_->tool_move);
-  toolbar->addAction(actions_->tool_create_road);
-  toolbar->addAction(actions_->tool_edit_nodes);
-  toolbar->addAction(actions_->tool_lane_profile);
-  toolbar->addAction(actions_->tool_lane_add);
-  toolbar->addAction(actions_->tool_lane_form);
-  toolbar->addAction(actions_->tool_lane_carve);
-  toolbar->addAction(actions_->tool_crosswalk);
-  toolbar->addAction(actions_->tool_marking_point);
-  toolbar->addAction(actions_->tool_marking_curve);
-  toolbar->addAction(actions_->tool_prop_point);
-  toolbar->addAction(actions_->tool_prop_curve);
-  toolbar->addAction(actions_->tool_prop_span);
-  toolbar->addAction(actions_->tool_prop_polygon);
-  toolbar->addAction(actions_->tool_elevation);
-  toolbar->addAction(actions_->tool_create_junction);
-  toolbar->addAction(actions_->tool_corner);
-  toolbar->addAction(actions_->tool_split);
-  toolbar->addAction(actions_->tool_delete);
-  toolbar->addAction(actions_->lane_width_editor);
-  toolbar->addSeparator();
-  toolbar->addAction(actions_->merge_roads);
-  toolbar->addAction(actions_->add_from_library);
-  toolbar->addSeparator();
-  toolbar->addAction(actions_->reset_camera);
-  toolbar->addAction(actions_->frame_selection);
+  // Two labeled rows, GENERATED from the action registry's taxonomy (p1-s5,
+  // issue #317) rather than hand-placed: row 1 authors the network
+  // (File | Edit | Roads | Lanes), row 2 the scene layers laid over it
+  // (Markings | Props | … | Library & View). A tool that lands without a
+  // toolbar_group fails shortcuts::toolbar_violations() in the tests, so the
+  // rows cannot silently go stale as P4 adds tools.
+  //
+  // 28 px icons with the action's iconText under each (ui-design.md) — a new
+  // user can read what every button does.
+  const auto make_row = [this](const QString& title, const QString& object_name) {
+    QToolBar* bar = addToolBar(title);
+    bar->setObjectName(object_name);
+    bar->setIconSize(QSize(28, 28));
+    bar->setToolButtonStyle(Qt::ToolButtonTextUnderIcon);
+    bar->setMovable(false);
+    // Give the overflow button a visible glyph. Qt's QToolBarExtension draws
+    // its arrow through the native style, which our QSS `QToolBar QToolButton`
+    // rule takes over — leaving a working but INVISIBLE button, so a narrow
+    // window silently hides the overflowed group. An explicit icon is what
+    // makes the overflow discoverable (verified at 920 px in the PR shots).
+    if (auto* extension = bar->findChild<QToolButton*>(QStringLiteral("qt_toolbar_ext_button"))) {
+      extension->setIcon(Icons::get(QStringLiteral("chevrons-right")));
+      extension->setToolTip(tr("More tools"));
+    }
+    return bar;
+  };
+
+  const auto fill_row = [this](QToolBar* bar, shortcuts::ToolbarRow row) {
+    bool first_group = true;
+    for (const shortcuts::ToolbarGroupLayout& group : shortcuts::toolbar_layout(row)) {
+      if (group.ids.empty()) {
+        continue; // a reserved group renders nothing until its first tool lands
+      }
+      if (!first_group) {
+        bar->addSeparator();
+      }
+      first_group = false;
+      for (const shortcuts::Id id : group.ids) {
+        QAction* action = actions_->action(id);
+        Q_ASSERT(action != nullptr); // ActionMappingCoversEveryId gates this
+        bar->addAction(action);
+      }
+    }
+  };
+
+  // Row 1 keeps the historical object name so a saved layout still restores,
+  // and the member so the guided tour can locate a button to highlight.
+  main_toolbar_ = make_row(tr("Main"), QStringLiteral("toolbar.main"));
+  fill_row(main_toolbar_, shortcuts::ToolbarRow::kAuthoring);
+
+  addToolBarBreak();
+  layers_toolbar_ = make_row(tr("Layers"), QStringLiteral("toolbar.layers"));
+  fill_row(layers_toolbar_, shortcuts::ToolbarRow::kLayers);
 }
 
 void MainWindow::build_tool_options_bar() {
@@ -1264,19 +1281,23 @@ void MainWindow::start_tour() {
   if (tour_overlay_ == nullptr) {
     tour_overlay_ = new TourOverlay(default_tour_steps(), this);
     // Resolve a step's target (an action iconText) to its toolbar button rect.
+    // BOTH rows: p1-s5 moved "Library" (and the view commands) to row 2, and a
+    // resolver that only searched main_toolbar_ would silently skip that step.
     tour_overlay_->set_target_resolver([this](const QString& key) -> QRect {
-      if (main_toolbar_ == nullptr) {
-        return {};
-      }
-      const QList<QAction*> toolbar_actions = main_toolbar_->actions();
-      for (QAction* action : toolbar_actions) {
-        if (action->iconText() != key) {
+      for (QToolBar* bar : {main_toolbar_, layers_toolbar_}) {
+        if (bar == nullptr) {
           continue;
         }
-        QWidget* widget = main_toolbar_->widgetForAction(action);
-        if (widget != nullptr && widget->isVisible()) {
-          const QPoint top_left = tour_overlay_->mapFromGlobal(widget->mapToGlobal(QPoint(0, 0)));
-          return {top_left, widget->size()};
+        const QList<QAction*> toolbar_actions = bar->actions();
+        for (QAction* action : toolbar_actions) {
+          if (action->iconText() != key) {
+            continue;
+          }
+          QWidget* widget = bar->widgetForAction(action);
+          if (widget != nullptr && widget->isVisible()) {
+            const QPoint top_left = tour_overlay_->mapFromGlobal(widget->mapToGlobal(QPoint(0, 0)));
+            return {top_left, widget->size()};
+          }
         }
       }
       return {};
