@@ -79,4 +79,4 @@ the keys are accelerators, not the only route.
 
 | Date          | OS    | Commit | Result | Notes |
 |---------------|-------|---|---|---|
-| July 15, 2026 | MacOS | — | — | no runs yet |
+| July 15, 2026 | macOS | a9734d8 | Pass | maintainer hand-run; Linux + Windows runs remain for the release gate |
