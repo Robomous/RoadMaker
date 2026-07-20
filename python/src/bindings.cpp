@@ -491,6 +491,15 @@ NB_MODULE(_roadmaker, m) {
       .def_ro("extent_b",
               &roadmaker::JunctionCorner::extent_b,
               "Authored tangent-leg setback [m] on arm_b's edge, or None.")
+      .def_ro("sidewalk_material",
+              &roadmaker::JunctionCorner::sidewalk_material,
+              "Bare catalog name of the corner's sidewalk overlay material, or "
+              "None when the corner authors no sidewalk. Edit it with "
+              "edit.set_corner_sidewalk_material.")
+      .def_ro("median_material",
+              &roadmaker::JunctionCorner::median_material,
+              "Bare catalog name of the corner's median-nose overlay material, "
+              "or None. Edit it with edit.set_corner_median_material.")
       .def("__repr__", [](const roadmaker::JunctionCorner& corner) {
         std::string text =
             "JunctionCorner(" + road_end_text(corner.arm_a) + ", " + road_end_text(corner.arm_b);
@@ -513,6 +522,17 @@ NB_MODULE(_roadmaker, m) {
               &roadmaker::Junction::corners,
               "Authored corner-fillet overrides (sparse; read-only). Edit them "
               "with edit.set_corner_radius / edit.set_corner_extents.")
+      .def_ro("default_corner_radius",
+              &roadmaker::Junction::default_corner_radius,
+              "Junction-wide fillet radius [m] used by every corner without its "
+              "own radius, or None. Resolution order is per-corner override > "
+              "this default > derived. Edit it with "
+              "edit.set_junction_default_corner_radius.")
+      .def_ro("material",
+              &roadmaker::Junction::material,
+              "Bare catalog material name for the junction carriageway; empty "
+              "means the derived asphalt look. Edit it with "
+              "edit.set_junction_material.")
       .def("__repr__", [](const roadmaker::Junction& junction) {
         return "Junction(odr_id='" + junction.odr_id +
                "', connections=" + std::to_string(junction.connections.size()) + ")";
@@ -1089,6 +1109,19 @@ NB_MODULE(_roadmaker, m) {
       .def_ro("extents_authored",
               &roadmaker::JunctionCornerInfo::extents_authored,
               "True when a JunctionCorner override supplies the extents.")
+      .def_ro("radius_from_junction_default",
+              &roadmaker::JunctionCornerInfo::radius_from_junction_default,
+              "True when `radius` came from Junction.default_corner_radius — no "
+              "per-corner override supplied one but the junction-wide default "
+              "did. Never True together with `radius_authored`.")
+      .def_ro("sidewalk_material",
+              &roadmaker::JunctionCornerInfo::sidewalk_material,
+              "The corner's authored sidewalk overlay material (bare catalog "
+              "name), empty when unset.")
+      .def_ro("median_material",
+              &roadmaker::JunctionCornerInfo::median_material,
+              "The corner's authored median-nose overlay material (bare catalog "
+              "name), empty when unset.")
       .def_prop_ro(
           "curve",
           [](const roadmaker::JunctionCornerInfo& info) { return to_xy(info.curve); },
@@ -1904,6 +1937,74 @@ NB_MODULE(_roadmaker, m) {
       "independently; the curve stays G1-tangent to both edges. Pushing raises "
       "ValueError for a non-positive extent, a stale junction, or a "
       "non-adjacent arm pair.");
+  edit.def(
+      "set_corner_sidewalk_material",
+      [](const roadmaker::RoadNetwork& network,
+         roadmaker::JunctionId junction,
+         const roadmaker::RoadEnd& arm_a,
+         const roadmaker::RoadEnd& arm_b,
+         std::string material) {
+        return roadmaker::edit::set_corner_sidewalk_material(
+            network, junction, arm_a, arm_b, std::move(material));
+      },
+      "network"_a,
+      "junction"_a,
+      "arm_a"_a,
+      "arm_b"_a,
+      "material"_a,
+      "Authors the sidewalk overlay material of ONE junction corner — a bare "
+      "catalog name such as 'concrete'. An empty material clears the slot. The "
+      "corner geometry is untouched; the mesher emits the sidewalk overlay only "
+      "while a material is authored. Pushing raises ValueError for a stale "
+      "junction, a non-adjacent arm pair, a clear with nothing authored, or a "
+      "name outside [A-Za-z0-9_.-]+ (':', ';' and spaces are rejected — the "
+      "persistence grammar joins on them and does not escape).");
+  edit.def(
+      "set_corner_median_material",
+      [](const roadmaker::RoadNetwork& network,
+         roadmaker::JunctionId junction,
+         const roadmaker::RoadEnd& arm_a,
+         const roadmaker::RoadEnd& arm_b,
+         std::string material) {
+        return roadmaker::edit::set_corner_median_material(
+            network, junction, arm_a, arm_b, std::move(material));
+      },
+      "network"_a,
+      "junction"_a,
+      "arm_a"_a,
+      "arm_b"_a,
+      "material"_a,
+      "The median-nose counterpart of set_corner_sidewalk_material: an arm's "
+      "nose takes the material of the corner where that arm is arm_a, falling "
+      "back to the corner where it is arm_b. Empty clears; same token rule and "
+      "same ValueError cases.");
+  edit.def(
+      "set_junction_default_corner_radius",
+      [](const roadmaker::RoadNetwork& network, roadmaker::JunctionId junction, double radius) {
+        return roadmaker::edit::set_junction_default_corner_radius(network, junction, radius);
+      },
+      "network"_a,
+      "junction"_a,
+      "radius"_a,
+      "Authors the junction-wide fillet radius [m] — the fallback every corner "
+      "without its own radius uses. Resolution order is per-corner override > "
+      "this default > derived. radius <= 0 clears the default. The value is "
+      "stored uncapped and clamped to each corner's geometry only at mesh time. "
+      "Pushing raises ValueError for a stale junction or a clear with no "
+      "default set.");
+  edit.def(
+      "set_junction_material",
+      [](const roadmaker::RoadNetwork& network,
+         roadmaker::JunctionId junction,
+         std::string material) {
+        return roadmaker::edit::set_junction_material(network, junction, std::move(material));
+      },
+      "network"_a,
+      "junction"_a,
+      "material"_a,
+      "Authors the junction carriageway (floor) material — a bare catalog name, "
+      "empty to clear. Pushing raises ValueError for a stale junction, a clear "
+      "when the material is already empty, or a name outside [A-Za-z0-9_.-]+.");
   edit.def("delete_junction", &roadmaker::edit::delete_junction, "network"_a, "junction"_a);
 
   // --- parametric intersection assemblies (rm.edit.assembly) ---
