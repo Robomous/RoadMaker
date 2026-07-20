@@ -43,8 +43,9 @@ docs: update README for the Qt editor
 
 PRs should stay at or below ~500 changed lines where feasible. Split
 mechanical churn (renames, formatting) from behavior changes. Larger efforts
-are organized as one epic per milestone phase — see
-[Pull requests](pull-requests.md) for how milestones and labels are used.
+are organized as one epic per roadmap pillar — see
+[Pull requests](pull-requests.md) for how pillars, milestones, and labels
+are used.
 
 ## Format before committing
 

@@ -1,6 +1,6 @@
 # ADR-0007: Roadmap reset — "Road to Parity" and a single release
 
-- **Status:** ACCEPTED — maintainer decided 2026-07-15
+- **Status:** ACCEPTED — maintainer decided 2026-07-15; amended 2026-07-20
 - **Date:** 2026-07-15
 - **Deciders:** Armando Anaya
 
@@ -65,6 +65,18 @@ notes) moved to
 - **Reversal cost:** low for the release policy (start tagging again);
   moderate for the backlog (issues would need re-grouping into milestones
   again). The archive keeps the old model restorable.
+
+## Amendment (2026-07-20): pillar milestones as progress trackers
+
+The reset's "no milestones" rule targeted **version milestones** — trackers
+that created release obligations. With four pillars' sprint work complete,
+the maintainer reintroduced GitHub milestones **mirroring the pillars
+one-to-one** (`P1 — Interaction & Navigation` … `P8 — Scenarios`) as pure
+progress trackers: each collects its pillar's sprint issues, epic, and
+follow-ups, and closes only when every sprint is merged and the pillar's
+golden-workflow hand-runs pass. Nothing else changes — still exactly one
+release (v0.1.0), no version milestones, no release tasks. See
+[Tracking on GitHub](../roadmap/README.md#tracking-on-github).
 
 ## References
 
