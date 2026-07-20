@@ -94,9 +94,10 @@ be committed.
   comes next.
 - Work items are **GitHub issues**, grouped by the eight capability
   **pillars** of the [roadmap](../roadmap/README.md) (P1 Interaction &
-  Navigation … P8 Scenarios). There are **no GitHub milestones and no
-  version labels** — the roadmap has a single release at the end
-  ([release philosophy](../roadmap/README.md#release-philosophy)).
+  Navigation … P8 Scenarios). GitHub **milestones mirror the pillars
+  one-to-one** and are pure progress trackers; there are **no version
+  milestones and no version labels** — the roadmap has a single release at
+  the end ([release philosophy](../roadmap/README.md#release-philosophy)).
 - Each pillar has an `epic`-labeled issue listing its sprint issues;
   pillar work carries a matching label (`pillar:P1` … `pillar:P8`) and
   PRs reference their issue (`Closes #N`). Sprint issues are titled

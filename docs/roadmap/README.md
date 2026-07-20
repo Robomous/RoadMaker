@@ -87,11 +87,39 @@ map editor.
 - Every sprint issue states **Scope**, **Acceptance** (the golden-workflow
   steps it unblocks), **Out of scope**, and **Supersedes** (old issue
   numbers where applicable).
-- No milestones, no version labels, no release tasks.
+- GitHub **milestones mirror the pillars one-to-one** (`P1 — Interaction &
+  Navigation` … `P8 — Scenarios`); each collects its pillar's sprint issues,
+  epic, and follow-ups as a pure progress tracker. No version milestones, no
+  release tasks.
 - A **cross-pillar workstream** — infrastructure seeded by one pillar and
   grown by every later one — is titled for the workstream rather than the
   pillar (`help-sM: …`) and carries its own label alongside the owning
   pillar's (`help` + `pillar:P2`). The in-app Help system is the first.
+
+### Tracking on GitHub
+
+Work is tracked in three synchronized places; on conflict, the epic issue's
+checklist is the authoritative sprint list for its pillar:
+
+- The [RoadMaker Roadmap project board](https://github.com/orgs/Robomous/projects/1)
+  — every issue lives on the board with a current Status
+  (Todo / In Progress / Done).
+- One **milestone per pillar** — its progress bar is the pillar's progress.
+  A milestone (and its epic) closes only when every sprint is merged **and**
+  the pillar's golden-workflow hand-runs pass.
+- The pillar **epic issues**, each holding the sprint checklist, follow-ups,
+  and a dated status line.
+
+| Pillar | Epic | Milestone |
+|---|---|---|
+| P1 Interaction & Navigation | [#250](https://github.com/Robomous/RoadMaker/issues/250) | [P1](https://github.com/Robomous/RoadMaker/milestone/8) |
+| P2 Roads & Lanes | [#251](https://github.com/Robomous/RoadMaker/issues/251) | [P2](https://github.com/Robomous/RoadMaker/milestone/9) |
+| P3 Markings | [#252](https://github.com/Robomous/RoadMaker/issues/252) | [P3](https://github.com/Robomous/RoadMaker/milestone/10) |
+| P4 Junctions & Signals | [#253](https://github.com/Robomous/RoadMaker/issues/253) | [P4](https://github.com/Robomous/RoadMaker/milestone/11) |
+| P5 Terrain & Structures | [#254](https://github.com/Robomous/RoadMaker/issues/254) | [P5](https://github.com/Robomous/RoadMaker/milestone/12) |
+| P6 Assets, Props & Materials | [#255](https://github.com/Robomous/RoadMaker/issues/255) | [P6](https://github.com/Robomous/RoadMaker/milestone/13) |
+| P7 Import & Export | [#256](https://github.com/Robomous/RoadMaker/issues/256) | [P7](https://github.com/Robomous/RoadMaker/milestone/14) |
+| P8 Scenarios | [#257](https://github.com/Robomous/RoadMaker/issues/257) | [P8](https://github.com/Robomous/RoadMaker/milestone/15) |
 
 ### Discovery reports
 
