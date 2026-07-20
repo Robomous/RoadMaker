@@ -20,6 +20,7 @@ add_executable(roadmaker_core_tests
   test_junction_corners.cpp
   test_junction_export.cpp
   test_junction_crosswalks.cpp
+  test_junction_stoplines.cpp
   test_marking_curves.cpp
   test_stencils.cpp
   test_t_junction_quality.cpp

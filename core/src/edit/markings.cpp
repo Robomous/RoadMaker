@@ -1,5 +1,6 @@
 #include "roadmaker/edit/markings.hpp"
 
+#include "markings_detail.hpp"
 #include "roadmaker/edit/connection.hpp"
 #include "roadmaker/road/junction.hpp"
 #include "roadmaker/road/network.hpp"
@@ -382,28 +383,8 @@ Expected<void> apply_stencil_asset(Object& object, const StencilParams& params) 
 
 namespace {
 
-/// The contact end of arm `road` that belongs to `junction` (Start or End).
-std::optional<ContactPoint>
-facing_end(const RoadNetwork& network, RoadId road, JunctionId junction) {
-  for (const ContactPoint contact : {ContactPoint::Start, ContactPoint::End}) {
-    if (junction_at_end(network, RoadEnd{.road = road, .contact = contact}) == junction) {
-      return contact;
-    }
-  }
-  return std::nullopt;
-}
-
-/// Distinct arm (incoming) roads of a junction — one entry per road even when it
-/// feeds several turns.
-std::vector<RoadId> distinct_arms(const Junction& record) {
-  std::vector<RoadId> arms;
-  for (const JunctionConnection& connection : record.connections) {
-    if (std::ranges::find(arms, connection.incoming_road) == arms.end()) {
-      arms.push_back(connection.incoming_road);
-    }
-  }
-  return arms;
-}
+using markings_detail::distinct_arms;
+using markings_detail::facing_end;
 
 /// A factory for object odr ids clear of every existing object, so a batch of
 /// authored marks stays id_unique_in_class-valid.
