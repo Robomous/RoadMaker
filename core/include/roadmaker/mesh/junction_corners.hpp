@@ -76,7 +76,16 @@ struct JunctionCornerInfo {
   std::vector<std::array<double, 2>> curve;
 
   /// Midpoint of `curve` (the Bezier at t=0.5) — the apex control vertex.
-  [[nodiscard]] std::array<double, 2> apex() const;
+  ///
+  /// RM_API sits on the member rather than the struct: the definition lives in
+  /// junction_corners.cpp (it evaluates the curve through the internal
+  /// junction_corner_detail solver, so it cannot be inlined here), and under
+  /// RM_BUILD_SHARED=ON the kernel hides symbols by default — an unexported
+  /// out-of-line member fails to link from the editor, the bindings and the
+  /// tests. Exporting the whole struct instead would drag its std::vector
+  /// member into MSVC's dll-interface warning (C4251), and no struct in this
+  /// kernel is exported wholesale.
+  [[nodiscard]] RM_API std::array<double, 2> apex() const;
 };
 
 /// Solves every corner of `junction_id` in CCW order, applying any authored
