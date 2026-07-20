@@ -86,6 +86,17 @@ double corner_fillet_radius(const RoadNetwork& network,
   return std::clamp(derived, kFilletRadiusFloor, kFilletRadiusCap);
 }
 
+/// The authored override naming exactly the ordered pair (a, b), if any.
+const JunctionCorner*
+override_for(const Junction& junction, const CornerFace& a, const CornerFace& b) {
+  for (const JunctionCorner& entry : junction.corners) {
+    if (entry.arm_a == a.arm && entry.arm_b == b.arm) {
+      return &entry;
+    }
+  }
+  return nullptr;
+}
+
 /// Perpendicular distance from `p` to the line through `on` with direction
 /// (dx, dy) (unit).
 double line_distance(const std::array<double, 2>& p,
@@ -205,16 +216,31 @@ CornerSolution solve_corner(const RoadNetwork& network,
   }
   const double tan_half = std::tan(phi / 2.0);
   const double max_radius = std::min(ta, tb) * tan_half;
-  // Desired radius, clamped to the tangent legs the faces leave room for.
-  const double radius = std::min(corner_fillet_radius(network, junction, a, b), max_radius);
+
+  const JunctionCorner* entry = override_for(junction, a, b);
+  double radius = 0.0;
+  if (entry != nullptr && entry->radius.has_value()) {
+    // Authored: only the geometric bound applies — the [floor, cap] band is a
+    // property of the DERIVATION, not of what an author may ask for.
+    radius = std::clamp(*entry->radius, kMinFilletRadius, max_radius);
+    solution.radius_authored = true;
+  } else {
+    // Desired radius, clamped to the tangent legs the faces leave room for.
+    radius = std::min(corner_fillet_radius(network, junction, a, b), max_radius);
+  }
   if (radius < kMinFilletRadius) {
     return solution;
   }
   const double tangent_len = radius / tan_half;
-  const std::array<double, 2> tan_a{corner[0] - (tangent_len * a.ix),
-                                    corner[1] - (tangent_len * a.iy)};
-  const std::array<double, 2> tan_b{corner[0] - (tangent_len * b.ix),
-                                    corner[1] - (tangent_len * b.iy)};
+  double extent_a = tangent_len;
+  double extent_b = tangent_len;
+  if (entry != nullptr && (entry->extent_a.has_value() || entry->extent_b.has_value())) {
+    extent_a = std::clamp(entry->extent_a.value_or(tangent_len), kMinFilletExtent, ta);
+    extent_b = std::clamp(entry->extent_b.value_or(tangent_len), kMinFilletExtent, tb);
+    solution.extents_authored = true;
+  }
+  const std::array<double, 2> tan_a{corner[0] - (extent_a * a.ix), corner[1] - (extent_a * a.iy)};
+  const std::array<double, 2> tan_b{corner[0] - (extent_b * b.ix), corner[1] - (extent_b * b.iy)};
   // Inward bisector at the corner (the arc center lies along it).
   double bis_x = -(a.ix + b.ix);
   double bis_y = -(a.iy + b.iy);
@@ -229,8 +255,8 @@ CornerSolution solve_corner(const RoadNetwork& network,
   solution.corner = corner;
   solution.bisector = {bis_x, bis_y};
   solution.phi = phi;
-  solution.extent_a = tangent_len;
-  solution.extent_b = tangent_len;
+  solution.extent_a = extent_a;
+  solution.extent_b = extent_b;
   solution.tangent_a = tan_a;
   solution.tangent_b = tan_b;
   solution.radius = radius;
@@ -240,41 +266,82 @@ CornerSolution solve_corner(const RoadNetwork& network,
   return solution;
 }
 
+std::array<double, 2> corner_curve_point(const CornerSolution& solution, double t) {
+  const double w = std::sin(solution.phi / 2.0);
+  const double u = 1.0 - t;
+  const double b0 = u * u;
+  const double b1 = 2.0 * w * t * u;
+  const double b2 = t * t;
+  const double denom = b0 + b1 + b2;
+  if (denom <= 0.0) {
+    return solution.corner;
+  }
+  return {
+      ((b0 * solution.tangent_a[0]) + (b1 * solution.corner[0]) + (b2 * solution.tangent_b[0])) /
+          denom,
+      ((b0 * solution.tangent_a[1]) + (b1 * solution.corner[1]) + (b2 * solution.tangent_b[1])) /
+          denom};
+}
+
 std::vector<std::array<double, 2>> corner_curve(const CornerSolution& solution) {
   std::vector<std::array<double, 2>> curve;
   if (!solution.valid) {
     return curve;
   }
-  // Arc center: along the inward bisector at R/sin(phi/2) from the corner.
-  const double center_dist = solution.radius / std::sin(solution.phi / 2.0);
-  const std::array<double, 2> center{solution.corner[0] + (solution.bisector[0] * center_dist),
-                                     solution.corner[1] + (solution.bisector[1] * center_dist)};
-  const double ang_a =
-      std::atan2(solution.tangent_a[1] - center[1], solution.tangent_a[0] - center[0]);
-  double ang_b = std::atan2(solution.tangent_b[1] - center[1], solution.tangent_b[0] - center[0]);
-  // Sweep the SHORT way (the fillet arc spans pi - phi < pi).
-  while (ang_b - ang_a > std::numbers::pi) {
-    ang_b -= 2.0 * std::numbers::pi;
-  }
-  while (ang_a - ang_b > std::numbers::pi) {
-    ang_b += 2.0 * std::numbers::pi;
-  }
-  const double sweep = ang_b - ang_a;
-  const int steps = fillet_steps(std::abs(sweep), solution.radius);
-  for (int k = 0; k <= steps; ++k) {
-    const double ang = ang_a + (sweep * static_cast<double>(k) / steps);
-    const std::array<double, 2> p{center[0] + (solution.radius * std::cos(ang)),
-                                  center[1] + (solution.radius * std::sin(ang))};
+  const double abs_sweep = std::numbers::pi - solution.phi;
+  const int steps = fillet_steps(abs_sweep, solution.radius);
+  const auto keep = [&solution, &curve](const std::array<double, 2>& p, bool endpoint) {
     // Endpoints are the exact tangencies; interior samples hugging either
     // tangent line are dropped (see kFilletTangentLift).
-    if (k != 0 && k != steps &&
-        (line_distance(p, solution.tangent_a, solution.dir_a[0], solution.dir_a[1]) <
-             kFilletTangentLift ||
-         line_distance(p, solution.tangent_b, solution.dir_b[0], solution.dir_b[1]) <
-             kFilletTangentLift)) {
-      continue;
+    if (!endpoint && (line_distance(p, solution.tangent_a, solution.dir_a[0], solution.dir_a[1]) <
+                          kFilletTangentLift ||
+                      line_distance(p, solution.tangent_b, solution.dir_b[0], solution.dir_b[1]) <
+                          kFilletTangentLift)) {
+      return;
     }
     curve.push_back(p);
+  };
+
+  if (!solution.radius_authored && !solution.extents_authored) {
+    // Derived corner: the original uniform-angle circular-arc sampling, kept
+    // verbatim so unauthored junction meshes stay byte-identical.
+    const double center_dist = solution.radius / std::sin(solution.phi / 2.0);
+    const std::array<double, 2> center{solution.corner[0] + (solution.bisector[0] * center_dist),
+                                       solution.corner[1] + (solution.bisector[1] * center_dist)};
+    const double ang_a =
+        std::atan2(solution.tangent_a[1] - center[1], solution.tangent_a[0] - center[0]);
+    double ang_b = std::atan2(solution.tangent_b[1] - center[1], solution.tangent_b[0] - center[0]);
+    // Sweep the SHORT way (the fillet arc spans pi - phi < pi).
+    while (ang_b - ang_a > std::numbers::pi) {
+      ang_b -= 2.0 * std::numbers::pi;
+    }
+    while (ang_a - ang_b > std::numbers::pi) {
+      ang_b += 2.0 * std::numbers::pi;
+    }
+    const double sweep = ang_b - ang_a;
+    const int arc_steps = fillet_steps(std::abs(sweep), solution.radius);
+    for (int k = 0; k <= arc_steps; ++k) {
+      const double ang = ang_a + (sweep * static_cast<double>(k) / arc_steps);
+      keep({center[0] + (solution.radius * std::cos(ang)),
+            center[1] + (solution.radius * std::sin(ang))},
+           k == 0 || k == arc_steps);
+    }
+    return curve;
+  }
+
+  // Authored corner: rational quadratic Bezier. Equal extents reproduce the
+  // circle of the same radius; unequal extents stay tangent to both edges,
+  // which is what keeps independent per-side setbacks watertight.
+  for (int k = 0; k <= steps; ++k) {
+    if (k == 0) {
+      curve.push_back(solution.tangent_a);
+      continue;
+    }
+    if (k == steps) {
+      curve.push_back(solution.tangent_b);
+      continue;
+    }
+    keep(corner_curve_point(solution, static_cast<double>(k) / steps), false);
   }
   return curve;
 }

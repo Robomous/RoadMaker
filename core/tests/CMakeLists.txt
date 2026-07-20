@@ -17,6 +17,7 @@ add_executable(roadmaker_core_tests
   test_road_marks.cpp
   test_mesh.cpp
   test_junction_surface.cpp
+  test_junction_corners.cpp
   test_junction_export.cpp
   test_junction_crosswalks.cpp
   test_marking_curves.cpp
