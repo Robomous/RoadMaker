@@ -47,6 +47,7 @@
 #include "panels/library_panel.hpp"
 #include "panels/properties_panel.hpp"
 #include "panels/scene_tree_panel.hpp"
+#include "tools/corner_tool.hpp"
 #include "tools/create_junction_tool.hpp"
 #include "tools/create_road_tool.hpp"
 #include "tools/crosswalk_stop_line_tool.hpp"
@@ -432,6 +433,13 @@ MainWindow::MainWindow(QWidget* parent, bool restore_saved_layout)
   connect(actions_->tool_prop_polygon, &QAction::triggered, this, [this] {
     tool_manager_.set_active(ToolId::PropPolygon);
   });
+  // Corner: junction fillets. No params provider — it edits what it picks.
+  auto corner_tool = std::make_unique<CornerTool>(document_, selection_);
+  wire_status(corner_tool.get());
+  tool_manager_.register_tool(ToolId::Corner, std::move(corner_tool));
+  connect(actions_->tool_corner, &QAction::triggered, this, [this] {
+    tool_manager_.set_active(ToolId::Corner);
+  });
   tool_manager_.set_active(ToolId::Select);
 
   // Merge Roads: enabled only for exactly two selected roads mergeable in some
@@ -720,6 +728,7 @@ void MainWindow::build_toolbar() {
   toolbar->addAction(actions_->tool_prop_polygon);
   toolbar->addAction(actions_->tool_elevation);
   toolbar->addAction(actions_->tool_create_junction);
+  toolbar->addAction(actions_->tool_corner);
   toolbar->addAction(actions_->tool_split);
   toolbar->addAction(actions_->tool_delete);
   toolbar->addAction(actions_->lane_width_editor);
@@ -1149,6 +1158,7 @@ void MainWindow::activate_tool_for_capture(const QString& tool_id) {
       {QStringLiteral("propCurve"), ToolId::PropCurve},
       {QStringLiteral("propSpan"), ToolId::PropSpan},
       {QStringLiteral("propPolygon"), ToolId::PropPolygon},
+      {QStringLiteral("corner"), ToolId::Corner},
   };
   if (const auto found = kTools.find(tool_id); found != kTools.end()) {
     tool_manager_.set_active(found->second);

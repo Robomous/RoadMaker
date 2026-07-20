@@ -27,6 +27,7 @@
     <file alias="undo-2.svg">icons/lucide/undo-2.svg</file>
     <file alias="waypoints.svg">icons/lucide/waypoints.svg</file>
     <file alias="clothoid-road.svg">icons/custom/clothoid-road.svg</file>
+    <file alias="corner-radius.svg">icons/custom/corner-radius.svg</file>
     <file alias="crosswalk.svg">icons/custom/crosswalk.svg</file>
     <file alias="junction-connect.svg">icons/custom/junction-connect.svg</file>
     <file alias="lane-section.svg">icons/custom/lane-section.svg</file>

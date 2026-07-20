@@ -305,6 +305,11 @@ private:
   /// the GL frame, like the hint card.
   void draw_handles(QPainter& painter) const;
 
+  /// Paints the active tool's DASHED guide lines (PreviewGeometry::
+  /// dashed_line_positions) in the accent token. GL 3.3 core dropped line
+  /// stipple, so these live in the QPainter pass rather than the GL overlay.
+  void draw_dashed_lines(QPainter& painter) const;
+
   /// Themed top-left tool-hint card; fades out after an idle stretch.
   void draw_hint_card(QPainter& painter) const;
 
@@ -419,6 +424,11 @@ private:
   /// The active tool's handle knobs (kernel frame), stashed by
   /// upload_tool_preview and painted as screen sprites by draw_handles.
   std::vector<Handle> handle_overlays_;
+
+  /// The active tool's dashed guide segments (kernel frame, xyz triples
+  /// pairwise), stashed by upload_tool_preview and painted by
+  /// draw_dashed_lines.
+  std::vector<double> dashed_overlays_;
   QMetaObject::Connection preview_connection_;
   QMetaObject::Connection cursor_connection_;
 

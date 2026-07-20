@@ -423,6 +423,7 @@ void ViewportWidget::paintGL() {
     QPainter painter(this);
     painter.setRenderHint(QPainter::Antialiasing);
     painter.setRenderHint(QPainter::TextAntialiasing);
+    draw_dashed_lines(painter);
     draw_handles(painter);
     draw_gizmo(painter);
     draw_drag_ghost(painter);
@@ -512,6 +513,35 @@ void ViewportWidget::draw_toasts(QPainter& painter) {
 
     bottom -= box_h + kGap;
   }
+}
+
+void ViewportWidget::draw_dashed_lines(QPainter& painter) const {
+  // Segments are xyz triples consumed pairwise (the line_positions encoding);
+  // a trailing partial segment is ignored rather than trusted.
+  constexpr std::size_t kStride = 6; // two xyz points per segment
+  if (dashed_overlays_.size() < kStride) {
+    return;
+  }
+  const float aspect =
+      height() > 0 ? static_cast<float>(width()) / static_cast<float>(height()) : 1.0F;
+  const CameraMatrices camera = camera_.matrices(aspect);
+  const double w = static_cast<double>(width());
+  const double h = static_cast<double>(height());
+
+  painter.save();
+  painter.setBrush(Qt::NoBrush);
+  painter.setPen(QPen(theme::current().accent, 1.5, Qt::DashLine));
+  for (std::size_t i = 0; i + kStride <= dashed_overlays_.size(); i += kStride) {
+    const auto a = project_to_screen(
+        camera, dashed_overlays_[i], dashed_overlays_[i + 1], dashed_overlays_[i + 2], w, h);
+    const auto b = project_to_screen(
+        camera, dashed_overlays_[i + 3], dashed_overlays_[i + 4], dashed_overlays_[i + 5], w, h);
+    if (!a.has_value() || !b.has_value()) {
+      continue; // an endpoint behind the camera
+    }
+    painter.drawLine(QPointF((*a)[0], (*a)[1]), QPointF((*b)[0], (*b)[1]));
+  }
+  painter.restore();
 }
 
 void ViewportWidget::draw_handles(QPainter& painter) const {
@@ -1465,6 +1495,7 @@ void ViewportWidget::upload_tool_preview() {
   }
   preview_handles_.clear();
   handle_overlays_.clear();
+  dashed_overlays_.clear();
 
   const Tool* tool = tools_.active();
   if (tool == nullptr) {
@@ -1499,6 +1530,10 @@ void ViewportWidget::upload_tool_preview() {
   // Handle knobs are drawn as screen-space QPainter sprites in draw_handles()
   // (screen-constant size, DPI-crisp) rather than world-meter GL crosses.
   handle_overlays_ = geometry.handles;
+
+  // Dashed guides stay on the CPU: the GL 3.3 core profile has no line
+  // stipple, so draw_dashed_lines paints them with a Qt::DashLine pen.
+  dashed_overlays_ = geometry.dashed_line_positions;
 }
 
 void ViewportWidget::wheelEvent(QWheelEvent* event) {

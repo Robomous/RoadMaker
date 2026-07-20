@@ -36,6 +36,7 @@ enum class ToolId {
   PropCurve,
   PropSpan,
   PropPolygon,
+  Corner,
 };
 
 struct ToolEvent {
@@ -81,6 +82,15 @@ struct Handle {
 // screen-space QPainter sprites.
 struct PreviewGeometry {
   std::vector<double> line_positions;
+
+  /// Secondary "guide" lines — same encoding as `line_positions` (xyz triples
+  /// consumed pairwise as independent segments), but painted DASHED. GL 3.3
+  /// core has no line stipple, so the viewport draws these in the QPainter
+  /// overlay pass (ViewportWidget::draw_dashed_lines) rather than as GL lines.
+  /// The Corner tool's extent guides (face corner → tangency) are the first
+  /// consumer.
+  std::vector<double> dashed_line_positions;
+
   std::vector<Handle> handles;
 
   void add_handle(double x,
@@ -91,7 +101,9 @@ struct PreviewGeometry {
     handles.push_back(Handle{.x = x, .y = y, .z = z, .kind = kind, .state = state});
   }
 
-  [[nodiscard]] bool empty() const { return line_positions.empty() && handles.empty(); }
+  [[nodiscard]] bool empty() const {
+    return line_positions.empty() && dashed_line_positions.empty() && handles.empty();
+  }
 };
 
 class Tool : public QObject {
