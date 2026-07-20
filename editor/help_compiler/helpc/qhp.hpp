@@ -12,7 +12,7 @@ namespace roadmaker::helpc {
 struct QhpOptions {
   std::string namespace_ = "ai.robomous.roadmaker";
   std::string folder = "doc";
-  std::string version = "0.1.0";
+  std::string version = "0.0.1";          ///< fallback; the build passes PROJECT_VERSION
   std::string qch_file = "roadmaker.qch"; ///< the .qch the collection registers
 };
 

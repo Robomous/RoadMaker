@@ -17,7 +17,7 @@ body:
     attributes:
       label: Version / commit
       description: From Help → About, `roadmaker-editor --version`, or the "version:" line of the crash report.
-      placeholder: 0.4.0 (commit f8b99c3)
+      placeholder: 0.0.1 (commit f8b99c3)
     validations:
       required: true
   - type: input
