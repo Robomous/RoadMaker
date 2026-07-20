@@ -37,6 +37,7 @@ add_executable(roadmaker_core_tests
   test_surface_roundtrip.cpp
   test_material_roundtrip.cpp
   test_assembly.cpp
+  test_corner_operations.cpp
   test_translate_road.cpp
   test_rotate_road.cpp
   test_insert_node.cpp
