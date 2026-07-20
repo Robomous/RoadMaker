@@ -9,6 +9,8 @@
 #include <QObject>
 #include <QUndoStack>
 
+#include "app/shortcut_registry.hpp"
+
 namespace roadmaker::editor {
 
 class Actions : public QObject {
@@ -16,6 +18,13 @@ class Actions : public QObject {
 
 public:
   explicit Actions(QUndoStack& undo_stack, QObject* parent = nullptr);
+
+  /// The QAction a registry Id names. This is what lets MainWindow GENERATE
+  /// the toolbar from shortcut_registry's taxonomy instead of hand-placing
+  /// buttons. Implemented as an exhaustive switch with NO `default:`, so
+  /// CI's -Wswitch -Werror is the gate: a new Id fails the build until it is
+  /// mapped. Returns nullptr only for the kIdCount sentinel.
+  [[nodiscard]] QAction* action(shortcuts::Id id) const;
 
   /// (Re)assigns the bundled palette-tinted icons to every action. Called
   /// from the constructor; call again after Icons::clear_cache() when the

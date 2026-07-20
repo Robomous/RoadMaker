@@ -51,6 +51,13 @@ QToolBar QToolButton:hover { background: @hoverOverlay; color: @text; }
 QToolBar QToolButton:pressed { background: @pressedOverlay; }
 QToolBar QToolButton:checked { background: @accentSoft; color: @accent; }
 QToolBar QToolButton:disabled { color: @textDis; }
+/* The overflow ("more tools") button. Qt sizes it from PM_ToolBarExtensionExtent
+   (~12 px), which the rule above then fills entirely with padding, leaving no
+   room to paint — a working but invisible button. Give it its own box so a
+   narrow window still SHOWS that a group overflowed. */
+QToolBar QToolButton#qt_toolbar_ext_button { padding: 0px; min-width: 24px;
+                                             border-left: 1px solid @border;
+                                             border-radius: 0px; }
 
 QMenuBar { background: @bg1; color: @text; }
 QMenuBar::item { padding: 4px 10px; border-radius: 4px; }

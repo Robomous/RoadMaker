@@ -27,6 +27,7 @@ Actions::Actions(QUndoStack& undo_stack, QObject* parent) : QObject(parent) {
   save_as->setShortcuts(shortcuts::sequences(shortcuts::Id::SaveAs));
 
   export_glb = new QAction(tr("&Export glTF…"), this);
+  export_glb->setShortcuts(shortcuts::sequences(shortcuts::Id::ExportGlb));
   export_glb->setEnabled(false); // enabled once a file is loaded
   export_glb->setIconText(tr("Export"));
   export_glb->setToolTip(tr("Export the network as binary glTF (.glb)"));
@@ -242,9 +243,11 @@ Actions::Actions(QUndoStack& undo_stack, QObject* parent) : QObject(parent) {
   template_group->addAction(template_highway);
 
   reset_camera = new QAction(tr("Reset &Camera"), this);
+  reset_camera->setShortcuts(shortcuts::sequences(shortcuts::Id::ResetCamera));
   reset_camera->setIconText(tr("Camera"));
   reset_camera->setToolTip(tr("Reset the camera to the default view"));
   add_from_library = new QAction(tr("Add from &Library…"), this);
+  add_from_library->setShortcuts(shortcuts::sequences(shortcuts::Id::AddFromLibrary));
   add_from_library->setIconText(tr("Library"));
   add_from_library->setToolTip(tr("Open the Library panel to drag in roads, intersections, "
                                   "and props"));
@@ -297,6 +300,7 @@ Actions::Actions(QUndoStack& undo_stack, QObject* parent) : QObject(parent) {
                            tr("Plan view from directly above, north up (numpad 5, or 5)"),
                            shortcuts::Id::ViewTop);
   merge_roads = new QAction(tr("&Merge Roads"), this);
+  merge_roads->setShortcuts(shortcuts::sequences(shortcuts::Id::MergeRoads));
   merge_roads->setIconText(tr("Merge"));
   merge_roads->setEnabled(false); // enabled only for a mergeable 2-road selection
   merge_roads->setToolTip(tr("Merge — join two selected roads that meet end-to-start"));
@@ -311,6 +315,101 @@ Actions::Actions(QUndoStack& undo_stack, QObject* parent) : QObject(parent) {
   about->setMenuRole(QAction::AboutRole);
 
   apply_icons();
+}
+
+QAction* Actions::action(shortcuts::Id id) const {
+  using shortcuts::Id;
+  // No `default:` on purpose — -Wswitch -Werror is what forces a new Id to be
+  // mapped here before it can compile (see the header).
+  switch (id) {
+  case Id::NewScene:
+    return new_file;
+  case Id::Open:
+    return open;
+  case Id::Save:
+    return save;
+  case Id::SaveAs:
+    return save_as;
+  case Id::ExportGlb:
+    return export_glb;
+  case Id::Quit:
+    return quit;
+  case Id::Undo:
+    return undo;
+  case Id::Redo:
+    return redo;
+  case Id::ToolSelect:
+    return tool_select;
+  case Id::ToolMove:
+    return tool_move;
+  case Id::ToolCreateRoad:
+    return tool_create_road;
+  case Id::ToolEditNodes:
+    return tool_edit_nodes;
+  case Id::ToolLaneProfile:
+    return tool_lane_profile;
+  case Id::ToolElevation:
+    return tool_elevation;
+  case Id::ToolCreateJunction:
+    return tool_create_junction;
+  case Id::ToolSplit:
+    return tool_split;
+  case Id::ToolDelete:
+    return tool_delete;
+  case Id::ToolLaneAdd:
+    return tool_lane_add;
+  case Id::ToolLaneForm:
+    return tool_lane_form;
+  case Id::ToolLaneCarve:
+    return tool_lane_carve;
+  case Id::ToolCrosswalk:
+    return tool_crosswalk;
+  case Id::ToolMarkingPoint:
+    return tool_marking_point;
+  case Id::ToolMarkingCurve:
+    return tool_marking_curve;
+  case Id::ToolPropPoint:
+    return tool_prop_point;
+  case Id::ToolPropCurve:
+    return tool_prop_curve;
+  case Id::ToolPropSpan:
+    return tool_prop_span;
+  case Id::ToolPropPolygon:
+    return tool_prop_polygon;
+  case Id::ToolCorner:
+    return tool_corner;
+  case Id::LaneWidthEditor:
+    return lane_width_editor;
+  case Id::MergeRoads:
+    return merge_roads;
+  case Id::AddFromLibrary:
+    return add_from_library;
+  case Id::ResetCamera:
+    return reset_camera;
+  case Id::FrameSelection:
+    return frame_selection;
+  case Id::FrameCursor:
+    return frame_cursor;
+  case Id::ViewPerspective:
+    return view_perspective;
+  case Id::ViewOrthographic:
+    return view_orthographic;
+  case Id::ViewNorth:
+    return view_north;
+  case Id::ViewSouth:
+    return view_south;
+  case Id::ViewWest:
+    return view_west;
+  case Id::ViewEast:
+    return view_east;
+  case Id::ViewTop:
+    return view_top;
+  case Id::Help:
+    return help_contents;
+  case Id::kIdCount:
+    break; // the sentinel names no action
+  }
+  return nullptr;
 }
 
 void Actions::apply_icons() {
