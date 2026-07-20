@@ -13,6 +13,7 @@
 #include "roadmaker/geometry/profile_fit.hpp"
 #include "roadmaker/io/gltf_exporter.hpp"
 #include "roadmaker/io/usd_exporter.hpp"
+#include "roadmaker/mesh/junction_corners.hpp"
 #include "roadmaker/mesh/mesh_builder.hpp"
 #include "roadmaker/road/authoring.hpp"
 #include "roadmaker/road/network.hpp"
@@ -34,6 +35,7 @@
 #include <nanobind/stl/variant.h>
 #include <nanobind/stl/vector.h>
 
+#include <array>
 #include <filesystem>
 #include <functional>
 #include <stdexcept>
@@ -54,6 +56,26 @@ std::vector<roadmaker::Waypoint> to_waypoints(const std::vector<std::pair<double
     points.push_back(roadmaker::Waypoint{.x = x, .y = y});
   }
   return points;
+}
+
+/// Plan-view point as an (x, y) tuple on the Python side.
+std::pair<double, double> to_xy(const std::array<double, 2>& point) {
+  return {point[0], point[1]};
+}
+
+std::vector<std::pair<double, double>> to_xy(const std::vector<std::array<double, 2>>& points) {
+  std::vector<std::pair<double, double>> out;
+  out.reserve(points.size());
+  for (const auto& point : points) {
+    out.push_back(to_xy(point));
+  }
+  return out;
+}
+
+/// Compact RoadEnd text for the corner __repr__s.
+std::string road_end_text(const roadmaker::RoadEnd& end) {
+  return "RoadEnd(" + std::to_string(end.road.index) + ", " +
+         (end.contact == roadmaker::ContactPoint::Start ? "START" : "END") + ")";
 }
 
 /// Carrier for rm::Error through the binding boundary; translated below.
@@ -455,11 +477,42 @@ NB_MODULE(_roadmaker, m) {
       .def_ro("contact_point", &roadmaker::JunctionConnection::contact_point)
       .def_ro("lane_links", &roadmaker::JunctionConnection::lane_links);
 
+  nb::class_<roadmaker::JunctionCorner>(m, "JunctionCorner")
+      .def_ro("arm_a",
+              &roadmaker::JunctionCorner::arm_a,
+              "First arm of the CCW-adjacent pair this override is keyed by.")
+      .def_ro("arm_b", &roadmaker::JunctionCorner::arm_b, "Second arm of the pair.")
+      .def_ro("radius",
+              &roadmaker::JunctionCorner::radius,
+              "Authored fillet radius [m], or None when the derived radius applies.")
+      .def_ro("extent_a",
+              &roadmaker::JunctionCorner::extent_a,
+              "Authored tangent-leg setback [m] on arm_a's edge, or None.")
+      .def_ro("extent_b",
+              &roadmaker::JunctionCorner::extent_b,
+              "Authored tangent-leg setback [m] on arm_b's edge, or None.")
+      .def("__repr__", [](const roadmaker::JunctionCorner& corner) {
+        std::string text =
+            "JunctionCorner(" + road_end_text(corner.arm_a) + ", " + road_end_text(corner.arm_b);
+        if (corner.radius) {
+          text += ", radius=" + std::to_string(*corner.radius);
+        }
+        if (corner.extent_a && corner.extent_b) {
+          text += ", extents=(" + std::to_string(*corner.extent_a) + ", " +
+                  std::to_string(*corner.extent_b) + ")";
+        }
+        return text + ")";
+      });
+
   nb::class_<roadmaker::Junction>(m, "Junction")
       .def_ro("odr_id", &roadmaker::Junction::odr_id)
       .def_ro("name", &roadmaker::Junction::name)
       .def_ro("connections", &roadmaker::Junction::connections)
       .def_ro("arms", &roadmaker::Junction::arms)
+      .def_ro("corners",
+              &roadmaker::Junction::corners,
+              "Authored corner-fillet overrides (sparse; read-only). Edit them "
+              "with edit.set_corner_radius / edit.set_corner_extents.")
       .def("__repr__", [](const roadmaker::Junction& junction) {
         return "Junction(odr_id='" + junction.odr_id +
                "', connections=" + std::to_string(junction.connections.size()) + ")";
@@ -973,6 +1026,95 @@ NB_MODULE(_roadmaker, m) {
         "Reconciles the surface arena so that, after the call, the set of "
         "surfaces exactly matches the areas enclosed by roads. Id-stable across "
         "calls and idempotent when the topology is unchanged.");
+
+  // --- junction corners (the solve shared by mesher, tool and panel) -------------
+
+  nb::class_<roadmaker::JunctionCornerInfo>(m, "JunctionCornerInfo")
+      .def_ro("arm_a", &roadmaker::JunctionCornerInfo::arm_a, "First arm of the CCW pair.")
+      .def_ro("arm_b", &roadmaker::JunctionCornerInfo::arm_b, "Second arm of the CCW pair.")
+      .def_prop_ro(
+          "corner",
+          [](const roadmaker::JunctionCornerInfo& info) { return to_xy(info.corner); },
+          "(x, y) edge-line intersection — the unfilleted corner point.")
+      .def_prop_ro(
+          "dir_a",
+          [](const roadmaker::JunctionCornerInfo& info) { return to_xy(info.dir_a); },
+          "Unit direction of arm_a's edge ray, pointing into the junction.")
+      .def_prop_ro(
+          "dir_b",
+          [](const roadmaker::JunctionCornerInfo& info) { return to_xy(info.dir_b); },
+          "Unit direction of arm_b's edge ray, pointing into the junction.")
+      .def_prop_ro(
+          "bisector",
+          [](const roadmaker::JunctionCornerInfo& info) { return to_xy(info.bisector); },
+          "Unit inward bisector at `corner`.")
+      .def_prop_ro(
+          "face_a",
+          [](const roadmaker::JunctionCornerInfo& info) { return to_xy(info.face_a); },
+          "Outer corner of arm_a's face that its edge ray starts from.")
+      .def_prop_ro(
+          "face_b",
+          [](const roadmaker::JunctionCornerInfo& info) { return to_xy(info.face_b); },
+          "Outer corner of arm_b's face that its edge ray starts from.")
+      .def_ro("phi", &roadmaker::JunctionCornerInfo::phi, "Angle [rad] between the two edge rays.")
+      .def_ro("extent_a",
+              &roadmaker::JunctionCornerInfo::extent_a,
+              "Effective tangent-leg setback [m] along arm_a's edge.")
+      .def_ro("extent_b",
+              &roadmaker::JunctionCornerInfo::extent_b,
+              "Effective tangent-leg setback [m] along arm_b's edge.")
+      .def_prop_ro(
+          "tangent_a",
+          [](const roadmaker::JunctionCornerInfo& info) { return to_xy(info.tangent_a); },
+          "(x, y) tangency point on arm_a's edge.")
+      .def_prop_ro(
+          "tangent_b",
+          [](const roadmaker::JunctionCornerInfo& info) { return to_xy(info.tangent_b); },
+          "(x, y) tangency point on arm_b's edge.")
+      .def_ro("radius",
+              &roadmaker::JunctionCornerInfo::radius,
+              "Effective fillet radius [m] — what the Corner Radius attribute shows.")
+      .def_ro("max_radius",
+              &roadmaker::JunctionCornerInfo::max_radius,
+              "Largest radius the arm faces leave room for [m].")
+      .def_ro("max_extent_a",
+              &roadmaker::JunctionCornerInfo::max_extent_a,
+              "Free run [m] of arm_a's edge from its face corner to `corner`.")
+      .def_ro("max_extent_b",
+              &roadmaker::JunctionCornerInfo::max_extent_b,
+              "Free run [m] of arm_b's edge from its face corner to `corner`.")
+      .def_ro("radius_authored",
+              &roadmaker::JunctionCornerInfo::radius_authored,
+              "True when a JunctionCorner override supplies the radius.")
+      .def_ro("extents_authored",
+              &roadmaker::JunctionCornerInfo::extents_authored,
+              "True when a JunctionCorner override supplies the extents.")
+      .def_prop_ro(
+          "curve",
+          [](const roadmaker::JunctionCornerInfo& info) { return to_xy(info.curve); },
+          "The corner curve tangent_a -> tangent_b as a list of (x, y) tuples.")
+      .def(
+          "apex",
+          [](const roadmaker::JunctionCornerInfo& info) { return to_xy(info.apex()); },
+          "(x, y) midpoint of `curve` — the apex control vertex.")
+      .def("__repr__", [](const roadmaker::JunctionCornerInfo& info) {
+        return "JunctionCornerInfo(" + road_end_text(info.arm_a) + ", " +
+               road_end_text(info.arm_b) + ", radius=" + std::to_string(info.radius) +
+               ", max_radius=" + std::to_string(info.max_radius) +
+               (info.radius_authored ? ", authored" : "") + ")";
+      });
+
+  m.def(
+      "junction_corners",
+      [](const roadmaker::RoadNetwork& network, roadmaker::JunctionId junction) {
+        return roadmaker::junction_corners(network, junction);
+      },
+      "network"_a,
+      "junction"_a,
+      "Solves every corner of the junction in CCW order, applying any authored "
+      "JunctionCorner overrides — the same solve the mesher uses. Returns an "
+      "empty list for a stale id or a junction with fewer than two usable arms; "
+      "degenerate pairs (parallel or behind a face) are skipped.");
 
   // --- authoring -----------------------------------------------------------------
 
@@ -1722,6 +1864,46 @@ NB_MODULE(_roadmaker, m) {
       "ALLOW_CHANGE (default) a lane added, removed, or retyped on an incoming "
       "road grows or shrinks the turn set; the turns that survive keep their "
       "connecting-road ids. IN_PLACE_ONLY refuses any turn-set change.");
+  edit.def(
+      "set_corner_radius",
+      [](const roadmaker::RoadNetwork& network,
+         roadmaker::JunctionId junction,
+         const roadmaker::RoadEnd& arm_a,
+         const roadmaker::RoadEnd& arm_b,
+         double radius) {
+        return roadmaker::edit::set_corner_radius(network, junction, arm_a, arm_b, radius);
+      },
+      "network"_a,
+      "junction"_a,
+      "arm_a"_a,
+      "arm_b"_a,
+      "radius"_a,
+      "Authors the fillet radius [m] of ONE junction corner, named by its "
+      "adjacent arm pair. radius <= 0 clears the override (and any extents on "
+      "that corner) so the derived radius applies again. Pushing raises "
+      "ValueError for a stale junction, a non-adjacent arm pair, or a clear "
+      "with no override to remove.");
+  edit.def(
+      "set_corner_extents",
+      [](const roadmaker::RoadNetwork& network,
+         roadmaker::JunctionId junction,
+         const roadmaker::RoadEnd& arm_a,
+         const roadmaker::RoadEnd& arm_b,
+         double extent_a,
+         double extent_b) {
+        return roadmaker::edit::set_corner_extents(
+            network, junction, arm_a, arm_b, extent_a, extent_b);
+      },
+      "network"_a,
+      "junction"_a,
+      "arm_a"_a,
+      "arm_b"_a,
+      "extent_a"_a,
+      "extent_b"_a,
+      "Authors the two tangent-leg setbacks [m] of ONE junction corner "
+      "independently; the curve stays G1-tangent to both edges. Pushing raises "
+      "ValueError for a non-positive extent, a stale junction, or a "
+      "non-adjacent arm pair.");
   edit.def("delete_junction", &roadmaker::edit::delete_junction, "network"_a, "junction"_a);
 
   // --- parametric intersection assemblies (rm.edit.assembly) ---
