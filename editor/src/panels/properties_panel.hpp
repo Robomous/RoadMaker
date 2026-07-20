@@ -97,6 +97,12 @@ private:
   void refresh_lane_section();
   void refresh_elevation();
   void refresh_corner();
+
+  /// Populates the Junction section (default corner radius + carriageway
+  /// material) from `junction`, and shows it. Called from the junction branch
+  /// of refresh(), after the read-only topology rows.
+  void refresh_junction(const Junction& junction);
+
   void add_row(const QString& label, const QString& value);
   void clear_rows();
 
@@ -227,7 +233,19 @@ private:
   /// The "Corner radius" scrub handle — kept so the row can be hidden when the
   /// active pair no longer solves (GW-2 s9 drags this label).
   ScrubLabel* corner_radius_scrub_label_ = nullptr;
+  /// Per-corner overlay material slots (p4-s2): the sidewalk wedge and the
+  /// median nose of the arms meeting at this corner. They reflect the stored
+  /// value and stay visible even on a corner too tight to carry a radius row.
+  SlotWidget* corner_sidewalk_slot_;
+  SlotWidget* corner_median_slot_;
   CornerTool* corner_tool_ = nullptr;
+
+  /// Junction section (p4-s2): the junction-wide corner-radius default (the
+  /// fallback every corner without its own radius uses) and the carriageway
+  /// material. Shown for a selected junction, alongside its read-only rows.
+  QGroupBox* junction_group_;
+  QDoubleSpinBox* junction_radius_spin_;
+  SlotWidget* junction_material_slot_;
 
   QGroupBox* signal_group_;
   QDoubleSpinBox* signal_s_spin_;
@@ -265,6 +283,17 @@ private:
   /// surface. Unknown keys toast without pushing (no silent default); an
   /// unchanged material pushes nothing.
   void push_surface_material(const QString& key);
+
+  /// Commits the dropped Materials library item as the active corner's sidewalk
+  /// (resp. median) overlay material — the bare catalog name, like every other
+  /// material slot. Unknown keys toast without pushing; an unchanged material
+  /// pushes nothing (p4-s2).
+  void push_corner_sidewalk_material(const QString& key);
+  void push_corner_median_material(const QString& key);
+
+  /// Commits the dropped Materials library item as the selected junction's
+  /// carriageway material. Same unknown-key / unchanged-value rules.
+  void push_junction_material(const QString& key);
 
   /// Commits the dropped Materials library item onto the primary selected lane
   /// as a single constant <material> record (§11.8.2). Refuses the centre lane,

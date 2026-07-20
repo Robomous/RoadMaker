@@ -309,6 +309,78 @@ TEST(SurfaceFor, MapsLaneTypesToTexturedClasses) {
   EXPECT_EQ(surface_for(LaneType::Curb), SurfaceKind::Concrete);
 }
 
+// p4-s2 (#226): a junction's authored carriageway material flows onto its floor
+// item, exactly like a lane's or a ground surface's; an unpainted junction keeps
+// the asphalt class and an empty code (the SurfaceKind fallback then applies).
+TEST(BuildScene, JunctionFloorSceneItemCarriesMaterialCode) {
+  const JunctionId junction{.index = 3, .gen = 0};
+  const SubMesh floor{.positions = {-5, -5, 0, 0, -5, 0, 0, 0, 0},
+                      .normals = {0, 0, 1, 0, 0, 1, 0, 0, 1},
+                      .indices = {0, 1, 2}};
+
+  NetworkMesh bare;
+  bare.junction_floors.push_back(JunctionFloor{.junction = junction, .mesh = floor});
+  const Scene unpainted = build_scene(bare);
+  ASSERT_EQ(unpainted.items.size(), 1U);
+  EXPECT_EQ(unpainted.items[0].junction, junction);
+  EXPECT_TRUE(unpainted.items[0].material.empty());
+  EXPECT_EQ(unpainted.items[0].surface, SurfaceKind::Asphalt);
+
+  NetworkMesh painted;
+  SubMesh concrete_floor = floor;
+  concrete_floor.surface = "concrete";
+  painted.junction_floors.push_back(JunctionFloor{.junction = junction, .mesh = concrete_floor});
+  const Scene scene = build_scene(painted);
+  ASSERT_EQ(scene.items.size(), 1U);
+  EXPECT_EQ(scene.items[0].material, "concrete");
+  EXPECT_EQ(scene.items[0].surface, SurfaceKind::Concrete);
+}
+
+// Each authored corner overlay becomes its own item: same junction id (a click
+// on a wedge still selects the junction), its lane-type base colour, and its own
+// material code, so the sidewalk and the floor can be painted independently.
+TEST(BuildScene, CornerDetailSceneItemsEmitted) {
+  const JunctionId junction{.index = 7, .gen = 1};
+  JunctionFloor floor{.junction = junction,
+                      .mesh = SubMesh{.positions = {-5, -5, 0, 0, -5, 0, 0, 0, 0},
+                                      .normals = {0, 0, 1, 0, 0, 1, 0, 0, 1},
+                                      .indices = {0, 1, 2}}};
+  floor.details.push_back(SubMesh{.positions = {0, 0, 0.02, 2, 0, 0.02, 2, 2, 0.02},
+                                  .normals = {0, 0, 1, 0, 0, 1, 0, 0, 1},
+                                  .indices = {0, 1, 2},
+                                  .material = LaneType::Sidewalk,
+                                  .surface = "concrete"});
+  floor.details.push_back(SubMesh{.positions = {0, 0, 0.02, -2, 0, 0.02, -2, -2, 0.02},
+                                  .normals = {0, 0, 1, 0, 0, 1, 0, 0, 1},
+                                  .indices = {0, 1, 2},
+                                  .material = LaneType::Median,
+                                  .surface = "asphalt"});
+
+  NetworkMesh mesh;
+  mesh.junction_floors.push_back(std::move(floor));
+  const Scene scene = build_scene(mesh);
+  ASSERT_EQ(scene.items.size(), 3U) << "one floor + one item per overlay";
+
+  const SceneItem& sidewalk = scene.items[1];
+  EXPECT_EQ(sidewalk.junction, junction);
+  EXPECT_FALSE(sidewalk.road.is_valid());
+  EXPECT_FALSE(sidewalk.lane.is_valid());
+  EXPECT_EQ(sidewalk.data.color, lane_color(LaneType::Sidewalk));
+  EXPECT_EQ(sidewalk.material, "concrete");
+  EXPECT_EQ(sidewalk.surface, SurfaceKind::Concrete);
+
+  const SceneItem& median = scene.items[2];
+  EXPECT_EQ(median.junction, junction);
+  EXPECT_EQ(median.data.color, lane_color(LaneType::Median));
+  EXPECT_EQ(median.material, "asphalt");
+  EXPECT_EQ(median.surface, SurfaceKind::Asphalt);
+
+  // The overlays grow the bounds like any other geometry.
+  ASSERT_TRUE(scene.bounds.valid());
+  EXPECT_FLOAT_EQ(scene.bounds.hi[0], 2.0F);
+  EXPECT_FLOAT_EQ(scene.bounds.hi[2], 0.02F);
+}
+
 TEST(BuildScene, TagsSurfaceClassesForTexturedMode) {
   NetworkMesh mesh;
   RoadMesh road;

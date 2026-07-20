@@ -12,6 +12,20 @@ namespace roadmaker::editor {
 
 namespace {
 
+/// Render class for an assigned BARE catalog material name ("asphalt",
+/// "concrete"), falling back to `fallback` for an empty or unrecognised name.
+/// One mapping shared by the ground surfaces and the junction floor/overlays
+/// (p4-s2) so the two can never drift apart.
+SurfaceKind surface_kind_for(const std::string& material, SurfaceKind fallback) {
+  if (material == "asphalt") {
+    return SurfaceKind::Asphalt;
+  }
+  if (material == "concrete") {
+    return SurfaceKind::Concrete;
+  }
+  return fallback;
+}
+
 void grow_bounds(SceneBounds& bounds, const std::vector<double>& positions) {
   for (std::size_t i = 0; i + 2 < positions.size(); i += 3) {
     for (std::size_t axis = 0; axis < 3; ++axis) {
@@ -269,7 +283,9 @@ Scene build_scene(const NetworkMesh& mesh, const RoadNetwork* network) {
   }
   for (const JunctionFloor& floor : mesh.junction_floors) {
     // Same material class as the lanes feeding the junction — one
-    // continuous asphalt (a distinct floor color read as a patch).
+    // continuous asphalt (a distinct floor color read as a patch) unless the
+    // junction authors a carriageway material (p4-s2), which then resolves
+    // through the same catalog as a lane or ground-surface material.
     scene.items.push_back(SceneItem{
         .data = to_render_data(floor.mesh.positions,
                                floor.mesh.normals,
@@ -278,9 +294,25 @@ Scene build_scene(const NetworkMesh& mesh, const RoadNetwork* network) {
         .road = {},
         .lane = {},
         .junction = floor.junction,
-        .surface = SurfaceKind::Asphalt,
+        .surface = surface_kind_for(floor.mesh.surface, SurfaceKind::Asphalt),
+        .material = floor.mesh.surface,
     });
     grow_bounds(scene.bounds, floor.mesh.positions);
+    // Authored corner overlays (p4-s2): sidewalk wedges and median noses, each
+    // its own item so it can carry its own material and lane-type base colour.
+    // They belong to the junction for picking, exactly like the floor.
+    for (const SubMesh& detail : floor.details) {
+      scene.items.push_back(SceneItem{
+          .data = to_render_data(
+              detail.positions, detail.normals, detail.indices, lane_color(detail.material)),
+          .road = {},
+          .lane = {},
+          .junction = floor.junction,
+          .surface = surface_kind_for(detail.surface, surface_for(detail.material)),
+          .material = detail.surface,
+      });
+      grow_bounds(scene.bounds, detail.positions);
+    }
   }
   for (const SurfaceMesh& surface : mesh.surfaces) {
     // Enclosed-area ground (#215): a lit flat grass-green by default, carrying
@@ -295,11 +327,8 @@ Scene build_scene(const NetworkMesh& mesh, const RoadNetwork* network) {
         // Neutral mid-grey pavement so the color reads as paved even in Sober
         // mode; textured mode overlays the asphalt/concrete texture.
         color = {0.34F, 0.34F, 0.35F, 1.0F};
-        if (entity->material == "asphalt") {
-          kind = SurfaceKind::Asphalt;
-        } else if (entity->material == "concrete") {
-          kind = SurfaceKind::Concrete;
-        }
+        // An unrecognised material keeps the Grass class (flat paved colour).
+        kind = surface_kind_for(entity->material, SurfaceKind::Grass);
       }
     }
     const Surface* entity = network != nullptr ? network->surface(surface.surface) : nullptr;
