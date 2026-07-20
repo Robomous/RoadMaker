@@ -286,20 +286,42 @@ void write_poly3_list(pugi::xml_node parent,
   }
 }
 
+/// The `@elementId` a road link points at, or nullptr when the target no
+/// longer resolves.
+///
+/// A stale target is reachable: `erase_road`/`erase_junction` drop the
+/// junction connections that name the erased object but deliberately leave
+/// surviving roads' `predecessor`/`successor` alone (road/network.hpp — the
+/// edit layer's `delete_road` closure is what normally repairs them), and a
+/// hand-edited or foreign file can carry the same shape. The writer resolves
+/// first and never dereferences, mirroring the rm:arms rule that stale
+/// references are not serialized; `validate_network` reports the omission so
+/// the drop is never silent.
+const std::string* link_target_odr_id(const RoadNetwork& network, const RoadLink& road_link) {
+  if (const RoadId* road_target = std::get_if<RoadId>(&road_link.target)) {
+    const Road* road = network.road(*road_target);
+    return road != nullptr ? &road->odr_id : nullptr;
+  }
+  const Junction* junction = network.junction(std::get<JunctionId>(road_link.target));
+  return junction != nullptr ? &junction->odr_id : nullptr;
+}
+
+/// Writes one <predecessor>/<successor>. `element_id` is the caller's already
+/// resolved link_target_odr_id — a link that did not resolve is not written
+/// at all, so this is never reached with a stale target.
 void write_link_element(pugi::xml_node link,
                         const char* kind,
                         const RoadLink& road_link,
-                        const RoadNetwork& network) {
+                        const std::string& element_id) {
   pugi::xml_node node = link.append_child(kind);
-  if (const RoadId* road_target = std::get_if<RoadId>(&road_link.target)) {
+  if (std::holds_alternative<RoadId>(road_link.target)) {
     node.append_attribute("elementType").set_value("road");
-    node.append_attribute("elementId").set_value(network.road(*road_target)->odr_id.c_str());
+    node.append_attribute("elementId").set_value(element_id.c_str());
     node.append_attribute("contactPoint")
         .set_value(road_link.contact == ContactPoint::End ? "end" : "start");
   } else {
-    const JunctionId junction = std::get<JunctionId>(road_link.target);
     node.append_attribute("elementType").set_value("junction");
-    node.append_attribute("elementId").set_value(network.junction(junction)->odr_id.c_str());
+    node.append_attribute("elementId").set_value(element_id.c_str());
   }
 }
 
@@ -821,13 +843,20 @@ void write_road(pugi::xml_node root,
   road_node.append_attribute("junction")
       .set_value(junction != nullptr ? junction->odr_id.c_str() : "-1");
 
-  if (road.predecessor || road.successor) {
+  // Resolve both ends before opening <link>: a link whose target was erased is
+  // dropped (link_target_odr_id), and a <link> with no surviving child would be
+  // an empty element rather than an absent one.
+  const std::string* predecessor_id =
+      road.predecessor ? link_target_odr_id(network, *road.predecessor) : nullptr;
+  const std::string* successor_id =
+      road.successor ? link_target_odr_id(network, *road.successor) : nullptr;
+  if (predecessor_id != nullptr || successor_id != nullptr) {
     pugi::xml_node link = road_node.append_child("link");
-    if (road.predecessor) {
-      write_link_element(link, "predecessor", *road.predecessor, network);
+    if (predecessor_id != nullptr) {
+      write_link_element(link, "predecessor", *road.predecessor, *predecessor_id);
     }
-    if (road.successor) {
-      write_link_element(link, "successor", *road.successor, network);
+    if (successor_id != nullptr) {
+      write_link_element(link, "successor", *road.successor, *successor_id);
     }
   }
 
@@ -1211,6 +1240,26 @@ std::vector<Diagnostic> validate_network(const RoadNetwork& network, const Write
   std::vector<Diagnostic> findings;
   network.for_each_road([&](RoadId road_id, const Road& road) {
     check_road_structure(network, road_id, road, findings);
+    // "Only defined IDs may be referenced." A predecessor/successor whose
+    // target was erased (erase_road leaves surviving roads' links alone) or
+    // that a foreign file names without defining is not written — say so, so
+    // the omission from the output is never silent.
+    const auto check_link = [&](const char* kind, const std::optional<RoadLink>& link) {
+      if (link.has_value() && link_target_odr_id(network, *link) == nullptr) {
+        findings.push_back(Diagnostic{
+            .severity = Severity::Warning,
+            .location = fmt::format("road id={}", road.odr_id),
+            .message =
+                fmt::format("{} references a {} that no longer exists — the link is "
+                            "omitted from the output",
+                            kind,
+                            std::holds_alternative<RoadId>(link->target) ? "road" : "junction"),
+            .rule_id = std::string(rules::kOnlyRefDefinedIds),
+            .road = road_id});
+      }
+    };
+    check_link("predecessor", road.predecessor);
+    check_link("successor", road.successor);
     // RoadMaker advisory (no ASAM rule id — rule_id stays empty): a grade
     // above options.max_grade_warning is drivable in a file but rarely in a
     // vehicle. A cubic's derivative is quadratic, so per record the extreme
