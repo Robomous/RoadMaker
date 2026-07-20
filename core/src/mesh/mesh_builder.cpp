@@ -836,7 +836,8 @@ JunctionFloor build_one_junction_floor(const RoadNetwork& network,
                                        const Junction& junction,
                                        const SamplingOptions& sampling) {
   return JunctionFloor{.junction = junction_id,
-                       .mesh = build_junction_surface(network, junction, sampling)};
+                       .mesh = build_junction_surface(network, junction, sampling),
+                       .details = build_junction_corner_details(network, junction, sampling)};
 }
 
 /// One enclosed-area ground surface, keyed by id; empty mesh (no indices) when

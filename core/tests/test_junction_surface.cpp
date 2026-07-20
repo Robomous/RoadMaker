@@ -10,6 +10,7 @@
 // and the fuzz corpus so the committed fixtures can be regenerated on demand.
 
 #include "roadmaker/edit/operations.hpp"
+#include "roadmaker/mesh/junction_corners.hpp"
 #include "roadmaker/mesh/mesh_builder.hpp"
 #include "roadmaker/road/authoring.hpp"
 #include "roadmaker/road/junction.hpp"
@@ -19,8 +20,10 @@
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <array>
 #include <cmath>
+#include <cstddef>
 #include <filesystem>
 #include <limits>
 #include <map>
@@ -31,8 +34,13 @@
 #include <vector>
 
 using roadmaker::ContactPoint;
+using roadmaker::Junction;
+using roadmaker::JunctionCorner;
+using roadmaker::JunctionCornerInfo;
 using roadmaker::JunctionId;
 using roadmaker::LaneProfile;
+using roadmaker::LaneSpec;
+using roadmaker::LaneType;
 using roadmaker::NetworkMesh;
 using roadmaker::RoadEnd;
 using roadmaker::RoadId;
@@ -210,6 +218,110 @@ void expect_watertight(const NetworkMesh& mesh) {
   }
 }
 
+// --- Authored corner overlays (p4-s2, issue #226) ----------------------------
+
+/// A four-way with a 20 m arm gap — roomy enough that the derived fillet is
+/// bounded by the derivation and not clamped to a couple of meters by the arm
+/// faces, so the corner wedges enclose real area.
+JunctionId build_roomy_four_way(RoadNetwork& network,
+                                const LaneProfile& profile = LaneProfile::two_lane_default()) {
+  const RoadId west = author(network, {Waypoint{-80.0, 0.0}, Waypoint{-20.0, 0.0}}, "1", profile);
+  const RoadId east = author(network, {Waypoint{80.0, 0.0}, Waypoint{20.0, 0.0}}, "2", profile);
+  const RoadId south = author(network, {Waypoint{0.0, -80.0}, Waypoint{0.0, -20.0}}, "3", profile);
+  const RoadId north = author(network, {Waypoint{0.0, 80.0}, Waypoint{0.0, 20.0}}, "4", profile);
+  return make_junction(network, {end_of(west), end_of(east), end_of(south), end_of(north)});
+}
+
+/// Urban cross-section with a median lane innermost on both sides — the
+/// profile the median-nose overlay needs.
+LaneProfile median_profile() {
+  return LaneProfile{
+      .left = {LaneSpec{.type = LaneType::Median, .width = 2.0},
+               LaneSpec{.type = LaneType::Driving, .width = 3.5, .outer_marking = true}},
+      .right = {LaneSpec{.type = LaneType::Median, .width = 2.0},
+                LaneSpec{.type = LaneType::Driving, .width = 3.5, .outer_marking = true}},
+      .center_marking = false,
+  };
+}
+
+/// Sets (or replaces) the authored override for an arm pair. Corner entries are
+/// plain data on the junction; the editor reaches them through the command
+/// layer, tests through the arena.
+void set_corner(RoadNetwork& network, JunctionId id, const JunctionCorner& entry) {
+  Junction* junction = network.junction(id);
+  const auto match = [&entry](const JunctionCorner& c) {
+    return c.arm_a == entry.arm_a && c.arm_b == entry.arm_b;
+  };
+  const auto it = std::ranges::find_if(junction->corners, match);
+  if (it != junction->corners.end()) {
+    *it = entry;
+  } else {
+    junction->corners.push_back(entry);
+  }
+}
+
+/// The solved corner of `id` in which `arm` plays the requested role.
+JunctionCornerInfo
+corner_with(const RoadNetwork& network, JunctionId id, const RoadEnd& arm, bool as_arm_a) {
+  for (const JunctionCornerInfo& info : roadmaker::junction_corners(network, id)) {
+    if ((as_arm_a ? info.arm_a : info.arm_b) == arm) {
+      return info;
+    }
+  }
+  throw std::runtime_error("corner_with: no such corner");
+}
+
+/// Every overlay of the (single) junction floor carrying `material`.
+std::vector<const SubMesh*> details_of(const NetworkMesh& mesh, LaneType material) {
+  std::vector<const SubMesh*> found;
+  for (const roadmaker::JunctionFloor& floor : mesh.junction_floors) {
+    for (const SubMesh& detail : floor.details) {
+      if (detail.material == material) {
+        found.push_back(&detail);
+      }
+    }
+  }
+  return found;
+}
+
+std::array<double, 2> centroid_xy(const SubMesh& s) {
+  double x = 0.0, y = 0.0;
+  const std::size_t count = s.positions.size() / 3;
+  for (std::size_t i = 0; i < count; ++i) {
+    x += s.positions[i * 3];
+    y += s.positions[(i * 3) + 1];
+  }
+  const auto n = static_cast<double>(std::max<std::size_t>(count, 1));
+  return {x / n, y / n};
+}
+
+/// The median nose sitting at an arm's mouth — identified by geometry, since a
+/// junction paints one nose per arm and they all share a name.
+const SubMesh* nose_near(const NetworkMesh& mesh, const std::array<double, 2>& at) {
+  const SubMesh* best = nullptr;
+  double best_d2 = 9.0; // within 3 m of the expected mouth
+  for (const SubMesh* nose : details_of(mesh, LaneType::Median)) {
+    const std::array<double, 2> c = centroid_xy(*nose);
+    const double d2 = ((c[0] - at[0]) * (c[0] - at[0])) + ((c[1] - at[1]) * (c[1] - at[1]));
+    if (d2 < best_d2) {
+      best_d2 = d2;
+      best = nose;
+    }
+  }
+  return best;
+}
+
+/// The floor is never cut for an overlay: its buffers must stay bit-identical.
+void expect_floor_identical(const NetworkMesh& before, const NetworkMesh& after) {
+  ASSERT_EQ(before.junction_floors.size(), after.junction_floors.size());
+  ASSERT_FALSE(before.junction_floors.empty());
+  for (std::size_t i = 0; i < before.junction_floors.size(); ++i) {
+    EXPECT_EQ(before.junction_floors[i].mesh.positions, after.junction_floors[i].mesh.positions);
+    EXPECT_EQ(before.junction_floors[i].mesh.normals, after.junction_floors[i].mesh.normals);
+    EXPECT_EQ(before.junction_floors[i].mesh.indices, after.junction_floors[i].mesh.indices);
+  }
+}
+
 } // namespace
 
 TEST(JunctionSurface, TJunctionIsWatertightHeightField) {
@@ -370,4 +482,146 @@ TEST(JunctionSurface, CommittedFixturesAreWatertight) {
     ++loaded;
   }
   EXPECT_GT(loaded, 0);
+}
+
+// --- Authored corner overlays (p4-s2, issue #226) ----------------------------
+
+TEST(JunctionSurface, NoAuthoredMaterialsEmitsNoDetailsAndIdenticalFloor) {
+  RoadNetwork network;
+  const JunctionId junction = build_roomy_four_way(network);
+  const NetworkMesh baseline = roadmaker::build_network_mesh(network);
+  ASSERT_FALSE(baseline.junction_floors.empty());
+  EXPECT_TRUE(baseline.junction_floors[0].details.empty());
+
+  // A corner entry that authors no material at all must change nothing: no
+  // overlay, and a floor that is still bit-identical (overlays never cut it).
+  const JunctionCornerInfo info = roadmaker::junction_corners(network, junction).at(0);
+  set_corner(network, junction, JunctionCorner{.arm_a = info.arm_a, .arm_b = info.arm_b});
+  const NetworkMesh after = roadmaker::build_network_mesh(network);
+  EXPECT_TRUE(after.junction_floors[0].details.empty());
+  expect_floor_identical(baseline, after);
+}
+
+TEST(JunctionSurface, CornerSidewalkMaterialEmitsSidewalkWedge) {
+  RoadNetwork network;
+  const JunctionId junction = build_roomy_four_way(network);
+  const NetworkMesh baseline = roadmaker::build_network_mesh(network);
+
+  const JunctionCornerInfo info = roadmaker::junction_corners(network, junction).at(0);
+  set_corner(network,
+             junction,
+             JunctionCorner{.arm_a = info.arm_a,
+                            .arm_b = info.arm_b,
+                            .sidewalk_material = std::string("concrete")});
+
+  const NetworkMesh after = roadmaker::build_network_mesh(network);
+  const std::vector<const SubMesh*> wedges = details_of(after, LaneType::Sidewalk);
+  ASSERT_EQ(wedges.size(), 1U);
+  EXPECT_EQ(wedges[0]->surface, "concrete");
+  EXPECT_FALSE(wedges[0]->indices.empty());
+  EXPECT_EQ(wedges[0]->indices.size() % 3, 0U);
+  EXPECT_EQ(wedges[0]->positions.size(), wedges[0]->normals.size());
+  // The wedge covers the rounded-away corner: every vertex sits within the
+  // fillet's reach of the edge-line intersection, above the floor.
+  for (std::size_t i = 0; i + 2 < wedges[0]->positions.size(); i += 3) {
+    EXPECT_LT(std::hypot(wedges[0]->positions[i] - info.corner[0],
+                         wedges[0]->positions[i + 1] - info.corner[1]),
+              info.max_extent_a + info.max_extent_b);
+  }
+  // Overlay only — the floor itself is untouched.
+  expect_floor_identical(baseline, after);
+}
+
+TEST(JunctionSurface, MedianNoseEmittedForMedianArm) {
+  RoadNetwork network;
+  const JunctionId junction = build_roomy_four_way(network, median_profile());
+  const NetworkMesh baseline = roadmaker::build_network_mesh(network);
+  EXPECT_TRUE(details_of(baseline, LaneType::Median).empty());
+
+  const JunctionCornerInfo info = roadmaker::junction_corners(network, junction).at(0);
+  set_corner(network,
+             junction,
+             JunctionCorner{.arm_a = info.arm_a,
+                            .arm_b = info.arm_b,
+                            .median_material = std::string("grass")});
+
+  const NetworkMesh after = roadmaker::build_network_mesh(network);
+  const std::vector<const SubMesh*> noses = details_of(after, LaneType::Median);
+  ASSERT_FALSE(noses.empty());
+  for (const SubMesh* nose : noses) {
+    EXPECT_EQ(nose->surface, "grass");
+    EXPECT_FALSE(nose->indices.empty());
+    EXPECT_EQ(nose->indices.size() % 3, 0U);
+    // Flat, and lifted clear of the floor it covers.
+    const double z0 = nose->positions[2];
+    for (std::size_t i = 2; i < nose->positions.size(); i += 3) {
+      EXPECT_NEAR(nose->positions[i], z0, 1e-12);
+    }
+  }
+  expect_floor_identical(baseline, after);
+}
+
+TEST(JunctionSurface, MedianNoseSharedArmPrefersArmACorner) {
+  RoadNetwork network;
+  const JunctionId junction = build_roomy_four_way(network, median_profile());
+  // The west arm ("1"): its face is at x = -20 and the nose reaches 2 m in.
+  RoadEnd arm{};
+  network.for_each_road([&](RoadId road_id, const roadmaker::Road& road) {
+    if (road.odr_id == "1") {
+      arm = end_of(road_id);
+    }
+  });
+
+  const JunctionCornerInfo as_a = corner_with(network, junction, arm, /*as_arm_a=*/true);
+  const JunctionCornerInfo as_b = corner_with(network, junction, arm, /*as_arm_a=*/false);
+  set_corner(network,
+             junction,
+             JunctionCorner{.arm_a = as_a.arm_a,
+                            .arm_b = as_a.arm_b,
+                            .median_material = std::string("primary")});
+  set_corner(network,
+             junction,
+             JunctionCorner{.arm_a = as_b.arm_a,
+                            .arm_b = as_b.arm_b,
+                            .median_material = std::string("fallback")});
+
+  const NetworkMesh mesh = roadmaker::build_network_mesh(network);
+  const SubMesh* nose = nose_near(mesh, {-19.0, 0.0});
+  ASSERT_NE(nose, nullptr);
+  EXPECT_EQ(nose->surface, "primary");
+}
+
+TEST(JunctionSurface, MedianNoseFallsBackToArmBCorner) {
+  RoadNetwork network;
+  const JunctionId junction = build_roomy_four_way(network, median_profile());
+  RoadEnd arm{};
+  network.for_each_road([&](RoadId road_id, const roadmaker::Road& road) {
+    if (road.odr_id == "1") {
+      arm = end_of(road_id);
+    }
+  });
+
+  // Only the corner where the west arm is arm_b authors a median material.
+  const JunctionCornerInfo as_b = corner_with(network, junction, arm, /*as_arm_a=*/false);
+  set_corner(network,
+             junction,
+             JunctionCorner{.arm_a = as_b.arm_a,
+                            .arm_b = as_b.arm_b,
+                            .median_material = std::string("fallback")});
+
+  const NetworkMesh mesh = roadmaker::build_network_mesh(network);
+  const SubMesh* nose = nose_near(mesh, {-19.0, 0.0});
+  ASSERT_NE(nose, nullptr);
+  EXPECT_EQ(nose->surface, "fallback");
+}
+
+TEST(JunctionSurface, JunctionFloorCarriesMaterialCode) {
+  RoadNetwork network;
+  const JunctionId junction = build_roomy_four_way(network);
+  EXPECT_TRUE(roadmaker::build_network_mesh(network).junction_floors[0].mesh.surface.empty());
+
+  network.junction(junction)->material = "concrete";
+  const NetworkMesh mesh = roadmaker::build_network_mesh(network);
+  ASSERT_FALSE(mesh.junction_floors.empty());
+  EXPECT_EQ(mesh.junction_floors[0].mesh.surface, "concrete");
 }

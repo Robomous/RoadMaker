@@ -2,6 +2,8 @@
 
 #include "roadmaker/geometry/poly3.hpp"
 #include "roadmaker/road/junction.hpp"
+#include "roadmaker/road/lane.hpp"
+#include "roadmaker/road/lane_section.hpp"
 #include "roadmaker/tol.hpp"
 
 #include <CDT.h>
@@ -17,6 +19,7 @@
 #include <numbers>
 #include <optional>
 #include <span>
+#include <string>
 #include <utility>
 #include <vector>
 
@@ -179,6 +182,187 @@ void append_corner_fillets(const RoadNetwork& network,
     strip(pa, corner, -a.iy, a.ix); // interior is left of A's right edge
     strip(pb, corner, b.iy, -b.ix); // interior is right of B's left edge
   }
+}
+
+// --- Authored corner overlays (p4-s2, issue #226) ----------------------------
+
+// Height [m] every authored overlay floats above the floor it covers. Large
+// enough that no depth buffer confuses the two, small enough to read as flush
+// pavement detail rather than a curb.
+constexpr double kJunctionDetailLift = 0.01;
+
+// Depth [m] a median nose reaches into the junction from its arm's face — the
+// painted/raised nose that keeps opposing traffic apart at the mouth.
+constexpr double kMedianNoseDepth = 2.0;
+
+/// One arm's end cross-section, resolved once and reused by every overlay on
+/// that arm. `types` runs left-to-right in EXACTLY the order `boundary_offsets`
+/// lays out its gaps, so `types[k]` is the lane between `offsets[k]` and
+/// `offsets[k + 1]`.
+struct ArmFace {
+  StationFrame frame;
+  std::vector<double> offsets;
+  std::vector<LaneType> types;
+  double ix = 0.0; // unit direction INTO the junction
+  double iy = 0.0;
+};
+
+/// Resolves `arm`'s end cross-section, or nullopt when the arm is unusable.
+std::optional<ArmFace> arm_face(const RoadNetwork& network, const RoadEnd& arm) {
+  const Road* road = network.road(arm.road);
+  if (road == nullptr || road->plan_view.empty() || road->sections.empty()) {
+    return std::nullopt;
+  }
+  const double station = arm.contact == ContactPoint::Start ? 0.0 : road->plan_view.length();
+  const LaneSection& section = section_at(network, *road, station);
+  ArmFace face;
+  face.frame = make_frame(*road, station);
+  face.offsets = boundary_offsets(network, *road, section, station);
+  const double sign = arm.contact == ContactPoint::Start ? -1.0 : 1.0;
+  face.ix = sign * face.frame.cos_h;
+  face.iy = sign * face.frame.sin_h;
+  // Same walk lane_boundary_offsets does — left lanes in section order, then
+  // the right ones — so the type list stays aligned with the offset gaps even
+  // if the section's lane ordering ever changes.
+  std::vector<LaneType> left;
+  std::vector<LaneType> right;
+  for (const LaneId lane_id : section.lanes) {
+    const Lane* lane = network.lane(lane_id);
+    if (lane == nullptr || lane->odr_id == 0) {
+      continue;
+    }
+    (lane->odr_id > 0 ? left : right).push_back(lane->type);
+  }
+  face.types = std::move(left);
+  face.types.insert(face.types.end(), right.begin(), right.end());
+  if (face.offsets.size() != face.types.size() + 1) {
+    return std::nullopt; // profile the offset walk and the type walk disagree on
+  }
+  return face;
+}
+
+/// Every arm-face vertex of the junction — the exact end-cross-section points
+/// the floor's boundary is stitched to, so the nearest of them carries the
+/// floor's elevation at any point along an arm face or a corner between two.
+std::vector<std::array<double, 3>> arm_face_vertices(const RoadNetwork& network,
+                                                     const Junction& junction) {
+  std::vector<std::array<double, 3>> points;
+  if (junction.arms.size() < 2) {
+    return points;
+  }
+  for (const RoadEnd& arm : junction.arms) {
+    const std::optional<ArmFace> face = arm_face(network, arm);
+    if (!face) {
+      continue;
+    }
+    for (const double offset : face->offsets) {
+      points.push_back(lateral_point(face->frame, offset));
+    }
+  }
+  return points;
+}
+
+/// The floor's elevation at (x, y), taken from the nearest arm-face vertex —
+/// the same Dirichlet data the floor's harmonic solve is pinned to.
+double nearest_border_z(const std::vector<std::array<double, 3>>& points, double x, double y) {
+  double best = std::numeric_limits<double>::max();
+  double z = 0.0;
+  for (const std::array<double, 3>& p : points) {
+    const double d2 = ((p[0] - x) * (p[0] - x)) + ((p[1] - y) * (p[1] - y));
+    if (d2 < best) {
+      best = d2;
+      z = p[2];
+    }
+  }
+  return z;
+}
+
+/// Appends one flat-shaded triangle (its own three vertices, one face normal
+/// forced into the +Z hemisphere so the overlay is never backfaced).
+void push_triangle(SubMesh& sub,
+                   const std::array<double, 3>& a,
+                   const std::array<double, 3>& b,
+                   const std::array<double, 3>& c) {
+  const double ux = b[0] - a[0], uy = b[1] - a[1], uz = b[2] - a[2];
+  const double vx = c[0] - a[0], vy = c[1] - a[1], vz = c[2] - a[2];
+  double nx = (uy * vz) - (uz * vy);
+  double ny = (uz * vx) - (ux * vz);
+  double nz = (ux * vy) - (uy * vx);
+  const double len = std::sqrt((nx * nx) + (ny * ny) + (nz * nz));
+  if (len < tol::kLength) {
+    return; // degenerate sliver
+  }
+  nx /= len;
+  ny /= len;
+  nz /= len;
+  if (nz < 0.0) {
+    nx = -nx;
+    ny = -ny;
+    nz = -nz;
+  }
+  const auto base = static_cast<std::uint32_t>(sub.positions.size() / 3);
+  for (const std::array<double, 3>& p : {a, b, c}) {
+    sub.positions.insert(sub.positions.end(), {p[0], p[1], p[2]});
+    sub.normals.insert(sub.normals.end(), {nx, ny, nz});
+  }
+  sub.indices.insert(sub.indices.end(), {base, base + 1, base + 2});
+}
+
+/// Signed plan area of a closed ring (positive = CCW).
+double ring_area(const std::vector<std::array<double, 3>>& ring) {
+  double area = 0.0;
+  for (std::size_t i = 0; i < ring.size(); ++i) {
+    const std::array<double, 3>& p = ring[i];
+    const std::array<double, 3>& q = ring[(i + 1) % ring.size()];
+    area += (p[0] * q[1]) - (q[0] * p[1]);
+  }
+  return 0.5 * area;
+}
+
+/// Fan-triangulates `ring` from vertex 0. Only valid for rings star-shaped
+/// about that apex — the corner wedge (apex = the edge-line intersection) and
+/// the median quads both are.
+void fan_triangulate(SubMesh& sub, std::vector<std::array<double, 3>> ring) {
+  if (ring.size() < 3) {
+    return;
+  }
+  if (ring_area(ring) < 0.0) {
+    // Reversing the tail is the same cyclic ring wound the other way, with the
+    // apex still first — which the fan below requires.
+    std::reverse(ring.begin() + 1, ring.end());
+  }
+  for (std::size_t i = 1; i + 1 < ring.size(); ++i) {
+    push_triangle(sub, ring[0], ring[i], ring[i + 1]);
+  }
+}
+
+/// The authored override naming exactly the ordered arm pair (a, b), if any.
+/// Mirrors junction_corner_detail's own lookup: corners are ordered pairs.
+const JunctionCorner*
+corner_override(const Junction& junction, const RoadEnd& a, const RoadEnd& b) {
+  for (const JunctionCorner& entry : junction.corners) {
+    if (entry.arm_a == a && entry.arm_b == b) {
+      return &entry;
+    }
+  }
+  return nullptr;
+}
+
+/// The median material governing `arm`'s nose. An arm belongs to two corners:
+/// the one it enters as `arm_a` wins, the one it enters as `arm_b` is the
+/// fallback, and an arm neither corner paints gets no nose at all.
+const std::string* median_material_for_arm(const Junction& junction, const RoadEnd& arm) {
+  for (const JunctionCorner& entry : junction.corners) {
+    if (entry.arm_a == arm && entry.median_material.has_value()) {
+      return &*entry.median_material;
+    }
+  }
+  for (const JunctionCorner& entry : junction.corners) {
+    if (entry.arm_b == arm && entry.median_material.has_value()) {
+      return &*entry.median_material;
+    }
+  }
+  return nullptr;
 }
 
 } // namespace
@@ -406,7 +590,105 @@ SubMesh build_junction_surface(const RoadNetwork& network,
   //    for tiny footprints).
   assign_boundary_elevation_and_solve(mesh, flat_floor, mean_z, border, centerline);
 
-  return emit(mesh, fmt::format("junction {} surface", junction.odr_id));
+  SubMesh out = emit(mesh, fmt::format("junction {} surface", junction.odr_id));
+  // Junction-wide carriageway material (p4-s2): empty means the derived
+  // asphalt look, mirroring Surface::material.
+  out.surface = junction.material;
+  return out;
+}
+
+std::vector<SubMesh> build_junction_corner_details(const RoadNetwork& network,
+                                                   const Junction& junction,
+                                                   const SamplingOptions& sampling) {
+  (void)sampling; // overlays are face/corner geometry only — no station sampling
+  std::vector<SubMesh> details;
+  if (junction.corners.empty()) {
+    return details; // nothing authored — the common case, and free
+  }
+  const std::vector<std::array<double, 3>> face_points = arm_face_vertices(network, junction);
+  if (face_points.empty()) {
+    return details;
+  }
+
+  // 1. Sidewalk wedges: the pavement between a corner's edge-line intersection
+  //    and its fillet curve — the exact region the fillet rounded away, which
+  //    is what a real intersection surfaces as sidewalk.
+  const std::vector<CornerFace> faces = corner_faces(network, junction);
+  for (std::size_t i = 0; faces.size() >= 2 && i < faces.size(); ++i) {
+    const CornerFace& a = faces[i];
+    const CornerFace& b = faces[(i + 1) % faces.size()];
+    const JunctionCorner* entry = corner_override(junction, a.arm, b.arm);
+    if (entry == nullptr || !entry->sidewalk_material.has_value()) {
+      continue;
+    }
+    const CornerSolution solution = solve_corner(network, junction, a, b);
+    if (!solution.valid) {
+      continue;
+    }
+    const auto lift = [&face_points](const std::array<double, 2>& p) {
+      return std::array<double, 3>{
+          p[0], p[1], nearest_border_z(face_points, p[0], p[1]) + kJunctionDetailLift};
+    };
+    // Star-shaped about the corner: a fan from that apex covers it exactly.
+    std::vector<std::array<double, 3>> ring;
+    ring.push_back(lift(solution.corner));
+    for (const std::array<double, 2>& p : corner_curve(solution)) {
+      ring.push_back(lift(p));
+    }
+    SubMesh wedge;
+    wedge.material = LaneType::Sidewalk;
+    wedge.surface = *entry->sidewalk_material;
+    wedge.name = fmt::format("junction {} corner sidewalk", junction.odr_id);
+    fan_triangulate(wedge, std::move(ring));
+    if (!wedge.indices.empty()) {
+      details.push_back(std::move(wedge));
+    }
+  }
+
+  // 2. Median noses: each arm's median lanes, extruded kMedianNoseDepth into
+  //    the junction from the arm face.
+  const std::span<const RoadEnd> arms = junction.arms.size() >= 2
+                                            ? std::span<const RoadEnd>(junction.arms)
+                                            : std::span<const RoadEnd>();
+  for (const RoadEnd& arm : arms) {
+    const std::string* material = median_material_for_arm(junction, arm);
+    if (material == nullptr) {
+      continue;
+    }
+    const std::optional<ArmFace> face = arm_face(network, arm);
+    if (!face) {
+      continue;
+    }
+    SubMesh nose;
+    nose.material = LaneType::Median;
+    nose.surface = *material;
+    nose.name = fmt::format("junction {} median nose", junction.odr_id);
+    for (std::size_t k = 0; k < face->types.size();) {
+      if (face->types[k] != LaneType::Median) {
+        ++k;
+        continue;
+      }
+      std::size_t end = k;
+      while (end + 1 < face->types.size() && face->types[end + 1] == LaneType::Median) {
+        ++end;
+      }
+      const std::array<double, 3> p0 = lateral_point(face->frame, face->offsets[k]);
+      const std::array<double, 3> p1 = lateral_point(face->frame, face->offsets[end + 1]);
+      const double z = ((p0[2] + p1[2]) / 2.0) + kJunctionDetailLift;
+      const double dx = kMedianNoseDepth * face->ix;
+      const double dy = kMedianNoseDepth * face->iy;
+      fan_triangulate(nose,
+                      {std::array<double, 3>{p0[0], p0[1], z},
+                       std::array<double, 3>{p1[0], p1[1], z},
+                       std::array<double, 3>{p1[0] + dx, p1[1] + dy, z},
+                       std::array<double, 3>{p0[0] + dx, p0[1] + dy, z}});
+      k = end + 1;
+    }
+    if (!nose.indices.empty()) {
+      details.push_back(std::move(nose));
+    }
+  }
+  return details;
 }
 
 } // namespace roadmaker
