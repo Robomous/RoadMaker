@@ -1,7 +1,10 @@
 // Persistence of authored junction corner-fillet overrides (p4-s1, issue
 // #225): <userData code="rm:corners"> on <junction>, entries ";"-joined,
 // fields ":"-joined:
-//   "roadA:start|end:roadB:start|end[:r=<num>][:ea=<num>][:eb=<num>]"
+//   "roadA:start|end:roadB:start|end
+//    [:r=<num>][:ea=<num>][:eb=<num>][:sw=<name>][:md=<name>]"
+// Junction-scope values (p4-s2, issue #226) ride a sibling
+// <userData code="rm:junction"> ";"-joined "key=value": "r=<num>;mat=<name>".
 // Mirrors the rm:arms contract: stale references are dropped on write, a
 // malformed value is all-or-nothing on read (one warning, junction still
 // loads).
@@ -114,6 +117,8 @@ void expect_same_corners(const RoadNetwork& lhs_network,
     EXPECT_EQ(a.radius, b.radius);
     EXPECT_EQ(a.extent_a, b.extent_a);
     EXPECT_EQ(a.extent_b, b.extent_b);
+    EXPECT_EQ(a.sidewalk_material, b.sidewalk_material);
+    EXPECT_EQ(a.median_material, b.median_material);
   }
 }
 
@@ -278,4 +283,199 @@ TEST(CornerPersistence, ValidEntryAfterMalformedOneDropsTheWholeValue) {
   ASSERT_TRUE(reparsed.has_value());
   EXPECT_EQ(count_warnings_mentioning(reparsed->diagnostics, "rm:corners"), 1U);
   EXPECT_TRUE(reparsed->network.junction(reparsed->network.find_junction("1"))->corners.empty());
+}
+
+// --- p4-s2 (#226): materials in rm:corners, junction scope in rm:junction ----
+
+namespace {
+
+/// The value= payload of the junction's rm:junction element, or nullopt.
+std::optional<std::string> junction_value(const std::string& xml) {
+  const std::string key = "code=\"rm:junction\" value=\"";
+  const std::size_t at = xml.find(key);
+  if (at == std::string::npos) {
+    return std::nullopt;
+  }
+  const std::size_t begin = at + key.size();
+  return xml.substr(begin, xml.find('"', begin) - begin);
+}
+
+/// Splices a hand-written rm:junction element in after the junction's rm:arms
+/// element (the same trick with_corners_element uses).
+std::string with_junction_element(const std::string& xml, const std::string& value) {
+  const std::size_t arms = xml.find("code=\"rm:arms\"");
+  EXPECT_NE(arms, std::string::npos);
+  const std::size_t close = xml.find("/>", arms);
+  EXPECT_NE(close, std::string::npos);
+  return xml.substr(0, close + 2) + "<userData code=\"rm:junction\" value=\"" + value + "\" />" +
+         xml.substr(close + 2);
+}
+
+} // namespace
+
+TEST(CornerPersistence, CornersUserDataRoundTripsMaterials) {
+  TeeFixture fixture;
+  fixture.set_corners(
+      {JunctionCorner{.arm_a = RoadEnd{.road = fixture.west, .contact = ContactPoint::End},
+                      .arm_b = RoadEnd{.road = fixture.east, .contact = ContactPoint::End},
+                      .radius = 8.0,
+                      .sidewalk_material = "concrete",
+                      .median_material = "paint_white"}});
+
+  const auto xml = roadmaker::write_xodr(fixture.network, "corners");
+  ASSERT_TRUE(xml.has_value());
+  EXPECT_EQ(corners_value(*xml),
+            std::optional<std::string>("1:end:2:end:r=8:sw=concrete:md=paint_white"));
+
+  auto reparsed = roadmaker::parse_xodr(*xml, "corners");
+  ASSERT_TRUE(reparsed.has_value());
+  const Junction& loaded = *reparsed->network.junction(reparsed->network.find_junction("1"));
+  ASSERT_EQ(loaded.corners.size(), 1U);
+  EXPECT_EQ(loaded.corners[0].sidewalk_material, std::optional<std::string>("concrete"));
+  EXPECT_EQ(loaded.corners[0].median_material, std::optional<std::string>("paint_white"));
+
+  const auto rewritten = roadmaker::write_xodr(reparsed->network, "corners");
+  ASSERT_TRUE(rewritten.has_value());
+  EXPECT_EQ(*rewritten, *xml);
+}
+
+TEST(CornerPersistence, CornersUserDataMaterialOnlyEntryPersists) {
+  TeeFixture fixture;
+  fixture.set_corners(
+      {JunctionCorner{.arm_a = RoadEnd{.road = fixture.east, .contact = ContactPoint::End},
+                      .arm_b = RoadEnd{.road = fixture.south, .contact = ContactPoint::End},
+                      .sidewalk_material = "concrete"}});
+
+  const auto xml = roadmaker::write_xodr(fixture.network, "corners");
+  ASSERT_TRUE(xml.has_value());
+  EXPECT_EQ(corners_value(*xml), std::optional<std::string>("2:end:3:end:sw=concrete"));
+
+  auto reparsed = roadmaker::parse_xodr(*xml, "corners");
+  ASSERT_TRUE(reparsed.has_value());
+  const Junction& loaded = *reparsed->network.junction(reparsed->network.find_junction("1"));
+  ASSERT_EQ(loaded.corners.size(), 1U);
+  EXPECT_FALSE(loaded.corners[0].radius.has_value());
+  EXPECT_EQ(loaded.corners[0].sidewalk_material, std::optional<std::string>("concrete"));
+}
+
+class CornerMaterialPersistenceMalformed : public testing::TestWithParam<const char*> {};
+
+TEST_P(CornerMaterialPersistenceMalformed, MalformedCornerMaterialDropsWholeValue) {
+  TeeFixture fixture;
+  const auto base = roadmaker::write_xodr(fixture.network, "corners");
+  ASSERT_TRUE(base.has_value());
+  const std::string xml = with_corners_element(*base, GetParam());
+
+  auto reparsed = roadmaker::parse_xodr(xml, "corners");
+  ASSERT_TRUE(reparsed.has_value());
+  EXPECT_EQ(count_warnings_mentioning(reparsed->diagnostics, "rm:corners"), 1U);
+  EXPECT_TRUE(reparsed->network.junction(reparsed->network.find_junction("1"))->corners.empty());
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    Values,
+    CornerMaterialPersistenceMalformed,
+    testing::Values("1:end:2:end:sw=",                           // empty material name
+                    "1:end:2:end:sw=a:sw=b",                     // duplicate key
+                    "1:end:2:end:sw=a b",                        // whitespace in the token
+                    "1:end:2:end:r=1:ea=2:eb=3:sw=a:md=b:x=1")); // ten fields (cap is nine)
+
+TEST(CornerPersistence, JunctionUserDataRoundTrips) {
+  TeeFixture fixture;
+  Junction& junction = *fixture.network.junction(fixture.junction);
+  junction.default_corner_radius = 12.0;
+  junction.material = "concrete";
+
+  const auto xml = roadmaker::write_xodr(fixture.network, "corners");
+  ASSERT_TRUE(xml.has_value());
+  EXPECT_EQ(junction_value(*xml), std::optional<std::string>("r=12;mat=concrete"));
+
+  auto reparsed = roadmaker::parse_xodr(*xml, "corners");
+  ASSERT_TRUE(reparsed.has_value());
+  const Junction& loaded = *reparsed->network.junction(reparsed->network.find_junction("1"));
+  EXPECT_EQ(loaded.default_corner_radius, std::optional<double>(12.0));
+  EXPECT_EQ(loaded.material, "concrete");
+
+  const auto rewritten = roadmaker::write_xodr(reparsed->network, "corners");
+  ASSERT_TRUE(rewritten.has_value());
+  EXPECT_EQ(*rewritten, *xml);
+}
+
+TEST(CornerPersistence, JunctionUserDataUnknownKeyIgnoredWithWarning) {
+  TeeFixture fixture;
+  const auto base = roadmaker::write_xodr(fixture.network, "corners");
+  ASSERT_TRUE(base.has_value());
+  // Forward compatibility: a field a future RoadMaker adds must not cost the
+  // reader the fields it DOES understand.
+  const std::string xml = with_junction_element(*base, "r=9;future=42;mat=concrete");
+
+  auto reparsed = roadmaker::parse_xodr(xml, "corners");
+  ASSERT_TRUE(reparsed.has_value());
+  EXPECT_EQ(count_warnings_mentioning(reparsed->diagnostics, "future=42"), 1U);
+  const Junction& loaded = *reparsed->network.junction(reparsed->network.find_junction("1"));
+  EXPECT_EQ(loaded.default_corner_radius, std::optional<double>(9.0));
+  EXPECT_EQ(loaded.material, "concrete");
+}
+
+class JunctionUserDataMalformed : public testing::TestWithParam<const char*> {};
+
+TEST_P(JunctionUserDataMalformed, JunctionUserDataMalformedValueDroppedWithWarning) {
+  TeeFixture fixture;
+  const auto base = roadmaker::write_xodr(fixture.network, "corners");
+  ASSERT_TRUE(base.has_value());
+  const std::string xml = with_junction_element(*base, GetParam());
+
+  auto reparsed = roadmaker::parse_xodr(xml, "corners");
+  ASSERT_TRUE(reparsed.has_value());
+  EXPECT_EQ(count_warnings_mentioning(reparsed->diagnostics, "malformed rm:junction"), 1U);
+  const Junction& loaded = *reparsed->network.junction(reparsed->network.find_junction("1"));
+  EXPECT_FALSE(loaded.default_corner_radius.has_value());
+  EXPECT_TRUE(loaded.material.empty());
+  EXPECT_FALSE(loaded.arms.empty()); // the junction itself still loads
+}
+
+INSTANTIATE_TEST_SUITE_P(Values,
+                         JunctionUserDataMalformed,
+                         testing::Values("r=abc",       // unparseable number
+                                         "r=1;r=2",     // duplicate known key
+                                         "mat=",        // empty material name
+                                         "mat=a;mat=b", // duplicate known key
+                                         "mat=a:b"));   // reserved character
+
+TEST(CornerPersistence, WriterOmitsEmptyJunctionUserData) {
+  TeeFixture fixture;
+  const auto xml = roadmaker::write_xodr(fixture.network, "corners");
+  ASSERT_TRUE(xml.has_value());
+  EXPECT_EQ(junction_value(*xml), std::nullopt);
+  EXPECT_EQ(xml->find("rm:junction"), std::string::npos);
+}
+
+TEST(CornerPersistence, SaveLoadSaveByteIdenticalWithMaterials) {
+  TeeFixture fixture;
+  Junction& junction = *fixture.network.junction(fixture.junction);
+  junction.default_corner_radius = 5.5;
+  junction.material = "asphalt_worn";
+  fixture.set_corners(
+      {JunctionCorner{.arm_a = RoadEnd{.road = fixture.west, .contact = ContactPoint::End},
+                      .arm_b = RoadEnd{.road = fixture.east, .contact = ContactPoint::End},
+                      .extent_a = 3.0,
+                      .extent_b = 4.0,
+                      .sidewalk_material = "concrete"},
+       JunctionCorner{.arm_a = RoadEnd{.road = fixture.east, .contact = ContactPoint::End},
+                      .arm_b = RoadEnd{.road = fixture.south, .contact = ContactPoint::End},
+                      .median_material = "paint_white"}});
+
+  const auto first = roadmaker::write_xodr(fixture.network, "corners");
+  ASSERT_TRUE(first.has_value());
+  auto reparsed = roadmaker::parse_xodr(*first, "corners");
+  ASSERT_TRUE(reparsed.has_value());
+  const auto second = roadmaker::write_xodr(reparsed->network, "corners");
+  ASSERT_TRUE(second.has_value());
+  EXPECT_EQ(*second, *first);
+
+  const Junction& loaded = *reparsed->network.junction(reparsed->network.find_junction("1"));
+  expect_same_corners(
+      fixture.network, *fixture.network.junction(fixture.junction), reparsed->network, loaded);
+  EXPECT_EQ(loaded.default_corner_radius, std::optional<double>(5.5));
+  EXPECT_EQ(loaded.material, "asphalt_worn");
 }

@@ -46,6 +46,11 @@ public:
       // Floors carry the driving-lane material: one continuous asphalt with
       // the roads feeding them (a distinct junction color read as a patch).
       scene.nodes.push_back(add_submesh_node(floor.mesh, material_for(floor.mesh.material)));
+      // Authored corner overlays (p4-s2): sidewalk wedges and median noses,
+      // each carrying its own lane-type material, laid over the floor.
+      for (const SubMesh& detail : floor.details) {
+        scene.nodes.push_back(add_submesh_node(detail, material_for(detail.material)));
+      }
     }
     // Placed props: one shared mesh per prop model, one node per instance —
     // idiomatic glTF instancing, so many trees stay one mesh in the file.

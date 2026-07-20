@@ -245,6 +245,20 @@ Expected<void> export_usda(const NetworkMesh& mesh, const std::filesystem::path&
                                   material),
                         /*rename=*/true,
                         &err);
+    // Authored corner overlays (p4-s2): sidewalk wedges and median noses, each
+    // materialled from its own lane type, laid over the floor.
+    for (const SubMesh& detail : floor.details) {
+      const std::string detail_material = io_common::lane_material_name(detail.material);
+      materials.emplace(detail_material,
+                        MaterialDef{lane_color3(detail.material), io_common::kLaneRoughness});
+      worldPrim.add_child(make_mesh(sanitize_identifier(detail.name, "junction_detail"),
+                                    detail.positions,
+                                    detail.normals,
+                                    detail.indices,
+                                    detail_material),
+                          /*rename=*/true,
+                          &err);
+    }
   }
 
   // Placed props (trees/vegetation) and signals (lights/signs). tinyusdz has no

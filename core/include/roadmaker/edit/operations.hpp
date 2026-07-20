@@ -400,6 +400,45 @@ regenerate_junction(const RoadNetwork& network,
                                                                  double extent_a,
                                                                  double extent_b);
 
+/// Authors the sidewalk (resp. median) overlay material of ONE junction corner
+/// — a bare catalog name such as "concrete" (p4-s2, issue #226). An empty
+/// `material` clears the slot; clearing a corner that authors nothing is an
+/// error, as is a name outside `[A-Za-z0-9_.-]+` (the persistence grammar
+/// joins on ':' and ';' and does not escape).
+///
+/// Same validation and dirty set as set_corner_radius. Materials are pure
+/// pass-through: the corner geometry is untouched, but the mesher emits the
+/// matching overlay submesh only while a material is authored.
+[[nodiscard]] RM_API std::unique_ptr<Command>
+set_corner_sidewalk_material(const RoadNetwork& network,
+                             JunctionId junction,
+                             RoadEnd arm_a,
+                             RoadEnd arm_b,
+                             std::string material);
+
+/// See set_corner_sidewalk_material — the median-nose counterpart. An arm's
+/// nose takes the material of the corner where that arm is `arm_a`, falling
+/// back to the corner where it is `arm_b`.
+[[nodiscard]] RM_API std::unique_ptr<Command> set_corner_median_material(const RoadNetwork& network,
+                                                                         JunctionId junction,
+                                                                         RoadEnd arm_a,
+                                                                         RoadEnd arm_b,
+                                                                         std::string material);
+
+/// Authors the junction-wide fillet radius [m] — the fallback every corner
+/// without its own `radius` uses (p4-s2, issue #226). Resolution order is
+/// per-corner override > this default > derived. `radius <= 0` clears the
+/// default (an error when none is set). Like a per-corner radius the value is
+/// stored uncapped and clamped to the corner geometry only at mesh time.
+[[nodiscard]] RM_API std::unique_ptr<Command>
+set_junction_default_corner_radius(const RoadNetwork& network, JunctionId junction, double radius);
+
+/// Authors the junction carriageway material — a bare catalog name, empty to
+/// clear (an error when already empty). Same token rule as the corner
+/// materials; same dirty set (floor re-mesh only, no turn-set change).
+[[nodiscard]] RM_API std::unique_ptr<Command>
+set_junction_material(const RoadNetwork& network, JunctionId junction, std::string material);
+
 /// Deletes the junction AND its connecting roads (the §7 closure); incoming
 /// roads survive with their predecessor/successor links into the junction
 /// cleared. Undo restores the junction, every connecting road, and every

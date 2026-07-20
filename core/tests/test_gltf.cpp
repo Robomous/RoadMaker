@@ -88,6 +88,43 @@ TEST(Gltf, TJunctionExportsRoadsAndFloorNodes) {
   }
 }
 
+TEST(Gltf, GltfIncludesJunctionDetailSubmeshes) {
+  // Authored corner overlays (p4-s2, issue #226) ride alongside their floor:
+  // one extra node and mesh per detail submesh. Injected directly into the
+  // NetworkMesh so this pins the EXPORTER, not the corner solve.
+  auto parsed = roadmaker::load_xodr(std::filesystem::path(RM_SAMPLES_DIR) / "t_junction.xodr");
+  ASSERT_TRUE(parsed.has_value());
+  roadmaker::NetworkMesh mesh = roadmaker::build_network_mesh(parsed->network);
+  ASSERT_FALSE(mesh.junction_floors.empty());
+  ASSERT_TRUE(mesh.junction_floors[0].details.empty());
+
+  const auto node_count = [](const roadmaker::NetworkMesh& m, const char* out_name) {
+    const auto path = temp_glb(out_name);
+    const auto exported = roadmaker::export_glb(m, path);
+    EXPECT_TRUE(exported.has_value());
+    tinygltf::Model model;
+    tinygltf::TinyGLTF loader;
+    std::string err;
+    std::string warn;
+    const bool loaded = loader.LoadBinaryFromFile(&model, &err, &warn, path.string());
+    std::remove(path.string().c_str());
+    EXPECT_TRUE(loaded) << err << " / " << warn;
+    return model.scenes.empty() ? 0U : model.scenes[0].nodes.size();
+  };
+  const std::size_t before = node_count(mesh, "rm_jct_details_before.glb");
+
+  roadmaker::SubMesh wedge;
+  wedge.material = roadmaker::LaneType::Sidewalk;
+  wedge.surface = "concrete";
+  wedge.name = "junction corner sidewalk";
+  wedge.positions = {0.0, 0.0, 0.1, 1.0, 0.0, 0.1, 0.0, 1.0, 0.1};
+  wedge.normals = {0.0, 0.0, 1.0, 0.0, 0.0, 1.0, 0.0, 0.0, 1.0};
+  wedge.indices = {0, 1, 2};
+  mesh.junction_floors[0].details.push_back(std::move(wedge));
+
+  EXPECT_EQ(node_count(mesh, "rm_jct_details_after.glb"), before + 1U);
+}
+
 TEST(Gltf, ExportingAnEmptyMeshFailsCleanly) {
   const roadmaker::NetworkMesh empty;
   const auto result = roadmaker::export_glb(empty, temp_glb("rm_empty.glb"));

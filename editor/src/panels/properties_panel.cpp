@@ -229,10 +229,16 @@ PropertiesPanel::PropertiesPanel(Document& document,
       elevation_group_(new QGroupBox(tr("Elevation"), this)),
       elevation_node_label_(new QLabel(this)), elevation_spin_(new QDoubleSpinBox),
       corner_group_(new QGroupBox(tr("Corner"), this)), corner_arms_label_(new QLabel(this)),
-      corner_radius_spin_(new QDoubleSpinBox), signal_group_(new QGroupBox(tr("Signal"), this)),
-      signal_s_spin_(new QDoubleSpinBox), signal_t_spin_(new QDoubleSpinBox),
-      signal_h_spin_(new QDoubleSpinBox), signal_kind_label_(new QLabel(this)),
-      object_group_(new QGroupBox(tr("Prop"), this)), object_kind_label_(new QLabel(this)),
+      corner_radius_spin_(new QDoubleSpinBox),
+      corner_sidewalk_slot_(new SlotWidget(QStringLiteral("Materials"), this)),
+      corner_median_slot_(new SlotWidget(QStringLiteral("Materials"), this)),
+      junction_group_(new QGroupBox(tr("Junction"), this)),
+      junction_radius_spin_(new QDoubleSpinBox),
+      junction_material_slot_(new SlotWidget(QStringLiteral("Materials"), this)),
+      signal_group_(new QGroupBox(tr("Signal"), this)), signal_s_spin_(new QDoubleSpinBox),
+      signal_t_spin_(new QDoubleSpinBox), signal_h_spin_(new QDoubleSpinBox),
+      signal_kind_label_(new QLabel(this)), object_group_(new QGroupBox(tr("Prop"), this)),
+      object_kind_label_(new QLabel(this)),
       model_slot_(new SlotWidget(QStringLiteral("Props"), this)),
       instance_material_slot_(new SlotWidget(QStringLiteral("Materials"), this)),
       style_group_(new QGroupBox(tr("Road style"), this)),
@@ -422,7 +428,82 @@ PropertiesPanel::PropertiesPanel(Document& document,
                          }});
   corner_radius_scrub_label_->setObjectName(QStringLiteral("corner_radius_scrub"));
   corner_form_->addRow(corner_radius_scrub_label_, corner_radius_spin_);
+  // Per-corner overlay materials (p4-s2): the sidewalk wedge and the median
+  // nose. Both reflect the stored value (empty → the slot's placeholder, which
+  // is also the truth: an unpainted corner meshes no overlay at all).
+  corner_sidewalk_slot_->setObjectName(QStringLiteral("corner_sidewalk_slot"));
+  corner_sidewalk_slot_->setToolTip(tr("Drop a material to pave this corner's sidewalk wedge"));
+  corner_form_->addRow(tr("Sidewalk"), corner_sidewalk_slot_);
+  connect(corner_sidewalk_slot_,
+          &SlotWidget::item_dropped,
+          this,
+          &PropertiesPanel::push_corner_sidewalk_material);
+  connect(corner_sidewalk_slot_,
+          &SlotWidget::engage_requested,
+          this,
+          &PropertiesPanel::library_category_requested);
+  corner_median_slot_->setObjectName(QStringLiteral("corner_median_slot"));
+  corner_median_slot_->setToolTip(tr("Drop a material to pave this corner's median nose"));
+  corner_form_->addRow(tr("Median"), corner_median_slot_);
+  connect(corner_median_slot_,
+          &SlotWidget::item_dropped,
+          this,
+          &PropertiesPanel::push_corner_median_material);
+  connect(corner_median_slot_,
+          &SlotWidget::engage_requested,
+          this,
+          &PropertiesPanel::library_category_requested);
   corner_group_->hide();
+
+  // Junction: the junction-WIDE values (p4-s2). The radius default is the
+  // fallback every corner without its own radius uses, so its zero position is
+  // "no default at all" — spelled "Derived" rather than 0 m, and reachable only
+  // by typing (a scrub clamps to the editable floor so a drag never clears it).
+  junction_radius_spin_->setObjectName(QStringLiteral("junction_corner_radius_spin"));
+  junction_radius_spin_->setRange(0.0, 50.0);
+  junction_radius_spin_->setSingleStep(0.5);
+  junction_radius_spin_->setDecimals(2);
+  junction_radius_spin_->setSuffix(tr(" m"));
+  // Qt renders the special text ONLY at exactly the minimum, so the minimum
+  // above must stay precisely 0.0 for this to ever appear.
+  junction_radius_spin_->setSpecialValueText(tr("Derived"));
+  junction_radius_spin_->setToolTip(
+      tr("Fillet radius applied to every corner of this junction that has no radius of its own. "
+         "Type 0 to clear it and return the corners to their derived radii."));
+  auto* junction_form = new QFormLayout(junction_group_);
+  ScrubLabel* junction_radius_scrub = install_scrub(
+      new ScrubLabel(tr("Corner radius"), this),
+      {.spin = junction_radius_spin_,
+       .units_per_pixel = 0.05,
+       .baseline = [this]() -> std::optional<double> {
+         const Junction* junction = document_.network().junction(selection_.primary().junction);
+         if (junction == nullptr) {
+           return std::nullopt;
+         }
+         return junction->default_corner_radius.value_or(0.0);
+       },
+       .factory =
+           [this](const RoadNetwork& network, double value) {
+             // A scrub must never emit the clear sentinel: dragging
+             // to the floor sets the smallest real default, and
+             // clearing stays a deliberate typed 0.
+             return edit::set_junction_default_corner_radius(
+                 network, selection_.primary().junction, std::max(value, kCornerRadiusMin));
+           }});
+  junction_radius_scrub->setObjectName(QStringLiteral("junction_corner_radius_scrub"));
+  junction_form->addRow(junction_radius_scrub, junction_radius_spin_);
+  junction_material_slot_->setObjectName(QStringLiteral("junction_material_slot"));
+  junction_material_slot_->setToolTip(tr("Drop a material to pave this junction's carriageway"));
+  junction_form->addRow(tr("Carriageway material"), junction_material_slot_);
+  connect(junction_material_slot_,
+          &SlotWidget::item_dropped,
+          this,
+          &PropertiesPanel::push_junction_material);
+  connect(junction_material_slot_,
+          &SlotWidget::engage_requested,
+          this,
+          &PropertiesPanel::library_category_requested);
+  junction_group_->hide();
 
   // Signal: a placed <signal>'s road-relative pose. s/t/heading edit through
   // move_signal (one command each); type/subtype stay read-only for now (a
@@ -633,6 +714,7 @@ PropertiesPanel::PropertiesPanel(Document& document,
   layout->addWidget(lane_group_);
   layout->addWidget(elevation_group_);
   layout->addWidget(corner_group_);
+  layout->addWidget(junction_group_);
   layout->addWidget(signal_group_);
   layout->addWidget(object_group_);
   layout->addWidget(style_group_);
@@ -738,6 +820,30 @@ PropertiesPanel::PropertiesPanel(Document& document,
                                  corner_radius_spin_->value()));
   });
 
+  // The junction-wide default commits on focus-out too, with the same skip
+  // guard. Typing 0 (the "Derived" position) is the CLEAR gesture — but only
+  // when a default is actually set: clearing nothing is a kernel error.
+  connect(junction_radius_spin_, &QDoubleSpinBox::editingFinished, this, [this] {
+    const JunctionId id = selection_.primary().junction;
+    const Junction* junction = document_.network().junction(id);
+    if (junction == nullptr) {
+      return;
+    }
+    const double value = junction_radius_spin_->value();
+    const bool has_default = junction->default_corner_radius.has_value();
+    if (value < kCornerRadiusMin) {
+      if (!has_default) {
+        return; // already derived — nothing to clear
+      }
+      push(edit::set_junction_default_corner_radius(document_.network(), id, 0.0));
+      return;
+    }
+    if (has_default && std::abs(*junction->default_corner_radius - value) < 1e-9) {
+      return;
+    }
+    push(edit::set_junction_default_corner_radius(document_.network(), id, value));
+  });
+
   // Signal pose: commit s/t/heading on focus-out through move_signal, with the
   // same unchanged-value skip guard so refresh() after undo never re-commits.
   for (QDoubleSpinBox* spin : {signal_s_spin_, signal_t_spin_, signal_h_spin_}) {
@@ -778,6 +884,8 @@ void PropertiesPanel::refresh() {
   style_group_->hide();
   // Shown only on the ground-surface path below; hidden everywhere else.
   surface_group_->hide();
+  // Shown only on the junction path below (p4-s2); hidden everywhere else.
+  junction_group_->hide();
 
   // The primary entry (most recently selected) drives the panel.
   const SelectionEntry primary = selection_.primary();
@@ -840,6 +948,7 @@ void PropertiesPanel::refresh() {
       add_row(tr("OpenDRIVE id"), tr("junction %1").arg(QString::fromStdString(junction->odr_id)));
       add_row(tr("Arms"), QString::number(junction->arms.size()));
       add_row(tr("Connections"), QString::number(junction->connections.size()));
+      refresh_junction(*junction);
       return;
     }
     placeholder_->show();
@@ -1165,6 +1274,59 @@ void PropertiesPanel::push_lane_material(const QString& key) {
   push(edit::set_lane_material(document_.network(), selection_.primary().lane, {record}));
 }
 
+void PropertiesPanel::push_corner_sidewalk_material(const QString& key) {
+  const std::optional<JunctionCornerInfo> info = active_corner_info();
+  if (!info.has_value() || key.isEmpty()) {
+    return;
+  }
+  const std::optional<std::string> material = material_for_key(key);
+  if (!material.has_value()) {
+    emit status_message(tr("“%1” isn't a known material").arg(key));
+    return;
+  }
+  if (info->sidewalk_material == *material) {
+    return; // no change — a drop that changes nothing pushes no command
+  }
+  const auto corner = corner_tool_->active_corner();
+  push(edit::set_corner_sidewalk_material(
+      document_.network(), corner->junction, corner->arm_a, corner->arm_b, *material));
+}
+
+void PropertiesPanel::push_corner_median_material(const QString& key) {
+  const std::optional<JunctionCornerInfo> info = active_corner_info();
+  if (!info.has_value() || key.isEmpty()) {
+    return;
+  }
+  const std::optional<std::string> material = material_for_key(key);
+  if (!material.has_value()) {
+    emit status_message(tr("“%1” isn't a known material").arg(key));
+    return;
+  }
+  if (info->median_material == *material) {
+    return;
+  }
+  const auto corner = corner_tool_->active_corner();
+  push(edit::set_corner_median_material(
+      document_.network(), corner->junction, corner->arm_a, corner->arm_b, *material));
+}
+
+void PropertiesPanel::push_junction_material(const QString& key) {
+  const JunctionId id = selection_.primary().junction;
+  const Junction* junction = document_.network().junction(id);
+  if (junction == nullptr || key.isEmpty()) {
+    return;
+  }
+  const std::optional<std::string> material = material_for_key(key);
+  if (!material.has_value()) {
+    emit status_message(tr("“%1” isn't a known material").arg(key));
+    return;
+  }
+  if (junction->material == *material) {
+    return;
+  }
+  push(edit::set_junction_material(document_.network(), id, *material));
+}
+
 void PropertiesPanel::push_marking(const QString& key) {
   const Lane* lane = primary_lane();
   if (lane == nullptr || key.isEmpty()) {
@@ -1305,6 +1467,12 @@ void PropertiesPanel::refresh_corner() {
                                   .arg(arm_name(document_.network(), info->arm_a))
                                   .arg(arm_name(document_.network(), info->arm_b)));
 
+  // The overlay materials are seeded BEFORE the radius row's editability gate:
+  // a corner too tight to carry a radius can still be painted, so the slots
+  // must survive the early return below.
+  corner_sidewalk_slot_->set_item(QString::fromStdString(info->sidewalk_material));
+  corner_median_slot_->set_item(QString::fromStdString(info->median_material));
+
   // A corner whose arm faces leave no room below the floor cannot be edited
   // here — the row goes away rather than offering an empty range.
   const bool editable = info->max_radius >= kCornerRadiusMin;
@@ -1323,6 +1491,18 @@ void PropertiesPanel::refresh_corner() {
           .arg(info->max_radius, 0, 'f', 2));
   const QSignalBlocker blocker(corner_radius_spin_);
   corner_radius_spin_->setValue(info->radius);
+}
+
+void PropertiesPanel::refresh_junction(const Junction& junction) {
+  {
+    // Programmatic seeding must not echo a set/clear back through
+    // editingFinished — the same guard every other editor here uses.
+    const QSignalBlocker blocker(junction_radius_spin_);
+    // No default → the minimum, which renders as "Derived" (specialValueText).
+    junction_radius_spin_->setValue(junction.default_corner_radius.value_or(0.0));
+  }
+  junction_material_slot_->set_item(QString::fromStdString(junction.material));
+  junction_group_->show();
 }
 
 void PropertiesPanel::refresh_lane_section() {

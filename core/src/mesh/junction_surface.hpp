@@ -8,6 +8,8 @@
 #include "roadmaker/mesh/mesh.hpp"
 #include "roadmaker/road/network.hpp"
 
+#include <vector>
+
 namespace roadmaker {
 
 struct Junction;
@@ -29,5 +31,21 @@ struct Junction;
 [[nodiscard]] SubMesh build_junction_surface(const RoadNetwork& network,
                                              const Junction& junction,
                                              const SamplingOptions& sampling = {});
+
+/// The junction's authored corner overlays (p4-s2, issue #226): one sidewalk
+/// wedge per corner whose JunctionCorner entry names a `sidewalk_material`, and
+/// one median nose per contiguous median span of every arm whose corner pair
+/// names a `median_material`.
+///
+/// Overlays only — the floor built by `build_junction_surface` is NEVER cut:
+/// carving the wedge out of the union would move the boundary ring and change
+/// both the harmonic elevation solve and the `<boundary>` export. Each overlay
+/// instead floats `kJunctionDetailLift` above the floor's elevation at that
+/// point, which is far below any authored grade and never z-fights.
+///
+/// Returns empty when nothing is authored, so an unpainted junction meshes and
+/// exports exactly as it did before the feature existed.
+[[nodiscard]] std::vector<SubMesh> build_junction_corner_details(
+    const RoadNetwork& network, const Junction& junction, const SamplingOptions& sampling = {});
 
 } // namespace roadmaker

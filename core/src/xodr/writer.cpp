@@ -1122,7 +1122,8 @@ void write_junction(pugi::xml_node root,
   // <userData> pattern — ASAM OpenDRIVE 1.9.0 §12.10 gives <boundary> no
   // corner-radius carrier, and the exported boundary/grid stay derived.
   // Format: ";"-joined entries, each
-  //   "roadAOdrId:start|end:roadBOdrId:start|end[:r=<num>][:ea=<num>][:eb=<num>]".
+  //   "roadAOdrId:start|end:roadBOdrId:start|end
+  //    [:r=<num>][:ea=<num>][:eb=<num>][:sw=<name>][:md=<name>]".
   // Stale entries (a road that no longer resolves) and entries that authored
   // nothing are dropped, mirroring the stale-arm rule; storage order is kept
   // so save→load→save is byte-identical.
@@ -1134,7 +1135,8 @@ void write_junction(pugi::xml_node root,
       if (road_a == nullptr || road_b == nullptr) {
         continue; // stale corner references are not written
       }
-      if (!corner.radius && !corner.extent_a && !corner.extent_b) {
+      if (!corner.radius && !corner.extent_a && !corner.extent_b && !corner.sidewalk_material &&
+          !corner.median_material) {
         continue; // nothing authored — the derived fillet already says it
       }
       if (!value.empty()) {
@@ -1159,10 +1161,45 @@ void write_junction(pugi::xml_node root,
         value += ":eb=";
         value += num(*corner.extent_b);
       }
+      // Overlay materials (p4-s2, issue #226). The command layer restricts
+      // these tokens to [A-Za-z0-9_.-]+, so they never carry a separator and
+      // the grammar needs no escaping.
+      if (corner.sidewalk_material) {
+        value += ":sw=";
+        value += *corner.sidewalk_material;
+      }
+      if (corner.median_material) {
+        value += ":md=";
+        value += *corner.median_material;
+      }
     }
     if (!value.empty()) {
       pugi::xml_node user_data = junction_node.append_child("userData");
       user_data.append_attribute("code").set_value("rm:corners");
+      user_data.append_attribute("value").set_value(value.c_str());
+    }
+  }
+
+  // Junction-scope authored values (p4-s2, issue #226) get their own code so
+  // an older reader drops only these and still understands rm:arms/rm:corners.
+  // Format: ";"-joined "key=value", each key at most once, element omitted
+  // entirely when nothing is authored:  "r=<num>;mat=<name>".
+  {
+    std::string value;
+    if (junction.default_corner_radius) {
+      value += "r=";
+      value += num(*junction.default_corner_radius);
+    }
+    if (!junction.material.empty()) {
+      if (!value.empty()) {
+        value += ';';
+      }
+      value += "mat=";
+      value += junction.material;
+    }
+    if (!value.empty()) {
+      pugi::xml_node user_data = junction_node.append_child("userData");
+      user_data.append_attribute("code").set_value("rm:junction");
       user_data.append_attribute("value").set_value(value.c_str());
     }
   }

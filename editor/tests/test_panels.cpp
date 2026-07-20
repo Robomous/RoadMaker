@@ -20,6 +20,7 @@
 #include <QTemporaryDir>
 #include <QTest>
 #include <QUndoStack>
+#include <algorithm>
 #include <array>
 #include <fstream>
 #include <stdexcept>
@@ -900,11 +901,15 @@ struct CornerScene {
   SelectionModel selection{document};
   JunctionId junction;
 
-  CornerScene() {
-    const std::array<RoadEnd, 4> ends{RoadEnd{make(-80.0, 0.0, -20.0, 0.0, "1"), ContactPoint::End},
-                                      RoadEnd{make(80.0, 0.0, 20.0, 0.0, "2"), ContactPoint::End},
-                                      RoadEnd{make(0.0, -80.0, 0.0, -20.0, "3"), ContactPoint::End},
-                                      RoadEnd{make(0.0, 80.0, 0.0, 20.0, "4"), ContactPoint::End}};
+  /// `reach` is how far each arm's face stops from the crossing [m]; the
+  /// default leaves every corner metres of headroom. A small reach makes the
+  /// arm faces crowd the crossing (see TightCornerScene).
+  explicit CornerScene(double reach = 20.0) {
+    const std::array<RoadEnd, 4> ends{
+        RoadEnd{make(-80.0, 0.0, -reach, 0.0, "1"), ContactPoint::End},
+        RoadEnd{make(80.0, 0.0, reach, 0.0, "2"), ContactPoint::End},
+        RoadEnd{make(0.0, -80.0, 0.0, -reach, "3"), ContactPoint::End},
+        RoadEnd{make(0.0, 80.0, 0.0, reach, "4"), ContactPoint::End}};
     if (!document.push_command(edit::create_junction(document.network(), ends))) {
       throw std::runtime_error("junction create failed");
     }
@@ -941,6 +946,15 @@ struct CornerScene {
     }
     return nullptr;
   }
+};
+
+/// A cross junction whose arm faces crowd the crossing: no fillet fits, so the
+/// panel's radius row goes away (max_radius below its 0.5 m floor) while the
+/// corner is still a real, paintable corner.
+/// At this reach the four corners still solve, but each leaves only ~0.3 m of
+/// free edge — below the panel's 0.5 m floor.
+struct TightCornerScene : CornerScene {
+  TightCornerScene() : CornerScene(4.8) {}
 };
 
 /// Click-selects `info`'s corner the way the viewport reports a click on the
@@ -1079,6 +1093,325 @@ TEST(PropertiesPanel, ScrubbingTheCornerRadiusCommitsExactlyOneUndoEntry) {
   const JunctionCorner* after_undo = scene.authored();
   EXPECT_TRUE(after_undo == nullptr || !after_undo->radius.has_value())
       << "undo returns the corner to its derived radius";
+}
+
+// --- per-corner + junction-wide materials (p4-s2, issue #226) ----------------
+
+namespace {
+
+SlotWidget* slot_named(PropertiesPanel& panel, const char* name) {
+  return panel.findChild<SlotWidget*>(QString::fromLatin1(name));
+}
+
+/// Whether a slot's caption shows `text` — the slot renders its reference as a
+/// plain label, so this is what "the slot reflects the stored value" means.
+[[nodiscard]] bool slot_shows(const SlotWidget* slot, const QString& text) {
+  const QList<QLabel*> labels = slot->findChildren<QLabel*>();
+  return std::any_of(
+      labels.begin(), labels.end(), [&text](const QLabel* label) { return label->text() == text; });
+}
+
+/// The junction-wide corner-radius spin box.
+QDoubleSpinBox* junction_spin(PropertiesPanel& panel) {
+  return panel.findChild<QDoubleSpinBox*>(QStringLiteral("junction_corner_radius_spin"));
+}
+
+/// A panel + Corner tool with the fixture's first corner already active.
+struct CornerPanel {
+  PropertiesPanel panel;
+  CornerTool tool;
+  JunctionCornerInfo info;
+
+  explicit CornerPanel(CornerScene& scene)
+      : panel(scene.document, scene.selection), tool(scene.document, scene.selection),
+        info(scene.corner()) {
+    panel.set_corner_tool(&tool);
+    tool.activate();
+    activate_corner(tool, scene, info);
+  }
+};
+
+} // namespace
+
+TEST(PropertiesPanel, CornerSlotsShowAuthoredMaterials) {
+  CornerScene scene;
+  const JunctionCornerInfo info = scene.corner();
+  ASSERT_TRUE(scene.document.push_command(edit::set_corner_sidewalk_material(
+      scene.document.network(), scene.junction, info.arm_a, info.arm_b, "concrete")));
+  ASSERT_TRUE(scene.document.push_command(edit::set_corner_median_material(
+      scene.document.network(), scene.junction, info.arm_a, info.arm_b, "asphalt")));
+
+  CornerPanel ui(scene);
+  SlotWidget* sidewalk = slot_named(ui.panel, "corner_sidewalk_slot");
+  SlotWidget* median = slot_named(ui.panel, "corner_median_slot");
+  ASSERT_NE(sidewalk, nullptr);
+  ASSERT_NE(median, nullptr);
+  EXPECT_EQ(sidewalk->category(), QStringLiteral("Materials"));
+  EXPECT_TRUE(sidewalk->isVisibleTo(&ui.panel));
+  EXPECT_TRUE(slot_shows(sidewalk, QStringLiteral("concrete")));
+  EXPECT_TRUE(slot_shows(median, QStringLiteral("asphalt")));
+}
+
+TEST(PropertiesPanel, DropOnCornerSidewalkSlotPushesOneCommand) {
+  CornerScene scene;
+  CornerPanel ui(scene);
+  SlotWidget* sidewalk = slot_named(ui.panel, "corner_sidewalk_slot");
+  ASSERT_NE(sidewalk, nullptr);
+
+  const int base = scene.document.undo_stack()->index();
+  emit sidewalk->item_dropped(QStringLiteral("material.concrete"));
+  ASSERT_EQ(scene.document.undo_stack()->index(), base + 1);
+  ASSERT_NE(scene.authored(), nullptr);
+  ASSERT_TRUE(scene.authored()->sidewalk_material.has_value());
+  // The BARE catalog name is stored, not the library key spelling.
+  EXPECT_EQ(*scene.authored()->sidewalk_material, "concrete");
+
+  // An identical second drop changes nothing, so it must push nothing.
+  emit sidewalk->item_dropped(QStringLiteral("material.concrete"));
+  EXPECT_EQ(scene.document.undo_stack()->index(), base + 1);
+
+  scene.document.undo_stack()->undo();
+  EXPECT_EQ(scene.document.undo_stack()->index(), base);
+  const JunctionCorner* after_undo = scene.authored();
+  EXPECT_TRUE(after_undo == nullptr || !after_undo->sidewalk_material.has_value());
+}
+
+TEST(PropertiesPanel, DropOnCornerMedianSlotPushesOneCommand) {
+  CornerScene scene;
+  CornerPanel ui(scene);
+  SlotWidget* median = slot_named(ui.panel, "corner_median_slot");
+  ASSERT_NE(median, nullptr);
+
+  const int base = scene.document.undo_stack()->index();
+  emit median->item_dropped(QStringLiteral("material.asphalt"));
+  ASSERT_EQ(scene.document.undo_stack()->index(), base + 1);
+  ASSERT_NE(scene.authored(), nullptr);
+  ASSERT_TRUE(scene.authored()->median_material.has_value());
+  EXPECT_EQ(*scene.authored()->median_material, "asphalt");
+  // The sidewalk slot is independent — painting one leaves the other unset.
+  EXPECT_FALSE(scene.authored()->sidewalk_material.has_value());
+}
+
+TEST(PropertiesPanel, DropUnknownKeyOnCornerSlotToastsWithoutCommand) {
+  CornerScene scene;
+  CornerPanel ui(scene);
+  SlotWidget* sidewalk = slot_named(ui.panel, "corner_sidewalk_slot");
+  ASSERT_NE(sidewalk, nullptr);
+
+  QSignalSpy spy(&ui.panel, &PropertiesPanel::status_message);
+  const int base = scene.document.undo_stack()->index();
+  emit sidewalk->item_dropped(QStringLiteral("tree_pine")); // a prop model, not a material
+  EXPECT_EQ(scene.document.undo_stack()->index(), base) << "a refusal never reaches the undo stack";
+  EXPECT_EQ(spy.count(), 1) << "an unknown key is reported, not silently defaulted";
+  EXPECT_EQ(scene.authored(), nullptr);
+}
+
+TEST(PropertiesPanel, CornerSlotsVisibleWhenRadiusRowHidden) {
+  // A corner whose arm faces leave no room hides the radius row — but it can
+  // still be painted, so the material slots must survive that early return.
+  TightCornerScene scene;
+  PropertiesPanel panel(scene.document, scene.selection);
+  CornerTool tool(scene.document, scene.selection);
+  panel.set_corner_tool(&tool);
+  tool.activate();
+  const JunctionCornerInfo info = scene.corner();
+  ASSERT_LT(info.max_radius, 0.5) << "the fixture must be too tight for a radius row";
+  activate_corner(tool, scene, info);
+
+  QDoubleSpinBox* spin = corner_spin(panel);
+  ASSERT_NE(spin, nullptr);
+  EXPECT_FALSE(spin->isVisibleTo(&panel)) << "no room for a fillet — no radius row";
+  SlotWidget* sidewalk = slot_named(panel, "corner_sidewalk_slot");
+  SlotWidget* median = slot_named(panel, "corner_median_slot");
+  ASSERT_NE(sidewalk, nullptr);
+  ASSERT_NE(median, nullptr);
+  EXPECT_TRUE(sidewalk->isVisibleTo(&panel));
+  EXPECT_TRUE(median->isVisibleTo(&panel));
+
+  // And the slots still commit from here.
+  const int base = scene.document.undo_stack()->index();
+  emit sidewalk->item_dropped(QStringLiteral("material.concrete"));
+  EXPECT_EQ(scene.document.undo_stack()->index(), base + 1);
+}
+
+TEST(PropertiesPanel, JunctionGroupVisibleForJunctionSelection) {
+  CornerScene scene;
+  PropertiesPanel panel(scene.document, scene.selection);
+  QDoubleSpinBox* spin = junction_spin(panel);
+  SlotWidget* material = slot_named(panel, "junction_material_slot");
+  ASSERT_NE(spin, nullptr);
+  ASSERT_NE(material, nullptr);
+  EXPECT_FALSE(spin->isVisibleTo(&panel)) << "nothing selected yet";
+
+  scene.selection.select({.junction = scene.junction});
+  EXPECT_TRUE(spin->isVisibleTo(&panel));
+  EXPECT_TRUE(material->isVisibleTo(&panel));
+  EXPECT_EQ(material->category(), QStringLiteral("Materials"));
+
+  // A road selection takes the whole section away again.
+  scene.selection.select({.road = scene.document.network().find_road("1")});
+  EXPECT_FALSE(spin->isVisibleTo(&panel));
+}
+
+TEST(PropertiesPanel, JunctionRadiusSpinSeedsWithoutCommand) {
+  CornerScene scene;
+  ASSERT_TRUE(scene.document.push_command(
+      edit::set_junction_default_corner_radius(scene.document.network(), scene.junction, 6.0)));
+  PropertiesPanel panel(scene.document, scene.selection);
+  QDoubleSpinBox* spin = junction_spin(panel);
+  ASSERT_NE(spin, nullptr);
+
+  const int base = scene.document.undo_stack()->index();
+  scene.selection.select({.junction = scene.junction});
+  EXPECT_DOUBLE_EQ(spin->value(), 6.0);
+  EXPECT_EQ(spin->minimum(), 0.0) << "specialValueText only renders at exactly the minimum";
+  EXPECT_DOUBLE_EQ(spin->maximum(), 50.0);
+  EXPECT_EQ(scene.document.undo_stack()->index(), base) << "seeding must not echo a command";
+
+  emit spin->editingFinished(); // focus-out with the value the pane just seeded
+  EXPECT_EQ(scene.document.undo_stack()->index(), base);
+}
+
+TEST(PropertiesPanel, JunctionRadiusEditPushesSingleCommand) {
+  CornerScene scene;
+  PropertiesPanel panel(scene.document, scene.selection);
+  scene.selection.select({.junction = scene.junction});
+  QDoubleSpinBox* spin = junction_spin(panel);
+  ASSERT_NE(spin, nullptr);
+
+  const int base = scene.document.undo_stack()->index();
+  spin->setValue(7.5);
+  emit spin->editingFinished();
+  ASSERT_EQ(scene.document.undo_stack()->index(), base + 1);
+  const Junction* junction = scene.document.network().junction(scene.junction);
+  ASSERT_TRUE(junction->default_corner_radius.has_value());
+  EXPECT_DOUBLE_EQ(*junction->default_corner_radius, 7.5);
+
+  spin->setValue(9.0);
+  emit spin->editingFinished();
+  EXPECT_EQ(scene.document.undo_stack()->index(), base + 2)
+      << "one typed edit is one command, never one per keystroke";
+
+  scene.document.undo_stack()->undo();
+  EXPECT_DOUBLE_EQ(*scene.document.network().junction(scene.junction)->default_corner_radius, 7.5);
+}
+
+TEST(PropertiesPanel, JunctionRadiusUnchangedCommitPushesNothing) {
+  CornerScene scene;
+  PropertiesPanel panel(scene.document, scene.selection);
+  scene.selection.select({.junction = scene.junction});
+  QDoubleSpinBox* spin = junction_spin(panel);
+  ASSERT_NE(spin, nullptr);
+
+  const int base = scene.document.undo_stack()->index();
+  // Nothing is authored yet, so the spin sits at the clear sentinel: a commit
+  // here would ask the kernel to clear a default that does not exist.
+  EXPECT_DOUBLE_EQ(spin->value(), 0.0);
+  emit spin->editingFinished();
+  EXPECT_EQ(scene.document.undo_stack()->index(), base);
+
+  spin->setValue(4.0);
+  emit spin->editingFinished();
+  ASSERT_EQ(scene.document.undo_stack()->index(), base + 1);
+  emit spin->editingFinished(); // focus-out again, same value
+  EXPECT_EQ(scene.document.undo_stack()->index(), base + 1);
+}
+
+TEST(PropertiesPanel, JunctionRadiusScrubIsOneUndoEntry) {
+  CornerScene scene;
+  PropertiesPanel panel(scene.document, scene.selection);
+  scene.selection.select({.junction = scene.junction});
+
+  ScrubLabel* label = panel.findChild<ScrubLabel*>(QStringLiteral("junction_corner_radius_scrub"));
+  ASSERT_NE(label, nullptr);
+
+  const int base = scene.document.undo_stack()->index();
+  scrub(label, 40); // +2 m at 0.05 m/px, up from the unset baseline
+  EXPECT_EQ(scene.document.undo_stack()->index(), base + 1)
+      << "a drag is one gesture and must be one undo entry, not one per frame";
+  const Junction* junction = scene.document.network().junction(scene.junction);
+  ASSERT_TRUE(junction->default_corner_radius.has_value())
+      << "a scrub never emits the clear sentinel";
+  EXPECT_DOUBLE_EQ(*junction->default_corner_radius, 2.0);
+
+  scene.document.undo_stack()->undo();
+  EXPECT_EQ(scene.document.undo_stack()->index(), base);
+  EXPECT_FALSE(
+      scene.document.network().junction(scene.junction)->default_corner_radius.has_value());
+}
+
+TEST(PropertiesPanel, JunctionRadiusZeroClearsDefault) {
+  CornerScene scene;
+  PropertiesPanel panel(scene.document, scene.selection);
+  scene.selection.select({.junction = scene.junction});
+  QDoubleSpinBox* spin = junction_spin(panel);
+  ASSERT_NE(spin, nullptr);
+
+  spin->setValue(5.0);
+  emit spin->editingFinished();
+  const int base = scene.document.undo_stack()->index();
+  ASSERT_TRUE(scene.document.network().junction(scene.junction)->default_corner_radius.has_value());
+
+  spin->setValue(0.0); // the "Derived" position
+  emit spin->editingFinished();
+  EXPECT_EQ(scene.document.undo_stack()->index(), base + 1);
+  EXPECT_FALSE(
+      scene.document.network().junction(scene.junction)->default_corner_radius.has_value());
+
+  // Clearing again would be a kernel error — the panel must not even try.
+  emit spin->editingFinished();
+  EXPECT_EQ(scene.document.undo_stack()->index(), base + 1);
+}
+
+TEST(PropertiesPanel, DropOnJunctionMaterialSlotPushesOneCommand) {
+  CornerScene scene;
+  PropertiesPanel panel(scene.document, scene.selection);
+  scene.selection.select({.junction = scene.junction});
+  SlotWidget* slot = slot_named(panel, "junction_material_slot");
+  ASSERT_NE(slot, nullptr);
+
+  const int base = scene.document.undo_stack()->index();
+  emit slot->item_dropped(QStringLiteral("material.concrete"));
+  ASSERT_EQ(scene.document.undo_stack()->index(), base + 1);
+  EXPECT_EQ(scene.document.network().junction(scene.junction)->material, "concrete");
+  EXPECT_TRUE(slot_shows(slot, QStringLiteral("concrete")));
+
+  emit slot->item_dropped(QStringLiteral("material.concrete")); // unchanged
+  EXPECT_EQ(scene.document.undo_stack()->index(), base + 1);
+
+  QSignalSpy spy(&panel, &PropertiesPanel::status_message);
+  emit slot->item_dropped(QStringLiteral("tree_pine")); // not a material
+  EXPECT_EQ(scene.document.undo_stack()->index(), base + 1);
+  EXPECT_EQ(spy.count(), 1);
+
+  scene.document.undo_stack()->undo();
+  EXPECT_EQ(scene.document.network().junction(scene.junction)->material, "");
+}
+
+TEST(PropertiesPanel, JunctionDefaultThenPerCornerOverrideWins) {
+  CornerScene scene;
+  ASSERT_TRUE(scene.document.push_command(
+      edit::set_junction_default_corner_radius(scene.document.network(), scene.junction, 6.0)));
+
+  CornerPanel ui(scene);
+  QDoubleSpinBox* spin = corner_spin(ui.panel);
+  ASSERT_NE(spin, nullptr);
+  ASSERT_TRUE(spin->isVisibleTo(&ui.panel));
+  // With no per-corner radius the corner shows the junction default …
+  EXPECT_DOUBLE_EQ(spin->value(), 6.0);
+  const JunctionCornerInfo defaulted = scene.corner();
+  EXPECT_TRUE(defaulted.radius_from_junction_default);
+  EXPECT_FALSE(defaulted.radius_authored);
+
+  // … and authoring the corner itself takes precedence over that default.
+  spin->setValue(9.0);
+  emit spin->editingFinished();
+  const JunctionCornerInfo overridden = scene.corner();
+  EXPECT_DOUBLE_EQ(overridden.radius, 9.0);
+  EXPECT_TRUE(overridden.radius_authored);
+  EXPECT_FALSE(overridden.radius_from_junction_default);
+  EXPECT_DOUBLE_EQ(*scene.document.network().junction(scene.junction)->default_corner_radius, 6.0)
+      << "the junction default survives a per-corner override";
 }
 
 } // namespace

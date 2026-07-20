@@ -85,6 +85,13 @@ struct RoadMesh {
 struct JunctionFloor {
   JunctionId junction;
   SubMesh mesh;
+
+  /// Authored corner overlays (p4-s2, issue #226): sidewalk wedges and median
+  /// noses, lifted just above the floor and materialled independently of it.
+  /// Empty unless a JunctionCorner authors a material, so a junction nobody
+  /// has painted meshes and exports exactly as it did before the feature —
+  /// `mesh` itself is never cut, only overlaid.
+  std::vector<SubMesh> details;
 };
 
 /// One enclosed-area ground surface (#215), keyed by its SurfaceId so
