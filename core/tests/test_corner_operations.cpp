@@ -13,6 +13,7 @@
 
 #include <cstddef>
 #include <memory>
+#include <optional>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -31,7 +32,11 @@ using roadmaker::RoadNetwork;
 using roadmaker::Waypoint;
 using roadmaker::edit::Command;
 using roadmaker::edit::set_corner_extents;
+using roadmaker::edit::set_corner_median_material;
 using roadmaker::edit::set_corner_radius;
+using roadmaker::edit::set_corner_sidewalk_material;
+using roadmaker::edit::set_junction_default_corner_radius;
+using roadmaker::edit::set_junction_material;
 using roadmaker::test::expect_network_matches;
 using roadmaker::test::snapshot_xodr;
 
@@ -300,4 +305,254 @@ TEST(CornerOperations, TwoCornersCanBeAuthoredIndependently) {
   const std::vector<JunctionCornerInfo> solved = junction_corners(network, junction);
   EXPECT_NEAR(solved[0].radius, 5.0, 1e-9);
   EXPECT_NEAR(solved[1].radius, 11.0, 1e-9);
+}
+
+// --- p4-s2 (#226): per-corner + junction-wide materials ----------------------
+
+TEST(CornerOperations, SetCornerSidewalkMaterialAuthorsEntry) {
+  RoadNetwork network;
+  const JunctionId junction = make_cross(network);
+  const std::vector<JunctionCornerInfo> corners = junction_corners(network, junction);
+  ASSERT_FALSE(corners.empty());
+
+  auto command = set_corner_sidewalk_material(
+      network, junction, corners[0].arm_a, corners[0].arm_b, "concrete");
+  expect_command_round_trip(network, *command);
+  ASSERT_TRUE(command->apply(network).has_value());
+
+  const Junction& after = *network.junction(junction);
+  ASSERT_EQ(after.corners.size(), 1U);
+  EXPECT_EQ(after.corners[0].sidewalk_material, std::optional<std::string>("concrete"));
+  EXPECT_FALSE(after.corners[0].median_material.has_value());
+  // Materials are pass-through: the geometry of the corner is untouched.
+  const std::vector<JunctionCornerInfo> solved = junction_corners(network, junction);
+  EXPECT_NEAR(solved[0].radius, corners[0].radius, 1e-9);
+  EXPECT_FALSE(solved[0].radius_authored);
+  EXPECT_EQ(solved[0].sidewalk_material, "concrete");
+}
+
+TEST(CornerOperations, SetCornerMedianMaterialAuthorsEntry) {
+  RoadNetwork network;
+  const JunctionId junction = make_cross(network);
+  const std::vector<JunctionCornerInfo> corners = junction_corners(network, junction);
+  ASSERT_FALSE(corners.empty());
+
+  auto command = set_corner_median_material(
+      network, junction, corners[0].arm_a, corners[0].arm_b, "paint_white");
+  expect_command_round_trip(network, *command);
+  ASSERT_TRUE(command->apply(network).has_value());
+  EXPECT_EQ(network.junction(junction)->corners[0].median_material,
+            std::optional<std::string>("paint_white"));
+  EXPECT_EQ(junction_corners(network, junction)[0].median_material, "paint_white");
+}
+
+TEST(CornerOperations, SetCornerMaterialClearDropsEmptyEntry) {
+  RoadNetwork network;
+  const JunctionId junction = make_cross(network);
+  const std::vector<JunctionCornerInfo> corners = junction_corners(network, junction);
+  ASSERT_FALSE(corners.empty());
+
+  ASSERT_TRUE(set_corner_sidewalk_material(
+                  network, junction, corners[0].arm_a, corners[0].arm_b, "concrete")
+                  ->apply(network)
+                  .has_value());
+  ASSERT_EQ(network.junction(junction)->corners.size(), 1U);
+
+  auto clear =
+      set_corner_sidewalk_material(network, junction, corners[0].arm_a, corners[0].arm_b, "");
+  expect_command_round_trip(network, *clear);
+  ASSERT_TRUE(clear->apply(network).has_value());
+  EXPECT_TRUE(network.junction(junction)->corners.empty());
+}
+
+TEST(CornerOperations, SetCornerMaterialClearWithoutOverrideIsInvalid) {
+  RoadNetwork network;
+  const JunctionId junction = make_cross(network);
+  const std::vector<JunctionCornerInfo> corners = junction_corners(network, junction);
+  ASSERT_FALSE(corners.empty());
+
+  const std::string before = snapshot_xodr(network);
+  auto command =
+      set_corner_median_material(network, junction, corners[0].arm_a, corners[0].arm_b, "");
+  EXPECT_FALSE(command->apply(network).has_value());
+  expect_network_matches(network, before);
+}
+
+class CornerMaterialTokens : public testing::TestWithParam<const char*> {};
+
+TEST_P(CornerMaterialTokens, SetCornerMaterialRejectsReservedCharacters) {
+  RoadNetwork network;
+  const JunctionId junction = make_cross(network);
+  const std::vector<JunctionCornerInfo> corners = junction_corners(network, junction);
+  ASSERT_FALSE(corners.empty());
+
+  const std::string before = snapshot_xodr(network);
+  auto command = set_corner_sidewalk_material(
+      network, junction, corners[0].arm_a, corners[0].arm_b, GetParam());
+  EXPECT_FALSE(command->apply(network).has_value());
+  expect_network_matches(network, before);
+}
+
+INSTANTIATE_TEST_SUITE_P(Values,
+                         CornerMaterialTokens,
+                         testing::Values("bad:name",   // the field separator
+                                         "bad;name",   // the entry separator
+                                         "bad name")); // whitespace
+
+/// The regression this sprint had to fix: a radius clear used to erase the
+/// whole entry, which would silently drop authored materials with it.
+TEST(CornerOperations, SetCornerRadiusClearKeepsMaterialOnlyEntry) {
+  RoadNetwork network;
+  const JunctionId junction = make_cross(network);
+  const std::vector<JunctionCornerInfo> corners = junction_corners(network, junction);
+  ASSERT_FALSE(corners.empty());
+  const RoadEnd arm_a = corners[0].arm_a;
+  const RoadEnd arm_b = corners[0].arm_b;
+
+  ASSERT_TRUE(set_corner_radius(network, junction, arm_a, arm_b, 9.0)->apply(network).has_value());
+  ASSERT_TRUE(set_corner_sidewalk_material(network, junction, arm_a, arm_b, "concrete")
+                  ->apply(network)
+                  .has_value());
+  ASSERT_EQ(network.junction(junction)->corners.size(), 1U);
+
+  auto clear = set_corner_radius(network, junction, arm_a, arm_b, 0.0);
+  expect_command_round_trip(network, *clear);
+  ASSERT_TRUE(clear->apply(network).has_value());
+
+  const Junction& after = *network.junction(junction);
+  ASSERT_EQ(after.corners.size(), 1U);
+  EXPECT_FALSE(after.corners[0].radius.has_value());
+  EXPECT_EQ(after.corners[0].sidewalk_material, std::optional<std::string>("concrete"));
+  // Geometry is back to derived even though the entry survives.
+  EXPECT_FALSE(junction_corners(network, junction)[0].radius_authored);
+}
+
+TEST(CornerOperations, SetJunctionDefaultCornerRadiusAuthorsAndClears) {
+  RoadNetwork network;
+  const JunctionId junction = make_cross(network);
+  const std::vector<JunctionCornerInfo> derived = junction_corners(network, junction);
+  ASSERT_FALSE(derived.empty());
+
+  auto set = set_junction_default_corner_radius(network, junction, 7.0);
+  expect_command_round_trip(network, *set);
+  ASSERT_TRUE(set->apply(network).has_value());
+  EXPECT_EQ(network.junction(junction)->default_corner_radius, std::optional<double>(7.0));
+
+  // EVERY corner picks it up, and reports where it came from.
+  for (const JunctionCornerInfo& info : junction_corners(network, junction)) {
+    EXPECT_NEAR(info.radius, 7.0, 1e-9);
+    EXPECT_TRUE(info.radius_from_junction_default);
+    EXPECT_FALSE(info.radius_authored);
+  }
+
+  auto clear = set_junction_default_corner_radius(network, junction, 0.0);
+  expect_command_round_trip(network, *clear);
+  ASSERT_TRUE(clear->apply(network).has_value());
+  EXPECT_FALSE(network.junction(junction)->default_corner_radius.has_value());
+  EXPECT_NEAR(junction_corners(network, junction)[0].radius, derived[0].radius, 1e-9);
+}
+
+TEST(CornerOperations, SetJunctionDefaultCornerRadiusClearWithoutValueIsInvalid) {
+  RoadNetwork network;
+  const JunctionId junction = make_cross(network);
+  const std::string before = snapshot_xodr(network);
+  EXPECT_FALSE(
+      set_junction_default_corner_radius(network, junction, 0.0)->apply(network).has_value());
+  expect_network_matches(network, before);
+}
+
+TEST(CornerOperations, SetJunctionMaterialAuthorsAndClears) {
+  RoadNetwork network;
+  const JunctionId junction = make_cross(network);
+
+  auto set = set_junction_material(network, junction, "asphalt_worn");
+  expect_command_round_trip(network, *set);
+  ASSERT_TRUE(set->apply(network).has_value());
+  EXPECT_EQ(network.junction(junction)->material, "asphalt_worn");
+
+  auto clear = set_junction_material(network, junction, "");
+  expect_command_round_trip(network, *clear);
+  ASSERT_TRUE(clear->apply(network).has_value());
+  EXPECT_TRUE(network.junction(junction)->material.empty());
+  EXPECT_FALSE(set_junction_material(network, junction, "")->apply(network).has_value());
+}
+
+TEST(CornerOperations, SetJunctionMaterialRejectsReservedCharacters) {
+  RoadNetwork network;
+  const JunctionId junction = make_cross(network);
+  const std::string before = snapshot_xodr(network);
+  EXPECT_FALSE(set_junction_material(network, junction, "a;b")->apply(network).has_value());
+  expect_network_matches(network, before);
+}
+
+TEST(CornerOperations, JunctionDefaultRadiusResolutionOrder) {
+  RoadNetwork network;
+  const JunctionId junction = make_cross(network);
+  const std::vector<JunctionCornerInfo> corners = junction_corners(network, junction);
+  ASSERT_GE(corners.size(), 2U);
+
+  ASSERT_TRUE(
+      set_junction_default_corner_radius(network, junction, 6.0)->apply(network).has_value());
+  ASSERT_TRUE(set_corner_radius(network, junction, corners[0].arm_a, corners[0].arm_b, 11.0)
+                  ->apply(network)
+                  .has_value());
+
+  const std::vector<JunctionCornerInfo> solved = junction_corners(network, junction);
+  // Per-corner override wins on corner 0; the junction default carries the rest.
+  EXPECT_NEAR(solved[0].radius, 11.0, 1e-9);
+  EXPECT_TRUE(solved[0].radius_authored);
+  EXPECT_FALSE(solved[0].radius_from_junction_default);
+  for (std::size_t i = 1; i < solved.size(); ++i) {
+    EXPECT_NEAR(solved[i].radius, 6.0, 1e-9);
+    EXPECT_TRUE(solved[i].radius_from_junction_default);
+  }
+}
+
+TEST(CornerOperations, JunctionDefaultRadiusUncappedButClampedToMaxRadius) {
+  RoadNetwork network;
+  const JunctionId junction = make_cross(network);
+
+  // Above the DERIVED band's cap (kFilletRadiusCap = 15 m) but still within
+  // what this crossing's geometry allows (~15.5 m): honored verbatim.
+  ASSERT_TRUE(
+      set_junction_default_corner_radius(network, junction, 15.4)->apply(network).has_value());
+  const std::vector<JunctionCornerInfo> roomy = junction_corners(network, junction);
+  ASSERT_FALSE(roomy.empty());
+  ASSERT_GT(roomy[0].max_radius, 15.4);
+  EXPECT_NEAR(roomy[0].radius, 15.4, 1e-9);
+
+  // Absurd: stored verbatim, clamped only when solved.
+  ASSERT_TRUE(
+      set_junction_default_corner_radius(network, junction, 5000.0)->apply(network).has_value());
+  EXPECT_EQ(network.junction(junction)->default_corner_radius, std::optional<double>(5000.0));
+  const std::vector<JunctionCornerInfo> clamped = junction_corners(network, junction);
+  ASSERT_FALSE(clamped.empty());
+  EXPECT_NEAR(clamped[0].radius, clamped[0].max_radius, 1e-9);
+}
+
+TEST(CornerOperations, JunctionCornersReportsMaterialsAndDefaultFlag) {
+  RoadNetwork network;
+  const JunctionId junction = make_cross(network);
+  const std::vector<JunctionCornerInfo> corners = junction_corners(network, junction);
+  ASSERT_GE(corners.size(), 2U);
+  for (const JunctionCornerInfo& info : corners) {
+    EXPECT_TRUE(info.sidewalk_material.empty());
+    EXPECT_TRUE(info.median_material.empty());
+    EXPECT_FALSE(info.radius_from_junction_default);
+  }
+
+  ASSERT_TRUE(set_corner_sidewalk_material(
+                  network, junction, corners[0].arm_a, corners[0].arm_b, "concrete")
+                  ->apply(network)
+                  .has_value());
+  ASSERT_TRUE(set_corner_median_material(
+                  network, junction, corners[1].arm_a, corners[1].arm_b, "paint_white")
+                  ->apply(network)
+                  .has_value());
+
+  const std::vector<JunctionCornerInfo> solved = junction_corners(network, junction);
+  EXPECT_EQ(solved[0].sidewalk_material, "concrete");
+  EXPECT_TRUE(solved[0].median_material.empty());
+  EXPECT_TRUE(solved[1].sidewalk_material.empty());
+  EXPECT_EQ(solved[1].median_material, "paint_white");
 }

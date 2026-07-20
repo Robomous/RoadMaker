@@ -3230,6 +3230,25 @@ Expected<Junction> corner_edit_context(const RoadNetwork& network,
   return *junction;
 }
 
+/// True when the entry carries no authored value at all — the writer's drop
+/// rule and the commands' "erase the entry" condition (p4-s2: a radius clear
+/// must not take authored materials with it).
+bool corner_authors_nothing(const JunctionCorner& corner) {
+  return !corner.radius && !corner.extent_a && !corner.extent_b && !corner.sidewalk_material &&
+         !corner.median_material;
+}
+
+/// Material names ride a ':'/';'-joined userData grammar with no escaping, so
+/// the separators — and whitespace, which would not survive an XML attribute
+/// round-trip unchanged — are rejected at author time rather than silently
+/// corrupting the file.
+bool validate_material_token(std::string_view material) {
+  return !material.empty() && std::ranges::all_of(material, [](char c) {
+    return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_' ||
+           c == '.' || c == '-';
+  });
+}
+
 /// Wraps a junction value edit that leaves the turn set alone: only the floor
 /// mesh changes, so the editor must NOT regenerate the connecting roads.
 std::unique_ptr<Command> corner_value_command(std::string_view name,
@@ -3258,14 +3277,21 @@ std::unique_ptr<Command> set_corner_radius(const RoadNetwork& network,
   Junction after = *before;
   const auto entry = find_corner(after.corners, arm_a, arm_b);
   if (radius <= 0.0) {
-    // Clearing: drop the entry entirely so the corner returns to the derived
-    // fillet and the writer emits nothing for it.
-    if (entry == after.corners.end()) {
+    // Clearing: drop the geometry override so the corner returns to the
+    // derived fillet, and erase the entry only if nothing else is authored on
+    // it — an entry may also carry overlay materials (p4-s2), which a radius
+    // clear must not delete.
+    if (entry == after.corners.end() || (!entry->radius && !entry->extent_a && !entry->extent_b)) {
       return invalid_command(std::string(kName),
                              Error{.code = ErrorCode::InvalidArgument,
                                    .message = "the corner has no override to clear"});
     }
-    after.corners.erase(entry);
+    entry->radius.reset();
+    entry->extent_a.reset();
+    entry->extent_b.reset();
+    if (corner_authors_nothing(*entry)) {
+      after.corners.erase(entry);
+    }
   } else if (entry != after.corners.end()) {
     // A radius is symmetric by definition — it supersedes any per-side reach.
     entry->radius = radius;
@@ -3303,6 +3329,130 @@ std::unique_ptr<Command> set_corner_extents(const RoadNetwork& network,
         JunctionCorner{.arm_a = arm_a, .arm_b = arm_b, .extent_a = extent_a, .extent_b = extent_b});
   }
   return corner_value_command(kName, junction_id, *before, std::move(after));
+}
+
+namespace {
+
+/// Shared implementation of the two corner-material commands: they differ only
+/// in which optional they write and in the undo label the user sees.
+std::unique_ptr<Command> set_corner_material_impl(std::string_view name,
+                                                  std::optional<std::string> JunctionCorner::*slot,
+                                                  const RoadNetwork& network,
+                                                  JunctionId junction_id,
+                                                  const RoadEnd& arm_a,
+                                                  const RoadEnd& arm_b,
+                                                  std::string material) {
+  const bool clearing = material.empty();
+  if (!clearing && !validate_material_token(material)) {
+    return invalid_command(
+        std::string(name),
+        Error{.code = ErrorCode::InvalidArgument,
+              .message = fmt::format("material name '{}' must match [A-Za-z0-9_.-]+", material)});
+  }
+  Expected<Junction> before = corner_edit_context(network, junction_id, arm_a, arm_b, name);
+  if (!before) {
+    return invalid_command(std::string(name), before.error());
+  }
+  Junction after = *before;
+  const auto entry = find_corner(after.corners, arm_a, arm_b);
+  if (clearing) {
+    if (entry == after.corners.end() || !((*entry).*slot).has_value()) {
+      return invalid_command(std::string(name),
+                             Error{.code = ErrorCode::InvalidArgument,
+                                   .message = "the corner has no material to clear"});
+    }
+    ((*entry).*slot).reset();
+    if (corner_authors_nothing(*entry)) {
+      after.corners.erase(entry);
+    }
+  } else if (entry != after.corners.end()) {
+    (*entry).*slot = std::move(material);
+  } else {
+    JunctionCorner fresh{.arm_a = arm_a, .arm_b = arm_b};
+    fresh.*slot = std::move(material);
+    after.corners.push_back(std::move(fresh));
+  }
+  return corner_value_command(name, junction_id, *before, std::move(after));
+}
+
+} // namespace
+
+std::unique_ptr<Command> set_corner_sidewalk_material(const RoadNetwork& network,
+                                                      JunctionId junction_id,
+                                                      RoadEnd arm_a,
+                                                      RoadEnd arm_b,
+                                                      std::string material) {
+  return set_corner_material_impl("Set Corner Sidewalk Material",
+                                  &JunctionCorner::sidewalk_material,
+                                  network,
+                                  junction_id,
+                                  arm_a,
+                                  arm_b,
+                                  std::move(material));
+}
+
+std::unique_ptr<Command> set_corner_median_material(const RoadNetwork& network,
+                                                    JunctionId junction_id,
+                                                    RoadEnd arm_a,
+                                                    RoadEnd arm_b,
+                                                    std::string material) {
+  return set_corner_material_impl("Set Corner Median Material",
+                                  &JunctionCorner::median_material,
+                                  network,
+                                  junction_id,
+                                  arm_a,
+                                  arm_b,
+                                  std::move(material));
+}
+
+std::unique_ptr<Command> set_junction_default_corner_radius(const RoadNetwork& network,
+                                                            JunctionId junction_id,
+                                                            double radius) {
+  static constexpr std::string_view kName = "Set Junction Corner Radius";
+  const Junction* junction = network.junction(junction_id);
+  if (junction == nullptr) {
+    return invalid_command(
+        std::string(kName),
+        Error{.code = ErrorCode::InvalidArgument, .message = "stale junction id"});
+  }
+  Junction after = *junction;
+  if (radius <= 0.0) {
+    if (!after.default_corner_radius) {
+      return invalid_command(
+          std::string(kName),
+          Error{.code = ErrorCode::InvalidArgument,
+                .message = "the junction has no default corner radius to clear"});
+    }
+    after.default_corner_radius.reset();
+  } else {
+    after.default_corner_radius = radius;
+  }
+  return corner_value_command(kName, junction_id, *junction, std::move(after));
+}
+
+std::unique_ptr<Command>
+set_junction_material(const RoadNetwork& network, JunctionId junction_id, std::string material) {
+  static constexpr std::string_view kName = "Set Junction Material";
+  if (!material.empty() && !validate_material_token(material)) {
+    return invalid_command(
+        std::string(kName),
+        Error{.code = ErrorCode::InvalidArgument,
+              .message = fmt::format("material name '{}' must match [A-Za-z0-9_.-]+", material)});
+  }
+  const Junction* junction = network.junction(junction_id);
+  if (junction == nullptr) {
+    return invalid_command(
+        std::string(kName),
+        Error{.code = ErrorCode::InvalidArgument, .message = "stale junction id"});
+  }
+  if (material.empty() && junction->material.empty()) {
+    return invalid_command(std::string(kName),
+                           Error{.code = ErrorCode::InvalidArgument,
+                                 .message = "the junction has no material to clear"});
+  }
+  Junction after = *junction;
+  after.material = std::move(material);
+  return corner_value_command(kName, junction_id, *junction, std::move(after));
 }
 
 // --- parametric intersection assemblies -------------------------------------

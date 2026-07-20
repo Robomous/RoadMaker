@@ -33,9 +33,13 @@ struct JunctionConnection {
 /// that derivation for the named pair; entries whose arms are no longer
 /// adjacent (or whose roads are gone) lie dormant and are ignored.
 ///
-/// ASAM OpenDRIVE 1.9.0 §12.10 gives `<boundary>` no corner-radius carrier, so
-/// these persist as `<userData code="rm:corners">` on `<junction>` (the rm:arms
-/// pattern); the exported `<boundary>`/`<elevationGrid>` stay fully derived.
+/// ASAM OpenDRIVE 1.9.0 §12.10 gives `<boundary>` no corner-radius or
+/// corner-material carrier (its `<segment>`/`<cornerRoad>` children carry only
+/// geometry), so these persist as `<userData code="rm:corners">` on
+/// `<junction>` (the rm:arms pattern); the exported
+/// `<boundary>`/`<elevationGrid>` stay fully derived. Junction-scope values
+/// (`Junction::default_corner_radius`, `Junction::material`) ride a sibling
+/// `<userData code="rm:junction">`.
 struct JunctionCorner {
   /// The corner's identity: the ordered pair of CCW-adjacent arms it sits
   /// between (arm_a's right edge meeting arm_b's left edge, entering).
@@ -49,6 +53,16 @@ struct JunctionCorner {
   /// side's tangency point. Unset ⇒ symmetric legs from `radius`.
   std::optional<double> extent_a;
   std::optional<double> extent_b;
+
+  /// Bare catalog material names (e.g. "concrete") for the corner's sidewalk
+  /// wedge and the median nose of the arms meeting here (p4-s2, issue #226).
+  /// Unset ⇒ the mesher emits no such overlay at all, so an unauthored
+  /// junction meshes exactly as it did before the feature existed.
+  ///
+  /// Tokens are restricted to `[A-Za-z0-9_.-]+` because the persistence
+  /// grammar joins fields with ':' and entries with ';' and does not escape.
+  std::optional<std::string> sidewalk_material;
+  std::optional<std::string> median_material;
 };
 
 struct Junction {
@@ -72,6 +86,16 @@ struct Junction {
   /// leaves this untouched — an override outlives a turn-set change and simply
   /// goes dormant if its pair stops being adjacent.
   std::vector<JunctionCorner> corners;
+
+  /// Junction-wide fillet radius [m] applied to every corner that carries no
+  /// per-corner `radius` (p4-s2, issue #226). Resolution order at solve time:
+  /// per-corner override > this default > derived. Authored-like: uncapped
+  /// here, clamped only to the geometric `max_radius` when solved.
+  std::optional<double> default_corner_radius;
+
+  /// Bare catalog material name for the junction carriageway (the floor).
+  /// Empty ⇒ the derived asphalt look, mirroring `Surface::material`.
+  std::string material;
 };
 
 } // namespace roadmaker

@@ -5,6 +5,7 @@
 #include "roadmaker/road/network.hpp"
 
 #include <array>
+#include <string>
 #include <vector>
 
 namespace roadmaker {
@@ -67,6 +68,17 @@ struct JunctionCornerInfo {
   /// value (as opposed to the derivation).
   bool radius_authored = false;
   bool extents_authored = false;
+
+  /// True when `radius` came from `Junction::default_corner_radius` — i.e. no
+  /// per-corner entry supplied one, but the junction-wide default did
+  /// (p4-s2, issue #226). Never true together with `radius_authored`.
+  bool radius_from_junction_default = false;
+
+  /// The corner's authored overlay materials (bare catalog names), empty when
+  /// unset. Plain data members — no accessors: an out-of-line member function
+  /// in this installed header would need its own RM_API (see `apex()`).
+  std::string sidewalk_material;
+  std::string median_material;
 
   /// The corner curve, tangent_a → tangent_b, sampled at the mesher's fillet
   /// sagitta. A rational quadratic Bezier (P0=tangent_a, P1=corner,

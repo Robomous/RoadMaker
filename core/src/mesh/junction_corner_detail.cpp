@@ -224,6 +224,12 @@ CornerSolution solve_corner(const RoadNetwork& network,
     // property of the DERIVATION, not of what an author may ask for.
     radius = std::clamp(*entry->radius, kMinFilletRadius, max_radius);
     solution.radius_authored = true;
+  } else if (junction.default_corner_radius.has_value()) {
+    // Junction-wide default (p4-s2): authored-like, so it is bounded only by
+    // the geometry, exactly as a per-corner radius is. A per-corner entry
+    // above still wins.
+    radius = std::clamp(*junction.default_corner_radius, kMinFilletRadius, max_radius);
+    solution.radius_from_junction_default = true;
   } else {
     // Desired radius, clamped to the tangent legs the faces leave room for.
     radius = std::min(corner_fillet_radius(network, junction, a, b), max_radius);
@@ -302,7 +308,8 @@ std::vector<std::array<double, 2>> corner_curve(const CornerSolution& solution) 
     curve.push_back(p);
   };
 
-  if (!solution.radius_authored && !solution.extents_authored) {
+  if (!solution.radius_authored && !solution.extents_authored &&
+      !solution.radius_from_junction_default) {
     // Derived corner: the original uniform-angle circular-arc sampling, kept
     // verbatim so unauthored junction meshes stay byte-identical.
     const double center_dist = solution.radius / std::sin(solution.phi / 2.0);

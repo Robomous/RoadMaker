@@ -115,6 +115,10 @@ struct CornerSolution {
   /// True when a JunctionCorner override supplied the value.
   bool radius_authored = false;
   bool extents_authored = false;
+
+  /// True when the radius came from `Junction::default_corner_radius` rather
+  /// than from a per-corner entry or the derivation (p4-s2, issue #226).
+  bool radius_from_junction_default = false;
 };
 
 /// Solves the corner between CCW-adjacent faces `a` and `b`, honouring any
@@ -126,7 +130,7 @@ struct CornerSolution {
                                           const CornerFace& b);
 
 /// The fillet boundary, tangent_a → tangent_b inclusive, sampled at
-/// kFilletArcSagitta. Derived (unauthored) corners keep the original
+/// kFilletArcSagitta. Purely derived corners keep the original
 /// uniform-angle circular-arc sampling verbatim so their meshes stay
 /// byte-identical; authored corners use the rational quadratic Bezier
 /// (P0=tangent_a, P1=corner, P2=tangent_b, w=sin(phi/2)) which is the same

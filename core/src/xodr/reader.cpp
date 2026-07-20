@@ -1282,10 +1282,21 @@ private:
                    .contact = contact == "end" ? ContactPoint::End : ContactPoint::Start};
   }
 
+  /// The material-name alphabet the command layer enforces at author time
+  /// (p4-s2, issue #226) — it excludes the grammar's ':' and ';' separators
+  /// and whitespace, so the userData values need no escaping.
+  static bool is_material_token(std::string_view text) {
+    return !text.empty() && std::ranges::all_of(text, [](char c) {
+      return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') ||
+             c == '_' || c == '.' || c == '-';
+    });
+  }
+
   /// Authored corner-fillet overrides (p4-s1, issue #225) round-trip through
   /// <userData code="rm:corners">, entries ";"-joined and fields ":"-joined:
-  /// "roadA:start|end:roadB:start|end[:r=<num>][:ea=<num>][:eb=<num>]". The
-  /// three optionals may appear in any order but each at most once, and at
+  /// "roadA:start|end:roadB:start|end
+  ///  [:r=<num>][:ea=<num>][:eb=<num>][:sw=<name>][:md=<name>]".
+  /// The five optionals may appear in any order but each at most once, and at
   /// least one must be present (the writer never emits an empty override).
   /// All-or-nothing like rm:arms: any malformed entry drops the whole value.
   std::optional<std::vector<JunctionCorner>> parse_corners_value(std::string_view value) {
@@ -1307,7 +1318,7 @@ private:
         fields.push_back(entry.substr(f, stop - f));
         f = stop + 1;
       }
-      if (fields.size() < 5 || fields.size() > 7) {
+      if (fields.size() < 5 || fields.size() > 9) {
         return std::nullopt;
       }
       const std::optional<RoadEnd> arm_a = parse_road_end(fields[0], fields[1]);
@@ -1318,6 +1329,7 @@ private:
       JunctionCorner corner{.arm_a = *arm_a, .arm_b = *arm_b};
       for (std::size_t i = 4; i < fields.size(); ++i) {
         const std::string_view field = fields[i];
+        std::optional<std::string>* text_slot = nullptr;
         std::optional<double>* slot = nullptr;
         if (field.starts_with("r=")) {
           slot = &corner.radius;
@@ -1325,17 +1337,32 @@ private:
           slot = &corner.extent_a;
         } else if (field.starts_with("eb=")) {
           slot = &corner.extent_b;
+        } else if (field.starts_with("sw=")) {
+          text_slot = &corner.sidewalk_material;
+        } else if (field.starts_with("md=")) {
+          text_slot = &corner.median_material;
+        }
+        const std::string_view text = field.substr(field.find('=') + 1);
+        if (text_slot != nullptr) {
+          // Material names (p4-s2): the writer only ever emits tokens the
+          // command layer validated, so anything else is a corrupt file.
+          if (text_slot->has_value() || !is_material_token(text)) {
+            return std::nullopt;
+          }
+          *text_slot = std::string(text);
+          continue;
         }
         if (slot == nullptr || slot->has_value()) {
           return std::nullopt; // unknown key, or the same key twice
         }
-        const std::optional<double> parsed = to_double(field.substr(field.find('=') + 1));
+        const std::optional<double> parsed = to_double(text);
         if (!parsed) {
           return std::nullopt;
         }
         *slot = *parsed;
       }
-      if (!corner.radius && !corner.extent_a && !corner.extent_b) {
+      if (!corner.radius && !corner.extent_a && !corner.extent_b && !corner.sidewalk_material &&
+          !corner.median_material) {
         return std::nullopt; // the writer never emits an empty override
       }
       corners.push_back(corner);
@@ -1365,6 +1392,45 @@ private:
           continue;
         }
         junction.corners = std::move(*corners);
+        continue;
+      }
+      if (code == "rm:junction") {
+        // Junction-scope authored values (p4-s2, issue #226): ";"-joined
+        // "key=value". A malformed or repeated KNOWN key drops the whole value
+        // (all-or-nothing, like the siblings); an UNKNOWN key is warned about
+        // and skipped, so a file written by a newer RoadMaker still loads its
+        // radius and material here.
+        const std::string value = node.attribute("value").value();
+        std::optional<double> radius;
+        std::string material;
+        bool malformed = false;
+        for (std::size_t begin = 0; begin <= value.size() && !malformed;) {
+          std::size_t end = value.find(';', begin);
+          if (end == std::string::npos) {
+            end = value.size();
+          }
+          const std::string_view field = std::string_view(value).substr(begin, end - begin);
+          begin = end + 1;
+          if (field.starts_with("r=")) {
+            const std::optional<double> parsed = to_double(field.substr(2));
+            malformed = !parsed || radius.has_value();
+            radius = parsed;
+          } else if (field.starts_with("mat=")) {
+            const std::string_view name = field.substr(4);
+            malformed = !is_material_token(name) || !material.empty();
+            material = std::string(name);
+          } else {
+            diag(Severity::Warning,
+                 location,
+                 fmt::format("rm:junction field '{}' is not understood and was ignored", field));
+          }
+        }
+        if (malformed) {
+          diag(Severity::Warning, location, "malformed rm:junction userData ignored");
+          continue;
+        }
+        junction.default_corner_radius = radius;
+        junction.material = std::move(material);
         continue;
       }
       if (code != "rm:arms") {
