@@ -1,7 +1,10 @@
 cmake_minimum_required(VERSION 3.26)
 
 project(roadmaker
-  VERSION 0.6.0
+  # Pre-release development version. The milestone/version model was retired
+  # by ADR-0007 (Road to Parity reset): there will be exactly one release,
+  # v0.1.0, so `main` carries 0.0.1 until the release gate passes.
+  VERSION 0.0.1
   DESCRIPTION "Open source road-network authoring toolkit for AV simulation"
   HOMEPAGE_URL "https://github.com/robomous/roadmaker"
   LANGUAGES CXX C

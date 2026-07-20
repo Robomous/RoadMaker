@@ -31,7 +31,8 @@ onto the scene — every drop is one undoable edit:
 Prebuilt editor packages (DMG / NSIS installer / AppImage) and Python wheels
 will ship with the first release, **v0.1.0** — published when the
 [Road to Parity roadmap](docs/roadmap/README.md) is complete. Until then,
-build from source below.
+`main` carries the pre-release version **0.0.1** and you build from source
+below.
 
 ## Quickstart (from source)
 
@@ -91,7 +92,9 @@ status lives on the public
 only when every pillar is complete and the
 [release gate](docs/roadmap/README.md#release-gate) passes.** A release is
 a promise of maturity and utility, not a development checkpoint; sprints
-end with merged PRs, never with tags.
+end with merged PRs, never with tags. Everything built from `main` reports
+version **0.0.1**; that number is reset scaffolding and does not move with
+sprints — it becomes `0.1.0` only at the release itself.
 
 ### Current capabilities
 

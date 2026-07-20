@@ -5,16 +5,29 @@ All notable changes to RoadMaker are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.6.0] - Unreleased
+> **Version reset (2026-07).** The per-milestone release model was retired by
+> [ADR-0007](docs/decisions/0007-roadmap-reset-road-to-parity.md): every
+> previously published release and git tag was deleted, and the project now
+> targets **exactly one release, v0.1.0**, published only when the
+> [release gate](docs/roadmap/README.md#release-gate) passes. `main` therefore
+> carries the pre-release version **0.0.1**, and everything below is
+> unreleased. The former milestone headings are kept as sub-sections for
+> historical context only — they are not, and never were, published versions.
+
+## [Unreleased] — toward v0.1.0
+
+Current version on `main`: **0.0.1**.
+
+### Milestone M3a close — placement, transform and GS-1 acceptance
 
 Closes **M3a**. Placement and transform corrections found while dogfooding GS-1
 ([epic #178](https://github.com/Robomous/RoadMaker/issues/178)) — the shared
 placement path GS-1 signal placement builds on — plus the GS-1 golden-scene
 acceptance walk that closes the milestone.
 
-Released together with [0.4.0] and [0.5.0], which are also unreleased.
+Grouped with the two sub-sections below, which were also never released.
 
-### Added
+#### Added
 - **Junction centre-line and turn-arrow authoring**
   ([#193](https://github.com/Robomous/RoadMaker/issues/193)):
   `edit::junction_center_marks` paints the double-yellow centre line
@@ -73,7 +86,7 @@ Released together with [0.4.0] and [0.5.0], which are also unreleased.
   entry that arms the tool with the entity selected. Junction-member roads stay
   blocked with the same toast.
 
-### Changed
+#### Changed
 - **GS-1 acceptance walk — one authoritative checklist**
   ([#73](https://github.com/Robomous/RoadMaker/issues/73)): the scene spec
   carried two disagreeing tables (an all-unticked aspirational checklist and a
@@ -93,7 +106,7 @@ Released together with [0.4.0] and [0.5.0], which are also unreleased.
   reported 0.3.0 with three releases unreleased. Tagging and publishing remain
   the maintainer's.
 
-### Fixed
+#### Fixed
 - **`split_road` no longer drops a road mark's colour and line geometry**
   ([#202](https://github.com/Robomous/RoadMaker/pull/202)): splitting a road
   rebuilt the tail's marks field by field, keeping only `sOffset`/type/width, so
@@ -125,20 +138,20 @@ Released together with [0.4.0] and [0.5.0], which are also unreleased.
   drop tints the ghost and is rejected with a toast rather than silently
   relocated. Controller tests assert ghost == commit across camera angles.
 
-### Known gaps (GS-1)
+#### Known gaps (GS-1)
 - **Dashed white lane lines** ([#194](https://github.com/Robomous/RoadMaker/issues/194)):
   not representable in GS-1 — a one-lane-per-direction carriageway has no
   same-direction lane boundary to mark. Needs a two-lane-per-direction urban
   profile.
 
-## [0.5.0] - Unreleased
+### Milestone M3a — topology editing, signals and markings
 
 M3a opens with a topology-editing pass — moving whole roads, inserting bend
 points, splitting and merging — plus interaction polish. Every change ships
 through the M2 command layer (one undo step per edit, byte-identical undo) and
 is headless-testable.
 
-### Added
+#### Added
 - **Auxiliary boundary roads close junction boundary gaps** (GS-1 WS-E,
   [#62](https://github.com/Robomous/RoadMaker/issues/62)): when an adjacent arm
   pair of a junction has no bridging connecting road, the writer now closes the
@@ -546,7 +559,7 @@ is headless-testable.
   `check_mergeable` + `examples/merge_roads.py`; soak driver + fuzz corpus gain
   merge/post-split seeds.
 
-### Fixed
+#### Fixed
 - **Soak CI log no longer masquerades expected refusals as errors** (#167): the
   ASan soak fires random, mostly-invalid ops, and the command layer logged every
   expected refusal at `[error]`/`[warning]` (~460 lines per green run) — alarming
@@ -622,7 +635,7 @@ is headless-testable.
   `ground_point()` helper (`editor/src/viewport/picking.{hpp,cpp}`) now backs
   the hover readout, tool events, and the pan.
 
-### Changed
+#### Changed
 - **Contributing docs gained an "Agent PR discipline" section**
   (`docs/contributing/workflow.md`): main-first branching with no stacked
   branches off unmerged work, verify-before-merge, merge-on-green, the
@@ -638,7 +651,7 @@ is headless-testable.
   revamp epic is complete; remaining standards-track work (junction boundary,
   textures, instancing, object/signal placement, GS-1) carries on under M3a.
 
-## [0.4.0] - Unreleased
+### Hardening sprint — golden-workflow findings
 
 The **hardening release**: maintainer dogfooding of v0.3.0 found product
 gaps the milestone plans and scene-based acceptance had missed —
@@ -649,7 +662,7 @@ to v0.5.0. Acceptance adds [golden workflows](docs/roadmap/golden_workflows/READ
 (path-based, run by hand) alongside golden scenes; the release gate is
 GW-1 + GW-2 executed by the maintainer.
 
-### Added
+#### Added
 - **UI revamp Phase 0 — the editor looks like a product** (#109, epic #108):
   theme token system (`editor/src/theme/`, Fusion + dark QPalette +
   generated QSS; three palettes selectable via `--theme` and persisted in
@@ -719,7 +732,7 @@ GW-1 + GW-2 executed by the maintainer.
   `edit::t_attach_gap` (bound in Python) exposes the auto-gap the preview
   and the command share; committed tee sample `assets/samples/t_attach.xodr`.
 
-### Fixed
+#### Fixed
 - **T-junction visual quality — fillets, materials, smooth shading, seams**
   (follow-up to #103): the tee's measured geometry was fixed in PR #104 but
   the rendered junction still read as a dark rectangular patch. The junction
@@ -767,7 +780,7 @@ GW-1 + GW-2 executed by the maintainer.
   writer/reader asymmetry, #90).
 - MSVC build break on `fopen` under `/WX` (PR #94).
 
-### Also in this release — early M3a kernel groundwork
+#### Also in this release — early M3a kernel groundwork
 
 Landed on `main` between v0.3.0 and the hardening decision, shipping here
 (M3a itself resumes as v0.5.0 after the gate): OpenDRIVE `<objects>`
@@ -777,13 +790,13 @@ completions — color, dual geometry, object markings (#69); junction
 boundary roads remain); autosave & crash recovery (#53); the esmini
 round-trip CI smoke gate (#51); and the first user guide (#52).
 
-## [0.3.0] - 2026-07-11
+### Milestone M2 — editing framework, undo/redo and USD export
 
 Milestone 2 (M2): interactive editing core, 3D junction blending, and OpenUSD
 export. This is the first release in which OpenDRIVE networks can be authored
 and edited in the editor, not just viewed.
 
-### Added
+#### Added
 - **Interactive editing tools** (8, issues #9–#17): Select/Move (multi-pick,
   rubber band, node drag), Edit Nodes (insert/delete/drag), Delete with
   referential integrity, Create Road (lane-profile templates + snapping UX),
@@ -812,12 +825,12 @@ and edited in the editor, not just viewed.
 - **Lucide icon set** — toolbar/action icons fetched from Lucide plus custom
   glyphs, tinted through `Icons::get()` (issue #7).
 
-### Changed
+#### Changed
 - Kernel shared-library `SOVERSION`/`VERSION` bumped to `0.3`.
 
-## [0.2.0] - 2026-07-10
+### Qt 6 Widgets editor migration
 
-### Changed
+#### Changed
 - **Editor migrated to Qt 6 Widgets** (LGPLv3, dynamic linking only),
   replacing the GLFW + Dear ImGui viewer. Editor logic moved into testable
   `document/` and model classes with headless (offscreen) tests.
@@ -825,14 +838,14 @@ and edited in the editor, not just viewed.
   rules and a `find_package(roadmaker)` package; wheels continue to embed the
   static kernel.
 
-### Added
+#### Added
 - Platform installers and packaging for the Qt editor.
 
-## [0.1.0] - 2026-07-10
+### Milestone M1 — kernel, OpenDRIVE I/O, meshing and glTF export
 
 First public release (Milestone 1) — geometric and standards correctness.
 
-### Added
+#### Added
 - **ASAM OpenDRIVE 1.6/1.7 reader** — line/arc/spiral/paramPoly3 plan views,
   lane sections/widths/offsets, elevation & superelevation, road marks, and
   junctions with resolved links. Nothing is silently dropped: skipped or
@@ -850,7 +863,3 @@ First public release (Milestone 1) — geometric and standards correctness.
   errors and reprs, plus runnable examples.
 - **Read-only editor** — OpenDRIVE viewer with 3D viewport, scene tree,
   inspector, and diagnostics log.
-
-[0.3.0]: https://github.com/Robomous/RoadMaker/compare/v0.2.0...HEAD
-[0.2.0]: https://github.com/Robomous/RoadMaker/compare/v0.1.0...v0.2.0
-[0.1.0]: https://github.com/Robomous/RoadMaker/releases/tag/v0.1.0

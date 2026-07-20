@@ -6,7 +6,7 @@
 
 namespace roadmaker {
 
-/// Semantic version of the RoadMaker kernel, e.g. "0.2.0".
+/// Semantic version of the RoadMaker kernel, e.g. "0.0.1".
 [[nodiscard]] RM_API std::string_view version();
 
 } // namespace roadmaker
