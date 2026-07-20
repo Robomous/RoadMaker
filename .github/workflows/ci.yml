@@ -401,8 +401,12 @@ jobs:
         with:
           path: build/_deps/*-subbuild/*-populate-prefix/src/*.tar.gz
           key: deps-usd-${{ hashFiles('cmake/deps.cmake') }}
+      # Pinned below 26.8: that release removed UsdUtils.ComplianceChecker in
+      # favour of the new pxr.UsdValidation framework, which broke this job on
+      # a docs-only commit. Migrating the wrapper script is tracked separately;
+      # until then the pin keeps the gate honest instead of silently skipped.
       - name: Install usd-core (usdchecker) + nanobind
-        run: pip install usd-core nanobind
+        run: pip install "usd-core<26.8" nanobind
       - name: Configure (RM_BUILD_USD=ON, kernel + tests + Python binding)
         run: >
           cmake -B build -G Ninja
