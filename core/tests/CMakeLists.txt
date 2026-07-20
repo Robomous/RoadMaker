@@ -24,6 +24,7 @@ add_executable(roadmaker_core_tests
   test_t_junction_quality.cpp
   test_gltf.cpp
   test_round_trip.cpp
+  test_corner_persistence.cpp
   test_edit_stack.cpp
   test_connection.cpp
   test_edit_operations.cpp

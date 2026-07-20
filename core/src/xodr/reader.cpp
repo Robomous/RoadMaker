@@ -1272,9 +1272,84 @@ private:
     parse_junction_user_data(junction_node, junction, location);
   }
 
+  /// One arm of an rm:corners entry: "roadOdrId:start|end" already split out.
+  std::optional<RoadEnd> parse_road_end(std::string_view road, std::string_view contact) {
+    const RoadId road_id = network().find_road(std::string(road));
+    if (!road_id.is_valid() || (contact != "start" && contact != "end")) {
+      return std::nullopt;
+    }
+    return RoadEnd{.road = road_id,
+                   .contact = contact == "end" ? ContactPoint::End : ContactPoint::Start};
+  }
+
+  /// Authored corner-fillet overrides (p4-s1, issue #225) round-trip through
+  /// <userData code="rm:corners">, entries ";"-joined and fields ":"-joined:
+  /// "roadA:start|end:roadB:start|end[:r=<num>][:ea=<num>][:eb=<num>]". The
+  /// three optionals may appear in any order but each at most once, and at
+  /// least one must be present (the writer never emits an empty override).
+  /// All-or-nothing like rm:arms: any malformed entry drops the whole value.
+  std::optional<std::vector<JunctionCorner>> parse_corners_value(std::string_view value) {
+    std::vector<JunctionCorner> corners;
+    for (std::size_t begin = 0; begin <= value.size();) {
+      std::size_t end = value.find(';', begin);
+      if (end == std::string_view::npos) {
+        end = value.size();
+      }
+      const std::string_view entry = value.substr(begin, end - begin);
+      begin = end + 1;
+
+      std::vector<std::string_view> fields;
+      for (std::size_t f = 0; f <= entry.size();) {
+        std::size_t stop = entry.find(':', f);
+        if (stop == std::string_view::npos) {
+          stop = entry.size();
+        }
+        fields.push_back(entry.substr(f, stop - f));
+        f = stop + 1;
+      }
+      if (fields.size() < 5 || fields.size() > 7) {
+        return std::nullopt;
+      }
+      const std::optional<RoadEnd> arm_a = parse_road_end(fields[0], fields[1]);
+      const std::optional<RoadEnd> arm_b = parse_road_end(fields[2], fields[3]);
+      if (!arm_a || !arm_b) {
+        return std::nullopt;
+      }
+      JunctionCorner corner{.arm_a = *arm_a, .arm_b = *arm_b};
+      for (std::size_t i = 4; i < fields.size(); ++i) {
+        const std::string_view field = fields[i];
+        std::optional<double>* slot = nullptr;
+        if (field.starts_with("r=")) {
+          slot = &corner.radius;
+        } else if (field.starts_with("ea=")) {
+          slot = &corner.extent_a;
+        } else if (field.starts_with("eb=")) {
+          slot = &corner.extent_b;
+        }
+        if (slot == nullptr || slot->has_value()) {
+          return std::nullopt; // unknown key, or the same key twice
+        }
+        const std::optional<double> parsed = to_double(field.substr(field.find('=') + 1));
+        if (!parsed) {
+          return std::nullopt;
+        }
+        *slot = *parsed;
+      }
+      if (!corner.radius && !corner.extent_a && !corner.extent_b) {
+        return std::nullopt; // the writer never emits an empty override
+      }
+      corners.push_back(corner);
+    }
+    if (corners.empty()) {
+      return std::nullopt;
+    }
+    return corners;
+  }
+
   /// The generator's arm list (roadmaker::edit) round-trips through
   /// <userData code="rm:arms"> ("roadOdrId:start|end;…"); roads parse before
-  /// junctions, so arm road ids resolve here. Unknown codes are reported and
+  /// junctions, so arm road ids resolve here. Corner overrides ride the
+  /// sibling <userData code="rm:corners">. Unknown codes are reported and
   /// ignored; a malformed value drops the arms (the junction still loads but
   /// cannot regenerate until recreated).
   void parse_junction_user_data(const pugi::xml_node& junction_node,
@@ -1282,6 +1357,16 @@ private:
                                 const std::string& location) {
     for (const pugi::xml_node node : junction_node.children("userData")) {
       const std::string code = node.attribute("code").value();
+      if (code == "rm:corners") {
+        std::optional<std::vector<JunctionCorner>> corners =
+            parse_corners_value(node.attribute("value").value());
+        if (!corners) {
+          diag(Severity::Warning, location, "malformed rm:corners userData ignored");
+          continue;
+        }
+        junction.corners = std::move(*corners);
+        continue;
+      }
       if (code != "rm:arms") {
         diag(Severity::Warning,
              location,

@@ -1117,6 +1117,55 @@ void write_junction(pugi::xml_node root,
       user_data.append_attribute("value").set_value(value.c_str());
     }
   }
+
+  // Authored corner-fillet overrides (p4-s1, issue #225) ride the same
+  // <userData> pattern — ASAM OpenDRIVE 1.9.0 §12.10 gives <boundary> no
+  // corner-radius carrier, and the exported boundary/grid stay derived.
+  // Format: ";"-joined entries, each
+  //   "roadAOdrId:start|end:roadBOdrId:start|end[:r=<num>][:ea=<num>][:eb=<num>]".
+  // Stale entries (a road that no longer resolves) and entries that authored
+  // nothing are dropped, mirroring the stale-arm rule; storage order is kept
+  // so save→load→save is byte-identical.
+  if (!junction.corners.empty()) {
+    std::string value;
+    for (const JunctionCorner& corner : junction.corners) {
+      const Road* road_a = network.road(corner.arm_a.road);
+      const Road* road_b = network.road(corner.arm_b.road);
+      if (road_a == nullptr || road_b == nullptr) {
+        continue; // stale corner references are not written
+      }
+      if (!corner.radius && !corner.extent_a && !corner.extent_b) {
+        continue; // nothing authored — the derived fillet already says it
+      }
+      if (!value.empty()) {
+        value += ';';
+      }
+      value += road_a->odr_id;
+      value += ':';
+      value += corner.arm_a.contact == ContactPoint::End ? "end" : "start";
+      value += ':';
+      value += road_b->odr_id;
+      value += ':';
+      value += corner.arm_b.contact == ContactPoint::End ? "end" : "start";
+      if (corner.radius) {
+        value += ":r=";
+        value += num(*corner.radius);
+      }
+      if (corner.extent_a) {
+        value += ":ea=";
+        value += num(*corner.extent_a);
+      }
+      if (corner.extent_b) {
+        value += ":eb=";
+        value += num(*corner.extent_b);
+      }
+    }
+    if (!value.empty()) {
+      pugi::xml_node user_data = junction_node.append_child("userData");
+      user_data.append_attribute("code").set_value("rm:corners");
+      user_data.append_attribute("value").set_value(value.c_str());
+    }
+  }
 }
 
 } // namespace
