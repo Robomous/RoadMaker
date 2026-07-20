@@ -55,8 +55,15 @@ by dragging from the Library Browser onto Attributes-pane slots.
 
 - Every step's expected result holds; zero crashes.
 - Each reshape/assignment is exactly one undo step.
-- Materials persist through save/reload and appear in the OpenDRIVE
-  export as standard `<material>` data.
+- Materials persist through save/reload. Lane-scope materials appear in the
+  OpenDRIVE export as standard `<material>` data. **Corner- and
+  junction-scope materials have no ASAM carrier** — OpenDRIVE 1.9.0 §12.10
+  gives `<junction>`/`<boundary>` no material or corner-radius attribute — so
+  they route through `<userData>` (`rm:corners` fields `sw=`/`md=`, and
+  `rm:junction` `mat=`), the route sanctioned for exactly this case in
+  `docs/design/materials-structures/04_phases.md` WS-2 ("Centre lane /
+  junction floor route through `<userData>`"). Save → reload → save is
+  byte-identical either way.
 
 ## Results
 
