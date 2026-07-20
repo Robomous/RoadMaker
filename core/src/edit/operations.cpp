@@ -5,6 +5,7 @@
 #include "roadmaker/edit/connection.hpp"
 #include "roadmaker/geometry/profile_fit.hpp"
 #include "roadmaker/geometry/road_intersection.hpp"
+#include "roadmaker/mesh/junction_corners.hpp"
 #include "roadmaker/road/authoring.hpp"
 #include "roadmaker/road/network.hpp"
 #include "roadmaker/tol.hpp"
@@ -3190,6 +3191,118 @@ std::unique_ptr<Command> delete_junction(const RoadNetwork& network, JunctionId 
   auto command = std::make_unique<GenericCommand>(std::string(kName), std::move(dirty));
   capture_deletion(network, *command, doomed, junction_id);
   return command;
+}
+
+namespace {
+
+/// Locates the JunctionCorner entry for the ordered arm pair, or `end()`.
+std::vector<JunctionCorner>::iterator
+find_corner(std::vector<JunctionCorner>& corners, const RoadEnd& arm_a, const RoadEnd& arm_b) {
+  return std::ranges::find_if(corners, [&](const JunctionCorner& entry) {
+    return entry.arm_a == arm_a && entry.arm_b == arm_b;
+  });
+}
+
+/// Shared front half of the corner-authoring commands: validates the junction
+/// id and that (arm_a, arm_b) names a corner the junction currently HAS —
+/// adjacency comes from junction_corners(), the same solver the mesher uses, so
+/// the tool, the panel, and the command can never disagree about what a corner
+/// is. On success returns a copy of the junction to mutate.
+Expected<Junction> corner_edit_context(const RoadNetwork& network,
+                                       JunctionId junction_id,
+                                       const RoadEnd& arm_a,
+                                       const RoadEnd& arm_b,
+                                       std::string_view name) {
+  const Junction* junction = network.junction(junction_id);
+  if (junction == nullptr) {
+    return make_error(ErrorCode::InvalidArgument, "stale junction id");
+  }
+  const std::vector<JunctionCornerInfo> corners = junction_corners(network, junction_id);
+  const bool adjacent = std::ranges::any_of(corners, [&](const JunctionCornerInfo& info) {
+    return info.arm_a == arm_a && info.arm_b == arm_b;
+  });
+  if (!adjacent) {
+    return make_error(ErrorCode::InvalidArgument,
+                      fmt::format("{}: the given arm pair is not an adjacent corner of junction {}",
+                                  name,
+                                  junction->odr_id));
+  }
+  return *junction;
+}
+
+/// Wraps a junction value edit that leaves the turn set alone: only the floor
+/// mesh changes, so the editor must NOT regenerate the connecting roads.
+std::unique_ptr<Command> corner_value_command(std::string_view name,
+                                              JunctionId junction_id,
+                                              const Junction& before,
+                                              Junction after) {
+  auto command = std::make_unique<GenericCommand>(
+      std::string(name), DirtySet{.junctions = {junction_id}, .junctions_are_current = true});
+  command->before.junctions.emplace_back(junction_id, before);
+  command->after.junctions.emplace_back(junction_id, std::move(after));
+  return command;
+}
+
+} // namespace
+
+std::unique_ptr<Command> set_corner_radius(const RoadNetwork& network,
+                                           JunctionId junction_id,
+                                           RoadEnd arm_a,
+                                           RoadEnd arm_b,
+                                           double radius) {
+  static constexpr std::string_view kName = "Set Corner Radius";
+  Expected<Junction> before = corner_edit_context(network, junction_id, arm_a, arm_b, kName);
+  if (!before) {
+    return invalid_command(std::string(kName), before.error());
+  }
+  Junction after = *before;
+  const auto entry = find_corner(after.corners, arm_a, arm_b);
+  if (radius <= 0.0) {
+    // Clearing: drop the entry entirely so the corner returns to the derived
+    // fillet and the writer emits nothing for it.
+    if (entry == after.corners.end()) {
+      return invalid_command(std::string(kName),
+                             Error{.code = ErrorCode::InvalidArgument,
+                                   .message = "the corner has no override to clear"});
+    }
+    after.corners.erase(entry);
+  } else if (entry != after.corners.end()) {
+    // A radius is symmetric by definition — it supersedes any per-side reach.
+    entry->radius = radius;
+    entry->extent_a.reset();
+    entry->extent_b.reset();
+  } else {
+    after.corners.push_back(JunctionCorner{.arm_a = arm_a, .arm_b = arm_b, .radius = radius});
+  }
+  return corner_value_command(kName, junction_id, *before, std::move(after));
+}
+
+std::unique_ptr<Command> set_corner_extents(const RoadNetwork& network,
+                                            JunctionId junction_id,
+                                            RoadEnd arm_a,
+                                            RoadEnd arm_b,
+                                            double extent_a,
+                                            double extent_b) {
+  static constexpr std::string_view kName = "Set Corner Extents";
+  if (extent_a <= 0.0 || extent_b <= 0.0) {
+    return invalid_command(
+        std::string(kName),
+        Error{.code = ErrorCode::InvalidArgument, .message = "corner extents must be positive"});
+  }
+  Expected<Junction> before = corner_edit_context(network, junction_id, arm_a, arm_b, kName);
+  if (!before) {
+    return invalid_command(std::string(kName), before.error());
+  }
+  Junction after = *before;
+  const auto entry = find_corner(after.corners, arm_a, arm_b);
+  if (entry != after.corners.end()) {
+    entry->extent_a = extent_a;
+    entry->extent_b = extent_b;
+  } else {
+    after.corners.push_back(
+        JunctionCorner{.arm_a = arm_a, .arm_b = arm_b, .extent_a = extent_a, .extent_b = extent_b});
+  }
+  return corner_value_command(kName, junction_id, *before, std::move(after));
 }
 
 // --- parametric intersection assemblies -------------------------------------

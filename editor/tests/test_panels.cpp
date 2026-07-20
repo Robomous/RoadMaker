@@ -3,7 +3,9 @@
 // offscreen platform) — the ViewportWidget is deliberately absent here.
 
 #include "roadmaker/edit/operations.hpp"
+#include "roadmaker/mesh/junction_corners.hpp"
 #include "roadmaker/road/authoring.hpp"
+#include "roadmaker/road/junction.hpp"
 #include "roadmaker/road/surface_derivation.hpp"
 #include "roadmaker/xodr/writer.hpp"
 
@@ -11,11 +13,14 @@
 
 #include <QDoubleSpinBox>
 #include <QItemSelectionModel>
+#include <QLabel>
 #include <QLineEdit>
 #include <QPushButton>
 #include <QSignalSpy>
 #include <QTemporaryDir>
 #include <QTest>
+#include <QUndoStack>
+#include <array>
 #include <fstream>
 #include <stdexcept>
 #include <string>
@@ -32,6 +37,7 @@
 #include "panels/scene_tree_panel.hpp"
 #include "panels/scrub_label.hpp"
 #include "panels/slot_widget.hpp"
+#include "tools/corner_tool.hpp"
 
 namespace roadmaker::editor {
 namespace {
@@ -875,6 +881,204 @@ TEST(PropertiesPanel, PropSetEditorEmitsCommittedItem) {
   // A read-only asset disables the entry widgets and the Save button.
   panel.edit_asset(QStringLiteral("prop_set.mixed"), /*editable=*/false);
   EXPECT_FALSE(save->isEnabled());
+}
+
+// --- Corner section (p4-s1, issue #225; GW-2 s9 / GW-3 s5) --------------------
+// The Corner tool's active corner is tool-local sub-selection, so what matters
+// here is the binding: the section appears only for the junction the pane is
+// showing, and both edit paths (typed and scrubbed) are ONE undo entry each.
+
+namespace {
+
+/// A ROOMY cross junction: four arms stopping 20 m short of the origin, so
+/// every corner has real headroom (max_radius well above the derived radius).
+/// On a tight junction the derived radius already sits AT max_radius and an
+/// authored value would be clamped on the way in — assertions would then fail
+/// for reasons that have nothing to do with the panel.
+struct CornerScene {
+  Document document;
+  SelectionModel selection{document};
+  JunctionId junction;
+
+  CornerScene() {
+    const std::array<RoadEnd, 4> ends{RoadEnd{make(-80.0, 0.0, -20.0, 0.0, "1"), ContactPoint::End},
+                                      RoadEnd{make(80.0, 0.0, 20.0, 0.0, "2"), ContactPoint::End},
+                                      RoadEnd{make(0.0, -80.0, 0.0, -20.0, "3"), ContactPoint::End},
+                                      RoadEnd{make(0.0, 80.0, 0.0, 20.0, "4"), ContactPoint::End}};
+    if (!document.push_command(edit::create_junction(document.network(), ends))) {
+      throw std::runtime_error("junction create failed");
+    }
+    document.network().for_each_junction([&](JunctionId id, const Junction&) { junction = id; });
+  }
+
+  RoadId make(double x0, double y0, double x1, double y1, const char* odr) {
+    if (!document.push_command(
+            edit::create_road({Waypoint{.x = x0, .y = y0}, Waypoint{.x = x1, .y = y1}},
+                              LaneProfile::two_lane_default(),
+                              odr))) {
+      throw std::runtime_error("road create failed");
+    }
+    return document.network().find_road(odr);
+  }
+
+  [[nodiscard]] JunctionCornerInfo corner() const {
+    const std::vector<JunctionCornerInfo> all = junction_corners(document.network(), junction);
+    if (all.empty()) {
+      throw std::runtime_error("the cross junction solved no corners");
+    }
+    return all.front();
+  }
+
+  /// The authored override for the first corner's pair, or nullptr when the
+  /// corner is still derived.
+  [[nodiscard]] const JunctionCorner* authored() const {
+    const JunctionCornerInfo info = corner();
+    const Junction* junc = document.network().junction(junction);
+    for (const JunctionCorner& stored : junc->corners) {
+      if (stored.arm_a == info.arm_a && stored.arm_b == info.arm_b) {
+        return &stored;
+      }
+    }
+    return nullptr;
+  }
+};
+
+/// Click-selects `info`'s corner the way the viewport reports a click on the
+/// junction floor, which also mirrors the junction into the SelectionModel.
+void activate_corner(CornerTool& tool, const CornerScene& scene, const JunctionCornerInfo& info) {
+  const std::array<double, 2> apex = info.apex();
+  ToolEvent event;
+  event.world_x = apex[0];
+  event.world_y = apex[1];
+  event.buttons = Qt::LeftButton;
+  PickHit hit;
+  hit.junction = scene.junction;
+  event.pick = hit;
+  if (!tool.mouse_press(event)) {
+    throw std::runtime_error("the corner click was not consumed");
+  }
+  event.buttons = Qt::NoButton;
+  static_cast<void>(tool.mouse_release(event));
+}
+
+/// The panel's Corner Radius spin box (the row the section is really about).
+QDoubleSpinBox* corner_spin(PropertiesPanel& panel) {
+  return panel.findChild<QDoubleSpinBox*>(QStringLiteral("corner_radius_spin"));
+}
+
+} // namespace
+
+TEST(PropertiesPanel, CornerRadiusRowAppearsOnlyForTheActiveCornersJunction) {
+  CornerScene scene;
+  PropertiesPanel panel(scene.document, scene.selection);
+  CornerTool tool(scene.document, scene.selection);
+  panel.set_corner_tool(&tool);
+  tool.activate();
+
+  QDoubleSpinBox* spin = corner_spin(panel);
+  ASSERT_NE(spin, nullptr);
+  EXPECT_FALSE(spin->isVisibleTo(&panel)) << "no active corner yet";
+
+  // Selecting the junction alone is not enough — the pane needs a corner.
+  scene.selection.select({.junction = scene.junction});
+  EXPECT_FALSE(spin->isVisibleTo(&panel));
+
+  const JunctionCornerInfo info = scene.corner();
+  activate_corner(tool, scene, info);
+  ASSERT_TRUE(spin->isVisibleTo(&panel)) << "an active corner shows the Corner section";
+  EXPECT_DOUBLE_EQ(spin->value(), info.radius);
+  EXPECT_DOUBLE_EQ(spin->maximum(), info.max_radius);
+  auto* arms = panel.findChild<QLabel*>(QStringLiteral("corner_arms_label"));
+  ASSERT_NE(arms, nullptr);
+  EXPECT_TRUE(arms->text().contains(QStringLiteral("road"))) << arms->text().toStdString();
+
+  // A non-junction primary selection takes the section away again, even though
+  // the tool's sub-selection is untouched.
+  scene.selection.select({.road = scene.document.network().find_road("1")});
+  EXPECT_FALSE(spin->isVisibleTo(&panel));
+  EXPECT_TRUE(tool.active_corner().has_value());
+}
+
+TEST(PropertiesPanel, TypingACornerRadiusIsOneUndoEntryEachAndUndoRestores) {
+  CornerScene scene;
+  PropertiesPanel panel(scene.document, scene.selection);
+  CornerTool tool(scene.document, scene.selection);
+  panel.set_corner_tool(&tool);
+  tool.activate();
+  const JunctionCornerInfo info = scene.corner();
+  ASSERT_GT(info.max_radius, 10.0) << "the fixture must leave room for a 10 m fillet";
+  activate_corner(tool, scene, info);
+
+  QDoubleSpinBox* spin = corner_spin(panel);
+  ASSERT_NE(spin, nullptr);
+  const int base = scene.document.undo_stack()->index();
+
+  spin->setValue(5.0);
+  emit spin->editingFinished();
+  ASSERT_EQ(scene.document.undo_stack()->index(), base + 1);
+  ASSERT_NE(scene.authored(), nullptr);
+  ASSERT_TRUE(scene.authored()->radius.has_value());
+  EXPECT_DOUBLE_EQ(*scene.authored()->radius, 5.0);
+
+  spin->setValue(10.0);
+  emit spin->editingFinished();
+  EXPECT_EQ(scene.document.undo_stack()->index(), base + 2)
+      << "one typed edit is one command, never one per keystroke";
+  EXPECT_DOUBLE_EQ(*scene.authored()->radius, 10.0);
+
+  // Undo restores the previous radius (count() does NOT move on undo — index does).
+  scene.document.undo_stack()->undo();
+  EXPECT_EQ(scene.document.undo_stack()->index(), base + 1);
+  ASSERT_TRUE(scene.authored()->radius.has_value());
+  EXPECT_DOUBLE_EQ(*scene.authored()->radius, 5.0);
+}
+
+TEST(PropertiesPanel, ARefreshedCornerRadiusDoesNotEchoACommand) {
+  CornerScene scene;
+  PropertiesPanel panel(scene.document, scene.selection);
+  CornerTool tool(scene.document, scene.selection);
+  panel.set_corner_tool(&tool);
+  tool.activate();
+  activate_corner(tool, scene, scene.corner());
+
+  QDoubleSpinBox* spin = corner_spin(panel);
+  ASSERT_NE(spin, nullptr);
+  const int base = scene.document.undo_stack()->index();
+  emit spin->editingFinished(); // focus-out with the value the pane just seeded
+  EXPECT_EQ(scene.document.undo_stack()->index(), base);
+}
+
+TEST(PropertiesPanel, ScrubbingTheCornerRadiusCommitsExactlyOneUndoEntry) {
+  CornerScene scene;
+  PropertiesPanel panel(scene.document, scene.selection);
+  CornerTool tool(scene.document, scene.selection);
+  panel.set_corner_tool(&tool);
+  tool.activate();
+  const JunctionCornerInfo info = scene.corner();
+  activate_corner(tool, scene, info);
+
+  ScrubLabel* label = nullptr;
+  for (ScrubLabel* candidate : panel.findChildren<ScrubLabel*>()) {
+    if (candidate->objectName() == QStringLiteral("corner_radius_scrub")) {
+      label = candidate;
+    }
+  }
+  ASSERT_NE(label, nullptr);
+
+  const int base = scene.document.undo_stack()->index();
+  scrub(label, -40); // ~-2 m at 0.05 m/px, away from the geometric ceiling
+
+  EXPECT_EQ(scene.document.undo_stack()->index(), base + 1)
+      << "a drag is one gesture and must be one undo entry, not one per frame";
+  ASSERT_NE(scene.authored(), nullptr);
+  ASSERT_TRUE(scene.authored()->radius.has_value());
+  EXPECT_LT(*scene.authored()->radius, info.radius);
+
+  scene.document.undo_stack()->undo();
+  EXPECT_EQ(scene.document.undo_stack()->index(), base);
+  const JunctionCorner* after_undo = scene.authored();
+  EXPECT_TRUE(after_undo == nullptr || !after_undo->radius.has_value())
+      << "undo returns the corner to its derived radius";
 }
 
 } // namespace

@@ -371,6 +371,35 @@ regenerate_junction(const RoadNetwork& network,
                     const JunctionGenOptions& options = {},
                     TurnSetPolicy policy = TurnSetPolicy::AllowChange);
 
+/// Authors the fillet radius of ONE junction corner, named by its adjacent arm
+/// pair (p4-s1, issue #225). `radius <= 0` removes the override and returns the
+/// corner to its derived radius. Either way any per-side extent override on
+/// that corner is cleared — a radius is symmetric by definition.
+///
+/// The pair must currently be an adjacent corner of `junction` (validated with
+/// mesh::junction_corners); a non-adjacent or stale pair is an error. The value
+/// is stored as authored and clamped only at mesh time, so a later arm move
+/// that shrinks the corner never fails the mesh.
+///
+/// Dirty set: `{junctions = {junction}, junctions_are_current = true}` — the
+/// turn set is untouched, so the editor re-meshes the floor without
+/// regenerating connecting roads.
+[[nodiscard]] RM_API std::unique_ptr<Command> set_corner_radius(
+    const RoadNetwork& network, JunctionId junction, RoadEnd arm_a, RoadEnd arm_b, double radius);
+
+/// Authors the two tangent-leg setbacks [m] of ONE junction corner — the reach
+/// of the fillet along each arm's edge, independently. The corner curve stays
+/// G1-tangent to both edges (rational quadratic Bezier), so unequal legs remain
+/// watertight. Same validation and dirty set as set_corner_radius; a
+/// non-positive extent on either side is an error (use set_corner_radius with
+/// a non-positive radius to clear the whole override).
+[[nodiscard]] RM_API std::unique_ptr<Command> set_corner_extents(const RoadNetwork& network,
+                                                                 JunctionId junction,
+                                                                 RoadEnd arm_a,
+                                                                 RoadEnd arm_b,
+                                                                 double extent_a,
+                                                                 double extent_b);
+
 /// Deletes the junction AND its connecting roads (the §7 closure); incoming
 /// roads survive with their predecessor/successor links into the junction
 /// cleared. Undo restores the junction, every connecting road, and every

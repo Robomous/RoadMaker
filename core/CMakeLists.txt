@@ -26,6 +26,8 @@ add_library(roadmaker_core ${_rm_core_type}
   src/xodr/writer.cpp
   src/xodr/junction_export.cpp
   src/mesh/mesh_builder.cpp
+  src/mesh/junction_corner_detail.cpp
+  src/mesh/junction_corners.cpp
   src/mesh/junction_surface.cpp
   src/mesh/surface_fill.cpp
   src/assets/prop_meshes.gen.cpp

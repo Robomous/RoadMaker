@@ -57,6 +57,7 @@ conventions below.
 | Prop Curve tool | `Shift+T` |  |
 | Prop Span tool | `Shift+S` |  |
 | Prop Polygon tool | `Shift+P` |  |
+| Corner tool (junction fillets) | `Shift+R` | plain R is the Prop Polygon tool's re-scatter key |
 | Lane Width editor (2D) | `Shift+L` |  |
 
 ## View

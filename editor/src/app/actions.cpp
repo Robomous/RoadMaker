@@ -205,6 +205,15 @@ Actions::Actions(QUndoStack& undo_stack, QObject* parent) : QObject(parent) {
          "density, R re-scatters, Enter bakes them into individual props, Esc cancels (⇧P)"));
   tool_group->addAction(tool_prop_polygon);
 
+  tool_corner = new QAction(tr("Co&rner"), this);
+  tool_corner->setCheckable(true);
+  tool_corner->setShortcuts(shortcuts::sequences(shortcuts::Id::ToolCorner));
+  tool_corner->setIconText(tr("Corner"));
+  tool_corner->setToolTip(
+      tr("Corner — click a junction corner, then drag its apex to set the fillet radius or a "
+         "tangency point to set that side's extent, Esc cancels (⇧R)"));
+  tool_group->addAction(tool_corner);
+
   // Not a tool — a command that surfaces the 2D Editor's Lane Width tab for the
   // selected lane. Standalone so ⇧L works whatever tool is active.
   lane_width_editor = new QAction(tr("Lane &Width Editor"), this);
@@ -338,6 +347,7 @@ void Actions::apply_icons() {
   tool_prop_curve->setIcon(Icons::get(QStringLiteral("prop-curve")));
   tool_prop_span->setIcon(Icons::get(QStringLiteral("prop-span")));
   tool_prop_polygon->setIcon(Icons::get(QStringLiteral("prop-polygon")));
+  tool_corner->setIcon(Icons::get(QStringLiteral("corner-radius")));
   template_rural->setIcon(Icons::get(QStringLiteral("template-rural")));
   template_urban->setIcon(Icons::get(QStringLiteral("template-urban")));
   template_highway->setIcon(Icons::get(QStringLiteral("template-highway")));

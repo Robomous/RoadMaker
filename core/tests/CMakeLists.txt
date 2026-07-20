@@ -17,6 +17,7 @@ add_executable(roadmaker_core_tests
   test_road_marks.cpp
   test_mesh.cpp
   test_junction_surface.cpp
+  test_junction_corners.cpp
   test_junction_export.cpp
   test_junction_crosswalks.cpp
   test_marking_curves.cpp
@@ -24,6 +25,7 @@ add_executable(roadmaker_core_tests
   test_t_junction_quality.cpp
   test_gltf.cpp
   test_round_trip.cpp
+  test_corner_persistence.cpp
   test_edit_stack.cpp
   test_connection.cpp
   test_edit_operations.cpp
@@ -35,6 +37,7 @@ add_executable(roadmaker_core_tests
   test_surface_roundtrip.cpp
   test_material_roundtrip.cpp
   test_assembly.cpp
+  test_corner_operations.cpp
   test_translate_road.cpp
   test_rotate_road.cpp
   test_insert_node.cpp
