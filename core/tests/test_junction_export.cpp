@@ -26,6 +26,7 @@
 #include <array>
 #include <cmath>
 #include <limits>
+#include <ranges>
 #include <sstream>
 #include <string>
 #include <string_view>
@@ -655,4 +656,106 @@ TEST(JunctionExport, WriteIsDeterministic) {
   ASSERT_TRUE(a.has_value());
   ASSERT_TRUE(b.has_value());
   EXPECT_EQ(*a, *b);
+}
+
+// --- dangling arm roads (#311) ----------------------------------------------
+//
+// erase_road drops the junction CONNECTIONS that reference a road but
+// deliberately leaves Junction::arms alone (network.hpp: arms are the
+// generator's input, reconciled by regenerate_junction). A junction can
+// therefore hold a RoadEnd whose RoadId no longer resolves — also reachable
+// from a hand-edited or foreign .xodr. Every export path must treat such an
+// arm as absent, never dereference it.
+
+TEST(DanglingArm, WriteXodrSurvivesAnErasedArmRoad) {
+  RoadNetwork network;
+  const JunctionId junction = build_four_way(network);
+  const RoadEnd doomed = network.junction(junction)->arms.front();
+  ASSERT_TRUE(network.erase_road(doomed.road));
+  ASSERT_NE(network.junction(junction), nullptr);
+  ASSERT_EQ(network.road(doomed.road), nullptr) << "the arm must be dangling for this test";
+
+  const auto xodr = roadmaker::write_xodr(network, "j");
+  ASSERT_TRUE(xodr.has_value()) << xodr.error().message;
+}
+
+TEST(DanglingArm, StaleRoadLinksAreOmittedNotWritten) {
+  RoadNetwork network;
+  const JunctionId junction = build_four_way(network);
+  const RoadEnd doomed = network.junction(junction)->arms.front();
+  const std::string erased_odr_id = network.road(doomed.road)->odr_id;
+  ASSERT_TRUE(network.erase_road(doomed.road));
+
+  const auto xodr = roadmaker::write_xodr(network, "j");
+  ASSERT_TRUE(xodr.has_value()) << xodr.error().message;
+
+  pugi::xml_document doc;
+  ASSERT_TRUE(doc.load_string(xodr->c_str()));
+  // The surviving connecting roads that bridged the erased arm keep their
+  // OTHER end; only the reference to the gone road disappears.
+  for (const pugi::xml_node road : doc.child("OpenDRIVE").children("road")) {
+    for (const pugi::xml_node end : road.child("link").children()) {
+      if (std::string_view(end.attribute("elementType").value()) == "road") {
+        EXPECT_NE(std::string_view(end.attribute("elementId").value()), erased_odr_id)
+            << "road " << road.attribute("id").value() << " still names the erased road";
+      }
+    }
+  }
+  // A <link> is absent, never emitted empty.
+  for (const pugi::xml_node road : doc.child("OpenDRIVE").children("road")) {
+    const pugi::xml_node link = road.child("link");
+    EXPECT_TRUE(link.empty() || link.first_child())
+        << "empty <link> on road " << road.attribute("id").value();
+  }
+}
+
+TEST(DanglingArm, ValidateNetworkWarnsAboutTheOmittedLink) {
+  RoadNetwork network;
+  const JunctionId junction = build_four_way(network);
+  const RoadEnd doomed = network.junction(junction)->arms.front();
+  ASSERT_TRUE(network.erase_road(doomed.road));
+
+  const std::vector<roadmaker::Diagnostic> findings = roadmaker::validate_network(network);
+  const auto omitted = std::ranges::find_if(findings, [](const roadmaker::Diagnostic& d) {
+    return d.message.find("no longer exists") != std::string::npos;
+  });
+  ASSERT_NE(omitted, findings.end()) << "the dropped link must be reported, never silent";
+  EXPECT_EQ(omitted->severity, roadmaker::Severity::Warning);
+  EXPECT_EQ(omitted->rule_id, "asam.net:xodr:1.4.0:ids.only_ref_defined_ids")
+      << "cites the wrong rule";
+}
+
+TEST(DanglingArm, WriteWithADanglingArmIsDeterministic) {
+  RoadNetwork network;
+  const JunctionId junction = build_four_way(network);
+  ASSERT_TRUE(network.erase_road(network.junction(junction)->arms.front().road));
+  const auto a = roadmaker::write_xodr(network, "j");
+  const auto b = roadmaker::write_xodr(network, "j");
+  ASSERT_TRUE(a.has_value());
+  ASSERT_TRUE(b.has_value());
+  EXPECT_EQ(*a, *b);
+}
+
+TEST(DanglingArm, StaleJunctionLinksAreOmittedToo) {
+  // erase_junction detaches the roads that pointed at it (network.hpp), so a
+  // surviving approach road's predecessor/successor names a JunctionId that no
+  // longer resolves — the same hole on the junction side of the variant.
+  RoadNetwork network;
+  const JunctionId junction = build_four_way(network);
+  const std::string erased_odr_id = network.junction(junction)->odr_id;
+  ASSERT_TRUE(network.erase_junction(junction));
+  ASSERT_EQ(network.junction(junction), nullptr);
+
+  const auto xodr = roadmaker::write_xodr(network, "j");
+  ASSERT_TRUE(xodr.has_value()) << xodr.error().message;
+
+  pugi::xml_document doc;
+  ASSERT_TRUE(doc.load_string(xodr->c_str()));
+  for (const pugi::xml_node road : doc.child("OpenDRIVE").children("road")) {
+    for (const pugi::xml_node end : road.child("link").children()) {
+      if (std::string_view(end.attribute("elementType").value()) == "junction") {
+        EXPECT_NE(std::string_view(end.attribute("elementId").value()), erased_odr_id);
+      }
+    }
+  }
 }
