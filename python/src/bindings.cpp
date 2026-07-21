@@ -527,6 +527,22 @@ NB_MODULE(_roadmaker, m) {
         return text + ")";
       });
 
+  nb::class_<roadmaker::SpanArm>(m, "SpanArm")
+      .def_ro("road",
+              &roadmaker::SpanArm::road,
+              "The road the span lies on. spans[0].road is exported as the "
+              "OpenDRIVE @mainRoad of the virtual junction.")
+      .def_ro("s_start",
+              &roadmaker::SpanArm::s_start,
+              "Start of the covered interval in the road's reference-line s [m].")
+      .def_ro("s_end",
+              &roadmaker::SpanArm::s_end,
+              "End of the covered interval in the road's reference-line s [m].")
+      .def("__repr__", [](const roadmaker::SpanArm& span) {
+        return "SpanArm(s_start=" + std::to_string(span.s_start) +
+               ", s_end=" + std::to_string(span.s_end) + ")";
+      });
+
   nb::class_<roadmaker::Junction>(m, "Junction")
       .def_ro("odr_id", &roadmaker::Junction::odr_id)
       .def_ro("name", &roadmaker::Junction::name)
@@ -547,6 +563,19 @@ NB_MODULE(_roadmaker, m) {
               "Bare catalog material name for the junction carriageway; empty "
               "means the derived asphalt look. Edit it with "
               "edit.set_junction_material.")
+      .def_ro("locked",
+              &roadmaker::Junction::locked,
+              "True when the automatic regeneration loops skip this junction, "
+              "so hand-tuned connections, corners and stop lines survive edits "
+              "to its arms. edit.regenerate_junction still re-derives it on "
+              "demand. Toggle it with edit.set_junction_locked; a span junction "
+              "is always locked.")
+      .def_ro("spans",
+              &roadmaker::Junction::spans,
+              "Membership spans of a VIRTUAL (span) junction — a stretch of a "
+              "road that belongs to the junction without cutting it (OpenDRIVE "
+              "1.8.1/1.9.0 §12.7). Non-empty means this is a span junction, "
+              "which has no arms and no connections and is always locked.")
       .def("__repr__", [](const roadmaker::Junction& junction) {
         return "Junction(odr_id='" + junction.odr_id +
                "', connections=" + std::to_string(junction.connections.size()) + ")";
@@ -2120,6 +2149,23 @@ NB_MODULE(_roadmaker, m) {
       "Drops ONE arm's authored stop-line record, returning it to the derived "
       "default. Pushing raises ValueError for a stale junction, a road end that "
       "is not a stop line of it, or an arm with nothing authored to reset.");
+  edit.def(
+      "set_junction_locked",
+      [](const roadmaker::RoadNetwork& network, roadmaker::JunctionId junction, bool locked) {
+        return roadmaker::edit::set_junction_locked(network, junction, locked);
+      },
+      "network"_a,
+      "junction"_a,
+      "locked"_a,
+      "Locks or unlocks a junction against the AUTOMATIC regeneration loops, so "
+      "hand-tuned connections, corners and stop lines survive edits to its "
+      "arms; regenerate_junction still re-derives it on demand. Unlocking a "
+      "junction whose arms no longer plan REMOVES it together with its "
+      "connecting roads (the delete_junction closure), since there is no "
+      "automatic state left to hand back to. Pushing raises ValueError for a "
+      "stale junction, a state that is already what was asked for, a foreign "
+      "junction (no arms and no spans), or unlocking a span junction, whose "
+      "lock is structural.");
   edit.def("delete_junction", &roadmaker::edit::delete_junction, "network"_a, "junction"_a);
 
   // --- parametric intersection assemblies (rm.edit.assembly) ---

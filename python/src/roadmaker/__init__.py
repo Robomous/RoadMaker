@@ -51,6 +51,7 @@ from ._roadmaker import (  # noqa: F401
     Severity,
     Signal,
     SignalId,
+    SpanArm,
     StencilData,
     StyleLane,
     Surface,
