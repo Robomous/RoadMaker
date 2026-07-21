@@ -19,6 +19,47 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 Current version on `main`: **0.0.1**.
 
 ### Added
+- **Junctions can be signalized from a template**
+  ([#228](https://github.com/Robomous/RoadMaker/issues/228)): a new **Signal
+  tool** (`G`) fits a junction out with traffic lights or stop signs in one
+  undoable step. Four templates ship — **Protected left (4-phase)** and **Two
+  phase** place traffic lights and group them into OpenDRIVE **controllers**;
+  **All-way stop** and **Two-way stop** place signs and create no phase data.
+  None assume four arms — approaches are clustered into axes by heading, so a
+  three-arm T signalizes as cleanly as a cross. **Auto Signalize** /
+  **Clear Signalization** live in the junction's Attributes pane and its
+  right-click menu; clearing removes exactly what a signalization authored and
+  leaves other signs alone, and re-signalizing replaces rather than stacks.
+  - This adds the **controller layer** the kernel lacked: `<controller>` /
+    `<control>` (§14.6) as a new top-level arena and a `<junction><controller>`
+    synchronization reference (§12.14). A top-level `<controller>` in an input
+    file used to be warned about and silently dropped, and a
+    `<junction><controller>` dropped without a warning — both round-trip
+    data-loss paths are now closed by construction.
+  - One query, `junction_signals()`, resolves every approach — its gated
+    maneuvers, the signals on it and the controller groups they belong to — and
+    feeds the tool, the panel, the command layer and the Python bindings alike.
+    Signals are placed at each approach's stop line; a `<control>` references a
+    signal by its string `@signalId`, so a dangling reference from third-party
+    input survives and is reported by the validator rather than dropped.
+  - Traffic-light heads use the OpenDRIVE catalog code
+    `type=1000001 subtype=-1 country="OpenDRIVE"` (§14.1). The ASAM reference
+    names no OpenDRIVE-catalog stop/yield code, so stop signs reuse RoadMaker's
+    existing StVO code `206` (`country="DE"`).
+  - An optional **mount prop** drops a physical prop model under each head and
+    records the logical-signal → object pairing, stored as a list per signal so
+    multi-part signal assemblies drop in without a format change.
+  - New validator rules for a controller with no `<control>`
+    (`asam.net:xodr:1.7.0:road.signal.controller.valid_for_signals`) and for a
+    virtual/span junction carrying controllers
+    (`asam.net:xodr:1.9.0:junctions.virtual.no_controllers`).
+  - Kernel commands `edit::signalize_junction` and `edit::clear_signalization`,
+    both bound in Python alongside the `junction_signals()` query, the
+    `Controller` / `Control` / `JunctionController` types, the `SignalizeTemplate`
+    enum and a new `python/examples/signalize_junction.py`.
+  - The applied template and the mount pairings ride `rm:signal` and
+    `rm:signalmount` extension records on `<junction>`; a junction with no
+    signalization writes neither, so existing files round-trip byte-identically.
 - **A junction's turns are editable maneuvers**
   ([#227](https://github.com/Robomous/RoadMaker/issues/227)): every connecting
   road a junction generates is now a first-class **maneuver** you can take over.

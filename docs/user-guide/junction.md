@@ -116,6 +116,72 @@ one of them, and a file re-saved without edits is byte-identical. Another tool
 that ignores the extension still gets a fully valid junction with your
 hand-shaped geometry baked into the connecting roads.
 
+## Signalization
+
+Once a junction has its arms and maneuvers, the **Signal** tool (**G**, in the
+*Signals & Signs* toolbar group) fits it out with traffic lights or stop signs
+in one step. Activate the tool and click the junction: the Properties panel
+grows a **Signalization** group.
+
+### Auto Signalize
+
+Pick a **template**, optionally a **mount prop** to hang under each head, then
+press **Auto Signalize** (or right-click the junction ▸ **Auto signalize** and
+pick a template). Four templates ship — two dynamic (traffic lights), two static
+(signs):
+
+- **Protected left (4-phase)** — a light on every approach, plus a protected-left
+  light wherever an approach actually has a left turn.
+- **Two phase (permissive lefts)** — a light on every approach, one phase group
+  per axis, lefts unprotected.
+- **All-way stop** — a stop sign on every approach.
+- **Two-way stop** — stop signs on the minor axis only (the approaches with fewer
+  incoming lanes).
+
+RoadMaker places one logical signal per approach at that approach's stop line,
+groups the lights of the dynamic templates into **controllers** (OpenDRIVE
+signal groups), and lists one read-only row per approach showing the signals it
+carries and the group they belong to. The **static templates create no
+controllers** — a stop-controlled junction has no phases, so there is no phase
+data to make. The templates do not assume four arms: they cluster the approaches
+into axes by heading, so a three-arm T-junction signalizes just as cleanly.
+
+The signal heads render in the viewport through the ordinary prop path, so you
+see them immediately. When the phase editor lands (p4-s8) it edits the
+controllers these templates create.
+
+### Mount props
+
+Choosing a **mount prop** also drops that prop model at each head and records the
+logical-signal → physical-object pairing in the file, so the head has a physical
+representation and neither is ever an orphan. The pairing is stored as a *list*
+of objects per signal, ready for multi-part signal assemblies without any change
+to the file format.
+
+### Clear Signalization
+
+**Clear Signalization** (the button, or right-click the junction ▸ **Clear
+signalization**) removes exactly what a signalization authored — its signals,
+controllers and mount props — and leaves any hand-placed signs of other types
+alone. Re-running Auto Signalize with a different template clears the previous
+one first, so you never accumulate two generations of heads.
+
+Both are single undoable steps. Signalizing a junction and pressing `Ctrl+Z`
+returns the file byte-for-byte to its pre-signalization state.
+
+### What is saved
+
+The signals and controllers are ordinary OpenDRIVE — real `<signal>` elements,
+top-level `<controller>`/`<control>` groups, and a `<junction><controller>`
+synchronization reference — that any consumer reads. Which template you applied
+and the signal → mount-prop pairings ride the junction's `rm:signal` and
+`rm:signalmount` extension records, so reopening the file shows the current
+template and a re-save without edits is byte-identical. A junction with no
+signalization writes none of these, so existing files are untouched.
+
+A foreign junction (read from another tool's file, with no recorded arms) can be
+inspected but not signalized until you recreate it — the same rule as maneuvers.
+
 ## Notes
 
 - The selected arms are remembered on the junction, so it can be regenerated
@@ -131,6 +197,9 @@ hand-shaped geometry baked into the connecting roads.
 [junction blending](../design/m2/03_junction_blending.md) — connecting-road
 generation, the blended surface, and the exported reference line / elevation
 grid / boundary. [§6c (Maneuver)](../design/m2/02_editing_tools.md) covers the
-maneuver query, the six commands and the regeneration guard; the `rm:maneuver`
-payload is registered in
+maneuver query, the six commands and the regeneration guard; and
+[§6d (Signal)](../design/m2/02_editing_tools.md) covers the controller layer,
+the `junction_signals()` query, the four templates and the two signalization
+commands. The `rm:maneuver`, `rm:signal` and `rm:signalmount` payloads are
+registered in
 [ADR-0008](../decisions/0008-persistence-layers-asam-first.md).

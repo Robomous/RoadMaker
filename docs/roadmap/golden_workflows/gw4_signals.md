@@ -45,9 +45,12 @@ highlighting.
    the timeline re-flows; undo restores it.
 10. [ ] Use Next/Previous Phase navigation. **Expected:** the selection
     steps through phases in order, updating highlighting each time.
-11. [ ] Save, reload, and re-open the Signal Phase Editor. **Expected:**
-    templates, links, phases, and intervals round-trip; the exported
-    `.xodr` carries the `<signal>` data and validates.
+11. [ ] Save the file, reload it, and re-select the junction with the
+    Signal tool. **Expected:** the applied template and the signal↔mount
+    links round-trip (the Signalization pane shows the same template); the
+    exported `.xodr` carries the `<signal>` and `<controller>` data and
+    validates. *(Phase and interval round-trip is verified once the Signal
+    Phase Editor lands — p4-s8, steps 4–10.)*
 
 ## Pass criteria
 
