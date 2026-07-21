@@ -215,7 +215,7 @@ TEST(JunctionSignals, DerivesOneApproachPerArmWithItsGatedMovements) {
     EXPECT_GT(approach.s_stop, 0.0);
     EXPECT_LT(approach.s_stop, length);
     // Nothing is signalized yet.
-    EXPECT_TRUE(approach.signals.empty());
+    EXPECT_TRUE(approach.signal_ids.empty());
     EXPECT_TRUE(approach.controller_odr_ids.empty());
     EXPECT_FALSE(approach.dynamic);
   }
@@ -284,9 +284,9 @@ TEST(JunctionSignals, ResolvesSignalsInsideTheApproachWindowOnly) {
       junction_signals(fixture.network, fixture.junction);
   const JunctionApproachInfo* west = approach_for(approaches, fixture.west);
   ASSERT_NE(west, nullptr);
-  ASSERT_EQ(west->signals.size(), 2U);
-  EXPECT_EQ(west->signals[0], edge);
-  EXPECT_EQ(west->signals[1], both);
+  ASSERT_EQ(west->signal_ids.size(), 2U);
+  EXPECT_EQ(west->signal_ids[0], edge);
+  EXPECT_EQ(west->signal_ids[1], both);
   EXPECT_TRUE(west->dynamic);
   EXPECT_TRUE(west->controller_odr_ids.empty());
 
@@ -441,7 +441,7 @@ TEST(Signalize, HeadsSitOnTheApproachAnchorOutboardOfTheCarriageway) {
 
   // The query now sees them, and reports the junction as light-controlled.
   for (const JunctionApproachInfo& approach : junction_signals(fixture.network, fixture.junction)) {
-    EXPECT_EQ(approach.signals.size(), 1U);
+    EXPECT_EQ(approach.signal_ids.size(), 1U);
     EXPECT_TRUE(approach.dynamic);
     EXPECT_EQ(approach.controller_odr_ids.size(), 1U);
   }

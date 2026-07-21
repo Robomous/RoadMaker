@@ -62,6 +62,7 @@ conventions below.
 | Junction Span tool (virtual junctions over a road) | `Shift+J` | plain J is the Create Junction tool |
 | Junction Surface tool (inspect and order fill spans) | `I` | Space toggles the active span's samples; PgUp/PgDn raise or lower it |
 | Maneuver tool (reshape a junction's turns) | `Shift+M` | plain M is the Move tool; Del removes the focused path point |
+| Signal tool (signalize a junction, place signals) | `G` | S is the Marking Point tool and ⇧S the Prop Span tool |
 | Lane Width editor (2D) | `Shift+L` |  |
 
 ## View

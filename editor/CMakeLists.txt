@@ -73,6 +73,7 @@ add_library(roadmaker_editor_lib STATIC
   src/document/marking_curve_placement.cpp
   src/document/marking_item.cpp
   src/document/prop_placement.cpp
+  src/document/signal_placement.cpp
   src/document/project.cpp
   src/document/elevation_utils.cpp
   src/document/editor_command.cpp
@@ -114,6 +115,7 @@ add_library(roadmaker_editor_lib STATIC
   src/tools/junction_span_tool.cpp
   src/tools/junction_surface_tool.cpp
   src/tools/maneuver_tool.cpp
+  src/tools/signal_tool.cpp
   src/tools/stopline_tool.cpp
   src/tools/prop_polygon_tool.cpp
   src/tools/prop_span_tool.cpp

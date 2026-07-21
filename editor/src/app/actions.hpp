@@ -71,6 +71,7 @@ public:
   QAction* tool_junction_span = nullptr;
   QAction* tool_junction_surface = nullptr;
   QAction* tool_maneuver = nullptr;
+  QAction* tool_signal = nullptr;
 
   /// Not a tool: raises the 2D Editor's Lane Width tab for the selected lane
   /// (⇧L). Standalone so it works from any active tool.

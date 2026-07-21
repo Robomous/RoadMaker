@@ -7070,7 +7070,7 @@ AuthoredSignalization authored_signalization(const RoadNetwork& network, Junctio
       tmpl.has_value()) {
     const SignalCode code = signalize_template_code(*tmpl);
     for (const JunctionApproachInfo& approach : junction_signals(network, junction_id)) {
-      for (const SignalId signal_id : approach.signals) {
+      for (const SignalId signal_id : approach.signal_ids) {
         const Signal* signal = network.signal(signal_id);
         if (signal != nullptr && signal_has_code(*signal, code)) {
           signal_ids.insert(signal->odr_id);

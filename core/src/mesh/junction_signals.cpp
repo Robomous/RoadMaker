@@ -105,7 +105,7 @@ std::vector<JunctionApproachInfo> junction_signals(const RoadNetwork& network,
       if (signal->orientation != toward && signal->orientation != ObjectOrientation::None) {
         continue;
       }
-      info.signals.push_back(signal_id);
+      info.signal_ids.push_back(signal_id);
       info.dynamic = info.dynamic || signal->dynamic.value_or(false);
     }
   }
@@ -122,7 +122,7 @@ std::vector<JunctionApproachInfo> junction_signals(const RoadNetwork& network,
       controlled.insert(control.signal_odr_id);
     }
     for (JunctionApproachInfo& info : out) {
-      const bool matches = std::ranges::any_of(info.signals, [&](SignalId signal_id) {
+      const bool matches = std::ranges::any_of(info.signal_ids, [&](SignalId signal_id) {
         const Signal* signal = network.signal(signal_id);
         return signal != nullptr && controlled.contains(signal->odr_id);
       });

@@ -10,6 +10,7 @@
 
 #include "roadmaker/mesh/junction_corners.hpp"
 #include "roadmaker/mesh/junction_maneuvers.hpp"
+#include "roadmaker/mesh/junction_signals.hpp"
 #include "roadmaker/mesh/junction_stoplines.hpp"
 #include "roadmaker/mesh/junction_surface_spans.hpp"
 
@@ -40,6 +41,7 @@ class CornerTool;
 class StopLineTool;
 class JunctionSurfaceTool;
 class ManeuverTool;
+class SignalTool;
 class ElevationTool;
 class LibraryListModel;
 
@@ -103,6 +105,12 @@ public:
   /// issue #227), so a row click and a viewport click pick the same turn.
   void set_maneuver_tool(ManeuverTool* tool);
 
+  /// Binds the "Signalization" group to the Signal tool (p4-s7, issue #228).
+  /// The tool owns the PENDING template and mount model; this section is the
+  /// view over them plus the two commands. Until a tool is attached the group
+  /// stays hidden (the Elevation/Corner precedent) — the panel never owns it.
+  void set_signal_tool(SignalTool* tool);
+
   /// The editor's road-mark width conventions [m]. OpenDRIVE's @width has no
   /// normative values (weight standard/bold is the spec's coarse axis) —
   /// these presets are RoadMaker conventions (docs/domain/opendrive.md).
@@ -125,6 +133,13 @@ private:
   /// plain widgets for the same reason the span rows are: a handful of rows,
   /// nothing sortable or drag-reorderable, nothing to share with a view.
   void refresh_maneuvers();
+
+  /// Re-seeds the template/mount combos from the Signal tool's pending state,
+  /// re-enables the two commands from their live preconditions, and rebuilds
+  /// one read-only row per approach from mesh::junction_signals(). Same dynamic
+  /// row idiom (and the same setParent(nullptr)+deleteLater teardown) as the
+  /// maneuver rows.
+  void refresh_signalization();
 
   /// Populates the Junction section (default corner radius + carriageway
   /// material) from `junction`, and shows it. Called from the junction branch
@@ -295,6 +310,17 @@ private:
   QVBoxLayout* maneuvers_layout_ = nullptr;
   QPushButton* maneuvers_rebuild_button_ = nullptr;
   ManeuverTool* maneuver_tool_ = nullptr;
+
+  /// Junction signalization (p4-s7, issue #228): the template + mount combos,
+  /// the two commands, and one read-only row per approach. The pending template
+  /// lives on the TOOL, not here — this is a view over it.
+  QGroupBox* signalization_group_;
+  QVBoxLayout* signalization_rows_layout_ = nullptr;
+  QComboBox* signalization_template_combo_ = nullptr;
+  QComboBox* signalization_mount_combo_ = nullptr;
+  QPushButton* signalization_apply_button_ = nullptr;
+  QPushButton* signalization_clear_button_ = nullptr;
+  SignalTool* signal_tool_ = nullptr;
 
   /// Junction section (p4-s2): the junction-wide corner-radius default (the
   /// fallback every corner without its own radius uses) and the carriageway

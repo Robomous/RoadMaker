@@ -63,10 +63,16 @@ struct JunctionApproachInfo {
   /// within `kSignalApproachWindow` of the mouth whose @orientation admits
   /// traffic travelling toward the junction (the matching direction, or
   /// `None`, which is valid in both). In arena creation order.
-  std::vector<SignalId> signals;
+  ///
+  /// NOT named `signals`: Qt's <QObject> defines `signals` as a macro
+  /// (`#define signals public`), so a member of that name makes this header
+  /// impossible to include from ANY editor translation unit — the struct
+  /// declaration itself fails to parse. The kernel never includes Qt, but its
+  /// headers are consumed by code that does.
+  std::vector<SignalId> signal_ids;
 
   /// The odr ids of the top-level `<controller>`s (§14.6) that name at least
-  /// one of `signals` in a `<control>`, in arena creation order, deduplicated.
+  /// one of `signal_ids` in a `<control>`, in arena creation order, deduplicated.
   /// A `<control>` naming no live signal is simply never matched — the query
   /// is dormant-tolerant and never mutates.
   std::vector<std::string> controller_odr_ids;

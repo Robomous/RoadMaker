@@ -70,6 +70,7 @@
 #include "tools/prop_polygon_tool.hpp"
 #include "tools/prop_span_tool.hpp"
 #include "tools/select_tool.hpp"
+#include "tools/signal_tool.hpp"
 #include "tools/split_tool.hpp"
 #include "tools/stopline_tool.hpp"
 
@@ -480,6 +481,15 @@ MainWindow::MainWindow(QWidget* parent, bool restore_saved_layout)
   wire_status(maneuver_tool.get());
   properties_panel_->set_maneuver_tool(maneuver_tool.get());
   tool_manager_.register_tool(ToolId::Maneuver, std::move(maneuver_tool));
+
+  // Signal: the signalization layer (p4-s7, #228). It targets a junction so the
+  // Properties pane can apply a template, selects a placed head, and places one
+  // signal from the Library on a road — all through Document commands.
+  auto signal_tool = std::make_unique<SignalTool>(document_, selection_);
+  wire_status(signal_tool.get());
+  signal_tool->set_params_provider([this] { return resolve_default_signal_item(); });
+  properties_panel_->set_signal_tool(signal_tool.get());
+  tool_manager_.register_tool(ToolId::Signal, std::move(signal_tool));
   connect(actions_->tool_corner, &QAction::triggered, this, [this] {
     tool_manager_.set_active(ToolId::Corner);
   });
@@ -494,6 +504,9 @@ MainWindow::MainWindow(QWidget* parent, bool restore_saved_layout)
   });
   connect(actions_->tool_maneuver, &QAction::triggered, this, [this] {
     tool_manager_.set_active(ToolId::Maneuver);
+  });
+  connect(actions_->tool_signal, &QAction::triggered, this, [this] {
+    tool_manager_.set_active(ToolId::Signal);
   });
   tool_manager_.set_active(ToolId::Select);
 
@@ -1036,6 +1049,18 @@ LibraryItem MainWindow::resolve_default_stencil_item() const {
   for (int row = 0; row < library_model_.rowCount(); ++row) {
     const LibraryItem* item = library_model_.item(row);
     if (item != nullptr && item->kind == LibraryItem::Kind::Stencil) {
+      return *item;
+    }
+  }
+  return {};
+}
+
+LibraryItem MainWindow::resolve_default_signal_item() const {
+  // The first Kind::Signal in the merged Library (an overlay asset shadows the
+  // built-in). An empty item makes the Signal tool toast rather than place.
+  for (int row = 0; row < library_model_.rowCount(); ++row) {
+    const LibraryItem* item = library_model_.item(row);
+    if (item != nullptr && item->kind == LibraryItem::Kind::Signal) {
       return *item;
     }
   }

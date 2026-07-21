@@ -119,6 +119,8 @@ private:
   void op_maneuver_edit();
   void op_rebuild_maneuvers();
   void op_add_uturn();
+  void op_signalize();
+  void op_clear_signalization();
   void op_create_span_junction();
   void op_delete_junction();
   void op_delete_road();

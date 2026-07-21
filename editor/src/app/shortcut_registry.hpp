@@ -71,6 +71,7 @@ enum class Id {
   ToolJunctionSpan,
   ToolJunctionSurface,
   ToolManeuver,
+  ToolSignal,
   LaneWidthEditor,
   MergeRoads,
   // View

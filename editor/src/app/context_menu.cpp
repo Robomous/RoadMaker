@@ -4,6 +4,7 @@
 #include "roadmaker/edit/markings.hpp"
 #include "roadmaker/edit/operations.hpp"
 #include "roadmaker/mesh/junction_maneuvers.hpp"
+#include "roadmaker/mesh/junction_signals.hpp"
 #include "roadmaker/mesh/junction_stoplines.hpp"
 #include "roadmaker/road/network.hpp"
 
@@ -12,6 +13,7 @@
 #include <QObject>
 #include <QUndoStack>
 #include <algorithm>
+#include <array>
 #include <set>
 #include <string>
 #include <utility>
@@ -363,6 +365,48 @@ std::vector<MenuItem> build_context_menu(const MenuContext& context, ContextMenu
       uturns.enabled = !uturns.children.empty();
       items.push_back(std::move(uturns));
     }
+
+    // Signalization (p4-s7, issue #228). Gated on exactly what
+    // signalize_junction validates, so an item never fails when clicked: arms
+    // to place against (a foreign junction has none), no spans (ASAM: a virtual
+    // junction "shall not have controllers"), a solvable approach, and — per
+    // template — a plan that is not already applied, since re-applying the same
+    // one is a no-op the command layer refuses.
+    const bool signalizable = arm_based && !junction_signals(network, junction).empty();
+    // Display names, in edit::SignalizeTemplate's own order — the same order
+    // kSignalizationTemplates uses, which is what makes the index the mapping.
+    const std::array<QString, 4> template_names{QObject::tr("Protected left (4-phase)"),
+                                                QObject::tr("Two phase (permissive lefts)"),
+                                                QObject::tr("All-way stop"),
+                                                QObject::tr("Two-way stop")};
+    MenuItem signalize{.text = QObject::tr("Auto signalize")};
+    for (std::size_t i = 0; i < std::size(kSignalizationTemplates); ++i) {
+      const std::string_view token = kSignalizationTemplates[i];
+      const auto tmpl = static_cast<edit::SignalizeTemplate>(i);
+      // The context menu never mounts a prop (the Attributes pane's combo does),
+      // so "already applied" means this template with no mount.
+      const bool applied = junction_ptr != nullptr && junction_ptr->signalization.tmpl == token &&
+                           junction_ptr->signalization.mount_model.empty();
+      signalize.children.push_back(
+          MenuItem{.text = template_names[i],
+                   .enabled = signalizable && !applied,
+                   .invoke = [deps, junction, tmpl] {
+                     (void)deps.document.push_command(edit::signalize_junction(
+                         deps.document.network(), junction, edit::SignalizeOptions{.tmpl = tmpl}));
+                   }});
+    }
+    signalize.enabled = signalizable;
+    items.push_back(std::move(signalize));
+    const bool clearable =
+        junction_ptr != nullptr &&
+        (!junction_ptr->junction_controllers.empty() || !junction_ptr->signal_mounts.empty() ||
+         !junction_ptr->signalization.tmpl.empty());
+    items.push_back(MenuItem{.text = QObject::tr("Clear signalization"),
+                             .enabled = clearable,
+                             .invoke = [deps, junction] {
+                               (void)deps.document.push_command(
+                                   edit::clear_signalization(deps.document.network(), junction));
+                             }});
     items.push_back(separator());
     // Author one zebra crosswalk per arm, spanning its driving lanes just inside
     // the junction — all in one undo step (§WS-B). Disabled when the junction has
