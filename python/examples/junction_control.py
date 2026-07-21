@@ -151,6 +151,47 @@ def main() -> int:
     describe(network, "after unlocking the merged junction:")
     check_round_trip(network, "unlocked")
 
+    # --- 6b. junction floor surface spans (#320) ----------------------------
+    # The floor is a union of one contribution — a SURFACE SPAN — per connecting
+    # road. `junction_surface_spans` returns them with the exact samples the
+    # mesher used, and two commands control how each one takes part: Include
+    # Samples (samples-only: the footprint stays in the union, so coverage and
+    # the exported <boundary> never move) and a free Sort Index, where higher
+    # wins on overlap.
+    #
+    # NOT to be confused with the SpanArm spans of §7 below: those are a VIRTUAL
+    # junction's s-interval, and a virtual junction has no floor at all.
+    floor_spans = rm.junction_surface_spans(network, left)
+    print(f"\nsurface spans of junction {network.junction(left).odr_id}: {len(floor_spans)}")
+    for info in floor_spans[:3]:
+        print(
+            f"  turn {info.road_odr_id:<4} included={info.included} "
+            f"sort={info.sort_index} border_samples={len(info.border)}"
+        )
+
+    first = floor_spans[0].road
+    stack.push(network, rm.edit.set_surface_span_sort_index(network, left, first, 1))
+    stack.push(network, rm.edit.set_surface_span_included(network, left, first, False))
+    raised = next(s for s in rm.junction_surface_spans(network, left) if s.road == first)
+    assert raised.authored and raised.sort_index == 1 and not raised.included
+    print(f"  raised and excluded turn {raised.road_odr_id}")
+    check_round_trip(network, "surface spans")
+
+    # Erase-at-default: returning BOTH fields to their defaults drops the record
+    # entirely, so the file matches the one before the first edit byte for byte.
+    stack.push(network, rm.edit.set_surface_span_included(network, left, first, True))
+    stack.push(network, rm.edit.set_surface_span_sort_index(network, left, first, 0))
+    assert not network.junction(left).surface_spans
+    print("  back to defaults — the record is gone, not merely reset")
+
+    # A no-op against the EFFECTIVE value is refused rather than silently
+    # creating a defaulted record.
+    try:
+        stack.push(network, rm.edit.set_surface_span_included(network, left, first, True))
+        raise AssertionError("a no-op include should have been refused")
+    except ValueError as error:
+        print(f"  refused (no-op): {error}")
+
     # --- 7. span (virtual) junctions ---------------------------------------
     # §12.7: the main road is UNINTERRUPTED. Nothing is cut, nothing is linked,
     # no connecting road is generated — the junction record simply declares that

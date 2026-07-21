@@ -15,6 +15,7 @@
 #include "roadmaker/io/usd_exporter.hpp"
 #include "roadmaker/mesh/junction_corners.hpp"
 #include "roadmaker/mesh/junction_stoplines.hpp"
+#include "roadmaker/mesh/junction_surface_spans.hpp"
 #include "roadmaker/mesh/mesh_builder.hpp"
 #include "roadmaker/road/authoring.hpp"
 #include "roadmaker/road/network.hpp"
@@ -527,6 +528,27 @@ NB_MODULE(_roadmaker, m) {
         return text + ")";
       });
 
+  nb::class_<roadmaker::SurfaceSpan>(m, "SurfaceSpan")
+      .def_ro("road",
+              &roadmaker::SurfaceSpan::road,
+              "The connecting road whose floor contribution this record "
+              "overrides. NOT a SpanArm — that is a VIRTUAL junction's "
+              "s-interval, and a span junction has no floor at all.")
+      .def_ro("included",
+              &roadmaker::SurfaceSpan::included,
+              "False means this road's SAMPLES leave the floor's fill inputs. "
+              "Its footprint stays in the union either way, so the pavement's "
+              "coverage and the exported <boundary> never change. Edit it with "
+              "edit.set_surface_span_included.")
+      .def_ro("sort_index",
+              &roadmaker::SurfaceSpan::sort_index,
+              "Precedence where span footprints OVERLAP: higher wins. Edit it "
+              "with edit.set_surface_span_sort_index.")
+      .def("__repr__", [](const roadmaker::SurfaceSpan& span) {
+        return "SurfaceSpan(included=" + std::string(span.included ? "True" : "False") +
+               ", sort_index=" + std::to_string(span.sort_index) + ")";
+      });
+
   nb::class_<roadmaker::SpanArm>(m, "SpanArm")
       .def(nb::init<>())
       // edit.create_span_junction takes a list of these, so they have to be
@@ -581,6 +603,12 @@ NB_MODULE(_roadmaker, m) {
               "to its arms. edit.regenerate_junction still re-derives it on "
               "demand. Toggle it with edit.set_junction_locked; a span junction "
               "is always locked.")
+      .def_ro("surface_spans",
+              &roadmaker::Junction::surface_spans,
+              "Authored floor-contribution overrides, one per connecting road "
+              "(sparse; read-only). Edit them with "
+              "edit.set_surface_span_included / edit.set_surface_span_sort_index, "
+              "and read the SOLVED spans with mesh.junction_surface_spans.")
       .def_ro("spans",
               &roadmaker::Junction::spans,
               "Membership spans of a VIRTUAL (span) junction — a stretch of a "
@@ -1273,6 +1301,55 @@ NB_MODULE(_roadmaker, m) {
       "StopLine record is merged over that derivation. This is the same solve the "
       "mesher and the writer use. Empty for a stale id; an arm already carrying a "
       "plain signalLines object is suppressed so foreign files do not double-draw.");
+
+  nb::class_<roadmaker::JunctionSurfaceSpanInfo>(m, "JunctionSurfaceSpanInfo")
+      .def_ro("road",
+              &roadmaker::JunctionSurfaceSpanInfo::road,
+              "The connecting road this span belongs to — stable across "
+              "regeneration, so it is the record key.")
+      .def_ro("road_odr_id", &roadmaker::JunctionSurfaceSpanInfo::road_odr_id)
+      .def_ro("included",
+              &roadmaker::JunctionSurfaceSpanInfo::included,
+              "Effective Include Samples: False means the span's samples leave "
+              "the floor's elevation and triangulation inputs. Its footprint "
+              "stays in the union regardless.")
+      .def_ro("sort_index",
+              &roadmaker::JunctionSurfaceSpanInfo::sort_index,
+              "Effective sort index — higher wins where footprints overlap.")
+      .def_ro("authored",
+              &roadmaker::JunctionSurfaceSpanInfo::authored,
+              "True when the junction carries a SurfaceSpan record for this road.")
+      .def_prop_ro(
+          "footprint",
+          [](const roadmaker::JunctionSurfaceSpanInfo& info) { return to_xy(info.footprint); },
+          "The raw plan-view footprint ring (CCW) as (x, y) pairs — the polygon "
+          "whose overlaps the sort index arbitrates.")
+      .def_ro("border",
+              &roadmaker::JunctionSurfaceSpanInfo::border,
+              "Exact border-ring samples (x, y, z): the Dirichlet sources and "
+              "the road mesh vertices the floor stitches to.")
+      .def_ro("centerline",
+              &roadmaker::JunctionSurfaceSpanInfo::centerline,
+              "Reference-line samples (x, y, z) — the soft interior constraints.")
+      .def("__repr__", [](const roadmaker::JunctionSurfaceSpanInfo& info) {
+        return "JunctionSurfaceSpanInfo(road='" + info.road_odr_id +
+               "', included=" + std::string(info.included ? "True" : "False") +
+               ", sort_index=" + std::to_string(info.sort_index) + ")";
+      });
+
+  m.def(
+      "junction_surface_spans",
+      [](const roadmaker::RoadNetwork& network, roadmaker::JunctionId junction) {
+        return roadmaker::junction_surface_spans(network, junction);
+      },
+      "network"_a,
+      "junction"_a,
+      "Every surface span of the junction — one per connecting road, in "
+      "connection order — with the exact footprint, border and centerline "
+      "samples its floor was built from. The SAME gather the mesher runs, so a "
+      "tool never re-implements the sampling. Empty for a stale id and for a "
+      "junction with no floor to control (a span/virtual junction has no "
+      "connections at all).");
 
   // --- authoring -----------------------------------------------------------------
 
@@ -2167,6 +2244,43 @@ NB_MODULE(_roadmaker, m) {
       "Drops ONE arm's authored stop-line record, returning it to the derived "
       "default. Pushing raises ValueError for a stale junction, a road end that "
       "is not a stop line of it, or an arm with nothing authored to reset.");
+  edit.def(
+      "set_surface_span_included",
+      [](const roadmaker::RoadNetwork& network,
+         roadmaker::JunctionId junction,
+         roadmaker::RoadId road,
+         bool included) {
+        return roadmaker::edit::set_surface_span_included(network, junction, road, included);
+      },
+      "network"_a,
+      "junction"_a,
+      "road"_a,
+      "included"_a,
+      "Authors whether ONE connecting road's samples take part in the junction "
+      "floor's elevation and triangulation. Excluding is SAMPLES-ONLY: the "
+      "footprint stays in the union, so coverage and the exported <boundary> "
+      "never change. A record left back at its defaults is erased, so toggling "
+      "twice is byte-identical to never having touched the span. Pushing raises "
+      "ValueError for a stale junction, a road that is not a surface span of it "
+      "(a span/virtual junction has none), or a no-op against the effective "
+      "value.");
+  edit.def(
+      "set_surface_span_sort_index",
+      [](const roadmaker::RoadNetwork& network,
+         roadmaker::JunctionId junction,
+         roadmaker::RoadId road,
+         int sort_index) {
+        return roadmaker::edit::set_surface_span_sort_index(network, junction, road, sort_index);
+      },
+      "network"_a,
+      "junction"_a,
+      "road"_a,
+      "sort_index"_a,
+      "Authors ONE connecting road's precedence where span footprints OVERLAP — "
+      "higher wins. A free integer bounded by +/-1000; the editor's Raise/Lower "
+      "are just this with current +/- 1, so an index survives regeneration "
+      "without renumbering. Same validation and erase-at-default rule as "
+      "edit.set_surface_span_included.");
   edit.def(
       "set_junction_locked",
       [](const roadmaker::RoadNetwork& network, roadmaker::JunctionId junction, bool locked) {
