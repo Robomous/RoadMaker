@@ -58,10 +58,22 @@ gracefully in other tools (they ignore `userData`). Policy:
 
 **Registry** — existing: `rm:waypoints`, `rm:crosswalk`, `rm:markingCurve`,
 `rm:stencil`, `rm:aux_boundary`, `rm:arms`, `rm:corners`, `rm:junction`,
-`rm:surface`, `rm:<material-id>`, `rm:stopline`. Planned:
-`rm:arms`/`rm:junction` extensions for locked state and s-spans (p4-s4),
-per-span surface records (p4-s5), `rm:maneuver` (p4-s6), `rm:phases`
-(p4-s8). Each owning sprint defines its payload against this policy.
+`rm:surface`, `rm:<material-id>`, `rm:stopline`, `rm:spans`, `rm:floor`.
+Planned: `rm:maneuver` (p4-s6), `rm:phases` (p4-s8). Each owning sprint
+defines its payload against this policy.
+
+`rm:floor` (p4-s5, shipped) carries the junction floor's per-connecting-road
+surface spans — Include Samples and a sort index. It is Layer 1 with NO Layer-0
+counterpart at all: §12.10 gives `<junction>` only `<boundary>` and
+`<elevationGrid>`, both of them derived OUTPUT geometry with no say in how the
+pavement is triangulated, so there is nothing for a foreign reader to lose.
+Junction scope, entry form `roadOdrId[:inc=0][:sort=<int>]` joined with `;`,
+each field omitted at its default so a junction that predates the feature
+re-exports byte-identically. The code is `rm:floor` and not `rm:surface`: that
+one already belongs to the P2 ground surfaces (a root-level element) and its
+bytes must stay stable. Degradation follows the policy above: a malformed
+ENTRY drops the whole value (all-or-nothing, like `rm:corners`) while an
+unknown FIELD key warns and is skipped (forward-compat, like `rm:junction`).
 
 `rm:stopline` (p4-s3, shipped) is the worked example of a **materialized**
 record: the Layer-0 carrier is not something the user placed but an
