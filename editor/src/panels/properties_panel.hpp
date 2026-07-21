@@ -301,8 +301,8 @@ private:
   /// The primary selected object's rendered height: its declared @height when
   /// positive, else its model's authored height. nullopt when the primary is
   /// not a prop (a marking, or an unknown model), which makes the scrub inert.
-  [[nodiscard]] std::optional<double> primary_prop_effective_height(const RoadNetwork& network)
-      const;
+  [[nodiscard]] std::optional<double>
+  primary_prop_effective_height(const RoadNetwork& network) const;
 
   /// ONE update_objects command resizing every selected prop. `absolute` sets
   /// each prop's height to `value` outright; otherwise `value` is the primary

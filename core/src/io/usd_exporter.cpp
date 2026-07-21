@@ -314,7 +314,8 @@ Expected<void> export_usda(const NetworkMesh& mesh, const std::filesystem::path&
   };
   for (std::size_t oi = 0; oi < mesh.objects.size(); ++oi) {
     const ObjectInstance& instance = mesh.objects[oi];
-    bake_instance("prop", oi, instance.model_id, instance.position, instance.heading, instance.scale);
+    bake_instance(
+        "prop", oi, instance.model_id, instance.position, instance.heading, instance.scale);
   }
   for (std::size_t si = 0; si < mesh.signal_instances.size(); ++si) {
     const SignalInstance& instance = mesh.signal_instances[si];

@@ -26,8 +26,8 @@
 #include <algorithm>
 #include <array>
 #include <filesystem>
-#include <optional>
 #include <fstream>
+#include <optional>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -1667,8 +1667,8 @@ namespace {
 
 /// Adds a tree_pine prop at `s` with an optional declared @height, and returns
 /// its id. A nullopt height leaves the object relying on the model's size.
-ObjectId add_prop(Document& document, RoadId road, const char* odr_id, double s,
-                  std::optional<double> height) {
+ObjectId add_prop(
+    Document& document, RoadId road, const char* odr_id, double s, std::optional<double> height) {
   Object tree;
   tree.odr_id = odr_id;
   tree.name = "tree_pine";
@@ -1770,8 +1770,8 @@ TEST(PropertiesPanel, PropHeightTypedAppliesAbsoluteToAll) {
   const RoadId road = all_roads(h.document).front();
   const ObjectId small = add_prop(h.document, road, "t1", 10.0, 2.0);
   const ObjectId tall = add_prop(h.document, road, "t2", 20.0, 8.0);
-  h.selection.select_many(std::vector<SelectionEntry>{{.road = road, .object = small},
-                                                      {.road = road, .object = tall}});
+  h.selection.select_many(
+      std::vector<SelectionEntry>{{.road = road, .object = small}, {.road = road, .object = tall}});
 
   auto* spin = panel.findChild<QDoubleSpinBox*>(QStringLiteral("object_height_spin"));
   ASSERT_NE(spin, nullptr);

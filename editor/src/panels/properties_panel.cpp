@@ -247,8 +247,7 @@ PropertiesPanel::PropertiesPanel(Document& document,
       object_kind_label_(new QLabel(this)),
       model_slot_(new SlotWidget(QStringLiteral("Props"), this)),
       instance_material_slot_(new SlotWidget(QStringLiteral("Materials"), this)),
-      object_height_spin_(new QDoubleSpinBox),
-      style_group_(new QGroupBox(tr("Road style"), this)),
+      object_height_spin_(new QDoubleSpinBox), style_group_(new QGroupBox(tr("Road style"), this)),
       style_slot_(new SlotWidget(QStringLiteral("Road styles"), this)),
       surface_group_(new QGroupBox(tr("Ground surface"), this)),
       material_slot_(new SlotWidget(QStringLiteral("Materials"), this)),
@@ -677,10 +676,9 @@ PropertiesPanel::PropertiesPanel(Document& document,
       install_scrub(new ScrubLabel(tr("Height"), this),
                     {.spin = object_height_spin_,
                      .units_per_pixel = 0.05,
-                     .baseline =
-                         [this]() -> std::optional<double> {
-                           return primary_prop_effective_height(document_.network());
-                         },
+                     .baseline = [this]() -> std::optional<double> {
+                       return primary_prop_effective_height(document_.network());
+                     },
                      .factory =
                          [this](const RoadNetwork& network, double value) {
                            return resize_selected_props(network, value, /*absolute=*/false);
@@ -704,7 +702,8 @@ PropertiesPanel::PropertiesPanel(Document& document,
     if (!current.has_value() || std::abs(object_height_spin_->value() - *current) < 1e-9) {
       return;
     }
-    push(resize_selected_props(document_.network(), object_height_spin_->value(),
+    push(resize_selected_props(document_.network(),
+                               object_height_spin_->value(),
                                /*absolute=*/true));
   });
   connect(model_slot_, &SlotWidget::item_dropped, this, &PropertiesPanel::push_object_model);
@@ -1284,8 +1283,8 @@ PropertiesPanel::primary_prop_effective_height(const RoadNetwork& network) const
 }
 
 std::unique_ptr<edit::Command> PropertiesPanel::resize_selected_props(const RoadNetwork& network,
-                                                                     double value,
-                                                                     bool absolute) const {
+                                                                      double value,
+                                                                      bool absolute) const {
   // The primary's height sets the batch factor, so every prop keeps its
   // relative size. Read from `network` — see the header's note on baselines.
   const Object* primary = network.object(selection_.primary().object);
@@ -1316,8 +1315,8 @@ std::unique_ptr<edit::Command> PropertiesPanel::resize_selected_props(const Road
     if (model == nullptr) {
       continue; // markings and unknown models are not resizable
     }
-    const double height = object->height.has_value() && *object->height > 0.0 ? *object->height
-                                                                             : model->height;
+    const double height =
+        object->height.has_value() && *object->height > 0.0 ? *object->height : model->height;
     if (!(height > 0.0)) {
       continue;
     }

@@ -6,8 +6,8 @@
 // RM_BUILD_USD CI job, which runs against the golden file this suite leaves in
 // the temp directory.
 
-#include "roadmaker/io/usd_exporter.hpp"
 #include "roadmaker/assets/prop_library.hpp"
+#include "roadmaker/io/usd_exporter.hpp"
 #include "roadmaker/mesh/mesh_builder.hpp"
 #include "roadmaker/road/authoring.hpp"
 #include "roadmaker/road/network.hpp"
