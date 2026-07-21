@@ -8,10 +8,12 @@
 // every command validated through junction_maneuvers(), the same query the tool
 // and the panel read.
 //
-// PERSISTENCE IS WP2's: `Junction::maneuvers` is not written to .xodr yet, so a
-// record-only command leaves the serialized document untouched. Those cases use
-// expect_record_round_trip (record digest changes, document does NOT) while the
-// geometry command, which really does move a road, uses the full §8 oracle.
+// Every command here runs through the §8 oracle: `Junction::maneuvers` is
+// persisted as `<userData code="rm:maneuver">`, so a lock, a turn-type override
+// and an endpoint slide all reach write_xodr() exactly like a geometry change
+// does. Byte-equality of the serialized document is therefore the whole test of
+// apply→revert — including the authors-nothing rule, since a record the writer
+// drops must leave bytes identical to the ones before the edit.
 
 #include "roadmaker/edit/operations.hpp"
 #include "roadmaker/mesh/junction_maneuvers.hpp"
@@ -55,7 +57,8 @@ namespace {
 
 constexpr double kDeg = std::numbers::pi / 180.0;
 
-/// The §8 command oracle for a command that really moves geometry.
+/// The §8 command oracle: apply changes the document, revert restores it
+/// byte-identically, re-apply reproduces, final revert is pristine.
 void expect_command_round_trip(RoadNetwork& network, Command& command) {
   const std::string before = snapshot_xodr(network);
   ASSERT_TRUE(command.apply(network).has_value());
@@ -67,48 +70,6 @@ void expect_command_round_trip(RoadNetwork& network, Command& command) {
   expect_network_matches(network, after);
   ASSERT_TRUE(command.revert(network).has_value());
   expect_network_matches(network, before);
-}
-
-/// A stable text rendering of everything a maneuver command can change on the
-/// junction record. Stands in for write_xodr until WP2 persists `maneuvers`.
-std::string junction_digest(const RoadNetwork& network, JunctionId junction_id) {
-  const Junction* junction = network.junction(junction_id);
-  if (junction == nullptr) {
-    return "<stale>";
-  }
-  std::string out;
-  for (const auto& connection : junction->connections) {
-    out += "c(" + std::to_string(connection.connecting_road.index) + ")";
-  }
-  for (const Maneuver& record : junction->maneuvers) {
-    out += "m(" + std::to_string(record.road.index) + "," +
-           (record.locked ? std::string("L") : std::string("-")) + "," +
-           (record.turn_type.has_value() ? std::to_string(static_cast<int>(*record.turn_type))
-                                         : std::string("-")) +
-           "," + std::to_string(record.start_offset.value_or(0.0)) + "," +
-           std::to_string(record.end_offset.value_or(0.0)) + "," +
-           std::to_string(record.control_points.size()) + ")";
-  }
-  return out;
-}
-
-/// The oracle for a RECORD-ONLY command: the junction record changes, the
-/// serialized document does not (Layer 1 persistence is WP2's), and revert
-/// restores both.
-void expect_record_round_trip(RoadNetwork& network, JunctionId junction_id, Command& command) {
-  const std::string before_xml = snapshot_xodr(network);
-  const std::string before = junction_digest(network, junction_id);
-  ASSERT_TRUE(command.apply(network).has_value());
-  const std::string after = junction_digest(network, junction_id);
-  EXPECT_NE(before, after); // a command that changes nothing is a bug
-  ASSERT_TRUE(command.revert(network).has_value());
-  EXPECT_EQ(junction_digest(network, junction_id), before);
-  expect_network_matches(network, before_xml);
-  ASSERT_TRUE(command.apply(network).has_value());
-  EXPECT_EQ(junction_digest(network, junction_id), after);
-  ASSERT_TRUE(command.revert(network).has_value());
-  EXPECT_EQ(junction_digest(network, junction_id), before);
-  expect_network_matches(network, before_xml);
 }
 
 RoadId author(RoadNetwork& network, std::vector<Waypoint> waypoints, const char* odr_id) {
@@ -298,20 +259,24 @@ TEST(ManeuverOperations, LockRoundTripsAndErasesOnUnlock) {
   const Cross cross = make_cross(network);
   const RoadId road =
       maneuver_between(network, cross.junction, end_of(cross.west), end_of(cross.east)).road;
+  const std::string derived = snapshot_xodr(network);
 
   auto lock = roadmaker::edit::set_maneuver_locked(network, cross.junction, road, true);
   ASSERT_NE(lock, nullptr);
-  expect_record_round_trip(network, cross.junction, *lock);
+  expect_command_round_trip(network, *lock);
 
   ASSERT_TRUE(lock->apply(network).has_value());
   const Maneuver* record = record_for(network, cross.junction, road);
   ASSERT_NE(record, nullptr);
   EXPECT_TRUE(record->locked);
 
-  // Unlocking leaves the record authoring nothing, so it is dropped entirely.
+  // Unlocking leaves the record authoring nothing, so it is dropped entirely —
+  // and the writer's drop rule makes lock-then-unlock byte-identical to never
+  // having locked at all.
   auto unlock = roadmaker::edit::set_maneuver_locked(network, cross.junction, road, false);
   ASSERT_TRUE(unlock->apply(network).has_value());
   EXPECT_EQ(record_for(network, cross.junction, road), nullptr);
+  expect_network_matches(network, derived);
 }
 
 TEST(ManeuverOperations, LockRejectsNoOpAndUnknownRoad) {
@@ -336,11 +301,12 @@ TEST(ManeuverOperations, TurnTypeOverrideRoundTripsAndClears) {
   const Cross cross = make_cross(network);
   const RoadId road =
       maneuver_between(network, cross.junction, end_of(cross.west), end_of(cross.east)).road;
+  const std::string derived = snapshot_xodr(network);
 
   auto override_left =
       roadmaker::edit::set_maneuver_turn_type(network, cross.junction, road, TurnType::Left);
   ASSERT_NE(override_left, nullptr);
-  expect_record_round_trip(network, cross.junction, *override_left);
+  expect_command_round_trip(network, *override_left);
   ASSERT_TRUE(override_left->apply(network).has_value());
 
   const JunctionManeuverInfo overridden =
@@ -361,6 +327,7 @@ TEST(ManeuverOperations, TurnTypeOverrideRoundTripsAndClears) {
       roadmaker::edit::set_maneuver_turn_type(network, cross.junction, road, TurnType::Straight);
   ASSERT_TRUE(to_computed->apply(network).has_value());
   EXPECT_EQ(record_for(network, cross.junction, road), nullptr);
+  expect_network_matches(network, derived);
 }
 
 TEST(ManeuverOperations, ClearingAnAbsentOverrideIsAnError) {
