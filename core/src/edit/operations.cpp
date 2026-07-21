@@ -3398,6 +3398,238 @@ set_junction_locked(const RoadNetwork& network, JunctionId junction_id, bool loc
 
 namespace {
 
+/// The membership ops' shared precondition (p4-s4 D4): the junction must be
+/// live, ARM-based and LOCKED. Order matters — a span junction and a foreign
+/// junction are both arm-less, and each deserves its own message.
+Expected<const Junction*> arm_editable_junction(const RoadNetwork& network,
+                                                JunctionId junction_id) {
+  const Junction* junction = network.junction(junction_id);
+  if (junction == nullptr) {
+    return make_error(ErrorCode::InvalidArgument, "stale junction id");
+  }
+  if (!junction->spans.empty()) {
+    return make_error(ErrorCode::InvalidArgument,
+                      "a span junction has no arms to edit — §12.7 virtual junctions cover a "
+                      "stretch of road, they never cut it");
+  }
+  if (junction->arms.empty()) {
+    return make_error(
+        ErrorCode::InvalidArgument,
+        "junction has no recorded arms (loaded from a foreign file); recreate it to edit");
+  }
+  if (!junction->locked) {
+    return make_error(ErrorCode::InvalidArgument,
+                      "lock the junction first — an automatic junction's arms are re-derived from "
+                      "the roads that meet it, so an edit to them would not survive");
+  }
+  return junction;
+}
+
+/// `end`'s road odr id for a message, or "?" when the road is gone.
+std::string end_road_name(const RoadNetwork& network, const RoadEnd& end) {
+  const Road* road = network.road(end.road);
+  return road != nullptr ? road->odr_id : std::string("?");
+}
+
+} // namespace
+
+std::unique_ptr<Command> add_junction_arm(const RoadNetwork& network,
+                                          JunctionId junction_id,
+                                          RoadEnd end,
+                                          const JunctionGenOptions& options) {
+  static constexpr std::string_view kName = "Add Junction Arm";
+  const auto fail = [&](std::string message) {
+    return invalid_command(
+        std::string(kName),
+        Error{.code = ErrorCode::InvalidArgument, .message = std::move(message)});
+  };
+  auto junction = arm_editable_junction(network, junction_id);
+  if (!junction.has_value()) {
+    return invalid_command(std::string(kName), junction.error());
+  }
+  if (std::ranges::find((*junction)->arms, end) != (*junction)->arms.end()) {
+    return fail(
+        fmt::format("road '{}' is already an arm of this junction", end_road_name(network, end)));
+  }
+  // Single-owner rule (create_junction gate finding 5): a road end claimed by
+  // one junction may not become an arm of a second.
+  if (const auto owner = junction_at_end(network, end)) {
+    const Junction* other = network.junction(*owner);
+    return fail(fmt::format("road '{}' end already belongs to junction {}",
+                            end_road_name(network, end),
+                            other != nullptr ? other->odr_id : "?"));
+  }
+  const std::array<RoadEnd, 1> probe{end};
+  if (auto free = ends_link_slots_free(network, probe); !free.has_value()) {
+    return invalid_command(std::string(kName), free.error());
+  }
+
+  std::vector<RoadEnd> arms = (*junction)->arms;
+  arms.push_back(end);
+  // retarget_junction re-plans the union and reports the planner's refusals
+  // (notably the max_end_distance_m proximity rule) as the command's error.
+  return retarget_junction(network, junction_id, arms, options, TurnSetPolicy::AllowChange, kName);
+}
+
+std::unique_ptr<Command> remove_junction_arm(const RoadNetwork& network,
+                                             JunctionId junction_id,
+                                             RoadEnd end,
+                                             const JunctionGenOptions& options) {
+  static constexpr std::string_view kName = "Remove Junction Arm";
+  const auto fail = [&](std::string message) {
+    return invalid_command(
+        std::string(kName),
+        Error{.code = ErrorCode::InvalidArgument, .message = std::move(message)});
+  };
+  auto junction = arm_editable_junction(network, junction_id);
+  if (!junction.has_value()) {
+    return invalid_command(std::string(kName), junction.error());
+  }
+  if (std::ranges::find((*junction)->arms, end) == (*junction)->arms.end()) {
+    return fail(
+        fmt::format("road '{}' is not an arm of this junction", end_road_name(network, end)));
+  }
+  // A junction needs two arms to have a turn at all. The planner would refuse
+  // the remainder anyway, but with a message about road ends rather than about
+  // what the user should do instead.
+  if ((*junction)->arms.size() < 3) {
+    return fail("a junction needs at least 2 arms — unlock it to re-derive it, or delete it");
+  }
+
+  std::vector<RoadEnd> arms;
+  arms.reserve((*junction)->arms.size() - 1);
+  for (const RoadEnd& arm : (*junction)->arms) {
+    if (arm != end) {
+      arms.push_back(arm);
+    }
+  }
+  // The junction's authored corners and stop lines keyed by `end` are LEFT
+  // ALONE: they go dormant and reactivate if the arm comes back (p4-s1/p4-s3
+  // dormancy contract), exactly as they do across any turn-set change.
+  return retarget_junction(network, junction_id, arms, options, TurnSetPolicy::AllowChange, kName);
+}
+
+std::unique_ptr<Command> merge_junctions(const RoadNetwork& network,
+                                         JunctionId survivor_id,
+                                         JunctionId absorbed_id,
+                                         const JunctionGenOptions& options) {
+  static constexpr std::string_view kName = "Merge Junctions";
+  const auto fail = [&](std::string message) {
+    return invalid_command(
+        std::string(kName),
+        Error{.code = ErrorCode::InvalidArgument, .message = std::move(message)});
+  };
+  if (survivor_id == absorbed_id) {
+    return fail("cannot merge a junction with itself");
+  }
+  // Neither side has to be locked (merging is an explicit authoring act on two
+  // derived junctions), but both must be arm-based with a real arm list — the
+  // union is what gets re-planned.
+  const auto side = [&](JunctionId id, const char* which) -> Expected<const Junction*> {
+    const Junction* junction = network.junction(id);
+    if (junction == nullptr) {
+      return make_error(ErrorCode::InvalidArgument, fmt::format("stale {} junction id", which));
+    }
+    if (!junction->spans.empty()) {
+      return make_error(ErrorCode::InvalidArgument,
+                        fmt::format("the {} is a span junction — §12.7 virtual junctions have no "
+                                    "arms to merge",
+                                    which));
+    }
+    if (junction->arms.size() < 2) {
+      return make_error(ErrorCode::InvalidArgument,
+                        fmt::format("the {} junction has no recorded arms (loaded from a foreign "
+                                    "file); recreate it to edit",
+                                    which));
+    }
+    return junction;
+  };
+  auto survivor = side(survivor_id, "survivor");
+  if (!survivor.has_value()) {
+    return invalid_command(std::string(kName), survivor.error());
+  }
+  auto absorbed = side(absorbed_id, "absorbed");
+  if (!absorbed.has_value()) {
+    return invalid_command(std::string(kName), absorbed.error());
+  }
+
+  std::vector<RoadEnd> arms = (*survivor)->arms;
+  arms.insert(arms.end(), (*absorbed)->arms.begin(), (*absorbed)->arms.end());
+
+  // Every road that currently belongs to the absorbed junction. Captured as
+  // VALUES here so the creator prologue never holds an arena pointer.
+  std::vector<RoadId> absorbed_roads;
+  network.for_each_road([&](RoadId road_id, const Road& road) {
+    if (road.junction == absorbed_id) {
+      absorbed_roads.push_back(road_id);
+    }
+  });
+
+  const std::array<JunctionId, 1> also_dirty{absorbed_id};
+  auto command = retarget_junction(network,
+                                   survivor_id,
+                                   arms,
+                                   options,
+                                   TurnSetPolicy::AllowChange,
+                                   kName,
+                                   (*absorbed)->connections,
+                                   also_dirty);
+  if (command->invalid.has_value()) {
+    return command;
+  }
+
+  // The absorbed junction goes away in place: erase_exact reserves its slot, so
+  // undo restores it under its own id with no generation bump.
+  command->erased.junctions.emplace_back(absorbed_id, **absorbed);
+
+  // Every absorbed road the retarget did not already capture (as a surviving
+  // turn in `before` or a dropped one in `erased`) still has its junction
+  // back-reference rewritten below, so it is a value edit too.
+  for (const RoadId road_id : absorbed_roads) {
+    const bool captured =
+        std::ranges::any_of(command->before.roads,
+                            [&](const auto& entry) { return entry.first == road_id; }) ||
+        std::ranges::any_of(command->erased.roads,
+                            [&](const auto& entry) { return entry.first == road_id; });
+    if (!captured) {
+      command->before.roads.emplace_back(road_id, *network.road(road_id));
+    }
+  }
+
+  auto retarget = std::move(command->creator);
+  command->creator = [survivor_id,
+                      absorbed_roads = std::move(absorbed_roads),
+                      corners = (*absorbed)->corners,
+                      stoplines = (*absorbed)->stoplines,
+                      retarget = std::move(retarget)](RoadNetwork& target,
+                                                      Values& created) -> Expected<void> {
+    // Prologue, BEFORE the retarget body: nothing may still point at the
+    // junction that is about to be erased (#311 — never leave a stale
+    // reference behind). The arm-road link slots are re-pointed by the
+    // retarget itself (the absorbed arms are `gained` arms of the survivor);
+    // the connecting roads' back-reference is re-pointed here.
+    for (const RoadId road_id : absorbed_roads) {
+      if (Road* road = target.road(road_id); road != nullptr) {
+        road->junction = survivor_id;
+      }
+    }
+    {
+      Junction& survivor = *target.junction(survivor_id);
+      // Authored records carry over verbatim: their RoadEnd keys name arms that
+      // survive the merge, so nothing goes dormant.
+      survivor.corners.insert(survivor.corners.end(), corners.begin(), corners.end());
+      survivor.stoplines.insert(survivor.stoplines.end(), stoplines.begin(), stoplines.end());
+      // A hand-authored merge is not something the automatic loop should
+      // re-derive away.
+      survivor.locked = true;
+    }
+    return retarget(target, created);
+  };
+  return command;
+}
+
+namespace {
+
 /// Locates the JunctionCorner entry for the ordered arm pair, or `end()`.
 std::vector<JunctionCorner>::iterator
 find_corner(std::vector<JunctionCorner>& corners, const RoadEnd& arm_a, const RoadEnd& arm_b) {

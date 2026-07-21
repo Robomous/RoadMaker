@@ -72,3 +72,38 @@ def test_span_arm_type_is_exposed():
     assert rm.SpanArm.__name__ == "SpanArm"
     for field in ("road", "s_start", "s_end"):
         assert hasattr(rm.SpanArm, field)
+
+def test_removing_and_re_adding_an_arm_round_trips(crossing):
+    net, stack, jid = crossing
+    stack.push(net, rm.edit.set_junction_locked(net, jid, True))
+    arms = list(net.junction(jid).arms)
+    assert len(arms) == 4
+    departing = arms[3]
+
+    stack.push(net, rm.edit.remove_junction_arm(net, jid, departing))
+    assert len(net.junction(jid).arms) == 3
+
+    stack.undo(net)
+    assert len(net.junction(jid).arms) == 4
+
+    stack.redo(net)
+    assert len(net.junction(jid).arms) == 3
+
+    # The freed end can rejoin the junction it just left.
+    stack.push(net, rm.edit.add_junction_arm(net, jid, departing))
+    assert len(net.junction(jid).arms) == 4
+
+
+def test_membership_edits_require_the_lock(crossing):
+    net, stack, jid = crossing
+    arm = list(net.junction(jid).arms)[0]
+    with pytest.raises(ValueError):
+        stack.push(net, rm.edit.remove_junction_arm(net, jid, arm))
+    with pytest.raises(ValueError):
+        stack.push(net, rm.edit.add_junction_arm(net, jid, arm))
+
+
+def test_merging_a_junction_with_itself_is_refused(crossing):
+    net, stack, jid = crossing
+    with pytest.raises(ValueError):
+        stack.push(net, rm.edit.merge_junctions(net, jid, jid))

@@ -405,6 +405,79 @@ regenerate_junction(const RoadNetwork& network,
 [[nodiscard]] RM_API std::unique_ptr<Command>
 set_junction_locked(const RoadNetwork& network, JunctionId junction, bool locked);
 
+/// Adds `end` to a LOCKED junction's arm list and retargets it: the arm's link
+/// slot points at the junction, the turns it opens get fresh connecting roads,
+/// and every turn that survives keeps its connecting-road id (p4-s4, issue
+/// #319).
+///
+/// The lock is a precondition, not a side effect. An AUTOMATIC junction is
+/// defined by its derivation — the next regeneration would re-derive the arm
+/// list from the roads that meet it and undo the edit — so hand-editing
+/// membership is only meaningful once the user has taken the junction out of
+/// the automatic loop with set_junction_locked.
+///
+/// Errors (invalid_command, network untouched): a stale junction id; a SPAN
+/// junction (§12.7 virtual junctions cover a road, they never cut it, so they
+/// have no arms); a FOREIGN junction (no arms, read from someone else's file);
+/// an UNLOCKED junction; `end` already an arm of this junction; `end` already
+/// owned by another junction (the single-owner rule create_junction enforces);
+/// an occupied link slot at `end`; and anything the planner refuses for the
+/// resulting arm list — notably two arm ends farther apart than
+/// options.max_end_distance_m.
+[[nodiscard]] RM_API std::unique_ptr<Command>
+add_junction_arm(const RoadNetwork& network,
+                 JunctionId junction,
+                 RoadEnd end,
+                 const JunctionGenOptions& options = {});
+
+/// Removes `end` from a LOCKED junction's arm list and retargets it: the arm's
+/// link slot is freed, every connecting road serving a turn through it is
+/// erased, and the turns that remain keep their connecting-road ids (p4-s4,
+/// issue #319).
+///
+/// DORMANCY: authored corners and stop lines naming the removed arm STAY on the
+/// junction record. They go dormant exactly as they do across a turn-set change
+/// (JunctionCorner / StopLine doc comments) and reactivate if the arm is added
+/// back, so removing an arm by mistake costs no authored work.
+///
+/// Errors (invalid_command, network untouched): a stale junction id; a SPAN or
+/// FOREIGN junction; an UNLOCKED junction; `end` not an arm of this junction;
+/// fewer than 2 arms left afterwards (a junction needs two — unlock it to
+/// re-derive, or delete_junction it); and anything the planner refuses for the
+/// remaining arm list.
+[[nodiscard]] RM_API std::unique_ptr<Command>
+remove_junction_arm(const RoadNetwork& network,
+                    JunctionId junction,
+                    RoadEnd end,
+                    const JunctionGenOptions& options = {});
+
+/// Folds `absorbed` into `survivor` — ONE junction over the union of both arm
+/// lists (p4-s4, issue #319). The survivor is the FIRST argument and keeps its
+/// odr id, name, default corner radius and material; `absorbed` is erased in
+/// place (erase_exact, no generation bump, so undo restores it under its own
+/// id).
+///
+/// The absorbed junction's arm-road links and its connecting roads'
+/// back-references are re-pointed at the survivor BEFORE the turns are matched,
+/// so no reference into the erased junction outlives the command (#311) and an
+/// absorbed turn that still plans keeps its connecting road. The absorbed
+/// junction's authored corners and stop lines are appended verbatim — their
+/// RoadEnd keys stay valid because the arms themselves survive.
+///
+/// The result is LOCKED: a hand-authored merge is not something the automatic
+/// loop should re-derive away.
+///
+/// Errors (invalid_command, network untouched): a stale id on either side; the
+/// same junction twice; a SPAN or FOREIGN junction on either side; either side
+/// with fewer than 2 arms; and anything the planner refuses for the union —
+/// notably two arm ends farther apart than options.max_end_distance_m, which is
+/// what "neighbouring junctions" means here.
+[[nodiscard]] RM_API std::unique_ptr<Command>
+merge_junctions(const RoadNetwork& network,
+                JunctionId survivor,
+                JunctionId absorbed,
+                const JunctionGenOptions& options = {});
+
 /// Authors the fillet radius of ONE junction corner, named by its adjacent arm
 /// pair (p4-s1, issue #225). `radius <= 0` removes the override and returns the
 /// corner to its derived radius. Either way any per-side extent override on
