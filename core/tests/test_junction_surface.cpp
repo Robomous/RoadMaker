@@ -11,6 +11,7 @@
 
 #include "roadmaker/edit/operations.hpp"
 #include "roadmaker/mesh/junction_corners.hpp"
+#include "roadmaker/mesh/junction_surface_spans.hpp"
 #include "roadmaker/mesh/mesh_builder.hpp"
 #include "roadmaker/road/authoring.hpp"
 #include "roadmaker/road/junction.hpp"
@@ -624,4 +625,189 @@ TEST(JunctionSurface, JunctionFloorCarriesMaterialCode) {
   const NetworkMesh mesh = roadmaker::build_network_mesh(network);
   ASSERT_FALSE(mesh.junction_floors.empty());
   EXPECT_EQ(mesh.junction_floors[0].mesh.surface, "concrete");
+}
+
+// --- Authored surface spans (p4-s5, issue #320) ------------------------------
+
+namespace {
+
+/// Plan area of every junction floor in the mesh — the coverage an excluded
+/// span must not change.
+double floor_area(const NetworkMesh& mesh) {
+  double total = 0.0;
+  for (const roadmaker::JunctionFloor& floor : mesh.junction_floors) {
+    for (std::size_t i = 0; i + 2 < floor.mesh.indices.size(); i += 3) {
+      total += std::abs(triangle_area_xy(
+          floor.mesh.positions, floor.mesh.indices[i], floor.mesh.indices[i + 1],
+          floor.mesh.indices[i + 2]));
+    }
+  }
+  return total;
+}
+
+/// Gives the connecting roads a spread of constant elevations, the way a node
+/// move or elevation edit would. On a FLAT junction every span's border agrees
+/// on z = 0, so which span supplies the Dirichlet value is unobservable —
+/// grade is what makes the span controls have anything to say.
+///
+/// The arms are deliberately left flat, so the floor and the arm road meshes
+/// disagree at the mouth BY CONSTRUCTION. Tests built on this fixture therefore
+/// never assert expect_watertight — for the same reason
+/// GradeMismatchStaysWithinIncomingBounds does not. Watertightness under the
+/// span controls is asserted on the flat fixture instead.
+void grade_turns(RoadNetwork& network, JunctionId junction) {
+  double sign = 1.0;
+  network.for_each_road([&](RoadId, roadmaker::Road& road) {
+    if (road.junction == junction) {
+      road.elevation = {{.s = 0.0, .a = sign * 0.75}};
+      sign = -sign;
+    }
+  });
+}
+
+} // namespace
+
+TEST(JunctionSurface, SpanQueryMatchesTheMesherInputs) {
+  RoadNetwork network;
+  const JunctionId junction = build_roomy_four_way(network);
+  const std::vector<roadmaker::JunctionSurfaceSpanInfo> spans =
+      roadmaker::junction_surface_spans(network, junction);
+  ASSERT_FALSE(spans.empty());
+
+  // One span per connecting road, in connection order, de-duplicated — the
+  // same set and order the floor union is built from.
+  std::vector<RoadId> turns;
+  for (const roadmaker::JunctionConnection& connection : network.junction(junction)->connections) {
+    if (std::ranges::find(turns, connection.connecting_road) == turns.end()) {
+      turns.push_back(connection.connecting_road);
+    }
+  }
+  ASSERT_EQ(spans.size(), turns.size());
+  for (std::size_t i = 0; i < spans.size(); ++i) {
+    EXPECT_EQ(spans[i].road, turns[i]);
+    EXPECT_EQ(spans[i].road_odr_id, network.road(turns[i])->odr_id);
+    EXPECT_TRUE(spans[i].included);
+    EXPECT_EQ(spans[i].sort_index, 0);
+    EXPECT_FALSE(spans[i].authored);
+    EXPECT_GE(spans[i].footprint.size(), 3U);
+    EXPECT_EQ(spans[i].border.size(), spans[i].footprint.size());
+    EXPECT_EQ(spans[i].centerline.size(), spans[i].footprint.size() / 2);
+  }
+
+  // A stale id, and a junction with no floor to control, both yield nothing.
+  EXPECT_TRUE(roadmaker::junction_surface_spans(network, JunctionId{}).empty());
+  RoadNetwork bare;
+  EXPECT_TRUE(
+      roadmaker::junction_surface_spans(bare, bare.create_junction("9", "empty")).empty());
+}
+
+TEST(JunctionSurface, SpanQueryReportsAuthoredValues) {
+  RoadNetwork network;
+  const JunctionId junction = build_roomy_four_way(network);
+  const RoadId first = roadmaker::junction_surface_spans(network, junction).front().road;
+  network.junction(junction)->surface_spans.push_back(
+      roadmaker::SurfaceSpan{.road = first, .included = false, .sort_index = 3});
+
+  const roadmaker::JunctionSurfaceSpanInfo info =
+      roadmaker::junction_surface_spans(network, junction).front();
+  EXPECT_EQ(info.road, first);
+  EXPECT_FALSE(info.included);
+  EXPECT_EQ(info.sort_index, 3);
+  EXPECT_TRUE(info.authored);
+}
+
+TEST(JunctionSurface, DefaultedSpanRecordsAreByteIdenticalToNoRecords) {
+  RoadNetwork network;
+  const JunctionId junction = build_roomy_four_way(network);
+  const NetworkMesh baseline = roadmaker::build_network_mesh(network);
+
+  // The fast path is keyed on the EFFECTIVE values, not on the absence of
+  // records: a junction carrying nothing but defaulted records must still take
+  // the verbatim legacy path.
+  for (const roadmaker::JunctionSurfaceSpanInfo& info :
+       roadmaker::junction_surface_spans(network, junction)) {
+    network.junction(junction)->surface_spans.push_back(
+        roadmaker::SurfaceSpan{.road = info.road});
+  }
+  expect_floor_identical(baseline, roadmaker::build_network_mesh(network));
+}
+
+TEST(JunctionSurface, ExcludedSpanKeepsCoverageAndStaysWatertight) {
+  RoadNetwork network;
+  const JunctionId junction = build_roomy_four_way(network);
+  const NetworkMesh baseline = roadmaker::build_network_mesh(network);
+  const RoadId first = roadmaker::junction_surface_spans(network, junction).front().road;
+
+  network.junction(junction)->surface_spans.push_back(
+      roadmaker::SurfaceSpan{.road = first, .included = false});
+  const NetworkMesh excluded = roadmaker::build_network_mesh(network);
+
+  // Exclusion is SAMPLES-ONLY: the footprint stays in the union, so the floor
+  // still paves exactly the same ground and <boundary> never moves...
+  EXPECT_NEAR(floor_area(excluded), floor_area(baseline), 1e-6);
+  // ...and it is still a valid, seam-exact height field. The seam-exactness
+  // exception is what carries check 4 here: an excluded span's border vertices
+  // are still snap targets and still hand their exact z to any floor vertex
+  // that lands on them.
+  expect_watertight(excluded);
+}
+
+TEST(JunctionSurface, ExcludedSpanDropsItsElevationInfluence) {
+  RoadNetwork network;
+  const JunctionId junction = build_roomy_four_way(network);
+  grade_turns(network, junction);
+  const NetworkMesh baseline = roadmaker::build_network_mesh(network);
+  const RoadId first = roadmaker::junction_surface_spans(network, junction).front().road;
+
+  network.junction(junction)->surface_spans.push_back(
+      roadmaker::SurfaceSpan{.road = first, .included = false});
+  const NetworkMesh excluded = roadmaker::build_network_mesh(network);
+
+  // The escape valve did something: with the grades spread, the excluded
+  // span's border no longer supplies any elevation it used to win.
+  EXPECT_NE(baseline.junction_floors[0].mesh.positions,
+            excluded.junction_floors[0].mesh.positions);
+  EXPECT_NEAR(floor_area(excluded), floor_area(baseline), 1e-6);
+}
+
+TEST(JunctionSurface, SortIndexFlipsTheElevationWinnerDeterministically) {
+  RoadNetwork network;
+  const JunctionId junction = build_roomy_four_way(network);
+  grade_turns(network, junction);
+  const NetworkMesh baseline = roadmaker::build_network_mesh(network);
+  const std::vector<roadmaker::JunctionSurfaceSpanInfo> spans =
+      roadmaker::junction_surface_spans(network, junction);
+  ASSERT_GE(spans.size(), 2U);
+
+  // Raising one span above every other changes which border supplies the
+  // elevation wherever the ribbons overlap.
+  network.junction(junction)->surface_spans.push_back(
+      roadmaker::SurfaceSpan{.road = spans.front().road, .sort_index = 1});
+  const NetworkMesh raised = roadmaker::build_network_mesh(network);
+  EXPECT_NE(baseline.junction_floors[0].mesh.positions,
+            raised.junction_floors[0].mesh.positions);
+
+  // Deterministic: the same network builds byte-identically twice, and the
+  // plan-view triangulation is untouched (priority only moves elevations).
+  expect_floor_identical(raised, roadmaker::build_network_mesh(network));
+  EXPECT_EQ(raised.junction_floors[0].mesh.indices, baseline.junction_floors[0].mesh.indices);
+}
+
+TEST(JunctionSurface, ExcludedAndRaisedSpansSurviveSaveReload) {
+  RoadNetwork network;
+  const JunctionId junction = build_roomy_four_way(network);
+  grade_turns(network, junction);
+  const std::vector<roadmaker::JunctionSurfaceSpanInfo> spans =
+      roadmaker::junction_surface_spans(network, junction);
+  ASSERT_GE(spans.size(), 2U);
+  network.junction(junction)->surface_spans = {
+      roadmaker::SurfaceSpan{.road = spans[0].road, .included = false},
+      roadmaker::SurfaceSpan{.road = spans[1].road, .sort_index = 2}};
+  const NetworkMesh before = roadmaker::build_network_mesh(network);
+
+  const auto xml = roadmaker::write_xodr(network, "surface_spans");
+  ASSERT_TRUE(xml.has_value());
+  auto reparsed = roadmaker::parse_xodr(*xml, "surface_spans");
+  ASSERT_TRUE(reparsed.has_value());
+  expect_floor_identical(before, roadmaker::build_network_mesh(reparsed->network));
 }

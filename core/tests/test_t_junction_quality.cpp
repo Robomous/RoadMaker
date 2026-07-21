@@ -25,6 +25,7 @@
 #include "roadmaker/edit/operations.hpp"
 #include "roadmaker/geometry/poly3.hpp"
 #include "roadmaker/io/gltf_exporter.hpp"
+#include "roadmaker/mesh/junction_surface_spans.hpp"
 #include "roadmaker/mesh/mesh_builder.hpp"
 #include "roadmaker/road/authoring.hpp"
 #include "roadmaker/road/junction.hpp"
@@ -1004,3 +1005,34 @@ INSTANTIATE_TEST_SUITE_P(
     [](const ::testing::TestParamInfo<TeeCase>& tee_case) {
       return std::string(tee_case.param.name);
     });
+
+// An excluded span must not cost mesh quality: the escape valve is there to
+// FIX interior artifacts, so it has to clear the same sliver, degeneracy and
+// seam budget the derived floor does (p4-s5, issue #320).
+TEST(TJunctionQualitySpans, ExcludedSpanClearsTheSameQualityBudget) {
+  Tee tee = attach(setup_perp());
+  ASSERT_TRUE(tee.junction.is_valid());
+  const std::vector<roadmaker::JunctionSurfaceSpanInfo> spans =
+      roadmaker::junction_surface_spans(tee.network, tee.junction);
+  ASSERT_FALSE(spans.empty());
+  tee.network.junction(tee.junction)->surface_spans.push_back(
+      roadmaker::SurfaceSpan{.road = spans.front().road, .included = false});
+
+  const NetworkMesh mesh = roadmaker::build_network_mesh(tee.network);
+  ASSERT_FALSE(mesh.junction_floors.empty());
+  const QualityMetrics m = compute_metrics(tee, mesh);
+  RecordProperty("metrics", format_metrics(m));
+
+  EXPECT_EQ(m.degenerate, 0);
+  EXPECT_EQ(m.flipped, 0);
+  EXPECT_LE(m.slivers, kSliverBudget);
+  EXPECT_EQ(m.seam_z_mismatches, 0);
+  EXPECT_EQ(m.seam_near_misses, 0);
+  EXPECT_LE(m.max_seam_dz, roadmaker::tol::kLength);
+
+  const NetworkMesh again = roadmaker::build_network_mesh(tee.network);
+  EXPECT_EQ(again.junction_floors.front().mesh.positions,
+            mesh.junction_floors.front().mesh.positions);
+  EXPECT_EQ(again.junction_floors.front().mesh.indices,
+            mesh.junction_floors.front().mesh.indices);
+}
