@@ -42,6 +42,7 @@ add_executable(roadmaker_core_tests
   test_assembly.cpp
   test_corner_operations.cpp
   test_stopline_operations.cpp
+  test_junction_control.cpp
   test_translate_road.cpp
   test_rotate_road.cpp
   test_insert_node.cpp

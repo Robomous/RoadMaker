@@ -3114,10 +3114,16 @@ std::unique_ptr<Command> move_waypoint_following_junctions(const RoadNetwork& ne
   // from a foreign file, and regenerate_junction calls that an error. Skipping
   // it keeps the drag alive (the junction stays stale, exactly as it does on
   // the commit path) instead of refusing every frame.
+  //
+  // A LOCKED junction (#319) is skipped by the same rule for the opposite
+  // reason: it CAN regenerate, but the user asked it not to. Dragging an arm
+  // node of a locked junction is therefore a plain move with no mid-drag regen,
+  // matching Document's post-command loop; only an explicit regenerate_junction
+  // re-derives it.
   std::vector<JunctionId> followed;
   for (const JunctionId junction_id : junctions_touching(network, road_id)) {
     const Junction* junction = network.junction(junction_id);
-    if (junction != nullptr && !junction->arms.empty()) {
+    if (junction != nullptr && !junction->arms.empty() && !junction->locked) {
       followed.push_back(junction_id);
     }
   }
@@ -3158,16 +3164,16 @@ std::unique_ptr<Command> move_waypoint_following_junctions(const RoadNetwork& ne
       std::string(probe->name()), DirtySet{}, std::move(builders));
 }
 
-std::unique_ptr<Command> delete_junction(const RoadNetwork& network, JunctionId junction_id) {
-  static constexpr std::string_view kName = "Delete Junction";
-  const Junction* junction = network.junction(junction_id);
-  if (junction == nullptr) {
-    return invalid_command(
-        std::string(kName),
-        Error{.code = ErrorCode::InvalidArgument, .message = "stale junction id"});
-  }
-  // §7 closure: the junction takes its connecting roads (back-reference set)
-  // with it; incoming roads survive with their links into it cleared.
+namespace {
+
+/// The §7 junction-removal command for a junction already known to be live:
+/// the junction takes its connecting roads (its back-reference set, closed
+/// over) with it, and the incoming roads survive with their links into it
+/// cleared. Shared by delete_junction and by set_junction_locked's unlock path,
+/// which has to remove a junction it can no longer derive.
+std::unique_ptr<GenericCommand> junction_removal_command(const RoadNetwork& network,
+                                                         JunctionId junction_id,
+                                                         std::string_view name) {
   std::vector<RoadId> seeds;
   network.for_each_road([&](RoadId road_id, const Road& road) {
     if (road.junction == junction_id) {
@@ -3189,8 +3195,73 @@ std::unique_ptr<Command> delete_junction(const RoadNetwork& network, JunctionId 
     }
   }
 
-  auto command = std::make_unique<GenericCommand>(std::string(kName), std::move(dirty));
+  auto command = std::make_unique<GenericCommand>(std::string(name), std::move(dirty));
   capture_deletion(network, *command, doomed, junction_id);
+  return command;
+}
+
+} // namespace
+
+std::unique_ptr<Command> delete_junction(const RoadNetwork& network, JunctionId junction_id) {
+  static constexpr std::string_view kName = "Delete Junction";
+  const Junction* junction = network.junction(junction_id);
+  if (junction == nullptr) {
+    return invalid_command(
+        std::string(kName),
+        Error{.code = ErrorCode::InvalidArgument, .message = "stale junction id"});
+  }
+  return junction_removal_command(network, junction_id, kName);
+}
+
+std::unique_ptr<Command>
+set_junction_locked(const RoadNetwork& network, JunctionId junction_id, bool locked) {
+  const std::string_view kName = locked ? "Lock Junction" : "Unlock Junction";
+  const auto fail = [&](std::string message) {
+    return invalid_command(
+        std::string(kName),
+        Error{.code = ErrorCode::InvalidArgument, .message = std::move(message)});
+  };
+  const Junction* junction = network.junction(junction_id);
+  if (junction == nullptr) {
+    return fail("stale junction id");
+  }
+  // A no-op command would break the §8 round-trip oracle (apply must change the
+  // document), and there is nothing sensible for undo to restore either.
+  if (junction->locked == locked) {
+    return fail(locked ? "the junction is already locked" : "the junction is already unlocked");
+  }
+  if (junction->arms.empty() && junction->spans.empty()) {
+    return fail("junction has no recorded arms (loaded from a foreign file); there is no automatic "
+                "regeneration to lock");
+  }
+  // arms-xor-spans: a span junction (§12.7 virtual) is never derived from arms,
+  // so its lock is structural rather than a user preference.
+  if (!locked && !junction->spans.empty()) {
+    return fail("a span junction is always locked");
+  }
+
+  Junction after = *junction;
+  after.locked = locked;
+
+  // Unlocking hands the junction back to the automatic loop, so it has to be
+  // re-derived against whatever moved while it was locked. When the arms no
+  // longer plan there is no automatic state to hand back to — the junction
+  // would sit stale forever, refusing every regeneration — so the unlock is a
+  // full §7 removal instead, connecting roads included.
+  if (!locked) {
+    if (auto plan = plan_junction(network, junction->arms, JunctionGenOptions{});
+        !plan.has_value()) {
+      return junction_removal_command(network, junction_id, kName);
+    }
+  }
+
+  // junctions_are_current mirrors the flag: locking freezes the turn set where
+  // it is, unlocking asks the editor's loop to re-derive it inside the same
+  // undo macro.
+  auto command = std::make_unique<GenericCommand>(
+      std::string(kName), DirtySet{.junctions = {junction_id}, .junctions_are_current = locked});
+  command->before.junctions.emplace_back(junction_id, *junction);
+  command->after.junctions.emplace_back(junction_id, std::move(after));
   return command;
 }
 

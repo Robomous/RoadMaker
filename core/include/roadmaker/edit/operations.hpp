@@ -60,6 +60,15 @@ move_waypoint(const RoadNetwork& network, RoadId road, std::size_t index, Waypoi
 /// rather than refused: regenerate_junction treats them as an error, but a drag
 /// must not fail because some unrelated junction came from someone else's file.
 ///
+/// LOCKED junctions (Junction::locked, p4-s4 #319) are skipped for the same
+/// reason with the opposite cause: the user asked for the hand-tuned result to
+/// survive edits to its arms, so dragging an arm node is a plain move and the
+/// connections stay exactly where they were put. The lock is a policy of the
+/// AUTOMATIC loops only — this one and Document's post-command regeneration —
+/// never of regenerate_junction itself, so an explicit "re-derive" action
+/// works on a locked junction with no bypass flag. edit::set_junction_locked
+/// toggles the flag.
+///
 /// Unlike the editor's commit-time regeneration, this is **atomic** — if a
 /// regeneration fails the whole move is refused and the network is untouched.
 /// That is the right trade mid-drag: the frame is simply rejected and the last
@@ -370,6 +379,31 @@ regenerate_junction(const RoadNetwork& network,
                     JunctionId junction,
                     const JunctionGenOptions& options = {},
                     TurnSetPolicy policy = TurnSetPolicy::AllowChange);
+
+/// Toggles `Junction::locked` — explicit user control over the AUTOMATIC
+/// regeneration loops (p4-s4, issue #319). A locked junction keeps its
+/// hand-tuned connections, corners and stop lines when a neighbouring road is
+/// edited; regenerate_junction still re-derives it on demand, since the lock
+/// guards the automatic pass and does not freeze the junction.
+///
+/// LOCK is a pure value edit (`junctions_are_current = true`).
+///
+/// UNLOCK hands the junction back to the automatic loop, so it must be
+/// re-derived against whatever changed while it was locked. When the arms still
+/// plan, that is a value edit with `junctions_are_current = false`, so the
+/// editor's regeneration runs inside the same undo macro. When they no longer
+/// plan (an arm was moved out of reach, or its road is gone) there is no
+/// automatic state to hand back to, so the command instead performs the full
+/// §7 junction removal delete_junction performs — connecting roads included.
+///
+/// Errors (invalid_command, so apply() reports them): a stale junction id; no
+/// state change (locking a locked or unlocking an unlocked junction — the
+/// round-trip oracle forbids a no-op command); a FOREIGN junction (no arms and
+/// no spans, read from someone else's file — there is no automatic derivation
+/// to guard); and unlocking a SPAN junction, whose lock is structural (§12.7
+/// virtual junctions are never derived, so they are always locked).
+[[nodiscard]] RM_API std::unique_ptr<Command>
+set_junction_locked(const RoadNetwork& network, JunctionId junction, bool locked);
 
 /// Authors the fillet radius of ONE junction corner, named by its adjacent arm
 /// pair (p4-s1, issue #225). `radius <= 0` removes the override and returns the
