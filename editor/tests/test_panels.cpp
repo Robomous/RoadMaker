@@ -2,6 +2,7 @@
 // selection bidirectionally. Rendering itself is not asserted (no GL in the
 // offscreen platform) — the ViewportWidget is deliberately absent here.
 
+#include "roadmaker/assets/prop_library.hpp"
 #include "roadmaker/edit/operations.hpp"
 #include "roadmaker/mesh/junction_corners.hpp"
 #include "roadmaker/mesh/junction_stoplines.hpp"
@@ -25,6 +26,7 @@
 #include <algorithm>
 #include <array>
 #include <filesystem>
+#include <optional>
 #include <fstream>
 #include <stdexcept>
 #include <string>
@@ -1654,6 +1656,205 @@ TEST(PropertiesPanel, ForeignJunctionShowsForeignAndCannotBeLocked) {
   EXPECT_EQ(junction_type(panel)->text(), QStringLiteral("Foreign"));
   EXPECT_FALSE(junction_lock(panel)->isChecked());
   EXPECT_FALSE(junction_lock(panel)->isEnabled()) << "there is no automatic derivation to guard";
+}
+
+// --- per-instance prop size (p6-s10, #335) -----------------------------------
+// The Height row is the Attributes pane's first MULTI-SELECT batch edit: one
+// gesture over N selected props must be one update_objects command, hence one
+// undo entry, with every prop scaled by the same factor.
+
+namespace {
+
+/// Adds a tree_pine prop at `s` with an optional declared @height, and returns
+/// its id. A nullopt height leaves the object relying on the model's size.
+ObjectId add_prop(Document& document, RoadId road, const char* odr_id, double s,
+                  std::optional<double> height) {
+  Object tree;
+  tree.odr_id = odr_id;
+  tree.name = "tree_pine";
+  tree.type = ObjectType::Tree;
+  tree.s = s;
+  tree.t = 6.0;
+  tree.radius = 1.2;
+  tree.height = height;
+  if (!document.push_command(edit::add_object(document.network(), road, tree)).has_value()) {
+    throw std::runtime_error("add_prop failed");
+  }
+  ObjectId id;
+  document.network().for_each_object([&](ObjectId oid, const Object& object) {
+    if (object.odr_id == odr_id) {
+      id = oid;
+    }
+  });
+  return id;
+}
+
+ScrubLabel* height_scrub(PropertiesPanel& panel) {
+  return panel.findChild<ScrubLabel*>(QStringLiteral("object_height_scrub"));
+}
+
+double model_height() {
+  const props::PropModel* model = props::model("tree_pine");
+  if (model == nullptr) {
+    throw std::runtime_error("tree_pine missing from the prop library");
+  }
+  return model->height;
+}
+
+} // namespace
+
+TEST(PropertiesPanel, PropHeightScrubCommitsOneUndoEntry) {
+  Harness h;
+  ASSERT_TRUE(h.document.load(kSample).has_value());
+  PropertiesPanel panel(h.document, h.selection);
+  const RoadId road = all_roads(h.document).front();
+  const ObjectId tree = add_prop(h.document, road, "t1", 20.0, 4.0);
+  h.selection.select({.road = road, .object = tree});
+
+  ScrubLabel* label = height_scrub(panel);
+  ASSERT_NE(label, nullptr);
+  const std::string xodr_before = xodr(h.document);
+  const int base = h.document.undo_stack()->count();
+
+  scrub(label, 100); // +5 m at 0.05 m/px
+
+  EXPECT_EQ(h.document.undo_stack()->count(), base + 1) << "one gesture, one undo entry";
+  const Object* after = h.document.network().object(tree);
+  ASSERT_NE(after, nullptr);
+  ASSERT_TRUE(after->height.has_value());
+  EXPECT_GT(*after->height, 4.0);
+  ASSERT_TRUE(after->radius.has_value());
+  EXPECT_GT(*after->radius, 1.2) << "a present sibling dimension scales with the height";
+
+  h.document.undo_stack()->undo();
+  EXPECT_EQ(xodr(h.document), xodr_before);
+}
+
+TEST(PropertiesPanel, PropHeightBatchScrubResizesAllSelected) {
+  Harness h;
+  ASSERT_TRUE(h.document.load(kSample).has_value());
+  PropertiesPanel panel(h.document, h.selection);
+  const RoadId road = all_roads(h.document).front();
+  const ObjectId small = add_prop(h.document, road, "t1", 10.0, 2.0);
+  const ObjectId bare = add_prop(h.document, road, "t2", 20.0, std::nullopt);
+  const ObjectId tall = add_prop(h.document, road, "t3", 30.0, 8.0);
+  // The LAST entry is the primary, and its height sets the batch factor.
+  h.selection.select_many(std::vector<SelectionEntry>{{.road = road, .object = small},
+                                                      {.road = road, .object = bare},
+                                                      {.road = road, .object = tall}});
+  ASSERT_EQ(h.selection.primary().object, tall);
+
+  ScrubLabel* label = height_scrub(panel);
+  ASSERT_NE(label, nullptr);
+  const std::string xodr_before = xodr(h.document);
+  const int base = h.document.undo_stack()->count();
+
+  scrub(label, 80); // +4 m on the primary: 8 -> 12, a factor of 1.5
+
+  EXPECT_EQ(h.document.undo_stack()->count(), base + 1)
+      << "a batch resize is ONE command, not one per prop";
+  const double factor = *h.document.network().object(tall)->height / 8.0;
+  EXPECT_GT(factor, 1.0);
+  EXPECT_NEAR(*h.document.network().object(small)->height, 2.0 * factor, 1e-9);
+  // A prop that declared no height is MATERIALIZED from its model height.
+  EXPECT_NEAR(*h.document.network().object(bare)->height, model_height() * factor, 1e-9);
+
+  h.document.undo_stack()->undo();
+  EXPECT_EQ(xodr(h.document), xodr_before) << "one undo reverses the whole batch";
+}
+
+TEST(PropertiesPanel, PropHeightTypedAppliesAbsoluteToAll) {
+  Harness h;
+  ASSERT_TRUE(h.document.load(kSample).has_value());
+  PropertiesPanel panel(h.document, h.selection);
+  const RoadId road = all_roads(h.document).front();
+  const ObjectId small = add_prop(h.document, road, "t1", 10.0, 2.0);
+  const ObjectId tall = add_prop(h.document, road, "t2", 20.0, 8.0);
+  h.selection.select_many(std::vector<SelectionEntry>{{.road = road, .object = small},
+                                                      {.road = road, .object = tall}});
+
+  auto* spin = panel.findChild<QDoubleSpinBox*>(QStringLiteral("object_height_spin"));
+  ASSERT_NE(spin, nullptr);
+  ASSERT_TRUE(spin->isVisibleTo(&panel));
+  EXPECT_DOUBLE_EQ(spin->value(), 8.0) << "seeded from the primary's effective height";
+
+  const int base = h.document.undo_stack()->count();
+  spin->setValue(5.0);
+  emit spin->editingFinished();
+
+  EXPECT_EQ(h.document.undo_stack()->count(), base + 1);
+  // Typing is ABSOLUTE: every selected prop becomes 5 m tall.
+  EXPECT_DOUBLE_EQ(*h.document.network().object(small)->height, 5.0);
+  EXPECT_DOUBLE_EQ(*h.document.network().object(tall)->height, 5.0);
+  // Each scaled by its OWN factor, so the small tree's radius grew 2.5x and the
+  // tall one's shrank.
+  EXPECT_NEAR(*h.document.network().object(small)->radius, 1.2 * (5.0 / 2.0), 1e-9);
+  EXPECT_NEAR(*h.document.network().object(tall)->radius, 1.2 * (5.0 / 8.0), 1e-9);
+}
+
+TEST(PropertiesPanel, PropHeightScrubCancelRestoresByteIdentical) {
+  Harness h;
+  ASSERT_TRUE(h.document.load(kSample).has_value());
+  PropertiesPanel panel(h.document, h.selection);
+  const RoadId road = all_roads(h.document).front();
+  const ObjectId tree = add_prop(h.document, road, "t1", 20.0, 4.0);
+  h.selection.select({.road = road, .object = tree});
+
+  ScrubLabel* label = height_scrub(panel);
+  ASSERT_NE(label, nullptr);
+  const std::string xodr_before = xodr(h.document);
+  const int base = h.document.undo_stack()->count();
+
+  scrub(label, 120, /*hold=*/true);
+  ASSERT_NE(xodr(h.document), xodr_before) << "preview is live";
+  QTest::keyClick(label, Qt::Key_Escape);
+
+  EXPECT_EQ(h.document.undo_stack()->count(), base);
+  EXPECT_EQ(xodr(h.document), xodr_before);
+  EXPECT_FALSE(h.document.preview_active());
+}
+
+TEST(PropertiesPanel, PropHeightRowVisibility) {
+  Harness h;
+  ASSERT_TRUE(h.document.load(kSample).has_value());
+  PropertiesPanel panel(h.document, h.selection);
+  const RoadId road = all_roads(h.document).front();
+  auto* spin = panel.findChild<QDoubleSpinBox*>(QStringLiteral("object_height_spin"));
+  ASSERT_NE(spin, nullptr);
+
+  // A prop with no declared height shows its MODEL height.
+  const ObjectId tree = add_prop(h.document, road, "t1", 20.0, std::nullopt);
+  h.selection.select({.road = road, .object = tree});
+  EXPECT_TRUE(spin->isVisibleTo(&panel));
+  EXPECT_DOUBLE_EQ(spin->value(), model_height());
+
+  // A marking has no model to scale — the row is hidden.
+  const ObjectId crosswalk = add_crosswalk(h.document, road, "cw", "material.paint_white");
+  h.selection.select({.road = road, .object = crosswalk});
+  EXPECT_FALSE(spin->isVisibleTo(&panel));
+}
+
+TEST(PropertiesPanel, PropHeightRefreshAndEqualTypedValueCommitNothing) {
+  Harness h;
+  ASSERT_TRUE(h.document.load(kSample).has_value());
+  PropertiesPanel panel(h.document, h.selection);
+  const RoadId road = all_roads(h.document).front();
+  const ObjectId tree = add_prop(h.document, road, "t1", 20.0, 4.0);
+  h.selection.select({.road = road, .object = tree});
+
+  auto* spin = panel.findChild<QDoubleSpinBox*>(QStringLiteral("object_height_spin"));
+  ASSERT_NE(spin, nullptr);
+  const std::string xodr_before = xodr(h.document);
+  const int base = h.document.undo_stack()->count();
+
+  // Re-seeding the spin box must not echo a command back, and typing the value
+  // it already holds is not an edit.
+  emit spin->editingFinished();
+  EXPECT_EQ(h.document.undo_stack()->count(), base);
+  spin->setValue(4.0);
+  emit spin->editingFinished();
+  EXPECT_EQ(h.document.undo_stack()->count(), base);
+  EXPECT_EQ(xodr(h.document), xodr_before);
 }
 
 } // namespace roadmaker::editor
