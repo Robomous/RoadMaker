@@ -49,6 +49,32 @@ std::optional<double> to_double(std::string_view text) {
   return value;
 }
 
+/// Strict decimal integer parsing for the rm:floor sort index (p4-s5, issue
+/// #320): no whitespace, no sign but a leading '-', no leading zeros, and the
+/// same magnitude bound the command layer clamps authors to. Anything else is a
+/// corrupt file, not a value to salvage.
+std::optional<int> to_sort_index(std::string_view text) {
+  bool negative = false;
+  if (text.starts_with('-')) {
+    negative = true;
+    text.remove_prefix(1);
+  }
+  if (text.empty() || text.size() > 4 || (text.size() > 1 && text.front() == '0')) {
+    return std::nullopt;
+  }
+  int value = 0;
+  for (const char c : text) {
+    if (c < '0' || c > '9') {
+      return std::nullopt;
+    }
+    value = (value * 10) + (c - '0');
+  }
+  if (value > kMaxSurfaceSpanSortIndex) {
+    return std::nullopt;
+  }
+  return negative ? -value : value;
+}
+
 /// Serializes a node as a self-contained XML fragment (no indentation), for
 /// the verbatim-preservation tier (roadmaker/xodr/raw_xml.hpp).
 std::string node_to_string(const pugi::xml_node& node) {
@@ -1652,6 +1678,87 @@ private:
     return corners;
   }
 
+  /// Authored floor-contribution overrides (p4-s5, issue #320) round-trip
+  /// through <userData code="rm:floor">, entries ";"-joined and fields
+  /// ":"-joined: "roadOdrId[:inc=0][:sort=<int>]". Each optional field may
+  /// appear at most once and at least one must be present (the writer never
+  /// emits an entry that authors nothing).
+  ///
+  /// All-or-nothing on the entry grammar like rm:corners — an unresolvable or
+  /// duplicated road, a malformed or repeated known field, or an empty override
+  /// drops the whole value. An UNKNOWN field key is warned about and skipped
+  /// instead, so a file written by a newer RoadMaker still loads the fields
+  /// this build understands (the rm:junction forward-compat rule).
+  std::optional<std::vector<SurfaceSpan>> parse_floor_value(std::string_view value,
+                                                            const std::string& location) {
+    std::vector<SurfaceSpan> spans;
+    for (std::size_t begin = 0; begin <= value.size();) {
+      std::size_t end = value.find(';', begin);
+      if (end == std::string_view::npos) {
+        end = value.size();
+      }
+      const std::string_view entry = value.substr(begin, end - begin);
+      begin = end + 1;
+
+      std::vector<std::string_view> fields;
+      for (std::size_t f = 0; f <= entry.size();) {
+        std::size_t stop = entry.find(':', f);
+        if (stop == std::string_view::npos) {
+          stop = entry.size();
+        }
+        fields.push_back(entry.substr(f, stop - f));
+        f = stop + 1;
+      }
+      if (fields.size() < 2 || fields.size() > 3) {
+        return std::nullopt;
+      }
+      const RoadId road_id = network().find_road(std::string(fields[0]));
+      if (!road_id.is_valid()) {
+        return std::nullopt;
+      }
+      if (std::ranges::any_of(spans,
+                              [&](const SurfaceSpan& seen) { return seen.road == road_id; })) {
+        return std::nullopt; // the same road twice
+      }
+      SurfaceSpan span{.road = road_id};
+      bool included_seen = false;
+      bool sort_seen = false;
+      for (std::size_t i = 1; i < fields.size(); ++i) {
+        const std::string_view field = fields[i];
+        if (field.starts_with("inc=")) {
+          // The writer emits `inc=0` and nothing else — any other value is a
+          // corrupt file.
+          if (included_seen || field.substr(4) != "0") {
+            return std::nullopt;
+          }
+          included_seen = true;
+          span.included = false;
+          continue;
+        }
+        if (field.starts_with("sort=")) {
+          const std::optional<int> parsed = to_sort_index(field.substr(5));
+          if (sort_seen || !parsed || *parsed == 0) {
+            return std::nullopt;
+          }
+          sort_seen = true;
+          span.sort_index = *parsed;
+          continue;
+        }
+        diag(Severity::Warning,
+             location,
+             fmt::format("rm:floor field '{}' is not understood and was ignored", field));
+      }
+      if (!included_seen && !sort_seen) {
+        return std::nullopt; // the writer never emits an empty override
+      }
+      spans.push_back(span);
+    }
+    if (spans.empty()) {
+      return std::nullopt;
+    }
+    return spans;
+  }
+
   /// The generator's arm list (roadmaker::edit) round-trips through
   /// <userData code="rm:arms"> ("roadOdrId:start|end;…"); roads parse before
   /// junctions, so arm road ids resolve here. Corner overrides ride the
@@ -1684,6 +1791,24 @@ private:
           continue;
         }
         junction.spans = std::move(*spans);
+        continue;
+      }
+      if (code == "rm:floor") {
+        // Authored floor-contribution overrides (p4-s5, issue #320):
+        // ";"-joined "roadOdrId[:inc=0][:sort=<int>]". All-or-nothing on the
+        // ENTRY grammar (an unresolvable road, a duplicate road, a malformed
+        // or repeated inc/sort, or an entry authoring nothing drops the whole
+        // value — the rm:corners rule); an UNKNOWN field key inside an entry
+        // is warned about and skipped, so a file written by a newer RoadMaker
+        // still loads the fields this build understands (the rm:junction
+        // forward-compat rule).
+        std::optional<std::vector<SurfaceSpan>> spans =
+            parse_floor_value(node.attribute("value").value(), location);
+        if (!spans) {
+          diag(Severity::Warning, location, "malformed rm:floor userData ignored");
+          continue;
+        }
+        junction.surface_spans = std::move(*spans);
         continue;
       }
       if (code == "rm:junction") {

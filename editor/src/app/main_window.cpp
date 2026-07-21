@@ -57,6 +57,7 @@
 #include "tools/edit_nodes_tool.hpp"
 #include "tools/elevation_tool.hpp"
 #include "tools/junction_span_tool.hpp"
+#include "tools/junction_surface_tool.hpp"
 #include "tools/lane_add_tool.hpp"
 #include "tools/lane_carve_tool.hpp"
 #include "tools/lane_form_tool.hpp"
@@ -460,11 +461,23 @@ MainWindow::MainWindow(QWidget* parent, bool restore_saved_layout)
   auto junction_span_tool = std::make_unique<JunctionSpanTool>(document_, selection_);
   wire_status(junction_span_tool.get());
   tool_manager_.register_tool(ToolId::JunctionSpan, std::move(junction_span_tool));
+
+  // Junction Surface: the floor's per-connecting-road spans (p4-s5, #320).
+  // Inspection only — no drag, no preview session; it follows the SELECTION
+  // rather than picking a junction of its own, and the Properties pane binds to
+  // its sub-selection so a row click and a viewport click agree.
+  auto junction_surface_tool = std::make_unique<JunctionSurfaceTool>(document_, selection_);
+  wire_status(junction_surface_tool.get());
+  properties_panel_->set_junction_surface_tool(junction_surface_tool.get());
+  tool_manager_.register_tool(ToolId::JunctionSurface, std::move(junction_surface_tool));
   connect(actions_->tool_corner, &QAction::triggered, this, [this] {
     tool_manager_.set_active(ToolId::Corner);
   });
   connect(actions_->tool_stopline, &QAction::triggered, this, [this] {
     tool_manager_.set_active(ToolId::StopLine);
+  });
+  connect(actions_->tool_junction_surface, &QAction::triggered, this, [this] {
+    tool_manager_.set_active(ToolId::JunctionSurface);
   });
   connect(actions_->tool_junction_span, &QAction::triggered, this, [this] {
     tool_manager_.set_active(ToolId::JunctionSpan);

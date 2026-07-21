@@ -10,6 +10,7 @@
 
 #include "roadmaker/mesh/junction_corners.hpp"
 #include "roadmaker/mesh/junction_stoplines.hpp"
+#include "roadmaker/mesh/junction_surface_spans.hpp"
 
 #include <QCheckBox>
 #include <QComboBox>
@@ -36,6 +37,7 @@ namespace roadmaker::editor {
 
 class CornerTool;
 class StopLineTool;
+class JunctionSurfaceTool;
 class ElevationTool;
 class LibraryListModel;
 
@@ -90,6 +92,11 @@ public:
   void set_corner_tool(CornerTool* tool);
   void set_stopline_tool(StopLineTool* tool);
 
+  /// Binds the "Surface spans" rows to the Junction Surface tool's
+  /// sub-selection (p4-s5, issue #320), so a row click and a viewport click
+  /// pick the same span.
+  void set_junction_surface_tool(JunctionSurfaceTool* tool);
+
   /// The editor's road-mark width conventions [m]. OpenDRIVE's @width has no
   /// normative values (weight standard/bold is the spec's coarse axis) —
   /// these presets are RoadMaker conventions (docs/domain/opendrive.md).
@@ -102,6 +109,11 @@ private:
   void refresh_elevation();
   void refresh_corner();
   void refresh_stopline();
+
+  /// Rebuilds the per-span rows from mesh::junction_surface_spans(). Dynamic
+  /// plain widgets, not a QAbstractItemModel: the row count is a handful and
+  /// nothing here is sortable, selectable-as-a-model, or drag-reorderable.
+  void refresh_surface_spans();
 
   /// Populates the Junction section (default corner radius + carriageway
   /// material) from `junction`, and shows it. Called from the junction branch
@@ -258,6 +270,12 @@ private:
   QPushButton* stopline_flip_button_;
   QPushButton* stopline_reset_button_;
   StopLineTool* stopline_tool_ = nullptr;
+
+  /// Junction floor surface spans (p4-s5, issue #320). The rows are rebuilt on
+  /// every refresh, so nothing here is cached beyond the container.
+  QGroupBox* surface_spans_group_;
+  QVBoxLayout* surface_spans_layout_ = nullptr;
+  JunctionSurfaceTool* junction_surface_tool_ = nullptr;
 
   /// Junction section (p4-s2): the junction-wide corner-radius default (the
   /// fallback every corner without its own radius uses) and the carriageway

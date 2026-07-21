@@ -613,6 +613,44 @@ flip_stopline(const RoadNetwork& network, JunctionId junction, RoadEnd arm);
 [[nodiscard]] RM_API std::unique_ptr<Command>
 reset_stopline(const RoadNetwork& network, JunctionId junction, RoadEnd arm);
 
+/// Authors whether ONE connecting road's samples take part in the junction
+/// floor's elevation and triangulation (p4-s5, issue #320). Creates the
+/// SurfaceSpan record when the span is still fully derived.
+///
+/// Excluding a span is SAMPLES-ONLY: its footprint stays in the floor union, so
+/// the pavement's coverage and the exported `<boundary>` never change. What
+/// drops out is its border elevations as Dirichlet sources, its centerline as a
+/// soft constraint, and its samples' protection of nearby boundary debris from
+/// the short-segment merge — the escape valve for an interior triangulation
+/// artifact one overlapping ribbon is causing.
+///
+/// `road` must name a span the junction currently HAS: solvability comes from
+/// mesh::junction_surface_spans(), the same query the mesher and the panel read.
+/// A span (virtual) junction has no floor, so it has no spans and every edit on
+/// one is an error.
+///
+/// Dirty set: `{junctions = {junction}, junctions_are_current = true}` — only
+/// the floor re-meshes and the turn set is untouched.
+[[nodiscard]] RM_API std::unique_ptr<Command> set_surface_span_included(const RoadNetwork& network,
+                                                                        JunctionId junction,
+                                                                        RoadId road,
+                                                                        bool included);
+
+/// Authors ONE connecting road's precedence where span footprints OVERLAP:
+/// the higher sort index supplies the elevation there ("higher wins").
+///
+/// A free integer bounded by `kMaxSurfaceSpanSortIndex` — there is no
+/// renumbering pass, so a record survives regeneration untouched. The editor's
+/// Raise/Lower are just this factory with `current ± 1`.
+///
+/// A record left authoring nothing (included, index back to zero) is erased
+/// rather than kept, so raise-then-lower produces a file byte-identical to the
+/// one before the first raise. Same validation and dirty set as
+/// set_surface_span_included; the command layer rejects a no-op against the
+/// EFFECTIVE value, including "included = true with no record at all".
+[[nodiscard]] RM_API std::unique_ptr<Command> set_surface_span_sort_index(
+    const RoadNetwork& network, JunctionId junction, RoadId road, int sort_index);
+
 /// Deletes the junction AND its connecting roads (the §7 closure); incoming
 /// roads survive with their predecessor/successor links into the junction
 /// cleared. Undo restores the junction, every connecting road, and every

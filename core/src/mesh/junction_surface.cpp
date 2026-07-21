@@ -25,6 +25,7 @@
 
 #include "fill_backend.hpp"
 #include "junction_corner_detail.hpp"
+#include "junction_fill_spans.hpp"
 #include "mesh_detail.hpp"
 
 namespace roadmaker {
@@ -39,6 +40,9 @@ using junction_corner_detail::corner_faces;
 using junction_corner_detail::CornerFace;
 using junction_corner_detail::CornerSolution;
 using junction_corner_detail::solve_corner;
+
+using junction_fill_spans::collect_fill_spans;
+using junction_fill_spans::JunctionFillSpan;
 
 using mesh_detail::boundary_offsets;
 using mesh_detail::lateral_point;
@@ -365,6 +369,108 @@ const std::string* median_material_for_arm(const Junction& junction, const RoadE
   return nullptr;
 }
 
+// --- authored span controls (p4-s5, issue #320) ------------------------------
+//
+// Everything below is JUNCTION-LOCAL on purpose: fill_backend.hpp is shared
+// bit-for-bit with the P2 ground-surface fill and must not learn about
+// priorities. It runs only when a span carries an authored control; at all
+// defaults build_junction_surface takes the verbatim legacy path, so bit
+// identity for every pre-existing network is structural rather than numeric.
+
+/// One INCLUDED span's data for the overlap arbitration: the RAW (pre-inflate)
+/// footprint whose overlaps the sort index arbitrates, and the border samples
+/// that supply the elevation where it wins.
+struct SpanPriority {
+  const Clipper2Lib::PathD* footprint;
+  const std::vector<Vec3>* border;
+  int sort_index;
+};
+
+/// The highest sort index among included spans whose raw footprint contains
+/// (px, py) — the rank a span must match to have a say there. Nullopt where no
+/// ribbon covers the point at all (the joint quads, corner fillets and edge
+/// strips pave ground no connecting road claims), which lets every included
+/// span speak.
+std::optional<int> max_sort_at(const std::vector<SpanPriority>& priorities, double px, double py) {
+  std::optional<int> best;
+  const Clipper2Lib::PointD probe{px, py};
+  for (const SpanPriority& entry : priorities) {
+    if (Clipper2Lib::PointInPolygon(probe, *entry.footprint) ==
+        Clipper2Lib::PointInPolygonResult::IsInside) {
+      best = best.has_value() ? std::max(*best, entry.sort_index) : entry.sort_index;
+    }
+  }
+  return best;
+}
+
+/// Dirichlet source for one floor boundary vertex under authored controls.
+///
+/// "Higher wins": only spans whose sort index reaches the highest one covering
+/// the point may supply its elevation. Two things outrank that rule, both for
+/// watertightness — a vertex EXACTLY coincident with any sample takes that
+/// sample's z even if the span was excluded or outranked (test_junction_surface
+/// check 4 compares exactly those xy-coincident floor/road pairs), and arm-face
+/// samples are always candidates, since a seam vertex must keep the arm road's
+/// own z whatever the interior spans say.
+double nearest_border_z_prioritized(const std::vector<SpanPriority>& priorities,
+                                    const std::vector<Vec3>& faces,
+                                    const std::vector<Vec3>& every_sample,
+                                    double px,
+                                    double py) {
+  for (const Vec3& sample : every_sample) {
+    const double dx = sample.x - px;
+    const double dy = sample.y - py;
+    if ((dx * dx) + (dy * dy) < 1e-12) {
+      return sample.z;
+    }
+  }
+  const std::optional<int> rank = max_sort_at(priorities, px, py);
+  double best = std::numeric_limits<double>::max();
+  double z = 0.0;
+  const auto scan = [&best, &z, px, py](const Vec3& sample) {
+    const double d = ((sample.x - px) * (sample.x - px)) + ((sample.y - py) * (sample.y - py));
+    if (d < best) {
+      best = d;
+      z = sample.z;
+    }
+  };
+  for (const SpanPriority& entry : priorities) {
+    if (rank.has_value() && entry.sort_index < *rank) {
+      continue;
+    }
+    for (const Vec3& sample : *entry.border) {
+      scan(sample);
+    }
+  }
+  for (const Vec3& sample : faces) {
+    scan(sample);
+  }
+  return z;
+}
+
+/// fill_backend::assign_boundary_elevation_and_solve with the prioritized
+/// Dirichlet source substituted. The harmonic solve itself is the shared one.
+void assign_prioritized_elevation(CompactMesh& mesh,
+                                  bool flat_floor,
+                                  double mean_z,
+                                  const std::vector<SpanPriority>& priorities,
+                                  const std::vector<Vec3>& faces,
+                                  const std::vector<Vec3>& every_sample,
+                                  const std::vector<Vec3>& centerline) {
+  const std::vector<bool> on_boundary = boundary_flags(mesh);
+  for (std::size_t i = 0; i < mesh.vertices.size(); ++i) {
+    if (flat_floor) {
+      mesh.vertices[i].z = mean_z;
+    } else if (on_boundary[i]) {
+      mesh.vertices[i].z = nearest_border_z_prioritized(
+          priorities, faces, every_sample, mesh.vertices[i].x, mesh.vertices[i].y);
+    }
+  }
+  if (!flat_floor) {
+    solve_elevation(mesh, on_boundary, centerline);
+  }
+}
+
 } // namespace
 
 SubMesh build_junction_surface(const RoadNetwork& network,
@@ -376,26 +482,35 @@ SubMesh build_junction_surface(const RoadNetwork& network,
   std::vector<Vec3> centerline;
   double z_sum = 0.0;
   std::size_t z_count = 0;
-  for (const RoadId road_id : connecting_roads(junction)) {
-    const Road* road = network.road(road_id);
-    if (road == nullptr || road->plan_view.empty() || road->sections.empty()) {
+  // The per-road grouping (p4-s5, issue #320) lives in junction_fill_spans so
+  // the public junction_surface_spans() query and the mesher share one
+  // definition of a span; flattening here keeps the legacy input order exactly.
+  const std::vector<JunctionFillSpan> spans = collect_fill_spans(network, junction, sampling);
+  // Nothing authored on any span (every pre-p4-s5 network) ⇒ the verbatim
+  // legacy path below, so bit identity at defaults is structural.
+  const bool plain = std::ranges::none_of(spans, [](const JunctionFillSpan& entry) {
+    return !entry.included || entry.sort_index != 0;
+  });
+  // `border` collects EVERY span's samples: they are the watertight stitch's
+  // snap targets, and excluding a span must never move the pavement's seams.
+  // `included_border` is the subset that still gets a say in the elevation and
+  // still protects nearby boundary debris from the short-segment merge — the
+  // two are the same vector whenever nothing is authored.
+  std::vector<Vec3> included_border;
+  for (const JunctionFillSpan& span : spans) {
+    footprints.push_back(span.contribution.footprint);
+    border.insert(border.end(), span.contribution.border.begin(), span.contribution.border.end());
+    if (!span.included) {
       continue;
     }
-    RoadContribution contribution = build_contribution(network, *road, sampling);
-    // The ring is built left-border-forward + right-border-reversed, which
-    // winds CLOCKWISE — fine for NonZero union, but InflatePaths would
-    // erode it (hole semantics). The weld inflation needs CCW.
-    if (Clipper2Lib::Area(contribution.footprint) < 0.0) {
-      std::ranges::reverse(contribution.footprint);
-    }
-    footprints.push_back(std::move(contribution.footprint));
-    for (const Vec3& p : contribution.border) {
+    for (const Vec3& p : span.contribution.border) {
       z_sum += p.z;
       ++z_count;
     }
-    border.insert(border.end(), contribution.border.begin(), contribution.border.end());
+    included_border.insert(
+        included_border.end(), span.contribution.border.begin(), span.contribution.border.end());
     centerline.insert(
-        centerline.end(), contribution.centerline.begin(), contribution.centerline.end());
+        centerline.end(), span.contribution.centerline.begin(), span.contribution.centerline.end());
   }
 
   // 1b. Joint quads (03 §1): each arm's full end cross-section, extruded
@@ -456,6 +571,9 @@ SubMesh build_junction_surface(const RoadNetwork& network,
     for (const double offset : offsets) {
       const auto p = lateral_point(frame, offset);
       border.push_back({p[0], p[1], p[2]});
+      // Arm faces are seams, never spans: they are always included and can
+      // never be outranked, whatever the interior ribbons author.
+      included_border.push_back({p[0], p[1], p[2]});
       face_vertices.push_back({p[0], p[1], p[2]});
       z_sum += p[2];
       ++z_count;
@@ -510,8 +628,11 @@ SubMesh build_junction_surface(const RoadNetwork& network,
   // road border sample are stitch targets and always survive.
   {
     constexpr double kMinBoundarySegment = 0.2;
-    const auto near_border = [&border](const Clipper2Lib::PointD& p) {
-      for (const Vec3& b : border) {
+    // An EXCLUDED span stops protecting debris here: the arc crossings its
+    // footprint causes may now merge away, which is exactly the triangulation
+    // escape valve Include Samples is for.
+    const auto near_border = [&included_border](const Clipper2Lib::PointD& p) {
+      for (const Vec3& b : included_border) {
         if (std::hypot(b.x - p.x, b.y - p.y) < 0.1) {
           return true;
         }
@@ -588,7 +709,38 @@ SubMesh build_junction_surface(const RoadNetwork& network,
   // 5. Elevation: Dirichlet boundary z from the nearest road border (snapped
   //    vertices already carry the exact z); harmonic interior (or flat floor
   //    for tiny footprints).
-  assign_boundary_elevation_and_solve(mesh, flat_floor, mean_z, border, centerline);
+  if (plain) {
+    assign_boundary_elevation_and_solve(mesh, flat_floor, mean_z, border, centerline);
+  } else {
+    // Overlap arbitration (p4-s5): included spans only, in connection order.
+    std::vector<SpanPriority> priorities;
+    priorities.reserve(spans.size());
+    for (const JunctionFillSpan& span : spans) {
+      if (span.included) {
+        priorities.push_back(SpanPriority{.footprint = &span.contribution.footprint,
+                                          .border = &span.contribution.border,
+                                          .sort_index = span.sort_index});
+      }
+    }
+    // A span's centerline pull applies only where it is not outranked —
+    // otherwise a buried ribbon would still drag the interior toward its own
+    // grade after the boundary handed the region to the winner.
+    std::vector<Vec3> constrained;
+    constrained.reserve(centerline.size());
+    for (const JunctionFillSpan& span : spans) {
+      if (!span.included) {
+        continue;
+      }
+      for (const Vec3& sample : span.contribution.centerline) {
+        const std::optional<int> rank = max_sort_at(priorities, sample.x, sample.y);
+        if (!rank.has_value() || span.sort_index >= *rank) {
+          constrained.push_back(sample);
+        }
+      }
+    }
+    assign_prioritized_elevation(
+        mesh, flat_floor, mean_z, priorities, face_vertices, border, constrained);
+  }
 
   SubMesh out = emit(mesh, fmt::format("junction {} surface", junction.odr_id));
   // Junction-wide carriageway material (p4-s2): empty means the derived
