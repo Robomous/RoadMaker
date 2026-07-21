@@ -3628,6 +3628,83 @@ std::unique_ptr<Command> merge_junctions(const RoadNetwork& network,
   return command;
 }
 
+std::unique_ptr<Command> create_span_junction(const RoadNetwork& network,
+                                              std::span<const SpanArm> spans) {
+  static constexpr std::string_view kName = "Create Span Junction";
+  const auto fail = [&](std::string message) {
+    return invalid_command(
+        std::string(kName),
+        Error{.code = ErrorCode::InvalidArgument, .message = std::move(message)});
+  };
+  // ASAM OpenDRIVE 1.9.0 §12.7 (identical in 1.8.1 §12.7): a virtual junction
+  // covers a stretch of ONE uninterrupted main road. Two spans is the parallel
+  // -road case (the same crossing over both carriageways); beyond that the
+  // Layer-0 @mainRoad/@sStart/@sEnd projection stops describing anything a
+  // reader could act on, so it is refused rather than half-written.
+  if (spans.empty()) {
+    return fail("a span junction needs at least one span");
+  }
+  if (spans.size() > 2) {
+    return fail("a span junction covers one road (a crosswalk) or two parallel roads — at most two "
+                "spans");
+  }
+  for (std::size_t i = 0; i < spans.size(); ++i) {
+    const SpanArm& span = spans[i];
+    const Road* road = network.road(span.road);
+    if (road == nullptr) {
+      return fail("stale road id in span");
+    }
+    // A connecting road is junction internals; a span covers a through road.
+    if (road->junction.is_valid()) {
+      return fail(fmt::format("road '{}' is a connecting road — a §12.7 virtual junction spans an "
+                              "uninterrupted road, not junction internals",
+                              road->odr_id));
+    }
+    if (span.s_start < 0.0 || span.s_end > road->length) {
+      return fail(fmt::format("span [{}, {}] lies outside road '{}' (length {})",
+                              span.s_start,
+                              span.s_end,
+                              road->odr_id,
+                              road->length));
+    }
+    if (span.s_end - span.s_start <= tol::kLength) {
+      return fail(fmt::format("span [{}, {}] on road '{}' is not a forward interval (s_start must "
+                              "be strictly less than s_end)",
+                              span.s_start,
+                              span.s_end,
+                              road->odr_id));
+    }
+    for (std::size_t j = 0; j < i; ++j) {
+      if (spans[j].road == span.road) {
+        return fail(
+            fmt::format("road '{}' appears in both spans — the parallel-road case needs two "
+                        "different roads",
+                        road->odr_id));
+      }
+    }
+  }
+
+  // junctions_are_current: there is no derivation behind a span junction, so
+  // the editor's regeneration pass must not run over what was just created.
+  auto command = std::make_unique<GenericCommand>(
+      std::string(kName), DirtySet{.topology = true, .junctions_are_current = true});
+  // A tiny creator on purpose. retarget_junction plans turns and rewrites arm
+  // link slots; a span junction must have neither, and the main road stays
+  // uninterrupted (§12.7), so nothing outside the new junction record changes.
+  command->creator = [spans = std::vector<SpanArm>(spans.begin(), spans.end())](
+                         RoadNetwork& target, Values& created) -> Expected<void> {
+    const JunctionId junction_id = target.create_junction(next_free_junction_odr_id(target), "");
+    created.junctions.emplace_back(junction_id, Junction{});
+    Junction& junction = *target.junction(junction_id);
+    junction.spans = spans;
+    // Structural, not a preference: a §12.7 virtual junction is never derived,
+    // so it is always locked (the reader forces this too).
+    junction.locked = true;
+    return {};
+  };
+  return command;
+}
+
 namespace {
 
 /// Locates the JunctionCorner entry for the ordered arm pair, or `end()`.

@@ -3,6 +3,7 @@
 #include "roadmaker/edit/command.hpp"
 #include "roadmaker/export.hpp"
 #include "roadmaker/road/authoring.hpp"
+#include "roadmaker/road/junction.hpp"
 #include "roadmaker/road/lane.hpp"
 #include "roadmaker/road/object.hpp"
 #include "roadmaker/road/road.hpp"
@@ -477,6 +478,28 @@ merge_junctions(const RoadNetwork& network,
                 JunctionId survivor,
                 JunctionId absorbed,
                 const JunctionGenOptions& options = {});
+
+/// Creates a SPAN (virtual) junction covering `spans` (p4-s4, issue #319) — the
+/// mid-road crosswalk and the parallel-road span. ASAM OpenDRIVE 1.9.0 §12.7
+/// (identical in 1.8.1 §12.7): a virtual junction marks a stretch of an
+/// UNINTERRUPTED road, so the command creates nothing but the junction record
+/// itself — no arms, no connecting roads, no connection table, and no link on
+/// any road. The result is LOCKED, structurally: a span junction is never
+/// derived, so the automatic loop has nothing to re-derive it from
+/// (set_junction_locked refuses to unlock one).
+///
+/// The junction takes the next free numeric odr id and an empty name, exactly
+/// as create_junction does.
+///
+/// One span is a single-road span (a crosswalk across one carriageway); two
+/// spans cover the same crossing over two parallel roads. Errors
+/// (invalid_command, network untouched): no spans or more than two; a stale
+/// road id; the same road in both spans; a CONNECTING road (one that belongs to
+/// a junction — a span covers a through road, not junction internals); and a
+/// span that is not a real interval inside its road, i.e. `s_start < 0`,
+/// `s_end > road length`, or a length of at most tol::kLength.
+[[nodiscard]] RM_API std::unique_ptr<Command> create_span_junction(const RoadNetwork& network,
+                                                                   std::span<const SpanArm> spans);
 
 /// Authors the fillet radius of ONE junction corner, named by its adjacent arm
 /// pair (p4-s1, issue #225). `radius <= 0` removes the override and returns the

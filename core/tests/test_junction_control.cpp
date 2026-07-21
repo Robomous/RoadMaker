@@ -20,6 +20,9 @@
 #include "roadmaker/road/authoring.hpp"
 #include "roadmaker/road/junction.hpp"
 #include "roadmaker/road/network.hpp"
+#include "roadmaker/tol.hpp"
+#include "roadmaker/xodr/reader.hpp"
+#include "roadmaker/xodr/writer.hpp"
 
 #include <gtest/gtest.h>
 
@@ -642,4 +645,217 @@ TEST(JunctionControl, MergingAStaleOrForeignOrSpanJunctionIsRejected) {
   fixture.network.junction(span)->locked = true;
   expect_command_rejected(fixture.network, merge_junctions(fixture.network, fixture.left, span));
   expect_command_rejected(fixture.network, merge_junctions(fixture.network, span, fixture.left));
+}
+
+// --- span (virtual) junction creation ---------------------------------------
+
+namespace {
+
+/// Two straight parallel through roads — the substrate a span junction covers.
+/// Neither is cut and neither belongs to a junction, which is exactly what
+/// ASAM OpenDRIVE 1.9.0 §12.7 means by "the main road is uninterrupted".
+struct SpanFixture {
+  RoadNetwork network;
+  RoadId north;
+  RoadId south;
+
+  SpanFixture() {
+    north = author(network, {Waypoint{0.0, 6.0}, Waypoint{120.0, 6.0}}, "1");
+    south = author(network, {Waypoint{0.0, -6.0}, Waypoint{120.0, -6.0}}, "2");
+  }
+
+  double length(RoadId road) const { return network.road(road)->length; }
+};
+
+/// The only junction the network holds (the span suites build exactly one).
+JunctionId sole_junction(const RoadNetwork& network) {
+  JunctionId found;
+  network.for_each_junction([&](JunctionId id, const Junction&) { found = id; });
+  return found;
+}
+
+/// Any connecting road of an already-generated junction.
+RoadId a_connecting_road(const RoadNetwork& network) {
+  RoadId found;
+  network.for_each_road([&](RoadId id, const roadmaker::Road& road) {
+    if (road.junction.is_valid()) {
+      found = id;
+    }
+  });
+  return found;
+}
+
+std::vector<SpanArm> one_span(RoadId road) {
+  return {SpanArm{.road = road, .s_start = 50.0, .s_end = 56.5}};
+}
+
+} // namespace
+
+TEST(JunctionControl, CreatingASingleRoadSpanJunctionRoundTrips) {
+  SpanFixture fixture;
+  auto command = roadmaker::edit::create_span_junction(fixture.network, one_span(fixture.north));
+  ASSERT_NE(command, nullptr);
+  EXPECT_EQ(command->name(), "Create Span Junction");
+  // Nothing is derived behind a span junction, so the editor must not
+  // regenerate on top of what was just created.
+  EXPECT_TRUE(command->dirty().junctions_are_current);
+  EXPECT_TRUE(command->dirty().topology);
+
+  expect_command_round_trip(fixture.network, *command);
+
+  ASSERT_TRUE(command->apply(fixture.network).has_value());
+  const JunctionId made = sole_junction(fixture.network);
+  ASSERT_TRUE(made.is_valid());
+  // The created id is reported so the editor can select it.
+  const std::vector<JunctionId> dirty_junctions = command->dirty().junctions;
+  EXPECT_NE(std::ranges::find(dirty_junctions, made), dirty_junctions.end());
+
+  const Junction& junction = *fixture.network.junction(made);
+  ASSERT_EQ(junction.spans.size(), 1U);
+  EXPECT_EQ(junction.spans.front().road, fixture.north);
+  EXPECT_DOUBLE_EQ(junction.spans.front().s_start, 50.0);
+  EXPECT_DOUBLE_EQ(junction.spans.front().s_end, 56.5);
+  // §12.7: the main road is uninterrupted — no arms, no connections, no links.
+  EXPECT_TRUE(junction.locked) << "a span junction is locked structurally";
+  EXPECT_TRUE(junction.arms.empty());
+  EXPECT_TRUE(junction.connections.empty());
+  EXPECT_FALSE(fixture.network.road(fixture.north)->predecessor.has_value());
+  EXPECT_FALSE(fixture.network.road(fixture.north)->successor.has_value());
+  EXPECT_FALSE(fixture.network.road(fixture.north)->junction.is_valid());
+  // Only the junction was created: the two authored roads are still all there is.
+  std::size_t roads = 0;
+  fixture.network.for_each_road([&](RoadId, const roadmaker::Road&) { ++roads; });
+  EXPECT_EQ(roads, 2U);
+}
+
+TEST(JunctionControl, CreatingAParallelRoadSpanJunctionRoundTrips) {
+  SpanFixture fixture;
+  const std::vector<SpanArm> spans{SpanArm{.road = fixture.north, .s_start = 40.0, .s_end = 44.0},
+                                   SpanArm{.road = fixture.south, .s_start = 41.5, .s_end = 45.5}};
+  auto command = roadmaker::edit::create_span_junction(fixture.network, spans);
+  ASSERT_NE(command, nullptr);
+  expect_command_round_trip(fixture.network, *command);
+
+  ASSERT_TRUE(command->apply(fixture.network).has_value());
+  const Junction& junction = *fixture.network.junction(sole_junction(fixture.network));
+  ASSERT_EQ(junction.spans.size(), 2U);
+  EXPECT_EQ(junction.spans[1].road, fixture.south);
+  EXPECT_DOUBLE_EQ(junction.spans[1].s_end, 45.5);
+  EXPECT_TRUE(junction.locked);
+}
+
+TEST(JunctionControl, RedoingASpanJunctionReusesItsId) {
+  SpanFixture fixture;
+  auto command = roadmaker::edit::create_span_junction(fixture.network, one_span(fixture.north));
+  ASSERT_NE(command, nullptr);
+  ASSERT_TRUE(command->apply(fixture.network).has_value());
+  const JunctionId first = sole_junction(fixture.network);
+
+  ASSERT_TRUE(command->revert(fixture.network).has_value());
+  EXPECT_FALSE(sole_junction(fixture.network).is_valid());
+
+  ASSERT_TRUE(command->apply(fixture.network).has_value());
+  // restore-in-place: redo resurrects the junction under its ORIGINAL id, so
+  // references held elsewhere (the selection, the undo stack) stay valid.
+  EXPECT_EQ(sole_junction(fixture.network), first);
+  EXPECT_EQ(fixture.network.junction(first)->spans.size(), 1U);
+}
+
+TEST(JunctionControl, ACreatedSpanJunctionCannotBeUnlocked) {
+  SpanFixture fixture;
+  auto command = roadmaker::edit::create_span_junction(fixture.network, one_span(fixture.north));
+  ASSERT_NE(command, nullptr);
+  ASSERT_TRUE(command->apply(fixture.network).has_value());
+  const JunctionId made = sole_junction(fixture.network);
+  expect_command_rejected(fixture.network, set_junction_locked(fixture.network, made, false));
+}
+
+TEST(JunctionControl, ACreatedSpanJunctionSurvivesSaveReloadSave) {
+  SpanFixture fixture;
+  const std::vector<SpanArm> spans{SpanArm{.road = fixture.north, .s_start = 40.0, .s_end = 44.0},
+                                   SpanArm{.road = fixture.south, .s_start = 41.5, .s_end = 45.5}};
+  auto command = roadmaker::edit::create_span_junction(fixture.network, spans);
+  ASSERT_NE(command, nullptr);
+  ASSERT_TRUE(command->apply(fixture.network).has_value());
+
+  // The op's output has to survive the WP1 persistence untouched, or the
+  // command is authoring something the file cannot carry.
+  const auto xml = roadmaker::write_xodr(fixture.network, "span");
+  ASSERT_TRUE(xml.has_value()) << xml.error().message;
+  EXPECT_NE(xml->find("type=\"virtual\""), std::string::npos) << *xml;
+
+  auto reparsed = roadmaker::parse_xodr(*xml, "span");
+  ASSERT_TRUE(reparsed.has_value());
+  EXPECT_TRUE(reparsed->diagnostics.empty())
+      << "never write what you cannot read back; first: " << reparsed->diagnostics.front().message;
+  const auto again = roadmaker::write_xodr(reparsed->network, "span");
+  ASSERT_TRUE(again.has_value());
+  EXPECT_EQ(*again, *xml) << "save->reload->save must be byte-identical";
+
+  EXPECT_TRUE(roadmaker::validate_network(fixture.network).empty());
+}
+
+// --- span rejections --------------------------------------------------------
+
+TEST(JunctionControl, ASpanJunctionNeedsOneOrTwoSpans) {
+  SpanFixture fixture;
+  expect_command_rejected(fixture.network,
+                          roadmaker::edit::create_span_junction(fixture.network, {}));
+
+  const RoadId third = author(fixture.network, {Waypoint{0.0, 18.0}, Waypoint{120.0, 18.0}}, "3");
+  const std::vector<SpanArm> three{SpanArm{.road = fixture.north, .s_start = 40.0, .s_end = 44.0},
+                                   SpanArm{.road = fixture.south, .s_start = 40.0, .s_end = 44.0},
+                                   SpanArm{.road = third, .s_start = 40.0, .s_end = 44.0}};
+  expect_command_rejected(fixture.network,
+                          roadmaker::edit::create_span_junction(fixture.network, three));
+}
+
+TEST(JunctionControl, AnInvertedOrDegenerateSpanIsRejected) {
+  SpanFixture fixture;
+  const auto reject = [&](double s_start, double s_end) {
+    const std::vector<SpanArm> spans{
+        SpanArm{.road = fixture.north, .s_start = s_start, .s_end = s_end}};
+    expect_command_rejected(fixture.network,
+                            roadmaker::edit::create_span_junction(fixture.network, spans));
+  };
+  reject(60.0, 40.0);                                 // inverted
+  reject(40.0, 40.0);                                 // zero length
+  reject(40.0, 40.0 + roadmaker::tol::kLength / 2.0); // below the length tolerance
+}
+
+TEST(JunctionControl, ASpanOutsideItsRoadIsRejected) {
+  SpanFixture fixture;
+  const double length = fixture.length(fixture.north);
+  const auto reject = [&](double s_start, double s_end) {
+    const std::vector<SpanArm> spans{
+        SpanArm{.road = fixture.north, .s_start = s_start, .s_end = s_end}};
+    expect_command_rejected(fixture.network,
+                            roadmaker::edit::create_span_junction(fixture.network, spans));
+  };
+  reject(-5.0, 10.0);                 // before the start of the road
+  reject(length - 5.0, length + 5.0); // past the end of the road
+}
+
+TEST(JunctionControl, TheSameRoadTwiceIsRejected) {
+  SpanFixture fixture;
+  const std::vector<SpanArm> spans{SpanArm{.road = fixture.north, .s_start = 40.0, .s_end = 44.0},
+                                   SpanArm{.road = fixture.north, .s_start = 60.0, .s_end = 64.0}};
+  expect_command_rejected(fixture.network,
+                          roadmaker::edit::create_span_junction(fixture.network, spans));
+}
+
+TEST(JunctionControl, AConnectingRoadCannotCarryASpan) {
+  CrossFixture fixture;
+  const RoadId connecting = a_connecting_road(fixture.network);
+  ASSERT_TRUE(connecting.is_valid());
+  const std::vector<SpanArm> spans{SpanArm{
+      .road = connecting, .s_start = 0.0, .s_end = fixture.network.road(connecting)->length}};
+  expect_command_rejected(fixture.network,
+                          roadmaker::edit::create_span_junction(fixture.network, spans));
+}
+
+TEST(JunctionControl, AStaleSpanRoadIsRejected) {
+  SpanFixture fixture;
+  expect_command_rejected(
+      fixture.network, roadmaker::edit::create_span_junction(fixture.network, one_span(RoadId{})));
 }
