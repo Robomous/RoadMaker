@@ -18,7 +18,7 @@ validates, junctions carry coherent lane logic, and meshes are watertight and
 robust. A C++20 kernel does the work; a Qt 6 Widgets editor and a Python
 package sit on top ([architecture](docs/architecture/overview.md)).
 
-![The RoadMaker editor: the GS-1 urban intersection — a signalized four-arm
+![The RoadMaker editor: an urban intersection — a signalized four-arm
 junction with crosswalks, stop lines, lane arrows, traffic lights, and street
 trees — in the graphite-amber theme with the Library catalogue
 open](docs/user-guide/img/gs1_hero.png)
@@ -72,7 +72,7 @@ RoadMaker tessellates a network into simulation-ready 3D meshes and writes:
 - **glTF 2.0** (`.glb`) — binary, self-contained, always available.
 - **OpenUSD** (`.usda`) — ASCII only, in editor/optional builds configured with
   `-DRM_BUILD_USD=ON` (prebuilt release packages include it; Python wheels ship
-  it off). `.usdc`/`.usdz` **crate** output is intentionally unsupported in M2 —
+  it off). `.usdc`/`.usdz` **crate** output is intentionally unsupported —
   every USD consumer (usdview, Omniverse/Isaac Sim, Blender) reads `.usda`. See
   [docs/design/m2/04_usd_export.md](docs/design/m2/04_usd_export.md).
 
@@ -100,10 +100,21 @@ sprints — it becomes `0.1.0` only at the release itself.
 
 - ASAM OpenDRIVE 1.8/1.9 read/write/validate, clothoid geometry, watertight
   simulation-ready meshes, structured diagnostics
-- Interactive editing: road/lane/elevation/junction tools with full
-  undo/redo, T-junctions, topology editing, junction 3D surfaces
-- Textured viewport with props and signals, dark professional theme,
-  welcome screen, Library panel with drag-and-drop creation
+- Road-plan authoring: create/extend roads with junction formation on
+  crossings, the full lane tool suite (lane type & direction, width, add,
+  form, carve), road styles as draggable assets, enclosed-area ground
+  surfaces
+- Junction control: stop lines, locked/custom junctions (membership, merge,
+  span junctions), per-corner radius and materials, interior surface
+  control, editable maneuver roads with turn types
+- Markings: crosswalks, marking curve/point tools, arrow stencils, boundary
+  marking assets, per-instance materials
+- Props & assets: Library panel with drag-and-drop creation, four prop
+  placement tools plus prop sets, per-instance sizing persisted through
+  OpenDRIVE object dimensions
+- Editor: orbit-pivot camera with framing and cardinal views, scrub-editable
+  Attributes pane, 2D profile editor, in-app help with F1 context lookup,
+  full undo/redo, dark professional theme
 - glTF 2.0 + OpenUSD export, esmini round-trip CI gate, Python bindings
 
 ## License
