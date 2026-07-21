@@ -528,6 +528,17 @@ NB_MODULE(_roadmaker, m) {
       });
 
   nb::class_<roadmaker::SpanArm>(m, "SpanArm")
+      .def(nb::init<>())
+      // edit.create_span_junction takes a list of these, so they have to be
+      // constructible from Python (WP4, issue #319).
+      .def(
+          "__init__",
+          [](roadmaker::SpanArm* self, roadmaker::RoadId road, double s_start, double s_end) {
+            new (self) roadmaker::SpanArm{.road = road, .s_start = s_start, .s_end = s_end};
+          },
+          "road"_a,
+          "s_start"_a,
+          "s_end"_a)
       .def_ro("road",
               &roadmaker::SpanArm::road,
               "The road the span lies on. spans[0].road is exported as the "
@@ -2226,6 +2237,21 @@ NB_MODULE(_roadmaker, m) {
       "with fewer than 2 arms, or a union the generator refuses (notably ends "
       "farther apart than options.max_end_distance_m — what 'neighbouring' "
       "means here).");
+  edit.def(
+      "create_span_junction",
+      [](const roadmaker::RoadNetwork& network, const std::vector<roadmaker::SpanArm>& spans) {
+        return roadmaker::edit::create_span_junction(network, spans);
+      },
+      "network"_a,
+      "spans"_a,
+      "Creates a SPAN (virtual) junction over one span (a mid-road crosswalk) "
+      "or two (the same crossing over two parallel roads). ASAM OpenDRIVE "
+      "1.9.0 §12.7: the main road is UNINTERRUPTED, so nothing is created but "
+      "the junction record — no arms, no connecting roads, no road links — and "
+      "the result is always locked. Pushing raises ValueError for no spans or "
+      "more than two, a stale road id, the same road in both spans, a "
+      "connecting road, or a span that is not a real interval inside its road "
+      "(s_start < 0, s_end > length, or zero length).");
   edit.def("delete_junction", &roadmaker::edit::delete_junction, "network"_a, "junction"_a);
 
   // --- parametric intersection assemblies (rm.edit.assembly) ---
