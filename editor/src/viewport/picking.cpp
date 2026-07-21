@@ -267,10 +267,12 @@ pick(const NetworkMesh& mesh, std::span<const RoadAabb> road_aabbs, const Ray& r
     if (model == nullptr) {
       continue;
     }
-    const double half_height = model->height * 0.5;
+    // The sphere tracks the instance's rendered size (#335) — a prop scaled to
+    // twice the model height must be twice as easy to grab, not half.
+    const double half_height = model->height * 0.5 * instance.scale;
     const std::array<double, 3> center{
         instance.position[0], instance.position[1], instance.position[2] + half_height};
-    const double radius = std::max(model->radius, half_height);
+    const double radius = std::max(model->radius * instance.scale, half_height);
     const auto t = intersect_sphere(ray, center, radius);
     if (t && *t < best_t) {
       best_t = *t;

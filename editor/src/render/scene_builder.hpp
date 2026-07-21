@@ -90,9 +90,12 @@ struct ScenePropBatch {
 };
 
 /// Column-major model matrix for a prop at `position` rotated by `heading` about
-/// +Z. Pure and header-declared so both the scene builder and its tests share
-/// the one bake definition. Matches the pre-instancing world-space bake exactly.
-[[nodiscard]] InstanceData prop_transform(const std::array<double, 3>& position, double heading);
+/// +Z and uniformly scaled by `scale` (ObjectInstance::scale — the prop's
+/// declared OpenDRIVE @height relative to the model). Pure and header-declared
+/// so both the scene builder and its tests share the one bake definition. At
+/// scale 1 it matches the pre-instancing world-space bake exactly.
+[[nodiscard]] InstanceData
+prop_transform(const std::array<double, 3>& position, double heading, double scale = 1.0);
 
 /// Axis-aligned bounds of the built scene (kernel frame, meters).
 struct SceneBounds {

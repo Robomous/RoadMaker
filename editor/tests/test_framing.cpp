@@ -206,6 +206,34 @@ TEST(SelectionBounds, ObjectSelectionFramesThePropWithItsModelHeight) {
   EXPECT_NEAR(bounds.hi[2], static_cast<float>(model->height), 1e-3F);
 }
 
+TEST(SelectionBounds, ObjectSelectionFramesScaledProp) {
+  RoadNetwork network;
+  NetworkMesh mesh;
+  mesh.roads.push_back(make_two_lane_road(network, "1", 200.0));
+  const RoadId road = mesh.roads[0].road;
+
+  Object tree;
+  tree.odr_id = "o1";
+  tree.name = "tree_pine";
+  const ObjectId object = network.add_object(road, tree);
+  mesh.objects.push_back(ObjectInstance{.object = object,
+                                        .road = road,
+                                        .model_id = "tree_pine",
+                                        .position = {40.0, 60.0, 0.0},
+                                        .heading = 0.0,
+                                        .scale = 2.0});
+
+  const std::vector<SelectionEntry> entries{{.road = road, .object = object}};
+  const SceneBounds bounds = selection_bounds(mesh, entries);
+  ASSERT_TRUE(bounds.valid());
+  const props::PropModel* model = props::model("tree_pine");
+  ASSERT_NE(model, nullptr);
+  // Framing follows the RENDERED size — zooming to a resized prop must not cut
+  // it off at model height (#335).
+  EXPECT_NEAR(bounds.lo[0], 40.0F - static_cast<float>(model->radius * 2.0), 1e-3F);
+  EXPECT_NEAR(bounds.hi[2], static_cast<float>(model->height * 2.0), 1e-3F);
+}
+
 TEST(SelectionBounds, UnknownPropModelStillFramesSomething) {
   RoadNetwork network;
   NetworkMesh mesh;
