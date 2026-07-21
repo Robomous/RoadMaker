@@ -593,6 +593,20 @@ void ViewportWidget::draw_handles(QPainter& painter) const {
       break;
     }
 
+    if (handle.kind == HandleKind::Sample) {
+      // A mesher input sample (junction surface spans, p4-s5): read-only and
+      // there are hundreds of them, so it is a small flat dot with no outline —
+      // big enough to read as a sampled station, small enough that a whole
+      // ribbon's worth does not become a smear. Idle is dimmed (an excluded or
+      // merely hovered span), hovered is the accent (the active span).
+      const double r = handle.state == HandleState::Idle ? 1.5 : 2.5;
+      QColor dot = handle.state == HandleState::Idle ? theme.text_secondary : theme.accent;
+      painter.setBrush(dot);
+      painter.setPen(Qt::NoPen);
+      painter.drawEllipse(center, r, r);
+      continue;
+    }
+
     if (handle.kind == HandleKind::Midpoint) {
       // Hollow "insert here" marker: an accent ring with a plus, no fill.
       const double r = 4.0;

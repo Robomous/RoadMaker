@@ -1,4 +1,6 @@
 #include "panels/properties_panel.hpp"
+#include <QCheckBox>
+#include <QToolButton>
 
 #include "roadmaker/assets/prop_library.hpp"
 #include "roadmaker/edit/operations.hpp"
@@ -27,6 +29,7 @@
 #include "tools/corner_tool.hpp"
 #include "tools/elevation_tool.hpp"
 #include "tools/stopline_tool.hpp"
+#include "tools/junction_surface_tool.hpp"
 
 namespace roadmaker::editor {
 
@@ -237,6 +240,7 @@ PropertiesPanel::PropertiesPanel(Document& document,
       stopline_distance_spin_(new QDoubleSpinBox),
       stopline_flip_button_(new QPushButton(tr("Flip direction"))),
       stopline_reset_button_(new QPushButton(tr("Reset to default"))),
+      surface_spans_group_(new QGroupBox(tr("Surface spans"), this)),
       junction_group_(new QGroupBox(tr("Junction"), this)), junction_type_label_(new QLabel(this)),
       junction_locked_check_(new QCheckBox(tr("Locked"), this)),
       junction_radius_spin_(new QDoubleSpinBox),
@@ -517,6 +521,18 @@ PropertiesPanel::PropertiesPanel(Document& document,
   });
   stopline_form_->addRow(QString(), stopline_reset_button_);
   stopline_group_->hide();
+
+  // Surface spans (p4-s5, issue #320): one row per connecting road of the
+  // selected junction's floor. Dynamic PLAIN widgets rebuilt on every refresh —
+  // deliberately not a QAbstractItemModel, because the rows are neither
+  // sortable nor drag-reorderable and there is nothing to share with a view.
+  // This is the first reorder UI in the editor, and it is intentionally minimal:
+  // paired Raise/Lower buttons (the stop line's flip/reset precedent), no
+  // drag handles.
+  surface_spans_group_->setObjectName(QStringLiteral("surface_spans_group"));
+  surface_spans_layout_ = new QVBoxLayout(surface_spans_group_);
+  surface_spans_layout_->setSpacing(2);
+  surface_spans_group_->hide();
 
   // Junction: the junction-WIDE values (p4-s2). The radius default is the
   // fallback every corner without its own radius uses, so its zero position is
@@ -828,6 +844,7 @@ PropertiesPanel::PropertiesPanel(Document& document,
   layout->addWidget(elevation_group_);
   layout->addWidget(corner_group_);
   layout->addWidget(stopline_group_);
+  layout->addWidget(surface_spans_group_);
   layout->addWidget(junction_group_);
   layout->addWidget(signal_group_);
   layout->addWidget(object_group_);
@@ -1016,6 +1033,7 @@ void PropertiesPanel::refresh() {
   // up front.
   refresh_corner();
   refresh_stopline();
+  refresh_surface_spans();
 
   // The asset editors are Library-driven modes; any scene selection closes them.
   asset_group_->hide();
@@ -1666,6 +1684,117 @@ void PropertiesPanel::set_stopline_tool(StopLineTool* tool) {
             &PropertiesPanel::refresh_stopline);
   }
   refresh_stopline();
+}
+
+void PropertiesPanel::set_junction_surface_tool(JunctionSurfaceTool* tool) {
+  junction_surface_tool_ = tool;
+  if (junction_surface_tool_ != nullptr) {
+    connect(junction_surface_tool_,
+            &JunctionSurfaceTool::surface_span_selection_changed,
+            this,
+            &PropertiesPanel::refresh_surface_spans);
+  }
+  refresh_surface_spans();
+}
+
+void PropertiesPanel::refresh_surface_spans() {
+  // Rows are rebuilt wholesale: they are cheap, and rebuilding is what keeps
+  // the display honest after a regeneration changed the turn set.
+  while (QLayoutItem* item = surface_spans_layout_->takeAt(0)) {
+    delete item->widget();
+    delete item;
+  }
+
+  const JunctionId junction = selection_.primary().junction;
+  const std::vector<JunctionSurfaceSpanInfo> spans =
+      junction.is_valid() ? junction_surface_spans(document_.network(), junction)
+                          : std::vector<JunctionSurfaceSpanInfo>{};
+  if (spans.empty()) {
+    // Empty for a stale id and for a junction with no floor to control — a
+    // span (virtual) junction has no connections at all.
+    surface_spans_group_->hide();
+    return;
+  }
+
+  const std::optional<ActiveSurfaceSpan> active =
+      junction_surface_tool_ != nullptr ? junction_surface_tool_->active_span() : std::nullopt;
+
+  for (const JunctionSurfaceSpanInfo& info : spans) {
+    auto* row = new QWidget(surface_spans_group_);
+    row->setObjectName(QStringLiteral("surface_span_row"));
+    auto* row_layout = new QHBoxLayout(row);
+    row_layout->setContentsMargins(0, 0, 0, 0);
+
+    // A flat button rather than a label: clicking the name is what selects the
+    // span in the tool, so the viewport and the panel always agree about which
+    // one is under attention.
+    auto* label = new QPushButton(tr("Turn %1").arg(QString::fromStdString(info.road_odr_id)), row);
+    label->setObjectName(QStringLiteral("surface_span_label"));
+    label->setFlat(true);
+    label->setCursor(Qt::PointingHandCursor);
+    if (active.has_value() && active->road == info.road) {
+      QFont bold = label->font();
+      bold.setBold(true);
+      label->setFont(bold);
+    }
+    row_layout->addWidget(label, 1);
+
+    auto* samples = new QCheckBox(tr("Samples"), row);
+    samples->setObjectName(QStringLiteral("surface_span_samples_check"));
+    samples->setToolTip(
+        tr("Let this turn's samples shape the floor's elevation and triangulation. Clearing it "
+           "leaves the footprint in the union, so the pavement's extent never changes."));
+    {
+      // Programmatic seeding must not echo a toggle back as a command — the
+      // same guard every other editor here uses.
+      const QSignalBlocker blocker(samples);
+      samples->setChecked(info.included);
+    }
+    const RoadId road = info.road;
+    const bool included = info.included;
+    connect(samples, &QCheckBox::toggled, this, [this, junction, road, included](bool checked) {
+      if (checked == included) {
+        return; // a refresh re-seed, not a click
+      }
+      push(edit::set_surface_span_included(document_.network(), junction, road, checked));
+    });
+    row_layout->addWidget(samples);
+
+    auto* sort_label = new QLabel(QString::number(info.sort_index), row);
+    sort_label->setObjectName(QStringLiteral("surface_span_sort_label"));
+    sort_label->setToolTip(tr("Precedence where this turn's footprint overlaps another's — "
+                              "higher wins."));
+    sort_label->setMinimumWidth(24);
+    sort_label->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
+    row_layout->addWidget(sort_label);
+
+    const auto nudge = [this, junction, road](int delta, const JunctionSurfaceSpanInfo& span) {
+      push(edit::set_surface_span_sort_index(
+          document_.network(), junction, road, span.sort_index + delta));
+    };
+    const JunctionSurfaceSpanInfo snapshot = info;
+    auto* lower = new QToolButton(row);
+    lower->setObjectName(QStringLiteral("surface_span_lower_button"));
+    lower->setText(QStringLiteral("↓"));
+    lower->setToolTip(tr("Lower this span: it loses overlaps to the spans above it"));
+    connect(lower, &QToolButton::clicked, this, [nudge, snapshot] { nudge(-1, snapshot); });
+    row_layout->addWidget(lower);
+
+    auto* raise = new QToolButton(row);
+    raise->setObjectName(QStringLiteral("surface_span_raise_button"));
+    raise->setText(QStringLiteral("↑"));
+    raise->setToolTip(tr("Raise this span: it wins overlaps against the spans below it"));
+    connect(raise, &QToolButton::clicked, this, [nudge, snapshot] { nudge(+1, snapshot); });
+    row_layout->addWidget(raise);
+
+    connect(label, &QPushButton::clicked, this, [this, road] {
+      if (junction_surface_tool_ != nullptr) {
+        junction_surface_tool_->select_span(road);
+      }
+    });
+    surface_spans_layout_->addWidget(row);
+  }
+  surface_spans_group_->show();
 }
 
 void PropertiesPanel::set_corner_tool(CornerTool* tool) {

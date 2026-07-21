@@ -4,6 +4,7 @@
 
 #include "roadmaker/assets/prop_library.hpp"
 #include "roadmaker/edit/operations.hpp"
+#include "roadmaker/mesh/junction_surface_spans.hpp"
 #include "roadmaker/mesh/junction_corners.hpp"
 #include "roadmaker/mesh/junction_stoplines.hpp"
 #include "roadmaker/road/authoring.hpp"
@@ -21,6 +22,7 @@
 #include <QPushButton>
 #include <QSignalSpy>
 #include <QTemporaryDir>
+#include <QToolButton>
 #include <QTest>
 #include <QUndoStack>
 #include <algorithm>
@@ -1701,6 +1703,21 @@ double model_height() {
   return model->height;
 }
 
+// --- Surface spans (p4-s5, issue #320) ---------------------------------------
+
+/// The panel's per-span rows, in display order.
+std::vector<QWidget*> span_rows(const PropertiesPanel& panel) {
+  std::vector<QWidget*> rows;
+  auto* group = panel.findChild<QGroupBox*>(QStringLiteral("surface_spans_group"));
+  if (group == nullptr) {
+    return rows;
+  }
+  for (QWidget* row : group->findChildren<QWidget*>(QStringLiteral("surface_span_row"))) {
+    rows.push_back(row);
+  }
+  return rows;
+}
+
 } // namespace
 
 TEST(PropertiesPanel, PropHeightScrubCommitsOneUndoEntry) {
@@ -1855,6 +1872,79 @@ TEST(PropertiesPanel, PropHeightRefreshAndEqualTypedValueCommitNothing) {
   emit spin->editingFinished();
   EXPECT_EQ(h.document.undo_stack()->count(), base);
   EXPECT_EQ(xodr(h.document), xodr_before);
+}
+
+TEST(PropertiesPanel, SurfaceSpanRowsAppearForAJunctionWithAFloor) {
+  CornerScene scene;
+  PropertiesPanel panel(scene.document, scene.selection);
+  auto* group = panel.findChild<QGroupBox*>(QStringLiteral("surface_spans_group"));
+  ASSERT_NE(group, nullptr);
+  EXPECT_TRUE(group->isHidden()) << "nothing selected — nothing to show";
+
+  scene.selection.select({.junction = scene.junction});
+  EXPECT_FALSE(group->isHidden());
+  const std::size_t expected =
+      junction_surface_spans(scene.document.network(), scene.junction).size();
+  ASSERT_GT(expected, 0U);
+  EXPECT_EQ(span_rows(panel).size(), expected) << "one row per connecting road";
+
+  // A road selection is not a junction selection: the section goes away.
+  scene.selection.select({.road = scene.document.network().find_road("1")});
+  EXPECT_TRUE(group->isHidden());
+}
+
+TEST(PropertiesPanel, SurfaceSpanSamplesCheckboxPushesOneCommandAndNeverEchoes) {
+  CornerScene scene;
+  PropertiesPanel panel(scene.document, scene.selection);
+  scene.selection.select({.junction = scene.junction});
+  const std::vector<QWidget*> rows = span_rows(panel);
+  ASSERT_FALSE(rows.empty());
+  auto* samples = rows.front()->findChild<QCheckBox*>(QStringLiteral("surface_span_samples_check"));
+  ASSERT_NE(samples, nullptr);
+  EXPECT_TRUE(samples->isChecked());
+
+  const int base = scene.document.undo_stack()->index();
+  samples->setChecked(false);
+  EXPECT_EQ(scene.document.undo_stack()->index(), base + 1);
+  ASSERT_EQ(scene.document.network().junction(scene.junction)->surface_spans.size(), 1U);
+  EXPECT_FALSE(scene.document.network().junction(scene.junction)->surface_spans.front().included);
+
+  // Re-seeding from the record must not push a second (no-op) command — the
+  // kernel refuses those, so an echo would show up as a rejected command.
+  scene.selection.select({.junction = scene.junction});
+  EXPECT_EQ(scene.document.undo_stack()->index(), base + 1);
+}
+
+TEST(PropertiesPanel, SurfaceSpanRaiseAndLowerMoveTheSortIndexByOne) {
+  CornerScene scene;
+  PropertiesPanel panel(scene.document, scene.selection);
+  scene.selection.select({.junction = scene.junction});
+  ASSERT_FALSE(span_rows(panel).empty());
+
+  const auto sort_text = [&panel] {
+    return span_rows(panel)
+        .front()
+        ->findChild<QLabel*>(QStringLiteral("surface_span_sort_label"))
+        ->text();
+  };
+  EXPECT_EQ(sort_text(), QStringLiteral("0"));
+
+  const int base = scene.document.undo_stack()->index();
+  span_rows(panel)
+      .front()
+      ->findChild<QToolButton*>(QStringLiteral("surface_span_raise_button"))
+      ->click();
+  EXPECT_EQ(scene.document.undo_stack()->index(), base + 1);
+  EXPECT_EQ(sort_text(), QStringLiteral("1")) << "the row label follows the authored value";
+
+  span_rows(panel)
+      .front()
+      ->findChild<QToolButton*>(QStringLiteral("surface_span_lower_button"))
+      ->click();
+  EXPECT_EQ(scene.document.undo_stack()->index(), base + 2);
+  EXPECT_EQ(sort_text(), QStringLiteral("0"));
+  // Back at its default, the record is erased rather than kept.
+  EXPECT_TRUE(scene.document.network().junction(scene.junction)->surface_spans.empty());
 }
 
 } // namespace roadmaker::editor

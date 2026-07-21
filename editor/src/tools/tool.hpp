@@ -39,6 +39,7 @@ enum class ToolId {
   Corner,
   StopLine,
   JunctionSpan,
+  JunctionSurface,
 };
 
 struct ToolEvent {
@@ -62,6 +63,8 @@ struct ToolEvent {
 enum class HandleKind {
   Node,     ///< an editable road node (draggable)
   Midpoint, ///< a segment midpoint: click to insert a node
+  Sample,   ///< a read-only mesher input sample (junction surface spans) — a
+            ///< small dot, never draggable
 };
 
 enum class HandleState {
