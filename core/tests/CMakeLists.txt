@@ -28,6 +28,7 @@ add_executable(roadmaker_core_tests
   test_round_trip.cpp
   test_corner_persistence.cpp
   test_stopline_persistence.cpp
+  test_junction_lock_persistence.cpp
   test_edit_stack.cpp
   test_connection.cpp
   test_edit_operations.cpp
