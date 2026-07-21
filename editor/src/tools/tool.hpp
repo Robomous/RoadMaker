@@ -38,6 +38,7 @@ enum class ToolId {
   PropPolygon,
   Corner,
   StopLine,
+  JunctionSpan,
 };
 
 struct ToolEvent {

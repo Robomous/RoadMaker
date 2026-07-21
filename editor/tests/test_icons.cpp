@@ -87,6 +87,7 @@ TEST(Icons, EveryMappedIconIsBundled) {
                                "corner-radius",
                                "crosswalk",
                                "junction-connect",
+                               "junction-span",
                                "lane-section",
                                "marking-point",
                                "marking-curve",
