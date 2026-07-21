@@ -391,8 +391,7 @@ struct SpanPriority {
 /// ribbon covers the point at all (the joint quads, corner fillets and edge
 /// strips pave ground no connecting road claims), which lets every included
 /// span speak.
-std::optional<int>
-max_sort_at(const std::vector<SpanPriority>& priorities, double px, double py) {
+std::optional<int> max_sort_at(const std::vector<SpanPriority>& priorities, double px, double py) {
   std::optional<int> best;
   const Clipper2Lib::PointD probe{px, py};
   for (const SpanPriority& entry : priorities) {
@@ -510,9 +509,8 @@ SubMesh build_junction_surface(const RoadNetwork& network,
     }
     included_border.insert(
         included_border.end(), span.contribution.border.begin(), span.contribution.border.end());
-    centerline.insert(centerline.end(),
-                      span.contribution.centerline.begin(),
-                      span.contribution.centerline.end());
+    centerline.insert(
+        centerline.end(), span.contribution.centerline.begin(), span.contribution.centerline.end());
   }
 
   // 1b. Joint quads (03 §1): each arm's full end cross-section, extruded

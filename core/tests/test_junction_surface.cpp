@@ -637,9 +637,10 @@ double floor_area(const NetworkMesh& mesh) {
   double total = 0.0;
   for (const roadmaker::JunctionFloor& floor : mesh.junction_floors) {
     for (std::size_t i = 0; i + 2 < floor.mesh.indices.size(); i += 3) {
-      total += std::abs(triangle_area_xy(
-          floor.mesh.positions, floor.mesh.indices[i], floor.mesh.indices[i + 1],
-          floor.mesh.indices[i + 2]));
+      total += std::abs(triangle_area_xy(floor.mesh.positions,
+                                         floor.mesh.indices[i],
+                                         floor.mesh.indices[i + 1],
+                                         floor.mesh.indices[i + 2]));
     }
   }
   return total;
@@ -697,8 +698,7 @@ TEST(JunctionSurface, SpanQueryMatchesTheMesherInputs) {
   // A stale id, and a junction with no floor to control, both yield nothing.
   EXPECT_TRUE(roadmaker::junction_surface_spans(network, JunctionId{}).empty());
   RoadNetwork bare;
-  EXPECT_TRUE(
-      roadmaker::junction_surface_spans(bare, bare.create_junction("9", "empty")).empty());
+  EXPECT_TRUE(roadmaker::junction_surface_spans(bare, bare.create_junction("9", "empty")).empty());
 }
 
 TEST(JunctionSurface, SpanQueryReportsAuthoredValues) {
@@ -726,8 +726,7 @@ TEST(JunctionSurface, DefaultedSpanRecordsAreByteIdenticalToNoRecords) {
   // the verbatim legacy path.
   for (const roadmaker::JunctionSurfaceSpanInfo& info :
        roadmaker::junction_surface_spans(network, junction)) {
-    network.junction(junction)->surface_spans.push_back(
-        roadmaker::SurfaceSpan{.road = info.road});
+    network.junction(junction)->surface_spans.push_back(roadmaker::SurfaceSpan{.road = info.road});
   }
   expect_floor_identical(baseline, roadmaker::build_network_mesh(network));
 }
@@ -765,8 +764,7 @@ TEST(JunctionSurface, ExcludedSpanDropsItsElevationInfluence) {
 
   // The escape valve did something: with the grades spread, the excluded
   // span's border no longer supplies any elevation it used to win.
-  EXPECT_NE(baseline.junction_floors[0].mesh.positions,
-            excluded.junction_floors[0].mesh.positions);
+  EXPECT_NE(baseline.junction_floors[0].mesh.positions, excluded.junction_floors[0].mesh.positions);
   EXPECT_NEAR(floor_area(excluded), floor_area(baseline), 1e-6);
 }
 
@@ -784,8 +782,7 @@ TEST(JunctionSurface, SortIndexFlipsTheElevationWinnerDeterministically) {
   network.junction(junction)->surface_spans.push_back(
       roadmaker::SurfaceSpan{.road = spans.front().road, .sort_index = 1});
   const NetworkMesh raised = roadmaker::build_network_mesh(network);
-  EXPECT_NE(baseline.junction_floors[0].mesh.positions,
-            raised.junction_floors[0].mesh.positions);
+  EXPECT_NE(baseline.junction_floors[0].mesh.positions, raised.junction_floors[0].mesh.positions);
 
   // Deterministic: the same network builds byte-identically twice, and the
   // plan-view triangulation is untouched (priority only moves elevations).

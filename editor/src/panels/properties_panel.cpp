@@ -1,16 +1,16 @@
 #include "panels/properties_panel.hpp"
-#include <QCheckBox>
-#include <QToolButton>
 
 #include "roadmaker/assets/prop_library.hpp"
 #include "roadmaker/edit/operations.hpp"
 #include "roadmaker/geometry/poly3.hpp"
 #include "roadmaker/road/network.hpp"
 
+#include <QCheckBox>
 #include <QFile>
 #include <QHBoxLayout>
 #include <QPixmap>
 #include <QSignalBlocker>
+#include <QToolButton>
 #include <QVBoxLayout>
 #include <algorithm>
 #include <array>
@@ -28,8 +28,8 @@
 #include "render/material_catalog.hpp"
 #include "tools/corner_tool.hpp"
 #include "tools/elevation_tool.hpp"
-#include "tools/stopline_tool.hpp"
 #include "tools/junction_surface_tool.hpp"
+#include "tools/stopline_tool.hpp"
 
 namespace roadmaker::editor {
 

@@ -77,7 +77,8 @@ struct CrossFixture {
   /// The connecting roads of the junction, in connection order, de-duplicated.
   [[nodiscard]] std::vector<RoadId> turns() const {
     std::vector<RoadId> out;
-    for (const roadmaker::JunctionConnection& connection : network.junction(junction)->connections) {
+    for (const roadmaker::JunctionConnection& connection :
+         network.junction(junction)->connections) {
       if (std::ranges::find(out, connection.connecting_road) == out.end()) {
         out.push_back(connection.connecting_road);
       }
@@ -138,8 +139,8 @@ TEST(SurfaceSpanPersistence, PreSprintFileReExportsByteIdentical) {
 
   auto reparsed = roadmaker::parse_xodr(xml, "surface_spans");
   ASSERT_TRUE(reparsed.has_value());
-  EXPECT_TRUE(reparsed->network.junction(reparsed->network.find_junction("1"))
-                  ->surface_spans.empty());
+  EXPECT_TRUE(
+      reparsed->network.junction(reparsed->network.find_junction("1"))->surface_spans.empty());
   EXPECT_EQ(write(reparsed->network), xml);
 }
 

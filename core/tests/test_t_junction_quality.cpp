@@ -1015,8 +1015,9 @@ TEST(TJunctionQualitySpans, ExcludedSpanClearsTheSameQualityBudget) {
   const std::vector<roadmaker::JunctionSurfaceSpanInfo> spans =
       roadmaker::junction_surface_spans(tee.network, tee.junction);
   ASSERT_FALSE(spans.empty());
-  tee.network.junction(tee.junction)->surface_spans.push_back(
-      roadmaker::SurfaceSpan{.road = spans.front().road, .included = false});
+  tee.network.junction(tee.junction)
+      ->surface_spans.push_back(
+          roadmaker::SurfaceSpan{.road = spans.front().road, .included = false});
 
   const NetworkMesh mesh = roadmaker::build_network_mesh(tee.network);
   ASSERT_FALSE(mesh.junction_floors.empty());
@@ -1033,6 +1034,5 @@ TEST(TJunctionQualitySpans, ExcludedSpanClearsTheSameQualityBudget) {
   const NetworkMesh again = roadmaker::build_network_mesh(tee.network);
   EXPECT_EQ(again.junction_floors.front().mesh.positions,
             mesh.junction_floors.front().mesh.positions);
-  EXPECT_EQ(again.junction_floors.front().mesh.indices,
-            mesh.junction_floors.front().mesh.indices);
+  EXPECT_EQ(again.junction_floors.front().mesh.indices, mesh.junction_floors.front().mesh.indices);
 }

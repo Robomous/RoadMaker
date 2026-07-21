@@ -4136,15 +4136,17 @@ Expected<Junction> surface_span_edit_context(const RoadNetwork& network,
   const bool solvable = std::ranges::any_of(
       spans, [&](const JunctionSurfaceSpanInfo& info) { return info.road == road; });
   if (!solvable) {
-    return make_error(
-        ErrorCode::InvalidArgument,
-        fmt::format("{}: the given road is not a surface span of junction {}", name, junction->odr_id));
+    return make_error(ErrorCode::InvalidArgument,
+                      fmt::format("{}: the given road is not a surface span of junction {}",
+                                  name,
+                                  junction->odr_id));
   }
   return *junction;
 }
 
 std::vector<SurfaceSpan>::iterator find_surface_span(std::vector<SurfaceSpan>& spans, RoadId road) {
-  return std::ranges::find_if(spans, [&](const SurfaceSpan& record) { return record.road == road; });
+  return std::ranges::find_if(spans,
+                              [&](const SurfaceSpan& record) { return record.road == road; });
 }
 
 /// True when the record has fallen back to pure derivation — the writer's drop
@@ -4212,11 +4214,10 @@ std::unique_ptr<Command> set_surface_span_sort_index(const RoadNetwork& network,
                                                      int sort_index) {
   static constexpr std::string_view kName = "Set Span Sort Index";
   if (sort_index > kMaxSurfaceSpanSortIndex || sort_index < -kMaxSurfaceSpanSortIndex) {
-    return invalid_command(
-        std::string(kName),
-        Error{.code = ErrorCode::InvalidArgument,
-              .message = fmt::format("the sort index must lie within +/-{}",
-                                     kMaxSurfaceSpanSortIndex)});
+    return invalid_command(std::string(kName),
+                           Error{.code = ErrorCode::InvalidArgument,
+                                 .message = fmt::format("the sort index must lie within +/-{}",
+                                                        kMaxSurfaceSpanSortIndex)});
   }
   Expected<Junction> before = surface_span_edit_context(network, junction_id, road, kName);
   if (!before) {

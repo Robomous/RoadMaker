@@ -4,9 +4,9 @@
 
 #include "roadmaker/assets/prop_library.hpp"
 #include "roadmaker/edit/operations.hpp"
-#include "roadmaker/mesh/junction_surface_spans.hpp"
 #include "roadmaker/mesh/junction_corners.hpp"
 #include "roadmaker/mesh/junction_stoplines.hpp"
+#include "roadmaker/mesh/junction_surface_spans.hpp"
 #include "roadmaker/road/authoring.hpp"
 #include "roadmaker/road/junction.hpp"
 #include "roadmaker/road/surface_derivation.hpp"
@@ -22,8 +22,8 @@
 #include <QPushButton>
 #include <QSignalSpy>
 #include <QTemporaryDir>
-#include <QToolButton>
 #include <QTest>
+#include <QToolButton>
 #include <QUndoStack>
 #include <algorithm>
 #include <array>

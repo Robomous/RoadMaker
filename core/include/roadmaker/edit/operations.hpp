@@ -631,8 +631,10 @@ reset_stopline(const RoadNetwork& network, JunctionId junction, RoadEnd arm);
 ///
 /// Dirty set: `{junctions = {junction}, junctions_are_current = true}` — only
 /// the floor re-meshes and the turn set is untouched.
-[[nodiscard]] RM_API std::unique_ptr<Command> set_surface_span_included(
-    const RoadNetwork& network, JunctionId junction, RoadId road, bool included);
+[[nodiscard]] RM_API std::unique_ptr<Command> set_surface_span_included(const RoadNetwork& network,
+                                                                        JunctionId junction,
+                                                                        RoadId road,
+                                                                        bool included);
 
 /// Authors ONE connecting road's precedence where span footprints OVERLAP:
 /// the higher sort index supplies the elevation there ("higher wins").

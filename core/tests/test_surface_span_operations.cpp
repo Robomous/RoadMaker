@@ -26,8 +26,8 @@
 
 using roadmaker::ContactPoint;
 using roadmaker::Junction;
-using roadmaker::JunctionId;
 using roadmaker::junction_surface_spans;
+using roadmaker::JunctionId;
 using roadmaker::JunctionSurfaceSpanInfo;
 using roadmaker::kMaxSurfaceSpanSortIndex;
 using roadmaker::LaneProfile;
@@ -191,7 +191,8 @@ TEST(SurfaceSpanOperations, TheOtherFieldSurvivesAnEraseAtDefault) {
   const JunctionId junction = make_cross(network);
   const RoadId span = first_span(network, junction);
 
-  ASSERT_TRUE(set_surface_span_included(network, junction, span, false)->apply(network).has_value());
+  ASSERT_TRUE(
+      set_surface_span_included(network, junction, span, false)->apply(network).has_value());
   ASSERT_TRUE(set_surface_span_sort_index(network, junction, span, 2)->apply(network).has_value());
   // Returning ONE field to its default must not delete the other's authoring.
   ASSERT_TRUE(set_surface_span_sort_index(network, junction, span, 0)->apply(network).has_value());
@@ -209,7 +210,8 @@ TEST(SurfaceSpanOperations, NoOpsAreRejectedAgainstTheEffectiveValue) {
 
   // No record at all: the effective values are the defaults, so setting them
   // again is a no-op — the record's ABSENCE is not an excuse to create one.
-  EXPECT_FALSE(set_surface_span_included(network, junction, span, true)->apply(network).has_value());
+  EXPECT_FALSE(
+      set_surface_span_included(network, junction, span, true)->apply(network).has_value());
   EXPECT_FALSE(set_surface_span_sort_index(network, junction, span, 0)->apply(network).has_value());
   EXPECT_TRUE(network.junction(junction)->surface_spans.empty());
 
@@ -222,18 +224,15 @@ TEST(SurfaceSpanOperations, OutOfRangeSortIndexIsRefused) {
   const JunctionId junction = make_cross(network);
   const RoadId span = first_span(network, junction);
 
-  EXPECT_FALSE(
-      set_surface_span_sort_index(network, junction, span, kMaxSurfaceSpanSortIndex + 1)
-          ->apply(network)
-          .has_value());
-  EXPECT_FALSE(
-      set_surface_span_sort_index(network, junction, span, -kMaxSurfaceSpanSortIndex - 1)
-          ->apply(network)
-          .has_value());
-  EXPECT_TRUE(
-      set_surface_span_sort_index(network, junction, span, kMaxSurfaceSpanSortIndex)
-          ->apply(network)
-          .has_value());
+  EXPECT_FALSE(set_surface_span_sort_index(network, junction, span, kMaxSurfaceSpanSortIndex + 1)
+                   ->apply(network)
+                   .has_value());
+  EXPECT_FALSE(set_surface_span_sort_index(network, junction, span, -kMaxSurfaceSpanSortIndex - 1)
+                   ->apply(network)
+                   .has_value());
+  EXPECT_TRUE(set_surface_span_sort_index(network, junction, span, kMaxSurfaceSpanSortIndex)
+                  ->apply(network)
+                  .has_value());
 }
 
 TEST(SurfaceSpanOperations, StaleAndForeignTargetsAreCleanErrors) {
@@ -243,7 +242,8 @@ TEST(SurfaceSpanOperations, StaleAndForeignTargetsAreCleanErrors) {
 
   // An ARM road is not a connecting road, so it is not a span of the floor.
   const RoadId arm = network.junction(junction)->arms.front().road;
-  EXPECT_FALSE(set_surface_span_included(network, junction, arm, false)->apply(network).has_value());
+  EXPECT_FALSE(
+      set_surface_span_included(network, junction, arm, false)->apply(network).has_value());
 
   EXPECT_FALSE(
       set_surface_span_included(network, JunctionId{}, span, false)->apply(network).has_value());

@@ -30,8 +30,7 @@ bool inside_ring(const std::vector<std::array<double, 2>>& footprint, double x, 
   for (std::size_t i = 0, j = count - 1; i < count; j = i++) {
     const std::array<double, 2>& a = footprint[i];
     const std::array<double, 2>& b = footprint[j];
-    if (((a[1] > y) != (b[1] > y)) &&
-        (x < (((b[0] - a[0]) * (y - a[1])) / (b[1] - a[1])) + a[0])) {
+    if (((a[1] > y) != (b[1] > y)) && (x < (((b[0] - a[0]) * (y - a[1])) / (b[1] - a[1])) + a[0])) {
       inside = !inside;
     }
   }
@@ -43,8 +42,7 @@ void append_ring(std::vector<double>& lines, const std::vector<std::array<double
   for (std::size_t i = 0; i < count; ++i) {
     const std::array<double, 2>& a = footprint[i];
     const std::array<double, 2>& b = footprint[(i + 1) % count];
-    lines.insert(lines.end(),
-                 {a[0], a[1], kSpanOverlayLift, b[0], b[1], kSpanOverlayLift});
+    lines.insert(lines.end(), {a[0], a[1], kSpanOverlayLift, b[0], b[1], kSpanOverlayLift});
   }
 }
 
@@ -287,12 +285,12 @@ PreviewGeometry JunctionSurfaceTool::preview() const {
     }
     const HandleState state = active ? HandleState::Hovered : HandleState::Idle;
     for (const std::array<double, 3>& sample : info.border) {
-      geometry.add_handle(sample[0], sample[1], sample[2] + kSpanOverlayLift, HandleKind::Sample,
-                          state);
+      geometry.add_handle(
+          sample[0], sample[1], sample[2] + kSpanOverlayLift, HandleKind::Sample, state);
     }
     for (const std::array<double, 3>& sample : info.centerline) {
-      geometry.add_handle(sample[0], sample[1], sample[2] + kSpanOverlayLift, HandleKind::Sample,
-                          state);
+      geometry.add_handle(
+          sample[0], sample[1], sample[2] + kSpanOverlayLift, HandleKind::Sample, state);
     }
   }
   return geometry;

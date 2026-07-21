@@ -1,6 +1,5 @@
-#include "junction_fill_spans.hpp"
-
 #include "roadmaker/mesh/junction_surface_spans.hpp"
+
 #include "roadmaker/road/junction.hpp"
 #include "roadmaker/road/road.hpp"
 
@@ -12,6 +11,7 @@
 #include <vector>
 
 #include "junction_corner_detail.hpp"
+#include "junction_fill_spans.hpp"
 
 namespace roadmaker::junction_fill_spans {
 
