@@ -6928,48 +6928,6 @@ std::set<std::string> live_controller_odr_ids(const RoadNetwork& network) {
   return out;
 }
 
-/// Groups the approaches into signal AXES by clustering their travel headings.
-///
-/// The rule, deliberately arm-count-agnostic: walk the approaches in the
-/// junction's connection order; the first unassigned one opens an axis, and the
-/// still-unassigned approach whose heading is CLOSEST to opposite it — within
-/// kSignalizeAxisTolerance of exactly pi apart — joins it. An axis therefore
-/// holds one or two arms, and an arm with no opposite partner (the stem of a T,
-/// the fifth leg of a star) forms its own single-arm axis instead of being
-/// forced into someone else's phase.
-std::vector<std::vector<std::size_t>>
-cluster_signal_axes(const std::vector<JunctionApproachInfo>& approaches) {
-  std::vector<bool> assigned(approaches.size(), false);
-  std::vector<std::vector<std::size_t>> axes;
-  for (std::size_t i = 0; i < approaches.size(); ++i) {
-    if (assigned[i]) {
-      continue;
-    }
-    assigned[i] = true;
-    std::vector<std::size_t> axis{i};
-    std::size_t partner = approaches.size();
-    double best = kSignalizeAxisTolerance;
-    for (std::size_t j = i + 1; j < approaches.size(); ++j) {
-      if (assigned[j]) {
-        continue;
-      }
-      const double delta =
-          std::abs(std::remainder(approaches[j].heading - approaches[i].heading - std::numbers::pi,
-                                  2.0 * std::numbers::pi));
-      if (delta <= best) {
-        best = delta;
-        partner = j;
-      }
-    }
-    if (partner < approaches.size()) {
-      assigned[partner] = true;
-      axis.push_back(partner);
-    }
-    axes.push_back(std::move(axis));
-  }
-  return axes;
-}
-
 /// Incoming driving lanes at `arm` — the "how major is this road" measure the
 /// TwoWayStop minor-axis pick uses. 0 when the arm no longer solves.
 std::size_t approach_incoming_lane_count(const RoadNetwork& network, const RoadEnd& arm) {

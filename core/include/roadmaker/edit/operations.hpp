@@ -1126,13 +1126,9 @@ move_signal(const RoadNetwork& network,
 
 // --- signalization (p4-s7, issue #228) ---------------------------------------
 
-/// Half-width [rad] of the band in which two approach headings are treated as
-/// OPPOSITE, and therefore as the two arms of one signal axis (30 degrees).
-///
-/// Deliberately independent of `kManeuverStraightThreshold`, which happens to
-/// share the value: that one labels a MOVEMENT for the author, this one pairs
-/// ARMS for a phase plan. Changing either must not change the other.
-inline constexpr double kSignalizeAxisTolerance = 0.5235987755982988; // 30 deg
+// `kSignalizeAxisTolerance` and `cluster_signal_axes` were promoted to
+// mesh/junction_signals.hpp for p4-s8 (so the phase-derivation query can share
+// them without depending on the command layer). Include that header for them.
 
 /// The auto-signalization templates (`signalize_junction`).
 ///
