@@ -30,16 +30,30 @@ numpad-less alternates** — the "or the documented numpad-less alternates" in
 the preconditions. Everything below is also reachable from the **View** menu;
 the keys are accelerators, not the only route.
 
+**Amendments note (field triage, 2026-07-21).** Steps 3–4 were amended by
+maintainer decision ([#351](https://github.com/Robomous/RoadMaker/issues/351)
+item 5, implemented by
+[#358](https://github.com/Robomous/RoadMaker/issues/358)): wheel zoom anchors
+to the **cursor** in both projections (the chord zoom stays pivot-centered),
+and wheel-driven push-past relocates the pivot along the cursor ray. The
+2026-07-15 macOS pass in the Results table predates this amendment — steps
+3–4 must be re-verified at the next hand-run (the Linux/Windows runs were
+still pending anyway), so their boxes are unchecked.
+
 1. [x] Open the empty scene. **Expected:** the camera orbits a pivot
    point of interest 1.5 m above the world origin.
 2. [x] Hold `⌥ (Alt)` + left-drag. **Expected:** the camera rotates
    around the pivot (polar orbit); the pivot stays fixed on screen.
-3. [x] Hold `⌥ (Alt)` + right-drag, then scroll the wheel. **Expected:**
-   both zoom toward/away from the pivot. Dragging **up zooms in**, matching
-   the wheel's forward-is-closer.
-4. [x] Zoom continuously toward the pivot without stopping. **Expected:**
-   the camera **pushes past the pivot** — the pivot relocates forward and
-   travel continues, with no dead stop at the pivot.
+3. [ ] Hold `⌥ (Alt)` + right-drag, then scroll the wheel over a landmark
+   away from the view centre. **Expected:** the drag zooms toward/away from
+   the **pivot**; the wheel zooms toward/away from the **cursor** — the
+   world point under the cursor stays fixed under it, in both projections.
+   Dragging **up zooms in**, matching the wheel's forward-is-closer.
+4. [ ] Scroll-zoom continuously onto a landmark without stopping.
+   **Expected:** the camera **pushes past the pivot** — the pivot relocates
+   forward **along the cursor ray**, travel continues with no dead stop, and
+   the landmark stays under the cursor. Chord zoom still pushes past along
+   the view axis.
 5. [x] Hold `⌥ (Alt)` + left-drag + right-drag together, and separately
    middle-drag. **Expected:** both pan the camera and pivot together,
    1:1 with the ground under the cursor.
