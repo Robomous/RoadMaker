@@ -19,6 +19,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 Current version on `main`: **0.0.1**.
 
 ### Added
+- **Props render at the size they declare**
+  ([#335](https://github.com/Robomous/RoadMaker/issues/335)): the kernel already
+  round-tripped an `<object>`'s optional OpenDRIVE `@height`/`@width`/`@radius`/
+  `@length`, but nothing consumed them — every prop drew at its bundled model's
+  authored size. A `.xodr` from another tool that declares a 10 m tree now draws
+  a 10 m tree instead of a 4.2 m one, and the rendered size follows through to
+  picking, framing, and the glTF and USD exports.
+  - The Attributes pane gains a prop **Height** row: drag the label to resize
+    live or type an exact height, either way as a single undo step. It is the
+    pane's first **multi-select batch edit** — with several props selected,
+    dragging scales them all by the same factor (relative sizes preserved) and
+    typing sets them all to that height, still as one command.
+  - Sizes persist as plain OpenDRIVE attributes, with no RoadMaker extension
+    record. Height is always written; `@width`/`@radius`/`@length` scale only
+    when the object already declares them, so resizing never invents an optional
+    attribute. Existing scenes are unaffected — a prop that declares exactly its
+    model's height derives a scale of exactly 1.
 - **Junction stop lines are a first-class derived entity**
   ([#318](https://github.com/Robomous/RoadMaker/issues/318)): every junction
   arm whose junction-facing end has driving lanes now HAS a stop line — set

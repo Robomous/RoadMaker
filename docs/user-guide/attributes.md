@@ -34,10 +34,19 @@ partway through refines from wherever the value has already reached rather than
 jumping somewhere new.
 
 Scrubbing is available on lane **Width**, road-mark **Mark width**, elevation
-**Height**, and a signal's **s**, **t**, and **Heading offset**. Each has its
+**Height**, a prop's **Height**, and a signal's **s**, **t**, and **Heading
+offset**. Each has its
 own rate, chosen so a comfortable drag covers a useful range — roughly 2 m of
 lane width, or 10 m along a road, per screen-width drag. Scrubbing respects the
 same limits as typing: it cannot push a value out of the attribute's range.
+
+### Editing several things at once
+
+A prop's **Height** applies to the *whole selection*, not just the primary
+object: select any number of props and one drag resizes them all by the same
+factor — relative sizes preserved — while typing a height makes them all exactly
+that tall. It is still one undo step. See
+[Resizing props](objects-signals.md#resizing-props).
 
 ## Slots: drop an asset in
 

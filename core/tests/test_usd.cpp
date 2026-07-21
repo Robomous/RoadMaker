@@ -7,6 +7,7 @@
 // the temp directory.
 
 #include "roadmaker/io/usd_exporter.hpp"
+#include "roadmaker/assets/prop_library.hpp"
 #include "roadmaker/mesh/mesh_builder.hpp"
 #include "roadmaker/road/authoring.hpp"
 #include "roadmaker/road/network.hpp"
@@ -15,6 +16,8 @@
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
+#include <cstdio>
 #include <filesystem>
 #include <fstream>
 #include <sstream>
@@ -134,4 +137,60 @@ TEST(Usd, TreePropEmitsAnXformWithPartMeshesAndMaterials) {
   EXPECT_NE(usda.find("def Mesh \"trunk\""), std::string::npos);
   EXPECT_NE(usda.find("def Mesh \"crown\""), std::string::npos);
   EXPECT_NE(usda.find("def Material \"propmat_tree_pine_crown\""), std::string::npos);
+}
+
+// USD bakes each instance's geometry into world space, so a resized prop (#335)
+// must come out with its vertices scaled — the exported stage matches what the
+// viewport draws rather than the model's authored size.
+TEST(Usd, ScaledPropBakesLargerVertices) {
+  const auto extent_z = [](const std::string& usda) {
+    // The tallest z in the stage's baked points, read out of the USDA text:
+    // every point is "(x, y, z)" and the kernel Z-up frame is rotated to Y-up
+    // at export, so the model's height axis lands in the SECOND component.
+    double max_y = 0.0;
+    for (std::size_t i = usda.find('('); i != std::string::npos; i = usda.find('(', i + 1)) {
+      double x = 0.0;
+      double y = 0.0;
+      double z = 0.0;
+      if (std::sscanf(usda.c_str() + i, "(%lf, %lf, %lf)", &x, &y, &z) == 3) {
+        max_y = std::max(max_y, y);
+      }
+    }
+    return max_y;
+  };
+
+  const auto export_tree = [&](double scale_factor) {
+    roadmaker::RoadNetwork network;
+    const std::vector<roadmaker::Waypoint> waypoints{roadmaker::Waypoint{.x = 0.0, .y = 0.0},
+                                                     roadmaker::Waypoint{.x = 100.0, .y = 0.0}};
+    auto road = roadmaker::author_clothoid_road(
+        network, waypoints, roadmaker::LaneProfile::two_lane_default());
+    if (!road.has_value()) {
+      throw std::runtime_error("author failed");
+    }
+    const roadmaker::props::PropModel* model = roadmaker::props::model("tree_pine");
+    roadmaker::Object tree;
+    tree.odr_id = "1";
+    tree.name = "tree_pine";
+    tree.type = roadmaker::ObjectType::Tree;
+    tree.s = 50.0;
+    tree.t = 6.0;
+    tree.height = model->height * scale_factor;
+    network.add_object(*road, tree);
+
+    const auto mesh = roadmaker::build_network_mesh(network, {});
+    const auto path = std::filesystem::temp_directory_path() /
+                      ("rm_scaled_tree_" + std::to_string(scale_factor) + ".usda");
+    if (!roadmaker::export_usda(mesh, path).has_value()) {
+      throw std::runtime_error("export failed");
+    }
+    return slurp(path);
+  };
+
+  const double unit_top = extent_z(export_tree(1.0));
+  const double doubled_top = extent_z(export_tree(2.0));
+  EXPECT_GT(unit_top, 0.0);
+  // The road surface contributes points too, so compare the two stages against
+  // each other rather than against an absolute model height.
+  EXPECT_NEAR(doubled_top, unit_top * 2.0, 1e-6);
 }

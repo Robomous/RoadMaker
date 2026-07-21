@@ -1,4 +1,5 @@
 #include "roadmaker/io/gltf_exporter.hpp"
+#include "roadmaker/assets/prop_library.hpp"
 #include "roadmaker/mesh/mesh_builder.hpp"
 #include "roadmaker/road/authoring.hpp"
 #include "roadmaker/road/network.hpp"
@@ -181,7 +182,77 @@ TEST(Gltf, TreePropExportsASharedMeshAndInstanceNode) {
       ASSERT_EQ(node.translation.size(), 3U);
       EXPECT_NEAR(node.translation[0], 50.0, 1.5);
       EXPECT_NEAR(node.translation[2], -6.0, 1.5);
+      // The tree declares exactly the model height, so it exports at unit size.
+      ASSERT_EQ(node.scale.size(), 3U);
+      EXPECT_DOUBLE_EQ(node.scale[0], 1.0);
     }
   }
   EXPECT_TRUE(found_node);
+}
+
+// A prop resized in the editor must export at its rendered size (#335) — a
+// glTF consumer sees the 8.4 m tree the viewport shows, not a 4.2 m one.
+// Signals are not resizable, so they stay unit in the same file.
+TEST(Gltf, ScaledPropExportsAUniformNodeScale) {
+  roadmaker::RoadNetwork network;
+  const std::vector<roadmaker::Waypoint> waypoints{roadmaker::Waypoint{.x = 0.0, .y = 0.0},
+                                                   roadmaker::Waypoint{.x = 100.0, .y = 0.0}};
+  auto road = roadmaker::author_clothoid_road(
+      network, waypoints, roadmaker::LaneProfile::two_lane_default());
+  ASSERT_TRUE(road.has_value());
+  const roadmaker::props::PropModel* model = roadmaker::props::model("tree_pine");
+  ASSERT_NE(model, nullptr);
+
+  roadmaker::Object tree;
+  tree.odr_id = "1";
+  tree.name = "tree_pine";
+  tree.type = roadmaker::ObjectType::Tree;
+  tree.s = 50.0;
+  tree.t = 6.0;
+  tree.height = model->height * 2.0;
+  network.add_object(*road, tree);
+
+  roadmaker::Signal sign;
+  sign.odr_id = "s1";
+  sign.type = "274";
+  sign.country = "DE";
+  sign.dynamic = false;
+  sign.s = 20.0;
+  sign.t = -6.0;
+  network.add_signal(*road, sign);
+
+  const auto mesh = roadmaker::build_network_mesh(network, {});
+  ASSERT_EQ(mesh.objects.size(), 1U);
+  ASSERT_EQ(mesh.signal_instances.size(), 1U);
+
+  const auto path = temp_glb("rm_scaled_tree.glb");
+  ASSERT_TRUE(roadmaker::export_glb(mesh, path).has_value());
+  tinygltf::Model gltf;
+  tinygltf::TinyGLTF loader;
+  std::string err;
+  std::string warn;
+  ASSERT_TRUE(loader.LoadBinaryFromFile(&gltf, &err, &warn, path.string()));
+  std::remove(path.string().c_str());
+
+  bool checked_prop = false;
+  bool checked_signal = false;
+  for (const auto& node : gltf.nodes) {
+    if (node.mesh < 0) {
+      continue;
+    }
+    const std::string& mesh_name = gltf.meshes[static_cast<std::size_t>(node.mesh)].name;
+    if (mesh_name == "tree_pine") {
+      checked_prop = true;
+      ASSERT_EQ(node.scale.size(), 3U);
+      EXPECT_DOUBLE_EQ(node.scale[0], 2.0);
+      EXPECT_DOUBLE_EQ(node.scale[1], 2.0);
+      EXPECT_DOUBLE_EQ(node.scale[2], 2.0);
+    } else if (mesh_name == mesh.signal_instances.front().model_id) {
+      checked_signal = true;
+      ASSERT_EQ(node.scale.size(), 3U);
+      EXPECT_DOUBLE_EQ(node.scale[0], 1.0);
+    }
+  }
+  EXPECT_TRUE(checked_prop);
+  EXPECT_TRUE(checked_signal);
 }

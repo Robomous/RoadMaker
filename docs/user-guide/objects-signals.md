@@ -131,6 +131,30 @@ Create or edit a set from the Library (right-click → *New prop set…*); the b
 props are plain objects and never reference the set, so editing the set later
 does not disturb props already placed.
 
+### Resizing props
+
+A placed prop draws at the size its `<object>` declares, so a prop is not stuck
+at whatever size its model happens to be.
+
+- Select a prop and the Attributes pane shows a **Height** row. Drag the word
+  *Height* to resize it live, or type a height to set it exactly. Either way the
+  whole gesture is a **single** undo step.
+- **Select several props and they all resize together.** Dragging scales every
+  selected prop by the same factor, so a group keeps its relative sizes; typing
+  a height makes them all exactly that tall. A prop that declared no height of
+  its own starts from its model's height.
+- Resizing is uniform: the prop's width, radius and length follow its height, so
+  a tree never stretches or squashes.
+
+The size is stored as the plain OpenDRIVE `@height` / `@width` / `@radius` /
+`@length` attributes on the `<object>` — no RoadMaker-specific extension — so
+another tool reads it back as an ordinary sized object, and a `.xodr` authored
+elsewhere that declares a 10 m tree draws a 10 m tree here. Exports match the
+viewport: the glTF instance node carries the scale and the USD stage bakes it
+into the geometry.
+
+Signals are placed from their own models and are not resizable.
+
 ### Junction markings
 
 The painted markings a junction needs on every arm author in one action each.

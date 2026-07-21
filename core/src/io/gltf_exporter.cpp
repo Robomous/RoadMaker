@@ -55,7 +55,8 @@ public:
     // Placed props: one shared mesh per prop model, one node per instance —
     // idiomatic glTF instancing, so many trees stay one mesh in the file.
     for (const ObjectInstance& instance : mesh.objects) {
-      const int node = add_prop_node(instance.model_id, instance.position, instance.heading);
+      const int node =
+          add_prop_node(instance.model_id, instance.position, instance.heading, instance.scale);
       if (node >= 0) {
         scene.nodes.push_back(node);
       }
@@ -63,7 +64,8 @@ public:
     // Placed signals share the identical instancing path (one mesh per signal
     // model, one node per placement).
     for (const SignalInstance& instance : mesh.signal_instances) {
-      const int node = add_prop_node(instance.model_id, instance.position, instance.heading);
+      // Signals are not resizable (#335).
+      const int node = add_prop_node(instance.model_id, instance.position, instance.heading, 1.0);
       if (node >= 0) {
         scene.nodes.push_back(node);
       }
@@ -274,11 +276,14 @@ private:
 
   /// One instance node placing a shared prop mesh at its world pose. The
   /// kernel Z-up → glTF Y-up map (x,y,z)→(x,z,−y) is Rx(−90°), so a Z-up
-  /// heading θ becomes a rotation about +Y by θ. Returns -1 for an unknown
-  /// prop model (skipped).
+  /// heading θ becomes a rotation about +Y by θ. `scale` is the instance's
+  /// uniform size factor (#335) — uniform scale commutes with the Y-up
+  /// rotation, so it maps across the frame change unchanged. Returns -1 for an
+  /// unknown prop model (skipped).
   int add_prop_node(const std::string& model_id,
                     const std::array<double, 3>& position,
-                    double heading) {
+                    double heading,
+                    double scale) {
     const int mesh_index = prop_mesh_for(model_id);
     if (mesh_index < 0) {
       return -1;
@@ -289,6 +294,7 @@ private:
     node.translation = {position[0], position[2], -position[1]};
     const double half = heading * 0.5;
     node.rotation = {0.0, std::sin(half), 0.0, std::cos(half)};
+    node.scale = {scale, scale, scale};
     model_.nodes.push_back(std::move(node));
     return static_cast<int>(model_.nodes.size() - 1);
   }
