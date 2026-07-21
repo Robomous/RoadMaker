@@ -9,6 +9,7 @@
 // refresh-on-undo never echoes a command back.
 
 #include "roadmaker/mesh/junction_corners.hpp"
+#include "roadmaker/mesh/junction_stoplines.hpp"
 
 #include <QComboBox>
 #include <QDoubleSpinBox>
@@ -33,6 +34,7 @@
 namespace roadmaker::editor {
 
 class CornerTool;
+class StopLineTool;
 class ElevationTool;
 class LibraryListModel;
 
@@ -85,6 +87,7 @@ public:
   /// is a junction AND the tool's active corner belongs to that junction, so
   /// until a tool is attached it stays hidden. The panel never owns the tool.
   void set_corner_tool(CornerTool* tool);
+  void set_stopline_tool(StopLineTool* tool);
 
   /// The editor's road-mark width conventions [m]. OpenDRIVE's @width has no
   /// normative values (weight standard/bold is the spec's coarse axis) —
@@ -97,6 +100,7 @@ private:
   void refresh_lane_section();
   void refresh_elevation();
   void refresh_corner();
+  void refresh_stopline();
 
   /// Populates the Junction section (default corner radius + carriageway
   /// material) from `junction`, and shows it. Called from the junction branch
@@ -167,6 +171,7 @@ private:
   /// all agree on. nullopt when no tool, no active corner, a different
   /// primary selection, or a pair that no longer solves (an arm moved away).
   [[nodiscard]] std::optional<JunctionCornerInfo> active_corner_info() const;
+  [[nodiscard]] std::optional<JunctionStopLineInfo> active_stopline_info() const;
 
   /// Removes the outermost lane on `side` (>0 left, <0 right) of the target
   /// section — no lane selection needed. Emits status_message on success.
@@ -239,6 +244,19 @@ private:
   SlotWidget* corner_sidewalk_slot_;
   SlotWidget* corner_median_slot_;
   CornerTool* corner_tool_ = nullptr;
+
+  /// Stop line section (p4-s3): the active junction stop line's setback, its
+  /// direction and a way back to the derived default. Like the Corner section
+  /// the arm row names WHICH line is being edited, because the tool's
+  /// sub-selection is not a SelectionModel entry.
+  QGroupBox* stopline_group_;
+  QFormLayout* stopline_form_ = nullptr;
+  QLabel* stopline_arm_label_;
+  QDoubleSpinBox* stopline_distance_spin_;
+  ScrubLabel* stopline_distance_scrub_label_ = nullptr;
+  QPushButton* stopline_flip_button_;
+  QPushButton* stopline_reset_button_;
+  StopLineTool* stopline_tool_ = nullptr;
 
   /// Junction section (p4-s2): the junction-wide corner-radius default (the
   /// fallback every corner without its own radius uses) and the carriageway

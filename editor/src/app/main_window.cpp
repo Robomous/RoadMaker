@@ -68,6 +68,7 @@
 #include "tools/prop_span_tool.hpp"
 #include "tools/select_tool.hpp"
 #include "tools/split_tool.hpp"
+#include "tools/stopline_tool.hpp"
 
 namespace roadmaker::editor {
 
@@ -445,8 +446,18 @@ MainWindow::MainWindow(QWidget* parent, bool restore_saved_layout)
   // The Properties pane edits the corner the tool has made active.
   properties_panel_->set_corner_tool(corner_tool.get());
   tool_manager_.register_tool(ToolId::Corner, std::move(corner_tool));
+
+  // Stop Line: the derived band on each junction arm. Like the Corner tool it
+  // edits what it picks, and the Properties pane binds to its sub-selection.
+  auto stopline_tool = std::make_unique<StopLineTool>(document_, selection_);
+  wire_status(stopline_tool.get());
+  properties_panel_->set_stopline_tool(stopline_tool.get());
+  tool_manager_.register_tool(ToolId::StopLine, std::move(stopline_tool));
   connect(actions_->tool_corner, &QAction::triggered, this, [this] {
     tool_manager_.set_active(ToolId::Corner);
+  });
+  connect(actions_->tool_stopline, &QAction::triggered, this, [this] {
+    tool_manager_.set_active(ToolId::StopLine);
   });
   tool_manager_.set_active(ToolId::Select);
 
@@ -1179,6 +1190,7 @@ void MainWindow::activate_tool_for_capture(const QString& tool_id) {
       {QStringLiteral("propSpan"), ToolId::PropSpan},
       {QStringLiteral("propPolygon"), ToolId::PropPolygon},
       {QStringLiteral("corner"), ToolId::Corner},
+      {QStringLiteral("stopline"), ToolId::StopLine},
   };
   if (const auto found = kTools.find(tool_id); found != kTools.end()) {
     tool_manager_.set_active(found->second);

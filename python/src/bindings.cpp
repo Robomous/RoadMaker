@@ -14,6 +14,7 @@
 #include "roadmaker/io/gltf_exporter.hpp"
 #include "roadmaker/io/usd_exporter.hpp"
 #include "roadmaker/mesh/junction_corners.hpp"
+#include "roadmaker/mesh/junction_stoplines.hpp"
 #include "roadmaker/mesh/mesh_builder.hpp"
 #include "roadmaker/road/authoring.hpp"
 #include "roadmaker/road/network.hpp"
@@ -1149,6 +1150,70 @@ NB_MODULE(_roadmaker, m) {
       "empty list for a stale id or a junction with fewer than two usable arms; "
       "degenerate pairs (parallel or behind a face) are skipped.");
 
+  nb::class_<roadmaker::JunctionStopLineInfo>(m, "JunctionStopLineInfo")
+      .def_ro("arm",
+              &roadmaker::JunctionStopLineInfo::arm,
+              "The junction-facing road end this line belongs to — its identity.")
+      .def_ro("distance",
+              &roadmaker::JunctionStopLineInfo::distance,
+              "Effective setback [m] from the junction mouth, clamped to "
+              "[0, max_distance].")
+      .def_ro("max_distance",
+              &roadmaker::JunctionStopLineInfo::max_distance,
+              "Largest setback [m] the arm road leaves room for.")
+      .def_ro("flipped",
+              &roadmaker::JunctionStopLineInfo::flipped,
+              "False: the band spans the approach lanes. True: the outgoing ones.")
+      .def_ro("distance_authored",
+              &roadmaker::JunctionStopLineInfo::distance_authored,
+              "True when `distance` came from a record rather than the default.")
+      .def_ro("authored",
+              &roadmaker::JunctionStopLineInfo::authored,
+              "True when the junction carries a StopLine record for this arm at "
+              "all — what edit.reset_stopline needs.")
+      .def_ro("crosswalk_odr_id",
+              &roadmaker::JunctionStopLineInfo::crosswalk_odr_id,
+              "odr id of the crosswalk this line was placed alongside, or empty.")
+      .def_ro("s_center",
+              &roadmaker::JunctionStopLineInfo::s_center,
+              "Station [m] of the band's mid-thickness — the exported @s.")
+      .def_ro("t_center",
+              &roadmaker::JunctionStopLineInfo::t_center,
+              "Mid-span lateral offset [m] — the exported @t.")
+      .def_ro("span",
+              &roadmaker::JunctionStopLineInfo::span,
+              "Span ACROSS the lanes [m] — the exported @width.")
+      .def_ro("thickness",
+              &roadmaker::JunctionStopLineInfo::thickness,
+              "Extent ALONG the road [m] — the exported @length.")
+      .def_prop_ro(
+          "left",
+          [](const roadmaker::JunctionStopLineInfo& info) { return to_xy(info.left); },
+          "(x, y) endpoint left of the arm's reference line.")
+      .def_prop_ro(
+          "right",
+          [](const roadmaker::JunctionStopLineInfo& info) { return to_xy(info.right); },
+          "(x, y) endpoint right of the arm's reference line.")
+      .def("__repr__", [](const roadmaker::JunctionStopLineInfo& info) {
+        return "JunctionStopLineInfo(arm=" + road_end_text(info.arm) +
+               ", distance=" + std::to_string(info.distance) + (info.flipped ? ", flipped" : "") +
+               (info.authored ? ", authored" : "") + ")";
+      });
+
+  m.def(
+      "junction_stoplines",
+      [](const roadmaker::RoadNetwork& network, roadmaker::JunctionId junction) {
+        return roadmaker::junction_stoplines(network, junction);
+      },
+      "network"_a,
+      "junction"_a,
+      "Solves every stop line of the junction — one per arm whose junction-facing "
+      "end has driving lanes in the line's direction, in connection order. Stop "
+      "lines are DERIVED: an arm has one without anything being authored, and any "
+      "StopLine record is merged over that derivation. This is the same solve the "
+      "mesher and the writer use. Empty for a stale id; an arm already carrying a "
+      "plain signalLines object is suppressed so foreign files do not double-draw.");
+
   // --- authoring -----------------------------------------------------------------
 
   nb::class_<roadmaker::LaneSpec>(m, "LaneSpec")
@@ -1995,6 +2060,53 @@ NB_MODULE(_roadmaker, m) {
       "Authors the junction carriageway (floor) material — a bare catalog name, "
       "empty to clear. Pushing raises ValueError for a stale junction, a clear "
       "when the material is already empty, or a name outside [A-Za-z0-9_.-]+.");
+  edit.def(
+      "set_stopline_distance",
+      [](const roadmaker::RoadNetwork& network,
+         roadmaker::JunctionId junction,
+         roadmaker::RoadEnd arm,
+         double distance,
+         std::optional<std::string> crosswalk_link) {
+        return roadmaker::edit::set_stopline_distance(
+            network, junction, arm, distance, std::move(crosswalk_link));
+      },
+      "network"_a,
+      "junction"_a,
+      "arm"_a,
+      "distance"_a,
+      "crosswalk_link"_a = nb::none(),
+      "Authors the setback [m] of ONE arm's stop line, creating the record when "
+      "the arm is still fully derived. The value is stored UNCLAMPED and clamped "
+      "to the road only when solved. `crosswalk_link` records the odr id of a "
+      "crosswalk placed alongside; None leaves any existing link alone. Pushing "
+      "raises ValueError for a stale junction, a road end that is not a stop line "
+      "of it, or a negative/non-finite distance.");
+  edit.def(
+      "flip_stopline",
+      [](const roadmaker::RoadNetwork& network,
+         roadmaker::JunctionId junction,
+         roadmaker::RoadEnd arm) { return roadmaker::edit::flip_stopline(network, junction, arm); },
+      "network"_a,
+      "junction"_a,
+      "arm"_a,
+      "Toggles which travel direction ONE arm's stop line spans (approach lanes "
+      "by default, outgoing when flipped). A record left back at its defaults is "
+      "erased, so flipping twice is byte-identical to never having flipped. "
+      "Pushing raises ValueError for a stale junction, a road end that is not a "
+      "stop line of it, or a direction with no driving lanes to span.");
+  edit.def(
+      "reset_stopline",
+      [](const roadmaker::RoadNetwork& network,
+         roadmaker::JunctionId junction,
+         roadmaker::RoadEnd arm) {
+        return roadmaker::edit::reset_stopline(network, junction, arm);
+      },
+      "network"_a,
+      "junction"_a,
+      "arm"_a,
+      "Drops ONE arm's authored stop-line record, returning it to the derived "
+      "default. Pushing raises ValueError for a stale junction, a road end that "
+      "is not a stop line of it, or an arm with nothing authored to reset.");
   edit.def("delete_junction", &roadmaker::edit::delete_junction, "network"_a, "junction"_a);
 
   // --- parametric intersection assemblies (rm.edit.assembly) ---
