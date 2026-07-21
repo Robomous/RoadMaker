@@ -1,11 +1,13 @@
 #include "junction_fill_spans.hpp"
 
+#include "roadmaker/mesh/junction_surface_spans.hpp"
 #include "roadmaker/road/junction.hpp"
 #include "roadmaker/road/road.hpp"
 
 #include <clipper2/clipper.h>
 
 #include <algorithm>
+#include <array>
 #include <utility>
 #include <vector>
 
@@ -46,3 +48,42 @@ std::vector<JunctionFillSpan> collect_fill_spans(const RoadNetwork& network,
 }
 
 } // namespace roadmaker::junction_fill_spans
+
+namespace roadmaker {
+
+std::vector<JunctionSurfaceSpanInfo> junction_surface_spans(const RoadNetwork& network,
+                                                            JunctionId junction_id,
+                                                            const SamplingOptions& sampling) {
+  const Junction* junction = network.junction(junction_id);
+  if (junction == nullptr) {
+    return {};
+  }
+  std::vector<JunctionSurfaceSpanInfo> out;
+  // A thin conversion over the mesher's own gather — Clipper2 paths and
+  // fill_backend::Vec3 never leak past this boundary, and the two can never
+  // disagree about which spans exist or where their samples fall.
+  for (const junction_fill_spans::JunctionFillSpan& span :
+       junction_fill_spans::collect_fill_spans(network, *junction, sampling)) {
+    JunctionSurfaceSpanInfo info{.road = span.road,
+                                 .road_odr_id = network.road(span.road)->odr_id,
+                                 .included = span.included,
+                                 .sort_index = span.sort_index,
+                                 .authored = span.authored};
+    info.footprint.reserve(span.contribution.footprint.size());
+    for (const Clipper2Lib::PointD& p : span.contribution.footprint) {
+      info.footprint.push_back({p.x, p.y});
+    }
+    info.border.reserve(span.contribution.border.size());
+    for (const fill_backend::Vec3& p : span.contribution.border) {
+      info.border.push_back({p.x, p.y, p.z});
+    }
+    info.centerline.reserve(span.contribution.centerline.size());
+    for (const fill_backend::Vec3& p : span.contribution.centerline) {
+      info.centerline.push_back({p.x, p.y, p.z});
+    }
+    out.push_back(std::move(info));
+  }
+  return out;
+}
+
+} // namespace roadmaker
