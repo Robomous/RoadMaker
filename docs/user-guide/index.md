@@ -67,6 +67,7 @@ not undoable.
 | [Road markings](markings.md) | Place arrow stencils on a lane and draw free-form line markings and crossings |
 | [Materials](materials.md) | Pave a lane or surface with asphalt or concrete, textured and saved into the file |
 | [Textured rendering](textured-rendering.md) | Switch the viewport between the Sober working look and the daytime textured look |
+| [Viewport hints](viewport-hints.md) | Show or hide the active tool's hint card in the viewport corner |
 | [Save & export](save-export.md) | Write OpenDRIVE and export meshes (glTF, USD) |
 
 ## Tutorials

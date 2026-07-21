@@ -418,25 +418,30 @@ void ViewportWidget::paintGL() {
   // frame — supported on QOpenGLWidget when done last (no beginNativePainting).
   const bool has_toasts = !toasts_.active(now_ms()).empty();
   const bool has_gizmo = gizmo_target().has_value();
-  if (!handle_overlays_.empty() || !hint_text_.isEmpty() || has_toasts ||
-      drop_preview_.has_value() || has_gizmo) {
+  if (!handle_overlays_.empty() || hint_visible() || has_toasts || drop_preview_.has_value() ||
+      has_gizmo) {
     QPainter painter(this);
     painter.setRenderHint(QPainter::Antialiasing);
     painter.setRenderHint(QPainter::TextAntialiasing);
+    // The hint card goes FIRST: it is a passive corner label, so the
+    // world-anchored overlays (handles, the gizmo, a drag ghost) must paint
+    // over it rather than disappear behind it when they land in the top-left
+    // corner (issue #333). Toasts stay last — they are bottom-center and
+    // deliberately the topmost feedback.
+    draw_hint_card(painter);
     draw_dashed_lines(painter);
     draw_handles(painter);
     draw_gizmo(painter);
     draw_drag_ghost(painter);
-    draw_hint_card(painter);
     draw_toasts(painter);
   }
 }
 
 void ViewportWidget::draw_hint_card(QPainter& painter) const {
-  const double opacity = hint_opacity();
-  if (hint_text_.isEmpty() || opacity <= 0.0) {
+  if (!hint_visible()) {
     return;
   }
+  const double opacity = hint_opacity();
   const Theme& theme = theme::current();
   constexpr int kPad = 10;    // ui-design.md spacing scale
   constexpr int kRadius = 8;  // card radius
@@ -617,6 +622,24 @@ void ViewportWidget::set_hint(const QString& text) {
   update();
 }
 
+void ViewportWidget::set_hints_enabled(bool enabled) {
+  if (hints_enabled_ == enabled) {
+    return;
+  }
+  hints_enabled_ = enabled;
+  // Turning them back on restarts the idle-fade clock, so the card returns at
+  // full opacity instead of mid-fade from whenever the text last changed.
+  if (enabled) {
+    hint_changed_ms_ = now_ms();
+  }
+  refresh_overlay_animation();
+  update();
+}
+
+bool ViewportWidget::hint_visible() const {
+  return hints_enabled_ && !hint_text_.isEmpty() && hint_opacity() > 0.0;
+}
+
 void ViewportWidget::show_toast(const QString& text, ToastSeverity severity) {
   if (text.isEmpty()) {
     return;
@@ -647,8 +670,7 @@ void ViewportWidget::refresh_overlay_animation() {
   if (overlay_timer_ == nullptr) {
     return;
   }
-  const bool animating =
-      !toasts_.active(now_ms()).empty() || (!hint_text_.isEmpty() && hint_opacity() > 0.0);
+  const bool animating = !toasts_.active(now_ms()).empty() || hint_visible();
   if (animating && !overlay_timer_->isActive()) {
     overlay_timer_->start();
   } else if (!animating && overlay_timer_->isActive()) {

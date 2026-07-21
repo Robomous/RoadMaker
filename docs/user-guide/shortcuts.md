@@ -67,6 +67,7 @@ conventions below.
 |---|---|---|
 | Frame the selection (the whole scene when nothing is selected) | `F` |  |
 | Frame on the point under the cursor (keeps the zoom) | `V` |  |
+| Show or hide the active tool's hint in the viewport corner | `H` |  |
 | Perspective projection | `P` |  |
 | Orthographic projection | `O` |  |
 | Look from the north | `Num+8` or `8` | Numpad; the top-row digit is the alternate |

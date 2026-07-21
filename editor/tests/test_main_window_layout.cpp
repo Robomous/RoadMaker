@@ -9,16 +9,25 @@
 
 #include <gtest/gtest.h>
 
+#include <QAction>
 #include <QApplication>
 #include <QLabel>
+#include <QMenu>
+#include <QMenuBar>
 #include <QResizeEvent>
+#include <QSettings>
 #include <QStatusBar>
 #include <QStringList>
 #include <QToolBar>
 #include <QWidget>
+#include <algorithm>
+#include <memory>
 
 #include "app/elided_label.hpp"
 #include "app/main_window.hpp"
+#include "app/settings.hpp"
+#include "app/shortcut_registry.hpp"
+#include "viewport/viewport_widget.hpp"
 
 namespace roadmaker::editor {
 namespace {
@@ -118,6 +127,96 @@ TEST_F(MainWindowLayoutTest, InstructionElidesInsteadOfWidening) {
 
   instruction->resize(2000, instruction->sizeHint().height());
   EXPECT_EQ(instruction->displayed_text(), sentence);
+}
+
+// #333 — View ▸ Viewport Hints. The window is constructed against a CLEARED
+// QSettings scope so the assertions see the shipped default, never whatever
+// the developer running the suite last toggled (and nothing leaks back out).
+class ViewportHintsToggleTest : public ::testing::Test {
+protected:
+  void SetUp() override {
+    // Same isolation as the Settings suites: a test-only QSettings scope, so a
+    // toggle asserted here can never land in the developer's real RoadMaker
+    // settings (nor be read from them).
+    QCoreApplication::setOrganizationName(QStringLiteral("RobomousTests"));
+    QCoreApplication::setApplicationName(QStringLiteral("RoadMakerHintsTest"));
+    QSettings().clear();
+    window_ = std::make_unique<MainWindow>(nullptr, /*restore_saved_layout=*/false);
+    // The action is reached through its binding rather than its label, so the
+    // test does not re-hardcode a key letter the registry owns (the drift this
+    // whole registry exists to prevent).
+    for (QAction* action : window_->findChildren<QAction*>()) {
+      if (action->shortcuts() == shortcuts::sequences(shortcuts::Id::ViewportHints)) {
+        toggle_ = action;
+        break;
+      }
+    }
+  }
+
+  void TearDown() override {
+    window_.reset();
+    QSettings().clear();
+    QCoreApplication::setOrganizationName(QStringLiteral("Robomous"));
+    QCoreApplication::setApplicationName(QStringLiteral("RoadMaker"));
+  }
+
+  std::unique_ptr<MainWindow> window_;
+  QAction* toggle_ = nullptr;
+};
+
+TEST_F(ViewportHintsToggleTest, DefaultsOnAndIsACheckableViewMenuEntry) {
+  ASSERT_NE(toggle_, nullptr) << "no action carries the ViewportHints binding";
+  EXPECT_TRUE(toggle_->isCheckable());
+  EXPECT_TRUE(toggle_->isChecked());
+  EXPECT_TRUE(window_->viewport()->hints_enabled());
+
+  const QList<QAction*> menus = window_->menuBar()->actions();
+  const auto view = std::find_if(menus.begin(), menus.end(), [](const QAction* action) {
+    return action->menu() != nullptr && action->text().contains(QStringLiteral("View"));
+  });
+  ASSERT_NE(view, menus.end());
+  EXPECT_TRUE((*view)->menu()->actions().contains(toggle_));
+}
+
+TEST_F(ViewportHintsToggleTest, TogglingHidesTheCardAndKeepsTheText) {
+  ASSERT_NE(toggle_, nullptr);
+  ViewportWidget* viewport = window_->viewport();
+  window_->activate_tool_for_capture(QStringLiteral("create-road"));
+  const QString hint = viewport->hint();
+  ASSERT_FALSE(hint.isEmpty()) << "the active tool must feed the corner hint";
+  EXPECT_TRUE(viewport->hint_visible());
+
+  toggle_->setChecked(false);
+  EXPECT_FALSE(viewport->hints_enabled());
+  EXPECT_FALSE(viewport->hint_visible());
+  EXPECT_EQ(viewport->hint(), hint) << "only painting is gated; the text is kept";
+
+  toggle_->setChecked(true);
+  EXPECT_TRUE(viewport->hint_visible()) << "re-enabling shows the CURRENT tool's hint at once";
+}
+
+TEST_F(ViewportHintsToggleTest, StatusBarInstructionIsUnaffected) {
+  ASSERT_NE(toggle_, nullptr);
+  auto* instruction = window_->findChild<ElidedLabel*>(QStringLiteral("status_instruction"));
+  ASSERT_NE(instruction, nullptr);
+  window_->activate_tool_for_capture(QStringLiteral("create-road"));
+  const QString sentence = instruction->full_text();
+  ASSERT_FALSE(sentence.isEmpty());
+
+  toggle_->setChecked(false);
+  EXPECT_EQ(instruction->full_text(), sentence);
+  window_->activate_tool_for_capture(QStringLiteral("elevation"));
+  EXPECT_FALSE(instruction->full_text().isEmpty())
+      << "the status bar keeps tracking the tool while the viewport hint is off";
+}
+
+TEST_F(ViewportHintsToggleTest, ChoicePersistsAcrossWindows) {
+  ASSERT_NE(toggle_, nullptr);
+  toggle_->setChecked(false);
+  EXPECT_FALSE(Settings().viewport_hints());
+
+  MainWindow reopened(nullptr, /*restore_saved_layout=*/false);
+  EXPECT_FALSE(reopened.viewport()->hints_enabled());
 }
 
 TEST(ElidedLabelTest, ElidesAndRestoresWithWidth) {

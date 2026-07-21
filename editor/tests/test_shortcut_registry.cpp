@@ -108,6 +108,18 @@ TEST(ShortcutRegistry, ActionsBindWhatTheTableDocuments) {
   EXPECT_EQ(actions.tool_prop_polygon->shortcuts(), shortcuts::sequences(Id::ToolPropPolygon));
   EXPECT_EQ(actions.tool_corner->shortcuts(), shortcuts::sequences(Id::ToolCorner));
   EXPECT_EQ(actions.help_contents->shortcuts(), shortcuts::sequences(Id::Help));
+  EXPECT_EQ(actions.viewport_hints->shortcuts(), shortcuts::sequences(Id::ViewportHints));
+}
+
+// #333: the toggle is only useful if it reads as a toggle — checkable, and
+// discoverable on the generated shortcuts page (which skips unbound rows).
+TEST(ShortcutRegistry, ViewportHintsIsACheckableBoundViewRow) {
+  QUndoStack stack;
+  const Actions actions(stack);
+  EXPECT_TRUE(actions.viewport_hints->isCheckable());
+  EXPECT_FALSE(shortcuts::sequences(Id::ViewportHints).isEmpty());
+  EXPECT_STREQ(shortcuts::entry(Id::ViewportHints).category, "View");
+  EXPECT_EQ(shortcuts::entry(Id::ViewportHints).toolbar_group, nullptr); // menu-only
 }
 
 // The gate: the committed page must be what the table renders. A binding

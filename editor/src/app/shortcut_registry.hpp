@@ -82,6 +82,7 @@ enum class Id {
   ViewWest,
   ViewEast,
   ViewTop,
+  ViewportHints,
   // Help
   Help,
 
