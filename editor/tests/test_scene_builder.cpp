@@ -541,6 +541,67 @@ TEST(PropTransform, MatchesWorldSpaceBake) {
   EXPECT_FLOAT_EQ(a[15], 1.0F);
 }
 
+// A scaled instance (#335) bakes a uniform factor into the upper 3x3 and leaves
+// the translation alone — the prop grows about its base, it does not move. The
+// 2-argument call must stay exactly the unit-scale bake.
+TEST(PropTransform, BakesUniformScale) {
+  const std::array<double, 3> origin{3.0, -4.0, 1.5};
+  const double heading = 0.7;
+  const InstanceData unit = prop_transform(origin, heading);
+  const InstanceData explicit_unit = prop_transform(origin, heading, 1.0);
+  EXPECT_EQ(unit.model, explicit_unit.model) << "the default argument is scale 1";
+
+  const InstanceData doubled = prop_transform(origin, heading, 2.0);
+  for (std::size_t col = 0; col < 3; ++col) {
+    for (std::size_t row = 0; row < 3; ++row) {
+      const std::size_t i = (col * 4) + row;
+      EXPECT_FLOAT_EQ(doubled.model[i], unit.model[i] * 2.0F) << "col " << col << " row " << row;
+    }
+  }
+  for (std::size_t row = 0; row < 4; ++row) {
+    EXPECT_FLOAT_EQ(doubled.model[12 + row], unit.model[12 + row]) << "translation is unscaled";
+  }
+}
+
+// The rendered batch and the scene bounds both honor ObjectInstance::scale,
+// while a signal in the same scene stays at model size.
+TEST(SceneBuilder, ScaledInstanceTransformAndBounds) {
+  const props::PropModel* model = props::model("tree_pine");
+  ASSERT_NE(model, nullptr);
+  const std::array<double, 3> origin{10.0, 20.0, 1.0};
+
+  NetworkMesh mesh;
+  mesh.objects.push_back(ObjectInstance{.object = ObjectId{.index = 1, .gen = 0},
+                                        .road = RoadId{.index = 1, .gen = 0},
+                                        .model_id = "tree_pine",
+                                        .position = origin,
+                                        .heading = 0.0,
+                                        .scale = 2.0});
+
+  const Scene scene = build_scene(mesh);
+  ASSERT_EQ(scene.prop_batches.size(), 1U);
+  ASSERT_EQ(scene.prop_batches.front().instances.size(), 1U);
+  EXPECT_EQ(scene.prop_batches.front().instances.front().transform.model,
+            prop_transform(origin, 0.0, 2.0).model);
+
+  EXPECT_FLOAT_EQ(scene.bounds.hi[2], static_cast<float>(origin[2] + (model->height * 2.0)));
+  EXPECT_FLOAT_EQ(scene.bounds.hi[0], static_cast<float>(origin[0] + (model->radius * 2.0)));
+  EXPECT_FLOAT_EQ(scene.bounds.lo[0], static_cast<float>(origin[0] - (model->radius * 2.0)));
+
+  // A signal placed at the same spot is NOT resizable — its batch stays unit.
+  NetworkMesh with_signal;
+  with_signal.signal_instances.push_back(SignalInstance{.signal = SignalId{.index = 7, .gen = 0},
+                                                        .road = RoadId{.index = 1, .gen = 0},
+                                                        .model_id = "signal_light",
+                                                        .position = origin,
+                                                        .heading = 0.0});
+  const Scene signal_scene = build_scene(with_signal);
+  ASSERT_EQ(signal_scene.prop_batches.size(), 1U);
+  ASSERT_EQ(signal_scene.prop_batches.front().instances.size(), 1U);
+  EXPECT_EQ(signal_scene.prop_batches.front().instances.front().transform.model,
+            prop_transform(origin, 0.0).model);
+}
+
 // Distinct models form separate batches in first-encounter order; an
 // object-backed instance carries an ObjectId, a signal-backed one a SignalId; and
 // the scene bounds cover every instance.

@@ -42,13 +42,16 @@ void grow_indexed(SceneBounds& bounds,
 /// rather than a zero-size point the camera would slam into.
 void grow_instance(SceneBounds& bounds,
                    const std::array<double, 3>& position,
-                   std::string_view model_id) {
+                   std::string_view model_id,
+                   double scale) {
   constexpr double kUnknownModelExtent = 1.0;
   double radius = kUnknownModelExtent;
   double height = kUnknownModelExtent;
+  // An unknown model keeps its unscaled fallback box — it derives scale 1.0
+  // anyway, and there is no model height for a ratio to mean anything against.
   if (const props::PropModel* model = props::model(model_id); model != nullptr) {
-    radius = model->radius;
-    height = model->height;
+    radius = model->radius * scale;
+    height = model->height * scale;
   }
   grow(bounds, position[0] - radius, position[1] - radius, position[2]);
   grow(bounds, position[0] + radius, position[1] + radius, position[2] + height);
@@ -65,7 +68,7 @@ SceneBounds selection_bounds(const NetworkMesh& mesh, std::span<const SelectionE
     if (entry.object.is_valid()) {
       for (const ObjectInstance& instance : mesh.objects) {
         if (instance.object == entry.object) {
-          grow_instance(bounds, instance.position, instance.model_id);
+          grow_instance(bounds, instance.position, instance.model_id, instance.scale);
         }
       }
       continue;
@@ -73,7 +76,8 @@ SceneBounds selection_bounds(const NetworkMesh& mesh, std::span<const SelectionE
     if (entry.signal.is_valid()) {
       for (const SignalInstance& instance : mesh.signal_instances) {
         if (instance.signal == entry.signal) {
-          grow_instance(bounds, instance.position, instance.model_id);
+          // Signals are not resizable (#335).
+          grow_instance(bounds, instance.position, instance.model_id, 1.0);
         }
       }
       continue;

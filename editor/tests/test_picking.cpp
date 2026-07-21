@@ -534,5 +534,35 @@ TEST(Pick, MissesPropWhenRayIsWideOfIt) {
   EXPECT_FALSE(pick(mesh, {}, straight_down(45.0, 45.0)).has_value());
 }
 
+namespace {
+
+/// A lone tree at (25, 25) rendered at `scale` (#335) — no road, so the pick
+/// result is entirely the prop's bounding sphere.
+NetworkMesh lone_tree(double scale) {
+  NetworkMesh mesh;
+  mesh.objects.push_back(ObjectInstance{.object = ObjectId{.index = 7, .gen = 0},
+                                        .road = RoadId{.index = 1, .gen = 0},
+                                        .model_id = "tree_pine",
+                                        .position = {25.0, 25.0, 0.0},
+                                        .heading = 0.0,
+                                        .scale = scale});
+  return mesh;
+}
+
+} // namespace
+
+// tree_pine is 4.2 m tall / 1.2 m in radius, so its unit hit sphere has radius
+// max(1.2, 2.1) = 2.1 m. A ray 3 m off-axis clears it at model size but must hit
+// once the prop is drawn at twice that size.
+TEST(Pick, ScaledPropGrowsHitSphere) {
+  EXPECT_FALSE(pick(lone_tree(1.0), {}, straight_down(28.0, 25.0)).has_value());
+  EXPECT_TRUE(pick(lone_tree(2.0), {}, straight_down(28.0, 25.0)).has_value());
+}
+
+TEST(Pick, ShrunkPropMisses) {
+  EXPECT_TRUE(pick(lone_tree(1.0), {}, straight_down(26.0, 25.0)).has_value());
+  EXPECT_FALSE(pick(lone_tree(0.25), {}, straight_down(26.0, 25.0)).has_value());
+}
+
 } // namespace
 } // namespace roadmaker::editor

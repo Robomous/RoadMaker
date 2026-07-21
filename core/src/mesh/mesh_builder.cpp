@@ -624,9 +624,13 @@ void build_object_instances(const RoadNetwork& network,
         object.type != ObjectType::Pole && object.type != ObjectType::Building) {
       continue;
     }
-    if (props::model(object.name) == nullptr) {
+    const props::PropModel* prop_model = props::model(object.name);
+    if (prop_model == nullptr) {
       continue;
     }
+    // One derivation per object: every instance it emits (single or repeated)
+    // renders at the size the object declares.
+    const double scale = props::instance_scale(object, prop_model);
 
     // §13.4: a <repeat> with @distance > 0 places a SERIES of instances and
     // "the <repeat> element takes precedence" over the object's own s/t/hdg, so
@@ -683,7 +687,8 @@ void build_object_instances(const RoadNetwork& network,
                                        .road = road_id,
                                        .model_id = object.name,
                                        .position = position,
-                                       .heading = heading});
+                                       .heading = heading,
+                                       .scale = scale});
         }
       }
       continue;
@@ -697,7 +702,8 @@ void build_object_instances(const RoadNetwork& network,
                                  .road = road_id,
                                  .model_id = object.name,
                                  .position = position,
-                                 .heading = heading});
+                                 .heading = heading,
+                                 .scale = scale});
   }
 }
 

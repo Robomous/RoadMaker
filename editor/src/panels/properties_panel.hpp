@@ -289,9 +289,32 @@ private:
   /// here pins this instance's paint (material_override), so a later change to
   /// the asset's Default Material leaves it alone (GW-2 s15, GW-5 s8/s9).
   SlotWidget* instance_material_slot_;
+  /// Per-instance prop size (p6-s10, #335): the object's OpenDRIVE @height in
+  /// meters. Scrubbing or typing here resizes EVERY selected prop — the pane's
+  /// first batch edit — through a single update_objects command. Hidden for
+  /// markings and for props whose @name resolves to no bundled model.
+  QDoubleSpinBox* object_height_spin_;
   /// The object group's form — kept so refresh_object can setRowVisible the
   /// Model vs Material rows per object kind.
   QFormLayout* object_form_ = nullptr;
+
+  /// The primary selected object's rendered height: its declared @height when
+  /// positive, else its model's authored height. nullopt when the primary is
+  /// not a prop (a marking, or an unknown model), which makes the scrub inert.
+  [[nodiscard]] std::optional<double>
+  primary_prop_effective_height(const RoadNetwork& network) const;
+
+  /// ONE update_objects command resizing every selected prop. `absolute` sets
+  /// each prop's height to `value` outright; otherwise `value` is the primary
+  /// prop's new height and every prop scales by the same factor, so a batch
+  /// keeps its relative sizes. Height is always MATERIALIZED (a prop that
+  /// declared none gains one); @radius/@width/@length scale only when already
+  /// present — resizing never invents an optional attribute. Every baseline is
+  /// read from `network`, never captured: update_preview rebuilds this factory
+  /// against the session's BASE state each tick, and captured baselines would
+  /// compound the factor.
+  [[nodiscard]] std::unique_ptr<edit::Command>
+  resize_selected_props(const RoadNetwork& network, double value, bool absolute) const;
 
   /// Road-style section (shown for a selected road): a write-only Library slot
   /// that applies a dropped road style to the road (p2-s8). Unlike the prop

@@ -9,6 +9,7 @@
 #include "roadmaker/road/authoring.hpp"
 #include "roadmaker/road/network.hpp"
 #include "roadmaker/road/object.hpp"
+#include "roadmaker/xodr/reader.hpp"
 
 #include <gtest/gtest.h>
 
@@ -195,6 +196,8 @@ TEST(ObjectOps, TreeObjectEmitsOneInstance) {
   EXPECT_NEAR(instance.position[0], 40.0, 1.0);
   EXPECT_NEAR(instance.position[1], 6.0, 1.0);
   EXPECT_NEAR(instance.position[2], 0.0, 0.01);
+  // The tree declares exactly the model height, so it draws at model size.
+  EXPECT_EQ(instance.scale, 1.0);
 }
 
 TEST(ObjectOps, NonPropObjectEmitsNoInstance) {
@@ -233,6 +236,7 @@ TEST(ObjectOps, RepeatExpandsToMeshInstances) {
   EXPECT_NEAR(mesh.objects.back().position[0], 110.0, 1.0);
   for (const ObjectInstance& instance : mesh.objects) {
     EXPECT_EQ(instance.model_id, "tree_pine");
+    EXPECT_EQ(instance.scale, 1.0);
     EXPECT_NEAR(instance.position[1], 4.0, 1e-6); // constant t on a +x road
   }
 }
@@ -351,6 +355,154 @@ TEST(UpdateObjects, EmptyBatchIsANoOp) {
   ASSERT_TRUE(command->apply(network).has_value());
   EXPECT_EQ(snapshot_xodr(network), before);
   EXPECT_TRUE(command->dirty().objects.empty());
+}
+
+// --- per-instance prop size (#335) -------------------------------------------
+
+TEST(InstanceScale, AbsentHeightIsUnit) {
+  const props::PropModel* model = props::model("tree_pine");
+  ASSERT_NE(model, nullptr);
+  Object tree = make_tree("1", 10.0, 4.0);
+  tree.height.reset();
+  EXPECT_DOUBLE_EQ(props::instance_scale(tree, model), 1.0);
+}
+
+TEST(InstanceScale, UnknownModelIsUnit) {
+  const Object tree = make_tree("1", 10.0, 4.0);
+  EXPECT_DOUBLE_EQ(props::instance_scale(tree, nullptr), 1.0);
+}
+
+TEST(InstanceScale, NonPositiveHeightsAreUnit) {
+  // A model with no authored height cannot define a ratio, and a non-positive
+  // declared height is meaningless — both fall back to model size rather than
+  // collapsing or mirroring the prop.
+  const props::PropModel degenerate{.id = "degenerate", .height = 0.0};
+  Object tree = make_tree("1", 10.0, 4.0);
+  EXPECT_DOUBLE_EQ(props::instance_scale(tree, &degenerate), 1.0);
+
+  const props::PropModel* model = props::model("tree_pine");
+  ASSERT_NE(model, nullptr);
+  tree.height = 0.0;
+  EXPECT_DOUBLE_EQ(props::instance_scale(tree, model), 1.0);
+  tree.height = -3.0;
+  EXPECT_DOUBLE_EQ(props::instance_scale(tree, model), 1.0);
+}
+
+TEST(InstanceScale, HeightRatio) {
+  const props::PropModel* model = props::model("tree_pine");
+  ASSERT_NE(model, nullptr);
+  Object tree = make_tree("1", 10.0, 4.0);
+
+  tree.height = model->height * 2.0;
+  EXPECT_DOUBLE_EQ(props::instance_scale(tree, model), 2.0);
+  tree.height = model->height * 0.25;
+  EXPECT_DOUBLE_EQ(props::instance_scale(tree, model), 0.25);
+  // Declaring exactly the model height must be EXACTLY unit (IEEE x/x == 1.0)
+  // — that is what keeps every pre-#335 scene rendering identically.
+  tree.height = model->height;
+  EXPECT_EQ(props::instance_scale(tree, model), 1.0);
+}
+
+TEST(ObjectOps, ScaledTreeObjectInstanceCarriesScale) {
+  RoadNetwork network;
+  const RoadId road = author_street(network);
+  const props::PropModel* model = props::model("tree_pine");
+  ASSERT_NE(model, nullptr);
+
+  Object tree = make_tree("1", 40.0, 6.0);
+  tree.height = model->height * 2.0;
+  network.add_object(road, tree);
+
+  const NetworkMesh mesh = build_network_mesh(network, {});
+  ASSERT_EQ(mesh.objects.size(), 1U);
+  EXPECT_DOUBLE_EQ(mesh.objects.front().scale, 2.0);
+}
+
+TEST(ObjectOps, RepeatSeriesSharesTheObjectScale) {
+  RoadNetwork network;
+  const RoadId road = author_street(network);
+  const props::PropModel* model = props::model("tree_pine");
+  ASSERT_NE(model, nullptr);
+
+  Object tree = make_tree("1", 10.0, 4.0);
+  tree.height = model->height * 3.0;
+  ObjectRepeat repeat;
+  repeat.s = 10.0;
+  repeat.length = 100.0;
+  repeat.distance = 20.0;
+  repeat.t_start = repeat.t_end = 4.0;
+  tree.repeats = {repeat};
+  network.add_object(road, tree);
+
+  const NetworkMesh mesh = build_network_mesh(network, {});
+  ASSERT_EQ(mesh.objects.size(), 6U);
+  for (const ObjectInstance& instance : mesh.objects) {
+    EXPECT_DOUBLE_EQ(instance.scale, 3.0) << "every repeated instance renders at the declared size";
+  }
+}
+
+TEST(ObjectOps, ResizedPropRoundTripsAsPlainOpenDriveAttributes) {
+  // The instance dimensions are standard @height/@radius — resizing a prop must
+  // not introduce any rm: userData, and must survive a parse unchanged.
+  RoadNetwork network;
+  const RoadId road = author_street(network);
+  const ObjectId id = network.add_object(road, make_tree("1", 40.0, 6.0));
+  Object resized = *network.object(id);
+  resized.height = 9.0;
+  resized.radius = 2.4;
+  auto command = edit::update_objects(network, {{id, resized}}, "Resize Props");
+  ASSERT_NE(command, nullptr);
+  ASSERT_TRUE(command->apply(network).has_value());
+
+  const std::string written = snapshot_xodr(network);
+  // Scoped to the <objects> block — the road itself always carries an
+  // rm:waypoints userData, which has nothing to do with the prop.
+  const std::size_t objects_begin = written.find("<objects>");
+  const std::size_t objects_end = written.find("</objects>");
+  ASSERT_NE(objects_begin, std::string::npos);
+  ASSERT_NE(objects_end, std::string::npos);
+  const std::string objects_block = written.substr(objects_begin, objects_end - objects_begin);
+  EXPECT_EQ(objects_block.find("rm:"), std::string::npos)
+      << "prop dimensions are Layer 0 — no extension record:\n"
+      << objects_block;
+  EXPECT_EQ(objects_block.find("userData"), std::string::npos) << objects_block;
+  EXPECT_NE(objects_block.find("height=\"9"), std::string::npos)
+      << "the declared height is a plain OpenDRIVE attribute:\n"
+      << objects_block;
+
+  auto parsed = parse_xodr(written, "resized");
+  ASSERT_TRUE(parsed.has_value()) << parsed.error().message;
+  EXPECT_EQ(snapshot_xodr(parsed->network), written);
+
+  const NetworkMesh mesh = build_network_mesh(parsed->network, {});
+  ASSERT_EQ(mesh.objects.size(), 1U);
+  EXPECT_DOUBLE_EQ(mesh.objects.front().scale, 9.0 / props::model("tree_pine")->height);
+}
+
+TEST(ObjectOps, ResizePropsCommandRoundTrip) {
+  RoadNetwork network;
+  const RoadId road = author_street(network);
+  const ObjectId id = network.add_object(road, make_tree("1", 40.0, 6.0));
+
+  Object resized = *network.object(id);
+  ASSERT_TRUE(resized.height.has_value());
+  ASSERT_TRUE(resized.radius.has_value());
+  resized.height = *resized.height * 2.0;
+  resized.radius = *resized.radius * 2.0;
+  auto command = edit::update_objects(network, {{id, resized}}, "Resize Props");
+  ASSERT_NE(command, nullptr);
+
+  // §8 oracle: apply changes the doc, revert restores it byte-identically.
+  const std::string before = snapshot_xodr(network);
+  ASSERT_TRUE(command->apply(network).has_value());
+  const std::string after = snapshot_xodr(network);
+  EXPECT_NE(before, after);
+  ASSERT_TRUE(command->revert(network).has_value());
+  test::expect_network_matches(network, before);
+  ASSERT_TRUE(command->apply(network).has_value());
+  test::expect_network_matches(network, after);
+  ASSERT_TRUE(command->revert(network).has_value());
+  test::expect_network_matches(network, before);
 }
 
 } // namespace

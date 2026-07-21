@@ -125,27 +125,30 @@ RenderMeshData to_render_data(const std::vector<double>& positions,
   return data;
 }
 
-InstanceData prop_transform(const std::array<double, 3>& position, double heading) {
-  // Column-major mat4: col0=(c,s,0,0) col1=(-s,c,0,0) col2=(0,0,1,0)
-  // col3=(x,y,z,1) — a +Z rotation by `heading` then a translate to `position`.
-  // Applied to (x,y,z,1) this reproduces the pre-instancing world-space bake:
-  //   x' = c*x - s*y + px,  y' = s*x + c*y + py,  z' = z + pz.
+InstanceData prop_transform(const std::array<double, 3>& position, double heading, double scale) {
+  // Column-major mat4: col0=(kc,ks,0,0) col1=(-ks,kc,0,0) col2=(0,0,k,0)
+  // col3=(x,y,z,1) — a uniform scale by k, a +Z rotation by `heading`, then a
+  // translate to `position` (which the scale must NOT touch: a resized prop
+  // stays where it was placed). Applied to (x,y,z,1):
+  //   x' = k*(c*x - s*y) + px,  y' = k*(s*x + c*y) + py,  z' = k*z + pz.
+  // At k = 1 this is bit-identical to the pre-#335 bake.
+  const auto k = static_cast<float>(scale);
   const auto c = static_cast<float>(std::cos(heading));
   const auto s = static_cast<float>(std::sin(heading));
   const auto px = static_cast<float>(position[0]);
   const auto py = static_cast<float>(position[1]);
   const auto pz = static_cast<float>(position[2]);
-  return InstanceData{{c,
-                       s,
+  return InstanceData{{k * c,
+                       k * s,
                        0.0F,
                        0.0F, //
-                       -s,
-                       c,
+                       -k * s,
+                       k * c,
                        0.0F,
                        0.0F, //
                        0.0F,
                        0.0F,
-                       1.0F,
+                       k,
                        0.0F, //
                        px,
                        py,
@@ -201,6 +204,7 @@ namespace {
 void append_model_items(std::string_view model_id,
                         const std::array<double, 3>& origin,
                         double heading,
+                        double scale,
                         RoadId road,
                         ObjectId object,
                         SignalId signal,
@@ -236,13 +240,14 @@ void append_model_items(std::string_view model_id,
       .road = road,
       .object = object,
       .signal = signal,
-      .transform = prop_transform(origin, heading),
+      .transform = prop_transform(origin, heading, scale),
   });
 
   // Grow scene bounds from the model bounding cylinder (radius/height) at the
   // instance origin — cheap and pose-independent (heading only spins the crown).
-  const auto radius = static_cast<float>(model->radius);
-  const auto height = static_cast<float>(model->height);
+  // The cylinder scales with the instance, so a resized prop frames correctly.
+  const auto radius = static_cast<float>(model->radius * scale);
+  const auto height = static_cast<float>(model->height * scale);
   const auto ox = static_cast<float>(origin[0]);
   const auto oy = static_cast<float>(origin[1]);
   const auto oz = static_cast<float>(origin[2]);
@@ -260,6 +265,7 @@ void append_object_items(const ObjectInstance& instance, Scene& scene) {
   append_model_items(instance.model_id,
                      instance.position,
                      instance.heading,
+                     instance.scale,
                      instance.road,
                      instance.object,
                      {},
@@ -267,9 +273,11 @@ void append_object_items(const ObjectInstance& instance, Scene& scene) {
 }
 
 void append_signal_items(const SignalInstance& instance, Scene& scene) {
+  // Signals are not resizable (#335 scopes per-instance size to props).
   append_model_items(instance.model_id,
                      instance.position,
                      instance.heading,
+                     1.0,
                      instance.road,
                      {},
                      instance.signal,

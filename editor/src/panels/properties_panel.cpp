@@ -247,7 +247,7 @@ PropertiesPanel::PropertiesPanel(Document& document,
       object_kind_label_(new QLabel(this)),
       model_slot_(new SlotWidget(QStringLiteral("Props"), this)),
       instance_material_slot_(new SlotWidget(QStringLiteral("Materials"), this)),
-      style_group_(new QGroupBox(tr("Road style"), this)),
+      object_height_spin_(new QDoubleSpinBox), style_group_(new QGroupBox(tr("Road style"), this)),
       style_slot_(new SlotWidget(QStringLiteral("Road styles"), this)),
       surface_group_(new QGroupBox(tr("Ground surface"), this)),
       material_slot_(new SlotWidget(QStringLiteral("Materials"), this)),
@@ -661,11 +661,51 @@ PropertiesPanel::PropertiesPanel(Document& document,
   instance_material_slot_->setObjectName(QStringLiteral("object_material_slot"));
   instance_material_slot_->setToolTip(
       tr("Drop a material to override this marking's paint on this instance only"));
+  // Per-instance size (#335): the prop's OpenDRIVE @height. Dragging the label
+  // resizes every selected prop live and commits ONE undo entry on release;
+  // typing sets them all to that height. 500 m covers a skyscraper model.
+  object_height_spin_->setObjectName(QStringLiteral("object_height_spin"));
+  object_height_spin_->setRange(0.1, 500.0);
+  object_height_spin_->setSingleStep(0.1);
+  object_height_spin_->setDecimals(2);
+  object_height_spin_->setSuffix(tr(" m"));
+  object_height_spin_->setToolTip(
+      tr("Rendered height of this prop, in meters. With several props selected, dragging scales "
+         "them all by the same factor and typing sets them all to this height."));
+  ScrubLabel* object_height_scrub =
+      install_scrub(new ScrubLabel(tr("Height"), this),
+                    {.spin = object_height_spin_,
+                     .units_per_pixel = 0.05,
+                     .baseline = [this]() -> std::optional<double> {
+                       return primary_prop_effective_height(document_.network());
+                     },
+                     .factory =
+                         [this](const RoadNetwork& network, double value) {
+                           return resize_selected_props(network, value, /*absolute=*/false);
+                         }});
+  object_height_scrub->setObjectName(QStringLiteral("object_height_scrub"));
   auto* object_form = new QFormLayout(object_group_);
   object_form->addRow(object_kind_label_);
   object_form->addRow(tr("Model"), model_slot_);
+  object_form->addRow(object_height_scrub, object_height_spin_);
   object_form->addRow(tr("Material"), instance_material_slot_);
   object_form_ = object_form;
+
+  // Typing a height is the ABSOLUTE gesture: every selected prop becomes that
+  // tall. Guarded against a scrub's live re-seed and against the refresh echo —
+  // update_objects would happily record a no-op undo entry otherwise.
+  connect(object_height_spin_, &QDoubleSpinBox::editingFinished, this, [this] {
+    if (scrub_active_.has_value()) {
+      return;
+    }
+    const std::optional<double> current = primary_prop_effective_height(document_.network());
+    if (!current.has_value() || std::abs(object_height_spin_->value() - *current) < 1e-9) {
+      return;
+    }
+    push(resize_selected_props(document_.network(),
+                               object_height_spin_->value(),
+                               /*absolute=*/true));
+  });
   connect(model_slot_, &SlotWidget::item_dropped, this, &PropertiesPanel::push_object_model);
   connect(model_slot_,
           &SlotWidget::engage_requested,
@@ -1212,7 +1252,94 @@ void PropertiesPanel::refresh_object(const Object& object) {
     model_slot_->set_item(QString::fromStdString(object.name));
     object_group_->setTitle(tr("Prop"));
   }
+  // Size is meaningful only for a prop that actually renders a bundled model:
+  // a marking has no model, and an unresolvable @name has no height to scale.
+  const bool resizable = !is_marking && props::model(object.name) != nullptr;
+  object_form_->setRowVisible(object_height_spin_, resizable);
+  if (resizable) {
+    if (const std::optional<double> height = primary_prop_effective_height(document_.network());
+        height.has_value()) {
+      const QSignalBlocker blocker(object_height_spin_);
+      object_height_spin_->setValue(*height);
+    }
+  }
   object_group_->show();
+}
+
+std::optional<double>
+PropertiesPanel::primary_prop_effective_height(const RoadNetwork& network) const {
+  const Object* object = network.object(selection_.primary().object);
+  if (object == nullptr) {
+    return std::nullopt;
+  }
+  const props::PropModel* model = props::model(object->name);
+  if (model == nullptr) {
+    return std::nullopt; // a marking or a model this build does not know
+  }
+  if (object->height.has_value() && *object->height > 0.0) {
+    return *object->height;
+  }
+  return model->height;
+}
+
+std::unique_ptr<edit::Command> PropertiesPanel::resize_selected_props(const RoadNetwork& network,
+                                                                      double value,
+                                                                      bool absolute) const {
+  // The primary's height sets the batch factor, so every prop keeps its
+  // relative size. Read from `network` — see the header's note on baselines.
+  const Object* primary = network.object(selection_.primary().object);
+  const props::PropModel* primary_model =
+      primary == nullptr ? nullptr : props::model(primary->name);
+  if (primary_model == nullptr) {
+    return nullptr;
+  }
+  const double primary_height = primary->height.has_value() && *primary->height > 0.0
+                                    ? *primary->height
+                                    : primary_model->height;
+  if (!(primary_height > 0.0)) {
+    return nullptr;
+  }
+
+  std::vector<std::pair<ObjectId, Object>> updates;
+  std::vector<ObjectId> seen;
+  for (const ObjectId id : selection_.selected_objects()) {
+    if (std::ranges::find(seen, id) != seen.end()) {
+      continue;
+    }
+    seen.push_back(id);
+    const Object* object = network.object(id);
+    if (object == nullptr) {
+      continue;
+    }
+    const props::PropModel* model = props::model(object->name);
+    if (model == nullptr) {
+      continue; // markings and unknown models are not resizable
+    }
+    const double height =
+        object->height.has_value() && *object->height > 0.0 ? *object->height : model->height;
+    if (!(height > 0.0)) {
+      continue;
+    }
+    const double factor = absolute ? value / height : value / primary_height;
+    Object updated = *object;
+    updated.height = absolute ? value : height * factor;
+    // Siblings scale only if the object already declares them — resizing must
+    // never invent an optional OpenDRIVE attribute.
+    if (updated.radius.has_value()) {
+      updated.radius = *updated.radius * factor;
+    }
+    if (updated.width.has_value()) {
+      updated.width = *updated.width * factor;
+    }
+    if (updated.length.has_value()) {
+      updated.length = *updated.length * factor;
+    }
+    updates.emplace_back(id, std::move(updated));
+  }
+  if (updates.empty()) {
+    return nullptr;
+  }
+  return edit::update_objects(network, std::move(updates), "Resize Props");
 }
 
 void PropertiesPanel::push_object_model(const QString& key) {

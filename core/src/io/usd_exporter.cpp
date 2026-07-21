@@ -270,11 +270,14 @@ Expected<void> export_usda(const NetworkMesh& mesh, const std::filesystem::path&
                                  std::size_t index,
                                  const std::string& model_id,
                                  const std::array<double, 3>& origin,
-                                 double heading) {
+                                 double heading,
+                                 double scale) {
     const props::PropModel* model = props::model(model_id);
     if (model == nullptr) {
       return;
     }
+    // Uniform scale in model space, applied before the rotate+translate (#335).
+    // Normals are unaffected: a uniform scale does not shear the surface.
     const double cos_h = std::cos(heading);
     const double sin_h = std::sin(heading);
     const std::string tag = std::string(prefix) + "_" + std::to_string(index);
@@ -285,11 +288,11 @@ Expected<void> export_usda(const NetworkMesh& mesh, const std::filesystem::path&
       std::vector<double> world_pos(part.positions.size());
       std::vector<double> world_nrm(part.normals.size());
       for (std::size_t i = 0; i + 2 < part.positions.size(); i += 3) {
-        const double x = part.positions[i];
-        const double y = part.positions[i + 1];
+        const double x = part.positions[i] * scale;
+        const double y = part.positions[i + 1] * scale;
         world_pos[i] = (cos_h * x) - (sin_h * y) + origin[0];
         world_pos[i + 1] = (sin_h * x) + (cos_h * y) + origin[1];
-        world_pos[i + 2] = part.positions[i + 2] + origin[2];
+        world_pos[i + 2] = (part.positions[i + 2] * scale) + origin[2];
         const double nx = part.normals[i];
         const double ny = part.normals[i + 1];
         world_nrm[i] = (cos_h * nx) - (sin_h * ny);
@@ -311,11 +314,13 @@ Expected<void> export_usda(const NetworkMesh& mesh, const std::filesystem::path&
   };
   for (std::size_t oi = 0; oi < mesh.objects.size(); ++oi) {
     const ObjectInstance& instance = mesh.objects[oi];
-    bake_instance("prop", oi, instance.model_id, instance.position, instance.heading);
+    bake_instance(
+        "prop", oi, instance.model_id, instance.position, instance.heading, instance.scale);
   }
   for (std::size_t si = 0; si < mesh.signal_instances.size(); ++si) {
     const SignalInstance& instance = mesh.signal_instances[si];
-    bake_instance("signal", si, instance.model_id, instance.position, instance.heading);
+    // Signals are not resizable (#335).
+    bake_instance("signal", si, instance.model_id, instance.position, instance.heading, 1.0);
   }
 
   tz::Scope looks;
