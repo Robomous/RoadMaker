@@ -38,6 +38,14 @@ against the code rather than left describing a product that does not exist
   the cross section and keeps everything orthogonal to it
   ([#219](https://github.com/Robomous/RoadMaker/issues/219)).
 
+**Amendment (field triage, 2026-07-21).** Step 3 was extended by maintainer
+decision ([#351](https://github.com/Robomous/RoadMaker/issues/351) item 3,
+implemented by [#354](https://github.com/Robomous/RoadMaker/issues/354)):
+the single-crossing wording was the p2-s3 delivery; the step now requires a
+junction at **every** crossing and T-intent detection when an endpoint lands
+on another road's side — all interactions of one stroke in one undoable
+commit.
+
 **Closeout self-check (P2 sprint 9, 2026-07-17).** A headless replay,
 `scripts/gw2_replay.py`, now drives the automatable slice through the kernel
 command layer and asserts each outcome: step 2 (Create Road, default two-lane
@@ -68,10 +76,13 @@ the same change. `Road Plan tool` in step 2 was corrected to its real name,
 2. [ ] With the Create Road tool, click control points to lay a straight
    road; right-click to finish. **Expected:** a road with the default
    style; control points remain editable.
-3. [ ] Draw a second road across the first, finishing beyond it.
-   **Expected:** on commit, a junction forms at the crossing with
-   connecting lanes — the crossing is detected when the road is finished,
-   not while it is being drawn.
+3. [ ] Draw a second road across the first, finishing beyond it. Then draw a
+   third road that crosses two roads and ends on the side of another.
+   **Expected:** on commit, a junction forms at EVERY crossing with
+   connecting lanes, and an endpoint landing on a road's side forms a
+   T junction — all in one undoable commit. Detection happens when the road
+   is finished, not while it is being drawn; T-intent is indicated while
+   drawing.
 4. [ ] Draw a curved road, then extend one of its endpoints by clicking
    beyond it. **Expected:** the extension fits with geometric-constraint
    continuity (no tangent kink at the join).
