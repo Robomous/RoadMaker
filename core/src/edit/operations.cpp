@@ -3474,12 +3474,13 @@ Expected<Junction> stopline_edit_context(const RoadNetwork& network,
     return make_error(ErrorCode::InvalidArgument, "stale junction id");
   }
   const std::vector<JunctionStopLineInfo> lines = junction_stoplines(network, junction_id);
-  const bool solvable = std::ranges::any_of(
-      lines, [&](const JunctionStopLineInfo& info) { return info.arm == arm; });
+  const bool solvable =
+      std::ranges::any_of(lines, [&](const JunctionStopLineInfo& info) { return info.arm == arm; });
   if (!solvable) {
-    return make_error(
-        ErrorCode::InvalidArgument,
-        fmt::format("{}: the given road end is not a stop line of junction {}", name, junction->odr_id));
+    return make_error(ErrorCode::InvalidArgument,
+                      fmt::format("{}: the given road end is not a stop line of junction {}",
+                                  name,
+                                  junction->odr_id));
   }
   return *junction;
 }
@@ -3502,10 +3503,9 @@ std::unique_ptr<Command> stopline_value_command(std::string_view name,
                                                 RoadId arm_road,
                                                 const Junction& before,
                                                 Junction after) {
-  auto command = std::make_unique<GenericCommand>(std::string(name),
-                                                  DirtySet{.roads = {arm_road},
-                                                           .junctions = {junction_id},
-                                                           .junctions_are_current = true});
+  auto command = std::make_unique<GenericCommand>(
+      std::string(name),
+      DirtySet{.roads = {arm_road}, .junctions = {junction_id}, .junctions_are_current = true});
   command->before.junctions.emplace_back(junction_id, before);
   command->after.junctions.emplace_back(junction_id, std::move(after));
   return command;
@@ -3537,11 +3537,10 @@ std::unique_ptr<Command> set_stopline_distance(const RoadNetwork& network,
       entry->crosswalk_odr_id = *std::move(crosswalk_link);
     }
   } else {
-    after.stoplines.push_back(
-        StopLine{.arm = arm,
-                 .distance = distance,
-                 .flipped = false,
-                 .crosswalk_odr_id = crosswalk_link.value_or(std::string{})});
+    after.stoplines.push_back(StopLine{.arm = arm,
+                                       .distance = distance,
+                                       .flipped = false,
+                                       .crosswalk_odr_id = crosswalk_link.value_or(std::string{})});
   }
   return stopline_value_command(kName, junction_id, arm.road, *before, std::move(after));
 }

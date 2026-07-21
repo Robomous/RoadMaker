@@ -1,6 +1,5 @@
 #include "roadmaker/edit/markings.hpp"
 
-#include "markings_detail.hpp"
 #include "roadmaker/edit/connection.hpp"
 #include "roadmaker/road/junction.hpp"
 #include "roadmaker/road/network.hpp"
@@ -17,6 +16,8 @@
 #include <span>
 #include <string>
 #include <vector>
+
+#include "markings_detail.hpp"
 
 namespace roadmaker::edit {
 

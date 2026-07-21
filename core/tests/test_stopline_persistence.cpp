@@ -81,9 +81,9 @@ struct CrossFixture {
   RoadEnd arm_end(RoadId road) const { return RoadEnd{.road = road, .contact = ContactPoint::End}; }
 };
 
-std::string write(const RoadNetwork& network,
-                  XodrVersion version = XodrVersion::v1_8_1) {
-  auto xml = roadmaker::write_xodr(network, "stoplines", roadmaker::WriterOptions{.target_version = version});
+std::string write(const RoadNetwork& network, XodrVersion version = XodrVersion::v1_8_1) {
+  auto xml = roadmaker::write_xodr(
+      network, "stoplines", roadmaker::WriterOptions{.target_version = version});
   EXPECT_TRUE(xml.has_value());
   return xml.value_or(std::string{});
 }
@@ -99,8 +99,8 @@ std::size_t count(const std::string& haystack, std::string_view needle) {
 
 const StopLine* record_for(const RoadNetwork& network, JunctionId junction, const RoadEnd& arm) {
   const Junction* record = network.junction(junction);
-  const auto entry = std::ranges::find_if(
-      record->stoplines, [&](const StopLine& line) { return line.arm == arm; });
+  const auto entry = std::ranges::find_if(record->stoplines,
+                                          [&](const StopLine& line) { return line.arm == arm; });
   return entry == record->stoplines.end() ? nullptr : &*entry;
 }
 
@@ -159,9 +159,8 @@ TEST(StopLinePersistence, DerivedObjectsAreAbsorbedNotDuplicated) {
 
   // Absorbed: the objects are NOT in the arena...
   std::size_t arena_objects = 0;
-  reparsed->network.for_each_object([&](roadmaker::ObjectId, const roadmaker::Object&) {
-    ++arena_objects;
-  });
+  reparsed->network.for_each_object(
+      [&](roadmaker::ObjectId, const roadmaker::Object&) { ++arena_objects; });
   EXPECT_EQ(arena_objects, 0U);
   // ...and a pure default stores no record either — it is simply re-derived.
   const JunctionId junction = reparsed->network.find_junction("1");
@@ -301,11 +300,10 @@ TEST(StopLinePersistence, MalformedStoplineDataWarnsAndKeepsTheObjectLive) {
   EXPECT_EQ(reparsed->diagnostics.front().severity, Severity::Warning);
 
   std::size_t arena_objects = 0;
-  reparsed->network.for_each_object(
-      [&](roadmaker::ObjectId, const roadmaker::Object& object) {
-        ++arena_objects;
-        EXPECT_EQ(object.subtype, "signalLines");
-      });
+  reparsed->network.for_each_object([&](roadmaker::ObjectId, const roadmaker::Object& object) {
+    ++arena_objects;
+    EXPECT_EQ(object.subtype, "signalLines");
+  });
   EXPECT_EQ(arena_objects, 1U) << "the unreadable line stays a live object";
 }
 
@@ -359,8 +357,11 @@ TEST(StopLinePersistence, StoplineOnARoadEndWithNoJunctionStaysAPlainObject) {
   // with its userData preserved verbatim rather than dropped.
   RoadNetwork network;
   const RoadId lonely = *roadmaker::author_clothoid_road(
-      network, std::vector<Waypoint>{Waypoint{0.0, 0.0}, Waypoint{60.0, 0.0}},
-      LaneProfile::two_lane_default(), "", "1");
+      network,
+      std::vector<Waypoint>{Waypoint{0.0, 0.0}, Waypoint{60.0, 0.0}},
+      LaneProfile::two_lane_default(),
+      "",
+      "1");
   ASSERT_TRUE(lonely.is_valid());
   roadmaker::Object marker;
   marker.road = lonely;
@@ -380,11 +381,10 @@ TEST(StopLinePersistence, StoplineOnARoadEndWithNoJunctionStaysAPlainObject) {
   EXPECT_FALSE(reparsed->diagnostics.empty()) << "the orphan tag is reported";
 
   std::size_t arena_objects = 0;
-  reparsed->network.for_each_object(
-      [&](roadmaker::ObjectId, const roadmaker::Object& object) {
-        ++arena_objects;
-        EXPECT_EQ(object.odr_id, "sl_x");
-      });
+  reparsed->network.for_each_object([&](roadmaker::ObjectId, const roadmaker::Object& object) {
+    ++arena_objects;
+    EXPECT_EQ(object.odr_id, "sl_x");
+  });
   EXPECT_EQ(arena_objects, 1U);
   // The userData survived, so a later edit that does attach a junction can
   // still read the record.
@@ -429,11 +429,11 @@ TEST(StopLinePersistence, DISABLED_WriteCorpusSeed) {
   CrossFixture fixture;
   // Exercise every attribute of the grammar: one arm authors a setback, a flip
   // and a crosswalk link; the other three stay pure defaults.
-  ASSERT_TRUE(roadmaker::edit::set_stopline_distance(
-                  fixture.network, fixture.junction, fixture.arm_end(fixture.east), 2.5,
-                  std::string("7"))
-                  ->apply(fixture.network)
-                  .has_value());
+  ASSERT_TRUE(
+      roadmaker::edit::set_stopline_distance(
+          fixture.network, fixture.junction, fixture.arm_end(fixture.east), 2.5, std::string("7"))
+          ->apply(fixture.network)
+          .has_value());
   ASSERT_TRUE(roadmaker::edit::flip_stopline(
                   fixture.network, fixture.junction, fixture.arm_end(fixture.east))
                   ->apply(fixture.network)

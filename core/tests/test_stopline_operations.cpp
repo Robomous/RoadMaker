@@ -8,7 +8,6 @@
 // stale or non-arm road end is a clean error rather than a crash.
 
 #include "roadmaker/edit/operations.hpp"
-
 #include "roadmaker/mesh/junction_stoplines.hpp"
 #include "roadmaker/road/authoring.hpp"
 #include "roadmaker/road/junction.hpp"
@@ -100,9 +99,8 @@ RoadEnd first_arm(const RoadNetwork& network, JunctionId junction) {
   return junction_stoplines(network, junction).front().arm;
 }
 
-std::optional<JunctionStopLineInfo> solved(const RoadNetwork& network,
-                                           JunctionId junction,
-                                           const RoadEnd& arm) {
+std::optional<JunctionStopLineInfo>
+solved(const RoadNetwork& network, JunctionId junction, const RoadEnd& arm) {
   const std::vector<JunctionStopLineInfo> lines = junction_stoplines(network, junction);
   const auto entry = std::ranges::find_if(
       lines, [&](const JunctionStopLineInfo& info) { return info.arm == arm; });
@@ -114,8 +112,8 @@ std::optional<JunctionStopLineInfo> solved(const RoadNetwork& network,
 
 const StopLine* record_for(const RoadNetwork& network, JunctionId junction, const RoadEnd& arm) {
   const Junction* record = network.junction(junction);
-  const auto entry = std::ranges::find_if(
-      record->stoplines, [&](const StopLine& line) { return line.arm == arm; });
+  const auto entry = std::ranges::find_if(record->stoplines,
+                                          [&](const StopLine& line) { return line.arm == arm; });
   return entry == record->stoplines.end() ? nullptr : &*entry;
 }
 
@@ -210,8 +208,8 @@ TEST(StopLineOperations, SetDistanceRejectsBadInput) {
   const RoadEnd arm = first_arm(network, junction);
   const std::string pristine = snapshot_xodr(network);
 
-  for (const double bad : {-1.0, std::numeric_limits<double>::quiet_NaN(),
-                           std::numeric_limits<double>::infinity()}) {
+  for (const double bad :
+       {-1.0, std::numeric_limits<double>::quiet_NaN(), std::numeric_limits<double>::infinity()}) {
     auto command = set_stopline_distance(network, junction, arm, bad);
     ASSERT_NE(command, nullptr);
     EXPECT_FALSE(command->apply(network).has_value()) << "distance " << bad << " must be rejected";

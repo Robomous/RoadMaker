@@ -8,9 +8,9 @@
 // lanes in the line's direction, and a legacy/foreign signalLines object
 // already painting one.
 
-#include "roadmaker/mesh/junction_stoplines.hpp"
-
 #include "roadmaker/edit/operations.hpp"
+#include "roadmaker/mesh/junction_stoplines.hpp"
+#include "roadmaker/mesh/mesh_builder.hpp"
 #include "roadmaker/road/authoring.hpp"
 #include "roadmaker/road/junction.hpp"
 #include "roadmaker/road/network.hpp"
@@ -19,6 +19,7 @@
 #include <gtest/gtest.h>
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstddef>
 #include <optional>
@@ -123,9 +124,8 @@ TEST(JunctionStopLines, FourWayExposesFourDefaults) {
                     (kStopLineThickness / 2.0),
                 1e-9);
     // The endpoints straddle the centre laterally and are span apart.
-    EXPECT_NEAR(std::hypot(info.left[0] - info.right[0], info.left[1] - info.right[1]),
-                info.span,
-                1e-9);
+    EXPECT_NEAR(
+        std::hypot(info.left[0] - info.right[0], info.left[1] - info.right[1]), info.span, 1e-9);
   }
 }
 
@@ -188,9 +188,8 @@ TEST(JunctionStopLines, AuthoredDistanceIsClampedToTheRoad) {
   EXPECT_DOUBLE_EQ(info->distance, info->max_distance)
       << "an absurd setback is stored unclamped and clamped only when solved";
   EXPECT_GT(info->max_distance, 0.0);
-  EXPECT_NEAR(info->max_distance,
-              network.road(arm.road)->plan_view.length() - kStopLineThickness,
-              1e-9);
+  EXPECT_NEAR(
+      info->max_distance, network.road(arm.road)->plan_view.length() - kStopLineThickness, 1e-9);
   // Clamped or not, the band lands whole on the road.
   EXPECT_GE(info->s_center - (kStopLineThickness / 2.0), -1e-9);
   EXPECT_LE(info->s_center + (kStopLineThickness / 2.0),
@@ -262,14 +261,15 @@ TEST(JunctionStopLines, ArmWithNoLanesInTheDirectionHasNoLine) {
 TEST(JunctionStopLines, DormantRecordIsIgnored) {
   RoadNetwork network;
   const JunctionId junction = make_cross(network);
-  const RoadId stranger = author(network, {Waypoint{200.0, 200.0}, Waypoint{260.0, 200.0}}, "stranger");
+  const RoadId stranger =
+      author(network, {Waypoint{200.0, 200.0}, Waypoint{260.0, 200.0}}, "stranger");
 
   // A record naming a road that is not an arm of this junction lies dormant:
   // it neither adds a line nor disturbs the four derived ones.
-  author_record(network,
-                junction,
-                StopLine{.arm = RoadEnd{.road = stranger, .contact = ContactPoint::End},
-                         .distance = 12.0});
+  author_record(
+      network,
+      junction,
+      StopLine{.arm = RoadEnd{.road = stranger, .contact = ContactPoint::End}, .distance = 12.0});
 
   const std::vector<JunctionStopLineInfo> lines = junction_stoplines(network, junction);
   EXPECT_EQ(lines.size(), 4U);
@@ -328,4 +328,114 @@ TEST(JunctionStopLines, LegacyObjectOnTheFarHalfDoesNotSuppress) {
   ASSERT_TRUE(network.add_object(seed.arm.road, std::move(far_away)).is_valid());
 
   EXPECT_EQ(junction_stoplines(network, junction).size(), 4U);
+}
+
+// --- mesher (WP4) ------------------------------------------------------------
+//
+// Stop lines are the only marking with no Object behind them: the mesher
+// derives them from the junction at each road end via the same
+// junction_stoplines() the writer uses, so the viewport and the export cannot
+// drift.
+
+namespace {
+
+std::size_t stopline_submeshes(const RoadNetwork& network) {
+  const roadmaker::NetworkMesh scene = roadmaker::build_network_mesh(network);
+  std::size_t n = 0;
+  for (const roadmaker::RoadMesh& road : scene.roads) {
+    for (const roadmaker::SubMesh& marking : road.markings) {
+      if (marking.name.find("stopline") != std::string::npos) {
+        ++n;
+      }
+    }
+  }
+  return n;
+}
+
+/// Centroid of every stop-line submesh vertex on `road_odr_id`, or nullopt when
+/// that road paints none.
+std::optional<std::array<double, 3>> stopline_centroid(const RoadNetwork& network, RoadId road_id) {
+  const roadmaker::NetworkMesh scene = roadmaker::build_network_mesh(network);
+  std::array<double, 3> sum{};
+  std::size_t count = 0;
+  for (const roadmaker::RoadMesh& road : scene.roads) {
+    if (!(road.road == road_id)) {
+      continue;
+    }
+    for (const roadmaker::SubMesh& marking : road.markings) {
+      if (marking.name.find("stopline") == std::string::npos) {
+        continue;
+      }
+      for (std::size_t i = 0; i + 2 < marking.positions.size(); i += 3) {
+        sum[0] += marking.positions[i];
+        sum[1] += marking.positions[i + 1];
+        sum[2] += marking.positions[i + 2];
+        ++count;
+      }
+    }
+  }
+  if (count == 0) {
+    return std::nullopt;
+  }
+  const double n = static_cast<double>(count);
+  return std::array<double, 3>{sum[0] / n, sum[1] / n, sum[2] / n};
+}
+
+} // namespace
+
+TEST(JunctionStopLineMesh, FourWayPaintsFourLinesWithNoAuthoring) {
+  RoadNetwork network;
+  make_cross(network);
+  EXPECT_EQ(stopline_submeshes(network), 4U) << "the defaults mesh without anyone authoring them";
+}
+
+TEST(JunctionStopLineMesh, ChangingTheDistanceMovesTheQuad) {
+  RoadNetwork network;
+  const JunctionId junction = make_cross(network);
+  const RoadEnd arm = junction_stoplines(network, junction).front().arm;
+
+  const std::optional<std::array<double, 3>> before = stopline_centroid(network, arm.road);
+  ASSERT_TRUE(before.has_value());
+
+  ASSERT_TRUE(roadmaker::edit::set_stopline_distance(network, junction, arm, 12.0)
+                  ->apply(network)
+                  .has_value());
+  const std::optional<std::array<double, 3>> after = stopline_centroid(network, arm.road);
+  ASSERT_TRUE(after.has_value());
+
+  // The arm runs along a world axis, so a bigger setback moves the band a
+  // matching distance back from the junction.
+  const double moved = std::hypot((*after)[0] - (*before)[0], (*after)[1] - (*before)[1]);
+  EXPECT_NEAR(moved, 12.0 - kStopLineDefaultDistance, 1e-6);
+}
+
+TEST(JunctionStopLineMesh, ALegacyObjectMeshesOnceNotTwice) {
+  RoadNetwork network;
+  const JunctionId junction = make_cross(network);
+  const JunctionStopLineInfo seed = junction_stoplines(network, junction).front();
+
+  Object legacy;
+  legacy.road = seed.arm.road;
+  legacy.odr_id = "900";
+  legacy.type_str = "roadMark";
+  legacy.subtype = "signalLines";
+  legacy.s = seed.s_center;
+  legacy.t = seed.t_center;
+  legacy.length = kStopLineThickness;
+  legacy.width = seed.span;
+  ASSERT_TRUE(network.add_object(seed.arm.road, std::move(legacy)).is_valid());
+
+  // Three derived bands + the legacy object's own "stop line" submesh: the
+  // suppressed arm is painted exactly once, by the object branch.
+  EXPECT_EQ(stopline_submeshes(network), 3U);
+  const roadmaker::NetworkMesh scene = roadmaker::build_network_mesh(network);
+  std::size_t object_stop_lines = 0;
+  for (const roadmaker::RoadMesh& road : scene.roads) {
+    for (const roadmaker::SubMesh& marking : road.markings) {
+      if (marking.name.find("stop line") != std::string::npos) {
+        ++object_stop_lines;
+      }
+    }
+  }
+  EXPECT_EQ(object_stop_lines, 1U);
 }

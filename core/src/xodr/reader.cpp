@@ -87,7 +87,6 @@ public:
   }
 
 private:
-
   /// The fields of one `<userData code="rm:stopline">`, already validated.
   struct ParsedStopLine {
     ContactPoint contact = ContactPoint::Start;
@@ -106,6 +105,7 @@ private:
     std::string fragment; ///< the userData element verbatim, for the fallback
     Object fallback;
   };
+
   // --- diagnostics ---------------------------------------------------------
 
   /// `rule` is the ASAM checker-rule UID (roadmaker/xodr/rules.hpp) when a
@@ -870,7 +870,8 @@ private:
       // StopLine record rather than added to the arena — see resolve_stoplines.
       // The element is kept verbatim so an object that fails to resolve can be
       // restored with its record intact.
-      if (name == "userData" && std::string_view(child.attribute("code").value()) == "rm:stopline") {
+      if (name == "userData" &&
+          std::string_view(child.attribute("code").value()) == "rm:stopline") {
         if (auto data = parse_stopline_data(child, fmt::format("{}/userData", location))) {
           stopline = std::move(*data);
           stopline_fragment = node_to_string(child);
@@ -925,10 +926,10 @@ private:
     if (const pugi::xml_attribute attr = node.attribute("distance")) {
       const auto value = to_double(attr.value());
       if (!value.has_value() || !std::isfinite(*value) || *value < 0.0) {
-        diag(Severity::Warning,
-             location,
-             fmt::format("rm:stopline userData with malformed distance '{}' ignored",
-                         attr.value()));
+        diag(
+            Severity::Warning,
+            location,
+            fmt::format("rm:stopline userData with malformed distance '{}' ignored", attr.value()));
         return std::nullopt;
       }
       data.distance = *value;

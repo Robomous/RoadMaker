@@ -1,7 +1,5 @@
 #include "roadmaker/mesh/junction_stoplines.hpp"
 
-#include "../edit/markings_detail.hpp"
-#include "mesh_detail.hpp"
 #include "roadmaker/edit/connection.hpp"
 #include "roadmaker/road/junction.hpp"
 #include "roadmaker/road/network.hpp"
@@ -12,6 +10,9 @@
 #include <array>
 #include <optional>
 #include <vector>
+
+#include "../edit/markings_detail.hpp"
+#include "mesh_detail.hpp"
 
 namespace roadmaker {
 
@@ -105,10 +106,10 @@ std::vector<JunctionStopLineInfo> junction_stoplines(const RoadNetwork& network,
     info.arm = arm;
     info.max_distance = length - kStopLineThickness;
     info.distance_authored = record != nullptr && record->distance.has_value();
-    info.distance = std::clamp(info.distance_authored ? *record->distance
-                                                      : kStopLineDefaultDistance,
-                               0.0,
-                               info.max_distance);
+    info.distance =
+        std::clamp(info.distance_authored ? *record->distance : kStopLineDefaultDistance,
+                   0.0,
+                   info.max_distance);
     info.flipped = flipped;
     info.authored = record != nullptr;
     info.crosswalk_odr_id = record != nullptr ? record->crosswalk_odr_id : std::string{};
@@ -119,8 +120,8 @@ std::vector<JunctionStopLineInfo> junction_stoplines(const RoadNetwork& network,
     // depends on which end of the arm the junction is at; `distance` is already
     // clamped so the band always lands whole on the road.
     const double half = kStopLineThickness / 2.0;
-    info.s_center = *facing == ContactPoint::Start ? info.distance + half
-                                                   : length - info.distance - half;
+    info.s_center =
+        *facing == ContactPoint::Start ? info.distance + half : length - info.distance - half;
 
     const mesh_detail::StationFrame frame = mesh_detail::make_frame(*road, info.s_center);
     const std::array<double, 3> left = mesh_detail::lateral_point(frame, t_max);

@@ -1,8 +1,7 @@
 #include "roadmaker/xodr/writer.hpp"
 
-#include "roadmaker/mesh/junction_stoplines.hpp"
-
 #include "roadmaker/geometry/reference_line.hpp"
+#include "roadmaker/mesh/junction_stoplines.hpp"
 #include "roadmaker/tol.hpp"
 #include "roadmaker/xodr/rules.hpp"
 
@@ -13,9 +12,9 @@
 #include <cmath>
 #include <cstdlib>
 #include <fstream>
+#include <map>
 #include <numbers>
 #include <optional>
-#include <map>
 #include <set>
 #include <sstream>
 #include <string>
@@ -757,8 +756,8 @@ using StopLineExports = std::map<std::string, std::vector<StopLineExport>>;
 void write_stopline_data(pugi::xml_node object_node, const JunctionStopLineInfo& info) {
   pugi::xml_node node = object_node.append_child("userData");
   node.append_attribute("code").set_value("rm:stopline");
-  node.append_attribute("contact")
-      .set_value(info.arm.contact == ContactPoint::End ? "end" : "start");
+  node.append_attribute("contact").set_value(info.arm.contact == ContactPoint::End ? "end"
+                                                                                   : "start");
   if (info.distance_authored) {
     set_num(node, "distance", info.distance);
   }
