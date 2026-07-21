@@ -775,6 +775,13 @@ bool spans_round_trip(const RoadNetwork& network, const Junction& junction) {
 struct StopLineExport {
   JunctionStopLineInfo info;
   std::string odr_id;
+
+  /// The owning junction's odr id, set ONLY for a span (virtual) junction's
+  /// faces. An arm line needs no such back-reference — the reader recovers its
+  /// junction from the road end — but a span face's RoadEnd is a pseudo key
+  /// that resolves to no junction at all, so the reference is what makes the
+  /// record readable back (p4-s4, issue #319).
+  std::string span_junction_odr_id;
 };
 
 /// Materialized stop lines keyed by the owning road's odr id. Built once per
@@ -788,11 +795,22 @@ using StopLineExports = std::map<std::string, std::vector<StopLineExport>>;
 /// that lets the reader absorb the object back into a StopLine. Everything else
 /// is omitted at its default, so a fully derived line exports as a bare tag and
 /// stays byte-stable.
-void write_stopline_data(pugi::xml_node object_node, const JunctionStopLineInfo& info) {
+///
+/// `junction` is written for a SPAN junction's faces only (p4-s4, issue #319).
+/// There `contact` names which FACE of the span the line guards rather than a
+/// junction-facing road end, and no road end of the span road belongs to the
+/// junction at all — so without the junction's id the reader has nothing to key
+/// the record back on. Its absence is exactly what selects the arm path on
+/// read, which is why an arm line's bytes are untouched.
+void write_stopline_data(pugi::xml_node object_node, const StopLineExport& line) {
+  const JunctionStopLineInfo& info = line.info;
   pugi::xml_node node = object_node.append_child("userData");
   node.append_attribute("code").set_value("rm:stopline");
   node.append_attribute("contact").set_value(info.arm.contact == ContactPoint::End ? "end"
                                                                                    : "start");
+  if (!line.span_junction_odr_id.empty()) {
+    node.append_attribute("junction").set_value(line.span_junction_odr_id.c_str());
+  }
   if (info.distance_authored) {
     set_num(node, "distance", info.distance);
   }
@@ -829,7 +847,7 @@ void write_stopline_object(pugi::xml_node objects_node, const StopLineExport& li
   node.append_attribute("orientation").set_value(orientation_name(ObjectOrientation::None));
   set_num(node, "length", line.info.thickness);
   set_num(node, "width", line.info.span);
-  write_stopline_data(node, line.info);
+  write_stopline_data(node, line);
 }
 
 /// Solves every junction's stop lines and buckets them by owning road, minting
@@ -848,6 +866,7 @@ StopLineExports build_stopline_exports(const RoadNetwork& network) {
   struct Pending {
     std::string junction_odr_id;
     std::string road_odr_id;
+    bool span = false;
     JunctionStopLineInfo info;
   };
 
@@ -859,7 +878,13 @@ StopLineExports build_stopline_exports(const RoadNetwork& network) {
     // then SUPPRESSES the derived line and lands in arena order, breaking
     // write→parse→write. Emit nothing rather than something unreadable; the
     // junction is degenerate (below 2 arms) and already persists as arm-less.
-    if (!arms_round_trip(network, junction)) {
+    //
+    // A span junction's faces are keyed on the junction id instead, so their
+    // gate is the one that decides whether that junction is written as virtual
+    // at all — all-or-nothing, exactly like rm:spans (#319, #311). Never write
+    // what you cannot read back.
+    const bool span = !junction.spans.empty();
+    if (span ? !spans_round_trip(network, junction) : !arms_round_trip(network, junction)) {
       return;
     }
     for (const JunctionStopLineInfo& info : junction_stoplines(network, junction_id)) {
@@ -867,8 +892,10 @@ StopLineExports build_stopline_exports(const RoadNetwork& network) {
       if (road == nullptr) {
         continue;
       }
-      pending.push_back(
-          Pending{.junction_odr_id = junction.odr_id, .road_odr_id = road->odr_id, .info = info});
+      pending.push_back(Pending{.junction_odr_id = junction.odr_id,
+                                .road_odr_id = road->odr_id,
+                                .span = span,
+                                .info = info});
     }
   });
   std::ranges::sort(pending, [](const Pending& a, const Pending& b) {
@@ -889,7 +916,9 @@ StopLineExports build_stopline_exports(const RoadNetwork& network) {
     }
     taken.insert(id);
     out[entry.road_odr_id].push_back(
-        StopLineExport{.info = std::move(entry.info), .odr_id = std::move(id)});
+        StopLineExport{.info = std::move(entry.info),
+                       .odr_id = std::move(id),
+                       .span_junction_odr_id = entry.span ? entry.junction_odr_id : std::string{}});
   }
   return out;
 }

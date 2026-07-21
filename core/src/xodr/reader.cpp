@@ -93,6 +93,10 @@ private:
     std::optional<double> distance;
     bool flipped = false;
     std::string crosswalk;
+
+    /// `@junction` — present only on a SPAN junction's face (p4-s4, issue
+    /// #319). Empty selects the arm resolution path.
+    std::string junction;
   };
 
   /// A stop line absorbed from an object, waiting for junctions to parse so its
@@ -947,11 +951,12 @@ private:
     }
 
     data.crosswalk = node.attribute("crosswalk").value();
+    data.junction = node.attribute("junction").value();
 
     // An attribute we do not model is reported but does not cost the record —
     // a newer RoadMaker's extra field must not silently delete the stop line.
-    static constexpr std::array<std::string_view, 5> kKnown{
-        "code", "contact", "distance", "flipped", "crosswalk"};
+    static constexpr std::array<std::string_view, 6> kKnown{
+        "code", "contact", "distance", "flipped", "crosswalk", "junction"};
     for (const pugi::xml_attribute attr : node.attributes()) {
       if (std::ranges::find(kKnown, std::string_view(attr.name())) == kKnown.end()) {
         diag(Severity::Warning,
@@ -962,20 +967,55 @@ private:
     return data;
   }
 
-  /// Pass 2: fold every absorbed stop line into its junction's record. The arm
-  /// is the road end named by `contact`; junctions parse before this, so
-  /// junction_at_end resolves. A record that carries nothing beyond its identity
-  /// is a pure derived default and is absorbed silently — re-deriving it
-  /// reproduces the same line. A road end with no junction cannot own a record
-  /// at all, so the object is restored live with its userData verbatim.
+  /// Resolves the junction that owns a span (virtual) junction's stop-line face
+  /// (p4-s4, issue #319) — the SECOND resolution path, and a separate one on
+  /// purpose: a span junction has no arms, no connections and no road links, so
+  /// nothing the arm path keys on (junction_at_end) can ever match it.
+  ///
+  /// The key is the span itself: `@junction` names the owning junction and the
+  /// enclosing `<road>` names the span road, and the record is accepted only
+  /// when that junction really carries a span on that road. Geometry is
+  /// deliberately NOT the key — a face station is clamped to the road, so two
+  /// spans that both begin inside the first half-thickness of a road would
+  /// solve to the same station and the mapping would stop being injective.
+  std::optional<JunctionId> span_junction_for(const PendingStopLine& pending) {
+    const JunctionId junction_id = network().find_junction(pending.data.junction);
+    if (!junction_id.is_valid()) {
+      return std::nullopt;
+    }
+    const Junction& junction = *network().junction(junction_id);
+    const bool spans_the_road = std::ranges::any_of(
+        junction.spans, [&](const SpanArm& span) { return span.road == pending.road; });
+    return spans_the_road ? std::optional<JunctionId>{junction_id} : std::nullopt;
+  }
+
+  /// Pass 2: fold every absorbed stop line into its junction's record. Two
+  /// resolution paths, selected by whether `@junction` is present:
+  ///
+  ///  - absent: an ARM line. The arm is the road end named by `contact`;
+  ///    junctions parse before this, so junction_at_end resolves.
+  ///  - present: a SPAN junction's FACE, resolved by span_junction_for(). Here
+  ///    `contact` names which face of the span it guards, not a road end.
+  ///
+  /// A record that carries nothing beyond its identity is a pure derived
+  /// default and is absorbed silently — re-deriving it reproduces the same line.
+  /// A record that resolves to no junction at all cannot be owned, so the object
+  /// is restored live with its userData verbatim.
   void resolve_stoplines() {
     for (PendingStopLine& pending : pending_stoplines_) {
       const RoadEnd arm{.road = pending.road, .contact = pending.data.contact};
-      const std::optional<JunctionId> junction_id = edit::junction_at_end(network(), arm);
+      const bool is_span_face = !pending.data.junction.empty();
+      const std::optional<JunctionId> junction_id =
+          is_span_face ? span_junction_for(pending) : edit::junction_at_end(network(), arm);
       if (!junction_id.has_value()) {
         diag(Severity::Warning,
              pending.location,
-             "rm:stopline names a road end with no junction — kept as a plain object");
+             is_span_face
+                 ? fmt::format("rm:stopline names junction '{}', which is not a span junction of "
+                               "this road — kept as a plain object",
+                               pending.data.junction)
+                 : std::string(
+                       "rm:stopline names a road end with no junction — kept as a plain object"));
         pending.fallback.preserved.children.push_back(std::move(pending.fragment));
         network().add_object(pending.road, std::move(pending.fallback));
         continue;

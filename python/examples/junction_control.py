@@ -20,6 +20,11 @@ road links at all, and it is always locked. It persists as a spec-valid
 `<junction type="virtual" mainRoad=… orientation="none" sStart=… sEnd=…>` with
 the full span list on `<userData code="rm:spans">`.
 
+Having no arms, a span junction derives its stop lines differently: TWO FACES
+per span, one guarding each edge, keyed by a pseudo road end (start = the
+s_start face, end = the s_end face). The ordinary stop-line commands take that
+key where an arm's road end would go.
+
 Every step below is ONE undoable command, and every step is checked for a
 byte-identical save → reload → save.
 
@@ -192,7 +197,28 @@ def main() -> int:
         except ValueError as error:
             print(f"  refused ({label}): {error}")
 
-    # --- 8. save ------------------------------------------------------------
+    # --- 8. stop lines on a span junction -----------------------------------
+    # A span junction has no arms, so it derives FACES instead: two per SpanArm,
+    # one guarding each edge of the span, keyed by a pseudo road end — start =
+    # the s_start face, end = the s_end face. The band sits OUTSIDE the span,
+    # where traffic approaching the crossing has to stop.
+    span_junction = network.find_junction("2")
+    faces = rm.junction_stoplines(network, span_junction)
+    print("\nstop-line faces of the single-road span junction:")
+    for face in faces:
+        assert face.span_face
+        side = "upstream" if face.arm.contact == rm.ContactPoint.START else "downstream"
+        print(f"  {side:<10} s={face.s_center:.2f} t={face.t_center:.2f} span={face.span:.2f} m")
+
+    # The same stop-line commands an arm's line takes; the face key goes in
+    # where the arm would.
+    upstream = rm.RoadEnd(network.find_road("8"), rm.ContactPoint.START)
+    stack.push(network, rm.edit.set_stopline_distance(network, span_junction, upstream, 9.0))
+    moved = next(f for f in rm.junction_stoplines(network, span_junction) if f.arm == upstream)
+    print(f"  after set_stopline_distance(9.0): upstream s={moved.s_center:.2f}")
+    check_round_trip(network, "span stop line")
+
+    # --- 9. save ------------------------------------------------------------
     findings = rm.validate_network(network)
     print(f"\nvalidate_network: {len(findings)} findings")
     for finding in findings:

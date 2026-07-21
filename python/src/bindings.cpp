@@ -1206,7 +1206,14 @@ NB_MODULE(_roadmaker, m) {
   nb::class_<roadmaker::JunctionStopLineInfo>(m, "JunctionStopLineInfo")
       .def_ro("arm",
               &roadmaker::JunctionStopLineInfo::arm,
-              "The junction-facing road end this line belongs to — its identity.")
+              "The junction-facing road end this line belongs to — its identity. "
+              "On a span (virtual) junction it is a pseudo road end naming which "
+              "FACE of the span the line guards: start = the s_start face, end = "
+              "the s_end face.")
+      .def_ro("span_face",
+              &roadmaker::JunctionStopLineInfo::span_face,
+              "True when this line is one of the two faces of a span (virtual) "
+              "junction rather than an arm's line, i.e. `arm` is a pseudo road end.")
       .def_ro("distance",
               &roadmaker::JunctionStopLineInfo::distance,
               "Effective setback [m] from the junction mouth, clamped to "
