@@ -128,6 +128,11 @@ private:
   /// The default Tree asset from the merged Library — the prop the Prop Point and
   /// Prop Curve tools place (p6-s4). An empty item when the Library has none.
   [[nodiscard]] LibraryItem resolve_default_prop_item() const;
+
+  /// The Library's default signal asset (p4-s7, issue #228) — what a Signal
+  /// tool click on a road places, so the tool and the Library drop land the
+  /// same head.
+  [[nodiscard]] LibraryItem resolve_default_signal_item() const;
   /// The default crosswalk/marking asset from the merged Library — the asset the
   /// Marking Curve tool authors (p3-s4). An empty item when the Library has none.
   [[nodiscard]] LibraryItem resolve_default_marking_curve_item() const;

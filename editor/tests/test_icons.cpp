@@ -90,6 +90,7 @@ TEST(Icons, EveryMappedIconIsBundled) {
                                "junction-span",
                                "lane-section",
                                "maneuver",
+                               "signal",
                                "marking-point",
                                "marking-curve",
                                "template-highway",

@@ -69,6 +69,12 @@ SignalId RoadNetwork::add_signal(RoadId road_id, Signal value) {
   return signals_.emplace(std::move(value));
 }
 
+ControllerId RoadNetwork::add_controller(Controller value) {
+  // No owner check: <controller> is a child of <OpenDRIVE> (§14.6), so there is
+  // no road or junction whose staleness could reject it.
+  return controllers_.emplace(std::move(value));
+}
+
 SurfaceId RoadNetwork::create_surface(Surface value) {
   return surfaces_.emplace(std::move(value));
 }
@@ -122,6 +128,10 @@ bool RoadNetwork::erase_object(ObjectId object_id) {
 
 bool RoadNetwork::erase_signal(SignalId signal_id) {
   return signals_.erase(signal_id);
+}
+
+bool RoadNetwork::erase_controller(ControllerId controller_id) {
+  return controllers_.erase(controller_id);
 }
 
 bool RoadNetwork::erase_junction(JunctionId junction_id) {
@@ -188,6 +198,14 @@ Expected<void> RoadNetwork::erase_signal_exact(SignalId id) {
   return signals_.erase_exact(id);
 }
 
+Expected<ControllerId> RoadNetwork::restore_controller(ControllerId id, Controller value) {
+  return controllers_.restore(id, std::move(value));
+}
+
+Expected<void> RoadNetwork::erase_controller_exact(ControllerId id) {
+  return controllers_.erase_exact(id);
+}
+
 Expected<SurfaceId> RoadNetwork::restore_surface(SurfaceId id, Surface value) {
   return surfaces_.restore(id, std::move(value));
 }
@@ -218,6 +236,10 @@ Expected<void> RoadNetwork::release_object_reserved(ObjectId id) {
 
 Expected<void> RoadNetwork::release_signal_reserved(SignalId id) {
   return signals_.release_reserved(id);
+}
+
+Expected<void> RoadNetwork::release_controller_reserved(ControllerId id) {
+  return controllers_.release_reserved(id);
 }
 
 Expected<void> RoadNetwork::release_surface_reserved(SurfaceId id) {

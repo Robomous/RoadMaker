@@ -2,10 +2,12 @@
 
 #include "roadmaker/road/id.hpp"
 #include "roadmaker/road/road.hpp"
+#include "roadmaker/xodr/raw_xml.hpp"
 
 #include <cstddef>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
 
@@ -221,6 +223,79 @@ struct Maneuver {
 /// and lets a reader reject a corrupt record outright.
 inline constexpr std::size_t kMaxManeuverControlPoints = 64;
 
+/// <junction><controller> (ASAM OpenDRIVE 1.9.0 §12.14, Table 84; identical in
+/// 1.8.1 §12.14) — one member of this junction's signal SYNCHRONIZATION group.
+///
+/// It is a REFERENCE, never a definition: "Lists the controllers that should be
+/// grouped in a synchronization group (limited to that particular junction)."
+/// The controller itself is the top-level `<controller>` (§14.6) living in
+/// RoadNetwork's controller arena; only its string @id appears here, so a
+/// dangling reference from third-party input survives a round trip untouched.
+///
+/// Sparse: empty on every unsignalized junction, so a file that predates the
+/// feature re-exports byte-identically. Always empty on a span (virtual)
+/// junction — "Virtual junctions shall not have controllers and therefore no
+/// traffic lights" (asam.net:xodr:1.9.0:junctions.virtual.no_controllers).
+struct JunctionController {
+  std::string controller_odr_id;    ///< @id — required, id of the controller
+  std::optional<unsigned> sequence; ///< @sequence — optional nonNegativeInteger
+  std::string type;                 ///< @type — optional, free text
+
+  /// Unknown attributes and unmodeled children, preserved verbatim (the
+  /// never-drop contract). Table 84 has exactly three attributes and no
+  /// children, so this is empty for anything RoadMaker writes.
+  RawXml preserved;
+};
+
+/// The physical props that represent ONE logical signal (p4-s7, issue #228).
+///
+/// LAYER 1, RoadMaker-only: ASAM models a signal's appearance only through
+/// `<signal>`'s own bounding box (§14.1 Table 122) — there is no carrier tying a
+/// signal to the `<object>`s that render it. Today one signal is one prop, so
+/// the list holds one id; it is a LIST because #323 (assemblies) replaces that
+/// one model with an assembly's parts and must need no schema change.
+///
+/// Sparse and dormant-tolerant like every sibling record: a signal placed
+/// without a mount has no entry, and an entry whose signal or object no longer
+/// exists is ignored and never written.
+struct SignalMount {
+  /// The mount's identity: the odr id of the logical `<signal>`. A string, for
+  /// the same reason `Control::signal_odr_id` is one.
+  std::string signal_odr_id;
+
+  /// The odr ids of the `<object>`s that physically represent it, in placement
+  /// order. Bounded by `kMaxSignalMountParts`.
+  std::vector<std::string> object_odr_ids;
+};
+
+/// Upper bound on `SignalMount::object_odr_ids`. An assembly is a handful of
+/// parts; the bound keeps the persistence grammar's list short and lets a
+/// reader reject a corrupt record outright, exactly as
+/// `kMaxManeuverControlPoints` does.
+inline constexpr std::size_t kMaxSignalMountParts = 16;
+
+/// Which auto-signalization template was applied to a junction (p4-s7, issue
+/// #228), so the tool can show it and re-apply coherently.
+///
+/// LAYER 1, RoadMaker-only: the `<signal>`s and `<controller>`s ARE the export
+/// (ADR-0008 Layer 0) and a foreign reader loses nothing by ignoring this — it
+/// records only HOW they were authored. Empty `tmpl` ⇒ nothing was applied and
+/// nothing is written, mirroring `Junction::material`.
+struct Signalization {
+  /// One of `kSignalizationTemplates`. Empty ⇒ not signalized by a template.
+  std::string tmpl;
+
+  /// The prop model id mounted with each placed signal; empty ⇒ none. This is
+  /// the #323 extension point — an assembly id slots straight in.
+  std::string mount_model;
+};
+
+/// The template tokens `Signalization::tmpl` may carry, and the exact spellings
+/// the `rm:signal` grammar uses. The engine's `SignalizeTemplate` enum
+/// (roadmaker::edit) maps onto these one-to-one.
+inline constexpr std::string_view kSignalizationTemplates[] = {
+    "protected_left", "two_phase", "all_way_stop", "two_way_stop"};
+
 /// Membership span of a virtual (span) junction: a stretch [s_start, s_end] of
 /// one road that belongs to the junction without cutting that road.
 ///
@@ -299,6 +374,23 @@ struct Junction {
   ///
   /// Always empty on a span (virtual) junction — it has no connections at all.
   std::vector<Maneuver> maneuvers;
+
+  /// The junction's signal SYNCHRONIZATION group (§12.14): the top-level
+  /// controllers whose signal groups belong together here, by string id.
+  /// Sparse — empty on every unsignalized junction, and always empty on a span
+  /// (virtual) junction, which "shall not have controllers and therefore no
+  /// traffic lights" (asam.net:xodr:1.9.0:junctions.virtual.no_controllers).
+  std::vector<JunctionController> junction_controllers;
+
+  /// Which auto-signalization template produced this junction's signals, if
+  /// any (p4-s7, issue #228). Layer 1 authoring provenance only — the
+  /// `<signal>`/`<controller>` elements are Layer 0 truth.
+  Signalization signalization;
+
+  /// The physical props representing each placed signal (p4-s7, issue #228),
+  /// keyed by signal odr id. Sparse: a signal placed without a mount prop has
+  /// no entry, and an entry whose signal or object is gone lies dormant.
+  std::vector<SignalMount> signal_mounts;
 
   /// Bare catalog material name for the junction carriageway (the floor).
   /// Empty ⇒ the derived asphalt look, mirroring `Surface::material`.

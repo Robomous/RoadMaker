@@ -7,11 +7,13 @@
 #include "roadmaker/geometry/road_intersection.hpp"
 #include "roadmaker/mesh/junction_corners.hpp"
 #include "roadmaker/mesh/junction_maneuvers.hpp"
+#include "roadmaker/mesh/junction_signals.hpp"
 #include "roadmaker/mesh/junction_stoplines.hpp"
 #include "roadmaker/mesh/junction_surface_spans.hpp"
 #include "roadmaker/road/authoring.hpp"
 #include "roadmaker/road/network.hpp"
 #include "roadmaker/tol.hpp"
+#include "roadmaker/xodr/rules.hpp"
 
 #include <fmt/format.h>
 
@@ -20,9 +22,12 @@
 #include <cmath>
 #include <cstdlib>
 #include <functional>
+#include <limits>
 #include <numbers>
 #include <optional>
+#include <set>
 #include <span>
+#include <string_view>
 #include <utility>
 #include <variant>
 
@@ -49,6 +54,9 @@ struct Values {
   std::vector<std::pair<JunctionId, Junction>> junctions;
   std::vector<std::pair<ObjectId, Object>> objects;
   std::vector<std::pair<SignalId, Signal>> signals;
+  /// Signal controllers (§14.6). Top-level, owned by no road or junction, so
+  /// they sit beside `signals` rather than under anything (p4-s7, issue #228).
+  std::vector<std::pair<ControllerId, Controller>> controllers;
 };
 
 Expected<void> ensure_live(const RoadNetwork& network, const Values& values) {
@@ -82,6 +90,11 @@ Expected<void> ensure_live(const RoadNetwork& network, const Values& values) {
       return make_error(ErrorCode::InvalidArgument, "stale signal id");
     }
   }
+  for (const auto& [id, value] : values.controllers) {
+    if (network.controller(id) == nullptr) {
+      return make_error(ErrorCode::InvalidArgument, "stale controller id");
+    }
+  }
   return {};
 }
 
@@ -105,6 +118,9 @@ void write_values(RoadNetwork& network, const Values& values) {
   for (const auto& [id, value] : values.signals) {
     *network.signal(id) = value;
   }
+  for (const auto& [id, value] : values.controllers) {
+    *network.controller(id) = value;
+  }
 }
 
 /// Same ids as `ids`, values re-read from the network (post-mutation).
@@ -127,6 +143,9 @@ Values read_values(const RoadNetwork& network, const Values& ids) {
   }
   for (const auto& [id, value] : ids.signals) {
     out.signals.emplace_back(id, *network.signal(id));
+  }
+  for (const auto& [id, value] : ids.controllers) {
+    out.controllers.emplace_back(id, *network.controller(id));
   }
   return out;
 }
@@ -162,6 +181,11 @@ Expected<void> restore_values(RoadNetwork& network, const Values& values) {
       return tl::unexpected<Error>(restored.error());
     }
   }
+  for (const auto& [id, value] : values.controllers) {
+    if (auto restored = network.restore_controller(id, value); !restored.has_value()) {
+      return tl::unexpected<Error>(restored.error());
+    }
+  }
   return {};
 }
 
@@ -169,6 +193,13 @@ Expected<void> erase_values_exact(RoadNetwork& network, const Values& values) {
   // Leaf to root, so a partially-visible intermediate state never has a
   // parent without its children. Objects are pure leaves (a road erase would
   // otherwise cascade them) — erase them first.
+  // Controllers are the purest leaf of all: nothing in any arena points at
+  // one, and they point at signals only by string id (§14.6).
+  for (const auto& [id, value] : values.controllers) {
+    if (auto erased = network.erase_controller_exact(id); !erased.has_value()) {
+      return erased;
+    }
+  }
   for (const auto& [id, value] : values.signals) {
     if (auto erased = network.erase_signal_exact(id); !erased.has_value()) {
       return erased;
@@ -209,6 +240,9 @@ Expected<void> erase_values_exact(RoadNetwork& network, const Values& values) {
 /// slot from a not-actually-reverted command) into a harmless no-op, so the
 /// void-return, ignore-each-result contract is safe.
 void release_values_reserved(RoadNetwork& network, const Values& values) {
+  for (const auto& [id, value] : values.controllers) {
+    (void)network.release_controller_reserved(id);
+  }
   for (const auto& [id, value] : values.signals) {
     (void)network.release_signal_reserved(id);
   }
@@ -6761,6 +6795,640 @@ std::unique_ptr<Command> move_signal(const RoadNetwork& network,
       std::make_unique<GenericCommand>(std::string(kName), DirtySet{.objects = {current->road}});
   command->before.signals.emplace_back(signal, *current);
   command->after.signals.emplace_back(signal, std::move(moved));
+  return command;
+}
+
+// --- signalization (p4-s7, issue #228) ---------------------------------------
+
+namespace {
+
+/// Catalog identity of one authored signal: exactly the (type, subtype,
+/// country) triple §14.1 says a signal is only unique in combination with.
+struct SignalCode {
+  std::string_view type;
+  std::string_view subtype;
+  std::string_view country;
+};
+
+/// The vehicle traffic light.
+///
+/// ASAM OpenDRIVE 1.9.0 §14.1 (14_signals.md:61-65): "some elements that are
+/// considered signals in ASAM OpenDRIVE, for example traffic lights, do not
+/// have any official @type and @subtype representation, these are specified in
+/// the Signal reference 1.0.0. They can be used with the appropriate @type,
+/// @subtype and the @country='OpenDRIVE'." The local reference names the
+/// VEHICLE head as type 1000001 / subtype -1 (06_general_architecture.md:216, a
+/// `<signalRegulations type="1000001" subType="-1">` carrying
+/// `turnOnRedAllowed` — a semantic that exists only for a vehicle traffic
+/// light) and the pedestrian head as 1000002 (14_signals.md:408-415).
+/// RoadMaker already places 1000001/-1/OpenDRIVE from the library-drop path, so
+/// the engine authors the same code rather than a second spelling of it.
+constexpr SignalCode kTrafficLightCode{.type = "1000001", .subtype = "-1", .country = "OpenDRIVE"};
+
+/// The STOP sign.
+///
+/// NO code is invented here. The local ASAM reference names no
+/// OpenDRIVE-catalog code for a stop or a yield sign: §14.8 mentions the stop
+/// sign only as an example of `<priority>` semantics (14_signals.md:1019), and
+/// every concrete sign code the reference spells out is a German StVO one (274,
+/// 101, 1010, 1012, 1040, 386, 405 — 14_signals.md:164, 726-738, 896-902). So
+/// the engine reuses the StVO code RoadMaker itself already places from the
+/// library-drop path: 206 "Halt! Vorfahrt gewähren", @country="DE".
+constexpr SignalCode kStopSignCode{.type = "206", .subtype = "-1", .country = "DE"};
+
+/// Mounting height [m] above the road surface. §14.1 prescribes none (it only
+/// recommends @height/@width "for proper representation"), so these are
+/// RoadMaker authoring defaults: a head hung at driver-visible height and a
+/// plate at post height. The reference's own traffic-light example uses
+/// zOffset="3.03" (14_signals.md:407).
+constexpr double kLightHeadZOffset = 3.0;
+constexpr double kSignPlateZOffset = 2.2;
+
+/// Extra outboard clearance [m] between an approach's through head and its
+/// protected-left head, so the two never coincide.
+constexpr double kProtectedLeftHeadSpacing = 0.7;
+
+bool signalize_template_is_dynamic(SignalizeTemplate tmpl) {
+  return tmpl == SignalizeTemplate::FourWayProtectedLeft || tmpl == SignalizeTemplate::TwoPhase;
+}
+
+/// The persistence token for `tmpl`. Indexes kSignalizationTemplates rather
+/// than spelling fresh string literals, so the enum and the rm:signal grammar
+/// cannot drift — the writer silently drops any other spelling.
+std::string_view signalize_template_token(SignalizeTemplate tmpl) {
+  switch (tmpl) {
+  case SignalizeTemplate::FourWayProtectedLeft:
+    return kSignalizationTemplates[0]; // protected_left
+  case SignalizeTemplate::TwoPhase:
+    return kSignalizationTemplates[1]; // two_phase
+  case SignalizeTemplate::AllWayStop:
+    return kSignalizationTemplates[2]; // all_way_stop
+  case SignalizeTemplate::TwoWayStop:
+    return kSignalizationTemplates[3]; // two_way_stop
+  }
+  return {};
+}
+
+std::optional<SignalizeTemplate> signalize_template_from_token(std::string_view token) {
+  for (const SignalizeTemplate tmpl : {SignalizeTemplate::FourWayProtectedLeft,
+                                       SignalizeTemplate::TwoPhase,
+                                       SignalizeTemplate::AllWayStop,
+                                       SignalizeTemplate::TwoWayStop}) {
+    if (signalize_template_token(tmpl) == token) {
+      return tmpl;
+    }
+  }
+  return std::nullopt;
+}
+
+SignalCode signalize_template_code(SignalizeTemplate tmpl) {
+  return signalize_template_is_dynamic(tmpl) ? kTrafficLightCode : kStopSignCode;
+}
+
+bool signal_has_code(const Signal& signal, const SignalCode& code) {
+  return signal.type == code.type && signal.subtype == code.subtype &&
+         signal.country == code.country;
+}
+
+/// Mints odr ids unique within a class and legal in every rm:* record value
+/// (the writer's `[A-Za-z0-9_.-]+` alphabet — decimal digits qualify).
+class OdrIdMinter {
+public:
+  explicit OdrIdMinter(std::set<std::string> taken) : taken_(std::move(taken)) {}
+
+  std::string next() {
+    std::string candidate;
+    do {
+      candidate = std::to_string(cursor_++);
+    } while (!taken_.insert(candidate).second);
+    return candidate;
+  }
+
+private:
+  std::set<std::string> taken_;
+  unsigned long long cursor_ = 1;
+};
+
+std::set<std::string> live_signal_odr_ids(const RoadNetwork& network) {
+  std::set<std::string> out;
+  network.for_each_signal([&](SignalId, const Signal& signal) { out.insert(signal.odr_id); });
+  return out;
+}
+
+std::set<std::string> live_object_odr_ids(const RoadNetwork& network) {
+  std::set<std::string> out;
+  network.for_each_object([&](ObjectId, const Object& object) { out.insert(object.odr_id); });
+  return out;
+}
+
+std::set<std::string> live_controller_odr_ids(const RoadNetwork& network) {
+  std::set<std::string> out;
+  network.for_each_controller(
+      [&](ControllerId, const Controller& controller) { out.insert(controller.odr_id); });
+  return out;
+}
+
+/// Groups the approaches into signal AXES by clustering their travel headings.
+///
+/// The rule, deliberately arm-count-agnostic: walk the approaches in the
+/// junction's connection order; the first unassigned one opens an axis, and the
+/// still-unassigned approach whose heading is CLOSEST to opposite it — within
+/// kSignalizeAxisTolerance of exactly pi apart — joins it. An axis therefore
+/// holds one or two arms, and an arm with no opposite partner (the stem of a T,
+/// the fifth leg of a star) forms its own single-arm axis instead of being
+/// forced into someone else's phase.
+std::vector<std::vector<std::size_t>>
+cluster_signal_axes(const std::vector<JunctionApproachInfo>& approaches) {
+  std::vector<bool> assigned(approaches.size(), false);
+  std::vector<std::vector<std::size_t>> axes;
+  for (std::size_t i = 0; i < approaches.size(); ++i) {
+    if (assigned[i]) {
+      continue;
+    }
+    assigned[i] = true;
+    std::vector<std::size_t> axis{i};
+    std::size_t partner = approaches.size();
+    double best = kSignalizeAxisTolerance;
+    for (std::size_t j = i + 1; j < approaches.size(); ++j) {
+      if (assigned[j]) {
+        continue;
+      }
+      const double delta =
+          std::abs(std::remainder(approaches[j].heading - approaches[i].heading - std::numbers::pi,
+                                  2.0 * std::numbers::pi));
+      if (delta <= best) {
+        best = delta;
+        partner = j;
+      }
+    }
+    if (partner < approaches.size()) {
+      assigned[partner] = true;
+      axis.push_back(partner);
+    }
+    axes.push_back(std::move(axis));
+  }
+  return axes;
+}
+
+/// Incoming driving lanes at `arm` — the "how major is this road" measure the
+/// TwoWayStop minor-axis pick uses. 0 when the arm no longer solves.
+std::size_t approach_incoming_lane_count(const RoadNetwork& network, const RoadEnd& arm) {
+  const Expected<ContactState> contact = contact_state(network, arm);
+  if (!contact.has_value()) {
+    return 0;
+  }
+  return driving_lanes_at(network, arm, *contact, /*incoming=*/true).size();
+}
+
+/// The t of the outboard edge of the approach's incoming carriageway, on the
+/// DRIVER'S RIGHT: traffic reaching a road's End travels toward +s, so its
+/// right is -t; traffic reaching its Start travels toward -s, so its right is
+/// +t. nullopt when the arm carries no incoming driving lane.
+std::optional<double> approach_right_edge(const RoadNetwork& network, const RoadEnd& arm) {
+  const Expected<ContactState> contact = contact_state(network, arm);
+  if (!contact.has_value()) {
+    return std::nullopt;
+  }
+  const std::vector<ContactLane> lanes =
+      driving_lanes_at(network, arm, *contact, /*incoming=*/true);
+  if (lanes.empty()) {
+    return std::nullopt;
+  }
+  bool first = true;
+  double edge = 0.0;
+  for (const ContactLane& lane : lanes) {
+    const double outer = lane.inner_t + (lane.odr_id > 0 ? lane.width : -lane.width);
+    if (first) {
+      edge = outer;
+      first = false;
+    } else {
+      edge = arm.contact == ContactPoint::End ? std::min(edge, outer) : std::max(edge, outer);
+    }
+  }
+  return edge;
+}
+
+/// Signed outboard direction along the arm's +t axis, toward the driver's
+/// right.
+double approach_outboard_sign(const RoadEnd& arm) {
+  return arm.contact == ContactPoint::End ? -1.0 : 1.0;
+}
+
+/// Everything a previous signalization authored on a junction, resolved to
+/// arena ids and their current values — the erasure set both commands share.
+///
+/// DERIVED, never a stored flag:
+///   - every top-level controller the junction's sync group names, and every
+///     signal its `<control>` children reference;
+///   - every signal and object named in `signal_mounts`;
+///   - when an rm:signal template is recorded, every signal resolved onto an
+///     approach (so within kSignalApproachWindow) carrying THAT template's
+///     catalog code.
+/// The last clause is what lets a static template — which creates no
+/// controllers and, without a mount model, no records naming its signals at all
+/// — still be cleared, without touching a hand-placed sign of another type.
+struct AuthoredSignalization {
+  std::vector<std::pair<SignalId, Signal>> signals;
+  std::vector<std::pair<ControllerId, Controller>> controllers;
+  std::vector<std::pair<ObjectId, Object>> objects;
+
+  [[nodiscard]] bool empty() const {
+    return signals.empty() && controllers.empty() && objects.empty();
+  }
+};
+
+AuthoredSignalization authored_signalization(const RoadNetwork& network, JunctionId junction_id) {
+  AuthoredSignalization out;
+  const Junction* junction = network.junction(junction_id);
+  if (junction == nullptr) {
+    return out;
+  }
+
+  std::set<std::string> group_ids;
+  for (const JunctionController& entry : junction->junction_controllers) {
+    group_ids.insert(entry.controller_odr_id);
+  }
+  std::set<std::string> signal_ids;
+  std::set<std::string> object_ids;
+  for (const SignalMount& mount : junction->signal_mounts) {
+    signal_ids.insert(mount.signal_odr_id);
+    object_ids.insert(mount.object_odr_ids.begin(), mount.object_odr_ids.end());
+  }
+
+  network.for_each_controller([&](ControllerId id, const Controller& controller) {
+    if (!group_ids.contains(controller.odr_id)) {
+      return;
+    }
+    out.controllers.emplace_back(id, controller);
+    for (const Control& control : controller.controls) {
+      signal_ids.insert(control.signal_odr_id);
+    }
+  });
+
+  if (const std::optional<SignalizeTemplate> tmpl =
+          signalize_template_from_token(junction->signalization.tmpl);
+      tmpl.has_value()) {
+    const SignalCode code = signalize_template_code(*tmpl);
+    for (const JunctionApproachInfo& approach : junction_signals(network, junction_id)) {
+      for (const SignalId signal_id : approach.signal_ids) {
+        const Signal* signal = network.signal(signal_id);
+        if (signal != nullptr && signal_has_code(*signal, code)) {
+          signal_ids.insert(signal->odr_id);
+        }
+      }
+    }
+  }
+
+  network.for_each_signal([&](SignalId id, const Signal& signal) {
+    if (signal_ids.contains(signal.odr_id)) {
+      out.signals.emplace_back(id, signal);
+    }
+  });
+  network.for_each_object([&](ObjectId id, const Object& object) {
+    if (object_ids.contains(object.odr_id)) {
+      out.objects.emplace_back(id, object);
+    }
+  });
+  return out;
+}
+
+/// One head to place, with its optional mount prop already sized from the
+/// model. Values only — never an arena pointer.
+struct PlannedHead {
+  RoadId road;
+  Signal signal;
+  bool has_mount = false;
+  Object mount;
+};
+
+} // namespace
+
+std::unique_ptr<Command> signalize_junction(const RoadNetwork& network,
+                                            JunctionId junction_id,
+                                            const SignalizeOptions& options) {
+  static constexpr std::string_view kName = "Signalize Junction";
+  const auto fail = [](std::string message) {
+    return invalid_command(
+        std::string(kName),
+        Error{.code = ErrorCode::InvalidArgument, .message = std::move(message)});
+  };
+
+  const Junction* junction = network.junction(junction_id);
+  if (junction == nullptr) {
+    return fail("stale junction id");
+  }
+  if (!junction->spans.empty()) {
+    // asam.net:xodr:1.9.0:junctions.virtual.no_controllers — "Virtual junctions
+    // shall not have controllers and therefore no traffic lights."
+    return fail(fmt::format("a span (virtual) junction cannot be signalized ({})",
+                            rules::kVirtualNoControllers));
+  }
+  if (junction->arms.empty()) {
+    return fail("junction has no recorded arms (loaded from a foreign file); recreate it to edit");
+  }
+
+  const std::string_view token = signalize_template_token(options.tmpl);
+  if (token.empty()) {
+    return fail("unknown signalization template");
+  }
+  // Re-applying what is already there would author nothing, and the round-trip
+  // oracle forbids a no-op command (the wall p4-s6 hit with rebuild_maneuvers).
+  // `lateral_offset` is deliberately not part of the test: it is not persisted,
+  // so there would be nothing to compare a second offset against.
+  if (junction->signalization.tmpl == token &&
+      junction->signalization.mount_model == options.mount_model) {
+    return fail("the junction already carries this signalization; clear it first");
+  }
+
+  const props::PropModel* mount_model = nullptr;
+  if (!options.mount_model.empty()) {
+    if (!validate_material_token(options.mount_model)) {
+      // The rm:signalmount grammar cannot encode anything outside the record
+      // alphabet, and the writer refuses to emit what its reader would drop.
+      return fail(
+          fmt::format("mount model id '{}' must match [A-Za-z0-9_.-]+", options.mount_model));
+    }
+    mount_model = props::model(options.mount_model);
+    if (mount_model == nullptr) {
+      return fail("unknown prop model id: " + options.mount_model);
+    }
+  }
+
+  const std::vector<JunctionApproachInfo> approaches = junction_signals(network, junction_id);
+  if (approaches.empty()) {
+    return fail("the junction has no solvable approach to signalize");
+  }
+  const std::vector<std::vector<std::size_t>> axes = cluster_signal_axes(approaches);
+  if (options.tmpl == SignalizeTemplate::TwoWayStop && axes.size() < 2) {
+    return fail("a two-way stop needs at least two approach axes");
+  }
+
+  // Which approaches get a head at all. Every template but TwoWayStop signs
+  // every approach; TwoWayStop signs the MINOR axis only — fewest incoming
+  // driving lanes, ties breaking toward the later axis so the pick is
+  // deterministic.
+  std::vector<bool> signed_approach(approaches.size(), true);
+  if (options.tmpl == SignalizeTemplate::TwoWayStop) {
+    std::size_t minor = 0;
+    std::size_t fewest = std::numeric_limits<std::size_t>::max();
+    for (std::size_t axis = 0; axis < axes.size(); ++axis) {
+      std::size_t lanes = 0;
+      for (const std::size_t index : axes[axis]) {
+        lanes += approach_incoming_lane_count(network, approaches[index].arm);
+      }
+      if (lanes <= fewest) {
+        fewest = lanes;
+        minor = axis;
+      }
+    }
+    signed_approach.assign(approaches.size(), false);
+    for (const std::size_t index : axes[minor]) {
+      signed_approach[index] = true;
+    }
+  }
+
+  // Turn types come from the maneuver query, so "has a left turn to protect"
+  // means exactly what the Maneuver panel shows.
+  const std::vector<JunctionManeuverInfo> maneuvers = junction_maneuvers(network, junction_id);
+  const auto turns_left = [&](const JunctionApproachInfo& approach) {
+    return std::ranges::any_of(approach.gated, [&](RoadId turn) {
+      const auto entry = std::ranges::find_if(
+          maneuvers, [&](const JunctionManeuverInfo& info) { return info.road == turn; });
+      return entry != maneuvers.end() && entry->effective == TurnType::Left;
+    });
+  };
+
+  const bool dynamic = signalize_template_is_dynamic(options.tmpl);
+  const SignalCode code = signalize_template_code(options.tmpl);
+  OdrIdMinter signal_ids(live_signal_odr_ids(network));
+  OdrIdMinter object_ids(live_object_odr_ids(network));
+  OdrIdMinter controller_ids(live_controller_odr_ids(network));
+
+  std::vector<PlannedHead> heads;
+  // Per approach, the odr id of its primary head and of its protected-left
+  // head; empty means "not placed".
+  std::vector<std::string> primary_head(approaches.size());
+  std::vector<std::string> left_head(approaches.size());
+
+  const auto place = [&](const JunctionApproachInfo& approach, double lateral, bool arrow) {
+    const Road* road = network.road(approach.arm.road);
+    if (road == nullptr) {
+      return std::string{};
+    }
+    PlannedHead head;
+    head.road = approach.arm.road;
+    head.signal.road = approach.arm.road;
+    head.signal.odr_id = signal_ids.next();
+    head.signal.s = std::clamp(approach.s_stop, 0.0, road->plan_view.length());
+    head.signal.t = lateral;
+    head.signal.z_offset = dynamic ? kLightHeadZOffset : kSignPlateZOffset;
+    head.signal.dynamic = dynamic;
+    // §14.1: "+" applies to traffic travelling in the positive reference-line
+    // direction, which is the traffic reaching a road's End.
+    head.signal.orientation = approach.arm.contact == ContactPoint::Start ? ObjectOrientation::Minus
+                                                                          : ObjectOrientation::Plus;
+    head.signal.type = std::string(code.type);
+    head.signal.subtype = std::string(code.subtype);
+    head.signal.country = std::string(code.country);
+    // The local ASAM reference names no distinct catalog code for a
+    // protected-left ARROW head, so none is invented: the left head carries the
+    // same 1000001/-1/OpenDRIVE identity and is told apart by its signal GROUP,
+    // which is exactly what §14.6 controllers are for. @name records the intent
+    // (Table 122: "name of the signal, may be chosen freely").
+    head.signal.name = arrow ? "protected_left" : "";
+    if (mount_model != nullptr) {
+      head.has_mount = true;
+      head.mount.road = approach.arm.road;
+      head.mount.odr_id = object_ids.next();
+      head.mount.name = options.mount_model;
+      head.mount.type = mount_model->type;
+      head.mount.radius = mount_model->radius;
+      head.mount.height = mount_model->height;
+      head.mount.s = head.signal.s;
+      head.mount.t = head.signal.t;
+    }
+    std::string odr_id = head.signal.odr_id;
+    heads.push_back(std::move(head));
+    return odr_id;
+  };
+
+  for (std::size_t i = 0; i < approaches.size(); ++i) {
+    if (!signed_approach[i]) {
+      continue;
+    }
+    const JunctionApproachInfo& approach = approaches[i];
+    const double outboard = approach_outboard_sign(approach.arm);
+    const double edge = approach_right_edge(network, approach.arm).value_or(approach.t_center);
+    primary_head[i] = place(approach, edge + outboard * options.lateral_offset, /*arrow=*/false);
+    if (options.tmpl == SignalizeTemplate::FourWayProtectedLeft && turns_left(approach)) {
+      left_head[i] = place(approach,
+                           edge + outboard * (options.lateral_offset + kProtectedLeftHeadSpacing),
+                           /*arrow=*/true);
+    }
+  }
+  if (heads.empty()) {
+    return fail("the junction has no approach this template can sign");
+  }
+
+  // Grouping (§14.6). STATIC templates create NO controllers and no
+  // synchronization group at all: an all-way or two-way stop has no phases, so
+  // there is no phase data to create.
+  std::vector<Controller> controllers;
+  if (dynamic) {
+    for (std::size_t axis = 0; axis < axes.size(); ++axis) {
+      const auto group = [&](const std::vector<std::string>& heads_of,
+                             std::string_view suffix) -> void {
+        Controller controller;
+        for (const std::size_t index : axes[axis]) {
+          if (!heads_of[index].empty()) {
+            controller.controls.push_back(Control{.signal_odr_id = heads_of[index], .type = {}});
+          }
+        }
+        if (controller.controls.empty()) {
+          // A controller with no <control> violates
+          // asam.net:xodr:1.7.0:road.signal.controller.valid_for_signals, so it
+          // is never created rather than created and reported.
+          return;
+        }
+        controller.odr_id = controller_ids.next();
+        controller.name = fmt::format("j{}_axis{}_{}", junction->odr_id, axis, suffix);
+        controllers.push_back(std::move(controller));
+      };
+      group(primary_head, "through");
+      if (options.tmpl == SignalizeTemplate::FourWayProtectedLeft) {
+        group(left_head, "left");
+      }
+    }
+  }
+
+  // The junction after the command: the sync group references (§12.14, one per
+  // created controller), the Layer-1 template record, and the mount pairs.
+  Junction after = *junction;
+  after.signalization =
+      Signalization{.tmpl = std::string(token), .mount_model = options.mount_model};
+  after.junction_controllers.clear();
+  for (const Controller& controller : controllers) {
+    after.junction_controllers.push_back(
+        JunctionController{.controller_odr_id = controller.odr_id, .sequence = {}, .type = {}});
+  }
+  after.signal_mounts.clear();
+  for (const PlannedHead& head : heads) {
+    if (!head.has_mount) {
+      continue;
+    }
+    SignalMount mount{.signal_odr_id = head.signal.odr_id, .object_odr_ids = {head.mount.odr_id}};
+    // Bounded at AUTHOR time, not just at write time: the writer truncates a
+    // long part list rather than emitting a value its own reader would drop
+    // whole, and a record that survives in memory but not on disk would break
+    // save→reload→save byte stability. One prop per signal today; #323's
+    // assemblies are the reason this is a list at all.
+    if (mount.object_odr_ids.size() > kMaxSignalMountParts) {
+      mount.object_odr_ids.resize(kMaxSignalMountParts);
+    }
+    after.signal_mounts.push_back(std::move(mount));
+  }
+
+  const AuthoredSignalization previous = authored_signalization(network, junction_id);
+
+  DirtySet dirty;
+  dirty.junctions.push_back(junction_id);
+  dirty.junctions_are_current = true;
+  for (const JunctionApproachInfo& approach : approaches) {
+    if (std::ranges::find(dirty.objects, approach.arm.road) == dirty.objects.end()) {
+      dirty.objects.push_back(approach.arm.road);
+    }
+  }
+
+  auto command = std::make_unique<GenericCommand>(std::string(kName), std::move(dirty));
+  command->before.junctions.emplace_back(junction_id, *junction);
+  command->erased.signals = previous.signals;
+  command->erased.controllers = previous.controllers;
+  command->erased.objects = previous.objects;
+  // The junction value is written by the CREATOR, not through `after`: when a
+  // creator is set, GenericCommand re-reads `after` from the network right
+  // after it runs, so anything assigned to `after` here would be discarded.
+  command->creator = [junction_id, heads, controllers, after](RoadNetwork& net,
+                                                              Values& created) -> Expected<void> {
+    // Validate-first: nothing is mutated until every target is live.
+    if (net.junction(junction_id) == nullptr) {
+      return make_error(ErrorCode::InvalidArgument, "stale junction id");
+    }
+    for (const PlannedHead& head : heads) {
+      if (net.road(head.road) == nullptr) {
+        return make_error(ErrorCode::InvalidArgument, "stale arm road id");
+      }
+    }
+    for (const PlannedHead& head : heads) {
+      const SignalId signal = net.add_signal(head.road, head.signal);
+      if (!signal.is_valid()) {
+        return make_error(ErrorCode::InvalidArgument, "failed to add signal");
+      }
+      created.signals.emplace_back(signal, head.signal);
+      if (!head.has_mount) {
+        continue;
+      }
+      const ObjectId object = net.add_object(head.road, head.mount);
+      if (!object.is_valid()) {
+        return make_error(ErrorCode::InvalidArgument, "failed to add mount prop");
+      }
+      created.objects.emplace_back(object, head.mount);
+    }
+    for (const Controller& controller : controllers) {
+      const ControllerId id = net.add_controller(controller);
+      if (!id.is_valid()) {
+        return make_error(ErrorCode::InvalidArgument, "failed to add controller");
+      }
+      created.controllers.emplace_back(id, controller);
+    }
+    *net.junction(junction_id) = after;
+    return {};
+  };
+  return command;
+}
+
+std::unique_ptr<Command> clear_signalization(const RoadNetwork& network, JunctionId junction_id) {
+  static constexpr std::string_view kName = "Clear Signalization";
+  const Junction* junction = network.junction(junction_id);
+  if (junction == nullptr) {
+    return invalid_command(
+        std::string(kName),
+        Error{.code = ErrorCode::InvalidArgument, .message = "stale junction id"});
+  }
+
+  const AuthoredSignalization authored = authored_signalization(network, junction_id);
+  const bool records = !junction->signalization.tmpl.empty() ||
+                       !junction->junction_controllers.empty() || !junction->signal_mounts.empty();
+  if (authored.empty() && !records) {
+    return invalid_command(std::string(kName),
+                           Error{.code = ErrorCode::InvalidArgument,
+                                 .message = "the junction has no signalization to clear"});
+  }
+
+  Junction after = *junction;
+  after.signalization = Signalization{};
+  after.junction_controllers.clear();
+  after.signal_mounts.clear();
+
+  DirtySet dirty;
+  dirty.junctions.push_back(junction_id);
+  dirty.junctions_are_current = true;
+  for (const auto& [id, value] : authored.signals) {
+    if (std::ranges::find(dirty.objects, value.road) == dirty.objects.end()) {
+      dirty.objects.push_back(value.road);
+    }
+  }
+  for (const auto& [id, value] : authored.objects) {
+    if (std::ranges::find(dirty.objects, value.road) == dirty.objects.end()) {
+      dirty.objects.push_back(value.road);
+    }
+  }
+
+  auto command = std::make_unique<GenericCommand>(std::string(kName), std::move(dirty));
+  command->before.junctions.emplace_back(junction_id, *junction);
+  command->after.junctions.emplace_back(junction_id, std::move(after));
+  command->erased.signals = authored.signals;
+  command->erased.controllers = authored.controllers;
+  command->erased.objects = authored.objects;
   return command;
 }
 

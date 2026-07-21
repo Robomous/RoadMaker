@@ -437,6 +437,155 @@ plus the Python suite and three soak operations.
 
 ---
 
+## 6d. Signal (p4-s7, issue #228)
+
+**The controller layer is new.** `<controller>`/`<control>` (§14.6) and
+`<junction><controller>` (§12.14) did not exist anywhere in the kernel before
+this sprint — a top-level `<controller>` in an input file was warned about and
+silently DROPPED, and a `<junction><controller>` child dropped without even a
+warning. This sprint adds them as Layer 0 truth and, by construction, closes
+both round-trip data-loss paths.
+
+**Controller entity.** `Controller` (`core/include/roadmaker/road/controller.hpp`)
+is a **top-level** element — a child of `<OpenDRIVE>`, owned by no road and no
+junction, stored in its own `Arena<Controller, ControllerId>` on `RoadNetwork`
+with the full signal-parallel accessor set (`add_controller` takes no owner,
+plus `erase`/`restore`/`erase_exact`/`release_reserved`/`for_each_controller`),
+and it participates in the generic command engine through a `Values::controllers`
+snapshot. Its `<control>` children reference a signal by its **string
+`@signalId`**, never by `SignalId`: that is what the standard stores, it stays
+faithful to a dangling reference in third-party input, and it survives the
+signal being erased and restored. Resolving it to a live signal is the query's
+job. Erasing a `Signal` therefore does NOT cascade into controllers — a
+`<control>` naming a gone signal becomes a dangling reference the validator
+reports and `clear_signalization` cleans, which keeps `delete_signal` a leaf op.
+The junction's `<controller>` synchronization group (§12.14) is a REFERENCE, not
+a definition: `Junction::junction_controllers` is sparse, empty on every
+unsignalized junction so pre-existing files re-export byte-identically.
+
+**One query: `junction_signals()`.** `core/src/mesh/junction_signals.cpp` (the
+`junction_stoplines` / `junction_maneuvers` template) is the single source shared
+by the tool, the panel, the commands' validate-first path, Python, and p4-s8's
+phase editor, so none can disagree about what an approach is. Each
+`JunctionApproachInfo` carries the incoming arm, its travel heading, the stop
+station and mid-span offset (taken from `junction_stoplines()` so a head never
+sits at a different station than the line drivers stop at), its **gated**
+maneuvers (DERIVED — exactly the `junction_maneuvers()` entries whose `from ==
+arm`, the substrate p4-s8's per-phase highlighting needs), the `signal_ids`
+resolved on the arm, and the `controller_odr_ids` those signals belong to.
+Signal→approach resolution takes signals on the arm within `kSignalApproachWindow`
+(30 m, named in the header — no normative distance exists) whose `@orientation`
+admits travel toward the junction. It walks `Junction::connections` like
+`junction_maneuvers`, so a FOREIGN junction (no arms) yields read-only approach
+info rather than nothing; a SPAN/virtual junction has no connections and so no
+approaches. The member is `signal_ids`, NOT `signals`: Qt's `<QObject>` defines
+`signals` as a preprocessor macro, so a member of that name makes the header
+impossible to include from any editor translation unit — the struct itself fails
+to parse. The Python attribute is `signal_ids` too.
+
+**Templates.** `edit::SignalizeTemplate` is two dynamic and two static — the
+static pair is what keeps the engine from hard-coding "a signalized junction has
+lights on four arms". **Axes are derived by clustering approach headings** (an
+odd arm forms its own group), so all four work on a 3-arm T:
+
+- `FourWayProtectedLeft` (dynamic) — one head per approach, plus a protected-left
+  head on every approach that actually has a left-turn maneuver; per axis a
+  through/right controller and, where the axis has any left, a protected-left
+  controller. The protected-left head is the **same** `1000001/-1/OpenDRIVE`
+  vehicle-light code, told apart only by its signal group.
+- `TwoPhase` (dynamic) — one head per approach and one controller per axis
+  (permissive lefts, no separate left group).
+- `AllWayStop` (static) — a stop sign on every approach and **NO controllers**:
+  an all-way stop has no phases, so no phase data is created (GW-4 step 3).
+- `TwoWayStop` (static) — stop signs on the minor axis only (fewer incoming
+  driving lanes; ties break toward the later axis); needs at least two axes.
+
+**Catalog codes come from the reference, not memory.** The vehicle light is
+`type=1000001 subtype=-1 country="OpenDRIVE"` — §14.1 (14_signals.md:61-65) says
+traffic lights have no official type/subtype and are given a catalog value under
+`country="OpenDRIVE"`, and the reference names 1000001/-1 at
+06_general_architecture.md:216. **The local ASAM reference names no OpenDRIVE-
+catalog stop or yield code**, so the stop sign reuses RoadMaker's existing
+library-drop code, StVO **206 "Halt! Vorfahrt gewähren", `country="DE"`,
+subtype=-1** — disclosed here rather than inventing an OpenDRIVE code.
+
+**Kernel API.** `edit::signalize_junction(network, junction, SignalizeOptions{})`
+is ONE compound command (ONE undo step), validate-first via `junction_signals()`
+with before/after snapshots. It removes anything a previous signalization
+authored on this junction FIRST (switching templates never leaves two
+generations of heads behind), then places one `Signal` per approach (dynamic →
+`@dynamic="yes"` light; static → stop sign) anchored at the stopline station,
+groups the dynamic heads into top-level `<controller>`s, references them from the
+junction's sync group, and records the applied template and any signal→prop
+mounts as Layer-1 userData. `SignalizeOptions` carries the template, an optional
+`mount_model` prop id placed alongside each head (the #323 assembly extension
+point — the mount record already holds a LIST of object ids per signal), and a
+non-persisted `lateral_offset`. It is `invalid_command` for a stale id, a
+foreign junction, a SPAN/virtual junction (§12.14 —
+`asam.net:xodr:1.9.0:junctions.virtual.no_controllers`), a junction with no
+solvable approach, an unknown `mount_model`, `TwoWayStop` with fewer than two
+axes, and — deliberately — a re-apply of the exact same template and mount
+(a no-op, which the round-trip oracle forbids; the same wall p4-s6 hit with
+`rebuild_maneuvers`). `edit::clear_signalization` is the exact inverse and is
+invalid when nothing is signalized; what counts as "authored here" is DERIVED
+(the sync-group controllers, the signals they reference, the mount pairs, and
+the template's own catalog-code signals within the approach window), so a
+hand-placed sign of another type is left alone.
+
+**Validator rules** (`validate_network`): a `<controller>` with zero `<control>`
+children fires `asam.net:xodr:1.7.0:road.signal.controller.valid_for_signals`; a
+duplicate controller `@id` reuses `rules::kIdUniqueInClass`; a span/virtual
+junction carrying `junction_controllers` fires
+`asam.net:xodr:1.9.0:junctions.virtual.no_controllers`. A `<control signalId>`
+naming no existing signal has **no normative rule id**, so it is a RoadMaker-
+scoped diagnostic with no rule id — project convention cites a rule id only when
+the spec has one.
+
+**Persistence.** Two `<userData>` records on `<junction>`, after the
+`rm:maneuver` block — see ADR-0008's registry for the grammar and degradation
+rules. `rm:signal` (`template=<tok>[:mount=<modelId>]`, tokens
+`protected_left|two_phase|all_way_stop|two_way_stop`) records WHICH template was
+applied so the tool can show and re-apply it; `rm:signalmount`
+(`signalOdrId=objOdrId[,...][;...]`) pairs each logical signal with its physical
+prop object(s). Both follow the every-prior-rm:* carrier rules — skip stale ids,
+omit fields at defaults, **emit no element when empty** so an unsignalized
+junction round-trips byte-identically; a malformed known grammar drops the whole
+value with one warning, an unknown field key warns and skips. The `<signal>` and
+`<controller>` elements are Layer 0 truth and are never re-derived on load.
+
+**Editor.** A **Signal tool** (`G`, toolbar group "Signals & Signs"): clicking a
+junction makes it the tool's target and the Attributes pane shows the
+Signalization group; clicking a signal selects it; clicking a road places one
+signal from the current Library item through the extracted
+`document/signal_placement.{hpp,cpp}` (shared with the library-drop path so both
+snap and mint ids one way). The overlay draws each controller group in a distinct
+colour with a dotted leader from each head to the `path` polylines of the
+maneuvers it gates. The **Signalization** group in the junction properties
+(dynamic-rows idiom, `setParent(nullptr)` + `deleteLater()` teardown) carries a
+template combo, a mount-prop combo, **Auto Signalize** / **Clear Signalization**
+buttons and one read-only row per approach. The junction context menu adds an
+**Auto signalize ▸ <template>** submenu and **Clear signalization**, both gated
+on the same preconditions the command validates. Two coverage-gate holes were
+closed deliberately: `test_toolbar_registry` now asserts the populated "Signals &
+Signs" group, and `test_help_registry` looped only to `ToolId::Corner` (leaving
+StopLine, JunctionSpan, JunctionSurface and Maneuver with no help page and
+uncaught) — the loop now runs to the real last enumerator and the missing
+`kToolPages` rows, including `Signal`, were added.
+
+**Tests.** `test_controller` and `test_signalization_persistence` (arena
+add/erase/restore-in-place, third-party `<controller>` and junction sync-group
+byte-identity, malformed rm:* dropped with one warning, unsignalized junction
+emits no rm:signal element, every validator rule fires),
+`test_signalization` (query derivation, each template's counts, static creates
+zero controllers, T-junction tolerance, span/virtual rejected, re-apply
+`invalid_command`, `expect_command_round_trip` on both commands, mount pairs),
+`test_signal_tool` (placement, target, and the structural overlay assertion
+`OverlayLinksEveryHeadToTheMovementsItGates`), `test_panels`, plus the Python
+suite, two soak operations, and fuzz-corpus seeds exercising both records, a
+top-level `<controller>` and a `<junction><controller>`.
+
+---
+
 ## 7. Delete
 
 **Interaction.** Delete tool: click deletes picked road (with confirmation in

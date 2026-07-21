@@ -10,7 +10,7 @@ namespace {
 // both live on Moving and transforming; Delete's behaviour is documented with
 // the right-click menus. Keep this exhaustive — the coverage test loops the
 // whole ToolId enum and fails the build on a hole.
-constexpr std::array<ToolPage, 20> kToolPages{{
+constexpr std::array<ToolPage, 25> kToolPages{{
     {ToolId::Select, "moving-and-transforming"},
     {ToolId::Move, "moving-and-transforming"},
     {ToolId::CreateRoad, "create-road"},
@@ -31,6 +31,15 @@ constexpr std::array<ToolPage, 20> kToolPages{{
     {ToolId::PropSpan, "objects-signals"},
     {ToolId::PropPolygon, "objects-signals"},
     {ToolId::Corner, "junction"}, // corners are a junction's fillets
+    // The junction-authoring tools all document their gestures on the junction
+    // page. These four shipped WITHOUT a row: the coverage loop below stopped at
+    // Corner and its comment wrongly called Corner the last enumerator, so the
+    // gate never noticed (p4-s7, issue #228).
+    {ToolId::StopLine, "junction"},
+    {ToolId::JunctionSpan, "junction"},
+    {ToolId::JunctionSurface, "junction"},
+    {ToolId::Maneuver, "junction"},
+    {ToolId::Signal, "junction"}, // signalization is authored on a junction
 }};
 
 // Every dockable panel, keyed by the QDockWidget objectName set in

@@ -1124,6 +1124,94 @@ move_signal(const RoadNetwork& network,
             double t,
             std::optional<double> h_offset = std::nullopt);
 
+// --- signalization (p4-s7, issue #228) ---------------------------------------
+
+/// Half-width [rad] of the band in which two approach headings are treated as
+/// OPPOSITE, and therefore as the two arms of one signal axis (30 degrees).
+///
+/// Deliberately independent of `kManeuverStraightThreshold`, which happens to
+/// share the value: that one labels a MOVEMENT for the author, this one pairs
+/// ARMS for a phase plan. Changing either must not change the other.
+inline constexpr double kSignalizeAxisTolerance = 0.5235987755982988; // 30 deg
+
+/// The auto-signalization templates (`signalize_junction`).
+///
+/// Two dynamic, two static — the static pair is what keeps the engine from
+/// hard-coding "a signalized junction has traffic lights on four arms". None of
+/// them assumes four arms: axes are derived by clustering approach headings, so
+/// a 3-arm T yields one two-arm axis and one single-arm axis.
+enum class SignalizeTemplate {
+  /// Dynamic. One head per approach, plus a protected-left head on every
+  /// approach that actually has a left-turn maneuver. Per axis: one controller
+  /// for the through/right heads and, when the axis has any, one for the
+  /// protected-left heads.
+  FourWayProtectedLeft,
+  /// Dynamic. One head per approach and ONE controller per axis — permissive
+  /// lefts, no separate left group.
+  TwoPhase,
+  /// Static. A stop sign on every approach and NO controllers at all: an
+  /// all-way stop has no phases, so no phase data is created.
+  AllWayStop,
+  /// Static. Stop signs on the MINOR axis only (the axis carrying fewer
+  /// incoming driving lanes; ties break toward the later axis), and no
+  /// controllers. Needs at least two axes.
+  TwoWayStop,
+};
+
+/// Options for `signalize_junction`.
+struct SignalizeOptions {
+  SignalizeTemplate tmpl = SignalizeTemplate::FourWayProtectedLeft;
+
+  /// Optional prop model id (assets/prop_library.hpp) placed as an `<object>`
+  /// alongside each authored signal and recorded in the junction's
+  /// `signal_mounts`; empty places nothing. This is the #323 extension point —
+  /// an assembly id slots straight in and needs no schema change, because the
+  /// mount record already holds a LIST of object ids per signal.
+  std::string mount_model;
+
+  /// Lateral clearance [m] between the outboard edge of the approach's stop
+  /// band and the head, on the driver's right. Not persisted: the `rm:signal`
+  /// record carries the template and the mount model only, so re-applying the
+  /// same template with a different offset is still rejected as a no-op.
+  double lateral_offset = 0.5;
+};
+
+/// Auto-signalizes `junction` from a template: places the `<signal>`s, groups
+/// the dynamic ones into top-level `<controller>`s (§14.6), references those
+/// controllers from the junction's synchronization group (§12.14), and records
+/// the applied template plus any signal→prop mounts as Layer-1 userData. ONE
+/// compound command, so it is ONE undo step.
+///
+/// Anything a previous signalization authored on this junction is removed
+/// first, so switching templates never leaves two generations of heads behind.
+///
+/// Fails (invalid_command) for a stale id, for a junction with no recorded arms
+/// (foreign — recreate it to edit), for a SPAN/virtual junction (which "shall
+/// not have controllers and therefore no traffic lights",
+/// asam.net:xodr:1.9.0:junctions.virtual.no_controllers), for a junction with
+/// no solvable approach, for an unknown `mount_model`, for `TwoWayStop` on a
+/// junction with fewer than two axes, and — deliberately — when the junction
+/// ALREADY carries exactly this template and mount model: that would be a
+/// no-op, and the command layer's round-trip oracle forbids no-op commands.
+[[nodiscard]] RM_API std::unique_ptr<Command> signalize_junction(
+    const RoadNetwork& network, JunctionId junction, const SignalizeOptions& options = {});
+
+/// The exact inverse: erases the signals, controllers and mount props a
+/// signalization authored on `junction` and clears its Layer-1 records.
+///
+/// What counts as "authored here" is DERIVED, never a hidden flag: the
+/// controllers the junction's synchronization group names (and every signal
+/// their `<control>` children reference), every signal and object named in
+/// `signal_mounts`, and — for a junction carrying an `rm:signal` template — the
+/// signals within `kSignalApproachWindow` of its approaches whose catalog code
+/// is the one that template places. A hand-placed sign of another type is left
+/// alone.
+///
+/// Fails (invalid_command) for a stale id and for a junction with nothing
+/// signalized (a no-op, which the round-trip oracle forbids).
+[[nodiscard]] RM_API std::unique_ptr<Command> clear_signalization(const RoadNetwork& network,
+                                                                  JunctionId junction);
+
 /// Re-points a placed object at another prop model: sets Object::name (the
 /// prop_library id the mesher renders — mesh.hpp ObjectInstance::model_id) and
 /// refreshes the bounding radius/height from that model, so the object's

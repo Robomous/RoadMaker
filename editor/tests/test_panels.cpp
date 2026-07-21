@@ -6,6 +6,7 @@
 #include "roadmaker/edit/operations.hpp"
 #include "roadmaker/mesh/junction_corners.hpp"
 #include "roadmaker/mesh/junction_maneuvers.hpp"
+#include "roadmaker/mesh/junction_signals.hpp"
 #include "roadmaker/mesh/junction_stoplines.hpp"
 #include "roadmaker/mesh/junction_surface_spans.hpp"
 #include "roadmaker/road/authoring.hpp"
@@ -48,6 +49,7 @@
 #include "panels/scrub_label.hpp"
 #include "panels/slot_widget.hpp"
 #include "tools/corner_tool.hpp"
+#include "tools/signal_tool.hpp"
 #include "tools/stopline_tool.hpp"
 
 namespace roadmaker::editor {
@@ -1720,6 +1722,19 @@ std::vector<QWidget*> maneuver_rows(const PropertiesPanel& panel) {
   return rows;
 }
 
+/// The panel's read-only approach rows, in display order.
+std::vector<QLabel*> signalization_rows(const PropertiesPanel& panel) {
+  std::vector<QLabel*> rows;
+  auto* group = panel.findChild<QGroupBox*>(QStringLiteral("signalization_group"));
+  if (group == nullptr) {
+    return rows;
+  }
+  for (QLabel* row : group->findChildren<QLabel*>(QStringLiteral("signalization_approach_row"))) {
+    rows.push_back(row);
+  }
+  return rows;
+}
+
 std::vector<QWidget*> span_rows(const PropertiesPanel& panel) {
   std::vector<QWidget*> rows;
   auto* group = panel.findChild<QGroupBox*>(QStringLiteral("surface_spans_group"));
@@ -2041,6 +2056,100 @@ TEST(PropertiesPanel, ManeuverTurnTypeComboPushesOnlyRealChanges) {
   EXPECT_EQ(scene.document.undo_stack()->index(), base + 1);
   ASSERT_EQ(scene.document.network().junction(scene.junction)->maneuvers.size(), 1U);
   EXPECT_EQ(combo()->currentIndex(), other + 1);
+}
+
+// --- Signalization (p4-s7, issue #228) ---------------------------------------
+
+TEST(PropertiesPanel, SignalizationGroupNeedsBothATargetedJunctionAndATool) {
+  CornerScene scene;
+  PropertiesPanel panel(scene.document, scene.selection);
+  auto* group = panel.findChild<QGroupBox*>(QStringLiteral("signalization_group"));
+  ASSERT_NE(group, nullptr);
+  scene.selection.select({.junction = scene.junction});
+  EXPECT_TRUE(group->isHidden()) << "the section belongs to the Signal tool; none is wired yet";
+
+  SignalTool tool(scene.document, scene.selection);
+  panel.set_signal_tool(&tool);
+  scene.selection.select({.junction = scene.junction});
+  EXPECT_FALSE(group->isHidden());
+  EXPECT_EQ(signalization_rows(panel).size(),
+            junction_signals(scene.document.network(), scene.junction).size())
+      << "one read-only row per approach";
+
+  // An arm road is not a junction selection: the section goes away.
+  scene.selection.select({.road = scene.document.network().find_road("1")});
+  EXPECT_TRUE(group->isHidden());
+}
+
+TEST(PropertiesPanel, SignalizationTemplateComboDrivesTheToolsPendingState) {
+  CornerScene scene;
+  PropertiesPanel panel(scene.document, scene.selection);
+  SignalTool tool(scene.document, scene.selection);
+  panel.set_signal_tool(&tool);
+  scene.selection.select({.junction = scene.junction});
+
+  auto* combo = panel.findChild<QComboBox*>(QStringLiteral("signalization_template_combo"));
+  ASSERT_NE(combo, nullptr);
+  EXPECT_EQ(combo->currentIndex(), static_cast<int>(edit::SignalizeTemplate::FourWayProtectedLeft));
+
+  const int base = scene.document.undo_stack()->index();
+  combo->setCurrentIndex(static_cast<int>(edit::SignalizeTemplate::AllWayStop));
+  EXPECT_EQ(tool.pending_template(), edit::SignalizeTemplate::AllWayStop);
+  EXPECT_EQ(scene.document.undo_stack()->index(), base)
+      << "choosing a template authors nothing until Auto Signalize is pressed";
+}
+
+TEST(PropertiesPanel, AutoSignalizeIsOneUndoEntryAndThenDisablesItself) {
+  CornerScene scene;
+  PropertiesPanel panel(scene.document, scene.selection);
+  SignalTool tool(scene.document, scene.selection);
+  panel.set_signal_tool(&tool);
+  scene.selection.select({.junction = scene.junction});
+
+  auto* apply = panel.findChild<QPushButton*>(QStringLiteral("signalization_apply_button"));
+  auto* clear = panel.findChild<QPushButton*>(QStringLiteral("signalization_clear_button"));
+  ASSERT_NE(apply, nullptr);
+  ASSERT_NE(clear, nullptr);
+  EXPECT_TRUE(apply->isEnabled());
+  EXPECT_FALSE(clear->isEnabled()) << "nothing is signalized yet";
+
+  const int base = scene.document.undo_stack()->index();
+  apply->click();
+  EXPECT_EQ(scene.document.undo_stack()->index(), base + 1) << "one compound command, one undo";
+  EXPECT_FALSE(scene.document.network().junction(scene.junction)->signalization.tmpl.empty());
+
+  // Re-applying the SAME template would be a no-op, which the factory refuses —
+  // so the button disables rather than failing, and says why.
+  EXPECT_FALSE(apply->isEnabled());
+  EXPECT_FALSE(apply->toolTip().isEmpty());
+  EXPECT_TRUE(clear->isEnabled());
+
+  clear->click();
+  EXPECT_EQ(scene.document.undo_stack()->index(), base + 2);
+  EXPECT_TRUE(scene.document.network().junction(scene.junction)->signalization.tmpl.empty());
+  EXPECT_TRUE(apply->isEnabled()) << "the same template is offered again once cleared";
+  EXPECT_FALSE(clear->isEnabled());
+}
+
+TEST(PropertiesPanel, SignalizationRowsFollowUndoWithoutEchoingACommand) {
+  CornerScene scene;
+  PropertiesPanel panel(scene.document, scene.selection);
+  SignalTool tool(scene.document, scene.selection);
+  panel.set_signal_tool(&tool);
+  scene.selection.select({.junction = scene.junction});
+  panel.findChild<QPushButton*>(QStringLiteral("signalization_apply_button"))->click();
+
+  auto* applied = panel.findChild<QLabel*>(QStringLiteral("signalization_applied_label"));
+  ASSERT_NE(applied, nullptr);
+  EXPECT_FALSE(applied->text().contains(QStringLiteral("none")));
+
+  const int after = scene.document.undo_stack()->index();
+  scene.document.undo_stack()->undo();
+  // The re-seed reads the LIVE network; it must not push anything back.
+  EXPECT_EQ(scene.document.undo_stack()->index(), after - 1);
+  EXPECT_TRUE(panel.findChild<QLabel*>(QStringLiteral("signalization_applied_label"))
+                  ->text()
+                  .contains(QStringLiteral("none")));
 }
 
 TEST(PropertiesPanel, RebuildManeuversIsDisabledUntilSomethingGeometricIsAuthored) {

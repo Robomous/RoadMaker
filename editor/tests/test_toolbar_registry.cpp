@@ -169,7 +169,11 @@ TEST(ToolbarRegistry, LayoutMatchesTheIssue) {
   EXPECT_EQ(ids_of(layers, "Library & View"),
             (std::vector{Id::AddFromLibrary, Id::ResetCamera, Id::FrameSelection}));
 
-  for (const char* reserved : {"Terrain & Structures", "Signals & Signs", "Scenario"}) {
+  // Populated by p4-s7 (issue #228): the reserved group now renders the Signal
+  // tool, which is what the group was reserved for.
+  EXPECT_EQ(ids_of(layers, "Signals & Signs"), (std::vector{Id::ToolSignal}));
+
+  for (const char* reserved : {"Terrain & Structures", "Scenario"}) {
     EXPECT_TRUE(ids_of(layers, reserved).empty())
         << reserved << " is reserved and must render nothing yet";
   }

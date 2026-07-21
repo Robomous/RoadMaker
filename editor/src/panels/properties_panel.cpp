@@ -10,6 +10,7 @@
 #include <QHBoxLayout>
 #include <QPixmap>
 #include <QSignalBlocker>
+#include <QStringList>
 #include <QToolButton>
 #include <QVBoxLayout>
 #include <algorithm>
@@ -30,6 +31,7 @@
 #include "tools/elevation_tool.hpp"
 #include "tools/junction_surface_tool.hpp"
 #include "tools/maneuver_tool.hpp"
+#include "tools/signal_tool.hpp"
 #include "tools/stopline_tool.hpp"
 
 namespace roadmaker::editor {
@@ -257,6 +259,7 @@ PropertiesPanel::PropertiesPanel(Document& document,
       stopline_reset_button_(new QPushButton(tr("Reset to default"))),
       surface_spans_group_(new QGroupBox(tr("Surface spans"), this)),
       maneuvers_group_(new QGroupBox(tr("Maneuvers"), this)),
+      signalization_group_(new QGroupBox(tr("Signalization"), this)),
       junction_group_(new QGroupBox(tr("Junction"), this)), junction_type_label_(new QLabel(this)),
       junction_locked_check_(new QCheckBox(tr("Locked"), this)),
       junction_radius_spin_(new QDoubleSpinBox),
@@ -580,6 +583,84 @@ PropertiesPanel::PropertiesPanel(Document& document,
   maneuvers_column->addWidget(maneuvers_rebuild_button_);
   maneuvers_group_->hide();
 
+  // Signalization (p4-s7, issue #228): the junction-wide template controls plus
+  // one read-only row per approach. The combos edit the SIGNAL TOOL's pending
+  // state — the panel caches nothing, so undo/redo and a context-menu
+  // signalization re-seed it like any other refresh.
+  signalization_group_->setObjectName(QStringLiteral("signalization_group"));
+  auto* signalization_column = new QVBoxLayout(signalization_group_);
+  signalization_column->setSpacing(2);
+
+  signalization_template_combo_ = new QComboBox(signalization_group_);
+  signalization_template_combo_->setObjectName(QStringLiteral("signalization_template_combo"));
+  // Index == edit::SignalizeTemplate's own order, so no lookup table is needed
+  // (the same one-to-one mapping signalize_template_token relies on).
+  signalization_template_combo_->addItem(tr("Protected left (4-phase)"));
+  signalization_template_combo_->addItem(tr("Two phase (permissive lefts)"));
+  signalization_template_combo_->addItem(tr("All-way stop"));
+  signalization_template_combo_->addItem(tr("Two-way stop"));
+  signalization_template_combo_->setToolTip(
+      tr("Which plan Auto Signalize applies. The two stop templates are static: they place signs "
+         "and create no controllers at all, because an all-way stop has no phases."));
+  connect(signalization_template_combo_, &QComboBox::currentIndexChanged, this, [this](int index) {
+    if (signal_tool_ == nullptr || index < 0) {
+      return;
+    }
+    signal_tool_->set_pending_template(static_cast<edit::SignalizeTemplate>(index));
+    refresh_signalization();
+  });
+  signalization_column->addWidget(signalization_template_combo_);
+
+  signalization_mount_combo_ = new QComboBox(signalization_group_);
+  signalization_mount_combo_->setObjectName(QStringLiteral("signalization_mount_combo"));
+  signalization_mount_combo_->addItem(tr("No mount prop"), QString());
+  for (const std::string& id : props::ids()) {
+    const QString model = QString::fromStdString(id);
+    signalization_mount_combo_->addItem(model, model);
+  }
+  signalization_mount_combo_->setToolTip(
+      tr("An optional prop placed with each head and recorded as its physical mount. The record "
+         "already holds a LIST of parts, so an assembly slots in unchanged."));
+  connect(signalization_mount_combo_, &QComboBox::currentIndexChanged, this, [this](int index) {
+    if (signal_tool_ == nullptr || index < 0) {
+      return;
+    }
+    signal_tool_->set_pending_mount_model(
+        signalization_mount_combo_->itemData(index).toString().toStdString());
+    refresh_signalization();
+  });
+  signalization_column->addWidget(signalization_mount_combo_);
+
+  signalization_apply_button_ = new QPushButton(tr("Auto Signalize"), signalization_group_);
+  signalization_apply_button_->setObjectName(QStringLiteral("signalization_apply_button"));
+  connect(signalization_apply_button_, &QPushButton::clicked, this, [this] {
+    if (signal_tool_ != nullptr) {
+      static_cast<void>(signal_tool_->signalize());
+    }
+  });
+  signalization_column->addWidget(signalization_apply_button_);
+
+  signalization_clear_button_ = new QPushButton(tr("Clear Signalization"), signalization_group_);
+  signalization_clear_button_->setObjectName(QStringLiteral("signalization_clear_button"));
+  signalization_clear_button_->setToolTip(
+      tr("Erase the signals, controllers and mount props this junction's signalization authored. "
+         "A hand-placed sign of another type is left alone."));
+  connect(signalization_clear_button_, &QPushButton::clicked, this, [this] {
+    if (signal_tool_ != nullptr) {
+      static_cast<void>(signal_tool_->clear());
+    }
+  });
+  signalization_column->addWidget(signalization_clear_button_);
+
+  // The approach rows live in their own container so the controls above survive
+  // the wholesale row rebuild.
+  auto* signalization_rows = new QWidget(signalization_group_);
+  signalization_rows_layout_ = new QVBoxLayout(signalization_rows);
+  signalization_rows_layout_->setContentsMargins(0, 0, 0, 0);
+  signalization_rows_layout_->setSpacing(2);
+  signalization_column->addWidget(signalization_rows);
+  signalization_group_->hide();
+
   // Junction: the junction-WIDE values (p4-s2). The radius default is the
   // fallback every corner without its own radius uses, so its zero position is
   // "no default at all" — spelled "Derived" rather than 0 m, and reachable only
@@ -892,6 +973,7 @@ PropertiesPanel::PropertiesPanel(Document& document,
   layout->addWidget(stopline_group_);
   layout->addWidget(surface_spans_group_);
   layout->addWidget(maneuvers_group_);
+  layout->addWidget(signalization_group_);
   layout->addWidget(junction_group_);
   layout->addWidget(signal_group_);
   layout->addWidget(object_group_);
@@ -1082,6 +1164,7 @@ void PropertiesPanel::refresh() {
   refresh_stopline();
   refresh_surface_spans();
   refresh_maneuvers();
+  refresh_signalization();
 
   // The asset editors are Library-driven modes; any scene selection closes them.
   asset_group_->hide();
@@ -2020,6 +2103,107 @@ void PropertiesPanel::refresh_maneuvers() {
   // override survives a rebuild, so it is not a reason to offer one).
   maneuvers_rebuild_button_->setEnabled(arm_based && anything_geometric);
   maneuvers_group_->show();
+}
+
+void PropertiesPanel::set_signal_tool(SignalTool* tool) {
+  signal_tool_ = tool;
+  if (signal_tool_ != nullptr) {
+    connect(signal_tool_,
+            &SignalTool::signalization_changed,
+            this,
+            &PropertiesPanel::refresh_signalization);
+  }
+  refresh_signalization();
+}
+
+void PropertiesPanel::refresh_signalization() {
+  // deleteLater, not delete, for the reason refresh_maneuvers spells out: a row
+  // editor pushes its command from inside its own signal, the command re-meshes,
+  // and the re-mesh lands right back here.
+  while (QLayoutItem* item = signalization_rows_layout_->takeAt(0)) {
+    if (QWidget* row = item->widget()) {
+      row->setParent(nullptr);
+      row->deleteLater();
+    }
+    delete item;
+  }
+
+  const RoadNetwork& network = document_.network();
+  const JunctionId junction = selection_.primary().junction;
+  // The section belongs to the Signal tool, so it appears only once one is
+  // wired up — and only for a junction selection.
+  if (signal_tool_ == nullptr || !junction.is_valid() || network.junction(junction) == nullptr) {
+    signalization_group_->hide();
+    return;
+  }
+
+  // The tool learns the new target from the SAME selection_changed signal this
+  // panel does, and it connected later, so on the selection pass its target can
+  // still be the previous junction. Its own signalization_changed then calls us
+  // back with the target caught up — until then the commands stay disabled
+  // rather than acting on the wrong junction.
+  const bool tool_on_target = signal_tool_->inspected_junction() == junction;
+
+  // Programmatic re-seed must not echo a set_pending_* back through the combo.
+  {
+    const QSignalBlocker block(signalization_template_combo_);
+    signalization_template_combo_->setCurrentIndex(
+        static_cast<int>(signal_tool_->pending_template()));
+  }
+  {
+    const QSignalBlocker block(signalization_mount_combo_);
+    const QString mount = QString::fromStdString(signal_tool_->pending_mount_model());
+    const int index = signalization_mount_combo_->findData(mount);
+    signalization_mount_combo_->setCurrentIndex(index >= 0 ? index : 0);
+  }
+
+  // Disabled, never failing: a span/virtual junction, a foreign one, and a
+  // re-apply of exactly the applied template are all refusals the factory
+  // would raise, so the button states them instead.
+  const QString blocker = signal_tool_->signalize_blocker();
+  signalization_apply_button_->setEnabled(tool_on_target && blocker.isEmpty());
+  signalization_apply_button_->setToolTip(
+      blocker.isEmpty() ? tr("Place this junction's signals and controllers from the template "
+                             "above, as one undo step")
+                        : blocker);
+  signalization_clear_button_->setEnabled(tool_on_target && signal_tool_->can_clear());
+
+  const std::optional<edit::SignalizeTemplate> applied = signal_tool_->applied_template();
+  const auto template_name = [this](edit::SignalizeTemplate tmpl) {
+    return signalization_template_combo_->itemText(static_cast<int>(tmpl));
+  };
+  auto* applied_row = new QLabel(
+      applied.has_value() ? tr("Applied: %1").arg(template_name(*applied)) : tr("Applied: none"),
+      signalization_group_);
+  applied_row->setObjectName(QStringLiteral("signalization_applied_label"));
+  signalization_rows_layout_->addWidget(applied_row);
+
+  const auto road_name = [&network](RoadId road) {
+    const Road* ptr = network.road(road);
+    return ptr != nullptr ? QString::fromStdString(ptr->odr_id) : tr("?");
+  };
+
+  // One READ-ONLY row per approach, from the one query every consumer shares.
+  // Solved against the junction under selection, not a value captured when the
+  // rows were built.
+  for (const JunctionApproachInfo& approach : junction_signals(network, junction)) {
+    QStringList groups;
+    for (const std::string& controller : approach.controller_odr_ids) {
+      groups << QString::fromStdString(controller);
+    }
+    auto* row = new QLabel(
+        tr("Arm %1 \u2014 %2 signal(s)%3, gates %4 turn(s)")
+            .arg(road_name(approach.arm.road))
+            .arg(approach.signal_ids.size())
+            .arg(groups.isEmpty() ? tr(", no group") : tr(", group %1").arg(groups.join(", ")))
+            .arg(approach.gated.size()),
+        signalization_group_);
+    row->setObjectName(QStringLiteral("signalization_approach_row"));
+    row->setToolTip(approach.dynamic ? tr("Light-controlled approach")
+                                     : tr("Sign-controlled (or unsignalized) approach"));
+    signalization_rows_layout_->addWidget(row);
+  }
+  signalization_group_->show();
 }
 
 void PropertiesPanel::set_corner_tool(CornerTool* tool) {

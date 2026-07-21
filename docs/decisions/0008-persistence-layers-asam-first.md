@@ -59,8 +59,35 @@ gracefully in other tools (they ignore `userData`). Policy:
 **Registry** — existing: `rm:waypoints`, `rm:crosswalk`, `rm:markingCurve`,
 `rm:stencil`, `rm:aux_boundary`, `rm:arms`, `rm:corners`, `rm:junction`,
 `rm:surface`, `rm:<material-id>`, `rm:stopline`, `rm:spans`, `rm:floor`,
-`rm:maneuver`. Planned: `rm:phases` (p4-s8). Each owning sprint defines its
-payload against this policy.
+`rm:maneuver`, `rm:signal`, `rm:signalmount`. Planned: `rm:phases` (p4-s8).
+Each owning sprint defines its payload against this policy.
+
+`rm:signal` (p4-s7, shipped) records WHICH auto-signalization template produced
+a junction's signals, so the tool can show the current template and re-apply
+coherently. Layer 1 on top of a full Layer 0: the `<signal>` (§14.1) and
+`<controller>`/`<control>` (§14.6) elements ARE the export and a foreign reader
+loses only the authoring provenance. Junction scope, one entry, fields `:`-joined:
+`template=protected_left|two_phase|all_way_stop|two_way_stop[:mount=<modelId>]`.
+`mount` names the prop model placed with each signal and is omitted when there
+is none; the whole element is omitted when no template was applied, so an
+unsignalized junction re-exports byte-identically. Degradation: a missing,
+repeated or unrecognized template — or a repeated/unencodable mount — drops the
+whole value with one warning (all-or-nothing, like `rm:maneuver`), while an
+unknown FIELD key warns and is skipped (forward-compat, like `rm:junction`).
+Nothing is re-derived on load — the `<signal>`/`<controller>` elements win.
+
+`rm:signalmount` (p4-s7, shipped) pairs each logical signal with the physical
+`<object>`s that represent it. Layer 1 with NO Layer-0 counterpart: §14.1
+Table 122 gives `<signal>` only its own bounding box, and nothing in the
+standard ties a signal to an object, so a foreign reader loses nothing. Junction
+scope, entries `;`-joined, each `signalOdrId=objOdrId[,objOdrId…]`. The object
+list is a LIST from day one so #323 (assemblies) replaces one model id with an
+assembly's parts and needs no schema change; it is bounded by
+`kMaxSignalMountParts` on both sides (the writer truncates to it, the reader
+rejects a longer value). Stale entries — a signal or object that no longer
+exists — are dropped on write like stale arms, and an empty result emits no
+element. Degradation is all-or-nothing throughout: the value is a map, so it has
+no field key to be forward-compatible about.
 
 `rm:maneuver` (p4-s6, shipped) carries the junction's authored maneuver
 overrides — per connecting road: a geometry lock, a turn-type override, the two

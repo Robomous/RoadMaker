@@ -9,13 +9,13 @@
 #include <algorithm>
 #include <cmath>
 #include <optional>
-#include <set>
 #include <string>
 
 #include "document/crosswalk_item.hpp"
 #include "document/crosswalk_placement.hpp"
 #include "document/marking_item.hpp"
 #include "document/prop_placement.hpp"
+#include "document/signal_placement.hpp"
 #include "document/stencil_placement.hpp"
 #include "render/material_catalog.hpp"
 #include "viewport/picking.hpp"
@@ -51,22 +51,9 @@ constexpr double kAssemblyEndMargin = 15.0;
 /// document/prop_placement.hpp (shared with the prop tools); this TU uses them
 /// via that include so the drop and the tools snap and mint ids identically.
 
-/// A signal snaps to a road within this lateral distance [m] of its reference
-/// line — same rationale as the tree threshold (OpenDRIVE signals are
-/// road-relative; a drop in open space is rejected).
-constexpr double kSignalSnapThreshold = 12.0;
-
-/// Lowest positive integer odr id not already used by a signal (id-unique per
-/// <signals>). Signals and objects have separate id spaces in OpenDRIVE.
-std::string next_signal_odr_id(const RoadNetwork& network) {
-  std::set<std::string> taken;
-  network.for_each_signal([&](SignalId, const Signal& signal) { taken.insert(signal.odr_id); });
-  int candidate = 1;
-  while (taken.contains(std::to_string(candidate))) {
-    ++candidate;
-  }
-  return std::to_string(candidate);
-}
+/// Signal snapping and id-minting now live in document/signal_placement.hpp
+/// (shared with the Signal tool, p4-s7); this TU uses them via that include so
+/// the drop and the tool snap and mint ids identically.
 
 /// A marking snaps to a lane boundary within this lateral distance [m] of a
 /// road's reference line — the whole carriageway is in reach so a drop anywhere
@@ -135,42 +122,6 @@ LaneId lane_containing_t(const RoadNetwork& network, RoadId road, double s, doub
     }
   }
   return {}; // off the carriageway
-}
-
-/// The Signal a library item authors at (s, t), by its manifest `signal` tag.
-/// "light" is a dynamic traffic light (OpenDRIVE catalog type); the sign tags
-/// are static German StVO (VzKat) regulatory plates the mesh builder renders by
-/// their catalog type: "sign_stop" → 206 (STOP), "sign_yield" → 205 (yield),
-/// and the generic "sign" → 274/50 (speed-limit-50, a recognisable default the
-/// user can retype). Orientation "+" faces the signal along increasing s.
-Signal make_dropped_signal(const RoadNetwork& network, const QString& tag, double s, double t) {
-  Signal signal;
-  signal.odr_id = next_signal_odr_id(network);
-  signal.orientation = ObjectOrientation::Plus;
-  signal.s = s;
-  signal.t = t;
-  if (tag == QStringLiteral("light")) {
-    signal.dynamic = true;
-    signal.type = "1000001"; // OpenDRIVE traffic-light catalog type
-    signal.subtype = "-1";
-    signal.country = "OpenDRIVE";
-  } else if (tag == QStringLiteral("sign_stop")) {
-    signal.dynamic = false;
-    signal.type = "206"; // StVO 206: Halt! Vorfahrt gewähren — STOP
-    signal.subtype = "-1";
-    signal.country = "DE";
-  } else if (tag == QStringLiteral("sign_yield")) {
-    signal.dynamic = false;
-    signal.type = "205"; // StVO 205: Vorfahrt gewähren — yield/give way
-    signal.subtype = "-1";
-    signal.country = "DE";
-  } else { // "sign" — generic regulatory plate (speed-limit 50)
-    signal.dynamic = false;
-    signal.type = "274"; // German regulatory speed-limit sign
-    signal.subtype = "50";
-    signal.country = "DE";
-  }
-  return signal;
 }
 
 } // namespace
@@ -323,12 +274,13 @@ LibraryDropAction resolve_library_drop(const LibraryItem& item,
     // with a hint. The dropped (s, t) is where the pole plants — the same
     // (road, s, t) → world projection the mesh builder instances the signal at,
     // so the ghost marks exactly where it lands (ghost==commit).
-    const auto placement = nearest_road_station(network, world_x, world_y, kSignalSnapThreshold);
+    const auto placement = nearest_signal_station(network, world_x, world_y);
     if (!placement.has_value()) {
       action.toast = QStringLiteral("Drop a signal onto or beside a road");
       return action; // kind stays None, preview invalid — caller hints
     }
-    Signal signal = make_dropped_signal(network, item.signal, placement->s, placement->t);
+    Signal signal =
+        make_signal(item.signal, next_signal_odr_id(network), placement->s, placement->t);
     action.command = edit::add_signal(network, placement->road, std::move(signal));
     if (action.command != nullptr) {
       action.kind = LibraryDropKind::Signal;

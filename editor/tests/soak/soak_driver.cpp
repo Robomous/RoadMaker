@@ -3,6 +3,7 @@
 #include "roadmaker/edit/assembly.hpp"
 #include "roadmaker/edit/operations.hpp"
 #include "roadmaker/mesh/junction_maneuvers.hpp"
+#include "roadmaker/mesh/junction_signals.hpp"
 #include "roadmaker/xodr/reader.hpp"
 #include "roadmaker/xodr/writer.hpp"
 
@@ -89,6 +90,8 @@ void SoakDriver::step(int index) {
       {2, &SoakDriver::op_maneuver_edit, "maneuver_edit"},
       {1, &SoakDriver::op_rebuild_maneuvers, "rebuild_maneuvers"},
       {1, &SoakDriver::op_add_uturn, "add_uturn"},
+      {2, &SoakDriver::op_signalize, "signalize"},
+      {1, &SoakDriver::op_clear_signalization, "clear_signalization"},
       {1, &SoakDriver::op_create_span_junction, "create_span_junction"},
       {1, &SoakDriver::op_delete_junction, "delete_junction"},
       {1, &SoakDriver::op_delete_road, "delete_road"},
@@ -201,6 +204,32 @@ bool SoakDriver::check_invariants(int index, const char* label) {
     for (const RoadEnd& arm : junction.arms) {
       if (network.road(arm.road) == nullptr) {
         broken = fmt::format("junction {} arm references dead road", junction.odr_id);
+        return;
+      }
+    }
+    // Signalization (p4-s7, issue #228). A DANGLING controller/signal reference
+    // is legal and expected (the records are dormant-tolerant), so what is
+    // checked is what the writer can actually round-trip: a template token the
+    // reader knows, no synchronization group on a virtual junction (ASAM
+    // junctions.virtual.no_controllers), and a mount list inside the bound the
+    // grammar can read back.
+    if (!junction.signalization.tmpl.empty() &&
+        std::ranges::find(kSignalizationTemplates, junction.signalization.tmpl) ==
+            std::end(kSignalizationTemplates)) {
+      broken = fmt::format("junction {} carries unknown signalization template '{}'",
+                           junction.odr_id,
+                           junction.signalization.tmpl);
+      return;
+    }
+    if (!junction.spans.empty() && !junction.junction_controllers.empty()) {
+      broken = fmt::format("virtual junction {} carries a synchronization group", junction.odr_id);
+      return;
+    }
+    for (const SignalMount& mount : junction.signal_mounts) {
+      if (mount.object_odr_ids.size() > kMaxSignalMountParts) {
+        broken = fmt::format("junction {} mount for signal {} exceeds the part bound",
+                             junction.odr_id,
+                             mount.signal_odr_id);
         return;
       }
     }
@@ -1173,6 +1202,35 @@ void SoakDriver::op_add_uturn() {
       document_.network(),
       id,
       junction->arms[static_cast<std::size_t>(rand_int(0, int(junction->arms.size()) - 1))]));
+}
+
+// --- signalization (p4-s7, issue #228) ---------------------------------------
+
+void SoakDriver::op_signalize() {
+  const std::vector<JunctionId> junctions = live_junctions();
+  if (junctions.empty()) {
+    return;
+  }
+  const JunctionId id = junctions[static_cast<std::size_t>(rand_int(0, int(junctions.size()) - 1))];
+  // Deliberately unconditional across all four templates: a virtual junction, a
+  // foreign one, a re-apply of the SAME template (a no-op the round-trip oracle
+  // forbids) and TwoWayStop on a single-axis junction are four distinct refusal
+  // paths, and a refused command must leave the network byte-unchanged.
+  edit::SignalizeOptions options;
+  options.tmpl = static_cast<edit::SignalizeTemplate>(rand_int(0, 3));
+  push(edit::signalize_junction(document_.network(), id, options));
+}
+
+void SoakDriver::op_clear_signalization() {
+  const std::vector<JunctionId> junctions = live_junctions();
+  if (junctions.empty()) {
+    return;
+  }
+  // Also unconditional: clearing a junction with nothing signalized is a
+  // refusal worth drawing.
+  push(edit::clear_signalization(
+      document_.network(),
+      junctions[static_cast<std::size_t>(rand_int(0, int(junctions.size()) - 1))]));
 }
 
 void SoakDriver::op_merge_junctions() {

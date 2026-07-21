@@ -252,6 +252,15 @@ Actions::Actions(QUndoStack& undo_stack, QObject* parent) : QObject(parent) {
          "endpoint to slide it across the arm; Del removes a point, Esc cancels (\u21e7M)"));
   tool_group->addAction(tool_maneuver);
 
+  tool_signal = new QAction(tr("Si&gnal"), this);
+  tool_signal->setCheckable(true);
+  tool_signal->setShortcuts(shortcuts::sequences(shortcuts::Id::ToolSignal));
+  tool_signal->setIconText(tr("Signal"));
+  tool_signal->setToolTip(
+      tr("Signal \u2014 click a junction to auto-signalize it from a template, or a road to place "
+         "one signal from the Library (G)"));
+  tool_group->addAction(tool_signal);
+
   // Not a tool — a command that surfaces the 2D Editor's Lane Width tab for the
   // selected lane. Standalone so ⇧L works whatever tool is active.
   lane_width_editor = new QAction(tr("Lane &Width Editor"), this);
@@ -432,6 +441,8 @@ QAction* Actions::action(shortcuts::Id id) const {
     return tool_junction_surface;
   case Id::ToolManeuver:
     return tool_maneuver;
+  case Id::ToolSignal:
+    return tool_signal;
   case Id::LaneWidthEditor:
     return lane_width_editor;
   case Id::MergeRoads:
@@ -507,6 +518,7 @@ void Actions::apply_icons() {
   tool_junction_span->setIcon(Icons::get(QStringLiteral("junction-span")));
   tool_junction_surface->setIcon(Icons::get(QStringLiteral("junction-surface")));
   tool_maneuver->setIcon(Icons::get(QStringLiteral("maneuver")));
+  tool_signal->setIcon(Icons::get(QStringLiteral("signal")));
   template_rural->setIcon(Icons::get(QStringLiteral("template-rural")));
   template_urban->setIcon(Icons::get(QStringLiteral("template-urban")));
   template_highway->setIcon(Icons::get(QStringLiteral("template-highway")));

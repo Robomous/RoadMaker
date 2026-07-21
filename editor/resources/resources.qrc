@@ -33,6 +33,7 @@
     <file alias="junction-span.svg">icons/custom/junction-span.svg</file>
     <file alias="junction-surface.svg">icons/custom/junction-surface.svg</file>
     <file alias="maneuver.svg">icons/custom/tool_maneuver.svg</file>
+    <file alias="signal.svg">icons/custom/tool_signal.svg</file>
     <file alias="crosswalk.svg">icons/custom/crosswalk.svg</file>
     <file alias="junction-connect.svg">icons/custom/junction-connect.svg</file>
     <file alias="lane-section.svg">icons/custom/lane-section.svg</file>
