@@ -103,6 +103,45 @@ struct StopLine {
   std::string crosswalk_odr_id;
 };
 
+/// An authored override for ONE connecting road's contribution ("surface
+/// span") to the junction floor (p4-s5, issue #320).
+///
+/// NAME COLLISION, read this before reaching for `SpanArm`: a SurfaceSpan is a
+/// road's stretch of the FLOOR UNION, one per connecting road, and exists only
+/// on ordinary arm junctions. `SpanArm` is something else entirely — the
+/// s-interval of a VIRTUAL (span) junction (§12.7). A span junction has no
+/// floor at all, so it never carries SurfaceSpan records.
+///
+/// Sparse and dormant-tolerant exactly like JunctionCorner and StopLine: a
+/// connecting road with no entry contributes by pure derivation, and an entry
+/// whose road was erased (its turn dropped by regeneration) is ignored and
+/// never written. `regenerate_junction` leaves the list untouched — it matches
+/// surviving turns by TurnKey and rewrites geometry onto the SAME RoadId, so a
+/// record outlives a turn-set change.
+///
+/// ASAM OpenDRIVE 1.9.0 §12.10 gives `<junction>` no carrier for how its
+/// pavement is triangulated (`<boundary>` and `<elevationGrid>` are pure
+/// output geometry), so these ride `<userData code="rm:floor">` on the
+/// junction — ADR-0008 Layer 1, the rm:corners pattern.
+struct SurfaceSpan {
+  /// The span's identity: the connecting road whose contribution it overrides.
+  RoadId road;
+
+  /// false ⇒ this road's SAMPLES leave the fill inputs: its border elevations
+  /// stop being Dirichlet sources, its centerline stops constraining the
+  /// harmonic solve, and its samples stop protecting boundary debris from the
+  /// short-segment merge. Its FOOTPRINT stays in the union either way, so the
+  /// floor's coverage and the exported `<boundary>` never change — this is an
+  /// escape valve for interior triangulation artifacts, not a way to punch a
+  /// hole in the pavement.
+  bool included = true;
+
+  /// Precedence where span footprints OVERLAP: the higher sort index supplies
+  /// the elevation there. Free integer (the editor's Raise/Lower simply move it
+  /// by one), so a record survives regeneration without any renumbering pass.
+  int sort_index = 0;
+};
+
 /// Membership span of a virtual (span) junction: a stretch [s_start, s_end] of
 /// one road that belongs to the junction without cutting that road.
 ///
@@ -158,6 +197,15 @@ struct Junction {
   /// `regenerate_junction` leaves this untouched so an override outlives a
   /// turn-set change and simply goes dormant if its arm leaves the junction.
   std::vector<StopLine> stoplines;
+
+  /// Authored floor-contribution overrides, keyed by connecting road (p4-s5,
+  /// issue #320). Sparse in exactly the sense `corners` and `stoplines` are: a
+  /// connecting road with no entry contributes by pure derivation, and
+  /// `regenerate_junction` leaves this untouched so an override outlives a
+  /// turn-set change and simply goes dormant if its turn is dropped.
+  ///
+  /// Always empty on a span (virtual) junction — it has no floor to control.
+  std::vector<SurfaceSpan> surface_spans;
 
   /// Bare catalog material name for the junction carriageway (the floor).
   /// Empty ⇒ the derived asphalt look, mirroring `Surface::material`.

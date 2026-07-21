@@ -30,7 +30,17 @@ std::vector<JunctionFillSpan> collect_fill_spans(const RoadNetwork& network,
     if (Clipper2Lib::Area(contribution.footprint) < 0.0) {
       std::ranges::reverse(contribution.footprint);
     }
-    spans.push_back(JunctionFillSpan{.road = road_id, .contribution = std::move(contribution)});
+    JunctionFillSpan span{.road = road_id, .contribution = std::move(contribution)};
+    // A record whose road is no longer a connecting road is simply never looked
+    // up, which is what makes it dormant rather than an error.
+    const auto record = std::ranges::find_if(
+        junction.surface_spans, [&](const SurfaceSpan& entry) { return entry.road == road_id; });
+    if (record != junction.surface_spans.end()) {
+      span.included = record->included;
+      span.sort_index = record->sort_index;
+      span.authored = true;
+    }
+    spans.push_back(std::move(span));
   }
   return spans;
 }
