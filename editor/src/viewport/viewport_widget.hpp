@@ -104,6 +104,20 @@ public slots:
   /// #103 discoverability). Empty text clears it.
   void set_hint(const QString& text);
 
+  /// Shows or hides the corner hint card (View ▸ Viewport Hints, issue #333).
+  /// Only PAINTING is gated: the text keeps arriving and is kept, so switching
+  /// the toggle back on shows the active tool's current instruction straight
+  /// away instead of waiting for the next tool change. The status-bar
+  /// instruction is a separate channel and is unaffected either way.
+  void set_hints_enabled(bool enabled);
+
+  [[nodiscard]] bool hints_enabled() const { return hints_enabled_; }
+
+  /// Whether the hint card is on screen right now — the ONE definition of
+  /// "showing", shared by the painter, the overlay-animation clock and the
+  /// tests (which cannot inspect pixels headlessly).
+  [[nodiscard]] bool hint_visible() const;
+
   /// Shows a transient toast in the viewport (queued, themed, auto-fading).
   /// The single place editor feedback ("Merged", "Saved", a refusal) surfaces
   /// over the scene instead of only in the status bar.
@@ -454,6 +468,11 @@ private:
   QElapsedTimer clock_;
   QTimer* overlay_timer_ = nullptr;
   std::int64_t hint_changed_ms_ = 0;
+
+  /// View ▸ Viewport Hints (#333). Gates PAINTING of the hint card only —
+  /// hint_text_ keeps its value while off. Defaults to on, which is the
+  /// pre-#333 behavior.
+  bool hints_enabled_ = true;
 
   /// Resolved landing point (world x, y) and validity of a library item being
   /// dragged over the viewport; drives the world-anchored drop ghost (a marker

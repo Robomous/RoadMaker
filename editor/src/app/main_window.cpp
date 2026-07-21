@@ -681,6 +681,16 @@ void MainWindow::build_menus() {
   view_menu->addAction(textured_action);
   // Apply the persisted mode now (no-op when it matches the viewport default).
   viewport_->set_textured_rendering(settings_.textured_rendering());
+  // The other viewport view-setting (#333): whether the active tool's hint is
+  // drawn in the corner. Persisted the same way, defaults on, and never touches
+  // the document — the status-bar instruction is a separate channel.
+  actions_->viewport_hints->setChecked(settings_.viewport_hints());
+  connect(actions_->viewport_hints, &QAction::toggled, this, [this](bool enabled) {
+    settings_.set_viewport_hints(enabled);
+    viewport_->set_hints_enabled(enabled);
+  });
+  view_menu->addAction(actions_->viewport_hints);
+  viewport_->set_hints_enabled(settings_.viewport_hints());
   view_menu->addSeparator();
   view_menu->addAction(actions_->reset_camera);
   view_menu->addAction(actions_->frame_selection);

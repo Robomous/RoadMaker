@@ -48,6 +48,12 @@ public:
   [[nodiscard]] bool textured_rendering() const;
   void set_textured_rendering(bool textured);
 
+  /// Viewport corner hint (View ▸ Viewport Hints, issue #333): true = the
+  /// active tool's instruction is drawn in the viewport corner (the default —
+  /// #103 discoverability), false = viewport only, status bar unaffected.
+  [[nodiscard]] bool viewport_hints() const;
+  void set_viewport_hints(bool enabled);
+
   static constexpr int kMaxRecentFiles = 10;
 
 private:

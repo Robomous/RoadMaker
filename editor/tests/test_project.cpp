@@ -205,5 +205,18 @@ TEST_F(RecentProjectsSettingsTest, PersistsAcrossSettingsInstancesAndIsSeparateF
   EXPECT_EQ(reread.recent_files(), QStringList{QStringLiteral("/s/scene.xodr")});
 }
 
+// #333: the viewport-hint toggle is a persisted view setting. On (the pre-#333
+// behavior) is the default, so an upgrade never silently removes the hint.
+TEST_F(RecentProjectsSettingsTest, ViewportHintsDefaultOnAndRoundTrip) {
+  EXPECT_TRUE(settings_->viewport_hints());
+
+  settings_->set_viewport_hints(false);
+  EXPECT_FALSE(settings_->viewport_hints());
+  EXPECT_FALSE(Settings().viewport_hints()); // survives a fresh wrapper
+
+  settings_->set_viewport_hints(true);
+  EXPECT_TRUE(Settings().viewport_hints());
+}
+
 } // namespace
 } // namespace roadmaker::editor

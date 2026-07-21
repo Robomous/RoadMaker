@@ -87,4 +87,14 @@ void Settings::set_textured_rendering(bool textured) {
   settings_.setValue(QStringLiteral("view/textured_rendering"), textured);
 }
 
+bool Settings::viewport_hints() const {
+  // Default ON: the corner hint is what #103 added for discoverability, and
+  // #333 only adds a way OUT of it — an upgrade must not silently take it away.
+  return settings_.value(QStringLiteral("view/viewport_hints"), true).toBool();
+}
+
+void Settings::set_viewport_hints(bool enabled) {
+  settings_.setValue(QStringLiteral("view/viewport_hints"), enabled);
+}
+
 } // namespace roadmaker::editor

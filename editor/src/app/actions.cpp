@@ -308,6 +308,15 @@ Actions::Actions(QUndoStack& undo_stack, QObject* parent) : QObject(parent) {
   view_top = make_cardinal(tr("&Top-Down"),
                            tr("Plan view from directly above, north up (numpad 5, or 5)"),
                            shortcuts::Id::ViewTop);
+  // View ▸ Viewport Hints (#333). Checkable and menu-only; MainWindow owns the
+  // checked state (it is persisted in QSettings, not derived from the tool).
+  viewport_hints = new QAction(tr("&Viewport Hints"), this);
+  viewport_hints->setShortcuts(shortcuts::sequences(shortcuts::Id::ViewportHints));
+  viewport_hints->setCheckable(true);
+  viewport_hints->setToolTip(
+      tr("Show the active tool's hint in the viewport corner (H) — the status bar keeps it "
+         "either way"));
+
   merge_roads = new QAction(tr("&Merge Roads"), this);
   merge_roads->setShortcuts(shortcuts::sequences(shortcuts::Id::MergeRoads));
   merge_roads->setIconText(tr("Merge"));
@@ -415,6 +424,8 @@ QAction* Actions::action(shortcuts::Id id) const {
     return view_east;
   case Id::ViewTop:
     return view_top;
+  case Id::ViewportHints:
+    return viewport_hints;
   case Id::Help:
     return help_contents;
   case Id::kIdCount:

@@ -146,6 +146,7 @@ click.
 
 ## See also
 
+- [Viewport hints](viewport-hints.md) — the corner hint card, and how to hide it
 - [Right-click menus](context-menus.md) — the menu the short right-click opens
 - [Moving and transforming](moving-and-transforming.md) — moving *content*,
   as opposed to moving the camera

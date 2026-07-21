@@ -97,6 +97,11 @@ public:
   QAction* view_west = nullptr;
   QAction* view_east = nullptr;
   QAction* view_top = nullptr;
+
+  /// Checkable View toggle for the viewport corner hint (#333). Persisted in
+  /// QSettings by MainWindow; the status-bar instruction is unaffected.
+  QAction* viewport_hints = nullptr;
+
   QAction* merge_roads = nullptr;
   QAction* reset_layout = nullptr;
 
