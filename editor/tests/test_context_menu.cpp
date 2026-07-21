@@ -732,6 +732,12 @@ struct JunctionFixture {
     return build_context_menu(context, deps);
   }
 
+  /// The returned pointer aliases `items`, so a temporary menu would dangle —
+  /// hold the vector in a named local. Deleted below for rvalues so the
+  /// mistake is a compile error rather than a use-after-free ASan only sees
+  /// on Linux.
+  [[nodiscard]] static const MenuItem* find(std::vector<MenuItem>&&, const QString&) = delete;
+
   [[nodiscard]] static const MenuItem* find(const std::vector<MenuItem>& items,
                                             const QString& text) {
     for (const MenuItem& item : items) {
@@ -914,16 +920,23 @@ TEST(ContextMenu, MergeJunctionsNeedsExactlyTwoSelected) {
       });
   ASSERT_TRUE(other.is_valid());
 
-  // Nothing selected: present but disabled, and unnamed.
-  const MenuItem* merge = JunctionFixture::find(fx.junction_menu(), "Merge selected junctions");
-  ASSERT_NE(merge, nullptr);
-  EXPECT_FALSE(merge->enabled);
+  // Nothing selected: present but disabled, and unnamed. The menu has to be
+  // held in a named local — `find` returns a pointer into it.
+  {
+    const std::vector<MenuItem> items = fx.junction_menu();
+    const MenuItem* merge = JunctionFixture::find(items, "Merge selected junctions");
+    ASSERT_NE(merge, nullptr);
+    EXPECT_FALSE(merge->enabled);
+  }
 
   // One selected: still disabled.
   fx.selection.select({.junction = fx.junction});
-  merge = JunctionFixture::find(fx.junction_menu(), "Merge selected junctions");
-  ASSERT_NE(merge, nullptr);
-  EXPECT_FALSE(merge->enabled);
+  {
+    const std::vector<MenuItem> items = fx.junction_menu();
+    const MenuItem* merge = JunctionFixture::find(items, "Merge selected junctions");
+    ASSERT_NE(merge, nullptr);
+    EXPECT_FALSE(merge->enabled);
+  }
 
   // Two selected: enabled, and the text names the survivor (the FIRST selected).
   fx.selection.select({.junction = other}, roadmaker::editor::SelectMode::Add);
