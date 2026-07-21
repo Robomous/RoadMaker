@@ -419,6 +419,91 @@ TEST(StopLinePersistence, ALegacyPlainSignalLinesObjectSurvivesAndSuppressesTheD
   EXPECT_EQ(write(reparsed->network), xml);
 }
 
+// --- round-trip idempotence traps (found by the soak invariant) --------------
+
+TEST(StopLinePersistence, AJunctionWhoseArmsDoNotRoundTripExportsNoStopLines) {
+  // A stop line is owned by a RoadEnd, and the reader recovers that ownership
+  // through the junction's arm list. The rm:arms writer refuses to emit a list
+  // below 2 arms (issue #90), so such a junction reloads arm-less — and a stop
+  // line written for it would come back as an orphaned live object, which then
+  // suppresses the derived line and lands in arena order. Write nothing.
+  CrossFixture fixture;
+  ASSERT_FALSE(write(fixture.network).find("rm:stopline") == std::string::npos)
+      << "the 4-arm fixture must export stop lines to begin with";
+
+  // Degenerate the junction the way delete_road's closure does.
+  fixture.network.junction(fixture.junction)->arms.resize(1);
+
+  const std::string xml = write(fixture.network);
+  EXPECT_EQ(count(xml, "code=\"rm:stopline\""), 0U);
+  EXPECT_EQ(count(xml, "subtype=\"signalLines\""), 0U);
+  EXPECT_EQ(count(xml, "code=\"rm:arms\""), 0U) << "the two rules must agree";
+
+  auto reparsed = roadmaker::parse_xodr(xml, "stoplines");
+  ASSERT_TRUE(reparsed.has_value());
+  EXPECT_TRUE(reparsed->diagnostics.empty());
+  EXPECT_EQ(write(reparsed->network), xml) << "write->parse->write must be byte-identical";
+}
+
+TEST(StopLinePersistence, ADegenerateJunctionBesideAHealthyOneStillRoundTrips) {
+  // The soak repro, reduced: a healthy junction and a degenerate one (whose arm
+  // list will not be written) in the same file. Without the arms_round_trip
+  // gate the degenerate junction's stop line reloads as an ORPHANED LIVE OBJECT
+  // — which both suppresses the derived line and, being a real object, is
+  // emitted BEFORE the materialized ones, so the second write differs.
+  RoadNetwork network;
+  const auto arm = [&](std::vector<Waypoint> waypoints, const char* id) {
+    auto road = roadmaker::author_clothoid_road(
+        network, waypoints, LaneProfile::two_lane_default(), "", id);
+    EXPECT_TRUE(road.has_value()) << "author " << id << ": "
+                                  << (road.has_value() ? "" : road.error().message);
+    return road.has_value() ? *road : RoadId{};
+  };
+  // Two independent four-way crossings, 400 m apart. The odr ids are held in
+  // named strings — `std::to_string(n).c_str()` would dangle immediately.
+  const auto cross_at = [&](double cx, double cy, int base) {
+    const std::string a = std::to_string(base);
+    const std::string b = std::to_string(base + 1);
+    const std::string c = std::to_string(base + 2);
+    const std::string d = std::to_string(base + 3);
+    const RoadId west = arm({Waypoint{cx - 80.0, cy}, Waypoint{cx - 20.0, cy}}, a.c_str());
+    const RoadId east = arm({Waypoint{cx + 80.0, cy}, Waypoint{cx + 20.0, cy}}, b.c_str());
+    const RoadId south = arm({Waypoint{cx, cy - 80.0}, Waypoint{cx, cy - 20.0}}, c.c_str());
+    const RoadId north = arm({Waypoint{cx, cy + 80.0}, Waypoint{cx, cy + 20.0}}, d.c_str());
+    const std::array<RoadEnd, 4> ends{RoadEnd{.road = west, .contact = ContactPoint::End},
+                                      RoadEnd{.road = east, .contact = ContactPoint::End},
+                                      RoadEnd{.road = south, .contact = ContactPoint::End},
+                                      RoadEnd{.road = north, .contact = ContactPoint::End}};
+    auto applied = roadmaker::edit::create_junction(network, ends)->apply(network);
+    EXPECT_TRUE(applied.has_value()) << (applied.has_value() ? "" : applied.error().message);
+  };
+  cross_at(0.0, 0.0, 1);
+  cross_at(400.0, 0.0, 100);
+
+  // Degenerate the SECOND junction the way delete_road's closure leaves one.
+  JunctionId degenerate{};
+  network.for_each_junction([&](JunctionId id, const Junction&) { degenerate = id; });
+  ASSERT_TRUE(degenerate.is_valid());
+  ASSERT_GE(network.junction(degenerate)->arms.size(), 2U);
+  network.junction(degenerate)->arms.resize(1);
+
+  const std::string xml = write(network);
+  // The healthy junction still exports its four lines; the degenerate one none.
+  EXPECT_EQ(count(xml, "code=\"rm:stopline\""), 4U);
+
+  auto reparsed = roadmaker::parse_xodr(xml, "stoplines");
+  ASSERT_TRUE(reparsed.has_value());
+  EXPECT_TRUE(reparsed->diagnostics.empty())
+      << "a materialized line we cannot read back must never be written; first: "
+      << (reparsed->diagnostics.empty() ? std::string{} : reparsed->diagnostics.front().message);
+
+  std::size_t arena_objects = 0;
+  reparsed->network.for_each_object(
+      [&](roadmaker::ObjectId, const roadmaker::Object&) { ++arena_objects; });
+  EXPECT_EQ(arena_objects, 0U) << "no stop line came back as an orphaned live object";
+  EXPECT_EQ(write(reparsed->network), xml) << "write->parse->write must be byte-identical";
+}
+
 // DISABLED by default so normal runs never write into the source tree.
 // Regenerate the committed rm:stopline fuzz-corpus seed with
 // --gtest_also_run_disabled_tests --gtest_filter='*DISABLED_WriteCorpusSeed'.

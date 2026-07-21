@@ -18,6 +18,7 @@
 #include <set>
 #include <sstream>
 #include <string>
+#include <tuple>
 #include <variant>
 #include <vector>
 
@@ -735,6 +736,25 @@ void write_object(pugi::xml_node objects_node, const Object& object, const Write
   }
 }
 
+/// How many of a junction's arms will actually be serialized into `rm:arms` —
+/// stale entries (whose road is gone) are not written.
+///
+/// Shared by the rm:arms writer and the stop-line exporter so the two cannot
+/// drift: anything whose ownership is recovered on load through
+/// `Junction::arms` is only writable when that list itself round-trips.
+std::size_t writable_arm_count(const RoadNetwork& network, const Junction& junction) {
+  return static_cast<std::size_t>(std::ranges::count_if(
+      junction.arms, [&](const RoadEnd& arm) { return network.road(arm.road) != nullptr; }));
+}
+
+/// True when `junction`'s arm list survives a round trip. The reader rejects an
+/// rm:arms with fewer than 2 arms, so the writer does not emit one either
+/// (issue #90) — and a junction that comes back arm-less cannot re-resolve
+/// anything keyed on a RoadEnd.
+bool arms_round_trip(const RoadNetwork& network, const Junction& junction) {
+  return writable_arm_count(network, junction) >= 2;
+}
+
 /// One materialized stop line: the solved geometry plus the deterministic
 /// `@id` its object will carry.
 struct StopLineExport {
@@ -800,32 +820,62 @@ void write_stopline_object(pugi::xml_node objects_node, const StopLineExport& li
 /// Solves every junction's stop lines and buckets them by owning road, minting
 /// each one's `@id`.
 ///
-/// Order is junction arena order, then the query's own arm order (connection
-/// order) — both deterministic, so the ids and the emission sequence are stable
-/// across writes of the same network. Ids are namespaced
-/// `sl_<junction>_<road>_<s|e>` and disambiguated against every id already in
-/// the file, mirroring unique_aux_id.
+/// Both the ids and the per-road emission order are keyed on INTRINSIC data —
+/// the owning junction's and road's odr ids and the contact end — never on
+/// arena iteration order. A road can be an arm of two junctions (one at each
+/// end), and junction arena order is NOT stable across a round trip: erasing a
+/// junction leaves a slot that a later creation reuses, while a freshly parsed
+/// network has no holes. Bucketing in arena order therefore flipped the two
+/// objects' positions on the second write and broke write→parse→write
+/// idempotence. Sorting before minting also keeps the collision suffixes
+/// themselves order-independent.
 StopLineExports build_stopline_exports(const RoadNetwork& network) {
-  StopLineExports out;
-  std::set<std::string> taken;
-  network.for_each_object([&](ObjectId, const Object& object) { taken.insert(object.odr_id); });
+  struct Pending {
+    std::string junction_odr_id;
+    std::string road_odr_id;
+    JunctionStopLineInfo info;
+  };
 
+  std::vector<Pending> pending;
   network.for_each_junction([&](JunctionId junction_id, const Junction& junction) {
+    // A stop line is owned by a RoadEnd, and the reader recovers that ownership
+    // through the junction's arm list. When that list will not be written, the
+    // object would come back as an orphan — a live, untagged-looking object that
+    // then SUPPRESSES the derived line and lands in arena order, breaking
+    // write→parse→write. Emit nothing rather than something unreadable; the
+    // junction is degenerate (below 2 arms) and already persists as arm-less.
+    if (!arms_round_trip(network, junction)) {
+      return;
+    }
     for (const JunctionStopLineInfo& info : junction_stoplines(network, junction_id)) {
       const Road* road = network.road(info.arm.road);
       if (road == nullptr) {
         continue;
       }
-      const std::string base = "sl_" + junction.odr_id + "_" + road->odr_id + "_" +
-                               (info.arm.contact == ContactPoint::End ? "e" : "s");
-      std::string id = base;
-      for (int suffix = 1; taken.contains(id); ++suffix) {
-        id = base + "_" + std::to_string(suffix);
-      }
-      taken.insert(id);
-      out[road->odr_id].push_back(StopLineExport{.info = info, .odr_id = std::move(id)});
+      pending.push_back(
+          Pending{.junction_odr_id = junction.odr_id, .road_odr_id = road->odr_id, .info = info});
     }
   });
+  std::ranges::sort(pending, [](const Pending& a, const Pending& b) {
+    return std::tie(a.road_odr_id, a.junction_odr_id, a.info.arm.contact) <
+           std::tie(b.road_odr_id, b.junction_odr_id, b.info.arm.contact);
+  });
+
+  std::set<std::string> taken;
+  network.for_each_object([&](ObjectId, const Object& object) { taken.insert(object.odr_id); });
+
+  StopLineExports out;
+  for (Pending& entry : pending) {
+    const std::string base = "sl_" + entry.junction_odr_id + "_" + entry.road_odr_id + "_" +
+                             (entry.info.arm.contact == ContactPoint::End ? "e" : "s");
+    std::string id = base;
+    for (int suffix = 1; taken.contains(id); ++suffix) {
+      id = base + "_" + std::to_string(suffix);
+    }
+    taken.insert(id);
+    out[entry.road_odr_id].push_back(
+        StopLineExport{.info = std::move(entry.info), .odr_id = std::move(id)});
+  }
   return out;
 }
 
@@ -1223,9 +1273,15 @@ void write_junction(pugi::xml_node root,
   // The generator's arm list round-trips through <userData> (OpenDRIVE 1.9.0
   // §7.2) so regeneration survives save/load; junctions from foreign files
   // carry no arms and emit nothing. Format: "roadOdrId:start|end;…".
-  if (!junction.arms.empty()) {
+  // Reader/writer symmetry (issue #90, found by the soak round-trip
+  // invariant): the reader rejects rm:arms with fewer than 2 arms, so
+  // writing a degenerate list (a junction that lost arms to delete_road's
+  // closure) would not round-trip byte-identically. A junction below 2
+  // arms cannot regenerate anyway — it persists as arm-less (foreign
+  // semantics: recreate to edit). `arms_round_trip` is the shared predicate;
+  // the stop-line exporter gates on it too, for the same reason.
+  if (arms_round_trip(network, junction)) {
     std::string value;
-    std::size_t written_arms = 0;
     for (const RoadEnd& arm : junction.arms) {
       const Road* road = network.road(arm.road);
       if (road == nullptr) {
@@ -1237,16 +1293,6 @@ void write_junction(pugi::xml_node root,
       value += road->odr_id;
       value += ':';
       value += arm.contact == ContactPoint::End ? "end" : "start";
-      ++written_arms;
-    }
-    // Reader/writer symmetry (issue #90, found by the soak round-trip
-    // invariant): the reader rejects rm:arms with fewer than 2 arms, so
-    // writing a degenerate list (a junction that lost arms to delete_road's
-    // closure) would not round-trip byte-identically. A junction below 2
-    // arms cannot regenerate anyway — it persists as arm-less (foreign
-    // semantics: recreate to edit).
-    if (written_arms < 2) {
-      value.clear();
     }
     if (!value.empty()) {
       pugi::xml_node user_data = junction_node.append_child("userData");
