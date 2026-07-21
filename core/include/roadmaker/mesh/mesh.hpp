@@ -114,6 +114,9 @@ struct ObjectInstance {
   std::string model_id;             ///< prop_library id, e.g. "tree_pine"
   std::array<double, 3> position{}; ///< world origin (base centre), xyz
   double heading = 0.0;             ///< world heading [rad] about +Z
+  /// Uniform scale applied to the model, derived from the object's declared
+  /// OpenDRIVE @height (props::instance_scale). 1.0 = draw at model size.
+  double scale = 1.0;
 };
 
 /// A placed <signal> as an INSTANCE of a bundled signal model

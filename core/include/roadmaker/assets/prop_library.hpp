@@ -49,4 +49,22 @@ RM_API const std::vector<std::string>& ids();
 /// the program lifetime (models are static data).
 RM_API const PropModel* model(std::string_view id);
 
+/// Uniform render scale for a placed prop: the object's declared OpenDRIVE
+/// @height divided by the model's authored height. This is what makes a
+/// third-party .xodr that declares a 10 m tree draw as a 10 m tree instead of at
+/// model unit size. Returns 1.0 when the model is unknown, when either height is
+/// absent or non-positive, and — by IEEE x/x == 1.0 — when the object declares
+/// exactly the model height, so scenes authored before per-instance sizing keep
+/// rendering identically. Only @height drives the scale: props scale uniformly,
+/// so @radius/@width/@length ride along rather than skewing the model.
+[[nodiscard]] inline double instance_scale(const Object& object, const PropModel* model) {
+  if (model == nullptr || !(model->height > 0.0)) {
+    return 1.0;
+  }
+  if (!object.height.has_value() || !(*object.height > 0.0)) {
+    return 1.0;
+  }
+  return *object.height / model->height;
+}
+
 } // namespace roadmaker::props
