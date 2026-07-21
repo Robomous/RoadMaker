@@ -9,6 +9,7 @@
 // refresh-on-undo never echoes a command back.
 
 #include "roadmaker/mesh/junction_corners.hpp"
+#include "roadmaker/mesh/junction_maneuvers.hpp"
 #include "roadmaker/mesh/junction_stoplines.hpp"
 #include "roadmaker/mesh/junction_surface_spans.hpp"
 
@@ -38,6 +39,7 @@ namespace roadmaker::editor {
 class CornerTool;
 class StopLineTool;
 class JunctionSurfaceTool;
+class ManeuverTool;
 class ElevationTool;
 class LibraryListModel;
 
@@ -97,6 +99,10 @@ public:
   /// pick the same span.
   void set_junction_surface_tool(JunctionSurfaceTool* tool);
 
+  /// Binds the "Maneuvers" rows to the Maneuver tool's sub-selection (p4-s6,
+  /// issue #227), so a row click and a viewport click pick the same turn.
+  void set_maneuver_tool(ManeuverTool* tool);
+
   /// The editor's road-mark width conventions [m]. OpenDRIVE's @width has no
   /// normative values (weight standard/bold is the spec's coarse axis) —
   /// these presets are RoadMaker conventions (docs/domain/opendrive.md).
@@ -114,6 +120,11 @@ private:
   /// plain widgets, not a QAbstractItemModel: the row count is a handful and
   /// nothing here is sortable, selectable-as-a-model, or drag-reorderable.
   void refresh_surface_spans();
+
+  /// Rebuilds the per-maneuver rows from mesh::junction_maneuvers(). Dynamic
+  /// plain widgets for the same reason the span rows are: a handful of rows,
+  /// nothing sortable or drag-reorderable, nothing to share with a view.
+  void refresh_maneuvers();
 
   /// Populates the Junction section (default corner radius + carriageway
   /// material) from `junction`, and shows it. Called from the junction branch
@@ -276,6 +287,14 @@ private:
   QGroupBox* surface_spans_group_;
   QVBoxLayout* surface_spans_layout_ = nullptr;
   JunctionSurfaceTool* junction_surface_tool_ = nullptr;
+
+  /// Junction maneuvers (p4-s6, issue #227): one row per connecting road plus
+  /// the junction-wide Rebuild. Rebuilt on every refresh, so nothing here is
+  /// cached beyond the container.
+  QGroupBox* maneuvers_group_;
+  QVBoxLayout* maneuvers_layout_ = nullptr;
+  QPushButton* maneuvers_rebuild_button_ = nullptr;
+  ManeuverTool* maneuver_tool_ = nullptr;
 
   /// Junction section (p4-s2): the junction-wide corner-radius default (the
   /// fallback every corner without its own radius uses) and the carriageway

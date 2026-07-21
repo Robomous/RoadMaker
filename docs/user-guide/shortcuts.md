@@ -61,6 +61,7 @@ conventions below.
 | Stop Line tool (junction stop lines) | `Shift+O` | F flips the active line while the tool is up |
 | Junction Span tool (virtual junctions over a road) | `Shift+J` | plain J is the Create Junction tool |
 | Junction Surface tool (inspect and order fill spans) | `I` | Space toggles the active span's samples; PgUp/PgDn raise or lower it |
+| Maneuver tool (reshape a junction's turns) | `Shift+M` | plain M is the Move tool; Del removes the focused path point |
 | Lane Width editor (2D) | `Shift+L` |  |
 
 ## View

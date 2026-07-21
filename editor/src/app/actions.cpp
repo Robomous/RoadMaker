@@ -243,6 +243,15 @@ Actions::Actions(QUndoStack& undo_stack, QObject* parent) : QObject(parent) {
          "toggles a span's samples, PgUp/PgDn raise or lower it on overlap (I)"));
   tool_group->addAction(tool_junction_surface);
 
+  tool_maneuver = new QAction(tr("&Maneuver"), this);
+  tool_maneuver->setCheckable(true);
+  tool_maneuver->setShortcuts(shortcuts::sequences(shortcuts::Id::ToolManeuver));
+  tool_maneuver->setIconText(tr("Maneuver"));
+  tool_maneuver->setToolTip(
+      tr("Maneuver \u2014 click a junction turn, then drag its points to reshape it or an "
+         "endpoint to slide it across the arm; Del removes a point, Esc cancels (\u21e7M)"));
+  tool_group->addAction(tool_maneuver);
+
   // Not a tool — a command that surfaces the 2D Editor's Lane Width tab for the
   // selected lane. Standalone so ⇧L works whatever tool is active.
   lane_width_editor = new QAction(tr("Lane &Width Editor"), this);
@@ -421,6 +430,8 @@ QAction* Actions::action(shortcuts::Id id) const {
     return tool_junction_span;
   case Id::ToolJunctionSurface:
     return tool_junction_surface;
+  case Id::ToolManeuver:
+    return tool_maneuver;
   case Id::LaneWidthEditor:
     return lane_width_editor;
   case Id::MergeRoads:
@@ -495,6 +506,7 @@ void Actions::apply_icons() {
   tool_stopline->setIcon(Icons::get(QStringLiteral("stop-line")));
   tool_junction_span->setIcon(Icons::get(QStringLiteral("junction-span")));
   tool_junction_surface->setIcon(Icons::get(QStringLiteral("junction-surface")));
+  tool_maneuver->setIcon(Icons::get(QStringLiteral("maneuver")));
   template_rural->setIcon(Icons::get(QStringLiteral("template-rural")));
   template_urban->setIcon(Icons::get(QStringLiteral("template-urban")));
   template_highway->setIcon(Icons::get(QStringLiteral("template-highway")));

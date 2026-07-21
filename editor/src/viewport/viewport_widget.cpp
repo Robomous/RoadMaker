@@ -1506,6 +1506,15 @@ ToolEvent ViewportWidget::make_tool_event(const QMouseEvent* event) const {
       tool_event.station = find_station(road->plan_view, tool_event.world_x, tool_event.world_y);
     }
   }
+  // Screen context for tools that hit-test in pixels rather than metres (the
+  // Maneuver tool's connecting-road paths have no mesh proxy to ray-cast).
+  const float aspect =
+      height() > 0 ? static_cast<float>(width()) / static_cast<float>(height()) : 1.0F;
+  tool_event.screen = ScreenContext{.camera = camera_.matrices(aspect),
+                                    .px = event->position().x(),
+                                    .py = event->position().y(),
+                                    .width = static_cast<double>(width()),
+                                    .height = static_cast<double>(height())};
   tool_event.buttons = event->buttons(); // press events include their button
   tool_event.modifiers = event->modifiers();
   return tool_event;
