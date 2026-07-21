@@ -15,10 +15,12 @@
 #include "roadmaker/io/usd_exporter.hpp"
 #include "roadmaker/mesh/junction_corners.hpp"
 #include "roadmaker/mesh/junction_maneuvers.hpp"
+#include "roadmaker/mesh/junction_signals.hpp"
 #include "roadmaker/mesh/junction_stoplines.hpp"
 #include "roadmaker/mesh/junction_surface_spans.hpp"
 #include "roadmaker/mesh/mesh_builder.hpp"
 #include "roadmaker/road/authoring.hpp"
+#include "roadmaker/road/controller.hpp"
 #include "roadmaker/road/network.hpp"
 #include "roadmaker/road/repeat_expansion.hpp"
 #include "roadmaker/road/surface_derivation.hpp"
@@ -231,6 +233,7 @@ NB_MODULE(_roadmaker, m) {
   bind_id<roadmaker::JunctionId>(m, "JunctionId");
   bind_id<roadmaker::ObjectId>(m, "ObjectId");
   bind_id<roadmaker::SignalId>(m, "SignalId");
+  bind_id<roadmaker::ControllerId>(m, "ControllerId");
   bind_id<roadmaker::SurfaceId>(m, "SurfaceId");
 
   // --- value types -----------------------------------------------------------
@@ -624,6 +627,48 @@ NB_MODULE(_roadmaker, m) {
                ", s_end=" + std::to_string(span.s_end) + ")";
       });
 
+  nb::class_<roadmaker::JunctionController>(m, "JunctionController")
+      .def_ro("controller_odr_id",
+              &roadmaker::JunctionController::controller_odr_id,
+              "@id of the top-level <controller> this junction synchronizes. A "
+              "REFERENCE, never a definition (OpenDRIVE 1.9.0 §12.14, Table 84) "
+              "— look the controller itself up in RoadNetwork.controller_ids.")
+      .def_ro("sequence", &roadmaker::JunctionController::sequence, "@sequence, or None.")
+      .def_ro("type", &roadmaker::JunctionController::type, "@type — optional free text.")
+      .def_ro("preserved", &roadmaker::JunctionController::preserved)
+      .def("__repr__", [](const roadmaker::JunctionController& reference) {
+        return "JunctionController(controller_odr_id='" + reference.controller_odr_id + "')";
+      });
+
+  nb::class_<roadmaker::SignalMount>(m, "SignalMount")
+      .def_ro("signal_odr_id",
+              &roadmaker::SignalMount::signal_odr_id,
+              "odr id of the logical <signal> these props represent.")
+      .def_ro("object_odr_ids",
+              &roadmaker::SignalMount::object_odr_ids,
+              "odr ids of the <object>s that physically represent it, in "
+              "placement order. A LIST because an assembly's parts drop "
+              "straight in; bounded by 16.")
+      .def("__repr__", [](const roadmaker::SignalMount& mount) {
+        return "SignalMount(signal_odr_id='" + mount.signal_odr_id +
+               "', parts=" + std::to_string(mount.object_odr_ids.size()) + ")";
+      });
+
+  nb::class_<roadmaker::Signalization>(m, "Signalization")
+      .def_ro("tmpl",
+              &roadmaker::Signalization::tmpl,
+              "The applied template token ('protected_left', 'two_phase', "
+              "'all_way_stop', 'two_way_stop'); empty means the junction was "
+              "not signalized from a template. Authoring provenance only — the "
+              "<signal>/<controller> elements are the export.")
+      .def_ro("mount_model",
+              &roadmaker::Signalization::mount_model,
+              "Prop model id mounted with each placed signal; empty = none.")
+      .def("__repr__", [](const roadmaker::Signalization& signalization) {
+        return "Signalization(tmpl='" + signalization.tmpl + "', mount_model='" +
+               signalization.mount_model + "')";
+      });
+
   nb::class_<roadmaker::Junction>(m, "Junction")
       .def_ro("odr_id", &roadmaker::Junction::odr_id)
       .def_ro("name", &roadmaker::Junction::name)
@@ -664,6 +709,23 @@ NB_MODULE(_roadmaker, m) {
               "edit.set_maneuver_turn_type / edit.set_maneuver_path / "
               "edit.reset_maneuver / edit.rebuild_maneuvers, and read the "
               "SOLVED maneuvers with junction_maneuvers.")
+      .def_ro("junction_controllers",
+              &roadmaker::Junction::junction_controllers,
+              "The junction's signal SYNCHRONIZATION group (OpenDRIVE §12.14): "
+              "the top-level <controller>s whose groups belong together here, "
+              "by string id. Sparse — empty on every unsignalized junction, and "
+              "always empty on a span/virtual junction, which shall have no "
+              "controllers. Authored by edit.signalize_junction.")
+      .def_ro("signalization",
+              &roadmaker::Junction::signalization,
+              "Which auto-signalization template produced this junction's "
+              "signals, if any (read-only; edit.signalize_junction / "
+              "edit.clear_signalization author it).")
+      .def_ro("signal_mounts",
+              &roadmaker::Junction::signal_mounts,
+              "The physical props representing each placed signal, keyed by "
+              "signal odr id (sparse; read-only). A signal placed without a "
+              "mount prop has no entry.")
       .def_ro("spans",
               &roadmaker::Junction::spans,
               "Membership spans of a VIRTUAL (span) junction — a stretch of a "
@@ -946,6 +1008,44 @@ NB_MODULE(_roadmaker, m) {
                "', s=" + std::to_string(signal.s) + ", t=" + std::to_string(signal.t) + ")";
       });
 
+  nb::class_<roadmaker::Control>(m, "Control")
+      .def(nb::init<>())
+      .def(
+          "__init__",
+          [](roadmaker::Control* self, std::string signal_odr_id, std::string type) {
+            new (self) roadmaker::Control{.signal_odr_id = std::move(signal_odr_id),
+                                          .type = std::move(type)};
+          },
+          "signal_odr_id"_a,
+          "type"_a = std::string{})
+      .def_rw("signal_odr_id",
+              &roadmaker::Control::signal_odr_id,
+              "@signalId — the STRING id of the controlled signal, which is "
+              "what OpenDRIVE stores. Resolving it to a live SignalId is a "
+              "query's job (junction_signals), never the model's, so a dangling "
+              "reference from a foreign file survives a round trip and is "
+              "reported by validate_network instead of being dropped.")
+      .def_rw("type", &roadmaker::Control::type, "@type — optional, free text.")
+      .def("__repr__", [](const roadmaker::Control& control) {
+        return "Control(signal_odr_id='" + control.signal_odr_id + "')";
+      });
+
+  nb::class_<roadmaker::Controller>(m, "Controller")
+      .def(nb::init<>())
+      .def_rw("odr_id", &roadmaker::Controller::odr_id, "@id — required, unique in the database.")
+      .def_rw("name", &roadmaker::Controller::name)
+      .def_rw("sequence", &roadmaker::Controller::sequence, "@sequence, or None.")
+      .def_rw("controls",
+              &roadmaker::Controller::controls,
+              "<control> children (1..*). A controller with none is a "
+              "validate_network finding "
+              "(asam.net:xodr:1.7.0:road.signal.controller.valid_for_signals).")
+      .def_ro("preserved", &roadmaker::Controller::preserved)
+      .def("__repr__", [](const roadmaker::Controller& controller) {
+        return "Controller(odr_id='" + controller.odr_id +
+               "', controls=" + std::to_string(controller.controls.size()) + ")";
+      });
+
   // --- the network -----------------------------------------------------------
 
   nb::class_<roadmaker::RoadNetwork>(m, "RoadNetwork")
@@ -966,6 +1066,12 @@ NB_MODULE(_roadmaker, m) {
            "value"_a,
            "Adds an OpenDRIVE <signal> to `road`; returns an invalid id if "
            "`road` is stale.")
+      .def("add_controller",
+           &roadmaker::RoadNetwork::add_controller,
+           "value"_a,
+           "Adds an OpenDRIVE <controller> (§14.6). Takes NO owner: a "
+           "controller is a child of <OpenDRIVE>, not of a road or a junction "
+           "— a junction only references it by string id (§12.14).")
       .def("create_surface",
            &roadmaker::RoadNetwork::create_surface,
            "value"_a,
@@ -976,6 +1082,13 @@ NB_MODULE(_roadmaker, m) {
       .def("erase_junction", &roadmaker::RoadNetwork::erase_junction, "junction"_a)
       .def("erase_object", &roadmaker::RoadNetwork::erase_object, "object"_a)
       .def("erase_signal", &roadmaker::RoadNetwork::erase_signal, "signal"_a)
+      .def("erase_controller",
+           &roadmaker::RoadNetwork::erase_controller,
+           "controller"_a,
+           "Controllers are leaves — nothing in the arenas points at one, so "
+           "erasing cascades nothing. The converse holds too: erase_signal does "
+           "NOT cascade into controllers, and the resulting dangling <control> "
+           "is an expected state validate_network reports.")
       .def("erase_surface", &roadmaker::RoadNetwork::erase_surface, "surface"_a)
       .def("object",
            nb::overload_cast<roadmaker::ObjectId>(&roadmaker::RoadNetwork::object),
@@ -996,6 +1109,12 @@ NB_MODULE(_roadmaker, m) {
            nb::rv_policy::reference_internal,
            "Signal for id, or None if the id is stale. The reference is valid "
            "only until the network is mutated.")
+      .def("controller",
+           nb::overload_cast<roadmaker::ControllerId>(&roadmaker::RoadNetwork::controller),
+           "id"_a,
+           nb::rv_policy::reference_internal,
+           "Controller for id, or None if the id is stale. The reference is "
+           "valid only until the network is mutated.")
       .def("surface",
            nb::overload_cast<roadmaker::SurfaceId>(&roadmaker::RoadNetwork::surface),
            "id"_a,
@@ -1095,6 +1214,15 @@ NB_MODULE(_roadmaker, m) {
                      });
                      return ids;
                    })
+      .def_prop_ro("controller_ids",
+                   [](const roadmaker::RoadNetwork& network) {
+                     std::vector<roadmaker::ControllerId> ids;
+                     network.for_each_controller(
+                         [&](roadmaker::ControllerId id, const roadmaker::Controller&) {
+                           ids.push_back(id);
+                         });
+                     return ids;
+                   })
       .def_prop_ro(
           "surface_ids",
           [](const roadmaker::RoadNetwork& network) {
@@ -1108,6 +1236,7 @@ NB_MODULE(_roadmaker, m) {
       .def_prop_ro("junction_count", &roadmaker::RoadNetwork::junction_count)
       .def_prop_ro("object_count", &roadmaker::RoadNetwork::object_count)
       .def_prop_ro("signal_count", &roadmaker::RoadNetwork::signal_count)
+      .def_prop_ro("controller_count", &roadmaker::RoadNetwork::controller_count)
       .def_prop_ro("surface_count", &roadmaker::RoadNetwork::surface_count)
       .def("__repr__", [](const roadmaker::RoadNetwork& network) {
         return "RoadNetwork(roads=" + std::to_string(network.road_count()) +
@@ -1523,6 +1652,74 @@ NB_MODULE(_roadmaker, m) {
       "validate-first checks read, so none of them can disagree about what a "
       "maneuver is. A FOREIGN junction (no arm list) still reports its "
       "maneuvers, inspectable but not authorable. Empty for a stale id and for "
+      "a SPAN (virtual) junction, which has no connections at all.");
+
+  m.attr("SIGNAL_APPROACH_WINDOW") = roadmaker::kSignalApproachWindow;
+
+  nb::class_<roadmaker::JunctionApproachInfo>(m, "JunctionApproachInfo")
+      .def_ro("arm",
+              &roadmaker::JunctionApproachInfo::arm,
+              "The junction-facing end of the incoming arm — the approach's "
+              "identity, matching JunctionManeuverInfo.from_ and "
+              "JunctionStopLineInfo.arm.")
+      .def_ro("heading",
+              &roadmaker::JunctionApproachInfo::heading,
+              "Travel heading [rad] of traffic reaching the junction on this "
+              "arm. Opposite arms of one axis differ by ~pi, which is what the "
+              "signalization templates cluster on.")
+      .def_ro("s_stop",
+              &roadmaker::JunctionApproachInfo::s_stop,
+              "Placement anchor: the station [m] of the approach's stop line, "
+              "taken from junction_stoplines so a head is never placed at a "
+              "different station than the line drivers stop at.")
+      .def_ro("t_center",
+              &roadmaker::JunctionApproachInfo::t_center,
+              "Mid-span lateral offset [m] of that stop line.")
+      .def_ro("gated",
+              &roadmaker::JunctionApproachInfo::gated,
+              "The connecting roads this approach feeds — every "
+              "junction_maneuvers entry whose from_ is this arm, in connection "
+              "order. DERIVED, never stored: a head gates whatever movements "
+              "leave its arm.")
+      .def_ro("signal_ids",
+              &roadmaker::JunctionApproachInfo::signal_ids,
+              "SignalIds resolved onto this approach: signals on arm.road "
+              "within SIGNAL_APPROACH_WINDOW of the mouth whose @orientation "
+              "admits traffic travelling toward the junction (the matching "
+              "direction, or NONE, which is valid in both). In arena creation "
+              "order. Named for the kernel member, which cannot be called "
+              "`signals` — Qt makes that a macro.")
+      .def_ro("controller_odr_ids",
+              &roadmaker::JunctionApproachInfo::controller_odr_ids,
+              "odr ids of the top-level <controller>s naming at least one of "
+              "`signal_ids` in a <control>, deduplicated. A <control> naming no "
+              "live signal is simply never matched — the query is "
+              "dormant-tolerant and never mutates.")
+      .def_ro("dynamic",
+              &roadmaker::JunctionApproachInfo::dynamic,
+              "True when any resolved signal is @dynamic='yes' — the approach "
+              "is light-controlled rather than sign-controlled.")
+      .def("__repr__", [](const roadmaker::JunctionApproachInfo& info) {
+        return "JunctionApproachInfo(gated=" + std::to_string(info.gated.size()) +
+               ", signals=" + std::to_string(info.signal_ids.size()) +
+               (info.dynamic ? ", dynamic" : "") + ")";
+      });
+
+  m.def(
+      "junction_signals",
+      [](const roadmaker::RoadNetwork& network, roadmaker::JunctionId junction) {
+        return roadmaker::junction_signals(network, junction);
+      },
+      "network"_a,
+      "junction"_a,
+      "Every APPROACH of the junction — one per incoming arm, in connection "
+      "order — with the movements it gates, the placement anchor its stop line "
+      "already solved, the signals resolved onto it and the controller groups "
+      "those signals belong to. The SAME solve the editor's Signal tool, the "
+      "Signalization rows, the signalization commands' validate-first path and "
+      "(later) the phase editor read, so none of them can disagree about what "
+      "an approach is. A FOREIGN junction (no arm list) still reports its "
+      "approaches, inspectable but not authorable. Empty for a stale id and for "
       "a SPAN (virtual) junction, which has no connections at all.");
 
   // --- authoring -----------------------------------------------------------------
@@ -2587,6 +2784,86 @@ NB_MODULE(_roadmaker, m) {
       "that is not an arm of it, no driving lane in one of the two directions, "
       "an existing same-arm connection, or a failed connector fit (a U-turn "
       "between two adjacent lanes can legitimately be too tight).");
+
+  // --- signalization (p4-s7, #228) ----------------------------------------
+  // Two commands, both ONE undo step, both validating through the same
+  // junction_signals solve the query exposes. Signalizing REPLACES: anything a
+  // previous signalization authored on the junction is removed first, so
+  // switching templates never leaves two generations of heads behind — and
+  // re-applying the identical template is refused, because the command layer's
+  // round-trip oracle forbids a command that changes nothing.
+  nb::enum_<roadmaker::edit::SignalizeTemplate>(edit, "SignalizeTemplate")
+      .value("FOUR_WAY_PROTECTED_LEFT",
+             roadmaker::edit::SignalizeTemplate::FourWayProtectedLeft,
+             "Dynamic. One head per approach plus a protected-left head on "
+             "every approach that has a left turn; per axis, one controller for "
+             "the through/right heads and one for the protected-left heads.")
+      .value("TWO_PHASE",
+             roadmaker::edit::SignalizeTemplate::TwoPhase,
+             "Dynamic. One head per approach and ONE controller per axis — "
+             "permissive lefts, no separate left group.")
+      .value("ALL_WAY_STOP",
+             roadmaker::edit::SignalizeTemplate::AllWayStop,
+             "Static. A stop sign on every approach and NO controllers at all: "
+             "an all-way stop has no phases, so no phase data is created.")
+      .value("TWO_WAY_STOP",
+             roadmaker::edit::SignalizeTemplate::TwoWayStop,
+             "Static. Stop signs on the MINOR axis only, and no controllers. "
+             "Needs at least two axes.");
+
+  nb::class_<roadmaker::edit::SignalizeOptions>(edit, "SignalizeOptions")
+      .def(nb::init<>())
+      .def_rw("tmpl", &roadmaker::edit::SignalizeOptions::tmpl)
+      .def_rw("mount_model",
+              &roadmaker::edit::SignalizeOptions::mount_model,
+              "Optional prop model id placed as an <object> alongside each "
+              "authored signal and recorded in the junction's signal_mounts; "
+              "empty places nothing. An unknown id is refused before anything "
+              "is placed.")
+      .def_rw("lateral_offset",
+              &roadmaker::edit::SignalizeOptions::lateral_offset,
+              "Lateral clearance [m] between the outboard edge of the "
+              "approach's stop band and the head, on the driver's right. NOT "
+              "persisted, so re-applying the same template with a different "
+              "offset is still a no-op and still refused.");
+
+  edit.def(
+      "signalize_junction",
+      [](const roadmaker::RoadNetwork& network,
+         roadmaker::JunctionId junction,
+         const roadmaker::edit::SignalizeOptions& options) {
+        return roadmaker::edit::signalize_junction(network, junction, options);
+      },
+      "network"_a,
+      "junction"_a,
+      "options"_a = roadmaker::edit::SignalizeOptions{},
+      "Auto-signalizes a junction from a template: places the <signal>s, groups "
+      "the dynamic ones into top-level <controller>s (§14.6), references those "
+      "controllers from the junction's synchronization group (§12.14), and "
+      "records the applied template plus any signal->prop mounts. Static "
+      "templates create ZERO controllers — a stop-controlled junction has no "
+      "phases. Pushing raises ValueError for a stale junction, a FOREIGN one "
+      "(no arms — recreate it to edit), a SPAN/virtual one (which shall not "
+      "have controllers, asam.net:xodr:1.9.0:junctions.virtual.no_controllers), "
+      "a junction with no solvable approach, an unknown mount_model, "
+      "TWO_WAY_STOP on fewer than two axes, and the junction already carrying "
+      "exactly this template and mount model.");
+  edit.def(
+      "clear_signalization",
+      [](const roadmaker::RoadNetwork& network, roadmaker::JunctionId junction) {
+        return roadmaker::edit::clear_signalization(network, junction);
+      },
+      "network"_a,
+      "junction"_a,
+      "The exact inverse: erases the signals, controllers and mount props a "
+      "signalization authored on the junction and clears its records. What "
+      "counts as 'authored here' is DERIVED, never a hidden flag — the "
+      "synchronization group's controllers and the signals they name, "
+      "everything in signal_mounts, and, for a template junction, the signals "
+      "within SIGNAL_APPROACH_WINDOW of its approaches carrying that template's "
+      "catalog code. A hand-placed sign of another type is left alone. Pushing "
+      "raises ValueError for a stale junction and for one with nothing "
+      "signalized.");
 
   edit.def(
       "set_junction_locked",
