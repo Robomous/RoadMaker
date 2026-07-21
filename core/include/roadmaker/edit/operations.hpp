@@ -353,6 +353,23 @@ enum class TurnSetPolicy {
   InPlaceOnly,
 };
 
+/// What a regeneration does with the junction's authored maneuvers (p4-s6,
+/// issue #227).
+enum class ManeuverPolicy {
+  /// The default everywhere: a LOCKED maneuver keeps its plan view, length,
+  /// elevation and lane width, and its connecting road is KEPT even when the
+  /// plan no longer contains its turn — which is what makes hand-shaped
+  /// geometry, and an explicit U-turn, survive a turn-set change. Unlocked
+  /// maneuvers are replanned exactly as before the feature existed.
+  Respect,
+  /// The explicit rebuild (`rebuild_maneuvers`): locks are ignored, so every
+  /// connecting road is replanned and every unclaimed one is dropped. The
+  /// records' geometric fields (lock, offsets, control points) are cleared and
+  /// records left authoring nothing are erased; a `turn_type` override SURVIVES,
+  /// because it is semantic rather than geometric.
+  Rebuild,
+};
+
 /// Re-runs the generator from a junction's recorded arm list and replaces its
 /// connecting-road geometry and lane widths in place (02 §6 "Dependency
 /// tracking"). The editor triggers this after any edit to an incoming road
@@ -650,6 +667,133 @@ reset_stopline(const RoadNetwork& network, JunctionId junction, RoadEnd arm);
 /// EFFECTIVE value, including "included = true with no record at all".
 [[nodiscard]] RM_API std::unique_ptr<Command> set_surface_span_sort_index(
     const RoadNetwork& network, JunctionId junction, RoadId road, int sort_index);
+
+// --- maneuvers (p4-s6, #227) -------------------------------------------------
+//
+// A maneuver is ONE connecting road's path through a junction. Every one of
+// these factories validates through mesh::junction_maneuvers(), the same query
+// the tool, the panel and the Python bindings read, so none of them can
+// disagree about what a maneuver is; and every one erases a record left
+// authoring nothing, so an edit-and-undo pair writes the original bytes.
+
+/// Locks or unlocks ONE maneuver's geometry against regeneration — the
+/// finer-grained sibling of `Junction::locked`, and the "Convert to Explicit"
+/// verb on a derived maneuver.
+///
+/// A locked maneuver keeps its plan view, length, elevation and lane width
+/// through an explicit `regenerate_junction`, and its connecting road is kept
+/// even when the plan no longer contains its turn. `rebuild_maneuvers` is the
+/// way back to derivation for the whole junction.
+///
+/// Errors (invalid_command, network untouched): a stale junction id; `road` not
+/// a maneuver of this junction; the maneuver already being in that lock state
+/// (the round-trip oracle forbids a no-op command).
+///
+/// Dirty set: `{junctions = {junction}, junctions_are_current = true}` — pure
+/// value edit, no geometry moves.
+[[nodiscard]] RM_API std::unique_ptr<Command>
+set_maneuver_locked(const RoadNetwork& network, JunctionId junction, RoadId road, bool locked);
+
+/// Overrides ONE maneuver's turn type, or clears the override with `nullopt`.
+///
+/// The type is otherwise DERIVED from the arm-face headings (there is no ASAM
+/// carrier for it — §12.2 Table 56 has no such attribute), so the override is
+/// purely semantic and never moves geometry. Storing a value equal to the
+/// computed type CLEARS the override rather than pinning it, which keeps the
+/// record from authoring something the derivation already says.
+///
+/// Errors (invalid_command): a stale junction id; `road` not a maneuver of this
+/// junction; clearing an override that does not exist; and setting the type the
+/// maneuver already reports.
+///
+/// Same dirty set as set_maneuver_locked.
+[[nodiscard]] RM_API std::unique_ptr<Command> set_maneuver_turn_type(const RoadNetwork& network,
+                                                                     JunctionId junction,
+                                                                     RoadId road,
+                                                                     std::optional<TurnType> type);
+
+/// Reshapes ONE maneuver: its INTERIOR control points plus the endpoint slides
+/// along the two arm faces. THE geometry command — the editor's add point, move
+/// point, insert point and endpoint drag all compose into this one factory, so
+/// a drag is one preview session and one command on release.
+///
+/// The path is refitted as a G1 clothoid chain through
+/// `[start anchor + start_offset, control_points…, end anchor + end_offset]`
+/// with the END HEADINGS LOCKED to the arm faces, so a reshaped maneuver still
+/// meets its arms tangentially (§12.4.2). The refit rewrites the road's length,
+/// elevation profile and blended drive-lane width together — a stale domain
+/// there exports invalid OpenDRIVE.
+///
+/// Applying this LOCKS the maneuver in the same undo step: hand-shaped geometry
+/// that the next regeneration threw away would be a data-loss bug, and an
+/// implicit lock keeps it one undo away rather than two.
+///
+/// Offsets are `nullopt` to leave the current slide alone. Errors
+/// (invalid_command, network untouched): a stale junction id; `road` not a
+/// maneuver of this junction; more than `kMaxManeuverControlPoints` points; a
+/// non-finite coordinate or offset; an offset outside the anchor lane's span
+/// (see `ManeuverSlide`); an anchor lane that no longer exists; a failed refit;
+/// and a request that changes nothing.
+///
+/// Dirty set: `{roads = {road}, junctions = {junction},
+/// junctions_are_current = true}` — the connecting road re-meshes, the turn set
+/// is untouched.
+[[nodiscard]] RM_API std::unique_ptr<Command>
+set_maneuver_path(const RoadNetwork& network,
+                  JunctionId junction,
+                  RoadId road,
+                  std::span<const Waypoint> control_points,
+                  std::optional<double> start_offset = std::nullopt,
+                  std::optional<double> end_offset = std::nullopt);
+
+/// Drops ONE maneuver's authored record and replans its connecting road from
+/// the junction's arms — the per-maneuver "back to derived".
+///
+/// Errors (invalid_command): a stale junction id; `road` not a maneuver of this
+/// junction; a maneuver with nothing authored to reset; a FOREIGN junction (no
+/// arm list, so there is nothing to replan from); and an EXPLICIT U-turn, which
+/// the planner never emits and therefore has no derived geometry to fall back
+/// on — delete its connecting road instead.
+///
+/// Same dirty set as set_maneuver_path.
+[[nodiscard]] RM_API std::unique_ptr<Command>
+reset_maneuver(const RoadNetwork& network,
+               JunctionId junction,
+               RoadId road,
+               const JunctionGenOptions& options = {});
+
+/// Replans the WHOLE junction ignoring every maneuver lock
+/// (`ManeuverPolicy::Rebuild`): hand-shaped geometry is replaced by the
+/// derivation, connecting roads the plan no longer contains are dropped
+/// (explicit U-turns included), and the records' geometric fields are cleared.
+/// `turn_type` overrides SURVIVE — they are semantic, not geometric.
+///
+/// Errors (invalid_command): a stale junction id; a FOREIGN or SPAN junction;
+/// a junction with no locked or hand-shaped maneuver to rebuild.
+[[nodiscard]] RM_API std::unique_ptr<Command> rebuild_maneuvers(
+    const RoadNetwork& network, JunctionId junction, const JunctionGenOptions& options = {});
+
+/// Adds the one maneuver the planner never emits: a U-turn on `arm`, from its
+/// innermost incoming driving lane back to its innermost outgoing one.
+///
+/// The generator skips the same-arm pair on purpose (a U-turn is a policy
+/// decision, not a derivable movement), so this creates the connecting road,
+/// the connection-table entry and a LOCKED Maneuver record together — the lock
+/// is what keeps the next regeneration from dropping a turn no plan contains.
+///
+/// Errors (invalid_command, network untouched): a stale junction id; a FOREIGN
+/// or SPAN junction; `arm` not an arm of this junction; no driving lane in one
+/// of the two directions; a same-arm connection already existing; and a failed
+/// connector fit, whose message is surfaced verbatim — a U-turn between two
+/// adjacent lanes can legitimately be too tight to fit.
+///
+/// Dirty set: `{roads = {arm.road}, junctions = {junction}, topology = true,
+/// junctions_are_current = true}`.
+[[nodiscard]] RM_API std::unique_ptr<Command>
+add_uturn_maneuver(const RoadNetwork& network,
+                   JunctionId junction,
+                   RoadEnd arm,
+                   const JunctionGenOptions& options = {});
 
 /// Deletes the junction AND its connecting roads (the §7 closure); incoming
 /// roads survive with their predecessor/successor links into the junction

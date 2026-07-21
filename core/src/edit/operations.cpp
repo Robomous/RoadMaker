@@ -6,6 +6,7 @@
 #include "roadmaker/geometry/profile_fit.hpp"
 #include "roadmaker/geometry/road_intersection.hpp"
 #include "roadmaker/mesh/junction_corners.hpp"
+#include "roadmaker/mesh/junction_maneuvers.hpp"
 #include "roadmaker/mesh/junction_stoplines.hpp"
 #include "roadmaker/mesh/junction_surface_spans.hpp"
 #include "roadmaker/road/authoring.hpp"
@@ -718,13 +719,23 @@ void capture_deletion(const RoadNetwork& network,
     const auto doomed_arm = [&doomed](const RoadEnd& arm) {
       return contains_road(doomed, arm.road);
     };
+    // Maneuver records are keyed by the CONNECTING road, so a deleted turn's
+    // record would otherwise linger as a dormant entry naming a dead RoadId —
+    // harmless to read, but it would resurrect as soon as the arena recycled
+    // the slot. Corners and stop lines are keyed by ARM and stay (they
+    // reactivate if the arm comes back); a connecting road never comes back.
+    const auto doomed_maneuver = [&doomed](const Maneuver& record) {
+      return contains_road(doomed, record.road);
+    };
     if (!std::ranges::any_of(junction.connections, doomed_connection) &&
-        !std::ranges::any_of(junction.arms, doomed_arm)) {
+        !std::ranges::any_of(junction.arms, doomed_arm) &&
+        !std::ranges::any_of(junction.maneuvers, doomed_maneuver)) {
       return;
     }
     Junction after = junction;
     std::erase_if(after.connections, doomed_connection);
     std::erase_if(after.arms, doomed_arm);
+    std::erase_if(after.maneuvers, doomed_maneuver);
     command.before.junctions.emplace_back(junction_id, junction);
     command.after.junctions.emplace_back(junction_id, std::move(after));
   });
@@ -934,6 +945,13 @@ Expected<JunctionPlan> plan_junction(const RoadNetwork& network,
       // matrix's fan-out crossing invariant).
       const double deflection =
           std::remainder(arm_ends[j].out_hdg - arm_ends[i].into_hdg, 2.0 * std::numbers::pi);
+      // NOTE (p4-s6, #227): this 10-degree threshold is LANE DISCIPLINE and is
+      // deliberately NOT the maneuver LABEL threshold
+      // (kManeuverStraightThreshold, 30 degrees, in junction_maneuvers.hpp).
+      // This one must err tiny: a movement that turns left even slightly has to
+      // depart from the inner lanes or it crosses their through connections. The
+      // label one is perceptual, so its bands are the ones a driver would name.
+      // Changing either must not change the other.
       if (deflection > 10.0 * std::numbers::pi / 180.0) { // left turn
         if (incoming.size() > pairs) {
           incoming.erase(incoming.begin(),
@@ -2926,6 +2944,54 @@ std::unique_ptr<Command> create_crossing_road(const RoadNetwork& network,
 
 namespace {
 
+// ---- maneuvers (p4-s6, #227) -----------------------------------------------
+
+/// Locates the Maneuver entry for a connecting road, or `end()`.
+std::vector<Maneuver>::iterator find_maneuver(std::vector<Maneuver>& maneuvers, RoadId road) {
+  return std::ranges::find_if(maneuvers,
+                              [&](const Maneuver& record) { return record.road == road; });
+}
+
+/// The junction's Maneuver record for `road`, or nullptr.
+const Maneuver* maneuver_record(const Junction& junction, RoadId road) {
+  const auto found = std::ranges::find_if(
+      junction.maneuvers, [&](const Maneuver& record) { return record.road == road; });
+  return found == junction.maneuvers.end() ? nullptr : &*found;
+}
+
+/// True when the record has fallen back to pure derivation — the writer's drop
+/// rule and every command's "erase the entry" condition, which is what keeps an
+/// edit-and-undo pair byte-identical to no edit at all.
+bool maneuver_authors_nothing(const Maneuver& record) {
+  return !record.locked && !record.turn_type.has_value() && !record.start_offset.has_value() &&
+         !record.end_offset.has_value() && record.control_points.empty();
+}
+
+/// True when `road`'s maneuver locks its geometry against regeneration.
+bool maneuver_is_locked(const Junction& junction, RoadId road) {
+  const Maneuver* record = maneuver_record(junction, road);
+  return record != nullptr && record->locked;
+}
+
+/// True when a connection's connecting road is still live AND still linked to
+/// two live roads. A locked maneuver is only worth KEEPING through a
+/// regeneration while it still has arms to meet; one whose arm road is gone
+/// would be a dangling turn, so it is dropped like any unclaimed connection.
+bool connection_is_intact(const RoadNetwork& network, const JunctionConnection& connection) {
+  const Road* road = network.road(connection.connecting_road);
+  if (road == nullptr || road->sections.empty() || !road->predecessor.has_value() ||
+      !road->successor.has_value()) {
+    return false;
+  }
+  for (const std::optional<RoadLink>& link : {road->predecessor, road->successor}) {
+    const RoadId* target = std::get_if<RoadId>(&link->target);
+    if (target == nullptr || network.road(*target) == nullptr) {
+      return false;
+    }
+  }
+  return true;
+}
+
 /// Re-plans `junction_id` against `new_arms` and rewrites its connecting roads
 /// in place — the single retarget engine behind regeneration AND every
 /// membership edit (p4-s4 D5, issue #319).
@@ -2958,7 +3024,8 @@ retarget_junction(const RoadNetwork& network,
                   TurnSetPolicy policy,
                   std::string_view name,
                   std::span<const JunctionConnection> extra_existing = {},
-                  std::span<const JunctionId> also_dirty = {}) {
+                  std::span<const JunctionId> also_dirty = {},
+                  ManeuverPolicy maneuvers = ManeuverPolicy::Respect) {
   const auto fail_with = [&](Error error) {
     auto command = std::make_unique<GenericCommand>(std::string(name), DirtySet{});
     command->invalid = std::move(error);
@@ -2984,9 +3051,12 @@ retarget_junction(const RoadNetwork& network,
   existing.insert(existing.end(), junction->connections.begin(), junction->connections.end());
   existing.insert(existing.end(), extra_existing.begin(), extra_existing.end());
 
-  if (policy == TurnSetPolicy::InPlaceOnly && plan->roads.size() != existing.size()) {
-    return fail("regeneration changed the connection count; delete and recreate the junction");
-  }
+  // The InPlaceOnly turn-set check runs AFTER matching (p4-s6, #227): a
+  // junction holding an explicit U-turn always has one more connection than the
+  // plan has turns, so a count comparison here would refuse every preview frame
+  // on such a junction. What InPlaceOnly actually forbids is a turn APPEARING or
+  // a connecting road being DROPPED, and both are only known once the plan has
+  // been matched against the table.
 
   // Which arm link slots move. An arm that stays keeps its slot untouched, so a
   // pure regeneration (new_arms == junction->arms) writes nothing here.
@@ -3053,6 +3123,10 @@ retarget_junction(const RoadNetwork& network,
   struct Matched {
     ConnectingPlan cp;
     RoadId road;
+    /// Under ManeuverPolicy::Respect, a locked maneuver keeps its hand-shaped
+    /// geometry: the turn still appears in the connection table (identically),
+    /// but pass 1 leaves its plan view, length, elevation and width alone.
+    bool locked = false;
   };
 
   std::vector<Matched> matched_turns;
@@ -3076,27 +3150,45 @@ retarget_junction(const RoadNetwork& network,
       }
     }
     if (found == existing.size()) {
-      if (policy == TurnSetPolicy::InPlaceOnly) {
-        // Same count but a different turn set (e.g. a lane retyped so a turn
-        // moved to a different lane): the ids can't be reused in place.
-        return fail("regeneration changed the turn set; delete and recreate the junction");
-      }
       new_turns.push_back(cp);
       continue;
     }
     claimed[found] = true;
-    matched_turns.push_back(Matched{.cp = cp, .road = existing[found].connecting_road});
+    const RoadId road = existing[found].connecting_road;
+    matched_turns.push_back(Matched{.cp = cp,
+                                    .road = road,
+                                    .locked = maneuvers == ManeuverPolicy::Respect &&
+                                              maneuver_is_locked(*junction, road)});
   }
 
   // Unclaimed connections serve a turn the plan no longer contains. NOTE: a
   // connection whose key could not be read at all (a malformed connecting road
   // — no sections, missing links, empty lane_links) lands here too and is
   // rebuilt from the plan rather than reported. That repairs it, but silently.
+  //
+  // EXCEPT when the maneuver is LOCKED (p4-s6, #227): the author shaped that
+  // path by hand, or it is an explicit U-turn the planner can never emit, so the
+  // road and its table entry are KEPT verbatim instead. Kept entries land at the
+  // END of the rebuilt table, which is stable across repeated regenerations.
+  // A locked road whose arms are gone is not intact and is dropped like any
+  // other unclaimed connection.
+  std::vector<JunctionConnection> kept;
   std::vector<RoadId> dropped;
   for (std::size_t i = 0; i < existing.size(); ++i) {
-    if (!claimed[i]) {
-      dropped.push_back(existing[i].connecting_road);
+    if (claimed[i]) {
+      continue;
     }
+    if (maneuvers == ManeuverPolicy::Respect &&
+        maneuver_is_locked(*junction, existing[i].connecting_road) &&
+        connection_is_intact(network, existing[i])) {
+      kept.push_back(existing[i]);
+      continue;
+    }
+    dropped.push_back(existing[i].connecting_road);
+  }
+
+  if (policy == TurnSetPolicy::InPlaceOnly && (!new_turns.empty() || !dropped.empty())) {
+    return fail("regeneration changed the turn set; delete and recreate the junction");
   }
 
   // Every connecting road is dirty so incremental re-mesh re-tessellates the
@@ -3156,6 +3248,8 @@ retarget_junction(const RoadNetwork& network,
                       lost_arms = std::move(lost_arms),
                       matched_turns = std::move(matched_turns),
                       new_turns = std::move(new_turns),
+                      kept = std::move(kept),
+                      maneuvers,
                       dropped](RoadNetwork& target, Values& created) -> Expected<void> {
     // Pass 0: membership. An arm that left gives its link slot back (only if it
     // still points HERE — a slot re-pointed elsewhere is not ours to clear),
@@ -3184,17 +3278,22 @@ retarget_junction(const RoadNetwork& network,
     // Pass 1: rewrite the turns that survive. No creation happens here, so
     // references stay valid within an iteration.
     std::vector<JunctionConnection> table;
-    table.reserve(matched_turns.size() + new_turns.size());
+    table.reserve(matched_turns.size() + new_turns.size() + kept.size());
     for (const Matched& match : matched_turns) {
       Road& road = *target.road(match.road);
-      road.plan_view = match.cp.line;
-      road.length = road.plan_view.length();
-      road.elevation = connecting_elevation(match.cp, road.length);
-      const double length = road.length;
-      for (const LaneId lane_id : target.lane_section(road.sections.front())->lanes) {
-        Lane& lane = *target.lane(lane_id);
-        if (lane.odr_id == -1) {
-          lane.widths = {connecting_lane_width(match.cp, length)};
+      // A locked maneuver keeps its geometry — the table entry it produces is
+      // identical either way, which is why the turn still takes part in
+      // matching and still holds its connecting-road id.
+      if (!match.locked) {
+        road.plan_view = match.cp.line;
+        road.length = road.plan_view.length();
+        road.elevation = connecting_elevation(match.cp, road.length);
+        const double length = road.length;
+        for (const LaneId lane_id : target.lane_section(road.sections.front())->lanes) {
+          Lane& lane = *target.lane(lane_id);
+          if (lane.odr_id == -1) {
+            lane.widths = {connecting_lane_width(match.cp, length)};
+          }
         }
       }
       table.push_back(JunctionConnection{.incoming_road = match.cp.from.road,
@@ -3207,9 +3306,24 @@ retarget_junction(const RoadNetwork& network,
     for (const ConnectingPlan& cp : new_turns) {
       table.push_back(materialize_connection(target, created, junction_id, cp));
     }
+    // Pass 3: the locked turns the plan does not contain, verbatim and last.
+    table.insert(table.end(), kept.begin(), kept.end());
     // The dropped roads are erased by `erased` after this returns; dropping
     // them from the table first means they are never referenced when they go.
-    target.junction(junction_id)->connections = std::move(table);
+    Junction& junction_after = *target.junction(junction_id);
+    junction_after.connections = std::move(table);
+    if (maneuvers == ManeuverPolicy::Rebuild) {
+      // Everything geometric goes; the turn-type override is semantic and
+      // survives. A record left authoring nothing is erased, or a rebuilt
+      // junction would keep writing phantom entries for turns it re-derives.
+      for (Maneuver& record : junction_after.maneuvers) {
+        record.locked = false;
+        record.start_offset.reset();
+        record.end_offset.reset();
+        record.control_points.clear();
+      }
+      std::erase_if(junction_after.maneuvers, maneuver_authors_nothing);
+    }
     return {};
   };
   return command;
@@ -4232,6 +4346,523 @@ std::unique_ptr<Command> set_surface_span_sort_index(const RoadNetwork& network,
       kName, junction_id, road, *before, [sort_index](SurfaceSpan& record) {
         record.sort_index = sort_index;
       });
+}
+
+// --- maneuvers (p4-s6, #227) -------------------------------------------------
+
+namespace {
+
+/// Shared front half of the maneuver commands: validates the junction id and
+/// that `road` names a maneuver the junction currently HAS. Solvability comes
+/// from junction_maneuvers(), the same query the tool, the panel and the
+/// bindings read, so none of them can disagree about what a maneuver is — and a
+/// span (virtual) junction, which has no connections at all, is refused by the
+/// same test rather than by a special case.
+Expected<JunctionManeuverInfo> maneuver_edit_context(const RoadNetwork& network,
+                                                     JunctionId junction_id,
+                                                     RoadId road,
+                                                     std::string_view name) {
+  const Junction* junction = network.junction(junction_id);
+  if (junction == nullptr) {
+    return make_error(ErrorCode::InvalidArgument, "stale junction id");
+  }
+  const std::vector<JunctionManeuverInfo> maneuvers = junction_maneuvers(network, junction_id);
+  const auto found = std::ranges::find_if(
+      maneuvers, [&](const JunctionManeuverInfo& info) { return info.road == road; });
+  if (found == maneuvers.end()) {
+    return make_error(
+        ErrorCode::InvalidArgument,
+        fmt::format("{}: the given road is not a maneuver of junction {}", name, junction->odr_id));
+  }
+  return *found;
+}
+
+/// Applies `mutate` to `road`'s record (creating it when absent) and erases the
+/// result if it authors nothing. Pure junction value edit — no geometry moves,
+/// so the turn set is untouched (corner_value_command's dirty set).
+template <typename Mutate>
+std::unique_ptr<Command> maneuver_value_command(std::string_view name,
+                                                JunctionId junction_id,
+                                                RoadId road,
+                                                const Junction& before,
+                                                Mutate mutate) {
+  Junction after = before;
+  auto entry = find_maneuver(after.maneuvers, road);
+  if (entry == after.maneuvers.end()) {
+    after.maneuvers.push_back(Maneuver{.road = road});
+    entry = after.maneuvers.end() - 1;
+  }
+  mutate(*entry);
+  if (maneuver_authors_nothing(*entry)) {
+    after.maneuvers.erase(entry);
+  }
+  return corner_value_command(name, junction_id, before, std::move(after));
+}
+
+/// The anchor lane at one face of a maneuver, or an error naming what is gone.
+Expected<ContactLane> maneuver_anchor_lane(const RoadNetwork& network,
+                                           const RoadEnd& end,
+                                           const ContactState& contact,
+                                           int odr_id,
+                                           bool incoming) {
+  const std::vector<ContactLane> lanes = driving_lanes_at(network, end, contact, incoming);
+  const auto found =
+      std::ranges::find_if(lanes, [&](const ContactLane& lane) { return lane.odr_id == odr_id; });
+  if (found == lanes.end()) {
+    return make_error(ErrorCode::InvalidArgument,
+                      fmt::format("the maneuver's anchor lane {} no longer exists on road {}",
+                                  odr_id,
+                                  network.road(end.road)->odr_id));
+  }
+  return *found;
+}
+
+/// Re-fits ONE maneuver's path: a G1 clothoid chain through
+/// [start anchor + start_offset, control_points..., end anchor + end_offset]
+/// with the END HEADINGS LOCKED to the arm faces, so the reshaped path still
+/// meets its arms tangentially (§12.4.2). Returns the same ConnectingPlan the
+/// generator would have produced, so the caller rewrites plan view, length,
+/// elevation and blended width with the SAME helpers — leaving any one of them
+/// stale exports invalid OpenDRIVE.
+Expected<ConnectingPlan> fit_maneuver(const RoadNetwork& network,
+                                      const JunctionManeuverInfo& info,
+                                      std::span<const Waypoint> control_points,
+                                      double start_offset,
+                                      double end_offset) {
+  Expected<ContactState> from = contact_state(network, info.from);
+  if (!from.has_value()) {
+    return tl::unexpected<Error>(from.error());
+  }
+  Expected<ContactState> to = contact_state(network, info.to);
+  if (!to.has_value()) {
+    return tl::unexpected<Error>(to.error());
+  }
+  Expected<ContactLane> from_lane =
+      maneuver_anchor_lane(network, info.from, *from, info.from_lane, /*incoming=*/true);
+  if (!from_lane.has_value()) {
+    return tl::unexpected<Error>(from_lane.error());
+  }
+  Expected<ContactLane> to_lane =
+      maneuver_anchor_lane(network, info.to, *to, info.to_lane, /*incoming=*/false);
+  if (!to_lane.has_value()) {
+    return tl::unexpected<Error>(to_lane.error());
+  }
+
+  const std::array<double, 2> a = contact_lateral(*from, from_lane->inner_t + start_offset);
+  const std::array<double, 2> b = contact_lateral(*to, to_lane->inner_t + end_offset);
+  std::vector<Waypoint> waypoints;
+  waypoints.reserve(control_points.size() + 2);
+  waypoints.push_back(Waypoint{.x = a[0], .y = a[1]});
+  waypoints.insert(waypoints.end(), control_points.begin(), control_points.end());
+  waypoints.push_back(Waypoint{.x = b[0], .y = b[1]});
+
+  auto line =
+      fit_clothoid_path(waypoints, EndpointHeadings{.start = from->into_hdg, .end = to->out_hdg});
+  if (!line.has_value()) {
+    return tl::unexpected<Error>(line.error());
+  }
+  return ConnectingPlan{
+      .from = info.from,
+      .to = info.to,
+      .from_lane = info.from_lane,
+      .to_lane = info.to_lane,
+      .line = std::move(*line),
+      .start_width = from_lane->width,
+      .end_width = to_lane->width,
+      .start_z = from->z,
+      .start_grade = (info.from.contact == ContactPoint::End ? 1.0 : -1.0) * from->grade,
+      .end_z = to->z,
+      .end_grade = (info.to.contact == ContactPoint::Start ? 1.0 : -1.0) * to->grade};
+}
+
+/// Captures the connecting road's geometry rewrite (plan view + length +
+/// elevation + blended drive-lane width) as a value edit onto `command`.
+Expected<void> capture_maneuver_geometry(const RoadNetwork& network,
+                                         GenericCommand& command,
+                                         RoadId road_id,
+                                         const ConnectingPlan& plan) {
+  const Road* road = network.road(road_id);
+  Road after = *road;
+  after.plan_view = plan.line;
+  after.length = after.plan_view.length();
+  after.elevation = connecting_elevation(plan, after.length);
+  for (const LaneSectionId section_id : road->sections) {
+    if (network.lane_section(section_id)->s0 >= after.length - tol::kLength) {
+      return make_error(ErrorCode::InvalidArgument,
+                        "the reshaped maneuver is too short for its lane sections",
+                        road->odr_id);
+    }
+  }
+  command.before.roads.emplace_back(road_id, *road);
+  command.after.roads.emplace_back(road_id, std::move(after));
+  const double length = plan.line.length();
+  for (const LaneId lane_id : network.lane_section(road->sections.front())->lanes) {
+    const Lane* lane = network.lane(lane_id);
+    if (lane->odr_id != -1) {
+      continue;
+    }
+    Lane after_lane = *lane;
+    after_lane.widths = {connecting_lane_width(plan, length)};
+    command.before.lanes.emplace_back(lane_id, *lane);
+    command.after.lanes.emplace_back(lane_id, std::move(after_lane));
+  }
+  return {};
+}
+
+} // namespace
+
+std::unique_ptr<Command>
+set_maneuver_locked(const RoadNetwork& network, JunctionId junction_id, RoadId road, bool locked) {
+  static constexpr std::string_view kName = "Lock Maneuver";
+  Expected<JunctionManeuverInfo> info = maneuver_edit_context(network, junction_id, road, kName);
+  if (!info) {
+    return invalid_command(std::string(kName), info.error());
+  }
+  if (info->locked == locked) {
+    return invalid_command(std::string(kName),
+                           Error{.code = ErrorCode::InvalidArgument,
+                                 .message = "the maneuver is already in that lock state"});
+  }
+  return maneuver_value_command(
+      kName, junction_id, road, *network.junction(junction_id), [locked](Maneuver& record) {
+        record.locked = locked;
+      });
+}
+
+std::unique_ptr<Command> set_maneuver_turn_type(const RoadNetwork& network,
+                                                JunctionId junction_id,
+                                                RoadId road,
+                                                std::optional<TurnType> type) {
+  static constexpr std::string_view kName = "Set Turn Type";
+  Expected<JunctionManeuverInfo> info = maneuver_edit_context(network, junction_id, road, kName);
+  if (!info) {
+    return invalid_command(std::string(kName), info.error());
+  }
+  if (!type.has_value() && !info->overridden) {
+    return invalid_command(std::string(kName),
+                           Error{.code = ErrorCode::InvalidArgument,
+                                 .message = "the maneuver has no turn-type override to clear"});
+  }
+  // Storing the computed type would author what the derivation already says, so
+  // it CLEARS the override instead — which is only a change when one exists.
+  const bool clears = !type.has_value() || *type == info->computed;
+  if (clears && !info->overridden) {
+    return invalid_command(std::string(kName),
+                           Error{.code = ErrorCode::InvalidArgument,
+                                 .message = "the maneuver already computes as that turn type"});
+  }
+  if (!clears && info->overridden && info->effective == *type) {
+    return invalid_command(std::string(kName),
+                           Error{.code = ErrorCode::InvalidArgument,
+                                 .message = "the maneuver already has that turn type"});
+  }
+  return maneuver_value_command(
+      kName, junction_id, road, *network.junction(junction_id), [&](Maneuver& record) {
+        if (clears) {
+          record.turn_type.reset();
+        } else {
+          record.turn_type = *type;
+        }
+      });
+}
+
+std::unique_ptr<Command> set_maneuver_path(const RoadNetwork& network,
+                                           JunctionId junction_id,
+                                           RoadId road,
+                                           std::span<const Waypoint> control_points,
+                                           std::optional<double> start_offset,
+                                           std::optional<double> end_offset) {
+  static constexpr std::string_view kName = "Reshape Maneuver";
+  const auto fail = [](std::string message) {
+    return invalid_command(
+        std::string(kName),
+        Error{.code = ErrorCode::InvalidArgument, .message = std::move(message)});
+  };
+  if (control_points.size() > kMaxManeuverControlPoints) {
+    return fail(
+        fmt::format("a maneuver takes at most {} control points", kMaxManeuverControlPoints));
+  }
+  for (const Waypoint& point : control_points) {
+    if (!std::isfinite(point.x) || !std::isfinite(point.y)) {
+      return fail("a maneuver control point must be finite");
+    }
+  }
+  for (const std::optional<double>& offset : {start_offset, end_offset}) {
+    if (offset.has_value() && !std::isfinite(*offset)) {
+      return fail("a maneuver endpoint offset must be finite");
+    }
+  }
+  Expected<JunctionManeuverInfo> info = maneuver_edit_context(network, junction_id, road, kName);
+  if (!info) {
+    return invalid_command(std::string(kName), info.error());
+  }
+
+  const double start = start_offset.value_or(info->start_offset);
+  const double end = end_offset.value_or(info->end_offset);
+  const auto in_span = [](double offset, const ManeuverSlide& slide) {
+    return offset >= slide.min_offset - tol::kLength && offset <= slide.max_offset + tol::kLength;
+  };
+  if (!in_span(start, info->start_slide) || !in_span(end, info->end_slide)) {
+    return fail("a maneuver endpoint must stay within its anchor lane");
+  }
+  // The lock is implicit: hand-shaped geometry the next regeneration replanned
+  // away would be data loss, and folding it into THIS command keeps it one undo
+  // step rather than two.
+  const Maneuver* current = maneuver_record(*network.junction(junction_id), road);
+  if (current != nullptr && current->locked &&
+      std::ranges::equal(current->control_points, control_points) &&
+      current->start_offset.value_or(0.0) == start && current->end_offset.value_or(0.0) == end) {
+    return fail("the maneuver already has that shape");
+  }
+
+  Expected<ConnectingPlan> plan = fit_maneuver(network, *info, control_points, start, end);
+  if (!plan.has_value()) {
+    return invalid_command(std::string(kName), plan.error());
+  }
+
+  auto command = std::make_unique<GenericCommand>(
+      std::string(kName),
+      DirtySet{.roads = {road}, .junctions = {junction_id}, .junctions_are_current = true});
+  if (auto captured = capture_maneuver_geometry(network, *command, road, *plan);
+      !captured.has_value()) {
+    return invalid_command(std::string(kName), captured.error());
+  }
+  Junction after = *network.junction(junction_id);
+  auto entry = find_maneuver(after.maneuvers, road);
+  if (entry == after.maneuvers.end()) {
+    after.maneuvers.push_back(Maneuver{.road = road});
+    entry = after.maneuvers.end() - 1;
+  }
+  entry->locked = true;
+  entry->control_points.assign(control_points.begin(), control_points.end());
+  entry->start_offset = start;
+  entry->end_offset = end;
+  command->before.junctions.emplace_back(junction_id, *network.junction(junction_id));
+  command->after.junctions.emplace_back(junction_id, std::move(after));
+  return command;
+}
+
+std::unique_ptr<Command> reset_maneuver(const RoadNetwork& network,
+                                        JunctionId junction_id,
+                                        RoadId road,
+                                        const JunctionGenOptions& options) {
+  static constexpr std::string_view kName = "Reset Maneuver";
+  const auto fail = [](std::string message) {
+    return invalid_command(
+        std::string(kName),
+        Error{.code = ErrorCode::InvalidArgument, .message = std::move(message)});
+  };
+  Expected<JunctionManeuverInfo> info = maneuver_edit_context(network, junction_id, road, kName);
+  if (!info) {
+    return invalid_command(std::string(kName), info.error());
+  }
+  if (!info->authored) {
+    return fail("the maneuver has nothing authored to reset");
+  }
+  if (info->is_uturn_explicit) {
+    return fail("an explicit U-turn has no derived path to reset to; delete its road instead");
+  }
+  const Junction& junction = *network.junction(junction_id);
+  if (junction.arms.empty()) {
+    return fail("junction has no recorded arms (loaded from a foreign file); recreate it to edit");
+  }
+
+  // Replan the junction and take back the turn this road serves. Matching is by
+  // the same (from, from_lane, to, to_lane) key retarget_junction matches on, so
+  // a reset and a regeneration cannot produce different geometry.
+  Expected<JunctionPlan> plan = plan_junction(network, junction.arms, options);
+  if (!plan.has_value()) {
+    return invalid_command(std::string(kName), plan.error());
+  }
+  const auto derived = std::ranges::find_if(plan->roads, [&](const ConnectingPlan& cp) {
+    return cp.from == info->from && cp.to == info->to && cp.from_lane == info->from_lane &&
+           cp.to_lane == info->to_lane;
+  });
+  if (derived == plan->roads.end()) {
+    return fail("the junction no longer plans this turn; rebuild its maneuvers instead");
+  }
+
+  auto command = std::make_unique<GenericCommand>(
+      std::string(kName),
+      DirtySet{.roads = {road}, .junctions = {junction_id}, .junctions_are_current = true});
+  if (auto captured = capture_maneuver_geometry(network, *command, road, *derived);
+      !captured.has_value()) {
+    return invalid_command(std::string(kName), captured.error());
+  }
+  Junction after = junction;
+  after.maneuvers.erase(find_maneuver(after.maneuvers, road));
+  command->before.junctions.emplace_back(junction_id, junction);
+  command->after.junctions.emplace_back(junction_id, std::move(after));
+  return command;
+}
+
+std::unique_ptr<Command> rebuild_maneuvers(const RoadNetwork& network,
+                                           JunctionId junction_id,
+                                           const JunctionGenOptions& options) {
+  static constexpr std::string_view kName = "Rebuild Maneuvers";
+  const Junction* junction = network.junction(junction_id);
+  if (junction == nullptr) {
+    return invalid_command(
+        std::string(kName),
+        Error{.code = ErrorCode::InvalidArgument, .message = "stale junction id"});
+  }
+  if (junction->arms.empty()) {
+    return invalid_command(
+        std::string(kName),
+        Error{
+            .code = ErrorCode::InvalidArgument,
+            .message =
+                "junction has no recorded arms (loaded from a foreign file); recreate it to edit"});
+  }
+  // Something GEOMETRIC must be authored: a rebuild that only re-derives what is
+  // already derived would be a no-op command, which the round-trip oracle
+  // forbids. A lone turn-type override survives a rebuild, so it does not count.
+  const bool rebuildable = std::ranges::any_of(junction->maneuvers, [](const Maneuver& record) {
+    return record.locked || record.start_offset.has_value() || record.end_offset.has_value() ||
+           !record.control_points.empty();
+  });
+  if (!rebuildable) {
+    return invalid_command(
+        std::string(kName),
+        Error{.code = ErrorCode::InvalidArgument,
+              .message = "the junction has no locked or hand-shaped maneuver to rebuild"});
+  }
+  return retarget_junction(network,
+                           junction_id,
+                           junction->arms,
+                           options,
+                           TurnSetPolicy::AllowChange,
+                           kName,
+                           {},
+                           {},
+                           ManeuverPolicy::Rebuild);
+}
+
+std::unique_ptr<Command> add_uturn_maneuver(const RoadNetwork& network,
+                                            JunctionId junction_id,
+                                            RoadEnd arm,
+                                            const JunctionGenOptions& options) {
+  static constexpr std::string_view kName = "Add U-Turn";
+  const auto fail = [](std::string message) {
+    return invalid_command(
+        std::string(kName),
+        Error{.code = ErrorCode::InvalidArgument, .message = std::move(message)});
+  };
+  const Junction* junction = network.junction(junction_id);
+  if (junction == nullptr) {
+    return fail("stale junction id");
+  }
+  if (!junction->spans.empty()) {
+    return fail("a span junction has no connections, so it has no maneuvers");
+  }
+  if (std::ranges::find(junction->arms, arm) == junction->arms.end()) {
+    return fail("the given road end is not an arm of this junction");
+  }
+  // A junction never carries two maneuvers for the same movement, and the
+  // same-arm movement is the whole of what a U-turn is.
+  for (const JunctionManeuverInfo& info : junction_maneuvers(network, junction_id)) {
+    if (info.from == arm && info.to == arm) {
+      return fail("this arm already has a U-turn");
+    }
+  }
+
+  Expected<ContactState> contact = contact_state(network, arm);
+  if (!contact.has_value()) {
+    return invalid_command(std::string(kName), contact.error());
+  }
+  const std::vector<ContactLane> incoming =
+      driving_lanes_at(network, arm, *contact, /*incoming=*/true);
+  const std::vector<ContactLane> outgoing =
+      driving_lanes_at(network, arm, *contact, /*incoming=*/false);
+  if (incoming.empty() || outgoing.empty()) {
+    return fail("a U-turn needs a driving lane in both directions on the arm");
+  }
+  // Curb-in order, so the INNERMOST lanes — the ones a U-turn actually uses —
+  // are last.
+  const ContactLane& from_lane = incoming.back();
+  const ContactLane& to_lane = outgoing.back();
+  const std::array<double, 2> a = contact_lateral(*contact, from_lane.inner_t);
+  const std::array<double, 2> b = contact_lateral(*contact, to_lane.inner_t);
+
+  // DEVIATION from a plain fit_connector (documented on purpose): both anchors
+  // are the INNER boundaries of their lanes, and on an undivided road that is
+  // the same point with opposite headings — a fit with no solution. So the fit
+  // is seeded with ONE interior apex, pushed into the junction along the entry
+  // heading, and that apex is stored as the maneuver's control point: a U-turn
+  // is authored geometry, and its record has to be able to reproduce it. On a
+  // DIVIDED road (a median between the innermost driving lanes) the anchors are
+  // far enough apart for the plain connector fit, which is used unchanged.
+  const double separation = std::hypot(b[0] - a[0], b[1] - a[1]);
+  std::vector<Waypoint> control_points;
+  Expected<ReferenceLine> line = make_error(ErrorCode::InvalidArgument, "uninitialized");
+  if (separation > 2.0 * tol::kLength) {
+    auto connector =
+        fit_connector(ConnectorEndpoint{.x = a[0], .y = a[1], .heading = contact->into_hdg},
+                      ConnectorEndpoint{.x = b[0], .y = b[1], .heading = contact->out_hdg},
+                      ConnectorParams{.max_loop_factor = options.max_loop_factor});
+    if (connector.has_value()) {
+      line = std::move(connector->line);
+    }
+  }
+  if (!line.has_value()) {
+    // Apex depth: half the distance to the nearest other arm face, so the loop
+    // stays inside the junction whatever its size.
+    double depth = 0.5 * options.max_end_distance_m;
+    for (const RoadEnd& other : junction->arms) {
+      if (other == arm) {
+        continue;
+      }
+      if (const Expected<ContactState> face = contact_state(network, other); face.has_value()) {
+        depth = std::min(depth, 0.5 * std::hypot(face->x - contact->x, face->y - contact->y));
+      }
+    }
+    depth = std::clamp(depth, 2.0, 25.0);
+    const std::array<double, 2> mid =
+        contact_lateral(*contact, 0.5 * (from_lane.inner_t + to_lane.inner_t));
+    control_points.push_back(Waypoint{.x = mid[0] + (depth * std::cos(contact->into_hdg)),
+                                      .y = mid[1] + (depth * std::sin(contact->into_hdg))});
+    std::vector<Waypoint> waypoints{
+        Waypoint{.x = a[0], .y = a[1]}, control_points.front(), Waypoint{.x = b[0], .y = b[1]}};
+    line = fit_clothoid_path(waypoints,
+                             EndpointHeadings{.start = contact->into_hdg, .end = contact->out_hdg});
+  }
+  if (!line.has_value()) {
+    // A U-turn between two adjacent lanes can legitimately be too tight; the
+    // fit's own message is the useful one.
+    return invalid_command(std::string(kName), line.error());
+  }
+
+  const ConnectingPlan cp{
+      .from = arm,
+      .to = arm,
+      .from_lane = from_lane.odr_id,
+      .to_lane = to_lane.odr_id,
+      .line = std::move(*line),
+      .start_width = from_lane.width,
+      .end_width = to_lane.width,
+      .start_z = contact->z,
+      .start_grade = (arm.contact == ContactPoint::End ? 1.0 : -1.0) * contact->grade,
+      .end_z = contact->z,
+      .end_grade = (arm.contact == ContactPoint::Start ? 1.0 : -1.0) * contact->grade};
+
+  auto command = std::make_unique<GenericCommand>(std::string(kName),
+                                                  DirtySet{.roads = {arm.road},
+                                                           .junctions = {junction_id},
+                                                           .topology = true,
+                                                           .junctions_are_current = true});
+  command->before.junctions.emplace_back(junction_id, *junction);
+  command->creator = [junction_id, cp, control_points = std::move(control_points)](
+                         RoadNetwork& target, Values& created) -> Expected<void> {
+    const JunctionConnection connection = materialize_connection(target, created, junction_id, cp);
+    // Re-fetch: materialize_connection's create_* calls may have reallocated
+    // the arenas (arena.hpp "never store pointers across mutations").
+    Junction& junction_after = *target.junction(junction_id);
+    junction_after.connections.push_back(connection);
+    junction_after.maneuvers.push_back(Maneuver{
+        .road = connection.connecting_road, .locked = true, .control_points = control_points});
+    return {};
+  };
+  return command;
 }
 
 // --- parametric intersection assemblies -------------------------------------
