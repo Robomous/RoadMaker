@@ -103,6 +103,28 @@ struct StopLine {
   std::string crosswalk_odr_id;
 };
 
+/// Membership span of a virtual (span) junction: a stretch [s_start, s_end] of
+/// one road that belongs to the junction without cutting that road.
+///
+/// See ASAM OpenDRIVE 1.9.0 §12.7 (identical in 1.8.1 §12.7): a
+/// `<junction type="virtual">` names one @mainRoad plus the @sStart/@sEnd
+/// interval on it, so a mid-road crosswalk or a parking-lot entry needs no
+/// break in the main road. RoadMaker generalizes that to a LIST so one span
+/// junction can cover several parallel roads (a crosswalk across a divided
+/// carriageway); Layer 0 exports spans[0] as the spec-mandated main road and
+/// the full list rides `<userData code="rm:spans">` (ADR-0008 Layer 1).
+struct SpanArm {
+  /// The road the span lies on. `spans[0].road` is exported as @mainRoad.
+  RoadId road;
+
+  /// Start of the covered interval in the road's reference-line s [m].
+  double s_start = 0.0;
+
+  /// End of the covered interval in the road's reference-line s [m].
+  /// `s_end >= s_start`; both are `t_grEqZero` per §12.7 Table 69.
+  double s_end = 0.0;
+};
+
 struct Junction {
   /// OpenDRIVE junction id (string, unique within a network).
   std::string odr_id;
@@ -140,6 +162,34 @@ struct Junction {
   /// Bare catalog material name for the junction carriageway (the floor).
   /// Empty ⇒ the derived asphalt look, mirroring `Surface::material`.
   std::string material;
+
+  /// Explicit user control over automatic regeneration (p4-s4, issue #319).
+  /// Automatic regeneration loops (the ones that re-run the connecting-road
+  /// generator after a neighbouring edit) SKIP a locked junction, so hand-tuned
+  /// connections, corners and stop lines survive edits to the arms. An explicit
+  /// `regenerate_junction` is still allowed — locking guards the automatic
+  /// pass, it does not freeze the junction.
+  ///
+  /// Persisted as `locked=1` inside `<userData code="rm:junction">`; omitted
+  /// when false so an unlocked junction keeps exactly its pre-#319 bytes.
+  bool locked = false;
+
+  /// Membership spans of a VIRTUAL (span) junction — ASAM OpenDRIVE 1.9.0
+  /// §12.7 (identical in 1.8.1 §12.7). Non-empty ⇔ this is a span junction.
+  ///
+  /// arms-xor-spans: a span junction has an EMPTY `arms` list and NO
+  /// `connections` — the main road is never cut, so there is nothing to
+  /// generate and nothing to fillet. It is also always `locked` (there is no
+  /// automatic derivation that could regenerate it). Conversely an arm-based
+  /// junction has an empty `spans` list. Nothing in the kernel produces a
+  /// junction with both.
+  ///
+  /// State is DERIVED from these fields, never stored as an enum:
+  ///   foreign   = arms.empty() && spans.empty()
+  ///   automatic = !arms.empty() && !locked
+  ///   locked    = !arms.empty() && locked
+  ///   span      = !spans.empty()   (always locked)
+  std::vector<SpanArm> spans;
 };
 
 } // namespace roadmaker
