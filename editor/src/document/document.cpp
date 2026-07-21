@@ -198,7 +198,12 @@ void Document::push_applied_with_regeneration(std::unique_ptr<edit::Command> com
       break;
     }
     const Junction* junction = network_.junction(junction_id);
-    if (junction == nullptr || junction->arms.empty()) {
+    // A LOCKED junction (#319) opts out of this automatic pass: the user
+    // hand-tuned its connections, corners or stop lines and asked for them to
+    // survive edits to the arms. regenerate_junction itself never consults the
+    // flag, so an explicit "re-derive junction" action still works with no
+    // bypass — the lock is a policy of the automatic loops only.
+    if (junction == nullptr || junction->arms.empty() || junction->locked) {
       continue;
     }
     if (!announced) {

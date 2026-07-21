@@ -223,3 +223,82 @@ TEST(JunctionRegen, AddingADrivingLaneToAnArmRegeneratesWithoutAToast) {
   ASSERT_TRUE(welds.has_value());
   EXPECT_FALSE(welds->breaches);
 }
+
+// --- the lock (p4-s4, #319) --------------------------------------------------
+
+// A LOCKED junction opts out of the automatic regeneration loop: the user
+// hand-tuned it, so editing an arm must leave its connecting roads exactly
+// where they were. The gate lives in Document::push_applied_with_regeneration
+// (and in move_waypoint_following_junctions for the preview path).
+TEST(JunctionRegen, DraggingAnArmOfALockedJunctionDoesNotRegenerateIt) {
+  JunctionScene scene;
+  ASSERT_TRUE(scene.document
+                  .push_command(roadmaker::edit::set_junction_locked(
+                      scene.document.network(), scene.junction, true))
+                  .has_value());
+  ASSERT_TRUE(scene.document.network().junction(scene.junction)->locked);
+  const std::string locked_state = xodr(scene.document);
+  QSignalSpy skipped(&scene.document, &Document::regeneration_skipped);
+
+  ASSERT_TRUE(scene.document
+                  .push_command(roadmaker::edit::move_waypoint(
+                      scene.document.network(), scene.west, 0, Waypoint{.x = -40.0, .y = 14.0}))
+                  .has_value());
+
+  // Skipping is silent — a lock is not a failure, so no "junction not updated"
+  // toast — and the joint is now visibly stale, which is what the user asked
+  // for by locking it.
+  EXPECT_EQ(skipped.count(), 0);
+  EXPECT_NE(xodr(scene.document), locked_state) << "the arm itself moved";
+  const auto welds =
+      roadmaker::edit::verify_junction_welds(scene.document.network(), scene.junction);
+  ASSERT_TRUE(welds.has_value());
+  EXPECT_TRUE(welds->breaches) << "the connectors stayed put — the junction did not regenerate";
+}
+
+// Unlocking hands the junction back to the loop, so the very next arm edit
+// re-derives it. (The unlock itself carries junctions_are_current = false, so
+// the regeneration already runs inside the unlock's own undo macro.)
+TEST(JunctionRegen, UnlockingRestoresAutomaticRegeneration) {
+  JunctionScene scene;
+  ASSERT_TRUE(scene.document
+                  .push_command(roadmaker::edit::set_junction_locked(
+                      scene.document.network(), scene.junction, true))
+                  .has_value());
+  ASSERT_TRUE(scene.document
+                  .push_command(roadmaker::edit::move_waypoint(
+                      scene.document.network(), scene.west, 0, Waypoint{.x = -40.0, .y = 14.0}))
+                  .has_value());
+  {
+    const auto stale =
+        roadmaker::edit::verify_junction_welds(scene.document.network(), scene.junction);
+    ASSERT_TRUE(stale.has_value());
+    ASSERT_TRUE(stale->breaches) << "setup: the locked junction must be stale here";
+  }
+
+  QSignalSpy skipped(&scene.document, &Document::regeneration_skipped);
+  ASSERT_TRUE(scene.document
+                  .push_command(roadmaker::edit::set_junction_locked(
+                      scene.document.network(), scene.junction, false))
+                  .has_value());
+  EXPECT_FALSE(scene.document.network().junction(scene.junction)->locked);
+  EXPECT_EQ(skipped.count(), 0);
+
+  // The unlock's own dirty set asked for the re-derivation, so the connectors
+  // are already coincident again without any further edit.
+  const auto welds =
+      roadmaker::edit::verify_junction_welds(scene.document.network(), scene.junction);
+  ASSERT_TRUE(welds.has_value());
+  EXPECT_FALSE(welds->breaches);
+  EXPECT_LE(welds->max_position_gap, roadmaker::tol::kWeldPosition);
+
+  // And a further arm edit follows normally again.
+  ASSERT_TRUE(scene.document
+                  .push_command(roadmaker::edit::move_waypoint(
+                      scene.document.network(), scene.west, 0, Waypoint{.x = -40.0, .y = -12.0}))
+                  .has_value());
+  const auto after =
+      roadmaker::edit::verify_junction_welds(scene.document.network(), scene.junction);
+  ASSERT_TRUE(after.has_value());
+  EXPECT_FALSE(after->breaches);
+}
