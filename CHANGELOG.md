@@ -19,6 +19,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 Current version on `main`: **0.0.1**.
 
 ### Added
+- **A junction's turns are editable maneuvers**
+  ([#227](https://github.com/Robomous/RoadMaker/issues/227)): every connecting
+  road a junction generates is now a first-class **maneuver** you can take over.
+  One query, `junction_maneuvers()`, solves them all — the two arm faces and
+  linked lanes, the derived turn type, the endpoint slide limits and the sampled
+  path — and feeds the editor, the command layer and the Python bindings alike,
+  so what you see, what you edit and what you export cannot drift apart. A
+  junction read from a foreign file still lists its maneuvers, readable and
+  labelled even though it cannot be regenerated.
+  - A new **Maneuver tool** (⇧M) draws every turn of the selected junction and
+    lets the active one be reshaped: drag its interior control points, press a
+    midpoint marker to insert one, or drag an endpoint to slide it across the
+    arm within its anchor lane. `Del` removes a point, `Esc` cancels
+    byte-identically, and each gesture is one undo step whose path is refitted
+    to still meet both arms tangentially. Picking is screen-space against the
+    turn's centerline, because connecting roads carry no mesh to ray-cast.
+  - Reshaping a turn **locks** it, and a locked turn survives junction
+    regeneration — geometry, and the turn itself, even when a moved arm means
+    the plan no longer contains that movement. Lock without reshaping (the
+    Attributes row's checkbox, or right-click ▸ *Convert to explicit*) to pin a
+    derived turn as-is.
+  - **Turn Type** (Left / Straight / Right / U-Turn) is derived from the
+    arm-face angle and overridable per turn. OpenDRIVE has no turn-type element
+    — §12.2 Table 56 gives `<connection>` only its four attributes — so the
+    label is RoadMaker's own and never moves geometry. It survives a rebuild
+    for the same reason.
+  - **Reset** replans one turn from the arms; **Rebuild Maneuvers** replans the
+    whole junction ignoring every lock. **Add U-Turn…** creates the one movement
+    the generator never plans, from an arm's innermost incoming lane back to its
+    innermost outgoing one, locked so regeneration keeps it.
+  - Kernel commands `edit::set_maneuver_path`, `set_maneuver_locked`,
+    `set_maneuver_turn_type`, `reset_maneuver`, `rebuild_maneuvers` and
+    `add_uturn_maneuver`, all bound in Python alongside the query, `TurnType`
+    and a new `python/examples/junction_maneuvers.py`.
+  - Turns export as plain OpenDRIVE connecting roads with their `<connection>`
+    and `<laneLink>` rows; the lock, the type override, the endpoint slides and
+    the control points ride an `rm:maneuver` extension record on `<junction>`,
+    so a consumer that ignores it still reads a valid junction with the
+    hand-shaped geometry baked in.
 - **Props render at the size they declare**
   ([#335](https://github.com/Robomous/RoadMaker/issues/335)): the kernel already
   round-tripped an `<object>`'s optional OpenDRIVE `@height`/`@width`/`@radius`/

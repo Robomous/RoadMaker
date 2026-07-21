@@ -337,6 +337,106 @@ fuzz seeds), `test_stopline_tool` (gestures, one-undo-per-drag, F),
 
 ---
 
+## 6c. Maneuver (p4-s6, issue #227)
+
+**Interaction.** Maneuver tool (⇧M — plain `M` is Move): selecting a junction
+draws every one of its turns, dashed; clicking one makes it active and solid.
+The active turn shows knobs on its interior **control points**, **midpoint
+markers** between them (pressing one inserts a point and drags it in the same
+gesture), and **endpoint dots** at the two arm faces with their slide segments
+drawn as guides. Dragging a control point reshapes the path; dragging an
+endpoint slides it ACROSS the arm face, constrained to the anchor lane's
+cross-section. `Del` removes the focused point, `Esc` cancels a live drag
+byte-identically or clears the sub-selection. Every geometry gesture is one
+preview session and exactly ONE `edit::set_maneuver_path` on release.
+
+**Picking without a mesh.** Connecting-road surfaces are deliberately not
+tessellated (#103), so there is no proxy to ray-cast. The tool resolves the
+junction (from the selection, or from a floor pick) and then runs a
+SCREEN-space minimum-distance test against each maneuver's sampled centerline
+— `editor::screen_distance_to_polyline`, an 8 px constant tolerance at any
+zoom. Headless callers with no `ScreenContext` fall back to a world-metre
+radius, which is what the tests drive.
+
+**Derived, not created.** A junction's turns already exist: the generator plans
+one connecting road per permitted movement. `mesh::junction_maneuvers()` solves
+them all — identity, the two arm faces and linked lane ids, the fixed end
+headings, the endpoint slide constraints and the sampled path — and that one
+query feeds the tool, the pane, the command layer's validate-first checks and
+the bindings, so none of them can disagree. It walks `Junction::connections`,
+not the arm list, so a FOREIGN junction (no arms, not regenerable) is still
+readable and labelled, just not authorable. A SPAN junction has no connections
+and so no maneuvers.
+
+**Turn Type is ours, not ASAM's.** §12.2 Table 56 gives `<connection>` exactly
+`@connectingRoad`, `@contactPoint`, `@id` and `@incomingRoad` — there is no
+turn-type carrier anywhere in the standard. It is therefore DERIVED from the
+arm-face headings (`maneuver_turn_type`: ±30° reads Straight,
+beyond 150° reads U-turn, and a movement returning to its own arm is always a
+U-turn) and user-overridable as a purely semantic label. The 30° band is
+deliberately NOT the planner's 10° lane-discipline threshold: that one decides
+which LANES a movement may use and errs tiny on purpose; this one is a
+perceptual label shown to the author. Setting the override to the value the
+derivation already reports CLEARS it rather than pinning it.
+
+**Kernel API.** Six factories, all validating through `junction_maneuvers()`
+and all erasing a record left authoring nothing (so edit-then-undo writes the
+original bytes): `edit::set_maneuver_path` (interior points + the two endpoint
+slides; refits a G1 clothoid chain with the END HEADINGS LOCKED to the arm
+faces per §12.4.2, rewriting length, elevation and blended lane width
+together, and LOCKS the maneuver in the same undo step — hand-shaped geometry
+the next regeneration threw away would be a data-loss bug),
+`edit::set_maneuver_locked` (the "Convert to explicit" verb),
+`edit::set_maneuver_turn_type` (`nullopt` clears), `edit::reset_maneuver`
+(per-maneuver back-to-derived; refuses a foreign junction and an explicit
+U-turn, which has no derivation to fall back on), `edit::rebuild_maneuvers`
+(junction-wide replan under `ManeuverPolicy::Rebuild` — every lock ignored,
+turns the plan no longer contains dropped, but turn-type overrides SURVIVE
+because they are semantic, not geometric) and `edit::add_uturn_maneuver` (the
+one movement the planner never emits, created as connecting road + connection
+entry + a LOCKED record together). Dirty sets are value-only
+(`{junctions, junctions_are_current}`) except the two that move geometry,
+which add the connecting road, and the U-turn, which also sets `topology`.
+
+**The regeneration guard.** `retarget_junction` skips the rewrite for a locked
+matched turn, and KEEPS an unclaimed LOCKED connecting road instead of dropping
+it — that single rule is how both hand-shaped geometry and explicit U-turns
+survive an arm being moved. `InPlaceOnly` consequently fails only on new or
+dropped turns.
+
+**Sub-selection.** `ActiveManeuver{JunctionId, RoadId}` is tool-local (there is
+no ManeuverId) — the CornerTool / JunctionSurfaceTool precedent. The connecting
+ROAD is mirrored into the `SelectionModel`, which is what makes a maneuver
+selectable and highlightable everywhere else in the editor, and
+`maneuver_selection_changed()` binds the pane's finer state.
+
+**Attributes pane.** A "Maneuvers" group on a junction selection: one row per
+turn (`Turn <id>  <from> → <to>`) carrying a Turn Type combo (Auto / Left /
+Straight / Right / U-Turn), a **Lock** checkbox and a **Reset** button
+(disabled with an explaining tooltip on an explicit U-turn), plus a
+junction-wide **Rebuild Maneuvers** button.
+
+**Context menu.** On a junction: *Rebuild maneuvers* and an *Add U-Turn…*
+submenu listing the arms. On a connecting road: *Convert to explicit (lock
+geometry)* / *Return maneuver to derived (unlock geometry)* and *Reset
+maneuver*.
+
+**Persistence.** `<userData code="rm:maneuver">` on `<junction>` — see
+ADR-0008's registry for the payload grammar and degradation rules. Geometry
+itself stays Layer 0 (real connecting roads with their `<connection>` and
+`<laneLink>` rows); only the lock, the override, the offsets and the control
+points ride the extension.
+
+**Tests.** `test_junction_maneuvers` (derivation, classification, slides,
+foreign/span junctions, and every command through the round-trip oracle
+including the regeneration guard), `test_maneuver_persistence` (round trip +
+degradation + bounds, with four new fuzz-corpus seeds),
+`test_maneuver_tool` (gestures, one-undo-per-drag, insert, Del, Esc),
+`test_picking` (screen-space polyline distance), `test_panels` (the rows),
+plus the Python suite and three soak operations.
+
+---
+
 ## 7. Delete
 
 **Interaction.** Delete tool: click deletes picked road (with confirmation in
