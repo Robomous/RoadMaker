@@ -755,11 +755,33 @@ bool arms_round_trip(const RoadNetwork& network, const Junction& junction) {
   return writable_arm_count(network, junction) >= 2;
 }
 
+/// True when `junction` is a span (virtual) junction that can be written —
+/// i.e. it has spans and EVERY span road still resolves (p4-s4, issue #319).
+///
+/// All-or-nothing on purpose: the reader treats a malformed rm:spans as
+/// all-or-nothing too, and @mainRoad/@sStart/@sEnd are mandatory for a
+/// `<junction type="virtual">` (ASAM 1.9.0 §12.7 Table 69), so a junction whose
+/// main road went stale cannot be written as virtual at all. It then degrades
+/// to a plain arm-less junction; validate_network says so, so the omission is
+/// never silent (issue #311 — never dereference a stale road ref).
+bool spans_round_trip(const RoadNetwork& network, const Junction& junction) {
+  return !junction.spans.empty() && std::ranges::all_of(junction.spans, [&](const SpanArm& span) {
+    return network.road(span.road) != nullptr;
+  });
+}
+
 /// One materialized stop line: the solved geometry plus the deterministic
 /// `@id` its object will carry.
 struct StopLineExport {
   JunctionStopLineInfo info;
   std::string odr_id;
+
+  /// The owning junction's odr id, set ONLY for a span (virtual) junction's
+  /// faces. An arm line needs no such back-reference — the reader recovers its
+  /// junction from the road end — but a span face's RoadEnd is a pseudo key
+  /// that resolves to no junction at all, so the reference is what makes the
+  /// record readable back (p4-s4, issue #319).
+  std::string span_junction_odr_id;
 };
 
 /// Materialized stop lines keyed by the owning road's odr id. Built once per
@@ -773,11 +795,22 @@ using StopLineExports = std::map<std::string, std::vector<StopLineExport>>;
 /// that lets the reader absorb the object back into a StopLine. Everything else
 /// is omitted at its default, so a fully derived line exports as a bare tag and
 /// stays byte-stable.
-void write_stopline_data(pugi::xml_node object_node, const JunctionStopLineInfo& info) {
+///
+/// `junction` is written for a SPAN junction's faces only (p4-s4, issue #319).
+/// There `contact` names which FACE of the span the line guards rather than a
+/// junction-facing road end, and no road end of the span road belongs to the
+/// junction at all — so without the junction's id the reader has nothing to key
+/// the record back on. Its absence is exactly what selects the arm path on
+/// read, which is why an arm line's bytes are untouched.
+void write_stopline_data(pugi::xml_node object_node, const StopLineExport& line) {
+  const JunctionStopLineInfo& info = line.info;
   pugi::xml_node node = object_node.append_child("userData");
   node.append_attribute("code").set_value("rm:stopline");
   node.append_attribute("contact").set_value(info.arm.contact == ContactPoint::End ? "end"
                                                                                    : "start");
+  if (!line.span_junction_odr_id.empty()) {
+    node.append_attribute("junction").set_value(line.span_junction_odr_id.c_str());
+  }
   if (info.distance_authored) {
     set_num(node, "distance", info.distance);
   }
@@ -814,7 +847,7 @@ void write_stopline_object(pugi::xml_node objects_node, const StopLineExport& li
   node.append_attribute("orientation").set_value(orientation_name(ObjectOrientation::None));
   set_num(node, "length", line.info.thickness);
   set_num(node, "width", line.info.span);
-  write_stopline_data(node, line.info);
+  write_stopline_data(node, line);
 }
 
 /// Solves every junction's stop lines and buckets them by owning road, minting
@@ -833,6 +866,7 @@ StopLineExports build_stopline_exports(const RoadNetwork& network) {
   struct Pending {
     std::string junction_odr_id;
     std::string road_odr_id;
+    bool span = false;
     JunctionStopLineInfo info;
   };
 
@@ -844,7 +878,13 @@ StopLineExports build_stopline_exports(const RoadNetwork& network) {
     // then SUPPRESSES the derived line and lands in arena order, breaking
     // write→parse→write. Emit nothing rather than something unreadable; the
     // junction is degenerate (below 2 arms) and already persists as arm-less.
-    if (!arms_round_trip(network, junction)) {
+    //
+    // A span junction's faces are keyed on the junction id instead, so their
+    // gate is the one that decides whether that junction is written as virtual
+    // at all — all-or-nothing, exactly like rm:spans (#319, #311). Never write
+    // what you cannot read back.
+    const bool span = !junction.spans.empty();
+    if (span ? !spans_round_trip(network, junction) : !arms_round_trip(network, junction)) {
       return;
     }
     for (const JunctionStopLineInfo& info : junction_stoplines(network, junction_id)) {
@@ -852,8 +892,10 @@ StopLineExports build_stopline_exports(const RoadNetwork& network) {
       if (road == nullptr) {
         continue;
       }
-      pending.push_back(
-          Pending{.junction_odr_id = junction.odr_id, .road_odr_id = road->odr_id, .info = info});
+      pending.push_back(Pending{.junction_odr_id = junction.odr_id,
+                                .road_odr_id = road->odr_id,
+                                .span = span,
+                                .info = info});
     }
   });
   std::ranges::sort(pending, [](const Pending& a, const Pending& b) {
@@ -874,7 +916,9 @@ StopLineExports build_stopline_exports(const RoadNetwork& network) {
     }
     taken.insert(id);
     out[entry.road_odr_id].push_back(
-        StopLineExport{.info = std::move(entry.info), .odr_id = std::move(id)});
+        StopLineExport{.info = std::move(entry.info),
+                       .odr_id = std::move(id),
+                       .span_junction_odr_id = entry.span ? entry.junction_odr_id : std::string{}});
   }
   return out;
 }
@@ -1241,8 +1285,33 @@ void write_junction(pugi::xml_node root,
   if (!junction.name.empty()) {
     junction_node.append_attribute("name").set_value(junction.name.c_str());
   }
+
+  // Span (virtual) junctions, p4-s4 issue #319. Layer 0 is a spec-valid
+  // `<junction type="virtual">`: ASAM OpenDRIVE 1.9.0 §12.7 Table 69 marks
+  // @mainRoad, @orientation, @sStart and @sEnd all `required` (1.8.1 §12.7
+  // Table 69 is identical, and its rules list states the same as prose: "The
+  // @mainRoad, @sStart, @sEnd, @orientation attributes shall only be valid for
+  // junctions of type virtual") — and rule
+  // asam.net:xodr:1.5.0:junctions.common.virtual_junction_attributes forbids
+  // all four on any other junction type, which is why an arm-based junction
+  // still writes neither them nor @type and keeps its pre-#319 bytes exactly.
+  // @orientation="none" = "valid in both driving directions" (§12.7 Table 69).
+  // Only spans[0] fits Layer 0; the whole list rides rm:spans below.
+  const bool span = spans_round_trip(network, junction);
+  if (span) {
+    const SpanArm& main = junction.spans.front();
+    junction_node.append_attribute("type").set_value("virtual");
+    junction_node.append_attribute("mainRoad").set_value(network.road(main.road)->odr_id.c_str());
+    junction_node.append_attribute("orientation").set_value("none");
+    set_num(junction_node, "sStart", main.s_start);
+    set_num(junction_node, "sEnd", main.s_end);
+  }
+
   int connection_id = 0;
   for (const JunctionConnection& connection : junction.connections) {
+    if (span) {
+      break; // arms-xor-spans: a span junction generates no connecting roads
+    }
     const Road* incoming = network.road(connection.incoming_road);
     const Road* connecting = network.road(connection.connecting_road);
     if (incoming == nullptr || connecting == nullptr) {
@@ -1267,8 +1336,14 @@ void write_junction(pugi::xml_node root,
   // keep their order. The boundary defines the area the grid applies to, so it
   // precedes the grid. The boundary is precomputed by the caller so its
   // synthesized auxiliary roads (if any) are emitted among the real <road>s.
-  write_junction_boundary(junction_node, boundary);
-  write_junction_surface(junction_node, build_junction_export(network, junction));
+  // A span junction gets neither: it encloses no pavement area (the main road
+  // is never cut), and "junction boundaries are currently only valid for common
+  // junctions" (asam.net:xodr:1.8.0:junctions.boundary.only_for_common_junctions,
+  // §12.10).
+  if (!span) {
+    write_junction_boundary(junction_node, boundary);
+    write_junction_surface(junction_node, build_junction_export(network, junction));
+  }
 
   // The generator's arm list round-trips through <userData> (OpenDRIVE 1.9.0
   // §7.2) so regeneration survives save/load; junctions from foreign files
@@ -1280,7 +1355,7 @@ void write_junction(pugi::xml_node root,
   // arms cannot regenerate anyway — it persists as arm-less (foreign
   // semantics: recreate to edit). `arms_round_trip` is the shared predicate;
   // the stop-line exporter gates on it too, for the same reason.
-  if (arms_round_trip(network, junction)) {
+  if (!span && arms_round_trip(network, junction)) {
     std::string value;
     for (const RoadEnd& arm : junction.arms) {
       const Road* road = network.road(arm.road);
@@ -1310,7 +1385,7 @@ void write_junction(pugi::xml_node root,
   // Stale entries (a road that no longer resolves) and entries that authored
   // nothing are dropped, mirroring the stale-arm rule; storage order is kept
   // so save→load→save is byte-identical.
-  if (!junction.corners.empty()) {
+  if (!span && !junction.corners.empty()) {
     std::string value;
     for (const JunctionCorner& corner : junction.corners) {
       const Road* road_a = network.road(corner.arm_a.road);
@@ -1366,7 +1441,14 @@ void write_junction(pugi::xml_node root,
   // Junction-scope authored values (p4-s2, issue #226) get their own code so
   // an older reader drops only these and still understands rm:arms/rm:corners.
   // Format: ";"-joined "key=value", each key at most once, element omitted
-  // entirely when nothing is authored:  "r=<num>;mat=<name>".
+  // entirely when nothing is authored:  "r=<num>;mat=<name>;locked=1".
+  //
+  // `locked` (p4-s4, issue #319) is emitted ONLY when true, so every junction
+  // that predates the flag keeps its exact bytes. A span junction is locked by
+  // definition (arms-xor-spans: there is no automatic derivation to skip), so
+  // it is written as locked whatever the in-memory flag says — otherwise the
+  // reader, which forces the invariant, would produce different bytes on the
+  // second write.
   {
     std::string value;
     if (junction.default_corner_radius) {
@@ -1380,11 +1462,41 @@ void write_junction(pugi::xml_node root,
       value += "mat=";
       value += junction.material;
     }
+    if (junction.locked || span) {
+      if (!value.empty()) {
+        value += ';';
+      }
+      value += "locked=1";
+    }
     if (!value.empty()) {
       pugi::xml_node user_data = junction_node.append_child("userData");
       user_data.append_attribute("code").set_value("rm:junction");
       user_data.append_attribute("value").set_value(value.c_str());
     }
+  }
+
+  // The full span list (p4-s4, issue #319) rides its own sibling code, because
+  // Layer 0 can only carry ONE span (@mainRoad/@sStart/@sEnd). Every span is
+  // written, spans[0] included, so that the reader — which REPLACES the
+  // Layer-0 span with a well-formed rm:spans — reproduces the list exactly and
+  // save->load->save stays byte-identical. Format: ";"-joined entries, each
+  // "roadOdrId:s_start:s_end". Stale roads cannot appear: spans_round_trip
+  // already required every one of them to resolve.
+  if (span) {
+    std::string value;
+    for (const SpanArm& entry : junction.spans) {
+      if (!value.empty()) {
+        value += ';';
+      }
+      value += network.road(entry.road)->odr_id;
+      value += ':';
+      value += num(entry.s_start);
+      value += ':';
+      value += num(entry.s_end);
+    }
+    pugi::xml_node user_data = junction_node.append_child("userData");
+    user_data.append_attribute("code").set_value("rm:spans");
+    user_data.append_attribute("value").set_value(value.c_str());
   }
 }
 
@@ -1637,11 +1749,32 @@ std::vector<Diagnostic> validate_network(const RoadNetwork& network, const Write
     }
   });
 
+  // A span (virtual) junction whose road references went stale cannot be
+  // written as `<junction type="virtual">` at all — @mainRoad/@sStart/@sEnd are
+  // mandatory (§12.7 Table 69) — so it degrades to a plain arm-less junction.
+  // Say so rather than dropping the spans silently (issue #319, #311).
+  network.for_each_junction([&](JunctionId, const Junction& junction) {
+    if (junction.spans.empty() || spans_round_trip(network, junction)) {
+      return;
+    }
+    findings.push_back(Diagnostic{.severity = Severity::Warning,
+                                  .location = fmt::format("junction id={}", junction.odr_id),
+                                  .message =
+                                      "span junction references a road that no longer exists — the "
+                                      "virtual junction attributes and rm:spans were not written",
+                                  .rule_id = std::string(rules::kJunctionVirtualAttributes)});
+  });
+
   // junctions.common.not_only_two exists only in the 1.9.0 catalog
   // (Annex F.4.5.3); 1.8.1's Annex E (checker rules, normative) has no
   // equivalent, so the finding is version-gated on the writer target.
   if (options.target_version == XodrVersion::v1_9_0) {
     network.for_each_junction([&](JunctionId junction_id, const Junction& junction) {
+      if (!junction.spans.empty()) {
+        // A virtual junction legitimately joins one uninterrupted road
+        // (§12.7); the "only two roads meet" advice is about common junctions.
+        return;
+      }
       std::vector<RoadId> meeting;
       auto note = [&](RoadId id) {
         if (network.road(id) != nullptr &&

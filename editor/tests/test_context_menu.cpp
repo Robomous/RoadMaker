@@ -12,9 +12,12 @@
 #include <QAction>
 #include <QMenu>
 #include <QString>
+#include <QTemporaryDir>
 #include <QWidget>
 #include <algorithm>
 #include <array>
+#include <filesystem>
+#include <fstream>
 #include <optional>
 #include <stdexcept>
 #include <string>
@@ -665,4 +668,341 @@ TEST(ContextMenu, LinkEndsWeldsTwoSelectedRoadsWithNearbyFreeEnds) {
   const std::size_t before = document.network().road_count();
   link->invoke();
   EXPECT_EQ(document.network().road_count(), before + 1); // a connector road welds them
+}
+
+// --- junction control (p4-s4, issue #319) ------------------------------------
+//
+// Junction state is DERIVED (arms/spans/locked), so the menu items are gated by
+// what the record says, not by a stored mode. These pin every state's gating so
+// a menu item can never offer an edit the kernel would refuse.
+
+namespace {
+
+/// Four arms meeting at the origin, joined into one automatic junction.
+struct JunctionFixture {
+  Document document;
+  SelectionModel selection{document};
+  Actions actions{*document.undo_stack()};
+  ContextMenuDeps deps{document, selection, actions};
+  roadmaker::JunctionId junction;
+
+  JunctionFixture() {
+    const RoadId west = make(-60.0, 0.0, -12.0, 0.0, "1");
+    const RoadId east = make(60.0, 0.0, 12.0, 0.0, "2");
+    const RoadId south = make(0.0, -60.0, 0.0, -12.0, "3");
+    const RoadId north = make(0.0, 60.0, 0.0, 12.0, "4");
+    const std::array<roadmaker::RoadEnd, 4> ends{
+        roadmaker::RoadEnd{west, roadmaker::ContactPoint::End},
+        roadmaker::RoadEnd{east, roadmaker::ContactPoint::End},
+        roadmaker::RoadEnd{south, roadmaker::ContactPoint::End},
+        roadmaker::RoadEnd{north, roadmaker::ContactPoint::End}};
+    if (!document.push_command(roadmaker::edit::create_junction(document.network(), ends))) {
+      throw std::runtime_error("junction create failed");
+    }
+    document.network().for_each_junction(
+        [&](roadmaker::JunctionId id, const roadmaker::Junction&) { junction = id; });
+  }
+
+  /// create_road's third argument is the road NAME — the odr id is minted by
+  /// the kernel — so the new road is read back out of the command's dirty set
+  /// rather than looked up by a string that is not its id.
+  RoadId make(double x0, double y0, double x1, double y1, const char* name) {
+    if (!document.push_command(
+            roadmaker::edit::create_road({Waypoint{.x = x0, .y = y0}, Waypoint{.x = x1, .y = y1}},
+                                         roadmaker::LaneProfile::two_lane_default(),
+                                         name))) {
+      throw std::runtime_error("road create failed");
+    }
+    if (document.last_dirty().roads.empty()) {
+      throw std::runtime_error("create_road reported no road");
+    }
+    return document.last_dirty().roads.front();
+  }
+
+  void lock() {
+    if (!document.push_command(
+            roadmaker::edit::set_junction_locked(document.network(), junction, true))) {
+      throw std::runtime_error("lock failed");
+    }
+  }
+
+  [[nodiscard]] std::vector<MenuItem> junction_menu() {
+    MenuContext context;
+    context.junction = junction;
+    return build_context_menu(context, deps);
+  }
+
+  /// The returned pointer aliases `items`, so a temporary menu would dangle —
+  /// hold the vector in a named local. Deleted below for rvalues so the
+  /// mistake is a compile error rather than a use-after-free ASan only sees
+  /// on Linux.
+  [[nodiscard]] static const MenuItem* find(std::vector<MenuItem>&&, const QString&) = delete;
+
+  [[nodiscard]] static const MenuItem* find(const std::vector<MenuItem>& items,
+                                            const QString& text) {
+    for (const MenuItem& item : items) {
+      if (item.text == text) {
+        return &item;
+      }
+    }
+    return nullptr;
+  }
+
+  [[nodiscard]] static std::size_t count_prefixed(const std::vector<MenuItem>& items,
+                                                  const QString& prefix) {
+    std::size_t n = 0;
+    for (const MenuItem& item : items) {
+      if (item.text.startsWith(prefix)) {
+        ++n;
+      }
+    }
+    return n;
+  }
+};
+
+} // namespace
+
+TEST(ContextMenu, AutomaticJunctionOffersLockAndReDerive) {
+  JunctionFixture fx;
+  const std::vector<MenuItem> items = fx.junction_menu();
+
+  const MenuItem* lock = JunctionFixture::find(items, "Lock junction");
+  ASSERT_NE(lock, nullptr) << "an automatic junction locks, it does not unlock";
+  EXPECT_TRUE(lock->enabled);
+  EXPECT_EQ(JunctionFixture::find(items, "Unlock junction"), nullptr);
+
+  const MenuItem* rederive = JunctionFixture::find(items, "Re-derive junction");
+  ASSERT_NE(rederive, nullptr);
+  EXPECT_TRUE(rederive->enabled);
+
+  // Membership editing is locked-only: an automatic junction's arms are
+  // re-derived, so an edit to them would not survive.
+  EXPECT_EQ(JunctionFixture::count_prefixed(items, "Remove arm: "), 0U);
+
+  const int before = fx.document.undo_stack()->index();
+  lock->invoke();
+  EXPECT_EQ(fx.document.undo_stack()->index(), before + 1);
+  ASSERT_NE(fx.document.network().junction(fx.junction), nullptr);
+  EXPECT_TRUE(fx.document.network().junction(fx.junction)->locked);
+}
+
+TEST(ContextMenu, LockedJunctionOffersUnlockAndPerArmRemoval) {
+  JunctionFixture fx;
+  fx.lock();
+  const std::vector<MenuItem> items = fx.junction_menu();
+
+  const MenuItem* unlock = JunctionFixture::find(items, "Unlock junction");
+  ASSERT_NE(unlock, nullptr);
+  EXPECT_TRUE(unlock->enabled);
+  EXPECT_EQ(JunctionFixture::find(items, "Lock junction"), nullptr);
+
+  // One item per arm, named by the arm road's odr id.
+  EXPECT_EQ(JunctionFixture::count_prefixed(items, "Remove arm: "), 4U);
+  const MenuItem* remove = JunctionFixture::find(items, "Remove arm: 1");
+  ASSERT_NE(remove, nullptr);
+  const int before = fx.document.undo_stack()->index();
+  remove->invoke();
+  EXPECT_EQ(fx.document.undo_stack()->index(), before + 1);
+  ASSERT_NE(fx.document.network().junction(fx.junction), nullptr);
+  EXPECT_EQ(fx.document.network().junction(fx.junction)->arms.size(), 3U);
+}
+
+TEST(ContextMenu, RemoveArmDisappearsAtTwoArms) {
+  JunctionFixture fx;
+  fx.lock();
+  // Down to two arms: the kernel refuses going below two, so the menu must stop
+  // offering the removal rather than offering a guaranteed refusal.
+  for (const char* road : {"1", "2"}) {
+    const std::vector<MenuItem> items = fx.junction_menu();
+    const MenuItem* remove =
+        JunctionFixture::find(items, QStringLiteral("Remove arm: ") + QLatin1String(road));
+    ASSERT_NE(remove, nullptr) << road;
+    remove->invoke();
+  }
+  ASSERT_EQ(fx.document.network().junction(fx.junction)->arms.size(), 2U);
+  EXPECT_EQ(JunctionFixture::count_prefixed(fx.junction_menu(), "Remove arm: "), 0U);
+}
+
+TEST(ContextMenu, SpanJunctionCanNeverBeUnlocked) {
+  Document document;
+  SelectionModel selection{document};
+  Actions actions{*document.undo_stack()};
+  ContextMenuDeps deps{document, selection, actions};
+  ASSERT_TRUE(document.push_command(
+      roadmaker::edit::create_road({Waypoint{.x = 0.0, .y = 0.0}, Waypoint{.x = 200.0, .y = 0.0}},
+                                   roadmaker::LaneProfile::two_lane_default(),
+                                   "1")));
+  const RoadId road = document.network().find_road("1");
+  const std::array<roadmaker::SpanArm, 1> spans{
+      roadmaker::SpanArm{.road = road, .s_start = 40.0, .s_end = 60.0}};
+  ASSERT_TRUE(
+      document.push_command(roadmaker::edit::create_span_junction(document.network(), spans)));
+  roadmaker::JunctionId span_junction;
+  document.network().for_each_junction(
+      [&](roadmaker::JunctionId id, const roadmaker::Junction& junction) {
+        if (!junction.spans.empty()) {
+          span_junction = id;
+        }
+      });
+  ASSERT_TRUE(span_junction.is_valid());
+
+  MenuContext context;
+  context.junction = span_junction;
+  const std::vector<MenuItem> items = build_context_menu(context, deps);
+  const MenuItem* unlock = JunctionFixture::find(items, "Unlock junction");
+  ASSERT_NE(unlock, nullptr) << "a span junction reads as locked";
+  EXPECT_FALSE(unlock->enabled) << "the lock is structural (12.7 virtual junctions are never "
+                                   "derived)";
+  const MenuItem* rederive = JunctionFixture::find(items, "Re-derive junction");
+  ASSERT_NE(rederive, nullptr);
+  EXPECT_FALSE(rederive->enabled) << "there is no derivation behind a span junction";
+  EXPECT_EQ(JunctionFixture::count_prefixed(items, "Remove arm: "), 0U);
+}
+
+TEST(ContextMenu, ForeignJunctionOffersNothingToControl) {
+  // A junction read from someone else's file carries no rm:arms, so there is no
+  // automatic derivation to lock, unlock or re-run.
+  JunctionFixture source;
+  std::string text = xodr(source.document);
+  const std::string arms = R"(<userData code="rm:arms")";
+  for (std::size_t at = text.find(arms); at != std::string::npos; at = text.find(arms, at)) {
+    const std::size_t end = text.find("/>", at);
+    ASSERT_NE(end, std::string::npos);
+    text.erase(at, end + 2 - at);
+  }
+  QTemporaryDir dir;
+  ASSERT_TRUE(dir.isValid());
+  const std::filesystem::path path =
+      std::filesystem::path(dir.path().toStdString()) / "foreign.xodr";
+  {
+    std::ofstream out(path);
+    out << text;
+  }
+
+  Document document;
+  SelectionModel selection{document};
+  Actions actions{*document.undo_stack()};
+  ContextMenuDeps deps{document, selection, actions};
+  ASSERT_TRUE(document.load(path));
+  roadmaker::JunctionId foreign;
+  document.network().for_each_junction(
+      [&](roadmaker::JunctionId id, const roadmaker::Junction&) { foreign = id; });
+  ASSERT_TRUE(foreign.is_valid());
+  ASSERT_TRUE(document.network().junction(foreign)->arms.empty());
+
+  MenuContext context;
+  context.junction = foreign;
+  const std::vector<MenuItem> items = build_context_menu(context, deps);
+  const MenuItem* lock = JunctionFixture::find(items, "Lock junction");
+  ASSERT_NE(lock, nullptr);
+  EXPECT_FALSE(lock->enabled);
+  const MenuItem* rederive = JunctionFixture::find(items, "Re-derive junction");
+  ASSERT_NE(rederive, nullptr);
+  EXPECT_FALSE(rederive->enabled);
+  EXPECT_EQ(JunctionFixture::count_prefixed(items, "Remove arm: "), 0U);
+}
+
+TEST(ContextMenu, MergeJunctionsNeedsExactlyTwoSelected) {
+  JunctionFixture fx;
+  // A second junction elsewhere in the scene.
+  const RoadId a = fx.make(30.0, -60.0, 30.0, -6.0, "B1");
+  const RoadId b = fx.make(30.0, 60.0, 30.0, 6.0, "B2");
+  const std::array<roadmaker::RoadEnd, 2> ends{roadmaker::RoadEnd{a, roadmaker::ContactPoint::End},
+                                               roadmaker::RoadEnd{b, roadmaker::ContactPoint::End}};
+  ASSERT_TRUE(
+      fx.document.push_command(roadmaker::edit::create_junction(fx.document.network(), ends)));
+  roadmaker::JunctionId other;
+  fx.document.network().for_each_junction(
+      [&](roadmaker::JunctionId id, const roadmaker::Junction&) {
+        if (id != fx.junction) {
+          other = id;
+        }
+      });
+  ASSERT_TRUE(other.is_valid());
+
+  // Nothing selected: present but disabled, and unnamed. The menu has to be
+  // held in a named local — `find` returns a pointer into it.
+  {
+    const std::vector<MenuItem> items = fx.junction_menu();
+    const MenuItem* merge = JunctionFixture::find(items, "Merge selected junctions");
+    ASSERT_NE(merge, nullptr);
+    EXPECT_FALSE(merge->enabled);
+  }
+
+  // One selected: still disabled.
+  fx.selection.select({.junction = fx.junction});
+  {
+    const std::vector<MenuItem> items = fx.junction_menu();
+    const MenuItem* merge = JunctionFixture::find(items, "Merge selected junctions");
+    ASSERT_NE(merge, nullptr);
+    EXPECT_FALSE(merge->enabled);
+  }
+
+  // Two selected: enabled, and the text names the survivor (the FIRST selected).
+  fx.selection.select({.junction = other}, roadmaker::editor::SelectMode::Add);
+  const std::vector<MenuItem> items = fx.junction_menu();
+  const QString survivor =
+      QString::fromStdString(fx.document.network().junction(fx.junction)->odr_id);
+  const MenuItem* named =
+      JunctionFixture::find(items, QStringLiteral("Merge selected junctions into ") + survivor);
+  ASSERT_NE(named, nullptr) << "the survivor convention must be visible in the item";
+  EXPECT_TRUE(named->enabled);
+  EXPECT_EQ(JunctionFixture::find(items, "Merge selected junctions"), nullptr);
+
+  const std::size_t before = fx.document.network().junction_count();
+  named->invoke();
+  EXPECT_EQ(fx.document.network().junction_count(), before - 1);
+  EXPECT_NE(fx.document.network().junction(fx.junction), nullptr) << "the first selection survives";
+}
+
+TEST(ContextMenu, NodeMenuAddsAnEndToTheSelectedLockedJunction) {
+  JunctionFixture fx;
+  fx.lock();
+  // A free road whose START end is unowned and unlinked.
+  const RoadId spare = fx.make(18.0, 18.0, 120.0, 120.0, "SPARE");
+
+  MenuContext context;
+  context.node = WaypointHit{.road = spare, .index = 0};
+
+  // Nothing selected: no membership item at all.
+  EXPECT_EQ(
+      JunctionFixture::count_prefixed(build_context_menu(context, fx.deps), "Add end to junction "),
+      0U);
+
+  fx.selection.select({.junction = fx.junction});
+  const QString name = QStringLiteral("Add end to junction ") +
+                       QString::fromStdString(fx.document.network().junction(fx.junction)->odr_id);
+  const std::vector<MenuItem> items = build_context_menu(context, fx.deps);
+  const MenuItem* add = JunctionFixture::find(items, name);
+  ASSERT_NE(add, nullptr);
+  EXPECT_TRUE(add->enabled);
+
+  const int before = fx.document.undo_stack()->index();
+  add->invoke();
+  EXPECT_EQ(fx.document.undo_stack()->index(), before + 1);
+  EXPECT_EQ(fx.document.network().junction(fx.junction)->arms.size(), 5U);
+}
+
+TEST(ContextMenu, NodeMenuOffersNoMembershipWhenTheKernelWouldRefuse) {
+  JunctionFixture fx; // automatic — membership editing is locked-only
+  const RoadId spare = fx.make(18.0, 18.0, 120.0, 120.0, "SPARE");
+  fx.selection.select({.junction = fx.junction});
+
+  MenuContext context;
+  context.node = WaypointHit{.road = spare, .index = 0};
+  EXPECT_EQ(
+      JunctionFixture::count_prefixed(build_context_menu(context, fx.deps), "Add end to junction "),
+      0U)
+      << "an automatic junction's arms are re-derived, so the edit would not survive";
+
+  // Locked now — but an end this junction ALREADY owns is not offerable either.
+  fx.lock();
+  const RoadId arm = fx.document.network().find_road("1");
+  const std::size_t last =
+      roadmaker::edit::waypoint_stations(*fx.document.network().road(arm)).value().size() - 1;
+  context.node = WaypointHit{.road = arm, .index = last};
+  EXPECT_EQ(
+      JunctionFixture::count_prefixed(build_context_menu(context, fx.deps), "Add end to junction "),
+      0U)
+      << "that end is already an arm of this junction";
 }

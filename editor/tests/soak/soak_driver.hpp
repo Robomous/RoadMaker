@@ -107,6 +107,10 @@ private:
   void op_ground_surface();
   void op_overpass();
   void op_delete_crossing_road();
+  void op_toggle_junction_lock();
+  void op_junction_arm_edit();
+  void op_merge_junctions();
+  void op_create_span_junction();
   void op_delete_junction();
   void op_delete_road();
   void op_undo_redo();

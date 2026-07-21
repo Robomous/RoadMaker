@@ -32,15 +32,29 @@ inline constexpr double kStopLineThickness = 0.3;
 /// MSVC C4251 on its std::string member.
 struct JunctionStopLineInfo {
   /// Identity — the junction-facing end of the arm road, matching StopLine::arm.
+  ///
+  /// On a SPAN (virtual) junction this is a KEY, not a road end (p4-s4, issue
+  /// #319): `contact == Start` names the face guarding the span's `s_start`
+  /// edge and `contact == End` the face guarding its `s_end` edge, both of
+  /// which normally sit far from either end of the road. See `span_face`.
   RoadEnd arm;
+
+  /// True when this line is one of the two faces of a span (virtual) junction
+  /// rather than the line of an arm — i.e. `arm` is a pseudo road end. The
+  /// editor needs it to label the line ("upstream"/"downstream" instead of
+  /// "start"/"end") and the writer to emit the owning junction's id, without
+  /// which the reader could not key the record back.
+  bool span_face = false;
 
   /// Effective setback [m] from the junction mouth, clamped to
   /// `[0, max_distance]`. Equals `kStopLineDefaultDistance` when nothing is
-  /// authored.
+  /// authored. On a span face the "mouth" is the span edge and the setback runs
+  /// AWAY from the span (upstream of `s_start`, downstream of `s_end`).
   double distance = 0.0;
 
-  /// Largest setback [m] the arm road leaves room for — `length - thickness`.
-  /// The Distance spin box's upper bound.
+  /// Largest setback [m] the arm road leaves room for — `length - thickness`
+  /// for an arm, the room between the span edge and the near end of the road
+  /// for a span face. The Distance spin box's upper bound.
   double max_distance = 0.0;
 
   /// false ⇒ the band spans the approach (incoming) lanes; true ⇒ the outgoing
@@ -90,6 +104,15 @@ struct JunctionStopLineInfo {
 /// carrying a live untagged `signalLines` object on its near half is SUPPRESSED
 /// — a legacy or foreign file already draws its own stop line there, and
 /// deriving a second one would double-draw it.
+///
+/// A SPAN (virtual) junction (p4-s4, issue #319) has no arms and no connections
+/// at all, so it solves a different set: TWO faces per `SpanArm`, one guarding
+/// each edge of the span, keyed by the pseudo road ends `{road, Start}` (the
+/// `s_start` face) and `{road, End}` (the `s_end` face) — see
+/// `JunctionStopLineInfo::arm`. A face whose approach direction carries no
+/// driving lane (a one-way road) is omitted, exactly as for an arm. The legacy
+/// suppression does NOT apply: a span sits mid-road, where the arm branch's
+/// "near half" test means nothing.
 [[nodiscard]] RM_API std::vector<JunctionStopLineInfo>
 junction_stoplines(const RoadNetwork& network, JunctionId junction_id);
 

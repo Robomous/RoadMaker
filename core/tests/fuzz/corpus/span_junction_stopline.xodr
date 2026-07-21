@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<OpenDRIVE>
+  <header revMajor="1" revMinor="8" name="span_junction_stopline" vendor="RoadMaker" />
+  <road length="120" id="1" junction="-1">
+    <planView>
+      <geometry s="0" x="0" y="0" hdg="0" length="120">
+        <line />
+      </geometry>
+    </planView>
+    <lanes>
+      <laneSection s="0">
+        <left>
+          <lane id="1" type="driving" level="false">
+            <width sOffset="0" a="3.5" b="0" c="0" d="0" />
+            <roadMark sOffset="0" type="solid" width="0.12" />
+          </lane>
+        </left>
+        <center>
+          <lane id="0" type="none" level="false">
+            <roadMark sOffset="0" type="broken" width="0.12" />
+          </lane>
+        </center>
+        <right>
+          <lane id="-1" type="driving" level="false">
+            <width sOffset="0" a="3.5" b="0" c="0" d="0" />
+            <roadMark sOffset="0" type="solid" width="0.12" />
+          </lane>
+          <lane id="-2" type="shoulder" level="false">
+            <width sOffset="0" a="1" b="0" c="0" d="0" />
+          </lane>
+        </right>
+      </laneSection>
+    </lanes>
+    <objects>
+      <object type="roadMark" subtype="signalLines" id="sl_9_1_s" s="40.85" t="1.75" zOffset="0" orientation="none" length="0.3" width="3.5">
+        <userData code="rm:stopline" contact="start" junction="9" distance="9" flipped="true" crosswalk="7" />
+      </object>
+      <object type="roadMark" subtype="signalLines" id="sl_9_1_e" s="60.65" t="1.75" zOffset="0" orientation="none" length="0.3" width="3.5">
+        <userData code="rm:stopline" contact="end" junction="9" />
+      </object>
+    </objects>
+    <userData code="rm:waypoints" value="0,0;120,0" />
+  </road>
+  <junction id="9" name="crosswalk" type="virtual" mainRoad="1" orientation="none" sStart="50" sEnd="56.5">
+    <userData code="rm:junction" value="locked=1" />
+    <userData code="rm:spans" value="1:50:56.5" />
+  </junction>
+</OpenDRIVE>

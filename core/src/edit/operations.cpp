@@ -24,6 +24,8 @@
 #include <utility>
 #include <variant>
 
+#include "../mesh/junction_stoplines_detail.hpp"
+
 namespace roadmaker::edit {
 
 namespace {
@@ -2921,30 +2923,86 @@ std::unique_ptr<Command> create_crossing_road(const RoadNetwork& network,
       std::string(kName), DirtySet{.topology = true}, std::move(builders));
 }
 
-std::unique_ptr<Command> regenerate_junction(const RoadNetwork& network,
-                                             JunctionId junction_id,
-                                             const JunctionGenOptions& options,
-                                             TurnSetPolicy policy) {
-  static constexpr std::string_view kName = "Regenerate Junction";
+namespace {
+
+/// Re-plans `junction_id` against `new_arms` and rewrites its connecting roads
+/// in place — the single retarget engine behind regeneration AND every
+/// membership edit (p4-s4 D5, issue #319).
+///
+/// It plans the union of turns for `new_arms`, matches each planned turn to an
+/// EXISTING connecting road by TurnKey (so a surviving turn keeps its id, held
+/// references and undo entries), erases the connecting roads whose turn
+/// vanished, creates the ones that appeared, and moves the arm road-link slots
+/// so exactly `new_arms` point at the junction.
+///
+/// `extra_existing` are connection-table entries owned by ANOTHER junction that
+/// the caller is folding into this one (merge_junctions): they take part in the
+/// match, so an absorbed turn that still plans keeps its connecting road, and
+/// one that does not is erased with the rest. `also_dirty` names further
+/// junctions the edit touches (the absorbed one).
+///
+/// Returns a GenericCommand rather than a Command so callers can extend it —
+/// merge_junctions appends the absorbed junction's erasure and wraps the
+/// creator with its own prologue.
+///
+/// Preconditions the CALLER owns: the junction is live, `new_arms` is the
+/// intended arm list, and every arm's link slot is either free or already this
+/// junction's. Everything else (the planner's own rules, the 50 m proximity
+/// limit, the ≥2-ends rule) surfaces here as an invalid command.
+std::unique_ptr<GenericCommand>
+retarget_junction(const RoadNetwork& network,
+                  JunctionId junction_id,
+                  std::span<const RoadEnd> new_arms,
+                  const JunctionGenOptions& options,
+                  TurnSetPolicy policy,
+                  std::string_view name,
+                  std::span<const JunctionConnection> extra_existing = {},
+                  std::span<const JunctionId> also_dirty = {}) {
+  const auto fail_with = [&](Error error) {
+    auto command = std::make_unique<GenericCommand>(std::string(name), DirtySet{});
+    command->invalid = std::move(error);
+    return command;
+  };
   const auto fail = [&](std::string message) {
-    return invalid_command(
-        std::string(kName),
-        Error{.code = ErrorCode::InvalidArgument, .message = std::move(message)});
+    return fail_with(Error{.code = ErrorCode::InvalidArgument, .message = std::move(message)});
   };
   const Junction* junction = network.junction(junction_id);
   if (junction == nullptr) {
     return fail("stale junction id");
   }
-  if (junction->arms.empty()) {
-    return fail("junction has no recorded arms (loaded from a foreign file); recreate it to edit");
-  }
-  auto plan = plan_junction(network, junction->arms, options);
+  auto plan = plan_junction(network, new_arms, options);
   if (!plan.has_value()) {
-    return invalid_command(std::string(kName), plan.error());
+    return fail_with(plan.error());
   }
-  if (policy == TurnSetPolicy::InPlaceOnly && plan->roads.size() != junction->connections.size()) {
+
+  // The connection tables the plan is matched against: this junction's, plus
+  // whatever the caller is folding in. Unclaimed entries from EITHER are
+  // dropped, so an absorbed turn that no longer plans is erased like any other.
+  std::vector<JunctionConnection> existing;
+  existing.reserve(junction->connections.size() + extra_existing.size());
+  existing.insert(existing.end(), junction->connections.begin(), junction->connections.end());
+  existing.insert(existing.end(), extra_existing.begin(), extra_existing.end());
+
+  if (policy == TurnSetPolicy::InPlaceOnly && plan->roads.size() != existing.size()) {
     return fail("regeneration changed the connection count; delete and recreate the junction");
   }
+
+  // Which arm link slots move. An arm that stays keeps its slot untouched, so a
+  // pure regeneration (new_arms == junction->arms) writes nothing here.
+  std::vector<RoadEnd> gained_arms;
+  std::vector<RoadEnd> lost_arms;
+  for (const RoadEnd& arm : new_arms) {
+    if (std::ranges::find(junction->arms, arm) == junction->arms.end()) {
+      gained_arms.push_back(arm);
+    }
+  }
+  for (const RoadEnd& arm : junction->arms) {
+    if (std::ranges::find(new_arms, arm) == new_arms.end()) {
+      lost_arms.push_back(arm);
+    }
+  }
+  const bool arms_changed =
+      !gained_arms.empty() || !lost_arms.empty() || !std::ranges::equal(junction->arms, new_arms);
 
   // Match each freshly planned turn to its existing connecting road by KEY —
   // the (incoming road+contact+lane, outgoing road+contact+lane) it links — not
@@ -2998,7 +3056,7 @@ std::unique_ptr<Command> regenerate_junction(const RoadNetwork& network,
 
   std::vector<Matched> matched_turns;
   std::vector<ConnectingPlan> new_turns;
-  std::vector<bool> claimed(junction->connections.size(), false);
+  std::vector<bool> claimed(existing.size(), false);
   for (const ConnectingPlan& cp : plan->roads) {
     const TurnKey want{.from_road = cp.from.road,
                        .from_contact = cp.from.contact,
@@ -3006,18 +3064,17 @@ std::unique_ptr<Command> regenerate_junction(const RoadNetwork& network,
                        .to_road = cp.to.road,
                        .to_contact = cp.to.contact,
                        .to_lane = cp.to_lane};
-    std::size_t found = junction->connections.size();
-    for (std::size_t i = 0; i < junction->connections.size(); ++i) {
+    std::size_t found = existing.size();
+    for (std::size_t i = 0; i < existing.size(); ++i) {
       if (claimed[i]) {
         continue;
       }
-      if (const auto key = connection_key(junction->connections[i]);
-          key.has_value() && *key == want) {
+      if (const auto key = connection_key(existing[i]); key.has_value() && *key == want) {
         found = i;
         break;
       }
     }
-    if (found == junction->connections.size()) {
+    if (found == existing.size()) {
       if (policy == TurnSetPolicy::InPlaceOnly) {
         // Same count but a different turn set (e.g. a lane retyped so a turn
         // moved to a different lane): the ids can't be reused in place.
@@ -3027,8 +3084,7 @@ std::unique_ptr<Command> regenerate_junction(const RoadNetwork& network,
       continue;
     }
     claimed[found] = true;
-    matched_turns.push_back(
-        Matched{.cp = cp, .road = junction->connections[found].connecting_road});
+    matched_turns.push_back(Matched{.cp = cp, .road = existing[found].connecting_road});
   }
 
   // Unclaimed connections serve a turn the plan no longer contains. NOTE: a
@@ -3036,21 +3092,30 @@ std::unique_ptr<Command> regenerate_junction(const RoadNetwork& network,
   // — no sections, missing links, empty lane_links) lands here too and is
   // rebuilt from the plan rather than reported. That repairs it, but silently.
   std::vector<RoadId> dropped;
-  for (std::size_t i = 0; i < junction->connections.size(); ++i) {
+  for (std::size_t i = 0; i < existing.size(); ++i) {
     if (!claimed[i]) {
-      dropped.push_back(junction->connections[i].connecting_road);
+      dropped.push_back(existing[i].connecting_road);
     }
   }
 
   // Every connecting road is dirty so incremental re-mesh re-tessellates the
   // survivors and drops the mesh entries of the erased ones.
   DirtySet dirty{.junctions = {junction_id},
-                 .topology = !new_turns.empty() || !dropped.empty(),
+                 .topology = !new_turns.empty() || !dropped.empty() || arms_changed,
                  .junctions_are_current = true};
-  for (const JunctionConnection& connection : junction->connections) {
+  for (const JunctionConnection& connection : existing) {
     dirty.roads.push_back(connection.connecting_road);
   }
-  auto command = std::make_unique<GenericCommand>(std::string(kName), std::move(dirty));
+  for (const RoadEnd& arm : gained_arms) {
+    dirty.roads.push_back(arm.road);
+  }
+  for (const RoadEnd& arm : lost_arms) {
+    dirty.roads.push_back(arm.road);
+  }
+  for (const JunctionId touched : also_dirty) {
+    dirty.junctions.push_back(touched);
+  }
+  auto command = std::make_unique<GenericCommand>(std::string(name), std::move(dirty));
 
   // The junction record itself changes (the connection table is rewritten), so
   // it belongs in `before` — the creator mutates it in the network and
@@ -3066,12 +3131,55 @@ std::unique_ptr<Command> regenerate_junction(const RoadNetwork& network,
       }
     }
   }
+  // The arm roads whose link slot moves are value edits too. Appended AFTER the
+  // matched connecting roads so a pure regeneration (no arm change) captures
+  // exactly what it captured before this engine existed.
+  const auto capture_arm_road = [&](const RoadEnd& arm) {
+    const bool already = std::ranges::any_of(
+        command->before.roads, [&](const auto& entry) { return entry.first == arm.road; });
+    if (!already && network.road(arm.road) != nullptr) {
+      command->before.roads.emplace_back(arm.road, *network.road(arm.road));
+    }
+  };
+  for (const RoadEnd& arm : gained_arms) {
+    capture_arm_road(arm);
+  }
+  for (const RoadEnd& arm : lost_arms) {
+    capture_arm_road(arm);
+  }
   capture_road_erasure(network, *command, dropped);
 
   command->creator = [junction_id,
+                      new_arms = std::vector<RoadEnd>(new_arms.begin(), new_arms.end()),
+                      gained_arms = std::move(gained_arms),
+                      lost_arms = std::move(lost_arms),
                       matched_turns = std::move(matched_turns),
                       new_turns = std::move(new_turns),
                       dropped](RoadNetwork& target, Values& created) -> Expected<void> {
+    // Pass 0: membership. An arm that left gives its link slot back (only if it
+    // still points HERE — a slot re-pointed elsewhere is not ours to clear),
+    // one that arrived takes it.
+    const auto slot_of = [](Road& road, ContactPoint contact) -> std::optional<RoadLink>& {
+      return contact == ContactPoint::Start ? road.predecessor : road.successor;
+    };
+    for (const RoadEnd& arm : lost_arms) {
+      if (Road* road = target.road(arm.road); road != nullptr) {
+        auto& slot = slot_of(*road, arm.contact);
+        const JunctionId* owner =
+            slot.has_value() ? std::get_if<JunctionId>(&slot->target) : nullptr;
+        if (owner != nullptr && *owner == junction_id) {
+          slot.reset();
+        }
+      }
+    }
+    for (const RoadEnd& arm : gained_arms) {
+      if (Road* road = target.road(arm.road); road != nullptr) {
+        slot_of(*road, arm.contact) =
+            RoadLink{.target = junction_id, .contact = ContactPoint::Start};
+      }
+    }
+    target.junction(junction_id)->arms = new_arms;
+
     // Pass 1: rewrite the turns that survive. No creation happens here, so
     // references stay valid within an iteration.
     std::vector<JunctionConnection> table;
@@ -3106,6 +3214,31 @@ std::unique_ptr<Command> regenerate_junction(const RoadNetwork& network,
   return command;
 }
 
+} // namespace
+
+std::unique_ptr<Command> regenerate_junction(const RoadNetwork& network,
+                                             JunctionId junction_id,
+                                             const JunctionGenOptions& options,
+                                             TurnSetPolicy policy) {
+  static constexpr std::string_view kName = "Regenerate Junction";
+  const Junction* junction = network.junction(junction_id);
+  if (junction == nullptr) {
+    return invalid_command(
+        std::string(kName),
+        Error{.code = ErrorCode::InvalidArgument, .message = "stale junction id"});
+  }
+  if (junction->arms.empty()) {
+    return invalid_command(
+        std::string(kName),
+        Error{
+            .code = ErrorCode::InvalidArgument,
+            .message =
+                "junction has no recorded arms (loaded from a foreign file); recreate it to edit"});
+  }
+  // Regeneration is a retarget onto the arm list the junction already has.
+  return retarget_junction(network, junction_id, junction->arms, options, policy, kName);
+}
+
 std::unique_ptr<Command> move_waypoint_following_junctions(const RoadNetwork& network,
                                                            RoadId road_id,
                                                            std::size_t index,
@@ -3114,10 +3247,16 @@ std::unique_ptr<Command> move_waypoint_following_junctions(const RoadNetwork& ne
   // from a foreign file, and regenerate_junction calls that an error. Skipping
   // it keeps the drag alive (the junction stays stale, exactly as it does on
   // the commit path) instead of refusing every frame.
+  //
+  // A LOCKED junction (#319) is skipped by the same rule for the opposite
+  // reason: it CAN regenerate, but the user asked it not to. Dragging an arm
+  // node of a locked junction is therefore a plain move with no mid-drag regen,
+  // matching Document's post-command loop; only an explicit regenerate_junction
+  // re-derives it.
   std::vector<JunctionId> followed;
   for (const JunctionId junction_id : junctions_touching(network, road_id)) {
     const Junction* junction = network.junction(junction_id);
-    if (junction != nullptr && !junction->arms.empty()) {
+    if (junction != nullptr && !junction->arms.empty() && !junction->locked) {
       followed.push_back(junction_id);
     }
   }
@@ -3158,16 +3297,16 @@ std::unique_ptr<Command> move_waypoint_following_junctions(const RoadNetwork& ne
       std::string(probe->name()), DirtySet{}, std::move(builders));
 }
 
-std::unique_ptr<Command> delete_junction(const RoadNetwork& network, JunctionId junction_id) {
-  static constexpr std::string_view kName = "Delete Junction";
-  const Junction* junction = network.junction(junction_id);
-  if (junction == nullptr) {
-    return invalid_command(
-        std::string(kName),
-        Error{.code = ErrorCode::InvalidArgument, .message = "stale junction id"});
-  }
-  // §7 closure: the junction takes its connecting roads (back-reference set)
-  // with it; incoming roads survive with their links into it cleared.
+namespace {
+
+/// The §7 junction-removal command for a junction already known to be live:
+/// the junction takes its connecting roads (its back-reference set, closed
+/// over) with it, and the incoming roads survive with their links into it
+/// cleared. Shared by delete_junction and by set_junction_locked's unlock path,
+/// which has to remove a junction it can no longer derive.
+std::unique_ptr<GenericCommand> junction_removal_command(const RoadNetwork& network,
+                                                         JunctionId junction_id,
+                                                         std::string_view name) {
   std::vector<RoadId> seeds;
   network.for_each_road([&](RoadId road_id, const Road& road) {
     if (road.junction == junction_id) {
@@ -3189,8 +3328,382 @@ std::unique_ptr<Command> delete_junction(const RoadNetwork& network, JunctionId 
     }
   }
 
-  auto command = std::make_unique<GenericCommand>(std::string(kName), std::move(dirty));
+  auto command = std::make_unique<GenericCommand>(std::string(name), std::move(dirty));
   capture_deletion(network, *command, doomed, junction_id);
+  return command;
+}
+
+} // namespace
+
+std::unique_ptr<Command> delete_junction(const RoadNetwork& network, JunctionId junction_id) {
+  static constexpr std::string_view kName = "Delete Junction";
+  const Junction* junction = network.junction(junction_id);
+  if (junction == nullptr) {
+    return invalid_command(
+        std::string(kName),
+        Error{.code = ErrorCode::InvalidArgument, .message = "stale junction id"});
+  }
+  return junction_removal_command(network, junction_id, kName);
+}
+
+std::unique_ptr<Command>
+set_junction_locked(const RoadNetwork& network, JunctionId junction_id, bool locked) {
+  const std::string_view kName = locked ? "Lock Junction" : "Unlock Junction";
+  const auto fail = [&](std::string message) {
+    return invalid_command(
+        std::string(kName),
+        Error{.code = ErrorCode::InvalidArgument, .message = std::move(message)});
+  };
+  const Junction* junction = network.junction(junction_id);
+  if (junction == nullptr) {
+    return fail("stale junction id");
+  }
+  // A no-op command would break the §8 round-trip oracle (apply must change the
+  // document), and there is nothing sensible for undo to restore either.
+  if (junction->locked == locked) {
+    return fail(locked ? "the junction is already locked" : "the junction is already unlocked");
+  }
+  if (junction->arms.empty() && junction->spans.empty()) {
+    return fail("junction has no recorded arms (loaded from a foreign file); there is no automatic "
+                "regeneration to lock");
+  }
+  // arms-xor-spans: a span junction (§12.7 virtual) is never derived from arms,
+  // so its lock is structural rather than a user preference.
+  if (!locked && !junction->spans.empty()) {
+    return fail("a span junction is always locked");
+  }
+
+  Junction after = *junction;
+  after.locked = locked;
+
+  // Unlocking hands the junction back to the automatic loop, so it has to be
+  // re-derived against whatever moved while it was locked. When the arms no
+  // longer plan there is no automatic state to hand back to — the junction
+  // would sit stale forever, refusing every regeneration — so the unlock is a
+  // full §7 removal instead, connecting roads included.
+  if (!locked) {
+    if (auto plan = plan_junction(network, junction->arms, JunctionGenOptions{});
+        !plan.has_value()) {
+      return junction_removal_command(network, junction_id, kName);
+    }
+  }
+
+  // junctions_are_current mirrors the flag: locking freezes the turn set where
+  // it is, unlocking asks the editor's loop to re-derive it inside the same
+  // undo macro.
+  auto command = std::make_unique<GenericCommand>(
+      std::string(kName), DirtySet{.junctions = {junction_id}, .junctions_are_current = locked});
+  command->before.junctions.emplace_back(junction_id, *junction);
+  command->after.junctions.emplace_back(junction_id, std::move(after));
+  return command;
+}
+
+namespace {
+
+/// The membership ops' shared precondition (p4-s4 D4): the junction must be
+/// live, ARM-based and LOCKED. Order matters — a span junction and a foreign
+/// junction are both arm-less, and each deserves its own message.
+Expected<const Junction*> arm_editable_junction(const RoadNetwork& network,
+                                                JunctionId junction_id) {
+  const Junction* junction = network.junction(junction_id);
+  if (junction == nullptr) {
+    return make_error(ErrorCode::InvalidArgument, "stale junction id");
+  }
+  if (!junction->spans.empty()) {
+    return make_error(ErrorCode::InvalidArgument,
+                      "a span junction has no arms to edit — §12.7 virtual junctions cover a "
+                      "stretch of road, they never cut it");
+  }
+  if (junction->arms.empty()) {
+    return make_error(
+        ErrorCode::InvalidArgument,
+        "junction has no recorded arms (loaded from a foreign file); recreate it to edit");
+  }
+  if (!junction->locked) {
+    return make_error(ErrorCode::InvalidArgument,
+                      "lock the junction first — an automatic junction's arms are re-derived from "
+                      "the roads that meet it, so an edit to them would not survive");
+  }
+  return junction;
+}
+
+/// `end`'s road odr id for a message, or "?" when the road is gone.
+std::string end_road_name(const RoadNetwork& network, const RoadEnd& end) {
+  const Road* road = network.road(end.road);
+  return road != nullptr ? road->odr_id : std::string("?");
+}
+
+} // namespace
+
+std::unique_ptr<Command> add_junction_arm(const RoadNetwork& network,
+                                          JunctionId junction_id,
+                                          RoadEnd end,
+                                          const JunctionGenOptions& options) {
+  static constexpr std::string_view kName = "Add Junction Arm";
+  const auto fail = [&](std::string message) {
+    return invalid_command(
+        std::string(kName),
+        Error{.code = ErrorCode::InvalidArgument, .message = std::move(message)});
+  };
+  auto junction = arm_editable_junction(network, junction_id);
+  if (!junction.has_value()) {
+    return invalid_command(std::string(kName), junction.error());
+  }
+  if (std::ranges::find((*junction)->arms, end) != (*junction)->arms.end()) {
+    return fail(
+        fmt::format("road '{}' is already an arm of this junction", end_road_name(network, end)));
+  }
+  // Single-owner rule (create_junction gate finding 5): a road end claimed by
+  // one junction may not become an arm of a second.
+  if (const auto owner = junction_at_end(network, end)) {
+    const Junction* other = network.junction(*owner);
+    return fail(fmt::format("road '{}' end already belongs to junction {}",
+                            end_road_name(network, end),
+                            other != nullptr ? other->odr_id : "?"));
+  }
+  const std::array<RoadEnd, 1> probe{end};
+  if (auto free = ends_link_slots_free(network, probe); !free.has_value()) {
+    return invalid_command(std::string(kName), free.error());
+  }
+
+  std::vector<RoadEnd> arms = (*junction)->arms;
+  arms.push_back(end);
+  // retarget_junction re-plans the union and reports the planner's refusals
+  // (notably the max_end_distance_m proximity rule) as the command's error.
+  return retarget_junction(network, junction_id, arms, options, TurnSetPolicy::AllowChange, kName);
+}
+
+std::unique_ptr<Command> remove_junction_arm(const RoadNetwork& network,
+                                             JunctionId junction_id,
+                                             RoadEnd end,
+                                             const JunctionGenOptions& options) {
+  static constexpr std::string_view kName = "Remove Junction Arm";
+  const auto fail = [&](std::string message) {
+    return invalid_command(
+        std::string(kName),
+        Error{.code = ErrorCode::InvalidArgument, .message = std::move(message)});
+  };
+  auto junction = arm_editable_junction(network, junction_id);
+  if (!junction.has_value()) {
+    return invalid_command(std::string(kName), junction.error());
+  }
+  if (std::ranges::find((*junction)->arms, end) == (*junction)->arms.end()) {
+    return fail(
+        fmt::format("road '{}' is not an arm of this junction", end_road_name(network, end)));
+  }
+  // A junction needs two arms to have a turn at all. The planner would refuse
+  // the remainder anyway, but with a message about road ends rather than about
+  // what the user should do instead.
+  if ((*junction)->arms.size() < 3) {
+    return fail("a junction needs at least 2 arms — unlock it to re-derive it, or delete it");
+  }
+
+  std::vector<RoadEnd> arms;
+  arms.reserve((*junction)->arms.size() - 1);
+  for (const RoadEnd& arm : (*junction)->arms) {
+    if (arm != end) {
+      arms.push_back(arm);
+    }
+  }
+  // The junction's authored corners and stop lines keyed by `end` are LEFT
+  // ALONE: they go dormant and reactivate if the arm comes back (p4-s1/p4-s3
+  // dormancy contract), exactly as they do across any turn-set change.
+  return retarget_junction(network, junction_id, arms, options, TurnSetPolicy::AllowChange, kName);
+}
+
+std::unique_ptr<Command> merge_junctions(const RoadNetwork& network,
+                                         JunctionId survivor_id,
+                                         JunctionId absorbed_id,
+                                         const JunctionGenOptions& options) {
+  static constexpr std::string_view kName = "Merge Junctions";
+  const auto fail = [&](std::string message) {
+    return invalid_command(
+        std::string(kName),
+        Error{.code = ErrorCode::InvalidArgument, .message = std::move(message)});
+  };
+  if (survivor_id == absorbed_id) {
+    return fail("cannot merge a junction with itself");
+  }
+  // Neither side has to be locked (merging is an explicit authoring act on two
+  // derived junctions), but both must be arm-based with a real arm list — the
+  // union is what gets re-planned.
+  const auto side = [&](JunctionId id, const char* which) -> Expected<const Junction*> {
+    const Junction* junction = network.junction(id);
+    if (junction == nullptr) {
+      return make_error(ErrorCode::InvalidArgument, fmt::format("stale {} junction id", which));
+    }
+    if (!junction->spans.empty()) {
+      return make_error(ErrorCode::InvalidArgument,
+                        fmt::format("the {} is a span junction — §12.7 virtual junctions have no "
+                                    "arms to merge",
+                                    which));
+    }
+    if (junction->arms.size() < 2) {
+      return make_error(ErrorCode::InvalidArgument,
+                        fmt::format("the {} junction has no recorded arms (loaded from a foreign "
+                                    "file); recreate it to edit",
+                                    which));
+    }
+    return junction;
+  };
+  auto survivor = side(survivor_id, "survivor");
+  if (!survivor.has_value()) {
+    return invalid_command(std::string(kName), survivor.error());
+  }
+  auto absorbed = side(absorbed_id, "absorbed");
+  if (!absorbed.has_value()) {
+    return invalid_command(std::string(kName), absorbed.error());
+  }
+
+  std::vector<RoadEnd> arms = (*survivor)->arms;
+  arms.insert(arms.end(), (*absorbed)->arms.begin(), (*absorbed)->arms.end());
+
+  // Every road that currently belongs to the absorbed junction. Captured as
+  // VALUES here so the creator prologue never holds an arena pointer.
+  std::vector<RoadId> absorbed_roads;
+  network.for_each_road([&](RoadId road_id, const Road& road) {
+    if (road.junction == absorbed_id) {
+      absorbed_roads.push_back(road_id);
+    }
+  });
+
+  const std::array<JunctionId, 1> also_dirty{absorbed_id};
+  auto command = retarget_junction(network,
+                                   survivor_id,
+                                   arms,
+                                   options,
+                                   TurnSetPolicy::AllowChange,
+                                   kName,
+                                   (*absorbed)->connections,
+                                   also_dirty);
+  if (command->invalid.has_value()) {
+    return command;
+  }
+
+  // The absorbed junction goes away in place: erase_exact reserves its slot, so
+  // undo restores it under its own id with no generation bump.
+  command->erased.junctions.emplace_back(absorbed_id, **absorbed);
+
+  // Every absorbed road the retarget did not already capture (as a surviving
+  // turn in `before` or a dropped one in `erased`) still has its junction
+  // back-reference rewritten below, so it is a value edit too.
+  for (const RoadId road_id : absorbed_roads) {
+    const bool captured =
+        std::ranges::any_of(command->before.roads,
+                            [&](const auto& entry) { return entry.first == road_id; }) ||
+        std::ranges::any_of(command->erased.roads,
+                            [&](const auto& entry) { return entry.first == road_id; });
+    if (!captured) {
+      command->before.roads.emplace_back(road_id, *network.road(road_id));
+    }
+  }
+
+  auto retarget = std::move(command->creator);
+  command->creator = [survivor_id,
+                      absorbed_roads = std::move(absorbed_roads),
+                      corners = (*absorbed)->corners,
+                      stoplines = (*absorbed)->stoplines,
+                      retarget = std::move(retarget)](RoadNetwork& target,
+                                                      Values& created) -> Expected<void> {
+    // Prologue, BEFORE the retarget body: nothing may still point at the
+    // junction that is about to be erased (#311 — never leave a stale
+    // reference behind). The arm-road link slots are re-pointed by the
+    // retarget itself (the absorbed arms are `gained` arms of the survivor);
+    // the connecting roads' back-reference is re-pointed here.
+    for (const RoadId road_id : absorbed_roads) {
+      if (Road* road = target.road(road_id); road != nullptr) {
+        road->junction = survivor_id;
+      }
+    }
+    {
+      Junction& kept = *target.junction(survivor_id);
+      // Authored records carry over verbatim: their RoadEnd keys name arms that
+      // survive the merge, so nothing goes dormant.
+      kept.corners.insert(kept.corners.end(), corners.begin(), corners.end());
+      kept.stoplines.insert(kept.stoplines.end(), stoplines.begin(), stoplines.end());
+      // A hand-authored merge is not something the automatic loop should
+      // re-derive away.
+      kept.locked = true;
+    }
+    return retarget(target, created);
+  };
+  return command;
+}
+
+std::unique_ptr<Command> create_span_junction(const RoadNetwork& network,
+                                              std::span<const SpanArm> spans) {
+  static constexpr std::string_view kName = "Create Span Junction";
+  const auto fail = [&](std::string message) {
+    return invalid_command(
+        std::string(kName),
+        Error{.code = ErrorCode::InvalidArgument, .message = std::move(message)});
+  };
+  // ASAM OpenDRIVE 1.9.0 §12.7 (identical in 1.8.1 §12.7): a virtual junction
+  // covers a stretch of ONE uninterrupted main road. Two spans is the parallel
+  // -road case (the same crossing over both carriageways); beyond that the
+  // Layer-0 @mainRoad/@sStart/@sEnd projection stops describing anything a
+  // reader could act on, so it is refused rather than half-written.
+  if (spans.empty()) {
+    return fail("a span junction needs at least one span");
+  }
+  if (spans.size() > 2) {
+    return fail("a span junction covers one road (a crosswalk) or two parallel roads — at most two "
+                "spans");
+  }
+  for (std::size_t i = 0; i < spans.size(); ++i) {
+    const SpanArm& span = spans[i];
+    const Road* road = network.road(span.road);
+    if (road == nullptr) {
+      return fail("stale road id in span");
+    }
+    // A connecting road is junction internals; a span covers a through road.
+    if (road->junction.is_valid()) {
+      return fail(fmt::format("road '{}' is a connecting road — a §12.7 virtual junction spans an "
+                              "uninterrupted road, not junction internals",
+                              road->odr_id));
+    }
+    if (span.s_start < 0.0 || span.s_end > road->length) {
+      return fail(fmt::format("span [{}, {}] lies outside road '{}' (length {})",
+                              span.s_start,
+                              span.s_end,
+                              road->odr_id,
+                              road->length));
+    }
+    if (span.s_end - span.s_start <= tol::kLength) {
+      return fail(fmt::format("span [{}, {}] on road '{}' is not a forward interval (s_start must "
+                              "be strictly less than s_end)",
+                              span.s_start,
+                              span.s_end,
+                              road->odr_id));
+    }
+    for (std::size_t j = 0; j < i; ++j) {
+      if (spans[j].road == span.road) {
+        return fail(
+            fmt::format("road '{}' appears in both spans — the parallel-road case needs two "
+                        "different roads",
+                        road->odr_id));
+      }
+    }
+  }
+
+  // junctions_are_current: there is no derivation behind a span junction, so
+  // the editor's regeneration pass must not run over what was just created.
+  auto command = std::make_unique<GenericCommand>(
+      std::string(kName), DirtySet{.topology = true, .junctions_are_current = true});
+  // A tiny creator on purpose. retarget_junction plans turns and rewrites arm
+  // link slots; a span junction must have neither, and the main road stays
+  // uninterrupted (§12.7), so nothing outside the new junction record changes.
+  command->creator = [spans = std::vector<SpanArm>(spans.begin(), spans.end())](
+                         RoadNetwork& target, Values& created) -> Expected<void> {
+    const JunctionId junction_id = target.create_junction(next_free_junction_odr_id(target), "");
+    created.junctions.emplace_back(junction_id, Junction{});
+    Junction& junction = *target.junction(junction_id);
+    junction.spans = spans;
+    // Structural, not a preference: a §12.7 virtual junction is never derived,
+    // so it is always locked (the reader forces this too).
+    junction.locked = true;
+    return {};
+  };
   return command;
 }
 
@@ -3557,10 +4070,11 @@ flip_stopline(const RoadNetwork& network, JunctionId junction_id, RoadEnd arm) {
   const bool flipped = current != before->stoplines.end() && current->flipped;
 
   // The direction being toggled INTO must have lanes to span; an empty band is
-  // an error rather than a zero-width paint stripe. This mirrors exactly what
-  // junction_stoplines() checks when it decides an arm has no line.
-  const Expected<ContactState> contact = contact_state(network, arm);
-  if (!contact || driving_lanes_at(network, arm, *contact, /*incoming=*/flipped).empty()) {
+  // an error rather than a zero-width paint stripe. Shared with
+  // junction_stoplines() so the two cannot drift — and so a span junction's
+  // pseudo road end is sampled at the span edge rather than at the road end it
+  // only looks like (p4-s4, issue #319).
+  if (!stopline_detail::stopline_direction_has_lanes(network, *before, arm, !flipped)) {
     return invalid_command(std::string(kName),
                            Error{.code = ErrorCode::InvalidArgument,
                                  .message = "the arm has no driving lanes in that direction"});

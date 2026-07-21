@@ -527,6 +527,33 @@ NB_MODULE(_roadmaker, m) {
         return text + ")";
       });
 
+  nb::class_<roadmaker::SpanArm>(m, "SpanArm")
+      .def(nb::init<>())
+      // edit.create_span_junction takes a list of these, so they have to be
+      // constructible from Python (WP4, issue #319).
+      .def(
+          "__init__",
+          [](roadmaker::SpanArm* self, roadmaker::RoadId road, double s_start, double s_end) {
+            new (self) roadmaker::SpanArm{.road = road, .s_start = s_start, .s_end = s_end};
+          },
+          "road"_a,
+          "s_start"_a,
+          "s_end"_a)
+      .def_ro("road",
+              &roadmaker::SpanArm::road,
+              "The road the span lies on. spans[0].road is exported as the "
+              "OpenDRIVE @mainRoad of the virtual junction.")
+      .def_ro("s_start",
+              &roadmaker::SpanArm::s_start,
+              "Start of the covered interval in the road's reference-line s [m].")
+      .def_ro("s_end",
+              &roadmaker::SpanArm::s_end,
+              "End of the covered interval in the road's reference-line s [m].")
+      .def("__repr__", [](const roadmaker::SpanArm& span) {
+        return "SpanArm(s_start=" + std::to_string(span.s_start) +
+               ", s_end=" + std::to_string(span.s_end) + ")";
+      });
+
   nb::class_<roadmaker::Junction>(m, "Junction")
       .def_ro("odr_id", &roadmaker::Junction::odr_id)
       .def_ro("name", &roadmaker::Junction::name)
@@ -547,6 +574,19 @@ NB_MODULE(_roadmaker, m) {
               "Bare catalog material name for the junction carriageway; empty "
               "means the derived asphalt look. Edit it with "
               "edit.set_junction_material.")
+      .def_ro("locked",
+              &roadmaker::Junction::locked,
+              "True when the automatic regeneration loops skip this junction, "
+              "so hand-tuned connections, corners and stop lines survive edits "
+              "to its arms. edit.regenerate_junction still re-derives it on "
+              "demand. Toggle it with edit.set_junction_locked; a span junction "
+              "is always locked.")
+      .def_ro("spans",
+              &roadmaker::Junction::spans,
+              "Membership spans of a VIRTUAL (span) junction — a stretch of a "
+              "road that belongs to the junction without cutting it (OpenDRIVE "
+              "1.8.1/1.9.0 §12.7). Non-empty means this is a span junction, "
+              "which has no arms and no connections and is always locked.")
       .def("__repr__", [](const roadmaker::Junction& junction) {
         return "Junction(odr_id='" + junction.odr_id +
                "', connections=" + std::to_string(junction.connections.size()) + ")";
@@ -1166,7 +1206,14 @@ NB_MODULE(_roadmaker, m) {
   nb::class_<roadmaker::JunctionStopLineInfo>(m, "JunctionStopLineInfo")
       .def_ro("arm",
               &roadmaker::JunctionStopLineInfo::arm,
-              "The junction-facing road end this line belongs to — its identity.")
+              "The junction-facing road end this line belongs to — its identity. "
+              "On a span (virtual) junction it is a pseudo road end naming which "
+              "FACE of the span the line guards: start = the s_start face, end = "
+              "the s_end face.")
+      .def_ro("span_face",
+              &roadmaker::JunctionStopLineInfo::span_face,
+              "True when this line is one of the two faces of a span (virtual) "
+              "junction rather than an arm's line, i.e. `arm` is a pseudo road end.")
       .def_ro("distance",
               &roadmaker::JunctionStopLineInfo::distance,
               "Effective setback [m] from the junction mouth, clamped to "
@@ -2120,6 +2167,98 @@ NB_MODULE(_roadmaker, m) {
       "Drops ONE arm's authored stop-line record, returning it to the derived "
       "default. Pushing raises ValueError for a stale junction, a road end that "
       "is not a stop line of it, or an arm with nothing authored to reset.");
+  edit.def(
+      "set_junction_locked",
+      [](const roadmaker::RoadNetwork& network, roadmaker::JunctionId junction, bool locked) {
+        return roadmaker::edit::set_junction_locked(network, junction, locked);
+      },
+      "network"_a,
+      "junction"_a,
+      "locked"_a,
+      "Locks or unlocks a junction against the AUTOMATIC regeneration loops, so "
+      "hand-tuned connections, corners and stop lines survive edits to its "
+      "arms; regenerate_junction still re-derives it on demand. Unlocking a "
+      "junction whose arms no longer plan REMOVES it together with its "
+      "connecting roads (the delete_junction closure), since there is no "
+      "automatic state left to hand back to. Pushing raises ValueError for a "
+      "stale junction, a state that is already what was asked for, a foreign "
+      "junction (no arms and no spans), or unlocking a span junction, whose "
+      "lock is structural.");
+  edit.def(
+      "add_junction_arm",
+      [](const roadmaker::RoadNetwork& network,
+         roadmaker::JunctionId junction,
+         roadmaker::RoadEnd end,
+         const roadmaker::edit::JunctionGenOptions& options) {
+        return roadmaker::edit::add_junction_arm(network, junction, end, options);
+      },
+      "network"_a,
+      "junction"_a,
+      "end"_a,
+      "options"_a = roadmaker::edit::JunctionGenOptions{},
+      "Adds a road end to a LOCKED junction's arm list and retargets it: the "
+      "turns it opens get fresh connecting roads and every surviving turn keeps "
+      "its connecting-road id. The lock is a precondition — an automatic "
+      "junction re-derives its arms, so the edit would not survive. Pushing "
+      "raises ValueError for a stale junction, a span or foreign junction, an "
+      "unlocked junction, an end that is already an arm, an end owned by "
+      "another junction, an occupied link slot, or arms the generator refuses "
+      "(notably ends farther apart than options.max_end_distance_m).");
+  edit.def(
+      "remove_junction_arm",
+      [](const roadmaker::RoadNetwork& network,
+         roadmaker::JunctionId junction,
+         roadmaker::RoadEnd end,
+         const roadmaker::edit::JunctionGenOptions& options) {
+        return roadmaker::edit::remove_junction_arm(network, junction, end, options);
+      },
+      "network"_a,
+      "junction"_a,
+      "end"_a,
+      "options"_a = roadmaker::edit::JunctionGenOptions{},
+      "Removes a road end from a LOCKED junction's arm list, freeing its link "
+      "slot and erasing the connecting roads that served turns through it. "
+      "Authored corners and stop lines naming that arm STAY on the junction: "
+      "they go dormant and reactivate if the arm is added back. Pushing raises "
+      "ValueError for a stale junction, a span or foreign junction, an unlocked "
+      "junction, an end that is not an arm, fewer than 2 arms left afterwards, "
+      "or arms the generator refuses.");
+  edit.def(
+      "merge_junctions",
+      [](const roadmaker::RoadNetwork& network,
+         roadmaker::JunctionId survivor,
+         roadmaker::JunctionId absorbed,
+         const roadmaker::edit::JunctionGenOptions& options) {
+        return roadmaker::edit::merge_junctions(network, survivor, absorbed, options);
+      },
+      "network"_a,
+      "survivor"_a,
+      "absorbed"_a,
+      "options"_a = roadmaker::edit::JunctionGenOptions{},
+      "Folds `absorbed` into `survivor` — one junction over the union of both "
+      "arm lists. The survivor keeps its odr id, name, default corner radius "
+      "and material and inherits the absorbed junction's authored corners and "
+      "stop lines; connecting roads whose turn still plans keep their ids. The "
+      "result is LOCKED. Pushing raises ValueError for a stale id on either "
+      "side, the same junction twice, a span or foreign junction, either side "
+      "with fewer than 2 arms, or a union the generator refuses (notably ends "
+      "farther apart than options.max_end_distance_m — what 'neighbouring' "
+      "means here).");
+  edit.def(
+      "create_span_junction",
+      [](const roadmaker::RoadNetwork& network, const std::vector<roadmaker::SpanArm>& spans) {
+        return roadmaker::edit::create_span_junction(network, spans);
+      },
+      "network"_a,
+      "spans"_a,
+      "Creates a SPAN (virtual) junction over one span (a mid-road crosswalk) "
+      "or two (the same crossing over two parallel roads). ASAM OpenDRIVE "
+      "1.9.0 §12.7: the main road is UNINTERRUPTED, so nothing is created but "
+      "the junction record — no arms, no connecting roads, no road links — and "
+      "the result is always locked. Pushing raises ValueError for no spans or "
+      "more than two, a stale road id, the same road in both spans, a "
+      "connecting road, or a span that is not a real interval inside its road "
+      "(s_start < 0, s_end > length, or zero length).");
   edit.def("delete_junction", &roadmaker::edit::delete_junction, "network"_a, "junction"_a);
 
   // --- parametric intersection assemblies (rm.edit.assembly) ---

@@ -11,6 +11,7 @@
 #include "roadmaker/mesh/junction_corners.hpp"
 #include "roadmaker/mesh/junction_stoplines.hpp"
 
+#include <QCheckBox>
 #include <QComboBox>
 #include <QDoubleSpinBox>
 #include <QFormLayout>
@@ -262,6 +263,13 @@ private:
   /// fallback every corner without its own radius uses) and the carriageway
   /// material. Shown for a selected junction, alongside its read-only rows.
   QGroupBox* junction_group_;
+  /// Read-only DERIVED state (p4-s4, issue #319): Automatic / Locked / Span /
+  /// Foreign, read off arms/spans/locked exactly as road/junction.hpp defines.
+  QLabel* junction_type_label_;
+  /// Junction::locked. Disabled for a SPAN junction (structurally locked) and
+  /// for a FOREIGN one (no derivation to guard) — the states
+  /// edit::set_junction_locked refuses.
+  QCheckBox* junction_locked_check_;
   QDoubleSpinBox* junction_radius_spin_;
   SlotWidget* junction_material_slot_;
 

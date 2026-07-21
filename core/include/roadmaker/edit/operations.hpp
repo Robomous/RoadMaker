@@ -3,6 +3,7 @@
 #include "roadmaker/edit/command.hpp"
 #include "roadmaker/export.hpp"
 #include "roadmaker/road/authoring.hpp"
+#include "roadmaker/road/junction.hpp"
 #include "roadmaker/road/lane.hpp"
 #include "roadmaker/road/object.hpp"
 #include "roadmaker/road/road.hpp"
@@ -59,6 +60,15 @@ move_waypoint(const RoadNetwork& network, RoadId road, std::size_t index, Waypoi
 /// cost. Junctions with no recorded arms (read from a foreign file) are skipped
 /// rather than refused: regenerate_junction treats them as an error, but a drag
 /// must not fail because some unrelated junction came from someone else's file.
+///
+/// LOCKED junctions (Junction::locked, p4-s4 #319) are skipped for the same
+/// reason with the opposite cause: the user asked for the hand-tuned result to
+/// survive edits to its arms, so dragging an arm node is a plain move and the
+/// connections stay exactly where they were put. The lock is a policy of the
+/// AUTOMATIC loops only — this one and Document's post-command regeneration —
+/// never of regenerate_junction itself, so an explicit "re-derive" action
+/// works on a locked junction with no bypass flag. edit::set_junction_locked
+/// toggles the flag.
 ///
 /// Unlike the editor's commit-time regeneration, this is **atomic** — if a
 /// regeneration fails the whole move is refused and the network is untouched.
@@ -370,6 +380,126 @@ regenerate_junction(const RoadNetwork& network,
                     JunctionId junction,
                     const JunctionGenOptions& options = {},
                     TurnSetPolicy policy = TurnSetPolicy::AllowChange);
+
+/// Toggles `Junction::locked` — explicit user control over the AUTOMATIC
+/// regeneration loops (p4-s4, issue #319). A locked junction keeps its
+/// hand-tuned connections, corners and stop lines when a neighbouring road is
+/// edited; regenerate_junction still re-derives it on demand, since the lock
+/// guards the automatic pass and does not freeze the junction.
+///
+/// LOCK is a pure value edit (`junctions_are_current = true`).
+///
+/// UNLOCK hands the junction back to the automatic loop, so it must be
+/// re-derived against whatever changed while it was locked. When the arms still
+/// plan, that is a value edit with `junctions_are_current = false`, so the
+/// editor's regeneration runs inside the same undo macro. When they no longer
+/// plan (an arm was moved out of reach, or its road is gone) there is no
+/// automatic state to hand back to, so the command instead performs the full
+/// §7 junction removal delete_junction performs — connecting roads included.
+///
+/// Errors (invalid_command, so apply() reports them): a stale junction id; no
+/// state change (locking a locked or unlocking an unlocked junction — the
+/// round-trip oracle forbids a no-op command); a FOREIGN junction (no arms and
+/// no spans, read from someone else's file — there is no automatic derivation
+/// to guard); and unlocking a SPAN junction, whose lock is structural (§12.7
+/// virtual junctions are never derived, so they are always locked).
+[[nodiscard]] RM_API std::unique_ptr<Command>
+set_junction_locked(const RoadNetwork& network, JunctionId junction, bool locked);
+
+/// Adds `end` to a LOCKED junction's arm list and retargets it: the arm's link
+/// slot points at the junction, the turns it opens get fresh connecting roads,
+/// and every turn that survives keeps its connecting-road id (p4-s4, issue
+/// #319).
+///
+/// The lock is a precondition, not a side effect. An AUTOMATIC junction is
+/// defined by its derivation — the next regeneration would re-derive the arm
+/// list from the roads that meet it and undo the edit — so hand-editing
+/// membership is only meaningful once the user has taken the junction out of
+/// the automatic loop with set_junction_locked.
+///
+/// Errors (invalid_command, network untouched): a stale junction id; a SPAN
+/// junction (§12.7 virtual junctions cover a road, they never cut it, so they
+/// have no arms); a FOREIGN junction (no arms, read from someone else's file);
+/// an UNLOCKED junction; `end` already an arm of this junction; `end` already
+/// owned by another junction (the single-owner rule create_junction enforces);
+/// an occupied link slot at `end`; and anything the planner refuses for the
+/// resulting arm list — notably two arm ends farther apart than
+/// options.max_end_distance_m.
+[[nodiscard]] RM_API std::unique_ptr<Command>
+add_junction_arm(const RoadNetwork& network,
+                 JunctionId junction,
+                 RoadEnd end,
+                 const JunctionGenOptions& options = {});
+
+/// Removes `end` from a LOCKED junction's arm list and retargets it: the arm's
+/// link slot is freed, every connecting road serving a turn through it is
+/// erased, and the turns that remain keep their connecting-road ids (p4-s4,
+/// issue #319).
+///
+/// DORMANCY: authored corners and stop lines naming the removed arm STAY on the
+/// junction record. They go dormant exactly as they do across a turn-set change
+/// (JunctionCorner / StopLine doc comments) and reactivate if the arm is added
+/// back, so removing an arm by mistake costs no authored work.
+///
+/// Errors (invalid_command, network untouched): a stale junction id; a SPAN or
+/// FOREIGN junction; an UNLOCKED junction; `end` not an arm of this junction;
+/// fewer than 2 arms left afterwards (a junction needs two — unlock it to
+/// re-derive, or delete_junction it); and anything the planner refuses for the
+/// remaining arm list.
+[[nodiscard]] RM_API std::unique_ptr<Command>
+remove_junction_arm(const RoadNetwork& network,
+                    JunctionId junction,
+                    RoadEnd end,
+                    const JunctionGenOptions& options = {});
+
+/// Folds `absorbed` into `survivor` — ONE junction over the union of both arm
+/// lists (p4-s4, issue #319). The survivor is the FIRST argument and keeps its
+/// odr id, name, default corner radius and material; `absorbed` is erased in
+/// place (erase_exact, no generation bump, so undo restores it under its own
+/// id).
+///
+/// The absorbed junction's arm-road links and its connecting roads'
+/// back-references are re-pointed at the survivor BEFORE the turns are matched,
+/// so no reference into the erased junction outlives the command (#311) and an
+/// absorbed turn that still plans keeps its connecting road. The absorbed
+/// junction's authored corners and stop lines are appended verbatim — their
+/// RoadEnd keys stay valid because the arms themselves survive.
+///
+/// The result is LOCKED: a hand-authored merge is not something the automatic
+/// loop should re-derive away.
+///
+/// Errors (invalid_command, network untouched): a stale id on either side; the
+/// same junction twice; a SPAN or FOREIGN junction on either side; either side
+/// with fewer than 2 arms; and anything the planner refuses for the union —
+/// notably two arm ends farther apart than options.max_end_distance_m, which is
+/// what "neighbouring junctions" means here.
+[[nodiscard]] RM_API std::unique_ptr<Command>
+merge_junctions(const RoadNetwork& network,
+                JunctionId survivor,
+                JunctionId absorbed,
+                const JunctionGenOptions& options = {});
+
+/// Creates a SPAN (virtual) junction covering `spans` (p4-s4, issue #319) — the
+/// mid-road crosswalk and the parallel-road span. ASAM OpenDRIVE 1.9.0 §12.7
+/// (identical in 1.8.1 §12.7): a virtual junction marks a stretch of an
+/// UNINTERRUPTED road, so the command creates nothing but the junction record
+/// itself — no arms, no connecting roads, no connection table, and no link on
+/// any road. The result is LOCKED, structurally: a span junction is never
+/// derived, so the automatic loop has nothing to re-derive it from
+/// (set_junction_locked refuses to unlock one).
+///
+/// The junction takes the next free numeric odr id and an empty name, exactly
+/// as create_junction does.
+///
+/// One span is a single-road span (a crosswalk across one carriageway); two
+/// spans cover the same crossing over two parallel roads. Errors
+/// (invalid_command, network untouched): no spans or more than two; a stale
+/// road id; the same road in both spans; a CONNECTING road (one that belongs to
+/// a junction — a span covers a through road, not junction internals); and a
+/// span that is not a real interval inside its road, i.e. `s_start < 0`,
+/// `s_end > road length`, or a length of at most tol::kLength.
+[[nodiscard]] RM_API std::unique_ptr<Command> create_span_junction(const RoadNetwork& network,
+                                                                   std::span<const SpanArm> spans);
 
 /// Authors the fillet radius of ONE junction corner, named by its adjacent arm
 /// pair (p4-s1, issue #225). `radius <= 0` removes the override and returns the

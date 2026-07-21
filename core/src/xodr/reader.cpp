@@ -93,6 +93,10 @@ private:
     std::optional<double> distance;
     bool flipped = false;
     std::string crosswalk;
+
+    /// `@junction` — present only on a SPAN junction's face (p4-s4, issue
+    /// #319). Empty selects the arm resolution path.
+    std::string junction;
   };
 
   /// A stop line absorbed from an object, waiting for junctions to parse so its
@@ -947,11 +951,12 @@ private:
     }
 
     data.crosswalk = node.attribute("crosswalk").value();
+    data.junction = node.attribute("junction").value();
 
     // An attribute we do not model is reported but does not cost the record —
     // a newer RoadMaker's extra field must not silently delete the stop line.
-    static constexpr std::array<std::string_view, 5> kKnown{
-        "code", "contact", "distance", "flipped", "crosswalk"};
+    static constexpr std::array<std::string_view, 6> kKnown{
+        "code", "contact", "distance", "flipped", "crosswalk", "junction"};
     for (const pugi::xml_attribute attr : node.attributes()) {
       if (std::ranges::find(kKnown, std::string_view(attr.name())) == kKnown.end()) {
         diag(Severity::Warning,
@@ -962,20 +967,55 @@ private:
     return data;
   }
 
-  /// Pass 2: fold every absorbed stop line into its junction's record. The arm
-  /// is the road end named by `contact`; junctions parse before this, so
-  /// junction_at_end resolves. A record that carries nothing beyond its identity
-  /// is a pure derived default and is absorbed silently — re-deriving it
-  /// reproduces the same line. A road end with no junction cannot own a record
-  /// at all, so the object is restored live with its userData verbatim.
+  /// Resolves the junction that owns a span (virtual) junction's stop-line face
+  /// (p4-s4, issue #319) — the SECOND resolution path, and a separate one on
+  /// purpose: a span junction has no arms, no connections and no road links, so
+  /// nothing the arm path keys on (junction_at_end) can ever match it.
+  ///
+  /// The key is the span itself: `@junction` names the owning junction and the
+  /// enclosing `<road>` names the span road, and the record is accepted only
+  /// when that junction really carries a span on that road. Geometry is
+  /// deliberately NOT the key — a face station is clamped to the road, so two
+  /// spans that both begin inside the first half-thickness of a road would
+  /// solve to the same station and the mapping would stop being injective.
+  std::optional<JunctionId> span_junction_for(const PendingStopLine& pending) {
+    const JunctionId junction_id = network().find_junction(pending.data.junction);
+    if (!junction_id.is_valid()) {
+      return std::nullopt;
+    }
+    const Junction& junction = *network().junction(junction_id);
+    const bool spans_the_road = std::ranges::any_of(
+        junction.spans, [&](const SpanArm& span) { return span.road == pending.road; });
+    return spans_the_road ? std::optional<JunctionId>{junction_id} : std::nullopt;
+  }
+
+  /// Pass 2: fold every absorbed stop line into its junction's record. Two
+  /// resolution paths, selected by whether `@junction` is present:
+  ///
+  ///  - absent: an ARM line. The arm is the road end named by `contact`;
+  ///    junctions parse before this, so junction_at_end resolves.
+  ///  - present: a SPAN junction's FACE, resolved by span_junction_for(). Here
+  ///    `contact` names which face of the span it guards, not a road end.
+  ///
+  /// A record that carries nothing beyond its identity is a pure derived
+  /// default and is absorbed silently — re-deriving it reproduces the same line.
+  /// A record that resolves to no junction at all cannot be owned, so the object
+  /// is restored live with its userData verbatim.
   void resolve_stoplines() {
     for (PendingStopLine& pending : pending_stoplines_) {
       const RoadEnd arm{.road = pending.road, .contact = pending.data.contact};
-      const std::optional<JunctionId> junction_id = edit::junction_at_end(network(), arm);
+      const bool is_span_face = !pending.data.junction.empty();
+      const std::optional<JunctionId> junction_id =
+          is_span_face ? span_junction_for(pending) : edit::junction_at_end(network(), arm);
       if (!junction_id.has_value()) {
         diag(Severity::Warning,
              pending.location,
-             "rm:stopline names a road end with no junction — kept as a plain object");
+             is_span_face
+                 ? fmt::format("rm:stopline names junction '{}', which is not a span junction of "
+                               "this road — kept as a plain object",
+                               pending.data.junction)
+                 : std::string(
+                       "rm:stopline names a road end with no junction — kept as a plain object"));
         pending.fallback.preserved.children.push_back(std::move(pending.fragment));
         network().add_object(pending.road, std::move(pending.fallback));
         continue;
@@ -1418,7 +1458,97 @@ private:
       }
       junction.connections.push_back(std::move(result));
     }
+    parse_virtual_junction(junction_node, junction, location);
     parse_junction_user_data(junction_node, junction, location);
+
+    // arms-xor-spans (p4-s4, issue #319): a span junction never cuts its main
+    // road, so it owns no arms and no connecting roads, and there is no
+    // automatic derivation for it to skip — it is locked by definition. A
+    // hand-written file that mixes the two is degraded here rather than loaded
+    // into a state the writer could not reproduce.
+    if (!junction.spans.empty()) {
+      if (!junction.arms.empty() || !junction.connections.empty()) {
+        diag(Severity::Warning,
+             location,
+             "virtual junction also declares connections or rm:arms; they were dropped",
+             rules::kJunctionVirtualAttributes);
+        junction.arms.clear();
+        junction.connections.clear();
+      }
+      junction.locked = true;
+    }
+  }
+
+  /// Layer 0 of a span junction: `<junction type="virtual">` with the
+  /// mandatory @mainRoad/@orientation/@sStart/@sEnd (ASAM OpenDRIVE 1.9.0
+  /// §12.7 Table 69; 1.8.1 §12.7 Table 69 is identical). It carries exactly one
+  /// span, which a well-formed `<userData code="rm:spans">` then replaces with
+  /// the full list. Roads parse before junctions, so @mainRoad resolves here.
+  /// An unresolvable or malformed virtual junction is warned about and loads as
+  /// a plain junction — the parser never drops input silently.
+  void parse_virtual_junction(const pugi::xml_node& junction_node,
+                              Junction& junction,
+                              const std::string& location) {
+    if (std::string_view(junction_node.attribute("type").value()) != "virtual") {
+      return;
+    }
+    const std::string main_road = junction_node.attribute("mainRoad").value();
+    const RoadId road_id = network().find_road(main_road);
+    if (!road_id.is_valid()) {
+      diag(Severity::Warning,
+           location,
+           fmt::format("virtual junction names unknown mainRoad '{}'; the span was skipped",
+                       main_road),
+           rules::kOnlyRefDefinedIds);
+      return;
+    }
+    const std::optional<double> s_start = to_double(junction_node.attribute("sStart").value());
+    const std::optional<double> s_end = to_double(junction_node.attribute("sEnd").value());
+    // t_grEqZero on both, and an interval that runs forwards.
+    if (!s_start || !s_end || *s_start < 0.0 || *s_end < *s_start) {
+      diag(Severity::Warning,
+           location,
+           "virtual junction needs sStart and sEnd with 0 <= sStart <= sEnd; the span was skipped",
+           rules::kJunctionVirtualAttributes);
+      return;
+    }
+    junction.spans.push_back(SpanArm{.road = road_id, .s_start = *s_start, .s_end = *s_end});
+  }
+
+  /// `<userData code="rm:spans">` ("roadOdrId:s_start:s_end;…", p4-s4 issue
+  /// #319): the FULL span list of a virtual junction, spans[0] included, since
+  /// Layer 0 can only carry the one main-road span. All-or-nothing like its
+  /// rm:arms/rm:corners siblings — an unknown road id or a malformed interval
+  /// rejects the whole value, and the caller then keeps the Layer-0 span.
+  std::optional<std::vector<SpanArm>> parse_spans_value(std::string_view value) {
+    std::vector<SpanArm> spans;
+    for (std::size_t begin = 0; begin <= value.size();) {
+      std::size_t end = value.find(';', begin);
+      if (end == std::string_view::npos) {
+        end = value.size();
+      }
+      const std::string_view entry = value.substr(begin, end - begin);
+      begin = end + 1;
+      const std::size_t first = entry.find(':');
+      if (first == std::string_view::npos) {
+        return std::nullopt;
+      }
+      const std::size_t second = entry.find(':', first + 1);
+      if (second == std::string_view::npos) {
+        return std::nullopt;
+      }
+      const RoadId road_id = network().find_road(std::string(entry.substr(0, first)));
+      const std::optional<double> s_start = to_double(entry.substr(first + 1, second - first - 1));
+      const std::optional<double> s_end = to_double(entry.substr(second + 1));
+      if (!road_id.is_valid() || !s_start || !s_end || *s_start < 0.0 || *s_end < *s_start) {
+        return std::nullopt;
+      }
+      spans.push_back(SpanArm{.road = road_id, .s_start = *s_start, .s_end = *s_end});
+    }
+    if (spans.empty()) {
+      return std::nullopt;
+    }
+    return spans;
   }
 
   /// One arm of an rm:corners entry: "roadOdrId:start|end" already split out.
@@ -1543,6 +1673,19 @@ private:
         junction.corners = std::move(*corners);
         continue;
       }
+      if (code == "rm:spans") {
+        // A well-formed value REPLACES the single Layer-0 span with the full
+        // list; a malformed one warns and leaves the Layer-0 span in place, so
+        // the junction still loads as the virtual junction the file declared.
+        std::optional<std::vector<SpanArm>> spans =
+            parse_spans_value(node.attribute("value").value());
+        if (!spans) {
+          diag(Severity::Warning, location, "malformed rm:spans userData ignored");
+          continue;
+        }
+        junction.spans = std::move(*spans);
+        continue;
+      }
       if (code == "rm:junction") {
         // Junction-scope authored values (p4-s2, issue #226): ";"-joined
         // "key=value". A malformed or repeated KNOWN key drops the whole value
@@ -1552,6 +1695,7 @@ private:
         const std::string value = node.attribute("value").value();
         std::optional<double> radius;
         std::string material;
+        bool locked = false;
         bool malformed = false;
         for (std::size_t begin = 0; begin <= value.size() && !malformed;) {
           std::size_t end = value.find(';', begin);
@@ -1568,6 +1712,12 @@ private:
             const std::string_view name = field.substr(4);
             malformed = !is_material_token(name) || !material.empty();
             material = std::string(name);
+          } else if (field.starts_with("locked=")) {
+            // p4-s4 (issue #319): the writer emits `locked=1` and nothing else,
+            // so any other value is a corrupt file — all-or-nothing, like the
+            // KNOWN keys above.
+            malformed = field.substr(7) != "1" || locked;
+            locked = true;
           } else {
             diag(Severity::Warning,
                  location,
@@ -1580,6 +1730,7 @@ private:
         }
         junction.default_corner_radius = radius;
         junction.material = std::move(material);
+        junction.locked = locked;
         continue;
       }
       if (code != "rm:arms") {

@@ -13,6 +13,7 @@
 //   distance="<num>"     (omitted when not authored)
 //   flipped="true"       (omitted when false)
 //   crosswalk="<id>"     (omitted when empty)
+//   junction="<odr id>"  (p4-s4 #319 — span junction faces only, see below)
 
 #include "roadmaker/edit/operations.hpp"
 #include "roadmaker/mesh/junction_stoplines.hpp"
@@ -504,6 +505,224 @@ TEST(StopLinePersistence, ADegenerateJunctionBesideAHealthyOneStillRoundTrips) {
   EXPECT_EQ(write(reparsed->network), xml) << "write->parse->write must be byte-identical";
 }
 
+// --- span (virtual) junction faces (p4-s4, #319) -----------------------------
+//
+// A span junction has no arms, no connections and no road links, so NOTHING the
+// arm resolution path keys on can reach it: `edit::junction_at_end` on the span
+// road returns nothing at all. Its faces therefore carry one extra attribute —
+//   junction="<junction odr id>"
+// — and the reader takes a SECOND path for them, keyed on the span itself (that
+// junction id plus the enclosing road, which must be one of its span roads).
+// Its ABSENCE is what selects the arm path, so an arm line's bytes are
+// untouched by the feature.
+//
+// Writing is all-or-nothing with rm:spans: a junction whose spans will not be
+// written cannot be named by a face either, so it exports no faces (#311 —
+// never write what you cannot read back).
+
+namespace {
+
+/// One uninterrupted 120 m road "1" carrying a mid-road span junction "9" —
+/// the crosswalk case (§12.7): the road is never cut, so it is nobody's arm.
+struct SpanFixture {
+  RoadNetwork network;
+  RoadId road;
+  JunctionId junction;
+
+  explicit SpanFixture(double s_start = 50.0, double s_end = 56.5) {
+    const std::vector<Waypoint> waypoints{Waypoint{0.0, 0.0}, Waypoint{120.0, 0.0}};
+    road = *roadmaker::author_clothoid_road(
+        network, waypoints, LaneProfile::two_lane_default(), "", "1");
+    junction = network.create_junction("9", "crosswalk");
+    network.junction(junction)->spans.push_back(
+        roadmaker::SpanArm{.road = road, .s_start = s_start, .s_end = s_end});
+    network.junction(junction)->locked = true;
+  }
+
+  RoadEnd face(ContactPoint contact) const { return RoadEnd{.road = road, .contact = contact}; }
+};
+
+} // namespace
+
+TEST(SpanStopLinePersistence, DerivedFacesExportTwoTaggedObjects) {
+  SpanFixture fixture;
+  const std::string xml = write(fixture.network);
+
+  EXPECT_EQ(count(xml, "subtype=\"signalLines\""), 2U) << "one materialized band per face";
+  EXPECT_EQ(count(xml, "code=\"rm:stopline\""), 2U);
+  // The face key: contact names WHICH FACE, and junction names the owner the
+  // reader cannot otherwise find.
+  EXPECT_EQ(count(xml, "contact=\"start\" junction=\"9\""), 1U) << xml;
+  EXPECT_EQ(count(xml, "contact=\"end\" junction=\"9\""), 1U) << xml;
+  EXPECT_EQ(count(xml, "distance="), 0U) << "fully derived faces author nothing";
+  for (const char* id : {"sl_9_1_s", "sl_9_1_e"}) {
+    EXPECT_EQ(count(xml, std::string("id=\"") + id + "\""), 1U) << "missing face " << id;
+  }
+
+  auto reparsed = roadmaker::parse_xodr(xml, "stoplines");
+  ASSERT_TRUE(reparsed.has_value());
+  EXPECT_TRUE(reparsed->diagnostics.empty())
+      << (reparsed->diagnostics.empty() ? std::string{} : reparsed->diagnostics.front().message);
+  std::size_t arena_objects = 0;
+  reparsed->network.for_each_object(
+      [&](roadmaker::ObjectId, const roadmaker::Object&) { ++arena_objects; });
+  EXPECT_EQ(arena_objects, 0U) << "a pure default is absorbed, never left as a live object";
+  EXPECT_TRUE(reparsed->network.junction(reparsed->network.find_junction("9"))->stoplines.empty());
+  EXPECT_EQ(write(reparsed->network), xml) << "write->parse->write must be byte-identical";
+}
+
+TEST(SpanStopLinePersistence, AnAuthoredFaceRoundTrips) {
+  SpanFixture fixture;
+  const RoadEnd upstream = fixture.face(ContactPoint::Start);
+  ASSERT_TRUE(roadmaker::edit::set_stopline_distance(
+                  fixture.network, fixture.junction, upstream, 9.0, std::string("7"))
+                  ->apply(fixture.network)
+                  .has_value());
+  ASSERT_TRUE(roadmaker::edit::flip_stopline(fixture.network, fixture.junction, upstream)
+                  ->apply(fixture.network)
+                  .has_value());
+
+  const std::string xml = write(fixture.network);
+  EXPECT_EQ(count(xml, "distance=\"9\""), 1U) << xml;
+  EXPECT_EQ(count(xml, "flipped=\"true\""), 1U);
+  EXPECT_EQ(count(xml, "crosswalk=\"7\""), 1U);
+
+  auto reparsed = roadmaker::parse_xodr(xml, "stoplines");
+  ASSERT_TRUE(reparsed.has_value());
+  EXPECT_TRUE(reparsed->diagnostics.empty())
+      << (reparsed->diagnostics.empty() ? std::string{} : reparsed->diagnostics.front().message);
+  const JunctionId junction = reparsed->network.find_junction("9");
+  const RoadEnd reloaded{.road = reparsed->network.find_road("1"), .contact = ContactPoint::Start};
+
+  const StopLine* record = record_for(reparsed->network, junction, reloaded);
+  ASSERT_NE(record, nullptr) << "the face record came back on its span junction, not as an object";
+  ASSERT_TRUE(record->distance.has_value());
+  EXPECT_DOUBLE_EQ(*record->distance, 9.0);
+  EXPECT_TRUE(record->flipped);
+  EXPECT_EQ(record->crosswalk_odr_id, "7");
+  EXPECT_DOUBLE_EQ(solved(reparsed->network, junction, reloaded)->distance, 9.0);
+  EXPECT_EQ(write(reparsed->network), xml) << "the second write must be byte-identical";
+}
+
+TEST(SpanStopLinePersistence, ASpanJunctionThatDoesNotRoundTripExportsNoFaces) {
+  // All-or-nothing, shared with rm:spans: a span junction one of whose roads
+  // went stale cannot be written as <junction type="virtual"> at all, so the
+  // surviving span's faces would come back unresolvable. Emit nothing.
+  SpanFixture fixture;
+  const std::vector<Waypoint> waypoints{Waypoint{0.0, 12.0}, Waypoint{120.0, 12.0}};
+  const RoadId second = *roadmaker::author_clothoid_road(
+      fixture.network, waypoints, LaneProfile::two_lane_default(), "", "2");
+  fixture.network.junction(fixture.junction)
+      ->spans.push_back(roadmaker::SpanArm{.road = second, .s_start = 50.0, .s_end = 56.5});
+  ASSERT_EQ(count(write(fixture.network), "code=\"rm:stopline\""), 4U);
+
+  ASSERT_TRUE(fixture.network.erase_road(second));
+  const std::string xml = write(fixture.network);
+  EXPECT_EQ(count(xml, "code=\"rm:stopline\""), 0U);
+  EXPECT_EQ(count(xml, "code=\"rm:spans\""), 0U) << "the two rules must agree";
+
+  auto reparsed = roadmaker::parse_xodr(xml, "stoplines");
+  ASSERT_TRUE(reparsed.has_value());
+  EXPECT_TRUE(reparsed->diagnostics.empty());
+  EXPECT_EQ(write(reparsed->network), xml) << "write->parse->write must be byte-identical";
+}
+
+TEST(SpanStopLinePersistence, ADormantFaceRecordIsNotWritten) {
+  // The span the record names is dropped from the junction (a re-authored
+  // crosswalk). The record survives in the model but names nothing solvable, so
+  // it must neither be written nor disturb the faces that remain — the same
+  // dormancy remove_junction_arm relies on.
+  SpanFixture fixture;
+  fixture.network.junction(fixture.junction)
+      ->stoplines.push_back(StopLine{
+          .arm = RoadEnd{.road = fixture.network.find_road("1"), .contact = ContactPoint::Start},
+          .distance = 9.0});
+  const std::string authored = write(fixture.network);
+  EXPECT_EQ(count(authored, "distance=\"9\""), 1U);
+
+  fixture.network.junction(fixture.junction)->spans.clear();
+  const std::string xml = write(fixture.network);
+  EXPECT_EQ(count(xml, "code=\"rm:stopline\""), 0U)
+      << "no span, no faces — the record lies dormant";
+
+  auto reparsed = roadmaker::parse_xodr(xml, "stoplines");
+  ASSERT_TRUE(reparsed.has_value());
+  EXPECT_TRUE(reparsed->diagnostics.empty());
+  EXPECT_EQ(write(reparsed->network), xml);
+}
+
+TEST(SpanStopLinePersistence, AFaceNamingAnUnknownJunctionStaysAPlainObject) {
+  SpanFixture fixture;
+  std::string xml = write(fixture.network);
+  const std::size_t at = xml.find("junction=\"9\"");
+  ASSERT_NE(at, std::string::npos);
+  xml.replace(at, std::string("junction=\"9\"").size(), "junction=\"zz\"");
+
+  auto reparsed = roadmaker::parse_xodr(xml, "stoplines");
+  ASSERT_TRUE(reparsed.has_value());
+  ASSERT_FALSE(reparsed->diagnostics.empty());
+  EXPECT_NE(reparsed->diagnostics.front().message.find("not a span junction of this road"),
+            std::string::npos)
+      << reparsed->diagnostics.front().message;
+  // Degrade to Layer 0: the band stays on the road as a live object with its
+  // userData verbatim rather than vanishing.
+  std::size_t arena_objects = 0;
+  reparsed->network.for_each_object([&](roadmaker::ObjectId, const roadmaker::Object& object) {
+    ++arena_objects;
+    EXPECT_EQ(object.subtype, "signalLines");
+  });
+  EXPECT_EQ(arena_objects, 1U);
+}
+
+TEST(SpanStopLinePersistence, AFaceNamingAJunctionThatDoesNotSpanThisRoadStaysAPlainObject) {
+  // The junction exists but has no span on the road the object sits on — a
+  // hand-edited or half-migrated file. The record cannot be owned, so the
+  // object stays live rather than being folded onto the wrong junction.
+  SpanFixture fixture;
+  std::string xml = write(fixture.network);
+  const std::string spans = "<userData code=\"rm:spans\"";
+  const std::size_t at = xml.find(spans);
+  ASSERT_NE(at, std::string::npos);
+  xml.erase(at, xml.find("/>", at) + 2 - at);
+  const std::size_t main_road = xml.find("mainRoad=\"1\"");
+  ASSERT_NE(main_road, std::string::npos);
+  xml.replace(main_road, std::string("mainRoad=\"1\"").size(), "mainRoad=\"nope\"");
+
+  auto reparsed = roadmaker::parse_xodr(xml, "stoplines");
+  ASSERT_TRUE(reparsed.has_value());
+  EXPECT_TRUE(reparsed->network.junction(reparsed->network.find_junction("9"))->spans.empty());
+  std::size_t arena_objects = 0;
+  reparsed->network.for_each_object(
+      [&](roadmaker::ObjectId, const roadmaker::Object&) { ++arena_objects; });
+  EXPECT_EQ(arena_objects, 2U) << "both faces fell back to live objects";
+}
+
+TEST(SpanStopLinePersistence, ASpanAndAnArmOnTheSameRoadKeepSeparateLines) {
+  // Road "1" ends in a real junction AND carries a span junction. Both write
+  // lines keyed by the same RoadEnd value — they belong to different junctions,
+  // and only the span's carries @junction, which is exactly what keeps the two
+  // resolution paths from crossing.
+  CrossFixture fixture;
+  const JunctionId span = fixture.network.create_junction("9", "crosswalk");
+  fixture.network.junction(span)->spans.push_back(
+      roadmaker::SpanArm{.road = fixture.west, .s_start = 10.0, .s_end = 14.0});
+  fixture.network.junction(span)->locked = true;
+
+  const std::string xml = write(fixture.network);
+  EXPECT_EQ(count(xml, "code=\"rm:stopline\""), 6U) << "4 arm lines + 2 faces";
+  EXPECT_EQ(count(xml, "junction=\"9\""), 2U) << "only the faces carry the back-reference";
+
+  auto reparsed = roadmaker::parse_xodr(xml, "stoplines");
+  ASSERT_TRUE(reparsed.has_value());
+  EXPECT_TRUE(reparsed->diagnostics.empty())
+      << (reparsed->diagnostics.empty() ? std::string{} : reparsed->diagnostics.front().message);
+  std::size_t arena_objects = 0;
+  reparsed->network.for_each_object(
+      [&](roadmaker::ObjectId, const roadmaker::Object&) { ++arena_objects; });
+  EXPECT_EQ(arena_objects, 0U);
+  EXPECT_EQ(write(reparsed->network), xml) << "write->parse->write must be byte-identical";
+}
+
 // DISABLED by default so normal runs never write into the source tree.
 // Regenerate the committed rm:stopline fuzz-corpus seed with
 // --gtest_also_run_disabled_tests --gtest_filter='*DISABLED_WriteCorpusSeed'.
@@ -527,6 +746,58 @@ TEST(StopLinePersistence, DISABLED_WriteCorpusSeed) {
                                    fs::path(RM_FUZZ_CORPUS_DIR) / "objects_stopline.xodr",
                                    "objects_stopline")
                   .has_value());
+}
+
+// Regenerate with --gtest_also_run_disabled_tests
+// --gtest_filter='*SpanStopLine*DISABLED_WriteCorpusSeed'. Kept separate from
+// the arm seed so the fuzzer starts from a file exercising ONLY the span
+// resolution path (p4-s4, issue #319).
+TEST(SpanStopLinePersistence, DISABLED_WriteCorpusSeed) {
+  namespace fs = std::filesystem;
+  SpanFixture fixture;
+  // The upstream face authors every attribute of the grammar; the downstream
+  // one stays a pure default, so the seed carries both shapes of the tag.
+  ASSERT_TRUE(roadmaker::edit::set_stopline_distance(fixture.network,
+                                                     fixture.junction,
+                                                     fixture.face(ContactPoint::Start),
+                                                     9.0,
+                                                     std::string("7"))
+                  ->apply(fixture.network)
+                  .has_value());
+  ASSERT_TRUE(roadmaker::edit::flip_stopline(
+                  fixture.network, fixture.junction, fixture.face(ContactPoint::Start))
+                  ->apply(fixture.network)
+                  .has_value());
+  ASSERT_TRUE(roadmaker::save_xodr(fixture.network,
+                                   fs::path(RM_FUZZ_CORPUS_DIR) / "span_junction_stopline.xodr",
+                                   "span_junction_stopline")
+                  .has_value());
+}
+
+TEST(SpanStopLinePersistence, TheFuzzCorpusSeedParsesAndReExports) {
+  namespace fs = std::filesystem;
+  auto seed = roadmaker::load_xodr(fs::path(RM_FUZZ_CORPUS_DIR) / "span_junction_stopline.xodr");
+  ASSERT_TRUE(seed.has_value()) << "span_junction_stopline.xodr must parse";
+  EXPECT_TRUE(seed->diagnostics.empty())
+      << (seed->diagnostics.empty() ? std::string{} : seed->diagnostics.front().message);
+
+  const JunctionId junction = seed->network.find_junction("9");
+  ASSERT_TRUE(junction.is_valid());
+  ASSERT_EQ(seed->network.junction(junction)->spans.size(), 1U);
+  // The downstream face is a pure default (absorbed silently); the upstream one
+  // authors distance + flip + crosswalk, so exactly one record survives.
+  ASSERT_EQ(seed->network.junction(junction)->stoplines.size(), 1U);
+  const StopLine& record = seed->network.junction(junction)->stoplines.front();
+  EXPECT_EQ(record.arm.contact, ContactPoint::Start);
+  ASSERT_TRUE(record.distance.has_value());
+  EXPECT_DOUBLE_EQ(*record.distance, 9.0);
+  EXPECT_TRUE(record.flipped);
+  EXPECT_EQ(record.crosswalk_odr_id, "7");
+  std::size_t arena_objects = 0;
+  seed->network.for_each_object(
+      [&](roadmaker::ObjectId, const roadmaker::Object&) { ++arena_objects; });
+  EXPECT_EQ(arena_objects, 0U);
+  EXPECT_EQ(junction_stoplines(seed->network, junction).size(), 2U);
 }
 
 TEST(StopLinePersistence, TheFuzzCorpusSeedsParseAndReExport) {

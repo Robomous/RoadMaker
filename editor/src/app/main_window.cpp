@@ -56,6 +56,7 @@
 #include "tools/delete_tool.hpp"
 #include "tools/edit_nodes_tool.hpp"
 #include "tools/elevation_tool.hpp"
+#include "tools/junction_span_tool.hpp"
 #include "tools/lane_add_tool.hpp"
 #include "tools/lane_carve_tool.hpp"
 #include "tools/lane_form_tool.hpp"
@@ -453,11 +454,20 @@ MainWindow::MainWindow(QWidget* parent, bool restore_saved_layout)
   wire_status(stopline_tool.get());
   properties_panel_->set_stopline_tool(stopline_tool.get());
   tool_manager_.register_tool(ToolId::StopLine, std::move(stopline_tool));
+
+  // Junction Span: authors an ASAM 12.7 VIRTUAL junction over a stretch of road.
+  // It creates rather than edits, so nothing binds to it from the panels.
+  auto junction_span_tool = std::make_unique<JunctionSpanTool>(document_, selection_);
+  wire_status(junction_span_tool.get());
+  tool_manager_.register_tool(ToolId::JunctionSpan, std::move(junction_span_tool));
   connect(actions_->tool_corner, &QAction::triggered, this, [this] {
     tool_manager_.set_active(ToolId::Corner);
   });
   connect(actions_->tool_stopline, &QAction::triggered, this, [this] {
     tool_manager_.set_active(ToolId::StopLine);
+  });
+  connect(actions_->tool_junction_span, &QAction::triggered, this, [this] {
+    tool_manager_.set_active(ToolId::JunctionSpan);
   });
   tool_manager_.set_active(ToolId::Select);
 
@@ -1201,6 +1211,7 @@ void MainWindow::activate_tool_for_capture(const QString& tool_id) {
       {QStringLiteral("propPolygon"), ToolId::PropPolygon},
       {QStringLiteral("corner"), ToolId::Corner},
       {QStringLiteral("stopline"), ToolId::StopLine},
+      {QStringLiteral("junctionSpan"), ToolId::JunctionSpan},
   };
   if (const auto found = kTools.find(tool_id); found != kTools.end()) {
     tool_manager_.set_active(found->second);

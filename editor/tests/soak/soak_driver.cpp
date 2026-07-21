@@ -13,6 +13,7 @@
 #include <cmath>
 #include <fstream>
 #include <numbers>
+#include <optional>
 #include <utility>
 #include <vector>
 
@@ -81,6 +82,10 @@ void SoakDriver::step(int index) {
       {2, &SoakDriver::op_ground_surface, "ground_surface"},
       {1, &SoakDriver::op_overpass, "overpass"},
       {1, &SoakDriver::op_delete_crossing_road, "delete_crossing_road"},
+      {2, &SoakDriver::op_toggle_junction_lock, "toggle_junction_lock"},
+      {2, &SoakDriver::op_junction_arm_edit, "junction_arm_edit"},
+      {1, &SoakDriver::op_merge_junctions, "merge_junctions"},
+      {1, &SoakDriver::op_create_span_junction, "create_span_junction"},
       {1, &SoakDriver::op_delete_junction, "delete_junction"},
       {1, &SoakDriver::op_delete_road, "delete_road"},
       {2, &SoakDriver::op_undo_redo, "undo_redo"},
@@ -1000,6 +1005,167 @@ void SoakDriver::op_delete_crossing_road() {
       return;
     }
   }
+}
+
+// --- junction control (p4-s4, issue #319) ------------------------------------
+//
+// Every one of these is REFUSED for most random draws (the preconditions are
+// narrow on purpose), which is exactly the point: a refused command must leave
+// the network byte-unchanged, and the invariants after it must still hold.
+
+void SoakDriver::op_toggle_junction_lock() {
+  const std::vector<JunctionId> junctions = live_junctions();
+  if (junctions.empty()) {
+    return;
+  }
+  const JunctionId id = junctions[static_cast<std::size_t>(rand_int(0, int(junctions.size()) - 1))];
+  const Junction* junction = document_.network().junction(id);
+  if (junction == nullptr) {
+    return;
+  }
+  // A span junction is locked structurally and a foreign one has nothing to
+  // guard — both are refusals, and worth drawing so the refusal path runs.
+  push(edit::set_junction_locked(document_.network(), id, !junction->locked));
+}
+
+void SoakDriver::op_junction_arm_edit() {
+  // Membership editing is LOCKED-only, so lock first when the draw lands on an
+  // unlocked arm-based junction — that is the real user sequence.
+  const std::vector<JunctionId> junctions = live_junctions();
+  if (junctions.empty()) {
+    return;
+  }
+  const JunctionId id = junctions[static_cast<std::size_t>(rand_int(0, int(junctions.size()) - 1))];
+  const Junction* junction = document_.network().junction(id);
+  if (junction == nullptr || junction->arms.empty() || !junction->spans.empty()) {
+    return;
+  }
+  if (!junction->locked) {
+    push(edit::set_junction_locked(document_.network(), id, true));
+    junction = document_.network().junction(id);
+    if (junction == nullptr || !junction->locked) {
+      return; // the lock was refused (or the junction went away) — nothing to edit
+    }
+  }
+
+  if (chance(0.5)) {
+    // Remove: the kernel refuses dropping below two arms, which is a draw we
+    // WANT to make (a refused command must not touch the network).
+    const RoadEnd arm =
+        junction->arms[static_cast<std::size_t>(rand_int(0, int(junction->arms.size()) - 1))];
+    push(edit::remove_junction_arm(document_.network(), id, arm));
+    return;
+  }
+
+  // Add: a free end that no junction owns and whose link slot is empty.
+  std::vector<RoadEnd> candidates;
+  document_.network().for_each_road([&](RoadId road_id, const Road& road) {
+    if (road.junction.is_valid()) {
+      return;
+    }
+    if (!road.predecessor.has_value()) {
+      candidates.push_back(RoadEnd{.road = road_id, .contact = ContactPoint::Start});
+    }
+    if (!road.successor.has_value()) {
+      candidates.push_back(RoadEnd{.road = road_id, .contact = ContactPoint::End});
+    }
+  });
+  if (candidates.empty()) {
+    return;
+  }
+  push(edit::add_junction_arm(
+      document_.network(),
+      id,
+      candidates[static_cast<std::size_t>(rand_int(0, int(candidates.size()) - 1))]));
+}
+
+void SoakDriver::op_merge_junctions() {
+  const std::vector<JunctionId> junctions = live_junctions();
+  if (junctions.size() < 2) {
+    return;
+  }
+  // Neighbours: the two whose arm ends are closest, so the union has a chance
+  // of planning (a far-apart pair is refused by max_end_distance_m, which is a
+  // legitimate draw too).
+  const auto centroid = [this](JunctionId id) -> std::optional<std::array<double, 2>> {
+    const Junction* junction = document_.network().junction(id);
+    if (junction == nullptr || junction->arms.empty()) {
+      return std::nullopt;
+    }
+    double x = 0.0;
+    double y = 0.0;
+    int n = 0;
+    for (const RoadEnd& arm : junction->arms) {
+      const Road* road = document_.network().road(arm.road);
+      if (road == nullptr || road->plan_view.empty()) {
+        continue;
+      }
+      const PathPoint point =
+          road->plan_view.evaluate(arm.contact == ContactPoint::Start ? 0.0 : road->length);
+      x += point.x;
+      y += point.y;
+      ++n;
+    }
+    if (n == 0) {
+      return std::nullopt;
+    }
+    return std::array<double, 2>{x / n, y / n};
+  };
+  std::optional<std::pair<JunctionId, JunctionId>> best;
+  double best_distance = 0.0;
+  for (std::size_t i = 0; i < junctions.size(); ++i) {
+    const auto a = centroid(junctions[i]);
+    if (!a.has_value()) {
+      continue;
+    }
+    for (std::size_t j = i + 1; j < junctions.size(); ++j) {
+      const auto b = centroid(junctions[j]);
+      if (!b.has_value()) {
+        continue;
+      }
+      const double d = std::hypot((*a)[0] - (*b)[0], (*a)[1] - (*b)[1]);
+      if (!best.has_value() || d < best_distance) {
+        best_distance = d;
+        best = std::pair{junctions[i], junctions[j]};
+      }
+    }
+  }
+  if (!best.has_value()) {
+    return;
+  }
+  // Either orientation: which junction survives is the caller's choice, and
+  // both directions must behave.
+  const auto [a, b] = *best;
+  push(chance(0.5) ? edit::merge_junctions(document_.network(), a, b)
+                   : edit::merge_junctions(document_.network(), b, a));
+}
+
+void SoakDriver::op_create_span_junction() {
+  // A VIRTUAL junction over a through road (never a connecting one), sometimes
+  // over two roads at once — the parallel-carriageway case.
+  const std::vector<RoadId> roads = live_roads(/*editable_only=*/true);
+  if (roads.empty()) {
+    return;
+  }
+  std::vector<SpanArm> spans;
+  const int wanted = chance(0.3) ? 2 : 1;
+  for (int attempt = 0; attempt < 4 && int(spans.size()) < wanted; ++attempt) {
+    const RoadId road_id = roads[static_cast<std::size_t>(rand_int(0, int(roads.size()) - 1))];
+    if (std::ranges::any_of(spans, [&](const SpanArm& span) { return span.road == road_id; })) {
+      continue;
+    }
+    const Road* road = document_.network().road(road_id);
+    if (road == nullptr || road->length < 4.0) {
+      continue;
+    }
+    const double s0 = rand_range(0.0, road->length - 2.0);
+    const double s1 = std::min(road->length, s0 + rand_range(1.0, 20.0));
+    spans.push_back(SpanArm{.road = road_id, .s_start = s0, .s_end = s1});
+  }
+  if (spans.empty()) {
+    return;
+  }
+  push(edit::create_span_junction(document_.network(), spans));
 }
 
 void SoakDriver::op_delete_junction() {

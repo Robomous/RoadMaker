@@ -237,7 +237,8 @@ PropertiesPanel::PropertiesPanel(Document& document,
       stopline_distance_spin_(new QDoubleSpinBox),
       stopline_flip_button_(new QPushButton(tr("Flip direction"))),
       stopline_reset_button_(new QPushButton(tr("Reset to default"))),
-      junction_group_(new QGroupBox(tr("Junction"), this)),
+      junction_group_(new QGroupBox(tr("Junction"), this)), junction_type_label_(new QLabel(this)),
+      junction_locked_check_(new QCheckBox(tr("Locked"), this)),
       junction_radius_spin_(new QDoubleSpinBox),
       junction_material_slot_(new SlotWidget(QStringLiteral("Materials"), this)),
       signal_group_(new QGroupBox(tr("Signal"), this)), signal_s_spin_(new QDoubleSpinBox),
@@ -533,6 +534,16 @@ PropertiesPanel::PropertiesPanel(Document& document,
       tr("Fillet radius applied to every corner of this junction that has no radius of its own. "
          "Type 0 to clear it and return the corners to their derived radii."));
   auto* junction_form = new QFormLayout(junction_group_);
+  // Junction state (p4-s4, issue #319). DERIVED, so it is read-only: the one
+  // thing the user can change is the lock, and that is the checkbox below.
+  junction_type_label_->setObjectName(QStringLiteral("junction_type_label"));
+  junction_form->addRow(tr("Type"), junction_type_label_);
+  junction_locked_check_->setObjectName(QStringLiteral("junction_locked_check"));
+  junction_locked_check_->setToolTip(
+      tr("A locked junction is skipped by the automatic regeneration loop, so hand-tuned "
+         "connections, corners and stop lines survive edits to its arms. Re-derive it explicitly "
+         "from the junction's context menu."));
+  junction_form->addRow(QString(), junction_locked_check_);
   ScrubLabel* junction_radius_scrub = install_scrub(
       new ScrubLabel(tr("Corner radius"), this),
       {.spin = junction_radius_spin_,
@@ -899,6 +910,17 @@ PropertiesPanel::PropertiesPanel(Document& document,
   // The junction-wide default commits on focus-out too, with the same skip
   // guard. Typing 0 (the "Derived" position) is the CLEAR gesture — but only
   // when a default is actually set: clearing nothing is a kernel error.
+  // The lock toggle is one command per click. The refresh path blocks this
+  // signal while seeding, so a programmatic state change never echoes back.
+  connect(junction_locked_check_, &QCheckBox::toggled, this, [this](bool locked) {
+    const JunctionId id = selection_.primary().junction;
+    const Junction* junction = document_.network().junction(id);
+    if (junction == nullptr || junction->locked == locked) {
+      return; // set_junction_locked refuses a no-op
+    }
+    push(edit::set_junction_locked(document_.network(), id, locked));
+  });
+
   connect(junction_radius_spin_, &QDoubleSpinBox::editingFinished, this, [this] {
     const JunctionId id = selection_.primary().junction;
     const Junction* junction = document_.network().junction(id);
@@ -1625,6 +1647,20 @@ void PropertiesPanel::refresh_stopline() {
 }
 
 void PropertiesPanel::refresh_junction(const Junction& junction) {
+  // State is DERIVED from arms/spans/locked (road/junction.hpp), never stored.
+  const bool span = !junction.spans.empty();
+  const bool foreign = !span && junction.arms.empty();
+  junction_type_label_->setText(span              ? tr("Span (virtual)")
+                                : foreign         ? tr("Foreign")
+                                : junction.locked ? tr("Locked")
+                                                  : tr("Automatic"));
+  {
+    const QSignalBlocker blocker(junction_locked_check_);
+    junction_locked_check_->setChecked(junction.locked || span);
+  }
+  // Only the two arm-based states can toggle: a span junction is locked
+  // structurally and a foreign one has no derivation to guard.
+  junction_locked_check_->setEnabled(!span && !foreign);
   {
     // Programmatic seeding must not echo a set/clear back through
     // editingFinished — the same guard every other editor here uses.

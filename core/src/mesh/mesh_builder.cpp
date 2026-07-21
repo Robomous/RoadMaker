@@ -558,6 +558,19 @@ void build_stopline_markings(const RoadNetwork& network,
                              const Road& road,
                              RoadId road_id,
                              RoadMesh& mesh) {
+  const auto paint = [&](const JunctionStopLineInfo& info) {
+    const ObjectFrame frame = pose_frame(road, info.s_center, info.t_center, 0.0);
+    SubMesh marking;
+    marking.material = LaneType::None;
+    marking.name = fmt::format("road {} stopline {}",
+                               road.odr_id,
+                               info.arm.contact == ContactPoint::End ? "end" : "start");
+    emit_object_quad(frame, info.thickness, info.span, marking);
+    if (!marking.indices.empty()) {
+      mesh.markings.push_back(std::move(marking));
+    }
+  };
+
   for (const ContactPoint contact : {ContactPoint::Start, ContactPoint::End}) {
     const RoadEnd arm{.road = road_id, .contact = contact};
     const std::optional<JunctionId> junction = edit::junction_at_end(network, arm);
@@ -565,20 +578,30 @@ void build_stopline_markings(const RoadNetwork& network,
       continue;
     }
     for (const JunctionStopLineInfo& info : junction_stoplines(network, *junction)) {
-      if (!(info.arm == arm)) {
-        continue;
-      }
-      const ObjectFrame frame = pose_frame(road, info.s_center, info.t_center, 0.0);
-      SubMesh marking;
-      marking.material = LaneType::None;
-      marking.name = fmt::format(
-          "road {} stopline {}", road.odr_id, contact == ContactPoint::End ? "end" : "start");
-      emit_object_quad(frame, info.thickness, info.span, marking);
-      if (!marking.indices.empty()) {
-        mesh.markings.push_back(std::move(marking));
+      if (info.arm == arm) {
+        paint(info);
       }
     }
   }
+
+  // Span (virtual) junction faces (p4-s4, issue #319): the road is never cut,
+  // so junction_at_end finds nothing and the owning junction has to be looked
+  // up through its span list instead. A road can carry several span junctions
+  // (two crosswalks), so every one of them is asked.
+  network.for_each_junction([&](JunctionId junction_id, const Junction& junction) {
+    const bool spans_this_road =
+        std::any_of(junction.spans.begin(), junction.spans.end(), [&](const SpanArm& span) {
+          return span.road == road_id;
+        });
+    if (!spans_this_road) {
+      return;
+    }
+    for (const JunctionStopLineInfo& info : junction_stoplines(network, junction_id)) {
+      if (info.arm.road == road_id) {
+        paint(info);
+      }
+    }
+  });
 }
 
 /// Placed props (trees/vegetation) a road owns, as INSTANCES of bundled prop

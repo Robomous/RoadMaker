@@ -74,6 +74,14 @@ inline constexpr std::string_view kRoadLinkAttributeUsage =
 inline constexpr std::string_view kJunctionNotOnlyTwo =
     "asam.net:xodr:1.9.0:junctions.common.not_only_two";
 
+/// "The @mainRoad, @orientation, @sStart and @sEnd attributes shall only be
+/// specified for virtual junctions." (1.9.0 §12.7 rules; 1.8.1 §12.7 states the
+/// same as prose — "The @mainRoad, @sStart, @sEnd, @orientation attributes
+/// shall only be valid for junctions of type virtual".) All four are @required
+/// on `<junction type="virtual">` (§12.7 Table 69 in both versions).
+inline constexpr std::string_view kJunctionVirtualAttributes =
+    "asam.net:xodr:1.5.0:junctions.common.virtual_junction_attributes";
+
 /// "Junction reference lines shall be defined by one <geometry> element. This
 /// <geometry> element shall have only one <line> element." (1.8.0, §12.9.)
 inline constexpr std::string_view kJunctionOneLineElement =
