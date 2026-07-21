@@ -12,6 +12,7 @@
 
 #include <gtest/gtest.h>
 
+#include <QCheckBox>
 #include <QDoubleSpinBox>
 #include <QItemSelectionModel>
 #include <QLabel>
@@ -23,6 +24,7 @@
 #include <QUndoStack>
 #include <algorithm>
 #include <array>
+#include <filesystem>
 #include <fstream>
 #include <stdexcept>
 #include <string>
@@ -1526,6 +1528,132 @@ TEST(PropertiesPanel, StopLineFlipButtonFlipsAndResetEnablesOnlyWhenAuthored) {
   EXPECT_FALSE(first_stopline(scene).authored);
   EXPECT_FALSE(first_stopline(scene).flipped);
   EXPECT_FALSE(reset->isEnabled());
+}
+
+// --- junction type + lock (p4-s4, issue #319) --------------------------------
+//
+// The Type row is DERIVED state, so the smoke test walks all four values; the
+// Locked checkbox is the one thing the user can change here, and it is enabled
+// exactly for the two states edit::set_junction_locked accepts.
+
+namespace {
+
+QLabel* junction_type(PropertiesPanel& panel) {
+  return panel.findChild<QLabel*>(QStringLiteral("junction_type_label"));
+}
+
+QCheckBox* junction_lock(PropertiesPanel& panel) {
+  return panel.findChild<QCheckBox*>(QStringLiteral("junction_locked_check"));
+}
+
+} // namespace
+
+TEST(PropertiesPanel, JunctionTypeRowFollowsTheDerivedState) {
+  CornerScene scene;
+  PropertiesPanel panel(scene.document, scene.selection);
+  QLabel* type = junction_type(panel);
+  QCheckBox* lock = junction_lock(panel);
+  ASSERT_NE(type, nullptr);
+  ASSERT_NE(lock, nullptr);
+
+  scene.selection.select({.junction = scene.junction});
+  EXPECT_EQ(type->text(), QStringLiteral("Automatic"));
+  EXPECT_FALSE(lock->isChecked());
+  EXPECT_TRUE(lock->isEnabled());
+
+  ASSERT_TRUE(scene.document.push_command(
+      edit::set_junction_locked(scene.document.network(), scene.junction, true)));
+  scene.selection.select({.junction = scene.junction});
+  EXPECT_EQ(type->text(), QStringLiteral("Locked"));
+  EXPECT_TRUE(lock->isChecked());
+  EXPECT_TRUE(lock->isEnabled());
+}
+
+TEST(PropertiesPanel, JunctionLockCheckboxPushesOneCommandAndNeverEchoes) {
+  CornerScene scene;
+  PropertiesPanel panel(scene.document, scene.selection);
+  QCheckBox* lock = junction_lock(panel);
+  ASSERT_NE(lock, nullptr);
+  scene.selection.select({.junction = scene.junction});
+
+  const int base = scene.document.undo_stack()->index();
+  lock->setChecked(true);
+  EXPECT_EQ(scene.document.undo_stack()->index(), base + 1);
+  EXPECT_TRUE(scene.document.network().junction(scene.junction)->locked);
+
+  // Re-seeding from the record must not push a second (no-op) command — the
+  // kernel refuses those, so an echo would show up as a rejected command.
+  scene.selection.select({.junction = scene.junction});
+  EXPECT_EQ(scene.document.undo_stack()->index(), base + 1);
+
+  lock->setChecked(false);
+  EXPECT_EQ(scene.document.undo_stack()->index(), base + 2);
+  EXPECT_FALSE(scene.document.network().junction(scene.junction)->locked);
+}
+
+TEST(PropertiesPanel, SpanJunctionShowsSpanAndCannotBeUnlocked) {
+  Document document;
+  SelectionModel selection{document};
+  ASSERT_TRUE(document.push_command(
+      edit::create_road({Waypoint{.x = 0.0, .y = 0.0}, Waypoint{.x = 200.0, .y = 0.0}},
+                        LaneProfile::two_lane_default(),
+                        "main")));
+  ASSERT_FALSE(document.last_dirty().roads.empty());
+  const std::array<SpanArm, 1> spans{
+      SpanArm{.road = document.last_dirty().roads.front(), .s_start = 40.0, .s_end = 60.0}};
+  ASSERT_TRUE(document.push_command(edit::create_span_junction(document.network(), spans)));
+  JunctionId span_junction;
+  document.network().for_each_junction([&](JunctionId id, const Junction& junction) {
+    if (!junction.spans.empty()) {
+      span_junction = id;
+    }
+  });
+  ASSERT_TRUE(span_junction.is_valid());
+
+  PropertiesPanel panel(document, selection);
+  selection.select({.junction = span_junction});
+  ASSERT_NE(junction_type(panel), nullptr);
+  EXPECT_EQ(junction_type(panel)->text(), QStringLiteral("Span (virtual)"));
+  EXPECT_TRUE(junction_lock(panel)->isChecked());
+  EXPECT_FALSE(junction_lock(panel)->isEnabled())
+      << "a 12.7 virtual junction is locked structurally";
+}
+
+TEST(PropertiesPanel, ForeignJunctionShowsForeignAndCannotBeLocked) {
+  // rm:arms is what makes a junction ours; strip it and the reload produces
+  // exactly what someone else's file gives us.
+  CornerScene source;
+  auto written = write_xodr(source.document.network());
+  ASSERT_TRUE(written.has_value());
+  std::string text = *written;
+  const std::string arms = R"(<userData code="rm:arms")";
+  for (std::size_t at = text.find(arms); at != std::string::npos; at = text.find(arms, at)) {
+    const std::size_t end = text.find("/>", at);
+    ASSERT_NE(end, std::string::npos);
+    text.erase(at, end + 2 - at);
+  }
+  QTemporaryDir dir;
+  ASSERT_TRUE(dir.isValid());
+  const std::filesystem::path path =
+      std::filesystem::path(dir.path().toStdString()) / "foreign.xodr";
+  {
+    std::ofstream out(path);
+    out << text;
+  }
+
+  Document document;
+  SelectionModel selection{document};
+  ASSERT_TRUE(document.load(path));
+  JunctionId foreign;
+  document.network().for_each_junction([&](JunctionId id, const Junction&) { foreign = id; });
+  ASSERT_TRUE(foreign.is_valid());
+  ASSERT_TRUE(document.network().junction(foreign)->arms.empty());
+
+  PropertiesPanel panel(document, selection);
+  selection.select({.junction = foreign});
+  EXPECT_EQ(junction_type(panel)->text(), QStringLiteral("Foreign"));
+  EXPECT_FALSE(junction_lock(panel)->isChecked());
+  EXPECT_FALSE(junction_lock(panel)->isEnabled()) << "there is no automatic derivation to guard";
 }
 
 } // namespace roadmaker::editor
