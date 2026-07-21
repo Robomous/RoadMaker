@@ -17,6 +17,7 @@
 #include <optional>
 
 #include "app/actions.hpp"
+#include "app/elided_label.hpp"
 #include "app/settings.hpp"
 #include "app/welcome_widget.hpp"
 #include "document/autosave.hpp"
@@ -224,10 +225,12 @@ private:
   ViewportWidget* viewport_;
   QToolBar* options_bar_ = nullptr;
   QLabel* options_caption_ = nullptr;
-  QLabel* options_hint_ = nullptr;
   QToolButton* template_button_ = nullptr;
-  /// Handle returned by addWidget(template_button_) — visibility toggles go
-  /// through the action, not the widget (QToolBar owns the layout).
+  /// Handles returned by addWidget() — visibility toggles go through the
+  /// action, not the widget (QToolBar owns the layout). Both flip together so
+  /// the row's content is either "Template: <dropdown>" or nothing; nothing in
+  /// any toolbar may have tool-dependent width (issue #332).
+  QAction* options_caption_action_ = nullptr;
   QAction* template_action_ = nullptr;
   QDockWidget* scene_dock_;
   QDockWidget* library_dock_;
@@ -239,8 +242,9 @@ private:
   QLabel* status_hover_;
   /// Persistent per-tool instruction line (what click/drag/modifiers do right
   /// now). Distinct from the transient status_message channel, which keeps its
-  /// 5 s showMessage lane for state-dependent guidance and results.
-  QLabel* status_instruction_ = nullptr;
+  /// 5 s showMessage lane for state-dependent guidance and results. Elides
+  /// rather than widen the bar — its length varies with the tool.
+  ElidedLabel* status_instruction_ = nullptr;
   QLabel* status_entities_;
 
   /// The two generated toolbar rows (p1-s5): row 1 authors the network, row 2

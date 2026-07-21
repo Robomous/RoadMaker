@@ -124,7 +124,6 @@ QToolTip { background: @bg2; color: @text; border: 1px solid @borderStrong;
            padding: 4px 6px; }
 
 QLabel#toolOptionCaption { color: @textSec; font-weight: 600; }
-QLabel#toolOptionHint { color: @textSec; }
 
 #welcomeRoot { background: @bg0; }
 QPushButton#welcomePrimary { background: @accent; color: @onAccent;

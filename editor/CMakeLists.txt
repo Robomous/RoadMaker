@@ -52,6 +52,7 @@ add_library(roadmaker_editor_lib STATIC
   src/app/shortcut_registry.cpp
   src/app/context_menu.cpp
   src/app/crash_handler.cpp
+  src/app/elided_label.cpp
   src/app/icons.cpp
   src/app/log_setup.cpp
   src/app/main_window.cpp

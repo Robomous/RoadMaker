@@ -781,9 +781,9 @@ void MainWindow::build_tool_options_bar() {
   options_bar_->setIconSize(QSize(16, 16));
   options_bar_->setMovable(false);
 
-  options_caption_ = new QLabel(options_bar_);
+  options_caption_ = new QLabel(tr("Template:"), options_bar_);
   options_caption_->setObjectName(QStringLiteral("toolOptionCaption"));
-  options_bar_->addWidget(options_caption_);
+  options_caption_action_ = options_bar_->addWidget(options_caption_);
 
   template_button_ = new QToolButton(options_bar_);
   template_button_->setPopupMode(QToolButton::InstantPopup);
@@ -805,10 +805,6 @@ void MainWindow::build_tool_options_bar() {
           [mirror_template](QAction* action) { mirror_template(action); });
   template_action_ = options_bar_->addWidget(template_button_);
 
-  options_hint_ = new QLabel(options_bar_);
-  options_hint_->setObjectName(QStringLiteral("toolOptionHint"));
-  options_bar_->addWidget(options_hint_);
-
   connect(&tool_manager_, &ToolManager::active_changed, this, &MainWindow::update_tool_options);
   update_tool_options();
 }
@@ -816,24 +812,28 @@ void MainWindow::build_tool_options_bar() {
 void MainWindow::update_tool_options() {
   const QAction* active = actions_->tool_group->checkedAction();
   const bool create_road = active == actions_->tool_create_road;
-  // Create Road gets its option control (labeled template dropdown); every
-  // other tool shows its one-line usage as this row's content — the hint
-  // text already leads with the tool's name.
-  options_caption_->setText(create_road ? tr("Template:") : QString());
+  // Create Road gets its option control (labeled template dropdown); tools
+  // without options leave the row empty rather than fill it with prose. A
+  // tool-dependent label used to live here and its changing width shifted the
+  // buttons of the row above on every tool switch (issue #332) — the per-tool
+  // instruction belongs to the status bar and the viewport hint, both of which
+  // sit clear of the toolbars.
+  options_caption_action_->setVisible(create_road);
   template_action_->setVisible(create_road);
-  options_hint_->setText(create_road || active == nullptr ? QString() : active->toolTip());
 }
 
 void MainWindow::build_status_bar() {
-  statusBar()->addWidget(status_hover_, 1);
-  // PERMANENT, not a normal widget: showMessage() hides the normal indications
-  // while a transient message is up, and the instruction must survive that —
-  // it answers "what can I do with this tool", which stays true while results
-  // and refusals come and go. Being permanent also lays it out clear of the
-  // message, so the two can never paint over each other.
-  status_instruction_ = new QLabel(this);
+  // Leftmost, with the stretch: the instruction is the bar's primary content
+  // ("what can I do with this tool"), so it gets the stable left edge and the
+  // slack. It is a NORMAL widget, so a transient showMessage() covers it for
+  // its 5 s and Qt puts it back on clearMessage() — the instruction is still
+  // true underneath, and the viewport corner hint carries it meanwhile.
+  // Elided, because the sentence length varies per tool and the bar must not
+  // resize with it (issue #332).
+  status_instruction_ = new ElidedLabel(this);
   status_instruction_->setObjectName(QStringLiteral("status_instruction"));
-  statusBar()->addPermanentWidget(status_instruction_);
+  statusBar()->addWidget(status_instruction_, 1);
+  statusBar()->addWidget(status_hover_);
   // Follow the active tool: its instruction() is the ONE source for "what does
   // this tool do", shown both here and as the viewport corner hint (issue #103
   // — during an interaction the user's eyes are on the viewport). Tools used to
@@ -842,7 +842,7 @@ void MainWindow::build_status_bar() {
   const auto show_instruction = [this] {
     const Tool* tool = tool_manager_.active();
     const QString text = tool == nullptr ? QString() : tool->instruction();
-    status_instruction_->setText(text);
+    status_instruction_->set_full_text(text);
     viewport_->set_hint(text);
   };
   connect(&tool_manager_, &ToolManager::active_changed, this, show_instruction);
