@@ -7,6 +7,7 @@
 #include "roadmaker/geometry/road_intersection.hpp"
 #include "roadmaker/mesh/junction_corners.hpp"
 #include "roadmaker/mesh/junction_stoplines.hpp"
+#include "roadmaker/mesh/junction_surface_spans.hpp"
 #include "roadmaker/road/authoring.hpp"
 #include "roadmaker/road/network.hpp"
 #include "roadmaker/tol.hpp"
@@ -4111,6 +4112,125 @@ reset_stopline(const RoadNetwork& network, JunctionId junction_id, RoadEnd arm) 
   }
   after.stoplines.erase(entry);
   return stopline_value_command(kName, junction_id, arm.road, *before, std::move(after));
+}
+
+// --- junction floor surface spans (p4-s5, #320) ------------------------------
+
+namespace {
+
+/// Shared front half of the surface-span commands: validates the junction id
+/// and that `road` names a span the junction currently HAS. Solvability comes
+/// from junction_surface_spans(), the same query the mesher and the panel read,
+/// so tool, panel and command can never disagree about what a span is — and a
+/// span (virtual) junction, which has no floor and therefore no spans, is
+/// refused by the same test rather than by a special case.
+Expected<Junction> surface_span_edit_context(const RoadNetwork& network,
+                                             JunctionId junction_id,
+                                             RoadId road,
+                                             std::string_view name) {
+  const Junction* junction = network.junction(junction_id);
+  if (junction == nullptr) {
+    return make_error(ErrorCode::InvalidArgument, "stale junction id");
+  }
+  const std::vector<JunctionSurfaceSpanInfo> spans = junction_surface_spans(network, junction_id);
+  const bool solvable = std::ranges::any_of(
+      spans, [&](const JunctionSurfaceSpanInfo& info) { return info.road == road; });
+  if (!solvable) {
+    return make_error(
+        ErrorCode::InvalidArgument,
+        fmt::format("{}: the given road is not a surface span of junction {}", name, junction->odr_id));
+  }
+  return *junction;
+}
+
+std::vector<SurfaceSpan>::iterator find_surface_span(std::vector<SurfaceSpan>& spans, RoadId road) {
+  return std::ranges::find_if(spans, [&](const SurfaceSpan& record) { return record.road == road; });
+}
+
+/// True when the record has fallen back to pure derivation — the writer's drop
+/// rule and both commands' "erase the entry" condition, which is what keeps
+/// toggle-twice byte-identical to no edit at all.
+bool surface_span_authors_nothing(const SurfaceSpan& record) {
+  return record.included && record.sort_index == 0;
+}
+
+/// The effective values of `road`'s span, defaults included. Rejecting a no-op
+/// has to compare against these, not against the presence of a record.
+SurfaceSpan effective_surface_span(const Junction& junction, RoadId road) {
+  const auto entry = std::ranges::find_if(
+      junction.surface_spans, [&](const SurfaceSpan& record) { return record.road == road; });
+  return entry == junction.surface_spans.end() ? SurfaceSpan{.road = road} : *entry;
+}
+
+/// Applies `mutate` to `road`'s record (creating it when absent), erases it if
+/// the mutation left it authoring nothing, and wraps the result. The floor is
+/// the only thing that changes, and the turn set is untouched.
+template <typename Mutate>
+std::unique_ptr<Command> surface_span_value_command(std::string_view name,
+                                                    JunctionId junction_id,
+                                                    RoadId road,
+                                                    const Junction& before,
+                                                    Mutate mutate) {
+  Junction after = before;
+  auto entry = find_surface_span(after.surface_spans, road);
+  if (entry == after.surface_spans.end()) {
+    after.surface_spans.push_back(SurfaceSpan{.road = road});
+    entry = after.surface_spans.end() - 1;
+  }
+  mutate(*entry);
+  if (surface_span_authors_nothing(*entry)) {
+    after.surface_spans.erase(entry);
+  }
+  return corner_value_command(name, junction_id, before, std::move(after));
+}
+
+} // namespace
+
+std::unique_ptr<Command> set_surface_span_included(const RoadNetwork& network,
+                                                   JunctionId junction_id,
+                                                   RoadId road,
+                                                   bool included) {
+  static constexpr std::string_view kName = "Set Span Samples";
+  Expected<Junction> before = surface_span_edit_context(network, junction_id, road, kName);
+  if (!before) {
+    return invalid_command(std::string(kName), before.error());
+  }
+  if (effective_surface_span(*before, road).included == included) {
+    return invalid_command(std::string(kName),
+                           Error{.code = ErrorCode::InvalidArgument,
+                                 .message = "the span's samples are already in that state"});
+  }
+  return surface_span_value_command(
+      kName, junction_id, road, *before, [included](SurfaceSpan& record) {
+        record.included = included;
+      });
+}
+
+std::unique_ptr<Command> set_surface_span_sort_index(const RoadNetwork& network,
+                                                     JunctionId junction_id,
+                                                     RoadId road,
+                                                     int sort_index) {
+  static constexpr std::string_view kName = "Set Span Sort Index";
+  if (sort_index > kMaxSurfaceSpanSortIndex || sort_index < -kMaxSurfaceSpanSortIndex) {
+    return invalid_command(
+        std::string(kName),
+        Error{.code = ErrorCode::InvalidArgument,
+              .message = fmt::format("the sort index must lie within +/-{}",
+                                     kMaxSurfaceSpanSortIndex)});
+  }
+  Expected<Junction> before = surface_span_edit_context(network, junction_id, road, kName);
+  if (!before) {
+    return invalid_command(std::string(kName), before.error());
+  }
+  if (effective_surface_span(*before, road).sort_index == sort_index) {
+    return invalid_command(std::string(kName),
+                           Error{.code = ErrorCode::InvalidArgument,
+                                 .message = "the span already has that sort index"});
+  }
+  return surface_span_value_command(
+      kName, junction_id, road, *before, [sort_index](SurfaceSpan& record) {
+        record.sort_index = sort_index;
+      });
 }
 
 // --- parametric intersection assemblies -------------------------------------
