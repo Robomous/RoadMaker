@@ -3616,14 +3616,14 @@ std::unique_ptr<Command> merge_junctions(const RoadNetwork& network,
       }
     }
     {
-      Junction& survivor = *target.junction(survivor_id);
+      Junction& kept = *target.junction(survivor_id);
       // Authored records carry over verbatim: their RoadEnd keys name arms that
       // survive the merge, so nothing goes dormant.
-      survivor.corners.insert(survivor.corners.end(), corners.begin(), corners.end());
-      survivor.stoplines.insert(survivor.stoplines.end(), stoplines.begin(), stoplines.end());
+      kept.corners.insert(kept.corners.end(), corners.begin(), corners.end());
+      kept.stoplines.insert(kept.stoplines.end(), stoplines.begin(), stoplines.end());
       // A hand-authored merge is not something the automatic loop should
       // re-derive away.
-      survivor.locked = true;
+      kept.locked = true;
     }
     return retarget(target, created);
   };
