@@ -32,6 +32,7 @@ add_executable(roadmaker_core_tests
   test_junction_lock_persistence.cpp
   test_surface_span_operations.cpp
   test_surface_span_persistence.cpp
+  test_maneuver_persistence.cpp
   test_edit_stack.cpp
   test_connection.cpp
   test_edit_operations.cpp

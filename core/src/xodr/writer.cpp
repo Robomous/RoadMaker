@@ -10,6 +10,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstddef>
 #include <cstdlib>
 #include <fstream>
 #include <map>
@@ -1474,6 +1475,90 @@ void write_junction(pugi::xml_node root,
     if (!value.empty()) {
       pugi::xml_node user_data = junction_node.append_child("userData");
       user_data.append_attribute("code").set_value("rm:floor");
+      user_data.append_attribute("value").set_value(value.c_str());
+    }
+  }
+
+  // Authored maneuver overrides (p4-s6, issue #227). ASAM OpenDRIVE 1.9.0
+  // §12.2 Table 56 gives <connection> exactly @connectingRoad, @contactPoint,
+  // @id and @incomingRoad, and §12.4/§12.4.2 describe a connecting road purely
+  // by its geometry and lane linkage — there is no turn-type, no endpoint
+  // slide and no control-point carrier anywhere in the standard. The records
+  // are therefore Layer 1 alone (ADR-0008), riding their own sibling code
+  // after rm:floor. Format: ";"-joined entries, each
+  //   "roadOdrId[:lock=1][:turn=left|straight|right|uturn]
+  //    [:so=<num>][:eo=<num>][:pts=x,y|x,y|…]"
+  // — points use ',' within a point and '|' between points so no separator
+  // collides with the ';'/':' the value is already joined by. Every field is
+  // omitted at its default and an entry that authors nothing is dropped (the
+  // AUTHORS-NOTHING ⇒ ERASE rule of Maneuver), so a junction that predates the
+  // feature re-exports byte-identically. Stale road references are dropped
+  // like stale arms; storage order is kept so save→load→save is byte-identical.
+  //
+  // A span (virtual) junction has no connections, so it never carries these.
+  if (!span && !junction.maneuvers.empty()) {
+    std::string value;
+    for (const Maneuver& entry : junction.maneuvers) {
+      const Road* road = network.road(entry.road);
+      if (road == nullptr) {
+        continue; // stale maneuver references are not written
+      }
+      if (!entry.locked && !entry.turn_type && !entry.start_offset && !entry.end_offset &&
+          entry.control_points.empty()) {
+        continue; // nothing authored — the derivation already says it
+      }
+      if (!value.empty()) {
+        value += ';';
+      }
+      value += road->odr_id;
+      if (entry.locked) {
+        value += ":lock=1";
+      }
+      if (entry.turn_type) {
+        value += ":turn=";
+        switch (*entry.turn_type) {
+        case TurnType::Left:
+          value += "left";
+          break;
+        case TurnType::Straight:
+          value += "straight";
+          break;
+        case TurnType::Right:
+          value += "right";
+          break;
+        case TurnType::UTurn:
+          value += "uturn";
+          break;
+        }
+      }
+      if (entry.start_offset) {
+        value += ":so=";
+        value += num(*entry.start_offset);
+      }
+      if (entry.end_offset) {
+        value += ":eo=";
+        value += num(*entry.end_offset);
+      }
+      if (!entry.control_points.empty()) {
+        // Never write what the reader would refuse: the command layer already
+        // holds authors to kMaxManeuverControlPoints, so a longer list can only
+        // come from a hand-built network and is truncated rather than emitted
+        // as a value the very next load would drop whole.
+        const std::size_t count = std::min(entry.control_points.size(), kMaxManeuverControlPoints);
+        value += ":pts=";
+        for (std::size_t i = 0; i < count; ++i) {
+          if (i != 0) {
+            value += '|';
+          }
+          value += num(entry.control_points[i].x);
+          value += ',';
+          value += num(entry.control_points[i].y);
+        }
+      }
+    }
+    if (!value.empty()) {
+      pugi::xml_node user_data = junction_node.append_child("userData");
+      user_data.append_attribute("code").set_value("rm:maneuver");
       user_data.append_attribute("value").set_value(value.c_str());
     }
   }
