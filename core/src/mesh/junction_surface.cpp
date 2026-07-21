@@ -25,6 +25,7 @@
 
 #include "fill_backend.hpp"
 #include "junction_corner_detail.hpp"
+#include "junction_fill_spans.hpp"
 #include "mesh_detail.hpp"
 
 namespace roadmaker {
@@ -39,6 +40,9 @@ using junction_corner_detail::corner_faces;
 using junction_corner_detail::CornerFace;
 using junction_corner_detail::CornerSolution;
 using junction_corner_detail::solve_corner;
+
+using junction_fill_spans::collect_fill_spans;
+using junction_fill_spans::JunctionFillSpan;
 
 using mesh_detail::boundary_offsets;
 using mesh_detail::lateral_point;
@@ -376,26 +380,21 @@ SubMesh build_junction_surface(const RoadNetwork& network,
   std::vector<Vec3> centerline;
   double z_sum = 0.0;
   std::size_t z_count = 0;
-  for (const RoadId road_id : connecting_roads(junction)) {
-    const Road* road = network.road(road_id);
-    if (road == nullptr || road->plan_view.empty() || road->sections.empty()) {
-      continue;
-    }
-    RoadContribution contribution = build_contribution(network, *road, sampling);
-    // The ring is built left-border-forward + right-border-reversed, which
-    // winds CLOCKWISE — fine for NonZero union, but InflatePaths would
-    // erode it (hole semantics). The weld inflation needs CCW.
-    if (Clipper2Lib::Area(contribution.footprint) < 0.0) {
-      std::ranges::reverse(contribution.footprint);
-    }
-    footprints.push_back(std::move(contribution.footprint));
-    for (const Vec3& p : contribution.border) {
+  // The per-road grouping (p4-s5, issue #320) lives in junction_fill_spans so
+  // the public junction_surface_spans() query and the mesher share one
+  // definition of a span; flattening here keeps the legacy input order exactly.
+  const std::vector<JunctionFillSpan> spans = collect_fill_spans(network, junction, sampling);
+  for (const JunctionFillSpan& span : spans) {
+    footprints.push_back(span.contribution.footprint);
+    for (const Vec3& p : span.contribution.border) {
       z_sum += p.z;
       ++z_count;
     }
-    border.insert(border.end(), contribution.border.begin(), contribution.border.end());
-    centerline.insert(
-        centerline.end(), contribution.centerline.begin(), contribution.centerline.end());
+    border.insert(
+        border.end(), span.contribution.border.begin(), span.contribution.border.end());
+    centerline.insert(centerline.end(),
+                      span.contribution.centerline.begin(),
+                      span.contribution.centerline.end());
   }
 
   // 1b. Joint quads (03 §1): each arm's full end cross-section, extruded
