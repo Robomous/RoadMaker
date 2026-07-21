@@ -1,7 +1,9 @@
-"""Add crosswalks, stop lines, lane arrows and centre lines to a junction's arms.
+"""Add crosswalks, lane arrows and centre lines to a junction's arms.
 
-Uses edit.junction_crosswalks, edit.junction_stop_lines, edit.junction_lane_arrows
-and edit.junction_center_marks.
+Uses edit.junction_crosswalks, edit.junction_lane_arrows and
+edit.junction_center_marks. Stop lines are NOT here: since p4-s3 (#318) every
+arm already has one — they are derived, meshed and exported without anything
+being authored. See junction_stoplines.py for querying and editing them.
 
 This is the kernel geometry behind the editor's junction "Add crosswalks to all
 arms" action: for each distinct arm road, derive one <object type="crosswalk">
@@ -51,11 +53,15 @@ def main() -> int:
         )
         stack.push(network, rm.edit.add_object(network, road, crosswalk))
 
-    # A stop line behind each arm's crosswalk, spanning the approach lanes.
-    stop_lines = rm.edit.junction_stop_lines(network, junction)
-    print(f"authoring {len(stop_lines)} stop lines")
-    for road, stop_line in stop_lines:
-        stack.push(network, rm.edit.add_object(network, road, stop_line))
+    # No stop lines to author: every arm already has a derived one. Link each
+    # crosswalk to its arm's line so the two share a setback and a provenance.
+    for info in rm.junction_stoplines(network, junction):
+        stack.push(
+            network,
+            rm.edit.set_stopline_distance(
+                network, junction, info.arm, info.distance, crosswalk_link=""
+            ),
+        )
 
     # An arrow on each approach lane, pointing into the junction. Without a
     # `glyph` callable every lane gets arrowStraight; pass one to choose the

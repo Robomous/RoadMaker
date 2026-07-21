@@ -27,20 +27,22 @@ namespace roadmaker::editor {
 /// two agree on where an approach is in reach.
 inline constexpr double kCrosswalkSnapThreshold = 12.0;
 
-/// The crosswalk + stop-line pair to place on ONE junction approach, filtered
-/// from the all-arms generators. Calls edit::junction_crosswalks and
-/// edit::junction_stop_lines against `network`, keeps only the objects whose
-/// owning road is `arm_road`, then re-numbers the combined batch so the two
-/// adds stay id_unique_in_class-valid: both generators seed their odr ids from
-/// the same unmutated network, so a crosswalk and a stop line can otherwise
-/// share an id. Returns {owning road, object} pairs ready for edit::add_object
-/// (the caller adds them as ONE undo macro). Empty when the arm has no crossing
-/// or the junction is stale/foreign.
-[[nodiscard]] std::vector<std::pair<RoadId, Object>>
-crosswalk_pair_for_arm(const RoadNetwork& network,
-                       JunctionId junction,
-                       RoadId arm_road,
-                       const edit::CrosswalkParams& params);
+/// The crosswalk to place on ONE junction approach, filtered from the all-arms
+/// generator: calls edit::junction_crosswalks against `network` and keeps the
+/// object whose owning road is `arm_road`. Returns a {owning road, object} pair
+/// ready for edit::add_object; nullopt when the arm has no crossing or the
+/// junction is stale/foreign.
+///
+/// The companion stop line is NOT an object any more (p4-s3, #318): the arm
+/// already has a derived one, and the caller links the two by pushing
+/// edit::set_stopline_distance inside the same undo macro. That also retires
+/// the odr-id re-numbering this helper used to do — with a single generator
+/// left there is no second batch to collide with.
+[[nodiscard]] std::optional<std::pair<RoadId, Object>>
+crosswalk_for_arm(const RoadNetwork& network,
+                  JunctionId junction,
+                  RoadId arm_road,
+                  const edit::CrosswalkParams& params);
 
 /// A junction approach resolved from a world-space cursor: the junction, the
 /// arm (approach) road, the world point where that arm meets the junction, and
@@ -48,6 +50,9 @@ crosswalk_pair_for_arm(const RoadNetwork& network,
 struct ArmHit {
   JunctionId junction;
   RoadId arm_road;
+  /// Which end of `arm_road` touches the junction — with `arm_road` this is the
+  /// RoadEnd that identifies the approach's stop line (p4-s3, #318).
+  ContactPoint contact = ContactPoint::End;
   double anchor_x = 0.0;
   double anchor_y = 0.0;
   double heading = 0.0; ///< [rad] into the junction at the arm end

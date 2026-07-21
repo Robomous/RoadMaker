@@ -6,42 +6,21 @@
 
 #include <cmath>
 #include <numbers>
-#include <set>
-#include <string>
 
 #include "viewport/picking.hpp"
 
 namespace roadmaker::editor {
 
-std::vector<std::pair<RoadId, Object>> crosswalk_pair_for_arm(const RoadNetwork& network,
-                                                              JunctionId junction,
-                                                              RoadId arm_road,
-                                                              const edit::CrosswalkParams& params) {
-  std::vector<std::pair<RoadId, Object>> result;
-  const auto keep_arm = [&](std::vector<std::pair<RoadId, Object>> src) {
-    for (auto& [road, object] : src) {
-      if (road == arm_road) {
-        result.emplace_back(road, std::move(object));
-      }
+std::optional<std::pair<RoadId, Object>> crosswalk_for_arm(const RoadNetwork& network,
+                                                           JunctionId junction,
+                                                           RoadId arm_road,
+                                                           const edit::CrosswalkParams& params) {
+  for (auto& [road, object] : edit::junction_crosswalks(network, junction, params)) {
+    if (road == arm_road) {
+      return std::pair<RoadId, Object>{road, std::move(object)};
     }
-  };
-  keep_arm(edit::junction_crosswalks(network, junction, params));
-  keep_arm(edit::junction_stop_lines(network, junction, {}));
-
-  // Both generators seed their odr ids from the same unmutated network, so the
-  // crosswalk and the stop line can share an id; re-number the combined batch
-  // against every existing object so the two adds stay id_unique_in_class-valid.
-  std::set<std::string> taken;
-  network.for_each_object([&](ObjectId, const Object& object) { taken.insert(object.odr_id); });
-  int next = 1;
-  for (auto& [road, object] : result) {
-    while (taken.contains(std::to_string(next))) {
-      ++next;
-    }
-    object.odr_id = std::to_string(next);
-    taken.insert(object.odr_id);
   }
-  return result;
+  return std::nullopt;
 }
 
 std::optional<ArmHit>
@@ -91,6 +70,7 @@ nearest_junction_arm(const RoadNetwork& network, double x, double y, double thre
     best_dist = dist;
     best = ArmHit{.junction = *junction,
                   .arm_road = id,
+                  .contact = *contact,
                   .anchor_x = anchor[0],
                   .anchor_y = anchor[1],
                   .heading = into};

@@ -483,64 +483,6 @@ std::vector<std::pair<RoadId, Object>> junction_crosswalks(const RoadNetwork& ne
   return out;
 }
 
-std::vector<std::pair<RoadId, Object>>
-junction_stop_lines(const RoadNetwork& network, JunctionId junction, const StopLineParams& params) {
-  std::vector<std::pair<RoadId, Object>> out;
-  const Junction* record = network.junction(junction);
-  if (record == nullptr) {
-    return out;
-  }
-
-  OdrIdReserver ids(network);
-  for (const RoadId arm : distinct_arms(*record)) {
-    const Road* road = network.road(arm);
-    if (road == nullptr || road->plan_view.empty()) {
-      continue;
-    }
-    const std::optional<ContactPoint> facing = facing_end(network, arm, junction);
-    if (!facing.has_value()) {
-      continue;
-    }
-    const RoadEnd end{.road = arm, .contact = *facing};
-    const Expected<ContactState> contact = contact_state(network, end);
-    if (!contact) {
-      continue;
-    }
-
-    // Only the APPROACH lanes (leading into the junction) — one travel direction.
-    double t_min = 0.0;
-    double t_max = 0.0;
-    bool any = false;
-    for (const ContactLane& lane : driving_lanes_at(network, end, *contact, /*incoming=*/true)) {
-      const double outer = lane.inner_t + (lane.odr_id > 0 ? lane.width : -lane.width);
-      const double lo = std::min(lane.inner_t, outer);
-      const double hi = std::max(lane.inner_t, outer);
-      t_min = any ? std::min(t_min, lo) : lo;
-      t_max = any ? std::max(t_max, hi) : hi;
-      any = true;
-    }
-    if (!any || (t_max - t_min) < tol::kLength) {
-      continue; // no approach lanes
-    }
-
-    const double length = road->plan_view.length();
-    const double half = params.thickness_m / 2.0;
-    const double s =
-        *facing == ContactPoint::Start ? params.setback_m + half : length - params.setback_m - half;
-
-    Object stop_line;
-    stop_line.odr_id = ids.next();
-    stop_line.type_str = "roadMark"; // a road-mark object (type stays None)
-    stop_line.subtype = "signalLines";
-    stop_line.s = std::clamp(s, 0.0, length);
-    stop_line.t = (t_min + t_max) / 2.0;
-    stop_line.length = params.thickness_m; // thin, along the road (u, hdg = 0)
-    stop_line.width = t_max - t_min;       // across the approach lanes (v)
-    out.emplace_back(arm, std::move(stop_line));
-  }
-  return out;
-}
-
 std::vector<std::pair<RoadId, Object>> junction_lane_arrows(const RoadNetwork& network,
                                                             JunctionId junction,
                                                             const LaneArrowParams& params) {

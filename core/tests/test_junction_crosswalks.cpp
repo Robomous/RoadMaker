@@ -196,52 +196,11 @@ TEST(JunctionCrosswalks, StaleJunctionYieldsNone) {
   EXPECT_TRUE(roadmaker::edit::junction_crosswalks(fx.network, fx.junction).empty());
 }
 
-TEST(JunctionStopLines, OnePerArmAcrossApproachLanesOnly) {
-  ArmedJunction fx;
-  const auto lines = roadmaker::edit::junction_stop_lines(fx.network, fx.junction);
-  ASSERT_EQ(lines.size(), 3U); // one per arm
-
-  const auto crosswalks = roadmaker::edit::junction_crosswalks(fx.network, fx.junction);
-  ASSERT_EQ(crosswalks.size(), 3U);
-
-  std::set<std::string> ids;
-  for (const auto& [road, line] : lines) {
-    EXPECT_EQ(line.type_str, "roadMark");
-    EXPECT_EQ(line.subtype, "signalLines");
-    ASSERT_TRUE(line.length.has_value());
-    EXPECT_DOUBLE_EQ(*line.length, 0.3); // thin along the road
-    ASSERT_TRUE(line.width.has_value());
-    EXPECT_GT(*line.width, 2.0); // spans the approach lane(s)
-    // Approach lanes are one travel direction, so the line is narrower than a
-    // crosswalk that spans the full driving width (~7 m).
-    EXPECT_LT(*line.width, *crosswalks.front().second.length);
-    const auto* road_ptr = fx.network.road(road);
-    ASSERT_NE(road_ptr, nullptr);
-    EXPECT_GE(line.s, 0.0);
-    EXPECT_LE(line.s, road_ptr->plan_view.length());
-    ids.insert(line.odr_id);
-  }
-  EXPECT_EQ(ids.size(), 3U); // unique ids
-}
-
-TEST(JunctionStopLines, AddedObjectsMeshAsStopQuads) {
-  ArmedJunction fx;
-  auto lines = roadmaker::edit::junction_stop_lines(fx.network, fx.junction);
-  ASSERT_FALSE(lines.empty());
-  for (auto& [road, line] : lines) {
-    ASSERT_TRUE(roadmaker::edit::add_object(fx.network, road, line)->apply(fx.network).has_value());
-  }
-  const roadmaker::NetworkMesh mesh = roadmaker::build_network_mesh(fx.network);
-  int stop_meshes = 0;
-  for (const auto& road : mesh.roads) {
-    for (const auto& marking : road.markings) {
-      if (marking.name.find("stop line") != std::string::npos && !marking.indices.empty()) {
-        ++stop_meshes;
-      }
-    }
-  }
-  EXPECT_EQ(stop_meshes, 3);
-}
+// The two JunctionStopLines cases that used to live here are gone with the
+// edit::junction_stop_lines generator they exercised (p4-s3, #318). Stop lines
+// are now a derived entity, not an object batch: their derivation, authoring,
+// persistence and meshing are covered by test_junction_stoplines.cpp,
+// test_stopline_operations.cpp and test_stopline_persistence.cpp.
 
 TEST(JunctionLaneArrows, OnePerApproachLanePointingIntoTheJunction) {
   ArmedJunction fx;

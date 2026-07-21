@@ -1,15 +1,16 @@
 #include "tools/crosswalk_stop_line_tool.hpp"
 
 #include "roadmaker/edit/operations.hpp"
+#include "roadmaker/mesh/junction_stoplines.hpp"
 #include "roadmaker/road/network.hpp"
 #include "roadmaker/road/object.hpp"
 
 #include <QUndoStack>
 #include <cmath>
 #include <numbers>
+#include <optional>
 #include <string>
 #include <utility>
-#include <vector>
 
 #include "document/crosswalk_placement.hpp"
 #include "document/document.hpp"
@@ -67,30 +68,29 @@ bool CrosswalkStopLineTool::mouse_release(const ToolEvent& event) {
   }
   const edit::CrosswalkParams params =
       params_provider_ ? params_provider_() : edit::CrosswalkParams{};
-  std::vector<std::pair<RoadId, Object>> pair =
-      crosswalk_pair_for_arm(document_.network(), arm->junction, arm->arm_road, params);
-  if (pair.empty()) {
+  std::optional<std::pair<RoadId, Object>> placed =
+      crosswalk_for_arm(document_.network(), arm->junction, arm->arm_road, params);
+  if (!placed.has_value()) {
     emit toast_requested(tr("That approach has no lanes to cross"), ToastSeverity::Warning);
     return true;
   }
 
-  // The crosswalk carries a known odr_id (assigned by crosswalk_pair_for_arm);
-  // remember it so the placed instance can be selected once the adds apply.
-  RoadId crosswalk_road;
-  std::string crosswalk_odr;
-  for (const auto& [road, object] : pair) {
-    if (object.type == ObjectType::Crosswalk) {
-      crosswalk_road = road;
-      crosswalk_odr = object.odr_id;
-    }
-  }
+  // The crosswalk carries a known odr_id (assigned by the generator); remember
+  // it so the placed instance can be selected once the add applies, and so the
+  // stop-line record can point back at it.
+  const RoadId crosswalk_road = placed->first;
+  const std::string crosswalk_odr = placed->second.odr_id;
 
-  // ONE undo unit: the crosswalk and its stop line add together (context_menu's
-  // macro pattern), so a single Ctrl+Z removes the whole placement.
+  // ONE undo unit: the crosswalk object and the stop-line link land together
+  // (context_menu's macro pattern), so a single Ctrl+Z removes the whole
+  // placement (GW-5). The stop line itself already exists — it is derived — so
+  // the second command only records the setback and the provenance link.
   document_.undo_stack()->beginMacro(tr("Place crosswalk"));
-  for (auto& [road, object] : pair) {
-    (void)document_.push_command(edit::add_object(document_.network(), road, std::move(object)));
-  }
+  (void)document_.push_command(
+      edit::add_object(document_.network(), crosswalk_road, std::move(placed->second)));
+  const RoadEnd stopline_arm{.road = arm->arm_road, .contact = arm->contact};
+  (void)document_.push_command(edit::set_stopline_distance(
+      document_.network(), arm->junction, stopline_arm, kStopLineDefaultDistance, crosswalk_odr));
   document_.undo_stack()->endMacro();
 
   // Select the placed crosswalk (looked up by its odr_id on the arm road, since

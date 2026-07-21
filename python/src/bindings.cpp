@@ -1474,16 +1474,6 @@ NB_MODULE(_roadmaker, m) {
       "The closed cornerLocal outline of one arrow glyph in the object's local "
       "(u,v) frame. Empty for a subtype outside the 6-arrow core set.");
   edit.def(
-      "junction_stop_lines",
-      [](const roadmaker::RoadNetwork& network, roadmaker::JunctionId junction) {
-        return roadmaker::edit::junction_stop_lines(network, junction);
-      },
-      "network"_a,
-      "junction"_a,
-      "One solid stop line Object across each arm's approach lanes, just behind "
-      "the crosswalk. Returns a list of (RoadId, Object); add each with "
-      "edit.add_object.");
-  edit.def(
       "junction_lane_arrows",
       [](const roadmaker::RoadNetwork& network,
          roadmaker::JunctionId junction,

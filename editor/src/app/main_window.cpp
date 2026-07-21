@@ -1,6 +1,7 @@
 #include "app/main_window.hpp"
 
 #include "roadmaker/edit/operations.hpp"
+#include "roadmaker/mesh/junction_stoplines.hpp"
 #include "roadmaker/version.hpp"
 
 #include <spdlog/spdlog.h>
@@ -1236,11 +1237,19 @@ void MainWindow::on_library_drop(const QString& key, double world_x, double worl
     viewport_->clear_drag_target_road();
     break;
   case LibraryDropKind::Crosswalk:
-    // The crosswalk + stop line add as ONE undo unit (the placement helper's
-    // pair), so a single Ctrl+Z removes the whole drop.
+    // The crosswalk object and its stop-line link land as ONE undo unit, so a
+    // single Ctrl+Z removes the whole drop.
     document_.undo_stack()->beginMacro(tr("Place crosswalk"));
     for (auto& [road, object] : action.objects) {
       (void)document_.push_command(edit::add_object(document_.network(), road, std::move(object)));
+    }
+    if (action.stopline_link.has_value()) {
+      (void)document_.push_command(
+          edit::set_stopline_distance(document_.network(),
+                                      action.stopline_link->junction,
+                                      action.stopline_link->arm,
+                                      kStopLineDefaultDistance,
+                                      action.stopline_link->crosswalk_odr_id));
     }
     document_.undo_stack()->endMacro();
     viewport_->show_toast(action.toast, ToastSeverity::Success);
