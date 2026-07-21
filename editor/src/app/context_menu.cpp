@@ -87,6 +87,73 @@ bool lane_removable(const RoadNetwork& network, LaneId lane_id) {
   return true;
 }
 
+/// The four DERIVED junction states (p4-s4, issue #319). Never stored as an
+/// enum on Junction — read off `arms`/`spans`/`locked` exactly as
+/// road/junction.hpp documents, so the menu and the kernel cannot drift.
+enum class JunctionKind {
+  Foreign,   ///< no arms, no spans (read from someone else's file)
+  Automatic, ///< arms, unlocked — the regeneration loop owns it
+  Locked,    ///< arms, locked — hand-tuned, membership editable
+  Span,      ///< §12.7 virtual junction; structurally locked forever
+};
+
+JunctionKind junction_kind(const Junction& junction) {
+  if (!junction.spans.empty()) {
+    return JunctionKind::Span;
+  }
+  if (junction.arms.empty()) {
+    return JunctionKind::Foreign;
+  }
+  return junction.locked ? JunctionKind::Locked : JunctionKind::Automatic;
+}
+
+/// Mirrors edit::add_junction_arm's preconditions so the node menu can OFFER
+/// the item only when it would succeed (the kernel stays the final arbiter):
+/// a live, arm-based, LOCKED junction, an end it does not already own, an end
+/// no other junction owns, and a free link slot on that end.
+bool can_add_arm(const RoadNetwork& network, JunctionId junction_id, const RoadEnd& end) {
+  const Junction* junction = network.junction(junction_id);
+  if (junction == nullptr || junction_kind(*junction) != JunctionKind::Locked) {
+    return false;
+  }
+  if (std::ranges::find(junction->arms, end) != junction->arms.end()) {
+    return false;
+  }
+  if (edit::junction_at_end(network, end).has_value()) {
+    return false;
+  }
+  const Road* road = network.road(end.road);
+  if (road == nullptr || road->junction.is_valid()) {
+    return false;
+  }
+  const auto& slot = end.contact == ContactPoint::Start ? road->predecessor : road->successor;
+  return !slot.has_value();
+}
+
+/// The road END a waypoint index names, or nullopt for an interior node.
+std::optional<RoadEnd> end_for_node(const RoadNetwork& network, RoadId road_id, std::size_t index) {
+  const Road* road = network.road(road_id);
+  if (road == nullptr) {
+    return std::nullopt;
+  }
+  const auto stations = edit::waypoint_stations(*road);
+  if (!stations.has_value() || stations->size() < 2 || index >= stations->size()) {
+    return std::nullopt;
+  }
+  if (index == 0) {
+    return RoadEnd{.road = road_id, .contact = ContactPoint::Start};
+  }
+  if (index + 1 == stations->size()) {
+    return RoadEnd{.road = road_id, .contact = ContactPoint::End};
+  }
+  return std::nullopt;
+}
+
+QString junction_name(const RoadNetwork& network, JunctionId id) {
+  const Junction* junction = network.junction(id);
+  return junction != nullptr ? QString::fromStdString(junction->odr_id) : QStringLiteral("?");
+}
+
 } // namespace
 
 MenuContext menu_context_for_pick(const RoadNetwork& network, const std::optional<PickHit>& hit) {
@@ -133,6 +200,24 @@ std::vector<MenuItem> build_context_menu(const MenuContext& context, ContextMenu
                                (void)deps.document.push_command(
                                    edit::delete_waypoint(deps.document.network(), road, index));
                              }});
+    // Membership: hand THIS road end to the one selected LOCKED junction
+    // (p4-s4, issue #319). Offered only when edit::add_junction_arm would
+    // accept it, so the item never appears as a trap — an automatic junction
+    // must be locked first (its arms are re-derived from the roads that meet
+    // it, so an edit to them would not survive).
+    const std::vector<JunctionId> selected_junctions = deps.selection.selected_junctions();
+    if (selected_junctions.size() == 1) {
+      const JunctionId target = selected_junctions.front();
+      if (const std::optional<RoadEnd> end = end_for_node(network, road, index);
+          end.has_value() && can_add_arm(network, target, *end)) {
+        items.push_back(MenuItem{
+            .text = QObject::tr("Add end to junction %1").arg(junction_name(network, target)),
+            .invoke = [deps, target, end = *end] {
+              (void)deps.document.push_command(
+                  edit::add_junction_arm(deps.document.network(), target, end));
+            }});
+      }
+    }
     items.push_back(separator());
     items.push_back(MenuItem{.text = QObject::tr("Frame"), .invoke = [deps, road] {
                                select_road(deps, road);
@@ -149,6 +234,75 @@ std::vector<MenuItem> build_context_menu(const MenuContext& context, ContextMenu
                                deps.selection.clear();
                                deps.actions.frame_selection->trigger();
                              }});
+    items.push_back(separator());
+
+    // Junction control (p4-s4, issue #319). The state is DERIVED, so the
+    // items read it off the record rather than off a stored mode.
+    const Junction* junction_ptr = network.junction(junction);
+    const JunctionKind kind =
+        junction_ptr != nullptr ? junction_kind(*junction_ptr) : JunctionKind::Foreign;
+    // A span junction is locked structurally (§12.7 virtual junctions are never
+    // derived) and a foreign junction has no derivation to guard, so only the
+    // two arm-based states can toggle — the same rule set_junction_locked
+    // enforces.
+    const bool arm_based = kind == JunctionKind::Automatic || kind == JunctionKind::Locked;
+    const bool currently_locked = kind == JunctionKind::Locked || kind == JunctionKind::Span;
+    items.push_back(MenuItem{
+        .text = currently_locked ? QObject::tr("Unlock junction") : QObject::tr("Lock junction"),
+        .enabled = arm_based,
+        .invoke = [deps, junction, currently_locked] {
+          (void)deps.document.push_command(
+              edit::set_junction_locked(deps.document.network(), junction, !currently_locked));
+        }});
+    // Plain regenerate_junction: the lock is a policy of the AUTOMATIC loops
+    // only, so an explicit re-derive needs no bypass flag. Refused for the two
+    // arm-less states (there is nothing to re-run the generator from).
+    items.push_back(MenuItem{.text = QObject::tr("Re-derive junction"),
+                             .enabled = arm_based,
+                             .invoke = [deps, junction] {
+                               (void)deps.document.push_command(
+                                   edit::regenerate_junction(deps.document.network(), junction));
+                             }});
+    // Per-arm removal — locked junctions only (membership is meaningful only
+    // once the user has taken the junction out of the automatic loop), and only
+    // while a third arm keeps the remainder above the kernel's 2-arm floor.
+    if (kind == JunctionKind::Locked && junction_ptr->arms.size() >= 3) {
+      for (const RoadEnd& arm : junction_ptr->arms) {
+        const Road* arm_road = network.road(arm.road);
+        if (arm_road == nullptr) {
+          continue;
+        }
+        items.push_back(MenuItem{
+            .text = QObject::tr("Remove arm: %1").arg(QString::fromStdString(arm_road->odr_id)),
+            .invoke = [deps, junction, arm] {
+              (void)deps.document.push_command(
+                  edit::remove_junction_arm(deps.document.network(), junction, arm));
+            }});
+      }
+    }
+    // Merge — the two-selected gating merge_roads established. The survivor is
+    // the FIRST-selected junction, named in the text so the convention needs no
+    // documentation lookup.
+    const std::vector<JunctionId> selected_junctions = deps.selection.selected_junctions();
+    const auto arm_mergeable = [&network](JunctionId id) {
+      const Junction* candidate = network.junction(id);
+      return candidate != nullptr && candidate->spans.empty() && candidate->arms.size() >= 2;
+    };
+    const bool junctions_mergeable =
+        selected_junctions.size() == 2 && selected_junctions[0] != selected_junctions[1] &&
+        arm_mergeable(selected_junctions[0]) && arm_mergeable(selected_junctions[1]);
+    items.push_back(MenuItem{
+        .text = junctions_mergeable ? QObject::tr("Merge selected junctions into %1")
+                                          .arg(junction_name(network, selected_junctions[0]))
+                                    : QObject::tr("Merge selected junctions"),
+        .enabled = junctions_mergeable,
+        .invoke = [deps, selected_junctions] {
+          if (selected_junctions.size() != 2) {
+            return;
+          }
+          (void)deps.document.push_command(edit::merge_junctions(
+              deps.document.network(), selected_junctions[0], selected_junctions[1]));
+        }});
     items.push_back(separator());
     // Author one zebra crosswalk per arm, spanning its driving lanes just inside
     // the junction — all in one undo step (§WS-B). Disabled when the junction has
