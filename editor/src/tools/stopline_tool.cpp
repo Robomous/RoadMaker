@@ -70,8 +70,7 @@ void StopLineTool::reset_all() {
 }
 
 std::optional<JunctionStopLineInfo> StopLineTool::solve(const ActiveStopLine& line) const {
-  for (const JunctionStopLineInfo& info :
-       junction_stoplines(document_.network(), line.junction)) {
+  for (const JunctionStopLineInfo& info : junction_stoplines(document_.network(), line.junction)) {
     if (info.arm == line.arm) {
       return info;
     }
@@ -113,9 +112,8 @@ std::optional<double> StopLineTool::distance_for(const ActiveStopLine& line,
   const double half = info.thickness / 2.0;
   // Invert the solve: s_center = distance + half (Start) or
   // length - distance - half (End).
-  const double distance = line.arm.contact == ContactPoint::Start
-                              ? s - half
-                              : road->plan_view.length() - s - half;
+  const double distance =
+      line.arm.contact == ContactPoint::Start ? s - half : road->plan_view.length() - s - half;
   return std::clamp(distance, 0.0, info.max_distance);
 }
 
@@ -225,8 +223,9 @@ bool StopLineTool::key_press(int key, Qt::KeyboardModifiers modifiers) {
     }
     // The command refuses a direction with no lanes to span, so a flip that
     // cannot work reports rather than authoring an empty band.
-    if (!document_.push_command(
-                     edit::flip_stopline(document_.network(), active_->junction, active_->arm))
+    if (!document_
+             .push_command(
+                 edit::flip_stopline(document_.network(), active_->junction, active_->arm))
              .has_value()) {
       emit toast_requested(tr("That direction has no lanes to span"), ToastSeverity::Warning);
       return true;

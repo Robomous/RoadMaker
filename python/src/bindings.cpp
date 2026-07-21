@@ -373,7 +373,20 @@ NB_MODULE(_roadmaker, m) {
           "road"_a,
           "contact"_a)
       .def_rw("road", &roadmaker::RoadEnd::road)
-      .def_rw("contact", &roadmaker::RoadEnd::contact);
+      .def_rw("contact", &roadmaker::RoadEnd::contact)
+      // A RoadEnd is the IDENTITY of a junction arm — and so of its corner
+      // (p4-s1) and its stop line (p4-s3). Without these, matching a solved
+      // JunctionStopLineInfo back to the arm you asked about falls through to
+      // identity comparison and silently never matches.
+      .def("__eq__",
+           [](const roadmaker::RoadEnd& self, const roadmaker::RoadEnd& other) {
+             return self == other;
+           })
+      .def("__hash__",
+           [](const roadmaker::RoadEnd& self) {
+             return nb::hash(nb::make_tuple(self.road, self.contact));
+           })
+      .def("__repr__", [](const roadmaker::RoadEnd& self) { return road_end_text(self); });
 
   nb::class_<roadmaker::Diagnostic>(m, "Diagnostic")
       .def_ro("severity", &roadmaker::Diagnostic::severity)

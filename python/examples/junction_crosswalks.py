@@ -53,15 +53,11 @@ def main() -> int:
         )
         stack.push(network, rm.edit.add_object(network, road, crosswalk))
 
-    # No stop lines to author: every arm already has a derived one. Link each
-    # crosswalk to its arm's line so the two share a setback and a provenance.
-    for info in rm.junction_stoplines(network, junction):
-        stack.push(
-            network,
-            rm.edit.set_stopline_distance(
-                network, junction, info.arm, info.distance, crosswalk_link=""
-            ),
-        )
+    # No stop lines to author: every arm already HAS one. They are derived, so
+    # they mesh and export without anything being authored — junction_stoplines
+    # just reports them. See junction_stoplines.py to edit one.
+    lines = rm.junction_stoplines(network, junction)
+    print(f"{len(lines)} derived stop lines (nothing authored)")
 
     # An arrow on each approach lane, pointing into the junction. Without a
     # `glyph` callable every lane gets arrowStraight; pass one to choose the

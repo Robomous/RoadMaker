@@ -167,8 +167,7 @@ TEST(StopLineTool, ClickMakesALineActiveAndMirrorsItsJunction) {
   // There is no stop-line selection entry, so the JUNCTION is what the rest of
   // the UI follows.
   EXPECT_EQ(selection.primary().junction, scene.junction);
-  EXPECT_EQ(scene.document.undo_stack()->index(), scene.base_count)
-      << "selecting authors nothing";
+  EXPECT_EQ(scene.document.undo_stack()->index(), scene.base_count) << "selecting authors nothing";
 }
 
 TEST(StopLineTool, DragCommitsExactlyOneCommand) {

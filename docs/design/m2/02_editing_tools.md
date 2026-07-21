@@ -281,6 +281,62 @@ incoming-road edit regenerates (connection endpoints track the moved end).
 
 ---
 
+## 6b. Stop Line (p4-s3, issue #318)
+
+**Interaction.** Stop Line tool (⇧O): hover highlights a junction arm's
+painted band, a click makes it active, and dragging it along the arm sets the
+setback from the junction mouth. `F` flips which travel direction the band
+spans; `Esc` cancels a live drag byte-identically, or clears the selection.
+The band is its own handle — it is thin and wide, so the cursor grabs its
+CENTRELINE rather than a midpoint, which a wide arm would make unclickable.
+
+**Derived, not created.** Every arm whose junction-facing end has driving
+lanes ALREADY has a stop line: `mesh::junction_stoplines()` solves one per
+arm (default setback `kStopLineDefaultDistance` = 4 m, thickness 0.3 m,
+spanning the approach lanes) and that same query feeds the mesher, the .xodr
+writer, the Attributes pane and the bindings, so none of them can disagree.
+The tool therefore only ever EDITS; there is no create gesture, and the
+retired "Add stop lines to all arms" context action would have been a no-op.
+
+**Suppression.** An arm carrying a live, untagged
+`<object subtype="signalLines">` on its junction-facing half is skipped, so a
+legacy or foreign file that painted its own stop line keeps rendering that
+object and is never double-drawn.
+
+**Kernel API.** `edit::set_stopline_distance` (creates the record when the arm
+is still derived; distance stored UNCLAMPED and clamped only at solve time),
+`edit::flip_stopline` (refuses a direction with no lanes to span; a record
+left back at its defaults is ERASED, so flip-twice is byte-identical to no
+edit), `edit::reset_stopline` (drops the record; an error when nothing is
+authored). All three are GenericCommand value edits on the `Junction`, with
+dirty set `{roads = {arm.road}, junctions = {junction},
+junctions_are_current = true}` — the band belongs to the arm road's mesh and
+the turn set is untouched.
+
+**Sub-selection.** `ActiveStopLine{JunctionId, RoadEnd}` is tool-local, not a
+`SelectionModel` entry (there is no StopLineId) — the CornerTool precedent.
+The owning junction IS mirrored into the SelectionModel so the pane and the
+scene tree follow, and `stopline_selection_changed()` binds the pane's finer
+state.
+
+**Attributes pane.** A "Stop line" group: a read-only arm row (naming which
+line the numbers describe), a scrubbable **Distance** spin bounded by the
+arm's `max_distance`, **Flip direction**, and **Reset to default** enabled
+only when something is authored. Distance 0 is a MEANINGFUL setback, so
+unlike the junction radius default there is no special-value sentinel.
+
+**Persistence.** `<userData code="rm:stopline">` on a materialized
+`<object type="roadMark" subtype="signalLines">` — see ADR-0008's registry
+for the payload grammar and the degradation rules.
+
+**Tests.** `test_junction_stoplines` (derivation, overrides, suppression,
+meshing), `test_stopline_operations` (every case through the command
+round-trip oracle), `test_stopline_persistence` (round trip + degradation +
+fuzz seeds), `test_stopline_tool` (gestures, one-undo-per-drag, F),
+`test_panels` (the pane's three rows), plus the Python suite.
+
+---
+
 ## 7. Delete
 
 **Interaction.** Delete tool: click deletes picked road (with confirmation in
