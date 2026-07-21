@@ -24,6 +24,8 @@
 #include <utility>
 #include <variant>
 
+#include "../mesh/junction_stoplines_detail.hpp"
+
 namespace roadmaker::edit {
 
 namespace {
@@ -4068,10 +4070,11 @@ flip_stopline(const RoadNetwork& network, JunctionId junction_id, RoadEnd arm) {
   const bool flipped = current != before->stoplines.end() && current->flipped;
 
   // The direction being toggled INTO must have lanes to span; an empty band is
-  // an error rather than a zero-width paint stripe. This mirrors exactly what
-  // junction_stoplines() checks when it decides an arm has no line.
-  const Expected<ContactState> contact = contact_state(network, arm);
-  if (!contact || driving_lanes_at(network, arm, *contact, /*incoming=*/flipped).empty()) {
+  // an error rather than a zero-width paint stripe. Shared with
+  // junction_stoplines() so the two cannot drift — and so a span junction's
+  // pseudo road end is sampled at the span edge rather than at the road end it
+  // only looks like (p4-s4, issue #319).
+  if (!stopline_detail::stopline_direction_has_lanes(network, *before, arm, !flipped)) {
     return invalid_command(std::string(kName),
                            Error{.code = ErrorCode::InvalidArgument,
                                  .message = "the arm has no driving lanes in that direction"});

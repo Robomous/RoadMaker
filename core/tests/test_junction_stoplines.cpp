@@ -330,6 +330,197 @@ TEST(JunctionStopLines, LegacyObjectOnTheFarHalfDoesNotSuppress) {
   EXPECT_EQ(junction_stoplines(network, junction).size(), 4U);
 }
 
+// --- span (virtual) junction faces (p4-s4, #319) -----------------------------
+//
+// A span junction has no arms and no connections at all, so it derives a
+// different set: TWO faces per SpanArm, keyed by the pseudo road ends
+// {road, Start} (the s_start face) and {road, End} (the s_end face). The band
+// sits OUTSIDE the span — upstream of s_start, downstream of s_end — because
+// that is where traffic approaching the crossing has to stop.
+
+namespace {
+
+using roadmaker::SpanArm;
+
+/// One uninterrupted 120 m road "1" with a mid-road span junction "9" over
+/// [s_start, s_end] — the crosswalk case (§12.7): the road is never cut.
+JunctionId make_span(RoadNetwork& network, double s_start, double s_end, RoadId* road_out) {
+  const RoadId road = author(network, {Waypoint{0.0, 0.0}, Waypoint{120.0, 0.0}}, "1");
+  if (road_out != nullptr) {
+    *road_out = road;
+  }
+  const JunctionId junction = network.create_junction("9", "crosswalk");
+  network.junction(junction)->spans.push_back(
+      SpanArm{.road = road, .s_start = s_start, .s_end = s_end});
+  network.junction(junction)->locked = true;
+  return junction;
+}
+
+RoadEnd face_of(RoadId road, ContactPoint face) {
+  return RoadEnd{.road = road, .contact = face};
+}
+
+} // namespace
+
+TEST(SpanJunctionStopLines, OneSpanExposesTwoFaces) {
+  RoadNetwork network;
+  RoadId road{};
+  const JunctionId junction = make_span(network, 50.0, 56.5, &road);
+
+  const std::vector<JunctionStopLineInfo> lines = junction_stoplines(network, junction);
+  ASSERT_EQ(lines.size(), 2U) << "two faces per span, with nothing authored";
+  const double half = kStopLineThickness / 2.0;
+
+  const std::optional<JunctionStopLineInfo> start =
+      find_arm(lines, face_of(road, ContactPoint::Start));
+  ASSERT_TRUE(start.has_value());
+  EXPECT_TRUE(start->span_face);
+  EXPECT_FALSE(start->authored);
+  EXPECT_DOUBLE_EQ(start->distance, kStopLineDefaultDistance);
+  EXPECT_NEAR(start->s_center, 50.0 - kStopLineDefaultDistance - half, 1e-9);
+  EXPECT_NEAR(start->max_distance, 50.0 - kStopLineThickness, 1e-9);
+
+  const std::optional<JunctionStopLineInfo> end = find_arm(lines, face_of(road, ContactPoint::End));
+  ASSERT_TRUE(end.has_value());
+  EXPECT_TRUE(end->span_face);
+  EXPECT_NEAR(end->s_center, 56.5 + kStopLineDefaultDistance + half, 1e-9);
+  EXPECT_NEAR(end->max_distance, 120.0 - 56.5 - kStopLineThickness, 1e-9);
+
+  // Each face spans the lanes APPROACHING the span, which sit on opposite
+  // sides of the reference line — the road is two-way.
+  EXPECT_LT(start->t_center * end->t_center, 0.0);
+  for (const JunctionStopLineInfo& info : lines) {
+    EXPECT_GT(info.span, 2.0);
+    EXPECT_NEAR(
+        std::hypot(info.left[0] - info.right[0], info.left[1] - info.right[1]), info.span, 1e-9);
+  }
+}
+
+TEST(SpanJunctionStopLines, ParallelRoadsExposeFourFaces) {
+  RoadNetwork network;
+  const RoadId north = author(network, {Waypoint{0.0, 6.0}, Waypoint{120.0, 6.0}}, "1");
+  const RoadId south = author(network, {Waypoint{0.0, -6.0}, Waypoint{120.0, -6.0}}, "2");
+  const JunctionId junction = network.create_junction("9", "crosswalk");
+  network.junction(junction)->spans = {SpanArm{.road = north, .s_start = 40.0, .s_end = 44.0},
+                                       SpanArm{.road = south, .s_start = 41.5, .s_end = 45.5}};
+
+  const std::vector<JunctionStopLineInfo> lines = junction_stoplines(network, junction);
+  ASSERT_EQ(lines.size(), 4U) << "two faces per span road";
+  for (const RoadId road : {north, south}) {
+    for (const ContactPoint face : {ContactPoint::Start, ContactPoint::End}) {
+      EXPECT_TRUE(find_arm(lines, face_of(road, face)).has_value());
+    }
+  }
+  // Each road's own span edges drive its faces: the two roads are offset by
+  // 1.5 m, so the s stations are too.
+  const double a = find_arm(lines, face_of(north, ContactPoint::Start))->s_center;
+  const double b = find_arm(lines, face_of(south, ContactPoint::Start))->s_center;
+  EXPECT_NEAR(b - a, 1.5, 1e-9);
+}
+
+TEST(SpanJunctionStopLines, AFaceIsClampedAgainstTheNearRoadEnd) {
+  RoadNetwork network;
+  RoadId road{};
+  // The span starts 0.05 m into the road — closer than half a band thickness,
+  // so there is no room at all for the upstream face's setback.
+  const JunctionId junction = make_span(network, 0.05, 6.5, &road);
+
+  const std::optional<JunctionStopLineInfo> start =
+      find_arm(junction_stoplines(network, junction), face_of(road, ContactPoint::Start));
+  ASSERT_TRUE(start.has_value());
+  EXPECT_DOUBLE_EQ(start->max_distance, 0.0);
+  EXPECT_DOUBLE_EQ(start->distance, 0.0);
+  // Clamped or not, the band lands whole on the road.
+  EXPECT_GE(start->s_center - (kStopLineThickness / 2.0), -1e-9);
+  EXPECT_LE(start->s_center + (kStopLineThickness / 2.0), 120.0 + 1e-9);
+}
+
+TEST(SpanJunctionStopLines, ASpanOutsideAShortenedRoadIsClampedNotDropped) {
+  RoadNetwork network;
+  RoadId road{};
+  // s_end past the end of the road: the span outlives the edit that shortened
+  // it, exactly as a dormant record does, and the faces clamp.
+  const JunctionId junction = make_span(network, 118.0, 500.0, &road);
+
+  const std::vector<JunctionStopLineInfo> lines = junction_stoplines(network, junction);
+  const std::optional<JunctionStopLineInfo> end = find_arm(lines, face_of(road, ContactPoint::End));
+  ASSERT_TRUE(end.has_value());
+  EXPECT_DOUBLE_EQ(end->max_distance, 0.0);
+  EXPECT_NEAR(end->s_center, 120.0 - (kStopLineThickness / 2.0), 1e-9);
+}
+
+TEST(SpanJunctionStopLines, AuthoredDistanceAndFlipApplyPerFace) {
+  RoadNetwork network;
+  RoadId road{};
+  const JunctionId junction = make_span(network, 50.0, 56.5, &road);
+  const RoadEnd start = face_of(road, ContactPoint::Start);
+  const double derived_t = find_arm(junction_stoplines(network, junction), start)->t_center;
+
+  author_record(network, junction, StopLine{.arm = start, .distance = 9.0, .flipped = true});
+
+  const std::vector<JunctionStopLineInfo> lines = junction_stoplines(network, junction);
+  const std::optional<JunctionStopLineInfo> info = find_arm(lines, start);
+  ASSERT_TRUE(info.has_value());
+  EXPECT_TRUE(info->authored);
+  EXPECT_TRUE(info->distance_authored);
+  EXPECT_DOUBLE_EQ(info->distance, 9.0);
+  EXPECT_NEAR(info->s_center, 50.0 - 9.0 - (kStopLineThickness / 2.0), 1e-9);
+  // Flipping moves the band to the lanes LEAVING the span, on the other side.
+  EXPECT_LT(info->t_center * derived_t, 0.0);
+
+  // The other face is untouched: the record is per face, not per span.
+  const std::optional<JunctionStopLineInfo> other =
+      find_arm(lines, face_of(road, ContactPoint::End));
+  ASSERT_TRUE(other.has_value());
+  EXPECT_FALSE(other->authored);
+  EXPECT_DOUBLE_EQ(other->distance, kStopLineDefaultDistance);
+}
+
+TEST(SpanJunctionStopLines, AOneWayRoadGuardsOnlyTheEdgeItsTrafficApproaches) {
+  LaneProfile one_way = LaneProfile::two_lane_default();
+  one_way.left.clear();
+  one_way.center_marking = false;
+
+  RoadNetwork network;
+  const RoadId road = author(network, {Waypoint{0.0, 0.0}, Waypoint{120.0, 0.0}}, "1", one_way);
+  const JunctionId junction = network.create_junction("9", "crosswalk");
+  network.junction(junction)->spans.push_back(
+      SpanArm{.road = road, .s_start = 50.0, .s_end = 56.5});
+
+  // Only the right-hand (+s) lanes exist, so only the upstream face has an
+  // approach to guard; the downstream one is dropped rather than drawn
+  // zero-width.
+  const std::vector<JunctionStopLineInfo> lines = junction_stoplines(network, junction);
+  ASSERT_EQ(lines.size(), 1U);
+  EXPECT_EQ(lines.front().arm, face_of(road, ContactPoint::Start));
+}
+
+TEST(SpanJunctionStopLines, ADormantRecordOnAStaleRoadIsIgnored) {
+  RoadNetwork network;
+  RoadId road{};
+  const JunctionId junction = make_span(network, 50.0, 56.5, &road);
+  const RoadId stranger =
+      author(network, {Waypoint{200.0, 200.0}, Waypoint{260.0, 200.0}}, "stranger");
+  author_record(
+      network,
+      junction,
+      StopLine{.arm = RoadEnd{.road = stranger, .contact = ContactPoint::End}, .distance = 12.0});
+
+  const std::vector<JunctionStopLineInfo> lines = junction_stoplines(network, junction);
+  EXPECT_EQ(lines.size(), 2U);
+  for (const JunctionStopLineInfo& info : lines) {
+    EXPECT_FALSE(info.authored);
+  }
+}
+
+TEST(SpanJunctionStopLines, AStaleSpanRoadYieldsNoFaces) {
+  RoadNetwork network;
+  RoadId road{};
+  const JunctionId junction = make_span(network, 50.0, 56.5, &road);
+  ASSERT_TRUE(network.erase_road(road));
+  EXPECT_TRUE(junction_stoplines(network, junction).empty());
+}
+
 // --- mesher (WP4) ------------------------------------------------------------
 //
 // Stop lines are the only marking with no Object behind them: the mesher
@@ -438,4 +629,29 @@ TEST(JunctionStopLineMesh, ALegacyObjectMeshesOnceNotTwice) {
     }
   }
   EXPECT_EQ(object_stop_lines, 1U);
+}
+
+TEST(JunctionStopLineMesh, SpanJunctionFacesPaintOnTheUncutRoad) {
+  RoadNetwork network;
+  RoadId road{};
+  const JunctionId junction = make_span(network, 50.0, 56.5, &road);
+
+  // The road is never cut, so junction_at_end finds nothing on it: the mesher
+  // has to reach the junction through its span list instead.
+  EXPECT_EQ(stopline_submeshes(network), 2U);
+
+  const std::optional<std::array<double, 3>> before = stopline_centroid(network, road);
+  ASSERT_TRUE(before.has_value());
+  // The two faces straddle the span, so their joint centroid sits at its middle.
+  EXPECT_NEAR((*before)[0], (50.0 + 56.5) / 2.0, 1e-6);
+
+  author_record(
+      network,
+      junction,
+      StopLine{.arm = RoadEnd{.road = road, .contact = ContactPoint::Start}, .distance = 12.0});
+  const std::optional<std::array<double, 3>> after = stopline_centroid(network, road);
+  ASSERT_TRUE(after.has_value());
+  // Only the upstream face moved, and it moved AWAY from the span, so the pair
+  // centroid slides back by half the extra setback.
+  EXPECT_NEAR((*after)[0] - (*before)[0], -(12.0 - kStopLineDefaultDistance) / 2.0, 1e-6);
 }
