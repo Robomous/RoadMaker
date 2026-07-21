@@ -1,6 +1,7 @@
 #include "roadmaker/xodr/writer.hpp"
 
 #include "roadmaker/geometry/reference_line.hpp"
+#include "roadmaker/mesh/junction_stoplines.hpp"
 #include "roadmaker/tol.hpp"
 #include "roadmaker/xodr/rules.hpp"
 
@@ -11,11 +12,13 @@
 #include <cmath>
 #include <cstdlib>
 #include <fstream>
+#include <map>
 #include <numbers>
 #include <optional>
 #include <set>
 #include <sstream>
 #include <string>
+#include <tuple>
 #include <variant>
 #include <vector>
 
@@ -733,18 +736,172 @@ void write_object(pugi::xml_node objects_node, const Object& object, const Write
   }
 }
 
+/// How many of a junction's arms will actually be serialized into `rm:arms` —
+/// stale entries (whose road is gone) are not written.
+///
+/// Shared by the rm:arms writer and the stop-line exporter so the two cannot
+/// drift: anything whose ownership is recovered on load through
+/// `Junction::arms` is only writable when that list itself round-trips.
+std::size_t writable_arm_count(const RoadNetwork& network, const Junction& junction) {
+  return static_cast<std::size_t>(std::ranges::count_if(
+      junction.arms, [&](const RoadEnd& arm) { return network.road(arm.road) != nullptr; }));
+}
+
+/// True when `junction`'s arm list survives a round trip. The reader rejects an
+/// rm:arms with fewer than 2 arms, so the writer does not emit one either
+/// (issue #90) — and a junction that comes back arm-less cannot re-resolve
+/// anything keyed on a RoadEnd.
+bool arms_round_trip(const RoadNetwork& network, const Junction& junction) {
+  return writable_arm_count(network, junction) >= 2;
+}
+
+/// One materialized stop line: the solved geometry plus the deterministic
+/// `@id` its object will carry.
+struct StopLineExport {
+  JunctionStopLineInfo info;
+  std::string odr_id;
+};
+
+/// Materialized stop lines keyed by the owning road's odr id. Built once per
+/// write (see build_stopline_exports) because the solve is per JUNCTION while
+/// the emission is per ROAD.
+using StopLineExports = std::map<std::string, std::vector<StopLineExport>>;
+
+/// `<userData code="rm:stopline">` (§7.2): the parametric record behind a
+/// materialized stop line. `contact` is mandatory — it names the junction-facing
+/// end of the enclosing road, which is the record's identity and the only thing
+/// that lets the reader absorb the object back into a StopLine. Everything else
+/// is omitted at its default, so a fully derived line exports as a bare tag and
+/// stays byte-stable.
+void write_stopline_data(pugi::xml_node object_node, const JunctionStopLineInfo& info) {
+  pugi::xml_node node = object_node.append_child("userData");
+  node.append_attribute("code").set_value("rm:stopline");
+  node.append_attribute("contact").set_value(info.arm.contact == ContactPoint::End ? "end"
+                                                                                   : "start");
+  if (info.distance_authored) {
+    set_num(node, "distance", info.distance);
+  }
+  if (info.flipped) {
+    node.append_attribute("flipped").set_value("true");
+  }
+  if (!info.crosswalk_odr_id.empty()) {
+    node.append_attribute("crosswalk").set_value(info.crosswalk_odr_id.c_str());
+  }
+}
+
+/// Emits one stop line as a self-contained `<object type="roadMark"
+/// subtype="signalLines">` (§13.7 Table 117 — a bounding-volume road-marking
+/// object; `<outline>` is optional for this subtype and none is written, so the
+/// element is identical under both 1.8.1 and 1.9.0). A foreign consumer reads a
+/// valid stop line with no RoadMaker knowledge (ADR-0008 Layer 0); the
+/// rm:stopline userData beside it is what RoadMaker absorbs on reload (Layer 1).
+///
+/// Axis convention, shared with the pre-p4-s3 generator: `@length` is the thin
+/// ALONG-road extent and `@width` spans ACROSS the lanes — inverted with respect
+/// to the crosswalk object.
+void write_stopline_object(pugi::xml_node objects_node, const StopLineExport& line) {
+  // Attribute order and defaults follow write_object exactly (orientation is
+  // always written, hdg is omitted at 0), so a materialized line is
+  // indistinguishable from an authored object to a foreign reader — and does
+  // not trip the reader's own "missing @orientation" advisory on reload.
+  pugi::xml_node node = objects_node.append_child("object");
+  node.append_attribute("type").set_value("roadMark");
+  node.append_attribute("subtype").set_value("signalLines");
+  node.append_attribute("id").set_value(line.odr_id.c_str());
+  set_num(node, "s", line.info.s_center);
+  set_num(node, "t", line.info.t_center);
+  set_num(node, "zOffset", 0.0);
+  node.append_attribute("orientation").set_value(orientation_name(ObjectOrientation::None));
+  set_num(node, "length", line.info.thickness);
+  set_num(node, "width", line.info.span);
+  write_stopline_data(node, line.info);
+}
+
+/// Solves every junction's stop lines and buckets them by owning road, minting
+/// each one's `@id`.
+///
+/// Both the ids and the per-road emission order are keyed on INTRINSIC data —
+/// the owning junction's and road's odr ids and the contact end — never on
+/// arena iteration order. A road can be an arm of two junctions (one at each
+/// end), and junction arena order is NOT stable across a round trip: erasing a
+/// junction leaves a slot that a later creation reuses, while a freshly parsed
+/// network has no holes. Bucketing in arena order therefore flipped the two
+/// objects' positions on the second write and broke write→parse→write
+/// idempotence. Sorting before minting also keeps the collision suffixes
+/// themselves order-independent.
+StopLineExports build_stopline_exports(const RoadNetwork& network) {
+  struct Pending {
+    std::string junction_odr_id;
+    std::string road_odr_id;
+    JunctionStopLineInfo info;
+  };
+
+  std::vector<Pending> pending;
+  network.for_each_junction([&](JunctionId junction_id, const Junction& junction) {
+    // A stop line is owned by a RoadEnd, and the reader recovers that ownership
+    // through the junction's arm list. When that list will not be written, the
+    // object would come back as an orphan — a live, untagged-looking object that
+    // then SUPPRESSES the derived line and lands in arena order, breaking
+    // write→parse→write. Emit nothing rather than something unreadable; the
+    // junction is degenerate (below 2 arms) and already persists as arm-less.
+    if (!arms_round_trip(network, junction)) {
+      return;
+    }
+    for (const JunctionStopLineInfo& info : junction_stoplines(network, junction_id)) {
+      const Road* road = network.road(info.arm.road);
+      if (road == nullptr) {
+        continue;
+      }
+      pending.push_back(
+          Pending{.junction_odr_id = junction.odr_id, .road_odr_id = road->odr_id, .info = info});
+    }
+  });
+  std::ranges::sort(pending, [](const Pending& a, const Pending& b) {
+    return std::tie(a.road_odr_id, a.junction_odr_id, a.info.arm.contact) <
+           std::tie(b.road_odr_id, b.junction_odr_id, b.info.arm.contact);
+  });
+
+  std::set<std::string> taken;
+  network.for_each_object([&](ObjectId, const Object& object) { taken.insert(object.odr_id); });
+
+  StopLineExports out;
+  for (Pending& entry : pending) {
+    const std::string base = "sl_" + entry.junction_odr_id + "_" + entry.road_odr_id + "_" +
+                             (entry.info.arm.contact == ContactPoint::End ? "e" : "s");
+    std::string id = base;
+    for (int suffix = 1; taken.contains(id); ++suffix) {
+      id = base + "_" + std::to_string(suffix);
+    }
+    taken.insert(id);
+    out[entry.road_odr_id].push_back(
+        StopLineExport{.info = std::move(entry.info), .odr_id = std::move(id)});
+  }
+  return out;
+}
+
 void write_objects(pugi::xml_node road_node,
                    const RoadNetwork& network,
                    RoadId road_id,
                    const Road& road,
-                   const WriterOptions& options) {
+                   const WriterOptions& options,
+                   const StopLineExports& stoplines) {
   const std::vector<ObjectId> owned = objects_of(network, road_id);
-  if (owned.empty() && road.object_extras.empty()) {
+  const auto materialized = stoplines.find(road.odr_id);
+  const bool has_stoplines = materialized != stoplines.end();
+  if (owned.empty() && road.object_extras.empty() && !has_stoplines) {
     return;
   }
   pugi::xml_node objects_node = road_node.append_child("objects");
   for (const ObjectId object_id : owned) {
     write_object(objects_node, *network.object(object_id), options);
+  }
+  // Materialized stop lines come after the road's real objects: they are
+  // derived output, not part of the arena, and keeping them last leaves the
+  // authored objects' serialization untouched.
+  if (has_stoplines) {
+    for (const StopLineExport& line : materialized->second) {
+      write_stopline_object(objects_node, line);
+    }
   }
   for (const std::string& fragment : road.object_extras) {
     append_fragment(objects_node, fragment);
@@ -832,7 +989,8 @@ void write_road(pugi::xml_node root,
                 const RoadNetwork& network,
                 RoadId road_id,
                 const Road& road,
-                const WriterOptions& options) {
+                const WriterOptions& options,
+                const StopLineExports& stoplines) {
   pugi::xml_node road_node = root.append_child("road");
   if (!road.name.empty()) {
     road_node.append_attribute("name").set_value(road.name.c_str());
@@ -936,7 +1094,7 @@ void write_road(pugi::xml_node root,
   }
 
   // <objects> follows <lanes> in the road element sequence (1.9.0 §10.1).
-  write_objects(road_node, network, road_id, road, options);
+  write_objects(road_node, network, road_id, road, options, stoplines);
 
   // <signals> follows <objects> in the road element sequence (1.9.0 §10.1).
   write_signals(road_node, network, road_id, road, options);
@@ -1115,9 +1273,15 @@ void write_junction(pugi::xml_node root,
   // The generator's arm list round-trips through <userData> (OpenDRIVE 1.9.0
   // §7.2) so regeneration survives save/load; junctions from foreign files
   // carry no arms and emit nothing. Format: "roadOdrId:start|end;…".
-  if (!junction.arms.empty()) {
+  // Reader/writer symmetry (issue #90, found by the soak round-trip
+  // invariant): the reader rejects rm:arms with fewer than 2 arms, so
+  // writing a degenerate list (a junction that lost arms to delete_road's
+  // closure) would not round-trip byte-identically. A junction below 2
+  // arms cannot regenerate anyway — it persists as arm-less (foreign
+  // semantics: recreate to edit). `arms_round_trip` is the shared predicate;
+  // the stop-line exporter gates on it too, for the same reason.
+  if (arms_round_trip(network, junction)) {
     std::string value;
-    std::size_t written_arms = 0;
     for (const RoadEnd& arm : junction.arms) {
       const Road* road = network.road(arm.road);
       if (road == nullptr) {
@@ -1129,16 +1293,6 @@ void write_junction(pugi::xml_node root,
       value += road->odr_id;
       value += ':';
       value += arm.contact == ContactPoint::End ? "end" : "start";
-      ++written_arms;
-    }
-    // Reader/writer symmetry (issue #90, found by the soak round-trip
-    // invariant): the reader rejects rm:arms with fewer than 2 arms, so
-    // writing a degenerate list (a junction that lost arms to delete_road's
-    // closure) would not round-trip byte-identically. A junction below 2
-    // arms cannot regenerate anyway — it persists as arm-less (foreign
-    // semantics: recreate to edit).
-    if (written_arms < 2) {
-      value.clear();
     }
     if (!value.empty()) {
       pugi::xml_node user_data = junction_node.append_child("userData");
@@ -1571,8 +1725,13 @@ Expected<std::string> write_xodr(const RoadNetwork& network,
   header.append_attribute("name").set_value(std::string(document_name).c_str());
   header.append_attribute("vendor").set_value("RoadMaker");
 
-  network.for_each_road(
-      [&](RoadId road_id, const Road& road) { write_road(root, network, road_id, road, options); });
+  // Stop lines are materialized, not stored: solve every junction's once, up
+  // front, so the per-road emission below can stay a lookup (and so the ids
+  // stay stable no matter which road is written first).
+  const StopLineExports stoplines = build_stopline_exports(network);
+  network.for_each_road([&](RoadId road_id, const Road& road) {
+    write_road(root, network, road_id, road, options, stoplines);
+  });
 
   // Derive each junction's <boundary> once (pure). Any synthesized auxiliary
   // boundary roads are emitted among the real <road>s (before the <junction>s,

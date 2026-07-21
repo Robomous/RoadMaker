@@ -134,21 +134,11 @@ struct StencilParams {
 [[nodiscard]] RM_API Expected<void> apply_stencil_asset(Object& object,
                                                         const StencilParams& params);
 
-/// Parameters for junction-arm stop-line authoring.
-struct StopLineParams {
-  double thickness_m = 0.3; ///< line extent ALONG the road (§13 solid line)
-  double setback_m = 4.0;   ///< gap from the junction edge — clears a crosswalk
-};
-
-/// A solid stop line (`<object type="roadMark" subtype="signalLines">`) across
-/// the APPROACH lanes of each distinct arm road of `junction`, placed just
-/// inside the junction (the "Add stop lines to all arms" action). Spans only the
-/// lanes leading INTO the junction (one travel direction), so a two-way road
-/// gets a stop line per side at its own approach. Returns {owning road, object}
-/// pairs ready for `edit::add_object`, each with a unique `odr_id`. Empty when
-/// the junction is stale/foreign or an arm has no approach lanes. Pure.
-[[nodiscard]] RM_API std::vector<std::pair<RoadId, Object>> junction_stop_lines(
-    const RoadNetwork& network, JunctionId junction, const StopLineParams& params = {});
+// Stop lines are NOT generated here any more (p4-s3, issue #318). They are a
+// first-class derived entity: every junction arm has one without anything being
+// authored, solved by mesh::junction_stoplines() and materialized into the
+// .xodr on write. See roadmaker/mesh/junction_stoplines.hpp for the query and
+// roadmaker/edit/operations.hpp for the three authoring commands.
 
 /// Chooses the arrow glyph for one approach `lane` of arm road `arm`. Return an
 /// OpenDRIVE roadMark arrow subtype (§13.14.8 Table 117); returning an empty

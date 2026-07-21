@@ -215,6 +215,15 @@ Actions::Actions(QUndoStack& undo_stack, QObject* parent) : QObject(parent) {
          "tangency point to set that side's extent, Esc cancels (⇧R)"));
   tool_group->addAction(tool_corner);
 
+  tool_stopline = new QAction(tr("St&op Line"), this);
+  tool_stopline->setCheckable(true);
+  tool_stopline->setShortcuts(shortcuts::sequences(shortcuts::Id::ToolStopLine));
+  tool_stopline->setIconText(tr("Stop Line"));
+  tool_stopline->setToolTip(
+      tr("Stop Line — click a junction stop line, then drag it along the arm to set its "
+         "distance, F flips which direction it spans, Esc cancels (\u21e7O)"));
+  tool_group->addAction(tool_stopline);
+
   // Not a tool — a command that surfaces the 2D Editor's Lane Width tab for the
   // selected lane. Standalone so ⇧L works whatever tool is active.
   lane_width_editor = new QAction(tr("Lane &Width Editor"), this);
@@ -378,6 +387,8 @@ QAction* Actions::action(shortcuts::Id id) const {
     return tool_prop_polygon;
   case Id::ToolCorner:
     return tool_corner;
+  case Id::ToolStopLine:
+    return tool_stopline;
   case Id::LaneWidthEditor:
     return lane_width_editor;
   case Id::MergeRoads:
@@ -447,6 +458,7 @@ void Actions::apply_icons() {
   tool_prop_span->setIcon(Icons::get(QStringLiteral("prop-span")));
   tool_prop_polygon->setIcon(Icons::get(QStringLiteral("prop-polygon")));
   tool_corner->setIcon(Icons::get(QStringLiteral("corner-radius")));
+  tool_stopline->setIcon(Icons::get(QStringLiteral("stop-line")));
   template_rural->setIcon(Icons::get(QStringLiteral("template-rural")));
   template_urban->setIcon(Icons::get(QStringLiteral("template-urban")));
   template_highway->setIcon(Icons::get(QStringLiteral("template-highway")));

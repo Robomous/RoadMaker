@@ -147,6 +147,7 @@ TEST(ToolbarRegistry, LayoutMatchesTheIssue) {
                          Id::ToolEditNodes,
                          Id::ToolCreateJunction,
                          Id::ToolCorner,
+                         Id::ToolStopLine,
                          Id::ToolElevation}));
   EXPECT_EQ(ids_of(authoring, "Lanes"),
             (std::vector{Id::ToolLaneProfile,

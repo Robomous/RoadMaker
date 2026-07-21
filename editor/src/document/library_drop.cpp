@@ -445,11 +445,19 @@ LibraryDropAction resolve_library_drop(const LibraryItem& item,
     }
     const MaterialCatalog catalog;
     const edit::CrosswalkParams params = crosswalk_params_from_item(item, catalog);
-    action.objects = crosswalk_pair_for_arm(network, arm->junction, arm->arm_road, params);
-    if (action.objects.empty()) {
+    std::optional<std::pair<RoadId, Object>> placed =
+        crosswalk_for_arm(network, arm->junction, arm->arm_road, params);
+    if (!placed.has_value()) {
       action.toast = QStringLiteral("That approach has no lanes to cross");
       return action;
     }
+    // The stop line is derived, not placed: record the link so the drop's macro
+    // authors the same setback + provenance the interactive tool does.
+    action.stopline_link =
+        StopLineLink{.junction = arm->junction,
+                     .arm = RoadEnd{.road = arm->arm_road, .contact = arm->contact},
+                     .crosswalk_odr_id = placed->second.odr_id};
+    action.objects.push_back(*std::move(placed));
     action.kind = LibraryDropKind::Crosswalk;
     // Ghost sits where the arm meets the junction (ghost==commit); the tool's
     // chevron marks the same spot while the drag is live.

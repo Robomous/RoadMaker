@@ -40,7 +40,14 @@ asset's defaults unless individually overridden.
    shows the striped pattern with those measurements.
 5. [ ] With the Crosswalk & Stop Line tool, place two instances of the
    asset at two junction approaches. **Expected:** both render with the
-   asset's parameters.
+   asset's parameters, and one Ctrl+Z removes the crosswalk together with
+   its arm's stop-line link (the stop line itself is derived and stays —
+   see step 5b).
+5b. [ ] With the Stop Line tool (⇧O), click one of those approaches' stop
+   lines and drag it 5 m further from the junction, then press **F**.
+   **Expected:** the band slides along the arm as one undo step, the
+   Attributes pane's **Distance** tracks it, F flips it to span the
+   outgoing lanes, and **Reset to default** returns it to 4 m.
 6. [ ] With the Marking Curve tool, draw a free-form crossing using the
    same asset. **Expected:** the marking follows the drawn curve with the
    asset's pattern.
@@ -54,7 +61,10 @@ asset's defaults unless individually overridden.
    override.
 10. [ ] Save and reload. **Expected:** asset parameters, instances, and
     the override round-trip; the exported `.xodr` represents the
-    crosswalks as OpenDRIVE objects/markings and validates.
+    crosswalks as OpenDRIVE objects/markings and validates. The stop-line
+    distance and flip from step 5b survive too, and every arm's line is
+    exported as a plain `<object type="roadMark" subtype="signalLines">`
+    that a third-party viewer draws without any RoadMaker knowledge.
 
 ## Pass criteria
 

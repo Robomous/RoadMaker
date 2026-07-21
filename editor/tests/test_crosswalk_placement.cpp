@@ -68,55 +68,51 @@ TEST(CrosswalkPlacement, NearestJunctionArmRejectsOpenSpaceBeyondThreshold) {
   EXPECT_FALSE(hit.has_value());
 }
 
-TEST(CrosswalkPlacement, PairForArmKeepsOnlyThatArmsCrosswalkAndStopLine) {
+TEST(CrosswalkPlacement, ForArmKeepsOnlyThatArmsCrosswalk) {
   const RoadNetwork network = three_arm_junction();
   const RoadId arm = network.find_road("1");
-  const auto pair =
-      crosswalk_pair_for_arm(network, network.find_junction("1"), arm, edit::CrosswalkParams{});
+  const auto placed =
+      crosswalk_for_arm(network, network.find_junction("1"), arm, edit::CrosswalkParams{});
 
-  // Exactly the crosswalk + its stop line, both owned by the chosen arm.
-  int crosswalks = 0;
-  int stop_lines = 0;
-  std::set<std::string> ids;
-  for (const auto& [road, object] : pair) {
-    EXPECT_EQ(road, arm) << "an object leaked from another arm";
-    ids.insert(object.odr_id);
-    if (object.type == ObjectType::Crosswalk) {
-      ++crosswalks;
-    } else if (object.type_str == "roadMark" && object.subtype == "signalLines") {
-      ++stop_lines;
-    }
-  }
-  EXPECT_EQ(crosswalks, 1);
-  EXPECT_EQ(stop_lines, 1);
-  // Both generators seed ids from the same network, so the helper must have
-  // re-numbered the batch: the two objects carry distinct odr ids.
-  EXPECT_EQ(ids.size(), pair.size());
+  // Exactly the crosswalk, owned by the chosen arm. The companion stop line is
+  // no longer an object at all (p4-s3, #318): the arm already has a derived one,
+  // and the caller links it with edit::set_stopline_distance in the same macro.
+  ASSERT_TRUE(placed.has_value());
+  EXPECT_EQ(placed->first, arm) << "an object leaked from another arm";
+  EXPECT_EQ(placed->second.type, ObjectType::Crosswalk);
 }
 
-TEST(CrosswalkPlacement, PairForArmYieldsIdsUniqueAgainstExistingObjects) {
+TEST(CrosswalkPlacement, ForArmYieldsAnIdUniqueAgainstExistingObjects) {
   RoadNetwork network = three_arm_junction();
   const RoadId arm = network.find_road("1");
-  // Place the west arm's pair, then compute the east arm's pair against the
-  // mutated network: its ids must not collide with the objects already added.
+  // Place the west arm's crosswalk, then compute the east arm's against the
+  // mutated network: its id must not collide with the object already added.
   const auto west =
-      crosswalk_pair_for_arm(network, network.find_junction("1"), arm, edit::CrosswalkParams{});
-  ASSERT_FALSE(west.empty());
-  for (const auto& [road, object] : west) {
-    auto command = edit::add_object(network, road, object);
-    ASSERT_NE(command, nullptr);
-    ASSERT_TRUE(command->apply(network).has_value());
-  }
+      crosswalk_for_arm(network, network.find_junction("1"), arm, edit::CrosswalkParams{});
+  ASSERT_TRUE(west.has_value());
+  auto command = edit::add_object(network, west->first, west->second);
+  ASSERT_NE(command, nullptr);
+  ASSERT_TRUE(command->apply(network).has_value());
+
   std::set<std::string> existing;
   network.for_each_object([&](ObjectId, const Object& object) { existing.insert(object.odr_id); });
 
   const RoadId east = network.find_road("2");
-  const auto east_pair =
-      crosswalk_pair_for_arm(network, network.find_junction("1"), east, edit::CrosswalkParams{});
-  ASSERT_FALSE(east_pair.empty());
-  for (const auto& [road, object] : east_pair) {
-    EXPECT_FALSE(existing.contains(object.odr_id)) << "id " << object.odr_id << " collides";
-  }
+  const auto east_placed =
+      crosswalk_for_arm(network, network.find_junction("1"), east, edit::CrosswalkParams{});
+  ASSERT_TRUE(east_placed.has_value());
+  EXPECT_FALSE(existing.contains(east_placed->second.odr_id))
+      << "id " << east_placed->second.odr_id << " collides";
+}
+
+TEST(CrosswalkPlacement, NearestJunctionArmReportsWhichEndTouchesTheJunction) {
+  const RoadNetwork network = three_arm_junction();
+  // The west arm runs -40 -> -6, so it meets the junction at its End; the tool
+  // needs that contact to name the arm's stop line.
+  const auto hit = nearest_junction_arm(network, -20.0, 0.0, kCrosswalkSnapThreshold);
+  ASSERT_TRUE(hit.has_value());
+  EXPECT_EQ(hit->arm_road, network.find_road("1"));
+  EXPECT_EQ(hit->contact, ContactPoint::End);
 }
 
 } // namespace

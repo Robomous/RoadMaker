@@ -67,6 +67,7 @@ enum class Id {
   ToolPropSpan,
   ToolPropPolygon,
   ToolCorner,
+  ToolStopLine,
   LaneWidthEditor,
   MergeRoads,
   // View

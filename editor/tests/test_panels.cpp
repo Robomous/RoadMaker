@@ -4,6 +4,7 @@
 
 #include "roadmaker/edit/operations.hpp"
 #include "roadmaker/mesh/junction_corners.hpp"
+#include "roadmaker/mesh/junction_stoplines.hpp"
 #include "roadmaker/road/authoring.hpp"
 #include "roadmaker/road/junction.hpp"
 #include "roadmaker/road/surface_derivation.hpp"
@@ -39,6 +40,7 @@
 #include "panels/scrub_label.hpp"
 #include "panels/slot_widget.hpp"
 #include "tools/corner_tool.hpp"
+#include "tools/stopline_tool.hpp"
 
 namespace roadmaker::editor {
 namespace {
@@ -1415,4 +1417,115 @@ TEST(PropertiesPanel, JunctionDefaultThenPerCornerOverrideWins) {
 }
 
 } // namespace
+
+// --- Stop line section (p4-s3, #318) -----------------------------------------
+//
+// Every arm HAS a stop line, so unlike the Corner section there is nothing to
+// create: the pane only ever edits, and "Reset to default" is the way back.
+
+namespace {
+
+/// Click-selects `info`'s stop line, which also mirrors the junction into the
+/// SelectionModel.
+/// The band is its own handle, so — unlike a corner — no junction-floor pick is
+/// needed: the click lands directly on the line's centreline.
+void activate_stopline(StopLineTool& tool, const JunctionStopLineInfo& info) {
+  ToolEvent event;
+  event.world_x = (info.left[0] + info.right[0]) / 2.0;
+  event.world_y = (info.left[1] + info.right[1]) / 2.0;
+  event.buttons = Qt::LeftButton;
+  if (!tool.mouse_press(event)) {
+    throw std::runtime_error("the stop line click was not consumed");
+  }
+  event.buttons = Qt::NoButton;
+  static_cast<void>(tool.mouse_release(event));
+}
+
+JunctionStopLineInfo first_stopline(const CornerScene& scene) {
+  const std::vector<JunctionStopLineInfo> all =
+      junction_stoplines(scene.document.network(), scene.junction);
+  if (all.empty()) {
+    throw std::runtime_error("the cross junction solved no stop lines");
+  }
+  return all.front();
+}
+
+QDoubleSpinBox* stopline_spin(PropertiesPanel& panel) {
+  return panel.findChild<QDoubleSpinBox*>(QStringLiteral("stopline_distance_spin"));
+}
+
+} // namespace
+
+TEST(PropertiesPanel, StopLineRowAppearsOnlyForTheActiveLinesJunction) {
+  CornerScene scene;
+  PropertiesPanel panel(scene.document, scene.selection);
+  StopLineTool tool(scene.document, scene.selection);
+  panel.set_stopline_tool(&tool);
+  tool.activate();
+
+  QDoubleSpinBox* spin = stopline_spin(panel);
+  ASSERT_NE(spin, nullptr);
+  EXPECT_FALSE(spin->isVisibleTo(&panel)) << "no active stop line yet";
+
+  const JunctionStopLineInfo info = first_stopline(scene);
+  activate_stopline(tool, info);
+  ASSERT_TRUE(spin->isVisibleTo(&panel));
+  EXPECT_DOUBLE_EQ(spin->value(), info.distance);
+  EXPECT_DOUBLE_EQ(spin->maximum(), info.max_distance);
+  EXPECT_DOUBLE_EQ(spin->minimum(), 0.0)
+      << "zero is a meaningful setback — no special-value sentinel here";
+
+  auto* arm = panel.findChild<QLabel*>(QStringLiteral("stopline_arm_label"));
+  ASSERT_NE(arm, nullptr);
+  EXPECT_TRUE(arm->text().contains(QStringLiteral("road"))) << arm->text().toStdString();
+  EXPECT_TRUE(arm->text().contains(QStringLiteral("approach")));
+
+  // A non-junction primary selection takes the section away again.
+  scene.selection.select({.road = scene.document.network().find_road("1")});
+  EXPECT_FALSE(spin->isVisibleTo(&panel));
+  EXPECT_TRUE(tool.active_stopline().has_value());
+}
+
+TEST(PropertiesPanel, StopLineDistanceEditPushesOneCommand) {
+  CornerScene scene;
+  PropertiesPanel panel(scene.document, scene.selection);
+  StopLineTool tool(scene.document, scene.selection);
+  panel.set_stopline_tool(&tool);
+  tool.activate();
+  activate_stopline(tool, first_stopline(scene));
+
+  const int before = scene.document.undo_stack()->index();
+  QDoubleSpinBox* spin = stopline_spin(panel);
+  spin->setValue(7.5);
+  emit spin->editingFinished();
+
+  EXPECT_EQ(scene.document.undo_stack()->index(), before + 1);
+  EXPECT_DOUBLE_EQ(first_stopline(scene).distance, 7.5);
+  EXPECT_TRUE(first_stopline(scene).distance_authored);
+}
+
+TEST(PropertiesPanel, StopLineFlipButtonFlipsAndResetEnablesOnlyWhenAuthored) {
+  CornerScene scene;
+  PropertiesPanel panel(scene.document, scene.selection);
+  StopLineTool tool(scene.document, scene.selection);
+  panel.set_stopline_tool(&tool);
+  tool.activate();
+  activate_stopline(tool, first_stopline(scene));
+
+  auto* reset = panel.findChild<QPushButton*>(QStringLiteral("stopline_reset_button"));
+  auto* flip = panel.findChild<QPushButton*>(QStringLiteral("stopline_flip_button"));
+  ASSERT_NE(reset, nullptr);
+  ASSERT_NE(flip, nullptr);
+  EXPECT_FALSE(reset->isEnabled()) << "a derived line has nothing to reset";
+
+  flip->click();
+  EXPECT_TRUE(first_stopline(scene).flipped);
+  EXPECT_TRUE(reset->isEnabled()) << "the flip authored a record";
+
+  reset->click();
+  EXPECT_FALSE(first_stopline(scene).authored);
+  EXPECT_FALSE(first_stopline(scene).flipped);
+  EXPECT_FALSE(reset->isEnabled());
+}
+
 } // namespace roadmaker::editor

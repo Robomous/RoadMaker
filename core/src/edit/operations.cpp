@@ -6,6 +6,7 @@
 #include "roadmaker/geometry/profile_fit.hpp"
 #include "roadmaker/geometry/road_intersection.hpp"
 #include "roadmaker/mesh/junction_corners.hpp"
+#include "roadmaker/mesh/junction_stoplines.hpp"
 #include "roadmaker/road/authoring.hpp"
 #include "roadmaker/road/network.hpp"
 #include "roadmaker/tol.hpp"
@@ -3453,6 +3454,149 @@ set_junction_material(const RoadNetwork& network, JunctionId junction_id, std::s
   Junction after = *junction;
   after.material = std::move(material);
   return corner_value_command(kName, junction_id, *junction, std::move(after));
+}
+
+// --- stop lines (p4-s3, #318) ------------------------------------------------
+
+namespace {
+
+/// Shared front half of the stop-line commands: validates the junction id and
+/// that `arm` names a stop line the junction currently HAS. Solvability comes
+/// from junction_stoplines(), the same query the mesher and the panel read, so
+/// none of them can disagree about what a stop line is. On success returns a
+/// copy of the junction to mutate.
+Expected<Junction> stopline_edit_context(const RoadNetwork& network,
+                                         JunctionId junction_id,
+                                         const RoadEnd& arm,
+                                         std::string_view name) {
+  const Junction* junction = network.junction(junction_id);
+  if (junction == nullptr) {
+    return make_error(ErrorCode::InvalidArgument, "stale junction id");
+  }
+  const std::vector<JunctionStopLineInfo> lines = junction_stoplines(network, junction_id);
+  const bool solvable =
+      std::ranges::any_of(lines, [&](const JunctionStopLineInfo& info) { return info.arm == arm; });
+  if (!solvable) {
+    return make_error(ErrorCode::InvalidArgument,
+                      fmt::format("{}: the given road end is not a stop line of junction {}",
+                                  name,
+                                  junction->odr_id));
+  }
+  return *junction;
+}
+
+std::vector<StopLine>::iterator find_stopline(std::vector<StopLine>& lines, const RoadEnd& arm) {
+  return std::ranges::find_if(lines, [&](const StopLine& record) { return record.arm == arm; });
+}
+
+/// True when the record has fallen back to pure derivation — the writer's drop
+/// rule and the flip command's "erase the entry" condition, which is what keeps
+/// flip-twice byte-identical to no edit at all.
+bool stopline_authors_nothing(const StopLine& record) {
+  return !record.distance.has_value() && !record.flipped && record.crosswalk_odr_id.empty();
+}
+
+/// Wraps a stop-line value edit. The band belongs to the arm road's mesh, so
+/// that road is dirty; the turn set is untouched (junctions_are_current).
+std::unique_ptr<Command> stopline_value_command(std::string_view name,
+                                                JunctionId junction_id,
+                                                RoadId arm_road,
+                                                const Junction& before,
+                                                Junction after) {
+  auto command = std::make_unique<GenericCommand>(
+      std::string(name),
+      DirtySet{.roads = {arm_road}, .junctions = {junction_id}, .junctions_are_current = true});
+  command->before.junctions.emplace_back(junction_id, before);
+  command->after.junctions.emplace_back(junction_id, std::move(after));
+  return command;
+}
+
+} // namespace
+
+std::unique_ptr<Command> set_stopline_distance(const RoadNetwork& network,
+                                               JunctionId junction_id,
+                                               RoadEnd arm,
+                                               double distance,
+                                               std::optional<std::string> crosswalk_link) {
+  static constexpr std::string_view kName = "Set Stop Line Distance";
+  if (!std::isfinite(distance) || distance < 0.0) {
+    return invalid_command(
+        std::string(kName),
+        Error{.code = ErrorCode::InvalidArgument,
+              .message = "the stop-line distance must be finite and non-negative"});
+  }
+  Expected<Junction> before = stopline_edit_context(network, junction_id, arm, kName);
+  if (!before) {
+    return invalid_command(std::string(kName), before.error());
+  }
+  Junction after = *before;
+  const auto entry = find_stopline(after.stoplines, arm);
+  if (entry != after.stoplines.end()) {
+    entry->distance = distance;
+    if (crosswalk_link.has_value()) {
+      entry->crosswalk_odr_id = *std::move(crosswalk_link);
+    }
+  } else {
+    after.stoplines.push_back(StopLine{.arm = arm,
+                                       .distance = distance,
+                                       .flipped = false,
+                                       .crosswalk_odr_id = crosswalk_link.value_or(std::string{})});
+  }
+  return stopline_value_command(kName, junction_id, arm.road, *before, std::move(after));
+}
+
+std::unique_ptr<Command>
+flip_stopline(const RoadNetwork& network, JunctionId junction_id, RoadEnd arm) {
+  static constexpr std::string_view kName = "Flip Stop Line";
+  Expected<Junction> before = stopline_edit_context(network, junction_id, arm, kName);
+  if (!before) {
+    return invalid_command(std::string(kName), before.error());
+  }
+
+  const auto current = find_stopline(before->stoplines, arm);
+  const bool flipped = current != before->stoplines.end() && current->flipped;
+
+  // The direction being toggled INTO must have lanes to span; an empty band is
+  // an error rather than a zero-width paint stripe. This mirrors exactly what
+  // junction_stoplines() checks when it decides an arm has no line.
+  const Expected<ContactState> contact = contact_state(network, arm);
+  if (!contact || driving_lanes_at(network, arm, *contact, /*incoming=*/flipped).empty()) {
+    return invalid_command(std::string(kName),
+                           Error{.code = ErrorCode::InvalidArgument,
+                                 .message = "the arm has no driving lanes in that direction"});
+  }
+
+  Junction after = *before;
+  const auto entry = find_stopline(after.stoplines, arm);
+  if (entry != after.stoplines.end()) {
+    entry->flipped = !entry->flipped;
+    // Back to pure derivation — drop the record so the written file matches the
+    // one before the first flip byte for byte.
+    if (stopline_authors_nothing(*entry)) {
+      after.stoplines.erase(entry);
+    }
+  } else {
+    after.stoplines.push_back(StopLine{.arm = arm, .flipped = true});
+  }
+  return stopline_value_command(kName, junction_id, arm.road, *before, std::move(after));
+}
+
+std::unique_ptr<Command>
+reset_stopline(const RoadNetwork& network, JunctionId junction_id, RoadEnd arm) {
+  static constexpr std::string_view kName = "Reset Stop Line";
+  Expected<Junction> before = stopline_edit_context(network, junction_id, arm, kName);
+  if (!before) {
+    return invalid_command(std::string(kName), before.error());
+  }
+  Junction after = *before;
+  const auto entry = find_stopline(after.stoplines, arm);
+  if (entry == after.stoplines.end()) {
+    return invalid_command(std::string(kName),
+                           Error{.code = ErrorCode::InvalidArgument,
+                                 .message = "the stop line has nothing authored to reset"});
+  }
+  after.stoplines.erase(entry);
+  return stopline_value_command(kName, junction_id, arm.road, *before, std::move(after));
 }
 
 // --- parametric intersection assemblies -------------------------------------

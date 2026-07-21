@@ -201,7 +201,6 @@ TEST(ContextMenu, JunctionFloorPickReachesTheJunctionMenu) {
 
   const std::vector<MenuItem> items = build_context_menu(context, fx.deps);
   EXPECT_NE(fx.find(items, "Add crosswalks to all arms"), nullptr);
-  EXPECT_NE(fx.find(items, "Add stop lines to all arms"), nullptr);
   EXPECT_NE(fx.find(items, "Add lane arrows to all arms"), nullptr);
   EXPECT_NE(fx.find(items, "Add centre lines to all arms"), nullptr);
   EXPECT_NE(fx.find(items, "Delete junction"), nullptr);
@@ -243,7 +242,11 @@ TEST(ContextMenu, AddCrosswalksToAllArmsIsOneUndoableMacro) {
   EXPECT_EQ(object_count(fx), 3U);
 }
 
-TEST(ContextMenu, AddStopLinesToAllArmsIsOneUndoableMacro) {
+TEST(ContextMenu, AddCrosswalksAlsoLinksEachArmsStopLine) {
+  // "Add stop lines to all arms" is gone (p4-s3, #318): every arm already HAS a
+  // stop line, so the action would be a no-op. What the crosswalk action does
+  // now is link each placed crosswalk to its arm's derived line, in the SAME
+  // macro, so one undo still removes the whole batch.
   Fixture fx;
   const roadmaker::JunctionId junction = build_junction(fx);
   ASSERT_TRUE(junction.is_valid());
@@ -251,14 +254,25 @@ TEST(ContextMenu, AddStopLinesToAllArmsIsOneUndoableMacro) {
   MenuContext context;
   context.junction = junction;
   const std::vector<MenuItem> items = build_context_menu(context, fx.deps);
-  const MenuItem* add = fx.find(items, "Add stop lines to all arms");
+  EXPECT_EQ(fx.find(items, "Add stop lines to all arms"), nullptr)
+      << "the retired action must not linger in the menu";
+
+  const MenuItem* add = fx.find(items, "Add crosswalks to all arms");
   ASSERT_NE(add, nullptr);
   ASSERT_TRUE(add->enabled);
 
   add->invoke();
-  EXPECT_EQ(object_count(fx), 3U); // one stop line per arm
+  EXPECT_EQ(object_count(fx), 3U); // one crosswalk per arm, no stop-line objects
+  const roadmaker::Junction* record = fx.document.network().junction(junction);
+  ASSERT_NE(record, nullptr);
+  EXPECT_EQ(record->stoplines.size(), 3U) << "each arm's line records its crosswalk";
+  for (const roadmaker::StopLine& line : record->stoplines) {
+    EXPECT_FALSE(line.crosswalk_odr_id.empty());
+  }
+
   fx.document.undo_stack()->undo();
   EXPECT_EQ(object_count(fx), 0U);
+  EXPECT_TRUE(fx.document.network().junction(junction)->stoplines.empty());
 }
 
 TEST(ContextMenu, AddLaneArrowsToAllArmsIsOneUndoableMacro) {

@@ -49,12 +49,22 @@ struct PlacementPreview {
   bool valid = false;
 };
 
+/// The stop line a dropped crosswalk should be linked to (p4-s3, #318). The
+/// line itself is derived and already exists — only the setback and the
+/// provenance link are authored, in the same undo macro as the crosswalk add.
+struct StopLineLink {
+  JunctionId junction;
+  RoadEnd arm;
+  std::string crosswalk_odr_id;
+};
+
 struct LibraryDropAction {
   LibraryDropKind kind = LibraryDropKind::None;
   LaneProfile profile;                    ///< RoadTemplate: arm Create Road with this
   std::unique_ptr<edit::Command> command; ///< Assembly/Tree/RoadStyle: push this (one undo unit)
   std::vector<std::pair<RoadId, Object>>
-      objects;              ///< Crosswalk: the crosswalk + stop-line pair, added as one macro
+      objects; ///< Crosswalk: the crosswalk object, added as one macro with the link below
+  std::optional<StopLineLink> stopline_link; ///< Crosswalk: its arm's stop line
   RoadId target_road;       ///< RoadStyle: the road under the cursor (for highlight)
   QString toast;            ///< success message, or (kind None) a reject hint
   PlacementPreview preview; ///< where the ghost/commit lands (ghost==commit)

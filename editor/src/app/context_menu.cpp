@@ -3,6 +3,7 @@
 #include "roadmaker/edit/connection.hpp"
 #include "roadmaker/edit/markings.hpp"
 #include "roadmaker/edit/operations.hpp"
+#include "roadmaker/mesh/junction_stoplines.hpp"
 #include "roadmaker/road/network.hpp"
 
 #include <QAction>
@@ -168,29 +169,28 @@ std::vector<MenuItem> build_context_menu(const MenuContext& context, ContextMenu
           }
           deps.document.undo_stack()->beginMacro(QObject::tr("Add crosswalks"));
           for (auto& [road, object] : crosswalks) {
+            // Link each crosswalk to its arm's (already derived) stop line
+            // inside the same macro, so the setback and the provenance match
+            // what the interactive tool records.
+            const std::string crosswalk_odr = object.odr_id;
+            const RoadId arm_road = road;
             (void)deps.document.push_command(
                 edit::add_object(deps.document.network(), road, std::move(object)));
+            for (const ContactPoint contact : {ContactPoint::Start, ContactPoint::End}) {
+              const RoadEnd arm{.road = arm_road, .contact = contact};
+              if (edit::junction_at_end(deps.document.network(), arm) != junction) {
+                continue;
+              }
+              (void)deps.document.push_command(edit::set_stopline_distance(
+                  deps.document.network(), junction, arm, kStopLineDefaultDistance, crosswalk_odr));
+            }
           }
           deps.document.undo_stack()->endMacro();
         }});
-    // A solid stop line across each arm's approach lanes, just behind the
-    // crosswalk — again one undo step.
-    const bool has_stop_arms = !edit::junction_stop_lines(network, junction).empty();
-    items.push_back(
-        MenuItem{.text = QObject::tr("Add stop lines to all arms"),
-                 .enabled = has_stop_arms,
-                 .invoke = [deps, junction] {
-                   auto stop_lines = edit::junction_stop_lines(deps.document.network(), junction);
-                   if (stop_lines.empty()) {
-                     return;
-                   }
-                   deps.document.undo_stack()->beginMacro(QObject::tr("Add stop lines"));
-                   for (auto& [road, object] : stop_lines) {
-                     (void)deps.document.push_command(
-                         edit::add_object(deps.document.network(), road, std::move(object)));
-                   }
-                   deps.document.undo_stack()->endMacro();
-                 }});
+    // NOTE: there is no "Add stop lines to all arms" action any more (p4-s3,
+    // #318). Every arm already HAS a stop line — they are derived, meshed and
+    // exported without anything being authored — so the action would be a no-op.
+    // Editing one is the StopLine tool's job.
     // A straight lane arrow on each approach lane, pointing into the junction.
     const bool has_arrow_arms = !edit::junction_lane_arrows(network, junction).empty();
     items.push_back(

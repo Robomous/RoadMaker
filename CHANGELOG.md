@@ -18,6 +18,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 Current version on `main`: **0.0.1**.
 
+### Added
+- **Junction stop lines are a first-class derived entity**
+  ([#318](https://github.com/Robomous/RoadMaker/issues/318)): every junction
+  arm whose junction-facing end has driving lanes now HAS a stop line — set
+  back 4 m, spanning the approach lanes — without anything being authored. One
+  query, `junction_stoplines()`, is the single geometry source for the mesher,
+  the `.xodr` writer, the editor and the Python bindings, so what you see, what
+  you export and what you edit cannot drift apart.
+  - A new **Stop Line tool** (⇧O) drags a line along its arm to set the
+    setback and flips its direction with `F`; the Attributes pane gains a Stop
+    line section (Distance, Flip, Reset to default). Each gesture is one undo
+    step and reverts byte-identically.
+  - Kernel commands `edit::set_stopline_distance`, `edit::flip_stopline` and
+    `edit::reset_stopline`, all bound in Python alongside the query and a new
+    `python/examples/junction_stoplines.py`.
+  - Placing a crosswalk now links it to its arm's existing stop line inside the
+    same undo macro, instead of creating a second object.
+
+### Changed
+- **`RoadEnd` is comparable and hashable in Python.** It is the identity of a
+  junction arm — and so of its corner and its stop line — but `==` fell through
+  to identity comparison, so matching a solved result back to the arm you asked
+  about silently never matched.
+
+### Fixed
+- **`write_xodr` no longer crashes on a dangling road link**
+  ([#311](https://github.com/Robomous/RoadMaker/issues/311)): a road whose
+  predecessor/successor named an erased road (or junction) was dereferenced
+  unguarded while writing `<link>`. Such targets are now resolved first and
+  omitted from the output, never emitting an empty `<link/>`, and
+  `validate_network` reports each omission citing
+  `asam.net:xodr:1.4.0:ids.only_ref_defined_ids` so the drop is never silent.
+
+### Removed
+- `edit::junction_stop_lines` and `StopLineParams`, superseded by the derived
+  stop-line entity above; the "Add stop lines to all arms" junction context
+  action goes with them, since every arm already has one.
+
 ### Milestone M3a close — placement, transform and GS-1 acceptance
 
 Closes **M3a**. Placement and transform corrections found while dogfooding GS-1

@@ -26,6 +26,7 @@
 #include "render/material_catalog.hpp"
 #include "tools/corner_tool.hpp"
 #include "tools/elevation_tool.hpp"
+#include "tools/stopline_tool.hpp"
 
 namespace roadmaker::editor {
 
@@ -232,6 +233,10 @@ PropertiesPanel::PropertiesPanel(Document& document,
       corner_radius_spin_(new QDoubleSpinBox),
       corner_sidewalk_slot_(new SlotWidget(QStringLiteral("Materials"), this)),
       corner_median_slot_(new SlotWidget(QStringLiteral("Materials"), this)),
+      stopline_group_(new QGroupBox(tr("Stop line"), this)), stopline_arm_label_(new QLabel(this)),
+      stopline_distance_spin_(new QDoubleSpinBox),
+      stopline_flip_button_(new QPushButton(tr("Flip direction"))),
+      stopline_reset_button_(new QPushButton(tr("Reset to default"))),
       junction_group_(new QGroupBox(tr("Junction"), this)),
       junction_radius_spin_(new QDoubleSpinBox),
       junction_material_slot_(new SlotWidget(QStringLiteral("Materials"), this)),
@@ -454,6 +459,63 @@ PropertiesPanel::PropertiesPanel(Document& document,
           this,
           &PropertiesPanel::library_category_requested);
   corner_group_->hide();
+
+  // Stop line: the setback of whichever junction stop line the Stop Line tool
+  // has made active (p4-s3, GW-5). Every arm HAS a line — they are derived — so
+  // this section only ever edits, and "Reset to default" is what un-authors one.
+  stopline_arm_label_->setObjectName(QStringLiteral("stopline_arm_label"));
+  stopline_arm_label_->setWordWrap(true);
+  stopline_distance_spin_->setObjectName(QStringLiteral("stopline_distance_spin"));
+  // The upper bound is per-arm geometry (refresh_stopline re-ranges it). Zero is
+  // a MEANINGFUL setback here — a line right at the mouth — so unlike the
+  // junction radius default there is no special-value sentinel and no clamp
+  // away from zero.
+  stopline_distance_spin_->setRange(0.0, 0.0);
+  stopline_distance_spin_->setSingleStep(0.5);
+  stopline_distance_spin_->setDecimals(2);
+  stopline_distance_spin_->setSuffix(tr(" m"));
+  stopline_form_ = new QFormLayout(stopline_group_);
+  stopline_form_->addRow(tr("Arm"), stopline_arm_label_);
+  stopline_distance_scrub_label_ = install_scrub(
+      new ScrubLabel(tr("Distance"), this),
+      {.spin = stopline_distance_spin_,
+       .units_per_pixel = 0.05,
+       .baseline = [this]() -> std::optional<double> {
+         const std::optional<JunctionStopLineInfo> info = active_stopline_info();
+         return info.has_value() ? std::optional<double>(info->distance) : std::nullopt;
+       },
+       .factory =
+           [this](const RoadNetwork& network, double value) {
+             const auto line = stopline_tool_->active_stopline();
+             return edit::set_stopline_distance(network, line->junction, line->arm, value);
+           }});
+  stopline_distance_scrub_label_->setObjectName(QStringLiteral("stopline_distance_scrub"));
+  stopline_form_->addRow(stopline_distance_scrub_label_, stopline_distance_spin_);
+
+  stopline_flip_button_->setObjectName(QStringLiteral("stopline_flip_button"));
+  stopline_flip_button_->setToolTip(
+      tr("Span the outgoing lanes instead of the approach ones (F in the Stop Line tool)"));
+  connect(stopline_flip_button_, &QPushButton::clicked, this, [this] {
+    const auto line = stopline_tool_ != nullptr ? stopline_tool_->active_stopline() : std::nullopt;
+    if (!line.has_value()) {
+      return;
+    }
+    push(edit::flip_stopline(document_.network(), line->junction, line->arm));
+  });
+  stopline_form_->addRow(QString(), stopline_flip_button_);
+
+  stopline_reset_button_->setObjectName(QStringLiteral("stopline_reset_button"));
+  stopline_reset_button_->setToolTip(
+      tr("Drop this arm's authored stop line and return it to the derived default"));
+  connect(stopline_reset_button_, &QPushButton::clicked, this, [this] {
+    const auto line = stopline_tool_ != nullptr ? stopline_tool_->active_stopline() : std::nullopt;
+    if (!line.has_value()) {
+      return;
+    }
+    push(edit::reset_stopline(document_.network(), line->junction, line->arm));
+  });
+  stopline_form_->addRow(QString(), stopline_reset_button_);
+  stopline_group_->hide();
 
   // Junction: the junction-WIDE values (p4-s2). The radius default is the
   // fallback every corner without its own radius uses, so its zero position is
@@ -714,6 +776,7 @@ PropertiesPanel::PropertiesPanel(Document& document,
   layout->addWidget(lane_group_);
   layout->addWidget(elevation_group_);
   layout->addWidget(corner_group_);
+  layout->addWidget(stopline_group_);
   layout->addWidget(junction_group_);
   layout->addWidget(signal_group_);
   layout->addWidget(object_group_);
@@ -820,6 +883,19 @@ PropertiesPanel::PropertiesPanel(Document& document,
                                  corner_radius_spin_->value()));
   });
 
+  // The active stop line's setback commits on focus-out, with the same
+  // unchanged-value guard so refresh_stopline() re-seeding never echoes a
+  // command back.
+  connect(stopline_distance_spin_, &QDoubleSpinBox::editingFinished, this, [this] {
+    const std::optional<JunctionStopLineInfo> info = active_stopline_info();
+    if (!info.has_value() || std::abs(stopline_distance_spin_->value() - info->distance) < 1e-9) {
+      return;
+    }
+    const auto line = stopline_tool_->active_stopline();
+    push(edit::set_stopline_distance(
+        document_.network(), line->junction, line->arm, stopline_distance_spin_->value()));
+  });
+
   // The junction-wide default commits on focus-out too, with the same skip
   // guard. Typing 0 (the "Derived" position) is the CLEAR gesture — but only
   // when a default is actually set: clearing nothing is a kernel error.
@@ -872,10 +948,12 @@ void PropertiesPanel::refresh() {
   }
   clear_rows();
 
-  // The Corner section follows the tool's sub-selection, not the row layout
-  // below, and every path through this function (road, lane, junction, empty)
-  // is covered by its own predicate — so decide it once, up front.
+  // The Corner and Stop line sections follow their tool's sub-selection, not
+  // the row layout below, and every path through this function (road, lane,
+  // junction, empty) is covered by their own predicates — so decide them once,
+  // up front.
   refresh_corner();
+  refresh_stopline();
 
   // The asset editors are Library-driven modes; any scene selection closes them.
   asset_group_->hide();
@@ -1430,6 +1508,17 @@ void PropertiesPanel::refresh_elevation() {
   elevation_node_label_->setText(tr("Click a road node to edit its elevation."));
 }
 
+void PropertiesPanel::set_stopline_tool(StopLineTool* tool) {
+  stopline_tool_ = tool;
+  if (stopline_tool_ != nullptr) {
+    connect(stopline_tool_,
+            &StopLineTool::stopline_selection_changed,
+            this,
+            &PropertiesPanel::refresh_stopline);
+  }
+  refresh_stopline();
+}
+
 void PropertiesPanel::set_corner_tool(CornerTool* tool) {
   corner_tool_ = tool;
   if (corner_tool_ != nullptr) {
@@ -1491,6 +1580,48 @@ void PropertiesPanel::refresh_corner() {
           .arg(info->max_radius, 0, 'f', 2));
   const QSignalBlocker blocker(corner_radius_spin_);
   corner_radius_spin_->setValue(info->radius);
+}
+
+std::optional<JunctionStopLineInfo> PropertiesPanel::active_stopline_info() const {
+  if (stopline_tool_ == nullptr) {
+    return std::nullopt;
+  }
+  const auto line = stopline_tool_->active_stopline();
+  // The pane edits the stop line of the junction it is SHOWING: a stale active
+  // line from a junction the user has since deselected must not be editable
+  // through rows describing something else.
+  if (!line.has_value() || line->junction != selection_.primary().junction) {
+    return std::nullopt;
+  }
+  return stopline_tool_->active_stopline_info();
+}
+
+void PropertiesPanel::refresh_stopline() {
+  const std::optional<JunctionStopLineInfo> info = active_stopline_info();
+  if (!info.has_value()) {
+    stopline_group_->hide();
+    return;
+  }
+  stopline_group_->show();
+
+  stopline_arm_label_->setText(
+      tr("%1 · %2")
+          .arg(arm_name(document_.network(), info->arm))
+          .arg(info->flipped ? tr("outgoing lanes") : tr("approach lanes")));
+
+  stopline_distance_spin_->setRange(0.0, info->max_distance);
+  stopline_distance_spin_->setToolTip(
+      tr("Setback from the junction mouth. This arm leaves room for at most %1 m; a larger "
+         "value is clamped when the road is meshed. Drag the attribute name to scrub.")
+          .arg(info->max_distance, 0, 'f', 2));
+  {
+    const QSignalBlocker blocker(stopline_distance_spin_);
+    stopline_distance_spin_->setValue(info->distance);
+  }
+
+  // Nothing authored means nothing to reset — the arm is already showing the
+  // derived default.
+  stopline_reset_button_->setEnabled(info->authored);
 }
 
 void PropertiesPanel::refresh_junction(const Junction& junction) {

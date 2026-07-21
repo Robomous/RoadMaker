@@ -1,6 +1,7 @@
 #include "roadmaker/edit/assembly.hpp"
 #include "roadmaker/edit/connection.hpp"
 #include "roadmaker/edit/operations.hpp"
+#include "roadmaker/mesh/junction_stoplines.hpp"
 #include "roadmaker/road/authoring.hpp"
 #include "roadmaker/road/lane.hpp"
 #include "roadmaker/road/lane_section.hpp"
@@ -700,34 +701,42 @@ RoadNetwork crosswalk_junction() {
   return network;
 }
 
-TEST(LibraryDrop, CrosswalkDropOnAnApproachPlacesPairOnThatArm) {
+TEST(LibraryDrop, CrosswalkDropOnAnApproachPlacesItOnThatArm) {
   RoadNetwork network = crosswalk_junction();
   // Drop over the west approach, 10 m out from the junction.
   LibraryDropAction action = resolve_library_drop(crosswalk_item(), network, -10.0, 0.0);
   ASSERT_EQ(action.kind, LibraryDropKind::Crosswalk);
-  EXPECT_EQ(action.command, nullptr); // the pair goes through action.objects
+  EXPECT_EQ(action.command, nullptr); // the crosswalk goes through action.objects
   EXPECT_TRUE(action.preview.valid);
   EXPECT_NEAR(action.preview.x, -6.0, 1e-6); // ghost at the arm/junction anchor
   EXPECT_NEAR(action.preview.y, 0.0, 1e-6);
   EXPECT_FALSE(action.toast.isEmpty());
 
-  // A crosswalk AND its stop line, both on the west arm; adding them stays valid.
+  // ONE object — the crosswalk, on the west arm. The stop line is derived
+  // (p4-s3, #318), so the drop carries a link to author rather than an object.
   const RoadId west = network.find_road("1");
-  int crosswalks = 0;
-  int stop_lines = 0;
+  ASSERT_EQ(action.objects.size(), 1U);
+  EXPECT_EQ(action.objects.front().first, west);
+  EXPECT_EQ(action.objects.front().second.type, ObjectType::Crosswalk);
+
+  ASSERT_TRUE(action.stopline_link.has_value());
+  EXPECT_EQ(action.stopline_link->arm.road, west);
+  EXPECT_EQ(action.stopline_link->arm.contact, ContactPoint::End);
+  EXPECT_EQ(action.stopline_link->crosswalk_odr_id, action.objects.front().second.odr_id);
+
+  // Applying the drop the way main_window does keeps the network valid.
   for (auto& [road, object] : action.objects) {
-    EXPECT_EQ(road, west);
-    if (object.type == ObjectType::Crosswalk) {
-      ++crosswalks;
-    } else if (object.type_str == "roadMark" && object.subtype == "signalLines") {
-      ++stop_lines;
-    }
     auto command = edit::add_object(network, road, object);
     ASSERT_NE(command, nullptr);
     ASSERT_TRUE(command->apply(network).has_value());
   }
-  EXPECT_EQ(crosswalks, 1);
-  EXPECT_EQ(stop_lines, 1);
+  auto link = edit::set_stopline_distance(network,
+                                          action.stopline_link->junction,
+                                          action.stopline_link->arm,
+                                          roadmaker::kStopLineDefaultDistance,
+                                          action.stopline_link->crosswalk_odr_id);
+  ASSERT_NE(link, nullptr);
+  ASSERT_TRUE(link->apply(network).has_value());
   EXPECT_EQ(count_errors(validate_network(network)), 0U);
 }
 

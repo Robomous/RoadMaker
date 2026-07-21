@@ -58,6 +58,7 @@ conventions below.
 | Prop Span tool | `Shift+S` |  |
 | Prop Polygon tool | `Shift+P` |  |
 | Corner tool (junction fillets) | `Shift+R` | plain R is the Prop Polygon tool's re-scatter key |
+| Stop Line tool (junction stop lines) | `Shift+O` | F flips the active line while the tool is up |
 | Lane Width editor (2D) | `Shift+L` |  |
 
 ## View

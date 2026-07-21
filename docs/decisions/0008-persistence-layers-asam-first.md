@@ -58,10 +58,25 @@ gracefully in other tools (they ignore `userData`). Policy:
 
 **Registry** — existing: `rm:waypoints`, `rm:crosswalk`, `rm:markingCurve`,
 `rm:stencil`, `rm:aux_boundary`, `rm:arms`, `rm:corners`, `rm:junction`,
-`rm:surface`, `rm:<material-id>`. Planned: `rm:stopline` (p4-s3),
+`rm:surface`, `rm:<material-id>`, `rm:stopline`. Planned:
 `rm:arms`/`rm:junction` extensions for locked state and s-spans (p4-s4),
 per-span surface records (p4-s5), `rm:maneuver` (p4-s6), `rm:phases`
 (p4-s8). Each owning sprint defines its payload against this policy.
+
+`rm:stopline` (p4-s3, shipped) is the worked example of a **materialized**
+record: the Layer-0 carrier is not something the user placed but an
+`<object type="roadMark" subtype="signalLines">` the writer synthesizes per
+junction arm (§13.7 Table 117 — a bounding-volume road-marking object, no
+`<outline>`, so it serializes identically under 1.8.1 and 1.9.0). Object
+scope, attribute form: `contact="start|end"` (required — the junction-facing
+end of the enclosing road, which IS the record's identity), plus `distance`,
+`flipped` and `crosswalk`, each omitted at its default. A foreign reader gets
+a valid, placed stop line; RoadMaker absorbs the tagged objects back into
+`Junction::stoplines` on load, so they are never live arena objects and a
+round trip neither duplicates them nor loses the authoring. Degradation
+follows the policy above: a malformed field drops the record but keeps the
+object live (Layer 0 survives), and an unknown attribute warns without
+costing the record.
 
 ### Layer 2 — native project/scene container
 

@@ -1,7 +1,9 @@
 #include "roadmaker/mesh/mesh_builder.hpp"
 
 #include "roadmaker/assets/prop_library.hpp"
+#include "roadmaker/edit/connection.hpp"
 #include "roadmaker/geometry/poly3.hpp"
+#include "roadmaker/mesh/junction_stoplines.hpp"
 #include "roadmaker/road/repeat_expansion.hpp"
 #include "roadmaker/tol.hpp"
 
@@ -11,6 +13,7 @@
 #include <array>
 #include <cmath>
 #include <cstddef>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -216,17 +219,24 @@ struct ObjectFrame {
   double vx, vy; // leftward axis in world XY
 };
 
-ObjectFrame object_frame(const Road& road, const Object& object) {
-  const StationFrame f = make_frame(road, object.s);
-  std::array<double, 3> center = lateral_point(f, object.t);
+/// The paint frame at a road-relative pose. Split out of object_frame so a
+/// DERIVED marking (one with no Object behind it, e.g. a junction stop line)
+/// gets a frame from exactly the same math a placed object would.
+ObjectFrame pose_frame(const Road& road, double s, double t, double hdg) {
+  const StationFrame f = make_frame(road, s);
+  std::array<double, 3> center = lateral_point(f, t);
   center[2] += kMarkingLift;
-  const double heading = std::atan2(f.sin_h, f.cos_h) + object.hdg;
+  const double heading = std::atan2(f.sin_h, f.cos_h) + hdg;
   return ObjectFrame{.center = center,
                      .normal = surface_normal(f),
                      .ux = std::cos(heading),
                      .uy = std::sin(heading),
                      .vx = -std::sin(heading),
                      .vy = std::cos(heading)};
+}
+
+ObjectFrame object_frame(const Road& road, const Object& object) {
+  return pose_frame(road, object.s, object.t, object.hdg);
 }
 
 /// Appends a convex polygon (local u/v points, CCW) as a triangle fan.
@@ -532,6 +542,45 @@ void build_object_markings(const RoadNetwork& network,
   }
 }
 
+/// Junction stop lines painted on THIS road (p4-s3, #318). Unlike every other
+/// marking these have no Object behind them: they are derived from the junction
+/// at each end of the road (plus any authored StopLine record) and materialized
+/// into the .xodr only on write. junction_stoplines() is the single geometry
+/// source, so what the viewport paints and what the writer exports cannot drift.
+///
+/// The quad is emitted through the same emit_object_quad the placed-object
+/// branch uses, with a synthetic frame at (s_center, t_center, hdg = 0) and
+/// length/width taken from the solve — pixel-identical to the objects the
+/// pre-p4-s3 generator used to create. An arm already carrying a legacy or
+/// foreign signalLines object is suppressed inside junction_stoplines(), so
+/// that object's own branch above draws it exactly once.
+void build_stopline_markings(const RoadNetwork& network,
+                             const Road& road,
+                             RoadId road_id,
+                             RoadMesh& mesh) {
+  for (const ContactPoint contact : {ContactPoint::Start, ContactPoint::End}) {
+    const RoadEnd arm{.road = road_id, .contact = contact};
+    const std::optional<JunctionId> junction = edit::junction_at_end(network, arm);
+    if (!junction.has_value()) {
+      continue;
+    }
+    for (const JunctionStopLineInfo& info : junction_stoplines(network, *junction)) {
+      if (!(info.arm == arm)) {
+        continue;
+      }
+      const ObjectFrame frame = pose_frame(road, info.s_center, info.t_center, 0.0);
+      SubMesh marking;
+      marking.material = LaneType::None;
+      marking.name = fmt::format(
+          "road {} stopline {}", road.odr_id, contact == ContactPoint::End ? "end" : "start");
+      emit_object_quad(frame, info.thickness, info.span, marking);
+      if (!marking.indices.empty()) {
+        mesh.markings.push_back(std::move(marking));
+      }
+    }
+  }
+}
+
 /// Placed props (trees/vegetation) a road owns, as INSTANCES of bundled prop
 /// models. An object contributes an instance only when it is a Tree/Vegetation
 /// whose @name resolves to a prop_library model; markings and foreign objects
@@ -824,6 +873,7 @@ RoadMesh build_one_road(const RoadNetwork& network,
   if (options.markings) {
     build_markings(network, road, road_id, stations, mesh);
     build_object_markings(network, road, road_id, mesh);
+    build_stopline_markings(network, road, road_id, mesh);
   }
   return mesh;
 }
@@ -955,6 +1005,7 @@ void remesh_objects(const RoadNetwork& network,
       const std::vector<double> stations = road_stations(network, *road, options);
       build_markings(network, *road, road_id, stations, *existing);
       build_object_markings(network, *road, road_id, *existing);
+      build_stopline_markings(network, *road, road_id, *existing);
     }
   }
 }
