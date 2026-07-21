@@ -306,4 +306,60 @@ TEST(StopLineTool, EscapeWithNoDragClearsTheSelection) {
   EXPECT_FALSE(tool.active_stopline().has_value());
 }
 
+// --- locked junctions (p4-s4, issue #319) ------------------------------------
+//
+// Locking guards the AUTOMATIC regeneration loop; it must not freeze the
+// junction's authored values. Editing a locked junction's stop line is exactly
+// the case that motivates the lock, so it keeps the same drag discipline.
+
+TEST(StopLineTool, DragOnALockedJunctionStillCommitsOneCommand) {
+  Scene scene;
+  ASSERT_TRUE(scene.document.push_command(
+      roadmaker::edit::set_junction_locked(scene.document.network(), scene.junction, true)));
+  const int base = scene.document.undo_stack()->index();
+
+  SelectionModel selection(scene.document);
+  StopLineTool tool(scene.document, selection);
+  tool.activate();
+
+  const JunctionStopLineInfo info = scene.line();
+  const std::array<double, 2> on = Scene::grab(info);
+  ASSERT_TRUE(tool.mouse_press(at(on[0], on[1], Qt::LeftButton)));
+  ASSERT_TRUE(tool.mouse_press(at(on[0], on[1], Qt::LeftButton)));
+  ASSERT_TRUE(tool.mouse_move(at(on[0] - 5.0, on[1], Qt::LeftButton)));
+  ASSERT_TRUE(tool.mouse_move(at(on[0] - 5.0, on[1], Qt::LeftButton)));
+  ASSERT_TRUE(tool.mouse_release(at(on[0] - 5.0, on[1])));
+
+  EXPECT_EQ(scene.document.undo_stack()->index(), base + 1);
+  const StopLine* record = scene.authored(info);
+  ASSERT_NE(record, nullptr);
+  ASSERT_TRUE(record->distance.has_value());
+  EXPECT_NEAR(*record->distance, kStopLineDefaultDistance + 5.0, 0.2);
+  EXPECT_TRUE(scene.document.network().junction(scene.junction)->locked)
+      << "editing an authored value never unlocks the junction";
+}
+
+TEST(StopLineTool, CancelledDragOnALockedJunctionIsByteIdentical) {
+  Scene scene;
+  ASSERT_TRUE(scene.document.push_command(
+      roadmaker::edit::set_junction_locked(scene.document.network(), scene.junction, true)));
+  const int base = scene.document.undo_stack()->index();
+  const std::string locked_xodr = xodr(scene.document);
+
+  SelectionModel selection(scene.document);
+  StopLineTool tool(scene.document, selection);
+  tool.activate();
+
+  const JunctionStopLineInfo info = scene.line();
+  const std::array<double, 2> on = Scene::grab(info);
+  ASSERT_TRUE(tool.mouse_press(at(on[0], on[1], Qt::LeftButton)));
+  ASSERT_TRUE(tool.mouse_press(at(on[0], on[1], Qt::LeftButton)));
+  ASSERT_TRUE(tool.mouse_move(at(on[0] - 5.0, on[1], Qt::LeftButton)));
+  ASSERT_TRUE(tool.key_press(Qt::Key_Escape, Qt::NoModifier));
+
+  EXPECT_FALSE(scene.document.preview_active());
+  EXPECT_EQ(scene.document.undo_stack()->index(), base);
+  EXPECT_EQ(xodr(scene.document), locked_xodr);
+}
+
 } // namespace roadmaker::editor
