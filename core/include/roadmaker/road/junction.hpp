@@ -142,6 +142,13 @@ struct SurfaceSpan {
   int sort_index = 0;
 };
 
+/// Magnitude bound on `SurfaceSpan::sort_index`. The value is a free integer —
+/// Raise/Lower simply move it by one — but a bound keeps the persistence
+/// grammar's field short and lets the reader reject a corrupt value outright
+/// instead of loading an absurd one. Far above any plausible junction's turn
+/// count, so no author ever meets it.
+inline constexpr int kMaxSurfaceSpanSortIndex = 1000;
+
 /// Membership span of a virtual (span) junction: a stretch [s_start, s_end] of
 /// one road that belongs to the junction without cutting that road.
 ///

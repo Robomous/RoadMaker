@@ -1438,6 +1438,46 @@ void write_junction(pugi::xml_node root,
     }
   }
 
+  // Authored floor-contribution overrides (p4-s5, issue #320). ASAM OpenDRIVE
+  // 1.9.0 §12.10 gives <junction> no carrier for how its pavement is
+  // triangulated — <boundary>/<elevationGrid> are pure output geometry — so
+  // these ride their own sibling code (ADR-0008 Layer 1). Format: ";"-joined
+  // entries, each "roadOdrId[:inc=0][:sort=<int>]"; `inc` appears only when
+  // the samples are excluded and `sort` only when non-zero, so a record that
+  // authors nothing is dropped and a junction that predates the feature keeps
+  // its exact bytes. Stale road references are dropped like stale arms;
+  // storage order is kept so save→load→save is byte-identical.
+  //
+  // A span (virtual) junction has no floor, so it never carries these.
+  if (!span && !junction.surface_spans.empty()) {
+    std::string value;
+    for (const SurfaceSpan& entry : junction.surface_spans) {
+      const Road* road = network.road(entry.road);
+      if (road == nullptr) {
+        continue; // stale span references are not written
+      }
+      if (entry.included && entry.sort_index == 0) {
+        continue; // nothing authored — the derivation already says it
+      }
+      if (!value.empty()) {
+        value += ';';
+      }
+      value += road->odr_id;
+      if (!entry.included) {
+        value += ":inc=0";
+      }
+      if (entry.sort_index != 0) {
+        value += ":sort=";
+        value += std::to_string(entry.sort_index);
+      }
+    }
+    if (!value.empty()) {
+      pugi::xml_node user_data = junction_node.append_child("userData");
+      user_data.append_attribute("code").set_value("rm:floor");
+      user_data.append_attribute("value").set_value(value.c_str());
+    }
+  }
+
   // Junction-scope authored values (p4-s2, issue #226) get their own code so
   // an older reader drops only these and still understands rm:arms/rm:corners.
   // Format: ";"-joined "key=value", each key at most once, element omitted
