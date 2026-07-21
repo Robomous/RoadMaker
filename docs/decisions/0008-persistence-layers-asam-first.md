@@ -58,9 +58,30 @@ gracefully in other tools (they ignore `userData`). Policy:
 
 **Registry** — existing: `rm:waypoints`, `rm:crosswalk`, `rm:markingCurve`,
 `rm:stencil`, `rm:aux_boundary`, `rm:arms`, `rm:corners`, `rm:junction`,
-`rm:surface`, `rm:<material-id>`, `rm:stopline`, `rm:spans`, `rm:floor`.
-Planned: `rm:maneuver` (p4-s6), `rm:phases` (p4-s8). Each owning sprint
-defines its payload against this policy.
+`rm:surface`, `rm:<material-id>`, `rm:stopline`, `rm:spans`, `rm:floor`,
+`rm:maneuver`. Planned: `rm:phases` (p4-s8). Each owning sprint defines its
+payload against this policy.
+
+`rm:maneuver` (p4-s6, shipped) carries the junction's authored maneuver
+overrides — per connecting road: a geometry lock, a turn-type override, the two
+endpoint slides and the interior control points of a hand-shaped path. Layer 1
+with NO Layer-0 counterpart: §12.2 Table 56 gives `<connection>` exactly
+`@connectingRoad`, `@contactPoint`, `@id` and `@incomingRoad`, and
+§12.4/§12.4.2 describe a connecting road purely by its geometry and lane
+linkage, so ASAM has nowhere to put a turn type, an endpoint slide or a control
+point and a foreign reader loses nothing. Junction scope, entry form
+`roadOdrId[:lock=1][:turn=left|straight|right|uturn][:so=<num>][:eo=<num>][:pts=x,y|x,y|…]`
+joined with `;` — points use `,` within a point and `|` between points so no
+separator collides with the `;`/`:` joins. Every field is omitted at its
+default and an entry that authors nothing is dropped entirely (AUTHORS-NOTHING
+⇒ ERASE), so a junction that predates the feature re-exports byte-identically
+and overriding twice returns the original bytes. The point list is bounded by
+`kMaxManeuverControlPoints` on both sides: the writer truncates to it (never
+emit what the reader would refuse) and the reader drops a longer value.
+Nothing is refitted on load — the `<planView>` is Layer 0 truth and wins.
+Degradation follows the policy above: a malformed ENTRY drops the whole value
+(all-or-nothing, like `rm:floor`) while an unknown FIELD key warns and is
+skipped (forward-compat, like `rm:junction`).
 
 `rm:floor` (p4-s5, shipped) carries the junction floor's per-connecting-road
 surface spans — Include Samples and a sort index. It is Layer 1 with NO Layer-0

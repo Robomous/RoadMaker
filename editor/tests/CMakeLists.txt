@@ -48,6 +48,7 @@ add_executable(roadmaker_editor_tests
   test_corner_tool.cpp
   test_junction_span_tool.cpp
   test_junction_surface_tool.cpp
+  test_maneuver_tool.cpp
   test_stopline_tool.cpp
   test_prop_polygon_tool.cpp
   test_stencil_item.cpp

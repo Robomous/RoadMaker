@@ -21,6 +21,7 @@ add_executable(roadmaker_core_tests
   test_junction_export.cpp
   test_junction_crosswalks.cpp
   test_junction_stoplines.cpp
+  test_junction_maneuvers.cpp
   test_marking_curves.cpp
   test_stencils.cpp
   test_t_junction_quality.cpp
@@ -31,6 +32,7 @@ add_executable(roadmaker_core_tests
   test_junction_lock_persistence.cpp
   test_surface_span_operations.cpp
   test_surface_span_persistence.cpp
+  test_maneuver_persistence.cpp
   test_edit_stack.cpp
   test_connection.cpp
   test_edit_operations.cpp

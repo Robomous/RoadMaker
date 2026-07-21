@@ -6,9 +6,11 @@
 
 #include <array>
 #include <cmath>
+#include <optional>
 
 #include "viewport/camera.hpp"
 #include "viewport/picking.hpp"
+#include "viewport/projection.hpp"
 
 namespace roadmaker::editor {
 namespace {
@@ -562,6 +564,78 @@ TEST(Pick, ScaledPropGrowsHitSphere) {
 TEST(Pick, ShrunkPropMisses) {
   EXPECT_TRUE(pick(lone_tree(1.0), {}, straight_down(26.0, 25.0)).has_value());
   EXPECT_FALSE(pick(lone_tree(0.25), {}, straight_down(26.0, 25.0)).has_value());
+}
+
+// --- screen-space polyline distance (p4-s6, issue #227) ----------------------
+// The hit test for geometry with NO mesh proxy: a junction's connecting-road
+// paths are deliberately not tessellated, so the Maneuver tool measures the
+// cursor against the PROJECTED path instead of ray-casting it.
+
+TEST(ScreenDistanceToPolyline, MeasuresToTheNearestPointOnTheNearestSegment) {
+  OrbitCamera camera;
+  constexpr double kW = 1600.0;
+  constexpr double kH = 900.0;
+  const CameraMatrices matrices = camera.matrices(static_cast<float>(kW / kH));
+
+  // A ground-plane segment through the camera target, and the pixels its two
+  // ends land on — the ground truth the distance is measured against.
+  const std::array<float, 3> t3 = camera.target();
+  const std::array<double, 3> a{t3[0] - 10.0, t3[1], 0.0};
+  const std::array<double, 3> b{t3[0] + 10.0, t3[1], 0.0};
+  const auto screen_a = project_to_screen(matrices, a[0], a[1], a[2], kW, kH);
+  const auto screen_b = project_to_screen(matrices, b[0], b[1], b[2], kW, kH);
+  ASSERT_TRUE(screen_a.has_value());
+  ASSERT_TRUE(screen_b.has_value());
+
+  const std::array<std::array<double, 3>, 2> path{a, b};
+  const auto centre = ScreenContext{.camera = matrices,
+                                    .px = ((*screen_a)[0] + (*screen_b)[0]) / 2.0,
+                                    .py = ((*screen_a)[1] + (*screen_b)[1]) / 2.0,
+                                    .width = kW,
+                                    .height = kH};
+  const std::optional<PolylineScreenHit> on_it = screen_distance_to_polyline(centre, path);
+  ASSERT_TRUE(on_it.has_value());
+  EXPECT_NEAR(on_it->distance, 0.0, 1e-6) << "the cursor is ON the projected segment";
+  EXPECT_EQ(on_it->segment, 0U);
+  EXPECT_NEAR(on_it->t, 0.5, 1e-6);
+
+  // 30 px off the segment, measured along the segment's own screen NORMAL (the
+  // projected segment is not axis-aligned — the camera has yaw).
+  const double sx = (*screen_b)[0] - (*screen_a)[0];
+  const double sy = (*screen_b)[1] - (*screen_a)[1];
+  const double slen = std::hypot(sx, sy);
+  ASSERT_GT(slen, 1.0);
+  const double nx = -sy / slen;
+  const double ny = sx / slen;
+  ScreenContext above = centre;
+  above.px += nx * 30.0;
+  above.py += ny * 30.0;
+  const std::optional<PolylineScreenHit> off = screen_distance_to_polyline(above, path);
+  ASSERT_TRUE(off.has_value());
+  EXPECT_NEAR(off->distance, 30.0, 1e-6);
+
+  // Past an END the nearest point is that endpoint, not the infinite line.
+  ScreenContext beyond = centre;
+  beyond.px = (*screen_b)[0] + ((sx / slen) * 40.0);
+  beyond.py = (*screen_b)[1] + ((sy / slen) * 40.0);
+  const std::optional<PolylineScreenHit> capped = screen_distance_to_polyline(beyond, path);
+  ASSERT_TRUE(capped.has_value());
+  EXPECT_NEAR(capped->distance, 40.0, 1e-6);
+  EXPECT_NEAR(capped->t, 1.0, 1e-9);
+}
+
+TEST(ScreenDistanceToPolyline, EmptyPolylineHasNoAnswer) {
+  OrbitCamera camera;
+  const ScreenContext screen{.camera = camera.matrices(16.0F / 9.0F),
+                             .px = 800.0,
+                             .py = 450.0,
+                             .width = 1600.0,
+                             .height = 900.0};
+  EXPECT_FALSE(screen_distance_to_polyline(screen, {}).has_value());
+
+  // A single sample is still something to hover: it answers as a point.
+  const std::array<std::array<double, 3>, 1> dot{std::array<double, 3>{0.0, 0.0, 0.0}};
+  EXPECT_TRUE(screen_distance_to_polyline(screen, dot).has_value());
 }
 
 } // namespace

@@ -49,6 +49,43 @@ ground_point(const CameraMatrices& camera,
              double height,
              double max_t = std::numeric_limits<double>::infinity());
 
+/// The viewport context of a cursor event, when the caller has one: the cursor
+/// in widget-LOGICAL pixels (QPainter's convention, origin top-left) plus the
+/// camera and viewport extent that projected it.
+///
+/// Carried on ToolEvent so a tool can hit-test in SCREEN space — a constant
+/// pixel tolerance at any zoom — instead of guessing a world-metre radius that
+/// is either unusable when zoomed out or over-eager when zoomed in. Absent in
+/// headless tests and wherever no viewport is involved; consumers must keep a
+/// world-space fallback.
+struct ScreenContext {
+  CameraMatrices camera;
+  double px = 0.0;
+  double py = 0.0;
+  double width = 0.0;
+  double height = 0.0;
+};
+
+/// Nearest approach of a projected polyline to the cursor.
+struct PolylineScreenHit {
+  double distance = 0.0;   ///< cursor → polyline, in widget-logical PIXELS
+  std::size_t segment = 0; ///< index of the nearest segment's FIRST point
+  double t = 0.0;          ///< position along that segment, in [0, 1]
+};
+
+/// Distance in logical pixels from `screen`'s cursor to `polyline` (kernel
+/// frame, xyz), projecting each vertex with the same matrices the renderer
+/// draws with. Segments with an endpoint at or behind the camera are skipped;
+/// nullopt when nothing projected (an empty polyline, or all of it behind the
+/// camera).
+///
+/// The hit test for geometry that has NO mesh proxy to ray-cast against — a
+/// junction's connecting-road paths are deliberately not tessellated, so the
+/// Maneuver tool picks them by this instead (p4-s6, issue #227).
+[[nodiscard]] std::optional<PolylineScreenHit>
+screen_distance_to_polyline(const ScreenContext& screen,
+                            std::span<const std::array<double, 3>> polyline);
+
 struct PickHit {
   RoadId road;         // for an object/signal hit: its owning road
   LaneId lane;         // invalid when the hit is not a lane patch

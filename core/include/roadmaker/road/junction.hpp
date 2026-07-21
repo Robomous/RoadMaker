@@ -3,6 +3,7 @@
 #include "roadmaker/road/id.hpp"
 #include "roadmaker/road/road.hpp"
 
+#include <cstddef>
 #include <optional>
 #include <string>
 #include <utility>
@@ -149,6 +150,77 @@ struct SurfaceSpan {
 /// count, so no author ever meets it.
 inline constexpr int kMaxSurfaceSpanSortIndex = 1000;
 
+/// How a maneuver (a connecting road) turns through the junction (p4-s6, issue
+/// #227).
+///
+/// LAYER 1, RoadMaker-only: ASAM OpenDRIVE has NO turn-type element. §12.2
+/// Table 56 gives `<connection>` exactly @connectingRoad, @contactPoint, @id
+/// and @incomingRoad, and §12.4/§12.4.2 describe a connecting road purely by
+/// its geometry and lane linkage — the turn a driver perceives is implicit in
+/// the plan view. The type is therefore DERIVED from the arm-face headings and
+/// only stored when the author overrides it.
+enum class TurnType {
+  Left,
+  Straight,
+  Right,
+  UTurn,
+};
+
+/// An authored override for ONE connecting road's path through a junction — its
+/// "maneuver" (p4-s6, issue #227).
+///
+/// Sparse and dormant-tolerant exactly like SurfaceSpan, and keyed the same
+/// way: by the connecting RoadId. `retarget_junction` matches surviving turns
+/// by TurnKey and rewrites geometry onto the SAME RoadId, so a record outlives
+/// a turn-set change; a record whose road was erased lies dormant and is never
+/// written.
+///
+/// AUTHORS-NOTHING ⇒ ERASE: a record that is unlocked, has no turn-type
+/// override, no endpoint offsets and no control points is dropped rather than
+/// kept, so flipping an override twice (or locking and unlocking) produces a
+/// file byte-identical to the one before the first edit — the StopLine /
+/// SurfaceSpan idiom.
+///
+/// `locked` is the finer grain of `Junction::locked`: the junction lock gates
+/// the AUTOMATIC regeneration loop for the whole junction, while this keeps ONE
+/// hand-shaped connecting road's geometry across an explicit regeneration. It
+/// is also the survival mechanism for an explicit U-turn, which the planner
+/// never produces and would otherwise drop on the next regeneration.
+struct Maneuver {
+  /// The maneuver's identity: the connecting road whose path it overrides.
+  RoadId road;
+
+  /// Lock Geometry — regeneration keeps this road's plan view, length,
+  /// elevation and lane width instead of replanning them, and keeps the road
+  /// itself even when the plan no longer contains its turn. Set implicitly by
+  /// any manual geometry edit (`edit::set_maneuver_path`).
+  bool locked = false;
+
+  /// Authored turn type. Unset ⇒ the type computed from the arm-face headings.
+  /// Purely semantic (labels, later turn-lane arrows and signal phases); it
+  /// never moves geometry, which is why an explicit REBUILD keeps it while
+  /// clearing everything else here.
+  std::optional<TurnType> turn_type;
+
+  /// Endpoint slide [m] along the INCOMING arm's cross-section face, measured
+  /// from the anchor lane's inner boundary along the arm's +t axis. Unset ⇒ 0
+  /// (the derived anchor). Bounded by the anchor lane's own span.
+  std::optional<double> start_offset;
+
+  /// Endpoint slide [m] along the OUTGOING arm's face; same convention.
+  std::optional<double> end_offset;
+
+  /// Authored INTERIOR waypoints of the path, in driving direction. The
+  /// endpoints are NEVER stored here — they are derived from the arm faces plus
+  /// the offsets above, so a maneuver keeps meeting its arms when they move.
+  std::vector<Waypoint> control_points;
+};
+
+/// Upper bound on `Maneuver::control_points`. A hand-shaped junction path needs
+/// a handful of points; the bound keeps the persistence grammar's list short
+/// and lets a reader reject a corrupt record outright.
+inline constexpr std::size_t kMaxManeuverControlPoints = 64;
+
 /// Membership span of a virtual (span) junction: a stretch [s_start, s_end] of
 /// one road that belongs to the junction without cutting that road.
 ///
@@ -213,6 +285,20 @@ struct Junction {
   ///
   /// Always empty on a span (virtual) junction — it has no floor to control.
   std::vector<SurfaceSpan> surface_spans;
+
+  /// Authored maneuver overrides, keyed by connecting road (p4-s6, issue #227).
+  /// Sparse in exactly the sense `surface_spans` is: a connecting road with no
+  /// entry is fully derived, and `retarget_junction` under the default
+  /// `ManeuverPolicy::Respect` leaves the list untouched — a record outlives a
+  /// turn-set change and simply goes dormant if its turn is dropped.
+  ///
+  /// A LOCKED record additionally survives regeneration structurally: its
+  /// connecting road is kept even when the plan no longer contains its turn,
+  /// which is what keeps an explicit U-turn (a turn the planner never emits)
+  /// alive. `edit::rebuild_maneuvers` is the explicit way back to derivation.
+  ///
+  /// Always empty on a span (virtual) junction — it has no connections at all.
+  std::vector<Maneuver> maneuvers;
 
   /// Bare catalog material name for the junction carriageway (the floor).
   /// Empty ⇒ the derived asphalt look, mirroring `Surface::material`.

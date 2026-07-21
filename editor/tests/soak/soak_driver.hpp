@@ -18,10 +18,12 @@
 // which only bounds the loop). The seed is printed on failure so any find
 // is a one-line repro: roadmaker_soak --seed <N>.
 
+#include "roadmaker/mesh/junction_maneuvers.hpp"
 #include "roadmaker/road/authoring.hpp"
 
 #include <cstdint>
 #include <filesystem>
+#include <optional>
 #include <random>
 #include <string>
 
@@ -110,6 +112,13 @@ private:
   void op_toggle_junction_lock();
   void op_junction_arm_edit();
   void op_merge_junctions();
+  /// One maneuver of a random live junction, or nullopt when the draw found
+  /// none. Writes the junction it drew into `junction`.
+  [[nodiscard]] std::optional<JunctionManeuverInfo> random_maneuver(JunctionId& junction);
+
+  void op_maneuver_edit();
+  void op_rebuild_maneuvers();
+  void op_add_uturn();
   void op_create_span_junction();
   void op_delete_junction();
   void op_delete_road();

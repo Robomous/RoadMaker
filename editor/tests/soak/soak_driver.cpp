@@ -2,6 +2,7 @@
 
 #include "roadmaker/edit/assembly.hpp"
 #include "roadmaker/edit/operations.hpp"
+#include "roadmaker/mesh/junction_maneuvers.hpp"
 #include "roadmaker/xodr/reader.hpp"
 #include "roadmaker/xodr/writer.hpp"
 
@@ -85,6 +86,9 @@ void SoakDriver::step(int index) {
       {2, &SoakDriver::op_toggle_junction_lock, "toggle_junction_lock"},
       {2, &SoakDriver::op_junction_arm_edit, "junction_arm_edit"},
       {1, &SoakDriver::op_merge_junctions, "merge_junctions"},
+      {2, &SoakDriver::op_maneuver_edit, "maneuver_edit"},
+      {1, &SoakDriver::op_rebuild_maneuvers, "rebuild_maneuvers"},
+      {1, &SoakDriver::op_add_uturn, "add_uturn"},
       {1, &SoakDriver::op_create_span_junction, "create_span_junction"},
       {1, &SoakDriver::op_delete_junction, "delete_junction"},
       {1, &SoakDriver::op_delete_road, "delete_road"},
@@ -1077,6 +1081,98 @@ void SoakDriver::op_junction_arm_edit() {
       document_.network(),
       id,
       candidates[static_cast<std::size_t>(rand_int(0, int(candidates.size()) - 1))]));
+}
+
+// --- maneuvers (p4-s6, issue #227) -------------------------------------------
+//
+// Same shape as the junction-control ops above: most draws are REFUSED (the
+// preconditions are narrow), which is the point — a refused command must leave
+// the network byte-unchanged and the invariants must still hold after it.
+
+/// One maneuver of a random junction, or nullopt when the draw found none.
+std::optional<JunctionManeuverInfo> SoakDriver::random_maneuver(JunctionId& junction) {
+  const std::vector<JunctionId> junctions = live_junctions();
+  if (junctions.empty()) {
+    return std::nullopt;
+  }
+  junction = junctions[static_cast<std::size_t>(rand_int(0, int(junctions.size()) - 1))];
+  const std::vector<JunctionManeuverInfo> all = junction_maneuvers(document_.network(), junction);
+  if (all.empty()) {
+    return std::nullopt; // a span/virtual or degenerate junction has no turns
+  }
+  return all[static_cast<std::size_t>(rand_int(0, int(all.size()) - 1))];
+}
+
+void SoakDriver::op_maneuver_edit() {
+  JunctionId junction;
+  const std::optional<JunctionManeuverInfo> info = random_maneuver(junction);
+  if (!info.has_value()) {
+    return;
+  }
+  const double draw = rand_range(0.0, 1.0);
+  if (draw < 0.3) {
+    push(edit::set_maneuver_locked(document_.network(), junction, info->road, !info->locked));
+    return;
+  }
+  if (draw < 0.6) {
+    // Clearing an override that does not exist, and pinning the computed type,
+    // are both refusals worth drawing.
+    const std::optional<TurnType> type =
+        chance(0.25) ? std::nullopt
+                     : std::optional<TurnType>(static_cast<TurnType>(rand_int(0, 3)));
+    push(edit::set_maneuver_turn_type(document_.network(), junction, info->road, type));
+    return;
+  }
+  if (draw < 0.8) {
+    // Reset is refused for a derived maneuver, a foreign junction, and an
+    // explicit U-turn — three narrow refusal paths in one op.
+    push(edit::reset_maneuver(document_.network(), junction, info->road));
+    return;
+  }
+  // Reshape: one interior point jittered off the straight chord, plus an
+  // endpoint slide inside the bounds the QUERY reports (never recomputed).
+  const std::array<Waypoint, 1> points{
+      Waypoint{.x = ((info->start_slide.anchor[0] + info->end_slide.anchor[0]) / 2.0) +
+                    rand_range(-3.0, 3.0),
+               .y = ((info->start_slide.anchor[1] + info->end_slide.anchor[1]) / 2.0) +
+                    rand_range(-3.0, 3.0)}};
+  push(edit::set_maneuver_path(
+      document_.network(),
+      junction,
+      info->road,
+      points,
+      rand_range(info->start_slide.min_offset, info->start_slide.max_offset),
+      rand_range(info->end_slide.min_offset, info->end_slide.max_offset)));
+}
+
+void SoakDriver::op_rebuild_maneuvers() {
+  const std::vector<JunctionId> junctions = live_junctions();
+  if (junctions.empty()) {
+    return;
+  }
+  // Deliberately unconditional: a junction with nothing geometric authored is a
+  // refusal, and that is a path worth exercising.
+  push(edit::rebuild_maneuvers(
+      document_.network(),
+      junctions[static_cast<std::size_t>(rand_int(0, int(junctions.size()) - 1))]));
+}
+
+void SoakDriver::op_add_uturn() {
+  const std::vector<JunctionId> junctions = live_junctions();
+  if (junctions.empty()) {
+    return;
+  }
+  const JunctionId id = junctions[static_cast<std::size_t>(rand_int(0, int(junctions.size()) - 1))];
+  const Junction* junction = document_.network().junction(id);
+  if (junction == nullptr || junction->arms.empty()) {
+    return; // a foreign junction carries no arms to U-turn on
+  }
+  // A second U-turn on the same arm, and a hairpin too tight to fit, are both
+  // refusals the kernel owns.
+  push(edit::add_uturn_maneuver(
+      document_.network(),
+      id,
+      junction->arms[static_cast<std::size_t>(rand_int(0, int(junction->arms.size()) - 1))]));
 }
 
 void SoakDriver::op_merge_junctions() {

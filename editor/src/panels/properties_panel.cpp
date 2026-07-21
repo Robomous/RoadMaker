@@ -29,11 +29,26 @@
 #include "tools/corner_tool.hpp"
 #include "tools/elevation_tool.hpp"
 #include "tools/junction_surface_tool.hpp"
+#include "tools/maneuver_tool.hpp"
 #include "tools/stopline_tool.hpp"
 
 namespace roadmaker::editor {
 
 namespace {
+
+/// One maneuver of `junction`, solved against the network handed in. Every row
+/// editor re-reads its baseline through this rather than through a value
+/// captured when the row was built: a refresh re-seed must not echo a command
+/// back, and the kernel refuses a no-op outright.
+std::optional<JunctionManeuverInfo>
+maneuver_info(const RoadNetwork& network, JunctionId junction, RoadId road) {
+  for (const JunctionManeuverInfo& info : junction_maneuvers(network, junction)) {
+    if (info.road == road) {
+      return info;
+    }
+  }
+  return std::nullopt;
+}
 
 /// Panel display names for the LaneType subset the M2 editor offers (spec 02
 /// §4); the selected lane's current type joins the list when it is not one
@@ -241,6 +256,7 @@ PropertiesPanel::PropertiesPanel(Document& document,
       stopline_flip_button_(new QPushButton(tr("Flip direction"))),
       stopline_reset_button_(new QPushButton(tr("Reset to default"))),
       surface_spans_group_(new QGroupBox(tr("Surface spans"), this)),
+      maneuvers_group_(new QGroupBox(tr("Maneuvers"), this)),
       junction_group_(new QGroupBox(tr("Junction"), this)), junction_type_label_(new QLabel(this)),
       junction_locked_check_(new QCheckBox(tr("Locked"), this)),
       junction_radius_spin_(new QDoubleSpinBox),
@@ -533,6 +549,36 @@ PropertiesPanel::PropertiesPanel(Document& document,
   surface_spans_layout_ = new QVBoxLayout(surface_spans_group_);
   surface_spans_layout_->setSpacing(2);
   surface_spans_group_->hide();
+
+  // Maneuvers (p4-s6, issue #227): one row per connecting road of the selected
+  // junction, plus the junction-wide Rebuild. Same dynamic-plain-widget shape
+  // as the span rows above, and for the same reasons.
+  maneuvers_group_->setObjectName(QStringLiteral("maneuvers_group"));
+  auto* maneuvers_column = new QVBoxLayout(maneuvers_group_);
+  maneuvers_column->setSpacing(2);
+  // The rows live in their own container so the junction-wide Rebuild button
+  // below survives the wholesale row rebuild.
+  auto* maneuver_rows = new QWidget(maneuvers_group_);
+  maneuvers_layout_ = new QVBoxLayout(maneuver_rows);
+  maneuvers_layout_->setContentsMargins(0, 0, 0, 0);
+  maneuvers_layout_->setSpacing(2);
+  maneuvers_column->addWidget(maneuver_rows);
+  maneuvers_rebuild_button_ = new QPushButton(tr("Rebuild Maneuvers"), maneuvers_group_);
+  maneuvers_rebuild_button_->setObjectName(QStringLiteral("maneuver_rebuild_button"));
+  maneuvers_rebuild_button_->setToolTip(
+      tr("Replan every turn of this junction from its arms, discarding hand-shaped geometry and "
+         "per-turn locks. Turn-type overrides survive — they are semantic, not geometric."));
+  connect(maneuvers_rebuild_button_, &QPushButton::clicked, this, [this] {
+    // The junction is read at CLICK time from the live selection, never from a
+    // value captured when the row was built.
+    const JunctionId junction = selection_.primary().junction;
+    if (!junction.is_valid()) {
+      return;
+    }
+    push(edit::rebuild_maneuvers(document_.network(), junction));
+  });
+  maneuvers_column->addWidget(maneuvers_rebuild_button_);
+  maneuvers_group_->hide();
 
   // Junction: the junction-WIDE values (p4-s2). The radius default is the
   // fallback every corner without its own radius uses, so its zero position is
@@ -845,6 +891,7 @@ PropertiesPanel::PropertiesPanel(Document& document,
   layout->addWidget(corner_group_);
   layout->addWidget(stopline_group_);
   layout->addWidget(surface_spans_group_);
+  layout->addWidget(maneuvers_group_);
   layout->addWidget(junction_group_);
   layout->addWidget(signal_group_);
   layout->addWidget(object_group_);
@@ -1034,6 +1081,7 @@ void PropertiesPanel::refresh() {
   refresh_corner();
   refresh_stopline();
   refresh_surface_spans();
+  refresh_maneuvers();
 
   // The asset editors are Library-driven modes; any scene selection closes them.
   asset_group_->hide();
@@ -1700,8 +1748,14 @@ void PropertiesPanel::set_junction_surface_tool(JunctionSurfaceTool* tool) {
 void PropertiesPanel::refresh_surface_spans() {
   // Rows are rebuilt wholesale: they are cheap, and rebuilding is what keeps
   // the display honest after a regeneration changed the turn set.
+  // deleteLater for the same reason refresh_maneuvers uses it: a row editor
+  // pushes from inside its own signal and the re-mesh lands back here, so a
+  // plain delete would destroy a widget that is still emitting.
   while (QLayoutItem* item = surface_spans_layout_->takeAt(0)) {
-    delete item->widget();
+    if (QWidget* row = item->widget()) {
+      row->setParent(nullptr);
+      row->deleteLater();
+    }
     delete item;
   }
 
@@ -1795,6 +1849,177 @@ void PropertiesPanel::refresh_surface_spans() {
     surface_spans_layout_->addWidget(row);
   }
   surface_spans_group_->show();
+}
+
+void PropertiesPanel::set_maneuver_tool(ManeuverTool* tool) {
+  maneuver_tool_ = tool;
+  if (maneuver_tool_ != nullptr) {
+    connect(maneuver_tool_,
+            &ManeuverTool::maneuver_selection_changed,
+            this,
+            &PropertiesPanel::refresh_maneuvers);
+  }
+  refresh_maneuvers();
+}
+
+void PropertiesPanel::refresh_maneuvers() {
+  // Rows are rebuilt wholesale: they are cheap, and rebuilding is what keeps
+  // the display honest after a regeneration changed the turn set.
+  //
+  // deleteLater, not delete: a row editor pushes its command from inside its own
+  // signal, the command re-meshes, and the re-mesh lands right back here — a
+  // plain delete would destroy the widget still emitting. Re-parenting to
+  // nothing first is what keeps findChild (and the next rebuild) from seeing the
+  // corpses in the meantime.
+  while (QLayoutItem* item = maneuvers_layout_->takeAt(0)) {
+    if (QWidget* row = item->widget()) {
+      row->setParent(nullptr);
+      row->deleteLater();
+    }
+    delete item;
+  }
+
+  const RoadNetwork& network = document_.network();
+  const JunctionId junction = selection_.primary().junction;
+  const std::vector<JunctionManeuverInfo> all = junction.is_valid()
+                                                    ? junction_maneuvers(network, junction)
+                                                    : std::vector<JunctionManeuverInfo>{};
+  if (all.empty()) {
+    // Empty for a stale id and for a junction with no connections at all — a
+    // span (virtual) junction has no turns to author.
+    maneuvers_group_->hide();
+    return;
+  }
+
+  // A FOREIGN junction (read from someone else's file) carries no arms, so
+  // there is nothing to replan from: its maneuvers stay readable but neither
+  // Reset nor Rebuild can run. Same rule the kernel's factories enforce.
+  const Junction* junction_ptr = network.junction(junction);
+  const bool arm_based =
+      junction_ptr != nullptr && !junction_ptr->arms.empty() && junction_ptr->spans.empty();
+
+  const std::optional<ActiveManeuver> active =
+      maneuver_tool_ != nullptr ? maneuver_tool_->active_maneuver() : std::nullopt;
+
+  const auto road_name = [&network](RoadId road) {
+    const Road* ptr = network.road(road);
+    return ptr != nullptr ? QString::fromStdString(ptr->odr_id) : tr("?");
+  };
+
+  bool anything_geometric = false;
+  for (const JunctionManeuverInfo& info : all) {
+    anything_geometric = anything_geometric || info.locked || !info.control_points.empty() ||
+                         info.start_offset != 0.0 || info.end_offset != 0.0;
+
+    auto* row = new QWidget(maneuvers_group_);
+    row->setObjectName(QStringLiteral("maneuver_row"));
+    auto* row_layout = new QHBoxLayout(row);
+    row_layout->setContentsMargins(0, 0, 0, 0);
+
+    // A flat button rather than a label: clicking the name selects the maneuver
+    // in the tool, so the viewport and the panel always agree.
+    auto* label = new QPushButton(tr("Turn %1  %2 → %3")
+                                      .arg(QString::fromStdString(info.road_odr_id),
+                                           road_name(info.from.road),
+                                           road_name(info.to.road)),
+                                  row);
+    label->setObjectName(QStringLiteral("maneuver_label"));
+    label->setFlat(true);
+    label->setCursor(Qt::PointingHandCursor);
+    if (active.has_value() && active->road == info.road) {
+      QFont bold = label->font();
+      bold.setBold(true);
+      label->setFont(bold);
+    }
+    row_layout->addWidget(label, 1);
+
+    const RoadId road = info.road;
+
+    // Turn type. Index 0 is Auto (no override); the rest follow TurnType's own
+    // order, so index == int(type) + 1.
+    auto* turn = new QComboBox(row);
+    turn->setObjectName(QStringLiteral("maneuver_turn_combo"));
+    turn->addItem(tr("Auto"));
+    turn->addItem(tr("Left"));
+    turn->addItem(tr("Straight"));
+    turn->addItem(tr("Right"));
+    turn->addItem(tr("U-Turn"));
+    turn->setToolTip(tr("How this turn is labelled. OpenDRIVE has no turn-type element (§12.2 "
+                        "Table 56), so Auto derives it from the arm-face headings."));
+    {
+      const QSignalBlocker blocker(turn);
+      turn->setCurrentIndex(info.overridden ? static_cast<int>(info.effective) + 1 : 0);
+    }
+    connect(turn, &QComboBox::currentIndexChanged, this, [this, junction, road](int index) {
+      // The baseline is re-read from the LIVE network, never from a value
+      // captured when the row was built: a refresh re-seed must not echo a
+      // command back, and the kernel refuses a no-op outright.
+      const std::optional<JunctionManeuverInfo> current =
+          maneuver_info(document_.network(), junction, road);
+      if (!current.has_value()) {
+        return;
+      }
+      const std::optional<TurnType> requested =
+          index <= 0 ? std::nullopt : std::optional<TurnType>(static_cast<TurnType>(index - 1));
+      if (!requested.has_value() && !current->overridden) {
+        return; // clearing an override that does not exist
+      }
+      if (requested.has_value() && current->overridden && current->effective == *requested) {
+        return; // already pinned to exactly this
+      }
+      if (requested.has_value() && !current->overridden && current->computed == *requested) {
+        return; // storing the computed type would author nothing
+      }
+      push(edit::set_maneuver_turn_type(document_.network(), junction, road, requested));
+    });
+    row_layout->addWidget(turn);
+
+    auto* lock = new QCheckBox(tr("Lock"), row);
+    lock->setObjectName(QStringLiteral("maneuver_lock_check"));
+    lock->setToolTip(tr("Keep this turn's hand-shaped geometry through an explicit re-derive. Set "
+                        "automatically by any path edit."));
+    {
+      const QSignalBlocker blocker(lock);
+      lock->setChecked(info.locked);
+    }
+    connect(lock, &QCheckBox::toggled, this, [this, junction, road](bool checked) {
+      const std::optional<JunctionManeuverInfo> current =
+          maneuver_info(document_.network(), junction, road);
+      if (!current.has_value() || current->locked == checked) {
+        return; // a refresh re-seed, not a click
+      }
+      push(edit::set_maneuver_locked(document_.network(), junction, road, checked));
+    });
+    row_layout->addWidget(lock);
+
+    auto* reset = new QToolButton(row);
+    reset->setObjectName(QStringLiteral("maneuver_reset_button"));
+    reset->setText(tr("Reset"));
+    // An EXPLICIT U-turn has no derived geometry to fall back on — the planner
+    // never emits one — so it can only be deleted, never reset.
+    reset->setEnabled(arm_based && info.authored && !info.is_uturn_explicit);
+    reset->setToolTip(info.is_uturn_explicit
+                          ? tr("An explicit U-turn has no derived path to return to — delete its "
+                               "connecting road instead")
+                          : tr("Drop everything authored on this turn and replan it from the "
+                               "junction's arms"));
+    connect(reset, &QToolButton::clicked, this, [this, junction, road] {
+      push(edit::reset_maneuver(document_.network(), junction, road));
+    });
+    row_layout->addWidget(reset);
+
+    connect(label, &QPushButton::clicked, this, [this, road] {
+      if (maneuver_tool_ != nullptr) {
+        maneuver_tool_->select_maneuver(road);
+      }
+    });
+    maneuvers_layout_->addWidget(row);
+  }
+
+  // Rebuild is invalid unless something GEOMETRIC is authored (a turn-type
+  // override survives a rebuild, so it is not a reason to offer one).
+  maneuvers_rebuild_button_->setEnabled(arm_based && anything_geometric);
+  maneuvers_group_->show();
 }
 
 void PropertiesPanel::set_corner_tool(CornerTool* tool) {

@@ -62,6 +62,7 @@
 #include "tools/lane_carve_tool.hpp"
 #include "tools/lane_form_tool.hpp"
 #include "tools/lane_profile_tool.hpp"
+#include "tools/maneuver_tool.hpp"
 #include "tools/marking_curve_tool.hpp"
 #include "tools/marking_point_tool.hpp"
 #include "tools/prop_curve_tool.hpp"
@@ -470,6 +471,15 @@ MainWindow::MainWindow(QWidget* parent, bool restore_saved_layout)
   wire_status(junction_surface_tool.get());
   properties_panel_->set_junction_surface_tool(junction_surface_tool.get());
   tool_manager_.register_tool(ToolId::JunctionSurface, std::move(junction_surface_tool));
+
+  // Maneuver: one connecting road's path through a junction (p4-s6, #227). It
+  // edits what it picks (there is no mesh proxy for a connecting road, so it
+  // hit-tests the sampled paths in screen space), and the Properties pane binds
+  // to its sub-selection so a row click and a viewport click agree.
+  auto maneuver_tool = std::make_unique<ManeuverTool>(document_, selection_);
+  wire_status(maneuver_tool.get());
+  properties_panel_->set_maneuver_tool(maneuver_tool.get());
+  tool_manager_.register_tool(ToolId::Maneuver, std::move(maneuver_tool));
   connect(actions_->tool_corner, &QAction::triggered, this, [this] {
     tool_manager_.set_active(ToolId::Corner);
   });
@@ -481,6 +491,9 @@ MainWindow::MainWindow(QWidget* parent, bool restore_saved_layout)
   });
   connect(actions_->tool_junction_span, &QAction::triggered, this, [this] {
     tool_manager_.set_active(ToolId::JunctionSpan);
+  });
+  connect(actions_->tool_maneuver, &QAction::triggered, this, [this] {
+    tool_manager_.set_active(ToolId::Maneuver);
   });
   tool_manager_.set_active(ToolId::Select);
 

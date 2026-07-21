@@ -10,6 +10,8 @@
 #include <cmath>
 #include <limits>
 
+#include "viewport/projection.hpp"
+
 namespace roadmaker::editor {
 
 namespace {
@@ -132,6 +134,51 @@ std::optional<std::array<double, 3>> ground_point(
   return std::array<double, 3>{ray.origin[0] + (ray.direction[0] * t),
                                ray.origin[1] + (ray.direction[1] * t),
                                ray.origin[2] + (ray.direction[2] * t)};
+}
+
+std::optional<PolylineScreenHit>
+screen_distance_to_polyline(const ScreenContext& screen,
+                            std::span<const std::array<double, 3>> polyline) {
+  const auto project = [&screen](const std::array<double, 3>& point) {
+    return project_to_screen(
+        screen.camera, point[0], point[1], point[2], screen.width, screen.height);
+  };
+
+  std::optional<PolylineScreenHit> best;
+  const auto consider = [&best](double distance, std::size_t segment, double t) {
+    if (!best.has_value() || distance < best->distance) {
+      best = PolylineScreenHit{.distance = distance, .segment = segment, .t = t};
+    }
+  };
+
+  if (polyline.size() == 1) {
+    // Degenerate but legitimate: a one-sample path is still something to hover.
+    if (const auto a = project(polyline[0])) {
+      consider(std::hypot((*a)[0] - screen.px, (*a)[1] - screen.py), 0, 0.0);
+    }
+    return best;
+  }
+
+  for (std::size_t i = 0; i + 1 < polyline.size(); ++i) {
+    const std::optional<std::array<double, 2>> a = project(polyline[i]);
+    const std::optional<std::array<double, 2>> b = project(polyline[i + 1]);
+    if (!a.has_value() || !b.has_value()) {
+      continue; // an endpoint at or behind the camera — the segment is not on screen
+    }
+    const double dx = (*b)[0] - (*a)[0];
+    const double dy = (*b)[1] - (*a)[1];
+    const double length_sq = (dx * dx) + (dy * dy);
+    // A zero-length segment still answers as its own endpoint rather than
+    // dividing by zero.
+    const double t =
+        length_sq <= 1e-12
+            ? 0.0
+            : std::clamp((((screen.px - (*a)[0]) * dx) + ((screen.py - (*a)[1]) * dy)) / length_sq,
+                         0.0,
+                         1.0);
+    consider(std::hypot((*a)[0] + (dx * t) - screen.px, (*a)[1] + (dy * t) - screen.py), i, t);
+  }
+  return best;
 }
 
 RoadAabb compute_road_aabb(const RoadMesh& road) {

@@ -43,6 +43,13 @@ struct MenuItem {
   bool enabled = true;
   bool separator = false;
   std::function<void()> invoke;
+
+  /// Nested entries. A non-empty `children` makes this item a SUBMENU: its own
+  /// `invoke` is ignored, and the children are assembled recursively. The
+  /// per-arm "Add U-Turn…" list (p4-s6, issue #227) is the first user — a
+  /// four-arm junction would otherwise add four siblings to an already long
+  /// junction menu.
+  std::vector<MenuItem> children;
 };
 
 /// Collaborators the item closures act through — registry actions wrap

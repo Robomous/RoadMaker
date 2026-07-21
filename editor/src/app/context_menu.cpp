@@ -3,6 +3,7 @@
 #include "roadmaker/edit/connection.hpp"
 #include "roadmaker/edit/markings.hpp"
 #include "roadmaker/edit/operations.hpp"
+#include "roadmaker/mesh/junction_maneuvers.hpp"
 #include "roadmaker/mesh/junction_stoplines.hpp"
 #include "roadmaker/road/network.hpp"
 
@@ -46,6 +47,28 @@ std::string next_object_odr_id(const RoadNetwork& network) {
 
 MenuItem separator() {
   return MenuItem{.separator = true};
+}
+
+/// Adds `items` to `menu`, recursing into submenus. Split out of
+/// assemble_context_menu so nesting costs one call rather than a second loop.
+void fill_menu(QMenu& menu, const std::vector<MenuItem>& items) {
+  for (const MenuItem& item : items) {
+    if (item.separator) {
+      menu.addSeparator();
+      continue;
+    }
+    if (!item.children.empty()) {
+      QMenu* submenu = menu.addMenu(item.text);
+      submenu->setEnabled(item.enabled);
+      fill_menu(*submenu, item.children);
+      continue;
+    }
+    QAction* action = menu.addAction(item.text);
+    action->setEnabled(item.enabled);
+    if (item.invoke) {
+      QObject::connect(action, &QAction::triggered, &menu, [invoke = item.invoke] { invoke(); });
+    }
+  }
 }
 
 /// The first free end-pair of two selected roads that edit::close_gap can weld
@@ -304,6 +327,43 @@ std::vector<MenuItem> build_context_menu(const MenuContext& context, ContextMenu
               deps.document.network(), selected_junctions[0], selected_junctions[1]));
         }});
     items.push_back(separator());
+    // Maneuvers (p4-s6, issue #227). Rebuild replans every turn from the arms,
+    // discarding hand-shaped geometry and per-turn locks; it is invalid unless
+    // something geometric is authored, and impossible without arms to replan
+    // from, so both conditions gate the item rather than letting it no-op.
+    const std::vector<JunctionManeuverInfo> maneuvers = junction_maneuvers(network, junction);
+    const bool rebuildable =
+        arm_based && std::ranges::any_of(maneuvers, [](const JunctionManeuverInfo& info) {
+          return info.locked || !info.control_points.empty() || info.start_offset != 0.0 ||
+                 info.end_offset != 0.0;
+        });
+    items.push_back(MenuItem{.text = QObject::tr("Rebuild maneuvers"),
+                             .enabled = rebuildable,
+                             .invoke = [deps, junction] {
+                               (void)deps.document.push_command(
+                                   edit::rebuild_maneuvers(deps.document.network(), junction));
+                             }});
+    // The one turn the planner never emits: a U-turn back onto the arm it came
+    // from. One child per arm — a fit can legitimately be refused (two adjacent
+    // lanes are a tight hairpin), and the kernel stays the arbiter.
+    if (arm_based) {
+      MenuItem uturns{.text = QObject::tr("Add U-Turn…")};
+      for (const RoadEnd& arm : junction_ptr->arms) {
+        const Road* arm_road = network.road(arm.road);
+        if (arm_road == nullptr) {
+          continue;
+        }
+        uturns.children.push_back(
+            MenuItem{.text = QObject::tr("On arm %1").arg(QString::fromStdString(arm_road->odr_id)),
+                     .invoke = [deps, junction, arm] {
+                       (void)deps.document.push_command(
+                           edit::add_uturn_maneuver(deps.document.network(), junction, arm));
+                     }});
+      }
+      uturns.enabled = !uturns.children.empty();
+      items.push_back(std::move(uturns));
+    }
+    items.push_back(separator());
     // Author one zebra crosswalk per arm, spanning its driving lanes just inside
     // the junction — all in one undo step (§WS-B). Disabled when the junction has
     // no resolvable arms (foreign/degenerate) so it can't no-op silently.
@@ -497,6 +557,39 @@ std::vector<MenuItem> build_context_menu(const MenuContext& context, ContextMenu
                                (void)deps.document.push_command(edit::close_gap(
                                    deps.document.network(), link_pair->first, link_pair->second));
                              }});
+    // Connecting-road (maneuver) verbs, p4-s6 issue #227. A road that belongs
+    // to a junction IS one of its turns, so the two per-maneuver commands that
+    // need no drag are offered right where the turn was clicked.
+    if (const Road* road_ptr = network.road(road);
+        road_ptr != nullptr && road_ptr->junction.is_valid()) {
+      const JunctionId junction = road_ptr->junction;
+      const std::vector<JunctionManeuverInfo> maneuvers = junction_maneuvers(network, junction);
+      const auto match = std::ranges::find_if(
+          maneuvers, [road](const JunctionManeuverInfo& info) { return info.road == road; });
+      if (match != maneuvers.end()) {
+        items.push_back(separator());
+        // "Convert to Explicit" is the lock: an explicit turn keeps its plan
+        // view, length, elevation and lane widths through a re-derive, and is
+        // kept even when the plan no longer contains it.
+        items.push_back(MenuItem{
+            .text = match->locked ? QObject::tr("Return maneuver to derived (unlock geometry)")
+                                  : QObject::tr("Convert to explicit (lock geometry)"),
+            .invoke = [deps, junction, road, locked = match->locked] {
+              (void)deps.document.push_command(
+                  edit::set_maneuver_locked(deps.document.network(), junction, road, !locked));
+            }});
+        const Junction* junction_ptr = network.junction(junction);
+        const bool replannable = junction_ptr != nullptr && !junction_ptr->arms.empty() &&
+                                 junction_ptr->spans.empty() && match->authored &&
+                                 !match->is_uturn_explicit;
+        items.push_back(MenuItem{.text = QObject::tr("Reset maneuver"),
+                                 .enabled = replannable,
+                                 .invoke = [deps, junction, road] {
+                                   (void)deps.document.push_command(edit::reset_maneuver(
+                                       deps.document.network(), junction, road));
+                                 }});
+      }
+    }
     items.push_back(separator());
     items.push_back(MenuItem{.text = QObject::tr("Edit lane profile"), .invoke = [deps, road] {
                                select_road(deps, road);
@@ -538,17 +631,7 @@ QMenu* assemble_context_menu(const MenuContext& context, ContextMenuDeps& deps, 
     return nullptr;
   }
   auto* menu = new QMenu(parent);
-  for (const MenuItem& item : items) {
-    if (item.separator) {
-      menu->addSeparator();
-      continue;
-    }
-    QAction* action = menu->addAction(item.text);
-    action->setEnabled(item.enabled);
-    if (item.invoke) {
-      QObject::connect(action, &QAction::triggered, menu, [invoke = item.invoke] { invoke(); });
-    }
-  }
+  fill_menu(*menu, items);
   menu->setAttribute(Qt::WA_DeleteOnClose);
   return menu;
 }

@@ -5,6 +5,7 @@
 #include "roadmaker/assets/prop_library.hpp"
 #include "roadmaker/edit/operations.hpp"
 #include "roadmaker/mesh/junction_corners.hpp"
+#include "roadmaker/mesh/junction_maneuvers.hpp"
 #include "roadmaker/mesh/junction_stoplines.hpp"
 #include "roadmaker/mesh/junction_surface_spans.hpp"
 #include "roadmaker/road/authoring.hpp"
@@ -15,6 +16,7 @@
 #include <gtest/gtest.h>
 
 #include <QCheckBox>
+#include <QComboBox>
 #include <QDoubleSpinBox>
 #include <QItemSelectionModel>
 #include <QLabel>
@@ -1706,6 +1708,18 @@ double model_height() {
 // --- Surface spans (p4-s5, issue #320) ---------------------------------------
 
 /// The panel's per-span rows, in display order.
+std::vector<QWidget*> maneuver_rows(const PropertiesPanel& panel) {
+  std::vector<QWidget*> rows;
+  auto* group = panel.findChild<QGroupBox*>(QStringLiteral("maneuvers_group"));
+  if (group == nullptr) {
+    return rows;
+  }
+  for (QWidget* row : group->findChildren<QWidget*>(QStringLiteral("maneuver_row"))) {
+    rows.push_back(row);
+  }
+  return rows;
+}
+
 std::vector<QWidget*> span_rows(const PropertiesPanel& panel) {
   std::vector<QWidget*> rows;
   auto* group = panel.findChild<QGroupBox*>(QStringLiteral("surface_spans_group"));
@@ -1945,6 +1959,111 @@ TEST(PropertiesPanel, SurfaceSpanRaiseAndLowerMoveTheSortIndexByOne) {
   EXPECT_EQ(sort_text(), QStringLiteral("0"));
   // Back at its default, the record is erased rather than kept.
   EXPECT_TRUE(scene.document.network().junction(scene.junction)->surface_spans.empty());
+}
+
+// --- Maneuvers (p4-s6, issue #227) -------------------------------------------
+
+TEST(PropertiesPanel, ManeuverRowsAppearForAJunctionWithTurns) {
+  CornerScene scene;
+  PropertiesPanel panel(scene.document, scene.selection);
+  auto* group = panel.findChild<QGroupBox*>(QStringLiteral("maneuvers_group"));
+  ASSERT_NE(group, nullptr);
+  EXPECT_TRUE(group->isHidden()) << "nothing selected — nothing to show";
+
+  scene.selection.select({.junction = scene.junction});
+  EXPECT_FALSE(group->isHidden());
+  const std::size_t expected = junction_maneuvers(scene.document.network(), scene.junction).size();
+  ASSERT_GT(expected, 0U);
+  EXPECT_EQ(maneuver_rows(panel).size(), expected) << "one row per connecting road";
+
+  // An arm road is not a junction selection: the section goes away.
+  scene.selection.select({.road = scene.document.network().find_road("1")});
+  EXPECT_TRUE(group->isHidden());
+}
+
+TEST(PropertiesPanel, ManeuverLockCheckboxPushesOneCommandAndNeverEchoes) {
+  CornerScene scene;
+  PropertiesPanel panel(scene.document, scene.selection);
+  scene.selection.select({.junction = scene.junction});
+  const std::vector<QWidget*> rows = maneuver_rows(panel);
+  ASSERT_FALSE(rows.empty());
+  auto* lock = rows.front()->findChild<QCheckBox*>(QStringLiteral("maneuver_lock_check"));
+  ASSERT_NE(lock, nullptr);
+  EXPECT_FALSE(lock->isChecked()) << "a derived turn is not locked";
+
+  const int base = scene.document.undo_stack()->index();
+  lock->setChecked(true);
+  EXPECT_EQ(scene.document.undo_stack()->index(), base + 1);
+  ASSERT_EQ(scene.document.network().junction(scene.junction)->maneuvers.size(), 1U);
+  EXPECT_TRUE(scene.document.network().junction(scene.junction)->maneuvers.front().locked);
+
+  // Re-seeding from the record must not push a second (no-op) command — the
+  // kernel refuses those, so an echo would show up as a rejected command.
+  scene.selection.select({.junction = scene.junction});
+  EXPECT_EQ(scene.document.undo_stack()->index(), base + 1);
+
+  // And back off again erases the record entirely (authors-nothing ⇒ erase).
+  maneuver_rows(panel)
+      .front()
+      ->findChild<QCheckBox*>(QStringLiteral("maneuver_lock_check"))
+      ->setChecked(false);
+  EXPECT_EQ(scene.document.undo_stack()->index(), base + 2);
+  EXPECT_TRUE(scene.document.network().junction(scene.junction)->maneuvers.empty());
+}
+
+TEST(PropertiesPanel, ManeuverTurnTypeComboPushesOnlyRealChanges) {
+  CornerScene scene;
+  PropertiesPanel panel(scene.document, scene.selection);
+  scene.selection.select({.junction = scene.junction});
+  ASSERT_FALSE(maneuver_rows(panel).empty());
+  const std::vector<JunctionManeuverInfo> all =
+      junction_maneuvers(scene.document.network(), scene.junction);
+  ASSERT_FALSE(all.empty());
+
+  const auto combo = [&panel] {
+    return maneuver_rows(panel).front()->findChild<QComboBox*>(
+        QStringLiteral("maneuver_turn_combo"));
+  };
+  ASSERT_NE(combo(), nullptr);
+  EXPECT_EQ(combo()->currentIndex(), 0) << "a derived turn reads Auto";
+
+  // Picking the type the derivation already reports would author nothing, and
+  // the kernel refuses a no-op — the panel must not even ask.
+  const int base = scene.document.undo_stack()->index();
+  combo()->setCurrentIndex(static_cast<int>(all.front().computed) + 1);
+  EXPECT_EQ(scene.document.undo_stack()->index(), base);
+  EXPECT_TRUE(scene.document.network().junction(scene.junction)->maneuvers.empty());
+
+  // A genuinely different type is one command, and the row reads it back.
+  const int other = all.front().computed == TurnType::Left ? static_cast<int>(TurnType::Right)
+                                                           : static_cast<int>(TurnType::Left);
+  combo()->setCurrentIndex(other + 1);
+  EXPECT_EQ(scene.document.undo_stack()->index(), base + 1);
+  ASSERT_EQ(scene.document.network().junction(scene.junction)->maneuvers.size(), 1U);
+  EXPECT_EQ(combo()->currentIndex(), other + 1);
+}
+
+TEST(PropertiesPanel, RebuildManeuversIsDisabledUntilSomethingGeometricIsAuthored) {
+  CornerScene scene;
+  PropertiesPanel panel(scene.document, scene.selection);
+  scene.selection.select({.junction = scene.junction});
+  auto* rebuild = panel.findChild<QPushButton*>(QStringLiteral("maneuver_rebuild_button"));
+  ASSERT_NE(rebuild, nullptr);
+  EXPECT_FALSE(rebuild->isEnabled()) << "nothing authored — there is nothing to rebuild";
+
+  // A lock is geometric; it is exactly what a rebuild discards.
+  maneuver_rows(panel)
+      .front()
+      ->findChild<QCheckBox*>(QStringLiteral("maneuver_lock_check"))
+      ->setChecked(true);
+  EXPECT_TRUE(
+      panel.findChild<QPushButton*>(QStringLiteral("maneuver_rebuild_button"))->isEnabled());
+
+  const int base = scene.document.undo_stack()->index();
+  panel.findChild<QPushButton*>(QStringLiteral("maneuver_rebuild_button"))->click();
+  EXPECT_EQ(scene.document.undo_stack()->index(), base + 1);
+  EXPECT_TRUE(scene.document.network().junction(scene.junction)->maneuvers.empty())
+      << "the rebuild cleared the lock it was offered for";
 }
 
 } // namespace roadmaker::editor

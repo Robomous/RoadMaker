@@ -14,6 +14,7 @@
 #include "roadmaker/io/gltf_exporter.hpp"
 #include "roadmaker/io/usd_exporter.hpp"
 #include "roadmaker/mesh/junction_corners.hpp"
+#include "roadmaker/mesh/junction_maneuvers.hpp"
 #include "roadmaker/mesh/junction_stoplines.hpp"
 #include "roadmaker/mesh/junction_surface_spans.hpp"
 #include "roadmaker/mesh/mesh_builder.hpp"
@@ -188,6 +189,15 @@ NB_MODULE(_roadmaker, m) {
   nb::enum_<roadmaker::ContactPoint>(m, "ContactPoint")
       .value("START", roadmaker::ContactPoint::Start)
       .value("END", roadmaker::ContactPoint::End);
+
+  // Layer 1, RoadMaker-only: ASAM OpenDRIVE has no turn-type element (§12.2
+  // Table 56 gives <connection> no such attribute), so the type is DERIVED from
+  // the arm-face headings and only stored when the author overrides it.
+  nb::enum_<roadmaker::TurnType>(m, "TurnType")
+      .value("LEFT", roadmaker::TurnType::Left)
+      .value("STRAIGHT", roadmaker::TurnType::Straight)
+      .value("RIGHT", roadmaker::TurnType::Right)
+      .value("UTURN", roadmaker::TurnType::UTurn);
 
   nb::enum_<roadmaker::ObjectType>(m, "ObjectType")
       .value("NONE", roadmaker::ObjectType::None)
@@ -549,6 +559,44 @@ NB_MODULE(_roadmaker, m) {
                ", sort_index=" + std::to_string(span.sort_index) + ")";
       });
 
+  nb::class_<roadmaker::Maneuver>(m, "Maneuver")
+      .def_ro("road",
+              &roadmaker::Maneuver::road,
+              "The connecting road whose path through the junction this record "
+              "overrides — the record key, stable across regeneration.")
+      .def_ro("locked",
+              &roadmaker::Maneuver::locked,
+              "True when regeneration keeps this road's plan view, length, "
+              "elevation and lane width instead of replanning them, and keeps "
+              "the road itself even when the plan no longer contains its turn. "
+              "Toggle it with edit.set_maneuver_locked; edit.set_maneuver_path "
+              "sets it implicitly in the same undo step.")
+      .def_ro("turn_type",
+              &roadmaker::Maneuver::turn_type,
+              "Authored TurnType, or None when the type computed from the "
+              "arm-face headings applies. Purely semantic — it never moves "
+              "geometry, which is why edit.rebuild_maneuvers keeps it while "
+              "clearing everything else here.")
+      .def_ro("start_offset",
+              &roadmaker::Maneuver::start_offset,
+              "Endpoint slide [m] along the INCOMING arm's face, measured from "
+              "the anchor lane's inner boundary along the arm's +t axis. None "
+              "means the derived anchor (0).")
+      .def_ro("end_offset",
+              &roadmaker::Maneuver::end_offset,
+              "Endpoint slide [m] along the OUTGOING arm's face; same convention.")
+      .def_ro("control_points",
+              &roadmaker::Maneuver::control_points,
+              "The authored INTERIOR waypoints, in driving direction. The "
+              "endpoints are never stored — they are derived from the arm faces "
+              "plus the offsets, so a maneuver keeps meeting its arms when they "
+              "move. Edit them with edit.set_maneuver_path.")
+      .def("__repr__", [](const roadmaker::Maneuver& maneuver) {
+        return "Maneuver(locked=" + std::string(maneuver.locked ? "True" : "False") +
+               ", turn_type=" + (maneuver.turn_type ? "set" : "None") +
+               ", control_points=" + std::to_string(maneuver.control_points.size()) + ")";
+      });
+
   nb::class_<roadmaker::SpanArm>(m, "SpanArm")
       .def(nb::init<>())
       // edit.create_span_junction takes a list of these, so they have to be
@@ -609,6 +657,13 @@ NB_MODULE(_roadmaker, m) {
               "(sparse; read-only). Edit them with "
               "edit.set_surface_span_included / edit.set_surface_span_sort_index, "
               "and read the SOLVED spans with mesh.junction_surface_spans.")
+      .def_ro("maneuvers",
+              &roadmaker::Junction::maneuvers,
+              "Authored maneuver overrides, one per connecting road (sparse; "
+              "read-only). Edit them with edit.set_maneuver_locked / "
+              "edit.set_maneuver_turn_type / edit.set_maneuver_path / "
+              "edit.reset_maneuver / edit.rebuild_maneuvers, and read the "
+              "SOLVED maneuvers with junction_maneuvers.")
       .def_ro("spans",
               &roadmaker::Junction::spans,
               "Membership spans of a VIRTUAL (span) junction — a stretch of a "
@@ -1350,6 +1405,125 @@ NB_MODULE(_roadmaker, m) {
       "tool never re-implements the sampling. Empty for a stale id and for a "
       "junction with no floor to control (a span/virtual junction has no "
       "connections at all).");
+
+  nb::class_<roadmaker::ManeuverSlide>(m, "ManeuverSlide")
+      .def_prop_ro(
+          "anchor",
+          [](const roadmaker::ManeuverSlide& slide) {
+            return std::pair<double, double>{slide.anchor[0], slide.anchor[1]};
+          },
+          "(x, y) of the anchor lane's INNER boundary — offset 0, exactly where "
+          "an unauthored maneuver's endpoint sits.")
+      .def_prop_ro(
+          "min_point",
+          [](const roadmaker::ManeuverSlide& slide) {
+            return std::pair<double, double>{slide.min_point[0], slide.min_point[1]};
+          },
+          "(x, y) of the min_offset end of the constraint segment.")
+      .def_prop_ro(
+          "max_point",
+          [](const roadmaker::ManeuverSlide& slide) {
+            return std::pair<double, double>{slide.max_point[0], slide.max_point[1]};
+          },
+          "(x, y) of the max_offset end of the constraint segment.")
+      .def_ro("min_offset",
+              &roadmaker::ManeuverSlide::min_offset,
+              "Smallest slide [m] along the arm's +t axis the endpoint may take.")
+      .def_ro("max_offset",
+              &roadmaker::ManeuverSlide::max_offset,
+              "Largest slide [m] along the arm's +t axis the endpoint may take.")
+      .def("__repr__", [](const roadmaker::ManeuverSlide& slide) {
+        return "ManeuverSlide(" + std::to_string(slide.min_offset) + " .. " +
+               std::to_string(slide.max_offset) + ")";
+      });
+
+  nb::class_<roadmaker::JunctionManeuverInfo>(m, "JunctionManeuverInfo")
+      .def_ro("road",
+              &roadmaker::JunctionManeuverInfo::road,
+              "The connecting road — stable across regeneration, so it is the "
+              "record key every maneuver command takes.")
+      .def_ro("road_odr_id", &roadmaker::JunctionManeuverInfo::road_odr_id)
+      .def_ro("from_",
+              &roadmaker::JunctionManeuverInfo::from,
+              "The arm face the maneuver leaves ('from' is a Python keyword).")
+      .def_ro("to", &roadmaker::JunctionManeuverInfo::to, "The arm face it enters.")
+      .def_ro("from_lane",
+              &roadmaker::JunctionManeuverInfo::from_lane,
+              "odr id of the linked lane on the incoming face.")
+      .def_ro("to_lane",
+              &roadmaker::JunctionManeuverInfo::to_lane,
+              "odr id of the linked lane on the outgoing face.")
+      .def_ro("computed",
+              &roadmaker::JunctionManeuverInfo::computed,
+              "TurnType derived from the arm-face headings.")
+      .def_ro("effective",
+              &roadmaker::JunctionManeuverInfo::effective,
+              "What to show and act on: the override when there is one, else "
+              "`computed`.")
+      .def_ro("overridden",
+              &roadmaker::JunctionManeuverInfo::overridden,
+              "True when a record supplies `effective` rather than the derivation.")
+      .def_ro("locked",
+              &roadmaker::JunctionManeuverInfo::locked,
+              "True when the record locks this road's geometry against "
+              "regeneration.")
+      .def_ro("authored",
+              &roadmaker::JunctionManeuverInfo::authored,
+              "True when the junction carries a Maneuver record for this road "
+              "at all — what edit.reset_maneuver needs.")
+      .def_ro("is_uturn_explicit",
+              &roadmaker::JunctionManeuverInfo::is_uturn_explicit,
+              "True when the maneuver returns to the arm it came from. The "
+              "planner never emits such a turn, so it exists only because it "
+              "was authored (edit.add_uturn_maneuver) and has no derived "
+              "geometry to fall back on: it cannot be reset, only deleted.")
+      .def_ro("start_heading",
+              &roadmaker::JunctionManeuverInfo::start_heading,
+              "Tangent [rad] leaving the incoming face — locked through a refit.")
+      .def_ro("end_heading",
+              &roadmaker::JunctionManeuverInfo::end_heading,
+              "Tangent [rad] entering the outgoing face — locked through a refit.")
+      .def_ro("start_offset",
+              &roadmaker::JunctionManeuverInfo::start_offset,
+              "Effective slide [m] on the incoming face, 0 when unauthored.")
+      .def_ro("end_offset",
+              &roadmaker::JunctionManeuverInfo::end_offset,
+              "Effective slide [m] on the outgoing face, 0 when unauthored.")
+      .def_ro("start_slide",
+              &roadmaker::JunctionManeuverInfo::start_slide,
+              "The segment the start endpoint may be dragged along.")
+      .def_ro("end_slide",
+              &roadmaker::JunctionManeuverInfo::end_slide,
+              "The segment the end endpoint may be dragged along.")
+      .def_ro("control_points",
+              &roadmaker::JunctionManeuverInfo::control_points,
+              "The authored INTERIOR waypoints; empty for a derived path.")
+      .def_ro("path",
+              &roadmaker::JunctionManeuverInfo::path,
+              "The connecting road's sampled centerline (x, y, z) — the render "
+              "polyline and the tool's pick polyline.")
+      .def("__repr__", [](const roadmaker::JunctionManeuverInfo& info) {
+        return "JunctionManeuverInfo(road='" + info.road_odr_id +
+               "', effective=" + std::to_string(static_cast<int>(info.effective)) +
+               (info.overridden ? ", overridden" : "") + (info.locked ? ", locked" : "") +
+               (info.authored ? ", authored" : "") + ")";
+      });
+
+  m.def(
+      "junction_maneuvers",
+      [](const roadmaker::RoadNetwork& network, roadmaker::JunctionId junction) {
+        return roadmaker::junction_maneuvers(network, junction);
+      },
+      "network"_a,
+      "junction"_a,
+      "Every maneuver of the junction — one per connecting road, in connection "
+      "order — with the derived turn type merged over whatever is authored, the "
+      "sampled path, and the two endpoint slide constraints. The SAME solve the "
+      "editor's Maneuver tool, the properties rows and the command layer's "
+      "validate-first checks read, so none of them can disagree about what a "
+      "maneuver is. A FOREIGN junction (no arm list) still reports its "
+      "maneuvers, inspectable but not authorable. Empty for a stale id and for "
+      "a SPAN (virtual) junction, which has no connections at all.");
 
   // --- authoring -----------------------------------------------------------------
 
@@ -2281,6 +2455,139 @@ NB_MODULE(_roadmaker, m) {
       "are just this with current +/- 1, so an index survives regeneration "
       "without renumbering. Same validation and erase-at-default rule as "
       "edit.set_surface_span_included.");
+  // --- maneuvers (p4-s6, #227) --------------------------------------------
+  // A maneuver is ONE connecting road's path through a junction. Every factory
+  // validates through the same junction_maneuvers solve the query exposes, and
+  // every one erases a record left authoring nothing, so an edit-and-undo pair
+  // writes the original bytes.
+  edit.def(
+      "set_maneuver_locked",
+      [](const roadmaker::RoadNetwork& network,
+         roadmaker::JunctionId junction,
+         roadmaker::RoadId road,
+         bool locked) {
+        return roadmaker::edit::set_maneuver_locked(network, junction, road, locked);
+      },
+      "network"_a,
+      "junction"_a,
+      "road"_a,
+      "locked"_a,
+      "Locks or unlocks ONE maneuver's geometry against regeneration — the "
+      "finer-grained sibling of edit.set_junction_locked, and the 'convert to "
+      "explicit' verb on a derived maneuver. A locked maneuver keeps its plan "
+      "view, length, elevation and lane width through an explicit "
+      "regenerate_junction, and its connecting road is kept even when the plan "
+      "no longer contains its turn. Pushing raises ValueError for a stale "
+      "junction, a road that is not a maneuver of it, or the maneuver already "
+      "being in that lock state.");
+  edit.def(
+      "set_maneuver_turn_type",
+      [](const roadmaker::RoadNetwork& network,
+         roadmaker::JunctionId junction,
+         roadmaker::RoadId road,
+         std::optional<roadmaker::TurnType> turn_type) {
+        return roadmaker::edit::set_maneuver_turn_type(network, junction, road, turn_type);
+      },
+      "network"_a,
+      "junction"_a,
+      "road"_a,
+      "turn_type"_a,
+      "Overrides ONE maneuver's turn type, or clears the override with None. "
+      "The type is otherwise DERIVED from the arm-face headings (ASAM "
+      "OpenDRIVE has no carrier for it), so the override is purely semantic and "
+      "never moves geometry — which is why edit.rebuild_maneuvers keeps it. "
+      "Storing the COMPUTED value clears the override rather than pinning it. "
+      "Pushing raises ValueError for a stale junction, a road that is not a "
+      "maneuver of it, clearing an override that does not exist, or setting the "
+      "type the maneuver already reports.");
+  edit.def(
+      "set_maneuver_path",
+      [](const roadmaker::RoadNetwork& network,
+         roadmaker::JunctionId junction,
+         roadmaker::RoadId road,
+         const std::vector<std::pair<double, double>>& control_points,
+         std::optional<double> start_offset,
+         std::optional<double> end_offset) {
+        const std::vector<roadmaker::Waypoint> points = to_waypoints(control_points);
+        return roadmaker::edit::set_maneuver_path(
+            network, junction, road, points, start_offset, end_offset);
+      },
+      "network"_a,
+      "junction"_a,
+      "road"_a,
+      "control_points"_a,
+      "start_offset"_a = nb::none(),
+      "end_offset"_a = nb::none(),
+      "Reshapes ONE maneuver: its INTERIOR (x, y) control points plus the "
+      "endpoint slides along the two arm faces (None leaves a slide alone). THE "
+      "geometry command — add point, move point, insert point and endpoint drag "
+      "all compose into it. The path is refitted as a G1 clothoid chain with the "
+      "END HEADINGS LOCKED to the arm faces, so a reshaped maneuver still meets "
+      "its arms tangentially (§12.4.2), and the road's length, elevation and "
+      "blended lane width are rewritten together. Applying it LOCKS the maneuver "
+      "in the SAME undo step. Pushing raises ValueError for a stale junction, a "
+      "road that is not a maneuver of it, more than 64 control points, a "
+      "non-finite coordinate or offset, an offset outside the anchor lane's "
+      "span (see ManeuverSlide), a missing anchor lane, a failed refit, or a "
+      "request that changes nothing.");
+  edit.def(
+      "reset_maneuver",
+      [](const roadmaker::RoadNetwork& network,
+         roadmaker::JunctionId junction,
+         roadmaker::RoadId road,
+         const roadmaker::edit::JunctionGenOptions& options) {
+        return roadmaker::edit::reset_maneuver(network, junction, road, options);
+      },
+      "network"_a,
+      "junction"_a,
+      "road"_a,
+      "options"_a = roadmaker::edit::JunctionGenOptions{},
+      "Drops ONE maneuver's authored record and replans its connecting road "
+      "from the junction's arms — the per-maneuver 'back to derived'. Pushing "
+      "raises ValueError for a stale junction, a road that is not a maneuver of "
+      "it, a maneuver with nothing authored to reset, a FOREIGN junction (no "
+      "arm list to replan from), or an EXPLICIT U-turn, which the planner never "
+      "emits and so has no derived geometry to fall back on — delete its "
+      "connecting road instead.");
+  edit.def(
+      "rebuild_maneuvers",
+      [](const roadmaker::RoadNetwork& network,
+         roadmaker::JunctionId junction,
+         const roadmaker::edit::JunctionGenOptions& options) {
+        return roadmaker::edit::rebuild_maneuvers(network, junction, options);
+      },
+      "network"_a,
+      "junction"_a,
+      "options"_a = roadmaker::edit::JunctionGenOptions{},
+      "Replans the WHOLE junction ignoring every maneuver lock: hand-shaped "
+      "geometry is replaced by the derivation, connecting roads the plan no "
+      "longer contains are dropped (explicit U-turns included), and the "
+      "records' geometric fields are cleared. turn_type overrides SURVIVE — "
+      "they are semantic, not geometric. Pushing raises ValueError for a stale "
+      "junction, a FOREIGN or SPAN junction, or a junction with no locked or "
+      "hand-shaped maneuver to rebuild.");
+  edit.def(
+      "add_uturn_maneuver",
+      [](const roadmaker::RoadNetwork& network,
+         roadmaker::JunctionId junction,
+         const roadmaker::RoadEnd& arm,
+         const roadmaker::edit::JunctionGenOptions& options) {
+        return roadmaker::edit::add_uturn_maneuver(network, junction, arm, options);
+      },
+      "network"_a,
+      "junction"_a,
+      "arm"_a,
+      "options"_a = roadmaker::edit::JunctionGenOptions{},
+      "Adds the one maneuver the planner never emits: a U-turn on `arm`, from "
+      "its innermost incoming driving lane back to its innermost outgoing one. "
+      "The connecting road, the connection-table entry and a LOCKED Maneuver "
+      "record are created together — the lock is what keeps the next "
+      "regeneration from dropping a turn no plan contains. Pushing raises "
+      "ValueError for a stale junction, a FOREIGN or SPAN junction, a road end "
+      "that is not an arm of it, no driving lane in one of the two directions, "
+      "an existing same-arm connection, or a failed connector fit (a U-turn "
+      "between two adjacent lanes can legitimately be too tight).");
+
   edit.def(
       "set_junction_locked",
       [](const roadmaker::RoadNetwork& network, roadmaker::JunctionId junction, bool locked) {

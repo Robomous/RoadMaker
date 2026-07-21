@@ -40,6 +40,7 @@ enum class ToolId {
   StopLine,
   JunctionSpan,
   JunctionSurface,
+  Maneuver,
 };
 
 struct ToolEvent {
@@ -51,6 +52,12 @@ struct ToolEvent {
   // road (the cursor is over a road body). The Lane Width page's
   // split-at-cursor consumes it; a click on empty space leaves it unset.
   std::optional<StationCoord> station;
+  // The viewport context that produced this event — cursor in logical pixels
+  // plus the camera and viewport extent. Present only when a real viewport
+  // delivered the event; a tool that hit-tests geometry with no mesh proxy (the
+  // Maneuver tool's connecting-road paths) uses it for a constant PIXEL
+  // tolerance and falls back to a world-metre radius without it.
+  std::optional<ScreenContext> screen;
   Qt::MouseButtons buttons = Qt::NoButton;
   Qt::KeyboardModifiers modifiers = Qt::NoModifier;
 };

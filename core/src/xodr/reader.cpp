@@ -1759,6 +1759,148 @@ private:
     return spans;
   }
 
+  /// Authored maneuver overrides (p4-s6, issue #227) round-trip through
+  /// <userData code="rm:maneuver">, entries ";"-joined and fields ":"-joined:
+  /// "roadOdrId[:lock=1][:turn=left|straight|right|uturn][:so=<num>][:eo=<num>]
+  ///  [:pts=x,y|x,y|…]". Points use ',' within a point and '|' between points,
+  /// neither of which collides with the ';'/':' joins. Each optional field may
+  /// appear at most once and at least one must be present (the writer never
+  /// emits an entry that authors nothing).
+  ///
+  /// All-or-nothing on the entry grammar like rm:floor — an unresolvable or
+  /// duplicated road, a malformed or repeated KNOWN field, a point list longer
+  /// than kMaxManeuverControlPoints, or an empty override drops the whole
+  /// value. An UNKNOWN field key is warned about and skipped instead, so a file
+  /// written by a newer RoadMaker still loads the fields this build
+  /// understands (the rm:junction forward-compat rule).
+  ///
+  /// No refit happens here: the planView already read from the file is Layer 0
+  /// truth and wins. These records only say how the path was authored, so a
+  /// load never regenerates geometry from them.
+  std::optional<std::vector<Maneuver>> parse_maneuver_value(std::string_view value,
+                                                            const std::string& location) {
+    std::vector<Maneuver> maneuvers;
+    for (std::size_t begin = 0; begin <= value.size();) {
+      std::size_t end = value.find(';', begin);
+      if (end == std::string_view::npos) {
+        end = value.size();
+      }
+      const std::string_view entry = value.substr(begin, end - begin);
+      begin = end + 1;
+
+      std::vector<std::string_view> fields;
+      for (std::size_t f = 0; f <= entry.size();) {
+        std::size_t stop = entry.find(':', f);
+        if (stop == std::string_view::npos) {
+          stop = entry.size();
+        }
+        fields.push_back(entry.substr(f, stop - f));
+        f = stop + 1;
+      }
+      if (fields.size() < 2 || fields.size() > 6) {
+        return std::nullopt;
+      }
+      const RoadId road_id = network().find_road(std::string(fields[0]));
+      if (!road_id.is_valid()) {
+        return std::nullopt;
+      }
+      if (std::ranges::any_of(maneuvers,
+                              [&](const Maneuver& seen) { return seen.road == road_id; })) {
+        return std::nullopt; // the same road twice
+      }
+      Maneuver maneuver{.road = road_id};
+      bool lock_seen = false;
+      bool turn_seen = false;
+      bool points_seen = false;
+      for (std::size_t i = 1; i < fields.size(); ++i) {
+        const std::string_view field = fields[i];
+        if (field.starts_with("lock=")) {
+          // The writer emits `lock=1` and nothing else — any other value is a
+          // corrupt file.
+          if (lock_seen || field.substr(5) != "1") {
+            return std::nullopt;
+          }
+          lock_seen = true;
+          maneuver.locked = true;
+          continue;
+        }
+        if (field.starts_with("turn=")) {
+          const std::string_view text = field.substr(5);
+          if (turn_seen) {
+            return std::nullopt;
+          }
+          if (text == "left") {
+            maneuver.turn_type = TurnType::Left;
+          } else if (text == "straight") {
+            maneuver.turn_type = TurnType::Straight;
+          } else if (text == "right") {
+            maneuver.turn_type = TurnType::Right;
+          } else if (text == "uturn") {
+            maneuver.turn_type = TurnType::UTurn;
+          } else {
+            return std::nullopt;
+          }
+          turn_seen = true;
+          continue;
+        }
+        if (field.starts_with("so=") || field.starts_with("eo=")) {
+          std::optional<double>& slot =
+              field.starts_with("so=") ? maneuver.start_offset : maneuver.end_offset;
+          const std::optional<double> parsed = to_double(field.substr(3));
+          if (slot.has_value() || !parsed) {
+            return std::nullopt;
+          }
+          slot = *parsed;
+          continue;
+        }
+        if (field.starts_with("pts=")) {
+          if (points_seen) {
+            return std::nullopt;
+          }
+          points_seen = true;
+          const std::string_view list = field.substr(4);
+          if (list.empty()) {
+            return std::nullopt; // the writer never emits an empty list
+          }
+          for (std::size_t p = 0; p <= list.size();) {
+            std::size_t stop = list.find('|', p);
+            if (stop == std::string_view::npos) {
+              stop = list.size();
+            }
+            const std::string_view point = list.substr(p, stop - p);
+            p = stop + 1;
+            const std::size_t comma = point.find(',');
+            if (comma == std::string_view::npos) {
+              return std::nullopt;
+            }
+            const std::optional<double> x = to_double(point.substr(0, comma));
+            const std::optional<double> y = to_double(point.substr(comma + 1));
+            if (!x || !y) {
+              return std::nullopt;
+            }
+            if (maneuver.control_points.size() >= kMaxManeuverControlPoints) {
+              return std::nullopt; // longer than any writer would emit
+            }
+            maneuver.control_points.push_back(Waypoint{.x = *x, .y = *y});
+          }
+          continue;
+        }
+        diag(Severity::Warning,
+             location,
+             fmt::format("rm:maneuver field '{}' is not understood and was ignored", field));
+      }
+      if (!maneuver.locked && !maneuver.turn_type && !maneuver.start_offset &&
+          !maneuver.end_offset && maneuver.control_points.empty()) {
+        return std::nullopt; // the writer never emits an empty override
+      }
+      maneuvers.push_back(std::move(maneuver));
+    }
+    if (maneuvers.empty()) {
+      return std::nullopt;
+    }
+    return maneuvers;
+  }
+
   /// The generator's arm list (roadmaker::edit) round-trips through
   /// <userData code="rm:arms"> ("roadOdrId:start|end;…"); roads parse before
   /// junctions, so arm road ids resolve here. Corner overrides ride the
@@ -1809,6 +1951,21 @@ private:
           continue;
         }
         junction.surface_spans = std::move(*spans);
+        continue;
+      }
+      if (code == "rm:maneuver") {
+        // Authored maneuver overrides (p4-s6, issue #227): ";"-joined
+        // "roadOdrId[:lock=1][:turn=…][:so=<num>][:eo=<num>][:pts=x,y|…]".
+        // All-or-nothing on the ENTRY grammar (the rm:floor rule); an UNKNOWN
+        // field key inside an entry is warned about and skipped. Nothing is
+        // refitted here — the planView is Layer 0 truth and wins.
+        std::optional<std::vector<Maneuver>> maneuvers =
+            parse_maneuver_value(node.attribute("value").value(), location);
+        if (!maneuvers) {
+          diag(Severity::Warning, location, "malformed rm:maneuver userData ignored");
+          continue;
+        }
+        junction.maneuvers = std::move(*maneuvers);
         continue;
       }
       if (code == "rm:junction") {

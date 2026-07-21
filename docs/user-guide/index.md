@@ -62,6 +62,7 @@ not undoable.
 | [Road Styles](road-styles.md) | Restyle a whole road by dropping a style from the Library |
 | [Elevation](elevation.md) | Give a road a vertical profile |
 | [Junction](junction.md) | Connect road ends into a junction with generated turning lanes |
+| [Maneuvers](junction.md#maneuvers) | Reshape a junction's turns, lock them, label them, and add U-turns |
 | [T-junction](t-junction.md) | Tee a road's end into another road's body |
 | [Objects & signals](objects-signals.md) | Add crosswalks, props, traffic lights, and signs |
 | [Road markings](markings.md) | Place arrow stencils on a lane and draw free-form line markings and crossings |
