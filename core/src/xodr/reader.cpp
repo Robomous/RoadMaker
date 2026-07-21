@@ -1,5 +1,6 @@
 #include "roadmaker/xodr/reader.hpp"
 
+#include "roadmaker/edit/connection.hpp"
 #include "roadmaker/geometry/reference_line.hpp"
 #include "roadmaker/tol.hpp"
 #include "roadmaker/xodr/rules.hpp"
@@ -10,6 +11,7 @@
 #include <fast_float/fast_float.h>
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <fstream>
 #include <limits>
@@ -77,6 +79,7 @@ public:
       parse_junction(junction_node);
     }
     resolve_references();
+    resolve_stoplines();
     parse_surfaces(root);
     warn_unsupported_root_children(root);
 
@@ -84,6 +87,25 @@ public:
   }
 
 private:
+
+  /// The fields of one `<userData code="rm:stopline">`, already validated.
+  struct ParsedStopLine {
+    ContactPoint contact = ContactPoint::Start;
+    std::optional<double> distance;
+    bool flipped = false;
+    std::string crosswalk;
+  };
+
+  /// A stop line absorbed from an object, waiting for junctions to parse so its
+  /// owning arm can be resolved. `fallback` is the object it becomes again if no
+  /// junction claims that road end.
+  struct PendingStopLine {
+    RoadId road;
+    ParsedStopLine data;
+    std::string location;
+    std::string fragment; ///< the userData element verbatim, for the fallback
+    Object fallback;
+  };
   // --- diagnostics ---------------------------------------------------------
 
   /// `rule` is the ASAM checker-rule UID (roadmaker/xodr/rules.hpp) when a
@@ -756,6 +778,11 @@ private:
       object.orientation = ObjectOrientation::None;
     }
 
+    // Set by the rm:stopline branch of the child loop below: when present this
+    // object is absorbed into a junction record instead of the arena.
+    std::optional<ParsedStopLine> stopline;
+    std::string stopline_fragment;
+
     object.perp_to_road = node.attribute("perpToRoad").as_bool(false);
     object.length = attr_optional_double(node, "length", location);
     object.width = attr_optional_double(node, "width", location);
@@ -838,12 +865,133 @@ private:
         object.stencil = std::move(stencil);
         continue;
       }
+      // <userData code="rm:stopline">: this object is a stop line RoadMaker
+      // materialized on write. It is absorbed back into the owning junction's
+      // StopLine record rather than added to the arena — see resolve_stoplines.
+      // The element is kept verbatim so an object that fails to resolve can be
+      // restored with its record intact.
+      if (name == "userData" && std::string_view(child.attribute("code").value()) == "rm:stopline") {
+        if (auto data = parse_stopline_data(child, fmt::format("{}/userData", location))) {
+          stopline = std::move(*data);
+          stopline_fragment = node_to_string(child);
+          continue;
+        }
+        // Malformed: drop the record, keep the object live and its userData
+        // verbatim (ADR-0008 — degrade to Layer 0 rather than lose the line).
+        object.preserved.children.push_back(node_to_string(child));
+        continue;
+      }
       if (name != "outline" && name != "outlines" && name != "repeat" && name != "markings") {
         object.preserved.children.push_back(node_to_string(child));
       }
     }
 
+    if (stopline.has_value()) {
+      // Junctions have not been parsed yet, so the owning arm cannot be
+      // resolved until pass 2 — hold the record and the object it would fall
+      // back to.
+      pending_stoplines_.push_back(PendingStopLine{.road = road_id,
+                                                   .data = *std::move(stopline),
+                                                   .location = location,
+                                                   .fragment = std::move(stopline_fragment),
+                                                   .fallback = std::move(object)});
+      return;
+    }
+
     network().add_object(road_id, std::move(object));
+  }
+
+  /// <userData code="rm:stopline"> on an <object> (§7.2): the parametric record
+  /// behind a materialized stop line. `contact` is mandatory and names the
+  /// junction-facing end of the enclosing road; everything else is optional and
+  /// absent at its default. A malformed value drops the whole record (the caller
+  /// keeps the object live) rather than guessing.
+  std::optional<ParsedStopLine> parse_stopline_data(const pugi::xml_node& node,
+                                                    const std::string& location) {
+    ParsedStopLine data;
+    const std::string_view contact = node.attribute("contact").value();
+    if (contact == "end") {
+      data.contact = ContactPoint::End;
+    } else if (contact == "start") {
+      data.contact = ContactPoint::Start;
+    } else {
+      diag(Severity::Warning,
+           location,
+           fmt::format("rm:stopline userData with missing or unknown contact '{}' ignored",
+                       contact));
+      return std::nullopt;
+    }
+
+    if (const pugi::xml_attribute attr = node.attribute("distance")) {
+      const auto value = to_double(attr.value());
+      if (!value.has_value() || !std::isfinite(*value) || *value < 0.0) {
+        diag(Severity::Warning,
+             location,
+             fmt::format("rm:stopline userData with malformed distance '{}' ignored",
+                         attr.value()));
+        return std::nullopt;
+      }
+      data.distance = *value;
+    }
+
+    if (const pugi::xml_attribute attr = node.attribute("flipped")) {
+      const std::string_view value = attr.value();
+      if (value != "true" && value != "false") {
+        diag(Severity::Warning,
+             location,
+             fmt::format("rm:stopline userData with malformed flipped '{}' ignored", value));
+        return std::nullopt;
+      }
+      data.flipped = value == "true";
+    }
+
+    data.crosswalk = node.attribute("crosswalk").value();
+
+    // An attribute we do not model is reported but does not cost the record —
+    // a newer RoadMaker's extra field must not silently delete the stop line.
+    static constexpr std::array<std::string_view, 5> kKnown{
+        "code", "contact", "distance", "flipped", "crosswalk"};
+    for (const pugi::xml_attribute attr : node.attributes()) {
+      if (std::ranges::find(kKnown, std::string_view(attr.name())) == kKnown.end()) {
+        diag(Severity::Warning,
+             location,
+             fmt::format("unknown rm:stopline attribute '{}' ignored", attr.name()));
+      }
+    }
+    return data;
+  }
+
+  /// Pass 2: fold every absorbed stop line into its junction's record. The arm
+  /// is the road end named by `contact`; junctions parse before this, so
+  /// junction_at_end resolves. A record that carries nothing beyond its identity
+  /// is a pure derived default and is absorbed silently — re-deriving it
+  /// reproduces the same line. A road end with no junction cannot own a record
+  /// at all, so the object is restored live with its userData verbatim.
+  void resolve_stoplines() {
+    for (PendingStopLine& pending : pending_stoplines_) {
+      const RoadEnd arm{.road = pending.road, .contact = pending.data.contact};
+      const std::optional<JunctionId> junction_id = edit::junction_at_end(network(), arm);
+      if (!junction_id.has_value()) {
+        diag(Severity::Warning,
+             pending.location,
+             "rm:stopline names a road end with no junction — kept as a plain object");
+        pending.fallback.preserved.children.push_back(std::move(pending.fragment));
+        network().add_object(pending.road, std::move(pending.fallback));
+        continue;
+      }
+      const bool derived = !pending.data.distance.has_value() && !pending.data.flipped &&
+                           pending.data.crosswalk.empty();
+      if (derived) {
+        continue; // a pure default — re-derived on demand, nothing to store
+      }
+      network()
+          .junction(*junction_id)
+          ->stoplines.push_back(StopLine{.arm = arm,
+                                         .distance = pending.data.distance,
+                                         .flipped = pending.data.flipped,
+                                         .crosswalk_odr_id = std::move(pending.data.crosswalk)});
+    }
+    pending_stoplines_.clear();
   }
 
   /// <markings> (§13.8): an object's painted lines, either attached to the
@@ -1617,6 +1765,7 @@ private:
   std::string_view source_;
   XodrParseResult result_;
   std::vector<PendingRoadRefs> pending_refs_;
+  std::vector<PendingStopLine> pending_stoplines_;
   std::set<std::string> warned_elements_;
   /// Entity context stamped onto diagnostics by diag(). Set once the entity
   /// exists in the arena, reset when its scope ends; single-pass parsing

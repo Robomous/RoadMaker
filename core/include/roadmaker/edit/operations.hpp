@@ -439,6 +439,50 @@ set_junction_default_corner_radius(const RoadNetwork& network, JunctionId juncti
 [[nodiscard]] RM_API std::unique_ptr<Command>
 set_junction_material(const RoadNetwork& network, JunctionId junction, std::string material);
 
+/// Authors the setback [m] of ONE junction arm's stop line — the distance from
+/// the junction mouth back to the near face of the painted band (p4-s3, issue
+/// #318). Creates the StopLine record when the arm is still fully derived.
+///
+/// `arm` must name a stop line the junction currently HAS: solvability comes
+/// from mesh::junction_stoplines(), the same query the mesher and the panel
+/// read, so tool, panel and command can never disagree about what a stop line
+/// is. A negative or non-finite distance is an error. Like a corner radius the
+/// value is stored UNCLAMPED and clamped to the road only when solved, so an
+/// arm that later shortens never fails the mesh.
+///
+/// `crosswalk_link` records the odr id of a crosswalk this line was placed
+/// alongside (the Crosswalk tool passes it inside its macro); nullopt leaves
+/// any existing link alone.
+///
+/// Dirty set: `{roads = {arm.road}, junctions = {junction},
+/// junctions_are_current = true}` — the band is part of the arm road's mesh and
+/// the turn set is untouched.
+[[nodiscard]] RM_API std::unique_ptr<Command>
+set_stopline_distance(const RoadNetwork& network,
+                      JunctionId junction,
+                      RoadEnd arm,
+                      double distance,
+                      std::optional<std::string> crosswalk_link = std::nullopt);
+
+/// Toggles which travel direction ONE arm's stop line spans — the approach
+/// (incoming) lanes by default, the outgoing lanes when flipped. The direction
+/// being toggled INTO must have driving lanes, else there would be nothing to
+/// span; that is an error, not an empty band.
+///
+/// A record left authoring nothing at all by the toggle (default distance, not
+/// flipped, no crosswalk link) is erased rather than kept, so the file a
+/// flip-twice produces is byte-identical to the one before it. Same validation
+/// and dirty set as set_stopline_distance.
+[[nodiscard]] RM_API std::unique_ptr<Command>
+flip_stopline(const RoadNetwork& network, JunctionId junction, RoadEnd arm);
+
+/// Drops ONE arm's authored stop-line record, returning it to the derived
+/// default. An arm that authors nothing has nothing to reset — that is a clean
+/// error (the command layer rejects no-ops). Same dirty set as
+/// set_stopline_distance.
+[[nodiscard]] RM_API std::unique_ptr<Command>
+reset_stopline(const RoadNetwork& network, JunctionId junction, RoadEnd arm);
+
 /// Deletes the junction AND its connecting roads (the §7 closure); incoming
 /// roads survive with their predecessor/successor links into the junction
 /// cleared. Undo restores the junction, every connecting road, and every
