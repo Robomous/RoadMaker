@@ -171,6 +171,18 @@ inline constexpr std::string_view kSignalType = "asam.net:xodr:1.7.0:road.signal
 inline constexpr std::string_view kSignalUseCountryCode =
     "asam.net:xodr:1.7.0:road.signal.use_country_code";
 
+/// "Controllers shall be valid for one or more signals." (§14.6 — `<control>`
+/// has multiplicity 1..* inside `<controller>`, Table 129.)
+inline constexpr std::string_view kControllerValidForSignals =
+    "asam.net:xodr:1.7.0:road.signal.controller.valid_for_signals";
+
+/// "Virtual junctions shall not have controllers and therefore no traffic
+/// lights." (1.9.0, §12.7 / Annex F.4.13.5.) 1.8.1 has no equivalent checker
+/// rule, but §12.14 gives a virtual junction no synchronization group either,
+/// so the finding is not version-gated.
+inline constexpr std::string_view kVirtualNoControllers =
+    "asam.net:xodr:1.9.0:junctions.virtual.no_controllers";
+
 /// "If the existing roads are not sufficient to define a closed junction
 /// boundary, additional roads shall be defined for the missing segments."
 /// (1.8.0, §12.10.) M3a emits <boundary> for gap-free generated junctions;

@@ -39,6 +39,16 @@ void set_num(pugi::xml_node node, const char* name, double value) {
   node.append_attribute(name).set_value(num(value).c_str());
 }
 
+/// The separator-free alphabet every rm:* record value shares (the reader's
+/// is_record_token). A token outside it could not be read back, so the writer
+/// drops the record rather than emitting a value its own reader would refuse.
+bool is_record_token(std::string_view text) {
+  return !text.empty() && std::all_of(text.begin(), text.end(), [](char c) {
+    return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_' ||
+           c == '.' || c == '-';
+  });
+}
+
 const char* lane_type_name(LaneType type) {
   switch (type) {
   case LaneType::Driving:
@@ -1030,6 +1040,33 @@ void write_signals(pugi::xml_node road_node,
   }
 }
 
+/// Top-level `<controller>` (§14.6, Table 128) with its `<control>` children
+/// (Table 129). Attribute order follows the table; optional attributes are
+/// omitted when absent so a file that never had them keeps its exact bytes.
+void write_controller(pugi::xml_node root, const Controller& controller) {
+  pugi::xml_node node = root.append_child("controller");
+  node.append_attribute("id").set_value(controller.odr_id.c_str());
+  if (!controller.name.empty()) {
+    node.append_attribute("name").set_value(controller.name.c_str());
+  }
+  if (controller.sequence.has_value()) {
+    node.append_attribute("sequence").set_value(*controller.sequence);
+  }
+  for (const auto& [name, value] : controller.preserved.attributes) {
+    node.append_attribute(name.c_str()).set_value(value.c_str());
+  }
+  for (const Control& control : controller.controls) {
+    pugi::xml_node child = node.append_child("control");
+    child.append_attribute("signalId").set_value(control.signal_odr_id.c_str());
+    if (!control.type.empty()) {
+      child.append_attribute("type").set_value(control.type.c_str());
+    }
+  }
+  for (const std::string& fragment : controller.preserved.children) {
+    append_fragment(node, fragment);
+  }
+}
+
 void write_road(pugi::xml_node root,
                 const RoadNetwork& network,
                 RoadId road_id,
@@ -1331,6 +1368,35 @@ void write_junction(pugi::xml_node root,
     }
   }
 
+  // The signal synchronization group (§12.14, Table 84): `<controller>`
+  // children that REFERENCE top-level controllers by id. Document order comes
+  // from the element overview (1.9.0 §6.5, Table 12): inside `<junction>` the
+  // sequence is <connection> … <priority> … <controller> … <surface> …
+  // <planView> … <boundary> … <elevationGrid>, so these are emitted right after
+  // the connections and before any derived geometry — and before <userData>,
+  // like every other normative child.
+  //
+  // A virtual junction "shall not have controllers"
+  // (asam.net:xodr:1.9.0:junctions.virtual.no_controllers) and RoadMaker never
+  // authors one there, but a foreign file that does is written back verbatim
+  // rather than silently stripped; validate_network reports the violation.
+  for (const JunctionController& entry : junction.junction_controllers) {
+    pugi::xml_node node = junction_node.append_child("controller");
+    node.append_attribute("id").set_value(entry.controller_odr_id.c_str());
+    if (entry.sequence.has_value()) {
+      node.append_attribute("sequence").set_value(*entry.sequence);
+    }
+    if (!entry.type.empty()) {
+      node.append_attribute("type").set_value(entry.type.c_str());
+    }
+    for (const auto& [name, value] : entry.preserved.attributes) {
+      node.append_attribute(name.c_str()).set_value(value.c_str());
+    }
+    for (const std::string& fragment : entry.preserved.children) {
+      append_fragment(node, fragment);
+    }
+  }
+
   // Junction <boundary> (§12.10) then the blended 2.5D surface (§12.11:
   // reference line + elevation grid), both derived from the network so no model
   // state is stored, and emitted before <userData> so the normative children
@@ -1559,6 +1625,83 @@ void write_junction(pugi::xml_node root,
     if (!value.empty()) {
       pugi::xml_node user_data = junction_node.append_child("userData");
       user_data.append_attribute("code").set_value("rm:maneuver");
+      user_data.append_attribute("value").set_value(value.c_str());
+    }
+  }
+
+  // The applied signalization template (p4-s7, issue #228). Layer 1 alone: the
+  // `<signal>` and `<controller>` elements ARE the export (§14.1/§14.6), and
+  // ASAM has nowhere to record WHICH template an authoring tool used, so a
+  // foreign reader loses nothing. Format: ":"-joined
+  //   "template=protected_left|two_phase|all_way_stop|two_way_stop[:mount=<modelId>]".
+  // Written only when a template was applied, and `mount` only when non-empty,
+  // so an unsignalized junction (and every junction that predates the feature)
+  // emits nothing at all and re-exports byte-identically. A model id outside
+  // the record alphabet cannot be read back, so it is dropped rather than
+  // written (validate_network says so).
+  if (!junction.signalization.tmpl.empty() &&
+      std::ranges::find(kSignalizationTemplates, junction.signalization.tmpl) !=
+          std::end(kSignalizationTemplates)) {
+    std::string value = "template=";
+    value += junction.signalization.tmpl;
+    if (is_record_token(junction.signalization.mount_model)) {
+      value += ":mount=";
+      value += junction.signalization.mount_model;
+    }
+    pugi::xml_node user_data = junction_node.append_child("userData");
+    user_data.append_attribute("code").set_value("rm:signal");
+    user_data.append_attribute("value").set_value(value.c_str());
+  }
+
+  // The signal→prop mounts (p4-s7, issue #228), the #323 extension point:
+  // ASAM ties a `<signal>` to no `<object>` at all, so the pairing is Layer 1
+  // alone. Format: ";"-joined entries, each "signalOdrId=objOdrId[,objOdrId…]".
+  // Stale entries are dropped exactly like stale arms — a mount whose signal or
+  // whose every object no longer exists authors nothing — and the part list is
+  // truncated to kMaxSignalMountParts so the writer never emits a value its own
+  // reader would drop whole. Storage order is kept so save→load→save is
+  // byte-identical, and an empty result emits no element.
+  if (!junction.signal_mounts.empty()) {
+    std::set<std::string> live_signals;
+    network.for_each_signal(
+        [&](SignalId, const Signal& signal) { live_signals.insert(signal.odr_id); });
+    std::set<std::string> live_objects;
+    network.for_each_object(
+        [&](ObjectId, const Object& object) { live_objects.insert(object.odr_id); });
+
+    std::string value;
+    for (const SignalMount& mount : junction.signal_mounts) {
+      if (!is_record_token(mount.signal_odr_id) || !live_signals.contains(mount.signal_odr_id)) {
+        continue; // stale or unencodable — not written
+      }
+      std::string parts;
+      std::size_t count = 0;
+      for (const std::string& object_odr_id : mount.object_odr_ids) {
+        if (count >= kMaxSignalMountParts) {
+          break;
+        }
+        if (!is_record_token(object_odr_id) || !live_objects.contains(object_odr_id)) {
+          continue;
+        }
+        if (!parts.empty()) {
+          parts += ',';
+        }
+        parts += object_odr_id;
+        ++count;
+      }
+      if (parts.empty()) {
+        continue; // nothing left to mount
+      }
+      if (!value.empty()) {
+        value += ';';
+      }
+      value += mount.signal_odr_id;
+      value += '=';
+      value += parts;
+    }
+    if (!value.empty()) {
+      pugi::xml_node user_data = junction_node.append_child("userData");
+      user_data.append_attribute("code").set_value("rm:signalmount");
       user_data.append_attribute("value").set_value(value.c_str());
     }
   }
@@ -1850,6 +1993,62 @@ std::vector<Diagnostic> validate_network(const RoadNetwork& network, const Write
     }
   });
 
+  // Signal controllers (§14.6): id uniqueness across the database, the
+  // one-or-more-signals rule, and dangling <control> references. Erasing a
+  // signal deliberately does NOT cascade into controllers (that keeps
+  // delete_signal a leaf op), so a dangling reference is an expected state the
+  // author is told about rather than a corruption.
+  std::set<std::string> live_signal_ids;
+  network.for_each_signal(
+      [&](SignalId, const Signal& signal) { live_signal_ids.insert(signal.odr_id); });
+  std::set<std::string> seen_controller_ids;
+  network.for_each_controller([&](ControllerId, const Controller& controller) {
+    const std::string location = fmt::format("controller id={}", controller.odr_id);
+    if (!controller.odr_id.empty() && !seen_controller_ids.insert(controller.odr_id).second) {
+      findings.push_back(
+          Diagnostic{.severity = Severity::Warning,
+                     .location = location,
+                     .message = fmt::format("duplicate controller id '{}'", controller.odr_id),
+                     .rule_id = std::string(rules::kIdUniqueInClass)});
+    }
+    // "Controllers shall be valid for one or more signals." (§14.6; <control>
+    // has multiplicity 1..*.)
+    if (controller.controls.empty()) {
+      findings.push_back(Diagnostic{.severity = Severity::Warning,
+                                    .location = location,
+                                    .message = "controller controls no signals",
+                                    .rule_id = std::string(rules::kControllerValidForSignals)});
+    }
+    for (const Control& control : controller.controls) {
+      if (control.signal_odr_id.empty() || live_signal_ids.contains(control.signal_odr_id)) {
+        continue;
+      }
+      // RoadMaker advisory: ASAM has no rule id for a dangling @signalId (the
+      // generic ids.only_ref_defined_ids covers linkage attributes, not
+      // <control>), so rule_id stays EMPTY rather than citing an invented one.
+      findings.push_back(Diagnostic{
+          .severity = Severity::Warning,
+          .location = location,
+          .message = fmt::format("advisory: control references signal '{}', which does not exist",
+                                 control.signal_odr_id)});
+    }
+  });
+
+  // "Virtual junctions shall not have controllers and therefore no traffic
+  // lights." (1.9.0 §12.7 / Annex F.4.13.5.) RoadMaker never authors one, so
+  // this can only come from a foreign file — which is written back verbatim,
+  // never silently stripped.
+  network.for_each_junction([&](JunctionId, const Junction& junction) {
+    if (junction.spans.empty() || junction.junction_controllers.empty()) {
+      return;
+    }
+    findings.push_back(
+        Diagnostic{.severity = Severity::Warning,
+                   .location = fmt::format("junction id={}", junction.odr_id),
+                   .message = "virtual junction declares a signal synchronization group",
+                   .rule_id = std::string(rules::kVirtualNoControllers)});
+  });
+
   // The writer emits a junction <boundary> (§12.10) whenever it can be closed
   // from the existing connecting roads (build_junction_boundary). Only when a
   // gap remains — an adjacent arm pair with no bridging connecting road, or a
@@ -2005,6 +2204,17 @@ Expected<std::string> write_xodr(const RoadNetwork& network,
       write_aux_boundary_road(root, aux);
     }
   }
+  // Top-level `<controller>` (§14.6). VERIFIED document position: the element
+  // overview (1.9.0 §6.5, Table 12 — see the reference at
+  // 06_general_architecture.md:302 `<road>`, :513 `<controller>`, :515 the
+  // first `<junction>`) lists the children of `<OpenDRIVE>` in the order
+  // <vmsGroup>, <header>, <road>, <controller>, <junction>, <junctionGroup>,
+  // <station>. Controllers therefore go after every road — including the
+  // synthesized auxiliary boundary roads above — and before the first
+  // junction, which is exactly where they are emitted. Empty arena ⇒ nothing.
+  network.for_each_controller(
+      [&](ControllerId, const Controller& controller) { write_controller(root, controller); });
+
   std::size_t junction_index = 0;
   network.for_each_junction([&](JunctionId, const Junction& junction) {
     write_junction(root, network, junction, boundaries[junction_index++]);

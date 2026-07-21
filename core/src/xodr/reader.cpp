@@ -75,6 +75,25 @@ std::optional<int> to_sort_index(std::string_view text) {
   return negative ? -value : value;
 }
 
+/// Strict `nonNegativeInteger` parsing for @sequence on `<controller>` (§14.6
+/// Table 128) and on `<junction><controller>` (§12.14 Table 84): decimal
+/// digits only, no sign, no whitespace, no leading zeros, and bounded so a
+/// corrupt file cannot overflow. Anything else is reported by the caller and
+/// the attribute is preserved verbatim rather than invented.
+std::optional<unsigned> to_sequence(std::string_view text) {
+  if (text.empty() || text.size() > 9 || (text.size() > 1 && text.front() == '0')) {
+    return std::nullopt;
+  }
+  unsigned value = 0;
+  for (const char c : text) {
+    if (c < '0' || c > '9') {
+      return std::nullopt;
+    }
+    value = (value * 10U) + static_cast<unsigned>(c - '0');
+  }
+  return value;
+}
+
 /// Serializes a node as a self-contained XML fragment (no indentation), for
 /// the verbatim-preservation tier (roadmaker/xodr/raw_xml.hpp).
 std::string node_to_string(const pugi::xml_node& node) {
@@ -100,6 +119,14 @@ public:
     std::size_t road_index = 0;
     for (const pugi::xml_node road_node : root.children("road")) {
       parse_road(road_node, road_index++);
+    }
+    // Top-level <controller> (§14.6). Element overview Table 12 places it
+    // between the roads and the junctions, and that is where it is read and
+    // written. It references signals by string id, so it needs no resolution
+    // pass; parsing it before the junctions only keeps document order.
+    std::size_t controller_index = 0;
+    for (const pugi::xml_node controller_node : root.children("controller")) {
+      parse_controller(controller_node, controller_index++);
     }
     for (const pugi::xml_node junction_node : root.children("junction")) {
       parse_junction(junction_node);
@@ -1445,6 +1472,113 @@ private:
     network().add_signal(road_id, std::move(signal));
   }
 
+  // --- signal controllers (OpenDRIVE §14.6) ---------------------------------
+
+  /// Top-level `<controller>` (Table 128) with its `<control>` children (Table
+  /// 129). Before p4-s7 the element was warned about as unsupported and then
+  /// DROPPED, losing a third-party file's whole signal grouping; it is now a
+  /// first-class arena entity. Unknown attributes and unmodeled children are
+  /// preserved verbatim, exactly as parse_signal does.
+  void parse_controller(const pugi::xml_node& node, std::size_t index) {
+    Controller controller;
+    controller.odr_id = node.attribute("id").value();
+    const std::string location = controller.odr_id.empty()
+                                     ? fmt::format("controller[{}]", index)
+                                     : fmt::format("controller id={}", controller.odr_id);
+    if (controller.odr_id.empty()) {
+      diag(Severity::Warning, location, "controller without 'id' attribute");
+    }
+    controller.name = node.attribute("name").value();
+    if (const pugi::xml_attribute sequence = node.attribute("sequence")) {
+      controller.sequence = to_sequence(sequence.value());
+      if (!controller.sequence) {
+        diag(Severity::Warning,
+             location,
+             fmt::format("controller 'sequence' is not a nonNegativeInteger ('{}'); it is "
+                         "preserved verbatim",
+                         sequence.value()));
+      }
+    }
+
+    static constexpr std::string_view kModeledAttrs[] = {"id", "name", "sequence"};
+    for (const pugi::xml_attribute attr : node.attributes()) {
+      const std::string_view name = attr.name();
+      if (name == "sequence" && controller.sequence.has_value()) {
+        continue; // modeled and representable
+      }
+      if (name == "sequence" ||
+          std::find(std::begin(kModeledAttrs), std::end(kModeledAttrs), name) ==
+              std::end(kModeledAttrs)) {
+        controller.preserved.attributes.emplace_back(std::string(name), attr.value());
+      }
+    }
+    for (const pugi::xml_node child : node.children()) {
+      if (std::string_view(child.name()) != "control") {
+        controller.preserved.children.push_back(node_to_string(child));
+        continue;
+      }
+      Control control;
+      control.signal_odr_id = child.attribute("signalId").value();
+      control.type = child.attribute("type").value();
+      if (control.signal_odr_id.empty()) {
+        diag(Severity::Warning, location, "control without 'signalId' attribute");
+      }
+      controller.controls.push_back(std::move(control));
+    }
+    if (controller.controls.empty()) {
+      // "Controllers shall be valid for one or more signals." (§14.6.) The
+      // element still loads — the parser never drops input — and the writer
+      // re-emits it, so validate_network is where the finding lives.
+      diag(Severity::Warning,
+           location,
+           "controller has no <control> children",
+           rules::kControllerValidForSignals);
+    }
+    network().add_controller(std::move(controller));
+  }
+
+  /// `<junction><controller>` (§12.14 Table 84): a REFERENCE into a signal
+  /// synchronization group. Before p4-s7 this child was dropped without even a
+  /// warning. Unknown attributes and children are preserved verbatim.
+  void parse_junction_controllers(const pugi::xml_node& junction_node,
+                                  Junction& junction,
+                                  const std::string& location) {
+    for (const pugi::xml_node node : junction_node.children("controller")) {
+      JunctionController entry;
+      entry.controller_odr_id = node.attribute("id").value();
+      if (entry.controller_odr_id.empty()) {
+        diag(Severity::Warning, location, "junction controller without 'id' attribute");
+      }
+      entry.type = node.attribute("type").value();
+      if (const pugi::xml_attribute sequence = node.attribute("sequence")) {
+        entry.sequence = to_sequence(sequence.value());
+        if (!entry.sequence) {
+          diag(Severity::Warning,
+               location,
+               fmt::format("junction controller 'sequence' is not a nonNegativeInteger ('{}'); "
+                           "it is preserved verbatim",
+                           sequence.value()));
+        }
+      }
+      static constexpr std::string_view kModeledAttrs[] = {"id", "sequence", "type"};
+      for (const pugi::xml_attribute attr : node.attributes()) {
+        const std::string_view name = attr.name();
+        if (name == "sequence" && entry.sequence.has_value()) {
+          continue;
+        }
+        if (name == "sequence" ||
+            std::find(std::begin(kModeledAttrs), std::end(kModeledAttrs), name) ==
+                std::end(kModeledAttrs)) {
+          entry.preserved.attributes.emplace_back(std::string(name), attr.value());
+        }
+      }
+      for (const pugi::xml_node child : node.children()) {
+        entry.preserved.children.push_back(node_to_string(child));
+      }
+      junction.junction_controllers.push_back(std::move(entry));
+    }
+  }
+
   // --- junctions -----------------------------------------------------------
 
   void parse_junction(const pugi::xml_node& junction_node) {
@@ -1484,6 +1618,7 @@ private:
       }
       junction.connections.push_back(std::move(result));
     }
+    parse_junction_controllers(junction_node, junction, location);
     parse_virtual_junction(junction_node, junction, location);
     parse_junction_user_data(junction_node, junction, location);
 
@@ -1587,15 +1722,19 @@ private:
                    .contact = contact == "end" ? ContactPoint::End : ContactPoint::Start};
   }
 
-  /// The material-name alphabet the command layer enforces at author time
-  /// (p4-s2, issue #226) — it excludes the grammar's ':' and ';' separators
-  /// and whitespace, so the userData values need no escaping.
-  static bool is_material_token(std::string_view text) {
+  /// The separator-free alphabet every rm:* record value shares: it excludes
+  /// the grammars' ':' ';' ',' '=' separators and whitespace, so no value ever
+  /// needs escaping and a token can always be read back exactly as written.
+  static bool is_record_token(std::string_view text) {
     return !text.empty() && std::ranges::all_of(text, [](char c) {
       return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') ||
              c == '_' || c == '.' || c == '-';
     });
   }
+
+  /// The material-name alphabet the command layer enforces at author time
+  /// (p4-s2, issue #226) — the shared record alphabet above.
+  static bool is_material_token(std::string_view text) { return is_record_token(text); }
 
   /// Authored corner-fillet overrides (p4-s1, issue #225) round-trip through
   /// <userData code="rm:corners">, entries ";"-joined and fields ":"-joined:
@@ -1901,6 +2040,112 @@ private:
     return maneuvers;
   }
 
+  /// The applied signalization template (p4-s7, issue #228) round-trips through
+  /// <userData code="rm:signal">, fields ":"-joined:
+  /// "template=protected_left|two_phase|all_way_stop|two_way_stop[:mount=<modelId>]".
+  /// One entry per junction — it says HOW the junction was signalized, never
+  /// WHAT was placed (the <signal>/<controller> elements are Layer 0 truth and
+  /// are never re-derived from this).
+  ///
+  /// All-or-nothing on the KNOWN grammar like rm:maneuver: a missing, repeated
+  /// or unrecognized template, a repeated or malformed mount, drops the whole
+  /// value. An UNKNOWN field key is warned about and skipped (forward compat).
+  std::optional<Signalization> parse_signalization_value(std::string_view value,
+                                                         const std::string& location) {
+    Signalization record;
+    bool template_seen = false;
+    bool mount_seen = false;
+    for (std::size_t begin = 0; begin <= value.size();) {
+      std::size_t end = value.find(':', begin);
+      if (end == std::string_view::npos) {
+        end = value.size();
+      }
+      const std::string_view field = value.substr(begin, end - begin);
+      begin = end + 1;
+      if (field.starts_with("template=")) {
+        const std::string_view text = field.substr(9);
+        if (template_seen ||
+            std::ranges::find(kSignalizationTemplates, text) == std::end(kSignalizationTemplates)) {
+          return std::nullopt;
+        }
+        template_seen = true;
+        record.tmpl = std::string(text);
+        continue;
+      }
+      if (field.starts_with("mount=")) {
+        const std::string_view text = field.substr(6);
+        if (mount_seen || !is_record_token(text)) {
+          return std::nullopt;
+        }
+        mount_seen = true;
+        record.mount_model = std::string(text);
+        continue;
+      }
+      diag(Severity::Warning,
+           location,
+           fmt::format("rm:signal field '{}' is not understood and was ignored", field));
+    }
+    if (!template_seen) {
+      return std::nullopt; // the writer never emits a record without a template
+    }
+    return record;
+  }
+
+  /// The signal→prop mounts (p4-s7, issue #228) round-trip through
+  /// <userData code="rm:signalmount">, entries ";"-joined and each entry
+  /// "signalOdrId=objOdrId[,objOdrId…]". The object list is a LIST from day one
+  /// so #323 assemblies need no schema change.
+  ///
+  /// All-or-nothing throughout — the value is a map, so there is no field key to
+  /// be forward-compatible about: a missing '=', a non-token id, an empty or
+  /// over-long object list, or the same signal twice drops the whole value.
+  std::optional<std::vector<SignalMount>> parse_signal_mounts_value(std::string_view value) {
+    std::vector<SignalMount> mounts;
+    for (std::size_t begin = 0; begin <= value.size();) {
+      std::size_t end = value.find(';', begin);
+      if (end == std::string_view::npos) {
+        end = value.size();
+      }
+      const std::string_view entry = value.substr(begin, end - begin);
+      begin = end + 1;
+      const std::size_t equals = entry.find('=');
+      if (equals == std::string_view::npos) {
+        return std::nullopt;
+      }
+      SignalMount mount;
+      mount.signal_odr_id = std::string(entry.substr(0, equals));
+      if (!is_record_token(mount.signal_odr_id)) {
+        return std::nullopt;
+      }
+      if (std::ranges::any_of(mounts, [&](const SignalMount& seen) {
+            return seen.signal_odr_id == mount.signal_odr_id;
+          })) {
+        return std::nullopt; // the same signal twice
+      }
+      const std::string_view list = entry.substr(equals + 1);
+      if (list.empty()) {
+        return std::nullopt; // the writer never emits an entry without a part
+      }
+      for (std::size_t p = 0; p <= list.size();) {
+        std::size_t stop = list.find(',', p);
+        if (stop == std::string_view::npos) {
+          stop = list.size();
+        }
+        const std::string_view part = list.substr(p, stop - p);
+        p = stop + 1;
+        if (!is_record_token(part) || mount.object_odr_ids.size() >= kMaxSignalMountParts) {
+          return std::nullopt; // longer than any writer would emit
+        }
+        mount.object_odr_ids.emplace_back(part);
+      }
+      mounts.push_back(std::move(mount));
+    }
+    if (mounts.empty()) {
+      return std::nullopt;
+    }
+    return mounts;
+  }
+
   /// The generator's arm list (roadmaker::edit) round-trips through
   /// <userData code="rm:arms"> ("roadOdrId:start|end;…"); roads parse before
   /// junctions, so arm road ids resolve here. Corner overrides ride the
@@ -1966,6 +2211,35 @@ private:
           continue;
         }
         junction.maneuvers = std::move(*maneuvers);
+        continue;
+      }
+      if (code == "rm:signal") {
+        // The applied signalization template (p4-s7, issue #228):
+        // ":"-joined "template=<tok>[:mount=<tok>]". All-or-nothing on the
+        // KNOWN grammar (the rm:maneuver rule); an UNKNOWN field key is warned
+        // about and skipped. Nothing is re-derived from it — the <signal> and
+        // <controller> elements already in the file are Layer 0 truth.
+        std::optional<Signalization> record =
+            parse_signalization_value(node.attribute("value").value(), location);
+        if (!record) {
+          diag(Severity::Warning, location, "malformed rm:signal userData ignored");
+          continue;
+        }
+        junction.signalization = std::move(*record);
+        continue;
+      }
+      if (code == "rm:signalmount") {
+        // The signal→prop mounts (p4-s7, issue #228): ";"-joined
+        // "signalOdrId=objOdrId[,objOdrId…]". All-or-nothing throughout — the
+        // value is a map, so it has no field key to be forward-compatible
+        // about.
+        std::optional<std::vector<SignalMount>> mounts =
+            parse_signal_mounts_value(node.attribute("value").value());
+        if (!mounts) {
+          diag(Severity::Warning, location, "malformed rm:signalmount userData ignored");
+          continue;
+        }
+        junction.signal_mounts = std::move(*mounts);
         continue;
       }
       if (code == "rm:junction") {
@@ -2188,7 +2462,8 @@ private:
       const std::string_view name = child.name();
       // Root <userData> carries RoadMaker extensions (rm:surface); it is parsed
       // by parse_surfaces, not unsupported.
-      if (name != "header" && name != "road" && name != "junction" && name != "userData") {
+      if (name != "header" && name != "road" && name != "junction" && name != "controller" &&
+          name != "userData") {
         warn_unsupported(std::string(name), "OpenDRIVE");
       }
     }

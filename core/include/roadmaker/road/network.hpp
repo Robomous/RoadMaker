@@ -2,6 +2,7 @@
 
 #include "roadmaker/export.hpp"
 #include "roadmaker/road/arena.hpp"
+#include "roadmaker/road/controller.hpp"
 #include "roadmaker/road/id.hpp"
 #include "roadmaker/road/junction.hpp"
 #include "roadmaker/road/lane.hpp"
@@ -54,6 +55,11 @@ public:
   /// overwritten with `road`. Returns an invalid id if `road` is stale.
   RM_API SignalId add_signal(RoadId road, Signal value);
 
+  /// Adds a signal controller (OpenDRIVE <controller>, §14.6). Takes NO owner:
+  /// a controller is a child of <OpenDRIVE>, not of a road or a junction — a
+  /// junction only references it by string id (§12.14).
+  RM_API ControllerId add_controller(Controller value);
+
   /// Creates a ground surface (#215). Unlike add_object, a Surface is not
   /// owned by a single road, so this is a free create. derive_surfaces owns
   /// the surface arena and reconciles it against the enclosed areas.
@@ -72,6 +78,14 @@ public:
   /// Signals are leaves — nothing references them, so erasing cascades
   /// nothing. Returns false on a stale id.
   RM_API bool erase_signal(SignalId signal);
+
+  /// Controllers are leaves — nothing in the arenas references them (a
+  /// <control> and a junction's sync group name signals and controllers by
+  /// STRING id), so erasing cascades nothing. Returns false on a stale id.
+  /// NOTE the converse too: erase_signal does NOT cascade into controllers. A
+  /// <control> naming a gone signal is a dangling reference the validator
+  /// reports, exactly as it would be in a third-party file.
+  RM_API bool erase_controller(ControllerId controller);
 
   /// Erases the junction and detaches roads that pointed at it (their
   /// Road::junction becomes invalid). Connecting roads themselves survive.
@@ -109,6 +123,9 @@ public:
   RM_API Expected<SignalId> restore_signal(SignalId id, Signal value);
   RM_API Expected<void> erase_signal_exact(SignalId id);
 
+  RM_API Expected<ControllerId> restore_controller(ControllerId id, Controller value);
+  RM_API Expected<void> erase_controller_exact(ControllerId id);
+
   RM_API Expected<SurfaceId> restore_surface(SurfaceId id, Surface value);
   RM_API Expected<void> erase_surface_exact(SurfaceId id);
 
@@ -122,6 +139,7 @@ public:
   RM_API Expected<void> release_junction_reserved(JunctionId id);
   RM_API Expected<void> release_object_reserved(ObjectId id);
   RM_API Expected<void> release_signal_reserved(SignalId id);
+  RM_API Expected<void> release_controller_reserved(ControllerId id);
   RM_API Expected<void> release_surface_reserved(SurfaceId id);
 
   // --- lookup (nullptr on stale/invalid ids) ------------------------------
@@ -152,6 +170,10 @@ public:
 
   [[nodiscard]] const Signal* signal(SignalId id) const { return signals_.get(id); }
 
+  [[nodiscard]] Controller* controller(ControllerId id) { return controllers_.get(id); }
+
+  [[nodiscard]] const Controller* controller(ControllerId id) const { return controllers_.get(id); }
+
   [[nodiscard]] Surface* surface(SurfaceId id) { return surfaces_.get(id); }
 
   [[nodiscard]] const Surface* surface(SurfaceId id) const { return surfaces_.get(id); }
@@ -174,6 +196,8 @@ public:
 
   [[nodiscard]] std::size_t signal_count() const { return signals_.size(); }
 
+  [[nodiscard]] std::size_t controller_count() const { return controllers_.size(); }
+
   [[nodiscard]] std::size_t surface_count() const { return surfaces_.size(); }
 
   // Total slots ever allocated per arena (live + erased + reserved). Never
@@ -190,6 +214,8 @@ public:
   [[nodiscard]] std::size_t object_slot_count() const { return objects_.slot_count(); }
 
   [[nodiscard]] std::size_t signal_slot_count() const { return signals_.slot_count(); }
+
+  [[nodiscard]] std::size_t controller_slot_count() const { return controllers_.slot_count(); }
 
   [[nodiscard]] std::size_t surface_slot_count() const { return surfaces_.slot_count(); }
 
@@ -231,6 +257,17 @@ public:
     signals_.for_each(fn);
   }
 
+  /// fn(ControllerId, Controller&) over live controllers, in creation order.
+  template <class Fn>
+  void for_each_controller(Fn fn) {
+    controllers_.for_each(fn);
+  }
+
+  template <class Fn>
+  void for_each_controller(Fn fn) const {
+    controllers_.for_each(fn);
+  }
+
   /// fn(SurfaceId, Surface&) over live surfaces, in creation order.
   template <class Fn>
   void for_each_surface(Fn fn) {
@@ -249,6 +286,7 @@ private:
   Arena<Junction, JunctionId> junctions_;
   Arena<Object, ObjectId> objects_;
   Arena<Signal, SignalId> signals_;
+  Arena<Controller, ControllerId> controllers_;
   Arena<Surface, SurfaceId> surfaces_;
 };
 
