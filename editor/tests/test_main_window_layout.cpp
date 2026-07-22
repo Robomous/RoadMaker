@@ -51,6 +51,28 @@ TEST_F(MainWindowLayoutTest, ToolbarsHoldNoVariableWidthLabels) {
   }
 }
 
+TEST_F(MainWindowLayoutTest, TabPageToolbarsAreMarkedForZeroPadding) {
+  // #371: the tabbed section's page toolbars nest inside the host QToolBar, so
+  // the base stylesheet's 8 px padding would stack and indent the tool row past
+  // the core strip. The fix zeroes each page's horizontal padding via the
+  // `toolbarTabPage` dynamic property; guard that every page still carries it so
+  // a future rebuild of the pages cannot silently reintroduce the misalignment.
+  auto* host = window_.findChild<QToolBar*>(QStringLiteral("toolbar.tabs"));
+  ASSERT_NE(host, nullptr) << "the tabbed toolbar host is gone";
+
+  int pages = 0;
+  for (const QToolBar* page : host->findChildren<QToolBar*>()) {
+    if (!page->objectName().startsWith(QStringLiteral("toolbar.tab."))) {
+      continue;
+    }
+    ++pages;
+    EXPECT_TRUE(page->property("toolbarTabPage").toBool())
+        << "page '" << page->objectName().toStdString()
+        << "' is not marked for zero horizontal padding";
+  }
+  EXPECT_GT(pages, 0) << "no tab page toolbars found under the host";
+}
+
 TEST_F(MainWindowLayoutTest, ToolOptionHintIsGone) {
   EXPECT_EQ(window_.findChild<QWidget*>(QStringLiteral("toolOptionHint")), nullptr);
 }
