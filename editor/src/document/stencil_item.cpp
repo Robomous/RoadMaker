@@ -1,3 +1,6 @@
+// Copyright 2026 Robomous
+// SPDX-License-Identifier: Apache-2.0
+
 #include "document/stencil_item.hpp"
 
 #include "roadmaker/road/object.hpp"

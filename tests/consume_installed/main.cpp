@@ -1,3 +1,6 @@
+// Copyright 2026 Robomous
+// SPDX-License-Identifier: Apache-2.0
+
 // Exercises one symbol from each exported area so a missed RM_API annotation
 // fails this link even if the kernel's own tests pass.
 

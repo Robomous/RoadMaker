@@ -1,3 +1,6 @@
+// Copyright 2026 Robomous
+// SPDX-License-Identifier: Apache-2.0
+
 // Pure transform-gizmo math (A3): screen projection at constant pixel size,
 // handle hit-testing, axis-constrained translation, and detented yaw. No Qt/GL.
 

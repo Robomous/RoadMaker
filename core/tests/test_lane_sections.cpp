@@ -1,3 +1,6 @@
+// Copyright 2026 Robomous
+// SPDX-License-Identifier: Apache-2.0
+
 // Lane-section authoring: split_lane_section, set_lane_width_profile, and the
 // section_at/section_end helpers (P2 pillar, issue #262).
 //

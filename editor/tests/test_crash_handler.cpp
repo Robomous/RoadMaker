@@ -1,3 +1,6 @@
+// Copyright 2026 Robomous
+// SPDX-License-Identifier: Apache-2.0
+
 // Crash-capture infrastructure (#84): report writing, pending-report
 // detection/acknowledgement, and the log-tail append. The signal/SEH
 // handlers themselves are exercised through detail::write_report — the

@@ -1,3 +1,6 @@
+# Copyright 2026 Robomous
+# SPDX-License-Identifier: Apache-2.0
+
 """Junction maneuvers through the Python bindings (p4-s6, #227).
 
 A *maneuver* is ONE connecting road's path through a junction. Its turn type is

@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+# Copyright 2026 Robomous
+# SPDX-License-Identifier: Apache-2.0
+
 """esmini round-trip smoke check for exported OpenDRIVE (issue #51).
 
 The cross-cutting quality gate owned by M3a (docs/roadmap/roadmap.md,

@@ -1,3 +1,6 @@
+// Copyright 2026 Robomous
+// SPDX-License-Identifier: Apache-2.0
+
 // Acceptance tests for the enclosed-area ground surface (#215, p2-s7): a
 // derived Surface (the area a ring of roads surrounds) meshes into a watertight
 // 2.5D height-field SubMesh whose boundary lies on the ring roads' inner edges

@@ -1,3 +1,6 @@
+// Copyright 2026 Robomous
+// SPDX-License-Identifier: Apache-2.0
+
 #pragma once
 
 // Select/Move tool (issue #9, docs/design/m2/02_editing_tools.md §1) — the

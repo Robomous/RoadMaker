@@ -1,3 +1,6 @@
+// Copyright 2026 Robomous
+// SPDX-License-Identifier: Apache-2.0
+
 // Headless first-run tour state machine (UI-revamp Phase 4). The overlay only
 // paints current() and forwards Next/Skip, so all step logic is tested here.
 

@@ -1,3 +1,6 @@
+# Copyright 2026 Robomous
+# SPDX-License-Identifier: Apache-2.0
+
 """Move whole roads in plan view (roadmaker.edit.translate_road / translate_roads).
 
 A move shifts a road's plan-view geometry and authoring waypoints by (dx, dy);

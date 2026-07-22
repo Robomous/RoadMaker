@@ -1,3 +1,6 @@
+# Copyright 2026 Robomous
+# SPDX-License-Identifier: Apache-2.0
+
 """Tee/cross an intersection onto an existing road (rm.edit.assembly).
 
 `tee_onto_road` / `cross_onto_road` drop a T (3-way) or X (4-way) intersection

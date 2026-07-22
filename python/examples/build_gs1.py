@@ -1,3 +1,6 @@
+# Copyright 2026 Robomous
+# SPDX-License-Identifier: Apache-2.0
+
 """Build GS-1 — the M3a "Urban intersection" golden scene.
 
 Dogfoods the kernel edit layer end to end to author

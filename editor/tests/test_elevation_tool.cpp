@@ -1,3 +1,6 @@
+// Copyright 2026 Robomous
+// SPDX-License-Identifier: Apache-2.0
+
 // Elevation editor (issue #16, docs/design/m2/02_editing_tools.md §5): the
 // ElevationTool routes node picks into an active-node selection, and the
 // PropertiesPanel's Elevation section edits that node's height through one

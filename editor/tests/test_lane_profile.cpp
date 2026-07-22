@@ -1,3 +1,6 @@
+// Copyright 2026 Robomous
+// SPDX-License-Identifier: Apache-2.0
+
 // Lane Profile editor (issue #14, docs/design/m2/02_editing_tools.md §4):
 // the PropertiesPanel's lane-profile section drives Document commands — one
 // per discrete action — and the LaneProfileTool routes lane-granular picks

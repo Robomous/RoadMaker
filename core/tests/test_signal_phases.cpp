@@ -1,3 +1,6 @@
+// Copyright 2026 Robomous
+// SPDX-License-Identifier: Apache-2.0
+
 // Kernel tests for the SIGNAL PHASE query (p4-s8, issue #229): the derived
 // default cycle and its resolution, `mesh::junction_phases()` and
 // `phase_index_at()`. The command layer (edit::set_phase_* and friends) is

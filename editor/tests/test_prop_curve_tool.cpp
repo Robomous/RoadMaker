@@ -1,3 +1,6 @@
+// Copyright 2026 Robomous
+// SPDX-License-Identifier: Apache-2.0
+
 // Prop Curve tool (p6-s4, issue #238): headless ToolEvent sequences click
 // waypoints along a road, then Enter/double-click BAKES the distributed props as
 // ONE undo macro (the GW-2 step-17 acceptance). Asserts anchoring/refusal, the

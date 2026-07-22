@@ -1,3 +1,6 @@
+// Copyright 2026 Robomous
+// SPDX-License-Identifier: Apache-2.0
+
 // Document preview session (docs/design/m2/01_editing_framework.md §3, gate
 // issue #37): live mutation + re-mesh with NOTHING on the undo stack until
 // commit pushes exactly one entry; cancel leaves write_xodr byte-identical.

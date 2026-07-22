@@ -1,3 +1,6 @@
+// Copyright 2026 Robomous
+// SPDX-License-Identifier: Apache-2.0
+
 // Editor/export parity: the mesh the editor scene holds must be EXACTLY the
 // mesh the kernel builds from the same network — one meshing path, no drift.
 // Document keeps its NetworkMesh current through incremental remesh

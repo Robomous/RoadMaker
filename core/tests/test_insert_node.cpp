@@ -1,3 +1,6 @@
+// Copyright 2026 Robomous
+// SPDX-License-Identifier: Apache-2.0
+
 // Kernel tests for edit::insert_node_at (M3a bend points). Inserting a node
 // pins the heading at every node from the current curve, so the re-fit
 // reproduces the road's shape (line/arc/spiral within tol) and only the

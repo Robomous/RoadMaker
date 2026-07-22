@@ -1,3 +1,6 @@
+// Copyright 2026 Robomous
+// SPDX-License-Identifier: Apache-2.0
+
 // The context-help map is a single source of truth: F1 routes through
 // help::context_page, and every slug it can produce must resolve to a committed
 // page under docs/user-guide/ that index.md links (so the help collection and

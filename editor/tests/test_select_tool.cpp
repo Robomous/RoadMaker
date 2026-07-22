@@ -1,3 +1,6 @@
+// Copyright 2026 Robomous
+// SPDX-License-Identifier: Apache-2.0
+
 // Select/Move tool (issue #9): headless ToolEvent sequences drive
 // click/modifier selection, rubber bands, and node drags; the tests assert
 // on SelectionModel state, the undo stack, the serialized network, snapping,

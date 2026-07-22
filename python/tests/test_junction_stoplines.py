@@ -1,3 +1,6 @@
+# Copyright 2026 Robomous
+# SPDX-License-Identifier: Apache-2.0
+
 """Junction stop lines through the bindings (p4-s3, issue #318).
 
 Stop lines are DERIVED: every arm has one without anything being authored, and

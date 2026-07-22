@@ -1,3 +1,6 @@
+// Copyright 2026 Robomous
+// SPDX-License-Identifier: Apache-2.0
+
 // derive_surfaces — planar face-finding that auto-forms one Surface per area
 // enclosed by roads (#215, p2-s7). These tests assert the PROPERTY (how many
 // surfaces, which roads bound them, id stability, determinism), not a specific

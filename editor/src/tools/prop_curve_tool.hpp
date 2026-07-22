@@ -1,3 +1,6 @@
+// Copyright 2026 Robomous
+// SPDX-License-Identifier: Apache-2.0
+
 #pragma once
 
 // Prop Curve tool (p6-s4, issue #238). Multi-click places waypoints along a road;

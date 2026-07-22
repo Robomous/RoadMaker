@@ -1,3 +1,6 @@
+# Copyright 2026 Robomous
+# SPDX-License-Identifier: Apache-2.0
+
 """Place traffic-control signals on a road (edit.add_signal / move_signal).
 
 Signals (OpenDRIVE <signal>, section 14) are the traffic lights and signs that

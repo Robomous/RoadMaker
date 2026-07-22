@@ -1,3 +1,6 @@
+// Copyright 2026 Robomous
+// SPDX-License-Identifier: Apache-2.0
+
 // Kernel tests for edit::set_surface_span_included / set_surface_span_sort_index
 // (p4-s5, #320).
 //

@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+# Copyright 2026 Robomous
+# SPDX-License-Identifier: Apache-2.0
+
 """Author road-mark completions (OpenDRIVE §11.9): color + multi-line geometry.
 
 Puts a true double-yellow (two stripes) on the center line, a double-dashed

@@ -1,3 +1,6 @@
+# Copyright 2026 Robomous
+# SPDX-License-Identifier: Apache-2.0
+
 """Lane <material> (§11.8.2) through the bindings: assign, round-trip, refusals."""
 
 import pytest

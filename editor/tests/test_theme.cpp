@@ -1,3 +1,6 @@
+// Copyright 2026 Robomous
+// SPDX-License-Identifier: Apache-2.0
+
 // Theme registry and application smoke — token VALUES are a maintainer
 // pick, not a testable invariant (ui-design.md); what must hold is the
 // lookup contract and that apply() actually themes the application.

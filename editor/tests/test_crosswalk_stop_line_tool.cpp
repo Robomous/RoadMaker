@@ -1,3 +1,6 @@
+// Copyright 2026 Robomous
+// SPDX-License-Identifier: Apache-2.0
+
 // Crosswalk & Stop Line tool (p3-s3, issue #222): headless ToolEvent sequences
 // place a crosswalk + stop line on a junction approach and assert the network,
 // the ONE-undo-unit semantics, and the chevron placement affordance. This is

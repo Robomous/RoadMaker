@@ -1,3 +1,6 @@
+// Copyright 2026 Robomous
+// SPDX-License-Identifier: Apache-2.0
+
 // Tests for signal INSTANCE emission in the mesh builder. A <signal> renders as
 // an instance of a bundled signal model (props::model): dynamic → "signal_light",
 // static → "sign_generic". The instance carries the signal's world pose derived

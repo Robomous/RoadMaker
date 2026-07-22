@@ -1,3 +1,6 @@
+// Copyright 2026 Robomous
+// SPDX-License-Identifier: Apache-2.0
+
 // Create Road tool (issue #13): headless ToolEvent sequences drive waypoint
 // placement, snapping, Backspace/Esc, and the Enter/double-click commit; the
 // tests assert on the undo stack, the serialized network, and preview

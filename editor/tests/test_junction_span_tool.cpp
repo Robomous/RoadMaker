@@ -1,3 +1,6 @@
+// Copyright 2026 Robomous
+// SPDX-License-Identifier: Apache-2.0
+
 // Junction Span tool (p4-s4, issue #319): headless ToolEvent sequences drag an
 // [s0, s1] range on a road, stage it, and confirm with Enter — asserting the
 // stage-and-confirm discipline (nothing enters the network before Enter), the

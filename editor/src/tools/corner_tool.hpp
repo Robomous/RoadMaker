@@ -1,3 +1,6 @@
+// Copyright 2026 Robomous
+// SPDX-License-Identifier: Apache-2.0
+
 #pragma once
 
 // Corner tool (p4-s1, issue #225). Direct manipulation of a junction's fillet

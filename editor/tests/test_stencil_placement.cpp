@@ -1,3 +1,6 @@
+// Copyright 2026 Robomous
+// SPDX-License-Identifier: Apache-2.0
+
 // Stencil placement helper (p3-s4, issue #223): the pure geometry shared by the
 // Marking Point tool and the Library drag-drop path. Builds a straight two-lane
 // road and asserts lane/s/t/hdg resolution and off-road rejection headless.

@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+# Copyright 2026 Robomous
+# SPDX-License-Identifier: Apache-2.0
+
 """Assign lane surface materials (OpenDRIVE §11.8.2) and round-trip them.
 
 Builds a straight street and gives lane -1 a two-record <material> profile —

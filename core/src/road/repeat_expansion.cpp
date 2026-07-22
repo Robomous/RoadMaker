@@ -1,3 +1,6 @@
+// Copyright 2026 Robomous
+// SPDX-License-Identifier: Apache-2.0
+
 #include "roadmaker/road/repeat_expansion.hpp"
 
 #include "roadmaker/road/object.hpp"

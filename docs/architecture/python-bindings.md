@@ -99,7 +99,7 @@ Python tests use pytest idioms — see [testing](../contributing/testing.md).
 The wheel is built with **scikit-build-core** (`python/pyproject.toml`):
 CMake compiles the kernel and the nanobind module, and the wheel **embeds
 the static kernel** — users `pip install roadmaker` with no shared-library
-or Qt dependency, and the package stays pure MIT
+or Qt dependency, and the package stays pure Apache-2.0
 ([licensing](../standards/dependencies.md)). Release wheels are produced by
 the release workflow alongside the editor packages
 ([CI](../contributing/ci.md)).

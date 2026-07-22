@@ -1,3 +1,6 @@
+// Copyright 2026 Robomous
+// SPDX-License-Identifier: Apache-2.0
+
 // Persistence of signal controllers and of the junction's signalization
 // records (p4-s7, issue #228).
 //

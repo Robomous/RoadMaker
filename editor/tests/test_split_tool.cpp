@@ -1,3 +1,6 @@
+// Copyright 2026 Robomous
+// SPDX-License-Identifier: Apache-2.0
+
 // Split tool (M3a): a headless click splits the picked road at the cut station,
 // selects both halves, and requests a return to Select.
 

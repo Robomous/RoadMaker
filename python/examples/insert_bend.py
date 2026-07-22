@@ -1,3 +1,6 @@
+# Copyright 2026 Robomous
+# SPDX-License-Identifier: Apache-2.0
+
 """Insert a bend node without reshaping the road (roadmaker.edit.insert_node_at).
 
 Adding a node at a station pins the heading at every node from the current

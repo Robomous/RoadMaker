@@ -1,3 +1,6 @@
+// Copyright 2026 Robomous
+// SPDX-License-Identifier: Apache-2.0
+
 // Free-form marking-curve authoring (p3-s4): edit::apply_marking_curve_asset
 // derives an Object band from an (s,t) centreline — outline + <markings> +
 // rm:markingCurve userData — and the mesher walks that userData by arc length.

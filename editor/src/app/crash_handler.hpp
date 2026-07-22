@@ -1,3 +1,6 @@
+// Copyright 2026 Robomous
+// SPDX-License-Identifier: Apache-2.0
+
 #pragma once
 
 // Crash-capture infrastructure (hardening sprint, #84). On a fatal signal,

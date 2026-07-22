@@ -1,3 +1,6 @@
+// Copyright 2026 Robomous
+// SPDX-License-Identifier: Apache-2.0
+
 // Offscreen smoke tests: panels instantiate, mirror the models, and route
 // selection bidirectionally. Rendering itself is not asserted (no GL in the
 // offscreen platform) — the ViewportWidget is deliberately absent here.

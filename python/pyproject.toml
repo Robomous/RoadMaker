@@ -8,12 +8,12 @@ version = "0.0.1"
 description = "Road-network authoring toolkit for AV simulation: clothoid geometry, ASAM OpenDRIVE I/O, mesh generation, glTF export"
 readme = "README.md"
 requires-python = ">=3.9"
-license = { text = "MIT" }
+license = { text = "Apache-2.0" }
 authors = [{ name = "Robomous", email = "hello@robomous.ai" }]
 keywords = ["opendrive", "autonomous-driving", "simulation", "roads", "clothoid", "gltf"]
 classifiers = [
   "Development Status :: 3 - Alpha",
-  "License :: OSI Approved :: MIT License",
+  "License :: OSI Approved :: Apache Software License",
   "Programming Language :: C++",
   "Programming Language :: Python :: 3",
   "Topic :: Scientific/Engineering",

@@ -1,3 +1,6 @@
+// Copyright 2026 Robomous
+// SPDX-License-Identifier: Apache-2.0
+
 // Structural guards for the chrome layout (issue #332): nothing whose width
 // depends on the active tool may live in a toolbar, or the tool buttons shift
 // under the cursor on every tool switch. The per-tool instruction belongs to

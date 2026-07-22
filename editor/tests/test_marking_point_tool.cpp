@@ -1,3 +1,6 @@
+// Copyright 2026 Robomous
+// SPDX-License-Identifier: Apache-2.0
+
 // Marking Point tool (p3-s4, issue #223): headless ToolEvent sequences place an
 // arrow stencil on a lane and assert the network, the ONE-undo-entry semantics,
 // byte-identical undo, the drag = one move command path, the no-asset toast, and

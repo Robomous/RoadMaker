@@ -1,3 +1,6 @@
+// Copyright 2026 Robomous
+// SPDX-License-Identifier: Apache-2.0
+
 #include "app/main_window.hpp"
 
 #include "roadmaker/edit/operations.hpp"
@@ -1966,7 +1969,7 @@ void MainWindow::show_about_dialog() {
   about.setIconPixmap(Icons::app_icon().pixmap(64, 64));
   about.setText(tr("<b>RoadMaker</b> — open source road-network authoring toolkit.<br>"
                    "Kernel %1<br><br>"
-                   "Licensed under the MIT License — © Robomous.<br><br>"
+                   "Licensed under the Apache License 2.0 — © Robomous.<br><br>"
                    "Built with Qt %2, used under the GNU LGPLv3 as dynamically linked "
                    "libraries. You may replace the bundled Qt libraries with your own "
                    "builds; see THIRD_PARTY_LICENSES.md in the distribution.")

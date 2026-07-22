@@ -1,3 +1,6 @@
+// Copyright 2026 Robomous
+// SPDX-License-Identifier: Apache-2.0
+
 #include "tools/prop_point_tool.hpp"
 
 #include "roadmaker/assets/prop_library.hpp"

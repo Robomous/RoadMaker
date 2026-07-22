@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+# Copyright 2026 Robomous
+# SPDX-License-Identifier: Apache-2.0
+
 """Load an OpenDRIVE file and export its mesh as OpenUSD ASCII (.usda).
 
 Usage:

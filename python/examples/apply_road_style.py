@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+# Copyright 2026 Robomous
+# SPDX-License-Identifier: Apache-2.0
+
 """Apply a road style to an existing road (OpenDRIVE §9, §11.9).
 
 A road style is a serializable cross-section applied to an EXISTING road: it

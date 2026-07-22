@@ -1,3 +1,6 @@
+# Copyright 2026 Robomous
+# SPDX-License-Identifier: Apache-2.0
+
 """OpenDRIVE <objects> bindings: authoring, iteration, round-trip (issue #67)."""
 
 import pytest

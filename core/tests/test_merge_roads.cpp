@@ -1,3 +1,6 @@
+// Copyright 2026 Robomous
+// SPDX-License-Identifier: Apache-2.0
+
 // Kernel tests for edit::check_mergeable / merge_roads (M3a). Merge welds a's
 // END to b's START into one road (a's id kept, b erased); split→merge is
 // geometry-identical (the section boundary survives), undo is byte-identical,

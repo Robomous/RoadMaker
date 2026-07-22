@@ -1,3 +1,6 @@
+// Copyright 2026 Robomous
+// SPDX-License-Identifier: Apache-2.0
+
 // Tests for the object edit-command factories (add/delete/move_object) and the
 // instanced-prop mesh they feed. The commands follow the M2 contract:
 // apply→revert is byte-identical, a failed apply leaves the network untouched,

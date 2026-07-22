@@ -146,6 +146,13 @@ Current version on `main`: **0.0.1**.
     same undo macro, instead of creating a second object.
 
 ### Changed
+- **License changed from MIT to Apache-2.0.** The project — kernel, editor,
+  Python bindings, docs, and all first-party original-work assets — is now
+  licensed under the Apache License 2.0, gaining an explicit patent grant. The
+  dependency/asset allow-lists are unchanged (MIT remains an accepted upstream
+  license), and third-party components keep their own licenses
+  ([`THIRD_PARTY_LICENSES.md`](THIRD_PARTY_LICENSES.md),
+  [`ASSETS_LICENSES.md`](ASSETS_LICENSES.md)).
 - **`RoadEnd` is comparable and hashable in Python.** It is the identity of a
   junction arm — and so of its corner and its stop line — but `==` fell through
   to identity comparison, so matching a solved result back to the arm you asked
@@ -355,7 +362,7 @@ is headless-testable.
   a placed `<signal>` now draws in the viewport (and glTF/USD exports) as an
   instance of a bundled signal model — a dynamic signal as a three-lamp traffic
   light, a static one as a sign on a pole. The models are procedurally authored
-  original work (`scripts/gen_prop_meshes.py`, MIT), embedded in
+  original work (`scripts/gen_prop_meshes.py`, Apache-2.0), embedded in
   `prop_meshes.gen.cpp` alongside the trees. The mesh builder gains
   `build_signal_instances`, emitting one `SignalInstance` per signal at its
   world pose (s/t → position, road tangent + `hOffset` → heading, `zOffset`
@@ -558,7 +565,7 @@ is headless-testable.
   simulators receive: `docs/domain/opendrive.md`.
 - **Bundled low-poly tree props** (UI revamp Phase 3): five procedurally
   authored, license-clean props (`tree_pine`/`oak`/`birch`/`poplar` and
-  `shrub`, MIT "original work") — the geometry the Library will place as
+  `shrub`, Apache-2.0 "original work") — the geometry the Library will place as
   OpenDRIVE `<object>` trees. `scripts/gen_prop_meshes.py` builds them from
   parametric
   trunks/cones/icosahedral crowns and emits both an inspectable OBJ/MTL

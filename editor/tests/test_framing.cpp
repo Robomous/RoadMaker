@@ -1,3 +1,6 @@
+// Copyright 2026 Robomous
+// SPDX-License-Identifier: Apache-2.0
+
 // Per-kind selection bounds (P1/GW-1 steps 7-9). These are the regression
 // tests for the framing bugs the P1 discovery pass found: framing used to copy
 // whole roads into a temp mesh, so a signal framed its entire road, a lane

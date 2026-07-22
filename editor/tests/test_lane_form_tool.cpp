@@ -1,3 +1,6 @@
+// Copyright 2026 Robomous
+// SPDX-License-Identifier: Apache-2.0
+
 // Lane Form tool (p2-s5): a click forms an interior lane from the click station
 // to the road end through edit::form_lane — press begins a preview, release
 // commits ONE undo entry. A form upstream of a downstream seam is carried across

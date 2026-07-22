@@ -1,3 +1,6 @@
+// Copyright 2026 Robomous
+// SPDX-License-Identifier: Apache-2.0
+
 // Context-menu descriptor builder (M3a): build_context_menu() is pure logic —
 // the tests drive a MenuContext per pick-context and assert on the item texts,
 // enabled states, and that invoke() lands the command. No QMenu needed.

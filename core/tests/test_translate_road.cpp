@@ -1,3 +1,6 @@
+// Copyright 2026 Robomous
+// SPDX-License-Identifier: Apache-2.0
+
 // Kernel tests for edit::translate_roads / translate_road (M3a topology UX).
 // The move shifts plan-view x/y and authoring waypoints only; headings,
 // lengths, s, lanes, elevation and marks are untouched, undo is byte-identical,

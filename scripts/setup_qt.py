@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+# Copyright 2026 Robomous
+# SPDX-License-Identifier: Apache-2.0
+
 """Provision the Qt SDK the RoadMaker editor builds against.
 
 Downloads Qt (qtbase + qttools) via aqtinstall into ./.qt/<version>/<dir>/ so

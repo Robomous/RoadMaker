@@ -1,3 +1,6 @@
+// Copyright 2026 Robomous
+// SPDX-License-Identifier: Apache-2.0
+
 // Kernel tests for edit::rotate_road (A3 transform gizmo). A rigid rotation
 // about a world pivot: plan-view start positions and authoring waypoints rotate,
 // each record's heading gains the angle, lengths/lanes/elevation are untouched,

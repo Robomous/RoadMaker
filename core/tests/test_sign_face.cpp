@@ -1,3 +1,6 @@
+// Copyright 2026 Robomous
+// SPDX-License-Identifier: Apache-2.0
+
 // Tests for the CPU sign-face rasteriser (roadmaker::signs::render_face). stb's
 // float rasteriser can differ by ±1 LSB across platforms, so these assert
 // STRUCTURE — ink present/absent per region, a clean margin, an opaque plate —

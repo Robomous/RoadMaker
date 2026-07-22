@@ -1,7 +1,7 @@
 # ADR-0003: Qt 6 Widgets editor, LGPL dynamic-only
 
 *Why the editor is Qt 6 Widgets, and the exact conditions under which the
-MIT project carries its single LGPL dependency.*
+Apache-2.0 project carries its single LGPL dependency.*
 
 - **Status:** accepted
 - **Date:** 2026-07 (Qt migration shipped in v0.2.0)
@@ -18,7 +18,7 @@ feasibility spike; the strict kernel/editor boundary made it cheap enough to
 pull forward, and the migration landed as v0.2.0 without touching `core/` or
 `python/`.
 
-Qt is LGPLv3, and RoadMaker is MIT with a hard no-GPL/no-LGPL dependency
+Qt is LGPLv3, and RoadMaker is Apache-2.0 with a hard no-GPL/no-LGPL dependency
 policy — so adopting Qt required an explicit, tightly scoped exception.
 
 ## Decision
@@ -28,7 +28,7 @@ LGPL dependency**, under hard conditions:
 
 - **Dynamic linking only.** Never a static Qt build.
 - **Editor targets only.** `core/` and `python/` never include a Qt header
-  or link a Qt library; the kernel and wheels stay pure MIT.
+  or link a Qt library; the kernel and wheels stay pure Apache-2.0.
 - **Never vendored, never modified, never FetchContent.** Qt is provisioned
   by `scripts/setup_qt.py` (aqtinstall) into the gitignored `./.qt/`; the
   version pin lives in `cmake/QtVersion.cmake`.

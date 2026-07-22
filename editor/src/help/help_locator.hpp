@@ -1,3 +1,6 @@
+// Copyright 2026 Robomous
+// SPDX-License-Identifier: Apache-2.0
+
 #pragma once
 
 // Where the shipped Qt Help collection lives, and how to obtain a WRITABLE copy

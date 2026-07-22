@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+# Copyright 2026 Robomous
+# SPDX-License-Identifier: Apache-2.0
+
 """Subset the bundled Roboto font and embed it as a C++ byte array.
 
 The sign-face rasteriser (``roadmaker::signs::render_face``, core) draws editable

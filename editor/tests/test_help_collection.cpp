@@ -1,3 +1,6 @@
+// Copyright 2026 Robomous
+// SPDX-License-Identifier: Apache-2.0
+
 // CI-cheap packaging check: the staged .qch/.qhc that the build produced open
 // as a real Qt Help collection and serve the guide. Running this on all three
 // OS every build also exercises the qch generation AND the QSQLITE driver load

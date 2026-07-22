@@ -1,3 +1,6 @@
+// Copyright 2026 Robomous
+// SPDX-License-Identifier: Apache-2.0
+
 // Informational benchmark for the M2 drag budget (docs/m2/01 §5): on a
 // 100-road network, re-meshing ONE dirty road must fit a 16 ms preview
 // update on the dev machine (Release). CI only enforces a generous ceiling

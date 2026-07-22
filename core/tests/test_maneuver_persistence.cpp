@@ -1,3 +1,6 @@
+// Copyright 2026 Robomous
+// SPDX-License-Identifier: Apache-2.0
+
 // Persistence of the junction's authored maneuver overrides (p4-s6, issue
 // #227).
 //

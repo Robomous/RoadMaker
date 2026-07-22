@@ -1,3 +1,6 @@
+# Copyright 2026 Robomous
+# SPDX-License-Identifier: Apache-2.0
+
 """Edit a road's vertical profile (roadmaker.edit.set_elevation_profile).
 
 The hardening-sprint profile editor's kernel API: explicit elevation nodes

@@ -1,3 +1,6 @@
+# Copyright 2026 Robomous
+# SPDX-License-Identifier: Apache-2.0
+
 """Merge two adjacent roads into one (roadmaker.edit.merge_roads).
 
 Merge welds road a's END to road b's START into a single road that keeps a's

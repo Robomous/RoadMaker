@@ -12,7 +12,7 @@ CDT + Manifold rather than CGAL.*
 RoadMaker's value is geometric and standards correctness: clothoid-based
 reference lines, watertight meshes, and OpenDRIVE round-trips within tight
 tolerances. That demands a systems language with mature numeric libraries.
-The project is MIT-licensed end to end, which rules out the most famous
+The project is Apache-2.0-licensed end to end, which rules out the most famous
 computational-geometry library, CGAL (GPL), and any dependency that could
 contaminate the license story.
 
@@ -37,7 +37,7 @@ exceptions (see the [C++ style standard](../standards/cpp-style.md)).
 
 ## Consequences
 
-- The MIT story holds for the kernel and the Python wheels with no
+- The Apache-2.0 story holds for the kernel and the Python wheels with no
   carve-outs; only the editor carries the sanctioned Qt/LGPL exception
   ([ADR-0003](0003-qt-widgets-editor.md)).
 - Some algorithms that CGAL provides out of the box (exact predicates,

@@ -1,3 +1,6 @@
+// Copyright 2026 Robomous
+// SPDX-License-Identifier: Apache-2.0
+
 #pragma once
 
 // The 2D Editor pane (P1/GW-2 step 7): a tabbed host for the editors that work

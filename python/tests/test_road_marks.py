@@ -1,3 +1,6 @@
+# Copyright 2026 Robomous
+# SPDX-License-Identifier: Apache-2.0
+
 """Road-mark completions: color + multi-line geometry bindings (issue #69)."""
 
 import pytest

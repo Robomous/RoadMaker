@@ -1,3 +1,6 @@
+# Copyright 2026 Robomous
+# SPDX-License-Identifier: Apache-2.0
+
 """Junction floor surface spans through the Python bindings (p4-s5, #320).
 
 A junction's floor is a union of one contribution — a *surface span* — per

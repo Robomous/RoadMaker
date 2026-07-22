@@ -1,3 +1,6 @@
+# Copyright 2026 Robomous
+# SPDX-License-Identifier: Apache-2.0
+
 """Junction lock and span membership through the bindings (#319, p4-s4).
 
 `Junction.locked` keeps a hand-tuned junction out of the AUTOMATIC

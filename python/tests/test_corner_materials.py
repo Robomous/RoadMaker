@@ -1,3 +1,6 @@
+# Copyright 2026 Robomous
+# SPDX-License-Identifier: Apache-2.0
+
 """Per-corner and junction-wide materials through the bindings (#226, p4-s2).
 
 `edit.set_corner_sidewalk_material` / `edit.set_corner_median_material` author

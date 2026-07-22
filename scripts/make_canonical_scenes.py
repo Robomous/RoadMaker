@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+# Copyright 2026 Robomous
+# SPDX-License-Identifier: Apache-2.0
+
 """Regenerate the canonical visual-review scenes in assets/samples/.
 
 Three scenes cover the geometry classes the renderer must get right

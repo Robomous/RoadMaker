@@ -1,3 +1,6 @@
+// Copyright 2026 Robomous
+// SPDX-License-Identifier: Apache-2.0
+
 // Marking-curve placement helper (p3-s4, issue #223): the pure geometry behind
 // the Marking Curve tool. Builds a straight road and asserts anchor resolution,
 // projection onto the anchor, the single-road constraint, and that the kernel's

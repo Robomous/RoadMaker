@@ -1,3 +1,6 @@
+// Copyright 2026 Robomous
+// SPDX-License-Identifier: Apache-2.0
+
 // Crosswalk-library-item translation + runtime preview (p3-s2). Verifies the
 // manifest→CrosswalkParams mapping, that re-materializing an instance preserves
 // its placement and honors a per-instance material override, and that the

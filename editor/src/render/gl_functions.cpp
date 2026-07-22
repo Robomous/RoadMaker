@@ -1,3 +1,6 @@
+// Copyright 2026 Robomous
+// SPDX-License-Identifier: Apache-2.0
+
 #include "render/gl_functions.hpp"
 
 namespace roadmaker::editor::gl {

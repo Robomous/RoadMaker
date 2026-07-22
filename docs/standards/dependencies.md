@@ -1,8 +1,8 @@
 # Dependencies and licensing
 
-*The license and dependency policy for this MIT-licensed project. Read this before adding, upgrading, or vendoring any third-party code — including snippets copied from other projects.*
+*The license and dependency policy for this Apache-2.0-licensed project. Read this before adding, upgrading, or vendoring any third-party code — including snippets copied from other projects.*
 
-RoadMaker ships under MIT. Everything it links, embeds, or redistributes must
+RoadMaker ships under Apache-2.0. Everything it links, embeds, or redistributes must
 be compatible with that story. When you are unsure about a license, **stop and
 ask the maintainer** — do not add the dependency and sort it out later.
 
@@ -28,10 +28,10 @@ Qt 6 is the **only** LGPL dependency, used under LGPLv3 for the editor, under
 hard conditions (see [ADR 0003](../decisions/0003-qt-widgets-editor.md)):
 
 - **Dynamic linking only.** Never build or link static Qt — static linking
-  would drag the application into LGPL obligations incompatible with the MIT
+  would drag the application into LGPL obligations incompatible with the Apache-2.0
   story.
 - **Editor targets only.** `core/` and `python/` never include a Qt header or
-  link a Qt library; the kernel and the Python wheels stay pure MIT.
+  link a Qt library; the kernel and the Python wheels stay pure Apache-2.0.
 - **Never vendored, never modified, never FetchContent.** Qt is provisioned by
   `scripts/setup_qt.py` (aqtinstall) into the gitignored `./.qt/` directory;
   the version pin lives in `cmake/QtVersion.cmake` and nowhere else.

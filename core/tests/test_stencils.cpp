@@ -1,3 +1,6 @@
+// Copyright 2026 Robomous
+// SPDX-License-Identifier: Apache-2.0
+
 // Point-stencil arrow authoring + concave meshing (p3-s4): edit::
 // apply_stencil_asset writes one closed cornerLocal arrow outline that the
 // mesher tessellates with the in-tree CDT, and arrow_glyph_outline is the single

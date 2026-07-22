@@ -1,3 +1,6 @@
+# Copyright 2026 Robomous
+# SPDX-License-Identifier: Apache-2.0
+
 """Junction corner overrides through the bindings (#225, p4-s1).
 
 `junction_corners` is the shared corner solve (mesher + editor tool + panel);

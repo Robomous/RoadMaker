@@ -1,3 +1,6 @@
+// Copyright 2026 Robomous
+// SPDX-License-Identifier: Apache-2.0
+
 // The connection engine (gate-extension WS-2): contact/fit primitives, the
 // idempotency queries, weld verification, the duplicate-junction invariant, and
 // close_gap. Kernel-only — commands are applied directly.

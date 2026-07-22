@@ -1,3 +1,6 @@
+// Copyright 2026 Robomous
+// SPDX-License-Identifier: Apache-2.0
+
 #include "tools/node_drag.hpp"
 
 #include "roadmaker/edit/operations.hpp"

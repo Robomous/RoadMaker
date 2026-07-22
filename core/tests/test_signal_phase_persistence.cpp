@@ -1,3 +1,6 @@
+// Copyright 2026 Robomous
+// SPDX-License-Identifier: Apache-2.0
+
 // Persistence and validation of the junction signal CYCLE (p4-s8, issue #229).
 //
 // Phases are Layer 1 (ADR-0008): OpenDRIVE §14.6 deliberately excludes signal

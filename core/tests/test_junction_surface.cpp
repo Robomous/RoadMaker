@@ -1,3 +1,6 @@
+// Copyright 2026 Robomous
+// SPDX-License-Identifier: Apache-2.0
+
 // Acceptance tests for the M2 junction surface (issue #18,
 // docs/design/m2/03_junction_blending.md): watertightness, unflipped
 // height-field normals, seam-elevation continuity, deterministic regeneration,

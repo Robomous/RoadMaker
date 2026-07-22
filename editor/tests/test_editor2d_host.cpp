@@ -1,3 +1,6 @@
+// Copyright 2026 Robomous
+// SPDX-License-Identifier: Apache-2.0
+
 // The 2D Editor pane's host (P1/GW-2 step 7). The host's whole job is tab
 // management: pages keep their own selection subscriptions and their own
 // commands, which is why test_profile_panel.cpp needed no changes to keep

@@ -1,3 +1,6 @@
+// Copyright 2026 Robomous
+// SPDX-License-Identifier: Apache-2.0
+
 // Tests for the signal edit-command factories (add/delete/move_signal). Same M2
 // contract as the object commands: apply→revert is byte-identical, a failed
 // apply leaves the network untouched, and restore-in-place keeps the SignalId.

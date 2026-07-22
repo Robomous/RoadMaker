@@ -1,3 +1,6 @@
+// Copyright 2026 Robomous
+// SPDX-License-Identifier: Apache-2.0
+
 // tinygltf implementation TU for the test binary — needed ONLY when the
 // kernel is a shared library: core compiles its own copy inside
 // gltf_exporter.cpp, but hidden visibility keeps those symbols internal, so

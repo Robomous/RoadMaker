@@ -1,3 +1,6 @@
+// Copyright 2026 Robomous
+// SPDX-License-Identifier: Apache-2.0
+
 // The scrub gesture in isolation: ScrubLabel knows pixels and modifiers, never
 // units or values. Its consumer's side of the contract (one preview session per
 // gesture = one undo entry) is covered in test_panels.cpp.

@@ -1,3 +1,6 @@
+# Copyright 2026 Robomous
+# SPDX-License-Identifier: Apache-2.0
+
 """The kernel edit layer through the bindings: EditStack + factories."""
 
 from pathlib import Path

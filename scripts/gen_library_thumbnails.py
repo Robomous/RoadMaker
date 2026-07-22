@@ -1,9 +1,12 @@
 #!/usr/bin/env python3
+# Copyright 2026 Robomous
+# SPDX-License-Identifier: Apache-2.0
+
 """Generate the Library panel's item thumbnails (p6-s2, #236).
 
 Every catalogue item in ``assets/library/manifest.json`` names a 96x96 PNG under
 ``assets/library/thumbnails/``; this script draws all of them. They are
-*original work* (MIT, "original work (this repository)") — a tiny software
+*original work* (Apache-2.0, "original work (this repository)") — a tiny software
 rasterizer here, no third-party art:
 
   * Props and signals are rendered from the SAME procedurally-authored geometry

@@ -1,3 +1,6 @@
+// Copyright 2026 Robomous
+// SPDX-License-Identifier: Apache-2.0
+
 #pragma once
 
 // Crosswalk & Stop Line tool (p3-s3, issue #222). Click a junction approach: a

@@ -1,3 +1,6 @@
+// Copyright 2026 Robomous
+// SPDX-License-Identifier: Apache-2.0
+
 // Soak smoke (hardening sprint §4.3, issue #86): a short, fixed-seed soak in
 // the normal suite so every CI run exercises the random-op driver, plus the
 // determinism contract the crash-hunt repro workflow depends on.

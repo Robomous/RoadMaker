@@ -1,3 +1,6 @@
+// Copyright 2026 Robomous
+// SPDX-License-Identifier: Apache-2.0
+
 // CPU text-to-texture rasteriser for editable sign faces. The single
 // STB_TRUETYPE_IMPLEMENTATION translation unit in the kernel — stb_truetype.h is
 // pulled in as a SYSTEM header (angle brackets, via the rm_stb include dir) so

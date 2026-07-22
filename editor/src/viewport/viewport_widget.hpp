@@ -1,3 +1,6 @@
+// Copyright 2026 Robomous
+// SPDX-License-Identifier: Apache-2.0
+
 #pragma once
 
 // The 3D viewport: a QOpenGLWidget (3.3 core, requested app-wide via

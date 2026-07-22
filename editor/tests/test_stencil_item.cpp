@@ -1,3 +1,6 @@
+// Copyright 2026 Robomous
+// SPDX-License-Identifier: Apache-2.0
+
 // Stencil-library-item translation + runtime preview (p3-s4). Verifies the
 // manifest→StencilParams mapping (width scales to the lane by width_frac), that
 // re-materializing preserves placement, and that the painted glyph preview is

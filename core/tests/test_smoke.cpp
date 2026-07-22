@@ -1,3 +1,6 @@
+// Copyright 2026 Robomous
+// SPDX-License-Identifier: Apache-2.0
+
 // Build-system smoke test: proves every pinned dependency compiles, links,
 // and does something trivially correct on this toolchain.
 

@@ -1,3 +1,6 @@
+// Copyright 2026 Robomous
+// SPDX-License-Identifier: Apache-2.0
+
 // Signal Phase Editor panel (p4-s8, issue #229): headless drives of the timeline
 // widget that asserts the panel populates from the kernel cycle, that every edit
 // is exactly one undo entry (and undo restores the bytes), that view state

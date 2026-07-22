@@ -1,3 +1,6 @@
+# Copyright 2026 Robomous
+# SPDX-License-Identifier: Apache-2.0
+
 """Add crosswalks, lane arrows and centre lines to a junction's arms.
 
 Uses edit.junction_crosswalks, edit.junction_lane_arrows and

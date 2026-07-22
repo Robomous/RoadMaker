@@ -1,3 +1,6 @@
+# Copyright 2026 Robomous
+# SPDX-License-Identifier: Apache-2.0
+
 """Generate standalone intersections (roadmaker.edit.assembly).
 
 The parametric-assembly workflow the editor's drag-and-drop library uses:

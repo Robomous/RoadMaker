@@ -1,3 +1,6 @@
+# Copyright 2026 Robomous
+# SPDX-License-Identifier: Apache-2.0
+
 """RoadMaker: road-network authoring for AV simulation.
 
 C++ kernel with ASAM OpenDRIVE I/O, clothoid authoring, mesh generation,

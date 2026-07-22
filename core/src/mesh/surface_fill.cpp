@@ -1,3 +1,6 @@
+// Copyright 2026 Robomous
+// SPDX-License-Identifier: Apache-2.0
+
 #include "surface_fill.hpp"
 
 #include "roadmaker/road/surface.hpp"

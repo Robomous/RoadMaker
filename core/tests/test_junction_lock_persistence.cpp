@@ -1,3 +1,6 @@
+// Copyright 2026 Robomous
+// SPDX-License-Identifier: Apache-2.0
+
 // Persistence of the junction lock flag and of span (virtual) junctions
 // (p4-s4, issue #319).
 //

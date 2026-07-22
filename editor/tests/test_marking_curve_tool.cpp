@@ -1,3 +1,6 @@
+// Copyright 2026 Robomous
+// SPDX-License-Identifier: Apache-2.0
+
 // Marking Curve tool (p3-s4, issue #223): headless ToolEvent sequences draw a
 // free-form marking along a road and assert the network, ONE-undo-entry
 // semantics, byte-identical undo, Backspace/Esc, and the GW-5 s6 curved striped

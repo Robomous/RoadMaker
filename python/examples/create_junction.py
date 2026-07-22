@@ -1,3 +1,6 @@
+# Copyright 2026 Robomous
+# SPDX-License-Identifier: Apache-2.0
+
 """Generate a common junction from road ends (roadmaker.edit.create_junction).
 
 Selecting two or more road ends and generating a junction is the kernel work

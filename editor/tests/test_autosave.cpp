@@ -1,3 +1,6 @@
+// Copyright 2026 Robomous
+// SPDX-License-Identifier: Apache-2.0
+
 // Autosave & crash recovery (M3a issue #53): the write policy and the
 // recover-vs-clean decision are driven headless with a fake clock
 // (docs/design/m3a/05_editor_and_docs.md §3/§6). The invariant under test

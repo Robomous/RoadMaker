@@ -1,3 +1,6 @@
+# Copyright 2026 Robomous
+# SPDX-License-Identifier: Apache-2.0
+
 """Derived ground surfaces through the bindings (#215, p2-s7)."""
 
 import pytest

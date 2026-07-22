@@ -1,3 +1,6 @@
+# Copyright 2026 Robomous
+# SPDX-License-Identifier: Apache-2.0
+
 """edit.extend_road through the bindings: curvature continuity, undo, round trip."""
 
 import math

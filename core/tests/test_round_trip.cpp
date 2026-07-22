@@ -1,3 +1,6 @@
+// Copyright 2026 Robomous
+// SPDX-License-Identifier: Apache-2.0
+
 // Round-trip invariants are first-class tests: author → write → re-parse →
 // compare within rm::tol (position 1e-4 m, heading 1e-6 rad).
 

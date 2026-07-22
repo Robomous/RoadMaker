@@ -1,3 +1,6 @@
+// Copyright 2026 Robomous
+// SPDX-License-Identifier: Apache-2.0
+
 #pragma once
 
 // Lane Form tool (p2-s5). Click a road body: an interior lane is formed at the

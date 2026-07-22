@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+# Copyright 2026 Robomous
+# SPDX-License-Identifier: Apache-2.0
+
 """Author a clothoid road through waypoints, then write OpenDRIVE + glTF.
 
 Usage:

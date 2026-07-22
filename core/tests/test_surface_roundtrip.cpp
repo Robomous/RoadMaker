@@ -1,3 +1,6 @@
+// Copyright 2026 Robomous
+// SPDX-License-Identifier: Apache-2.0
+
 // rm:surface <userData> round-trip (#215, p2-s7). A derived Surface serializes
 // only its bounding-road ids; geometry is re-derived on load. These tests pin
 // the two contracts the soak driver also enforces: write->parse->write is

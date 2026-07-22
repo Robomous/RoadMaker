@@ -1,3 +1,6 @@
+// Copyright 2026 Robomous
+// SPDX-License-Identifier: Apache-2.0
+
 #include "panels/editor2d_host.hpp"
 
 #include "roadmaker/mesh/junction_signals.hpp"

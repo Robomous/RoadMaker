@@ -1,3 +1,6 @@
+// Copyright 2026 Robomous
+// SPDX-License-Identifier: Apache-2.0
+
 #pragma once
 
 // Create Junction tool (issue #17, docs/design/m2/02_editing_tools.md §6;

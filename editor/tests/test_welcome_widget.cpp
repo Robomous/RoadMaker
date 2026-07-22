@@ -1,3 +1,6 @@
+// Copyright 2026 Robomous
+// SPDX-License-Identifier: Apache-2.0
+
 // WelcomeWidget: logic-free surface, so the tests pin the contract that
 // matters — buttons emit, the recent grid drops dead paths, samples resolve
 // from the repo, thumbnails have a writable home.

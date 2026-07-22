@@ -1,3 +1,6 @@
+// Copyright 2026 Robomous
+// SPDX-License-Identifier: Apache-2.0
+
 // Shared exporter "stage" primitives used by every mesh exporter (glTF and
 // USD). Single source of truth for the two things the file formats must agree
 // on: the kernel-frame -> export-frame conversion, and the material naming +

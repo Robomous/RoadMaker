@@ -1,3 +1,6 @@
+// Copyright 2026 Robomous
+// SPDX-License-Identifier: Apache-2.0
+
 #pragma once
 
 // First-launch surface (UI revamp Phase 0, docs/standards/ui-design.md):

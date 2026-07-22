@@ -1,3 +1,6 @@
+// Copyright 2026 Robomous
+// SPDX-License-Identifier: Apache-2.0
+
 #pragma once
 
 // First-run guided-tour overlay (UI-revamp Phase 4). A translucent widget that

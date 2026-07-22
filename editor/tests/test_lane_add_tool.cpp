@@ -1,3 +1,6 @@
+// Copyright 2026 Robomous
+// SPDX-License-Identifier: Apache-2.0
+
 // Lane Add tool (p2-s5): a press-drag-release along one road carves a pocket
 // lane through edit::add_lane_span — ONE preview session, ONE undo entry. The
 // acceptance-critical property is DeactivateMidDragCancelsPreview: a tool switch
