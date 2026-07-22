@@ -311,19 +311,32 @@ HighlightState ViewportWidget::item_state(const UploadedItem& item) const {
   // A road-style drag highlights its target road through the Hover state; it and
   // a live mouse hover are mutually exclusive (Qt suppresses hover during a drag).
   const RoadId hovered_road = drag_target_road_.is_valid() ? drag_target_road_ : hovered_road_;
-  return highlight_state_for(item.road,
-                             item.lane,
-                             item.object,
-                             item.signal,
-                             item.junction,
-                             item.surface_id,
-                             selection_.entries(),
-                             hovered_road,
-                             hovered_lane_,
-                             hovered_object_,
-                             hovered_signal_,
-                             hovered_junction_,
-                             hovered_surface_);
+  return phase_highlight(item.road,
+                         highlight_state_for(item.road,
+                                             item.lane,
+                                             item.object,
+                                             item.signal,
+                                             item.junction,
+                                             item.surface_id,
+                                             selection_.entries(),
+                                             hovered_road,
+                                             hovered_lane_,
+                                             hovered_object_,
+                                             hovered_signal_,
+                                             hovered_junction_,
+                                             hovered_surface_));
+}
+
+HighlightState ViewportWidget::phase_highlight(RoadId road, HighlightState base) const {
+  if (base != HighlightState::None || !road.is_valid()) {
+    return base;
+  }
+  for (const RoadId moving : signal_phase_preview_.moving_roads) {
+    if (moving == road) {
+      return HighlightState::Hover; // a movement that may proceed this phase (GW-4 step 6)
+    }
+  }
+  return base;
 }
 
 void ViewportWidget::paintGL() {
@@ -366,19 +379,20 @@ void ViewportWidget::paintGL() {
     std::vector<HighlightState> states;
     states.reserve(batch.instances.size());
     for (const ScenePropInstance& inst : batch.instances) {
-      states.push_back(highlight_state_for(inst.road,
-                                           {},
-                                           inst.object,
-                                           inst.signal,
-                                           {},
-                                           {},
-                                           selection_.entries(),
-                                           hovered_road,
-                                           hovered_lane_,
-                                           hovered_object_,
-                                           hovered_signal_,
-                                           hovered_junction_,
-                                           hovered_surface_));
+      states.push_back(phase_highlight(inst.road,
+                                       highlight_state_for(inst.road,
+                                                           {},
+                                                           inst.object,
+                                                           inst.signal,
+                                                           {},
+                                                           {},
+                                                           selection_.entries(),
+                                                           hovered_road,
+                                                           hovered_lane_,
+                                                           hovered_object_,
+                                                           hovered_signal_,
+                                                           hovered_junction_,
+                                                           hovered_surface_)));
     }
     PropPartition split = partition_prop_batch(states, batch.transforms);
 
@@ -418,8 +432,10 @@ void ViewportWidget::paintGL() {
   // frame — supported on QOpenGLWidget when done last (no beginNativePainting).
   const bool has_toasts = !toasts_.active(now_ms()).empty();
   const bool has_gizmo = gizmo_target().has_value();
+  const bool has_phase_overlay =
+      !signal_phase_preview_.signal_states.empty() || !signal_phase_preview_.gate_links.empty();
   if (!handle_overlays_.empty() || hint_visible() || has_toasts || drop_preview_.has_value() ||
-      has_gizmo) {
+      has_gizmo || has_phase_overlay) {
     QPainter painter(this);
     painter.setRenderHint(QPainter::Antialiasing);
     painter.setRenderHint(QPainter::TextAntialiasing);
@@ -431,6 +447,7 @@ void ViewportWidget::paintGL() {
     draw_hint_card(painter);
     draw_dashed_lines(painter);
     draw_handles(painter);
+    draw_signal_phase(painter);
     draw_gizmo(painter);
     draw_drag_ghost(painter);
     draw_toasts(painter);
@@ -972,6 +989,59 @@ void ViewportWidget::draw_drag_ghost(QPainter& painter) const {
   painter.drawLine(QPointF(center.x(), center.y() - kRadius),
                    QPointF(center.x(), center.y() + kRadius));
   painter.restore();
+}
+
+void ViewportWidget::set_signal_phase_preview(SignalPhasePreview preview) {
+  signal_phase_preview_ = std::move(preview);
+  update();
+}
+
+void ViewportWidget::clear_signal_phase_preview() {
+  if (signal_phase_preview_.empty()) {
+    return;
+  }
+  signal_phase_preview_ = SignalPhasePreview{};
+  update();
+}
+
+void ViewportWidget::draw_signal_phase(QPainter& painter) const {
+  if (signal_phase_preview_.signal_states.empty() && signal_phase_preview_.gate_links.empty()) {
+    return;
+  }
+  const float aspect =
+      height() > 0 ? static_cast<float>(width()) / static_cast<float>(height()) : 1.0F;
+  const CameraMatrices camera = camera_.matrices(aspect);
+  const double w = static_cast<double>(width());
+  const double h = static_cast<double>(height());
+  const Theme& theme = theme::current();
+
+  // Dotted gate links: xyz pairs consumed pairwise, like draw_dashed_lines.
+  constexpr std::size_t kStride = 6;
+  const std::vector<double>& links = signal_phase_preview_.gate_links;
+  painter.save();
+  painter.setBrush(Qt::NoBrush);
+  painter.setPen(QPen(theme.text_secondary, 1.5, Qt::DashLine));
+  for (std::size_t i = 0; i + kStride <= links.size(); i += kStride) {
+    const auto a = project_to_screen(camera, links[i], links[i + 1], links[i + 2], w, h);
+    const auto b = project_to_screen(camera, links[i + 3], links[i + 4], links[i + 5], w, h);
+    if (a.has_value() && b.has_value()) {
+      painter.drawLine(QPointF((*a)[0], (*a)[1]), QPointF((*b)[0], (*b)[1]));
+    }
+  }
+  painter.restore();
+
+  // Head discs in the traffic color, with a theme-bg outline (the handle-sprite
+  // recipe) so they read on both a dark ground and an accented road.
+  for (const SignalPhasePreview::StateMarker& marker : signal_phase_preview_.signal_states) {
+    const auto screen = project_to_screen(camera, marker.x, marker.y, marker.z, w, h);
+    if (!screen.has_value()) {
+      continue; // behind the camera
+    }
+    const QPointF center{(*screen)[0], (*screen)[1]};
+    painter.setBrush(marker.color);
+    painter.setPen(QPen(theme.bg0, 1.5));
+    painter.drawEllipse(center, 6.0, 6.0);
+  }
 }
 
 // --- transform gizmo (A3, #177) --------------------------------------------

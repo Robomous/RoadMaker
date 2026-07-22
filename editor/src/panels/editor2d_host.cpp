@@ -1,7 +1,11 @@
 #include "panels/editor2d_host.hpp"
 
+#include "roadmaker/mesh/junction_signals.hpp"
+#include "roadmaker/road/network.hpp"
+
 #include <QVBoxLayout>
 
+#include "document/document.hpp"
 #include "document/selection_model.hpp"
 
 namespace roadmaker::editor {
@@ -34,6 +38,34 @@ QWidget* WidthEditorPage::widget() {
 
 bool WidthEditorPage::relevant(const SelectionModel& selection) const {
   return selection.primary().lane.is_valid();
+}
+
+SignalPhaseEditorPage::SignalPhaseEditorPage(Document& document,
+                                             SelectionModel& selection,
+                                             QWidget* parent)
+    : document_(document), panel_(new PhasePanel(document, selection, parent)) {}
+
+QString SignalPhaseEditorPage::title() const {
+  // This exact literal is matched by Editor2DHost::show_page from MainWindow —
+  // keep it identical in the action handler and the Signal tool activation.
+  return QObject::tr("Signal Phases");
+}
+
+QWidget* SignalPhaseEditorPage::widget() {
+  return panel_;
+}
+
+bool SignalPhaseEditorPage::relevant(const SelectionModel& selection) const {
+  const JunctionId junction = selection.primary().junction;
+  if (!junction.is_valid() || document_.network().junction(junction) == nullptr) {
+    return false;
+  }
+  for (const JunctionApproachInfo& approach : junction_signals(document_.network(), junction)) {
+    if (approach.dynamic || !approach.controller_odr_ids.empty()) {
+      return true; // a light-controlled junction has a cycle to time
+    }
+  }
+  return false;
 }
 
 Editor2DHost::Editor2DHost(const SelectionModel& selection, QWidget* parent)

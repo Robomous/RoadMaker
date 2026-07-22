@@ -2,15 +2,32 @@
 
 #include "roadmaker/road/network.hpp"
 #include "roadmaker/road/object.hpp"
+#include "roadmaker/road/road.hpp"
 
+#include <array>
 #include <set>
 #include <string>
 #include <utility>
+
+#include "viewport/picking.hpp" // station_to_world
 
 namespace roadmaker::editor {
 
 std::optional<RoadStation> nearest_signal_station(const RoadNetwork& network, double x, double y) {
   return nearest_road_station(network, x, y, kSignalSnapThreshold);
+}
+
+std::optional<std::array<double, 3>> signal_world(const RoadNetwork& network, SignalId id) {
+  const Signal* signal = network.signal(id);
+  if (signal == nullptr) {
+    return std::nullopt;
+  }
+  const Road* road = network.road(signal->road);
+  if (road == nullptr || road->plan_view.empty()) {
+    return std::nullopt;
+  }
+  const std::array<double, 2> plan = station_to_world(road->plan_view, signal->s, signal->t);
+  return std::array<double, 3>{plan[0], plan[1], signal->z_offset};
 }
 
 std::string next_signal_odr_id(const RoadNetwork& network) {

@@ -21,6 +21,7 @@
 #include "app/context_menu.hpp"
 #include "document/document.hpp"
 #include "document/selection_model.hpp"
+#include "document/signal_phase_overlay.hpp"
 #include "render/material_catalog.hpp"
 #include "render/prop_batching.hpp"
 #include "render/renderer.hpp"
@@ -141,6 +142,16 @@ public slots:
   /// Clears the road-style drag highlight (drag left the viewport, dropped, or
   /// moved off any road).
   void clear_drag_target_road();
+
+  /// Sets the signal-phase overlay (p4-s8, GW-4 steps 5-7): colored head discs,
+  /// moving connecting roads to brighten, and dotted gate links. Pane-driven —
+  /// MainWindow builds it from the phase panel's playhead — so it is independent
+  /// of the active tool and shows without the Signal tool up. The `set_drop_preview`
+  /// precedent: a stored member painted in the existing QPainter overlay pass.
+  void set_signal_phase_preview(SignalPhasePreview preview);
+
+  /// Clears the signal-phase overlay (pane hidden, junction dropped, load).
+  void clear_signal_phase_preview();
 
 public:
   [[nodiscard]] QString hint() const { return hint_text_; }
@@ -336,6 +347,16 @@ private:
   /// it sits where the element will commit; tinted as a rejection when invalid.
   void draw_drag_ghost(QPainter& painter) const;
 
+  /// The signal-phase overlay (set_signal_phase_preview): dotted gate links plus
+  /// a colored disc per resolved head, projected to screen. Painted after
+  /// draw_handles so it sits over the GL frame like the other overlays.
+  void draw_signal_phase(QPainter& painter) const;
+
+  /// Upgrades `base` to Hover when `road` is a moving connecting road this phase
+  /// (signal_phase_preview_.moving_roads) — the same brightening path
+  /// drag_target_road_ uses (GW-4 step 6).
+  [[nodiscard]] HighlightState phase_highlight(RoadId road, HighlightState base) const;
+
   // --- transform gizmo (A3, #177) --------------------------------------------
   /// The single transformable entity under the gizmo: a road or a prop, with its
   /// world pivot. Present only when the Move tool is active with exactly one such
@@ -486,6 +507,11 @@ private:
   };
 
   std::optional<DropPreview> drop_preview_;
+
+  /// The pane-driven signal-phase overlay (set_signal_phase_preview). Empty when
+  /// the phase pane is hidden or has no signalized junction. Painted in the
+  /// QPainter overlay pass and folded into the road highlight (moving roads).
+  SignalPhasePreview signal_phase_preview_;
 
   /// Active gizmo drag (nullopt when idle) and the handle currently hovered
   /// (for the highlight). See the transform-gizmo methods above.

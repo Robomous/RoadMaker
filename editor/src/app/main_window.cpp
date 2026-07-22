@@ -42,6 +42,7 @@
 #include "document/crosswalk_item.hpp"
 #include "document/library_drop.hpp"
 #include "document/library_manifest.hpp"
+#include "document/signal_phase_overlay.hpp"
 #include "help/help_registry.hpp"
 #include "help/help_viewer.hpp"
 #include "panels/diagnostics_panel.hpp"
@@ -162,6 +163,11 @@ MainWindow::MainWindow(QWidget* parent, bool restore_saved_layout)
           [this](const MenuContext& context, const QPoint& global_pos) {
             ContextMenuDeps deps{document_, selection_, *actions_};
             deps.default_crosswalk_params = [this] { return resolve_default_crosswalk_params(); };
+            deps.open_signal_phase_editor = [this](JunctionId) {
+              editor2d_dock_->show();
+              editor2d_dock_->raise();
+              editor2d_host_->show_page(tr("Signal Phases"));
+            };
             if (QMenu* menu = assemble_context_menu(context, deps, this)) {
               menu->popup(global_pos);
             }
@@ -333,6 +339,13 @@ MainWindow::MainWindow(QWidget* parent, bool restore_saved_layout)
     editor2d_dock_->show();
     editor2d_dock_->raise();
     editor2d_host_->show_page(tr("Lane Width"));
+  });
+  // ⇧G: jump straight to the Signal Phases tab (whatever tool is active). The
+  // literal must match SignalPhaseEditorPage::title() exactly.
+  connect(actions_->signal_phase_editor, &QAction::triggered, this, [this] {
+    editor2d_dock_->show();
+    editor2d_dock_->raise();
+    editor2d_host_->show_page(tr("Signal Phases"));
   });
   auto elevation_tool = std::make_unique<ElevationTool>(document_, selection_);
   elevation_tool_ = elevation_tool.get();
@@ -507,6 +520,12 @@ MainWindow::MainWindow(QWidget* parent, bool restore_saved_layout)
   });
   connect(actions_->tool_signal, &QAction::triggered, this, [this] {
     tool_manager_.set_active(ToolId::Signal);
+    // Surface the 2D Editor pane so the Signal Phases timeline is reachable when
+    // the signal workflow starts (mirrors the Elevation/Lane tools; the
+    // discoverability rule — GW-4 step 4).
+    editor2d_dock_->show();
+    editor2d_dock_->raise();
+    editor2d_host_->raise_relevant_page();
   });
   tool_manager_.set_active(ToolId::Select);
 
@@ -658,9 +677,31 @@ void MainWindow::build_docks() {
       std::make_unique<ProfileEditorPage>(document_, selection_, editor2d_host_));
   editor2d_host_->register_page(
       std::make_unique<WidthEditorPage>(document_, selection_, editor2d_host_));
+  {
+    auto phase_page =
+        std::make_unique<SignalPhaseEditorPage>(document_, selection_, editor2d_host_);
+    phase_page_ = phase_page.get();
+    editor2d_host_->register_page(std::move(phase_page));
+  }
   editor2d_dock_->setWidget(editor2d_host_);
   addDockWidget(Qt::BottomDockWidgetArea, editor2d_dock_);
   editor2d_dock_->hide(); // opt-in via the View menu — 2D editing is occasional
+
+  // The phase panel drives a pane-independent viewport overlay (head colors,
+  // moving-road highlight, dotted gate links) that works under ANY active tool.
+  // PhasePanel stays viewport-unaware: it emits phase_view_changed, MainWindow
+  // pulls its getters through the pure builder and pushes the result.
+  connect(phase_page_->panel(), &PhasePanel::phase_view_changed, this, [this] {
+    update_signal_phase_overlay();
+  });
+  connect(&document_, &Document::loaded, this, [this] { viewport_->clear_signal_phase_preview(); });
+  connect(editor2d_dock_, &QDockWidget::visibilityChanged, this, [this](bool visible) {
+    if (!visible) {
+      viewport_->clear_signal_phase_preview();
+    } else {
+      update_signal_phase_overlay();
+    }
+  });
 
   diagnostics_dock_ = new QDockWidget(tr("Diagnostics"), this);
   diagnostics_dock_->setObjectName(QStringLiteral("dock.diagnostics"));
@@ -1702,6 +1743,18 @@ void MainWindow::update_status_entities() {
                                 .arg(network.road_count())
                                 .arg(network.lane_count())
                                 .arg(network.junction_count()));
+}
+
+void MainWindow::update_signal_phase_overlay() {
+  PhasePanel* panel = phase_page_ != nullptr ? phase_page_->panel() : nullptr;
+  if (panel == nullptr || !editor2d_dock_->isVisible() || !panel->junction().is_valid()) {
+    viewport_->clear_signal_phase_preview();
+    return;
+  }
+  viewport_->set_signal_phase_preview(build_signal_phase_preview(document_.network(),
+                                                                 panel->junction(),
+                                                                 panel->signal_states_at_playhead(),
+                                                                 panel->moving_roads()));
 }
 
 void MainWindow::on_hover(const HoverInfo& info) {

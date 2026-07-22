@@ -169,9 +169,10 @@ TEST(ToolbarRegistry, LayoutMatchesTheIssue) {
   EXPECT_EQ(ids_of(layers, "Library & View"),
             (std::vector{Id::AddFromLibrary, Id::ResetCamera, Id::FrameSelection}));
 
-  // Populated by p4-s7 (issue #228): the reserved group now renders the Signal
-  // tool, which is what the group was reserved for.
-  EXPECT_EQ(ids_of(layers, "Signals & Signs"), (std::vector{Id::ToolSignal}));
+  // Populated by p4-s7 (issue #228): the Signal tool. p4-s8 (issue #229) adds
+  // the Signal Phase editor beside it — the group was reserved for exactly this.
+  EXPECT_EQ(ids_of(layers, "Signals & Signs"),
+            (std::vector{Id::ToolSignal, Id::SignalPhaseEditor}));
 
   for (const char* reserved : {"Terrain & Structures", "Scenario"}) {
     EXPECT_TRUE(ids_of(layers, reserved).empty())

@@ -3,11 +3,16 @@
 // commands, which is why test_profile_panel.cpp needed no changes to keep
 // passing once the panel was hosted.
 
+#include "roadmaker/edit/operations.hpp"
+#include "roadmaker/road/junction.hpp"
+#include "roadmaker/road/network.hpp"
+
 #include <gtest/gtest.h>
 
 #include <QDockWidget>
 #include <QMainWindow>
 #include <QTabWidget>
+#include <array>
 #include <memory>
 #include <vector>
 
@@ -169,6 +174,83 @@ TEST(Editor2DDock, StaleProfileLayoutDoesNotCaptureTheRenamedDock) {
 
   EXPECT_EQ(window.dockWidgetArea(dock), Qt::BottomDockWidgetArea)
       << "the stale dock.profile entry must not drag the 2D Editor to the left";
+}
+
+// A 4-arm cross joined into a junction and signalized with a dynamic template,
+// so the phase page has a cycle to be relevant for.
+JunctionId make_signalized_junction(Document& document) {
+  using roadmaker::ContactPoint;
+  using roadmaker::LaneProfile;
+  using roadmaker::RoadEnd;
+  using roadmaker::Waypoint;
+  const auto road = [&](double x0, double y0, double x1, double y1, const char* odr) {
+    (void)document.push_command(
+        roadmaker::edit::create_road({Waypoint{.x = x0, .y = y0}, Waypoint{.x = x1, .y = y1}},
+                                     LaneProfile::two_lane_default(),
+                                     odr));
+    return document.network().find_road(odr);
+  };
+  const std::array<RoadEnd, 4> ends{RoadEnd{road(-80.0, 0.0, -20.0, 0.0, "1"), ContactPoint::End},
+                                    RoadEnd{road(80.0, 0.0, 20.0, 0.0, "2"), ContactPoint::End},
+                                    RoadEnd{road(0.0, -80.0, 0.0, -20.0, "3"), ContactPoint::End},
+                                    RoadEnd{road(0.0, 80.0, 0.0, 20.0, "4"), ContactPoint::End}};
+  (void)document.push_command(roadmaker::edit::create_junction(document.network(), ends));
+  JunctionId junction;
+  document.network().for_each_junction(
+      [&](JunctionId id, const roadmaker::Junction&) { junction = id; });
+  (void)document.push_command(roadmaker::edit::signalize_junction(
+      document.network(), junction, {.tmpl = roadmaker::edit::SignalizeTemplate::TwoPhase}));
+  return junction;
+}
+
+TEST(SignalPhaseEditorPage, TitlesRegistersAndFollowsDynamicJunctionSelection) {
+  Harness h;
+  const JunctionId junction = make_signalized_junction(h.document);
+
+  auto page = std::make_unique<SignalPhaseEditorPage>(h.document, h.selection);
+  SignalPhaseEditorPage* raw = page.get();
+  EXPECT_EQ(raw->title(), QStringLiteral("Signal Phases"));
+  ASSERT_NE(raw->panel(), nullptr);
+  EXPECT_FALSE(raw->relevant(h.selection)) << "nothing selected yet";
+
+  // A plain road selection is NOT relevant to the phase editor.
+  h.selection.select({.road = h.document.network().find_road("1")});
+  EXPECT_FALSE(raw->relevant(h.selection)) << "a road is not a signalized junction";
+
+  // Selecting the dynamic junction makes it relevant, and the panel targets it.
+  h.selection.select({.junction = junction});
+  EXPECT_TRUE(raw->relevant(h.selection));
+  EXPECT_EQ(raw->panel()->junction(), junction);
+
+  Editor2DHost host(h.selection);
+  host.register_page(std::move(page));
+  EXPECT_EQ(host.current_title(), QStringLiteral("Signal Phases"));
+}
+
+TEST(SignalPhaseEditorPage, IsNotRelevantForAnUnsignalizedJunction) {
+  Harness h;
+  JunctionId junction; // built but not signalized
+  {
+    // Reuse the builder but undo the signalize step, leaving a plain junction.
+    junction = make_signalized_junction(h.document);
+    h.document.undo_stack()->undo(); // undo signalize_junction
+  }
+  SignalPhaseEditorPage page(h.document, h.selection);
+  h.selection.select({.junction = junction});
+  EXPECT_FALSE(page.relevant(h.selection)) << "an unsignalized junction has no cycle to edit";
+}
+
+TEST(Editor2DHost, RaisesTheSignalPhasePageForADynamicJunction) {
+  Harness h;
+  const JunctionId junction = make_signalized_junction(h.document);
+  Editor2DHost host(h.selection);
+  host.register_page(std::make_unique<FakePage>(QStringLiteral("Never"), false));
+  host.register_page(std::make_unique<SignalPhaseEditorPage>(h.document, h.selection));
+  ASSERT_EQ(host.current_title(), QStringLiteral("Never"));
+
+  // The host subscribes itself — selecting the junction auto-raises the page.
+  h.selection.select({.junction = junction});
+  EXPECT_EQ(host.current_title(), QStringLiteral("Signal Phases"));
 }
 
 } // namespace

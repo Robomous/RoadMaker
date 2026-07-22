@@ -269,6 +269,14 @@ Actions::Actions(QUndoStack& undo_stack, QObject* parent) : QObject(parent) {
   lane_width_editor->setToolTip(tr("Open the 2D Editor's Lane Width tab for the selected "
                                    "lane — drag the width curve along s (⇧L)"));
 
+  // Not a tool — a command that surfaces the 2D Editor's Signal Phases tab for
+  // the selected junction. Standalone so ⇧G works whatever tool is active.
+  signal_phase_editor = new QAction(tr("Signal &Phase Editor"), this);
+  signal_phase_editor->setShortcuts(shortcuts::sequences(shortcuts::Id::SignalPhaseEditor));
+  signal_phase_editor->setIconText(tr("Phases"));
+  signal_phase_editor->setToolTip(tr("Open the 2D Editor's Signal Phases tab for the selected "
+                                     "junction — scrub the red-yellow-green cycle (⇧G)"));
+
   // Road templates for the Create Road tool (02_editing_tools.md §2):
   // exclusive and always checked; the toolbar shows them as a dropdown.
   template_group = new QActionGroup(this);
@@ -445,6 +453,8 @@ QAction* Actions::action(shortcuts::Id id) const {
     return tool_signal;
   case Id::LaneWidthEditor:
     return lane_width_editor;
+  case Id::SignalPhaseEditor:
+    return signal_phase_editor;
   case Id::MergeRoads:
     return merge_roads;
   case Id::AddFromLibrary:
