@@ -19,6 +19,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 Current version on `main`: **0.0.1**.
 
 ### Added
+- **Road signs with editable face text**
+  ([#230](https://github.com/Robomous/RoadMaker/issues/230)): a new **Sign
+  tool** (`B`) places a road sign on a click or drag — a selected Library sign,
+  or by default a **StVO 310 town-entrance plate** — and selects it so its face
+  text is editable in the Attributes pane's new **Text** row (multi-line; one
+  undo step per edit). Sign text is a real, spec-sanctioned OpenDRIVE `@text`
+  (§14, Table 122) that round-trips through the `.xodr`, including multi-line
+  names. The text is rendered to a texture (a CPU rasteriser embedded in the
+  kernel) so a placed plate shows its words in the 3D viewport and in **exported
+  glTF** (`.glb`); a `rm.edit.set_signal_text` binding exposes the same edit to
+  Python. (USD export keeps the flat plate — single-file USDA cannot embed
+  textures — but the `@text` is still written.)
 - **Junctions can be signalized from a template**
   ([#228](https://github.com/Robomous/RoadMaker/issues/228)): a new **Signal
   tool** (`G`) fits a junction out with traffic lights or stop signs in one

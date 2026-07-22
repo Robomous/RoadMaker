@@ -293,6 +293,7 @@ THUMBNAILS = {
     "signal_sign": lambda: render_model(_model("sign_generic")),
     "sign_stop": lambda: render_model(_model("sign_stop")),
     "sign_yield": lambda: render_model(_model("sign_yield")),
+    "sign_text": lambda: render_model(_model("sign_plate")),
     "streetlight_single": lambda: render_model(_model("streetlight_single")),
     "streetlight_double": lambda: render_model(_model("streetlight_double")),
     "building_low": lambda: render_model(_model("building_low")),

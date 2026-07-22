@@ -170,9 +170,9 @@ TEST(ToolbarRegistry, LayoutMatchesTheIssue) {
             (std::vector{Id::AddFromLibrary, Id::ResetCamera, Id::FrameSelection}));
 
   // Populated by p4-s7 (issue #228): the Signal tool. p4-s8 (issue #229) adds
-  // the Signal Phase editor beside it — the group was reserved for exactly this.
+  // the Signal Phase editor beside it; p4-s9 (issue #230) adds the Sign tool.
   EXPECT_EQ(ids_of(layers, "Signals & Signs"),
-            (std::vector{Id::ToolSignal, Id::SignalPhaseEditor}));
+            (std::vector{Id::ToolSignal, Id::SignalPhaseEditor, Id::ToolSign}));
 
   for (const char* reserved : {"Terrain & Structures", "Scenario"}) {
     EXPECT_TRUE(ids_of(layers, reserved).empty())

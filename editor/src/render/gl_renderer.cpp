@@ -504,8 +504,9 @@ TextureHandle GLRenderer::upload(const TextureData& data) {
                  gl::kUnsignedByte,
                  data.rgba.data());
   gl::GenerateMipmap(gl::kTexture2D);
-  gl::TexParameteri(gl::kTexture2D, gl::kTextureWrapS, static_cast<gl::GLint>(gl::kRepeat));
-  gl::TexParameteri(gl::kTexture2D, gl::kTextureWrapT, static_cast<gl::GLint>(gl::kRepeat));
+  const gl::GLenum wrap = data.wrap == TextureWrap::ClampToEdge ? gl::kClampToEdge : gl::kRepeat;
+  gl::TexParameteri(gl::kTexture2D, gl::kTextureWrapS, static_cast<gl::GLint>(wrap));
+  gl::TexParameteri(gl::kTexture2D, gl::kTextureWrapT, static_cast<gl::GLint>(wrap));
   gl::TexParameteri(
       gl::kTexture2D, gl::kTextureMinFilter, static_cast<gl::GLint>(gl::kLinearMipmapLinear));
   gl::TexParameteri(gl::kTexture2D, gl::kTextureMagFilter, static_cast<gl::GLint>(gl::kLinear));

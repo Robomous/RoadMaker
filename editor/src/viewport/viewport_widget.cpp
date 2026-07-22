@@ -1,5 +1,7 @@
 #include "viewport/viewport_widget.hpp"
 
+#include "roadmaker/assets/prop_library.hpp"
+#include "roadmaker/assets/sign_face.hpp"
 #include "roadmaker/edit/operations.hpp"
 #include "roadmaker/road/network.hpp"
 #include "roadmaker/road/object.hpp"
@@ -28,6 +30,7 @@
 #include <numbers>
 #include <numeric>
 #include <span>
+#include <unordered_set>
 #include <utility>
 
 #include "document/highlight.hpp"
@@ -143,6 +146,28 @@ TextureHandle ViewportWidget::texture_for(const std::string& resource) const {
   return handle;
 }
 
+TextureHandle ViewportWidget::sign_face_texture(const std::string& model_id,
+                                                const std::string& text) const {
+  const std::string key = model_id + '\x1f' + text;
+  if (const auto cached = sign_face_textures_.find(key); cached != sign_face_textures_.end()) {
+    return cached->second;
+  }
+  TextureHandle handle;
+  const roadmaker::props::PropModel* model = roadmaker::props::model(model_id);
+  if (model != nullptr && model->face_plate.has_value()) {
+    const roadmaker::signs::FaceBitmap bitmap =
+        roadmaker::signs::render_face(text, *model->face_plate);
+    TextureData tex;
+    tex.width = bitmap.width;
+    tex.height = bitmap.height;
+    tex.rgba.assign(bitmap.rgba.begin(), bitmap.rgba.end());
+    tex.wrap = TextureWrap::ClampToEdge; // baked margin must not wrap/bleed
+    handle = renderer_->upload(tex);
+  }
+  sign_face_textures_.emplace(key, handle);
+  return handle;
+}
+
 Material ViewportWidget::material_for(SurfaceKind surface, const std::string& material) const {
   Material result;
   if (!textured_rendering_) {
@@ -178,6 +203,7 @@ void ViewportWidget::rebuild_scene() {
   renderer_->clear_meshes();
   items_.clear();
   prop_batches_.clear(); // clear_meshes() dropped their GL meshes; re-upload below
+  sign_faces_.clear();   // ditto — face quad meshes re-upload below
   pending_roads_.clear();
   preview_handles_.clear(); // clear_meshes() dropped them; re-uploaded this paint
 
@@ -209,6 +235,28 @@ void ViewportWidget::rebuild_scene() {
       uploaded.transforms.push_back(inst.transform);
     }
     prop_batches_.push_back(std::move(uploaded));
+  }
+  // Editable text-sign faces: one uploaded textured quad each, with a
+  // ClampToEdge texture shared per (model_id, text). Sweep any cached texture
+  // whose sign no longer exists so a text edit doesn't leak the old bitmap.
+  sign_faces_.reserve(scene.sign_faces.size());
+  std::unordered_set<std::string> live_face_keys;
+  for (const SceneSignFace& face : scene.sign_faces) {
+    live_face_keys.insert(face.model_id + '\x1f' + face.text);
+    sign_faces_.push_back(UploadedSignFace{
+        .mesh = renderer_->upload(face.data),
+        .texture = sign_face_texture(face.model_id, face.text),
+        .road = face.road,
+        .signal = face.signal,
+    });
+  }
+  for (auto it = sign_face_textures_.begin(); it != sign_face_textures_.end();) {
+    if (live_face_keys.contains(it->first)) {
+      ++it;
+    } else {
+      renderer_->remove(it->second);
+      it = sign_face_textures_.erase(it);
+    }
   }
   scene_bounds_ = scene.bounds;
   // Keep the ground plane just under the (possibly changed) network floor.
@@ -362,7 +410,8 @@ void ViewportWidget::paintGL() {
   highlight_scratch.reserve(instance_count);
 
   std::vector<DrawItem> draw_items;
-  draw_items.reserve(items_.size() + prop_part_count + instance_count + preview_handles_.size());
+  draw_items.reserve(items_.size() + prop_part_count + instance_count + sign_faces_.size() +
+                     preview_handles_.size());
   for (const UploadedItem& item : items_) {
     draw_items.push_back(DrawItem{.mesh = item.handle,
                                   .state = item_state(item),
@@ -415,6 +464,30 @@ void ViewportWidget::paintGL() {
             DrawItem{.mesh = handle, .state = state, .material = prop_material, .instances = one});
       }
     }
+  }
+
+  // Editable text-sign faces: one textured quad each, base-colour from its
+  // rendered-text texture with uv_scale 1 (UVs are already [0,1]). Highlighted
+  // with the owning signal so selecting/hovering the sign lights its face too.
+  for (const UploadedSignFace& face : sign_faces_) {
+    Material face_material;
+    face_material.base_color = face.texture; // invalid handle → flat white fallback
+    face_material.uv_scale = 1.0F;
+    const HighlightState state = phase_highlight(face.road,
+                                                 highlight_state_for(face.road,
+                                                                     {},
+                                                                     {},
+                                                                     face.signal,
+                                                                     {},
+                                                                     {},
+                                                                     selection_.entries(),
+                                                                     hovered_road,
+                                                                     hovered_lane_,
+                                                                     hovered_object_,
+                                                                     hovered_signal_,
+                                                                     hovered_junction_,
+                                                                     hovered_surface_));
+    draw_items.push_back(DrawItem{.mesh = face.mesh, .state = state, .material = face_material});
   }
 
   for (const RenderMeshHandle handle : preview_handles_) {

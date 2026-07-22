@@ -104,6 +104,18 @@ FetchContent_Declare(tinygltf
 )
 
 # ---------------------------------------------------------------------------
+# stb (MIT OR public-domain) — stb_truetype.h only, for CPU text rasterisation
+# of editable sign faces (roadmaker::signs::render_face). Header-only; the
+# STB_TRUETYPE_IMPLEMENTATION macro is defined in exactly one TU
+# (core/src/assets/sign_face.cpp). No tagged releases upstream, so pin the
+# exact commit archive + SHA256 (disclosed in THIRD_PARTY_LICENSES.md).
+FetchContent_Declare(stb
+  URL https://github.com/nothings/stb/archive/31c1ad37456438565541f4919958214b6e762fb4.tar.gz
+  URL_HASH SHA256=e4e3bba9c572a4a4148373a914d88ea0f0d11de8cc2c66739926e7eca0223319
+  SOURCE_SUBDIR cmake-disabled
+)
+
+# ---------------------------------------------------------------------------
 # Clothoids 2.1.0 (BSD-2) + its submodules, pinned at the exact commits the
 # 2.1.0 tag references (GitHub release tarballs do not include submodules).
 # We compile all four source drops into a single static library below
@@ -211,7 +223,7 @@ endif()
 
 # ---------------------------------------------------------------------------
 FetchContent_MakeAvailable(
-  fmt spdlog eigen pugixml clipper2 cdt libigl manifold tinygltf
+  fmt spdlog eigen pugixml clipper2 cdt libigl manifold tinygltf stb
   clothoids utilslite quartic gencon tlexpected fastfloat)
 if(RM_BUILD_TESTS)
   FetchContent_MakeAvailable(googletest)
@@ -301,6 +313,11 @@ target_compile_definitions(rm_tinygltf INTERFACE
   TINYGLTF_NO_STB_IMAGE_WRITE
   TINYGLTF_NO_EXTERNAL_IMAGE
 )
+
+# stb (header-only; STB_TRUETYPE_IMPLEMENTATION lives in core/src/assets)
+add_library(rm_stb INTERFACE)
+add_library(stb::stb ALIAS rm_stb)
+target_include_directories(rm_stb SYSTEM INTERFACE ${stb_SOURCE_DIR})
 
 # tl::expected (header-only)
 add_library(rm_tlexpected INTERFACE)

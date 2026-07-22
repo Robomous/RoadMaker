@@ -65,6 +65,7 @@ conventions below.
 | Signal tool (signalize a junction, place signals) | `G` | S is the Marking Point tool and ⇧S the Prop Span tool |
 | Lane Width editor (2D) | `Shift+L` |  |
 | Signal Phase editor (2D) | `Shift+G` | G is the Signal tool; ⇧G opens its phase timeline |
+| Sign tool (place a road sign; its face text is editable) | `B` |  |
 
 ## View
 

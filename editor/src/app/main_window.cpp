@@ -71,6 +71,7 @@
 #include "tools/prop_polygon_tool.hpp"
 #include "tools/prop_span_tool.hpp"
 #include "tools/select_tool.hpp"
+#include "tools/sign_tool.hpp"
 #include "tools/signal_tool.hpp"
 #include "tools/split_tool.hpp"
 #include "tools/stopline_tool.hpp"
@@ -503,6 +504,15 @@ MainWindow::MainWindow(QWidget* parent, bool restore_saved_layout)
   signal_tool->set_params_provider([this] { return resolve_default_signal_item(); });
   properties_panel_->set_signal_tool(signal_tool.get());
   tool_manager_.register_tool(ToolId::Signal, std::move(signal_tool));
+
+  // Sign: placement-only sibling (p4-s9, #230). Places one road sign — a
+  // selected Library sign, or by default a StVO 310 text plate — then selects it
+  // so the Attributes pane edits its face text.
+  auto sign_tool = std::make_unique<SignTool>(document_, selection_);
+  wire_status(sign_tool.get());
+  sign_tool->set_params_provider([this] { return resolve_default_sign_item(); });
+  tool_manager_.register_tool(ToolId::Sign, std::move(sign_tool));
+
   connect(actions_->tool_corner, &QAction::triggered, this, [this] {
     tool_manager_.set_active(ToolId::Corner);
   });
@@ -526,6 +536,9 @@ MainWindow::MainWindow(QWidget* parent, bool restore_saved_layout)
     editor2d_dock_->show();
     editor2d_dock_->raise();
     editor2d_host_->raise_relevant_page();
+  });
+  connect(actions_->tool_sign, &QAction::triggered, this, [this] {
+    tool_manager_.set_active(ToolId::Sign);
   });
   tool_manager_.set_active(ToolId::Select);
 
@@ -1102,6 +1115,20 @@ LibraryItem MainWindow::resolve_default_signal_item() const {
   for (int row = 0; row < library_model_.rowCount(); ++row) {
     const LibraryItem* item = library_model_.item(row);
     if (item != nullptr && item->kind == LibraryItem::Kind::Signal) {
+      return *item;
+    }
+  }
+  return {};
+}
+
+LibraryItem MainWindow::resolve_default_sign_item() const {
+  // The Library's text-sign asset (signal tag "sign_text") — the Sign tool's
+  // default. An empty item just makes SignTool fall back to the built-in text
+  // plate, so the tool is always usable.
+  for (int row = 0; row < library_model_.rowCount(); ++row) {
+    const LibraryItem* item = library_model_.item(row);
+    if (item != nullptr && item->kind == LibraryItem::Kind::Signal &&
+        item->signal == QStringLiteral("sign_text")) {
       return *item;
     }
   }

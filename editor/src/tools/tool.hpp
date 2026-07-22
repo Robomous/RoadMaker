@@ -42,6 +42,7 @@ enum class ToolId {
   JunctionSurface,
   Maneuver,
   Signal,
+  Sign,
 };
 
 struct ToolEvent {

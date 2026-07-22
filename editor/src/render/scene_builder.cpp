@@ -272,6 +272,50 @@ void append_object_items(const ObjectInstance& instance, Scene& scene) {
                      scene);
 }
 
+namespace {
+
+/// Bakes a model-space SignalFaceOverlay to a world-space textured quad using
+/// the instance's transform `m` (column-major mat4 from prop_transform). The
+/// mat4 is a uniform scale + Z-rotation + translation, so positions transform in
+/// full and normals by the rotation (uniform scale keeps them unit after the
+/// shader renormalises). UVs pass through unchanged.
+RenderMeshData bake_face_to_world(const SignalFaceOverlay& face, const InstanceData& m) {
+  const auto& t = m.model; // column-major: col c, row r → t[c*4 + r]
+  const auto apply = [&](double x, double y, double z, bool translate) {
+    const auto fx = static_cast<float>(x);
+    const auto fy = static_cast<float>(y);
+    const auto fz = static_cast<float>(z);
+    const float tx = translate ? t[12] : 0.0F;
+    const float ty = translate ? t[13] : 0.0F;
+    const float tz = translate ? t[14] : 0.0F;
+    return std::array<float, 3>{t[0] * fx + t[4] * fy + t[8] * fz + tx,
+                                t[1] * fx + t[5] * fy + t[9] * fz + ty,
+                                t[2] * fx + t[6] * fy + t[10] * fz + tz};
+  };
+  RenderMeshData data;
+  data.kind = PrimitiveKind::Triangles;
+  data.color = {1.0F, 1.0F, 1.0F, 1.0F}; // tinted by the sampled texture
+  const std::size_t verts = face.positions.size() / 3;
+  data.positions.reserve(verts * 3);
+  data.normals.reserve(verts * 3);
+  for (std::size_t v = 0; v < verts; ++v) {
+    const auto p =
+        apply(face.positions[v * 3], face.positions[v * 3 + 1], face.positions[v * 3 + 2], true);
+    const auto n =
+        apply(face.normals[v * 3], face.normals[v * 3 + 1], face.normals[v * 3 + 2], false);
+    data.positions.insert(data.positions.end(), p.begin(), p.end());
+    data.normals.insert(data.normals.end(), n.begin(), n.end());
+  }
+  data.uvs.reserve(face.uvs.size());
+  for (const double uv : face.uvs) {
+    data.uvs.push_back(static_cast<float>(uv));
+  }
+  data.indices = face.indices;
+  return data;
+}
+
+} // namespace
+
 void append_signal_items(const SignalInstance& instance, Scene& scene) {
   // Signals are not resizable (#335 scopes per-instance size to props).
   append_model_items(instance.model_id,
@@ -282,6 +326,18 @@ void append_signal_items(const SignalInstance& instance, Scene& scene) {
                      {},
                      instance.signal,
                      scene);
+  // Editable text face (static sign with @text on a face-plate model): a single
+  // world-space textured quad, drawn on its own because its texture is unique.
+  if (instance.face.has_value()) {
+    scene.sign_faces.push_back(SceneSignFace{
+        .road = instance.road,
+        .signal = instance.signal,
+        .model_id = instance.model_id,
+        .text = instance.face->text,
+        .data = bake_face_to_world(*instance.face,
+                                   prop_transform(instance.position, instance.heading, 1.0)),
+    });
+  }
 }
 
 Scene build_scene(const NetworkMesh& mesh, const RoadNetwork* network) {

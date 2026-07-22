@@ -117,11 +117,27 @@ struct SceneBounds {
 /// small default drop when there is no geometry yet. See Renderer::set_ground.
 [[nodiscard]] float ground_base_z(const SceneBounds& bounds);
 
+/// One placed text sign's editable face: a single textured quad baked to WORLD
+/// space (via prop_transform), kept OUT of the instanced prop batches because
+/// each face carries its own text→texture. The viewport uploads/caches the
+/// rasterised bitmap keyed on (model_id, text), draws it with a ClampToEdge
+/// texture, and highlights it with the owning signal like the other sign parts.
+struct SceneSignFace {
+  RoadId road;
+  SignalId signal;
+  std::string model_id;
+  std::string text;    ///< texture cache key (with model_id)
+  RenderMeshData data; ///< world-space quad; uvs in [0,1]
+};
+
 struct Scene {
   std::vector<SceneItem> items;
   /// Instanced props/signals: one batch per model, each drawn with a single
   /// instanced call instead of one baked SceneItem per placement.
   std::vector<ScenePropBatch> prop_batches;
+  /// Editable text-sign faces — one textured world-space quad per placed text
+  /// sign (drawn individually because each carries its own text texture).
+  std::vector<SceneSignFace> sign_faces;
   SceneBounds bounds;
 };
 

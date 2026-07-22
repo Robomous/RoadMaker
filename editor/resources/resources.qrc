@@ -34,6 +34,7 @@
     <file alias="junction-surface.svg">icons/custom/junction-surface.svg</file>
     <file alias="maneuver.svg">icons/custom/tool_maneuver.svg</file>
     <file alias="signal.svg">icons/custom/tool_signal.svg</file>
+    <file alias="sign.svg">icons/custom/tool_sign.svg</file>
     <file alias="crosswalk.svg">icons/custom/crosswalk.svg</file>
     <file alias="junction-connect.svg">icons/custom/junction-connect.svg</file>
     <file alias="lane-section.svg">icons/custom/lane-section.svg</file>
@@ -73,6 +74,7 @@
     <file alias="thumbnails/signal_sign.png">../../assets/library/thumbnails/signal_sign.png</file>
     <file alias="thumbnails/sign_stop.png">../../assets/library/thumbnails/sign_stop.png</file>
     <file alias="thumbnails/sign_yield.png">../../assets/library/thumbnails/sign_yield.png</file>
+    <file alias="thumbnails/sign_text.png">../../assets/library/thumbnails/sign_text.png</file>
     <file alias="thumbnails/streetlight_single.png">../../assets/library/thumbnails/streetlight_single.png</file>
     <file alias="thumbnails/streetlight_double.png">../../assets/library/thumbnails/streetlight_double.png</file>
     <file alias="thumbnails/building_low.png">../../assets/library/thumbnails/building_low.png</file>

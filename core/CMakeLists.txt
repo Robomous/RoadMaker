@@ -36,6 +36,8 @@ add_library(roadmaker_core ${_rm_core_type}
   src/mesh/junction_surface_spans.cpp
   src/mesh/surface_fill.cpp
   src/assets/prop_meshes.gen.cpp
+  src/assets/sign_face.cpp
+  src/assets/sign_font.gen.cpp
   src/io/gltf_exporter.cpp
 )
 add_library(roadmaker::core ALIAS roadmaker_core)
@@ -100,6 +102,7 @@ target_link_libraries(roadmaker_core
     CDT::CDT
     manifold::manifold
     tinygltf::tinygltf
+    stb::stb
 )
 
 # Single source of truth for the version string returned by rm::version().

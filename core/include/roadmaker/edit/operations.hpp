@@ -1124,6 +1124,15 @@ move_signal(const RoadNetwork& network,
             double t,
             std::optional<double> h_offset = std::nullopt);
 
+/// Sets a signal's free-text face (ASAM OpenDRIVE 1.9.0 §14, Table 122: @text —
+/// "Additional text associated with the signal", the carrier for editable sign
+/// text like a town-entrance plate; multi-line text uses literal `\n`). Undo is
+/// byte-identical from the value snapshot. Fails for a stale signal id or a
+/// stale road back-reference, and rejects a no-op (`text` equal to the current
+/// value) so the round-trip harness never sees an empty command.
+[[nodiscard]] RM_API std::unique_ptr<Command>
+set_signal_text(const RoadNetwork& network, SignalId signal, std::string text);
+
 // --- signalization (p4-s7, issue #228) ---------------------------------------
 
 // `kSignalizeAxisTolerance` and `cluster_signal_axes` were promoted to

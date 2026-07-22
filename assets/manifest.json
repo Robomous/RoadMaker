@@ -330,6 +330,15 @@
       "sha256": "4c8dfc43f7c460bfcea4e5d5234d64263a1e4e1e7d208c09e70ec50ac3d25a7f",
       "source_sha256": "ad63ece01a94cb43f57a9d628fa9d28a560bffc8878749998ad3601831ab843f",
       "retrieved": "2026-07-17"
+    },
+    {
+      "url": "https://github.com/googlefonts/roboto/raw/v2.138/src/hinted/Roboto-Regular.ttf",
+      "sha256": "56a45233d29f11b4dfb86d248e921939d115778f87325e7ae8cc108383d6664d",
+      "license": "Apache-2.0",
+      "license_url": "https://github.com/googlefonts/roboto/blob/v2.138/LICENSE",
+      "author": "Google Inc. (Christian Robertson)",
+      "destination": "assets/fonts/Roboto-Regular.ttf",
+      "retrieved": "2026-07-21"
     }
   ]
 }

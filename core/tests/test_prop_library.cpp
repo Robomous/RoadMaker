@@ -86,5 +86,31 @@ TEST(PropLibrary, GeometrySitsOnOriginBaseWithinHeight) {
   }
 }
 
+TEST(PropLibrary, SignPlateModelHasFacePlate) {
+  // The text sign carries a FacePlate so a placed <signal> renders its @text;
+  // it is the only model that does. The plate sits in front of the pole (+x),
+  // spans a positive area, and declares distinct fill/ink colours.
+  const PropModel* plate_model = model("sign_plate");
+  ASSERT_NE(plate_model, nullptr) << "sign_plate must be in the catalogue";
+  ASSERT_TRUE(plate_model->face_plate.has_value());
+  const FacePlate& fp = *plate_model->face_plate;
+  EXPECT_GT(fp.x, 0.0) << "face is in front of the pole";
+  EXPECT_GT(fp.half_w, 0.0);
+  EXPECT_GT(fp.half_h, 0.0);
+  EXPECT_NE(fp.background, fp.ink) << "ink must be visible against the fill";
+}
+
+TEST(PropLibrary, OnlySignPlateCarriesAFacePlate) {
+  for (const auto& id : ids()) {
+    const PropModel* m = model(id);
+    ASSERT_NE(m, nullptr);
+    if (id == "sign_plate") {
+      EXPECT_TRUE(m->face_plate.has_value()) << id;
+    } else {
+      EXPECT_FALSE(m->face_plate.has_value()) << id << " should not carry a face plate";
+    }
+  }
+}
+
 } // namespace
 } // namespace roadmaker::props

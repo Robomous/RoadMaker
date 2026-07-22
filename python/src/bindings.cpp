@@ -3521,6 +3521,16 @@ NB_MODULE(_roadmaker, m) {
            "h_offset"_a = std::optional<double>{},
            "Re-locates a signal to road-relative (s, t); h_offset (rad) optional.");
   edit.def(
+      "set_signal_text",
+      [](const roadmaker::RoadNetwork& network, roadmaker::SignalId signal, std::string text) {
+        return roadmaker::edit::set_signal_text(network, signal, std::move(text));
+      },
+      "network"_a,
+      "signal"_a,
+      "text"_a,
+      "Sets a signal's @text (§14 Table 122 — editable sign-face text; multi-line "
+      "uses literal \\n). Rejects a no-op; one undo step.");
+  edit.def(
       "rename_road",
       [](const roadmaker::RoadNetwork& network, roadmaker::RoadId road, std::string name) {
         return roadmaker::edit::rename_road(network, road, std::move(name));

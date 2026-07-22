@@ -79,12 +79,22 @@ def test_signals_round_trip_through_xodr(network_with_road, tmp_path):
     light.type, light.subtype = "1000001", "-1"
     network.add_signal(road_id, light)
 
+    # A StVO 310 town-entrance plate with multi-line @text (§14 Table 122).
+    plate = rm.Signal()
+    plate.odr_id = "3"
+    plate.s, plate.t = 20.0, 6.0
+    plate.dynamic = False
+    plate.country, plate.country_revision = "DE", "2021"
+    plate.type, plate.subtype = "310", "-1"
+    plate.text = "City\nBadAibling"
+    network.add_signal(road_id, plate)
+
     path = tmp_path / "signals.xodr"
     rm.save_xodr(network, path, name="signals test")
 
     reloaded, diagnostics = rm.load_xodr(path)
     assert not [d for d in diagnostics if d.severity == rm.Severity.ERROR]
-    assert reloaded.signal_count == 2
+    assert reloaded.signal_count == 3
 
     signals = {reloaded.signal(i).odr_id: reloaded.signal(i) for i in reloaded.signal_ids}
     assert signals["1"].type == "274"
@@ -92,6 +102,46 @@ def test_signals_round_trip_through_xodr(network_with_road, tmp_path):
     assert signals["1"].unit == "km/h"
     assert signals["2"].dynamic is True
     assert signals["2"].country == "OpenDRIVE"
+    assert signals["3"].type == "310"
+    assert signals["3"].text == "City\nBadAibling"  # newline survives &#10;
+
+
+def test_set_signal_text_is_one_undo_step(network_with_road):
+    network, road_id = network_with_road
+    signal_id = network.add_signal(road_id, make_speed_limit())
+
+    stack = rm.edit.EditStack()
+    stack.push(network, rm.edit.set_signal_text(network, signal_id, "City"))
+    assert network.signal(signal_id).text == "City"
+    assert stack.size == 1
+
+    stack.undo(network)  # ONE undo restores the empty text
+    assert network.signal(signal_id).text == ""
+
+
+def test_set_signal_text_newline_round_trip(network_with_road, tmp_path):
+    network, road_id = network_with_road
+    signal_id = network.add_signal(road_id, make_speed_limit())
+
+    stack = rm.edit.EditStack()
+    stack.push(network, rm.edit.set_signal_text(network, signal_id, "City\nBadAibling"))
+
+    path = tmp_path / "text.xodr"
+    rm.save_xodr(network, path, name="text sign")
+    reloaded, _ = rm.load_xodr(path)
+    stored = reloaded.signal(reloaded.signal_ids[0])
+    assert stored.text == "City\nBadAibling"
+
+
+def test_set_signal_text_rejects_no_op(network_with_road):
+    network, road_id = network_with_road
+    signal = make_speed_limit()
+    signal.text = "City"
+    signal_id = network.add_signal(road_id, signal)
+
+    stack = rm.edit.EditStack()
+    with pytest.raises(ValueError):
+        stack.push(network, rm.edit.set_signal_text(network, signal_id, "City"))
 
 
 def test_validate_cites_signal_rules(network_with_road):

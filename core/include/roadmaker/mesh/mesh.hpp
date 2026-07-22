@@ -5,6 +5,7 @@
 
 #include <array>
 #include <cstdint>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -119,6 +120,24 @@ struct ObjectInstance {
   double scale = 1.0;
 };
 
+/// The editable text face of a static sign, as a MODEL-SPACE quad the renderer
+/// and glTF exporter drape a text-to-texture bitmap (roadmaker::signs::
+/// render_face) over. Present on a SignalInstance only when the signal is static,
+/// declares non-empty @text, and its model carries a props::FacePlate. Geometry
+/// is in the same model frame as props::model(model_id); consumers apply the
+/// instance transform (position/heading/scale). The quad sits +0.005 m in front
+/// of the plate's +x face; UVs are [0,1] with v=0 at the TOP row — matching the
+/// row-0-top FaceBitmap and glTF's top-left texture origin, so one bitmap serves
+/// both with no flips. The bitmap itself is NOT stored here: it is cheap to
+/// re-raster and consumers cache it keyed on (model_id, text).
+struct SignalFaceOverlay {
+  std::string text;                   ///< the @text the draped bitmap renders
+  std::vector<double> positions;      ///< model-space xyz, 4 verts
+  std::vector<double> normals;        ///< model-space xyz (+x), 4 verts
+  std::vector<double> uvs;            ///< uv per vert, 4 pairs, in [0,1]
+  std::vector<std::uint32_t> indices; ///< 2 triangles (CCW seen from +x)
+};
+
 /// A placed <signal> as an INSTANCE of a bundled signal model
 /// (roadmaker::props — "signal_light" for a dynamic signal, "sign_generic" for
 /// a static one). Same instanced draw path as ObjectInstance: no per-signal
@@ -131,6 +150,9 @@ struct SignalInstance {
   std::string model_id;             ///< prop_library id ("signal_light"/"sign_generic")
   std::array<double, 3> position{}; ///< world origin (pole base), xyz
   double heading = 0.0;             ///< world heading [rad] about +Z
+  /// Editable text face, present only for a static sign with non-empty @text on
+  /// a face-plate model (e.g. "sign_plate"). Absent on lights and blank signs.
+  std::optional<SignalFaceOverlay> face;
 };
 
 /// Whole-network tessellation result.
