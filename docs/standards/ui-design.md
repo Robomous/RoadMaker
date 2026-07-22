@@ -109,32 +109,36 @@ Before adding a tool, decide which it is:
 
 The user-facing contract is [tools and the Library](../user-guide/tools-and-library.md).
 
-## Toolbar structure (core strip + tabs)
+## Toolbar structure (two plain grouped rows)
 
 The toolbar is **generated from the action registry** (`shortcut_registry.cpp`
 `kToolbarGroups`), never hand-placed, and a gtest (`toolbar_violations`) fails
-CI on an uncategorized tool. Two rows, each a **plain top-level `QToolBar`** so
-they share one left origin and align by construction (never a toolbar nested in
-a `QStackedWidget` nested in a toolbar — that double-nesting is what used to
-misalign the tool row):
+CI on an uncategorized tool. It is **two rows, each a plain top-level
+`QToolBar`** in the top tool-bar area — the standard `QMainWindow` idiom — so
+they share one left origin and align by construction. There are **no category
+tabs and no nested widgets**: a `QToolBar` nested in a `QStackedWidget` nested
+in a `QToolBar`, and tabs that swapped the tool row's contents, were both
+non-standard improvisations that kept misaligning the row (issue #377).
 
-- The **core row** (`toolbar.main`) — never hides — carries file ops, the
-  universal edit tools (Select/Move/Split/Delete/Merge), framing/camera/Library
-  (the `ToolbarTab::kCore` groups), and the **category tabs** at its right end
-  (Roads & Lanes, Markings, Props, Signals & Signs; Terrain & Structures and
-  Scenario are reserved and appear once their pillar lands a tool). Putting the
-  tabs on this row spends no extra vertical space on a separate tab strip.
-- The **tool row** (`toolbar.tools`) — a single toolbar **repopulated** from the
-  registry (`MainWindow::populate_tool_toolbar`) whenever the active tab changes,
-  rather than a stack of per-category page toolbars.
+- The **core row** (`toolbar.main`) — never hides — carries document ops: file
+  ops, the universal edit tools (Select/Move/Split/Delete/Merge), and
+  framing/camera/Library (the `ToolbarTab::kCore` groups).
+- The **tool row** (`toolbar.tools`) shows **every** placement/edit tool at
+  once, the tool groups (Roads · Lanes · Markings · Props · Signals …)
+  separated by `QToolBar` separators, with Qt's native overflow chevron when
+  the window is too narrow. Reserved pillars (Terrain, Scenario) contribute
+  nothing until they land a tool.
 
-Rules for adding a tool: give it a `toolbar_group` (the CI gate) whose tab
-places it; **never** put a file/edit/framing action behind a tab; keyboard
-shortcuts must fire regardless of the visible tab, and activating a tool
-reveals its tab (`MainWindow::reveal_active_tool_tab`) so nothing fires
-invisibly. The persisted window layout is versioned (`Settings`
-`kWindowStateVersion`) so a structural toolbar change discards a stale saved
-layout instead of misapplying it.
+The `ToolbarTab` taxonomy still classifies every tool into a group — it drives
+the CI gate and keeps the flat row's ordering stable — but it no longer renders
+as tabs; the whole taxonomy is laid out flat on the single tool row.
+
+Rules for adding a tool: give it a `toolbar_group` (the CI gate) that places
+it; **never** put a file/edit/framing action on the tool row (it belongs to the
+`kCore` groups on the core row); keyboard shortcuts fire regardless of overflow.
+The persisted window layout is versioned (`Settings` `kWindowStateVersion`) so a
+structural toolbar change discards a stale saved layout instead of misapplying
+it.
 
 ## Acceptance
 

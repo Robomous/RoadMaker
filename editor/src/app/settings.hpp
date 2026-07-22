@@ -57,12 +57,6 @@ public:
   [[nodiscard]] bool viewport_hints() const;
   void set_viewport_hints(bool enabled);
 
-  /// The active tab of the tabbed toolbar (p1-s6, issue #368), so it survives a
-  /// restart. Default 0 (the first tab); an out-of-range saved value is ignored
-  /// by the caller against the live tab count.
-  [[nodiscard]] int toolbar_tab() const;
-  void set_toolbar_tab(int index);
-
   static constexpr int kMaxRecentFiles = 10;
 
 private:

@@ -55,50 +55,55 @@ TEST_F(MainWindowLayoutTest, ToolbarsHoldNoVariableWidthLabels) {
   }
 }
 
-TEST_F(MainWindowLayoutTest, ToolbarIsFlatAndTheToolRowRepopulatesPerTab) {
-  // #374: the tabbed toolbar was flattened. Every row is now a plain top-level
-  // QToolBar — the core strip (`toolbar.main`, which also carries the category
-  // tabs) and ONE tool row (`toolbar.tools`) — so they share the same left
-  // origin and align by construction, instead of a QToolBar nested in a
-  // QStackedWidget nested in a QToolBar (the old shape that kept misaligning).
-  // Switching the tab repopulates the single tool row rather than swapping pages.
+TEST_F(MainWindowLayoutTest, ToolbarIsTwoPlainGroupedRowsWithNoTabs) {
+  // #377: the category tabs are gone. The chrome is two plain top-level
+  // QToolBars in the top area — the core strip (`toolbar.main`: document ops)
+  // and ONE flat tool row (`toolbar.tools`: EVERY placement tool at once,
+  // separator-grouped). Both being plain top-level bars, they share one left
+  // origin and align by construction — no QTabBar, no page-swapping, no widget
+  // nested inside a toolbar.
   auto* core = window_.findChild<QToolBar*>(QStringLiteral("toolbar.main"));
   auto* tools = window_.findChild<QToolBar*>(QStringLiteral("toolbar.tools"));
   ASSERT_NE(core, nullptr) << "the core strip is gone";
-  ASSERT_NE(tools, nullptr) << "the single tool row is gone";
+  ASSERT_NE(tools, nullptr) << "the flat tool row is gone";
 
-  // The old nested hosting must not come back.
+  // No tabs, and none of the old nested hosting, may come back.
+  EXPECT_EQ(window_.findChild<QTabBar*>(QStringLiteral("toolbar_tabs")), nullptr)
+      << "the category tab bar must be gone";
   EXPECT_EQ(window_.findChild<QToolBar*>(QStringLiteral("toolbar.tabs")), nullptr)
-      << "the nested tab-host toolbar should be gone";
+      << "the nested tab-host toolbar must be gone";
   for (const QToolBar* bar : window_.findChildren<QToolBar*>()) {
     EXPECT_FALSE(bar->objectName().startsWith(QStringLiteral("toolbar.tab.")))
         << "a nested page toolbar '" << bar->objectName().toStdString() << "' still exists";
   }
 
-  // The category tabs live on the core row.
-  auto* tabs = window_.findChild<QTabBar*>(QStringLiteral("toolbar_tabs"));
-  ASSERT_NE(tabs, nullptr) << "the category tab bar is gone";
-  EXPECT_EQ(tabs->parent(), core) << "the tabs must sit on the core strip, not a separate bar";
-  ASSERT_GT(tabs->count(), 1) << "expected at least two category tabs";
-
-  const auto icon_texts = [](const QToolBar* bar) {
-    QStringList out;
-    for (const QAction* action : bar->actions()) {
-      if (!action->iconText().isEmpty()) {
-        out << action->iconText();
-      }
+  // The flat row must hold every placement tool from every (non-empty) tab at
+  // once — not just one tab's worth — with separators grouping them. Both counts
+  // come from the registry so the assertion tracks the taxonomy as pillars land.
+  int expected_tools = 0;
+  int largest_tab = 0;
+  for (const shortcuts::ToolbarTabInfo& info : shortcuts::toolbar_tabs()) {
+    int tab_tools = 0;
+    for (const shortcuts::ToolbarGroupLayout& group : shortcuts::toolbar_layout(info.tab)) {
+      tab_tools += static_cast<int>(group.ids.size());
     }
-    return out;
-  };
+    expected_tools += tab_tools;
+    largest_tab = std::max(largest_tab, tab_tools);
+  }
 
-  tabs->setCurrentIndex(0);
-  const QStringList first = icon_texts(tools);
-  EXPECT_FALSE(first.isEmpty()) << "the tool row is empty on the first tab";
-
-  tabs->setCurrentIndex(1);
-  const QStringList second = icon_texts(tools);
-  EXPECT_FALSE(second.isEmpty()) << "the tool row is empty on the second tab";
-  EXPECT_NE(first, second) << "switching tabs must swap the single tool row's contents";
+  int placed = 0;
+  int separators = 0;
+  for (const QAction* action : tools->actions()) {
+    if (action->isSeparator()) {
+      ++separators;
+    } else {
+      ++placed;
+    }
+  }
+  EXPECT_EQ(placed, expected_tools) << "the flat row must render every tool across all tabs";
+  EXPECT_GT(expected_tools, largest_tab)
+      << "the row holds more than any single tab's tools — proof it is flat, not tabbed";
+  EXPECT_GT(separators, 0) << "the tool groups must be visually separated";
 }
 
 TEST_F(MainWindowLayoutTest, ToolOptionHintIsGone) {

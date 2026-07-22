@@ -18,7 +18,6 @@
 #include <QToolButton>
 #include <filesystem>
 #include <optional>
-#include <unordered_map>
 #include <vector>
 
 #include "app/actions.hpp"
@@ -282,28 +281,15 @@ private:
   ElidedLabel* status_instruction_ = nullptr;
   QLabel* status_entities_;
 
-  /// The tabbed toolbar (p1-s6 #368; flattened in #374). Every row is a plain
-  /// top-level QToolBar so they share one left origin and align by construction —
-  /// no toolbar nested in a QStackedWidget nested in a toolbar. `core_toolbar_`
-  /// holds File/Edit/framing/Library AND the category `toolbar_tab_bar_` at its
-  /// right end; `tool_toolbar_` is the SINGLE tool row, repopulated from the
-  /// registry each time the tab changes (see populate_tool_toolbar). `all_toolbars_`
-  /// is both bars so the guided tour can locate any action's button.
-  /// `toolbar_tab_index_` maps a tab to its tabbar index for reveal-on-activation;
-  /// `toolbar_tab_order_` is the inverse (index -> tab) for repopulation.
+  /// The two-row toolbar (#377). Both rows are plain top-level QToolBars in the
+  /// top area, so they share one left origin and align by construction — no tabs,
+  /// no nested widgets. `core_toolbar_` holds document ops (File / Edit / framing
+  /// / Library); `tool_toolbar_` is the single flat row of every placement tool,
+  /// group-separated with Qt's native overflow chevron. `all_toolbars_` is both
+  /// bars so the guided tour can locate any action's button.
   QToolBar* core_toolbar_ = nullptr;
   QToolBar* tool_toolbar_ = nullptr;
-  class QTabBar* toolbar_tab_bar_ = nullptr;
   std::vector<QToolBar*> all_toolbars_;
-  std::unordered_map<shortcuts::ToolbarTab, int> toolbar_tab_index_;
-  std::vector<shortcuts::ToolbarTab> toolbar_tab_order_;
-  /// Refills `tool_toolbar_` with the tools of the tab at `index` (registry
-  /// order, group separators). Called on tab change and at build time.
-  void populate_tool_toolbar(int index);
-  /// Switches the tabbed toolbar to the tab holding the now-active tool, so a
-  /// tool activated indirectly (shortcut, Library-arm, request_tool) reveals its
-  /// section instead of firing invisibly.
-  void reveal_active_tool_tab();
   /// First-run guided-tour overlay; created lazily on first show / Help menu.
   class TourOverlay* tour_overlay_ = nullptr;
   bool tour_checked_ = false; // first-run tour prompt fires at most once
