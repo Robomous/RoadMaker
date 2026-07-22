@@ -327,6 +327,13 @@ def sign_generic() -> dict:
 STOP_RED = (0.78, 0.11, 0.12)
 YIELD_RED = (0.80, 0.13, 0.13)
 
+# StVO 310 Ortstafel (town-entrance sign): a yellow rectangular plate with
+# near-black text and a dark rim. Flat linear RGB — the same gamma treatment as
+# every other flat prop colour; the face rasteriser paints ink over background.
+PLATE_YELLOW = (0.93, 0.75, 0.10)
+PLATE_INK = (0.09, 0.09, 0.10)
+PLATE_RIM_DARK = (0.16, 0.16, 0.17)
+
 
 def sign_stop() -> dict:
     """A STOP sign: a red octagonal plate with a white border on a pole, plate
@@ -364,7 +371,29 @@ def sign_yield() -> dict:
     }
 
 
-SIGNALS = [signal_light(), sign_generic(), sign_stop(), sign_yield()]
+def sign_plate() -> dict:
+    """A text sign: a rectangular yellow plate on a pole, plate face down +x
+    (German StVO 310 Ortstafel / town-entrance silhouette). The plate carries a
+    FacePlate so a placed <signal> renders its editable @text over the yellow
+    fill in near-black ink. A dark rim sits just behind the yellow face so the
+    plate reads as a bordered rectangle. Overall height 2.91 m (rim top)."""
+    pole = cylinder(0.05, 0.0, 2.2)
+    rim = box(0.0, 0.0, 2.55, 0.03, 1.16, 0.72)   # dark border, behind
+    face = box(0.03, 0.0, 2.55, 0.03, 1.10, 0.66)  # yellow plate, in front
+    return {
+        "id": "sign_plate", "label": "Text sign", "type": "None",
+        "height": 2.91, "radius": 0.58,
+        "parts": [("pole", POLE_GREY, pole),
+                  ("rim", PLATE_RIM_DARK, rim),
+                  ("face", PLATE_YELLOW, face)],
+        # Front surface of the yellow face box: cx 0.03 + half-depth 0.015.
+        "face_plate": {"x": 0.045, "z": 2.55, "half_w": 0.55, "half_h": 0.33,
+                       "background": PLATE_YELLOW, "ink": PLATE_INK},
+    }
+
+
+SIGNALS = [signal_light(), sign_generic(), sign_stop(), sign_yield(),
+           sign_plate()]
 
 
 # --------------------------------------------------------------------------- #
@@ -581,6 +610,14 @@ def write_cpp() -> None:
         lines.append(f"    {tree['height']:.4f},")
         lines.append(f"    {tree['radius']:.4f},")
         lines.append(f"    ObjectType::{tree['type']},")
+        fp = tree.get("face_plate")
+        if fp is not None:
+            bg, ink = fp["background"], fp["ink"]
+            lines.append(
+                f"    FacePlate{{{fp['x']:.4f}, {fp['z']:.4f}, "
+                f"{fp['half_w']:.4f}, {fp['half_h']:.4f}, "
+                f"{{{bg[0]:.4f}f, {bg[1]:.4f}f, {bg[2]:.4f}f}}, "
+                f"{{{ink[0]:.4f}f, {ink[1]:.4f}f, {ink[2]:.4f}f}}}},")
         lines.append("};")
         lines.append("")
     lines.append("const std::array<const PropModel*, "

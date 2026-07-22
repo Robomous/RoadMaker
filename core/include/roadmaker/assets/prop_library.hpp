@@ -5,6 +5,7 @@
 
 #include <array>
 #include <cstdint>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -28,6 +29,22 @@ struct PropPart {
   std::string name;
 };
 
+/// The flat rectangular front of a sign plate a placed <signal> can carry
+/// editable face text on (StVO 310 town-entrance signs). Model space is Z-up,
+/// meters; the plate face looks down +x, so the rectangle spans y (width) and z
+/// (height). x is the model-space x of the plate's front surface; z is the
+/// centre height. background/ink are flat linear RGB in [0,1] — the plate fill
+/// and the glyph ink the rasteriser (roadmaker::signs::render_face) paints. A
+/// model carries this only when it is meant to show text; plain props omit it.
+struct FacePlate {
+  double x = 0.0;                    ///< model-space x of the plate's front face (m)
+  double z = 0.0;                    ///< model-space centre height (m)
+  double half_w = 0.0;               ///< half width along y (m)
+  double half_h = 0.0;               ///< half height along z (m)
+  std::array<float, 3> background{}; ///< plate fill, linear RGB [0,1]
+  std::array<float, 3> ink{};        ///< glyph ink, linear RGB [0,1]
+};
+
 /// A complete prop model, assembled from one or more flat-shaded parts.
 struct PropModel {
   std::string id;
@@ -39,6 +56,10 @@ struct PropModel {
   /// reads it instead of hardcoding per-id). Signal models (traffic lights and
   /// sign plates) are placed as <signal>s, not <object>s, so they carry None.
   ObjectType type = ObjectType::Tree;
+  /// Present only on sign models whose face renders editable text (e.g.
+  /// "sign_plate"); absent on every other prop. The mesh builder emits a text
+  /// quad in front of this plate when the placed signal declares @text.
+  std::optional<FacePlate> face_plate;
 };
 
 /// Stable ids of every bundled prop model (e.g. "tree_pine"), in catalogue
