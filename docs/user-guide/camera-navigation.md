@@ -5,7 +5,8 @@ pivot lives.*
 
 RoadMaker's camera is an **orbit camera**. It always looks at a single point —
 the **pivot** — and every navigation gesture is defined relative to it: you
-orbit around it, zoom toward it, and pan it along with the camera. In an empty
+orbit around it, chord-zoom toward it, and pan it along with the camera (the
+wheel zooms toward the cursor instead). In an empty
 scene the pivot starts 1.5 m above the world origin, roughly eye height, so
 there is always something in the world to turn around.
 
@@ -18,7 +19,7 @@ elsewhere; the two names mean the same key throughout this page.
 |---|---|
 | `⌥` + left-drag | **Orbit** around the pivot — the pivot stays put on screen |
 | `⌥` + right-drag | **Zoom** toward or away from the pivot; drag **up to zoom in** |
-| Wheel | **Zoom** toward the pivot |
+| Wheel | **Zoom** toward the cursor — the point under it stays put |
 | `⌥` + left-drag + right-drag | **Pan** — camera and pivot move together, 1:1 with the ground under the cursor |
 | Middle-drag | **Pan** (the same thing, without `⌥`) |
 | `⌥` + `⇧` + left-drag + right-drag | **Raise or lower the pivot** — drag up to raise it |
@@ -80,9 +81,11 @@ choose what to look at**.
   alone.
 
 Zooming *in* moves the pivot too, once you go far enough: rather than stopping
-dead when you reach it, the camera **pushes past** — the pivot slides forward
-and you keep travelling at the same rate, so you can fly through a scene with
-the wheel alone. Zooming back out never drags the pivot with it.
+dead when you reach it, the camera **pushes past** and you keep travelling at
+the same rate, so you can fly through a scene with the wheel alone. The wheel
+pushes past along the line to the point under the cursor (that point stays
+fixed); the `⌥` + right-drag chord pushes past along the view axis, sliding the
+pivot forward. Zooming back out never drags the pivot with it.
 
 ## Framing
 
@@ -106,8 +109,9 @@ parallel lines stay parallel and distances read true across the frame — useful
 for checking alignment in plan view.
 
 The two share their framing, so **toggling doesn't jump**: whatever fills your
-screen in one mode fills it in the other. In orthographic mode the wheel zooms
-toward the cursor rather than the screen centre.
+screen in one mode fills it in the other. In both modes the wheel zooms toward
+the cursor — the world point under it stays pinned there — rather than the
+screen centre.
 
 ## Cardinal views
 

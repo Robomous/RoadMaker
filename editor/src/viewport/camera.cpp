@@ -93,9 +93,40 @@ void OrbitCamera::zoom(float scroll) {
   distance_ = kMinDistance;
 }
 
-void OrbitCamera::zoom_about(float scroll, const std::array<float, 2>& anchor_ndc, float aspect) {
+void OrbitCamera::zoom_about(float scroll,
+                             const std::array<float, 2>& anchor_ndc,
+                             float aspect,
+                             const std::optional<std::array<float, 3>>& world_anchor) {
   if (projection_ == ProjectionMode::Perspective) {
-    zoom(scroll); // the eye moves along the cursor's ray already
+    if (!world_anchor.has_value()) {
+      // No world point under the cursor (near-horizon ray): a plain dolly along
+      // the view axis, same as the chord zoom.
+      zoom(scroll);
+      return;
+    }
+    // Map-style cursor pin (#358): move the eye ALONG the cursor ray toward the
+    // anchor by the zoom factor. eye1 = factor·eye0 + (1−factor)·anchor stays
+    // collinear with (eye0, anchor), so the anchor keeps the same view-space
+    // direction and therefore the same pixel; yaw/pitch are unchanged so the
+    // view axis is fixed. Push-past falls out for free — as the factor shrinks
+    // the eye keeps sliding toward the anchor even after the pivot distance
+    // bottoms out at the minimum. Unlike the ortho branch this needs no NDC:
+    // the ray through the resolved world point carries the depth NDC lacks.
+    const float factor = std::pow(0.9F, scroll);
+    const float cos_pitch = std::cos(pitch_);
+    // Offset from target to eye (matrices() uses the same expression).
+    const std::array<float, 3> to_eye{
+        cos_pitch * std::cos(yaw_), cos_pitch * std::sin(yaw_), std::sin(pitch_)};
+    const std::array<float, 3>& w = *world_anchor;
+    const float new_distance = std::clamp(distance_ * factor, kMinDistance, kMaxDistance);
+    for (std::size_t i = 0; i < 3; ++i) {
+      const float eye0 = target_[i] + (distance_ * to_eye[i]);
+      const float eye1 = (factor * eye0) + ((1.0F - factor) * w[i]);
+      // Pivot sits new_distance in front of the new eye along the (fixed) view
+      // axis: target = eye1 + new_distance·forward = eye1 − new_distance·to_eye.
+      target_[i] = eye1 - (new_distance * to_eye[i]);
+    }
+    distance_ = new_distance;
     return;
   }
   // Orthographic: scale is half_height (∝ distance), and the projection is

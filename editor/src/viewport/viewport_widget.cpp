@@ -1730,16 +1730,23 @@ void ViewportWidget::upload_tool_preview() {
 void ViewportWidget::wheelEvent(QWheelEvent* event) {
   const float steps = static_cast<float>(event->angleDelta().y()) / 120.0F;
   if (steps != 0.0F) {
-    // Zoom toward the cursor. In perspective the eye already travels along the
-    // cursor's ray, so this only changes ortho — where zoom_about shifts the
-    // pivot to keep the anchored point under the cursor.
+    // Zoom toward the cursor in BOTH projections (#358). Ortho pins from the NDC
+    // anchor alone; perspective needs the actual world point under the cursor
+    // (the surface hit, else the ground plane) because NDC carries no depth, so
+    // resolve it here and hand it to the camera.
     const float w = std::max(static_cast<float>(width()), 1.0F);
     const float h = std::max(static_cast<float>(height()), 1.0F);
     const std::array<float, 2> anchor_ndc{
         (2.0F * static_cast<float>(event->position().x()) / w) - 1.0F,
         1.0F - (2.0F * static_cast<float>(event->position().y()) / h), // Qt y is down
     };
-    camera_.zoom_about(steps, anchor_ndc, w / h);
+    std::optional<std::array<float, 3>> world_anchor;
+    if (const auto hit = drop_world_point(event->position()); hit.has_value()) {
+      world_anchor = std::array<float, 3>{static_cast<float>((*hit)[0]),
+                                          static_cast<float>((*hit)[1]),
+                                          static_cast<float>((*hit)[2])};
+    }
+    camera_.zoom_about(steps, anchor_ndc, w / h, world_anchor);
     update();
   }
   event->accept();
