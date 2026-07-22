@@ -906,6 +906,10 @@ void MainWindow::build_toolbar() {
   int stack_index = 0;
   for (const shortcuts::ToolbarTabInfo& info : shortcuts::toolbar_tabs()) {
     QToolBar* page = style_bar(new QToolBar, QStringLiteral("toolbar.tab.%1").arg(stack_index));
+    // Marks this as a nested page toolbar so the stylesheet can zero its
+    // horizontal padding (it sits inside the host QToolBar, whose padding
+    // already frames it — see theme.cpp). Set before the page is polished.
+    page->setProperty("toolbarTabPage", true);
     fill(page, info.tab);
     toolbar_stack_->addWidget(page);
     // Double the ampersand so "Signals & Signs" shows literally — QTabBar reads a
