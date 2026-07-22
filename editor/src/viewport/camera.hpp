@@ -4,6 +4,7 @@
 #pragma once
 
 #include <array>
+#include <optional>
 
 #include "render/renderer.hpp"
 
@@ -42,13 +43,25 @@ public:
   /// relocates the pivot.
   void zoom(float scroll);
 
-  /// Zoom keeping the world point under a viewport pixel pinned there.
-  /// `anchor_ndc` is the cursor in normalized device coordinates ([-1,1], y
-  /// up). Perspective already zooms toward the cursor's ray by dollying the
-  /// eye, so this only shifts the pivot in ORTHOGRAPHIC mode — where a plain
-  /// zoom would otherwise scale about the viewport centre and slide the
-  /// content under the cursor away.
-  void zoom_about(float scroll, const std::array<float, 2>& anchor_ndc, float aspect);
+  /// Zoom keeping the world point under a viewport pixel pinned there, in BOTH
+  /// projections (the maintainer-decided wheel behavior; #358).
+  ///
+  /// ORTHOGRAPHIC pins from `anchor_ndc` alone (the cursor in normalized device
+  /// coordinates, [-1,1], y up): a plain zoom scales about the viewport centre,
+  /// so the pivot is shifted across the view plane by the anchor's change in
+  /// world offset.
+  ///
+  /// PERSPECTIVE needs the actual world point under the cursor — NDC alone lacks
+  /// depth — so the caller resolves `world_anchor` (surface hit, else the ground
+  /// plane) and the eye slides ALONG the cursor ray toward it by the zoom
+  /// factor, which keeps it collinear with the eye and therefore on the same
+  /// pixel. Push-past follows for free (the eye keeps sliding toward the
+  /// anchor). With no `world_anchor` (near-horizon ray, nothing resolved),
+  /// perspective falls back to a plain dolly along the view axis.
+  void zoom_about(float scroll,
+                  const std::array<float, 2>& anchor_ndc,
+                  float aspect,
+                  const std::optional<std::array<float, 3>>& world_anchor = std::nullopt);
 
   void frame(const std::array<float, 3>& center, float radius);
 

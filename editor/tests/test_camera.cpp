@@ -419,16 +419,79 @@ TEST(OrbitCamera, OrthoZoomAboutPinsTheAnchorPoint) {
   EXPECT_NEAR((*after)[1], (*before)[1], 1e-2);
 }
 
-TEST(OrbitCamera, ZoomAboutInPerspectiveIsAPlainZoom) {
+// Perspective must ALSO pin the world point under the cursor (#358), not just
+// dolly along the pivot ray. Mirror of the ortho pin: resolve the ground point
+// under an off-centre pixel, zoom about it, and it must stay under that pixel.
+TEST(OrbitCamera, PerspectiveZoomAboutPinsTheAnchorPoint) {
+  constexpr double kW = 800.0;
+  constexpr double kH = 600.0;
+  const float aspect = static_cast<float>(kW / kH);
+  constexpr double kPixelX = 560.0; // off-centre, so a plain dolly would slide it
+  constexpr double kPixelY = 250.0;
+
+  OrbitCamera camera; // default perspective pose looks down at the ground plane
+  const auto before = ground_point(camera.matrices(aspect), kPixelX, kPixelY, kW, kH);
+  ASSERT_TRUE(before.has_value());
+
+  const std::array<float, 2> anchor_ndc{
+      static_cast<float>((2.0 * kPixelX / kW) - 1.0),
+      static_cast<float>(1.0 - (2.0 * kPixelY / kH)),
+  };
+  const std::array<float, 3> world_anchor{static_cast<float>((*before)[0]),
+                                          static_cast<float>((*before)[1]),
+                                          static_cast<float>((*before)[2])};
+  camera.zoom_about(2.0F, anchor_ndc, aspect, world_anchor);
+
+  const auto after = ground_point(camera.matrices(aspect), kPixelX, kPixelY, kW, kH);
+  ASSERT_TRUE(after.has_value());
+  EXPECT_NEAR((*after)[0], (*before)[0], 1e-2);
+  EXPECT_NEAR((*after)[1], (*before)[1], 1e-2);
+  EXPECT_LT(camera.distance(), 80.0F) << "it must still zoom in";
+}
+
+// Without a resolved world anchor (near-horizon ray, nothing under the cursor)
+// perspective falls back to a plain dolly — the pivot does not move.
+TEST(OrbitCamera, PerspectiveZoomAboutWithoutAnAnchorIsAPlainZoom) {
   OrbitCamera zoomed;
   OrbitCamera about;
   const std::array<float, 3> target = about.target();
   zoomed.zoom(2.0F);
-  about.zoom_about(2.0F, {0.8F, -0.6F}, 1.6F);
+  about.zoom_about(2.0F, {0.8F, -0.6F}, 1.6F); // no world_anchor
   EXPECT_FLOAT_EQ(about.distance(), zoomed.distance());
-  // Perspective must NOT shift the pivot — the eye already tracks the cursor ray.
   EXPECT_FLOAT_EQ(about.target()[0], target[0]);
   EXPECT_FLOAT_EQ(about.target()[1], target[1]);
+}
+
+// Wheel push-past follows the CURSOR RAY: once the pivot distance bottoms out at
+// the minimum, continued zoom keeps sliding the eye toward the anchor (rather
+// than dead-stopping or lurching the subject sideways).
+TEST(OrbitCamera, PerspectiveZoomAboutPushPastFollowsTheCursorRay) {
+  constexpr double kW = 800.0;
+  constexpr double kH = 600.0;
+  const float aspect = static_cast<float>(kW / kH);
+  constexpr double kPixelX = 520.0;
+  constexpr double kPixelY = 300.0;
+
+  OrbitCamera camera;
+  const auto anchor = ground_point(camera.matrices(aspect), kPixelX, kPixelY, kW, kH);
+  ASSERT_TRUE(anchor.has_value());
+  const std::array<float, 2> anchor_ndc{
+      static_cast<float>((2.0 * kPixelX / kW) - 1.0),
+      static_cast<float>(1.0 - (2.0 * kPixelY / kH)),
+  };
+  const std::array<float, 3> world_anchor{static_cast<float>((*anchor)[0]),
+                                          static_cast<float>((*anchor)[1]),
+                                          static_cast<float>((*anchor)[2])};
+  // Zoom in until the pivot distance is clamped to the minimum (push-past).
+  for (int i = 0; i < 40; ++i) {
+    camera.zoom_about(1.0F, anchor_ndc, aspect, world_anchor);
+  }
+  ASSERT_FLOAT_EQ(camera.distance(), 2.0F);
+  const float before = eye_distance_to(camera, world_anchor);
+  camera.zoom_about(1.0F, anchor_ndc, aspect, world_anchor); // one more, past the floor
+  const float after = eye_distance_to(camera, world_anchor);
+  EXPECT_LT(after, before) << "the eye must keep approaching the anchor in push-past";
+  EXPECT_FLOAT_EQ(camera.distance(), 2.0F) << "the pivot distance stays clamped";
 }
 
 // --- cardinal views (GW-1 steps 12-13) ---------------------------------------

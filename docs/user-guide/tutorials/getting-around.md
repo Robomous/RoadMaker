@@ -18,7 +18,7 @@ The viewport is right-handed and Z-up, and the camera turns around a pivot in th
 scene:
 
 - **Orbit** — drag to rotate the view around the pivot.
-- **Zoom** — scroll the wheel to move toward or away from the pivot.
+- **Zoom** — scroll the wheel to move toward or away from the point under the cursor.
 - **Pan** — drag to slide the pivot across the ground plane.
 
 The full mouse and modifier map is on the
