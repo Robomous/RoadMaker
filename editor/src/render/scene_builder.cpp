@@ -306,7 +306,10 @@ RenderMeshData bake_face_to_world(const SignalFaceOverlay& face, const InstanceD
     data.positions.insert(data.positions.end(), p.begin(), p.end());
     data.normals.insert(data.normals.end(), n.begin(), n.end());
   }
-  data.uvs.assign(face.uvs.begin(), face.uvs.end());
+  data.uvs.reserve(face.uvs.size());
+  for (const double uv : face.uvs) {
+    data.uvs.push_back(static_cast<float>(uv));
+  }
   data.indices = face.indices;
   return data;
 }

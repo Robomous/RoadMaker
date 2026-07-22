@@ -421,8 +421,12 @@ private:
     primitive.mode = TINYGLTF_MODE_TRIANGLES;
     primitive.attributes["POSITION"] = add_vec3_accessor(to_gltf_frame(overlay.positions), true);
     primitive.attributes["NORMAL"] = add_vec3_accessor(to_gltf_frame(overlay.normals), false);
-    primitive.attributes["TEXCOORD_0"] =
-        add_vec2_accessor(std::vector<float>(overlay.uvs.begin(), overlay.uvs.end()));
+    std::vector<float> uvs;
+    uvs.reserve(overlay.uvs.size());
+    for (const double uv : overlay.uvs) {
+      uvs.push_back(static_cast<float>(uv));
+    }
+    primitive.attributes["TEXCOORD_0"] = add_vec2_accessor(uvs);
     primitive.indices = add_index_accessor(overlay.indices);
     primitive.material = material_index;
     gltf_mesh.primitives.push_back(std::move(primitive));

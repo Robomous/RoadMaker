@@ -191,7 +191,7 @@ FaceBitmap render_face(std::string_view text, const props::FacePlate& plate) {
   const float block_top = (static_cast<float>(height) - block_h) * 0.5f;
 
   for (int li = 0; li < num_lines; ++li) {
-    const auto& line = lines[li];
+    const auto& line = lines[static_cast<std::size_t>(li)];
     const float line_w_px = static_cast<float>(line_advance_width(font, line)) * scale;
     float pen_x = (static_cast<float>(width) - line_w_px) * 0.5f;
     const float baseline_y = block_top + static_cast<float>(li * line_advance) * scale +
