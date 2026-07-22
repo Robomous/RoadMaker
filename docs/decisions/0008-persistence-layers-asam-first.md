@@ -59,7 +59,7 @@ gracefully in other tools (they ignore `userData`). Policy:
 **Registry** — existing: `rm:waypoints`, `rm:crosswalk`, `rm:markingCurve`,
 `rm:stencil`, `rm:aux_boundary`, `rm:arms`, `rm:corners`, `rm:junction`,
 `rm:surface`, `rm:<material-id>`, `rm:stopline`, `rm:spans`, `rm:floor`,
-`rm:maneuver`, `rm:signal`, `rm:signalmount`. Planned: `rm:phases` (p4-s8).
+`rm:maneuver`, `rm:signal`, `rm:signalmount`, `rm:phases`.
 Each owning sprint defines its payload against this policy.
 
 `rm:signal` (p4-s7, shipped) records WHICH auto-signalization template produced
@@ -88,6 +88,29 @@ rejects a longer value). Stale entries — a signal or object that no longer
 exists — are dropped on write like stale arms, and an empty result emits no
 element. Degradation is all-or-nothing throughout: the value is a map, so it has
 no field key to be forward-compatible about.
+
+`rm:phases` (p4-s8, shipped) carries a signalized junction's phase-cycle
+*timing* — the one thing OpenDRIVE deliberately omits: §14.6 states that "the
+signal cycle itself is specified outside of this standard, for example, in ASAM
+OpenSCENARIO", so there is no Layer-0 counterpart and a foreign reader loses
+only the timing (the `<signal>`/`<controller>` wiring stays intact). Junction
+scope, emitted after `rm:signalmount` and before `rm:junction`, never on a span
+junction, and omitted entirely when no cycle is authored — so a junction whose
+timing is still the derived default (the empty ⇔ derived invariant) re-exports
+byte-identically. Entries `;`-joined in cycle order, each entry `:`-joined:
+`[name=<token>:]dur=<seconds>[:st=<ctrl>,<g|y|r|o>|…]`; a state is per
+controller (the §14.6 sync-group member), unstated members are Red, so an
+all-red clearance phase carries no `st` field. The schema mirrors
+OpenSCENARIO 1.4.0 `TrafficSignalController`/`Phase{duration,name,
+trafficSignalStates}` so the P8 export to OpenSCENARIO traffic-signal actions is
+near-mechanical. Degradation is all-or-nothing on the KNOWN grammar (a malformed
+or duplicated field, a missing `dur`, an out-of-bounds duration, a bad state or
+non-token controller, or exceeding `kMaxSignalPhases`/`kMaxSignalPhaseStates`
+drops the whole value with one warning, like `rm:maneuver`), while an unknown
+FIELD key warns and is skipped (forward-compat, like `rm:junction`). Controller
+ids are NOT resolved on load (dormant-tolerant — a foreign file loads; the
+validator advises), and dormant states are pruned on write, so a state naming a
+since-deleted controller normalizes away on the next save.
 
 `rm:maneuver` (p4-s6, shipped) carries the junction's authored maneuver
 overrides — per connecting road: a geometry lock, a turn-type override, the two

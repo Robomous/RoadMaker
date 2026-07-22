@@ -30,15 +30,20 @@ highlighting.
 3. [ ] Verify the static alternative: on a copy of the junction, apply a
    static template (stop signs). **Expected:** stop-sign props place at
    the approaches; no phase data is created.
-4. [ ] Open the **Signal Phase Editor** for the dynamic junction.
-   **Expected:** it opens in the 2D Editor pane, showing phases with
-   red–yellow–green intervals on a timeline bar.
-5. [ ] Scrub the timeline. **Expected:** the viewport signal heads change
-   state in sync with the scrubbed time.
-6. [ ] Select each phase in turn. **Expected:** the roads/maneuvers that
-   may move in that phase highlight in the viewport.
-7. [ ] Inspect the junction gates. **Expected:** dotted links connect
-   each signal to the junction movements it gates.
+4. [ ] Open the **Signal Phase Editor** for the dynamic junction — via
+   **⇧G**, by activating the Signal tool, or the junction's right-click
+   **Signal Phases…**. **Expected:** it opens as a page in the 2D Editor
+   pane, with one row per signal controller and phase columns whose widths
+   track their durations, coloured red–yellow–green (an all-red clearance
+   phase shows red across every row).
+5. [ ] Scrub the timeline (drag the playhead). **Expected:** the viewport
+   signal heads change state in sync with the scrubbed time.
+6. [ ] Select each phase in turn. **Expected:** the connecting roads that
+   may move in that phase brighten in the viewport.
+7. [ ] Inspect the junction gates. **Expected:** dotted links connect the
+   phase's green heads to the junction movements they gate, tracking the
+   active phase as the timeline is scrubbed; they show without the Signal
+   tool active.
 8. [ ] Right-click in the phase list: **add** a phase, then **duplicate**
    one. **Expected:** both appear with editable intervals.
 9. [ ] Delete a phase with the Delete key. **Expected:** it is removed;
@@ -49,8 +54,10 @@ highlighting.
     Signal tool. **Expected:** the applied template and the signal↔mount
     links round-trip (the Signalization pane shows the same template); the
     exported `.xodr` carries the `<signal>` and `<controller>` data and
-    validates. *(Phase and interval round-trip is verified once the Signal
-    Phase Editor lands — p4-s8, steps 4–10.)*
+    validates. *(Authored phase timing round-trips too, as of p4-s8: the
+    cycle rides `<userData code="rm:phases">` and survives save→reload→save
+    byte-identically; a junction still on its derived default cycle writes
+    no `rm:phases` at all.)*
 
 ## Pass criteria
 
