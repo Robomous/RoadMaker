@@ -6799,6 +6799,38 @@ std::unique_ptr<Command> move_signal(const RoadNetwork& network,
   return command;
 }
 
+std::unique_ptr<Command>
+set_signal_text(const RoadNetwork& network, SignalId signal, std::string text) {
+  // ASAM OpenDRIVE 1.9.0 §14, Table 122: @text — "Additional text associated
+  // with the signal" (the carrier for editable sign text; multi-line uses a
+  // literal \n). Legal on any signal, so no type gate here.
+  static constexpr std::string_view kName = "Edit Sign Text";
+  const Signal* current = network.signal(signal);
+  if (current == nullptr) {
+    return invalid_command(std::string(kName), stale_signal_error());
+  }
+  const Road* owner = network.road(current->road);
+  if (owner == nullptr) {
+    return invalid_command(std::string(kName),
+                           Error{.code = ErrorCode::InvalidArgument,
+                                 .message = "signal has a stale road back-reference"});
+  }
+  // Reject a no-op EXPLICITLY (the round-trip harness never sees an empty
+  // command). Note: rename_road below omits this guard — do not copy that.
+  if (text == current->text) {
+    return invalid_command(
+        std::string(kName),
+        Error{.code = ErrorCode::InvalidArgument, .message = "signal text is unchanged"});
+  }
+  Signal edited = *current;
+  edited.text = std::move(text);
+  auto command =
+      std::make_unique<GenericCommand>(std::string(kName), DirtySet{.objects = {current->road}});
+  command->before.signals.emplace_back(signal, *current);
+  command->after.signals.emplace_back(signal, std::move(edited));
+  return command;
+}
+
 // --- signalization (p4-s7, issue #228) ---------------------------------------
 
 namespace {

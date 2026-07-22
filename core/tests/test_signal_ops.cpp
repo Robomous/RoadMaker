@@ -6,6 +6,8 @@
 #include "roadmaker/road/authoring.hpp"
 #include "roadmaker/road/network.hpp"
 #include "roadmaker/road/signal.hpp"
+#include "roadmaker/xodr/reader.hpp"
+#include "roadmaker/xodr/writer.hpp"
 
 #include <gtest/gtest.h>
 
@@ -118,6 +120,87 @@ TEST(SignalOps, MoveApplyRevertIsByteIdentical) {
 
   ASSERT_TRUE(command->revert(network).has_value());
   EXPECT_EQ(snapshot_xodr(network), before) << "undo must be byte-identical";
+}
+
+// --- set_signal_text (p4-s9, #230) ------------------------------------------
+
+TEST(SignalOps, SetTextApplyRevertIsByteIdentical) {
+  RoadNetwork network;
+  const RoadId road = author_street(network);
+  const SignalId id = network.add_signal(road, make_sign("1", 10.0, -5.0));
+  const std::string before = snapshot_xodr(network);
+
+  auto command = edit::set_signal_text(network, id, "City");
+  ASSERT_TRUE(command->apply(network).has_value());
+  EXPECT_EQ(network.signal(id)->text, "City");
+  EXPECT_NE(snapshot_xodr(network), before) << "setting text must change the output";
+
+  ASSERT_TRUE(command->revert(network).has_value());
+  EXPECT_EQ(network.signal(id)->text, "");
+  EXPECT_EQ(snapshot_xodr(network), before) << "undo must be byte-identical";
+}
+
+TEST(SignalOps, SetTextReapplyMatchesSingleApply) {
+  RoadNetwork network;
+  const RoadId road = author_street(network);
+  const SignalId id = network.add_signal(road, make_sign("1", 10.0, -5.0));
+
+  auto command = edit::set_signal_text(network, id, "City");
+  ASSERT_TRUE(command->apply(network).has_value());
+  const std::string once = snapshot_xodr(network);
+  ASSERT_TRUE(command->revert(network).has_value());
+  ASSERT_TRUE(command->apply(network).has_value());
+  EXPECT_EQ(snapshot_xodr(network), once) << "reapply must match the single apply";
+}
+
+TEST(SignalOps, NoOpTextIsRejected) {
+  RoadNetwork network;
+  const RoadId road = author_street(network);
+  Signal sign = make_sign("1", 10.0, -5.0);
+  sign.text = "City";
+  const SignalId id = network.add_signal(road, sign);
+  const std::string before = snapshot_xodr(network);
+
+  // Same text ⇒ invalid_command; a valid command would round-trip through the
+  // EditStack, so a no-op must never produce one.
+  auto command = edit::set_signal_text(network, id, "City");
+  EXPECT_FALSE(command->apply(network).has_value());
+  EXPECT_EQ(snapshot_xodr(network), before) << "a rejected no-op must not mutate";
+}
+
+TEST(SignalOps, SetTextRejectsStaleSignalWithoutMutating) {
+  RoadNetwork network;
+  const RoadId road = author_street(network);
+  const SignalId id = network.add_signal(road, make_sign("1", 10.0, -5.0));
+  network.erase_signal(id);
+  const std::string before = snapshot_xodr(network);
+
+  auto command = edit::set_signal_text(network, id, "City");
+  EXPECT_FALSE(command->apply(network).has_value());
+  EXPECT_EQ(snapshot_xodr(network), before);
+}
+
+TEST(SignalOps, MultiLineTextRoundTripsThroughXodr) {
+  // §14 Table 122: a multi-line town name uses a literal '\n'; the writer must
+  // escape it as &#10; and the reader must decode it, so the text survives a
+  // full write→parse cycle unchanged. Locks the pugixml escaping both ways.
+  RoadNetwork network;
+  const RoadId road = author_street(network);
+  const SignalId id = network.add_signal(road, make_sign("1", 10.0, -5.0));
+
+  auto command = edit::set_signal_text(network, id, "City\nBadAibling");
+  ASSERT_TRUE(command->apply(network).has_value());
+
+  const auto written = write_xodr(network, "text-sign");
+  ASSERT_TRUE(written.has_value());
+  const auto reparsed = parse_xodr(*written, "text-sign");
+  ASSERT_TRUE(reparsed.has_value());
+  ASSERT_EQ(reparsed->network.signal_count(), 1U);
+
+  const Signal* again = nullptr;
+  reparsed->network.for_each_signal([&](SignalId /*sid*/, const Signal& sig) { again = &sig; });
+  ASSERT_NE(again, nullptr);
+  EXPECT_EQ(again->text, "City\nBadAibling");
 }
 
 } // namespace

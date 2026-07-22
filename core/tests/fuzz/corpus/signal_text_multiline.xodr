@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<OpenDRIVE>
+  <header revMajor="1" revMinor="9" name="signal-text-multiline"/>
+  <road name="r" length="100" id="1" junction="-1">
+    <planView>
+      <geometry s="0" x="0" y="0" hdg="0" length="100"><line/></geometry>
+    </planView>
+    <lanes>
+      <laneSection s="0">
+        <center><lane id="0" type="none" level="false"/></center>
+        <right><lane id="-1" type="driving" level="false"><width sOffset="0" a="3.5" b="0" c="0" d="0"/></lane></right>
+      </laneSection>
+    </lanes>
+    <signals>
+      <signal s="20.0" t="-6.0" id="3" name="ortstafel" dynamic="no" orientation="+" zOffset="0.0" type="310" subtype="-1" country="DE" countryRevision="2021" text="City&#10;BadAibling" vendorFoo="keep">
+        <validity fromLane="-1" toLane="-1"/>
+        <userData code="vendor:x" value="1"/>
+      </signal>
+    </signals>
+  </road>
+</OpenDRIVE>
