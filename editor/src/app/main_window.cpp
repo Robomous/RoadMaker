@@ -890,70 +890,86 @@ void MainWindow::build_toolbar() {
   // saved layout still restores.
   core_toolbar_ = style_bar(addToolBar(tr("Main")), QStringLiteral("toolbar.main"));
   fill(core_toolbar_, shortcuts::ToolbarTab::kCore);
-  all_toolbars_.push_back(core_toolbar_);
 
-  // The tabbed section: a QTabBar over a QStackedWidget of per-category page
-  // toolbars, hosted inside a single QToolBar so it docks like the rest. Only
-  // populated tabs appear (a reserved pillar's tab shows up with its first
-  // tool). Shortcuts still fire on a hidden tab; reveal_active_tool_tab() brings
-  // the tab forward when a tool activates.
-  addToolBarBreak();
+  // The category TABS sit at the RIGHT end of the core row (a stretch spacer
+  // pushes them over) — no separate tab strip, so the chrome spends no extra
+  // vertical space. Selecting a tab repopulates the single tool row below.
+  auto* tab_spacer = new QWidget;
+  tab_spacer->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
+  core_toolbar_->addWidget(tab_spacer);
+
   toolbar_tab_bar_ = new QTabBar;
   toolbar_tab_bar_->setObjectName(QStringLiteral("toolbar_tabs"));
   toolbar_tab_bar_->setExpanding(false);
   toolbar_tab_bar_->setDrawBase(false);
-  toolbar_stack_ = new QStackedWidget;
-  int stack_index = 0;
   for (const shortcuts::ToolbarTabInfo& info : shortcuts::toolbar_tabs()) {
-    QToolBar* page = style_bar(new QToolBar, QStringLiteral("toolbar.tab.%1").arg(stack_index));
-    // This page toolbar is NESTED inside the host QToolBar (`toolbar.tabs`),
-    // whose own 8 px padding already frames the tab block; the theme's base
-    // `QToolBar { padding: 4px 8px; border-bottom: 1px }` would stack on top,
-    // indenting the tool row 8 px past the core strip and drawing a second
-    // separator under it. A widget-level stylesheet is applied here (rather
-    // than a global property selector, which does not reliably re-polish a
-    // nested toolbar) to zero this page's own horizontal padding and bottom
-    // border, so the host provides the single frame.
-    page->setStyleSheet(QStringLiteral("QToolBar { padding: 4px 0px; border-bottom: none; }"));
-    fill(page, info.tab);
-    toolbar_stack_->addWidget(page);
     // Double the ampersand so "Signals & Signs" shows literally — QTabBar reads a
     // single '&' as a mnemonic marker and would swallow it.
     QString tab_title = QString::fromUtf8(info.title);
     tab_title.replace(QLatin1Char('&'), QLatin1String("&&"));
+    toolbar_tab_index_[info.tab] = static_cast<int>(toolbar_tab_order_.size());
+    toolbar_tab_order_.push_back(info.tab);
     toolbar_tab_bar_->addTab(tab_title);
-    toolbar_tab_index_[info.tab] = stack_index;
-    all_toolbars_.push_back(page);
-    ++stack_index;
   }
-  connect(
-      toolbar_tab_bar_, &QTabBar::currentChanged, toolbar_stack_, &QStackedWidget::setCurrentIndex);
+  core_toolbar_->addWidget(toolbar_tab_bar_);
+  all_toolbars_.push_back(core_toolbar_);
+
+  // The SINGLE tool row — a plain top-level QToolBar, so it shares the core
+  // strip's 8 px left origin and aligns by construction (no toolbar nested in a
+  // QStackedWidget nested in a toolbar, which is what used to misalign it). Its
+  // contents are swapped when the tab changes; shortcuts still fire on a hidden
+  // tab, and reveal_active_tool_tab() brings the tab forward when a tool activates.
+  addToolBarBreak();
+  tool_toolbar_ = style_bar(addToolBar(tr("Tools")), QStringLiteral("toolbar.tools"));
+  all_toolbars_.push_back(tool_toolbar_);
+
   connect(toolbar_tab_bar_, &QTabBar::currentChanged, this, [this](int index) {
+    populate_tool_toolbar(index);
     settings_.set_toolbar_tab(index);
   });
 
-  auto* tab_host = new QWidget;
-  auto* tab_layout = new QVBoxLayout(tab_host);
-  tab_layout->setContentsMargins(0, 0, 0, 0);
-  tab_layout->setSpacing(0);
-  tab_layout->addWidget(toolbar_tab_bar_);
-  tab_layout->addWidget(toolbar_stack_);
-
-  QToolBar* tab_bar_host = addToolBar(tr("Tools"));
-  tab_bar_host->setObjectName(QStringLiteral("toolbar.tabs"));
-  tab_bar_host->setMovable(false);
-  tab_bar_host->addWidget(tab_host);
-
   // Restore the last-used tab (validated against the live count — the tab set
-  // grows as pillars land, so a stale higher index is ignored).
+  // grows as pillars land, so a stale higher index is ignored). setCurrentIndex
+  // emits currentChanged only when the index actually changes, so fill the row
+  // explicitly for the common index-0 case.
   const int saved_tab = settings_.toolbar_tab();
-  if (saved_tab >= 0 && saved_tab < toolbar_tab_bar_->count()) {
-    toolbar_tab_bar_->setCurrentIndex(saved_tab);
-    toolbar_stack_->setCurrentIndex(saved_tab);
-  }
+  const int initial_tab = (saved_tab >= 0 && saved_tab < toolbar_tab_bar_->count()) ? saved_tab : 0;
+  toolbar_tab_bar_->setCurrentIndex(initial_tab);
+  populate_tool_toolbar(initial_tab);
 
   // A tool activated indirectly reveals its tab.
   connect(&tool_manager_, &ToolManager::active_changed, this, [this] { reveal_active_tool_tab(); });
+}
+
+void MainWindow::populate_tool_toolbar(int index) {
+  if (tool_toolbar_ == nullptr || index < 0 ||
+      index >= static_cast<int>(toolbar_tab_order_.size())) {
+    return;
+  }
+  tool_toolbar_->clear();
+  bool first_group = true;
+  for (const shortcuts::ToolbarGroupLayout& group :
+       shortcuts::toolbar_layout(toolbar_tab_order_[static_cast<std::size_t>(index)])) {
+    if (group.ids.empty()) {
+      continue; // a reserved group renders nothing until its first tool lands
+    }
+    if (!first_group) {
+      tool_toolbar_->addSeparator();
+    }
+    first_group = false;
+    for (const shortcuts::Id id : group.ids) {
+      QAction* action = actions_->action(id);
+      Q_ASSERT(action != nullptr); // ActionMappingCoversEveryId gates this
+      tool_toolbar_->addAction(action);
+    }
+  }
+  // clear() drops the extension button's icon set in build_toolbar; re-apply it
+  // so the overflow chevron stays visible after a refill.
+  if (auto* extension =
+          tool_toolbar_->findChild<QToolButton*>(QStringLiteral("qt_toolbar_ext_button"))) {
+    extension->setIcon(Icons::get(QStringLiteral("chevrons-right")));
+    extension->setToolTip(tr("More tools"));
+  }
 }
 
 namespace {
@@ -1670,30 +1686,39 @@ void MainWindow::start_tour() {
   if (tour_overlay_ == nullptr) {
     tour_overlay_ = new TourOverlay(default_tour_steps(), this);
     // Resolve a step's target (an action iconText) to its toolbar button rect.
-    // Searches EVERY bar — the core strip and every tab page (p1-s6/#368) — so a
-    // step on a tool that lives on a non-active tab still resolves; the tab is
-    // brought forward first so the highlighted button is actually visible.
+    // The core strip is always visible; the single tool row (#374) shows only the
+    // active tab's tools, so if the key is not on a currently-shown bar, walk the
+    // tabs — switching to each repopulates the tool row — until the button turns
+    // up, leaving that tab forward so the highlight is actually visible.
     tour_overlay_->set_target_resolver([this](const QString& key) -> QRect {
-      for (QToolBar* bar : all_toolbars_) {
-        if (bar == nullptr) {
-          continue;
-        }
-        const QList<QAction*> toolbar_actions = bar->actions();
-        for (QAction* action : toolbar_actions) {
-          if (action->iconText() != key) {
+      const auto find_on_shown_bars = [this, &key]() -> QRect {
+        for (QToolBar* bar : all_toolbars_) {
+          if (bar == nullptr) {
             continue;
           }
-          // Reveal the tab this button lives on so it can be measured/seen.
-          const int page = toolbar_stack_ != nullptr ? toolbar_stack_->indexOf(bar) : -1;
-          if (page >= 0 && toolbar_tab_bar_ != nullptr &&
-              toolbar_tab_bar_->currentIndex() != page) {
-            toolbar_tab_bar_->setCurrentIndex(page);
+          for (QAction* action : bar->actions()) {
+            if (action->iconText() != key) {
+              continue;
+            }
+            QWidget* widget = bar->widgetForAction(action);
+            if (widget != nullptr && widget->isVisible()) {
+              const QPoint top_left =
+                  tour_overlay_->mapFromGlobal(widget->mapToGlobal(QPoint(0, 0)));
+              return {top_left, widget->size()};
+            }
           }
-          QWidget* widget = bar->widgetForAction(action);
-          if (widget != nullptr && widget->isVisible()) {
-            const QPoint top_left = tour_overlay_->mapFromGlobal(widget->mapToGlobal(QPoint(0, 0)));
-            return {top_left, widget->size()};
-          }
+        }
+        return {};
+      };
+      QRect rect = find_on_shown_bars();
+      if (rect.isValid() || toolbar_tab_bar_ == nullptr) {
+        return rect;
+      }
+      for (int tab = 0; tab < toolbar_tab_bar_->count(); ++tab) {
+        toolbar_tab_bar_->setCurrentIndex(tab); // repopulates the tool row
+        rect = find_on_shown_bars();
+        if (rect.isValid()) {
+          return rect;
         }
       }
       return {};

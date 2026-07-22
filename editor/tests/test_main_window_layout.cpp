@@ -18,6 +18,7 @@
 #include <QSettings>
 #include <QStatusBar>
 #include <QStringList>
+#include <QTabBar>
 #include <QToolBar>
 #include <QWidget>
 #include <algorithm>
@@ -51,31 +52,50 @@ TEST_F(MainWindowLayoutTest, ToolbarsHoldNoVariableWidthLabels) {
   }
 }
 
-TEST_F(MainWindowLayoutTest, TabPageToolbarsZeroTheirOwnHorizontalPadding) {
-  // #371: the tabbed section's page toolbars nest inside the host QToolBar, so
-  // the theme's base `QToolBar { padding: 4px 8px }` would stack on the host's
-  // and indent the tool row 8 px past the core strip. The fix gives each page a
-  // widget-level stylesheet that zeroes its horizontal padding and bottom border
-  // (a global property selector did not reliably re-polish a toolbar nested in a
-  // QStackedWidget). Guard that every page still carries that stylesheet so a
-  // future rebuild of the pages cannot silently reintroduce the misalignment.
-  auto* host = window_.findChild<QToolBar*>(QStringLiteral("toolbar.tabs"));
-  ASSERT_NE(host, nullptr) << "the tabbed toolbar host is gone";
+TEST_F(MainWindowLayoutTest, ToolbarIsFlatAndTheToolRowRepopulatesPerTab) {
+  // #374: the tabbed toolbar was flattened. Every row is now a plain top-level
+  // QToolBar — the core strip (`toolbar.main`, which also carries the category
+  // tabs) and ONE tool row (`toolbar.tools`) — so they share the same left
+  // origin and align by construction, instead of a QToolBar nested in a
+  // QStackedWidget nested in a QToolBar (the old shape that kept misaligning).
+  // Switching the tab repopulates the single tool row rather than swapping pages.
+  auto* core = window_.findChild<QToolBar*>(QStringLiteral("toolbar.main"));
+  auto* tools = window_.findChild<QToolBar*>(QStringLiteral("toolbar.tools"));
+  ASSERT_NE(core, nullptr) << "the core strip is gone";
+  ASSERT_NE(tools, nullptr) << "the single tool row is gone";
 
-  int pages = 0;
-  for (const QToolBar* page : host->findChildren<QToolBar*>()) {
-    if (!page->objectName().startsWith(QStringLiteral("toolbar.tab."))) {
-      continue;
-    }
-    ++pages;
-    const QString sheet = page->styleSheet().simplified().remove(QLatin1Char(' '));
-    EXPECT_TRUE(sheet.contains(QStringLiteral("padding:4px0px")))
-        << "page '" << page->objectName().toStdString()
-        << "' does not zero its horizontal padding: " << page->styleSheet().toStdString();
-    EXPECT_TRUE(sheet.contains(QStringLiteral("border-bottom:none")))
-        << "page '" << page->objectName().toStdString() << "' still draws its own bottom border";
+  // The old nested hosting must not come back.
+  EXPECT_EQ(window_.findChild<QToolBar*>(QStringLiteral("toolbar.tabs")), nullptr)
+      << "the nested tab-host toolbar should be gone";
+  for (const QToolBar* bar : window_.findChildren<QToolBar*>()) {
+    EXPECT_FALSE(bar->objectName().startsWith(QStringLiteral("toolbar.tab.")))
+        << "a nested page toolbar '" << bar->objectName().toStdString() << "' still exists";
   }
-  EXPECT_GT(pages, 0) << "no tab page toolbars found under the host";
+
+  // The category tabs live on the core row.
+  auto* tabs = window_.findChild<QTabBar*>(QStringLiteral("toolbar_tabs"));
+  ASSERT_NE(tabs, nullptr) << "the category tab bar is gone";
+  EXPECT_EQ(tabs->parent(), core) << "the tabs must sit on the core strip, not a separate bar";
+  ASSERT_GT(tabs->count(), 1) << "expected at least two category tabs";
+
+  const auto icon_texts = [](const QToolBar* bar) {
+    QStringList out;
+    for (const QAction* action : bar->actions()) {
+      if (!action->iconText().isEmpty()) {
+        out << action->iconText();
+      }
+    }
+    return out;
+  };
+
+  tabs->setCurrentIndex(0);
+  const QStringList first = icon_texts(tools);
+  EXPECT_FALSE(first.isEmpty()) << "the tool row is empty on the first tab";
+
+  tabs->setCurrentIndex(1);
+  const QStringList second = icon_texts(tools);
+  EXPECT_FALSE(second.isEmpty()) << "the tool row is empty on the second tab";
+  EXPECT_NE(first, second) << "switching tabs must swap the single tool row's contents";
 }
 
 TEST_F(MainWindowLayoutTest, ToolOptionHintIsGone) {

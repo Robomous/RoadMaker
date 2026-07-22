@@ -44,10 +44,6 @@ QMainWindow::separator { background: @bg0; width: 3px; height: 3px; }
 
 QToolBar { background: @bg2; border: none; border-bottom: 1px solid @border;
            padding: 4px 8px; spacing: 2px; }
-/* NOTE: the tabbed section's nested page toolbars zero their own horizontal
-   padding + bottom border via a widget-level stylesheet in MainWindow::
-   build_toolbar() (a global property selector did not reliably re-polish a
-   toolbar nested inside a QStackedWidget) so the host provides the one frame. */
 QToolBar::separator { background: @border; width: 1px; margin: 6px 8px; }
 QToolBar QToolButton { background: transparent; color: @textSec; border: none;
                        border-radius: 4px; padding: 4px 8px; }

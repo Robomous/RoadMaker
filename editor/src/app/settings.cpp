@@ -9,11 +9,18 @@ const auto* kStateKey = "window/state";
 const auto* kRecentKey = "files/recent";
 const auto* kRecentProjectsKey = "files/recent_projects";
 
+// Bumped whenever the dockable toolbar/dock STRUCTURE changes so that a layout
+// saved by an older RoadMaker is rejected by restoreState (which returns false
+// on a version mismatch) rather than misapplied — otherwise a stale saved state
+// can park a since-renamed toolbar with a phantom offset. 2 = the flattened
+// tabbed toolbar (#374): core strip + one tool row, no nested page toolbars.
+constexpr int kWindowStateVersion = 2;
+
 } // namespace
 
 void Settings::save_window(const QMainWindow& window) {
   settings_.setValue(kGeometryKey, window.saveGeometry());
-  settings_.setValue(kStateKey, window.saveState());
+  settings_.setValue(kStateKey, window.saveState(kWindowStateVersion));
 }
 
 bool Settings::restore_window(QMainWindow& window) {
@@ -22,7 +29,9 @@ bool Settings::restore_window(QMainWindow& window) {
   if (geometry.isEmpty() || state.isEmpty()) {
     return false;
   }
-  return window.restoreGeometry(geometry) && window.restoreState(state);
+  // restoreState returns false on a version mismatch, so an out-of-date saved
+  // layout is discarded and the caller falls back to the default arrangement.
+  return window.restoreGeometry(geometry) && window.restoreState(state, kWindowStateVersion);
 }
 
 QStringList Settings::recent_files() const {
