@@ -14,6 +14,7 @@
 
 #include <array>
 #include <cmath>
+#include <cstddef>
 #include <optional>
 #include <stdexcept>
 #include <string>
@@ -134,6 +135,98 @@ TEST(SignalMeshes, MissingDynamicFlagDefaultsToSign) {
   const NetworkMesh mesh = build_network_mesh(network);
   ASSERT_EQ(mesh.signal_instances.size(), 1U);
   EXPECT_EQ(mesh.signal_instances[0].model_id, "sign_generic");
+}
+
+// --- editable text faces (p4-s9, #230) --------------------------------------
+
+// A StVO 310 town-entrance plate with text.
+Signal make_text_sign(std::string odr_id, double s, double t, std::string text) {
+  Signal sig = make_signal(std::move(odr_id), /*dynamic=*/false, s, t);
+  sig.type = "310";
+  sig.subtype = "-1";
+  sig.text = std::move(text);
+  return sig;
+}
+
+TEST(SignalMeshes, Type310ResolvesSignPlate) {
+  RoadNetwork network;
+  const RoadId road = author_street(network);
+  network.add_signal(road, make_text_sign("t", 40.0, 6.0, "City"));
+
+  const NetworkMesh mesh = build_network_mesh(network);
+  ASSERT_EQ(mesh.signal_instances.size(), 1U);
+  EXPECT_EQ(mesh.signal_instances[0].model_id, "sign_plate");
+}
+
+TEST(SignalMeshes, TextSignCarriesFaceOverlay) {
+  RoadNetwork network;
+  const RoadId road = author_street(network);
+  network.add_signal(road, make_text_sign("t", 40.0, 6.0, "City"));
+
+  const NetworkMesh mesh = build_network_mesh(network);
+  ASSERT_EQ(mesh.signal_instances.size(), 1U);
+  const SignalInstance& inst = mesh.signal_instances[0];
+  ASSERT_TRUE(inst.face.has_value());
+  const SignalFaceOverlay& face = *inst.face;
+  EXPECT_EQ(face.text, "City");
+  EXPECT_EQ(face.positions.size(), 12U); // 4 verts × xyz
+  EXPECT_EQ(face.normals.size(), 12U);
+  EXPECT_EQ(face.uvs.size(), 8U);     // 4 verts × uv
+  EXPECT_EQ(face.indices.size(), 6U); // 2 triangles
+  // Every UV lies in [0,1].
+  for (const double uv : face.uvs) {
+    EXPECT_GE(uv, 0.0);
+    EXPECT_LE(uv, 1.0);
+  }
+  // Every normal points +x (model-space front face).
+  for (std::size_t v = 0; v < 4; ++v) {
+    EXPECT_DOUBLE_EQ(face.normals[v * 3 + 0], 1.0);
+    EXPECT_DOUBLE_EQ(face.normals[v * 3 + 1], 0.0);
+    EXPECT_DOUBLE_EQ(face.normals[v * 3 + 2], 0.0);
+  }
+  // v = 0 sits at the TOP (higher z) than v = 1 — bitmap row 0 is the top row.
+  // Vertex 0 has uv (0,0); vertex 1 has uv (0,1); z0 > z1.
+  EXPECT_GT(face.positions[2], face.positions[5]);
+}
+
+TEST(SignalMeshes, EmptyTextHasNoFace) {
+  RoadNetwork network;
+  const RoadId road = author_street(network);
+  network.add_signal(road, make_text_sign("t", 40.0, 6.0, "")); // blank plate
+
+  const NetworkMesh mesh = build_network_mesh(network);
+  ASSERT_EQ(mesh.signal_instances.size(), 1U);
+  EXPECT_EQ(mesh.signal_instances[0].model_id, "sign_plate");
+  EXPECT_FALSE(mesh.signal_instances[0].face.has_value());
+}
+
+TEST(SignalMeshes, DynamicSignalHasNoFace) {
+  RoadNetwork network;
+  const RoadId road = author_street(network);
+  // Even if a dynamic signal carried text, a traffic light shows no text face.
+  Signal sig = make_signal("tl", /*dynamic=*/true, 40.0, -6.0);
+  sig.text = "ignored";
+  network.add_signal(road, sig);
+
+  const NetworkMesh mesh = build_network_mesh(network);
+  ASSERT_EQ(mesh.signal_instances.size(), 1U);
+  EXPECT_EQ(mesh.signal_instances[0].model_id, "signal_light");
+  EXPECT_FALSE(mesh.signal_instances[0].face.has_value());
+}
+
+TEST(SignalMeshes, GenericSignWithTextHasNoFace) {
+  RoadNetwork network;
+  const RoadId road = author_street(network);
+  // A 274 sign renders on the generic disc, which carries no FacePlate: text is
+  // preserved in the .xodr but not drawn this sprint.
+  Signal sig = make_signal("g", /*dynamic=*/false, 40.0, 6.0);
+  sig.text = "50";
+  network.add_signal(road, sig);
+
+  const NetworkMesh mesh = build_network_mesh(network);
+  ASSERT_EQ(mesh.signal_instances.size(), 1U);
+  EXPECT_EQ(mesh.signal_instances[0].model_id, "sign_generic");
+  EXPECT_FALSE(mesh.signal_instances[0].face.has_value());
 }
 
 } // namespace

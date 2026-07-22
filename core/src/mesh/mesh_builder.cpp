@@ -723,7 +723,31 @@ std::string_view signal_model_id(const Signal& signal) {
   if (signal.type == "205") { // StVO 205: Vorfahrt gewähren — yield/give way
     return "sign_yield";
   }
+  if (signal.type == "310") { // StVO 310: Ortstafel — town-entrance text plate
+    return "sign_plate";
+  }
   return "sign_generic";
+}
+
+/// A model-space text-face quad for a sign plate: a rectangle +0.005 m in front
+/// of the plate's +x face, spanning y (−half_w→+half_w) and z (centred on
+/// plate.z). Normals point +x (front-facing); UVs are [0,1] with v=0 at the TOP
+/// (z=+half_h) so the row-0-top rasterised bitmap drapes with no flip. Winding is
+/// CCW seen from +x. The bitmap is not baked here — consumers raster `text`.
+SignalFaceOverlay make_face_overlay(const std::string& text, const props::FacePlate& plate) {
+  const double x = plate.x + 0.005; // just in front of the plate face
+  const double z_top = plate.z + plate.half_h;
+  const double z_bot = plate.z - plate.half_h;
+  const double y_left = -plate.half_w; // u = 0
+  const double y_right = plate.half_w; // u = 1
+  SignalFaceOverlay face;
+  face.text = text;
+  // Vertices: 0 top-left, 1 bottom-left, 2 bottom-right, 3 top-right.
+  face.positions = {x, y_left, z_top, x, y_left, z_bot, x, y_right, z_bot, x, y_right, z_top};
+  face.normals = {1.0, 0.0, 0.0, 1.0, 0.0, 0.0, 1.0, 0.0, 0.0, 1.0, 0.0, 0.0};
+  face.uvs = {0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0, 0.0};
+  face.indices = {0, 1, 2, 0, 2, 3};
+  return face;
 }
 
 /// Placed signals a road owns, as INSTANCES of bundled signal models — the
@@ -741,11 +765,20 @@ void build_signal_instances(const RoadNetwork& network,
     std::array<double, 3> position = lateral_point(frame, signal.t);
     position[2] += signal.z_offset;
     const double heading = std::atan2(frame.sin_h, frame.cos_h) + signal.h_offset;
-    out.push_back(SignalInstance{.signal = signal_id,
-                                 .road = road_id,
-                                 .model_id = std::string(signal_model_id(signal)),
-                                 .position = position,
-                                 .heading = heading});
+    SignalInstance instance{.signal = signal_id,
+                            .road = road_id,
+                            .model_id = std::string(signal_model_id(signal)),
+                            .position = position,
+                            .heading = heading};
+    // Editable text face: only a STATIC sign with non-empty @text on a model
+    // that carries a face plate. Dynamic signals (traffic lights) never do.
+    if (!signal.dynamic.value_or(false) && !signal.text.empty()) {
+      const props::PropModel* model = props::model(instance.model_id);
+      if (model != nullptr && model->face_plate.has_value()) {
+        instance.face = make_face_overlay(signal.text, *model->face_plate);
+      }
+    }
+    out.push_back(std::move(instance));
   }
 }
 
