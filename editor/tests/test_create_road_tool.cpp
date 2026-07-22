@@ -301,6 +301,34 @@ TEST(CreateRoadTool, TemplateProfileIsAppliedOnCommit) {
   EXPECT_EQ(document.network().lane_section(road->sections.front())->lanes.size(), 7U);
 }
 
+// #355: the Create Road default template is urban-with-sidewalks. Committing
+// WITHOUT set_profile yields sidewalk lanes both sides (the rural default it
+// replaced has none).
+TEST(CreateRoadTool, DefaultTemplateIsUrbanWithSidewalks) {
+  Document document;
+  CreateRoadTool tool(document); // no set_profile: the tool default applies
+
+  click(tool, 0.0, 0.0);
+  click(tool, 90.0, 0.0);
+  ASSERT_TRUE(tool.key_press(Qt::Key_Return, Qt::NoModifier));
+
+  const RoadId created = document.network().find_road("1");
+  ASSERT_TRUE(created.is_valid());
+  const auto* road = document.network().road(created);
+  ASSERT_EQ(road->sections.size(), 1U);
+  const auto* section = document.network().lane_section(road->sections.front());
+  ASSERT_NE(section, nullptr);
+  // urban_sidewalk(): Driving + Sidewalk each side + center = 5 lanes.
+  EXPECT_EQ(section->lanes.size(), 5U);
+  int sidewalks = 0;
+  for (const auto lane_id : section->lanes) {
+    if (document.network().lane(lane_id)->type == roadmaker::LaneType::Sidewalk) {
+      ++sidewalks;
+    }
+  }
+  EXPECT_EQ(sidewalks, 2); // one each side
+}
+
 // --- tee / cross / extend on commit -----------------------------------------
 
 namespace {
