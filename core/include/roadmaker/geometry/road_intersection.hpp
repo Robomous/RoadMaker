@@ -58,4 +58,12 @@ struct BodyCrossing {
 [[nodiscard]] RM_API std::optional<BodyCrossing>
 first_body_crossing(const RoadNetwork& network, const ReferenceLine& fitted, RoadId exclude);
 
+/// EVERY road whose body `fitted` crosses (one crossing per road — its earliest
+/// interior hit), ascending by station on `fitted`. Same interior/exclude/
+/// connecting-road rules as first_body_crossing. Empty when `fitted` crosses no
+/// road's interior. Drives the Create Road tool's multi-crossing commit, where a
+/// single stroke forms one junction per crossed road (#354).
+[[nodiscard]] RM_API std::vector<BodyCrossing>
+body_crossings(const RoadNetwork& network, const ReferenceLine& fitted, RoadId exclude);
+
 } // namespace roadmaker

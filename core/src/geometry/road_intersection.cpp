@@ -129,4 +129,40 @@ first_body_crossing(const RoadNetwork& network, const ReferenceLine& fitted, Roa
   return best;
 }
 
+std::vector<BodyCrossing>
+body_crossings(const RoadNetwork& network, const ReferenceLine& fitted, RoadId exclude) {
+  std::vector<BodyCrossing> result;
+  if (fitted.empty()) {
+    return result;
+  }
+  network.for_each_road([&](RoadId id, const Road& road) {
+    if (id == exclude || road.plan_view.empty() || road.junction.is_valid()) {
+      return; // skip the excluded road and generated connecting roads
+    }
+    const auto crossings = intersect_lines(fitted, road.plan_view);
+    if (!crossings.has_value()) {
+      return;
+    }
+    // One junction per crossed road: keep only its earliest interior hit (a
+    // second crossing of the same road would land on a piece already inside the
+    // junction formed here).
+    std::optional<BodyCrossing> first;
+    for (const RoadCrossing& crossing : *crossings) {
+      if (!interior(crossing.s_a, fitted.length()) ||
+          !interior(crossing.s_b, road.plan_view.length())) {
+        continue;
+      }
+      if (!first.has_value() || crossing.s_a < first->s_line) {
+        first = BodyCrossing{
+            .road = id, .s_line = crossing.s_a, .s_road = crossing.s_b, .point = crossing.point};
+      }
+    }
+    if (first.has_value()) {
+      result.push_back(*first);
+    }
+  });
+  std::ranges::sort(result, {}, &BodyCrossing::s_line);
+  return result;
+}
+
 } // namespace roadmaker

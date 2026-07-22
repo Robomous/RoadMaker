@@ -3,6 +3,7 @@
 
 #include "tools/create_road_tool.hpp"
 
+#include "roadmaker/edit/assembly.hpp"
 #include "roadmaker/edit/operations.hpp"
 #include "roadmaker/geometry/reference_line.hpp"
 #include "roadmaker/geometry/road_intersection.hpp"
@@ -238,12 +239,13 @@ void CreateRoadTool::commit() {
   const PlacedPoint& first = points_.front();
   const PlacedPoint& last = points_.back();
 
-  // Which assembly fires, in priority order (02_editing_tools.md §2):
-  //   (i)   first point on a road END  → create_linked_road (weld/chain);
-  //   (ii)  first/last point on a road SIDE → create_teed_road (T-junction);
-  //   (iii) the fitted line crosses a road interior → create_crossing_road (X);
-  //   (iv)  otherwise → plain create_road.
-  std::unique_ptr<edit::Command> command;
+  // Enumerate EVERY junction the stroke forms and commit them as ONE undoable
+  // command (#354): a genuine road-END first point welds, a first/last point on
+  // a road SIDE tees, and every road the fitted line crosses forms its own X.
+  //   Start: end snap → weld (chain); else first-point side snap → tee.
+  //   End:   last-point side snap → tee.
+  //   Body:  each crossed road (body_crossings), in order along the stroke.
+  edit::assembly::RoadInteractions interactions;
   if (first.kind == edit::SnapKind::RoadEndpoint && first.snap_road.has_value() &&
       network.road(*first.snap_road) != nullptr) {
     const auto& plan = network.road(*first.snap_road)->plan_view;
@@ -251,29 +253,40 @@ void CreateRoadTool::commit() {
     const PathPoint end = plan.evaluate(plan.length());
     const double to_start = std::hypot(first.position.x - start.x, first.position.y - start.y);
     const double to_end = std::hypot(first.position.x - end.x, first.position.y - end.y);
-    const RoadEnd source{.road = *first.snap_road,
-                         .contact = to_start <= to_end ? ContactPoint::Start : ContactPoint::End};
-    command = edit::create_linked_road(
-        network, std::move(waypoints), profile_, {}, source, locked_headings());
-  } else if (first.side_snap.has_value() || last.side_snap.has_value()) {
-    const bool tee_first = first.side_snap.has_value();
-    const edit::SideSnap& snap = tee_first ? *first.side_snap : *last.side_snap;
-    const ContactPoint teed = tee_first ? ContactPoint::Start : ContactPoint::End;
-    command = edit::create_teed_road(
-        network, std::move(waypoints), profile_, {}, snap.road, snap.s, teed, locked_headings());
-  } else {
-    // Does the fitted reference line cross an existing road's interior?
-    std::optional<BodyCrossing> crossing;
-    if (const auto line = fit_clothoid_path(waypoints, locked_headings()); line.has_value()) {
-      crossing = first_body_crossing(network, *line, RoadId{});
-    }
-    if (crossing.has_value()) {
-      command = edit::create_crossing_road(
-          network, std::move(waypoints), profile_, {}, crossing->road, locked_headings());
-    } else {
-      command = edit::create_road(std::move(waypoints), profile_, {}, locked_headings());
+    interactions.start_link =
+        RoadEnd{.road = *first.snap_road,
+                .contact = to_start <= to_end ? ContactPoint::Start : ContactPoint::End};
+  } else if (first.side_snap.has_value()) {
+    interactions.start_tee = std::pair{first.side_snap->road, first.side_snap->s};
+  }
+  if (last.side_snap.has_value()) {
+    interactions.end_tee = std::pair{last.side_snap->road, last.side_snap->s};
+  }
+  if (const auto line = fit_clothoid_path(waypoints, locked_headings()); line.has_value()) {
+    for (const BodyCrossing& crossing : body_crossings(network, *line, RoadId{})) {
+      // A road teed/welded at an endpoint is not also crossed (the tee would put
+      // it in a junction before the cross runs); drop any such overlap.
+      const bool is_tee_target =
+          (interactions.start_link.has_value() && interactions.start_link->road == crossing.road) ||
+          (interactions.start_tee.has_value() && interactions.start_tee->first == crossing.road) ||
+          (interactions.end_tee.has_value() && interactions.end_tee->first == crossing.road);
+      if (!is_tee_target) {
+        interactions.crossings.push_back(crossing.road);
+      }
     }
   }
+
+  const bool has_interaction = interactions.start_link.has_value() ||
+                               interactions.start_tee.has_value() ||
+                               interactions.end_tee.has_value() || !interactions.crossings.empty();
+  std::unique_ptr<edit::Command> command =
+      has_interaction ? edit::assembly::create_road_with_interactions(network,
+                                                                      std::move(waypoints),
+                                                                      profile_,
+                                                                      {},
+                                                                      locked_headings(),
+                                                                      std::move(interactions))
+                      : edit::create_road(std::move(waypoints), profile_, {}, locked_headings());
   const Expected<void> pushed = document_.push_command(std::move(command));
   if (!pushed.has_value()) {
     // Session kept: the points are the user's work; fix and retry.
@@ -342,15 +355,14 @@ PreviewGeometry CreateRoadTool::preview() const {
     }
     if (const auto line = fit_clothoid_path(candidate, locked); line.has_value()) {
       append_polyline_of(geometry, *line);
-      // Cross hint: an X where the fitted line would cross a road interior, so
-      // the user sees the 4-way will fire before committing. A tangent-ray first
-      // point is a plain/crossing road (not a chain), so it still shows the hint;
-      // only a genuine endpoint chain (branch i) suppresses it.
+      // Cross hints: an X at EVERY road interior the fitted line crosses, so the
+      // user sees all the 4-ways that will fire before committing (#354). A
+      // tangent-ray first point is a plain/crossing road (not a chain), so it
+      // still shows the hints; only a genuine endpoint chain suppresses them.
       if (!points_.front().side_snap.has_value() &&
           points_.front().kind != edit::SnapKind::RoadEndpoint) {
-        if (const auto crossing = first_body_crossing(document_.network(), *line, RoadId{});
-            crossing.has_value()) {
-          append_cross(geometry, crossing->point.x, crossing->point.y, kSnapMarkerRadius * 1.5);
+        for (const BodyCrossing& crossing : body_crossings(document_.network(), *line, RoadId{})) {
+          append_cross(geometry, crossing.point.x, crossing.point.y, kSnapMarkerRadius * 1.5);
         }
       }
     }

@@ -5280,6 +5280,169 @@ cross_roads(const RoadNetwork& network, RoadId a, RoadId b, IntersectionParams p
       std::string(kName), DirtySet{.roads = {a, b}, .topology = true}, std::move(builders));
 }
 
+std::unique_ptr<Command> create_road_with_interactions(const RoadNetwork& network,
+                                                       std::vector<Waypoint> waypoints,
+                                                       LaneProfile profile,
+                                                       std::string name,
+                                                       EndpointHeadings locked,
+                                                       RoadInteractions interactions,
+                                                       IntersectionParams params) {
+  static constexpr std::string_view kName = "Create Road";
+
+  std::vector<RoadId> existing;
+  network.for_each_road([&](RoadId id, const Road&) { existing.push_back(id); });
+
+  // Running continuation piece of the authored road: each crossing splits it and
+  // the tail becomes the new active, carrying any later crossings.
+  struct Running {
+    RoadId active;
+  };
+
+  auto run = std::make_shared<Running>();
+
+  std::vector<CompositeCommand::Builder> builders;
+
+  // Author the base road, then discover its id off the mutated network.
+  builders.push_back(
+      [waypoints = std::move(waypoints),
+       profile = std::move(profile),
+       name = std::move(name),
+       locked](RoadNetwork&) { return create_road(waypoints, profile, name, locked); });
+  builders.push_back([existing = std::move(existing), run](RoadNetwork& net) {
+    net.for_each_road([&](RoadId id, const Road&) {
+      if (std::ranges::find(existing, id) == existing.end()) {
+        run->active = id;
+      }
+    });
+    return std::make_unique<GenericCommand>(std::string(kName), DirtySet{});
+  });
+
+  // Start weld (chain): a no-op stage when the ends cannot actually link, so the
+  // create never fails on the weld (mirrors create_linked_road). A start tee is
+  // the side-snap alternative; the two are mutually exclusive.
+  if (interactions.start_link.has_value()) {
+    builders.push_back(
+        [run, link = *interactions.start_link](RoadNetwork& net) -> std::unique_ptr<Command> {
+          const RoadEnd new_start{.road = run->active, .contact = ContactPoint::Start};
+          if (check_linkable(net, new_start, link).has_value()) {
+            return close_gap(net, new_start, link);
+          }
+          return std::make_unique<GenericCommand>(std::string(kName), DirtySet{});
+        });
+  } else if (interactions.start_tee.has_value()) {
+    builders.push_back([run,
+                        target = interactions.start_tee->first,
+                        s = interactions.start_tee->second,
+                        generation = params.generation](RoadNetwork& net) {
+      return attach_t_junction(net,
+                               RoadEnd{.road = run->active, .contact = ContactPoint::Start},
+                               target,
+                               s,
+                               TAttachOptions{.generation = generation});
+    });
+  }
+
+  // One X junction per crossed road, in order along the stroke. Each crossing
+  // re-derives its station on the LIVE active piece, so splitting for an earlier
+  // crossing never invalidates a later one. The split/delete/junction ladder and
+  // its lazy id reads mirror cross_roads exactly.
+  for (const RoadId crossed : interactions.crossings) {
+    struct Cx {
+      double s_a = 0.0;
+      double s_b = 0.0;
+      double gap = 0.0;
+      RoadId a_tail;
+      RoadId c_tail;
+    };
+
+    auto cx = std::make_shared<Cx>();
+    builders.push_back([run, crossed, cx, params](RoadNetwork& net) -> std::unique_ptr<Command> {
+      const Road* ra = net.road(run->active);
+      const Road* rc = net.road(crossed);
+      if (ra == nullptr || rc == nullptr) {
+        return invalid_command(
+            std::string(kName),
+            Error{.code = ErrorCode::InvalidArgument, .message = "stale road id at crossing"});
+      }
+      if (ra->junction.is_valid() || rc->junction.is_valid()) {
+        return invalid_command(std::string(kName),
+                               Error{.code = ErrorCode::InvalidArgument,
+                                     .message = "a road inside a junction cannot be crossed"});
+      }
+      auto crossings = road_intersections(net, run->active, crossed);
+      if (!crossings.has_value()) {
+        return invalid_command(std::string(kName), crossings.error());
+      }
+      const double len_a = ra->plan_view.length();
+      const double len_b = rc->plan_view.length();
+      for (const RoadCrossing& c : *crossings) {
+        const double g = params.gap_m > 0.0 ? params.gap_m
+                                            : std::max(std::max(half_width_at(net, *ra, c.s_a),
+                                                                half_width_at(net, *rc, c.s_b)) +
+                                                           1.0,
+                                                       params.generation.min_turn_radius_m + 1.0);
+        if (c.s_a - g > tol::kLength && c.s_a + g < len_a - tol::kLength &&
+            c.s_b - g > tol::kLength && c.s_b + g < len_b - tol::kLength) {
+          cx->s_a = c.s_a;
+          cx->s_b = c.s_b;
+          cx->gap = g;
+          return split_road(net, run->active, c.s_a + g);
+        }
+      }
+      return invalid_command(std::string(kName),
+                             Error{.code = ErrorCode::InvalidArgument,
+                                   .message = "the stroke no longer crosses with room for a "
+                                              "junction after an earlier split"});
+    });
+    builders.push_back([run, cx](RoadNetwork& net) {
+      cx->a_tail = std::get<RoadId>(net.road(run->active)->successor->target);
+      return split_road(net, run->active, cx->s_a - cx->gap);
+    });
+    builders.push_back([run, cx](RoadNetwork& net) {
+      const RoadId a_middle = std::get<RoadId>(net.road(run->active)->successor->target);
+      return delete_road(net, a_middle);
+    });
+    builders.push_back(
+        [crossed, cx](RoadNetwork& net) { return split_road(net, crossed, cx->s_b + cx->gap); });
+    builders.push_back([crossed, cx](RoadNetwork& net) {
+      cx->c_tail = std::get<RoadId>(net.road(crossed)->successor->target);
+      return split_road(net, crossed, cx->s_b - cx->gap);
+    });
+    builders.push_back([crossed, cx](RoadNetwork& net) {
+      const RoadId c_middle = std::get<RoadId>(net.road(crossed)->successor->target);
+      return delete_road(net, c_middle);
+    });
+    builders.push_back([run, crossed, cx, generation = params.generation](RoadNetwork& net) {
+      const std::array<RoadEnd, 4> ends{
+          RoadEnd{.road = run->active, .contact = ContactPoint::End},
+          RoadEnd{.road = cx->a_tail, .contact = ContactPoint::Start},
+          RoadEnd{.road = crossed, .contact = ContactPoint::End},
+          RoadEnd{.road = cx->c_tail, .contact = ContactPoint::Start},
+      };
+      auto command = create_junction(net, ends, generation);
+      run->active = cx->a_tail; // the continuation carries the remaining crossings
+      return command;
+    });
+  }
+
+  // End tee: the final tail's End into the target side.
+  if (interactions.end_tee.has_value()) {
+    builders.push_back([run,
+                        target = interactions.end_tee->first,
+                        s = interactions.end_tee->second,
+                        generation = params.generation](RoadNetwork& net) {
+      return attach_t_junction(net,
+                               RoadEnd{.road = run->active, .contact = ContactPoint::End},
+                               target,
+                               s,
+                               TAttachOptions{.generation = generation});
+    });
+  }
+
+  return std::make_unique<CompositeCommand>(
+      std::string(kName), DirtySet{.topology = true}, std::move(builders));
+}
+
 } // namespace assembly
 
 std::unique_ptr<Command>
