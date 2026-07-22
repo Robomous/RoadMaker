@@ -207,6 +207,42 @@ TEST(CreateRoadTool, ClosingOntoARoadEndLocksTheArrivalHeading) {
       std::remainder(arrive.hdg - 0.0, 2.0 * std::numbers::pi), 0.0, roadmaker::tol::kAngle);
 }
 
+// Issue #352: a first click merely NEAR a road's forward extension ray (a
+// tangent-continuation snap, not an endpoint snap) must not lock the fit's
+// start heading. Locking it — with the ray heading opposing where the user then
+// draws — produced a teardrop loop instead of a plain segment. The point's
+// position still snaps to the ray; only the heading lock is withheld, so two
+// clicks yield a straight road.
+TEST(CreateRoadTool, TangentBandFirstClickDoesNotLockHeadingIntoALoop) {
+  Document document;
+  // A road travelling -x, so its END is at (0,0) with a continuation heading of
+  // pi; its tangent ray extends into x < 0.
+  ASSERT_TRUE(document
+                  .push_command(roadmaker::edit::create_road(
+                      {Waypoint{.x = 100.0, .y = 0.0}, Waypoint{.x = 0.0, .y = 0.0}},
+                      LaneProfile::two_lane_rural(),
+                      "First"))
+                  .has_value());
+
+  CreateRoadTool tool(document);
+  tool.set_snap_options({.radius = 2.0});
+  // First click: 1 m off the extension ray, 50 m beyond the end — a tangent snap
+  // (heading pi), NOT an endpoint snap. Then draw back toward +x, roughly
+  // opposing that ray heading.
+  click(tool, -50.0, 1.0);
+  click(tool, 30.0, 15.0);
+  ASSERT_TRUE(tool.key_press(Qt::Key_Return, Qt::NoModifier));
+
+  const RoadId created = document.network().find_road("2");
+  ASSERT_TRUE(created.is_valid());                    // a plain road formed, not a failed link
+  ASSERT_EQ(document.network().junction_count(), 0U); // no weld/tee/cross
+  const auto& line = document.network().road(created)->plan_view;
+  // Snapped start (-50,0) to (30,15): chord ~81.4 m. A straight fit stays near
+  // the chord; the pre-fix teardrop looped far past it.
+  const double chord = std::hypot(30.0 - (-50.0), 15.0 - 0.0);
+  EXPECT_LT(line.length(), 1.5 * chord);
+}
+
 TEST(CreateRoadTool, FailedCommandKeepsTheSessionAndPushesNothing) {
   Document document;
   const std::string before = xodr(document);

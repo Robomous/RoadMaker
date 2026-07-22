@@ -66,11 +66,15 @@ public:
 private:
   /// One placed waypoint plus the continuation heading of the snap that
   /// produced it (set for road-end and tangent snaps, nullopt otherwise).
+  /// `kind` records WHICH snap produced the point so the commit path can tell a
+  /// genuine chaining intent (RoadEndpoint) from an incidental tangent-ray hit
+  /// (TangentContinuation) — only the former locks a fit heading (#352).
   struct PlacedPoint {
     Waypoint position;
     std::optional<double> heading;
-    std::optional<RoadId> snap_road;         ///< source road when snapped to its end
-    std::optional<edit::SideSnap> side_snap; ///< target road body when snapped to a side
+    edit::SnapKind kind = edit::SnapKind::Grid; ///< snap that produced this point
+    std::optional<RoadId> snap_road;            ///< source road when snapped to its end
+    std::optional<edit::SideSnap> side_snap;    ///< target road body when snapped to a side
   };
 
   [[nodiscard]] std::optional<edit::SnapResult> snap(const Waypoint& cursor) const;

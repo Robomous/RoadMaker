@@ -244,7 +244,27 @@ Expected<ReferenceLine> fit_clothoid_path(std::span<const Waypoint> waypoints,
   if (locked.end.has_value()) {
     headings.back() = *locked.end;
   }
-  return fit_clothoid_path(waypoints, headings);
+  auto fitted = fit_clothoid_path(waypoints, headings);
+  if (!fitted.has_value()) {
+    // A degenerate locked pose can make the Hermite build fail outright; the
+    // point-only fit is the safe fallback rather than a hard error (#352).
+    return estimated;
+  }
+  // Safety net (#352): a locked heading roughly anti-parallel to the chord makes
+  // the two-pose Hermite loop back on itself (a teardrop). Never return that
+  // silently — fall back to the straight point-only fit. Mirrors the k=4 loop
+  // guard in edit::check_fit_bounded (which gates the AUTHORING paths that reach
+  // here); the raw span<double> overload used by §2.5 foreign-geometry
+  // derivation is deliberately NOT gated and does not pass through here.
+  constexpr double kMaxLockedFitLoopFactor = 4.0;
+  double span = 0.0;
+  for (std::size_t i = 1; i < waypoints.size(); ++i) {
+    span += std::hypot(waypoints[i].x - waypoints[i - 1].x, waypoints[i].y - waypoints[i - 1].y);
+  }
+  if (fitted->length() > kMaxLockedFitLoopFactor * std::max(span, tol::kLength)) {
+    return estimated;
+  }
+  return fitted;
 }
 
 Expected<RoadId> author_clothoid_road(RoadNetwork& network,
