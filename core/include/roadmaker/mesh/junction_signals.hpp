@@ -4,6 +4,7 @@
 #include "roadmaker/road/id.hpp"
 #include "roadmaker/road/network.hpp"
 
+#include <cstddef>
 #include <string>
 #include <vector>
 
@@ -98,5 +99,32 @@ struct JunctionApproachInfo {
 /// (asam.net:xodr:1.9.0:junctions.virtual.no_controllers) either.
 [[nodiscard]] RM_API std::vector<JunctionApproachInfo> junction_signals(const RoadNetwork& network,
                                                                         JunctionId junction_id);
+
+/// Half-width [rad] of the band in which two approach headings are treated as
+/// OPPOSITE, and therefore as the two arms of one signal AXIS (30 degrees).
+///
+/// Deliberately independent of `kManeuverStraightThreshold`, which happens to
+/// share the value: that one labels a MOVEMENT for the author, this one pairs
+/// ARMS for a phase plan. Changing either must not change the other.
+///
+/// Lives here beside `cluster_signal_axes`, its only consumer, having been
+/// promoted out of `edit::` so `mesh::junction_phases()` can derive the default
+/// cycle without depending on the command layer (the `lane_boundary_offsets`
+/// promotion precedent).
+inline constexpr double kSignalizeAxisTolerance = 0.5235987755982988; // 30 deg
+
+/// Groups the approaches of a junction into signal AXES by clustering their
+/// travel headings (p4-s7, issue #228; promoted to `mesh::` for p4-s8's phase
+/// derivation).
+///
+/// The rule, deliberately arm-count-agnostic: walk the approaches in the
+/// junction's connection order; the first unassigned one opens an axis, and the
+/// still-unassigned approach whose heading is CLOSEST to opposite it — within
+/// `kSignalizeAxisTolerance` of exactly pi apart — joins it. An axis therefore
+/// holds one or two arms, and an arm with no opposite partner (the stem of a T,
+/// the fifth leg of a star) forms its own single-arm axis instead of being
+/// forced into someone else's phase. Indices are into the input vector.
+[[nodiscard]] RM_API std::vector<std::vector<std::size_t>>
+cluster_signal_axes(const std::vector<JunctionApproachInfo>& approaches);
 
 } // namespace roadmaker

@@ -73,6 +73,7 @@ enum class Id {
   ToolManeuver,
   ToolSignal,
   LaneWidthEditor,
+  SignalPhaseEditor,
   MergeRoads,
   // View
   AddFromLibrary,

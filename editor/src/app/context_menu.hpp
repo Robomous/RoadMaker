@@ -64,6 +64,12 @@ struct ContextMenuDeps {
   /// crosswalk.zebra defaults. Empty (the default) uses plain CrosswalkParams —
   /// the pre-p3-s2 behaviour and what headless tests without a Library get.
   std::function<edit::CrosswalkParams()> default_crosswalk_params;
+
+  /// Opens the 2D Editor's Signal Phases tab for `junction` (p4-s8): the "Signal
+  /// Phases…" item calls this after selecting the junction. Opening a dock is not
+  /// a document command, so it is a MainWindow-supplied callback — the menu stays
+  /// headless-testable, and a test without it simply gets no phase-editor item.
+  std::function<void(JunctionId)> open_signal_phase_editor;
 };
 
 /// The menu descriptor for `context`. Pure logic (no QMenu) — the seam the

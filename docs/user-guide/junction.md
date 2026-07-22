@@ -147,8 +147,32 @@ data to make. The templates do not assume four arms: they cluster the approaches
 into axes by heading, so a three-arm T-junction signalizes just as cleanly.
 
 The signal heads render in the viewport through the ordinary prop path, so you
-see them immediately. When the phase editor lands (p4-s8) it edits the
-controllers these templates create.
+see them immediately. The **Signal Phase Editor** (below) then edits the timing
+of the controllers a dynamic template creates.
+
+### Signal Phase Editor
+
+A dynamic junction runs a **phase cycle** — which lights are green, yellow or
+red over time. Open the editor with **⇧G**, by activating the Signal tool, or
+from the junction's right-click **Signal Phases…**; it appears as a page in the
+2D Editor pane. There is one **row per controller** and one **column per phase**,
+each column as wide as its duration and coloured red / yellow / green.
+
+- **Scrub** the playhead to preview the cycle: the signal heads in the viewport
+  light up for the phase under the playhead, the connecting roads that may move
+  brighten, and dotted links run from each green head to the movements it gates.
+- **Click a cell** to cycle its controller through green → yellow → red for that
+  phase; **drag a column boundary** to change a phase's duration.
+- **Right-click** for Add / Duplicate / Delete phase and Next / Previous; the
+  **Delete** key removes the selected phase and **←/→** step through them.
+
+Until you touch it, the cycle is the **derived default** — one green phase per
+axis plus a short yellow clearance (20 s / 3 s) — and nothing extra is written to
+the file. Your first edit *materializes* that cycle and starts saving it; every
+edit is a single undoable step, and `Ctrl+Z` on the first one returns the
+junction to the derived cycle. OpenDRIVE deliberately keeps signal timing
+outside the standard, so the cycle is saved as RoadMaker `<userData>` alongside
+the standard `<signal>`/`<controller>` wiring (see *What is saved*).
 
 ### Mount props
 
@@ -176,8 +200,10 @@ top-level `<controller>`/`<control>` groups, and a `<junction><controller>`
 synchronization reference — that any consumer reads. Which template you applied
 and the signal → mount-prop pairings ride the junction's `rm:signal` and
 `rm:signalmount` extension records, so reopening the file shows the current
-template and a re-save without edits is byte-identical. A junction with no
-signalization writes none of these, so existing files are untouched.
+template and a re-save without edits is byte-identical. An authored phase cycle
+rides a third record, `rm:phases`, on the same junction (a junction still on its
+derived default cycle writes none) — so the timing round-trips too. A junction
+with no signalization writes none of these, so existing files are untouched.
 
 A foreign junction (read from another tool's file, with no recorded arms) can be
 inspected but not signalized until you recreate it — the same rule as maneuvers.

@@ -11,6 +11,8 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstddef>
+#include <numbers>
 #include <set>
 #include <string>
 #include <vector>
@@ -134,6 +136,39 @@ std::vector<JunctionApproachInfo> junction_signals(const RoadNetwork& network,
   });
 
   return out;
+}
+
+std::vector<std::vector<std::size_t>>
+cluster_signal_axes(const std::vector<JunctionApproachInfo>& approaches) {
+  std::vector<bool> assigned(approaches.size(), false);
+  std::vector<std::vector<std::size_t>> axes;
+  for (std::size_t i = 0; i < approaches.size(); ++i) {
+    if (assigned[i]) {
+      continue;
+    }
+    assigned[i] = true;
+    std::vector<std::size_t> axis{i};
+    std::size_t partner = approaches.size();
+    double best = kSignalizeAxisTolerance;
+    for (std::size_t j = i + 1; j < approaches.size(); ++j) {
+      if (assigned[j]) {
+        continue;
+      }
+      const double delta =
+          std::abs(std::remainder(approaches[j].heading - approaches[i].heading - std::numbers::pi,
+                                  2.0 * std::numbers::pi));
+      if (delta <= best) {
+        best = delta;
+        partner = j;
+      }
+    }
+    if (partner < approaches.size()) {
+      assigned[partner] = true;
+      axis.push_back(partner);
+    }
+    axes.push_back(std::move(axis));
+  }
+  return axes;
 }
 
 } // namespace roadmaker

@@ -15,6 +15,7 @@
 #include "roadmaker/road/signal.hpp"
 
 #include <QString>
+#include <array>
 #include <optional>
 #include <string>
 
@@ -56,5 +57,14 @@ nearest_signal_station(const RoadNetwork& network, double x, double y);
 /// and the generic "sign" → 274/50 (speed-limit-50, a recognisable default the
 /// user can retype). Orientation "+" faces the signal along increasing s.
 [[nodiscard]] Signal make_signal(const QString& tag, std::string odr_id, double s, double t);
+
+/// World position of a signal head: its (s, t) on the owning road, lifted by its
+/// own zOffset — the exact projection the mesh builder instances the head at, so
+/// an overlay marker never drifts from the rendered pole. `nullopt` when the
+/// signal, its road, or the road's geometry is gone. Shared by the Signal tool's
+/// structural overlay and p4-s8's phase overlay so the two never disagree about
+/// where a head is.
+[[nodiscard]] std::optional<std::array<double, 3>> signal_world(const RoadNetwork& network,
+                                                                SignalId id);
 
 } // namespace roadmaker::editor

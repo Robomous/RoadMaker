@@ -274,6 +274,64 @@ struct SignalMount {
 /// `kMaxManeuverControlPoints` does.
 inline constexpr std::size_t kMaxSignalMountParts = 16;
 
+/// The state a signal group shows during one phase of the cycle (p4-s8, issue
+/// #229). Yellow is an EXPLICIT value, never an automatic transition — the
+/// derived cycle emits its own yellow clearance phases, so the timeline's
+/// red-yellow-green intervals are just phase columns and no separate transition
+/// model is needed. `Off` is the flashing/dark state a maintenance cycle uses.
+enum class SignalState { Red, Yellow, Green, Off };
+
+/// One controller's state within one `SignalPhase` (p4-s8, issue #229).
+///
+/// Keyed by the STRING controller id, for the same reason `Control` references
+/// its signal by @signalId and not by a `ControllerId`: it is what OpenDRIVE
+/// stores, it stays faithful to a dangling reference in third-party input, and
+/// it survives the controller being erased and restored by the command layer.
+/// Resolving it to a live controller (and thence to signal heads) is a query's
+/// job — `mesh::junction_phases()` — never the model's.
+struct PhaseState {
+  std::string controller_odr_id; ///< id of the top-level `<controller>`
+  SignalState state = SignalState::Red;
+};
+
+/// One phase of a junction's signal cycle (p4-s8, issue #229): a labelled
+/// interval during which each signal group shows a fixed state.
+///
+/// LAYER 1, RoadMaker-only (ADR-0008): OpenDRIVE §14.6 deliberately EXCLUDES
+/// the cycle itself — "dynamic content like the signal cycle itself is
+/// specified outside of this standard, for example, in ASAM OpenSCENARIO"
+/// (§14.6). Phases therefore ride `<userData code="rm:phases">`; a foreign
+/// reader loses nothing by ignoring them, and the schema mirrors OpenSCENARIO
+/// 1.4.0 `Phase{duration,name,trafficSignalStates}` so the P8 export to
+/// traffic-signal actions is near-mechanical.
+///
+/// State is SPARSE: an entry lists only its non-Red controllers, `<=1` per
+/// controller, so an unstated member controller shows Red and an all-red
+/// clearance phase carries an empty `states` list.
+struct SignalPhase {
+  /// Optional label (token alphabet `[A-Za-z0-9_.-]+`, or empty). The derived
+  /// cycle names phases `axis0`, `axis0_clear`, ...; a user phase may be empty.
+  std::string name;
+
+  /// Duration [s]. An authored phase is `> 0` and `<= kMaxSignalPhaseDuration`;
+  /// the writer skips (and the reader rejects) anything outside that band.
+  double duration = 0.0;
+
+  /// The non-Red controller states, `<= 1` per controller and bounded by
+  /// `kMaxSignalPhaseStates`. Everything a member controller is not listed with
+  /// is Red by omission.
+  std::vector<PhaseState> states;
+};
+
+/// Upper bounds on an authored cycle. `kMaxSignalPhases` bounds the phase list,
+/// `kMaxSignalPhaseStates` bounds one phase's state list, and
+/// `kMaxSignalPhaseDuration` [s] caps a single phase — exactly as
+/// `kMaxSignalMountParts` bounds `SignalMount`, so the persistence grammar's
+/// lists stay short and a reader can reject a corrupt record outright.
+inline constexpr std::size_t kMaxSignalPhases = 32;
+inline constexpr std::size_t kMaxSignalPhaseStates = 32;
+inline constexpr double kMaxSignalPhaseDuration = 3600.0;
+
 /// Which auto-signalization template was applied to a junction (p4-s7, issue
 /// #228), so the tool can show it and re-apply coherently.
 ///
@@ -391,6 +449,23 @@ struct Junction {
   /// keyed by signal odr id. Sparse: a signal placed without a mount prop has
   /// no entry, and an entry whose signal or object is gone lies dormant.
   std::vector<SignalMount> signal_mounts;
+
+  /// The signal CYCLE — an ordered list of phases (cycle order = storage order)
+  /// timing the junction's dynamic signal groups (p4-s8, issue #229). Layer 1,
+  /// RoadMaker-only: OpenDRIVE §14.6 excludes signal timing, so this rides
+  /// `<userData code="rm:phases">` (ADR-0008) and a foreign reader ignores it.
+  ///
+  /// EMPTY ⇔ UNAUTHORED ⇔ the effective cycle is DERIVED. `mesh::junction_phases()`
+  /// synthesizes a default red-yellow-green cycle from the sync group whenever
+  /// this list is empty; the FIRST edit materializes that whole derived cycle
+  /// SPARSELY into this list (the corner/stopline/maneuver override idiom). A
+  /// zero-phase authored cycle is UNREPRESENTABLE — a signalized junction always
+  /// has an effective cycle — so removing the last phase is rejected in favour
+  /// of `edit::clear_signal_phases`, which returns the junction to derivation.
+  ///
+  /// States are sparse (see `SignalPhase`): an unstated member controller shows
+  /// Red. Always empty on a span (virtual) junction, which has no controllers.
+  std::vector<SignalPhase> phases;
 
   /// Bare catalog material name for the junction carriageway (the floor).
   /// Empty ⇒ the derived asphalt look, mirroring `Surface::material`.

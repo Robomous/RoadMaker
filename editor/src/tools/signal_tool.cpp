@@ -36,22 +36,6 @@ void append_segment(std::vector<double>& lines,
                {a[0], a[1], a[2] + kSignalOverlayLift, b[0], b[1], b[2] + kSignalOverlayLift});
 }
 
-/// World position of a signal: its (s, t) on its owning road, lifted by its own
-/// zOffset — the same projection the mesh builder instances the head at, so the
-/// overlay never drifts from the rendered pole.
-std::optional<std::array<double, 3>> signal_world(const RoadNetwork& network, SignalId id) {
-  const Signal* signal = network.signal(id);
-  if (signal == nullptr) {
-    return std::nullopt;
-  }
-  const Road* road = network.road(signal->road);
-  if (road == nullptr || road->plan_view.empty()) {
-    return std::nullopt;
-  }
-  const std::array<double, 2> plan = station_to_world(road->plan_view, signal->s, signal->t);
-  return std::array<double, 3>{plan[0], plan[1], signal->z_offset};
-}
-
 /// The mid sample of a maneuver's path — where a gating leader points.
 std::optional<std::array<double, 3>> maneuver_midpoint(const std::vector<JunctionManeuverInfo>& all,
                                                        RoadId road) {

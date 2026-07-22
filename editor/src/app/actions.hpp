@@ -77,6 +77,10 @@ public:
   /// (⇧L). Standalone so it works from any active tool.
   QAction* lane_width_editor = nullptr;
 
+  /// Not a tool — a command that surfaces the 2D Editor's Signal Phases tab for
+  /// the selected junction. Standalone so ⇧G works whatever tool is active.
+  QAction* signal_phase_editor = nullptr;
+
   /// Create Road cross-section templates (exclusive, one always checked);
   /// the toolbar presents them as a dropdown next to the tool button.
   QActionGroup* template_group = nullptr;

@@ -186,6 +186,12 @@ private:
   void update_status_entities();
   void on_hover(const HoverInfo& info);
 
+  /// Rebuilds the viewport's signal-phase overlay from the phase panel's current
+  /// playhead (head colors, moving roads, gate links), or clears it when the
+  /// pane is hidden or the panel has no signalized junction. Pane-driven, so it
+  /// works under any active tool.
+  void update_signal_phase_overlay();
+
   /// Creates geometry from a library item dropped on the viewport: a road
   /// template arms Create Road at the drop point; a T/X assembly pushes a
   /// standalone-intersection command and toasts the result.
@@ -243,6 +249,7 @@ private:
   QDockWidget* diagnostics_dock_;
   QDockWidget* editor2d_dock_;
   class Editor2DHost* editor2d_host_ = nullptr;
+  class SignalPhaseEditorPage* phase_page_ = nullptr;
   QMenu* recent_menu_ = nullptr;
   QLabel* status_hover_;
   /// Persistent per-tool instruction line (what click/drag/modifiers do right

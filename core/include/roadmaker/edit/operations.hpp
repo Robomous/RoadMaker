@@ -1126,13 +1126,9 @@ move_signal(const RoadNetwork& network,
 
 // --- signalization (p4-s7, issue #228) ---------------------------------------
 
-/// Half-width [rad] of the band in which two approach headings are treated as
-/// OPPOSITE, and therefore as the two arms of one signal axis (30 degrees).
-///
-/// Deliberately independent of `kManeuverStraightThreshold`, which happens to
-/// share the value: that one labels a MOVEMENT for the author, this one pairs
-/// ARMS for a phase plan. Changing either must not change the other.
-inline constexpr double kSignalizeAxisTolerance = 0.5235987755982988; // 30 deg
+// `kSignalizeAxisTolerance` and `cluster_signal_axes` were promoted to
+// mesh/junction_signals.hpp for p4-s8 (so the phase-derivation query can share
+// them without depending on the command layer). Include that header for them.
 
 /// The auto-signalization templates (`signalize_junction`).
 ///
@@ -1210,6 +1206,64 @@ struct SignalizeOptions {
 /// Fails (invalid_command) for a stale id and for a junction with nothing
 /// signalized (a no-op, which the round-trip oracle forbids).
 [[nodiscard]] RM_API std::unique_ptr<Command> clear_signalization(const RoadNetwork& network,
+                                                                  JunctionId junction);
+
+// --- signal phases (p4-s8, issue #229) ---------------------------------------
+//
+// The six factories that edit a junction's signal CYCLE (`Junction::phases`).
+// All are pure junction-value edits — no geometry moves, so the turn set is
+// untouched (corner_value_command's DirtySet) — and all share `phase_edit_context`:
+// they reject a stale id, a SPAN (virtual) junction and an EMPTY plan
+// ("signalize the junction first"), and on the FIRST edit they MATERIALIZE the
+// derived cycle sparsely into `Junction::phases` (storing only the non-Red
+// states) so `mesh::junction_phases().authored` flips true while the derived
+// shape is preserved. The round-trip oracle forbids no-op commands, so every
+// factory rejects an edit that would change nothing (a duration equal to the
+// effective value, a state equal to the effective state, ...). Constants and
+// the derived-cycle shape live in `mesh/junction_phases.hpp`.
+
+/// Sets phase `phase_index`'s duration [s]. Rejects a non-finite, `<= 0` or
+/// `> kMaxSignalPhaseDuration` value, an out-of-range index, and a value equal
+/// to the phase's effective (possibly derived) duration.
+[[nodiscard]] RM_API std::unique_ptr<Command> set_phase_duration(const RoadNetwork& network,
+                                                                 JunctionId junction,
+                                                                 std::size_t phase_index,
+                                                                 double duration);
+
+/// Sets one controller's state within phase `phase_index`. Setting it to Red
+/// ERASES the controller's sparse `PhaseState` pair (Red is the omitted
+/// default). Rejects an out-of-range index, a `controller_odr_id` that is not a
+/// live member of the junction's sync group or fails the `[A-Za-z0-9_.-]+`
+/// token alphabet, and a state equal to the controller's effective state.
+[[nodiscard]] RM_API std::unique_ptr<Command> set_phase_state(const RoadNetwork& network,
+                                                              JunctionId junction,
+                                                              std::size_t phase_index,
+                                                              std::string controller_odr_id,
+                                                              SignalState state);
+
+/// Inserts an all-red phase (`kDefaultAddedPhaseSeconds`, empty state list) at
+/// `phase_index` in `0..count` (`count` appends). Rejects an out-of-range index
+/// and a resulting count exceeding `kMaxSignalPhases`.
+[[nodiscard]] RM_API std::unique_ptr<Command>
+add_signal_phase(const RoadNetwork& network, JunctionId junction, std::size_t phase_index);
+
+/// Deep-copies phase `phase_index` to `phase_index + 1`. Rejects an
+/// out-of-range index and a resulting count exceeding `kMaxSignalPhases`.
+[[nodiscard]] RM_API std::unique_ptr<Command>
+duplicate_signal_phase(const RoadNetwork& network, JunctionId junction, std::size_t phase_index);
+
+/// Removes phase `phase_index`. Rejects an out-of-range index and — because a
+/// zero-phase authored cycle is unrepresentable — removing the LAST remaining
+/// phase (use `clear_signal_phases` to return to the derived cycle instead).
+[[nodiscard]] RM_API std::unique_ptr<Command>
+remove_signal_phase(const RoadNetwork& network, JunctionId junction, std::size_t phase_index);
+
+/// Clears the authored cycle (`Junction::phases.clear()`), returning the
+/// junction to its DERIVED cycle (AUTHORS-NOTHING ⇒ ERASE). Unlike the other
+/// factories this BYPASSES the empty-plan rejection — a de-signalized junction
+/// carrying only dormant phases must stay clearable — and rejects only when
+/// `Junction::phases` is already empty (nothing to clear).
+[[nodiscard]] RM_API std::unique_ptr<Command> clear_signal_phases(const RoadNetwork& network,
                                                                   JunctionId junction);
 
 /// Re-points a placed object at another prop model: sets Object::name (the

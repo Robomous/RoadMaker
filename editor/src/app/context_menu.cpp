@@ -407,6 +407,26 @@ std::vector<MenuItem> build_context_menu(const MenuContext& context, ContextMenu
                                (void)deps.document.push_command(
                                    edit::clear_signalization(deps.document.network(), junction));
                              }});
+
+    // Signal Phases… (p4-s8, issue #229): opens the timeline editor for a
+    // light-controlled junction. Enabled only when the junction is dynamic
+    // (carries controllers) — a static all-way/two-way stop has no cycle. The
+    // callback is MainWindow's (opening a dock is not a document command); a
+    // headless test without it gets a disabled item.
+    bool dynamic = false;
+    for (const JunctionApproachInfo& approach : junction_signals(network, junction)) {
+      if (approach.dynamic || !approach.controller_odr_ids.empty()) {
+        dynamic = true;
+        break;
+      }
+    }
+    if (deps.open_signal_phase_editor) {
+      items.push_back(MenuItem{
+          .text = QObject::tr("Signal Phases…"), .enabled = dynamic, .invoke = [deps, junction] {
+            deps.selection.select(SelectionEntry{.junction = junction}, SelectMode::Replace);
+            deps.open_signal_phase_editor(junction);
+          }});
+    }
     items.push_back(separator());
     // Author one zebra crosswalk per arm, spanning its driving lanes just inside
     // the junction — all in one undo step (§WS-B). Disabled when the junction has

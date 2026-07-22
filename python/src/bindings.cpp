@@ -15,6 +15,7 @@
 #include "roadmaker/io/usd_exporter.hpp"
 #include "roadmaker/mesh/junction_corners.hpp"
 #include "roadmaker/mesh/junction_maneuvers.hpp"
+#include "roadmaker/mesh/junction_phases.hpp"
 #include "roadmaker/mesh/junction_signals.hpp"
 #include "roadmaker/mesh/junction_stoplines.hpp"
 #include "roadmaker/mesh/junction_surface_spans.hpp"
@@ -219,6 +220,16 @@ NB_MODULE(_roadmaker, m) {
 
   nb::enum_<roadmaker::BoundarySource>(m, "BoundarySource")
       .value("DERIVED", roadmaker::BoundarySource::Derived);
+
+  // The state a signal GROUP shows during one phase (p4-s8, §14.6 / ADR-0008
+  // Layer 1). Yellow is an EXPLICIT value, never an automatic transition — the
+  // derived cycle emits its own yellow clearance phases — and Off is the
+  // flashing/dark state a maintenance cycle uses.
+  nb::enum_<roadmaker::SignalState>(m, "SignalState")
+      .value("RED", roadmaker::SignalState::Red)
+      .value("YELLOW", roadmaker::SignalState::Yellow)
+      .value("GREEN", roadmaker::SignalState::Green)
+      .value("OFF", roadmaker::SignalState::Off);
 
   nb::enum_<roadmaker::Severity>(m, "Severity")
       .value("INFO", roadmaker::Severity::Info)
@@ -669,6 +680,38 @@ NB_MODULE(_roadmaker, m) {
                signalization.mount_model + "')";
       });
 
+  // The RAW authored cycle stored on a junction (p4-s8, §14.6 / ADR-0008 Layer
+  // 1). SPARSE: a PhaseState lists only a non-Red controller, so an unstated
+  // member shows Red and an all-red clearance phase has an empty state list.
+  // The RESOLVED, Red-filled cycle a consumer reads is mesh.junction_phases.
+  nb::class_<roadmaker::PhaseState>(m, "PhaseState")
+      .def_ro("controller_odr_id",
+              &roadmaker::PhaseState::controller_odr_id,
+              "String id of the top-level <controller> this state is for — what "
+              "OpenDRIVE stores, dangling-tolerant, and surviving an erase / "
+              "restore of the controller.")
+      .def_ro("state", &roadmaker::PhaseState::state, "The color that group shows this phase.")
+      .def("__repr__", [](const roadmaker::PhaseState& state) {
+        return "PhaseState(controller_odr_id='" + state.controller_odr_id + "')";
+      });
+
+  nb::class_<roadmaker::SignalPhase>(m, "SignalPhase")
+      .def_ro("name",
+              &roadmaker::SignalPhase::name,
+              "Optional label (token alphabet or empty); the derived cycle names "
+              "phases 'axis0', 'axis0_clear', ...")
+      .def_ro("duration",
+              &roadmaker::SignalPhase::duration,
+              "Duration [s]; an authored phase is > 0 and <= MAX_SIGNAL_PHASE_DURATION.")
+      .def_ro("states",
+              &roadmaker::SignalPhase::states,
+              "The non-Red controller states only (sparse, <=1 per controller); "
+              "everything unlisted is Red by omission.")
+      .def("__repr__", [](const roadmaker::SignalPhase& phase) {
+        return "SignalPhase(name='" + phase.name + "', duration=" + std::to_string(phase.duration) +
+               ", states=" + std::to_string(phase.states.size()) + ")";
+      });
+
   nb::class_<roadmaker::Junction>(m, "Junction")
       .def_ro("odr_id", &roadmaker::Junction::odr_id)
       .def_ro("name", &roadmaker::Junction::name)
@@ -726,6 +769,14 @@ NB_MODULE(_roadmaker, m) {
               "The physical props representing each placed signal, keyed by "
               "signal odr id (sparse; read-only). A signal placed without a "
               "mount prop has no entry.")
+      .def_ro("phases",
+              &roadmaker::Junction::phases,
+              "The AUTHORED signal cycle (ADR-0008 Layer 1, <userData "
+              "code='rm:phases'>; read-only, sparse). EMPTY means unauthored — "
+              "the effective cycle is DERIVED — so read the effective cycle with "
+              "mesh.junction_phases and edit it with edit.set_phase_duration / "
+              "set_phase_state / add_signal_phase / duplicate_signal_phase / "
+              "remove_signal_phase / clear_signal_phases.")
       .def_ro("spans",
               &roadmaker::Junction::spans,
               "Membership spans of a VIRTUAL (span) junction — a stretch of a "
@@ -1721,6 +1772,120 @@ NB_MODULE(_roadmaker, m) {
       "an approach is. A FOREIGN junction (no arm list) still reports its "
       "approaches, inspectable but not authorable. Empty for a stale id and for "
       "a SPAN (virtual) junction, which has no connections at all.");
+
+  // --- signal phases (p4-s8, #229) -----------------------------------------------
+  // The signal CYCLE — Layer 1 (§14.6 excludes timing; ADR-0008). The derived
+  // and authored cycles are reported identically; only JunctionPhasePlan.authored
+  // tells them apart. mesh.junction_phases is the ONE solve the editor, Python
+  // and the validator all read.
+  m.attr("MAX_SIGNAL_PHASES") = roadmaker::kMaxSignalPhases;
+  m.attr("MAX_SIGNAL_PHASE_STATES") = roadmaker::kMaxSignalPhaseStates;
+  m.attr("MAX_SIGNAL_PHASE_DURATION") = roadmaker::kMaxSignalPhaseDuration;
+  m.attr("DEFAULT_PHASE_GREEN_SECONDS") = roadmaker::kDefaultPhaseGreenSeconds;
+  m.attr("DEFAULT_PHASE_YELLOW_SECONDS") = roadmaker::kDefaultPhaseYellowSeconds;
+  m.attr("DEFAULT_ADDED_PHASE_SECONDS") = roadmaker::kDefaultAddedPhaseSeconds;
+
+  nb::class_<roadmaker::PhaseControllerState>(m, "PhaseControllerState")
+      .def_ro("controller_odr_id", &roadmaker::PhaseControllerState::controller_odr_id)
+      .def_ro("state", &roadmaker::PhaseControllerState::state)
+      .def("__repr__", [](const roadmaker::PhaseControllerState& state) {
+        return "PhaseControllerState(controller_odr_id='" + state.controller_odr_id + "')";
+      });
+
+  nb::class_<roadmaker::PhaseSignalState>(m, "PhaseSignalState")
+      .def_ro("signal",
+              &roadmaker::PhaseSignalState::signal,
+              "The live signal HEAD this state lights. Named `signal`, not "
+              "`signals` — Qt makes that a macro (mirrors "
+              "JunctionApproachInfo.signal_ids).")
+      .def_ro("state", &roadmaker::PhaseSignalState::state, "The color it shows this phase.")
+      .def("__repr__", [](const roadmaker::PhaseSignalState& state) {
+        return "PhaseSignalState(signal=" + std::to_string(state.signal.index) + ")";
+      });
+
+  nb::class_<roadmaker::JunctionPhaseInfo>(m, "JunctionPhaseInfo")
+      .def_ro("name", &roadmaker::JunctionPhaseInfo::name, "The phase label (may be empty).")
+      .def_ro("duration", &roadmaker::JunctionPhaseInfo::duration, "Duration [s] of this phase.")
+      .def_ro("start",
+              &roadmaker::JunctionPhaseInfo::start,
+              "Cumulative offset [s] of this phase's start within the cycle "
+              "(phase 0 = 0).")
+      .def_ro("states",
+              &roadmaker::JunctionPhaseInfo::states,
+              "EVERY member controller and the state it shows this phase, in "
+              "timeline row order (Red-filled — the sparse SignalPhase.states "
+              "expanded for the consumer).")
+      .def_ro("signal_states",
+              &roadmaker::JunctionPhaseInfo::signal_states,
+              "The live signal heads and their state this phase, resolved "
+              "through each controller's <control> children. COMPLETE — "
+              "scrubbing needs no time call, only "
+              "plan.phases[phase_index_at(plan, t)].signal_states.")
+      .def_ro("moving",
+              &roadmaker::JunctionPhaseInfo::moving,
+              "The connecting roads whose traffic MAY proceed this phase (GW-4 "
+              "step 6): a gated movement whose controlling group is Green.")
+      .def("__repr__", [](const roadmaker::JunctionPhaseInfo& info) {
+        return "JunctionPhaseInfo(name='" + info.name +
+               "', duration=" + std::to_string(info.duration) +
+               ", moving=" + std::to_string(info.moving.size()) + ")";
+      });
+
+  nb::class_<roadmaker::JunctionPhasePlan>(m, "JunctionPhasePlan")
+      .def_ro("authored",
+              &roadmaker::JunctionPhasePlan::authored,
+              "False ⇒ the cycle is DERIVED and the junction stores no rm:phases "
+              "bytes; True ⇒ read from Junction.phases. The first edit flips it.")
+      .def_ro("cycle_duration",
+              &roadmaker::JunctionPhasePlan::cycle_duration,
+              "Sum [s] of every phase's duration — the length phase_index_at "
+              "wraps over.")
+      .def_ro("controller_odr_ids",
+              &roadmaker::JunctionPhasePlan::controller_odr_ids,
+              "The live member controllers in TIMELINE ROW order (sync-group / "
+              "junction_controllers order); one row per entry.")
+      .def_ro("dormant_controller_odr_ids",
+              &roadmaker::JunctionPhasePlan::dormant_controller_odr_ids,
+              "Controller ids named by AUTHORED states that are NOT live members "
+              "— dormant references the writer prunes and the validator advises "
+              "on. Always empty on a derived plan.")
+      .def_ro("phases",
+              &roadmaker::JunctionPhasePlan::phases,
+              "The effective phases in cycle order. Empty ⇒ nothing to time "
+              "(a static, unsignalized or span junction: 'signalize first').")
+      .def("__repr__", [](const roadmaker::JunctionPhasePlan& plan) {
+        return "JunctionPhasePlan(authored=" + std::string(plan.authored ? "True" : "False") +
+               ", phases=" + std::to_string(plan.phases.size()) +
+               ", cycle=" + std::to_string(plan.cycle_duration) + ")";
+      });
+
+  m.def(
+      "junction_phases",
+      [](const roadmaker::RoadNetwork& network, roadmaker::JunctionId junction) {
+        return roadmaker::junction_phases(network, junction);
+      },
+      "network"_a,
+      "junction"_a,
+      "The effective signal CYCLE of a junction — DERIVED from its sync group "
+      "when the junction stores no phases (green+yellow per axis), resolved from "
+      "Junction.phases when it does. The SAME solve the phase editor, the "
+      "viewport overlay and the validator read, so none can disagree about the "
+      "cycle. Returns an empty plan (authored=False, no phases) for a stale id, "
+      "a SPAN (virtual) junction, an unsignalized junction and a STATIC-template "
+      "junction (no controllers) — none has a cycle to time. A FOREIGN dynamic "
+      "junction still resolves, off the sync-group references, not the arms.");
+  m.def(
+      "phase_index_at",
+      [](const roadmaker::JunctionPhasePlan& plan, double t) {
+        return roadmaker::phase_index_at(plan, t);
+      },
+      "plan"_a,
+      "t"_a,
+      "The index of the phase active at cycle time `t` [s], wrapping over "
+      "plan.cycle_duration (negative t and t >= cycle handled by modulo). This "
+      "is all scrubbing needs — state is piecewise-constant, so "
+      "plan.phases[phase_index_at(plan, t)].signal_states is complete. Returns "
+      "SIZE_MAX when the plan has no phases.");
 
   // --- authoring -----------------------------------------------------------------
 
@@ -2864,6 +3029,102 @@ NB_MODULE(_roadmaker, m) {
       "catalog code. A hand-placed sign of another type is left alone. Pushing "
       "raises ValueError for a stale junction and for one with nothing "
       "signalized.");
+
+  // --- signal phases (p4-s8, #229) ----------------------------------------
+  // Six pure junction-value edits over Junction.phases — no geometry moves, so
+  // the turn set is untouched. All share phase_edit_context: they reject a
+  // stale id, a SPAN junction and an EMPTY plan ('signalize first'), and on the
+  // FIRST edit they MATERIALIZE the derived cycle sparsely into the junction so
+  // junction_phases().authored flips true while the shape is preserved. The
+  // round-trip oracle forbids no-op commands, so every factory rejects an edit
+  // that would change nothing.
+  edit.def(
+      "set_phase_duration",
+      [](const roadmaker::RoadNetwork& network,
+         roadmaker::JunctionId junction,
+         std::size_t phase_index,
+         double duration) {
+        return roadmaker::edit::set_phase_duration(network, junction, phase_index, duration);
+      },
+      "network"_a,
+      "junction"_a,
+      "phase_index"_a,
+      "duration"_a,
+      "Sets phase `phase_index`'s duration [s]. Raises ValueError for a "
+      "non-finite, <= 0 or > MAX_SIGNAL_PHASE_DURATION value, an out-of-range "
+      "index, and a value equal to the phase's effective (possibly derived) "
+      "duration (the no-op the oracle forbids).");
+  edit.def(
+      "set_phase_state",
+      [](const roadmaker::RoadNetwork& network,
+         roadmaker::JunctionId junction,
+         std::size_t phase_index,
+         std::string controller_odr_id,
+         roadmaker::SignalState state) {
+        return roadmaker::edit::set_phase_state(
+            network, junction, phase_index, std::move(controller_odr_id), state);
+      },
+      "network"_a,
+      "junction"_a,
+      "phase_index"_a,
+      "controller_odr_id"_a,
+      "state"_a,
+      "Sets one controller's state within phase `phase_index`. Setting it to RED "
+      "ERASES the controller's sparse pair (Red is the omitted default). Raises "
+      "ValueError for an out-of-range index, a controller_odr_id that is not a "
+      "live member of the junction's sync group or fails the [A-Za-z0-9_.-]+ "
+      "token alphabet, and a state equal to the controller's effective state.");
+  edit.def(
+      "add_signal_phase",
+      [](const roadmaker::RoadNetwork& network,
+         roadmaker::JunctionId junction,
+         std::size_t phase_index) {
+        return roadmaker::edit::add_signal_phase(network, junction, phase_index);
+      },
+      "network"_a,
+      "junction"_a,
+      "phase_index"_a,
+      "Inserts an all-red phase (DEFAULT_ADDED_PHASE_SECONDS, empty state list) "
+      "at `phase_index` in 0..count (count appends). Raises ValueError for an "
+      "out-of-range index and a resulting count exceeding MAX_SIGNAL_PHASES.");
+  edit.def(
+      "duplicate_signal_phase",
+      [](const roadmaker::RoadNetwork& network,
+         roadmaker::JunctionId junction,
+         std::size_t phase_index) {
+        return roadmaker::edit::duplicate_signal_phase(network, junction, phase_index);
+      },
+      "network"_a,
+      "junction"_a,
+      "phase_index"_a,
+      "Deep-copies phase `phase_index` to phase_index + 1. Raises ValueError for "
+      "an out-of-range index and a resulting count exceeding MAX_SIGNAL_PHASES.");
+  edit.def(
+      "remove_signal_phase",
+      [](const roadmaker::RoadNetwork& network,
+         roadmaker::JunctionId junction,
+         std::size_t phase_index) {
+        return roadmaker::edit::remove_signal_phase(network, junction, phase_index);
+      },
+      "network"_a,
+      "junction"_a,
+      "phase_index"_a,
+      "Removes phase `phase_index`. Raises ValueError for an out-of-range index "
+      "and — because a zero-phase authored cycle is unrepresentable — for "
+      "removing the LAST remaining phase (use clear_signal_phases to return to "
+      "the derived cycle instead).");
+  edit.def(
+      "clear_signal_phases",
+      [](const roadmaker::RoadNetwork& network, roadmaker::JunctionId junction) {
+        return roadmaker::edit::clear_signal_phases(network, junction);
+      },
+      "network"_a,
+      "junction"_a,
+      "Clears the authored cycle, returning the junction to its DERIVED cycle "
+      "(AUTHORS-NOTHING ⇒ ERASE). Unlike the other five this BYPASSES the "
+      "empty-plan rejection — a de-signalized junction carrying only dormant "
+      "phases must stay clearable — and raises ValueError only when "
+      "Junction.phases is already empty (nothing to clear).");
 
   edit.def(
       "set_junction_locked",

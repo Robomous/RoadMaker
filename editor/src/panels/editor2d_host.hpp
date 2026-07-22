@@ -1,8 +1,8 @@
 #pragma once
 
 // The 2D Editor pane (P1/GW-2 step 7): a tabbed host for the editors that work
-// in a flat, non-perspective view of one entity — the vertical profile today,
-// the cross-section and the Signal Phase Editor (GW-4 step 4, p4-s5) later.
+// in a flat, non-perspective view of one entity — the vertical profile, the
+// lane-width curve, and the Signal Phase Editor (GW-4 step 4, p4-s8).
 //
 // The host is deliberately thin. A page owns its own selection subscription and
 // its own commands exactly as it did standing alone; the host only decides
@@ -14,6 +14,7 @@
 #include <memory>
 #include <vector>
 
+#include "panels/phase_panel.hpp"
 #include "panels/profile_panel.hpp"
 #include "panels/width_panel.hpp"
 
@@ -82,6 +83,29 @@ public:
 
 private:
   WidthPanel* panel_;
+};
+
+/// Hosts a PhasePanel — the signal-phase timeline (p4-s8, GW-4 step 4). Relevant
+/// for a DYNAMIC junction (one carrying controllers); a static or unsignalized
+/// junction has no cycle to time. The panel keeps its own selection
+/// subscription; this adapter only supplies the tab label and relevance.
+class SignalPhaseEditorPage : public Editor2DPage {
+public:
+  SignalPhaseEditorPage(Document& document, SelectionModel& selection, QWidget* parent = nullptr);
+
+  [[nodiscard]] QString title() const override;
+  [[nodiscard]] QWidget* widget() override;
+
+  /// Relevant when a junction is selected AND it is signalized with controllers
+  /// (dynamic) — the phase editor only has a cycle to show for a light-controlled
+  /// junction, never a static all-way/two-way stop.
+  [[nodiscard]] bool relevant(const SelectionModel& selection) const override;
+
+  [[nodiscard]] PhasePanel* panel() { return panel_; }
+
+private:
+  Document& document_;
+  PhasePanel* panel_;
 };
 
 /// Tabbed container for Editor2DPages.

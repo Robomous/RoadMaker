@@ -2146,6 +2146,136 @@ private:
     return mounts;
   }
 
+  /// The junction signal cycle (p4-s8, issue #229) round-trips through
+  /// <userData code="rm:phases">, entries ";"-joined in cycle (storage) order
+  /// and each entry ":"-joined "name=<tok>", "dur=<num>", "st=<ctrl>,<state>…"
+  /// with the state list '|'-joined. State chars are g=Green, y=Yellow, r=Red,
+  /// o=Off. Layer 1 alone (ADR-0008): OpenDRIVE §14.6 excludes signal timing.
+  ///
+  /// Controller ids are NOT resolved here — a dormant reference (a controller
+  /// outside the sync group or since deleted) LOADS, so a foreign file survives
+  /// and the validator, never the reader, speaks about it.
+  ///
+  /// All-or-nothing on the KNOWN grammar (the rm:maneuver rule): a malformed or
+  /// duplicated name/dur/st, a missing dur, a duration that is non-finite, <= 0
+  /// or > kMaxSignalPhaseDuration, a bad pair (no comma), a bad state char, a
+  /// non-token ctrl, a ctrl twice in one entry, or a list longer than
+  /// kMaxSignalPhases / kMaxSignalPhaseStates drops the WHOLE value. An UNKNOWN
+  /// "key=" field is warned about and skipped (forward compat, the rm:junction
+  /// rule); a field WITHOUT '=' is malformed and drops the value.
+  std::optional<std::vector<SignalPhase>> parse_signal_phases_value(std::string_view value,
+                                                                    const std::string& location) {
+    std::vector<SignalPhase> phases;
+    for (std::size_t begin = 0; begin <= value.size();) {
+      std::size_t end = value.find(';', begin);
+      if (end == std::string_view::npos) {
+        end = value.size();
+      }
+      const std::string_view entry = value.substr(begin, end - begin);
+      begin = end + 1;
+
+      if (phases.size() >= kMaxSignalPhases) {
+        return std::nullopt; // more entries than any writer would emit
+      }
+
+      SignalPhase phase;
+      bool name_seen = false;
+      bool dur_seen = false;
+      bool st_seen = false;
+      for (std::size_t fbegin = 0; fbegin <= entry.size();) {
+        std::size_t fend = entry.find(':', fbegin);
+        if (fend == std::string_view::npos) {
+          fend = entry.size();
+        }
+        const std::string_view field = entry.substr(fbegin, fend - fbegin);
+        fbegin = fend + 1;
+
+        if (field.starts_with("name=")) {
+          const std::string_view text = field.substr(5);
+          if (name_seen || !is_record_token(text)) {
+            return std::nullopt;
+          }
+          name_seen = true;
+          phase.name = std::string(text);
+        } else if (field.starts_with("dur=")) {
+          const std::optional<double> parsed = to_double(field.substr(4));
+          if (dur_seen || !parsed || *parsed <= 0.0 || *parsed > kMaxSignalPhaseDuration) {
+            return std::nullopt;
+          }
+          dur_seen = true;
+          phase.duration = *parsed;
+        } else if (field.starts_with("st=")) {
+          if (st_seen) {
+            return std::nullopt;
+          }
+          st_seen = true;
+          const std::string_view list = field.substr(3);
+          if (list.empty()) {
+            return std::nullopt; // the writer never emits an empty st field
+          }
+          for (std::size_t pbegin = 0; pbegin <= list.size();) {
+            std::size_t pend = list.find('|', pbegin);
+            if (pend == std::string_view::npos) {
+              pend = list.size();
+            }
+            const std::string_view pair = list.substr(pbegin, pend - pbegin);
+            pbegin = pend + 1;
+            const std::size_t comma = pair.find(',');
+            if (comma == std::string_view::npos) {
+              return std::nullopt; // a pair is "ctrl,state"
+            }
+            const std::string_view ctrl = pair.substr(0, comma);
+            const std::string_view state_text = pair.substr(comma + 1);
+            if (!is_record_token(ctrl) || state_text.size() != 1) {
+              return std::nullopt;
+            }
+            SignalState state{};
+            switch (state_text[0]) {
+            case 'g':
+              state = SignalState::Green;
+              break;
+            case 'y':
+              state = SignalState::Yellow;
+              break;
+            case 'r':
+              state = SignalState::Red;
+              break;
+            case 'o':
+              state = SignalState::Off;
+              break;
+            default:
+              return std::nullopt;
+            }
+            if (phase.states.size() >= kMaxSignalPhaseStates) {
+              return std::nullopt;
+            }
+            if (std::ranges::any_of(phase.states, [&](const PhaseState& seen) {
+                  return seen.controller_odr_id == ctrl;
+                })) {
+              return std::nullopt; // the same controller twice in one entry
+            }
+            phase.states.push_back(
+                PhaseState{.controller_odr_id = std::string(ctrl), .state = state});
+          }
+        } else if (field.find('=') != std::string_view::npos) {
+          diag(Severity::Warning,
+               location,
+               fmt::format("rm:phases field '{}' is not understood and was ignored", field));
+        } else {
+          return std::nullopt; // a field without '=' is malformed
+        }
+      }
+      if (!dur_seen) {
+        return std::nullopt; // every phase carries a duration
+      }
+      phases.push_back(std::move(phase));
+    }
+    if (phases.empty()) {
+      return std::nullopt; // the writer never emits an empty cycle
+    }
+    return phases;
+  }
+
   /// The generator's arm list (roadmaker::edit) round-trips through
   /// <userData code="rm:arms"> ("roadOdrId:start|end;…"); roads parse before
   /// junctions, so arm road ids resolve here. Corner overrides ride the
@@ -2240,6 +2370,24 @@ private:
           continue;
         }
         junction.signal_mounts = std::move(*mounts);
+        continue;
+      }
+      if (code == "rm:phases") {
+        // The junction signal cycle (p4-s8, issue #229): ";"-joined phase
+        // entries, each ":"-joined "name=<tok>:dur=<num>:st=<ctrl>,<state>…".
+        // Layer 1 alone — OpenDRIVE §14.6 puts the cycle outside the standard
+        // (ADR-0008). All-or-nothing on the KNOWN grammar (the rm:maneuver
+        // rule); an UNKNOWN field key is warned about and skipped. Controller
+        // ids are NOT resolved here — a dormant reference loads and the
+        // validator, never the reader, speaks. A well-formed value REPLACES
+        // junction.phases.
+        std::optional<std::vector<SignalPhase>> phases =
+            parse_signal_phases_value(node.attribute("value").value(), location);
+        if (!phases) {
+          diag(Severity::Warning, location, "malformed rm:phases userData ignored");
+          continue;
+        }
+        junction.phases = std::move(*phases);
         continue;
       }
       if (code == "rm:junction") {

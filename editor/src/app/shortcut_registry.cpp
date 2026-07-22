@@ -251,6 +251,13 @@ constexpr std::array kTable{
           .primary = QKeyCombination(Qt::ShiftModifier, Qt::Key_L),
           .toolbar_group = "Lanes",
           .toolbar_order = 50},
+    Entry{.id = Id::SignalPhaseEditor,
+          .category = "Tools",
+          .description = "Signal Phase editor (2D)",
+          .primary = QKeyCombination(Qt::ShiftModifier, Qt::Key_G),
+          .note = "G is the Signal tool; ⇧G opens its phase timeline",
+          .toolbar_group = "Signals & Signs",
+          .toolbar_order = 20},
     // Toolbar-only: enabled only for a mergeable two-road selection.
     Entry{.id = Id::MergeRoads,
           .category = "Tools",
