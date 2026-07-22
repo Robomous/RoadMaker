@@ -7,6 +7,7 @@
 #include "roadmaker/geometry/road_intersection.hpp"
 #include "roadmaker/mesh/junction_corners.hpp"
 #include "roadmaker/mesh/junction_maneuvers.hpp"
+#include "roadmaker/mesh/junction_phases.hpp"
 #include "roadmaker/mesh/junction_signals.hpp"
 #include "roadmaker/mesh/junction_stoplines.hpp"
 #include "roadmaker/mesh/junction_surface_spans.hpp"
@@ -7265,6 +7266,11 @@ std::unique_ptr<Command> signalize_junction(const RoadNetwork& network,
   after.signalization =
       Signalization{.tmpl = std::string(token), .mount_model = options.mount_model};
   after.junction_controllers.clear();
+  // Re-templating mints fresh controller ids, so any authored cycle that named
+  // the old ones would silently persist as all-dormant. Drop it here — BEFORE
+  // the creator lambda below captures `after` — so a re-signalized junction is
+  // back to its derived cycle (`junction_phases().authored == false`).
+  after.phases.clear();
   for (const Controller& controller : controllers) {
     after.junction_controllers.push_back(
         JunctionController{.controller_odr_id = controller.odr_id, .sequence = {}, .type = {}});
@@ -7355,7 +7361,8 @@ std::unique_ptr<Command> clear_signalization(const RoadNetwork& network, Junctio
 
   const AuthoredSignalization authored = authored_signalization(network, junction_id);
   const bool records = !junction->signalization.tmpl.empty() ||
-                       !junction->junction_controllers.empty() || !junction->signal_mounts.empty();
+                       !junction->junction_controllers.empty() ||
+                       !junction->signal_mounts.empty() || !junction->phases.empty();
   if (authored.empty() && !records) {
     return invalid_command(std::string(kName),
                            Error{.code = ErrorCode::InvalidArgument,
@@ -7366,6 +7373,10 @@ std::unique_ptr<Command> clear_signalization(const RoadNetwork& network, Junctio
   after.signalization = Signalization{};
   after.junction_controllers.clear();
   after.signal_mounts.clear();
+  // De-signalizing removes the cycle those controllers timed; a junction whose
+  // ONLY signalization artifact is an authored cycle (no template/controllers/
+  // mounts) is still cleared here — the `records` guard above admits it.
+  after.phases.clear();
 
   DirtySet dirty;
   dirty.junctions.push_back(junction_id);
@@ -7388,6 +7399,251 @@ std::unique_ptr<Command> clear_signalization(const RoadNetwork& network, Junctio
   command->erased.controllers = authored.controllers;
   command->erased.objects = authored.objects;
   return command;
+}
+
+// --- signal phases (p4-s8, #229) ---------------------------------------------
+
+namespace {
+
+/// Expands `plan`'s derived phases into stored `SignalPhase`s, SPARSELY: only a
+/// controller's non-Red state is written, so an all-red clearance phase carries
+/// an empty state list and `Junction::phases` reproduces the derived shape while
+/// flipping `authored` true. The materialization the first phase edit performs.
+std::vector<SignalPhase> materialize_phases(const JunctionPhasePlan& plan) {
+  std::vector<SignalPhase> phases;
+  phases.reserve(plan.phases.size());
+  for (const JunctionPhaseInfo& info : plan.phases) {
+    SignalPhase phase{.name = info.name, .duration = info.duration, .states = {}};
+    for (const PhaseControllerState& state : info.states) {
+      if (state.state != SignalState::Red) {
+        phase.states.push_back(
+            PhaseState{.controller_odr_id = state.controller_odr_id, .state = state.state});
+      }
+    }
+    phases.push_back(std::move(phase));
+  }
+  return phases;
+}
+
+/// Shared front half of the phase-editing commands. Rejects a stale id, a SPAN
+/// (virtual) junction and an EMPTY plan (a junction with no cycle to time —
+/// "signalize the junction first"), then returns the effective junction to
+/// mutate: its `phases` MATERIALIZED sparsely from the derived cycle when the
+/// junction was unauthored, so the first edit preserves the derived shape and
+/// `junction_phases().authored` flips true. `clear_signal_phases` does its own
+/// validation (it must stay usable on a de-signalized junction) and so does not
+/// go through here.
+Expected<Junction>
+phase_edit_context(const RoadNetwork& network, JunctionId junction_id, std::string_view name) {
+  const Junction* junction = network.junction(junction_id);
+  if (junction == nullptr) {
+    return make_error(ErrorCode::InvalidArgument, "stale junction id");
+  }
+  if (!junction->spans.empty()) {
+    return make_error(ErrorCode::InvalidArgument,
+                      fmt::format("{}: a span (virtual) junction has no signal cycle", name));
+  }
+  const JunctionPhasePlan plan = junction_phases(network, junction_id);
+  if (plan.phases.empty()) {
+    return make_error(
+        ErrorCode::InvalidArgument,
+        fmt::format("{}: junction {} has no signal cycle — signalize the junction first",
+                    name,
+                    junction->odr_id));
+  }
+  Junction after = *junction;
+  if (!plan.authored) {
+    after.phases = materialize_phases(plan);
+  }
+  return after;
+}
+
+} // namespace
+
+std::unique_ptr<Command> set_phase_duration(const RoadNetwork& network,
+                                            JunctionId junction_id,
+                                            std::size_t phase_index,
+                                            double duration) {
+  static constexpr std::string_view kName = "Set Phase Duration";
+  Expected<Junction> after = phase_edit_context(network, junction_id, kName);
+  if (!after) {
+    return invalid_command(std::string(kName), after.error());
+  }
+  if (phase_index >= after->phases.size()) {
+    return invalid_command(
+        std::string(kName),
+        Error{.code = ErrorCode::InvalidArgument, .message = "phase index out of range"});
+  }
+  if (!std::isfinite(duration) || duration <= 0.0 || duration > kMaxSignalPhaseDuration) {
+    return invalid_command(std::string(kName),
+                           Error{.code = ErrorCode::InvalidArgument,
+                                 .message = fmt::format("phase duration must be in (0, {}] seconds",
+                                                        kMaxSignalPhaseDuration)});
+  }
+  if (duration == after->phases[phase_index].duration) {
+    return invalid_command(std::string(kName),
+                           Error{.code = ErrorCode::InvalidArgument,
+                                 .message = "the phase already has this duration (no-op)"});
+  }
+  after->phases[phase_index].duration = duration;
+  return corner_value_command(
+      kName, junction_id, *network.junction(junction_id), std::move(*after));
+}
+
+std::unique_ptr<Command> set_phase_state(const RoadNetwork& network,
+                                         JunctionId junction_id,
+                                         std::size_t phase_index,
+                                         std::string controller_odr_id,
+                                         SignalState state) {
+  static constexpr std::string_view kName = "Set Phase State";
+  Expected<Junction> after = phase_edit_context(network, junction_id, kName);
+  if (!after) {
+    return invalid_command(std::string(kName), after.error());
+  }
+  if (phase_index >= after->phases.size()) {
+    return invalid_command(
+        std::string(kName),
+        Error{.code = ErrorCode::InvalidArgument, .message = "phase index out of range"});
+  }
+  // The controller id must be a live member of the sync group AND a valid
+  // record token (the `[A-Za-z0-9_.-]+` alphabet the rm:phases grammar shares
+  // with every other rm:* record — `validate_material_token` is that predicate
+  // in this translation unit, reused rather than re-spelled).
+  if (!validate_material_token(controller_odr_id)) {
+    return invalid_command(
+        std::string(kName),
+        Error{.code = ErrorCode::InvalidArgument,
+              .message = "controller id is not a valid record token [A-Za-z0-9_.-]+"});
+  }
+  const JunctionPhasePlan plan = junction_phases(network, junction_id);
+  if (std::ranges::find(plan.controller_odr_ids, controller_odr_id) ==
+      plan.controller_odr_ids.end()) {
+    return invalid_command(
+        std::string(kName),
+        Error{.code = ErrorCode::InvalidArgument,
+              .message = fmt::format("controller {} is not a live member of junction {}",
+                                     controller_odr_id,
+                                     network.junction(junction_id)->odr_id)});
+  }
+
+  std::vector<PhaseState>& states = after->phases[phase_index].states;
+  const auto entry = std::ranges::find_if(
+      states, [&](const PhaseState& s) { return s.controller_odr_id == controller_odr_id; });
+  const SignalState effective = entry == states.end() ? SignalState::Red : entry->state;
+  if (state == effective) {
+    return invalid_command(std::string(kName),
+                           Error{.code = ErrorCode::InvalidArgument,
+                                 .message = "the controller already shows this state (no-op)"});
+  }
+
+  if (state == SignalState::Red) {
+    // Red is the omitted default — erase the sparse pair rather than store it.
+    states.erase(entry);
+  } else if (entry == states.end()) {
+    states.push_back(PhaseState{.controller_odr_id = std::move(controller_odr_id), .state = state});
+  } else {
+    entry->state = state;
+  }
+  return corner_value_command(
+      kName, junction_id, *network.junction(junction_id), std::move(*after));
+}
+
+std::unique_ptr<Command>
+add_signal_phase(const RoadNetwork& network, JunctionId junction_id, std::size_t phase_index) {
+  static constexpr std::string_view kName = "Add Signal Phase";
+  Expected<Junction> after = phase_edit_context(network, junction_id, kName);
+  if (!after) {
+    return invalid_command(std::string(kName), after.error());
+  }
+  if (phase_index > after->phases.size()) {
+    // `== size()` appends; anything past that is out of range.
+    return invalid_command(
+        std::string(kName),
+        Error{.code = ErrorCode::InvalidArgument, .message = "phase index out of range"});
+  }
+  if (after->phases.size() + 1 > kMaxSignalPhases) {
+    return invalid_command(
+        std::string(kName),
+        Error{.code = ErrorCode::InvalidArgument,
+              .message = fmt::format("a cycle may hold at most {} phases", kMaxSignalPhases)});
+  }
+  after->phases.insert(
+      after->phases.begin() + static_cast<std::ptrdiff_t>(phase_index),
+      SignalPhase{.name = {}, .duration = kDefaultAddedPhaseSeconds, .states = {}});
+  return corner_value_command(
+      kName, junction_id, *network.junction(junction_id), std::move(*after));
+}
+
+std::unique_ptr<Command> duplicate_signal_phase(const RoadNetwork& network,
+                                                JunctionId junction_id,
+                                                std::size_t phase_index) {
+  static constexpr std::string_view kName = "Duplicate Signal Phase";
+  Expected<Junction> after = phase_edit_context(network, junction_id, kName);
+  if (!after) {
+    return invalid_command(std::string(kName), after.error());
+  }
+  if (phase_index >= after->phases.size()) {
+    return invalid_command(
+        std::string(kName),
+        Error{.code = ErrorCode::InvalidArgument, .message = "phase index out of range"});
+  }
+  if (after->phases.size() + 1 > kMaxSignalPhases) {
+    return invalid_command(
+        std::string(kName),
+        Error{.code = ErrorCode::InvalidArgument,
+              .message = fmt::format("a cycle may hold at most {} phases", kMaxSignalPhases)});
+  }
+  const SignalPhase copy = after->phases[phase_index];
+  after->phases.insert(after->phases.begin() + static_cast<std::ptrdiff_t>(phase_index) + 1, copy);
+  return corner_value_command(
+      kName, junction_id, *network.junction(junction_id), std::move(*after));
+}
+
+std::unique_ptr<Command>
+remove_signal_phase(const RoadNetwork& network, JunctionId junction_id, std::size_t phase_index) {
+  static constexpr std::string_view kName = "Remove Signal Phase";
+  Expected<Junction> after = phase_edit_context(network, junction_id, kName);
+  if (!after) {
+    return invalid_command(std::string(kName), after.error());
+  }
+  if (phase_index >= after->phases.size()) {
+    return invalid_command(
+        std::string(kName),
+        Error{.code = ErrorCode::InvalidArgument, .message = "phase index out of range"});
+  }
+  if (after->phases.size() == 1) {
+    // A zero-phase authored cycle is unrepresentable (empty ⇔ derived), so the
+    // last phase cannot be removed — clearing returns to the derived cycle.
+    return invalid_command(std::string(kName),
+                           Error{.code = ErrorCode::InvalidArgument,
+                                 .message =
+                                     "cannot remove the last phase — use clear_signal_phases to "
+                                     "return to the derived cycle"});
+  }
+  after->phases.erase(after->phases.begin() + static_cast<std::ptrdiff_t>(phase_index));
+  return corner_value_command(
+      kName, junction_id, *network.junction(junction_id), std::move(*after));
+}
+
+std::unique_ptr<Command> clear_signal_phases(const RoadNetwork& network, JunctionId junction_id) {
+  static constexpr std::string_view kName = "Clear Signal Phases";
+  const Junction* junction = network.junction(junction_id);
+  if (junction == nullptr) {
+    return invalid_command(
+        std::string(kName),
+        Error{.code = ErrorCode::InvalidArgument, .message = "stale junction id"});
+  }
+  // Bypass phase_edit_context's empty-plan rejection: a de-signalized junction
+  // whose only remaining phase data is dormant must stay clearable. The one
+  // no-op is an already-empty (already-derived) cycle.
+  if (junction->phases.empty()) {
+    return invalid_command(std::string(kName),
+                           Error{.code = ErrorCode::InvalidArgument,
+                                 .message = "the junction has no authored cycle to clear"});
+  }
+  Junction after = *junction;
+  after.phases.clear();
+  return corner_value_command(kName, junction_id, *junction, std::move(after));
 }
 
 std::unique_ptr<Command>

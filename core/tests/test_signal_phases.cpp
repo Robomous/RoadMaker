@@ -37,6 +37,8 @@
 #include <utility>
 #include <vector>
 
+#include "support/network_compare.hpp"
+
 using roadmaker::ContactPoint;
 using roadmaker::Control;
 using roadmaker::Controller;
@@ -61,9 +63,17 @@ using roadmaker::SignalState;
 using roadmaker::SpanArm;
 using roadmaker::TurnType;
 using roadmaker::Waypoint;
+using roadmaker::edit::add_signal_phase;
+using roadmaker::edit::clear_signal_phases;
 using roadmaker::edit::Command;
+using roadmaker::edit::duplicate_signal_phase;
+using roadmaker::edit::remove_signal_phase;
+using roadmaker::edit::set_phase_duration;
+using roadmaker::edit::set_phase_state;
 using roadmaker::edit::signalize_junction;
 using roadmaker::edit::SignalizeTemplate;
+using roadmaker::test::expect_network_matches;
+using roadmaker::test::snapshot_xodr;
 
 namespace {
 
@@ -165,6 +175,43 @@ bool turns_left(const RoadNetwork& network, JunctionId junction, RoadId road) {
   const auto entry = std::ranges::find_if(
       maneuvers, [&](const JunctionManeuverInfo& info) { return info.road == road; });
   return entry != maneuvers.end() && entry->effective == TurnType::Left;
+}
+
+/// The §8 command oracle (copied from test_corner_operations.cpp — the helper is
+/// file-local per suite, not in support/): apply changes the doc, revert
+/// restores it byte-identically, re-apply reproduces, final revert is pristine.
+void expect_command_round_trip(RoadNetwork& network, Command& command) {
+  const std::string before = snapshot_xodr(network);
+  ASSERT_TRUE(command.apply(network).has_value());
+  const std::string after = snapshot_xodr(network);
+  EXPECT_NE(before, after); // a command that changes nothing is a bug
+  ASSERT_TRUE(command.revert(network).has_value());
+  expect_network_matches(network, before);
+  ASSERT_TRUE(command.apply(network).has_value());
+  expect_network_matches(network, after);
+  ASSERT_TRUE(command.revert(network).has_value());
+  expect_network_matches(network, before);
+}
+
+/// A rejected factory yields a command whose apply() fails and leaves the
+/// serialized network untouched (the round-trip oracle forbids no-op commands).
+void expect_command_rejected(RoadNetwork& network, std::unique_ptr<Command> command) {
+  const std::string before = snapshot_xodr(network);
+  ASSERT_NE(command, nullptr);
+  EXPECT_FALSE(command->apply(network).has_value());
+  expect_network_matches(network, before);
+}
+
+std::size_t phase_count(const RoadNetwork& network, JunctionId junction) {
+  return network.junction(junction)->phases.size();
+}
+
+std::string front_controller(const RoadNetwork& network, JunctionId junction) {
+  return network.junction(junction)->junction_controllers.front().controller_odr_id;
+}
+
+std::string back_controller(const RoadNetwork& network, JunctionId junction) {
+  return network.junction(junction)->junction_controllers.back().controller_odr_id;
 }
 
 } // namespace
@@ -378,4 +425,264 @@ TEST(JunctionPhases, SpanAndStaleJunctionsYieldEmptyPlan) {
   const JunctionPhasePlan plan = junction_phases(network, sole_junction(network));
   EXPECT_FALSE(plan.authored);
   EXPECT_TRUE(plan.phases.empty());
+}
+
+// --- command layer (WP3): edits to the cycle ---------------------------------
+//
+// Each factory is a pure junction-value edit, so undo is byte-identical; the
+// FIRST edit materializes the derived cycle sparsely into Junction::phases; the
+// round-trip oracle forbids no-op commands, so every degenerate edit is
+// rejected rather than applied.
+
+TEST(SignalPhaseCommands, EachFactoryRoundTrips) {
+  CrossFixture fixture;
+  fixture.signalize(SignalizeTemplate::TwoPhase);
+  const JunctionId jid = fixture.junction;
+  RoadNetwork& net = fixture.network;
+  const std::string ctrl1 = back_controller(net, jid); // Red in phase 0 (axis0)
+
+  // set_phase_duration: change phase 0 from the derived 20 s.
+  {
+    auto command = set_phase_duration(net, jid, 0, 24.0);
+    ASSERT_NE(command, nullptr);
+    expect_command_round_trip(net, *command);
+  }
+  // set_phase_state: green a controller that is Red this phase.
+  {
+    auto command = set_phase_state(net, jid, 0, ctrl1, SignalState::Green);
+    ASSERT_NE(command, nullptr);
+    expect_command_round_trip(net, *command);
+  }
+  // add_signal_phase (append), duplicate_signal_phase, remove_signal_phase.
+  {
+    auto command = add_signal_phase(net, jid, 4);
+    ASSERT_NE(command, nullptr);
+    expect_command_round_trip(net, *command);
+  }
+  {
+    auto command = duplicate_signal_phase(net, jid, 0);
+    ASSERT_NE(command, nullptr);
+    expect_command_round_trip(net, *command);
+  }
+  {
+    auto command = remove_signal_phase(net, jid, 1);
+    ASSERT_NE(command, nullptr);
+    expect_command_round_trip(net, *command);
+  }
+  // clear_signal_phases: needs an authored cycle first.
+  {
+    apply_command(net, set_phase_duration(net, jid, 0, 24.0));
+    auto command = clear_signal_phases(net, jid);
+    ASSERT_NE(command, nullptr);
+    expect_command_round_trip(net, *command);
+  }
+}
+
+TEST(SignalPhaseCommands, FirstEditMaterializesTheDerivedCycleSparsely) {
+  CrossFixture fixture;
+  fixture.signalize(SignalizeTemplate::TwoPhase);
+  const JunctionId jid = fixture.junction;
+  RoadNetwork& net = fixture.network;
+
+  const JunctionPhasePlan derived = junction_phases(net, jid);
+  ASSERT_FALSE(derived.authored);
+  ASSERT_EQ(derived.phases.size(), 4U);
+  ASSERT_TRUE(net.junction(jid)->phases.empty());
+
+  apply_command(net, set_phase_duration(net, jid, 0, 24.0));
+
+  // Stored sparsely: 4 phases, each green phase records only its one non-Red
+  // controller, each yellow clearance one, and none is Red-padded.
+  const Junction& junction = *net.junction(jid);
+  ASSERT_EQ(junction.phases.size(), 4U);
+  for (const SignalPhase& phase : junction.phases) {
+    EXPECT_LE(phase.states.size(), 1U);
+    for (const PhaseState& state : phase.states) {
+      EXPECT_NE(state.state, SignalState::Red);
+    }
+  }
+
+  // The query now reports it authored; the edited phase changed, every OTHER
+  // phase still matches the derived shape exactly (name, duration, Red-filled
+  // states).
+  const JunctionPhasePlan authored = junction_phases(net, jid);
+  EXPECT_TRUE(authored.authored);
+  ASSERT_EQ(authored.phases.size(), 4U);
+  EXPECT_NEAR(authored.phases[0].duration, 24.0, 1e-9);
+  for (std::size_t i = 1; i < authored.phases.size(); ++i) {
+    SCOPED_TRACE(i);
+    EXPECT_EQ(authored.phases[i].name, derived.phases[i].name);
+    EXPECT_NEAR(authored.phases[i].duration, derived.phases[i].duration, 1e-9);
+    ASSERT_EQ(authored.phases[i].states.size(), derived.phases[i].states.size());
+    for (std::size_t r = 0; r < authored.phases[i].states.size(); ++r) {
+      EXPECT_EQ(authored.phases[i].states[r].controller_odr_id,
+                derived.phases[i].states[r].controller_odr_id);
+      EXPECT_EQ(authored.phases[i].states[r].state, derived.phases[i].states[r].state);
+    }
+  }
+}
+
+TEST(SignalPhaseCommands, EveryNoOpAndInvalidEditIsRejected) {
+  CrossFixture fixture;
+  fixture.signalize(SignalizeTemplate::TwoPhase);
+  const JunctionId jid = fixture.junction;
+  RoadNetwork& net = fixture.network;
+  const std::string ctrl0 = front_controller(net, jid); // Green in phase 0
+  const std::string ctrl1 = back_controller(net, jid);  // Red in phase 0
+
+  // set_phase_duration.
+  expect_command_rejected(net, set_phase_duration(net, jid, 0, 20.0)); // equals derived
+  expect_command_rejected(net, set_phase_duration(net, jid, 0, 0.0));  // <= 0
+  expect_command_rejected(net, set_phase_duration(net, jid, 0, -4.0));
+  expect_command_rejected(
+      net, set_phase_duration(net, jid, 0, roadmaker::kMaxSignalPhaseDuration + 1.0));
+  expect_command_rejected(net,
+                          set_phase_duration(net, jid, 0, std::numeric_limits<double>::infinity()));
+  expect_command_rejected(net, set_phase_duration(net, jid, 99, 24.0)); // index
+
+  // set_phase_state.
+  expect_command_rejected(net, set_phase_state(net, jid, 0, ctrl0, SignalState::Green)); // already
+  expect_command_rejected(net, set_phase_state(net, jid, 0, ctrl1, SignalState::Red));   // already
+  expect_command_rejected(net, set_phase_state(net, jid, 0, "ghost", SignalState::Green)); // member
+  expect_command_rejected(net, set_phase_state(net, jid, 0, "bad id", SignalState::Green)); // token
+  expect_command_rejected(net, set_phase_state(net, jid, 99, ctrl0, SignalState::Yellow));  // index
+
+  // add / duplicate / remove: bad index.
+  expect_command_rejected(net, add_signal_phase(net, jid, 99));
+  expect_command_rejected(net, duplicate_signal_phase(net, jid, 99));
+  expect_command_rejected(net, remove_signal_phase(net, jid, 99));
+
+  // clear on a derived (unauthored) junction: nothing to clear.
+  expect_command_rejected(net, clear_signal_phases(net, jid));
+
+  // The whole junction is still purely derived — no edit slipped through.
+  EXPECT_FALSE(junction_phases(net, jid).authored);
+  EXPECT_TRUE(net.junction(jid)->phases.empty());
+}
+
+TEST(SignalPhaseCommands, StaleAndSpanJunctionsAreRejected) {
+  CrossFixture fixture;
+  fixture.signalize(SignalizeTemplate::TwoPhase);
+  RoadNetwork& net = fixture.network;
+  expect_command_rejected(net, set_phase_duration(net, JunctionId{}, 0, 24.0));
+  expect_command_rejected(net, add_signal_phase(net, JunctionId{}, 0));
+  expect_command_rejected(net, clear_signal_phases(net, JunctionId{}));
+
+  // A span junction has no cycle at all.
+  RoadNetwork span_net;
+  const RoadId through = author(span_net, {Waypoint{0.0, 0.0}, Waypoint{120.0, 0.0}}, "1");
+  const std::vector<SpanArm> spans{SpanArm{.road = through, .s_start = 50.0, .s_end = 56.5}};
+  apply_command(span_net, roadmaker::edit::create_span_junction(span_net, spans));
+  const JunctionId span = sole_junction(span_net);
+  expect_command_rejected(span_net, set_phase_duration(span_net, span, 0, 24.0));
+}
+
+TEST(SignalPhaseCommands, RemovingTheLastRemainingPhaseIsRejected) {
+  CrossFixture fixture;
+  fixture.signalize(SignalizeTemplate::TwoPhase);
+  const JunctionId jid = fixture.junction;
+  RoadNetwork& net = fixture.network;
+
+  apply_command(net, set_phase_duration(net, jid, 0, 24.0)); // materialize (4 phases)
+  while (phase_count(net, jid) > 1) {
+    apply_command(net, remove_signal_phase(net, jid, phase_count(net, jid) - 1));
+  }
+  ASSERT_EQ(phase_count(net, jid), 1U);
+  // The last phase cannot be removed — a zero-phase authored cycle is
+  // unrepresentable; clear_signal_phases is the way back to derivation.
+  expect_command_rejected(net, remove_signal_phase(net, jid, 0));
+}
+
+TEST(SignalPhaseCommands, CannotGrowBeyondTheMaxPhaseCount) {
+  CrossFixture fixture;
+  fixture.signalize(SignalizeTemplate::TwoPhase);
+  const JunctionId jid = fixture.junction;
+  RoadNetwork& net = fixture.network;
+
+  apply_command(net, set_phase_duration(net, jid, 0, 24.0)); // materialize
+  while (phase_count(net, jid) < roadmaker::kMaxSignalPhases) {
+    apply_command(net, add_signal_phase(net, jid, phase_count(net, jid)));
+  }
+  ASSERT_EQ(phase_count(net, jid), roadmaker::kMaxSignalPhases);
+  expect_command_rejected(net, add_signal_phase(net, jid, 0));
+  expect_command_rejected(net, duplicate_signal_phase(net, jid, 0));
+}
+
+TEST(SignalPhaseCommands, ClearReturnsToDerivedAndPreEditBytes) {
+  CrossFixture fixture;
+  fixture.signalize(SignalizeTemplate::TwoPhase);
+  const JunctionId jid = fixture.junction;
+  RoadNetwork& net = fixture.network;
+
+  const std::string pristine = snapshot_xodr(net); // derived — no rm:phases bytes
+
+  apply_command(net, set_phase_duration(net, jid, 0, 24.0));
+  EXPECT_TRUE(junction_phases(net, jid).authored);
+  EXPECT_NE(snapshot_xodr(net), pristine);
+
+  apply_command(net, clear_signal_phases(net, jid));
+  EXPECT_FALSE(junction_phases(net, jid).authored);
+  EXPECT_TRUE(net.junction(jid)->phases.empty());
+  expect_network_matches(net, pristine); // byte-identical to before the first edit
+}
+
+TEST(SignalPhaseCommands, SettingAControllerRedErasesItsSparsePair) {
+  CrossFixture fixture;
+  fixture.signalize(SignalizeTemplate::TwoPhase);
+  const JunctionId jid = fixture.junction;
+  RoadNetwork& net = fixture.network;
+
+  apply_command(net, set_phase_duration(net, jid, 0, 24.0)); // materialize
+  ASSERT_EQ(net.junction(jid)->phases[0].states.size(), 1U);
+  const std::string green_ctrl = net.junction(jid)->phases[0].states.front().controller_odr_id;
+  EXPECT_EQ(net.junction(jid)->phases[0].states.front().state, SignalState::Green);
+
+  apply_command(net, set_phase_state(net, jid, 0, green_ctrl, SignalState::Red));
+  // Red is the omitted default: the pair is erased, not stored as Red.
+  EXPECT_TRUE(net.junction(jid)->phases[0].states.empty());
+  // The query still reports it Red via Red-fill.
+  const JunctionPhasePlan plan = junction_phases(net, jid);
+  const auto& row = plan.phases[0].states;
+  const auto entry =
+      std::ranges::find_if(row, [&](const auto& s) { return s.controller_odr_id == green_ctrl; });
+  ASSERT_NE(entry, row.end());
+  EXPECT_EQ(entry->state, SignalState::Red);
+}
+
+TEST(SignalPhaseCommands, AuthoredStateSurvivesControllerEraseAndRestoreByString) {
+  CrossFixture fixture;
+  fixture.signalize(SignalizeTemplate::TwoPhase);
+  const JunctionId jid = fixture.junction;
+  RoadNetwork& net = fixture.network;
+
+  // Materialize the derived cycle: phase 0 greens ctrl0, so an authored
+  // PhaseState now names it by string.
+  const std::string ctrl0 = front_controller(net, jid);
+  apply_command(net, set_phase_duration(net, jid, 0, 24.0));
+  ASSERT_EQ(net.junction(jid)->phases[0].states.front().controller_odr_id, ctrl0);
+
+  // Erase that controller from the arena. The authored PhaseState is keyed by
+  // STRING, so it stays put and goes dormant — reported, never resolved.
+  ControllerId ctrl0_id;
+  Controller ctrl0_value;
+  net.for_each_controller([&](ControllerId id, const Controller& controller) {
+    if (controller.odr_id == ctrl0) {
+      ctrl0_id = id;
+      ctrl0_value = controller;
+    }
+  });
+  ASSERT_TRUE(ctrl0_id.is_valid());
+  ASSERT_TRUE(net.erase_controller(ctrl0_id));
+
+  JunctionPhasePlan plan = junction_phases(net, jid);
+  EXPECT_EQ(std::ranges::find(plan.controller_odr_ids, ctrl0), plan.controller_odr_ids.end());
+  EXPECT_NE(std::ranges::find(plan.dormant_controller_odr_ids, ctrl0),
+            plan.dormant_controller_odr_ids.end());
+
+  // Restoring a controller with the SAME odr id re-binds the authored state by
+  // string match: it is a live member again and no longer dormant.
+  net.add_controller(ctrl0_value);
+  plan = junction_phases(net, jid);
+  EXPECT_NE(std::ranges::find(plan.controller_odr_ids, ctrl0), plan.controller_odr_ids.end());
+  EXPECT_TRUE(plan.dormant_controller_odr_ids.empty());
 }

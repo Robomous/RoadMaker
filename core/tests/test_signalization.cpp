@@ -25,6 +25,7 @@
 
 #include "roadmaker/edit/operations.hpp"
 #include "roadmaker/mesh/junction_maneuvers.hpp"
+#include "roadmaker/mesh/junction_phases.hpp"
 #include "roadmaker/mesh/junction_signals.hpp"
 #include "roadmaker/road/authoring.hpp"
 #include "roadmaker/road/controller.hpp"
@@ -49,24 +50,30 @@ using roadmaker::Controller;
 using roadmaker::ControllerId;
 using roadmaker::Junction;
 using roadmaker::junction_maneuvers;
+using roadmaker::junction_phases;
 using roadmaker::junction_signals;
 using roadmaker::JunctionApproachInfo;
 using roadmaker::JunctionId;
 using roadmaker::JunctionManeuverInfo;
+using roadmaker::JunctionPhasePlan;
 using roadmaker::kSignalApproachWindow;
 using roadmaker::LaneProfile;
 using roadmaker::ObjectId;
 using roadmaker::ObjectOrientation;
+using roadmaker::PhaseState;
 using roadmaker::RoadEnd;
 using roadmaker::RoadId;
 using roadmaker::RoadNetwork;
 using roadmaker::Signal;
 using roadmaker::SignalId;
+using roadmaker::SignalPhase;
+using roadmaker::SignalState;
 using roadmaker::SpanArm;
 using roadmaker::TurnType;
 using roadmaker::Waypoint;
 using roadmaker::edit::clear_signalization;
 using roadmaker::edit::Command;
+using roadmaker::edit::set_phase_duration;
 using roadmaker::edit::signalize_junction;
 using roadmaker::edit::SignalizeOptions;
 using roadmaker::edit::SignalizeTemplate;
@@ -663,4 +670,38 @@ TEST(Signalize, RetemplatingRoundTrips) {
       signalize_junction(fixture.network, fixture.junction, {.tmpl = SignalizeTemplate::TwoPhase});
   ASSERT_NE(second, nullptr);
   expect_command_round_trip(fixture.network, *second);
+}
+
+// --- phase interaction (p4-s8) -----------------------------------------------
+
+TEST(Signalize, RetemplatingClearsTheAuthoredCycle) {
+  CrossFixture fixture;
+  apply_command(fixture.network,
+                signalize_junction(fixture.network,
+                                   fixture.junction,
+                                   {.tmpl = SignalizeTemplate::FourWayProtectedLeft}));
+  // Author a cycle (materializes the derived phases into the junction).
+  apply_command(fixture.network, set_phase_duration(fixture.network, fixture.junction, 0, 24.0));
+  ASSERT_TRUE(junction_phases(fixture.network, fixture.junction).authored);
+
+  // Re-templating mints fresh controller ids, so the authored cycle — which
+  // named the old ones — is dropped rather than left all-dormant.
+  apply_command(
+      fixture.network,
+      signalize_junction(fixture.network, fixture.junction, {.tmpl = SignalizeTemplate::TwoPhase}));
+  EXPECT_TRUE(fixture.network.junction(fixture.junction)->phases.empty());
+  EXPECT_FALSE(junction_phases(fixture.network, fixture.junction).authored);
+}
+
+TEST(Signalize, ClearSignalizationClearsAPhaseOnlyJunction) {
+  CrossFixture fixture;
+  // A junction whose ONLY signalization artifact is an authored cycle (no
+  // template, controllers or mounts): the `records` guard must still admit it.
+  Junction& junction = *fixture.network.junction(fixture.junction);
+  junction.phases = {SignalPhase{.name = "solo", .duration = 20.0, .states = {}}};
+
+  auto cleared = clear_signalization(fixture.network, fixture.junction);
+  ASSERT_NE(cleared, nullptr);
+  apply_command(fixture.network, cleared);
+  EXPECT_TRUE(fixture.network.junction(fixture.junction)->phases.empty());
 }
