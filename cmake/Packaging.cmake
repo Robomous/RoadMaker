@@ -9,7 +9,8 @@
 #            support, and linuxdeploy is a CI-friendly AppImage tool that does
 #            not belong inside install(CODE)).
 #
-# Every bundle carries the Apache-2.0 license, THIRD_PARTY_LICENSES.md, and the Qt
+# Every bundle carries the Apache-2.0 license, the NOTICE file,
+# THIRD_PARTY_LICENSES.md, and the Qt
 # LGPLv3 texts: Qt stays a set of replaceable shared libraries (LGPL relink
 # provision — see THIRD_PARTY_LICENSES.md).
 
@@ -23,6 +24,7 @@ if(APPLE)
 endif()
 install(FILES
   ${CMAKE_SOURCE_DIR}/LICENSE
+  ${CMAKE_SOURCE_DIR}/NOTICE
   ${CMAKE_SOURCE_DIR}/THIRD_PARTY_LICENSES.md
   ${CMAKE_SOURCE_DIR}/licenses/LGPL-3.0-only.txt
   ${CMAKE_SOURCE_DIR}/licenses/GPL-3.0-only.txt
