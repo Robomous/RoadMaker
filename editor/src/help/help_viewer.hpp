@@ -1,3 +1,6 @@
+// Copyright 2026 Robomous
+// SPDX-License-Identifier: Apache-2.0
+
 #pragma once
 
 // The in-app user-guide window: a Contents/Index/Search sidebar beside the

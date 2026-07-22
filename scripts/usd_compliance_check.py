@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+# Copyright 2026 Robomous
+# SPDX-License-Identifier: Apache-2.0
+
 """Validate a .usda file against the OpenUSD reference compliance checker.
 
 Wraps ``pxr.UsdUtils.ComplianceChecker`` — the same engine the ``usdchecker``

@@ -1,3 +1,6 @@
+// Copyright 2026 Robomous
+// SPDX-License-Identifier: Apache-2.0
+
 #pragma once
 
 // Prop Point tool (p6-s4, issue #238). Click on or beside a road: the selected

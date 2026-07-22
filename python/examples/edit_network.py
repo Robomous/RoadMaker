@@ -1,3 +1,6 @@
+# Copyright 2026 Robomous
+# SPDX-License-Identifier: Apache-2.0
+
 """Undoable editing with the kernel command layer (roadmaker.edit).
 
 Every mutation is a command pushed onto an EditStack — pushing applies it,

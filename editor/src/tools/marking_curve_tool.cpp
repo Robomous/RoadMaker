@@ -1,3 +1,6 @@
+// Copyright 2026 Robomous
+// SPDX-License-Identifier: Apache-2.0
+
 #include "tools/marking_curve_tool.hpp"
 
 #include "roadmaker/edit/markings.hpp"

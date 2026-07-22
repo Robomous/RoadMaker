@@ -1,3 +1,6 @@
+// Copyright 2026 Robomous
+// SPDX-License-Identifier: Apache-2.0
+
 // Prop Span tool (p6-s5, issue #239): headless ToolEvent sequences click two
 // stations on one road, then Enter/double-click commits ONE `<object>` carrying
 // ONE `<repeat>` — a single undo entry whose undo restores the file byte for

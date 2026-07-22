@@ -1,3 +1,6 @@
+// Copyright 2026 Robomous
+// SPDX-License-Identifier: Apache-2.0
+
 // Kernel tests for the SIGNALIZATION ENGINE (p4-s7, issue #228): the
 // junction_signals() approach query and the two commands built on it,
 // edit::signalize_junction and edit::clear_signalization.

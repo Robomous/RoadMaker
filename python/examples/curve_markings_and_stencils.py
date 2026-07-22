@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+# Copyright 2026 Robomous
+# SPDX-License-Identifier: Apache-2.0
+
 """Free-form marking curves + arrow stencils (p3-s4): author and export.
 
 Builds a straight road, draws one free-form marking curve down it

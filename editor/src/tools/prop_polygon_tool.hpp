@@ -1,3 +1,6 @@
+// Copyright 2026 Robomous
+// SPDX-License-Identifier: Apache-2.0
+
 #pragma once
 
 // Prop Polygon tool (p6-s5, issue #239). Click a closed region (three or more

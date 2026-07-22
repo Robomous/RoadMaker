@@ -1,3 +1,6 @@
+// Copyright 2026 Robomous
+// SPDX-License-Identifier: Apache-2.0
+
 // Prop Polygon tool (p6-s5, issue #239): headless ToolEvent sequences click a
 // closed region, then Enter/double-click BAKES the scattered props as ONE undo
 // macro whose undo restores the file byte for byte. Asserts the single-macro

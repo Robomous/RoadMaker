@@ -1,3 +1,6 @@
+// Copyright 2026 Robomous
+// SPDX-License-Identifier: Apache-2.0
+
 // Junction regeneration after a node drag (gate finding 2): dragging a node of
 // a junction's incoming arm through the real preview→commit path must leave the
 // connecting roads coincident with the moved arm, not frozen. Drives the

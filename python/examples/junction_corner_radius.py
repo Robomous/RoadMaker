@@ -1,3 +1,6 @@
+# Copyright 2026 Robomous
+# SPDX-License-Identifier: Apache-2.0
+
 """Author junction corner fillets (roadmaker.junction_corners + edit.set_corner_*).
 
 Every corner of a junction — the re-entrant pocket between two angularly

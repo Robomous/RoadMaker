@@ -1,3 +1,6 @@
+// Copyright 2026 Robomous
+// SPDX-License-Identifier: Apache-2.0
+
 // nanobind bindings for the RoadMaker kernel. The API mirrors the C++ data
 // model pythonically: properties, natural containers, exceptions instead of
 // Expected, __repr__ everywhere. No C++ exception ever crosses this

@@ -1,3 +1,6 @@
+// Copyright 2026 Robomous
+// SPDX-License-Identifier: Apache-2.0
+
 // The shortcut map is a single source of truth: Actions binds from it and
 // docs/user-guide/shortcuts.md is rendered from it. These tests are what keeps
 // those three in step — before P1, key letters were hand-copied into tooltips

@@ -1,3 +1,6 @@
+// Copyright 2026 Robomous
+// SPDX-License-Identifier: Apache-2.0
+
 // Lane Add (add_lane_span) and Lane Form (form_lane) — the p2-s5 composite lane
 // tools (issue #217). Both compose the p2-s1/s2 primitives (split_lane_section,
 // add_lane, insert_lane, set_lane_width_profile) into one atomic, byte-identical

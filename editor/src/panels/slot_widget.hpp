@@ -1,3 +1,6 @@
+// Copyright 2026 Robomous
+// SPDX-License-Identifier: Apache-2.0
+
 #pragma once
 
 // Asset/material reference slots (P1/GW-3): a framed drop target in the

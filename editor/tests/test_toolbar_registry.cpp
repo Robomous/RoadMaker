@@ -1,3 +1,6 @@
+// Copyright 2026 Robomous
+// SPDX-License-Identifier: Apache-2.0
+
 // The toolbar is GENERATED from the action registry (p1-s5, issue #317), so
 // these tests are what keeps the taxonomy honest: the categories are pinned,
 // every tool must be categorized, and every Id must resolve to a QAction.

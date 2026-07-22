@@ -1,3 +1,6 @@
+// Copyright 2026 Robomous
+// SPDX-License-Identifier: Apache-2.0
+
 // Crosswalk placement helper (p3-s3, issue #222): the pure geometry shared by
 // the Crosswalk & Stop Line tool and the Library drag-drop path. Builds a
 // 3-arm junction and asserts arm resolution and pair filtering headless.

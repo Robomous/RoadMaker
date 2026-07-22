@@ -1,3 +1,6 @@
+// Copyright 2026 Robomous
+// SPDX-License-Identifier: Apache-2.0
+
 #pragma once
 
 /// Named tolerances used across the kernel. Never inline magic epsilons —

@@ -1,3 +1,6 @@
+// Copyright 2026 Robomous
+// SPDX-License-Identifier: Apache-2.0
+
 // libFuzzer entry point for the OpenDRIVE parser. The parser must never
 // crash, hang, or leak on arbitrary input — it may only return errors and
 // diagnostics. Build with RM_BUILD_FUZZERS=ON (Clang only).

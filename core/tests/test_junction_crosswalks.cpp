@@ -1,3 +1,6 @@
+// Copyright 2026 Robomous
+// SPDX-License-Identifier: Apache-2.0
+
 // Junction-arm crosswalk authoring (GS-1 WS-B): edit::junction_crosswalks derives
 // one zebra crosswalk Object per arm road, spanning its driving lanes.
 

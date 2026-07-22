@@ -1,3 +1,6 @@
+# Copyright 2026 Robomous
+# SPDX-License-Identifier: Apache-2.0
+
 """Author junction materials and a junction-wide corner radius (p4-s2, #226).
 
 Beyond the per-corner fillet geometry of `junction_corner_radius.py`, a

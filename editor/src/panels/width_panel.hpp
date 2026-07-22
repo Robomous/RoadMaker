@@ -1,3 +1,6 @@
+// Copyright 2026 Robomous
+// SPDX-License-Identifier: Apache-2.0
+
 #pragma once
 
 // Lane Width panel (p2-s4): a dockable 2D view of the PRIMARY lane's width

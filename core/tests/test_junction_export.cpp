@@ -1,3 +1,6 @@
+// Copyright 2026 Robomous
+// SPDX-License-Identifier: Apache-2.0
+
 // Acceptance tests for the M2 junction surface EXPORT (issue #19,
 // docs/design/m2/03_junction_blending.md §3): the OpenDRIVE ≥1.8 <planView>
 // reference line and <elevationGrid> the writer derives from a junction's

@@ -1,3 +1,6 @@
+// Copyright 2026 Robomous
+// SPDX-License-Identifier: Apache-2.0
+
 // Junction corner solve (p4-s1, issue #225): the public junction_corners()
 // query is the SAME solve the junction-surface mesher runs, so the Corner
 // tool's handles sit exactly on the emitted pavement. These tests pin the

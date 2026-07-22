@@ -1,3 +1,6 @@
+// Copyright 2026 Robomous
+// SPDX-License-Identifier: Apache-2.0
+
 // The slot's drop contract in isolation: it accepts exactly the Library's MIME
 // type, republishes the dragged key, and asks to be taken to its category. What
 // a key MEANS is the consumer's business (test_panels.cpp covers the Model slot

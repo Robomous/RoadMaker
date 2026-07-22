@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+# Copyright 2026 Robomous
+# SPDX-License-Identifier: Apache-2.0
+
 """GW-1 "First network" — headless replay of the automatable steps.
 
 Drives the kernel command layer (roadmaker.edit.EditStack — the same

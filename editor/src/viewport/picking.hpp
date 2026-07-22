@@ -1,3 +1,6 @@
+// Copyright 2026 Robomous
+// SPDX-License-Identifier: Apache-2.0
+
 #pragma once
 
 // Pure CPU picking math: mouse ray generation, ray/mesh intersection over

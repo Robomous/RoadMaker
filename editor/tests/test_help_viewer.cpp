@@ -1,3 +1,6 @@
+// Copyright 2026 Robomous
+// SPDX-License-Identifier: Apache-2.0
+
 // The in-app help viewer: resource resolution through the engine, slug
 // navigation, and the unavailable-collection path.
 

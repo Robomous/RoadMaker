@@ -1,3 +1,6 @@
+// Copyright 2026 Robomous
+// SPDX-License-Identifier: Apache-2.0
+
 // glTF 2.0 (.glb) export. THE Z-up → Y-up boundary: everything upstream of
 // this file is kernel frame (Z-up); everything in the written file is glTF
 // frame (Y-up). Conversion: (x, y, z) → (x, z, −y).

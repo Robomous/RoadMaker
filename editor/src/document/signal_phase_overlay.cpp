@@ -1,3 +1,6 @@
+// Copyright 2026 Robomous
+// SPDX-License-Identifier: Apache-2.0
+
 #include "document/signal_phase_overlay.hpp"
 
 #include "roadmaker/mesh/junction_maneuvers.hpp"

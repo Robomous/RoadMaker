@@ -1,3 +1,6 @@
+// Copyright 2026 Robomous
+// SPDX-License-Identifier: Apache-2.0
+
 // Sign tool (p4-s9, issue #230): headless ToolEvent sequences place a road sign
 // as ONE undo entry, defaulting to a StVO 310 text plate when the Library offers
 // no sign, placing a selected sign asset otherwise, committing a drag as exactly

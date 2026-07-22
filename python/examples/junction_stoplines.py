@@ -1,3 +1,6 @@
+# Copyright 2026 Robomous
+# SPDX-License-Identifier: Apache-2.0
+
 """Query and edit a junction's stop lines (p4-s3, issue #318).
 
 Uses rm.junction_stoplines plus edit.set_stopline_distance / flip_stopline /

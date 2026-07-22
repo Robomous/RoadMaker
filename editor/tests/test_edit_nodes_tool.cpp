@@ -1,3 +1,6 @@
+// Copyright 2026 Robomous
+// SPDX-License-Identifier: Apache-2.0
+
 // Edit Nodes tool (issue #10): headless ToolEvent sequences drive node
 // activation, midpoint-marker inserts, Delete-key removal, and node drags;
 // the tests assert on the undo stack, the serialized network, and preview

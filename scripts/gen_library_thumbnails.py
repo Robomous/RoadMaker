@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+# Copyright 2026 Robomous
+# SPDX-License-Identifier: Apache-2.0
+
 """Generate the Library panel's item thumbnails (p6-s2, #236).
 
 Every catalogue item in ``assets/library/manifest.json`` names a 96x96 PNG under

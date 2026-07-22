@@ -1,3 +1,6 @@
+// Copyright 2026 Robomous
+// SPDX-License-Identifier: Apache-2.0
+
 #pragma once
 
 // Stop line tool (p4-s3, issue #318). Direct manipulation of a junction arm's

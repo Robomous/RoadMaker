@@ -1,3 +1,6 @@
+// Copyright 2026 Robomous
+// SPDX-License-Identifier: Apache-2.0
+
 #pragma once
 
 #include "roadmaker/assets/prop_library.hpp" // props::FacePlate

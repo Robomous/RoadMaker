@@ -1,3 +1,6 @@
+// Copyright 2026 Robomous
+// SPDX-License-Identifier: Apache-2.0
+
 #pragma once
 
 // Lane Carve tool (p2-s6). Press on a lane near a boundary approaching a

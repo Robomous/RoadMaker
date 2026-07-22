@@ -1,3 +1,6 @@
+// Copyright 2026 Robomous
+// SPDX-License-Identifier: Apache-2.0
+
 #pragma once
 
 // Marking Point tool (p3-s4, issue #223). Click a lane: an arrow stencil

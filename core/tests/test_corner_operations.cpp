@@ -1,3 +1,6 @@
+// Copyright 2026 Robomous
+// SPDX-License-Identifier: Apache-2.0
+
 // Kernel tests for edit::set_corner_radius / set_corner_extents (p4-s1, #225).
 // Corners are named by their adjacent arm pair; the commands are pure junction
 // value edits, so undo is byte-identical and the turn set is never touched

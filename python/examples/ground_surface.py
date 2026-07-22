@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+# Copyright 2026 Robomous
+# SPDX-License-Identifier: Apache-2.0
+
 """Auto-form a ground surface from a closed loop of roads (#215, GW-2 step 5).
 
 Four straight roads welded corner-to-corner enclose a square. derive_surfaces

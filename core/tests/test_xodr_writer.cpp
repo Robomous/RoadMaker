@@ -1,3 +1,6 @@
+// Copyright 2026 Robomous
+// SPDX-License-Identifier: Apache-2.0
+
 // Version-explicit writer target + checker-rule validation (issue #12,
 // docs/design/m2/02_editing_tools.md §8): the header carries the selected
 // revMinor, and validate_network cites normative rule UIDs — rules present

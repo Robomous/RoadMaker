@@ -1,3 +1,6 @@
+// Copyright 2026 Robomous
+// SPDX-License-Identifier: Apache-2.0
+
 #pragma once
 
 // The Library dock (UI-revamp Phase 2): a searchable icon grid over the

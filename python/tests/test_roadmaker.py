@@ -1,3 +1,6 @@
+# Copyright 2026 Robomous
+# SPDX-License-Identifier: Apache-2.0
+
 """pytest suite for the roadmaker Python package."""
 
 from pathlib import Path

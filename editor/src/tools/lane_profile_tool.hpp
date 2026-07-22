@@ -1,3 +1,6 @@
+// Copyright 2026 Robomous
+// SPDX-License-Identifier: Apache-2.0
+
 #pragma once
 
 // Lane tool (issue #14 / p2-s4). The editing itself is panel-based: type edits

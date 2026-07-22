@@ -1,3 +1,6 @@
+// Copyright 2026 Robomous
+// SPDX-License-Identifier: Apache-2.0
+
 // Lane Width panel (p2-s4): width-along-s edits as commands through Document
 // (drags = one preview session + one undo entry via set_lane_width_profile),
 // insert/remove nodes, and the Shift+double-click lane-section split. Offscreen;

@@ -1,3 +1,6 @@
+# Copyright 2026 Robomous
+# SPDX-License-Identifier: Apache-2.0
+
 """Road styles through the bindings (edit.apply_road_style, p2-s8)."""
 
 import pytest

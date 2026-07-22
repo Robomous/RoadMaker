@@ -1,3 +1,6 @@
+# Copyright 2026 Robomous
+# SPDX-License-Identifier: Apache-2.0
+
 """Tee a road into the side of another (roadmaker.edit.attach_t_junction).
 
 The hardening-sprint workflow the editor's side-snap uses: attach a road END

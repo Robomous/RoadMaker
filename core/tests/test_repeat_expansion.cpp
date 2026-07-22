@@ -1,3 +1,6 @@
+// Copyright 2026 Robomous
+// SPDX-License-Identifier: Apache-2.0
+
 // Tests for expand_repeat — the §13.4 <repeat> section expander that turns one
 // ObjectRepeat into the discrete instances it places. Semantics under test:
 // round-down count, inclusive exact-fit endpoint, linear vs cubic t, linear

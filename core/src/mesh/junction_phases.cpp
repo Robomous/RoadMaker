@@ -1,3 +1,6 @@
+// Copyright 2026 Robomous
+// SPDX-License-Identifier: Apache-2.0
+
 #include "roadmaker/mesh/junction_phases.hpp"
 
 #include "roadmaker/mesh/junction_maneuvers.hpp"

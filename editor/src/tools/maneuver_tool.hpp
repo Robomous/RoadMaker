@@ -1,3 +1,6 @@
+// Copyright 2026 Robomous
+// SPDX-License-Identifier: Apache-2.0
+
 #pragma once
 
 // Maneuver tool (p4-s6, issue #227). Direct manipulation of ONE connecting

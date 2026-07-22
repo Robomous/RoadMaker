@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+# Copyright 2026 Robomous
+# SPDX-License-Identifier: Apache-2.0
+
 """Generate the bundled low-poly prop meshes (trees + shrub).
 
 The props are *procedurally authored original work* (Apache-2.0, "original work

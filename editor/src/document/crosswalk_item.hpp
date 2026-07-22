@@ -1,3 +1,6 @@
+// Copyright 2026 Robomous
+// SPDX-License-Identifier: Apache-2.0
+
 #pragma once
 
 // The Crosswalk-library-item → kernel translation (p3-s2), shared by the

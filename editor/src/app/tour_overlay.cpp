@@ -1,3 +1,6 @@
+// Copyright 2026 Robomous
+// SPDX-License-Identifier: Apache-2.0
+
 #include "app/tour_overlay.hpp"
 
 #include <QColor>

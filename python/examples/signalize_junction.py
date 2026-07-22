@@ -1,3 +1,6 @@
+# Copyright 2026 Robomous
+# SPDX-License-Identifier: Apache-2.0
+
 """Auto-SIGNALIZE a junction: heads, signs, controllers, sync groups (#228).
 
 Until this sprint RoadMaker had no model for OpenDRIVE's signal controllers at

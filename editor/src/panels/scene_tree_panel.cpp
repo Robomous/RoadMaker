@@ -1,3 +1,6 @@
+// Copyright 2026 Robomous
+// SPDX-License-Identifier: Apache-2.0
+
 #include "panels/scene_tree_panel.hpp"
 
 #include <QItemSelectionModel>

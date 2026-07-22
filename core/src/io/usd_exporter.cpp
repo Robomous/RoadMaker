@@ -1,3 +1,6 @@
+// Copyright 2026 Robomous
+// SPDX-License-Identifier: Apache-2.0
+
 // OpenUSD ASCII (.usda) export. THE Z-up → Y-up boundary for USD: everything
 // upstream is kernel frame (Z-up); everything authored here is USD frame
 // (Y-up), via the shared io_common::to_export_frame rotation.

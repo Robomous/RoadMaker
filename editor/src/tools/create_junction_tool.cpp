@@ -1,3 +1,6 @@
+// Copyright 2026 Robomous
+// SPDX-License-Identifier: Apache-2.0
+
 #include "tools/create_junction_tool.hpp"
 
 #include "roadmaker/edit/connection.hpp"

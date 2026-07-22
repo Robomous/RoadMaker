@@ -1,3 +1,6 @@
+// Copyright 2026 Robomous
+// SPDX-License-Identifier: Apache-2.0
+
 // Golden-file structural tests for the OpenUSD (.usda) exporter. USDA is ASCII,
 // so these assert on the emitted text (upAxis / metersPerUnit / defaultPrim,
 // the Road→LaneSection→Lane Xform hierarchy, material bindings, and the

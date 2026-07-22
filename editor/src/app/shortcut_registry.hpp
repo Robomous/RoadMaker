@@ -1,3 +1,6 @@
+// Copyright 2026 Robomous
+// SPDX-License-Identifier: Apache-2.0
+
 #pragma once
 
 // The action registry (P1/GW-1 pass criterion "every binding is discoverable in

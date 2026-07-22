@@ -1,3 +1,6 @@
+// Copyright 2026 Robomous
+// SPDX-License-Identifier: Apache-2.0
+
 #pragma once
 
 // Prop Span tool (p6-s5, issue #239). Two clicks on one road define a repeating

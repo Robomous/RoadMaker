@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+# Copyright 2026 Robomous
+# SPDX-License-Identifier: Apache-2.0
+
 """Carve a tapering turn lane approaching the road's end (OpenDRIVE §11.7.1).
 
 Builds a straight two-lane street and carves a right-hand turn lane through

@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+# Copyright 2026 Robomous
+# SPDX-License-Identifier: Apache-2.0
+
 """Parametric crosswalk assets (p3-s2): author, edit, and export.
 
 Builds a T-junction, drops one parametric crosswalk per arm via

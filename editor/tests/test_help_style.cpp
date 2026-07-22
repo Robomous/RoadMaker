@@ -1,3 +1,6 @@
+// Copyright 2026 Robomous
+// SPDX-License-Identifier: Apache-2.0
+
 // The in-app help stylesheet is generated from the theme tokens; the committed
 // editor/resources/help/help.css (baked into the shipped .qch) must be exactly
 // what help_style::css(default theme) produces. This gate is the tie.

@@ -1,3 +1,6 @@
+# Copyright 2026 Robomous
+# SPDX-License-Identifier: Apache-2.0
+
 """Close the gap between two free road ends (roadmaker.edit.close_gap).
 
 close_gap welds two free ends together in one undoable command: a pure link

@@ -1,3 +1,6 @@
+// Copyright 2026 Robomous
+// SPDX-License-Identifier: Apache-2.0
+
 #pragma once
 
 // Stylesheet for the in-app help viewer (QTextBrowser). Generated from the same

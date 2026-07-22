@@ -1,3 +1,6 @@
+// Copyright 2026 Robomous
+// SPDX-License-Identifier: Apache-2.0
+
 #include "roadmaker/mesh/junction_surface_spans.hpp"
 
 #include "roadmaker/road/junction.hpp"

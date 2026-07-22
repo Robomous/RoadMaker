@@ -1,3 +1,6 @@
+// Copyright 2026 Robomous
+// SPDX-License-Identifier: Apache-2.0
+
 // Lane Carve tool (p2-s6): a press-drag-release along one lane carves a turn
 // lane through edit::carve_lane — ONE preview session, ONE undo entry. The
 // width ramps 0 -> full over the dragged span and holds full to the terminus.

@@ -1,3 +1,6 @@
+// Copyright 2026 Robomous
+// SPDX-License-Identifier: Apache-2.0
+
 #pragma once
 
 // Junction Span tool (p4-s4, issue #319) — authoring a VIRTUAL junction, ASAM

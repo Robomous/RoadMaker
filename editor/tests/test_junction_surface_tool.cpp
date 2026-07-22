@@ -1,3 +1,6 @@
+// Copyright 2026 Robomous
+// SPDX-License-Identifier: Apache-2.0
+
 // Junction Surface tool (p4-s5, issue #320): headless ToolEvent sequences
 // select a junction, pick one of its floor's surface spans, and drive the two
 // controls, asserting that the preview is gated on the selection, that the

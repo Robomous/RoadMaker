@@ -1,3 +1,6 @@
+// Copyright 2026 Robomous
+// SPDX-License-Identifier: Apache-2.0
+
 // Road-mark completions (§11.9 color + multi-line, §13.14 object markings) —
 // M3a P2, docs/design/m3a/02_road_marks.md. Gate: marking round-trip
 // byte-stable (M2 single-line unchanged), dual-strip + arrow meshes

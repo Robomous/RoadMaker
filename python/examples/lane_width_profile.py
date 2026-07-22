@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+# Copyright 2026 Robomous
+# SPDX-License-Identifier: Apache-2.0
+
 """Author width that varies along s (OpenDRIVE §11.7.1) and split a lane section.
 
 Builds a straight street, cuts its single lane section in two, and tapers a

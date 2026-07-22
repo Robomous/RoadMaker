@@ -1,3 +1,6 @@
+# Copyright 2026 Robomous
+# SPDX-License-Identifier: Apache-2.0
+
 """The signal PHASE cycle of a junction through the Python bindings (p4-s8, #229).
 
 OpenDRIVE §14.6 gives a junction its static signal wiring — `<controller>`s and

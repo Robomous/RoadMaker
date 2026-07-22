@@ -1,3 +1,6 @@
+// Copyright 2026 Robomous
+// SPDX-License-Identifier: Apache-2.0
+
 // Prop Point tool (p6-s4, issue #238): headless ToolEvent sequences place a prop
 // on/beside a road and assert the network, the ONE-undo-entry semantics,
 // byte-identical undo, the drag = one move command path, the off-road no-op, the

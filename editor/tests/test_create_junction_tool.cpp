@@ -1,3 +1,6 @@
+// Copyright 2026 Robomous
+// SPDX-License-Identifier: Apache-2.0
+
 // Create Junction tool (issue #17, docs/design/m2/02_editing_tools.md §6):
 // headless ToolEvent sequences select road ends and generate a junction; the
 // tests assert on the network, the undo stack, and the regeneration an

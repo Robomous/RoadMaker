@@ -1,3 +1,6 @@
+// Copyright 2026 Robomous
+// SPDX-License-Identifier: Apache-2.0
+
 // Document::push_command bridge: apply-once semantics, undo/redo through
 // the kernel, failed applies never pushed, stack cleared on load.
 

@@ -1,3 +1,6 @@
+// Copyright 2026 Robomous
+// SPDX-License-Identifier: Apache-2.0
+
 // The signal-controller arena (p4-s7, issue #228).
 //
 // ASAM OpenDRIVE 1.9.0 §14.6 makes `<controller>` a child of `<OpenDRIVE>`

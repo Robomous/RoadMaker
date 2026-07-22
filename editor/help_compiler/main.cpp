@@ -1,3 +1,6 @@
+// Copyright 2026 Robomous
+// SPDX-License-Identifier: Apache-2.0
+
 // rm_helpc — compiles the committed Markdown user guide into the inputs
 // qhelpgenerator needs (rendered HTML + .qhp + .qhcp). Build-time host tool;
 // Qt-free. See editor/CMakeLists.txt for how the outputs become the shipped

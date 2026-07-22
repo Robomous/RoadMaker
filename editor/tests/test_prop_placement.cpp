@@ -1,3 +1,6 @@
+// Copyright 2026 Robomous
+// SPDX-License-Identifier: Apache-2.0
+
 // Prop placement helper (p6-s4, issue #238): the pure geometry behind the Prop
 // Point and Prop Curve tools. Builds a straight road and asserts road snapping,
 // prop-object construction, spacing distribution (including the s=0 sample), the

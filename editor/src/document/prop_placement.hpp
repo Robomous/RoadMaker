@@ -1,3 +1,6 @@
+// Copyright 2026 Robomous
+// SPDX-License-Identifier: Apache-2.0
+
 #pragma once
 
 // Prop placement helpers (p6-s4, issue #238), shared by the Prop Point tool, the

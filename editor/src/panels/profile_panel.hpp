@@ -1,3 +1,6 @@
+// Copyright 2026 Robomous
+// SPDX-License-Identifier: Apache-2.0
+
 #pragma once
 
 // Vertical-profile panel (hardening sprint WS-C): a dockable 2D view of the

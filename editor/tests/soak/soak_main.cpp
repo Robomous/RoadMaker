@@ -1,3 +1,6 @@
+// Copyright 2026 Robomous
+// SPDX-License-Identifier: Apache-2.0
+
 // Standalone soak runner (hardening sprint §4.3, issue #86):
 //
 //   roadmaker_soak [--seed N] [--ops N] [--minutes M] [--dir PATH]

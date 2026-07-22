@@ -1,3 +1,6 @@
+// Copyright 2026 Robomous
+// SPDX-License-Identifier: Apache-2.0
+
 #pragma once
 
 // The Marking-library-item → kernel RoadMark mapping, shared by the viewport

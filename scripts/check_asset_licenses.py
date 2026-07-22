@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+# Copyright 2026 Robomous
+# SPDX-License-Identifier: Apache-2.0
+
 """CI lint: every repository asset is accounted for in ASSETS_LICENSES.md.
 
 Checks (policy: docs/design/m2/05_assets.md):

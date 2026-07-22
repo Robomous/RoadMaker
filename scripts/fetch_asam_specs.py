@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+# Copyright 2026 Robomous
+# SPDX-License-Identifier: Apache-2.0
+
 """Fetch ASAM specifications as local Markdown references for RoadMaker.
 
 Downloads the ASAM OpenDRIVE and ASAM OpenSCENARIO XML specification HTML

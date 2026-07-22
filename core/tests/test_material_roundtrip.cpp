@@ -1,3 +1,6 @@
+// Copyright 2026 Robomous
+// SPDX-License-Identifier: Apache-2.0
+
 // Lane <material> (§11.8.2) + lane Preserved tier (p6-s3 / #237). The gate is
 // byte-identical round-trip INCLUDING an unmodeled @attr and an unmodeled lane
 // child, plus the two normative diagnostics (center_lane_no_material,

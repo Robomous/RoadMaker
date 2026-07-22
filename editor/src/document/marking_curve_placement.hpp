@@ -1,3 +1,6 @@
+// Copyright 2026 Robomous
+// SPDX-License-Identifier: Apache-2.0
+
 #pragma once
 
 // Marking-curve placement helper (p3-s4, issue #223) for the Marking Curve tool

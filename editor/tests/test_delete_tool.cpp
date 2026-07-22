@@ -1,3 +1,6 @@
+// Copyright 2026 Robomous
+// SPDX-License-Identifier: Apache-2.0
+
 // Delete tool (issue #11, docs/design/m2/02_editing_tools.md §7): headless
 // ToolEvent sequences drive click-deletion; the tests assert on the network,
 // the undo stack, and the serialized round-trip — including the referential

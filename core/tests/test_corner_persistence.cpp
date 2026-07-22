@@ -1,3 +1,6 @@
+// Copyright 2026 Robomous
+// SPDX-License-Identifier: Apache-2.0
+
 // Persistence of authored junction corner-fillet overrides (p4-s1, issue
 // #225): <userData code="rm:corners"> on <junction>, entries ";"-joined,
 // fields ":"-joined:

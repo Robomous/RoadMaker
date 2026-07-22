@@ -1,3 +1,6 @@
+// Copyright 2026 Robomous
+// SPDX-License-Identifier: Apache-2.0
+
 // Kernel tests for junction CONTROL — the lock that keeps a hand-tuned
 // junction out of the automatic regeneration loops (p4-s4, issue #319).
 //

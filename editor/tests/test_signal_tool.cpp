@@ -1,3 +1,6 @@
+// Copyright 2026 Robomous
+// SPDX-License-Identifier: Apache-2.0
+
 // Signal tool (p4-s7, issue #228): headless ToolEvent sequences target a
 // junction, apply and clear a signalization template, and place a single head
 // on a road — asserting that the two commands are ONE undo entry each and that

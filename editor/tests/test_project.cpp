@@ -1,3 +1,6 @@
+// Copyright 2026 Robomous
+// SPDX-License-Identifier: Apache-2.0
+
 // Project (p6-s1, #235): a directory with a project.json beside ordinary
 // *.xodr scenes. These tests pin the manifest contract (create refuses an
 // existing project, forward-compat parses a newer version, bad JSON errors),

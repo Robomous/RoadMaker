@@ -1,3 +1,6 @@
+// Copyright 2026 Robomous
+// SPDX-License-Identifier: Apache-2.0
+
 #pragma once
 
 // Scrub-editing (P1/GW-2): drag an attribute's NAME horizontally to change its

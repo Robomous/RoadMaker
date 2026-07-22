@@ -1,3 +1,6 @@
+// Copyright 2026 Robomous
+// SPDX-License-Identifier: Apache-2.0
+
 // Road styles (apply_road_style) — the p2-s8 kernel op (issue #219). A road
 // style is a serializable cross-section applied to an EXISTING road: it
 // replaces the lane profile and boundary marks and flattens the road to a

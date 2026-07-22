@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+# Copyright 2026 Robomous
+# SPDX-License-Identifier: Apache-2.0
+
 """Place road objects (OpenDRIVE <object>, spec chapter 13) on an authored road.
 
 Authors the GS-1 object set on a straight street — a painted crosswalk

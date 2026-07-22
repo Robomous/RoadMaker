@@ -1,3 +1,6 @@
+// Copyright 2026 Robomous
+// SPDX-License-Identifier: Apache-2.0
+
 #pragma once
 
 // The Signal Phase Editor timeline (p4-s8, issue #229, GW-4 steps 4-10): a

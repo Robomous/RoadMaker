@@ -1,3 +1,6 @@
+// Copyright 2026 Robomous
+// SPDX-License-Identifier: Apache-2.0
+
 // OpenDRIVE <signals> (§14) — data model, parse, write, validate (M3a P1,
 // docs/design/m3a/01_kernel_objects_signals.md). Round-trip fidelity is the
 // gate: typed fields within rm::tol, preserved fragments byte-equal. Mirrors

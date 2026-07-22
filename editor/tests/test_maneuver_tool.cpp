@@ -1,3 +1,6 @@
+// Copyright 2026 Robomous
+// SPDX-License-Identifier: Apache-2.0
+
 // Maneuver tool (p4-s6, issue #227): headless ToolEvent sequences select a
 // junction, pick one of its turns, and reshape it — asserting that the preview
 // is gated on the selection, that the sub-selection follows a viewport click, a

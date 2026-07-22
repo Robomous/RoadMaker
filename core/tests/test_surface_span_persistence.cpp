@@ -1,3 +1,6 @@
+// Copyright 2026 Robomous
+// SPDX-License-Identifier: Apache-2.0
+
 // Persistence of the junction floor's per-connecting-road surface spans
 // (p4-s5, issue #320).
 //

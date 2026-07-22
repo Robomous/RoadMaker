@@ -1,3 +1,6 @@
+// Copyright 2026 Robomous
+// SPDX-License-Identifier: Apache-2.0
+
 // T-junction geometry & mesh quality matrix (hardening sprint, GW-1 gate
 // finding): attach_t_junction must produce standards-correct, well-conditioned
 // geometry for every tee configuration the editor can author — not only the

@@ -1,3 +1,6 @@
+// Copyright 2026 Robomous
+// SPDX-License-Identifier: Apache-2.0
+
 // Kernel tests for the stop-line query API (p4-s3, #318).
 //
 // junction_stoplines() is the single geometry source the mesher, the writer's

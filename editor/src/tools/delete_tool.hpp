@@ -1,3 +1,6 @@
+// Copyright 2026 Robomous
+// SPDX-License-Identifier: Apache-2.0
+
 #pragma once
 
 // Delete tool (issue #11, docs/design/m2/02_editing_tools.md §7). A click

@@ -1,3 +1,6 @@
+# Copyright 2026 Robomous
+# SPDX-License-Identifier: Apache-2.0
+
 """Rotate a whole road about a world pivot (roadmaker.edit.rotate_road).
 
 A rotation is rigid: every plan-view geometry record's start position rotates

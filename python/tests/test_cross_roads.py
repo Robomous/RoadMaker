@@ -1,3 +1,6 @@
+# Copyright 2026 Robomous
+# SPDX-License-Identifier: Apache-2.0
+
 """edit.assembly.cross_roads + road_intersections through the bindings."""
 
 import pytest

@@ -1,3 +1,6 @@
+// Copyright 2026 Robomous
+// SPDX-License-Identifier: Apache-2.0
+
 // Kernel tests for edit::set_stopline_distance / flip_stopline / reset_stopline
 // (p4-s3, #318).
 //

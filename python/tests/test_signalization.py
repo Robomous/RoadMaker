@@ -1,3 +1,6 @@
+# Copyright 2026 Robomous
+# SPDX-License-Identifier: Apache-2.0
+
 """Junction SIGNALIZATION through the Python bindings (p4-s7, #228).
 
 Three layers meet here:

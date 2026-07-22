@@ -1,3 +1,6 @@
+// Copyright 2026 Robomous
+// SPDX-License-Identifier: Apache-2.0
+
 // Profile panel (hardening sprint WS-C): elevation node/grade edits as
 // commands through Document (drags = one preview session + one undo entry),
 // insert/delete, the overpass workflow, and the crossing detector. Offscreen;

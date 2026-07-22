@@ -1,3 +1,6 @@
+// Copyright 2026 Robomous
+// SPDX-License-Identifier: Apache-2.0
+
 // The (Qt-free) help compiler: TOC extraction from index.md, page rendering
 // with link rewrites, and .qhp emission. Temp-dir fixtures — no QApplication.
 

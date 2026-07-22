@@ -1,3 +1,6 @@
+# Copyright 2026 Robomous
+# SPDX-License-Identifier: Apache-2.0
+
 """The junction signal PHASE cycle through the Python bindings (p4-s8, #229).
 
 OpenDRIVE §14.6 excludes signal timing on purpose, so the cycle is a RoadMaker

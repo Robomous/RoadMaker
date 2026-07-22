@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+# Copyright 2026 Robomous
+# SPDX-License-Identifier: Apache-2.0
+
 """Render an editor viewport screenshot of a .xodr scene, headless-friendly.
 
 Thin wrapper over the editor's ``--screenshot`` mode that (a) locates the

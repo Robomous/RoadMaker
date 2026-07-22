@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+# Copyright 2026 Robomous
+# SPDX-License-Identifier: Apache-2.0
+
 """Fetch, verify, and place the external assets listed in assets/manifest.json.
 
 Icons and processed textures are committed to the repository (small,

@@ -1,3 +1,6 @@
+// Copyright 2026 Robomous
+// SPDX-License-Identifier: Apache-2.0
+
 #include "roadmaker/geometry/poly3.hpp"
 #include "roadmaker/geometry/profile_fit.hpp"
 #include "roadmaker/tol.hpp"

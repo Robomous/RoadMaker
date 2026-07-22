@@ -1,3 +1,6 @@
+// Copyright 2026 Robomous
+// SPDX-License-Identifier: Apache-2.0
+
 // Stop Line tool (p4-s3, issue #318): headless ToolEvent sequences hover,
 // select and drag a junction arm's stop line, asserting the tool-local
 // sub-selection, the ONE-undo-entry drag discipline (press-with-no-move and Esc
