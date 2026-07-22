@@ -9,6 +9,7 @@
 #include <QSet>
 #include <QUndoStack>
 #include <array>
+#include <string_view>
 #include <vector>
 
 #include "app/actions.hpp"
@@ -21,7 +22,7 @@ using shortcuts::Entry;
 using shortcuts::Id;
 using shortcuts::ToolbarGroup;
 using shortcuts::ToolbarGroupLayout;
-using shortcuts::ToolbarRow;
+using shortcuts::ToolbarTab;
 
 /// The ids of one group, in layout order.
 std::vector<Id> ids_of(const std::vector<ToolbarGroupLayout>& layout, const char* name) {
@@ -34,21 +35,21 @@ std::vector<Id> ids_of(const std::vector<ToolbarGroupLayout>& layout, const char
   return {};
 }
 
-// The taxonomy is a product decision (#317), not an implementation detail:
-// pin it so a reshuffle has to be deliberate. The three reserved groups are
-// listed before they hold anything — that is the point of committing them.
+// The taxonomy is a product decision (#317/#368), not an implementation detail:
+// pin it so a reshuffle has to be deliberate. The reserved tabs are listed
+// before they hold anything — that is the point of committing them.
 TEST(ToolbarRegistry, TaxonomyIsFixed) {
-  const std::array<std::pair<const char*, ToolbarRow>, 10> expected{{
-      {"File", ToolbarRow::kAuthoring},
-      {"Edit", ToolbarRow::kAuthoring},
-      {"Roads", ToolbarRow::kAuthoring},
-      {"Lanes", ToolbarRow::kAuthoring},
-      {"Markings", ToolbarRow::kLayers},
-      {"Props", ToolbarRow::kLayers},
-      {"Terrain & Structures", ToolbarRow::kLayers},
-      {"Signals & Signs", ToolbarRow::kLayers},
-      {"Scenario", ToolbarRow::kLayers},
-      {"Library & View", ToolbarRow::kLayers},
+  const std::array<std::pair<const char*, ToolbarTab>, 10> expected{{
+      {"File", ToolbarTab::kCore},
+      {"Edit", ToolbarTab::kCore},
+      {"Roads", ToolbarTab::kRoadsLanes},
+      {"Lanes", ToolbarTab::kRoadsLanes},
+      {"Markings", ToolbarTab::kMarkings},
+      {"Props", ToolbarTab::kProps},
+      {"Terrain & Structures", ToolbarTab::kTerrain},
+      {"Signals & Signs", ToolbarTab::kSignals},
+      {"Scenario", ToolbarTab::kScenario},
+      {"Library & View", ToolbarTab::kCore},
   }};
 
   const std::span<const ToolbarGroup> groups = shortcuts::toolbar_groups();
@@ -56,7 +57,7 @@ TEST(ToolbarRegistry, TaxonomyIsFixed) {
   for (std::size_t i = 0; i < expected.size(); ++i) {
     EXPECT_EQ(QString::fromUtf8(groups[i].name), QString::fromUtf8(expected[i].first))
         << "group " << i;
-    EXPECT_EQ(groups[i].row, expected[i].second) << "group " << i << " is on the wrong row";
+    EXPECT_EQ(groups[i].tab, expected[i].second) << "group " << i << " is on the wrong tab";
   }
 }
 
@@ -130,19 +131,24 @@ TEST(ToolbarRegistry, EveryToolGroupActionIsOnTheToolbar) {
   }
 }
 
-// The layout the issue specifies, per group and in order. Reserved groups are
-// present-but-empty rather than absent: the taxonomy is committed now, the
+// The layout the issue specifies, per tab and group, in order. Reserved tabs
+// are present-but-empty rather than absent: the taxonomy is committed now, the
 // contents arrive later.
 TEST(ToolbarRegistry, LayoutMatchesTheIssue) {
-  const std::vector<ToolbarGroupLayout> authoring =
-      shortcuts::toolbar_layout(ToolbarRow::kAuthoring);
-  ASSERT_EQ(authoring.size(), 4u);
-  EXPECT_EQ(ids_of(authoring, "File"),
-            (std::vector{Id::NewScene, Id::Open, Id::Save, Id::ExportGlb}));
+  // The persistent core strip: file ops, the universal edit tools, framing.
+  const std::vector<ToolbarGroupLayout> core = shortcuts::toolbar_layout(ToolbarTab::kCore);
+  ASSERT_EQ(core.size(), 3u);
+  EXPECT_EQ(ids_of(core, "File"), (std::vector{Id::NewScene, Id::Open, Id::Save, Id::ExportGlb}));
   EXPECT_EQ(
-      ids_of(authoring, "Edit"),
+      ids_of(core, "Edit"),
       (std::vector{Id::ToolSelect, Id::ToolMove, Id::ToolSplit, Id::ToolDelete, Id::MergeRoads}));
-  EXPECT_EQ(ids_of(authoring, "Roads"),
+  EXPECT_EQ(ids_of(core, "Library & View"),
+            (std::vector{Id::AddFromLibrary, Id::ResetCamera, Id::FrameSelection}));
+
+  const std::vector<ToolbarGroupLayout> roads_lanes =
+      shortcuts::toolbar_layout(ToolbarTab::kRoadsLanes);
+  ASSERT_EQ(roads_lanes.size(), 2u);
+  EXPECT_EQ(ids_of(roads_lanes, "Roads"),
             (std::vector{Id::ToolCreateRoad,
                          Id::ToolEditNodes,
                          Id::ToolCreateJunction,
@@ -152,31 +158,88 @@ TEST(ToolbarRegistry, LayoutMatchesTheIssue) {
                          Id::ToolJunctionSurface,
                          Id::ToolManeuver,
                          Id::ToolElevation}));
-  EXPECT_EQ(ids_of(authoring, "Lanes"),
+  EXPECT_EQ(ids_of(roads_lanes, "Lanes"),
             (std::vector{Id::ToolLaneProfile,
                          Id::ToolLaneAdd,
                          Id::ToolLaneForm,
                          Id::ToolLaneCarve,
                          Id::LaneWidthEditor}));
 
-  const std::vector<ToolbarGroupLayout> layers = shortcuts::toolbar_layout(ToolbarRow::kLayers);
-  ASSERT_EQ(layers.size(), 6u);
-  EXPECT_EQ(ids_of(layers, "Markings"),
+  EXPECT_EQ(ids_of(shortcuts::toolbar_layout(ToolbarTab::kMarkings), "Markings"),
             (std::vector{Id::ToolCrosswalk, Id::ToolMarkingPoint, Id::ToolMarkingCurve}));
   EXPECT_EQ(
-      ids_of(layers, "Props"),
+      ids_of(shortcuts::toolbar_layout(ToolbarTab::kProps), "Props"),
       (std::vector{Id::ToolPropPoint, Id::ToolPropCurve, Id::ToolPropSpan, Id::ToolPropPolygon}));
-  EXPECT_EQ(ids_of(layers, "Library & View"),
-            (std::vector{Id::AddFromLibrary, Id::ResetCamera, Id::FrameSelection}));
-
-  // Populated by p4-s7 (issue #228): the Signal tool. p4-s8 (issue #229) adds
-  // the Signal Phase editor beside it; p4-s9 (issue #230) adds the Sign tool.
-  EXPECT_EQ(ids_of(layers, "Signals & Signs"),
+  // Populated by p4-s7..s9 (#228/#229/#230): Signal tool, Phase editor, Sign.
+  EXPECT_EQ(ids_of(shortcuts::toolbar_layout(ToolbarTab::kSignals), "Signals & Signs"),
             (std::vector{Id::ToolSignal, Id::SignalPhaseEditor, Id::ToolSign}));
 
-  for (const char* reserved : {"Terrain & Structures", "Scenario"}) {
-    EXPECT_TRUE(ids_of(layers, reserved).empty())
-        << reserved << " is reserved and must render nothing yet";
+  for (const ToolbarTab reserved : {ToolbarTab::kTerrain, ToolbarTab::kScenario}) {
+    const std::vector<ToolbarGroupLayout> layout = shortcuts::toolbar_layout(reserved);
+    ASSERT_EQ(layout.size(), 1u);
+    EXPECT_TRUE(layout.front().ids.empty()) << "a reserved tab must render nothing yet";
+  }
+}
+
+// The tabs actually shown skip the core strip AND any empty reserved tab —
+// Terrain/Scenario appear only once their pillar (P5/P8) lands its first tool.
+TEST(ToolbarRegistry, ShownTabsSkipCoreAndEmptyReserved) {
+  std::vector<QString> titles;
+  for (const shortcuts::ToolbarTabInfo& info : shortcuts::toolbar_tabs()) {
+    titles.push_back(QString::fromUtf8(info.title));
+    EXPECT_NE(info.tab, ToolbarTab::kCore);
+    EXPECT_NE(info.tab, ToolbarTab::kTerrain) << "reserved-empty tab must stay hidden";
+    EXPECT_NE(info.tab, ToolbarTab::kScenario) << "reserved-empty tab must stay hidden";
+  }
+  EXPECT_EQ(titles,
+            (std::vector<QString>{QStringLiteral("Roads & Lanes"),
+                                  QStringLiteral("Markings"),
+                                  QStringLiteral("Props"),
+                                  QStringLiteral("Signals & Signs")}));
+}
+
+// The persistent strip is what the user must never lose behind a tab. Pin the
+// contract: these actions are always in the core strip, never a tab.
+TEST(ToolbarRegistry, CoreStripAlwaysHoldsFileEditAndFraming) {
+  QSet<Id> core_ids;
+  for (const ToolbarGroupLayout& group : shortcuts::toolbar_layout(ToolbarTab::kCore)) {
+    for (const Id id : group.ids) {
+      core_ids.insert(id);
+    }
+  }
+  for (const Id must : {Id::NewScene,
+                        Id::Save,
+                        Id::ToolSelect,
+                        Id::ToolMove,
+                        Id::ToolDelete,
+                        Id::FrameSelection,
+                        Id::ResetCamera,
+                        Id::AddFromLibrary}) {
+    EXPECT_TRUE(core_ids.contains(must))
+        << "the core strip must always hold " << shortcuts::entry(must).description;
+  }
+}
+
+// reveal-on-activation maps a tool to its tab (toolbar_tab_of): every tool must
+// map to the tab whose layout actually contains it, exactly once — so a hidden
+// tool always reveals the right section.
+TEST(ToolbarRegistry, EveryToolMapsToTheTabThatHoldsIt) {
+  for (const Entry& row : shortcuts::table()) {
+    if (row.toolbar_group == nullptr ||
+        std::string_view(row.category) != std::string_view("Tools")) {
+      continue;
+    }
+    const ToolbarTab tab = shortcuts::toolbar_tab_of(row.id);
+    int appearances = 0;
+    for (const ToolbarGroupLayout& group : shortcuts::toolbar_layout(tab)) {
+      for (const Id id : group.ids) {
+        if (id == row.id) {
+          ++appearances;
+        }
+      }
+    }
+    EXPECT_EQ(appearances, 1) << QString::fromUtf8(row.description).toStdString()
+                              << " must sit in exactly one group of the tab it maps to";
   }
 }
 

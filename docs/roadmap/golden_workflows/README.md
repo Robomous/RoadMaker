@@ -12,6 +12,13 @@ Specs are written under the
 [product-parity and IP rules](../../standards/product-parity.md): RoadMaker
 tool names and ASAM OpenDRIVE / OpenSCENARIO vocabulary only.
 
+> **Toolbar note (p1-s6):** tools are organized into a persistent **core
+> strip** (file ops · Select/Move/Split/Delete/Merge · camera/Frame/Library,
+> always visible) plus category **tabs** (Roads & Lanes, Markings, Props,
+> Signals & Signs). A step that "activates the *X* tool" works by its
+> keyboard shortcut regardless of the visible tab, and activating a tool
+> brings its tab forward — so no step needs to name a tab.
+
 | ID | Workflow | Exercises | Fed by |
 |---|---|---|---|
 | [GW-1](gw1_camera.md) | Camera & navigation | Orbit-pivot model, push-past zoom, framing, projections, cardinal views | P1 |

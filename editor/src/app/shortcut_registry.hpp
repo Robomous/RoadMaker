@@ -97,17 +97,28 @@ enum class Id {
   kIdCount,
 };
 
-/// Which of the two generated toolbar rows a group lives on.
-enum class ToolbarRow : std::uint8_t {
-  kNone = 0,      ///< not on a toolbar
-  kAuthoring = 1, ///< row 1 — building the network
-  kLayers = 2,    ///< row 2 — the scene layers laid over it
+/// Which toolbar section a group lives in (p1-s6, issue #368). `kCore` is the
+/// persistent strip that never hides — file ops, the universal edit tools, and
+/// framing/Library; every other value is a switchable tab in the tabbed
+/// toolbar. Order here is the tab display order. Terrain and Scenario are
+/// reserved: their tab appears only once their pillar (P5 / P8) lands a tool.
+enum class ToolbarTab : std::uint8_t {
+  kCore = 0, ///< always-visible strip — NOT a tab
+  kRoadsLanes,
+  kMarkings,
+  kProps,
+  kTerrain, ///< reserved (P5)
+  kSignals,
+  kScenario, ///< reserved (P8)
 };
 
 /// One toolbar group: a named run of buttons, separated from its neighbours.
+/// The group's `tab` decides where it renders — `kCore` in the persistent
+/// strip, otherwise on that tab. Derived, not stored per action, so the
+/// taxonomy has one place to drift and one test to gate it.
 struct ToolbarGroup {
   const char* name;
-  ToolbarRow row;
+  ToolbarTab tab;
 };
 
 /// One row of the map.
@@ -173,8 +184,8 @@ struct Entry {
 /// no-op, which keeps "everything binds from the registry" true for all Ids.
 [[nodiscard]] QList<QKeySequence> sequences(Id id);
 
-/// The toolbar taxonomy, in display order within each row. Fixed by issue
-/// #317; reserved groups are listed here before they hold anything so the
+/// The toolbar taxonomy, in display order within each section. Fixed by issues
+/// #317/#368; reserved groups are listed here before they hold anything so the
 /// categories are committed rather than invented per sprint.
 [[nodiscard]] std::span<const ToolbarGroup> toolbar_groups();
 
@@ -184,9 +195,29 @@ struct ToolbarGroupLayout {
   std::vector<Id> ids; ///< empty for a reserved group — renders nothing
 };
 
-/// The groups on `row` with their actions, both in display order. Reserved
+/// The groups in `tab` with their actions, both in display order. Reserved
 /// groups are present with an empty `ids`.
-[[nodiscard]] std::vector<ToolbarGroupLayout> toolbar_layout(ToolbarRow row);
+[[nodiscard]] std::vector<ToolbarGroupLayout> toolbar_layout(ToolbarTab tab);
+
+/// One tab to render in the tabbed toolbar: its enum value and display title.
+struct ToolbarTabInfo {
+  ToolbarTab tab;
+  const char* title;
+};
+
+/// The tabs to show, in display order, EXCLUDING `kCore` and any tab whose
+/// groups are all empty — so a reserved tab (Terrain, Scenario) appears only
+/// once its pillar lands a tool. The persistent core strip is built separately
+/// from `toolbar_layout(ToolbarTab::kCore)`.
+[[nodiscard]] std::vector<ToolbarTabInfo> toolbar_tabs();
+
+/// The tab `id` lives in — its group's tab, or `kCore` for a core-strip action
+/// OR an off-toolbar id (callers gate on toolbar_group != nullptr first). Used
+/// to reveal a tool's tab when it activates indirectly (shortcut, Library-arm).
+[[nodiscard]] ToolbarTab toolbar_tab_of(Id id);
+
+/// The display title for `tab` (e.g. "Roads & Lanes"). "" for `kCore`.
+[[nodiscard]] const char* toolbar_tab_title(ToolbarTab tab);
 
 /// The consistency gate: empty when `rows` are well-formed against `groups`,
 /// else one message per violation. Checks that (a) every "Tools" row is

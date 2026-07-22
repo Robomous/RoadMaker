@@ -109,6 +109,25 @@ Before adding a tool, decide which it is:
 
 The user-facing contract is [tools and the Library](../user-guide/tools-and-library.md).
 
+## Toolbar structure (core strip + tabs)
+
+The toolbar is **generated from the action registry** (`shortcut_registry.cpp`
+`kToolbarGroups`), never hand-placed, and a gtest (`toolbar_violations`) fails
+CI on an uncategorized tool. It has two parts:
+
+- A **persistent core strip** that never hides — file ops, the universal edit
+  tools (Select/Move/Split/Delete/Merge), and framing/camera/Library. These are
+  the `ToolbarTab::kCore` groups.
+- **Category tabs** (Roads & Lanes, Markings, Props, Signals & Signs; Terrain &
+  Structures and Scenario are reserved and appear once their pillar lands a
+  tool). Each is a `ToolbarTab` value.
+
+Rules for adding a tool: give it a `toolbar_group` (the CI gate) whose tab
+places it; **never** put a file/edit/framing action behind a tab; keyboard
+shortcuts must fire regardless of the visible tab, and activating a tool
+reveals its tab (`MainWindow::reveal_active_tool_tab`) so nothing fires
+invisibly.
+
 ## Acceptance
 
 Visual changes are accepted with pixels: before/after screenshots in the

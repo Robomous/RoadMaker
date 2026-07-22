@@ -45,13 +45,14 @@ TEST(HelpRegistry, EveryToolIdHasExactlyOnePage) {
     seen.insert(static_cast<int>(row.id));
     EXPECT_STRNE(row.slug, "") << "every tool row must name a page slug";
   }
-  // Signal is the last enumerator (tools/tool.hpp); every value at or below it
+  // Sign is the last enumerator (tools/tool.hpp); every value at or below it
   // must have a row, so a new ToolId added without one fails here. Keep this
   // bound on the REAL last value: it used to stop at Corner (with a comment
   // claiming Corner was last), which silently exempted every tool added after
   // it — StopLine, JunctionSpan, JunctionSurface and Maneuver all shipped with
-  // no help page and this gate stayed green (p4-s7, issue #228).
-  for (int i = 0; i <= static_cast<int>(ToolId::Signal); ++i) {
+  // no help page and this gate stayed green (p4-s7, issue #228); then it stopped
+  // at Signal, leaving Sign (p4-s9, #230) unchecked (p1-s6, #368).
+  for (int i = 0; i <= static_cast<int>(ToolId::Sign); ++i) {
     EXPECT_TRUE(seen.contains(i)) << "ToolId " << i << " has no help page";
     EXPECT_FALSE(help::page_for_tool(static_cast<ToolId>(i)).isEmpty())
         << "page_for_tool(" << i << ") is empty";
