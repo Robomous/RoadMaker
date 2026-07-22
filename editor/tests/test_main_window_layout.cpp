@@ -51,12 +51,14 @@ TEST_F(MainWindowLayoutTest, ToolbarsHoldNoVariableWidthLabels) {
   }
 }
 
-TEST_F(MainWindowLayoutTest, TabPageToolbarsAreMarkedForZeroPadding) {
+TEST_F(MainWindowLayoutTest, TabPageToolbarsZeroTheirOwnHorizontalPadding) {
   // #371: the tabbed section's page toolbars nest inside the host QToolBar, so
-  // the base stylesheet's 8 px padding would stack and indent the tool row past
-  // the core strip. The fix zeroes each page's horizontal padding via the
-  // `toolbarTabPage` dynamic property; guard that every page still carries it so
-  // a future rebuild of the pages cannot silently reintroduce the misalignment.
+  // the theme's base `QToolBar { padding: 4px 8px }` would stack on the host's
+  // and indent the tool row 8 px past the core strip. The fix gives each page a
+  // widget-level stylesheet that zeroes its horizontal padding and bottom border
+  // (a global property selector did not reliably re-polish a toolbar nested in a
+  // QStackedWidget). Guard that every page still carries that stylesheet so a
+  // future rebuild of the pages cannot silently reintroduce the misalignment.
   auto* host = window_.findChild<QToolBar*>(QStringLiteral("toolbar.tabs"));
   ASSERT_NE(host, nullptr) << "the tabbed toolbar host is gone";
 
@@ -66,9 +68,12 @@ TEST_F(MainWindowLayoutTest, TabPageToolbarsAreMarkedForZeroPadding) {
       continue;
     }
     ++pages;
-    EXPECT_TRUE(page->property("toolbarTabPage").toBool())
+    const QString sheet = page->styleSheet().simplified().remove(QLatin1Char(' '));
+    EXPECT_TRUE(sheet.contains(QStringLiteral("padding:4px0px")))
         << "page '" << page->objectName().toStdString()
-        << "' is not marked for zero horizontal padding";
+        << "' does not zero its horizontal padding: " << page->styleSheet().toStdString();
+    EXPECT_TRUE(sheet.contains(QStringLiteral("border-bottom:none")))
+        << "page '" << page->objectName().toStdString() << "' still draws its own bottom border";
   }
   EXPECT_GT(pages, 0) << "no tab page toolbars found under the host";
 }
