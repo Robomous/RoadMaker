@@ -47,6 +47,7 @@ not undoable.
 | [Scene tree](scene-tree.md) | Find and select any road, lane, or junction from the structural list |
 | [Diagnostics](diagnostics.md) | Read parser and validator findings, each citing its ASAM rule |
 | [Library](library.md) | Drag ready-made roads, intersections, and props into the scene |
+| [Tools and the Library](tools-and-library.md) | How toolbar tools (modes) and Library assets (content) work together |
 | [Projects](projects.md) | Group scenes and shared Library assets in a project folder |
 | [Create Road](create-road.md) | Lay a new clothoid road through waypoints with a lane template |
 | [Moving and transforming](moving-and-transforming.md) | Move and rotate roads and props with the Move tool and its 3D transform gizmo |

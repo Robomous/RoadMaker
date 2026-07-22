@@ -655,6 +655,12 @@ void MainWindow::build_docks() {
     properties_dock_->raise();
     properties_panel_->edit_asset(key, editable);
   });
+  // Library-first (#367): tracking the current asset arms its placement tool so
+  // the toolbar mode and the Library selection stay in sync.
+  connect(library_panel_,
+          &LibraryPanel::asset_current_changed,
+          this,
+          &MainWindow::on_library_asset_current_changed);
   connect(library_panel_,
           &LibraryPanel::new_crosswalk_asset_requested,
           this,
@@ -1086,6 +1092,12 @@ void MainWindow::apply_project_overlay() {
 }
 
 edit::CrosswalkParams MainWindow::resolve_default_crosswalk_params() const {
+  // Prefer the asset the user picked in the Library (#367) so a Crosswalk tool
+  // armed from a selection uses THAT crosswalk, not just the first one.
+  if (const LibraryItem* cur = current_library_item();
+      cur != nullptr && cur->kind == LibraryItem::Kind::Crosswalk) {
+    return crosswalk_params_from_item(*cur, crosswalk_materials_);
+  }
   // The first Kind::Crosswalk in the merged Library (an overlay asset shadows
   // the built-in); crosswalk.zebra is always present as the base fallback.
   for (int row = 0; row < library_model_.rowCount(); ++row) {
@@ -1098,6 +1110,11 @@ edit::CrosswalkParams MainWindow::resolve_default_crosswalk_params() const {
 }
 
 LibraryItem MainWindow::resolve_default_stencil_item() const {
+  // Prefer the stencil the user picked in the Library (#367).
+  if (const LibraryItem* cur = current_library_item();
+      cur != nullptr && cur->kind == LibraryItem::Kind::Stencil) {
+    return *cur;
+  }
   // The first Kind::Stencil in the merged Library (an overlay asset shadows the
   // built-in). An empty item makes the Marking Point tool toast on click.
   for (int row = 0; row < library_model_.rowCount(); ++row) {
@@ -1136,6 +1153,14 @@ LibraryItem MainWindow::resolve_default_sign_item() const {
 }
 
 LibraryItem MainWindow::resolve_default_prop_item() const {
+  // Prefer the prop OR prop-set the user picked in the Library (#367) so a prop
+  // tool armed from a selection scatters that asset. Both are valid prop assets
+  // (is_prop_asset); the curve/span/polygon tools resolve a set per instance.
+  if (const LibraryItem* cur = current_library_item();
+      cur != nullptr &&
+      (cur->kind == LibraryItem::Kind::Tree || cur->kind == LibraryItem::Kind::PropSet)) {
+    return *cur;
+  }
   // The first Kind::Tree in the merged Library (an overlay asset shadows the
   // built-in). An empty item makes the prop tools toast on the first click.
   for (int row = 0; row < library_model_.rowCount(); ++row) {
@@ -1159,6 +1184,55 @@ LibraryItem MainWindow::resolve_default_marking_curve_item() const {
     }
   }
   return {};
+}
+
+const LibraryItem* MainWindow::current_library_item() const {
+  if (current_library_key_.isEmpty()) {
+    return nullptr;
+  }
+  return library_model_.item_for_key(current_library_key_);
+}
+
+void MainWindow::on_library_asset_current_changed(const QString& key) {
+  current_library_key_ = key;
+  if (const LibraryItem* item = library_model_.item_for_key(key); item != nullptr) {
+    arm_tool_for_library_item(*item);
+  }
+}
+
+void MainWindow::arm_tool_for_library_item(const LibraryItem& item) {
+  // Map a content asset to the tool that applies it. Only the fixed-default
+  // placement tools have a Library counterpart; every other tool is a geometric
+  // mode with no asset, so selecting those kinds leaves the active tool alone.
+  QAction* tool = nullptr;
+  switch (item.kind) {
+  case LibraryItem::Kind::Tree:
+    tool = actions_->tool_prop_point;
+    break;
+  case LibraryItem::Kind::PropSet:
+    tool = actions_->tool_prop_curve; // a set scatters along a path
+    break;
+  case LibraryItem::Kind::Stencil:
+    tool = actions_->tool_marking_point;
+    break;
+  case LibraryItem::Kind::Crosswalk:
+    tool = actions_->tool_crosswalk;
+    break;
+  case LibraryItem::Kind::Signal:
+    // The Sign tool authors text signs; other signals (traffic lights, stop /
+    // yield) place through the Library drop or auto-signalize, not a single
+    // placement tool, so they do not arm anything.
+    if (item.signal == QStringLiteral("sign_text")) {
+      tool = actions_->tool_sign;
+    }
+    break;
+  default:
+    break;
+  }
+  if (tool != nullptr && !tool->isChecked()) {
+    tool->trigger();
+    viewport_->show_toast(tr("%1 tool armed from Library").arg(tool->text()), ToastSeverity::Info);
+  }
 }
 
 LibraryManifest MainWindow::load_or_create_overlay_manifest() const {
@@ -1373,6 +1447,14 @@ void MainWindow::on_library_drop(const QString& key, double world_x, double worl
       create_road_tool_->begin_at(world_x, world_y);
     }
     viewport_->show_toast(tr("Create Road armed — click to add points"), ToastSeverity::Info);
+    break;
+  case LibraryDropKind::PropSet:
+    // A dropped prop set arms Prop Curve with the set current (#367): track the
+    // key so the tool's resolver returns this set, then activate the tool.
+    current_library_key_ = key;
+    actions_->tool_prop_curve->trigger();
+    viewport_->show_toast(action.toast, ToastSeverity::Info);
+    viewport_->clear_drag_target_road();
     break;
   case LibraryDropKind::RoadStyle:
   case LibraryDropKind::Assembly:

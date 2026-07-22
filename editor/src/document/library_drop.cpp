@@ -444,8 +444,19 @@ LibraryDropAction resolve_library_drop(const LibraryItem& item,
     return action;
   }
   case LibraryItem::Kind::PropSet:
-    // A prop set is authored/scattered through the prop tools (p6-s5), not
-    // dropped straight onto the viewport — no direct drop action this round.
+    // A prop set scatters along a path, so a drop can't place a single object.
+    // Instead it ARMS the Prop Curve tool with the set current (#367) — the
+    // Create-Road-from-template precedent. MainWindow does the arming; the ghost
+    // sits at the cursor where the curve will begin. A dangling/empty set is
+    // rejected with a hint rather than arming an unusable tool.
+    if (is_prop_asset(item)) {
+      action.kind = LibraryDropKind::PropSet;
+      action.preview = {world_x, world_y, true};
+      action.toast =
+          QStringLiteral("Prop Curve armed from %1 — click to lay a path").arg(item.label);
+    } else {
+      action.toast = QStringLiteral("This prop set has no usable models");
+    }
     break;
   case LibraryItem::Kind::Unknown:
     break;

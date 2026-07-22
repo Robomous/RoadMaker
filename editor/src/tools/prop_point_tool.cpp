@@ -9,6 +9,7 @@
 #include <algorithm>
 #include <cmath>
 #include <numbers>
+#include <random>
 #include <string>
 #include <utility>
 
@@ -173,11 +174,18 @@ bool PropPointTool::key_press(int key, Qt::KeyboardModifiers modifiers) {
 }
 
 void PropPointTool::place_prop(double world_x, double world_y) {
-  const LibraryItem item = current_item();
+  LibraryItem item = current_item();
   if (!is_prop_asset(item)) {
     emit toast_requested(tr("Select a tree or shrub in the Library to place one"),
                          ToastSeverity::Warning);
     return;
+  }
+  // A prop set carries no single model — draw one concrete prop from it (the
+  // curve/span/polygon tools resolve per instance the same way). make_prop_object
+  // requires a pre-resolved Tree, so this must happen before it (#367).
+  if (item.kind == LibraryItem::Kind::PropSet) {
+    std::mt19937 rng(place_seed_++);
+    item = resolve_prop_asset(item, rng);
   }
   const std::optional<RoadStation> placement =
       nearest_road_station(document_.network(), world_x, world_y, kObjectSnapThreshold);

@@ -129,6 +129,19 @@ private:
   /// Prop Curve tools place (p6-s4). An empty item when the Library has none.
   [[nodiscard]] LibraryItem resolve_default_prop_item() const;
 
+  /// The item backing `current_library_key_` in the merged Library, or nullptr
+  /// when nothing is selected / the key is stale. The placement-tool resolvers
+  /// prefer this over their first-of-kind default so a tool armed from the
+  /// Library uses the asset the user picked (#367).
+  [[nodiscard]] const LibraryItem* current_library_item() const;
+  /// Tracks the Library selection and arms the matching placement tool (#367).
+  void on_library_asset_current_changed(const QString& key);
+  /// Activates the placement tool that applies `item` (prop → Prop Point,
+  /// stencil → Marking Point, crosswalk → Crosswalk, prop set → Prop Curve, text
+  /// sign → Sign). Kinds with no single-placement mode leave the active tool as
+  /// it is. A no-op when the tool is already active.
+  void arm_tool_for_library_item(const LibraryItem& item);
+
   /// The Library's default signal asset (p4-s7, issue #228) — what a Signal
   /// tool click on a road places, so the tool and the Library drop land the
   /// same head.
@@ -213,6 +226,10 @@ private:
   SelectionModel selection_;
   SceneTreeModel scene_tree_model_;
   LibraryListModel library_model_;
+  /// The key of the currently-selected Library item, or empty. The placement-
+  /// tool resolvers prefer it over their first-of-kind default so a tool armed
+  /// from the Library uses the picked asset (#367).
+  QString current_library_key_;
   /// Resolves a crosswalk asset's material to a paint tint when propagating an
   /// asset edit to its instances (p3-s2).
   MaterialCatalog crosswalk_materials_;

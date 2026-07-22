@@ -12,6 +12,7 @@
 
 #include "document/library_list_model.hpp"
 
+class QComboBox;
 class QLineEdit;
 class QListView;
 
@@ -26,6 +27,18 @@ class LibraryFilterProxy : public QSortFilterProxyModel {
 public:
   explicit LibraryFilterProxy(QObject* parent = nullptr);
   [[nodiscard]] QVariant data(const QModelIndex& index, int role) const override;
+
+  /// Restricts the grid to one category header (the manifest's spelling, e.g.
+  /// "Props"); an empty string shows every category. Combines with the search
+  /// box — an item must pass both to appear (#367).
+  void set_category_filter(const QString& category);
+
+protected:
+  [[nodiscard]] bool filterAcceptsRow(int source_row,
+                                      const QModelIndex& source_parent) const override;
+
+private:
+  QString category_filter_;
 };
 
 class LibraryPanel : public QWidget {
@@ -47,11 +60,22 @@ public:
   /// key is not present.
   void select_asset(const QString& key);
 
+  /// The category filter combo, exposed for headless tests.
+  [[nodiscard]] QComboBox* category_combo() { return category_combo_; }
+
 signals:
   /// A parametric asset (currently Kind::Crosswalk) was selected — MainWindow
   /// routes it to the Attributes-pane asset editor (PropertiesPanel::edit_asset).
   /// Fires only for editable-asset kinds, never for droppable geometry items.
   void asset_selected(const QString& key);
+
+  /// The current catalogue item changed to `key` (fires for EVERY kind, on any
+  /// valid selection). MainWindow tracks it as the "current Library asset" and
+  /// arms the matching placement tool (Library-first interaction, #367): a prop
+  /// arms Prop Point, a stencil Marking Point, a crosswalk the Crosswalk tool, a
+  /// prop set Prop Curve, a text sign the Sign tool. Kinds with no placement
+  /// mode leave the active tool untouched.
+  void asset_current_changed(const QString& key);
 
   /// The context menu's "New crosswalk asset…" was chosen — MainWindow creates
   /// a project-overlay crosswalk asset and opens its editor.
@@ -66,8 +90,13 @@ private:
   void handle_current_changed(const QModelIndex& index);
   void show_context_menu(const QPoint& pos);
 
+  /// Fills category_combo_ with "All categories" + each distinct category in the
+  /// merged model, in first-seen order.
+  void populate_categories();
+
   LibraryListModel& model_;
   LibraryFilterProxy proxy_;
+  QComboBox* category_combo_;
   QLineEdit* search_;
   QListView* view_;
 };

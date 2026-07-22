@@ -37,6 +37,7 @@ enum class LibraryDropKind {
   Material,
   Crosswalk,
   Stencil,
+  PropSet, ///< a scatter set — arms Prop Curve with the set current (#367)
 };
 
 /// Where a resolved drop lands in the world (x, y) and whether it is valid

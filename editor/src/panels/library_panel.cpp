@@ -1,9 +1,11 @@
 #include "panels/library_panel.hpp"
 
+#include <QComboBox>
 #include <QItemSelectionModel>
 #include <QLineEdit>
 #include <QListView>
 #include <QMenu>
+#include <QStringList>
 #include <QVBoxLayout>
 
 #include "app/icons.hpp"
@@ -70,10 +72,34 @@ QVariant LibraryFilterProxy::data(const QModelIndex& index, int role) const {
   return QSortFilterProxyModel::data(index, role);
 }
 
+void LibraryFilterProxy::set_category_filter(const QString& category) {
+  if (category_filter_ == category) {
+    return;
+  }
+  category_filter_ = category;
+  invalidateFilter();
+}
+
+bool LibraryFilterProxy::filterAcceptsRow(int source_row, const QModelIndex& source_parent) const {
+  // Search box first (label match, handled by the base), then the category combo.
+  if (!QSortFilterProxyModel::filterAcceptsRow(source_row, source_parent)) {
+    return false;
+  }
+  if (category_filter_.isEmpty()) {
+    return true;
+  }
+  const QModelIndex index = sourceModel()->index(source_row, 0, source_parent);
+  return sourceModel()->data(index, LibraryListModel::CategoryRole).toString() == category_filter_;
+}
+
 LibraryPanel::LibraryPanel(LibraryListModel& model, QWidget* parent)
     : QWidget(parent), model_(model) {
   proxy_.setSourceModel(&model);
   proxy_.sort(0);
+
+  category_combo_ = new QComboBox(this);
+  category_combo_->setObjectName(QStringLiteral("library_category"));
+  populate_categories();
 
   search_ = new QLineEdit(this);
   search_->setObjectName(QStringLiteral("library_search"));
@@ -96,6 +122,10 @@ LibraryPanel::LibraryPanel(LibraryListModel& model, QWidget* parent)
   view_->setDragDropMode(QAbstractItemView::DragOnly);
 
   connect(search_, &QLineEdit::textChanged, &proxy_, &QSortFilterProxyModel::setFilterFixedString);
+  connect(category_combo_, &QComboBox::currentIndexChanged, this, [this](int) {
+    // Index 0 ("All categories") carries an empty userData → no category filter.
+    proxy_.set_category_filter(category_combo_->currentData().toString());
+  });
   connect(
       view_->selectionModel(),
       &QItemSelectionModel::currentChanged,
@@ -108,8 +138,25 @@ LibraryPanel::LibraryPanel(LibraryListModel& model, QWidget* parent)
   auto* layout = new QVBoxLayout(this);
   layout->setContentsMargins(6, 6, 6, 6);
   layout->setSpacing(6);
+  layout->addWidget(category_combo_);
   layout->addWidget(search_);
   layout->addWidget(view_, 1);
+}
+
+void LibraryPanel::populate_categories() {
+  category_combo_->clear();
+  category_combo_->addItem(tr("All categories"), QString());
+  // First-seen order over the merged model — the manifest already lists items
+  // grouped by category, so this reads top-to-bottom as authored.
+  QStringList seen;
+  for (int row = 0; row < model_.rowCount(); ++row) {
+    const LibraryItem* item = model_.item(row);
+    if (item == nullptr || item->category.isEmpty() || seen.contains(item->category)) {
+      continue;
+    }
+    seen.append(item->category);
+    category_combo_->addItem(item->category, item->category);
+  }
 }
 
 void LibraryPanel::handle_current_changed(const QModelIndex& index) {
@@ -117,8 +164,14 @@ void LibraryPanel::handle_current_changed(const QModelIndex& index) {
     return;
   }
   const LibraryItem* item = model_.item(proxy_.mapToSource(index).row());
-  if (item != nullptr &&
-      (item->kind == LibraryItem::Kind::Crosswalk || item->kind == LibraryItem::Kind::PropSet)) {
+  if (item == nullptr) {
+    return;
+  }
+  // Every valid selection updates the "current Library asset" so MainWindow can
+  // arm the matching placement tool (Library-first, #367).
+  emit asset_current_changed(item->key);
+  // Parametric assets additionally open in the Attributes-pane editor.
+  if (item->kind == LibraryItem::Kind::Crosswalk || item->kind == LibraryItem::Kind::PropSet) {
     emit asset_selected(item->key);
   }
 }

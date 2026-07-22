@@ -1,8 +1,10 @@
 #include <gtest/gtest.h>
 
+#include <QComboBox>
 #include <QIcon>
 #include <QLineEdit>
 #include <QListView>
+#include <QSignalSpy>
 #include <filesystem>
 
 #include "document/library_list_model.hpp"
@@ -55,6 +57,56 @@ TEST(LibraryPanel, SearchFiltersByLabel) {
 
   search->clear();
   EXPECT_EQ(panel.view()->model()->rowCount(), 44);
+}
+
+TEST(LibraryPanel, CategoryComboFiltersGrid) {
+  LibraryPanel panel(populated_model());
+  auto* combo = panel.category_combo();
+  ASSERT_NE(combo, nullptr);
+  // Index 0 is "All categories" (empty userData); one entry per distinct
+  // category follows.
+  EXPECT_TRUE(combo->itemData(0).toString().isEmpty());
+  EXPECT_GT(combo->count(), 1);
+
+  const int props = combo->findData(QStringLiteral("Props"));
+  ASSERT_GE(props, 0);
+  combo->setCurrentIndex(props);
+  const int shown = panel.view()->model()->rowCount();
+  EXPECT_GT(shown, 0);
+  EXPECT_LT(shown, 44); // a strict subset
+  for (int row = 0; row < shown; ++row) {
+    const QModelIndex index = panel.view()->model()->index(row, 0);
+    EXPECT_EQ(panel.view()->model()->data(index, LibraryListModel::CategoryRole).toString(),
+              QStringLiteral("Props"));
+  }
+
+  combo->setCurrentIndex(0); // back to All
+  EXPECT_EQ(panel.view()->model()->rowCount(), 44);
+}
+
+TEST(LibraryPanel, CategoryFilterCombinesWithSearch) {
+  LibraryPanel panel(populated_model());
+  auto* combo = panel.category_combo();
+  auto* search = panel.findChild<QLineEdit*>(QStringLiteral("library_search"));
+  ASSERT_NE(combo, nullptr);
+  ASSERT_NE(search, nullptr);
+
+  combo->setCurrentIndex(combo->findData(QStringLiteral("Props")));
+  search->setText(QStringLiteral("pine")); // a Props item
+  EXPECT_EQ(panel.view()->model()->rowCount(), 1);
+  search->setText(QStringLiteral("asphalt")); // a Materials item — filtered out by category
+  EXPECT_EQ(panel.view()->model()->rowCount(), 0);
+}
+
+TEST(LibraryPanel, SelectingAnItemEmitsCurrentChanged) {
+  LibraryPanel panel(populated_model());
+  QSignalSpy spy(&panel, &LibraryPanel::asset_current_changed);
+  ASSERT_TRUE(spy.isValid());
+
+  const QModelIndex first = panel.view()->model()->index(0, 0);
+  panel.view()->setCurrentIndex(first);
+  ASSERT_EQ(spy.count(), 1);
+  EXPECT_FALSE(spy.at(0).at(0).toString().isEmpty());
 }
 
 // An engaged Attributes-pane slot asks the Library to show its category
