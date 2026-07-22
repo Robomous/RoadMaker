@@ -256,3 +256,130 @@ TEST(Gltf, ScaledPropExportsAUniformNodeScale) {
   EXPECT_TRUE(checked_prop);
   EXPECT_TRUE(checked_signal);
 }
+
+// --- editable sign-face textures (p4-s9, #230) ------------------------------
+
+namespace {
+
+// Authors a straight road with `count` StVO 310 text plates carrying `text`,
+// exports, reloads, and returns the glTF model. A no-op image loader keeps the
+// reload structural: tinygltf is built without stb_image, so it must not try to
+// decode the embedded PNG (we only inspect the model graph).
+tinygltf::Model export_text_signs(int count, const std::string& text) {
+  roadmaker::RoadNetwork network;
+  const std::vector<roadmaker::Waypoint> waypoints{{.x = 0.0, .y = 0.0}, {.x = 120.0, .y = 0.0}};
+  auto road = roadmaker::author_clothoid_road(
+      network, waypoints, roadmaker::LaneProfile::two_lane_default());
+  if (!road.has_value()) {
+    throw std::runtime_error("author failed");
+  }
+  for (int i = 0; i < count; ++i) {
+    roadmaker::Signal sign;
+    sign.odr_id = "t" + std::to_string(i);
+    sign.type = "310";
+    sign.subtype = "-1";
+    sign.country = "DE";
+    sign.dynamic = false;
+    sign.s = 20.0 + 10.0 * i;
+    sign.t = 6.0;
+    sign.text = text;
+    network.add_signal(*road, sign);
+  }
+  const auto mesh = roadmaker::build_network_mesh(network, {});
+
+  const auto path = temp_glb("rm_text_sign.glb");
+  const auto exported = roadmaker::export_glb(mesh, path);
+  if (!exported) {
+    throw std::runtime_error("export_glb failed: " + exported.error().message);
+  }
+  tinygltf::Model model;
+  tinygltf::TinyGLTF loader;
+  loader.SetImageLoader([](tinygltf::Image*,
+                           const int,
+                           std::string*,
+                           std::string*,
+                           int,
+                           int,
+                           const unsigned char*,
+                           int,
+                           void*) { return true; },
+                        nullptr);
+  std::string err;
+  std::string warn;
+  const bool loaded = loader.LoadBinaryFromFile(&model, &err, &warn, path.string());
+  std::remove(path.string().c_str());
+  if (!loaded) {
+    throw std::runtime_error("reload failed: " + err + " / " + warn);
+  }
+  return model;
+}
+
+} // namespace
+
+TEST(GltfExport, TextSignEmbedsFaceTexture) {
+  const tinygltf::Model model = export_text_signs(1, "City");
+
+  // Exactly one embedded PNG image, referenced by a bufferView.
+  ASSERT_EQ(model.images.size(), 1U);
+  EXPECT_EQ(model.images[0].mimeType, "image/png");
+  EXPECT_GE(model.images[0].bufferView, 0);
+
+  // A CLAMP_TO_EDGE sampler and a texture pointing at the image.
+  ASSERT_EQ(model.samplers.size(), 1U);
+  EXPECT_EQ(model.samplers[0].wrapS, TINYGLTF_TEXTURE_WRAP_CLAMP_TO_EDGE);
+  EXPECT_EQ(model.samplers[0].wrapT, TINYGLTF_TEXTURE_WRAP_CLAMP_TO_EDGE);
+  ASSERT_EQ(model.textures.size(), 1U);
+  EXPECT_EQ(model.textures[0].source, 0);
+  EXPECT_EQ(model.textures[0].sampler, 0);
+
+  // A material whose base colour is the texture, on a face mesh with TEXCOORD_0.
+  bool found_face = false;
+  for (const auto& gmesh : model.meshes) {
+    for (const auto& prim : gmesh.primitives) {
+      if (prim.attributes.count("TEXCOORD_0") == 0) {
+        continue;
+      }
+      found_face = true;
+      ASSERT_GE(prim.material, 0);
+      const auto& mat = model.materials[static_cast<std::size_t>(prim.material)];
+      EXPECT_EQ(mat.pbrMetallicRoughness.baseColorTexture.index, 0);
+    }
+  }
+  EXPECT_TRUE(found_face) << "a face mesh with TEXCOORD_0 must be present";
+}
+
+TEST(GltfExport, SameTextSharesOneImage) {
+  // Two identical plates reuse the same cached image/texture/material/mesh.
+  const tinygltf::Model model = export_text_signs(2, "City");
+  EXPECT_EQ(model.images.size(), 1U);
+  EXPECT_EQ(model.textures.size(), 1U);
+}
+
+TEST(GltfExport, SignWithoutTextEmitsNoImages) {
+  roadmaker::RoadNetwork network;
+  const std::vector<roadmaker::Waypoint> waypoints{{.x = 0.0, .y = 0.0}, {.x = 120.0, .y = 0.0}};
+  auto road = roadmaker::author_clothoid_road(
+      network, waypoints, roadmaker::LaneProfile::two_lane_default());
+  ASSERT_TRUE(road.has_value());
+  roadmaker::Signal sign; // a plain 274 disc — no face plate, no text
+  sign.odr_id = "s1";
+  sign.type = "274";
+  sign.subtype = "50";
+  sign.country = "DE";
+  sign.dynamic = false;
+  sign.s = 20.0;
+  sign.t = -6.0;
+  network.add_signal(*road, sign);
+  const auto mesh = roadmaker::build_network_mesh(network, {});
+
+  const auto path = temp_glb("rm_plain_sign.glb");
+  ASSERT_TRUE(roadmaker::export_glb(mesh, path).has_value());
+  tinygltf::Model model;
+  tinygltf::TinyGLTF loader;
+  std::string err;
+  std::string warn;
+  ASSERT_TRUE(loader.LoadBinaryFromFile(&model, &err, &warn, path.string()));
+  std::remove(path.string().c_str());
+  EXPECT_TRUE(model.images.empty());
+  EXPECT_TRUE(model.textures.empty());
+}

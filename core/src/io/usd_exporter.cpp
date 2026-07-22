@@ -319,7 +319,13 @@ Expected<void> export_usda(const NetworkMesh& mesh, const std::filesystem::path&
   }
   for (std::size_t si = 0; si < mesh.signal_instances.size(); ++si) {
     const SignalInstance& instance = mesh.signal_instances[si];
-    // Signals are not resizable (#335).
+    // Signals are not resizable (#335). A sign's editable text face
+    // (instance.face) is deliberately NOT exported here: this backend writes
+    // single-file USDA (tinyusdz cannot embed textures, and a sidecar image
+    // would break the one-file contract), so a text plate exports as its flat
+    // yellow plate. The @text itself is preserved in the .xodr, and the glTF
+    // (.glb) exporter DOES embed the rendered face. Documented limitation
+    // (#230); a textured-USD follow-up is tracked separately.
     bake_instance("signal", si, instance.model_id, instance.position, instance.heading, 1.0);
   }
 
