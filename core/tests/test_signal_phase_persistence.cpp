@@ -327,8 +327,8 @@ INSTANTIATE_TEST_SUITE_P(Cases,
                                                        "dur=5:st=c1,g|c1,y"},
                                          MalformedCase{"empty st field", "dur=5:st="},
                                          MalformedCase{"field without '='", "dur=5:garbage"}),
-                         [](const testing::TestParamInfo<MalformedCase>& info) {
-                           std::string name = info.param.label;
+                         [](const testing::TestParamInfo<MalformedCase>& param_info) {
+                           std::string name = param_info.param.label;
                            for (char& c : name) {
                              if (std::isalnum(static_cast<unsigned char>(c)) == 0) {
                                c = '_';
