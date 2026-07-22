@@ -91,6 +91,24 @@ Numbers in coordinate readouts use tabular figures where available.
 - **Don't** relitigate the stack (Qt Widgets) or the dark-professional
   direction; propose token changes instead.
 
+## Tools vs. content (the Library-first rule)
+
+Every new capability is either an **interaction mode** (a toolbar tool: how the
+user acts on the scene) or an **asset application** (content the user places).
+Before adding a tool, decide which it is:
+
+- **Content** — anything the user *chooses* an instance of (a template, a
+  marking style, a material, a prop, a signal, a stencil) — enters through the
+  **Library**. Selecting or dragging the asset arms the matching placement tool
+  with that asset current (`MainWindow::arm_tool_for_library_item`), so the
+  toolbar button is the *mode* and the Library is where the *choice* is made.
+  Don't ship a tool that places a hard-coded asset the Library could supply.
+- **Modes** — geometric and topology actions with no asset (draw, bend, split,
+  form a junction, scatter along a curve) — live on the toolbar. They may read
+  the current Library asset but they are not redundant with it.
+
+The user-facing contract is [tools and the Library](../user-guide/tools-and-library.md).
+
 ## Acceptance
 
 Visual changes are accepted with pixels: before/after screenshots in the

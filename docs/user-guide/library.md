@@ -7,9 +7,17 @@ straight into the scene — every drop is one undoable edit.*
 
 The **Library** is a dock (tabbed with the Scene tree by default). Open it from
 the **Library** button on the toolbar, from **Edit ▸ Add from Library…**, or by
-clicking its tab. Type in the search box to filter the catalogue by name. Every
-item shows a **preview thumbnail** — props and signals render their actual 3-D
-model, while templates, markings, and materials show a stylised swatch.
+clicking its tab. Narrow the grid to one class with the **category filter** at
+the top, and type in the search box to filter by name. Every item shows a
+**preview thumbnail** — props and signals render their actual 3-D model, while
+templates, markings, and materials show a stylised swatch.
+
+Besides dragging (below), **selecting** a placeable asset *arms its tool*: pick
+a prop and the Prop Point tool activates with that prop current, ready to
+click-place; a stencil arms Marking Point, a crosswalk the Crosswalk tool, a
+text sign the Sign tool, and a prop set the Prop Curve tool. See
+[tools and the Library](tools-and-library.md) for the full split between tools
+(modes) and Library assets (content).
 
 ## What's in it
 

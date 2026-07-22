@@ -78,6 +78,9 @@ private:
   std::optional<PressState> press_;
   std::optional<DragState> drag_;
   std::optional<RoadStation> hover_; ///< the ghost pose while hovering (not dragging)
+  /// Advances per placed instance so a prop set point-placed repeatedly draws a
+  /// varied (but reproducible) mix rather than the same model each click (#367).
+  unsigned place_seed_ = 0;
 };
 
 } // namespace roadmaker::editor

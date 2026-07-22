@@ -75,6 +75,15 @@ LibraryItem signal(const char* which) {
   return item;
 }
 
+LibraryItem prop_set() {
+  LibraryItem item;
+  item.key = QStringLiteral("prop_set.test");
+  item.label = QStringLiteral("Test set");
+  item.kind = LibraryItem::Kind::PropSet;
+  item.prop_entries.push_back({QStringLiteral("tree_pine"), 1.0});
+  return item;
+}
+
 TEST(LibraryDrop, RoadTemplateArmsCreateRoadWithItsProfile) {
   RoadNetwork network;
   const LibraryDropAction action =
@@ -147,6 +156,28 @@ TEST(LibraryDrop, AssemblyDroppedOffAnyRoadIsAStandaloneAtTheCursor) {
   LibraryDropAction action = resolve_library_drop(assembly("t"), network, 50.0, 200.0);
   ASSERT_EQ(action.kind, LibraryDropKind::Assembly);
   EXPECT_TRUE(action.toast.contains(QStringLiteral("Placed T-intersection")));
+}
+
+TEST(LibraryDrop, PropSetDropArmsPropCurve) {
+  RoadNetwork network;
+  // A prop set can't place a single object, so a drop arms the Prop Curve tool
+  // with the set current (#367) — MainWindow does the arming, the resolver only
+  // reports the kind + a valid cursor preview.
+  const LibraryDropAction action = resolve_library_drop(prop_set(), network, 12.0, 3.0);
+  EXPECT_EQ(action.kind, LibraryDropKind::PropSet);
+  EXPECT_TRUE(action.preview.valid);
+  EXPECT_FALSE(action.toast.isEmpty());
+  EXPECT_EQ(action.command, nullptr); // arming, not a direct edit
+}
+
+TEST(LibraryDrop, EmptyPropSetIsRejectedWithoutArming) {
+  RoadNetwork network;
+  LibraryItem empty;
+  empty.key = QStringLiteral("prop_set.empty");
+  empty.kind = LibraryItem::Kind::PropSet; // no usable entries
+  const LibraryDropAction action = resolve_library_drop(empty, network, 0.0, 0.0);
+  EXPECT_EQ(action.kind, LibraryDropKind::None);
+  EXPECT_FALSE(action.toast.isEmpty()); // a hint, not silence
 }
 
 TEST(LibraryDrop, UnknownItemYieldsNoAction) {
