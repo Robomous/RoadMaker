@@ -97,4 +97,12 @@ void Settings::set_viewport_hints(bool enabled) {
   settings_.setValue(QStringLiteral("view/viewport_hints"), enabled);
 }
 
+int Settings::toolbar_tab() const {
+  return settings_.value(QStringLiteral("ui/toolbar_tab"), 0).toInt();
+}
+
+void Settings::set_toolbar_tab(int index) {
+  settings_.setValue(QStringLiteral("ui/toolbar_tab"), index);
+}
+
 } // namespace roadmaker::editor

@@ -15,6 +15,8 @@
 #include <QToolButton>
 #include <filesystem>
 #include <optional>
+#include <unordered_map>
+#include <vector>
 
 #include "app/actions.hpp"
 #include "app/elided_label.hpp"
@@ -277,11 +279,21 @@ private:
   ElidedLabel* status_instruction_ = nullptr;
   QLabel* status_entities_;
 
-  /// The two generated toolbar rows (p1-s5): row 1 authors the network, row 2
-  /// holds the scene layers. Kept so the guided tour can locate an action's
-  /// button to highlight (widgetForAction) — it must search BOTH.
-  QToolBar* main_toolbar_ = nullptr;
-  QToolBar* layers_toolbar_ = nullptr;
+  /// The tabbed toolbar (p1-s6, issue #368). `core_toolbar_` is the persistent
+  /// strip that never hides (File, Edit, framing/Library); `toolbar_tab_bar_`
+  /// switches `toolbar_stack_` between per-category page toolbars. `all_toolbars_`
+  /// is every bar (core + pages) so the guided tour can locate any action's
+  /// button (widgetForAction) even on a hidden tab. `toolbar_tab_index_` maps a
+  /// tab to its stack/tabbar index for reveal-on-activation.
+  QToolBar* core_toolbar_ = nullptr;
+  class QTabBar* toolbar_tab_bar_ = nullptr;
+  class QStackedWidget* toolbar_stack_ = nullptr;
+  std::vector<QToolBar*> all_toolbars_;
+  std::unordered_map<shortcuts::ToolbarTab, int> toolbar_tab_index_;
+  /// Switches the tabbed toolbar to the tab holding the now-active tool, so a
+  /// tool activated indirectly (shortcut, Library-arm, request_tool) reveals its
+  /// section instead of firing invisibly.
+  void reveal_active_tool_tab();
   /// First-run guided-tour overlay; created lazily on first show / Help menu.
   class TourOverlay* tour_overlay_ = nullptr;
   bool tour_checked_ = false; // first-run tour prompt fires at most once

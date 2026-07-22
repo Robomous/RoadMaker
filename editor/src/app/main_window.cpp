@@ -25,12 +25,15 @@
 #include <QMimeData>
 #include <QPushButton>
 #include <QShowEvent>
+#include <QStackedWidget>
 #include <QStatusBar>
+#include <QTabBar>
 #include <QTimer>
 #include <QToolBar>
 #include <QToolButton>
 #include <QUrl>
 #include <QUuid>
+#include <QVBoxLayout>
 
 #include "app/context_menu.hpp"
 #include "app/crash_handler.hpp"
@@ -593,6 +596,9 @@ MainWindow::MainWindow(QWidget* parent, bool restore_saved_layout)
   default_layout_state_ = saveState();
   connect(actions_->reset_layout, &QAction::triggered, this, [this] {
     restoreState(default_layout_state_);
+    if (toolbar_tab_bar_ != nullptr && toolbar_tab_bar_->count() > 0) {
+      toolbar_tab_bar_->setCurrentIndex(0); // the tabbed toolbar returns to its first tab
+    }
   });
   if (!restore_saved_layout || !settings_.restore_window(*this)) {
     // First run (no saved layout) or a scripted capture: keep the default
@@ -835,17 +841,16 @@ void MainWindow::build_menus() {
 }
 
 void MainWindow::build_toolbar() {
-  // Two labeled rows, GENERATED from the action registry's taxonomy (p1-s5,
-  // issue #317) rather than hand-placed: row 1 authors the network
-  // (File | Edit | Roads | Lanes), row 2 the scene layers laid over it
-  // (Markings | Props | … | Library & View). A tool that lands without a
-  // toolbar_group fails shortcuts::toolbar_violations() in the tests, so the
-  // rows cannot silently go stale as P4 adds tools.
+  // A persistent CORE strip + a TABBED section, both GENERATED from the action
+  // registry's taxonomy (p1-s5/#317, p1-s6/#368) rather than hand-placed. The
+  // core strip (File | Edit | Library & View) never hides; each other category
+  // is a tab (Roads & Lanes, Markings, Props, Signals & Signs, …). A tool that
+  // lands without a toolbar_group fails shortcuts::toolbar_violations() in the
+  // tests, so the taxonomy cannot silently go stale as later pillars add tools.
   //
   // 28 px icons with the action's iconText under each (ui-design.md) — a new
   // user can read what every button does.
-  const auto make_row = [this](const QString& title, const QString& object_name) {
-    QToolBar* bar = addToolBar(title);
+  const auto style_bar = [](QToolBar* bar, const QString& object_name) {
     bar->setObjectName(object_name);
     bar->setIconSize(QSize(28, 28));
     bar->setToolButtonStyle(Qt::ToolButtonTextUnderIcon);
@@ -862,9 +867,9 @@ void MainWindow::build_toolbar() {
     return bar;
   };
 
-  const auto fill_row = [this](QToolBar* bar, shortcuts::ToolbarRow row) {
+  const auto fill = [this](QToolBar* bar, shortcuts::ToolbarTab tab) {
     bool first_group = true;
-    for (const shortcuts::ToolbarGroupLayout& group : shortcuts::toolbar_layout(row)) {
+    for (const shortcuts::ToolbarGroupLayout& group : shortcuts::toolbar_layout(tab)) {
       if (group.ids.empty()) {
         continue; // a reserved group renders nothing until its first tool lands
       }
@@ -880,14 +885,146 @@ void MainWindow::build_toolbar() {
     }
   };
 
-  // Row 1 keeps the historical object name so a saved layout still restores,
-  // and the member so the guided tour can locate a button to highlight.
-  main_toolbar_ = make_row(tr("Main"), QStringLiteral("toolbar.main"));
-  fill_row(main_toolbar_, shortcuts::ToolbarRow::kAuthoring);
+  // The persistent CORE strip — File, the universal edit tools, and framing /
+  // Library. It never hides behind a tab. Keeps the historical object name so a
+  // saved layout still restores.
+  core_toolbar_ = style_bar(addToolBar(tr("Main")), QStringLiteral("toolbar.main"));
+  fill(core_toolbar_, shortcuts::ToolbarTab::kCore);
+  all_toolbars_.push_back(core_toolbar_);
 
+  // The tabbed section: a QTabBar over a QStackedWidget of per-category page
+  // toolbars, hosted inside a single QToolBar so it docks like the rest. Only
+  // populated tabs appear (a reserved pillar's tab shows up with its first
+  // tool). Shortcuts still fire on a hidden tab; reveal_active_tool_tab() brings
+  // the tab forward when a tool activates.
   addToolBarBreak();
-  layers_toolbar_ = make_row(tr("Layers"), QStringLiteral("toolbar.layers"));
-  fill_row(layers_toolbar_, shortcuts::ToolbarRow::kLayers);
+  toolbar_tab_bar_ = new QTabBar;
+  toolbar_tab_bar_->setObjectName(QStringLiteral("toolbar_tabs"));
+  toolbar_tab_bar_->setExpanding(false);
+  toolbar_tab_bar_->setDrawBase(false);
+  toolbar_stack_ = new QStackedWidget;
+  int stack_index = 0;
+  for (const shortcuts::ToolbarTabInfo& info : shortcuts::toolbar_tabs()) {
+    QToolBar* page = style_bar(new QToolBar, QStringLiteral("toolbar.tab.%1").arg(stack_index));
+    fill(page, info.tab);
+    toolbar_stack_->addWidget(page);
+    // Double the ampersand so "Signals & Signs" shows literally — QTabBar reads a
+    // single '&' as a mnemonic marker and would swallow it.
+    QString tab_title = QString::fromUtf8(info.title);
+    tab_title.replace(QLatin1Char('&'), QLatin1String("&&"));
+    toolbar_tab_bar_->addTab(tab_title);
+    toolbar_tab_index_[info.tab] = stack_index;
+    all_toolbars_.push_back(page);
+    ++stack_index;
+  }
+  connect(
+      toolbar_tab_bar_, &QTabBar::currentChanged, toolbar_stack_, &QStackedWidget::setCurrentIndex);
+  connect(toolbar_tab_bar_, &QTabBar::currentChanged, this, [this](int index) {
+    settings_.set_toolbar_tab(index);
+  });
+
+  auto* tab_host = new QWidget;
+  auto* tab_layout = new QVBoxLayout(tab_host);
+  tab_layout->setContentsMargins(0, 0, 0, 0);
+  tab_layout->setSpacing(0);
+  tab_layout->addWidget(toolbar_tab_bar_);
+  tab_layout->addWidget(toolbar_stack_);
+
+  QToolBar* tab_bar_host = addToolBar(tr("Tools"));
+  tab_bar_host->setObjectName(QStringLiteral("toolbar.tabs"));
+  tab_bar_host->setMovable(false);
+  tab_bar_host->addWidget(tab_host);
+
+  // Restore the last-used tab (validated against the live count — the tab set
+  // grows as pillars land, so a stale higher index is ignored).
+  const int saved_tab = settings_.toolbar_tab();
+  if (saved_tab >= 0 && saved_tab < toolbar_tab_bar_->count()) {
+    toolbar_tab_bar_->setCurrentIndex(saved_tab);
+    toolbar_stack_->setCurrentIndex(saved_tab);
+  }
+
+  // A tool activated indirectly reveals its tab.
+  connect(&tool_manager_, &ToolManager::active_changed, this, [this] { reveal_active_tool_tab(); });
+}
+
+namespace {
+
+/// The registry Id for a runtime tool — the single bridge between the two
+/// enums, so a new tool must be classified here (no default: -Wswitch fails the
+/// build otherwise). Feeds reveal_active_tool_tab() via toolbar_tab_of().
+[[nodiscard]] shortcuts::Id id_for_tool(ToolId tool) {
+  switch (tool) {
+  case ToolId::Select:
+    return shortcuts::Id::ToolSelect;
+  case ToolId::Move:
+    return shortcuts::Id::ToolMove;
+  case ToolId::CreateRoad:
+    return shortcuts::Id::ToolCreateRoad;
+  case ToolId::EditNodes:
+    return shortcuts::Id::ToolEditNodes;
+  case ToolId::LaneProfile:
+    return shortcuts::Id::ToolLaneProfile;
+  case ToolId::Elevation:
+    return shortcuts::Id::ToolElevation;
+  case ToolId::CreateJunction:
+    return shortcuts::Id::ToolCreateJunction;
+  case ToolId::Split:
+    return shortcuts::Id::ToolSplit;
+  case ToolId::Delete:
+    return shortcuts::Id::ToolDelete;
+  case ToolId::LaneAdd:
+    return shortcuts::Id::ToolLaneAdd;
+  case ToolId::LaneForm:
+    return shortcuts::Id::ToolLaneForm;
+  case ToolId::LaneCarve:
+    return shortcuts::Id::ToolLaneCarve;
+  case ToolId::Crosswalk:
+    return shortcuts::Id::ToolCrosswalk;
+  case ToolId::MarkingPoint:
+    return shortcuts::Id::ToolMarkingPoint;
+  case ToolId::MarkingCurve:
+    return shortcuts::Id::ToolMarkingCurve;
+  case ToolId::PropPoint:
+    return shortcuts::Id::ToolPropPoint;
+  case ToolId::PropCurve:
+    return shortcuts::Id::ToolPropCurve;
+  case ToolId::PropSpan:
+    return shortcuts::Id::ToolPropSpan;
+  case ToolId::PropPolygon:
+    return shortcuts::Id::ToolPropPolygon;
+  case ToolId::Corner:
+    return shortcuts::Id::ToolCorner;
+  case ToolId::StopLine:
+    return shortcuts::Id::ToolStopLine;
+  case ToolId::JunctionSpan:
+    return shortcuts::Id::ToolJunctionSpan;
+  case ToolId::JunctionSurface:
+    return shortcuts::Id::ToolJunctionSurface;
+  case ToolId::Maneuver:
+    return shortcuts::Id::ToolManeuver;
+  case ToolId::Signal:
+    return shortcuts::Id::ToolSignal;
+  case ToolId::Sign:
+    return shortcuts::Id::ToolSign;
+  }
+  return shortcuts::Id::ToolSelect; // unreachable; every ToolId is handled above
+}
+
+} // namespace
+
+void MainWindow::reveal_active_tool_tab() {
+  if (toolbar_tab_bar_ == nullptr) {
+    return;
+  }
+  const std::optional<ToolId> active = tool_manager_.active_id();
+  if (!active.has_value()) {
+    return;
+  }
+  const shortcuts::ToolbarTab tab = shortcuts::toolbar_tab_of(id_for_tool(*active));
+  const auto it = toolbar_tab_index_.find(tab);
+  if (it != toolbar_tab_index_.end() && toolbar_tab_bar_->currentIndex() != it->second) {
+    toolbar_tab_bar_->setCurrentIndex(it->second);
+  }
 }
 
 void MainWindow::build_tool_options_bar() {
@@ -1524,10 +1661,11 @@ void MainWindow::start_tour() {
   if (tour_overlay_ == nullptr) {
     tour_overlay_ = new TourOverlay(default_tour_steps(), this);
     // Resolve a step's target (an action iconText) to its toolbar button rect.
-    // BOTH rows: p1-s5 moved "Library" (and the view commands) to row 2, and a
-    // resolver that only searched main_toolbar_ would silently skip that step.
+    // Searches EVERY bar — the core strip and every tab page (p1-s6/#368) — so a
+    // step on a tool that lives on a non-active tab still resolves; the tab is
+    // brought forward first so the highlighted button is actually visible.
     tour_overlay_->set_target_resolver([this](const QString& key) -> QRect {
-      for (QToolBar* bar : {main_toolbar_, layers_toolbar_}) {
+      for (QToolBar* bar : all_toolbars_) {
         if (bar == nullptr) {
           continue;
         }
@@ -1535,6 +1673,12 @@ void MainWindow::start_tour() {
         for (QAction* action : toolbar_actions) {
           if (action->iconText() != key) {
             continue;
+          }
+          // Reveal the tab this button lives on so it can be measured/seen.
+          const int page = toolbar_stack_ != nullptr ? toolbar_stack_->indexOf(bar) : -1;
+          if (page >= 0 && toolbar_tab_bar_ != nullptr &&
+              toolbar_tab_bar_->currentIndex() != page) {
+            toolbar_tab_bar_->setCurrentIndex(page);
           }
           QWidget* widget = bar->widgetForAction(action);
           if (widget != nullptr && widget->isVisible()) {

@@ -10,22 +10,35 @@ namespace roadmaker::editor::shortcuts {
 
 namespace {
 
-// The toolbar taxonomy (issue #317). Row 1 authors the network; row 2 holds
-// the scene layers laid over it. The three reserved groups are committed now
-// and render nothing until their pillar lands its first tool — so P4's
-// signals and signs arrive into a category instead of re-shuffling a flat
-// toolbar.
+// The toolbar taxonomy (issues #317/#368). The `kCore` groups form the
+// persistent strip that never hides — file ops, the universal edit tools, and
+// framing/Library. Every other group sits on a switchable tab; the reserved
+// Terrain and Scenario tabs are committed now and render nothing until their
+// pillar (P5 / P8) lands its first tool, so later tools arrive into a category
+// instead of re-shuffling a flat toolbar.
 constexpr std::array kToolbarGroups{
-    ToolbarGroup{"File", ToolbarRow::kAuthoring},
-    ToolbarGroup{"Edit", ToolbarRow::kAuthoring},
-    ToolbarGroup{"Roads", ToolbarRow::kAuthoring},
-    ToolbarGroup{"Lanes", ToolbarRow::kAuthoring},
-    ToolbarGroup{"Markings", ToolbarRow::kLayers},
-    ToolbarGroup{"Props", ToolbarRow::kLayers},
-    ToolbarGroup{"Terrain & Structures", ToolbarRow::kLayers}, // reserved
-    ToolbarGroup{"Signals & Signs", ToolbarRow::kLayers},      // reserved
-    ToolbarGroup{"Scenario", ToolbarRow::kLayers},             // reserved
-    ToolbarGroup{"Library & View", ToolbarRow::kLayers},
+    ToolbarGroup{"File", ToolbarTab::kCore},
+    ToolbarGroup{"Edit", ToolbarTab::kCore},
+    ToolbarGroup{"Roads", ToolbarTab::kRoadsLanes},
+    ToolbarGroup{"Lanes", ToolbarTab::kRoadsLanes},
+    ToolbarGroup{"Markings", ToolbarTab::kMarkings},
+    ToolbarGroup{"Props", ToolbarTab::kProps},
+    ToolbarGroup{"Terrain & Structures", ToolbarTab::kTerrain}, // reserved (P5)
+    ToolbarGroup{"Signals & Signs", ToolbarTab::kSignals},
+    ToolbarGroup{"Scenario", ToolbarTab::kScenario}, // reserved (P8)
+    ToolbarGroup{"Library & View", ToolbarTab::kCore},
+};
+
+// Tab display titles, indexed by ToolbarTab. kCore has none (the strip is
+// unlabeled). Kept beside kToolbarGroups so the two never drift.
+constexpr std::array kToolbarTabTitles{
+    "",                     // kCore
+    "Roads & Lanes",        // kRoadsLanes
+    "Markings",             // kMarkings
+    "Props",                // kProps
+    "Terrain & Structures", // kTerrain
+    "Signals & Signs",      // kSignals
+    "Scenario",             // kScenario
 };
 
 // The map. Order here is the order on the page — NOT the toolbar's order,
@@ -418,10 +431,10 @@ std::span<const ToolbarGroup> toolbar_groups() {
   return kToolbarGroups;
 }
 
-std::vector<ToolbarGroupLayout> toolbar_layout(ToolbarRow row) {
+std::vector<ToolbarGroupLayout> toolbar_layout(ToolbarTab tab) {
   std::vector<ToolbarGroupLayout> layout;
   for (const ToolbarGroup& group : kToolbarGroups) {
-    if (group.row != row) {
+    if (group.tab != tab) {
       continue;
     }
     // Reserved groups fall through with an empty `ids` — present in the
@@ -444,6 +457,48 @@ std::vector<ToolbarGroupLayout> toolbar_layout(ToolbarRow row) {
     layout.push_back(std::move(entry_layout));
   }
   return layout;
+}
+
+const char* toolbar_tab_title(ToolbarTab tab) {
+  return kToolbarTabTitles.at(static_cast<std::size_t>(tab));
+}
+
+ToolbarTab toolbar_tab_of(Id id) {
+  const Entry& e = entry(id);
+  if (e.toolbar_group == nullptr) {
+    return ToolbarTab::kCore; // off-toolbar — callers gate on toolbar_group first
+  }
+  for (const ToolbarGroup& group : kToolbarGroups) {
+    if (std::string_view(group.name) == std::string_view(e.toolbar_group)) {
+      return group.tab;
+    }
+  }
+  return ToolbarTab::kCore;
+}
+
+std::vector<ToolbarTabInfo> toolbar_tabs() {
+  std::vector<ToolbarTabInfo> tabs;
+  // Enum order is display order; kCore is the strip, not a tab, so it is skipped.
+  for (const ToolbarTab tab : {ToolbarTab::kRoadsLanes,
+                               ToolbarTab::kMarkings,
+                               ToolbarTab::kProps,
+                               ToolbarTab::kTerrain,
+                               ToolbarTab::kSignals,
+                               ToolbarTab::kScenario}) {
+    // A tab appears only once at least one of its groups holds an action, so a
+    // reserved pillar's tab stays hidden until its first tool lands.
+    bool has_any = false;
+    for (const ToolbarGroupLayout& group : toolbar_layout(tab)) {
+      if (!group.ids.empty()) {
+        has_any = true;
+        break;
+      }
+    }
+    if (has_any) {
+      tabs.push_back(ToolbarTabInfo{.tab = tab, .title = toolbar_tab_title(tab)});
+    }
+  }
+  return tabs;
 }
 
 QStringList toolbar_violations(std::span<const Entry> rows, std::span<const ToolbarGroup> groups) {
