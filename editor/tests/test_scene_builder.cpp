@@ -4,9 +4,12 @@
 #include <gtest/gtest.h>
 
 #include <QImage>
+#include <array>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <numbers>
+#include <string>
 #include <vector>
 
 #include "render/prop_batching.hpp"
@@ -683,6 +686,93 @@ TEST(PartitionPropBatch, AllHighlightedKeepsNone) {
   ASSERT_EQ(split.highlighted.size(), 3U);
   EXPECT_EQ(split.highlighted[0], 0U);
   EXPECT_EQ(split.highlighted[2], 2U);
+}
+
+// --- editable text-sign faces (p4-s9, #230) ---------------------------------
+
+// A model-space sign-face overlay matching what the mesh builder emits for a
+// sign_plate: a quad at x = 0.05 (front of the plate), spanning y ±0.55 and
+// z 2.55 ± 0.33, v = 0 at the top.
+SignalFaceOverlay make_face(const std::string& text) {
+  SignalFaceOverlay face;
+  face.text = text;
+  face.positions = {0.05, -0.55, 2.88, 0.05, -0.55, 2.22, 0.05, 0.55, 2.22, 0.05, 0.55, 2.88};
+  face.normals = {1.0, 0.0, 0.0, 1.0, 0.0, 0.0, 1.0, 0.0, 0.0, 1.0, 0.0, 0.0};
+  face.uvs = {0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0, 0.0};
+  face.indices = {0, 1, 2, 0, 2, 3};
+  return face;
+}
+
+SignalInstance make_text_signal(const std::array<double, 3>& position, double heading) {
+  SignalInstance instance{.signal = SignalId{.index = 7, .gen = 0},
+                          .road = RoadId{.index = 1, .gen = 0},
+                          .model_id = "sign_plate",
+                          .position = position,
+                          .heading = heading};
+  instance.face = make_face("City");
+  return instance;
+}
+
+TEST(SignFaces, TextSignEmitsFaceItem) {
+  NetworkMesh mesh;
+  mesh.signal_instances.push_back(make_text_signal({0.0, 0.0, 0.0}, 0.0));
+
+  const Scene scene = build_scene(mesh);
+  ASSERT_EQ(scene.sign_faces.size(), 1U);
+  const SceneSignFace& face = scene.sign_faces.front();
+  EXPECT_EQ(face.model_id, "sign_plate");
+  EXPECT_EQ(face.text, "City");
+  EXPECT_TRUE(face.signal.is_valid());
+  EXPECT_EQ(face.data.positions.size(), 12U); // 4 verts
+  EXPECT_EQ(face.data.uvs.size(), 8U);
+  EXPECT_EQ(face.data.indices.size(), 6U);
+}
+
+TEST(SignFaces, FaceQuadSitsInFrontOfThePlate) {
+  NetworkMesh mesh;
+  mesh.signal_instances.push_back(make_text_signal({0.0, 0.0, 0.0}, 0.0));
+
+  const Scene scene = build_scene(mesh);
+  ASSERT_EQ(scene.sign_faces.size(), 1U);
+  const auto& positions = scene.sign_faces.front().data.positions;
+  // Heading 0, origin placement: world x == model x = 0.05, in front of the
+  // pole at x = 0 (positive x is the plate face direction).
+  for (std::size_t v = 0; v < 4; ++v) {
+    EXPECT_NEAR(positions[v * 3 + 0], 0.05F, 1e-4F);
+    EXPECT_GT(positions[v * 3 + 0], 0.0F);
+  }
+}
+
+TEST(SignFaces, FaceFollowsInstanceTransform) {
+  NetworkMesh mesh;
+  // Placed at (10, 20, 0) turned 90° about +Z: the model +x axis maps to world
+  // +y, so a model point (0.05, -0.55, 2.88) lands at (10.55, 20.05, 2.88).
+  mesh.signal_instances.push_back(make_text_signal({10.0, 20.0, 0.0}, std::numbers::pi / 2.0));
+
+  const Scene scene = build_scene(mesh);
+  ASSERT_EQ(scene.sign_faces.size(), 1U);
+  const auto& positions = scene.sign_faces.front().data.positions;
+  EXPECT_NEAR(positions[0], 10.55F, 1e-3F); // x' = -s*y + px = 0.55 + 10
+  EXPECT_NEAR(positions[1], 20.05F, 1e-3F); // y' =  s*x + py = 0.05 + 20
+  EXPECT_NEAR(positions[2], 2.88F, 1e-3F);  // z' = z unchanged
+}
+
+TEST(SignFaces, NonTextSignalEmitsNoFace) {
+  NetworkMesh mesh;
+  mesh.signal_instances.push_back(SignalInstance{.signal = SignalId{.index = 7, .gen = 0},
+                                                 .road = RoadId{.index = 1, .gen = 0},
+                                                 .model_id = "sign_generic",
+                                                 .position = {0.0, 0.0, 0.0},
+                                                 .heading = 0.0});
+  const Scene scene = build_scene(mesh);
+  EXPECT_TRUE(scene.sign_faces.empty());
+}
+
+TEST(TextureBoundary, DefaultWrapIsRepeat) {
+  // A default-constructed texture keeps the M2 tiled behaviour byte for byte;
+  // only sign faces opt into ClampToEdge.
+  const TextureData tex;
+  EXPECT_EQ(tex.wrap, TextureWrap::Repeat);
 }
 
 } // namespace

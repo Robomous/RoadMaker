@@ -25,6 +25,14 @@ struct TextureHandle {
   [[nodiscard]] bool valid() const { return id != 0; }
 };
 
+/// How a texture samples outside [0,1]. Repeat is the M2 default (tiled road
+/// surfaces); ClampToEdge is for atlas-like single images (sign faces) whose
+/// baked margin must not wrap and bleed at the edges.
+enum class TextureWrap {
+  Repeat,
+  ClampToEdge,
+};
+
 /// CPU-side texture upload, RGBA8 row-major (4 bytes/texel, width*height
 /// texels). The render boundary stays GL-free: no sampler/format enum here,
 /// the GL backend picks the internal format.
@@ -32,6 +40,9 @@ struct TextureData {
   int width = 0;
   int height = 0;
   std::vector<std::uint8_t> rgba;
+  /// Wrap mode. Default Repeat keeps existing (tiled surface) behaviour byte
+  /// for byte; sign faces upload ClampToEdge.
+  TextureWrap wrap = TextureWrap::Repeat;
 };
 
 /// A material references an optional base-color texture plus scalar factors.

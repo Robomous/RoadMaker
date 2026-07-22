@@ -235,6 +235,22 @@ private:
     std::vector<InstanceData> transforms; ///< index-parallel to `instances`
   };
 
+  /// One uploaded editable text-sign face: a world-space textured quad plus the
+  /// ClampToEdge texture of its rendered text (shared via sign_face_textures_)
+  /// and the owning signal/road for hover/selection highlighting.
+  struct UploadedSignFace {
+    RenderMeshHandle mesh;
+    TextureHandle texture;
+    RoadId road;
+    SignalId signal;
+  };
+
+  /// Get-or-create the ClampToEdge texture for a text sign's face, keyed on
+  /// (model_id, text): rasterises with roadmaker::signs::render_face and uploads
+  /// it. MUST be called with the GL context current (paintGL / rebuild_scene).
+  [[nodiscard]] TextureHandle sign_face_texture(const std::string& model_id,
+                                                const std::string& text) const;
+
   /// The textured-mode Material for an item: the assigned `material` code
   /// resolved through the MaterialCatalog (albedo + normal + roughness), falling
   /// back to the SurfaceKind default when the code is empty/unknown, or bright
@@ -427,6 +443,14 @@ private:
   /// Instanced prop/signal batches (one per model), uploaded ONCE per rebuild.
   /// Props no longer flow through items_; they draw via the GL instanced path.
   std::vector<UploadedPropBatch> prop_batches_;
+
+  /// Editable text-sign faces — one uploaded textured quad per placed text sign.
+  std::vector<UploadedSignFace> sign_faces_;
+
+  /// Cache of uploaded sign-face textures keyed on "model_id\x1ftext", swept of
+  /// unreferenced handles on each rebuild. `mutable` so sign_face_texture (a
+  /// const helper) can fill it.
+  mutable std::unordered_map<std::string, TextureHandle> sign_face_textures_;
   std::vector<RoadAabb> road_aabbs_;
   SceneBounds scene_bounds_;
 

@@ -61,6 +61,7 @@ inline constexpr GLenum kTextureWrapT = 0x2803;
 inline constexpr GLenum kLinear = 0x2601;
 inline constexpr GLenum kLinearMipmapLinear = 0x2703;
 inline constexpr GLenum kRepeat = 0x2901;
+inline constexpr GLenum kClampToEdge = 0x812F;
 
 // Function pointers, loaded by load_functions().
 // NOLINTBEGIN(readability-identifier-naming) — official GL spellings.
