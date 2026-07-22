@@ -37,6 +37,7 @@ add_executable(roadmaker_core_tests
   test_maneuver_persistence.cpp
   test_controller.cpp
   test_signalization_persistence.cpp
+  test_signal_phase_persistence.cpp
   test_edit_stack.cpp
   test_connection.cpp
   test_edit_operations.cpp

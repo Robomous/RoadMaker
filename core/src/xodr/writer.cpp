@@ -1,6 +1,7 @@
 #include "roadmaker/xodr/writer.hpp"
 
 #include "roadmaker/geometry/reference_line.hpp"
+#include "roadmaker/mesh/junction_phases.hpp"
 #include "roadmaker/mesh/junction_stoplines.hpp"
 #include "roadmaker/tol.hpp"
 #include "roadmaker/xodr/rules.hpp"
@@ -47,6 +48,23 @@ bool is_record_token(std::string_view text) {
     return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_' ||
            c == '.' || c == '-';
   });
+}
+
+/// The one-character state code the rm:phases grammar uses (p4-s8, issue #229):
+/// g=Green, y=Yellow, r=Red, o=Off. Red is stored sparsely and never written,
+/// so 'r' is only ever produced when normalizing a foreign explicit Red away.
+char state_char(SignalState state) {
+  switch (state) {
+  case SignalState::Green:
+    return 'g';
+  case SignalState::Yellow:
+    return 'y';
+  case SignalState::Red:
+    return 'r';
+  case SignalState::Off:
+    return 'o';
+  }
+  return 'r';
 }
 
 const char* lane_type_name(LaneType type) {
@@ -1706,6 +1724,90 @@ void write_junction(pugi::xml_node root,
     }
   }
 
+  // The junction signal cycle (p4-s8, issue #229). Layer 1 alone: OpenDRIVE
+  // §14.6 puts signal timing outside the standard ("dynamic content like the
+  // signal cycle itself is specified outside of this standard"), so a foreign
+  // reader loses nothing. Format: ";"-joined phase entries in cycle order, each
+  // ":"-joined "name=<tok>:dur=<num>:st=<ctrl>,<state>…" (states '|'-joined,
+  // g/y/r/o). NEVER on a span (virtual) junction — it has no controllers — and
+  // omitted entirely when empty, so an unsignalized junction (and every one
+  // that predates the feature) re-exports byte-identically.
+  //
+  // Pruned to exactly what the reader would accept AND to LIVE state, so the
+  // writer never emits a value its own reader would drop: an entry with a
+  // reader-rejectable duration is skipped, and an st pair is written only for a
+  // controller that is a record token, is in this junction's synchronization
+  // group, AND resolves to a live top-level controller (the rm:signalmount
+  // precedent — a dormant reference is dropped). Red is stored sparsely, so a
+  // Red pair (only a foreign file carries one) is never written; it normalizes
+  // away here on the second save.
+  if (!span && !junction.phases.empty()) {
+    std::set<std::string> group_ids;
+    for (const JunctionController& reference : junction.junction_controllers) {
+      group_ids.insert(reference.controller_odr_id);
+    }
+    std::set<std::string> live_controller_ids;
+    network.for_each_controller([&](ControllerId, const Controller& controller) {
+      live_controller_ids.insert(controller.odr_id);
+    });
+
+    std::string value;
+    const std::size_t phase_count = std::min(junction.phases.size(), kMaxSignalPhases);
+    for (std::size_t i = 0; i < phase_count; ++i) {
+      const SignalPhase& phase = junction.phases[i];
+      if (!std::isfinite(phase.duration) || phase.duration <= 0.0 ||
+          phase.duration > kMaxSignalPhaseDuration) {
+        continue; // the reader would drop the whole value on this entry
+      }
+      std::string entry;
+      if (is_record_token(phase.name)) {
+        entry += "name=";
+        entry += phase.name;
+      }
+      if (!entry.empty()) {
+        entry += ':';
+      }
+      entry += "dur=";
+      entry += num(phase.duration);
+
+      std::string pairs;
+      std::size_t pair_count = 0;
+      for (const PhaseState& state : phase.states) {
+        if (pair_count >= kMaxSignalPhaseStates) {
+          break;
+        }
+        if (state.state == SignalState::Red) {
+          continue; // stored sparsely; a foreign explicit Red normalizes away
+        }
+        if (!is_record_token(state.controller_odr_id) ||
+            !group_ids.contains(state.controller_odr_id) ||
+            !live_controller_ids.contains(state.controller_odr_id)) {
+          continue; // dormant or unencodable — not written
+        }
+        if (!pairs.empty()) {
+          pairs += '|';
+        }
+        pairs += state.controller_odr_id;
+        pairs += ',';
+        pairs += state_char(state.state);
+        ++pair_count;
+      }
+      if (!pairs.empty()) {
+        entry += ":st=";
+        entry += pairs;
+      }
+      if (!value.empty()) {
+        value += ';';
+      }
+      value += entry;
+    }
+    if (!value.empty()) {
+      pugi::xml_node user_data = junction_node.append_child("userData");
+      user_data.append_attribute("code").set_value("rm:phases");
+      user_data.append_attribute("value").set_value(value.c_str());
+    }
+  }
+
   // Junction-scope authored values (p4-s2, issue #226) get their own code so
   // an older reader drops only these and still understands rm:arms/rm:corners.
   // Format: ";"-joined "key=value", each key at most once, element omitted
@@ -2047,6 +2149,83 @@ std::vector<Diagnostic> validate_network(const RoadNetwork& network, const Write
                    .location = fmt::format("junction id={}", junction.odr_id),
                    .message = "virtual junction declares a signal synchronization group",
                    .rule_id = std::string(rules::kVirtualNoControllers)});
+  });
+
+  // Signal phases (p4-s8, issue #229) are Layer 1: OpenDRIVE §14.6 excludes the
+  // cycle, so these are RoadMaker advisories with an EMPTY rule_id (the
+  // dangling-<control> precedent), except the span-junction case which reuses
+  // the §12.7 virtual-junction rule. Each mirrors a way the writer prunes: what
+  // it drops on write, the author is told about here.
+  network.for_each_junction([&](JunctionId junction_id, const Junction& junction) {
+    if (junction.phases.empty()) {
+      return;
+    }
+    const std::string location = fmt::format("junction id={}", junction.odr_id);
+
+    // (1) A span (virtual) junction "shall not have controllers and therefore
+    // no traffic lights" (§12.7), so a phase cycle on one drives nothing that
+    // can exist. It has no synchronization group, so findings 2/3 do not apply.
+    if (!junction.spans.empty()) {
+      findings.push_back(Diagnostic{.severity = Severity::Warning,
+                                    .location = location,
+                                    .message = "virtual junction carries a signal phase cycle",
+                                    .rule_id = std::string(rules::kVirtualNoControllers)});
+      return;
+    }
+
+    // (5) The list is truncated to kMaxSignalPhases on write.
+    if (junction.phases.size() > kMaxSignalPhases) {
+      findings.push_back(Diagnostic{
+          .severity = Severity::Warning,
+          .location = location,
+          .message =
+              fmt::format("advisory: junction has {} signal phases; only the first {} are written",
+                          junction.phases.size(),
+                          kMaxSignalPhases)});
+    }
+
+    // (4) An out-of-band duration is not written (the reader would drop it).
+    if (std::any_of(junction.phases.begin(), junction.phases.end(), [](const SignalPhase& phase) {
+          return !std::isfinite(phase.duration) || phase.duration <= 0.0 ||
+                 phase.duration > kMaxSignalPhaseDuration;
+        })) {
+      findings.push_back(Diagnostic{
+          .severity = Severity::Warning,
+          .location = location,
+          .message = "advisory: a signal phase has an out-of-range duration and is not written"});
+    }
+
+    // (2)/(3) The one-query idiom: the effective cycle resolves member
+    // controllers and reports every authored state that names a controller
+    // outside the live sync group.
+    const JunctionPhasePlan plan = junction_phases(network, junction_id);
+
+    // (2) Phases authored, but no live member controller — the cycle drives
+    // nothing.
+    if (plan.controller_odr_ids.empty()) {
+      findings.push_back(Diagnostic{.severity = Severity::Warning,
+                                    .location = location,
+                                    .message = "advisory: junction has signal phases but no live "
+                                               "controller; the cycle drives nothing"});
+    }
+
+    // (3) States naming a controller outside the sync group or since deleted are
+    // dormant — pruned on write.
+    if (!plan.dormant_controller_odr_ids.empty()) {
+      std::string names;
+      for (const std::string& id : plan.dormant_controller_odr_ids) {
+        if (!names.empty()) {
+          names += ", ";
+        }
+        names += id;
+      }
+      findings.push_back(Diagnostic{
+          .severity = Severity::Warning,
+          .location = location,
+          .message = fmt::format("advisory: signal phase names controller(s) not in this "
+                                 "junction's group; they are not written: {}",
+                                 names)});
+    }
   });
 
   // The writer emits a junction <boundary> (§12.10) whenever it can be closed
