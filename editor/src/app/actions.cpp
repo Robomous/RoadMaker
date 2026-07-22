@@ -294,12 +294,12 @@ Actions::Actions(QUndoStack& undo_stack, QObject* parent) : QObject(parent) {
   template_group = new QActionGroup(this);
   template_rural = new QAction(tr("Two-lane &Rural"), this);
   template_rural->setCheckable(true);
-  template_rural->setChecked(true); // the tool's default profile
   template_rural->setToolTip(tr("One driving lane each way, right-hand shoulder"));
   template_group->addAction(template_rural);
 
   template_urban = new QAction(tr("&Urban Sidewalk"), this);
   template_urban->setCheckable(true);
+  template_urban->setChecked(true); // the tool's default profile (#355)
   template_urban->setToolTip(tr("One driving lane each way, sidewalks both sides"));
   template_group->addAction(template_urban);
 

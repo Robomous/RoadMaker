@@ -54,8 +54,9 @@ within radius (assert final waypoint == snapped position).
 ## 2. Create Road
 
 **Interaction.** Toolbar template dropdown (kernel `LaneProfile` presets:
-`two_lane_rural` — existing `two_lane_default()` renamed/aliased, `urban_sidewalk`,
-`highway`; defined in `road/authoring.hpp` as named factory functions).
+`two_lane_rural` — existing `two_lane_default()` renamed/aliased, `urban_sidewalk`
+(the default new-road template, #355), `highway`; defined in `road/authoring.hpp`
+as named factory functions).
 Click places waypoints (ghost polyline + fitted-clothoid preview after 2 points);
 `Enter` or double-click commits; `Esc` cancels; `Backspace` removes the last
 waypoint. Tangent snap: when the first click lands on an existing road end

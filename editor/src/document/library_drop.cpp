@@ -136,7 +136,9 @@ LaneProfile profile_for(const QString& name) {
   if (name == QStringLiteral("highway")) {
     return LaneProfile::highway();
   }
-  return LaneProfile::two_lane_rural();
+  // Unknown name falls back to the default creation template (#355), matching the
+  // Create Road tool default and the toolbar's initial selection.
+  return LaneProfile::urban_sidewalk();
 }
 
 RoadStyle style_for(const QString& name) {

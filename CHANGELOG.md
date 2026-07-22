@@ -146,6 +146,12 @@ Current version on `main`: **0.0.1**.
     same undo macro, instead of creating a second object.
 
 ### Changed
+- **New roads default to the urban-with-sidewalks template**
+  ([#355](https://github.com/Robomous/RoadMaker/issues/355)): the Create Road
+  tool, its toolbar dropdown, and the Library fallback now start from
+  `urban_sidewalk` (a driving lane and a sidewalk each side) instead of the
+  two-lane rural template. The rural and highway templates remain selectable;
+  existing roads are untouched.
 - **License changed from MIT to Apache-2.0.** The project — kernel, editor,
   Python bindings, docs, and all first-party original-work assets — is now
   licensed under the Apache License 2.0, gaining an explicit patent grant. The

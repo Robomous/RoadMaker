@@ -9,7 +9,9 @@ clothoid reference line and applies a lane template.*
 
 1. Select the **Create Road** tool from the toolbar.
 2. Pick a **lane template** from the toolbar dropdown (the kernel `LaneProfile`
-   presets — e.g. a two-lane rural road or an urban road with sidewalks).
+   presets — a two-lane rural road, a highway, or the default **urban road with
+   sidewalks**). New roads use the urban-with-sidewalks template unless you pick
+   another.
 3. Click in the viewport to drop **waypoints** along the path you want. A live
    preview shows the reference line and lane edges as you go; nothing is
    committed to the network yet.

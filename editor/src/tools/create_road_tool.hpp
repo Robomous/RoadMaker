@@ -89,7 +89,9 @@ private:
   void reset_session();
 
   Document& document_;
-  LaneProfile profile_ = LaneProfile::two_lane_rural();
+  // The default creation template is urban-with-sidewalks (#355); the toolbar
+  // dropdown (actions.cpp) and the Library fallback (library_drop.cpp) agree.
+  LaneProfile profile_ = LaneProfile::urban_sidewalk();
   edit::SnapOptions snap_options_{};
   std::vector<PlacedPoint> points_;
   std::optional<edit::SnapResult> hover_snap_;
