@@ -18,10 +18,13 @@
 
 #include <QCheckBox>
 #include <QComboBox>
+#include <QCoreApplication>
 #include <QDoubleSpinBox>
+#include <QFocusEvent>
 #include <QItemSelectionModel>
 #include <QLabel>
 #include <QLineEdit>
+#include <QPlainTextEdit>
 #include <QPushButton>
 #include <QSignalSpy>
 #include <QTemporaryDir>
@@ -215,6 +218,88 @@ TEST(PropertiesPanel, SignalSelectionShowsPoseSectionAndEditCommitsMoveSignal) {
   // A focus-out with no change pushes nothing.
   emit s_spin->editingFinished();
   EXPECT_EQ(h.document.undo_stack()->count(), base + 1);
+}
+
+// --- editable sign-face text (p4-s9, #230) ----------------------------------
+
+namespace {
+// Adds a static sign to the sample's first road and selects it; returns the id.
+SignalId select_static_sign(Harness& h, PropertiesPanel& panel) {
+  const RoadId road = all_roads(h.document).front();
+  Signal sign;
+  sign.odr_id = "txt";
+  sign.type = "310";
+  sign.subtype = "-1";
+  sign.country = "DE";
+  sign.dynamic = false;
+  sign.s = 2.0;
+  sign.t = -3.0;
+  [&] {
+    ASSERT_TRUE(
+        h.document.push_command(edit::add_signal(h.document.network(), road, sign)).has_value());
+  }();
+  SignalId id;
+  h.document.network().for_each_signal([&](SignalId sid, const Signal&) { id = sid; });
+  h.selection.select({.signal = id});
+  static_cast<void>(panel);
+  return id;
+}
+} // namespace
+
+TEST(PropertiesPanel, SignalTextFocusOutPushesOneCommand) {
+  Harness h;
+  ASSERT_TRUE(h.document.load(kSample).has_value());
+  PropertiesPanel panel(h.document, h.selection);
+  auto* text = panel.findChild<QPlainTextEdit*>(QStringLiteral("signal_text_edit"));
+  ASSERT_NE(text, nullptr);
+  const SignalId signal = select_static_sign(h, panel);
+
+  ASSERT_TRUE(text->isEnabled());
+  const int base = h.document.undo_stack()->count();
+  text->setPlainText(QStringLiteral("Bad Aibling"));
+  QFocusEvent out(QEvent::FocusOut);
+  QCoreApplication::sendEvent(text, &out); // the panel's eventFilter commits
+  EXPECT_EQ(h.document.undo_stack()->count(), base + 1);
+  EXPECT_EQ(h.document.network().signal(signal)->text, "Bad Aibling");
+}
+
+TEST(PropertiesPanel, SignalTextUnchangedPushesNothing) {
+  Harness h;
+  ASSERT_TRUE(h.document.load(kSample).has_value());
+  PropertiesPanel panel(h.document, h.selection);
+  auto* text = panel.findChild<QPlainTextEdit*>(QStringLiteral("signal_text_edit"));
+  ASSERT_NE(text, nullptr);
+  select_static_sign(h, panel); // seeds the editor with the current text ("")
+
+  const int base = h.document.undo_stack()->count();
+  QFocusEvent out(QEvent::FocusOut);
+  QCoreApplication::sendEvent(text, &out);
+  EXPECT_EQ(h.document.undo_stack()->count(), base) << "an unchanged text pushes nothing";
+}
+
+TEST(PropertiesPanel, SignalTextRowDisabledForDynamicSignal) {
+  Harness h;
+  ASSERT_TRUE(h.document.load(kSample).has_value());
+  PropertiesPanel panel(h.document, h.selection);
+  auto* text = panel.findChild<QPlainTextEdit*>(QStringLiteral("signal_text_edit"));
+  ASSERT_NE(text, nullptr);
+
+  const RoadId road = all_roads(h.document).front();
+  Signal light;
+  light.odr_id = "tl";
+  light.type = "1000001";
+  light.subtype = "-1";
+  light.country = "OpenDRIVE";
+  light.dynamic = true;
+  light.s = 2.0;
+  light.t = -3.0;
+  ASSERT_TRUE(
+      h.document.push_command(edit::add_signal(h.document.network(), road, light)).has_value());
+  SignalId id;
+  h.document.network().for_each_signal([&](SignalId sid, const Signal&) { id = sid; });
+  h.selection.select({.signal = id});
+
+  EXPECT_FALSE(text->isEnabled()) << "@text is not meaningful on a dynamic head";
 }
 
 // --- scrub-editing (P1/GW-2) -------------------------------------------------

@@ -133,6 +133,7 @@ private:
   /// tool click on a road places, so the tool and the Library drop land the
   /// same head.
   [[nodiscard]] LibraryItem resolve_default_signal_item() const;
+  [[nodiscard]] LibraryItem resolve_default_sign_item() const;
   /// The default crosswalk/marking asset from the merged Library — the asset the
   /// Marking Curve tool authors (p3-s4). An empty item when the Library has none.
   [[nodiscard]] LibraryItem resolve_default_marking_curve_item() const;

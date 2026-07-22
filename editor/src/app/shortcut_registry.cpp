@@ -258,6 +258,12 @@ constexpr std::array kTable{
           .note = "G is the Signal tool; ⇧G opens its phase timeline",
           .toolbar_group = "Signals & Signs",
           .toolbar_order = 20},
+    Entry{.id = Id::ToolSign,
+          .category = "Tools",
+          .description = "Sign tool (place a road sign; its face text is editable)",
+          .primary = Qt::Key_B,
+          .toolbar_group = "Signals & Signs",
+          .toolbar_order = 30},
     // Toolbar-only: enabled only for a mergeable two-road selection.
     Entry{.id = Id::MergeRoads,
           .category = "Tools",

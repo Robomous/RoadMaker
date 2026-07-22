@@ -91,6 +91,7 @@ TEST(Icons, EveryMappedIconIsBundled) {
                                "lane-section",
                                "maneuver",
                                "signal",
+                               "sign",
                                "marking-point",
                                "marking-curve",
                                "template-highway",

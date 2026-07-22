@@ -21,6 +21,7 @@
 #include <QGroupBox>
 #include <QLabel>
 #include <QLineEdit>
+#include <QPlainTextEdit>
 #include <QPushButton>
 #include <QVBoxLayout>
 #include <QWidget>
@@ -341,6 +342,10 @@ private:
   QDoubleSpinBox* signal_t_spin_;
   QDoubleSpinBox* signal_h_spin_;
   QLabel* signal_kind_label_;
+  /// Editable @text face (§14 Table 122). A compact multi-line editor — @text
+  /// may carry literal newlines — that commits ONE set_signal_text on focus-out
+  /// (the single-undo rule); Escape restores. Disabled for dynamic signals.
+  QPlainTextEdit* signal_text_edit_;
 
   /// Object section: a selected <object>. A prop shows the Model slot; a marking
   /// instance (crosswalk / stencil / marking-curve) shows the Material slot
@@ -423,6 +428,12 @@ private:
   /// Populates the Signal section (position spinboxes + read-only type rows)
   /// from the primary selection's signal, and shows it.
   void refresh_signal(const Signal& signal);
+  /// Commits the Text editor's value as one set_signal_text, skipping a no-op
+  /// (the re-entrancy guard against a refresh()-driven re-seed echoing back).
+  void push_signal_text();
+  /// Filters the Text editor: commit on focus-out, restore on Escape. QText
+  /// editors have no editingFinished, and Enter must stay a newline.
+  [[nodiscard]] bool eventFilter(QObject* watched, QEvent* event) override;
 
   /// Commits a move_signal from the spinbox values for the primary signal.
   void push_signal_move();

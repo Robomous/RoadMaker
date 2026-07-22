@@ -261,6 +261,15 @@ Actions::Actions(QUndoStack& undo_stack, QObject* parent) : QObject(parent) {
          "one signal from the Library (G)"));
   tool_group->addAction(tool_signal);
 
+  tool_sign = new QAction(tr("Si&gn"), this);
+  tool_sign->setCheckable(true);
+  tool_sign->setShortcuts(shortcuts::sequences(shortcuts::Id::ToolSign));
+  tool_sign->setIconText(tr("Sign"));
+  tool_sign->setToolTip(
+      tr("Sign \u2014 click a road to place a sign; its face text is editable in the Attributes "
+         "pane (B)"));
+  tool_group->addAction(tool_sign);
+
   // Not a tool — a command that surfaces the 2D Editor's Lane Width tab for the
   // selected lane. Standalone so ⇧L works whatever tool is active.
   lane_width_editor = new QAction(tr("Lane &Width Editor"), this);
@@ -451,6 +460,8 @@ QAction* Actions::action(shortcuts::Id id) const {
     return tool_maneuver;
   case Id::ToolSignal:
     return tool_signal;
+  case Id::ToolSign:
+    return tool_sign;
   case Id::LaneWidthEditor:
     return lane_width_editor;
   case Id::SignalPhaseEditor:
@@ -529,6 +540,7 @@ void Actions::apply_icons() {
   tool_junction_surface->setIcon(Icons::get(QStringLiteral("junction-surface")));
   tool_maneuver->setIcon(Icons::get(QStringLiteral("maneuver")));
   tool_signal->setIcon(Icons::get(QStringLiteral("signal")));
+  tool_sign->setIcon(Icons::get(QStringLiteral("sign")));
   template_rural->setIcon(Icons::get(QStringLiteral("template-rural")));
   template_urban->setIcon(Icons::get(QStringLiteral("template-urban")));
   template_highway->setIcon(Icons::get(QStringLiteral("template-highway")));

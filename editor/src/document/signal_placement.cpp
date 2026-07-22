@@ -65,6 +65,14 @@ Signal make_signal(const QString& tag, std::string odr_id, double s, double t) {
     signal.type = "205"; // StVO 205: Vorfahrt gewähren — yield/give way
     signal.subtype = "-1";
     signal.country = "DE";
+  } else if (tag == QStringLiteral("sign_text")) {
+    // StVO 310 Ortstafel (town-entrance plate): the spec's own @text example.
+    // Placed with a recognisable default the user edits in the Attributes panel.
+    signal.dynamic = false;
+    signal.type = "310";
+    signal.subtype = "-1";
+    signal.country = "DE";
+    signal.text = "City";
   } else { // "sign" — generic regulatory plate (speed-limit 50)
     signal.dynamic = false;
     signal.type = "274"; // German regulatory speed-limit sign

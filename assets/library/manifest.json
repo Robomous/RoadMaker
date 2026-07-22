@@ -143,6 +143,13 @@
       "create": { "kind": "signal", "signal": "sign_yield" }
     },
     {
+      "key": "signal.text",
+      "label": "Text sign",
+      "category": "Signals",
+      "thumbnail": "assets/library/thumbnails/sign_text.png",
+      "create": { "kind": "signal", "signal": "sign_text" }
+    },
+    {
       "key": "marking.solid_white",
       "label": "Solid single white",
       "category": "Markings",

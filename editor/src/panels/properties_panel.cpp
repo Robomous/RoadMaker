@@ -6,8 +6,10 @@
 #include "roadmaker/road/network.hpp"
 
 #include <QCheckBox>
+#include <QEvent>
 #include <QFile>
 #include <QHBoxLayout>
+#include <QKeyEvent>
 #include <QPixmap>
 #include <QSignalBlocker>
 #include <QStringList>
@@ -266,8 +268,8 @@ PropertiesPanel::PropertiesPanel(Document& document,
       junction_material_slot_(new SlotWidget(QStringLiteral("Materials"), this)),
       signal_group_(new QGroupBox(tr("Signal"), this)), signal_s_spin_(new QDoubleSpinBox),
       signal_t_spin_(new QDoubleSpinBox), signal_h_spin_(new QDoubleSpinBox),
-      signal_kind_label_(new QLabel(this)), object_group_(new QGroupBox(tr("Prop"), this)),
-      object_kind_label_(new QLabel(this)),
+      signal_kind_label_(new QLabel(this)), signal_text_edit_(new QPlainTextEdit),
+      object_group_(new QGroupBox(tr("Prop"), this)), object_kind_label_(new QLabel(this)),
       model_slot_(new SlotWidget(QStringLiteral("Props"), this)),
       instance_material_slot_(new SlotWidget(QStringLiteral("Materials"), this)),
       object_height_spin_(new QDoubleSpinBox), style_group_(new QGroupBox(tr("Road style"), this)),
@@ -795,6 +797,14 @@ PropertiesPanel::PropertiesPanel(Document& document,
                                signal_s_spin_->value(), signal_t_spin_->value(), value)(network);
                          }}),
       signal_h_spin_);
+  // Editable face text (§14 Table 122). Compact multi-line editor; @text may
+  // carry literal newlines, so it commits on focus-out (eventFilter), not Enter.
+  signal_text_edit_->setObjectName(QStringLiteral("signal_text_edit"));
+  signal_text_edit_->setPlaceholderText(tr("Face text (e.g. a town name)"));
+  signal_text_edit_->setTabChangesFocus(true);
+  signal_text_edit_->setFixedHeight(2 * signal_text_edit_->fontMetrics().lineSpacing() + 12);
+  signal_text_edit_->installEventFilter(this);
+  signal_form->addRow(tr("Text"), signal_text_edit_);
 
   // Prop: a placed <object> that renders a bundled prop model. The Model slot
   // takes a Library drag and re-points the prop at what was dropped.
@@ -1742,7 +1752,52 @@ void PropertiesPanel::refresh_signal(const Signal& signal) {
   signal_s_spin_->setValue(signal.s);
   signal_t_spin_->setValue(signal.t);
   signal_h_spin_->setValue(signal.h_offset);
+  // @text is legal on any signal but only meaningful on a static sign; disable
+  // the editor for a dynamic head. Seeded under a blocker so the re-seed never
+  // commits back.
+  {
+    const QSignalBlocker block_text(signal_text_edit_);
+    signal_text_edit_->setPlainText(QString::fromStdString(signal.text));
+  }
+  signal_text_edit_->setEnabled(!dynamic);
   signal_group_->show();
+}
+
+void PropertiesPanel::push_signal_text() {
+  const std::vector<SignalId> signal_ids = selection_.selected_signals();
+  if (signal_ids.empty()) {
+    return;
+  }
+  const Signal* signal = document_.network().signal(signal_ids.back());
+  if (signal == nullptr) {
+    return;
+  }
+  const std::string text = signal_text_edit_->toPlainText().toStdString();
+  if (text == signal->text) {
+    return; // no-op: the re-entrancy guard (a refresh re-seed must not commit)
+  }
+  push(edit::set_signal_text(document_.network(), signal_ids.back(), text));
+}
+
+bool PropertiesPanel::eventFilter(QObject* watched, QEvent* event) {
+  if (watched == signal_text_edit_) {
+    if (event->type() == QEvent::FocusOut) {
+      push_signal_text();
+    } else if (event->type() == QEvent::KeyPress) {
+      auto* key = static_cast<QKeyEvent*>(event);
+      if (key->key() == Qt::Key_Escape) {
+        // Restore the committed value and drop focus (no command).
+        const std::vector<SignalId> ids = selection_.selected_signals();
+        const Signal* signal = ids.empty() ? nullptr : document_.network().signal(ids.back());
+        const QSignalBlocker block_text(signal_text_edit_);
+        signal_text_edit_->setPlainText(signal == nullptr ? QString{}
+                                                          : QString::fromStdString(signal->text));
+        signal_text_edit_->clearFocus();
+        return true;
+      }
+    }
+  }
+  return QWidget::eventFilter(watched, event);
 }
 
 void PropertiesPanel::push_signal_move() {
