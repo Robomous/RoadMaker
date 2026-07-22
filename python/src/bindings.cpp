@@ -708,9 +708,8 @@ NB_MODULE(_roadmaker, m) {
               "The non-Red controller states only (sparse, <=1 per controller); "
               "everything unlisted is Red by omission.")
       .def("__repr__", [](const roadmaker::SignalPhase& phase) {
-        return "SignalPhase(name='" + phase.name + "', duration=" +
-               std::to_string(phase.duration) + ", states=" +
-               std::to_string(phase.states.size()) + ")";
+        return "SignalPhase(name='" + phase.name + "', duration=" + std::to_string(phase.duration) +
+               ", states=" + std::to_string(phase.states.size()) + ")";
       });
 
   nb::class_<roadmaker::Junction>(m, "Junction")
@@ -1827,9 +1826,9 @@ NB_MODULE(_roadmaker, m) {
               "The connecting roads whose traffic MAY proceed this phase (GW-4 "
               "step 6): a gated movement whose controlling group is Green.")
       .def("__repr__", [](const roadmaker::JunctionPhaseInfo& info) {
-        return "JunctionPhaseInfo(name='" + info.name + "', duration=" +
-               std::to_string(info.duration) + ", moving=" +
-               std::to_string(info.moving.size()) + ")";
+        return "JunctionPhaseInfo(name='" + info.name +
+               "', duration=" + std::to_string(info.duration) +
+               ", moving=" + std::to_string(info.moving.size()) + ")";
       });
 
   nb::class_<roadmaker::JunctionPhasePlan>(m, "JunctionPhasePlan")
