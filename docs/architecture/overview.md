@@ -33,7 +33,7 @@ Deep dives: [kernel](kernel.md) · [editor](editor.md) ·
 *Why:* the kernel is the product. It must build and test headless on any
 platform, embed into wheels, and link into third-party tools without dragging
 in a GUI toolkit. Purity is also what keeps the kernel and the Python package
-pure MIT (see rule 2).
+pure Apache-2.0 (see rule 2).
 
 ### 2. Qt is confined to the editor
 
@@ -42,7 +42,7 @@ and **dynamically linked only**. `core/` and `python/` never include or link
 Qt. The full licensing policy — allowed licenses, forbidden dependencies, how
 Qt is provisioned — lives in [dependencies](../standards/dependencies.md).
 
-*Why:* dynamic linking is what makes LGPLv3 compatible with an MIT project.
+*Why:* dynamic linking is what makes LGPLv3 compatible with an Apache-2.0 project.
 Confining Qt to one layer keeps the compliance surface small and the kernel
 redistributable without conditions.
 

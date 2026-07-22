@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Generate the bundled low-poly prop meshes (trees + shrub).
 
-The props are *procedurally authored original work* (MIT, "original work (this
-repository)") — parametric trunks/cones/blobs, not fetched third-party art. The
+The props are *procedurally authored original work* (Apache-2.0, "original work
+(this repository)") — parametric trunks/cones/blobs, not fetched third-party art. The
 script is the single source of truth; it emits two consistent representations
 from the same geometry:
 

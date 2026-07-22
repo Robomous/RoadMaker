@@ -50,7 +50,7 @@ verification.
 No general set has clothoid-road / lane-section / junction-with-connecting-roads
 / road-template glyphs. Drawn as SVGs **on Lucide's grid** (24×24 viewBox,
 2 px stroke, `stroke="currentColor"`, round caps/joins, no fills) so they blend
-in. Location: `editor/resources/icons/custom/`; licensed MIT as project assets
+in. Location: `editor/resources/icons/custom/`; licensed Apache-2.0 as project assets
 (rows in `ASSETS_LICENSES.md` with author = RoadMaker contributors).
 
 ### Integration

@@ -51,7 +51,7 @@ provenance norms shift.
 - **Prompt hygiene:** prompts must **not** request the style of identifiable
   artists, products, or brands, nor reproduce logos or trade dress. Output is
   reviewed against the [product-parity IP rules](product-parity.md) before commit.
-- **Licensing:** AI-generated original work is licensed **MIT** as project assets;
+- **Licensing:** AI-generated original work is licensed **Apache-2.0** as project assets;
   its `ASSETS_LICENSES.md` row reads *"AI-generated original work (tool, date)"*
   in the source/author columns.
 - **Preference order (unchanged):** (1) **CC0 libraries**, (2) **procedural**,
@@ -68,7 +68,7 @@ provenance norms shift.
   chosen to blend with this style.
 - Custom domain glyphs (clothoid road, lane section, junction, road
   templates — shapes no general icon set has) are drawn as SVGs on the same
-  grid, live under `editor/resources/icons/custom/`, and are licensed MIT as
+  grid, live under `editor/resources/icons/custom/`, and are licensed Apache-2.0 as
   project assets (their `ASSETS_LICENSES.md` rows list author = RoadMaker
   contributors).
 

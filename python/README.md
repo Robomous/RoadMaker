@@ -11,4 +11,4 @@ mesh = rm.build_network_mesh(network)
 rm.export_glb(mesh, "road.glb")
 ```
 
-Part of the [RoadMaker](https://github.com/robomous/roadmaker) project (MIT).
+Part of the [RoadMaker](https://github.com/robomous/roadmaker) project (Apache-2.0).

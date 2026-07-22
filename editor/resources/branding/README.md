@@ -1,6 +1,6 @@
 # Branding / application icon
 
-First-party Robomous artwork (MIT). All raster artifacts here are **generated**
+First-party Robomous artwork (Apache-2.0). All raster artifacts here are **generated**
 from the source logo `assets/logo/robomous-original.png`.
 
 Treatment: solid coral (`#EA5A47`) rounded square with the robot glyph knocked

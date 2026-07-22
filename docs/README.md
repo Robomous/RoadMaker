@@ -3,7 +3,7 @@
 *The documentation home: what lives where, and the fastest reading path for
 what you want to do.*
 
-RoadMaker is an open-source (MIT) road-network authoring toolkit for
+RoadMaker is an open-source (Apache-2.0) road-network authoring toolkit for
 autonomous-driving simulation — a C++20 kernel with Python bindings and a
 Qt 6 Widgets editor, centered on ASAM OpenDRIVE correctness. This `docs/`
 tree is the single source of truth for the project's standards,

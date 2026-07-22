@@ -34,7 +34,7 @@ The renderer consumes flat-shaded `positions/normals/indices` with one colour
 per submesh and has no glTF/OBJ loader. Rather than fetch a third-party CC0 pack
 (zip-only distribution that fights the per-file-sha256 fetch pipeline, and needs
 a mesh/material parser), the trees are **procedurally authored original work**
-(MIT, "original work (this repository)") — the same footing as the custom icon
+(Apache-2.0, "original work (this repository)") — the same footing as the custom icon
 glyphs. `scripts/gen_prop_meshes.py` builds five low-poly props from parametric
 trunks/cones/icosahedral crowns and emits two consistent forms:
 

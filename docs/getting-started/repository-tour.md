@@ -58,7 +58,7 @@ docs/       This documentation tree
 |---|---|
 | `CMakeLists.txt` | Top-level build: options (`RM_BUILD_*`), subdirectory wiring |
 | `CMakePresets.json` | The `dev-*` / `ci-*` / `release-*` presets — see [Building](building.md) |
-| `LICENSE` | MIT license for the project itself |
+| `LICENSE` | Apache-2.0 license for the project itself |
 | `THIRD_PARTY_LICENSES.md` | Every dependency with its license — updated in the same commit as any dependency change |
 | `ASSETS_LICENSES.md` | Same, for bundled art/data assets |
 | `README.md` / `CONTRIBUTING.md` | Front door; both link into this docs tree |

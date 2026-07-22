@@ -5,9 +5,9 @@
 # RoadMaker
 
 [![CI](https://github.com/robomous/roadmaker/actions/workflows/ci.yml/badge.svg)](https://github.com/robomous/roadmaker/actions/workflows/ci.yml)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 
-**RoadMaker** is an open source (MIT) road-network authoring toolkit for
+**RoadMaker** is an open source (Apache-2.0) road-network authoring toolkit for
 autonomous-driving simulation, developed by [Robomous](https://robomous.ai).
 It authors clothoid-based road geometry with full lane semantics, reads and
 writes [ASAM OpenDRIVE](https://www.asam.net/standards/detail/opendrive/),
@@ -119,6 +119,6 @@ sprints — it becomes `0.1.0` only at the release itself.
 
 ## License
 
-MIT © 2026 Robomous. Third-party dependencies are listed with their licenses
+Apache-2.0 © 2026 Robomous. Third-party dependencies are listed with their licenses
 in [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md); bundled assets in
 [ASSETS_LICENSES.md](ASSETS_LICENSES.md).
