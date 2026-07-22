@@ -9,6 +9,10 @@
 #include "roadmaker/road/authoring.hpp"
 
 #include <memory>
+#include <optional>
+#include <string>
+#include <utility>
+#include <vector>
 
 namespace roadmaker {
 class RoadNetwork;
@@ -102,5 +106,43 @@ tee_onto_road(const RoadNetwork& network, RoadId target, double s, IntersectionP
                                                               RoadId target,
                                                               double s,
                                                               IntersectionParams params = {});
+
+/// Every junction a single Create Road stroke forms with existing geometry,
+/// resolved by the tool from its placed points. All fields are optional and
+/// combine in ONE command (#354). `start_link` and `start_tee` are mutually
+/// exclusive (an end snap chains; a side snap tees).
+struct RoadInteractions {
+  /// Weld the new road's Start onto this existing road end (first point on a
+  /// road END).
+  std::optional<RoadEnd> start_link;
+
+  /// Tee the new road's Start into (road, station) — first point on a road SIDE.
+  std::optional<std::pair<RoadId, double>> start_tee;
+
+  /// Tee the new road's End into (road, station) — last point on a road SIDE.
+  std::optional<std::pair<RoadId, double>> end_tee;
+
+  /// Roads whose body the stroke crosses, ASCENDING by station along the stroke
+  /// (the body_crossings order). Each forms its own X junction.
+  std::vector<RoadId> crossings;
+};
+
+/// Authors ONE road through `waypoints` and, in the SAME undoable command, forms
+/// every junction the stroke implies: an optional Start weld or Start tee, an X
+/// junction at each crossed road (in `interactions.crossings` order), then an
+/// optional End tee. Stages resolve ids lazily against the mutated network —
+/// each crossing splits the running road and its tail carries the remaining
+/// crossings — so a single stroke across two roads ending in a tee yields two X
+/// junctions and a T in ONE undo unit (apply→revert byte-identical). With no
+/// interactions this is exactly create_road. A stage that cannot fit (a crossing
+/// no longer interior, a create_junction failure) unwinds the whole command.
+[[nodiscard]] RM_API std::unique_ptr<Command>
+create_road_with_interactions(const RoadNetwork& network,
+                              std::vector<Waypoint> waypoints,
+                              LaneProfile profile,
+                              std::string name,
+                              EndpointHeadings locked,
+                              RoadInteractions interactions,
+                              IntersectionParams params = {});
 
 } // namespace roadmaker::edit::assembly

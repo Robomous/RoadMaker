@@ -301,4 +301,102 @@ TEST(Assembly, CrossRoadsRejectsRoadAlreadyInJunction) {
   expect_network_matches(network, before);
 }
 
+// --- create_road_with_interactions: many junctions per stroke (#354) --------
+
+namespace {
+
+using roadmaker::BodyCrossing;
+using roadmaker::EndpointHeadings;
+using roadmaker::edit::assembly::create_road_with_interactions;
+using roadmaker::edit::assembly::RoadInteractions;
+
+/// Two parallel horizontal roads at y = ±25 (x ∈ [−100, 100]) that a vertical
+/// stroke through the origin crosses at both. Returns {lower, upper}.
+std::pair<roadmaker::RoadId, roadmaker::RoadId> two_crossers(RoadNetwork& network) {
+  auto lower = roadmaker::author_clothoid_road(
+      network,
+      std::vector<Waypoint>{Waypoint{.x = -100.0, .y = -25.0}, Waypoint{.x = 100.0, .y = -25.0}},
+      LaneProfile::two_lane_rural(),
+      "",
+      "1");
+  auto upper = roadmaker::author_clothoid_road(
+      network,
+      std::vector<Waypoint>{Waypoint{.x = -100.0, .y = 25.0}, Waypoint{.x = 100.0, .y = 25.0}},
+      LaneProfile::two_lane_rural(),
+      "",
+      "2");
+  if (!lower.has_value() || !upper.has_value()) {
+    throw std::runtime_error("two_crossers author failed");
+  }
+  return {*lower, *upper};
+}
+
+RoadInteractions crossings_of(const RoadNetwork& network, const std::vector<Waypoint>& stroke) {
+  RoadInteractions interactions;
+  const auto line = roadmaker::fit_clothoid_path(stroke, EndpointHeadings{});
+  for (const BodyCrossing& crossing :
+       roadmaker::body_crossings(network, *line, roadmaker::RoadId{})) {
+    interactions.crossings.push_back(crossing.road);
+  }
+  return interactions;
+}
+
+} // namespace
+
+TEST(Assembly, CreateRoadWithInteractionsFormsBothCrossingsInOneCommand) {
+  RoadNetwork network;
+  two_crossers(network);
+  const std::vector<Waypoint> stroke{Waypoint{.x = 0.0, .y = -70.0}, Waypoint{.x = 0.0, .y = 70.0}};
+  RoadInteractions interactions = crossings_of(network, stroke);
+  ASSERT_EQ(interactions.crossings.size(), 2U); // both roads detected, in order
+
+  auto command = create_road_with_interactions(
+      network, stroke, LaneProfile::two_lane_rural(), "", EndpointHeadings{}, interactions);
+  ASSERT_TRUE(command->apply(network).has_value());
+  EXPECT_EQ(count_errors(validate_network(network)), 0U);
+  EXPECT_EQ(network.junction_count(), 2U); // an X at each crossed road
+}
+
+TEST(Assembly, CreateRoadWithInteractionsRoundTripsByteIdentical) {
+  RoadNetwork network;
+  two_crossers(network);
+  const std::vector<Waypoint> stroke{Waypoint{.x = 0.0, .y = -70.0}, Waypoint{.x = 0.0, .y = 70.0}};
+  auto command = create_road_with_interactions(network,
+                                               stroke,
+                                               LaneProfile::two_lane_rural(),
+                                               "",
+                                               EndpointHeadings{},
+                                               crossings_of(network, stroke));
+  expect_round_trip(network, *command); // one undo removes all of it
+}
+
+TEST(Assembly, CreateRoadWithInteractionsCombinesACrossAndAnEndTee) {
+  RoadNetwork network;
+  // A road to cross at y = 0 and a target to tee the far end into at y = 60.
+  auto crossed = roadmaker::author_clothoid_road(
+      network,
+      std::vector<Waypoint>{Waypoint{.x = -100.0, .y = 0.0}, Waypoint{.x = 100.0, .y = 0.0}},
+      LaneProfile::two_lane_rural(),
+      "",
+      "1");
+  auto target = roadmaker::author_clothoid_road(
+      network,
+      std::vector<Waypoint>{Waypoint{.x = -100.0, .y = 60.0}, Waypoint{.x = 100.0, .y = 60.0}},
+      LaneProfile::two_lane_rural(),
+      "",
+      "2");
+  ASSERT_TRUE(crossed.has_value() && target.has_value());
+
+  const std::vector<Waypoint> stroke{Waypoint{.x = 0.0, .y = -50.0}, Waypoint{.x = 0.0, .y = 50.0}};
+  RoadInteractions interactions = crossings_of(network, stroke); // the X at y = 0
+  ASSERT_EQ(interactions.crossings.size(), 1U);
+  interactions.end_tee = std::pair{*target, 100.0}; // x = 0 → station 100 on the target
+
+  auto command = create_road_with_interactions(
+      network, stroke, LaneProfile::two_lane_rural(), "", EndpointHeadings{}, interactions);
+  ASSERT_TRUE(command->apply(network).has_value());
+  EXPECT_EQ(count_errors(validate_network(network)), 0U);
+  EXPECT_EQ(network.junction_count(), 2U); // one X (cross) + one T (end tee)
+}
+
 } // namespace

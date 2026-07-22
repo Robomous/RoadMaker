@@ -352,6 +352,38 @@ TEST(CreateRoadTool, EndpointSideSnapTeesOnCommit) {
   EXPECT_EQ(document.undo_stack()->count(), 2);
 }
 
+// #354: one stroke that crosses TWO roads and ends teed into a third forms two X
+// junctions and one T — all in ONE undoable command.
+TEST(CreateRoadTool, CompoundStrokeFormsTwoCrossingsAndAnEndTeeInOneUndo) {
+  Document document;
+  const auto road_at = [&](double y) {
+    ASSERT_TRUE(document
+                    .push_command(roadmaker::edit::create_road(
+                        {Waypoint{.x = -100.0, .y = y}, Waypoint{.x = 100.0, .y = y}},
+                        LaneProfile::two_lane_rural(),
+                        ""))
+                    .has_value());
+  };
+  road_at(-25.0); // crosser A
+  road_at(25.0);  // crosser B
+  road_at(70.0);  // tee target C
+  ASSERT_EQ(document.network().junction_count(), 0U);
+  const std::string before = xodr(document);
+
+  CreateRoadTool tool(document);
+  tool.set_snap_options({.radius = 2.0});
+  tool.activate();
+  click(tool, 0.0, -60.0); // grid start
+  click(tool, 0.0, 68.5);  // lands on C's side (1.5 m from y=70) → end tee
+  ASSERT_TRUE(tool.key_press(Qt::Key_Return, Qt::NoModifier));
+
+  EXPECT_EQ(document.network().junction_count(), 3U); // two X + one T
+  EXPECT_EQ(document.undo_stack()->count(), 4);       // 3 roads + one compound macro
+  document.undo_stack()->undo();                      // ONE undo removes all of it
+  EXPECT_EQ(document.network().junction_count(), 0U);
+  EXPECT_EQ(xodr(document), before);
+}
+
 TEST(CreateRoadTool, TeeAndCrossAreEachOneUndoMacro) {
   // Cross.
   {
