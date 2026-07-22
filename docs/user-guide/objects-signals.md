@@ -155,6 +155,29 @@ into the geometry.
 
 Signals are placed from their own models and are not resizable.
 
+### Placing signs: the Sign tool
+
+The **Sign tool** (`B`) places a single road sign on a click, or on a drag that
+slides it along the nearest road and drops on release — the same snapping as the
+Signal tool, so a sign always lands on a road, never in open space. With a sign
+selected in the Library it places that sign; otherwise it defaults to a
+**town-entrance plate** (German **StVO 310**, the spec's own `@text` example), so
+the tool is usable the moment you pick it. Each placement is one undo step, and
+the placed sign is selected.
+
+A text plate's face text is **editable**. Select the sign and use the **Text**
+row in the Attributes pane — a small multi-line box (a sign name can wrap, e.g.
+`City` over `Bad Aibling`). The edit commits when the box loses focus and is a
+**single undo step**; Escape discards it. The text is written to the `.xodr` as
+the standard OpenDRIVE `@text` (§14, Table 122), so it round-trips through save
+and reload — newlines included — and any other OpenDRIVE tool reads it back.
+
+The words are rendered onto the plate as a texture, so a text sign shows its text
+in the 3D viewport and in **exported glTF** (`.glb`). USD export keeps the flat
+plate (single-file USDA cannot embed an image), but the `@text` is still written
+to the stage's `.xodr` companion. The Text row is available for any static sign
+(text is legal on all of them) and is disabled for dynamic traffic lights.
+
 ### Junction markings
 
 The painted markings a junction needs on every arm author in one action each.

@@ -1,7 +1,8 @@
 # GW-4 — Traffic signals at junctions
 
 *Accepts the P4 Signal tool: auto-signalization with templates, linked
-signal props, and the Signal Phase Editor in the 2D Editor pane.*
+signal props, and the Signal Phase Editor in the 2D Editor pane — plus the
+Sign tool and editable sign-face text (p4-s9).*
 
 **Status: draft** — steps are refined as the owning pillar sprints land.
 
@@ -58,6 +59,18 @@ highlighting.
     cycle rides `<userData code="rm:phases">` and survives save→reload→save
     byte-identically; a junction still on its derived default cycle writes
     no `rm:phases` at all.)*
+12. [ ] Activate the **Sign tool** (**B**) and click a road away from the
+    junction. **Expected:** a town-entrance plate places on the road and is
+    selected (added as of p4-s9, #230). Edit its **Text** row in the
+    Attributes pane to a two-line name (e.g. `City` / `Bad Aibling`).
+    **Expected:** the plate shows the text in the viewport; the edit is one
+    undo step.
+13. [ ] Save, reload, and re-select the sign. **Expected:** the face text
+    round-trips (the Text row shows the same multi-line value; the exported
+    `.xodr` carries `@text`). Export glTF (`.glb`) and open it. **Expected:**
+    the sign's face texture carries the text. *(USD export keeps the flat
+    plate — single-file USDA cannot embed textures, #364 — but the `@text` is
+    still written.)*
 
 ## Pass criteria
 
