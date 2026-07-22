@@ -279,17 +279,24 @@ private:
   ElidedLabel* status_instruction_ = nullptr;
   QLabel* status_entities_;
 
-  /// The tabbed toolbar (p1-s6, issue #368). `core_toolbar_` is the persistent
-  /// strip that never hides (File, Edit, framing/Library); `toolbar_tab_bar_`
-  /// switches `toolbar_stack_` between per-category page toolbars. `all_toolbars_`
-  /// is every bar (core + pages) so the guided tour can locate any action's
-  /// button (widgetForAction) even on a hidden tab. `toolbar_tab_index_` maps a
-  /// tab to its stack/tabbar index for reveal-on-activation.
+  /// The tabbed toolbar (p1-s6 #368; flattened in #374). Every row is a plain
+  /// top-level QToolBar so they share one left origin and align by construction —
+  /// no toolbar nested in a QStackedWidget nested in a toolbar. `core_toolbar_`
+  /// holds File/Edit/framing/Library AND the category `toolbar_tab_bar_` at its
+  /// right end; `tool_toolbar_` is the SINGLE tool row, repopulated from the
+  /// registry each time the tab changes (see populate_tool_toolbar). `all_toolbars_`
+  /// is both bars so the guided tour can locate any action's button.
+  /// `toolbar_tab_index_` maps a tab to its tabbar index for reveal-on-activation;
+  /// `toolbar_tab_order_` is the inverse (index -> tab) for repopulation.
   QToolBar* core_toolbar_ = nullptr;
+  QToolBar* tool_toolbar_ = nullptr;
   class QTabBar* toolbar_tab_bar_ = nullptr;
-  class QStackedWidget* toolbar_stack_ = nullptr;
   std::vector<QToolBar*> all_toolbars_;
   std::unordered_map<shortcuts::ToolbarTab, int> toolbar_tab_index_;
+  std::vector<shortcuts::ToolbarTab> toolbar_tab_order_;
+  /// Refills `tool_toolbar_` with the tools of the tab at `index` (registry
+  /// order, group separators). Called on tab change and at build time.
+  void populate_tool_toolbar(int index);
   /// Switches the tabbed toolbar to the tab holding the now-active tool, so a
   /// tool activated indirectly (shortcut, Library-arm, request_tool) reveals its
   /// section instead of firing invisibly.

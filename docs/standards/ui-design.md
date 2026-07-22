@@ -113,20 +113,28 @@ The user-facing contract is [tools and the Library](../user-guide/tools-and-libr
 
 The toolbar is **generated from the action registry** (`shortcut_registry.cpp`
 `kToolbarGroups`), never hand-placed, and a gtest (`toolbar_violations`) fails
-CI on an uncategorized tool. It has two parts:
+CI on an uncategorized tool. Two rows, each a **plain top-level `QToolBar`** so
+they share one left origin and align by construction (never a toolbar nested in
+a `QStackedWidget` nested in a toolbar — that double-nesting is what used to
+misalign the tool row):
 
-- A **persistent core strip** that never hides — file ops, the universal edit
-  tools (Select/Move/Split/Delete/Merge), and framing/camera/Library. These are
-  the `ToolbarTab::kCore` groups.
-- **Category tabs** (Roads & Lanes, Markings, Props, Signals & Signs; Terrain &
-  Structures and Scenario are reserved and appear once their pillar lands a
-  tool). Each is a `ToolbarTab` value.
+- The **core row** (`toolbar.main`) — never hides — carries file ops, the
+  universal edit tools (Select/Move/Split/Delete/Merge), framing/camera/Library
+  (the `ToolbarTab::kCore` groups), and the **category tabs** at its right end
+  (Roads & Lanes, Markings, Props, Signals & Signs; Terrain & Structures and
+  Scenario are reserved and appear once their pillar lands a tool). Putting the
+  tabs on this row spends no extra vertical space on a separate tab strip.
+- The **tool row** (`toolbar.tools`) — a single toolbar **repopulated** from the
+  registry (`MainWindow::populate_tool_toolbar`) whenever the active tab changes,
+  rather than a stack of per-category page toolbars.
 
 Rules for adding a tool: give it a `toolbar_group` (the CI gate) whose tab
 places it; **never** put a file/edit/framing action behind a tab; keyboard
 shortcuts must fire regardless of the visible tab, and activating a tool
 reveals its tab (`MainWindow::reveal_active_tool_tab`) so nothing fires
-invisibly.
+invisibly. The persisted window layout is versioned (`Settings`
+`kWindowStateVersion`) so a structural toolbar change discards a stale saved
+layout instead of misapplying it.
 
 ## Acceptance
 
