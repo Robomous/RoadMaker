@@ -153,6 +153,35 @@ TEST(FitClothoidPath, SharpSpikeWaypointsReturnErrorInsteadOfThrowing) {
   EXPECT_FALSE(locked.has_value());
 }
 
+// Issue #352: a locked endpoint heading must never yield a teardrop loop.
+// Whatever the locked start heading — including one anti-parallel to the chord —
+// the fit either honors it (bounded) or falls back to the straight point-only
+// fit; its length never exceeds the k=4 loop bound (mirrors check_fit_bounded).
+TEST(FitClothoidPath, LockedStartHeadingNeverLoopsPastTheBound) {
+  const std::vector<Waypoint> chord = {Waypoint{.x = 0.0, .y = 0.0},
+                                       Waypoint{.x = 100.0, .y = 0.0}};
+  constexpr double kSpan = 100.0;
+  for (double heading = -std::numbers::pi; heading <= std::numbers::pi; heading += 0.17) {
+    const auto line = roadmaker::fit_clothoid_path(chord, EndpointHeadings{.start = heading});
+    ASSERT_TRUE(line.has_value()) << "heading=" << heading;
+    EXPECT_LE(line->length(), (4.0 * kSpan) + roadmaker::tol::kLength) << "heading=" << heading;
+  }
+}
+
+// The guard must not over-fire: a moderate locked heading (a genuine G1 chain)
+// stays honored — the fit curves to meet it rather than snapping back to
+// straight (which would silently drop the chaining continuity).
+TEST(FitClothoidPath, ModerateLockedStartHeadingIsHonoredNotStraightened) {
+  const std::vector<Waypoint> chord = {Waypoint{.x = 0.0, .y = 0.0},
+                                       Waypoint{.x = 100.0, .y = 0.0}};
+  const double heading = 0.6;
+  const auto line = roadmaker::fit_clothoid_path(chord, EndpointHeadings{.start = heading});
+  ASSERT_TRUE(line.has_value());
+  expect_angle_near(line->evaluate(0.0).hdg, heading, roadmaker::tol::kAngle);
+  EXPECT_GT(line->length(), 100.0);       // curved to honor the lock
+  EXPECT_LT(line->length(), 4.0 * 100.0); // but well within the loop bound
+}
+
 // --- fit_forward_clothoid: fixed start pose+curvature, free end -------------
 
 TEST(FitForwardClothoid, MatchesStartPoseAndCurvature) {

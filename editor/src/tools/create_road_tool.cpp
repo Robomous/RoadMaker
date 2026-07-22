@@ -72,13 +72,23 @@ std::optional<edit::SnapResult> CreateRoadTool::snap(const Waypoint& cursor) con
 
 EndpointHeadings CreateRoadTool::locked_headings() const {
   EndpointHeadings locked;
-  if (!points_.empty()) {
-    locked.start = points_.front().heading;
-    if (points_.size() > 1 && points_.back().heading.has_value()) {
-      // The snap heading points away from its source road; the created road
-      // arrives there, so it closes onto the end with the reverse heading.
-      locked.end = wrap_angle(*points_.back().heading + std::numbers::pi);
-    }
+  if (points_.empty()) {
+    return locked;
+  }
+  // Lock a fit heading ONLY on a genuine road-END snap (chaining intent). A bare
+  // tangent-continuation hit (cursor near a road's forward extension ray) also
+  // carries a heading, but locking it silently forces a fixed-heading Hermite
+  // that loops into a teardrop when the heading opposes the chord (#352). Its
+  // position is still snapped; only the heading lock is withheld.
+  const PlacedPoint& first = points_.front();
+  if (first.kind == edit::SnapKind::RoadEndpoint) {
+    locked.start = first.heading;
+  }
+  const PlacedPoint& last = points_.back();
+  if (points_.size() > 1 && last.kind == edit::SnapKind::RoadEndpoint && last.heading.has_value()) {
+    // The snap heading points away from its source road; the created road
+    // arrives there, so it closes onto the end with the reverse heading.
+    locked.end = wrap_angle(*last.heading + std::numbers::pi);
   }
   return locked;
 }
@@ -115,6 +125,7 @@ void CreateRoadTool::place_point(const ToolEvent& event) {
   points_.push_back(PlacedPoint{
       .position = position,
       .heading = snapped.has_value() ? snapped->heading : std::nullopt,
+      .kind = snapped.has_value() ? snapped->kind : edit::SnapKind::Grid,
       .snap_road = snapped.has_value() ? snapped->road : std::nullopt,
       .side_snap = side_snap,
   });
@@ -139,7 +150,7 @@ void CreateRoadTool::place_point(const ToolEvent& event) {
     }
   }
 
-  if (points_.size() == 1 && points_.front().heading.has_value()) {
+  if (points_.size() == 1 && points_.front().kind == edit::SnapKind::RoadEndpoint) {
     emit status_message(tr("Start locked to the road end — the new road chains tangentially"));
   } else {
     emit status_message(tr("%n waypoint(s) — Enter or double-click creates the road",
@@ -233,7 +244,8 @@ void CreateRoadTool::commit() {
   //   (iii) the fitted line crosses a road interior → create_crossing_road (X);
   //   (iv)  otherwise → plain create_road.
   std::unique_ptr<edit::Command> command;
-  if (first.snap_road.has_value() && network.road(*first.snap_road) != nullptr) {
+  if (first.kind == edit::SnapKind::RoadEndpoint && first.snap_road.has_value() &&
+      network.road(*first.snap_road) != nullptr) {
     const auto& plan = network.road(*first.snap_road)->plan_view;
     const PathPoint start = plan.evaluate(0.0);
     const PathPoint end = plan.evaluate(plan.length());
@@ -315,10 +327,15 @@ PreviewGeometry CreateRoadTool::preview() const {
     candidate.push_back(*cursor_);
   }
   if (candidate.size() >= 2) {
+    // Mirror commit's locking (locked_headings): only a genuine road-END snap
+    // locks a heading, so the ghost fit of a tangent-ray first point is straight
+    // — no teardrop preview (#352).
     EndpointHeadings locked;
-    locked.start = points_.front().heading;
+    if (points_.front().kind == edit::SnapKind::RoadEndpoint) {
+      locked.start = points_.front().heading;
+    }
     if (candidate.size() > points_.size() && hover_snap_.has_value() &&
-        hover_snap_->heading.has_value()) {
+        hover_snap_->kind == edit::SnapKind::RoadEndpoint && hover_snap_->heading.has_value()) {
       locked.end = wrap_angle(*hover_snap_->heading + std::numbers::pi);
     } else if (candidate.size() == points_.size()) {
       locked.end = locked_headings().end;
@@ -326,8 +343,11 @@ PreviewGeometry CreateRoadTool::preview() const {
     if (const auto line = fit_clothoid_path(candidate, locked); line.has_value()) {
       append_polyline_of(geometry, *line);
       // Cross hint: an X where the fitted line would cross a road interior, so
-      // the user sees the 4-way will fire before committing.
-      if (!points_.front().side_snap.has_value() && !points_.front().snap_road.has_value()) {
+      // the user sees the 4-way will fire before committing. A tangent-ray first
+      // point is a plain/crossing road (not a chain), so it still shows the hint;
+      // only a genuine endpoint chain (branch i) suppresses it.
+      if (!points_.front().side_snap.has_value() &&
+          points_.front().kind != edit::SnapKind::RoadEndpoint) {
         if (const auto crossing = first_body_crossing(document_.network(), *line, RoadId{});
             crossing.has_value()) {
           append_cross(geometry, crossing->point.x, crossing->point.y, kSnapMarkerRadius * 1.5);
