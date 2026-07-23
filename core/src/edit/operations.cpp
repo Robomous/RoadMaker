@@ -27,6 +27,7 @@
 #include "roadmaker/mesh/junction_signals.hpp"
 #include "roadmaker/mesh/junction_stoplines.hpp"
 #include "roadmaker/mesh/junction_surface_spans.hpp"
+#include "roadmaker/mesh/surface_boundary.hpp"
 #include "roadmaker/road/authoring.hpp"
 #include "roadmaker/road/network.hpp"
 #include "roadmaker/tol.hpp"
@@ -6680,6 +6681,87 @@ private:
   std::string before_;
 };
 
+/// Whole-vector swap of a surface's boundary node graph, carrying the
+/// Derived → Authored detach (decision D3) with it. Both the nodes AND the
+/// source are captured before/after, so revert restores a derived surface
+/// exactly — including its `source` — and `write_xodr()` comes back
+/// byte-identical.
+class SetSurfaceBoundaryCommand : public Command {
+public:
+  SetSurfaceBoundaryCommand(SurfaceId surface,
+                            std::vector<SurfaceNode> after,
+                            std::vector<SurfaceNode> before,
+                            BoundarySource source_before)
+      : surface_(surface), after_(std::move(after)), before_(std::move(before)),
+        source_before_(source_before) {}
+
+  Expected<void> apply(RoadNetwork& network) override {
+    Surface* surface = network.surface(surface_);
+    if (surface == nullptr) {
+      return make_error(ErrorCode::InvalidArgument, "surface no longer exists");
+    }
+    surface->nodes = after_;
+    surface->source = BoundarySource::Authored;
+    return {};
+  }
+
+  Expected<void> revert(RoadNetwork& network) override {
+    Surface* surface = network.surface(surface_);
+    if (surface == nullptr) {
+      return make_error(ErrorCode::InvalidArgument, "surface no longer exists");
+    }
+    surface->nodes = before_;
+    surface->source = source_before_;
+    return {};
+  }
+
+  std::string_view name() const override { return "Edit Surface Boundary"; }
+
+  DirtySet dirty() const override { return DirtySet{.surfaces = {surface_}}; }
+
+private:
+  SurfaceId surface_;
+  std::vector<SurfaceNode> after_;
+  std::vector<SurfaceNode> before_;
+  BoundarySource source_before_;
+};
+
+/// The inverse detach: drop the node graph and hand the surface back to
+/// `derive_surfaces`.
+class RevertSurfaceToDerivedCommand : public Command {
+public:
+  RevertSurfaceToDerivedCommand(SurfaceId surface, std::vector<SurfaceNode> before)
+      : surface_(surface), before_(std::move(before)) {}
+
+  Expected<void> apply(RoadNetwork& network) override {
+    Surface* surface = network.surface(surface_);
+    if (surface == nullptr) {
+      return make_error(ErrorCode::InvalidArgument, "surface no longer exists");
+    }
+    surface->nodes.clear();
+    surface->source = BoundarySource::Derived;
+    return {};
+  }
+
+  Expected<void> revert(RoadNetwork& network) override {
+    Surface* surface = network.surface(surface_);
+    if (surface == nullptr) {
+      return make_error(ErrorCode::InvalidArgument, "surface no longer exists");
+    }
+    surface->nodes = before_;
+    surface->source = BoundarySource::Authored;
+    return {};
+  }
+
+  std::string_view name() const override { return "Revert Surface to Derived"; }
+
+  DirtySet dirty() const override { return DirtySet{.surfaces = {surface_}}; }
+
+private:
+  SurfaceId surface_;
+  std::vector<SurfaceNode> before_;
+};
+
 } // namespace
 
 std::unique_ptr<Command>
@@ -6691,6 +6773,50 @@ set_surface_material(const RoadNetwork& network, SurfaceId surface, std::string 
         Error{.code = ErrorCode::InvalidArgument, .message = "surface id is stale or unknown"});
   }
   return std::make_unique<SetSurfaceMaterialCommand>(surface, std::move(material));
+}
+
+std::unique_ptr<Command> set_surface_boundary(const RoadNetwork& network,
+                                              SurfaceId surface_id,
+                                              std::vector<SurfaceNode> nodes) {
+  static constexpr std::string_view kName = "Edit Surface Boundary";
+  const auto fail = [&](std::string message) {
+    return invalid_command(
+        std::string(kName),
+        Error{.code = ErrorCode::InvalidArgument, .message = std::move(message)});
+  };
+  const Surface* surface = network.surface(surface_id);
+  if (surface == nullptr) {
+    return fail("surface id is stale or unknown");
+  }
+  if (nodes.size() < 3) {
+    return fail("a surface boundary needs at least 3 nodes");
+  }
+  if (surface_boundary_self_intersects(nodes)) {
+    return fail("the surface boundary crosses itself");
+  }
+  if (surface->source == BoundarySource::Authored && surface->nodes == nodes) {
+    return fail("the surface boundary is unchanged");
+  }
+  return std::make_unique<SetSurfaceBoundaryCommand>(
+      surface_id, std::move(nodes), surface->nodes, surface->source);
+}
+
+std::unique_ptr<Command> revert_surface_to_derived(const RoadNetwork& network,
+                                                   SurfaceId surface_id) {
+  static constexpr std::string_view kName = "Revert Surface to Derived";
+  const auto fail = [&](std::string message) {
+    return invalid_command(
+        std::string(kName),
+        Error{.code = ErrorCode::InvalidArgument, .message = std::move(message)});
+  };
+  const Surface* surface = network.surface(surface_id);
+  if (surface == nullptr) {
+    return fail("surface id is stale or unknown");
+  }
+  if (surface->source != BoundarySource::Authored) {
+    return fail("the surface boundary is already derived");
+  }
+  return std::make_unique<RevertSurfaceToDerivedCommand>(surface_id, surface->nodes);
 }
 
 std::vector<ElevationPoint> elevation_profile_points(const Road& road) {

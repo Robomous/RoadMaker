@@ -24,6 +24,7 @@
 #include "roadmaker/road/object.hpp"
 #include "roadmaker/road/road.hpp"
 #include "roadmaker/road/road_style.hpp"
+#include "roadmaker/road/surface.hpp"
 
 #include <cstddef>
 #include <memory>
@@ -1053,6 +1054,34 @@ set_road_mark(const RoadNetwork& network, LaneId lane, RoadMark mark);
 /// stored material and its render class change (p6-s2).
 [[nodiscard]] RM_API std::unique_ptr<Command>
 set_surface_material(const RoadNetwork& network, SurfaceId surface, std::string material);
+
+/// Replaces a ground surface's boundary node graph wholesale — ONE command per
+/// gesture, capturing the whole vector before and after (p5-s1, #231).
+///
+/// Applied to a DERIVED surface this also flips its source to `Authored`: an
+/// edited boundary is no longer a function of the roads, so the surface detaches
+/// and stops being re-derived (decision D3, the locked-junction precedent).
+/// `bounding_roads` is deliberately left in place as provenance — it still
+/// supplies the elevation samples and still claims that face against
+/// `derive_surfaces`. `revert_surface_to_derived` undoes the detach.
+///
+/// Seed the initial node set from `surface_boundary_nodes()`, the same query the
+/// tool draws, so the first edit starts from the shape already on screen.
+///
+/// Rejects: a stale SurfaceId, fewer than 3 nodes (no closed region), a
+/// self-intersecting loop (`surface_boundary_self_intersects`), and a no-op.
+[[nodiscard]] RM_API std::unique_ptr<Command>
+set_surface_boundary(const RoadNetwork& network, SurfaceId surface, std::vector<SurfaceNode> nodes);
+
+/// Reattaches an authored surface to its roads: clears the node graph and flips
+/// the source back to `Derived`. The next `derive_surfaces` pass reclaims it if
+/// its provenance ring still encloses a face, and erases it otherwise — which is
+/// exactly what "revert to derived" should mean for a surface whose roads have
+/// since moved or gone.
+///
+/// Rejects a stale SurfaceId and a surface that is already derived.
+[[nodiscard]] RM_API std::unique_ptr<Command> revert_surface_to_derived(const RoadNetwork& network,
+                                                                        SurfaceId surface);
 
 // --- profiles ---------------------------------------------------------------
 

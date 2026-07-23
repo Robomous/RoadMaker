@@ -93,6 +93,7 @@
 #include "tools/signal_tool.hpp"
 #include "tools/split_tool.hpp"
 #include "tools/stopline_tool.hpp"
+#include "tools/surface_tool.hpp"
 
 namespace roadmaker::editor {
 
@@ -531,6 +532,15 @@ MainWindow::MainWindow(QWidget* parent, bool restore_saved_layout)
   sign_tool->set_params_provider([this] { return resolve_default_sign_item(); });
   tool_manager_.register_tool(ToolId::Sign, std::move(sign_tool));
 
+  // Surface: a ground surface's boundary as a node graph (p5-s1, #231). Like
+  // EditNodes it follows the SELECTION, and like the junction lock its first
+  // edit DETACHES a derived surface to authored (decision D3) — the Attributes
+  // pane's "Revert to derived" is the way back.
+  auto surface_tool = std::make_unique<SurfaceTool>(document_, selection_);
+  wire_status(surface_tool.get());
+  properties_panel_->set_surface_tool(surface_tool.get());
+  tool_manager_.register_tool(ToolId::Surface, std::move(surface_tool));
+
   connect(actions_->tool_corner, &QAction::triggered, this, [this] {
     tool_manager_.set_active(ToolId::Corner);
   });
@@ -542,6 +552,9 @@ MainWindow::MainWindow(QWidget* parent, bool restore_saved_layout)
   });
   connect(actions_->tool_junction_span, &QAction::triggered, this, [this] {
     tool_manager_.set_active(ToolId::JunctionSpan);
+  });
+  connect(actions_->tool_surface, &QAction::triggered, this, [this] {
+    tool_manager_.set_active(ToolId::Surface);
   });
   connect(actions_->tool_maneuver, &QAction::triggered, this, [this] {
     tool_manager_.set_active(ToolId::Maneuver);

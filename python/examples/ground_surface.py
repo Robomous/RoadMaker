@@ -14,12 +14,16 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Auto-form a ground surface from a closed loop of roads (#215, GW-2 step 5).
+"""Ground surfaces: auto-formed, then reshaped (#215 GW-2 step 5; #231 step 6).
 
 Four straight roads welded corner-to-corner enclose a square. derive_surfaces
 enumerates the bounded faces of the road graph and reconciles the surface
 arena so one Surface fills the enclosed area, its bounding_roads tracing the
 ring. The call is id-stable and idempotent on unchanged topology.
+
+The second half edits that boundary as a node graph. Editing it DETACHES the
+surface from the roads (source becomes AUTHORED and derive_surfaces leaves it
+alone); revert_surface_to_derived hands it back.
 
 Run:  python ground_surface.py [out.xodr]
 """
@@ -71,8 +75,39 @@ def main() -> int:
     print(f"material after undo: {network.surface(surface_id).material!r}")
     stack.redo(network)
 
+    # Reshape the boundary as a node graph (p5-s1, #231). The seed comes from
+    # surface_boundary_nodes: for a DERIVED surface it is computed from the same
+    # footprint union the mesher fills, and stored nowhere.
+    nodes = rm.surface_boundary_nodes(network, surface_id)
+    print(f"seed boundary: {len(nodes)} nodes (nothing stored yet)")
+    assert network.surface(surface_id).source == rm.BoundarySource.DERIVED
+
+    # Pull one node out and give it a tangent, so that edge bows.
+    nodes[0].x -= 1.5
+    nodes[0].tangent_out_x = 2.0
+    nodes[0].tangent_out_y = 2.0
+    stack.push(network, rm.edit.set_surface_boundary(network, surface_id, nodes))
+
+    surface = network.surface(surface_id)
+    # The edit DETACHED the surface: its boundary is no longer a function of the
+    # roads, so derive_surfaces stops re-deriving it. The ring stays as
+    # provenance — it is still where the elevation comes from.
+    print(f"after edit: source={surface.source}, {len(surface.nodes)} nodes, "
+          f"{len(surface.bounding_roads)} provenance roads")
+    rm.derive_surfaces(network)
+    assert network.surface_count == 1
+    assert network.surface(surface_id).source == rm.BoundarySource.AUTHORED
+
+    # And the way back.
+    stack.push(network, rm.edit.revert_surface_to_derived(network, surface_id))
+    print(f"after revert: source={network.surface(surface_id).source}")
+    stack.undo(network)  # keep the authored boundary in the written file
+
     rm.save_xodr(network, out_path)
-    print(f"wrote {out_path} (rm:surface userData carries material={network.surface(surface_id).material!r})")
+    print(
+        f"wrote {out_path} (rm:surface userData carries "
+        f"material={network.surface(surface_id).material!r} and its authored nodes)"
+    )
     return 0
 
 

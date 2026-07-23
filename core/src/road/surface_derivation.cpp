@@ -157,9 +157,14 @@ void derive_surfaces(RoadNetwork& network) {
 
   const std::size_t edge_count = edges.size();
   if (edge_count == 0) {
-    // No edges: every surface is stale.
+    // No edges: every DERIVED surface is stale. Authored surfaces own their
+    // boundary outright, so they outlive the roads they were detached from.
     std::vector<SurfaceId> doomed;
-    network.for_each_surface([&](SurfaceId id, const Surface&) { doomed.push_back(id); });
+    network.for_each_surface([&](SurfaceId id, const Surface& surface) {
+      if (surface.source == BoundarySource::Derived) {
+        doomed.push_back(id);
+      }
+    });
     for (const SurfaceId id : doomed) {
       network.erase_surface(id);
     }
@@ -317,14 +322,33 @@ void derive_surfaces(RoadNetwork& network) {
   std::ranges::sort(faces, less_by_index);
 
   // --- 7. Reconcile the surface arena (id-stable survivors). ---------------
+  // An AUTHORED surface still claims its provenance ring here, so the face it
+  // detached from is not re-derived as a duplicate underneath it — but it is
+  // never erased, whether or not that ring still exists (p5-s1, decision D3).
+  // A ring-less authored surface (provenance roads all deleted) survives
+  // unconditionally: its boundary is its own data, not a road query.
   std::unordered_map<std::string, std::vector<SurfaceId>> existing;
+  std::unordered_map<std::string, std::vector<SurfaceId>> authored_claims;
   network.for_each_surface([&](SurfaceId id, const Surface& surface) {
-    existing[ring_key(canonical_ring(surface.bounding_roads))].push_back(id);
+    const std::string key = ring_key(canonical_ring(surface.bounding_roads));
+    if (surface.source == BoundarySource::Authored) {
+      if (!surface.bounding_roads.empty()) {
+        authored_claims[key].push_back(id);
+      }
+      return; // never enters `existing` — nothing here can erase it
+    }
+    existing[key].push_back(id);
   });
 
   std::vector<std::vector<RoadId>> to_create;
   for (auto& face : faces) {
-    const auto it = existing.find(ring_key(face));
+    const std::string key = ring_key(face);
+    if (const auto claimed = authored_claims.find(key);
+        claimed != authored_claims.end() && !claimed->second.empty()) {
+      claimed->second.pop_back(); // an authored surface already owns this face
+      continue;
+    }
+    const auto it = existing.find(key);
     if (it != existing.end() && !it->second.empty()) {
       it->second.pop_back(); // a survivor keeps its SurfaceId — do nothing
     } else {
@@ -332,7 +356,8 @@ void derive_surfaces(RoadNetwork& network) {
     }
   }
 
-  // Erase surfaces with no matching face (deterministic order by index).
+  // Erase derived surfaces with no matching face (deterministic order by
+  // index). Authored surfaces are absent from `existing` by construction.
   std::vector<SurfaceId> doomed;
   for (auto& [key, ids] : existing) {
     for (const SurfaceId id : ids) {

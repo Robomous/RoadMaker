@@ -116,6 +116,7 @@ add_library(roadmaker_editor_lib STATIC
   src/tools/corner_tool.cpp
   src/tools/junction_span_tool.cpp
   src/tools/junction_surface_tool.cpp
+  src/tools/surface_tool.cpp
   src/tools/maneuver_tool.cpp
   src/tools/sign_tool.cpp
   src/tools/signal_tool.cpp

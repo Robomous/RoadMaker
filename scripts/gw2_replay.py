@@ -213,6 +213,75 @@ def step5_surface() -> str:
             f"{mesh.surface_vertex_count} vertices")
 
 
+def step6_surface_boundary() -> str:
+    """Step 6 — reshape a ground surface's boundary as a node graph (p5-s1).
+
+    The three things the step actually claims: the boundary is editable as
+    nodes+tangents, the edit is ONE undo step, and it round-trips through the
+    .xodr. Editing a derived boundary also DETACHES the surface (decision D3),
+    and revert_surface_to_derived is the way back.
+    """
+    net = rm.RoadNetwork()
+    corners = [(0.0, 0.0), (60.0, 0.0), (60.0, 60.0), (0.0, 60.0)]
+    for i in range(4):
+        rm.author_clothoid_road(
+            net, [corners[i], corners[(i + 1) % 4]],
+            rm.LaneProfile.two_lane_rural(), "", f"block{i}")
+    rm.derive_surfaces(net)
+    assert net.surface_count >= 1, "block derived no surface"
+    surface_id = net.surface_ids[0]
+
+    # The tool's own seed: a handful of nodes computed from the mesher's region.
+    nodes = rm.surface_boundary_nodes(net, surface_id)
+    assert 3 <= len(nodes) <= 24, f"unusable seed node count {len(nodes)}"
+    assert net.surface(surface_id).nodes == [], "a seed must not be stored"
+
+    # One gesture: move a node and bow its edge with a tangent.
+    nodes[0].x -= 2.0
+    nodes[0].tangent_out_x = 3.0
+    nodes[0].tangent_out_y = 3.0
+    stack = rm.edit.EditStack()
+    stack.push(net, rm.edit.set_surface_boundary(net, surface_id, nodes))
+
+    surface = net.surface(surface_id)
+    assert surface.source == rm.BoundarySource.AUTHORED, "edit did not detach the surface"
+    assert surface.nodes == nodes
+    assert len(surface.bounding_roads) == 4, "provenance ring was dropped"
+
+    # Re-deriving must neither erase it nor lay a duplicate on its face.
+    rm.derive_surfaces(net)
+    assert net.surface_count == 1, "authored surface was duplicated or erased"
+
+    # The authored boundary still meshes.
+    mesh = rm.build_network_mesh(net)
+    assert mesh.surface_count >= 1 and mesh.surface_vertex_count > 0, \
+        "authored surface produced no mesh"
+
+    # ONE undo step: undo restores the derived surface exactly.
+    stack.undo(net)
+    assert net.surface(surface_id).source == rm.BoundarySource.DERIVED
+    assert net.surface(surface_id).nodes == []
+    stack.redo(net)
+
+    # Round-trip: written, re-read, and written again byte-identically.
+    once = rm.write_xodr(net)
+    assert "nodes=" in once, "authored nodes were not written"
+    reparsed, _diags = rm.parse_xodr(once)
+    assert rm.write_xodr(reparsed) == once, "authored boundary is not byte-stable"
+    loaded = reparsed.surface(reparsed.surface_ids[0])
+    assert loaded.source == rm.BoundarySource.AUTHORED
+    assert loaded.nodes == nodes, "authored nodes did not survive the round trip"
+
+    # Revert hands it back to the roads.
+    stack.push(net, rm.edit.revert_surface_to_derived(net, surface_id))
+    assert net.surface(surface_id).source == rm.BoundarySource.DERIVED
+    rm.derive_surfaces(net)
+    assert net.surface_count == 1 and net.surface_ids[0] == surface_id, \
+        "revert did not return the surface to derivation"
+
+    return (f"{len(nodes)}-node boundary edited in 1 undo step; detached to AUTHORED, "
+            f"re-derivation left it alone, xodr round-trip byte-identical, revert reclaimed it")
+
 def step11_road_style(network, stack) -> str:
     """Step 11 — apply a road style: profile replaced, everything else preserved."""
     road_id = created_road(
@@ -439,6 +508,7 @@ def main() -> int:
     run_official("4. Extend curved road at BOTH endpoints",
                  lambda: step4_extend_both(network, stack))
     run_official("5. Enclosed-area ground surface", step5_surface)
+    run_official("6. Surface boundary as a node graph", step6_surface_boundary)
     run_official("11. Apply road style (replace + preserve)",
                  lambda: step11_road_style(network, stack))
 

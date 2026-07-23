@@ -86,6 +86,7 @@ public:
   QAction* tool_stopline = nullptr;
   QAction* tool_junction_span = nullptr;
   QAction* tool_junction_surface = nullptr;
+  QAction* tool_surface = nullptr;
   QAction* tool_maneuver = nullptr;
   QAction* tool_signal = nullptr;
   QAction* tool_sign = nullptr;

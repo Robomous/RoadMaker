@@ -190,11 +190,14 @@ TEST(ToolbarRegistry, LayoutMatchesTheIssue) {
   EXPECT_EQ(ids_of(shortcuts::toolbar_layout(ToolbarTab::kSignals), "Signals & Signs"),
             (std::vector{Id::ToolSignal, Id::SignalPhaseEditor, Id::ToolSign}));
 
-  for (const ToolbarTab reserved : {ToolbarTab::kTerrain, ToolbarTab::kScenario}) {
-    const std::vector<ToolbarGroupLayout> layout = shortcuts::toolbar_layout(reserved);
-    ASSERT_EQ(layout.size(), 1u);
-    EXPECT_TRUE(layout.front().ids.empty()) << "a reserved tab must render nothing yet";
-  }
+  // Terrain stopped being reserved-empty when p5-s1 (#231) landed the Surface
+  // tool in it; Scenario is still waiting on P8.
+  EXPECT_EQ(ids_of(shortcuts::toolbar_layout(ToolbarTab::kTerrain), "Terrain & Structures"),
+            (std::vector{Id::ToolSurface}));
+
+  const std::vector<ToolbarGroupLayout> scenario = shortcuts::toolbar_layout(ToolbarTab::kScenario);
+  ASSERT_EQ(scenario.size(), 1u);
+  EXPECT_TRUE(scenario.front().ids.empty()) << "a reserved tab must render nothing yet";
 }
 
 // The tabs actually shown skip the core strip AND any empty reserved tab —
@@ -204,13 +207,13 @@ TEST(ToolbarRegistry, ShownTabsSkipCoreAndEmptyReserved) {
   for (const shortcuts::ToolbarTabInfo& info : shortcuts::toolbar_tabs()) {
     titles.push_back(QString::fromUtf8(info.title));
     EXPECT_NE(info.tab, ToolbarTab::kCore);
-    EXPECT_NE(info.tab, ToolbarTab::kTerrain) << "reserved-empty tab must stay hidden";
     EXPECT_NE(info.tab, ToolbarTab::kScenario) << "reserved-empty tab must stay hidden";
   }
   EXPECT_EQ(titles,
             (std::vector<QString>{QStringLiteral("Roads & Lanes"),
                                   QStringLiteral("Markings"),
                                   QStringLiteral("Props"),
+                                  QStringLiteral("Terrain & Structures"),
                                   QStringLiteral("Signals & Signs")}));
 }
 

@@ -48,6 +48,7 @@ add_executable(roadmaker_editor_tests
   test_corner_tool.cpp
   test_junction_span_tool.cpp
   test_junction_surface_tool.cpp
+  test_surface_tool.cpp
   test_maneuver_tool.cpp
   test_sign_tool.cpp
   test_signal_tool.cpp

@@ -19,6 +19,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 Current version on `main`: **0.0.1**.
 
 ### Added
+- **Ground surfaces are editable as a node graph**
+  ([#231](https://github.com/Robomous/RoadMaker/issues/231)): a new **Surface
+  tool** (`U`) turns the ground a loop of roads encloses into an editable
+  boundary — drag a node to move it, drag a tangent tip to bow the edge, click a
+  midpoint marker to insert a node, Delete to remove one. Each gesture is a
+  single undo step. The first edit **detaches** the surface: its boundary is no
+  longer a function of the roads, so it stops being re-derived (and survives
+  even if those roads are deleted), while the ring it came from is kept as
+  provenance for the elevation solve. **Revert to derived** — in the Attributes
+  pane and the surface's right-click menu — hands it back. Authored boundaries
+  round-trip through the `.xodr` in a new optional `nodes` attribute on the
+  `rm:surface` userData, so files without one are written byte-for-byte as
+  before, and `rm.surface_boundary_nodes` / `rm.edit.set_surface_boundary` /
+  `rm.edit.revert_surface_to_derived` expose the same editing to Python. This
+  makes the **Terrain & Structures** toolbar group, reserved since the P1
+  toolbar work, visible for the first time.
 - **Road signs with editable face text**
   ([#230](https://github.com/Robomous/RoadMaker/issues/230)): a new **Sign
   tool** (`B`) places a road sign on a click or drag — a selected Library sign,
