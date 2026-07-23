@@ -146,6 +146,7 @@ Written once per pillar, before its first sprint lands:
 - [P1 — Interaction & Navigation](pillars/p1_discovery.md)
 - [P2 — Roads & Lanes](pillars/p2_discovery.md)
 - [P4 — Junctions & Signals](pillars/p4_discovery.md)
+- [P5 — Terrain & Structures](pillars/p5_discovery.md)
 - [P6 — Assets, Props & Materials](pillars/p6_discovery.md)
 
 ### Roadmap updates
