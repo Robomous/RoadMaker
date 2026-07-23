@@ -190,6 +190,67 @@ TEST(SurfaceBoundary, SelfIntersectionIsDetected) {
   EXPECT_TRUE(surface_boundary_self_intersects(bowtie));
 }
 
+// Regression (macOS CI, PR #388): the Hermite basis weights do not sum to
+// exactly 1 in floating point, so samples along a STRAIGHT edge land ~1e-14 m
+// off the chord in an arbitrary direction. With a strict-sign crossing test,
+// two non-adjacent samples of the same straight edge could produce tiny
+// opposing cross products and a perfectly simple boundary read as
+// self-intersecting — platform-dependently, because the rounding is. Long
+// straight edges (many interior samples each) are what expose it.
+TEST(SurfaceBoundary, LongStraightEdgesAreNotMistakenForSelfIntersection) {
+  // Every edge is many sample steps long, and the shapes are deliberately
+  // irregular so no symmetry can hide a sign flip.
+  const std::vector<std::vector<std::array<double, 2>>> shapes{
+      {{0.0, 0.0}, {120.0, 0.0}, {120.0, 90.0}, {0.0, 90.0}},               // rectangle
+      {{15.0, 15.0}, {145.0, 15.0}, {130.0, 145.0}},                        // triangle
+      {{15.0, 15.0}, {145.0, 15.0}, {130.0, 145.0}, {20.0, 140.0}},         // quad
+      {{0.0, 0.0}, {100.0, 3.0}, {97.0, 103.0}, {51.0, 66.0}, {2.0, 99.0}}, // concave
+  };
+  for (const std::vector<std::array<double, 2>>& shape : shapes) {
+    std::vector<SurfaceNode> nodes;
+    for (const std::array<double, 2>& p : shape) {
+      nodes.push_back(SurfaceNode{.x = p[0], .y = p[1]});
+    }
+    EXPECT_FALSE(surface_boundary_self_intersects(nodes))
+        << "a simple " << shape.size() << "-node boundary must not read as crossing";
+    // And the command layer must accept it (this is what CI actually failed on).
+    RoadNetwork network;
+    const SurfaceId id = network.create_surface(Surface{.source = BoundarySource::Derived});
+    EXPECT_TRUE(set_surface_boundary(network, id, nodes)->apply(network).has_value());
+  }
+}
+
+// The tolerance's contract, stated directly and independently of any platform's
+// rounding: a crossing SHALLOWER than a nanometre is treated as the boundary
+// touching itself, not crossing. That is the whole point — it is what buys the
+// margin over the ~7e-15 m sampling noise measured above, and it is what a
+// strict-sign test cannot express.
+//
+// The shape is a bow tie whose two long edges cross with a perpendicular
+// separation of ~2.5e-11 m. Mathematically it self-intersects; at the scale a
+// surface boundary means anything, it does not.
+TEST(SurfaceBoundary, CrossingsShallowerThanTheToleranceCountAsTouching) {
+  constexpr double kHair = 1e-10;
+  const std::vector<SurfaceNode> hairline_bowtie{SurfaceNode{.x = 0.0, .y = 0.0},
+                                                 SurfaceNode{.x = 100.0, .y = 0.0},
+                                                 SurfaceNode{.x = 0.0, .y = kHair},
+                                                 SurfaceNode{.x = 100.0, .y = kHair}};
+  EXPECT_FALSE(surface_boundary_self_intersects(hairline_bowtie))
+      << "a crossing far below the feature size must not block an edit";
+
+  // Widen the same shape past the tolerance and it IS a crossing: this is a
+  // tolerance, not a blanket disable.
+  const std::vector<SurfaceNode> real_bowtie{SurfaceNode{.x = 0.0, .y = 0.0},
+                                             SurfaceNode{.x = 100.0, .y = 0.0},
+                                             SurfaceNode{.x = 0.0, .y = 1.0},
+                                             SurfaceNode{.x = 100.0, .y = 1.0}};
+  EXPECT_TRUE(surface_boundary_self_intersects(real_bowtie));
+
+  std::vector<SurfaceNode> square_bowtie = square(20.0);
+  std::swap(square_bowtie[2], square_bowtie[3]);
+  EXPECT_TRUE(surface_boundary_self_intersects(square_bowtie));
+}
+
 // --- the commands ------------------------------------------------------------
 
 TEST(SurfaceBoundary, EditingADerivedBoundaryDetachesItToAuthored) {

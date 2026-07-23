@@ -90,8 +90,28 @@ std::vector<std::array<double, 2>> decimate_ring(std::vector<std::array<double, 
   return out;
 }
 
-/// True when the closed segments (a0,a1) and (b0,b1) properly cross. Endpoint
-/// touching does not count — adjacent boundary segments always share one.
+/// How far off a segment's line a point must lie before it counts as being to
+/// one side of it [m]. A nanometre: far below any boundary a user could draw,
+/// and far above the rounding noise below.
+///
+/// That noise is not hypothetical. The Hermite basis weights do not sum to
+/// exactly 1 in floating point, so samples along a STRAIGHT edge land ~1e-14 m
+/// off the chord in an arbitrary direction. Without this tolerance, two
+/// non-adjacent samples of the same straight edge produce tiny cross products
+/// whose signs happen to oppose, and a perfectly simple boundary reads as
+/// self-intersecting — differently on different platforms, because the rounding
+/// does (macOS CI caught exactly this).
+constexpr double kOnLineTolerance = 1e-9;
+
+/// True when the closed segments (a0,a1) and (b0,b1) cross — including the case
+/// where one segment's endpoint lands ON the other, which is how a boundary
+/// that pinches through a sample vertex presents itself.
+///
+/// The one case deliberately excluded is two segments lying along the SAME
+/// line, because that is what the sampling noise above produces: both endpoints
+/// of `b` sit within tolerance of `a`'s line. Requiring each segment to have at
+/// least one endpoint genuinely off the other's line separates the two — a real
+/// crossing is transverse, rounding noise is collinear.
 bool segments_cross(const std::array<double, 2>& a0,
                     const std::array<double, 2>& a1,
                     const std::array<double, 2>& b0,
@@ -101,14 +121,29 @@ bool segments_cross(const std::array<double, 2>& a0,
                         const std::array<double, 2>& q) {
     return ((p[0] - o[0]) * (q[1] - o[1])) - ((p[1] - o[1]) * (q[0] - o[0]));
   };
-  const double d0 = cross(a0, a1, b0);
-  const double d1 = cross(a0, a1, b1);
-  const double d2 = cross(b0, b1, a0);
-  const double d3 = cross(b0, b1, a1);
-  // Strict sign opposition on both segments: collinear-overlap and
-  // endpoint-touching cases fall through as "no crossing", which is what the
-  // shared-endpoint case of a closed loop needs.
-  return ((d0 > 0.0) != (d1 > 0.0)) && ((d2 > 0.0) != (d3 > 0.0));
+  const double len_a = std::hypot(a1[0] - a0[0], a1[1] - a0[1]);
+  const double len_b = std::hypot(b1[0] - b0[0], b1[1] - b0[1]);
+  if (len_a < kOnLineTolerance || len_b < kOnLineTolerance) {
+    return false; // a degenerate segment has no side
+  }
+  // |cross| / |segment| IS the point's perpendicular distance from the line, so
+  // the tolerance is applied in metres rather than in cross-product units,
+  // which would otherwise scale with the segment length.
+  const auto side = [](double numerator, double length) {
+    const double distance = numerator / length;
+    if (std::abs(distance) <= kOnLineTolerance) {
+      return 0; // on the line, within the feature size
+    }
+    return distance > 0.0 ? 1 : -1;
+  };
+  const int s0 = side(cross(a0, a1, b0), len_a);
+  const int s1 = side(cross(a0, a1, b1), len_a);
+  const int s2 = side(cross(b0, b1, a0), len_b);
+  const int s3 = side(cross(b0, b1, a1), len_b);
+  if ((s0 == 0 && s1 == 0) || (s2 == 0 && s3 == 0)) {
+    return false; // collinear within tolerance — the sampling-noise case
+  }
+  return s0 != s1 && s2 != s3;
 }
 
 } // namespace
