@@ -236,6 +236,21 @@ JunctionId build_roomy_four_way(RoadNetwork& network,
   return make_junction(network, {end_of(west), end_of(east), end_of(south), end_of(north)});
 }
 
+/// A roomy four-way with three sidewalked arms and one plain (rural) arm — the
+/// mixed junction that must transition without a band on the plain arm (#357).
+/// The south arm ("3") is the plain one.
+JunctionId build_mixed_four_way(RoadNetwork& network) {
+  const RoadId west = author(
+      network, {Waypoint{-80.0, 0.0}, Waypoint{-20.0, 0.0}}, "1", LaneProfile::urban_sidewalk());
+  const RoadId east = author(
+      network, {Waypoint{80.0, 0.0}, Waypoint{20.0, 0.0}}, "2", LaneProfile::urban_sidewalk());
+  const RoadId south = author(
+      network, {Waypoint{0.0, -80.0}, Waypoint{0.0, -20.0}}, "3", LaneProfile::two_lane_rural());
+  const RoadId north = author(
+      network, {Waypoint{0.0, 80.0}, Waypoint{0.0, 20.0}}, "4", LaneProfile::urban_sidewalk());
+  return make_junction(network, {end_of(west), end_of(east), end_of(south), end_of(north)});
+}
+
 /// Urban cross-section with a median lane innermost on both sides — the
 /// profile the median-nose overlay needs.
 LaneProfile median_profile() {
@@ -506,10 +521,42 @@ TEST(JunctionSurface, NoAuthoredMaterialsEmitsNoDetailsAndIdenticalFloor) {
   expect_floor_identical(baseline, after);
 }
 
-TEST(JunctionSurface, CornerSidewalkMaterialEmitsSidewalkWedge) {
+// Sidewalked arms (issue #357) carry a continuous Sidewalk band around every
+// corner, split out of the floor as a SEPARATE SubMesh; the carriageway core
+// keeps the Driving material. The floor stays watertight across the seam.
+TEST(JunctionSurface, SidewalkedFourWayWrapsAllCornersContinuously) {
   RoadNetwork network;
-  const JunctionId junction = build_roomy_four_way(network);
+  build_roomy_four_way(network, LaneProfile::urban_sidewalk());
+  const NetworkMesh mesh = roadmaker::build_network_mesh(network);
+  ASSERT_FALSE(mesh.junction_floors.empty());
+
+  // A band on each of the four corners, every one materialled Sidewalk (never
+  // left as bare Driving carriageway), and none empty.
+  const std::vector<const SubMesh*> bands = details_of(mesh, LaneType::Sidewalk);
+  EXPECT_EQ(bands.size(), 4U);
+  for (const SubMesh* band : bands) {
+    EXPECT_EQ(band->material, LaneType::Sidewalk);
+    EXPECT_FALSE(band->indices.empty());
+    EXPECT_EQ(band->indices.size() % 3, 0U);
+    EXPECT_EQ(band->positions.size(), band->normals.size());
+  }
+
+  // The carriageway core is a real, watertight Driving floor.
+  EXPECT_EQ(mesh.junction_floors[0].mesh.material, LaneType::Driving);
+  expect_watertight(mesh);
+}
+
+// The p4-s2 authored `sidewalk_material` becomes an OVERRIDE on the generated
+// band's surface — one corner's band, not the whole floor, and never a re-cut.
+TEST(JunctionSurface, CornerSidewalkMaterialOverridesBandSurface) {
+  RoadNetwork network;
+  const JunctionId junction = build_roomy_four_way(network, LaneProfile::urban_sidewalk());
   const NetworkMesh baseline = roadmaker::build_network_mesh(network);
+  const std::vector<const SubMesh*> before = details_of(baseline, LaneType::Sidewalk);
+  ASSERT_FALSE(before.empty());
+  for (const SubMesh* band : before) {
+    EXPECT_TRUE(band->surface.empty()); // derived look until authored
+  }
 
   const JunctionCornerInfo info = roadmaker::junction_corners(network, junction).at(0);
   set_corner(network,
@@ -519,21 +566,51 @@ TEST(JunctionSurface, CornerSidewalkMaterialEmitsSidewalkWedge) {
                             .sidewalk_material = std::string("concrete")});
 
   const NetworkMesh after = roadmaker::build_network_mesh(network);
-  const std::vector<const SubMesh*> wedges = details_of(after, LaneType::Sidewalk);
-  ASSERT_EQ(wedges.size(), 1U);
-  EXPECT_EQ(wedges[0]->surface, "concrete");
-  EXPECT_FALSE(wedges[0]->indices.empty());
-  EXPECT_EQ(wedges[0]->indices.size() % 3, 0U);
-  EXPECT_EQ(wedges[0]->positions.size(), wedges[0]->normals.size());
-  // The wedge covers the rounded-away corner: every vertex sits within the
-  // fillet's reach of the edge-line intersection, above the floor.
-  for (std::size_t i = 0; i + 2 < wedges[0]->positions.size(); i += 3) {
-    EXPECT_LT(std::hypot(wedges[0]->positions[i] - info.corner[0],
-                         wedges[0]->positions[i + 1] - info.corner[1]),
-              info.max_extent_a + info.max_extent_b);
+  const std::vector<const SubMesh*> bands = details_of(after, LaneType::Sidewalk);
+  EXPECT_EQ(bands.size(), before.size());
+  int concrete = 0;
+  for (const SubMesh* band : bands) {
+    EXPECT_FALSE(band->indices.empty());
+    EXPECT_EQ(band->positions.size(), band->normals.size());
+    if (band->surface == "concrete") {
+      ++concrete;
+    }
   }
-  // Overlay only — the floor itself is untouched.
+  EXPECT_EQ(concrete, 1); // only the authored corner's band is overridden
+
+  // Material override only — the floor triangulation is byte-identical (the
+  // authored code changes a band's surface string, never re-cuts the floor).
   expect_floor_identical(baseline, after);
+}
+
+// A mixed junction (three sidewalked arms + one plain rural arm): the sidewalk
+// is carried on the sidewalked corners, no band lands on the plain arm, and the
+// floor is still watertight (issue #357, mixed-boundary requirement).
+TEST(JunctionSurface, MixedSidewalkedAndPlainJunctionTransitions) {
+  RoadNetwork network;
+  build_mixed_four_way(network);
+  const NetworkMesh mesh = roadmaker::build_network_mesh(network);
+  ASSERT_FALSE(mesh.junction_floors.empty());
+
+  const std::vector<const SubMesh*> bands = details_of(mesh, LaneType::Sidewalk);
+  ASSERT_FALSE(bands.empty()); // the sidewalked corners still carry the band
+
+  // NO band on the plain (south) arm: its mouth centre (0, -20) and corridor
+  // (x ~ 0, y well below the junction) carry no sidewalk geometry.
+  for (const SubMesh* band : bands) {
+    EXPECT_EQ(band->material, LaneType::Sidewalk);
+    for (std::size_t i = 0; i + 2 < band->positions.size(); i += 3) {
+      const double x = band->positions[i];
+      const double y = band->positions[i + 1];
+      const bool in_plain_corridor = std::abs(x) < 5.0 && y < -12.0;
+      EXPECT_FALSE(in_plain_corridor)
+          << "sidewalk band vertex sits on the plain arm at (" << x << ", " << y << ")";
+    }
+  }
+
+  // The carriageway core is Driving and watertight through the transition.
+  EXPECT_EQ(mesh.junction_floors[0].mesh.material, LaneType::Driving);
+  expect_watertight(mesh);
 }
 
 TEST(JunctionSurface, MedianNoseEmittedForMedianArm) {

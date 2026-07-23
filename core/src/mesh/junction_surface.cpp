@@ -248,42 +248,6 @@ std::optional<ArmFace> arm_face(const RoadNetwork& network, const RoadEnd& arm) 
   return face;
 }
 
-/// Every arm-face vertex of the junction — the exact end-cross-section points
-/// the floor's boundary is stitched to, so the nearest of them carries the
-/// floor's elevation at any point along an arm face or a corner between two.
-std::vector<std::array<double, 3>> arm_face_vertices(const RoadNetwork& network,
-                                                     const Junction& junction) {
-  std::vector<std::array<double, 3>> points;
-  if (junction.arms.size() < 2) {
-    return points;
-  }
-  for (const RoadEnd& arm : junction.arms) {
-    const std::optional<ArmFace> face = arm_face(network, arm);
-    if (!face) {
-      continue;
-    }
-    for (const double offset : face->offsets) {
-      points.push_back(lateral_point(face->frame, offset));
-    }
-  }
-  return points;
-}
-
-/// The floor's elevation at (x, y), taken from the nearest arm-face vertex —
-/// the same Dirichlet data the floor's harmonic solve is pinned to.
-double nearest_border_z(const std::vector<std::array<double, 3>>& points, double x, double y) {
-  double best = std::numeric_limits<double>::max();
-  double z = 0.0;
-  for (const std::array<double, 3>& p : points) {
-    const double d2 = ((p[0] - x) * (p[0] - x)) + ((p[1] - y) * (p[1] - y));
-    if (d2 < best) {
-      best = d2;
-      z = p[2];
-    }
-  }
-  return z;
-}
-
 /// Appends one flat-shaded triangle (its own three vertices, one face normal
 /// forced into the +Z hemisphere so the overlay is never backfaced).
 void push_triangle(SubMesh& sub,
@@ -472,6 +436,171 @@ void assign_prioritized_elevation(CompactMesh& mesh,
   if (!flat_floor) {
     solve_elevation(mesh, on_boundary, centerline);
   }
+}
+
+// --- sidewalk band split (p4-s3 follow-up, issue #357) -----------------------
+//
+// A junction of sidewalked roads must carry the sidewalk band continuously
+// around each corner and stamp it with LaneType::Sidewalk, instead of paving
+// the whole floor as one Driving slab. The floor union already reaches the
+// sidewalk OUTER edge at every arm mouth (the joint quads span the full cross
+// section) and rounds the corners (append_corner_fillets), so the sidewalk
+// pavement is already IN the floor — it just needs to be segmented out by
+// material. We do that by classifying the floor's finished triangles against a
+// per-corner band polygon, so the split shares the floor's exact vertices
+// (watertight) and never re-triangulates (deterministic, byte-stable).
+
+/// One side of an arm face: is the outermost lane a sidewalk, and if so where
+/// its outer (curb) and inner (carriageway-facing) edges sit at the face.
+struct SidewalkSide {
+  bool present = false;
+  std::array<double, 2> outer{}; // curb edge at the face
+  std::array<double, 2> inner{}; // sidewalk/carriageway boundary at the face
+  double width = 0.0;
+};
+
+/// The sidewalk side of `face` that meets `corner_pt` (one of the two outer
+/// face corners). `corner_pt` selects which extreme — offsets.front() (left)
+/// or offsets.back() (right) — so the caller never has to know CornerFace's
+/// left/right convention.
+SidewalkSide sidewalk_side_at(const ArmFace& face, const std::array<double, 2>& corner_pt) {
+  SidewalkSide side;
+  if (face.types.empty() || face.offsets.size() < 2) {
+    return side;
+  }
+  const std::array<double, 3> back = lateral_point(face.frame, face.offsets.back());
+  const std::array<double, 3> front = lateral_point(face.frame, face.offsets.front());
+  const double db = ((back[0] - corner_pt[0]) * (back[0] - corner_pt[0])) +
+                    ((back[1] - corner_pt[1]) * (back[1] - corner_pt[1]));
+  const double df = ((front[0] - corner_pt[0]) * (front[0] - corner_pt[0])) +
+                    ((front[1] - corner_pt[1]) * (front[1] - corner_pt[1]));
+  const bool use_back = db <= df;
+  const LaneType outer_type = use_back ? face.types.back() : face.types.front();
+  if (outer_type != LaneType::Sidewalk) {
+    return side;
+  }
+  const double outer_off = use_back ? face.offsets.back() : face.offsets.front();
+  const double inner_off = use_back ? face.offsets[face.offsets.size() - 2] : face.offsets[1];
+  const std::array<double, 3> o = lateral_point(face.frame, outer_off);
+  const std::array<double, 3> in = lateral_point(face.frame, inner_off);
+  side.present = true;
+  side.outer = {o[0], o[1]};
+  side.inner = {in[0], in[1]};
+  side.width = std::abs(outer_off - inner_off);
+  return side;
+}
+
+/// Unit 2D vector b - a, or {0,0} when the two coincide.
+std::array<double, 2> unit_delta(const std::array<double, 2>& a, const std::array<double, 2>& b) {
+  const double dx = b[0] - a[0];
+  const double dy = b[1] - a[1];
+  const double len = std::hypot(dx, dy);
+  return len > tol::kLength ? std::array<double, 2>{dx / len, dy / len}
+                            : std::array<double, 2>{0.0, 0.0};
+}
+
+/// The plan-view band polygon for one corner. Its OUTER edge is the curb line
+/// (the exact arm curb legs plus the corner curve where both arms are
+/// sidewalked); its INNER edge is that line pushed one sidewalk-width toward the
+/// pavement. Empty when neither adjacent side carries a sidewalk. Used only to
+/// classify floor triangles, so its winding is irrelevant.
+Clipper2Lib::PathD
+corner_band_polygon(const CornerSolution& solution, const SidewalkSide& a, const SidewalkSide& b) {
+  if (!a.present && !b.present) {
+    return {};
+  }
+  std::vector<std::array<double, 2>> outer;
+  std::vector<std::array<double, 2>> inner;
+  const bool both = a.present && b.present;
+  const bool curved = both && solution.valid && !solution.parallel_edges;
+
+  if (a.present) {
+    outer.push_back(a.outer);
+    inner.push_back(a.inner);
+  }
+  if (curved) {
+    const std::array<double, 2> na = unit_delta(a.outer, a.inner); // perpendicular, inward
+    outer.push_back(solution.tangent_a);
+    inner.push_back(
+        {solution.tangent_a[0] + (na[0] * a.width), solution.tangent_a[1] + (na[1] * a.width)});
+    const std::vector<std::array<double, 2>> curve = corner_curve(solution);
+    for (std::size_t j = 0; j < curve.size(); ++j) {
+      const std::array<double, 2>& q = curve[j];
+      const std::array<double, 2> prev = j > 0 ? curve[j - 1] : solution.tangent_a;
+      const std::array<double, 2> next = j + 1 < curve.size() ? curve[j + 1] : solution.tangent_b;
+      const std::array<double, 2> dir = unit_delta(prev, next);
+      std::array<double, 2> nrm{-dir[1], dir[0]};
+      // Orient the normal toward the pavement (the corner apex is interior).
+      const double to_apex_x = solution.corner[0] - q[0];
+      const double to_apex_y = solution.corner[1] - q[1];
+      if ((nrm[0] * to_apex_x) + (nrm[1] * to_apex_y) < 0.0) {
+        nrm = {-nrm[0], -nrm[1]};
+      }
+      const double f =
+          curve.size() > 1 ? static_cast<double>(j) / static_cast<double>(curve.size() - 1) : 0.0;
+      const double w = a.width + (f * (b.width - a.width));
+      outer.push_back(q);
+      inner.push_back({q[0] + (nrm[0] * w), q[1] + (nrm[1] * w)});
+    }
+    const std::array<double, 2> nb = unit_delta(b.outer, b.inner);
+    outer.push_back(solution.tangent_b);
+    inner.push_back(
+        {solution.tangent_b[0] + (nb[0] * b.width), solution.tangent_b[1] + (nb[1] * b.width)});
+  }
+  if (b.present) {
+    outer.push_back(b.outer);
+    inner.push_back(b.inner);
+  }
+  if (outer.size() < 2 || outer.size() != inner.size()) {
+    return {};
+  }
+  Clipper2Lib::PathD ring;
+  ring.reserve(outer.size() * 2);
+  for (const std::array<double, 2>& p : outer) {
+    ring.emplace_back(p[0], p[1]);
+  }
+  for (std::size_t j = inner.size(); j-- > 0;) {
+    ring.emplace_back(inner[j][0], inner[j][1]);
+  }
+  return ring;
+}
+
+/// Emits the triangles of `floor` whose per-triangle `assignment` equals
+/// `want` as a fresh SubMesh, copying the floor's exact positions AND normals
+/// (so a seam vertex is bit-identical in every region it appears in) and
+/// remapping to a dense index range in triangle order (deterministic).
+SubMesh emit_floor_region(const SubMesh& floor,
+                          const std::vector<int>& assignment,
+                          int want,
+                          LaneType material,
+                          std::string surface,
+                          std::string name) {
+  SubMesh out;
+  out.material = material;
+  out.surface = std::move(surface);
+  out.name = std::move(name);
+  const std::size_t vertex_count = floor.positions.size() / 3;
+  std::vector<std::uint32_t> remap(vertex_count, std::numeric_limits<std::uint32_t>::max());
+  const std::size_t tri_count = floor.indices.size() / 3;
+  for (std::size_t t = 0; t < tri_count; ++t) {
+    if (assignment[t] != want) {
+      continue;
+    }
+    for (std::size_t k = 0; k < 3; ++k) {
+      const std::uint32_t v = floor.indices[(t * 3) + k];
+      if (remap[v] == std::numeric_limits<std::uint32_t>::max()) {
+        remap[v] = static_cast<std::uint32_t>(out.positions.size() / 3);
+        out.positions.insert(
+            out.positions.end(),
+            {floor.positions[v * 3], floor.positions[(v * 3) + 1], floor.positions[(v * 3) + 2]});
+        out.normals.insert(
+            out.normals.end(),
+            {floor.normals[v * 3], floor.normals[(v * 3) + 1], floor.normals[(v * 3) + 2]});
+      }
+      out.indices.push_back(remap[v]);
+    }
+  }
+  return out;
 }
 
 } // namespace
@@ -752,6 +881,104 @@ SubMesh build_junction_surface(const RoadNetwork& network,
   return out;
 }
 
+JunctionFloorSplit split_junction_floor_sidewalks(const RoadNetwork& network,
+                                                  const Junction& junction,
+                                                  const SubMesh& floor) {
+  JunctionFloorSplit result;
+
+  // Build one band polygon (+ its authored surface override) per corner where a
+  // CCW-adjacent arm carries a sidewalk. `corner_faces` returns the same CCW
+  // face order the mesher fillets, so A's right edge meets B's left edge.
+  struct BandDef {
+    Clipper2Lib::PathD polygon;
+    std::string surface; // authored sidewalk_material override, else empty
+  };
+
+  std::vector<BandDef> bands;
+  const std::vector<CornerFace> faces = corner_faces(network, junction);
+  for (std::size_t i = 0; faces.size() >= 2 && i < faces.size(); ++i) {
+    const CornerFace& a = faces[i];
+    const CornerFace& b = faces[(i + 1) % faces.size()];
+    const std::optional<ArmFace> af_a = arm_face(network, a.arm);
+    const std::optional<ArmFace> af_b = arm_face(network, b.arm);
+    const SidewalkSide sa = af_a ? sidewalk_side_at(*af_a, a.right) : SidewalkSide{};
+    const SidewalkSide sb = af_b ? sidewalk_side_at(*af_b, b.left) : SidewalkSide{};
+    if (!sa.present && !sb.present) {
+      continue; // neither adjacent arm is sidewalked — plain corner, no band
+    }
+    const CornerSolution solution = solve_corner(network, junction, a, b);
+    Clipper2Lib::PathD polygon = corner_band_polygon(solution, sa, sb);
+    if (polygon.size() < 3) {
+      continue;
+    }
+    const JunctionCorner* entry = corner_override(junction, a.arm, b.arm);
+    std::string surface =
+        (entry != nullptr && entry->sidewalk_material.has_value()) ? *entry->sidewalk_material : "";
+    bands.push_back(BandDef{.polygon = std::move(polygon), .surface = std::move(surface)});
+  }
+
+  // No sidewalks anywhere ⇒ the floor is returned VERBATIM (byte-identical to
+  // the pre-#357 single-material floor); the feature never touches a rural
+  // junction.
+  if (bands.empty() || floor.indices.empty()) {
+    result.carriageway = floor;
+    return result;
+  }
+
+  // Classify every floor triangle by the band (if any) that contains its
+  // centroid. -1 is the carriageway. Bands never overlap (each corner owns one
+  // arm edge per side), so first match wins.
+  const std::size_t tri_count = floor.indices.size() / 3;
+  std::vector<int> assignment(tri_count, -1);
+  bool any_sidewalk = false;
+  for (std::size_t t = 0; t < tri_count; ++t) {
+    const std::uint32_t i0 = floor.indices[t * 3];
+    const std::uint32_t i1 = floor.indices[(t * 3) + 1];
+    const std::uint32_t i2 = floor.indices[(t * 3) + 2];
+    const Clipper2Lib::PointD centroid{
+        (floor.positions[i0 * 3] + floor.positions[i1 * 3] + floor.positions[i2 * 3]) / 3.0,
+        (floor.positions[(i0 * 3) + 1] + floor.positions[(i1 * 3) + 1] +
+         floor.positions[(i2 * 3) + 1]) /
+            3.0};
+    for (std::size_t k = 0; k < bands.size(); ++k) {
+      if (Clipper2Lib::PointInPolygon(centroid, bands[k].polygon) ==
+          Clipper2Lib::PointInPolygonResult::IsInside) {
+        assignment[t] = static_cast<int>(k);
+        any_sidewalk = true;
+        break;
+      }
+    }
+  }
+
+  // Degenerate guard: if the band(s) somehow swallow the whole floor, keep the
+  // floor whole rather than emit an empty carriageway (which the caller drops).
+  std::size_t carriageway_tris = 0;
+  for (const int a : assignment) {
+    if (a == -1) {
+      ++carriageway_tris;
+    }
+  }
+  if (!any_sidewalk || carriageway_tris == 0) {
+    result.carriageway = floor;
+    return result;
+  }
+
+  result.carriageway =
+      emit_floor_region(floor, assignment, -1, LaneType::Driving, floor.surface, floor.name);
+  for (std::size_t k = 0; k < bands.size(); ++k) {
+    SubMesh band = emit_floor_region(floor,
+                                     assignment,
+                                     static_cast<int>(k),
+                                     LaneType::Sidewalk,
+                                     bands[k].surface,
+                                     fmt::format("junction {} corner sidewalk", junction.odr_id));
+    if (!band.indices.empty()) {
+      result.sidewalk_bands.push_back(std::move(band));
+    }
+  }
+  return result;
+}
+
 std::vector<SubMesh> build_junction_corner_details(const RoadNetwork& network,
                                                    const Junction& junction,
                                                    const SamplingOptions& sampling) {
@@ -760,48 +987,11 @@ std::vector<SubMesh> build_junction_corner_details(const RoadNetwork& network,
   if (junction.corners.empty()) {
     return details; // nothing authored — the common case, and free
   }
-  const std::vector<std::array<double, 3>> face_points = arm_face_vertices(network, junction);
-  if (face_points.empty()) {
-    return details;
-  }
 
-  // 1. Sidewalk wedges: the pavement between a corner's edge-line intersection
-  //    and its fillet curve — the exact region the fillet rounded away, which
-  //    is what a real intersection surfaces as sidewalk.
-  const std::vector<CornerFace> faces = corner_faces(network, junction);
-  for (std::size_t i = 0; faces.size() >= 2 && i < faces.size(); ++i) {
-    const CornerFace& a = faces[i];
-    const CornerFace& b = faces[(i + 1) % faces.size()];
-    const JunctionCorner* entry = corner_override(junction, a.arm, b.arm);
-    if (entry == nullptr || !entry->sidewalk_material.has_value()) {
-      continue;
-    }
-    const CornerSolution solution = solve_corner(network, junction, a, b);
-    if (!solution.valid) {
-      continue;
-    }
-    const auto lift = [&face_points](const std::array<double, 2>& p) {
-      return std::array<double, 3>{
-          p[0], p[1], nearest_border_z(face_points, p[0], p[1]) + kJunctionDetailLift};
-    };
-    // Star-shaped about the corner: a fan from that apex covers it exactly.
-    std::vector<std::array<double, 3>> ring;
-    ring.push_back(lift(solution.corner));
-    for (const std::array<double, 2>& p : corner_curve(solution)) {
-      ring.push_back(lift(p));
-    }
-    SubMesh wedge;
-    wedge.material = LaneType::Sidewalk;
-    wedge.surface = *entry->sidewalk_material;
-    wedge.name = fmt::format("junction {} corner sidewalk", junction.odr_id);
-    fan_triangulate(wedge, std::move(ring));
-    if (!wedge.indices.empty()) {
-      details.push_back(std::move(wedge));
-    }
-  }
-
-  // 2. Median noses: each arm's median lanes, extruded kMedianNoseDepth into
-  //    the junction from the arm face.
+  // Median noses: each arm's median lanes, extruded kMedianNoseDepth into the
+  // junction from the arm face. (The continuous sidewalk band is emitted by
+  // split_junction_floor_sidewalks — issue #357 — as part of the floor, not as
+  // a floating overlay.)
   const std::span<const RoadEnd> arms = junction.arms.size() >= 2
                                             ? std::span<const RoadEnd>(junction.arms)
                                             : std::span<const RoadEnd>();
