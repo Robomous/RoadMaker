@@ -22,6 +22,7 @@
 // elevation and width consumer inherits.
 
 #include "roadmaker/geometry/poly3.hpp"
+#include "roadmaker/tol.hpp"
 
 #include <gtest/gtest.h>
 
@@ -83,8 +84,10 @@ TEST(Poly3, EvalProfileEmptyIsZero) {
 
 TEST(Poly3, EvalProfileBeforeFirstRecordEvaluatesTheFirstRecord) {
   // The documented clamp: a query before the first record extrapolates the
-  // first record backwards, it does not return 0.
-  EXPECT_DOUBLE_EQ(eval_profile(kProfile, -5.0), 1.0 + (0.1 * -5.0));
+  // first record backwards, it does not return 0. EXPECT_NEAR, not bit
+  // equality: the 0.1 coefficient is not binary-representable and GCC may
+  // contract a + b*ds into an FMA, shifting the result by an ulp.
+  EXPECT_NEAR(eval_profile(kProfile, -5.0), 1.0 + (0.1 * -5.0), roadmaker::tol::kLength);
 }
 
 TEST(Poly3, EvalProfileExactlyAtARecordStartSelectsThatRecord) {
@@ -96,15 +99,15 @@ TEST(Poly3, EvalProfileExactlyAtARecordStartSelectsThatRecord) {
 }
 
 TEST(Poly3, EvalProfileJustBeforeARecordStartStaysOnThePriorRecord) {
-  EXPECT_DOUBLE_EQ(eval_profile(kProfile, 9.5), 1.0 + (0.1 * 9.5));
+  EXPECT_NEAR(eval_profile(kProfile, 9.5), 1.0 + (0.1 * 9.5), roadmaker::tol::kLength);
 }
 
 TEST(Poly3, EvalProfileJustAfterARecordStartUsesTheNewRecord) {
-  EXPECT_DOUBLE_EQ(eval_profile(kProfile, 10.5), 2.0 + (0.5 * 0.5));
+  EXPECT_NEAR(eval_profile(kProfile, 10.5), 2.0 + (0.5 * 0.5), roadmaker::tol::kLength);
 }
 
 TEST(Poly3, EvalProfilePastTheLastRecordExtrapolatesTheLastRecord) {
-  EXPECT_DOUBLE_EQ(eval_profile(kProfile, 25.0), 3.0 + (-1.0 * 5.0));
+  EXPECT_NEAR(eval_profile(kProfile, 25.0), 3.0 + (-1.0 * 5.0), roadmaker::tol::kLength);
 }
 
 // --- eval_profile_derivative analogues ---------------------------------------
