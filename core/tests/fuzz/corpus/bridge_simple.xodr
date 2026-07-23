@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<OpenDRIVE>
+  <header revMajor="1" revMinor="8" name="bridge_simple" vendor="RoadMaker" />
+  <road length="120" id="1" junction="-1">
+    <planView>
+      <geometry s="0" x="0" y="0" hdg="0" length="120">
+        <line />
+      </geometry>
+    </planView>
+    <elevation s="0" a="6" b="0" c="0" d="0" />
+    <lanes>
+      <laneSection s="0">
+        <center>
+          <lane id="0" type="none" level="false" />
+        </center>
+        <right>
+          <lane id="-1" type="driving" level="false">
+            <width sOffset="0" a="3.5" b="0" c="0" d="0" />
+          </lane>
+        </right>
+      </laneSection>
+    </lanes>
+    <objects>
+      <bridge s="50" length="24" id="b1" name="overpass" type="concrete">
+        <userData code="rm:material.bridge_deck" value="rm:concrete" />
+      </bridge>
+    </objects>
+  </road>
+</OpenDRIVE>

@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<OpenDRIVE>
+  <header revMajor="1" revMinor="9" name="bridge_lanevalidity" vendor="Foreign" />
+  <road length="80" id="7" junction="-1">
+    <planView>
+      <geometry s="0" x="0" y="0" hdg="0" length="80">
+        <line />
+      </geometry>
+    </planView>
+    <lanes>
+      <laneSection s="0">
+        <center>
+          <lane id="0" type="none" level="false" />
+        </center>
+        <right>
+          <lane id="-1" type="driving" level="false">
+            <width sOffset="0" a="3.5" b="0" c="0" d="0" />
+          </lane>
+        </right>
+      </laneSection>
+    </lanes>
+    <objects>
+      <bridge s="10" length="30" id="fb1" name="narrowed" type="steel" weight="heavy">
+        <validity fromLane="-1" toLane="-1" />
+      </bridge>
+    </objects>
+  </road>
+</OpenDRIVE>

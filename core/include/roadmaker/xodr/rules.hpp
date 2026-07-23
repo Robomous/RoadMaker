@@ -121,6 +121,13 @@ inline constexpr std::string_view kJunctionElevGridPerpendicular =
 /// "The type of an object shall be given by the @type attribute." (§13.1.)
 inline constexpr std::string_view kObjectTypeAttr = "asam.net:xodr:1.7.0:road.object.type_attr";
 
+/// "Bridges are valid for a road's complete cross section unless a lane
+/// validity record with further restrictions is provided as child element."
+/// A `<bridge>` must declare its @type; a narrowing `<laneValidity>` is
+/// preserved verbatim. (§13.12, p5-s3 #233.)
+inline constexpr std::string_view kBridgeDefineType =
+    "asam.net:xodr:1.7.0:road.object.bridges.define_type";
+
 /// "The direction for which objects are valid shall be specified." (§13.1.)
 inline constexpr std::string_view kObjectOrientation =
     "asam.net:xodr:1.7.0:road.object.orientation";

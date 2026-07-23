@@ -39,6 +39,7 @@ add_library(roadmaker_core ${_rm_core_type}
   src/mesh/surface_boundary.cpp
   src/mesh/surface_fill.cpp
   src/mesh/terrain_mesh.cpp
+  src/mesh/manifold_bridge.cpp
   src/assets/prop_meshes.gen.cpp
   src/assets/sign_face.cpp
   src/assets/sign_font.gen.cpp
