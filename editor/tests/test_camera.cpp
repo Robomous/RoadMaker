@@ -154,9 +154,9 @@ TEST(OrbitCamera, FrameSetsClampedDistance) {
 }
 
 TEST(OrbitCamera, SetPosePlacesTheEyeAtTheExactWorldPoint) {
-  // The GS-1 golden camera: eye (−55, −55, 35) looking at the origin. set_pose
-  // must reproduce that eye regardless of any prior framing, so the golden
-  // baseline is scene-independent.
+  // The diagonal showcase camera: eye (−55, −55, 35) looking at the origin.
+  // set_pose must reproduce that eye regardless of any prior framing, so the
+  // baseline render pose is scene-independent.
   constexpr float kPi = 3.14159265358979F;
   OrbitCamera camera;
   camera.frame({999.0F, 999.0F, 999.0F}, 500.0F); // prior framing must not leak

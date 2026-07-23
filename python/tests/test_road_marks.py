@@ -106,7 +106,7 @@ def test_dual_yellow_meshes_without_error(network_with_road):
 
 @pytest.fixture
 def junction_network():
-    """A 4-arm urban intersection — the GS-1 construction."""
+    """A 4-arm urban intersection with signalized arms."""
     network = rm.RoadNetwork()
     stack = rm.edit.EditStack()
     params = rm.edit.assembly.IntersectionParams()
