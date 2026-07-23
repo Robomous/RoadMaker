@@ -74,6 +74,11 @@ TEST(Smoke, CdtTriangulatesASquare) {
   EXPECT_EQ(cdt.triangles.size(), 2U);
 }
 
+// Manifold has no production call site yet; it is kept deliberately as the
+// sanctioned solid-boolean library for the P5 bridge solids (p5-s3, #233 —
+// deck, abutments, piers, guardrails). Decision D4 of the P5 discovery
+// dropped libigl and kept this. Do not remove the dependency on the grounds
+// that only this smoke test uses it.
 TEST(Smoke, ManifoldBuildsAWatertightCube) {
   const manifold::Manifold cube = manifold::Manifold::Cube({1.0, 1.0, 1.0});
   EXPECT_NEAR(cube.Volume(), 1.0, 1e-3);

@@ -13,7 +13,6 @@ BSL-1.0, Unlicense/CC0. License files verified in each upstream archive.
 | quarticRootsFlocke | ad9028e (Clothoids 2.1.0 submodule pin) | BSD-2-Clause | https://github.com/ebertolazzi/quarticRootsFlocke | Polynomial root solving used by Clothoids |
 | GenericContainer | f98cd3d (Clothoids 2.1.0 submodule pin) | BSD-2-Clause | https://github.com/ebertolazzi/GenericContainer | Container type used by Clothoids API |
 | Manifold | 3.5.2 | Apache-2.0 | https://github.com/elalish/manifold | Robust mesh booleans, junction solids |
-| libigl | 2.6.0 | MPL-2.0 | https://github.com/libigl/libigl | Mesh processing (header-only; GPL `copyleft/` headers are never used) |
 | CDT | 1.4.4 | MPL-2.0 | https://github.com/artem-ogre/CDT | 2D constrained Delaunay triangulation (junction floors) |
 | Clipper2 | 2.0.1 | BSL-1.0 | https://github.com/AngusJohnson/Clipper2 | 2D polygon offsets/unions for plan-view lane logic |
 | pugixml | 1.16 | MIT | https://github.com/zeux/pugixml | XML parsing/writing for OpenDRIVE |

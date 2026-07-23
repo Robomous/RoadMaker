@@ -72,15 +72,6 @@ FetchContent_Declare(cdt
 )
 
 # ---------------------------------------------------------------------------
-# libigl 2.6.0 (MPL-2.0) — header-only mode ONLY; the GPL `copyleft/`
-# headers must never be included by RoadMaker code (licensing policy).
-FetchContent_Declare(libigl
-  URL https://github.com/libigl/libigl/archive/refs/tags/v2.6.0.tar.gz
-  URL_HASH SHA256=fe3bf58571cccbef774947261284ccf6b7fdf04fcab5f7181e31931e42a0b14f
-  SOURCE_SUBDIR cmake-disabled
-)
-
-# ---------------------------------------------------------------------------
 # Manifold 3.5.2 (Apache-2.0) — robust mesh booleans
 FetchContent_Declare(manifold
   URL https://github.com/elalish/manifold/archive/refs/tags/v3.5.2.tar.gz
@@ -223,7 +214,7 @@ endif()
 
 # ---------------------------------------------------------------------------
 FetchContent_MakeAvailable(
-  fmt spdlog eigen pugixml clipper2 cdt libigl manifold tinygltf stb
+  fmt spdlog eigen pugixml clipper2 cdt manifold tinygltf stb
   clothoids utilslite quartic gencon tlexpected fastfloat)
 if(RM_BUILD_TESTS)
   FetchContent_MakeAvailable(googletest)
@@ -295,12 +286,6 @@ target_include_directories(rm_eigen SYSTEM INTERFACE ${eigen_SOURCE_DIR})
 add_library(rm_cdt INTERFACE)
 add_library(CDT::CDT ALIAS rm_cdt)
 target_include_directories(rm_cdt SYSTEM INTERFACE ${cdt_SOURCE_DIR}/CDT/include)
-
-# libigl (header-only, MPL-2.0 subset only)
-add_library(rm_igl INTERFACE)
-add_library(igl::core ALIAS rm_igl)
-target_include_directories(rm_igl SYSTEM INTERFACE ${libigl_SOURCE_DIR}/include)
-target_link_libraries(rm_igl INTERFACE Eigen3::Eigen)
 
 # tinygltf (header-only; TINYGLTF_IMPLEMENTATION lives in core/src/io)
 add_library(rm_tinygltf INTERFACE)
