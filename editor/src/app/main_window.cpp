@@ -619,6 +619,41 @@ MainWindow::MainWindow(QWidget* parent, bool restore_saved_layout)
                           ToastSeverity::Success);
   });
 
+  // Terrain (p5-s2, #232): the create/remove pair toggle each other's enablement
+  // on whether a field currently exists, refreshed whenever the mesh changes
+  // (a create/remove/undo all re-emit mesh_changed).
+  const auto update_terrain_enabled = [this] {
+    const bool has_field = !document_.network().terrain().empty();
+    actions_->terrain_create->setEnabled(!has_field);
+    actions_->terrain_remove->setEnabled(has_field);
+  };
+  update_terrain_enabled();
+  connect(&document_,
+          &Document::mesh_changed,
+          this,
+          [update_terrain_enabled](const std::vector<RoadId>&) { update_terrain_enabled(); });
+  connect(actions_->terrain_create, &QAction::triggered, this, [this] {
+    const Expected<void> created =
+        document_.push_command(edit::create_terrain_field(document_.network()));
+    if (!created.has_value()) {
+      viewport_->show_toast(
+          tr("Cannot create terrain: %1").arg(QString::fromStdString(created.error().message)),
+          ToastSeverity::Warning);
+    } else {
+      viewport_->show_toast(tr("Terrain field created — raise a road to shape it"),
+                            ToastSeverity::Success);
+    }
+  });
+  connect(actions_->terrain_remove, &QAction::triggered, this, [this] {
+    const Expected<void> removed =
+        document_.push_command(edit::remove_terrain_field(document_.network()));
+    if (!removed.has_value()) {
+      viewport_->show_toast(
+          tr("Cannot remove terrain: %1").arg(QString::fromStdString(removed.error().message)),
+          ToastSeverity::Warning);
+    }
+  });
+
   // The freshly-built arrangement is the canonical layout Reset Layout
   // restores; user geometry (if any) is applied on top of it.
   default_layout_state_ = saveState();
@@ -811,6 +846,10 @@ void MainWindow::build_menus() {
   edit_menu->addSeparator();
   edit_menu->addAction(actions_->merge_roads);
   edit_menu->addAction(actions_->add_from_library);
+  edit_menu->addSeparator();
+  QMenu* terrain_menu = edit_menu->addMenu(tr("&Terrain"));
+  terrain_menu->addAction(actions_->terrain_create);
+  terrain_menu->addAction(actions_->terrain_remove);
 
   QMenu* view_menu = menuBar()->addMenu(tr("&View"));
   view_menu->addAction(scene_dock_->toggleViewAction());

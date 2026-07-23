@@ -188,6 +188,15 @@ struct NetworkMesh {
   /// derives them itself.
   std::vector<SurfaceMesh> surfaces;
 
+  /// The sampled scene ground (p5-s2, #232): the height field triangulated
+  /// everywhere the road network and its enclosed surfaces do NOT already
+  /// cover, with a skirt band along road edges that blends the road-edge z into
+  /// the field so the ground meets the kerbs instead of ignoring them. EMPTY
+  /// when the network carries no height field — a scene without terrain meshes
+  /// exactly as it did before this channel existed, bit for bit. There is one
+  /// field per network, so this is a single SubMesh, not a keyed vector.
+  SubMesh terrain;
+
   /// Placed props (trees/vegetation), instanced from the bundled prop library
   /// — regenerated per owning road via the DirtySet::objects channel
   /// (remesh_objects), so a prop edit never re-tessellates a road surface.

@@ -444,4 +444,8 @@ std::vector<double> lane_boundary_offsets(const RoadNetwork& network, RoadId roa
   return lane_boundary_offsets(network, *road, *section, s);
 }
 
+void RoadNetwork::set_terrain(HeightField field) {
+  terrain_ = std::move(field);
+}
+
 } // namespace roadmaker

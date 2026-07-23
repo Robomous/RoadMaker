@@ -53,6 +53,13 @@ struct DirtySet {
   /// which rides `roads`/`topology` instead.
   std::vector<SurfaceId> surfaces;
 
+  /// The scene height field changed — created, replaced, or removed (p5-s2,
+  /// #232). There is exactly one field per network, so there is nothing to
+  /// name: the editor rebuilds the whole terrain mesh channel and re-uploads
+  /// wholesale. Roads are deliberately NOT listed — terrain reads the roads,
+  /// never the reverse, so a field edit re-meshes only terrain.
+  bool terrain = false;
+
   /// Roads or junctions were added or removed. Drives the editor's wholesale
   /// mesh re-upload (a partial per-road upload cannot add or drop an item) and
   /// prunes selections that named a now-erased id.

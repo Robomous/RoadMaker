@@ -19,6 +19,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 Current version on `main`: **0.0.1**.
 
 ### Added
+- **The scene has a ground height field the roads shape**
+  ([#232](https://github.com/Robomous/RoadMaker/issues/232)): **Edit ▸ Terrain**
+  creates a height field over the whole scene, turning the ground from a flat
+  presentation plane into real, shapeable data. Raise a road's elevation and the
+  ground within a skirt band of it rises to meet the kerb — cut where the field
+  sits above the road, filled where below — while ground farther away stays at
+  the field, with a watertight seam and no cliff at the edge. A scene without a
+  field renders and saves exactly as before. The field persists to an ESRI ASCII
+  grid (`.asc`) sidecar next to the `.xodr`, referenced from an `rm:terrain`
+  extension; a missing sidecar loads the scene without its ground rather than
+  failing. Brushes and DEM import are the next terrain sprint.
 - **Ground surfaces are editable as a node graph**
   ([#231](https://github.com/Robomous/RoadMaker/issues/231)): a new **Surface
   tool** (`U`) turns the ground a loop of roads encloses into an editable

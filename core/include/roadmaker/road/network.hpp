@@ -27,7 +27,10 @@
 #include "roadmaker/road/road.hpp"
 #include "roadmaker/road/signal.hpp"
 #include "roadmaker/road/surface.hpp"
+#include "roadmaker/road/terrain.hpp"
 
+#include <array>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -295,6 +298,18 @@ public:
     surfaces_.for_each(fn);
   }
 
+  // --- scene height field (p5-s2, #232) -------------------------------------
+
+  /// The ONE scene height field. NOT an arena entity — there is exactly one
+  /// per network, and it is scene data rather than a road-network object.
+  /// Default-constructed = EMPTY = "this scene has no terrain", which every
+  /// consumer reproduces as today's flat-plate behaviour, bit for bit.
+  [[nodiscard]] const HeightField& terrain() const { return terrain_; }
+
+  /// Replaces the height field wholesale. Callers outside tests go through the
+  /// edit layer (edit::set_terrain_field and friends) so the change is undoable.
+  RM_API void set_terrain(HeightField field);
+
 private:
   Arena<Road, RoadId> roads_;
   Arena<LaneSection, LaneSectionId> sections_;
@@ -304,7 +319,19 @@ private:
   Arena<Signal, SignalId> signals_;
   Arena<Controller, ControllerId> controllers_;
   Arena<Surface, SurfaceId> surfaces_;
+  HeightField terrain_;
 };
+
+/// Plan-view bounding box of the whole network as {lo_x, lo_y, hi_x, hi_y},
+/// enclosing the road SURFACE (each reference line grown by that road's widest
+/// half cross-section), not just the reference lines. std::nullopt when no road
+/// carries plan-view geometry.
+///
+/// Used to size a generated height field (make_flat_field) and to bound the
+/// terrain mesh; kept here rather than in the mesher because it is a property
+/// of the network, and the mesher is not the only consumer.
+[[nodiscard]] RM_API std::optional<std::array<double, 4>>
+network_plan_bounds(const RoadNetwork& network);
 
 /// Junctions the road participates in: as a connecting road
 /// (Road::junction), through any junction connection (incoming or

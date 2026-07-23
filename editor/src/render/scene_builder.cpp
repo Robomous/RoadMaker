@@ -423,6 +423,20 @@ Scene build_scene(const NetworkMesh& mesh, const RoadNetwork* network) {
     });
     grow_bounds(scene.bounds, surface.mesh.positions);
   }
+  // The scene terrain (p5-s2, #232): the sampled ground around the network.
+  // Drawn as flat grass-green like the enclosed surfaces, but with NO entity id
+  // — terrain is not selectable in this sprint, so a pick that lands on it hits
+  // nothing. Empty unless the network carries a height field.
+  if (!mesh.terrain.positions.empty()) {
+    scene.items.push_back(SceneItem{
+        .data = to_render_data(mesh.terrain.positions,
+                               mesh.terrain.normals,
+                               mesh.terrain.indices,
+                               std::array<float, 4>{0.28F, 0.42F, 0.20F, 1.0F}),
+        .surface = SurfaceKind::Grass,
+    });
+    grow_bounds(scene.bounds, mesh.terrain.positions);
+  }
   for (const ObjectInstance& instance : mesh.objects) {
     append_object_items(instance, scene);
   }

@@ -105,6 +105,21 @@ built structures, not ground elevation.
 - If C: roadmap renegotiation — out of scope for a hardening sprint to
   estimate honestly beyond "multiple milestones".
 
+## Amendment (2026-07-23, p5-s2 / #232)
+
+The decision above assumed roads would "cut/conform to the field via the
+**existing skirt logic**". The [P5 discovery](../roadmap/pillars/p5_discovery.md)
+found that logic never existed — the "M3a flat skirt" was only the renderer's
+procedural grass plane, presentation with no data behind it. So p5-s2 (#232)
+**built** the height field, its bilinear sampler, and the conform/cut skirt this
+ADR assumed, and reordered the pillar so the field is the *foundation* the
+elevation coupling stands on rather than a late addition (it moved out of p5-s4).
+Persistence is an ESRI ASCII `.asc` sidecar referenced from a Layer-1
+`rm:terrain` userData element, migrating into the Layer-2 container when fmt-s1
+(#325) lands (decision D2). DEM import and brushes remain in p5-s4. Option B is
+unchanged in substance; only the false premise about pre-existing code is
+corrected.
+
 ## References
 
 - [Gap analysis — known exclusions](../roadmap/archive/2026-07-pre-reset/gap_analysis.md#known-exclusions)

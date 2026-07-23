@@ -355,12 +355,32 @@ void Document::commit_preview(bool already_regenerated) {
   if (!preview_active()) {
     return;
   }
+  // Terrain is deliberately NOT rebuilt during a preview drag (after_kernel_
+  // mutation skips it while preview_active), so a road dragged over a terrain
+  // field leaves the ground channel stale until release. Capture whether this
+  // commit needs it before the command is moved away.
+  const edit::DirtySet committed = preview_command_->dirty();
+  const bool terrain_needs_rebuild =
+      !network_.terrain().empty() &&
+      (committed.terrain || committed.topology || !committed.roads.empty());
+
   // Already applied by begin/update — KernelEditorCommand skips the redo()
   // that QUndoStack fires on push, and the mesh already reflects the state.
   // Fold in any junction regeneration so a dragged arm's junction updates
   // (and undoes) with the drag; the preview already meshed the primary edit.
   push_applied_with_regeneration(
       std::move(preview_command_), /*already_meshed=*/true, already_regenerated);
+
+  // The one thing already_meshed=true does NOT cover: the terrain skipped every
+  // preview frame. Rebuild it once, now that the drag has landed, and re-upload
+  // the scene wholesale so the ground picks up the road's final position. (A
+  // commit that ran junction regeneration already routed through after_kernel_
+  // mutation with preview inactive and rebuilt terrain there — this path is the
+  // no-regeneration case that skips that hook.)
+  if (terrain_needs_rebuild) {
+    remesh_terrain(network_, mesh_);
+    emit mesh_changed({});
+  }
 }
 
 void Document::cancel_preview() {
@@ -432,12 +452,30 @@ void Document::after_kernel_mutation(const edit::DirtySet& dirty) {
     }
   }
 
-  // Topology, junction-floor, AND surface changes reshape the item list
-  // wholesale; only pure road-geometry edits with no surface touched ride the
+  // Terrain (p5-s2, #232) fills the ground AROUND the roads, so a road edit
+  // reshapes it, and a create/remove/undo of the field names it directly. It is
+  // ALSO rebuilt whenever a road moved (the footprint it cuts around changed) or
+  // topology shifted. Skipped mid-drag: a preview road move must not
+  // re-triangulate the whole terrain every frame — commit_preview() runs it
+  // once on release (see the note there). derive-then-mesh order does not matter
+  // for terrain because it reads the network directly, not the surface channel.
+  bool terrain_changed = false;
+  const bool has_field = !network_.terrain().empty();
+  if (!preview_active() &&
+      (dirty.terrain || (has_field && (dirty.topology || !dirty.roads.empty())))) {
+    // dirty.terrain covers create/remove (a remove leaves has_field false but
+    // must still clear the stale channel); the has_field guard keeps a plain
+    // road edit in a terrain-less scene on the cheap partial-upload path.
+    remesh_terrain(network_, mesh_);
+    terrain_changed = true;
+  }
+
+  // Topology, junction-floor, surface AND terrain changes reshape the item list
+  // wholesale; only pure road-geometry edits with nothing else touched ride the
   // partial-upload path. An objects-only edit (roads empty) rebuilds wholesale
   // via the empty list, which now re-reads the prop instances too.
-  const bool partial =
-      !dirty.topology && dirty.junctions.empty() && !surfaces_changed && !dirty.roads.empty();
+  const bool partial = !dirty.topology && dirty.junctions.empty() && !surfaces_changed &&
+                       !terrain_changed && !dirty.roads.empty();
   emit mesh_changed(partial ? dirty.roads : std::vector<RoadId>{});
   if (!dirty.objects.empty()) {
     emit objects_changed(dirty.objects); // prunes stale prop selections

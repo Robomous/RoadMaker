@@ -99,9 +99,16 @@ the same change. `Road Plan tool` in step 2 was corrected to its real name,
 
 ### Elevation and bridges
 
-7. [ ] Select a road, open its elevation profile in the 2D Editor pane,
+7. [ ] Create a terrain field (**Edit ▸ Terrain ▸ Create Terrain Field**),
+   then select a road, open its elevation profile in the 2D Editor pane,
    and raise a span over the crossing road. **Expected:** the profile
-   edits as a 2D curve; the 3D road follows; terrain follows the road.
+   edits as a 2D curve; the 3D road follows; the ground within a skirt band
+   of the road rises with it while ground farther away stays flat, and the
+   two meet at the kerb with no step. The field saves to a `.asc` sidecar
+   beside the `.xodr` and reloads with the scene. The headless slice of
+   this step (`scripts/gw2_replay.py`, step 7) covers creating the field,
+   the road-driven re-mesh, undo/redo of both edits, and the sidecar
+   round-trip; the hand-run is watching the ground follow the road in 3D.
 8. [ ] Run the Road Construction tool's automatic bridge assignment on
    the raised span. **Expected:** the elevated span becomes a bridge with
    sensible span limits; a span-inflation control widens/narrows the

@@ -6762,6 +6762,36 @@ private:
   std::vector<SurfaceNode> before_;
 };
 
+/// The scene height field is not an arena object, so it does not fit the
+/// GenericCommand Values engine — it is one value on the network. This command
+/// swaps the whole field, capturing both sides by value (p5-s2, #232). All
+/// three factories (set/create/remove) share it: "create" is set-from-empty and
+/// "remove" is set-to-empty.
+class SetTerrainFieldCommand : public Command {
+public:
+  SetTerrainFieldCommand(std::string_view name, HeightField after, HeightField before)
+      : name_(name), after_(std::move(after)), before_(std::move(before)) {}
+
+  Expected<void> apply(RoadNetwork& network) override {
+    network.set_terrain(after_);
+    return {};
+  }
+
+  Expected<void> revert(RoadNetwork& network) override {
+    network.set_terrain(before_);
+    return {};
+  }
+
+  std::string_view name() const override { return name_; }
+
+  DirtySet dirty() const override { return DirtySet{.terrain = true}; }
+
+private:
+  std::string_view name_;
+  HeightField after_;
+  HeightField before_;
+};
+
 } // namespace
 
 std::unique_ptr<Command>
@@ -6817,6 +6847,78 @@ std::unique_ptr<Command> revert_surface_to_derived(const RoadNetwork& network,
     return fail("the surface boundary is already derived");
   }
   return std::make_unique<RevertSurfaceToDerivedCommand>(surface_id, surface->nodes);
+}
+
+namespace {
+
+/// Shared validation for the field a set/create command would install: the same
+/// well-formedness the sampler and the sidecar writer rely on. Returns an error
+/// message, or std::nullopt when the field is acceptable.
+std::optional<std::string> validate_field(const HeightField& field) {
+  if (field.empty()) {
+    return std::nullopt; // the remove target; emptiness is checked by callers
+  }
+  if (!(field.spacing > 0.0)) {
+    return "height field spacing must be positive";
+  }
+  if (field.heights.size() != field.cols * field.rows) {
+    return "height field sample count does not match its dimensions";
+  }
+  for (const double z : field.heights) {
+    if (!std::isfinite(z)) {
+      return "height field contains a non-finite value";
+    }
+  }
+  return std::nullopt;
+}
+
+} // namespace
+
+std::unique_ptr<Command> set_terrain_field(const RoadNetwork& network, HeightField field) {
+  static constexpr std::string_view kName = "Edit Terrain Field";
+  const auto fail = [&](std::string message) {
+    return invalid_command(
+        std::string(kName),
+        Error{.code = ErrorCode::InvalidArgument, .message = std::move(message)});
+  };
+  if (std::optional<std::string> bad = validate_field(field); bad.has_value()) {
+    return fail(std::move(*bad));
+  }
+  if (field == network.terrain()) {
+    return fail("the height field is unchanged");
+  }
+  return std::make_unique<SetTerrainFieldCommand>(kName, std::move(field), network.terrain());
+}
+
+std::unique_ptr<Command>
+create_terrain_field(const RoadNetwork& network, double spacing, double margin) {
+  static constexpr std::string_view kName = "Create Terrain Field";
+  const auto fail = [&](std::string message) {
+    return invalid_command(
+        std::string(kName),
+        Error{.code = ErrorCode::InvalidArgument, .message = std::move(message)});
+  };
+  if (!network.terrain().empty()) {
+    return fail("a terrain field already exists; remove it first");
+  }
+  if (!(spacing > 0.0)) {
+    return fail("terrain spacing must be positive");
+  }
+  HeightField field = make_flat_field(network, spacing, margin);
+  if (field.empty()) {
+    return fail("the network has no road geometry to bound a terrain field");
+  }
+  return std::make_unique<SetTerrainFieldCommand>(kName, std::move(field), network.terrain());
+}
+
+std::unique_ptr<Command> remove_terrain_field(const RoadNetwork& network) {
+  static constexpr std::string_view kName = "Remove Terrain Field";
+  if (network.terrain().empty()) {
+    return invalid_command(std::string(kName),
+                           Error{.code = ErrorCode::InvalidArgument,
+                                 .message = "there is no terrain field to remove"});
+  }
+  return std::make_unique<SetTerrainFieldCommand>(kName, HeightField{}, network.terrain());
 }
 
 std::vector<ElevationPoint> elevation_profile_points(const Road& road) {

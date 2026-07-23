@@ -42,8 +42,10 @@
 #include "roadmaker/road/network.hpp"
 #include "roadmaker/road/repeat_expansion.hpp"
 #include "roadmaker/road/surface_derivation.hpp"
+#include "roadmaker/road/terrain.hpp"
 #include "roadmaker/version.hpp"
 #include "roadmaker/xodr/reader.hpp"
+#include "roadmaker/xodr/terrain_sidecar.hpp"
 #include "roadmaker/xodr/writer.hpp"
 
 #include <nanobind/nanobind.h>
@@ -1073,6 +1075,80 @@ NB_MODULE(_roadmaker, m) {
                ", nodes=" + std::to_string(surface.nodes.size()) + ")";
       });
 
+  nb::class_<roadmaker::HeightField>(m, "HeightField")
+      .def(nb::init<>())
+      .def_rw("origin_x", &roadmaker::HeightField::origin_x, "World x of the grid's low-x edge.")
+      .def_rw("origin_y", &roadmaker::HeightField::origin_y, "World y of the grid's low-y edge.")
+      .def_rw("spacing", &roadmaker::HeightField::spacing, "Uniform post spacing [m], > 0.")
+      .def_rw("cols", &roadmaker::HeightField::cols)
+      .def_rw("rows", &roadmaker::HeightField::rows)
+      .def_rw("heights",
+              &roadmaker::HeightField::heights,
+              "rows*cols samples, row-major, LOW-y row first.")
+      .def_rw("sidecar",
+              &roadmaker::HeightField::sidecar,
+              "Sidecar file name relative to the .xodr (decision D2).")
+      .def_prop_ro("empty",
+                   &roadmaker::HeightField::empty,
+                   "True when the field carries no samples — 'no terrain', not 'flat terrain'.")
+      .def("__eq__",
+           [](const roadmaker::HeightField& a, nb::object b) {
+             return nb::isinstance<roadmaker::HeightField>(b) &&
+                    a == nb::cast<roadmaker::HeightField>(b);
+           })
+      .def("__repr__", [](const roadmaker::HeightField& field) {
+        return "HeightField(cols=" + std::to_string(field.cols) +
+               ", rows=" + std::to_string(field.rows) + ")";
+      });
+
+  m.def(
+      "sample_height",
+      [](const roadmaker::HeightField& field, double x, double y) {
+        return roadmaker::sample_height(field, x, y);
+      },
+      "field"_a,
+      "x"_a,
+      "y"_a,
+      "Ground height at (x, y): bilinear, clamped to the grid edge outside the "
+      "extent, 0.0 on an empty field. THE definition of ground height.");
+  m.def(
+      "field_extent",
+      [](const roadmaker::HeightField& field) { return roadmaker::field_extent(field); },
+      "field"_a,
+      "Plan-view extent as (lo_x, lo_y, hi_x, hi_y); zeros on an empty field.");
+  m.def(
+      "make_flat_field",
+      [](const roadmaker::RoadNetwork& network, double spacing, double margin) {
+        return roadmaker::make_flat_field(network, spacing, margin);
+      },
+      "network"_a,
+      "spacing"_a = roadmaker::kDefaultFieldSpacing,
+      "margin"_a = roadmaker::kDefaultFieldMargin,
+      "A zero-height field covering the network bounds + margin. Empty when the "
+      "network has no road geometry to bound.");
+  m.def(
+      "write_terrain_asc",
+      [](const roadmaker::HeightField& field) {
+        auto text = roadmaker::write_terrain_asc(field);
+        if (!text) {
+          throw std::runtime_error(text.error().message);
+        }
+        return *text;
+      },
+      "field"_a,
+      "Serialize a height field as an ESRI ASCII grid (.asc).");
+  m.def(
+      "parse_terrain_asc",
+      [](const std::string& text) {
+        auto parsed = roadmaker::parse_terrain_asc(text, "<python>");
+        if (!parsed) {
+          throw std::runtime_error(parsed.error().message);
+        }
+        return parsed->field;
+      },
+      "text"_a,
+      "Parse an ESRI ASCII grid (.asc) into a HeightField.");
+
   nb::class_<roadmaker::Signal>(m, "Signal")
       .def(nb::init<>())
       .def_ro("road", &roadmaker::Signal::road, "Owning road (back-reference).")
@@ -1337,6 +1413,15 @@ NB_MODULE(_roadmaker, m) {
       .def_prop_ro("signal_count", &roadmaker::RoadNetwork::signal_count)
       .def_prop_ro("controller_count", &roadmaker::RoadNetwork::controller_count)
       .def_prop_ro("surface_count", &roadmaker::RoadNetwork::surface_count)
+      .def_prop_ro("terrain",
+                   &roadmaker::RoadNetwork::terrain,
+                   nb::rv_policy::reference_internal,
+                   "The scene height field (empty when the scene has no terrain).")
+      .def("set_terrain",
+           &roadmaker::RoadNetwork::set_terrain,
+           "field"_a,
+           "Replace the height field. Outside tests, prefer the undoable "
+           "edit.set_terrain_field / create_terrain_field / remove_terrain_field.")
       .def("__repr__", [](const roadmaker::RoadNetwork& network) {
         return "RoadNetwork(roads=" + std::to_string(network.road_count()) +
                ", junctions=" + std::to_string(network.junction_count()) + ")";
@@ -3552,6 +3637,32 @@ NB_MODULE(_roadmaker, m) {
       "flips the source back to DERIVED. The next derive_surfaces pass reclaims "
       "it if its provenance ring still encloses a face, and erases it "
       "otherwise. Rejects a stale id and an already-derived surface.");
+  edit.def(
+      "set_terrain_field",
+      [](const roadmaker::RoadNetwork& network, roadmaker::HeightField field) {
+        return roadmaker::edit::set_terrain_field(network, std::move(field));
+      },
+      "network"_a,
+      "field"_a,
+      "Replaces the scene height field wholesale (p5-s2). Rejects a non-positive "
+      "spacing, a sample-count mismatch, a non-finite height, and a no-op.");
+  edit.def(
+      "create_terrain_field",
+      [](const roadmaker::RoadNetwork& network, double spacing, double margin) {
+        return roadmaker::edit::create_terrain_field(network, spacing, margin);
+      },
+      "network"_a,
+      "spacing"_a = roadmaker::kDefaultFieldSpacing,
+      "margin"_a = roadmaker::kDefaultFieldMargin,
+      "Creates a flat zero-height field over the network bounds + margin. Rejects "
+      "an existing field, a road-less network, and a non-positive spacing.");
+  edit.def(
+      "remove_terrain_field",
+      [](const roadmaker::RoadNetwork& network) {
+        return roadmaker::edit::remove_terrain_field(network);
+      },
+      "network"_a,
+      "Removes the scene height field. Rejects when there is none.");
   edit.def("apply_road_style",
            &roadmaker::edit::apply_road_style,
            "network"_a,
@@ -3744,6 +3855,11 @@ NB_MODULE(_roadmaker, m) {
       .def(nb::init<>())
       .def_rw("markings", &roadmaker::MeshOptions::markings)
       .def_rw("junction_floors", &roadmaker::MeshOptions::junction_floors)
+      .def_rw(
+          "terrain", &roadmaker::MeshOptions::terrain, "Emit the scene terrain channel (p5-s2).")
+      .def_rw("terrain_skirt",
+              &roadmaker::MeshOptions::terrain_skirt,
+              "Skirt band width [m] over which road-edge z wins near a road.")
       .def_prop_rw(
           "chord_tolerance",
           [](const roadmaker::MeshOptions& o) { return o.sampling.chord_tolerance; },
@@ -3764,6 +3880,9 @@ NB_MODULE(_roadmaker, m) {
                      }
                      return count;
                    })
+      .def_prop_ro(
+          "terrain_vertex_count",
+          [](const roadmaker::NetworkMesh& mesh) { return mesh.terrain.positions.size() / 3; })
       .def_prop_ro("object_count",
                    [](const roadmaker::NetworkMesh& mesh) { return mesh.objects.size(); })
       .def_prop_ro("signal_count",
@@ -3797,6 +3916,19 @@ NB_MODULE(_roadmaker, m) {
       "network"_a,
       "options"_a = roadmaker::MeshOptions{},
       "Tessellates the network (kernel frame: Z-up, meters).");
+
+  m.def(
+      "remesh_terrain",
+      [](const roadmaker::RoadNetwork& network,
+         roadmaker::NetworkMesh& mesh,
+         const roadmaker::MeshOptions& options) {
+        roadmaker::remesh_terrain(network, mesh, options);
+      },
+      "network"_a,
+      "mesh"_a,
+      "options"_a = roadmaker::MeshOptions{},
+      "Rebuilds the terrain channel of `mesh` from the network's height field "
+      "(p5-s2). Clears it when there is no field.");
 
   m.def(
       "export_glb",

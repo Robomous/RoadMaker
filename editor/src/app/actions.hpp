@@ -129,6 +129,11 @@ public:
   QAction* viewport_hints = nullptr;
 
   QAction* merge_roads = nullptr;
+
+  // Terrain (p5-s2, #232): Edit ▸ Terrain menu entries, enabled by whether a
+  // height field currently exists.
+  QAction* terrain_create = nullptr;
+  QAction* terrain_remove = nullptr;
   QAction* reset_layout = nullptr;
 
   /// Opens the in-app user guide (Help menu, F1).

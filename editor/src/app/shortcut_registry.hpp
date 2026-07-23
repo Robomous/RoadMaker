@@ -93,6 +93,8 @@ enum class Id {
   LaneWidthEditor,
   SignalPhaseEditor,
   MergeRoads,
+  TerrainCreate,
+  TerrainRemove,
   // View
   AddFromLibrary,
   ResetCamera,

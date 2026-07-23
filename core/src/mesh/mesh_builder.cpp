@@ -39,6 +39,7 @@
 #include "junction_surface.hpp"
 #include "mesh_detail.hpp"
 #include "surface_fill.hpp"
+#include "terrain_mesh.hpp"
 
 namespace roadmaker {
 
@@ -1024,6 +1025,10 @@ NetworkMesh build_network_mesh(const RoadNetwork& network, const MeshOptions& op
       result.surfaces.push_back(std::move(built));
     }
   });
+  // Terrain LAST: it fills the ground AROUND the roads and surfaces, so it reads
+  // their footprints and must run after they exist. Empty unless the network
+  // carries a height field.
+  remesh_terrain(network, result, options);
   return result;
 }
 

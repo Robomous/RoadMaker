@@ -20,6 +20,7 @@
 #include "roadmaker/geometry/reference_line.hpp"
 #include "roadmaker/tol.hpp"
 #include "roadmaker/xodr/rules.hpp"
+#include "roadmaker/xodr/terrain_sidecar.hpp"
 
 #include <fmt/format.h>
 #include <pugixml.hpp>
@@ -150,6 +151,7 @@ public:
     resolve_references();
     resolve_stoplines();
     parse_surfaces(root);
+    parse_terrain_reference(root);
     warn_unsupported_root_children(root);
 
     return std::move(result_);
@@ -2613,6 +2615,41 @@ private:
     }
   }
 
+  /// `<userData code="rm:terrain" value="<sidecar>">` (p5-s2, #232): the scene
+  /// height field's Layer-1 REFERENCE. Only the reference is stored here — the
+  /// grid itself lives in the sidecar, which an in-memory parse has no
+  /// directory to resolve against, so load_xodr does that second step. Keeping
+  /// the reference either way is what makes the round-trip byte-identical for
+  /// callers that never touch the filesystem.
+  void parse_terrain_reference(const pugi::xml_node& root) {
+    bool seen = false;
+    for (const pugi::xml_node node : root.children("userData")) {
+      if (std::string(node.attribute("code").value()) != "rm:terrain") {
+        continue;
+      }
+      const std::string value = node.attribute("value").value();
+      if (seen) {
+        diag(Severity::Warning,
+             "OpenDRIVE",
+             "more than one rm:terrain userData; only the first is kept");
+        continue;
+      }
+      seen = true;
+      if (!is_safe_sidecar_reference(value)) {
+        // Kept out of the network deliberately: an absolute or escaping path is
+        // not something we will ever open, and storing it would make the next
+        // save re-emit it.
+        diag(Severity::Warning,
+             "OpenDRIVE",
+             "rm:terrain names an unusable sidecar path; the reference is dropped");
+        continue;
+      }
+      HeightField field = network().terrain();
+      field.sidecar = value;
+      network().set_terrain(std::move(field));
+    }
+  }
+
   // --- pass 2: reference resolution ---------------------------------------
 
   struct PendingLink {
@@ -2708,8 +2745,9 @@ private:
   void warn_unsupported_root_children(const pugi::xml_node& root) {
     for (const pugi::xml_node child : root.children()) {
       const std::string_view name = child.name();
-      // Root <userData> carries RoadMaker extensions (rm:surface); it is parsed
-      // by parse_surfaces, not unsupported.
+      // Root <userData> carries RoadMaker extensions (rm:surface, rm:terrain);
+      // they are parsed by parse_surfaces/parse_terrain_reference, not
+      // unsupported.
       if (name != "header" && name != "road" && name != "junction" && name != "controller" &&
           name != "userData") {
         warn_unsupported(std::string(name), "OpenDRIVE");
@@ -2757,7 +2795,39 @@ Expected<XodrParseResult> load_xodr(const std::filesystem::path& path) {
   std::ostringstream buffer;
   buffer << stream.rdbuf();
   const std::string text = std::move(buffer).str();
-  return parse_xodr(text, path.string());
+  auto result = parse_xodr(text, path.string());
+  if (!result) {
+    return result;
+  }
+
+  // Second step of the height-field load (p5-s2, #232): parse_xodr kept the
+  // sidecar REFERENCE, and only here — where a document directory exists — can
+  // the grid behind it be resolved. A sidecar that is missing or malformed is a
+  // warning and an empty grid, never a failed load: the network is perfectly
+  // usable without its terrain, and failing would make one unreadable file cost
+  // the user the whole scene. The reference survives either way, so re-saving
+  // does not silently drop it.
+  const std::string reference = result->network.terrain().sidecar;
+  if (!reference.empty()) {
+    auto sidecar = load_terrain_asc(path.parent_path() / reference);
+    if (!sidecar) {
+      result->diagnostics.push_back(Diagnostic{
+          .severity = Severity::Warning,
+          .location = path.string(),
+          .message = fmt::format("rm:terrain sidecar '{}' could not be read ({}); the scene "
+                                 "loads without its height field",
+                                 reference,
+                                 sidecar.error().message),
+      });
+    } else {
+      HeightField field = std::move(sidecar->field);
+      field.sidecar = reference;
+      result->network.set_terrain(std::move(field));
+      result->diagnostics.insert(
+          result->diagnostics.end(), sidecar->diagnostics.begin(), sidecar->diagnostics.end());
+    }
+  }
+  return result;
 }
 
 } // namespace roadmaker
