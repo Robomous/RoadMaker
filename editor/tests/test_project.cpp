@@ -177,8 +177,12 @@ TEST(Project, FindProjectForOutsideAnyProjectIsEmpty) {
 class RecentProjectsSettingsTest : public ::testing::Test {
 protected:
   void SetUp() override {
+    // Per-test app name: ctest -j runs sibling cases as concurrent processes
+    // that would otherwise race on one shared settings domain.
     QCoreApplication::setOrganizationName(QStringLiteral("RobomousTests"));
-    QCoreApplication::setApplicationName(QStringLiteral("RoadMakerProjectTest"));
+    const auto* info = ::testing::UnitTest::GetInstance()->current_test_info();
+    QCoreApplication::setApplicationName(QStringLiteral("RoadMakerProjectTest_") +
+                                         QString::fromUtf8(info->name()));
     QSettings().clear();
     settings_ = std::make_unique<Settings>();
   }

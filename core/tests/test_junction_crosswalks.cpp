@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-// Junction-arm crosswalk authoring (GS-1 WS-B): edit::junction_crosswalks derives
+// Junction-arm crosswalk authoring: edit::junction_crosswalks derives
 // one zebra crosswalk Object per arm road, spanning its driving lanes.
 
 #include "roadmaker/edit/connection.hpp"

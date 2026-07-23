@@ -22,7 +22,13 @@
   `python/tests/` (bindings), `tests/consume_installed/` (installed-package
   smoke, exercised by [CI](ci.md)).
 - Run everything with `ctest --preset dev-<os>` and `pytest python/tests`
-  (see [Building](../getting-started/building.md)).
+  (see [Building](../getting-started/building.md)). Add `-j N` for a ~5×
+  faster wall clock — CI runs `-j 4`, so **parallel-safety is part of the
+  test contract**: every test case runs as its own process, and any state a
+  test shares with a sibling through the OS (QSettings domains, fixed file
+  paths, ports) must be scoped per test. The QSettings idiom is a per-test
+  application name derived from `current_test_info()` (see
+  `editor/tests/test_welcome_widget.cpp`); use `QTemporaryDir` for files.
 
 ## GoogleTest conventions
 
@@ -104,4 +110,8 @@ cmake --build build-asan && ctest --test-dir build-asan --output-on-failure
 ```
 
 CI runs the same configuration on Linux/Clang (with the editor enabled — ASan
-surfaces signal/slot lifetime bugs) as a required job.
+surfaces signal/slot lifetime bugs) as a required job, in parallel
+(`ctest -j 4`) plus a seeded random-op soak — see [CI](ci.md) for the job's
+policy details and the
+[2026-07 test-suite audit](../testing/audit-2026-07.md) for the measurements
+behind them. On macOS, drop `detect_leaks` (LeakSanitizer is Linux-only).

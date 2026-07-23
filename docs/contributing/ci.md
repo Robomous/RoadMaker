@@ -39,6 +39,17 @@ ASan + UBSan build (`-DRM_SANITIZE=address,undefined`) including the editor
 on macOS runners and unsupported on MSVC. See
 [Testing](testing.md#sanitizers) for the local equivalent.
 
+The job runs the full instrumented suite with `ctest -j 4`, then the seeded
+random-op soak (`roadmaker_soak`) — 3 minutes on PRs, the full 9 on every
+push to `main` (seeds derive from the run id, so PR pushes accumulate varied
+coverage and every merge re-soaks at full length). One documented selection
+exception: `SoakSmoke.FixedSeedRunsClean` is skipped in this job only,
+because the soak step exercises the same driver under the same sanitizers
+for minutes right after; it still runs in the three `build-test` jobs and
+locally. Rationale, measurements, and the full optimization decision record:
+[test-suite audit](../testing/audit-2026-07.md). The manual 24-hour soak
+release gate is separate and unaffected.
+
 ### `format`
 
 Runs `clang-format --dry-run --Werror` over every tracked `.cpp`/`.hpp` —

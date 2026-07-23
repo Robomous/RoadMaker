@@ -207,7 +207,11 @@ protected:
     // toggle asserted here can never land in the developer's real RoadMaker
     // settings (nor be read from them).
     QCoreApplication::setOrganizationName(QStringLiteral("RobomousTests"));
-    QCoreApplication::setApplicationName(QStringLiteral("RoadMakerHintsTest"));
+    // Per-test app name: ctest -j runs sibling cases as concurrent processes
+    // that would otherwise race on one shared settings domain.
+    const auto* info = ::testing::UnitTest::GetInstance()->current_test_info();
+    QCoreApplication::setApplicationName(QStringLiteral("RoadMakerHintsTest_") +
+                                         QString::fromUtf8(info->name()));
     QSettings().clear();
     window_ = std::make_unique<MainWindow>(nullptr, /*restore_saved_layout=*/false);
     // The action is reached through its binding rather than its label, so the
