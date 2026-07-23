@@ -24,5 +24,5 @@ license-compatible with Apache-2.0 distribution — when in doubt, ask the
 maintainer before adding it
 ([policy](docs/standards/dependencies.md)).
 
-By contributing you agree that your contributions are licensed under the
+By contributing, you agree that your contributions are licensed under the
 [Apache License 2.0](LICENSE).
