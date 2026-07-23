@@ -30,6 +30,7 @@
 #include <array>
 #include <cmath>
 #include <cstddef>
+#include <limits>
 #include <vector>
 
 using roadmaker::author_clothoid_road;
