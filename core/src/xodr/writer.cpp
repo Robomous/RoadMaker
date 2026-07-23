@@ -2415,49 +2415,79 @@ Expected<std::string> write_xodr(const RoadNetwork& network,
     write_junction(root, network, junction, boundaries[junction_index++]);
   });
 
-  // Derived ground surfaces round-trip through <userData code="rm:surface">
+  // Ground surfaces round-trip through <userData code="rm:surface">
   // (OpenDRIVE 1.9.0 §7.2): value is the ";"-joined bounding-road odr ids in
-  // the surface's derived ring order. The mesh is re-derived from the roads and
-  // never serialized. Surfaces are emitted value-sorted so arena slot churn
+  // the surface's derived ring order. A DERIVED surface's mesh is re-derived
+  // from those roads and never serialized; an AUTHORED one (p5-s1) additionally
+  // carries its node graph in a `nodes` attribute, and its `value` degrades to
+  // provenance. Surfaces are emitted value-sorted so arena slot churn
   // (create/erase during reconciliation) cannot perturb the byte-identical
-  // round-trip. A bounded face needs >= 3 roads; anything less (or a stale road
-  // reference) is not written, mirroring the rm:arms < 2 guard.
+  // round-trip. A derived bounded face needs >= 3 roads; anything less (or a
+  // stale road reference) is not written, mirroring the rm:arms < 2 guard — but
+  // an authored surface is written even ring-less, because its boundary is its
+  // own data and dropping it would lose the user's work.
   struct SurfaceRecord {
     std::string value;    ///< ";"-joined bounding-road odr ids (the sort key)
     std::string material; ///< empty = default; written as a `material` attribute
+    std::string nodes;    ///< empty = derived; written as a `nodes` attribute
   };
 
   std::vector<SurfaceRecord> surface_records;
   network.for_each_surface([&](SurfaceId, const Surface& surface) {
-    if (surface.bounding_roads.size() < 3) {
+    const bool authored = surface.source == BoundarySource::Authored && surface.nodes.size() >= 3;
+    if (!authored && surface.bounding_roads.size() < 3) {
       return;
     }
     std::string value;
     for (const RoadId road_id : surface.bounding_roads) {
       const Road* road = network.road(road_id);
       if (road == nullptr) {
-        return; // stale reference — drop the whole surface
+        if (authored) {
+          continue; // provenance only — a vanished road just drops out of it
+        }
+        return; // stale reference — drop the whole derived surface
       }
       if (!value.empty()) {
         value += ';';
       }
       value += road->odr_id;
     }
-    surface_records.push_back(SurfaceRecord{std::move(value), surface.material});
+    // "x,y,tix,tiy,tox,toy" per node, ";"-joined — the same separator grammar
+    // as `value`, one record per node.
+    std::string nodes;
+    if (authored) {
+      for (const SurfaceNode& node : surface.nodes) {
+        if (!nodes.empty()) {
+          nodes += ';';
+        }
+        nodes += fmt::format("{},{},{},{},{},{}",
+                             num(node.x),
+                             num(node.y),
+                             num(node.tangent_in_x),
+                             num(node.tangent_in_y),
+                             num(node.tangent_out_x),
+                             num(node.tangent_out_y));
+      }
+    }
+    surface_records.push_back(SurfaceRecord{std::move(value), surface.material, std::move(nodes)});
   });
-  // Sort on `value` alone: a bounding-road ring is unique per surface, so this
-  // stays deterministic while carrying the paired material along.
+  // Sort on `value` then `nodes`: a bounding-road ring is unique per DERIVED
+  // surface, but authored surfaces can share a provenance ring (or all have an
+  // empty one), so the node graph is the tie-break that keeps the order total.
   std::ranges::sort(surface_records, [](const SurfaceRecord& a, const SurfaceRecord& b) {
-    return a.value < b.value;
+    return std::tie(a.value, a.nodes) < std::tie(b.value, b.nodes);
   });
   for (const SurfaceRecord& record : surface_records) {
     pugi::xml_node user_data = root.append_child("userData");
     user_data.append_attribute("code").set_value("rm:surface");
     user_data.append_attribute("value").set_value(record.value.c_str());
-    // The material attribute is written ONLY when set, so every existing file
-    // (no material) round-trips byte-identically.
+    // material and nodes are written ONLY when set, so every existing file
+    // (neither present) round-trips byte-identically.
     if (!record.material.empty()) {
       user_data.append_attribute("material").set_value(record.material.c_str());
+    }
+    if (!record.nodes.empty()) {
+      user_data.append_attribute("nodes").set_value(record.nodes.c_str());
     }
   }
 

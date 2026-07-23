@@ -88,8 +88,14 @@ the same change. `Road Plan tool` in step 2 was corrected to its real name,
    continuity (no tangent kink at the join).
 5. [ ] Draw roads enclosing an area. **Expected:** the enclosed area
    auto-forms a ground surface.
-6. [ ] Open the Surface tool on that surface. **Expected:** the surface
-   is a node graph; nodes and tangents are editable.
+6. [ ] Select that surface and open the Surface tool (**U**). **Expected:**
+   the surface is a node graph; nodes and tangent handles are editable, a
+   midpoint marker inserts a node and Delete removes one, each gesture is a
+   single undo step, and the Attributes pane reports the boundary as
+   *Authored* after the first edit with "Revert to derived" offered to undo
+   the detach. The headless slice of this step (`scripts/gw2_replay.py`,
+   step 6) covers the edit, the detach, the single undo step, the
+   round-trip, and the revert; the hand-run is the gestures themselves.
 
 ### Elevation and bridges
 

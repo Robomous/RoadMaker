@@ -57,6 +57,7 @@ namespace roadmaker::editor {
 class CornerTool;
 class StopLineTool;
 class JunctionSurfaceTool;
+class SurfaceTool;
 class ManeuverTool;
 class SignalTool;
 class ElevationTool;
@@ -123,6 +124,10 @@ public:
   /// sub-selection (p4-s5, issue #320), so a row click and a viewport click
   /// pick the same span.
   void set_junction_surface_tool(JunctionSurfaceTool* tool);
+
+  /// Binds the Surface tool (p5-s1) so the ground-surface page's "Revert to
+  /// derived" button pushes through the tool that owns the interaction.
+  void set_surface_tool(SurfaceTool* tool);
 
   /// Binds the "Maneuvers" rows to the Maneuver tool's sub-selection (p4-s6,
   /// issue #227), so a row click and a viewport click pick the same turn.
@@ -325,6 +330,8 @@ private:
   QGroupBox* surface_spans_group_;
   QVBoxLayout* surface_spans_layout_ = nullptr;
   JunctionSurfaceTool* junction_surface_tool_ = nullptr;
+  SurfaceTool* surface_tool_ = nullptr;
+  QPushButton* surface_revert_button_ = nullptr;
 
   /// Junction maneuvers (p4-s6, issue #227): one row per connecting road plus
   /// the junction-wide Rebuild. Rebuilt on every refresh, so nothing here is

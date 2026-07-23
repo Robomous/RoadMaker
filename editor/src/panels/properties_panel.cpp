@@ -51,6 +51,7 @@
 #include "tools/maneuver_tool.hpp"
 #include "tools/signal_tool.hpp"
 #include "tools/stopline_tool.hpp"
+#include "tools/surface_tool.hpp"
 
 namespace roadmaker::editor {
 
@@ -910,6 +911,20 @@ PropertiesPanel::PropertiesPanel(Document& document,
   material_slot_->setToolTip(tr("Drop a material to pave this ground surface"));
   auto* surface_form = new QFormLayout(surface_group_);
   surface_form->addRow(tr("Material"), material_slot_);
+  // "Revert to derived": only meaningful once an edit has DETACHED this surface
+  // to authored (decision D3), so the button is hidden on a derived one rather
+  // than shown disabled — there is no state to explain.
+  surface_revert_button_ = new QPushButton(tr("Revert to derived"), surface_group_);
+  surface_revert_button_->setObjectName(QStringLiteral("surface_revert_button"));
+  surface_revert_button_->setToolTip(
+      tr("Hand this surface's boundary back to the roads that enclose it, discarding the "
+         "authored nodes"));
+  surface_form->addRow(QString(), surface_revert_button_);
+  connect(surface_revert_button_, &QPushButton::clicked, this, [this] {
+    if (surface_tool_ != nullptr) {
+      surface_tool_->revert_to_derived();
+    }
+  });
   connect(material_slot_, &SlotWidget::item_dropped, this, &PropertiesPanel::push_surface_material);
   connect(material_slot_,
           &SlotWidget::engage_requested,
@@ -1276,7 +1291,13 @@ void PropertiesPanel::refresh() {
         }
       }
       add_row(tr("Area"), tr("%1 m²").arg(area, 0, 'f', 1));
-      add_row(tr("Bounding roads"), QString::number(surface->bounding_roads.size()));
+      const bool authored = surface->source == BoundarySource::Authored;
+      add_row(tr("Boundary"),
+              authored ? tr("Authored (%1 nodes)").arg(surface->nodes.size())
+                       : tr("Derived from roads"));
+      add_row(authored ? tr("Provenance roads") : tr("Bounding roads"),
+              QString::number(surface->bounding_roads.size()));
+      surface_revert_button_->setVisible(authored);
       // The Materials slot reflects the surface's stored material (empty →
       // placeholder = default grass).
       material_slot_->set_item(QString::fromStdString(surface->material));
@@ -1913,6 +1934,10 @@ void PropertiesPanel::set_stopline_tool(StopLineTool* tool) {
             &PropertiesPanel::refresh_stopline);
   }
   refresh_stopline();
+}
+
+void PropertiesPanel::set_surface_tool(SurfaceTool* tool) {
+  surface_tool_ = tool;
 }
 
 void PropertiesPanel::set_junction_surface_tool(JunctionSurfaceTool* tool) {

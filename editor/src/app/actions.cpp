@@ -259,6 +259,15 @@ Actions::Actions(QUndoStack& undo_stack, QObject* parent) : QObject(parent) {
          "toggles a span's samples, PgUp/PgDn raise or lower it on overlap (I)"));
   tool_group->addAction(tool_junction_surface);
 
+  tool_surface = new QAction(tr("S&urface"), this);
+  tool_surface->setCheckable(true);
+  tool_surface->setShortcuts(shortcuts::sequences(shortcuts::Id::ToolSurface));
+  tool_surface->setIconText(tr("Surface"));
+  tool_surface->setToolTip(
+      tr("Surface — reshape a ground surface's boundary: drag a node to move it, drag a "
+         "tangent tip to curve the edge, click a midpoint to insert a node (U)"));
+  tool_group->addAction(tool_surface);
+
   tool_maneuver = new QAction(tr("&Maneuver"), this);
   tool_maneuver->setCheckable(true);
   tool_maneuver->setShortcuts(shortcuts::sequences(shortcuts::Id::ToolManeuver));
@@ -478,6 +487,8 @@ QAction* Actions::action(shortcuts::Id id) const {
     return tool_signal;
   case Id::ToolSign:
     return tool_sign;
+  case Id::ToolSurface:
+    return tool_surface;
   case Id::LaneWidthEditor:
     return lane_width_editor;
   case Id::SignalPhaseEditor:
@@ -555,6 +566,7 @@ void Actions::apply_icons() {
   tool_junction_span->setIcon(Icons::get(QStringLiteral("junction-span")));
   tool_junction_surface->setIcon(Icons::get(QStringLiteral("junction-surface")));
   tool_maneuver->setIcon(Icons::get(QStringLiteral("maneuver")));
+  tool_surface->setIcon(Icons::get(QStringLiteral("surface-nodes")));
   tool_signal->setIcon(Icons::get(QStringLiteral("signal")));
   tool_sign->setIcon(Icons::get(QStringLiteral("sign")));
   template_rural->setIcon(Icons::get(QStringLiteral("template-rural")));

@@ -267,6 +267,35 @@ std::vector<MenuItem> build_context_menu(const MenuContext& context, ContextMenu
     return items;
   }
 
+  // Ground-surface menu (p5-s1, issue #231). Placed before the junction and
+  // road branches: a surface pick carries no road, and its own boundary items
+  // are the only thing there is to offer on it.
+  if (context.pick.has_value() && context.pick->surface.is_valid()) {
+    const SurfaceId surface_id = context.pick->surface;
+    const Surface* surface = network.surface(surface_id);
+    const bool authored = surface != nullptr && surface->source == BoundarySource::Authored;
+    items.push_back(MenuItem{.text = QObject::tr("Frame"), .invoke = [deps, surface_id] {
+                               deps.selection.select({.surface = surface_id}, SelectMode::Replace);
+                               deps.actions.frame_selection->trigger();
+                             }});
+    // Arm the Surface tool with this surface selected — the same discoverable
+    // "menu hands you the tool" path Move uses for roads and props.
+    items.push_back(MenuItem{.text = QObject::tr("Edit boundary"), .invoke = [deps, surface_id] {
+                               deps.selection.select({.surface = surface_id}, SelectMode::Replace);
+                               deps.actions.tool_surface->trigger();
+                             }});
+    items.push_back(separator());
+    // Only offered once an edit has detached the surface (decision D3) — on a
+    // derived one there is nothing to revert.
+    items.push_back(MenuItem{.text = QObject::tr("Revert to derived"),
+                             .enabled = authored,
+                             .invoke = [deps, surface_id] {
+                               (void)deps.document.push_command(edit::revert_surface_to_derived(
+                                   deps.document.network(), surface_id));
+                             }});
+    return items;
+  }
+
   // Junction menu (reached from the scene tree — junction floors aren't picked
   // in the viewport).
   if (context.junction.has_value()) {

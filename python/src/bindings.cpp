@@ -36,6 +36,7 @@
 #include "roadmaker/mesh/junction_stoplines.hpp"
 #include "roadmaker/mesh/junction_surface_spans.hpp"
 #include "roadmaker/mesh/mesh_builder.hpp"
+#include "roadmaker/mesh/surface_boundary.hpp"
 #include "roadmaker/road/authoring.hpp"
 #include "roadmaker/road/controller.hpp"
 #include "roadmaker/road/network.hpp"
@@ -235,7 +236,8 @@ NB_MODULE(_roadmaker, m) {
       .value("NONE", roadmaker::ObjectOrientation::None);
 
   nb::enum_<roadmaker::BoundarySource>(m, "BoundarySource")
-      .value("DERIVED", roadmaker::BoundarySource::Derived);
+      .value("DERIVED", roadmaker::BoundarySource::Derived)
+      .value("AUTHORED", roadmaker::BoundarySource::Authored);
 
   // The state a signal GROUP shows during one phase (p4-s8, §14.6 / ADR-0008
   // Layer 1). Yellow is an EXPLICIT value, never an automatic transition — the
@@ -1024,12 +1026,41 @@ NB_MODULE(_roadmaker, m) {
                ", t=" + std::to_string(object.t) + ")";
       });
 
+  nb::class_<roadmaker::SurfaceNode>(m, "SurfaceNode")
+      .def(nb::init<>())
+      .def_rw("x", &roadmaker::SurfaceNode::x)
+      .def_rw("y", &roadmaker::SurfaceNode::y)
+      .def_rw("tangent_in_x", &roadmaker::SurfaceNode::tangent_in_x)
+      .def_rw("tangent_in_y", &roadmaker::SurfaceNode::tangent_in_y)
+      .def_rw("tangent_out_x", &roadmaker::SurfaceNode::tangent_out_x)
+      .def_rw("tangent_out_y", &roadmaker::SurfaceNode::tangent_out_y)
+      .def("__eq__",
+           [](const roadmaker::SurfaceNode& a, nb::object b) {
+             return nb::isinstance<roadmaker::SurfaceNode>(b) &&
+                    a == nb::cast<roadmaker::SurfaceNode>(b);
+           })
+      .def("__repr__", [](const roadmaker::SurfaceNode& node) {
+        return "SurfaceNode(x=" + std::to_string(node.x) + ", y=" + std::to_string(node.y) + ")";
+      });
+
   nb::class_<roadmaker::Surface>(m, "Surface")
       .def(nb::init<>())
-      .def_rw("source", &roadmaker::Surface::source)
+      .def_rw("source",
+              &roadmaker::Surface::source,
+              "DERIVED (boundary follows bounding_roads) or AUTHORED (boundary "
+              "is `nodes`). Editing a derived boundary detaches it to AUTHORED; "
+              "edit.revert_surface_to_derived puts it back.")
       .def_rw("bounding_roads",
               &roadmaker::Surface::bounding_roads,
-              "Ordered ring of RoadIds enclosing the area; deterministic.")
+              "Ordered ring of RoadIds enclosing the area; deterministic. On an "
+              "AUTHORED surface this is PROVENANCE: it no longer shapes the "
+              "boundary but still supplies the elevation samples.")
+      .def_rw("nodes",
+              &roadmaker::Surface::nodes,
+              "The authored boundary loop (closed cubic Hermite), in ring order. "
+              "Always empty on a DERIVED surface. Edit it with "
+              "edit.set_surface_boundary, and read the EFFECTIVE nodes of either "
+              "kind with surface_boundary_nodes.")
       .def_rw("material",
               &roadmaker::Surface::material,
               "Ground material name (\"\" = default grass; e.g. \"asphalt\", \"concrete\").")
@@ -1038,7 +1069,8 @@ NB_MODULE(_roadmaker, m) {
              return nb::isinstance<roadmaker::Surface>(b) && a == nb::cast<roadmaker::Surface>(b);
            })
       .def("__repr__", [](const roadmaker::Surface& surface) {
-        return "Surface(bounding_roads=" + std::to_string(surface.bounding_roads.size()) + ")";
+        return "Surface(bounding_roads=" + std::to_string(surface.bounding_roads.size()) +
+               ", nodes=" + std::to_string(surface.nodes.size()) + ")";
       });
 
   nb::class_<roadmaker::Signal>(m, "Signal")
@@ -1601,6 +1633,42 @@ NB_MODULE(_roadmaker, m) {
       "tool never re-implements the sampling. Empty for a stale id and for a "
       "junction with no floor to control (a span/virtual junction has no "
       "connections at all).");
+
+  m.def(
+      "surface_boundary_nodes",
+      [](const roadmaker::RoadNetwork& network, roadmaker::SurfaceId surface) {
+        return roadmaker::surface_boundary_nodes(network, surface);
+      },
+      "network"_a,
+      "surface"_a,
+      "The EFFECTIVE editable boundary of a ground surface. For an AUTHORED "
+      "surface these are its stored nodes; for a DERIVED one they are a SEED "
+      "set computed from the same footprint union the mesher fills, decimated "
+      "to a handful of nodes with Catmull-Rom tangents and stored nowhere. "
+      "Seed edit.set_surface_boundary from this, so the first edit starts from "
+      "the shape already on screen. Empty for a stale id and for a ring that "
+      "encloses no area.");
+
+  m.def(
+      "sample_surface_boundary",
+      [](const std::vector<roadmaker::SurfaceNode>& nodes, double step) {
+        return roadmaker::sample_surface_boundary(nodes, step);
+      },
+      "nodes"_a,
+      "step"_a = roadmaker::kBoundarySampleStep,
+      "Tessellates a closed Hermite boundary loop into a plan-view polygon of "
+      "(x, y) pairs, passing exactly through every node. The single definition "
+      "of what an authored boundary means geometrically. Fewer than 3 nodes "
+      "yields an empty polygon.");
+
+  m.def(
+      "surface_boundary_self_intersects",
+      [](const std::vector<roadmaker::SurfaceNode>& nodes) {
+        return roadmaker::surface_boundary_self_intersects(nodes);
+      },
+      "nodes"_a,
+      "True when the tessellated boundary loop crosses itself — the shape "
+      "edit.set_surface_boundary refuses.");
 
   nb::class_<roadmaker::ManeuverSlide>(m, "ManeuverSlide")
       .def_prop_ro(
@@ -3457,6 +3525,33 @@ NB_MODULE(_roadmaker, m) {
       "Sets a derived ground surface's material name (\"\" clears to default grass). "
       "Round-trips as a `material` attribute on the surface's rm:surface userData. "
       "A stale SurfaceId yields an invalid command.");
+  edit.def(
+      "set_surface_boundary",
+      [](const roadmaker::RoadNetwork& network,
+         roadmaker::SurfaceId surface,
+         std::vector<roadmaker::SurfaceNode> nodes) {
+        return roadmaker::edit::set_surface_boundary(network, surface, std::move(nodes));
+      },
+      "network"_a,
+      "surface"_a,
+      "nodes"_a,
+      "Replaces a ground surface's boundary node graph wholesale — one command "
+      "per gesture. Applied to a DERIVED surface it also flips the source to "
+      "AUTHORED (the boundary is no longer a function of the roads, so the "
+      "surface detaches and stops being re-derived); bounding_roads stays as "
+      "provenance. Seed the nodes from surface_boundary_nodes. Rejects a stale "
+      "id, fewer than 3 nodes, a self-intersecting loop, and a no-op.");
+  edit.def(
+      "revert_surface_to_derived",
+      [](const roadmaker::RoadNetwork& network, roadmaker::SurfaceId surface) {
+        return roadmaker::edit::revert_surface_to_derived(network, surface);
+      },
+      "network"_a,
+      "surface"_a,
+      "Reattaches an authored surface to its roads: clears the node graph and "
+      "flips the source back to DERIVED. The next derive_surfaces pass reclaims "
+      "it if its provenance ring still encloses a face, and erases it "
+      "otherwise. Rejects a stale id and an already-derived surface.");
   edit.def("apply_road_style",
            &roadmaker::edit::apply_road_style,
            "network"_a,

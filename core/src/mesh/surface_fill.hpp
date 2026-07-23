@@ -24,6 +24,9 @@
 #include "roadmaker/mesh/mesh.hpp"
 #include "roadmaker/road/network.hpp"
 
+#include <array>
+#include <vector>
+
 namespace roadmaker {
 
 struct Surface;
@@ -47,5 +50,13 @@ struct Surface;
 [[nodiscard]] SubMesh build_surface_mesh(const RoadNetwork& network,
                                          const Surface& surface,
                                          const SamplingOptions& sampling = {});
+
+/// The plan-view region a DERIVED surface fills: the enclosed hole of its ring
+/// roads' footprint union, CCW, in Clipper2's post-simplification resolution.
+/// Empty when the ring encloses no real area. Factored out of
+/// build_surface_mesh so the public `surface_boundary_nodes` query seeds an
+/// editable node graph from the exact polygon the mesher fills (p5-s1).
+[[nodiscard]] std::vector<std::array<double, 2>> derived_region_polygon(
+    const RoadNetwork& network, const Surface& surface, const SamplingOptions& sampling = {});
 
 } // namespace roadmaker

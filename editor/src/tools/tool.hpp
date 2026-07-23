@@ -59,6 +59,7 @@ enum class ToolId {
   Maneuver,
   Signal,
   Sign,
+  Surface,
 };
 
 struct ToolEvent {

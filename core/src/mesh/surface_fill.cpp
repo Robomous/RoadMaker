@@ -16,6 +16,7 @@
 
 #include "surface_fill.hpp"
 
+#include "roadmaker/mesh/surface_boundary.hpp"
 #include "roadmaker/road/surface.hpp"
 #include "roadmaker/tol.hpp"
 
@@ -23,6 +24,7 @@
 #include <clipper2/clipper.h>
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstddef>
 #include <limits>
@@ -66,16 +68,21 @@ Clipper2Lib::PathD largest_hole(const Clipper2Lib::PathsD& merged) {
   return hole;
 }
 
-} // namespace
-
-SubMesh build_surface_mesh(const RoadNetwork& network,
-                           const Surface& surface,
-                           const SamplingOptions& sampling) {
-  // 1. Gather footprints, exact inner+outer border rings, and centerline
-  //    samples for every road bounding the enclosed area.
+/// The ring roads' contributions: footprints for the union, exact border rings
+/// (snap targets + Dirichlet z), centerline samples (soft constraints), and the
+/// mean border elevation. Gathered for BOTH boundary sources — an authored
+/// surface keeps `bounding_roads` as provenance precisely so its elevation
+/// still comes from the roads it was detached from.
+struct RingInputs {
   Clipper2Lib::PathsD footprints;
   std::vector<Vec3> border;
   std::vector<Vec3> centerline;
+  double mean_z = 0.0;
+};
+
+RingInputs
+gather_ring(const RoadNetwork& network, const Surface& surface, const SamplingOptions& sampling) {
+  RingInputs out;
   double z_sum = 0.0;
   std::size_t z_count = 0;
   for (const RoadId road_id : surface.bounding_roads) {
@@ -89,33 +96,86 @@ SubMesh build_surface_mesh(const RoadNetwork& network,
     if (Clipper2Lib::Area(contribution.footprint) < 0.0) {
       std::ranges::reverse(contribution.footprint);
     }
-    footprints.push_back(std::move(contribution.footprint));
+    out.footprints.push_back(std::move(contribution.footprint));
     for (const Vec3& p : contribution.border) {
       z_sum += p.z;
       ++z_count;
     }
-    border.insert(border.end(), contribution.border.begin(), contribution.border.end());
-    centerline.insert(
-        centerline.end(), contribution.centerline.begin(), contribution.centerline.end());
+    out.border.insert(out.border.end(), contribution.border.begin(), contribution.border.end());
+    out.centerline.insert(
+        out.centerline.end(), contribution.centerline.begin(), contribution.centerline.end());
   }
+  out.mean_z = z_count > 0 ? z_sum / static_cast<double>(z_count) : 0.0;
+  return out;
+}
+
+/// The enclosed region of a derived ring: union the full-width footprints (a
+/// ring of roads unions into a picture frame) and keep the inner HOLE — the
+/// block those roads surround. Empty when there is no hole, i.e. the roads do
+/// not actually enclose an area.
+Clipper2Lib::PathD derived_region(const Clipper2Lib::PathsD& footprints) {
   if (footprints.empty()) {
     return {};
   }
-
-  // 2. Union the full-width footprints. A ring of roads unions into a picture
-  //    frame: the enclosed block appears as an inner HOLE (opposite winding).
   Clipper2Lib::PathsD merged =
       Clipper2Lib::Union(footprints, Clipper2Lib::FillRule::NonZero, kUnionPrecision);
   merged = Clipper2Lib::SimplifyPaths(merged, 5e-3);
+  return largest_hole(merged);
+}
 
-  // 3. The enclosed region is that hole (largest negative-area contour). No hole
-  //    → the roads do not actually enclose an area → no surface.
-  Clipper2Lib::PathD region = largest_hole(merged);
+/// The region an AUTHORED surface fills: its Hermite loop, tessellated and
+/// normalized CCW so it triangulates as a filled polygon like the derived one.
+Clipper2Lib::PathD authored_region(const Surface& surface) {
+  Clipper2Lib::PathD region;
+  for (const std::array<double, 2>& p : sample_surface_boundary(surface.nodes)) {
+    region.emplace_back(p[0], p[1]);
+  }
+  if (region.size() >= 3 && Clipper2Lib::Area(region) < 0.0) {
+    std::ranges::reverse(region);
+  }
+  return region;
+}
+
+} // namespace
+
+std::vector<std::array<double, 2>> derived_region_polygon(const RoadNetwork& network,
+                                                          const Surface& surface,
+                                                          const SamplingOptions& sampling) {
+  const Clipper2Lib::PathD region =
+      derived_region(gather_ring(network, surface, sampling).footprints);
+  std::vector<std::array<double, 2>> out;
+  if (region.size() < 3) {
+    return out;
+  }
+  out.reserve(region.size());
+  for (const Clipper2Lib::PointD& p : region) {
+    out.push_back({p.x, p.y});
+  }
+  return out;
+}
+
+SubMesh build_surface_mesh(const RoadNetwork& network,
+                           const Surface& surface,
+                           const SamplingOptions& sampling) {
+  // 1. Gather the ring roads' footprints, exact border rings and centerline
+  //    samples. Authored surfaces keep the ring as provenance: it no longer
+  //    shapes the boundary, but it is still where the elevation comes from.
+  const RingInputs ring = gather_ring(network, surface, sampling);
+  const std::vector<Vec3>& border = ring.border;
+  const std::vector<Vec3>& centerline = ring.centerline;
+  const bool authored = surface.source == BoundarySource::Authored;
+  if (ring.footprints.empty() && !authored) {
+    return {};
+  }
+
+  // 2-3. The region to fill. An authored boundary IS the region (its node loop
+  //      replaces the union/largest-hole derivation entirely); a derived one is
+  //      still the hole its ring roads surround.
+  Clipper2Lib::PathD region = authored ? authored_region(surface) : derived_region(ring.footprints);
   if (region.size() < 3) {
     return {};
   }
   const double area = std::abs(Clipper2Lib::Area(region));
-  const double mean_z = z_count > 0 ? z_sum / static_cast<double>(z_count) : 0.0;
   const bool flat_floor = area < kFlatFloorMinArea;
   if (area < tol::kLength) {
     return {};
@@ -153,8 +213,11 @@ SubMesh build_surface_mesh(const RoadNetwork& network,
 
   // 6. Elevation: Dirichlet boundary z from the nearest road border; harmonic
   //    interior, or a flat surface at the mean border elevation for a tiny
-  //    enclosed area.
-  assign_boundary_elevation_and_solve(mesh, flat_floor, mean_z, border, centerline);
+  //    enclosed area. An authored boundary dragged clear of the roads keeps its
+  //    plan-view shape but still takes its z from the provenance ring — a
+  //    ring-less authored surface has no border at all and settles at z = 0
+  //    until the P5 height field (#232) gives the ground its own elevation.
+  assign_boundary_elevation_and_solve(mesh, flat_floor, ring.mean_z, border, centerline);
 
   return emit(mesh, "surface");
 }

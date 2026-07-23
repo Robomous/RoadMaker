@@ -28,10 +28,10 @@ namespace {
 
 // The toolbar taxonomy (issues #317/#368). The `kCore` groups form the
 // persistent strip that never hides — file ops, the universal edit tools, and
-// framing/Library. Every other group sits on a switchable tab; the reserved
-// Terrain and Scenario tabs are committed now and render nothing until their
-// pillar (P5 / P8) lands its first tool, so later tools arrive into a category
-// instead of re-shuffling a flat toolbar.
+// framing/Library. Terrain & Structures stopped being reserved when p5-s1
+// (#231) landed the Surface tool in it; Scenario is still committed-but-empty
+// and renders nothing until P8 lands its first tool, so later tools arrive into
+// a category instead of re-shuffling a flat toolbar.
 constexpr std::array kToolbarGroups{
     ToolbarGroup{"File", ToolbarTab::kCore},
     ToolbarGroup{"Edit", ToolbarTab::kCore},
@@ -39,7 +39,7 @@ constexpr std::array kToolbarGroups{
     ToolbarGroup{"Lanes", ToolbarTab::kRoadsLanes},
     ToolbarGroup{"Markings", ToolbarTab::kMarkings},
     ToolbarGroup{"Props", ToolbarTab::kProps},
-    ToolbarGroup{"Terrain & Structures", ToolbarTab::kTerrain}, // reserved (P5)
+    ToolbarGroup{"Terrain & Structures", ToolbarTab::kTerrain},
     ToolbarGroup{"Signals & Signs", ToolbarTab::kSignals},
     ToolbarGroup{"Scenario", ToolbarTab::kScenario}, // reserved (P8)
     ToolbarGroup{"Library & View", ToolbarTab::kCore},
@@ -293,6 +293,13 @@ constexpr std::array kTable{
           .primary = Qt::Key_B,
           .toolbar_group = "Signals & Signs",
           .toolbar_order = 30},
+    Entry{.id = Id::ToolSurface,
+          .category = "Tools",
+          .description = "Surface tool (reshape a ground surface's boundary)",
+          .primary = Qt::Key_U,
+          .note = "S is the Marking Point tool and ⇧S the Prop Span tool",
+          .toolbar_group = "Terrain & Structures",
+          .toolbar_order = 10},
     // Toolbar-only: enabled only for a mergeable two-road selection.
     Entry{.id = Id::MergeRoads,
           .category = "Tools",

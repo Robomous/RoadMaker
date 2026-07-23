@@ -2491,41 +2491,125 @@ private:
     }
   }
 
-  /// Root-level <userData code="rm:surface"> ("roadOdrId;…"): a derived ground
-  /// surface, reconstructed from its bounding-road ids. Roads parse before this
-  /// pass so the ids resolve. Geometry is re-derived from the roads, not stored.
-  /// A malformed value or fewer than 3 valid roads drops the surface (it cannot
-  /// enclose an area anyway), mirroring the writer's guard.
+  /// One authored boundary node record: "x,y,tix,tiy,tox,toy". Returns nullopt
+  /// on any field that is not a finite number, or on the wrong field count —
+  /// the caller then warns and drops the whole surface rather than inventing a
+  /// boundary the user never drew.
+  static std::optional<SurfaceNode> parse_surface_node(std::string_view record) {
+    std::array<double, 6> fields{};
+    std::size_t count = 0;
+    for (std::size_t begin = 0; begin <= record.size(); ++count) {
+      if (count >= fields.size()) {
+        return std::nullopt; // too many fields
+      }
+      std::size_t end = record.find(',', begin);
+      if (end == std::string_view::npos) {
+        end = record.size();
+      }
+      const std::optional<double> parsed = to_double(record.substr(begin, end - begin));
+      if (!parsed.has_value()) { // to_double already rejects non-finite values
+        return std::nullopt;
+      }
+      fields[count] = *parsed;
+      begin = end + 1;
+    }
+    if (count != fields.size()) {
+      return std::nullopt; // too few fields
+    }
+    return SurfaceNode{.x = fields[0],
+                       .y = fields[1],
+                       .tangent_in_x = fields[2],
+                       .tangent_in_y = fields[3],
+                       .tangent_out_x = fields[4],
+                       .tangent_out_y = fields[5]};
+  }
+
+  /// Root-level <userData code="rm:surface"> ("roadOdrId;…"): a ground surface,
+  /// reconstructed from its bounding-road ids. Roads parse before this pass so
+  /// the ids resolve. A DERIVED surface stores no geometry — it is re-derived
+  /// from those roads — and a malformed value or fewer than 3 valid roads drops
+  /// it (it cannot enclose an area anyway), mirroring the writer's guard.
+  ///
+  /// An AUTHORED surface (p5-s1) additionally carries a `nodes` attribute
+  /// ("x,y,tix,tiy,tox,toy;…"): that node graph IS its boundary, so `value`
+  /// degrades to provenance and the road ids may legitimately be absent or
+  /// stale. A `nodes` attribute that is present but malformed, or that carries
+  /// fewer than 3 nodes, drops the surface with a warning — never silently, and
+  /// never downgraded to a derived surface whose shape would be someone else's.
   void parse_surfaces(const pugi::xml_node& root) {
     for (const pugi::xml_node node : root.children("userData")) {
       const std::string code = node.attribute("code").value();
       if (code != "rm:surface") {
         continue;
       }
+      const pugi::xml_attribute nodes_attr = node.attribute("nodes");
+      const bool authored = !nodes_attr.empty();
+
+      std::vector<SurfaceNode> boundary;
+      if (authored) {
+        const std::string encoded = nodes_attr.value();
+        bool malformed = encoded.empty();
+        for (std::size_t begin = 0; !malformed && begin <= encoded.size();) {
+          std::size_t end = encoded.find(';', begin);
+          if (end == std::string::npos) {
+            end = encoded.size();
+          }
+          const std::optional<SurfaceNode> parsed =
+              parse_surface_node(std::string_view(encoded).substr(begin, end - begin));
+          if (!parsed.has_value()) {
+            malformed = true;
+            break;
+          }
+          boundary.push_back(*parsed);
+          begin = end + 1;
+        }
+        if (malformed || boundary.size() < 3) {
+          diag(Severity::Warning,
+               "OpenDRIVE",
+               "malformed rm:surface nodes userData ignored (authored surface dropped)");
+          continue;
+        }
+      }
+
       std::vector<RoadId> roads;
       bool malformed = false;
       const std::string value = node.attribute("value").value();
-      for (std::size_t begin = 0; begin <= value.size();) {
-        std::size_t end = value.find(';', begin);
-        if (end == std::string::npos) {
-          end = value.size();
+      // An authored surface may have lost every provenance road; an empty value
+      // is then legitimate, whereas for a derived surface it is the < 3 drop.
+      if (!(authored && value.empty())) {
+        for (std::size_t begin = 0; begin <= value.size();) {
+          std::size_t end = value.find(';', begin);
+          if (end == std::string::npos) {
+            end = value.size();
+          }
+          const std::string_view entry = std::string_view(value).substr(begin, end - begin);
+          const RoadId road_id = network().find_road(std::string(entry));
+          if (!road_id.is_valid()) {
+            malformed = true;
+            break;
+          }
+          roads.push_back(road_id);
+          begin = end + 1;
         }
-        const std::string_view entry = std::string_view(value).substr(begin, end - begin);
-        const RoadId road_id = network().find_road(std::string(entry));
-        if (!road_id.is_valid()) {
-          malformed = true;
-          break;
-        }
-        roads.push_back(road_id);
-        begin = end + 1;
       }
-      if (malformed || roads.size() < 3) {
+      if (authored) {
+        if (malformed) {
+          // Provenance only: a road that no longer exists costs the elevation
+          // samples, not the boundary. Warn and keep what resolved.
+          diag(Severity::Warning,
+               "OpenDRIVE",
+               "rm:surface names an unknown road; authored boundary kept without it");
+          roads.clear();
+        }
+      } else if (malformed || roads.size() < 3) {
         diag(Severity::Warning, "OpenDRIVE", "malformed rm:surface userData ignored");
         continue;
       }
-      network().create_surface(Surface{.source = BoundarySource::Derived,
-                                       .bounding_roads = std::move(roads),
-                                       .material = node.attribute("material").value()});
+      network().create_surface(
+          Surface{.source = authored ? BoundarySource::Authored : BoundarySource::Derived,
+                  .bounding_roads = std::move(roads),
+                  .nodes = std::move(boundary),
+                  .material = node.attribute("material").value()});
     }
   }
 

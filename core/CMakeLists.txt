@@ -34,6 +34,7 @@ add_library(roadmaker_core ${_rm_core_type}
   src/mesh/junction_stoplines.cpp
   src/mesh/junction_surface.cpp
   src/mesh/junction_surface_spans.cpp
+  src/mesh/surface_boundary.cpp
   src/mesh/surface_fill.cpp
   src/assets/prop_meshes.gen.cpp
   src/assets/sign_face.cpp

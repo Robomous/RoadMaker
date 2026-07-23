@@ -67,6 +67,7 @@ not undoable.
 | [Signalization](junction.md#signalization) | Auto-signalize a junction with traffic-light or stop-sign templates |
 | [T-junction](t-junction.md) | Tee a road's end into another road's body |
 | [Objects & signals](objects-signals.md) | Add crosswalks, props, traffic lights, and signs |
+| [Ground surfaces](ground-surfaces.md) | Reshape the ground a loop of roads encloses as a node graph |
 | [Road markings](markings.md) | Place arrow stencils on a lane and draw free-form line markings and crossings |
 | [Materials](materials.md) | Pave a lane or surface with asphalt or concrete, textured and saved into the file |
 | [Textured rendering](textured-rendering.md) | Switch the viewport between the Sober working look and the daytime textured look |
