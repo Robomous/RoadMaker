@@ -18,6 +18,7 @@ add_library(roadmaker_core ${_rm_core_type}
   src/road/road_style.cpp
   src/road/surface_derivation.cpp
   src/road/terrain.cpp
+  src/road/grade_separation.cpp
   src/edit/edit_stack.cpp
   src/edit/connection.cpp
   src/edit/markings.cpp
