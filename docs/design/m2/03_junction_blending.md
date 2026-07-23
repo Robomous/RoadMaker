@@ -68,11 +68,10 @@ with a golden-fixture harness, but the doc commits to a default):
 the CDT, Dirichlet boundary), with connecting-road centerline elevation samples
 added as *soft* constraints (quadratic penalty, weight 0.1) to keep long
 through-paths from sagging. Natural-neighbor is rejected for M2: it needs a new
-robust geometric kernel for no benefit at our data density. libigl (in tree,
-MPL-2.0 header-only subset) provides `igl::cotmatrix` + the solve is plain
-Eigen; if libigl's matrix assembly is the only use, hand-rolling the cotangent
-assembly (~40 lines) is preferred to keep the include surface small — decide at
-implementation by code size, both licensed fine.
+robust geometric kernel for no benefit at our data density. The cotangent
+assembly is ~40 lines against plain Eigen, so hand-rolling it is preferred to
+taking a mesh-processing dependency for one matrix. (As built, that is what
+happened; libigl was pinned but never used, and was dropped in #268.)
 
 Boundary Dirichlet values:
 - Joint edges: exact z of the road-mesh end cross-section vertices (§5).

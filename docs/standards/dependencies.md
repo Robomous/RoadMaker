@@ -14,8 +14,9 @@ zlib, BSL-1.0, Unlicense/CC0.
 ## Forbidden
 
 - **GPL** (any version) — includes GPL-licensed *subsets* of otherwise-fine
-  libraries (e.g., libigl's `copyleft/` headers are never included even
-  though libigl itself is pinned).
+  libraries: a permissive top-level license does not make a `copyleft/`
+  subdirectory usable, and pinning such a library means auditing which
+  headers we include.
 - **LGPL** — static-link risk; see the single sanctioned exception below.
 - **AGPL**, **SSPL**.
 - **Proprietary SDKs** (e.g., the Autodesk FBX SDK).
