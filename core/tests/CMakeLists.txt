@@ -3,9 +3,12 @@ add_executable(roadmaker_core_tests
   test_id_arena.cpp
   test_network.cpp
   test_reference_line.cpp
+  test_poly3.cpp
   test_profile_fit.cpp
   test_authoring.cpp
+  test_raw_xml.cpp
   test_xodr_reader.cpp
+  test_xodr_diagnostics.cpp
   test_xodr_writer.cpp
   test_xodr_objects.cpp
   test_prop_library.cpp
