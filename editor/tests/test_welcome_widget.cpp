@@ -41,8 +41,13 @@ protected:
     // Scope QSettings writes to a throwaway org so the suite never touches
     // the developer's real RoadMaker settings. Settings must be constructed
     // AFTER the rename — QSettings resolves org/app at construction.
+    // The app name carries the test name: ctest -j runs each case as its
+    // own process of this binary, and concurrent cases sharing one settings
+    // domain race on clear()/setValue() through the OS-level store.
     QCoreApplication::setOrganizationName(QStringLiteral("RobomousTests"));
-    QCoreApplication::setApplicationName(QStringLiteral("RoadMakerWelcomeTest"));
+    const auto* info = ::testing::UnitTest::GetInstance()->current_test_info();
+    QCoreApplication::setApplicationName(QStringLiteral("RoadMakerWelcomeTest_") +
+                                         QString::fromUtf8(info->name()));
     QSettings().clear();
     settings_ = std::make_unique<Settings>();
   }
