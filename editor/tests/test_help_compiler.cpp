@@ -19,7 +19,6 @@
 
 #include <gtest/gtest.h>
 
-#include <atomic>
 #include <filesystem>
 #include <fstream>
 #include <string>
@@ -36,9 +35,12 @@ protected:
   std::filesystem::path guide;
 
   void SetUp() override {
-    static std::atomic<int> counter{0};
-    guide = std::filesystem::temp_directory_path() /
-            ("rm_helpc_test_" + std::to_string(counter.fetch_add(1)));
+    // The path carries the test name, not a process-local counter: ctest -j
+    // runs each case as its own process, and every process's counter starts
+    // at zero — concurrent siblings would all pick the same directory and
+    // remove_all each other mid-test.
+    const auto* info = ::testing::UnitTest::GetInstance()->current_test_info();
+    guide = std::filesystem::temp_directory_path() / (std::string("rm_helpc_test_") + info->name());
     std::filesystem::remove_all(guide);
     std::filesystem::create_directories(guide);
   }
