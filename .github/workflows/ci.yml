@@ -80,7 +80,10 @@ jobs:
         run: cmake --build --preset ${{ matrix.preset }}
 
       - name: Test
-        run: ctest --preset ${{ matrix.preset }}
+        # -j 4: the runners have 4 cores and every test is its own process
+        # (gtest_discover_tests); measured ~3x on the serial step
+        # (docs/testing/audit-2026-07.md §C1).
+        run: ctest --preset ${{ matrix.preset }} -j 4
 
   shared-core:
     name: shared kernel ${{ matrix.os }}
@@ -116,7 +119,7 @@ jobs:
       - name: Build
         run: cmake --build build
       - name: Test against the shared kernel
-        run: ctest --test-dir build --output-on-failure
+        run: ctest --test-dir build --output-on-failure -j 4
       - name: Install
         run: cmake --install build --prefix _inst
       - name: Consume installed package
@@ -175,16 +178,29 @@ jobs:
       - name: Build
         run: cmake --build build
       - name: Test
-        run: ctest --test-dir build --output-on-failure
+        # -j 4 (audit §C1) + one documented selection exception (§C3):
+        # SoakSmoke.FixedSeedRunsClean is skipped HERE ONLY because the very
+        # next step soaks the same driver under the same sanitizers for
+        # minutes — in this job the 400-op fixed-seed run is a strict subset.
+        # It still runs on the three build+test jobs (its purpose: every CI
+        # run exercises the soak driver) and in every local ctest run.
+        run: >
+          ctest --test-dir build --output-on-failure -j 4
+          -E '^SoakSmoke\.FixedSeedRunsClean$'
         env:
           ASAN_OPTIONS: detect_leaks=1
           UBSAN_OPTIONS: halt_on_error=1
-      # Interactive soak (hardening sprint §4.3, #86): ~10 minutes of
-      # seeded-random editing ops over the real Document/command stack under
-      # ASan+UBSan. The seed derives from the run id — varied coverage across
-      # runs, and any failure prints its seed for a one-line local repro.
-      - name: Soak (10 min, seeded)
-        run: ./build/editor/tests/roadmaker_soak --minutes 9 --seed $(( ${{ github.run_id }} % 1000000 ))
+      # Interactive soak (hardening sprint §4.3, #86): seeded-random editing
+      # ops over the real Document/command stack under ASan+UBSan. The seed
+      # derives from the run id — varied coverage across runs, and any failure
+      # prints its seed for a one-line local repro. Split policy (audit §C2):
+      # 3 minutes on PRs (cumulative across pushes, seeds vary), the full 9 on
+      # every push to main. The manual 24-hour release-gate soak is separate.
+      - name: Soak (seeded; 3 min on PRs, 9 min on main)
+        run: >
+          ./build/editor/tests/roadmaker_soak
+          --minutes ${{ github.event_name == 'pull_request' && 3 || 9 }}
+          --seed $(( ${{ github.run_id }} % 1000000 ))
         env:
           QT_QPA_PLATFORM: offscreen
           ASAN_OPTIONS: detect_leaks=1
