@@ -248,19 +248,11 @@ LibraryDropAction resolve_library_drop(const LibraryItem& item,
       action.toast = QStringLiteral("Drop a tree onto or beside a road");
       return action; // kind stays None, preview invalid at cursor — caller hints
     }
-    Object tree;
-    tree.odr_id = next_object_odr_id(network);
-    tree.name = item.model.toStdString();
-    // The bundled model is the single source of truth for the object class
-    // (Tree/Vegetation/Pole/Building) and dimensions; an unknown model → Tree.
-    tree.type = ObjectType::Tree;
-    tree.s = placement->s;
-    tree.t = placement->t;
-    if (const props::PropModel* model = props::model(tree.name)) {
-      tree.type = model->type;
-      tree.radius = model->radius;
-      tree.height = model->height;
-    }
+    // The single placement funnel: make_prop_object reads the bundled model for
+    // the object class (Tree/Vegetation/Pole/Building) and dimensions and applies
+    // the item's Default scale — so a drop honors the same defaults as the prop
+    // tools (behavior-preserving for a native-size, scale-1 item).
+    Object tree = make_prop_object(item, next_object_odr_id(network), placement->s, placement->t);
     action.command = edit::add_object(network, placement->road, std::move(tree));
     if (action.command != nullptr) {
       action.kind = LibraryDropKind::Tree;

@@ -173,8 +173,10 @@ void LibraryPanel::handle_current_changed(const QModelIndex& index) {
   // Every valid selection updates the "current Library asset" so MainWindow can
   // arm the matching placement tool (Library-first, #367).
   emit asset_current_changed(item->key);
-  // Parametric assets additionally open in the Attributes-pane editor.
-  if (item->kind == LibraryItem::Kind::Crosswalk || item->kind == LibraryItem::Kind::PropSet) {
+  // Parametric assets additionally open in the Attributes-pane editor. Prop
+  // (Kind::Tree) items open it too so their Default scale is editable (p6-s11).
+  if (item->kind == LibraryItem::Kind::Crosswalk || item->kind == LibraryItem::Kind::PropSet ||
+      item->kind == LibraryItem::Kind::Tree) {
     emit asset_selected(item->key);
   }
 }

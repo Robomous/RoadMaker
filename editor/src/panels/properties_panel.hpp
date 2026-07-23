@@ -77,6 +77,12 @@ signals:
   /// reference the set. Emitted once per Save.
   void prop_set_asset_committed(const LibraryItem& item);
 
+  /// A prop asset's Default scale was edited in the Attributes pane (p6-s11).
+  /// MainWindow upserts `item` (a copy shadowing the built-in) into the
+  /// project-overlay manifest and saves it. No propagation — a placed prop bakes
+  /// its own dims. Emitted once per discrete edit (editingFinished).
+  void prop_asset_committed(const LibraryItem& item);
+
 public:
   /// Read-only handle used to populate the crosswalk asset editor from the
   /// merged manifest. The panel never mutates it (MainWindow owns the overlay).
@@ -514,6 +520,32 @@ private:
   QString prop_set_category_;
   /// True while the prop-set editor owns the panel (a subtype of asset_mode_).
   bool prop_set_mode_ = false;
+
+  // --- prop asset editor (p6-s11) --------------------------------------------
+
+  /// Opens the prop asset editor for `item` in the Attributes pane: a single
+  /// Default scale spin that commits on editingFinished (the crosswalk pattern),
+  /// upserting a project-overlay copy that shadows the built-in.
+  void edit_prop_asset(const LibraryItem& item, bool editable);
+
+  /// Builds the source item with the current Default scale (patching create_raw)
+  /// and emits prop_asset_committed. No-op when not editable / not in prop mode.
+  void commit_prop_asset_edit();
+
+  /// Repaints the "Spawns at X m (model Y m)" hint from the current spin value.
+  void refresh_prop_scale_hint();
+
+  /// The unedited source item (key, label, category, resolved thumbnail,
+  /// create_raw) — the commit copies it wholesale and changes only default_scale.
+  LibraryItem prop_asset_item_;
+
+  QGroupBox* prop_group_;
+  QLabel* prop_model_label_;
+  QDoubleSpinBox* prop_scale_spin_;
+  QLabel* prop_scale_hint_;
+  QLabel* prop_hint_;
+  /// True while the prop asset editor owns the panel (a subtype of asset_mode_).
+  bool prop_mode_ = false;
 };
 
 } // namespace roadmaker::editor

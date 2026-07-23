@@ -6,6 +6,7 @@
 // prop-object construction, spacing distribution (including the s=0 sample), the
 // off-anchor skip, batch-wide odr-id uniqueness, and the rejection paths.
 
+#include "roadmaker/assets/prop_library.hpp"
 #include "roadmaker/edit/operations.hpp"
 #include "roadmaker/road/network.hpp"
 #include "roadmaker/road/object.hpp"
@@ -161,6 +162,39 @@ TEST(PropPlacement, MakePropObjectCarriesTypeAndDimensions) {
   // A shrub is Vegetation rather than Tree.
   const Object shrub = make_prop_object(shrub_item(), "8", 0.0, 0.0);
   EXPECT_EQ(shrub.type, ObjectType::Vegetation);
+}
+
+TEST(PropPlacement, DefaultScaleMultipliesModelDimensions) {
+  const props::PropModel* model = props::model("tree_pine");
+  ASSERT_NE(model, nullptr);
+
+  LibraryItem scaled = pine_item();
+  scaled.default_scale = 2.0;
+  const Object tree = make_prop_object(scaled, "9", 1.0, 0.0);
+  ASSERT_TRUE(tree.radius.has_value());
+  ASSERT_TRUE(tree.height.has_value());
+  // Both dims scale uniformly (keeps declared data proportional to the render).
+  EXPECT_DOUBLE_EQ(*tree.height, model->height * 2.0);
+  EXPECT_DOUBLE_EQ(*tree.radius, model->radius * 2.0);
+
+  // A default (1.0) item is unchanged — native model size.
+  const Object native = make_prop_object(pine_item(), "10", 1.0, 0.0);
+  EXPECT_DOUBLE_EQ(*native.height, model->height);
+  EXPECT_DOUBLE_EQ(*native.radius, model->radius);
+}
+
+TEST(PropPlacement, ResolvePropAssetCarriesEntryDefaultScale) {
+  // A one-entry set with a scaled entry yields a synthetic tree carrying it, so
+  // a scatter honors each drawn model's default (filled at arm time).
+  LibraryItem set;
+  set.kind = LibraryItem::Kind::PropSet;
+  set.key = "prop_set.one";
+  set.prop_entries.push_back({.model = "tree_pine", .portion = 1.0, .default_scale = 2.0});
+  std::mt19937 rng(7);
+  const LibraryItem tree = resolve_prop_asset(set, rng);
+  EXPECT_EQ(tree.kind, LibraryItem::Kind::Tree);
+  EXPECT_EQ(tree.model, "tree_pine");
+  EXPECT_DOUBLE_EQ(tree.default_scale, 2.0);
 }
 
 TEST(PropPlacement, DistributesEverySpacingIncludingZero) {

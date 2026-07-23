@@ -311,6 +311,127 @@ TEST(LibraryManifest, ParsesTreeCreateKindWithModel) {
   const LibraryItem& tree = manifest->items()[0];
   EXPECT_EQ(tree.kind, LibraryItem::Kind::Tree);
   EXPECT_EQ(tree.model, "tree_pine");
+  EXPECT_DOUBLE_EQ(tree.default_scale, 1.0); // absent -> native size
+}
+
+TEST(LibraryManifest, ParsesDefaultScale) {
+  // Absent -> 1.0; an explicit positive value is taken; a non-positive value
+  // falls back to 1.0 with a warning (the parser never silently drops input).
+  const auto manifest = LibraryManifest::parse(json(R"({
+    "manifest_version": 1,
+    "items": [
+      {"key": "prop.a", "label": "A", "category": "Props",
+       "create": {"kind": "tree", "model": "tree_pine", "default_scale": 2.5}},
+      {"key": "prop.b", "label": "B", "category": "Props",
+       "create": {"kind": "tree", "model": "tree_oak", "default_scale": 0}},
+      {"key": "prop.c", "label": "C", "category": "Props",
+       "create": {"kind": "tree", "model": "shrub", "default_scale": -3}}
+    ]
+  })"));
+  ASSERT_TRUE(manifest.has_value());
+  ASSERT_EQ(manifest->items().size(), 3U);
+  EXPECT_DOUBLE_EQ(manifest->items()[0].default_scale, 2.5);
+  EXPECT_DOUBLE_EQ(manifest->items()[1].default_scale, 1.0); // zero -> 1.0
+  EXPECT_DOUBLE_EQ(manifest->items()[2].default_scale, 1.0); // negative -> 1.0
+}
+
+TEST(LibraryManifest, TreeRoundTripsWithDefaultScaleVerbatim) {
+  const auto manifest = LibraryManifest::parse(json(R"({
+    "manifest_version": 1,
+    "items": [
+      {"key": "prop.tree.pine", "label": "Pine", "category": "Props",
+       "create": {"kind": "tree", "model": "tree_pine", "default_scale": 2}}
+    ]
+  })"));
+  ASSERT_TRUE(manifest.has_value());
+  const auto reparsed = LibraryManifest::parse(manifest->to_json());
+  ASSERT_TRUE(reparsed.has_value());
+  ASSERT_EQ(reparsed->items().size(), 1U);
+  EXPECT_DOUBLE_EQ(reparsed->items()[0].default_scale, 2.0);
+  // A parsed item re-emits its verbatim create block byte-for-byte.
+  EXPECT_EQ(reparsed->items()[0].create_raw, manifest->items()[0].create_raw);
+}
+
+TEST(LibraryManifest, ProgrammaticTreeSerializesDefaultScale) {
+  // No create_raw: to_json serializes kind/model, and default_scale only when
+  // it differs from 1.0 (so a native-size prop stays byte-identical).
+  LibraryItem scaled;
+  scaled.key = "prop.custom.big";
+  scaled.kind = LibraryItem::Kind::Tree;
+  scaled.model = "tree_oak";
+  scaled.default_scale = 3.0;
+  LibraryItem native;
+  native.key = "prop.custom.native";
+  native.kind = LibraryItem::Kind::Tree;
+  native.model = "shrub";
+  LibraryManifest manifest;
+  manifest.upsert(scaled);
+  manifest.upsert(native);
+
+  const auto reparsed = LibraryManifest::parse(manifest.to_json());
+  ASSERT_TRUE(reparsed.has_value());
+  ASSERT_EQ(reparsed->items().size(), 2U);
+  const LibraryItem& out_scaled = reparsed->items()[0];
+  EXPECT_EQ(out_scaled.kind, LibraryItem::Kind::Tree);
+  EXPECT_EQ(out_scaled.model, "tree_oak");
+  EXPECT_DOUBLE_EQ(out_scaled.default_scale, 3.0);
+  // The native item omitted the key on serialize; parsing it defaults to 1.0.
+  EXPECT_FALSE(reparsed->items()[1].create_raw.contains(QStringLiteral("default_scale")));
+  EXPECT_DOUBLE_EQ(reparsed->items()[1].default_scale, 1.0);
+}
+
+TEST(LibraryListModel, DefaultScaleForModelReflectsTheMergedView) {
+  LibraryListModel model;
+  const auto base = LibraryManifest::parse(json(R"({
+    "manifest_version": 1,
+    "items": [
+      {"key": "prop.tree.pine", "label": "Pine", "category": "Props",
+       "create": {"kind": "tree", "model": "tree_pine", "default_scale": 2}},
+      {"key": "prop.tree.oak", "label": "Oak", "category": "Props",
+       "create": {"kind": "tree", "model": "tree_oak"}}
+    ]
+  })"));
+  ASSERT_TRUE(base.has_value());
+  model.set_manifest(*base);
+  EXPECT_DOUBLE_EQ(model.default_scale_for_model(QStringLiteral("tree_pine")), 2.0);
+  EXPECT_DOUBLE_EQ(model.default_scale_for_model(QStringLiteral("tree_oak")), 1.0);
+  EXPECT_DOUBLE_EQ(model.default_scale_for_model(QStringLiteral("no_such_model")), 1.0);
+
+  // A project overlay shadows the built-in: the first merged match wins.
+  const auto overlay = LibraryManifest::parse(json(R"({
+    "manifest_version": 1,
+    "items": [
+      {"key": "prop.tree.pine", "label": "Project Pine", "category": "Props",
+       "create": {"kind": "tree", "model": "tree_pine", "default_scale": 5}}
+    ]
+  })"));
+  ASSERT_TRUE(overlay.has_value());
+  model.set_overlay(*overlay);
+  EXPECT_DOUBLE_EQ(model.default_scale_for_model(QStringLiteral("tree_pine")), 5.0);
+}
+
+TEST(LibraryListModel, OverlayTreeKeepsAResolvedQrcThumbnail) {
+  // Committing a copy of a built-in prop writes its already-resolved
+  // ":/library/thumbnails/…" path into the overlay. QDir::filePath returns an
+  // absolute path (a qrc ":/" counts) unchanged, so the shadowing overlay entry
+  // keeps its icon — the thumbnail-preservation contract for prop asset edits.
+  LibraryListModel model;
+  const auto overlay = LibraryManifest::parse(json(R"({
+    "manifest_version": 1,
+    "items": [
+      {"key": "prop.tree.pine", "label": "Project Pine", "category": "Props",
+       "thumbnail": ":/library/thumbnails/prop_tree_pine.png",
+       "create": {"kind": "tree", "model": "tree_pine", "default_scale": 2}}
+    ]
+  })"));
+  ASSERT_TRUE(overlay.has_value());
+  QTemporaryDir project_dir;
+  ASSERT_TRUE(project_dir.isValid());
+  model.set_overlay(*overlay, project_dir.path());
+  const QModelIndex index = model.index(0, 0);
+  const QVariant decoration = model.data(index, Qt::DecorationRole);
+  ASSERT_TRUE(decoration.isValid());
+  EXPECT_FALSE(decoration.value<QIcon>().isNull());
 }
 
 TEST(LibraryManifest, NewerVersionParsesBestEffort) {

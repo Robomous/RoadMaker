@@ -101,6 +101,9 @@ LibraryItem resolve_prop_asset(const LibraryItem& item, std::mt19937& rng) {
   LibraryItem tree;
   tree.kind = LibraryItem::Kind::Tree;
   tree.model = chosen.model;
+  // Carry the drawn entry's Default scale forward so a scatter honors each
+  // model's own default (filled at arm time by resolve_default_prop_item).
+  tree.default_scale = chosen.default_scale;
   tree.key = item.key;
   tree.label = item.label;
   return tree;
@@ -118,8 +121,11 @@ Object make_prop_object(const LibraryItem& item, std::string odr_id, double s, d
   prop.t = t;
   if (const props::PropModel* model = props::model(prop.name)) {
     prop.type = model->type;
-    prop.radius = model->radius;
-    prop.height = model->height;
+    // Uniform Default scale: scale radius AND height together so the declared
+    // OpenDRIVE dims stay proportional to the render (p6-s10 sets the render
+    // scale from @height ÷ model height).
+    prop.radius = model->radius * item.default_scale;
+    prop.height = model->height * item.default_scale;
   }
   return prop;
 }

@@ -1,6 +1,7 @@
 // Copyright 2026 Robomous
 // SPDX-License-Identifier: Apache-2.0
 
+#include "roadmaker/assets/prop_library.hpp"
 #include "roadmaker/edit/assembly.hpp"
 #include "roadmaker/edit/connection.hpp"
 #include "roadmaker/edit/operations.hpp"
@@ -215,6 +216,31 @@ TEST(LibraryDrop, TreeSnapsToTheNearbyRoadAndAddsAnObject) {
   // Undo removes exactly the placed prop.
   ASSERT_TRUE(action.command->revert(network).has_value());
   EXPECT_EQ(network.object_count(), 0U);
+}
+
+TEST(LibraryDrop, TreeDropAppliesTheItemDefaultScale) {
+  RoadNetwork network = with_straight_road();
+  const props::PropModel* model = props::model("tree_pine");
+  ASSERT_NE(model, nullptr);
+
+  LibraryItem scaled = tree("tree_pine");
+  scaled.default_scale = 2.0;
+  LibraryDropAction action = resolve_library_drop(scaled, network, 50.0, 5.0);
+  ASSERT_EQ(action.kind, LibraryDropKind::Tree);
+  ASSERT_NE(action.command, nullptr);
+  ASSERT_TRUE(action.command->apply(network).has_value());
+
+  roadmaker::ObjectId id;
+  network.for_each_object([&](roadmaker::ObjectId oid, const roadmaker::Object&) { id = oid; });
+  const roadmaker::Object* object = network.object(id);
+  ASSERT_NE(object, nullptr);
+  ASSERT_TRUE(object->height.has_value());
+  ASSERT_TRUE(object->radius.has_value());
+  // The refactored drop path routes through make_prop_object, so the Default
+  // scale multiplies both dims — this also proves the WP2 dedup kept the drop's
+  // native-size behavior for a scale-1 item (asserted by the tests above).
+  EXPECT_DOUBLE_EQ(*object->height, model->height * 2.0);
+  EXPECT_DOUBLE_EQ(*object->radius, model->radius * 2.0);
 }
 
 TEST(LibraryDrop, ShrubMapsToVegetation) {

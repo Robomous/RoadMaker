@@ -169,6 +169,10 @@ private:
   /// baked props never reference the set, so an edit only affects future
   /// scatters (contrast commit_crosswalk_asset, which re-materializes instances).
   void commit_prop_set_asset(const LibraryItem& item);
+  /// Persists an edited prop asset's Default scale into the project overlay
+  /// (upserts a copy that shadows the built-in). No propagation: a placed prop
+  /// bakes its own @height/@radius, so an edit only affects new placements.
+  void commit_prop_asset(const LibraryItem& item);
   /// Adopts the project containing `scene_path` (or clears the association
   /// for a standalone scene). Runs after every load and save.
   void associate_project_for(const std::filesystem::path& scene_path);

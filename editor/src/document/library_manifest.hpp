@@ -50,6 +50,11 @@ struct LibraryItem {
   struct PropSetEntry {
     QString model;        ///< a bundled prop model id (props::model)
     double portion = 1.0; ///< relative draw weight (must be > 0)
+    /// Transient uniform spawn multiplier, DERIVED from the merged library at
+    /// arm time (LibraryListModel::default_scale_for_model) — never parsed from
+    /// or serialized to the manifest. Lets a scatter honor each drawn model's
+    /// Default scale (a mixed pine+birch set spawns both at their own defaults).
+    double default_scale = 1.0;
   };
 
   QString key;       ///< stable id (drag payload / scene reference)
@@ -63,6 +68,11 @@ struct LibraryItem {
   QString assembly; ///< Assembly: "t" | "x"
   QString model;    ///< Tree: a bundled prop model id (e.g. "tree_pine")
   QString signal;   ///< Signal: "light" (traffic light) | "sign" (static sign)
+
+  /// Uniform spawn multiplier applied to a prop's bundled model dims at
+  /// placement (make_prop_object scales BOTH height and radius). 1.0 = the
+  /// model's native size. Prop (Kind::Tree) kinds only; ignored otherwise.
+  double default_scale = 1.0;
 
   QString mark_type;        ///< Marking: "solid" | "broken" | "solid_solid" | …
   QString mark_color;       ///< Marking: "white" | "yellow" | …

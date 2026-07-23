@@ -97,6 +97,15 @@ QJsonObject create_object(const LibraryItem& item) {
     }
     create[QStringLiteral("entries")] = entries;
   }
+  if (item.kind == LibraryItem::Kind::Tree) {
+    create[QStringLiteral("kind")] = QStringLiteral("tree");
+    create[QStringLiteral("model")] = item.model;
+    // Default 1.0 stays implicit so a native-size prop item is byte-identical
+    // to one authored without the field.
+    if (item.default_scale != 1.0) {
+      create[QStringLiteral("default_scale")] = item.default_scale;
+    }
+  }
   return create;
 }
 
@@ -152,6 +161,12 @@ Expected<LibraryManifest> LibraryManifest::parse(const QByteArray& json) {
     item.style = create.value(QStringLiteral("style")).toString();
     item.assembly = create.value(QStringLiteral("assembly")).toString();
     item.model = create.value(QStringLiteral("model")).toString();
+    item.default_scale = create.value(QStringLiteral("default_scale")).toDouble(1.0);
+    if (!(item.default_scale > 0.0)) {
+      spdlog::warn("library manifest: item '{}' has a non-positive default_scale — using 1.0",
+                   key.toStdString());
+      item.default_scale = 1.0;
+    }
     item.signal = create.value(QStringLiteral("signal")).toString();
     item.mark_type = create.value(QStringLiteral("mark_type")).toString();
     item.mark_color = create.value(QStringLiteral("mark_color")).toString();
