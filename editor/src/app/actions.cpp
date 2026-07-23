@@ -402,6 +402,13 @@ Actions::Actions(QUndoStack& undo_stack, QObject* parent) : QObject(parent) {
   merge_roads->setEnabled(false); // enabled only for a mergeable 2-road selection
   merge_roads->setToolTip(tr("Merge — join two selected roads that meet end-to-start"));
 
+  terrain_create = new QAction(tr("Create &Terrain Field"), this);
+  terrain_create->setToolTip(
+      tr("Create a flat terrain height field over the scene — the ground becomes a real "
+         "surface the roads shape"));
+  terrain_remove = new QAction(tr("Remove Terrain Field"), this);
+  terrain_remove->setToolTip(tr("Remove the terrain height field, returning to the flat ground"));
+
   reset_layout = new QAction(tr("Reset &Layout"), this);
 
   help_contents = new QAction(tr("&User Guide"), this);
@@ -495,6 +502,10 @@ QAction* Actions::action(shortcuts::Id id) const {
     return signal_phase_editor;
   case Id::MergeRoads:
     return merge_roads;
+  case Id::TerrainCreate:
+    return terrain_create;
+  case Id::TerrainRemove:
+    return terrain_remove;
   case Id::AddFromLibrary:
     return add_from_library;
   case Id::ResetCamera:

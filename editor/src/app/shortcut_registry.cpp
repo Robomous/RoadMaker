@@ -306,6 +306,15 @@ constexpr std::array kTable{
           .description = "Merge two selected roads that meet end-to-start",
           .toolbar_group = "Edit",
           .toolbar_order = 50},
+    // Menu-only (Edit ▸ Terrain), no binding — the height field is created and
+    // removed rarely, so it lives in the menu rather than earning a key or a
+    // toolbar seat (p5-s2, #232).
+    Entry{.id = Id::TerrainCreate,
+          .category = "Edit",
+          .description = "Create a flat terrain height field over the scene"},
+    Entry{.id = Id::TerrainRemove,
+          .category = "Edit",
+          .description = "Remove the terrain height field"},
 
     // Toolbar-only view commands.
     Entry{.id = Id::AddFromLibrary,

@@ -59,5 +59,6 @@ graphify-out/
 # the repo (docs/contributing/pull-requests.md).
 diag/
 
-# gw1_replay.py generated artifacts
+# gw1_replay.py / gw2_replay.py generated artifacts
 gw1_replay_out/
+gw2_replay_out/

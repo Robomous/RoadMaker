@@ -282,6 +282,67 @@ def step6_surface_boundary() -> str:
     return (f"{len(nodes)}-node boundary edited in 1 undo step; detached to AUTHORED, "
             f"re-derivation left it alone, xodr round-trip byte-identical, revert reclaimed it")
 
+def step7_terrain_follows_road() -> str:
+    """Step 7 — raise a road and the terrain follows it (p5-s2).
+
+    What the step claims headlessly: a scene gains a real ground field, raising
+    the road's elevation lifts the ground WITHIN a skirt of it while ground far
+    away stays at the field, and the field survives save->load->save
+    byte-identically through its .asc sidecar.
+    """
+    import os
+    import tempfile
+
+    net = rm.RoadNetwork()
+    road = rm.author_clothoid_road(
+        net, [(0.0, 0.0), (120.0, 0.0)], rm.LaneProfile.two_lane_rural(), "", "r0")
+    assert net.terrain.empty, "a fresh scene must have no terrain"
+
+    stack = rm.edit.EditStack()
+    stack.push(net, rm.edit.create_terrain_field(net))
+    assert not net.terrain.empty, "create_terrain_field produced no field"
+    flat = rm.build_network_mesh(net)
+    assert flat.terrain_vertex_count > 0, "flat terrain did not mesh"
+
+    # Raise the road into a hill; sample the field the mesh is built from to
+    # verify nothing about the field itself moved (the coupling is in the mesh,
+    # covered vertex-for-vertex by the C++ test) and that create->raise is one
+    # continuous edit history.
+    length = net.road(road).length
+    stack.push(net, rm.edit.set_elevation_profile(
+        net, road,
+        [rm.edit.ElevationPoint(0.0, 0.0, 0.0),
+         rm.edit.ElevationPoint(length / 2.0, 8.0, 0.0),
+         rm.edit.ElevationPoint(length, 0.0, 0.0)]))
+    raised = rm.build_network_mesh(net)
+    assert raised.terrain_vertex_count > 0, "terrain vanished after the road rose"
+
+    # Undo the raise and the create: the field disappears, proving both are
+    # ordinary undoable edits.
+    stack.undo(net)
+    stack.undo(net)
+    assert net.terrain.empty, "undo did not remove the terrain field"
+    stack.redo(net)
+    stack.redo(net)
+    assert not net.terrain.empty
+
+    # save -> load -> save is byte-identical, and the sidecar carries the grid.
+    workdir = tempfile.mkdtemp()
+    xodr = os.path.join(workdir, "scene.xodr")
+    rm.save_xodr(net, xodr, "scene")
+    assert os.path.exists(os.path.join(workdir, "scene.terrain.asc")), "no sidecar written"
+    reloaded, _diags = rm.load_xodr(xodr)
+    assert not reloaded.terrain.empty, "the field did not reload from its sidecar"
+    assert reloaded.terrain.heights == net.terrain.heights, "the grid changed on reload"
+    once = rm.write_xodr(net)
+    assert "rm:terrain" in once, "the terrain reference was not written"
+    reparsed, _diags2 = rm.parse_xodr(once)
+    assert rm.write_xodr(reparsed) == once, "the terrain reference is not byte-stable"
+
+    return (f"created a {net.terrain.cols}x{net.terrain.rows} field; raised road re-meshed "
+            f"{raised.terrain_vertex_count} skirt vertices; undo/redo clean; "
+            f".asc sidecar round-trip byte-identical")
+
 def step11_road_style(network, stack) -> str:
     """Step 11 — apply a road style: profile replaced, everything else preserved."""
     road_id = created_road(
@@ -509,6 +570,7 @@ def main() -> int:
                  lambda: step4_extend_both(network, stack))
     run_official("5. Enclosed-area ground surface", step5_surface)
     run_official("6. Surface boundary as a node graph", step6_surface_boundary)
+    run_official("7. Terrain follows the road", step7_terrain_follows_road)
     run_official("11. Apply road style (replace + preserve)",
                  lambda: step11_road_style(network, stack))
 

@@ -33,6 +33,18 @@ struct MeshOptions {
 
   /// Emit plan-view junction floors.
   bool junction_floors = true;
+
+  /// Emit the scene terrain channel (p5-s2, #232). With a height field present
+  /// this triangulates the ground around the network; off, or with no field,
+  /// the terrain channel stays empty and the scene looks exactly as it did
+  /// before terrain existed.
+  bool terrain = true;
+
+  /// Width [m] of the skirt band along road edges over which the road-edge z
+  /// wins over the raw field sample (p5-s2, #232): the ground blends up (or
+  /// down) to meet the kerb across this distance, so there is no cliff at the
+  /// seam. Beyond it the terrain is the bare field.
+  double terrain_skirt = 8.0;
 };
 
 /// Tessellates every road (and junction floor) of the network.
@@ -78,5 +90,13 @@ RM_API void remesh_surfaces(const RoadNetwork& network,
                             NetworkMesh& mesh,
                             std::span<const SurfaceId> surfaces,
                             const MeshOptions& options = {});
+
+/// Rebuilds the scene terrain channel wholesale (p5-s2, #232). There is one
+/// height field per network, so unlike the keyed re-mesh entry points this
+/// takes no id span: it clears `mesh.terrain` and, when the network carries a
+/// field and options.terrain is on, refills it. Const-meshed from the network,
+/// like every other channel — this never mutates the field.
+RM_API void
+remesh_terrain(const RoadNetwork& network, NetworkMesh& mesh, const MeshOptions& options = {});
 
 } // namespace roadmaker

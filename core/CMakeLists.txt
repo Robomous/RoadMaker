@@ -17,6 +17,7 @@ add_library(roadmaker_core ${_rm_core_type}
   src/road/repeat_expansion.cpp
   src/road/road_style.cpp
   src/road/surface_derivation.cpp
+  src/road/terrain.cpp
   src/edit/edit_stack.cpp
   src/edit/connection.cpp
   src/edit/markings.cpp
@@ -25,6 +26,7 @@ add_library(roadmaker_core ${_rm_core_type}
   src/xodr/reader.cpp
   src/xodr/writer.cpp
   src/xodr/junction_export.cpp
+  src/xodr/terrain_sidecar.cpp
   src/mesh/mesh_builder.cpp
   src/mesh/junction_corner_detail.cpp
   src/mesh/junction_corners.cpp
@@ -36,6 +38,7 @@ add_library(roadmaker_core ${_rm_core_type}
   src/mesh/junction_surface_spans.cpp
   src/mesh/surface_boundary.cpp
   src/mesh/surface_fill.cpp
+  src/mesh/terrain_mesh.cpp
   src/assets/prop_meshes.gen.cpp
   src/assets/sign_face.cpp
   src/assets/sign_font.gen.cpp

@@ -25,6 +25,7 @@
 #include "roadmaker/road/road.hpp"
 #include "roadmaker/road/road_style.hpp"
 #include "roadmaker/road/surface.hpp"
+#include "roadmaker/road/terrain.hpp"
 
 #include <cstddef>
 #include <memory>
@@ -1082,6 +1083,36 @@ set_surface_boundary(const RoadNetwork& network, SurfaceId surface, std::vector<
 /// Rejects a stale SurfaceId and a surface that is already derived.
 [[nodiscard]] RM_API std::unique_ptr<Command> revert_surface_to_derived(const RoadNetwork& network,
                                                                         SurfaceId surface);
+
+// --- terrain (the scene height field, p5-s2, #232) --------------------------
+
+/// Replaces the scene height field wholesale (create, edit, or import all go
+/// through here). Captures the whole field before and after — a grid at P5
+/// scale is small, and p5-s4's brushes, which DO need an incremental diff, are
+/// p5-s4's problem. `DirtySet{.terrain = true}`.
+///
+/// Rejects: a non-positive spacing, a `heights.size() != rows*cols` mismatch,
+/// any non-finite height, and a no-op (the field already equals `field`). An
+/// EMPTY field is accepted here only as the target of remove_terrain_field;
+/// callers wanting to clear terrain should use that for the clearer intent.
+[[nodiscard]] RM_API std::unique_ptr<Command> set_terrain_field(const RoadNetwork& network,
+                                                                HeightField field);
+
+/// Creates a flat zero-height field over the network bounds grown by `margin`,
+/// at post spacing `spacing` (make_flat_field). Visually a no-op until edited —
+/// a flat field samples 0 everywhere, exactly like no field — but it is what
+/// makes the ground a real, deformable surface. `DirtySet{.terrain = true}`.
+///
+/// Rejects: a field already present (remove it first), a network with no road
+/// geometry to bound, and a non-positive spacing.
+[[nodiscard]] RM_API std::unique_ptr<Command>
+create_terrain_field(const RoadNetwork& network,
+                     double spacing = kDefaultFieldSpacing,
+                     double margin = kDefaultFieldMargin);
+
+/// Removes the scene height field, returning the ground to the flat render
+/// plane. `DirtySet{.terrain = true}`. Rejects when there is no field.
+[[nodiscard]] RM_API std::unique_ptr<Command> remove_terrain_field(const RoadNetwork& network);
 
 // --- profiles ---------------------------------------------------------------
 

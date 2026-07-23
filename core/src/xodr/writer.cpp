@@ -21,6 +21,7 @@
 #include "roadmaker/mesh/junction_stoplines.hpp"
 #include "roadmaker/tol.hpp"
 #include "roadmaker/xodr/rules.hpp"
+#include "roadmaker/xodr/terrain_sidecar.hpp"
 
 #include <fmt/format.h>
 #include <pugixml.hpp>
@@ -54,6 +55,17 @@ std::string num(double value) {
 
 void set_num(pugi::xml_node node, const char* name, double value) {
   node.append_attribute(name).set_value(num(value).c_str());
+}
+
+/// The sidecar name a field is referenced by and written to (p5-s2, #232).
+/// ONE definition so `<userData code="rm:terrain">` and save_xodr can never
+/// name different files: an unset — or unsafe — stored reference falls back to
+/// the document's own stem.
+std::string sidecar_reference(const HeightField& field, std::string_view document_name) {
+  if (is_safe_sidecar_reference(field.sidecar)) {
+    return field.sidecar;
+  }
+  return std::string{document_name} + ".terrain.asc";
 }
 
 /// The separator-free alphabet every rm:* record value shares (the reader's
@@ -2491,6 +2503,22 @@ Expected<std::string> write_xodr(const RoadNetwork& network,
     }
   }
 
+  // The scene height field (p5-s2, #232) is Layer-2 data — a grid blob does not
+  // belong in <userData>, which ADR-0008 reserves for SPARSE enrichment — so
+  // the .xodr carries only a REFERENCE to the sidecar holding it (decision D2).
+  // Emitted ONLY when the scene has terrain, so every file written before
+  // terrain existed, and every scene without it, stays byte-identical. "Has
+  // terrain" is a live grid OR a stored reference: an in-memory parse_xodr
+  // keeps the reference without the grid (it has no directory to resolve
+  // against), and that shape has to re-emit the same element or the round-trip
+  // would silently drop the scene's terrain.
+  if (!network.terrain().empty() || !network.terrain().sidecar.empty()) {
+    const std::string reference = sidecar_reference(network.terrain(), document_name);
+    pugi::xml_node user_data = root.append_child("userData");
+    user_data.append_attribute("code").set_value("rm:terrain");
+    user_data.append_attribute("value").set_value(reference.c_str());
+  }
+
   std::ostringstream out;
   doc.save(out, "  ", pugi::format_default, pugi::encoding_utf8);
   return std::move(out).str();
@@ -2511,6 +2539,19 @@ Expected<void> save_xodr(const RoadNetwork& network,
   stream << *text;
   if (!stream.good()) {
     return make_error(ErrorCode::IoFailure, "write failed", path.string());
+  }
+
+  // The height-field sidecar rides along with the document it belongs to
+  // (decision D2). Written ONLY when a field is actually present: a network
+  // that carries a reference but no grid — the shape parse_xodr leaves behind,
+  // because an in-memory parse has no directory to resolve against — must not
+  // overwrite or truncate the sidecar already sitting on disk.
+  if (!network.terrain().empty()) {
+    const std::string reference = sidecar_reference(network.terrain(), document_name);
+    if (auto sidecar = save_terrain_asc(network.terrain(), path.parent_path() / reference);
+        !sidecar) {
+      return sidecar;
+    }
   }
   return {};
 }
