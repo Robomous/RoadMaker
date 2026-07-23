@@ -35,10 +35,33 @@ struct Junction;
                                              const Junction& junction,
                                              const SamplingOptions& sampling = {});
 
-/// The junction's authored corner overlays (p4-s2, issue #226): one sidewalk
-/// wedge per corner whose JunctionCorner entry names a `sidewalk_material`, and
-/// one median nose per contiguous median span of every arm whose corner pair
-/// names a `median_material`.
+/// Splits a junction floor (from `build_junction_surface`) into its carriageway
+/// core and per-corner sidewalk bands (issue #357). Lane-type-aware: a corner's
+/// band exists only where a CCW-adjacent arm carries a `LaneType::Sidewalk`
+/// outermost lane, and it wraps continuously around the corner curve when BOTH
+/// adjacent arms do. The carriageway keeps the floor's `Driving` material and
+/// its `surface` (the junction material code); each band is a SEPARATE SubMesh
+/// with `material = LaneType::Sidewalk` and (optionally) the authored
+/// `JunctionCorner::sidewalk_material` as its `surface` override.
+///
+/// The two regions share their seam vertices bit-for-bit (both copy the floor's
+/// exact positions AND normals), so the split is watertight with no cracks. A
+/// junction whose arms carry NO sidewalks is returned VERBATIM as the
+/// carriageway (byte-identical to the un-split floor) with no bands — the
+/// feature never fires on a rural junction.
+struct JunctionFloorSplit {
+  SubMesh carriageway;                 ///< Driving core, surface = junction material.
+  std::vector<SubMesh> sidewalk_bands; ///< Sidewalk bands, one per sidewalked corner.
+};
+
+[[nodiscard]] JunctionFloorSplit split_junction_floor_sidewalks(const RoadNetwork& network,
+                                                                const Junction& junction,
+                                                                const SubMesh& floor);
+
+/// The junction's authored corner overlays (p4-s2, issue #226): one median nose
+/// per contiguous median span of every arm whose corner pair names a
+/// `median_material`. (The continuous sidewalk band moved to
+/// `split_junction_floor_sidewalks` — issue #357.)
 ///
 /// Overlays only — the floor built by `build_junction_surface` is NEVER cut:
 /// carving the wedge out of the union would move the boundary ring and change

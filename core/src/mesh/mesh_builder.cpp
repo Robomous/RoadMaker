@@ -950,9 +950,18 @@ JunctionFloor build_one_junction_floor(const RoadNetwork& network,
                                        JunctionId junction_id,
                                        const Junction& junction,
                                        const SamplingOptions& sampling) {
-  return JunctionFloor{.junction = junction_id,
-                       .mesh = build_junction_surface(network, junction, sampling),
-                       .details = build_junction_corner_details(network, junction, sampling)};
+  // Sidewalked junctions (issue #357): the floor is split into its carriageway
+  // core (kept as `mesh`, Driving) and per-corner sidewalk bands (Sidewalk),
+  // which join the authored median-nose overlays in `details`. A rural junction
+  // splits to itself, so `mesh` stays byte-identical to the un-split floor.
+  const SubMesh floor = build_junction_surface(network, junction, sampling);
+  JunctionFloorSplit split = split_junction_floor_sidewalks(network, junction, floor);
+  std::vector<SubMesh> details = std::move(split.sidewalk_bands);
+  for (SubMesh& overlay : build_junction_corner_details(network, junction, sampling)) {
+    details.push_back(std::move(overlay));
+  }
+  return JunctionFloor{
+      .junction = junction_id, .mesh = std::move(split.carriageway), .details = std::move(details)};
 }
 
 /// One enclosed-area ground surface, keyed by id; empty mesh (no indices) when
