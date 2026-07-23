@@ -112,6 +112,22 @@ TEST(LibraryPanel, SelectingAnItemEmitsCurrentChanged) {
   EXPECT_FALSE(spy.at(0).at(0).toString().isEmpty());
 }
 
+// A prop (Kind::Tree) selection additionally opens the Attributes-pane asset
+// editor (p6-s11 widened the gate beyond Crosswalk/PropSet).
+TEST(LibraryPanel, SelectingAPropItemEmitsAssetSelected) {
+  LibraryPanel panel(populated_model());
+  auto* search = panel.findChild<QLineEdit*>(QStringLiteral("library_search"));
+  ASSERT_NE(search, nullptr);
+  search->setText(QStringLiteral("pine")); // narrows to the single pine prop
+  ASSERT_EQ(panel.view()->model()->rowCount(), 1);
+
+  QSignalSpy spy(&panel, &LibraryPanel::asset_selected);
+  ASSERT_TRUE(spy.isValid());
+  panel.view()->setCurrentIndex(panel.view()->model()->index(0, 0));
+  ASSERT_EQ(spy.count(), 1);
+  EXPECT_EQ(spy.at(0).at(0).toString(), QStringLiteral("prop.tree.pine"));
+}
+
 // An engaged Attributes-pane slot asks the Library to show its category
 // (P1/GW-3): the first item of that category becomes current.
 TEST(LibraryPanel, FocusCategorySelectsThatCategorysFirstItem) {

@@ -655,7 +655,12 @@ void MainWindow::build_docks() {
   // MainWindow, which owns the project-overlay manifest and the propagation.
   properties_panel_->set_library_model(&library_model_);
   connect(library_panel_, &LibraryPanel::asset_selected, this, [this](const QString& key) {
-    const bool editable = project_.has_value() && library_model_.has_overlay_item(key);
+    // A prop asset's Default scale is editable whenever a project is open — the
+    // commit upserts a project-overlay entry that shadows the built-in (p6-s11).
+    // Crosswalk/PropSet built-ins stay read-only (they need an explicit copy).
+    const LibraryItem* item = library_model_.item_for_key(key);
+    const bool is_prop = item != nullptr && item->kind == LibraryItem::Kind::Tree;
+    const bool editable = project_.has_value() && (library_model_.has_overlay_item(key) || is_prop);
     properties_dock_->show();
     properties_dock_->raise();
     properties_panel_->edit_asset(key, editable);
@@ -682,6 +687,10 @@ void MainWindow::build_docks() {
           &PropertiesPanel::prop_set_asset_committed,
           this,
           &MainWindow::commit_prop_set_asset);
+  connect(properties_panel_,
+          &PropertiesPanel::prop_asset_committed,
+          this,
+          &MainWindow::commit_prop_asset);
   properties_dock_->setWidget(properties_panel_);
   properties_dock_->widget()->setMinimumWidth(300);
   addDockWidget(Qt::RightDockWidgetArea, properties_dock_);
@@ -1200,7 +1209,15 @@ LibraryItem MainWindow::resolve_default_prop_item() const {
   if (const LibraryItem* cur = current_library_item();
       cur != nullptr &&
       (cur->kind == LibraryItem::Kind::Tree || cur->kind == LibraryItem::Kind::PropSet)) {
-    return *cur;
+    LibraryItem resolved = *cur;
+    // Fill each PropSet entry's transient Default scale from the merged library
+    // so a scatter honors every drawn model's own default (resolve_prop_asset
+    // carries the chosen entry's scale onto the synthetic tree). A Tree item has
+    // no entries, so this is a no-op there.
+    for (LibraryItem::PropSetEntry& entry : resolved.prop_entries) {
+      entry.default_scale = library_model_.default_scale_for_model(entry.model);
+    }
+    return resolved;
   }
   // The first Kind::Tree in the merged Library (an overlay asset shadows the
   // built-in). An empty item makes the prop tools toast on the first click.
@@ -1405,6 +1422,26 @@ void MainWindow::commit_prop_set_asset(const LibraryItem& item) {
   // reference the set, so editing the set only changes future scatters (unlike
   // commit_crosswalk_asset, whose instances carry the asset's geometry).
   apply_project_overlay(); // refresh the Library entry for the edited set
+}
+
+void MainWindow::commit_prop_asset(const LibraryItem& item) {
+  if (!project_.has_value()) {
+    return;
+  }
+  const auto path = project_->library_manifest_path();
+  if (!path.has_value()) {
+    return;
+  }
+  LibraryManifest manifest = load_or_create_overlay_manifest();
+  manifest.upsert(item); // shadows the built-in prop with a project-owned copy
+  if (!manifest.save(*path).has_value()) {
+    viewport_->show_toast(tr("Couldn't write the project library"), ToastSeverity::Warning);
+    return;
+  }
+  // No propagation: Default scale affects new placements only (each placed prop
+  // already bakes its absolute @height/@radius and never references the asset),
+  // same rationale as commit_prop_set_asset.
+  apply_project_overlay(); // refresh the Library entry for the edited prop
 }
 
 void MainWindow::set_capture_highlights(const QString& select_odr, const QString& hover_odr) {

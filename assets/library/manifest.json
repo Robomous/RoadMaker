@@ -49,35 +49,35 @@
       "label": "Pine tree",
       "category": "Props",
       "thumbnail": "assets/library/thumbnails/prop_tree_pine.png",
-      "create": { "kind": "tree", "model": "tree_pine" }
+      "create": { "kind": "tree", "model": "tree_pine", "default_scale": 2.0 }
     },
     {
       "key": "prop.tree.oak",
       "label": "Oak tree",
       "category": "Props",
       "thumbnail": "assets/library/thumbnails/prop_tree_oak.png",
-      "create": { "kind": "tree", "model": "tree_oak" }
+      "create": { "kind": "tree", "model": "tree_oak", "default_scale": 2.0 }
     },
     {
       "key": "prop.tree.birch",
       "label": "Birch tree",
       "category": "Props",
       "thumbnail": "assets/library/thumbnails/prop_tree_birch.png",
-      "create": { "kind": "tree", "model": "tree_birch" }
+      "create": { "kind": "tree", "model": "tree_birch", "default_scale": 2.0 }
     },
     {
       "key": "prop.tree.poplar",
       "label": "Poplar tree",
       "category": "Props",
       "thumbnail": "assets/library/thumbnails/prop_tree_poplar.png",
-      "create": { "kind": "tree", "model": "tree_poplar" }
+      "create": { "kind": "tree", "model": "tree_poplar", "default_scale": 2.0 }
     },
     {
       "key": "prop.shrub",
       "label": "Shrub",
       "category": "Props",
       "thumbnail": "assets/library/thumbnails/prop_shrub.png",
-      "create": { "kind": "tree", "model": "shrub" }
+      "create": { "kind": "tree", "model": "shrub", "default_scale": 2.0 }
     },
     {
       "key": "prop.streetlight",

@@ -57,6 +57,13 @@ and they round-trip through save/reload and into the glTF and USD exports
 (`s` / `t` / heading offset) edits in the properties panel — see
 [objects & signals](objects-signals.md).
 
+Each prop has a **Default scale** — a uniform multiplier on the bundled model's
+size that new placements spawn at (the shipped trees default to 2×). Select a
+prop in the Library with a project open and its Default scale edits in the
+properties panel; the change applies to props you place afterward, not to ones
+already in the scene. Every placed prop still records its own absolute size, so
+resizing a single instance and changing the asset default stay independent.
+
 ## Markings drop on a lane boundary
 
 Drag a **marking** onto the viewport and drop it near a lane edge: RoadMaker

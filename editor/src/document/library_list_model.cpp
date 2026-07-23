@@ -192,6 +192,17 @@ const LibraryItem* LibraryListModel::item_for_key(const QString& key) const {
   return nullptr;
 }
 
+double LibraryListModel::default_scale_for_model(const QString& model) const {
+  // items_ is already base+overlay merged with the overlay winning on key
+  // collision, so the first Kind::Tree match reflects the project's shadowing.
+  for (const LibraryItem& entry : items_) {
+    if (entry.kind == LibraryItem::Kind::Tree && entry.model == model) {
+      return entry.default_scale;
+    }
+  }
+  return 1.0;
+}
+
 const LibraryItem* LibraryListModel::item(int row) const {
   if (row < 0 || row >= static_cast<int>(items_.size())) {
     return nullptr;

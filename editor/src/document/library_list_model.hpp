@@ -79,6 +79,12 @@ public:
   /// when unknown.
   [[nodiscard]] const LibraryItem* item_for_key(const QString& key) const;
 
+  /// The Default scale of the first prop (Kind::Tree) item whose bundled model
+  /// id is `model` — scanned over the MERGED rows, so a project overlay shadows
+  /// the built-in. 1.0 when no library item creates that model. Used to fill a
+  /// PropSet scatter's per-entry scale at arm time.
+  [[nodiscard]] double default_scale_for_model(const QString& model) const;
+
 private:
   /// Rebuilds items_ = base + overlay (overlay wins on key collision) under a
   /// model reset.

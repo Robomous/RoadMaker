@@ -984,6 +984,43 @@ TEST(PropertiesPanel, PropSetEditorEmitsCommittedItem) {
   EXPECT_FALSE(save->isEnabled());
 }
 
+TEST(PropertiesPanel, PropAssetEditorPopulatesAndCommitsDefaultScale) {
+  qRegisterMetaType<LibraryItem>();
+  Harness harness;
+  LibraryListModel model;
+  const auto manifest = LibraryManifest::parse(QByteArrayLiteral(R"({
+    "manifest_version": 1,
+    "items": [{"key": "prop.tree.pine", "label": "Pine", "category": "Props",
+               "create": {"kind": "tree", "model": "tree_pine", "default_scale": 2}}]
+  })"));
+  ASSERT_TRUE(manifest.has_value());
+  model.set_manifest(*manifest);
+
+  PropertiesPanel panel(harness.document, harness.selection);
+  panel.set_library_model(&model);
+  QSignalSpy spy(&panel, &PropertiesPanel::prop_asset_committed);
+
+  panel.edit_asset(QStringLiteral("prop.tree.pine"), /*editable=*/true);
+  auto* scale = panel.findChild<QDoubleSpinBox*>(QStringLiteral("prop_default_scale"));
+  ASSERT_NE(scale, nullptr);
+  EXPECT_DOUBLE_EQ(scale->value(), 2.0); // populated from the manifest
+
+  scale->setValue(3.5);
+  emit scale->editingFinished();
+  ASSERT_EQ(spy.count(), 1);
+  const auto committed = qvariant_cast<LibraryItem>(spy.front().front());
+  EXPECT_EQ(committed.kind, LibraryItem::Kind::Tree);
+  EXPECT_EQ(committed.key, QStringLiteral("prop.tree.pine"));
+  EXPECT_DOUBLE_EQ(committed.default_scale, 3.5);
+  // create_raw is patched so the overlay save carries the edited value (a parsed
+  // item re-emits its verbatim create block).
+  EXPECT_DOUBLE_EQ(committed.create_raw.value(QStringLiteral("default_scale")).toDouble(), 3.5);
+
+  // A read-only (built-in, no project) asset disables editing and does not commit.
+  panel.edit_asset(QStringLiteral("prop.tree.pine"), /*editable=*/false);
+  EXPECT_FALSE(scale->isEnabled());
+}
+
 // --- Corner section (p4-s1, issue #225; GW-2 s9 / GW-3 s5) --------------------
 // The Corner tool's active corner is tool-local sub-selection, so what matters
 // here is the binding: the section appears only for the junction the pane is

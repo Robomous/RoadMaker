@@ -285,7 +285,9 @@ PropertiesPanel::PropertiesPanel(Document& document,
       asset_material_slot_(new SlotWidget(QStringLiteral("Materials"), this)),
       asset_category_edit_(new QLineEdit), asset_preview_(new QLabel(this)),
       asset_hint_(new QLabel(this)), prop_set_group_(new QGroupBox(tr("Prop set"), this)),
-      prop_set_hint_(new QLabel(this)) {
+      prop_set_hint_(new QLabel(this)), prop_group_(new QGroupBox(tr("Prop asset"), this)),
+      prop_model_label_(new QLabel(this)), prop_scale_spin_(new QDoubleSpinBox),
+      prop_scale_hint_(new QLabel(this)), prop_hint_(new QLabel(this)) {
   placeholder_->setWordWrap(true);
   placeholder_->setEnabled(false);
 
@@ -976,6 +978,28 @@ PropertiesPanel::PropertiesPanel(Document& document,
   });
   connect(prop_set_save_button_, &QPushButton::clicked, this, [this] { commit_prop_set_edit(); });
 
+  // Prop asset editor (p6-s11): a single Default scale spin, built here and
+  // hidden until edit_prop_asset(). Commits per-field on editingFinished (the
+  // crosswalk pattern) — one spin never reshapes the form, so no Save button.
+  auto* prop_layout = new QFormLayout(prop_group_);
+  prop_model_label_->setStyleSheet(QStringLiteral("color: palette(mid);"));
+  prop_layout->addRow(tr("Model"), prop_model_label_);
+  prop_scale_spin_->setObjectName(QStringLiteral("prop_default_scale"));
+  prop_scale_spin_->setRange(0.05, 20.0);
+  prop_scale_spin_->setDecimals(2);
+  prop_scale_spin_->setSingleStep(0.1);
+  prop_layout->addRow(tr("Default scale"), prop_scale_spin_);
+  prop_scale_hint_->setWordWrap(true);
+  prop_scale_hint_->setStyleSheet(QStringLiteral("color: palette(mid);"));
+  prop_layout->addRow(prop_scale_hint_);
+  prop_hint_->setWordWrap(true);
+  prop_hint_->setStyleSheet(QStringLiteral("color: palette(mid);"));
+  prop_layout->addRow(prop_hint_);
+  prop_group_->hide();
+  connect(prop_scale_spin_, &QDoubleSpinBox::editingFinished, this, [this] {
+    commit_prop_asset_edit();
+  });
+
   auto* layout = new QVBoxLayout(this);
   layout->addWidget(placeholder_);
   layout->addWidget(name_row_);
@@ -994,6 +1018,7 @@ PropertiesPanel::PropertiesPanel(Document& document,
   layout->addWidget(surface_group_);
   layout->addWidget(asset_group_);
   layout->addWidget(prop_set_group_);
+  layout->addWidget(prop_group_);
   layout->addStretch();
 
   // One command per discrete action (spec 01 §7). Combos commit on
@@ -1152,6 +1177,7 @@ PropertiesPanel::PropertiesPanel(Document& document,
   connect(&selection_, &SelectionModel::selection_changed, this, [this] {
     asset_mode_ = false;
     prop_set_mode_ = false;
+    prop_mode_ = false;
     refresh();
   });
   connect(&document_, &Document::loaded, this, &PropertiesPanel::refresh);
@@ -1182,6 +1208,7 @@ void PropertiesPanel::refresh() {
   // The asset editors are Library-driven modes; any scene selection closes them.
   asset_group_->hide();
   prop_set_group_->hide();
+  prop_group_->hide();
   // Shown only on the road path below; every early return leaves it hidden.
   style_group_->hide();
   // Shown only on the ground-surface path below; hidden everywhere else.
@@ -2558,8 +2585,12 @@ void PropertiesPanel::edit_asset(const QString& key, bool editable) {
     edit_prop_set_asset(*item, editable);
     return;
   }
+  if (item != nullptr && item->kind == LibraryItem::Kind::Tree) {
+    edit_prop_asset(*item, editable);
+    return;
+  }
   if (item == nullptr || item->kind != LibraryItem::Kind::Crosswalk) {
-    return; // a non-crosswalk / non-prop-set key never opens the asset editor
+    return; // a non-crosswalk / non-prop-set / non-prop key never opens the editor
   }
   asset_mode_ = true;
   asset_editable_ = editable;
@@ -2576,6 +2607,7 @@ void PropertiesPanel::edit_asset(const QString& key, bool editable) {
   style_group_->hide();
   surface_group_->hide();
   prop_set_group_->hide();
+  prop_group_->hide();
 
   {
     const QSignalBlocker b1(asset_width_spin_);
@@ -2710,6 +2742,7 @@ void PropertiesPanel::edit_prop_set_asset(const LibraryItem& item, bool editable
   style_group_->hide();
   surface_group_->hide();
   asset_group_->hide();
+  prop_group_->hide();
 
   for (const LibraryItem::PropSetEntry& entry : item.prop_entries) {
     add_prop_set_row(entry.model, entry.portion, editable);
@@ -2738,6 +2771,69 @@ void PropertiesPanel::commit_prop_set_edit() {
                                                           .portion = row.portion->value()});
   }
   emit prop_set_asset_committed(item);
+}
+
+void PropertiesPanel::edit_prop_asset(const LibraryItem& item, bool editable) {
+  // A subtype of asset mode (refresh() early-returns on asset_mode_). Unlike the
+  // prop set, a single spin commits per-field on editingFinished.
+  asset_mode_ = true;
+  prop_mode_ = true;
+  asset_editable_ = editable;
+  asset_key_ = item.key;
+  prop_asset_item_ = item; // the source copy the commit patches
+
+  clear_rows();
+  placeholder_->hide();
+  name_row_->hide();
+  lane_group_->hide();
+  elevation_group_->hide();
+  signal_group_->hide();
+  object_group_->hide();
+  style_group_->hide();
+  surface_group_->hide();
+  asset_group_->hide();
+  prop_set_group_->hide();
+
+  prop_group_->setTitle(tr("Prop asset — %1").arg(item.label));
+  prop_model_label_->setText(item.model);
+  {
+    const QSignalBlocker block(prop_scale_spin_);
+    prop_scale_spin_->setValue(item.default_scale);
+  }
+  prop_scale_spin_->setEnabled(editable);
+  prop_scale_spin_->setReadOnly(!editable);
+  refresh_prop_scale_hint();
+  prop_hint_->setText(editable
+                          ? tr("Uniform spawn multiplier applied to new placements of this prop.")
+                          : tr("Open a project to edit prop defaults."));
+  prop_group_->show();
+}
+
+void PropertiesPanel::commit_prop_asset_edit() {
+  if (!prop_mode_ || !asset_editable_) {
+    return;
+  }
+  LibraryItem item = prop_asset_item_;
+  item.default_scale = prop_scale_spin_->value();
+  // A parsed item re-emits its verbatim create_raw, so the edited scale is lost
+  // unless we patch the raw block too (to_json reads create_raw when non-empty).
+  if (!item.create_raw.isEmpty()) {
+    item.create_raw[QStringLiteral("default_scale")] = item.default_scale;
+  }
+  prop_asset_item_ = item; // keep the source in sync for the next edit
+  refresh_prop_scale_hint();
+  emit prop_asset_committed(item);
+}
+
+void PropertiesPanel::refresh_prop_scale_hint() {
+  const double scale = prop_scale_spin_->value();
+  if (const props::PropModel* model = props::model(prop_asset_item_.model.toStdString())) {
+    prop_scale_hint_->setText(tr("Spawns at %1 m (model %2 m)")
+                                  .arg(model->height * scale, 0, 'f', 2)
+                                  .arg(model->height, 0, 'f', 2));
+  } else {
+    prop_scale_hint_->clear();
+  }
 }
 
 } // namespace roadmaker::editor

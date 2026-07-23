@@ -7,9 +7,11 @@
 // wrong-asset toast, selection, and the hover ghost. Runs under
 // QT_QPA_PLATFORM=offscreen.
 
+#include "roadmaker/assets/prop_library.hpp"
 #include "roadmaker/edit/operations.hpp"
 #include "roadmaker/road/network.hpp"
 #include "roadmaker/road/object.hpp"
+#include "roadmaker/xodr/reader.hpp"
 #include "roadmaker/xodr/writer.hpp"
 
 #include <gtest/gtest.h>
@@ -18,6 +20,7 @@
 #include <QUndoStack>
 #include <optional>
 #include <stdexcept>
+#include <string>
 
 #include "document/document.hpp"
 #include "document/library_manifest.hpp"
@@ -96,6 +99,57 @@ TEST(PropPointTool, ClickPlacesOnePropAsOneUndoEntry) {
 
   scene.document.undo_stack()->undo();
   EXPECT_EQ(scene.object_count(), 0);
+}
+
+TEST(PropPointTool, ScaledPlacementPersistsDimsAsLayerZero) {
+  Scene scene;
+  SelectionModel selection(scene.document);
+  PropPointTool tool(scene.document, selection);
+  tool.set_params_provider([] {
+    LibraryItem item = pine_item();
+    item.default_scale = 2.0;
+    return item;
+  });
+  tool.activate();
+  ASSERT_TRUE(tool.mouse_press(event_at(0.0, -1.75)));
+  ASSERT_TRUE(tool.mouse_release(event_at(0.0, -1.75)));
+  ASSERT_EQ(scene.object_count(), 1);
+
+  const props::PropModel* model = props::model("tree_pine");
+  ASSERT_NE(model, nullptr);
+  const auto id = scene.first_object();
+  ASSERT_TRUE(id.has_value());
+  const Object* placed = scene.document.network().object(*id);
+  ASSERT_NE(placed, nullptr);
+  ASSERT_TRUE(placed->height.has_value());
+  EXPECT_DOUBLE_EQ(*placed->height, model->height * 2.0);
+
+  // Write -> read keeps the scaled dims; persistence is Layer 0 (plain
+  // @height/@radius, no rm:/userData in the <objects> block).
+  const auto xml = roadmaker::write_xodr(scene.document.network(), "prop scale");
+  ASSERT_TRUE(xml.has_value());
+  const auto reparsed = roadmaker::parse_xodr(*xml, "prop scale");
+  ASSERT_TRUE(reparsed.has_value());
+  int reparsed_count = 0;
+  std::optional<double> reparsed_height;
+  reparsed->network.for_each_object([&](ObjectId, const Object& obj) {
+    ++reparsed_count;
+    reparsed_height = obj.height;
+  });
+  EXPECT_EQ(reparsed_count, 1);
+  ASSERT_TRUE(reparsed_height.has_value());
+  EXPECT_DOUBLE_EQ(*reparsed_height, model->height * 2.0);
+
+  // Scope the no-userData assertion to the <objects> slice — a road always
+  // carries its own rm:waypoints userData, so a whole-file check would be wrong.
+  const std::string& doc = *xml;
+  const std::string::size_type begin = doc.find("<objects>");
+  const std::string::size_type end = doc.find("</objects>");
+  ASSERT_NE(begin, std::string::npos);
+  ASSERT_NE(end, std::string::npos);
+  const std::string objects = doc.substr(begin, end - begin);
+  EXPECT_EQ(objects.find("userData"), std::string::npos);
+  EXPECT_EQ(objects.find("rm:"), std::string::npos);
 }
 
 TEST(PropPointTool, RepeatedClicksPlaceSeparateProps) {
