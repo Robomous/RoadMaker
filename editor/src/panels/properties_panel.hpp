@@ -50,6 +50,7 @@
 #include "document/selection_model.hpp"
 #include "panels/scrub_label.hpp"
 #include "panels/slot_widget.hpp"
+#include "panels/unit_spin_box.hpp"
 #include "render/material_catalog.hpp"
 
 namespace roadmaker::editor {
@@ -272,12 +273,12 @@ private:
 
   QGroupBox* lane_group_;
   QComboBox* type_combo_;
-  QDoubleSpinBox* width_spin_;
+  UnitSpinBox* width_spin_;
   /// The "Width" scrub handle — kept so it can be disabled alongside width_spin_
   /// on a lane whose width varies along s (that edit belongs in the 2D Editor).
   ScrubLabel* width_scrub_label_ = nullptr;
   QComboBox* mark_combo_;
-  QDoubleSpinBox* mark_width_spin_;
+  UnitSpinBox* mark_width_spin_;
   /// Lane marking slot (p3-s1): a Library slot that sets the selected lane's
   /// road mark from a dropped Markings item (parity with the viewport drop).
   /// Enabled on any lane, centre included — lane 0 carries the centre-line mark.
@@ -292,7 +293,7 @@ private:
 
   QGroupBox* elevation_group_;
   QLabel* elevation_node_label_;
-  QDoubleSpinBox* elevation_spin_;
+  UnitSpinBox* elevation_spin_;
   ElevationTool* elevation_tool_ = nullptr;
 
   /// Corner section (p4-s1): the active junction fillet's radius. The arm-pair
@@ -301,7 +302,7 @@ private:
   QGroupBox* corner_group_;
   QFormLayout* corner_form_ = nullptr;
   QLabel* corner_arms_label_;
-  QDoubleSpinBox* corner_radius_spin_;
+  UnitSpinBox* corner_radius_spin_;
   /// The "Corner radius" scrub handle — kept so the row can be hidden when the
   /// active pair no longer solves (GW-2 s9 drags this label).
   ScrubLabel* corner_radius_scrub_label_ = nullptr;
@@ -319,7 +320,7 @@ private:
   QGroupBox* stopline_group_;
   QFormLayout* stopline_form_ = nullptr;
   QLabel* stopline_arm_label_;
-  QDoubleSpinBox* stopline_distance_spin_;
+  UnitSpinBox* stopline_distance_spin_;
   ScrubLabel* stopline_distance_scrub_label_ = nullptr;
   QPushButton* stopline_flip_button_;
   QPushButton* stopline_reset_button_;
@@ -363,12 +364,12 @@ private:
   /// for a FOREIGN one (no derivation to guard) — the states
   /// edit::set_junction_locked refuses.
   QCheckBox* junction_locked_check_;
-  QDoubleSpinBox* junction_radius_spin_;
+  UnitSpinBox* junction_radius_spin_;
   SlotWidget* junction_material_slot_;
 
   QGroupBox* signal_group_;
-  QDoubleSpinBox* signal_s_spin_;
-  QDoubleSpinBox* signal_t_spin_;
+  UnitSpinBox* signal_s_spin_;
+  UnitSpinBox* signal_t_spin_;
   QDoubleSpinBox* signal_h_spin_;
   QLabel* signal_kind_label_;
   /// Editable @text face (§14 Table 122). A compact multi-line editor — @text
@@ -390,7 +391,7 @@ private:
   /// meters. Scrubbing or typing here resizes EVERY selected prop — the pane's
   /// first batch edit — through a single update_objects command. Hidden for
   /// markings and for props whose @name resolves to no bundled model.
-  QDoubleSpinBox* object_height_spin_;
+  UnitSpinBox* object_height_spin_;
   /// The object group's form — kept so refresh_object can setRowVisible the
   /// Model vs Material rows per object kind.
   QFormLayout* object_form_ = nullptr;
@@ -494,10 +495,10 @@ private:
   QString asset_material_key_;
 
   QGroupBox* asset_group_;
-  QDoubleSpinBox* asset_width_spin_;
-  QDoubleSpinBox* asset_border_spin_;
-  QDoubleSpinBox* asset_dash_spin_;
-  QDoubleSpinBox* asset_gap_spin_;
+  UnitSpinBox* asset_width_spin_;
+  UnitSpinBox* asset_border_spin_;
+  UnitSpinBox* asset_dash_spin_;
+  UnitSpinBox* asset_gap_spin_;
   SlotWidget* asset_material_slot_;
   QLineEdit* asset_category_edit_;
   QLabel* asset_preview_;

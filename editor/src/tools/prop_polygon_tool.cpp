@@ -28,6 +28,7 @@
 
 #include "document/document.hpp"
 #include "document/selection_model.hpp"
+#include "document/units.hpp"
 
 namespace roadmaker::editor {
 
@@ -143,7 +144,9 @@ bool PropPolygonTool::key_press(int key, Qt::KeyboardModifiers modifiers) {
 void PropPolygonTool::adjust_density(double delta) {
   density_per_100m2_ = std::clamp(density_per_100m2_ + delta, kDensityMin, kDensityMax);
   invalidate();
-  emit status_message(tr("Prop density %1 per 100 m²").arg(density_per_100m2_, 0, 'f', 1));
+  emit status_message(tr("Prop density %1 per %2")
+                          .arg(density_per_100m2_, 0, 'f', 1)
+                          .arg(units::format_area(100.0, 0)));
 }
 
 void PropPolygonTool::randomize() {
@@ -251,9 +254,10 @@ PreviewGeometry PropPolygonTool::preview() const {
 }
 
 QString PropPolygonTool::instruction() const {
-  return tr("Click to outline a region; Enter scatters props, [ / ] set density (%1 / 100 m²), "
+  return tr("Click to outline a region; Enter scatters props, [ / ] set density (%1 / %2), "
             "R re-scatters, Backspace undoes a vertex, Esc cancels")
-      .arg(density_per_100m2_, 0, 'f', 1);
+      .arg(density_per_100m2_, 0, 'f', 1)
+      .arg(units::format_area(100.0, 0));
 }
 
 } // namespace roadmaker::editor

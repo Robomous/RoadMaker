@@ -44,6 +44,7 @@
 #include "document/library_list_model.hpp"
 #include "document/library_manifest.hpp"
 #include "document/marking_item.hpp"
+#include "document/units.hpp"
 #include "render/material_catalog.hpp"
 #include "tools/corner_tool.hpp"
 #include "tools/elevation_tool.hpp"
@@ -259,21 +260,21 @@ PropertiesPanel::PropertiesPanel(Document& document,
     : QWidget(parent), document_(document), selection_(selection), form_(new QFormLayout),
       placeholder_(new QLabel(tr("Select a road or lane."), this)), name_row_(new QWidget(this)),
       name_edit_(new QLineEdit), lane_group_(new QGroupBox(tr("Lane profile"), this)),
-      type_combo_(new QComboBox), width_spin_(new QDoubleSpinBox), mark_combo_(new QComboBox),
-      mark_width_spin_(new QDoubleSpinBox),
+      type_combo_(new QComboBox), width_spin_(new UnitSpinBox), mark_combo_(new QComboBox),
+      mark_width_spin_(new UnitSpinBox),
       marking_slot_(new SlotWidget(QStringLiteral("Markings"), this)),
       lane_material_slot_(new SlotWidget(QStringLiteral("Materials"), this)),
       add_left_(new QPushButton(tr("Add left"))), add_right_(new QPushButton(tr("Add right"))),
       remove_left_(new QPushButton(tr("Remove left lane"))),
       remove_right_(new QPushButton(tr("Remove right lane"))),
       elevation_group_(new QGroupBox(tr("Elevation"), this)),
-      elevation_node_label_(new QLabel(this)), elevation_spin_(new QDoubleSpinBox),
+      elevation_node_label_(new QLabel(this)), elevation_spin_(new UnitSpinBox),
       corner_group_(new QGroupBox(tr("Corner"), this)), corner_arms_label_(new QLabel(this)),
-      corner_radius_spin_(new QDoubleSpinBox),
+      corner_radius_spin_(new UnitSpinBox),
       corner_sidewalk_slot_(new SlotWidget(QStringLiteral("Materials"), this)),
       corner_median_slot_(new SlotWidget(QStringLiteral("Materials"), this)),
       stopline_group_(new QGroupBox(tr("Stop line"), this)), stopline_arm_label_(new QLabel(this)),
-      stopline_distance_spin_(new QDoubleSpinBox),
+      stopline_distance_spin_(new UnitSpinBox),
       stopline_flip_button_(new QPushButton(tr("Flip direction"))),
       stopline_reset_button_(new QPushButton(tr("Reset to default"))),
       surface_spans_group_(new QGroupBox(tr("Surface spans"), this)),
@@ -281,21 +282,21 @@ PropertiesPanel::PropertiesPanel(Document& document,
       signalization_group_(new QGroupBox(tr("Signalization"), this)),
       junction_group_(new QGroupBox(tr("Junction"), this)), junction_type_label_(new QLabel(this)),
       junction_locked_check_(new QCheckBox(tr("Locked"), this)),
-      junction_radius_spin_(new QDoubleSpinBox),
+      junction_radius_spin_(new UnitSpinBox),
       junction_material_slot_(new SlotWidget(QStringLiteral("Materials"), this)),
-      signal_group_(new QGroupBox(tr("Signal"), this)), signal_s_spin_(new QDoubleSpinBox),
-      signal_t_spin_(new QDoubleSpinBox), signal_h_spin_(new QDoubleSpinBox),
+      signal_group_(new QGroupBox(tr("Signal"), this)), signal_s_spin_(new UnitSpinBox),
+      signal_t_spin_(new UnitSpinBox), signal_h_spin_(new QDoubleSpinBox),
       signal_kind_label_(new QLabel(this)), signal_text_edit_(new QPlainTextEdit),
       object_group_(new QGroupBox(tr("Prop"), this)), object_kind_label_(new QLabel(this)),
       model_slot_(new SlotWidget(QStringLiteral("Props"), this)),
       instance_material_slot_(new SlotWidget(QStringLiteral("Materials"), this)),
-      object_height_spin_(new QDoubleSpinBox), style_group_(new QGroupBox(tr("Road style"), this)),
+      object_height_spin_(new UnitSpinBox), style_group_(new QGroupBox(tr("Road style"), this)),
       style_slot_(new SlotWidget(QStringLiteral("Road styles"), this)),
       surface_group_(new QGroupBox(tr("Ground surface"), this)),
       material_slot_(new SlotWidget(QStringLiteral("Materials"), this)),
-      asset_group_(new QGroupBox(tr("Crosswalk asset"), this)),
-      asset_width_spin_(new QDoubleSpinBox), asset_border_spin_(new QDoubleSpinBox),
-      asset_dash_spin_(new QDoubleSpinBox), asset_gap_spin_(new QDoubleSpinBox),
+      asset_group_(new QGroupBox(tr("Crosswalk asset"), this)), asset_width_spin_(new UnitSpinBox),
+      asset_border_spin_(new UnitSpinBox), asset_dash_spin_(new UnitSpinBox),
+      asset_gap_spin_(new UnitSpinBox),
       asset_material_slot_(new SlotWidget(QStringLiteral("Materials"), this)),
       asset_category_edit_(new QLineEdit), asset_preview_(new QLabel(this)),
       asset_hint_(new QLabel(this)), prop_set_group_(new QGroupBox(tr("Prop set"), this)),
@@ -317,19 +318,17 @@ PropertiesPanel::PropertiesPanel(Document& document,
   width_spin_->setRange(0.01, 50.0);
   width_spin_->setSingleStep(0.25);
   width_spin_->setDecimals(2);
-  width_spin_->setSuffix(tr(" m"));
   mark_combo_->setObjectName(QStringLiteral("road_mark_combo"));
   mark_width_spin_->setObjectName(QStringLiteral("road_mark_width_spin"));
   mark_width_spin_->setRange(0.0, 2.0);
   mark_width_spin_->setSingleStep(0.01);
   mark_width_spin_->setDecimals(2);
-  mark_width_spin_->setSuffix(tr(" m"));
   mark_width_spin_->setValue(kMarkWidthStandard);
   mark_width_spin_->setToolTip(
-      tr("Painted line width. Conventions: %1 m standard, %2 m bold (the OpenDRIVE spec sets "
+      tr("Painted line width. Conventions: %1 standard, %2 bold (the OpenDRIVE spec sets "
          "no numeric values).")
-          .arg(kMarkWidthStandard)
-          .arg(kMarkWidthBold));
+          .arg(units::format_length(kMarkWidthStandard))
+          .arg(units::format_length(kMarkWidthBold)));
   add_left_->setObjectName(QStringLiteral("add_left_lane_button"));
   add_right_->setObjectName(QStringLiteral("add_right_lane_button"));
   remove_left_->setObjectName(QStringLiteral("remove_left_lane_button"));
@@ -430,7 +429,6 @@ PropertiesPanel::PropertiesPanel(Document& document,
   elevation_spin_->setRange(-1000.0, 1000.0);
   elevation_spin_->setSingleStep(0.5);
   elevation_spin_->setDecimals(3);
-  elevation_spin_->setSuffix(tr(" m"));
   elevation_node_label_->setWordWrap(true);
   auto* elevation_form = new QFormLayout(elevation_group_);
   elevation_form->addRow(elevation_node_label_);
@@ -459,7 +457,6 @@ PropertiesPanel::PropertiesPanel(Document& document,
   corner_radius_spin_->setRange(kCornerRadiusMin, kCornerRadiusMin);
   corner_radius_spin_->setSingleStep(0.5);
   corner_radius_spin_->setDecimals(2);
-  corner_radius_spin_->setSuffix(tr(" m"));
   corner_form_ = new QFormLayout(corner_group_);
   corner_form_->addRow(tr("Arms"), corner_arms_label_);
   corner_radius_scrub_label_ =
@@ -518,7 +515,6 @@ PropertiesPanel::PropertiesPanel(Document& document,
   stopline_distance_spin_->setRange(0.0, 0.0);
   stopline_distance_spin_->setSingleStep(0.5);
   stopline_distance_spin_->setDecimals(2);
-  stopline_distance_spin_->setSuffix(tr(" m"));
   stopline_form_ = new QFormLayout(stopline_group_);
   stopline_form_->addRow(tr("Arm"), stopline_arm_label_);
   stopline_distance_scrub_label_ = install_scrub(
@@ -690,7 +686,6 @@ PropertiesPanel::PropertiesPanel(Document& document,
   junction_radius_spin_->setRange(0.0, 50.0);
   junction_radius_spin_->setSingleStep(0.5);
   junction_radius_spin_->setDecimals(2);
-  junction_radius_spin_->setSuffix(tr(" m"));
   // Qt renders the special text ONLY at exactly the minimum, so the minimum
   // above must stay precisely 0.0 for this to ever appear.
   junction_radius_spin_->setSpecialValueText(tr("Derived"));
@@ -747,18 +742,20 @@ PropertiesPanel::PropertiesPanel(Document& document,
   // retype command is a later slice).
   signal_kind_label_->setObjectName(QStringLiteral("signal_kind_label"));
   signal_kind_label_->setWordWrap(true);
+  // s/t are UnitSpinBoxes and own their length suffix; the heading spin is
+  // angle-valued (unit-invariant, #412) and keeps its literal " rad".
   const auto configure_signal_spin =
-      [](QDoubleSpinBox* spin, const char* name, double lo, double hi, const QString& suffix) {
+      [](QDoubleSpinBox* spin, const char* name, double lo, double hi) {
         spin->setObjectName(QString::fromLatin1(name));
         spin->setRange(lo, hi);
         spin->setDecimals(3);
-        spin->setSuffix(suffix);
       };
-  configure_signal_spin(signal_s_spin_, "signal_s_spin", 0.0, 100000.0, tr(" m"));
+  configure_signal_spin(signal_s_spin_, "signal_s_spin", 0.0, 100000.0);
   signal_s_spin_->setSingleStep(1.0);
-  configure_signal_spin(signal_t_spin_, "signal_t_spin", -100.0, 100.0, tr(" m"));
+  configure_signal_spin(signal_t_spin_, "signal_t_spin", -100.0, 100.0);
   signal_t_spin_->setSingleStep(0.5);
-  configure_signal_spin(signal_h_spin_, "signal_h_spin", -6.2832, 6.2832, tr(" rad"));
+  configure_signal_spin(signal_h_spin_, "signal_h_spin", -6.2832, 6.2832);
+  signal_h_spin_->setSuffix(tr(" rad"));
   signal_h_spin_->setSingleStep(0.1);
   auto* signal_form = new QFormLayout(signal_group_);
   signal_form->addRow(signal_kind_label_);
@@ -840,7 +837,6 @@ PropertiesPanel::PropertiesPanel(Document& document,
   object_height_spin_->setRange(0.1, 500.0);
   object_height_spin_->setSingleStep(0.1);
   object_height_spin_->setDecimals(2);
-  object_height_spin_->setSuffix(tr(" m"));
   object_height_spin_->setToolTip(
       tr("Rendered height of this prop, in meters. With several props selected, dragging scales "
          "them all by the same factor and typing sets them all to this height."));
@@ -938,7 +934,6 @@ PropertiesPanel::PropertiesPanel(Document& document,
     spin->setRange(0.0, max);
     spin->setSingleStep(step);
     spin->setDecimals(2);
-    spin->setSuffix(QStringLiteral(" m"));
   };
   configure_asset_spin(asset_width_spin_, 20.0, 0.1); // walking depth
   configure_asset_spin(asset_border_spin_, 2.0, 0.05);
@@ -1196,7 +1191,8 @@ PropertiesPanel::PropertiesPanel(Document& document,
 
   // Signal pose: commit s/t/heading on focus-out through move_signal, with the
   // same unchanged-value skip guard so refresh() after undo never re-commits.
-  for (QDoubleSpinBox* spin : {signal_s_spin_, signal_t_spin_, signal_h_spin_}) {
+  for (QDoubleSpinBox* spin :
+       std::initializer_list<QDoubleSpinBox*>{signal_s_spin_, signal_t_spin_, signal_h_spin_}) {
     connect(spin, &QDoubleSpinBox::editingFinished, this, [this] { push_signal_move(); });
   }
 
@@ -1209,6 +1205,13 @@ PropertiesPanel::PropertiesPanel(Document& document,
     refresh();
   });
   connect(&document_, &Document::loaded, this, &PropertiesPanel::refresh);
+  // Display-unit flip (#412): rebuild the formatted readout rows in place.
+  // refresh() early-returns in asset mode (whose spin boxes re-render
+  // themselves); the prop-asset hint is re-rendered explicitly.
+  connect(&units::Notifier::instance(), &units::Notifier::changed, this, [this] {
+    refresh();
+    refresh_prop_scale_hint();
+  });
   // Commands and undo/redo change lane values without touching the
   // selection — re-sync the editors from the network.
   connect(&document_, &Document::mesh_changed, this, &PropertiesPanel::refresh);
@@ -1290,7 +1293,7 @@ void PropertiesPanel::refresh() {
           break;
         }
       }
-      add_row(tr("Area"), tr("%1 m²").arg(area, 0, 'f', 1));
+      add_row(tr("Area"), units::format_area(area, 1));
       const bool authored = surface->source == BoundarySource::Authored;
       add_row(tr("Boundary"),
               authored ? tr("Authored (%1 nodes)").arg(surface->nodes.size())
@@ -1330,7 +1333,7 @@ void PropertiesPanel::refresh() {
     add_row(tr("Selection"), tr("%1 items").arg(selection_.entries().size()));
   }
   add_row(tr("OpenDRIVE id"), QString::fromStdString(road->odr_id));
-  add_row(tr("Length"), tr("%1 m").arg(road->length, 0, 'f', 3));
+  add_row(tr("Length"), units::format_length(road->length, 3));
   add_row(tr("Geometry records"), QString::number(road->plan_view.records().size()));
   add_row(tr("Lane sections"), QString::number(road->sections.size()));
 
@@ -1453,7 +1456,8 @@ void PropertiesPanel::refresh_object(const Object& object) {
   add_row(tr("OpenDRIVE id"), tr("object %1").arg(QString::fromStdString(object.odr_id)));
   // This line says which KIND of object it is, from the OpenDRIVE @type (§13.1).
   object_kind_label_->setText(object_type_name(object.type));
-  add_row(tr("Position"), tr("s %1 m, t %2 m").arg(object.s, 0, 'f', 2).arg(object.t, 0, 'f', 2));
+  add_row(tr("Position"),
+          tr("s %1, t %2").arg(units::format_length(object.s)).arg(units::format_length(object.t)));
 
   // A marking instance (crosswalk / stencil / marking-curve) exposes the paint
   // Material override slot; every other object (a prop) exposes the Model slot.
@@ -1914,8 +1918,9 @@ void PropertiesPanel::refresh_elevation() {
     if (const auto stations = edit::waypoint_stations(*road);
         stations.has_value() && node->second < stations->size()) {
       elevation_spin_->setEnabled(true);
-      elevation_node_label_->setText(
-          tr("Node %1 (s = %2 m)").arg(node->second).arg((*stations)[node->second], 0, 'f', 2));
+      elevation_node_label_->setText(tr("Node %1 (s = %2)")
+                                         .arg(node->second)
+                                         .arg(units::format_length((*stations)[node->second])));
       const QSignalBlocker blocker(elevation_spin_);
       elevation_spin_->setValue(eval_profile(road->elevation, (*stations)[node->second]));
       return;
@@ -2385,9 +2390,9 @@ void PropertiesPanel::refresh_corner() {
   // does nothing. That is the truth about the junction, not a bug: a value
   // above the bound is clamped when the floor is meshed. Say so.
   corner_radius_spin_->setToolTip(
-      tr("Fillet radius. The arm faces leave room for at most %1 m at this corner; a larger "
+      tr("Fillet radius. The arm faces leave room for at most %1 at this corner; a larger "
          "value is clamped when the junction is meshed. Drag the attribute name to scrub.")
-          .arg(info->max_radius, 0, 'f', 2));
+          .arg(units::format_length(info->max_radius)));
   const QSignalBlocker blocker(corner_radius_spin_);
   corner_radius_spin_->setValue(info->radius);
 }
@@ -2421,9 +2426,9 @@ void PropertiesPanel::refresh_stopline() {
 
   stopline_distance_spin_->setRange(0.0, info->max_distance);
   stopline_distance_spin_->setToolTip(
-      tr("Setback from the junction mouth. This arm leaves room for at most %1 m; a larger "
+      tr("Setback from the junction mouth. This arm leaves room for at most %1; a larger "
          "value is clamped when the road is meshed. Drag the attribute name to scrub.")
-          .arg(info->max_distance, 0, 'f', 2));
+          .arg(units::format_length(info->max_distance)));
   {
     const QSignalBlocker blocker(stopline_distance_spin_);
     stopline_distance_spin_->setValue(info->distance);
@@ -2866,9 +2871,9 @@ void PropertiesPanel::commit_prop_asset_edit() {
 void PropertiesPanel::refresh_prop_scale_hint() {
   const double scale = prop_scale_spin_->value();
   if (const props::PropModel* model = props::model(prop_asset_item_.model.toStdString())) {
-    prop_scale_hint_->setText(tr("Spawns at %1 m (model %2 m)")
-                                  .arg(model->height * scale, 0, 'f', 2)
-                                  .arg(model->height, 0, 'f', 2));
+    prop_scale_hint_->setText(tr("Spawns at %1 (model %2)")
+                                  .arg(units::format_length(model->height * scale))
+                                  .arg(units::format_length(model->height)));
   } else {
     prop_scale_hint_->clear();
   }

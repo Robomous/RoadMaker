@@ -24,6 +24,7 @@
 #include <cmath>
 
 #include "document/document.hpp"
+#include "document/units.hpp"
 
 namespace roadmaker::editor {
 
@@ -101,12 +102,12 @@ bool CreateJunctionTool::mouse_press(const ToolEvent& event) {
     emit preview_changed();
     const Road* target = document_.network().road(side->road);
     const double gap = edit::t_attach_gap(document_.network(), ends_.front(), side->road, side->s);
-    emit status_message(tr("Tee into %1 at s=%2 m — replaces s=%3–%4 m; Enter attaches, "
+    emit status_message(tr("Tee into %1 at s=%2 — replaces s=%3–%4; Enter attaches, "
                            "Esc cancels")
                             .arg(QString::fromStdString(target->name))
-                            .arg(side->s, 0, 'f', 1)
-                            .arg(side->s - gap, 0, 'f', 1)
-                            .arg(side->s + gap, 0, 'f', 1));
+                            .arg(units::format_length(side->s, 1))
+                            .arg(units::format_length(side->s - gap, 1))
+                            .arg(units::format_length(side->s + gap, 1)));
   }
   return true;
 }

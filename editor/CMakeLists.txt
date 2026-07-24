@@ -80,6 +80,7 @@ add_library(roadmaker_editor_lib STATIC
   src/document/editor_command.cpp
   src/document/scene_tree_model.cpp
   src/document/selection_model.cpp
+  src/document/units.cpp
   src/help/help_browser.cpp
   src/help/help_locator.cpp
   src/help/help_registry.cpp
@@ -93,6 +94,7 @@ add_library(roadmaker_editor_lib STATIC
   src/panels/scene_tree_panel.cpp
   src/panels/scrub_label.cpp
   src/panels/slot_widget.cpp
+  src/panels/unit_spin_box.cpp
   src/panels/width_panel.cpp
   src/render/gl_functions.cpp
   src/render/gl_renderer.cpp

@@ -16,6 +16,8 @@
 
 #include "document/scene_tree_model.hpp"
 
+#include "document/units.hpp"
+
 namespace roadmaker::editor {
 
 namespace {
@@ -28,6 +30,13 @@ SceneTreeModel::SceneTreeModel(const Document& document, QObject* parent)
     : QAbstractItemModel(parent), document_(document) {
   rebuild();
   connect(&document_, &Document::loaded, this, [this] {
+    beginResetModel();
+    rebuild();
+    endResetModel();
+  });
+  // Section labels carry formatted lengths — rebuild them on a display-unit
+  // flip (#412).
+  connect(&units::Notifier::instance(), &units::Notifier::changed, this, [this] {
     beginResetModel();
     rebuild();
     endResetModel();
@@ -69,7 +78,7 @@ void SceneTreeModel::rebuild() {
                .parent = road_node,
                .row = static_cast<int>(nodes_[static_cast<std::size_t>(road_node)].children.size()),
                .road = road_id,
-               .label = tr("section s0=%1 m").arg(section->s0)});
+               .label = tr("section s0=%1").arg(units::format_length(section->s0))});
       nodes_[static_cast<std::size_t>(road_node)].children.push_back(section_node);
 
       for (const LaneId lane_id : section->lanes) {

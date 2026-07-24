@@ -69,6 +69,7 @@
 #include "document/library_drop.hpp"
 #include "document/library_manifest.hpp"
 #include "document/signal_phase_overlay.hpp"
+#include "document/units.hpp"
 #include "help/help_registry.hpp"
 #include "help/help_viewer.hpp"
 #include "panels/diagnostics_panel.hpp"
@@ -76,6 +77,7 @@
 #include "panels/library_panel.hpp"
 #include "panels/properties_panel.hpp"
 #include "panels/scene_tree_panel.hpp"
+#include "panels/unit_spin_box.hpp"
 #include "tools/corner_tool.hpp"
 #include "tools/create_junction_tool.hpp"
 #include "tools/create_road_tool.hpp"
@@ -115,6 +117,9 @@ MainWindow::MainWindow(QWidget* parent, bool restore_saved_layout)
       central_stack_(new QStackedWidget(this)), welcome_(new WelcomeWidget(settings_, this)),
       viewport_(new ViewportWidget(document_, selection_, tool_manager_, this)),
       status_hover_(new QLabel(this)), status_entities_(new QLabel(this)) {
+  // Seed the display-unit system from Settings before any panel or readout
+  // formats its first value (#412) — everything below renders through it.
+  units::set_active(settings_.display_units());
   setAcceptDrops(true);
   allow_first_run_tour_ = restore_saved_layout; // suppressed for capture windows
   // Central stack: the welcome screen greets an empty session; any document
@@ -992,6 +997,27 @@ void MainWindow::build_menus() {
   });
   view_menu->addAction(actions_->viewport_hints);
   viewport_->set_hints_enabled(settings_.viewport_hints());
+  // Display units (#412, realism batch #411): metric ⇄ imperial at the widget
+  // boundary only — files, commands and the kernel stay SI meters
+  // (docs/domain/realism_defaults.md, Unit policy), so toggling never dirties
+  // the document. Persisted like the other view settings.
+  auto* imperial_action = new QAction(tr("&Imperial Units"), this);
+  imperial_action->setCheckable(true);
+  imperial_action->setChecked(settings_.display_units() == units::UnitSystem::Imperial);
+  imperial_action->setToolTip(
+      tr("Show and type lengths in feet instead of meters. Files stay metric."));
+  connect(imperial_action, &QAction::toggled, this, [this](bool imperial) {
+    const units::UnitSystem system =
+        imperial ? units::UnitSystem::Imperial : units::UnitSystem::Metric;
+    settings_.set_display_units(system);
+    units::set_active(system);
+  });
+  view_menu->addAction(imperial_action);
+  // The status bar holds formatted text, so it re-renders from the last hover
+  // when the system flips instead of waiting for the next mouse move.
+  connect(&units::Notifier::instance(), &units::Notifier::changed, this, [this] {
+    on_hover(last_hover_);
+  });
   view_menu->addSeparator();
   view_menu->addAction(actions_->reset_camera);
   view_menu->addAction(actions_->frame_selection);
@@ -1170,23 +1196,21 @@ void MainWindow::build_tool_options_bar() {
   auto* radius_caption = new QLabel(tr("Radius:"), options_bar_);
   radius_caption->setObjectName(QStringLiteral("toolOptionCaption"));
   brush_option_actions_.push_back(options_bar_->addWidget(radius_caption));
-  brush_radius_spin_ = new QDoubleSpinBox(options_bar_);
+  brush_radius_spin_ = new UnitSpinBox(options_bar_);
   brush_radius_spin_->setRange(1.0, 500.0);
   brush_radius_spin_->setDecimals(0);
   brush_radius_spin_->setSingleStep(5.0);
-  brush_radius_spin_->setSuffix(tr(" m"));
   brush_radius_spin_->setValue(20.0);
-  brush_radius_spin_->setToolTip(tr("Brush radius in meters"));
+  brush_radius_spin_->setToolTip(tr("Brush radius"));
   brush_option_actions_.push_back(options_bar_->addWidget(brush_radius_spin_));
 
   auto* strength_caption = new QLabel(tr("Strength:"), options_bar_);
   strength_caption->setObjectName(QStringLiteral("toolOptionCaption"));
   brush_option_actions_.push_back(options_bar_->addWidget(strength_caption));
-  brush_strength_spin_ = new QDoubleSpinBox(options_bar_);
+  brush_strength_spin_ = new UnitSpinBox(options_bar_);
   brush_strength_spin_->setRange(0.01, 50.0);
   brush_strength_spin_->setDecimals(2);
   brush_strength_spin_->setSingleStep(0.1);
-  brush_strength_spin_->setSuffix(tr(" m"));
   brush_strength_spin_->setValue(0.5);
   brush_strength_spin_->setToolTip(tr("How hard one pass pushes (raise/lower) or blends (smooth)"));
   brush_option_actions_.push_back(options_bar_->addWidget(brush_strength_spin_));
@@ -2186,16 +2210,19 @@ void MainWindow::update_signal_phase_overlay() {
 }
 
 void MainWindow::on_hover(const HoverInfo& info) {
+  last_hover_ = info;
   if (!info.valid) {
     status_hover_->clear();
     return;
   }
-  QString text = tr("x %1 m · y %2 m").arg(info.world_x, 0, 'f', 2).arg(info.world_y, 0, 'f', 2);
+  QString text = tr("x %1 · y %2")
+                     .arg(units::format_length(info.world_x, 2))
+                     .arg(units::format_length(info.world_y, 2));
   if (info.on_road) {
-    text += tr("  ·  %1  ·  s %2 m · t %3 m")
+    text += tr("  ·  %1  ·  s %2 · t %3")
                 .arg(info.entity)
-                .arg(info.s, 0, 'f', 2)
-                .arg(info.t, 0, 'f', 2);
+                .arg(units::format_length(info.s, 2))
+                .arg(units::format_length(info.t, 2));
   }
   status_hover_->setText(text);
 }

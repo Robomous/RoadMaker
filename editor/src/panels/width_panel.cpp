@@ -34,6 +34,7 @@
 
 #include "document/document.hpp"
 #include "document/selection_model.hpp"
+#include "document/units.hpp"
 
 namespace roadmaker::editor {
 
@@ -70,6 +71,9 @@ WidthPanel::WidthPanel(Document& document, SelectionModel& selection, QWidget* p
 
   connect(
       &selection_, &SelectionModel::selection_changed, this, [this] { refresh_from_document(); });
+  // The painted node labels are formatted lengths — repaint on a display-unit
+  // flip (#412).
+  connect(&units::Notifier::instance(), &units::Notifier::changed, this, [this] { update(); });
   connect(&document_, &Document::loaded, this, [this] { refresh_from_document(); });
   connect(&document_, &Document::mesh_changed, this, [this](const std::vector<RoadId>&) {
     if (!drag_active_) {
@@ -332,7 +336,7 @@ void WidthPanel::paintEvent(QPaintEvent* /*event*/) {
              selected ? 2.0 : 1.5));
     painter.drawEllipse(node, selected ? 6.0 : 4.0, selected ? 6.0 : 4.0);
     painter.setPen(palette.color(QPalette::Mid));
-    painter.drawText(node + QPointF(8, -8), tr("%1 m").arg(nodes_[i].width, 0, 'f', 2));
+    painter.drawText(node + QPointF(8, -8), units::format_length(nodes_[i].width));
   }
 }
 

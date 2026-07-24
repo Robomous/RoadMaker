@@ -51,6 +51,7 @@
 
 #include "document/highlight.hpp"
 #include "document/library_list_model.hpp"
+#include "document/units.hpp"
 #include "render/gl_functions.hpp"
 #include "render/gl_renderer.hpp"
 #include "render/scene_builder.hpp"
@@ -1367,7 +1368,7 @@ void ViewportWidget::update_gizmo_drag(const QPointF& pos, Qt::KeyboardModifiers
       }
       return edit::set_elevation_profile(base, road, std::move(points));
     };
-    drag.summary = tr("Raised road by %1 m").arg(dz, 0, 'f', 2);
+    drag.summary = tr("Raised road by %1").arg(units::format_length(dz));
   } else {
     // Planar translate (AxisX / AxisY / PlaneXY).
     const auto delta = gizmo_constrain_translation(drag.handle, drag.press_world, cursor);
