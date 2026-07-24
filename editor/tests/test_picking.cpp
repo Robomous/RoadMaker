@@ -462,9 +462,9 @@ TEST(Pick, HitsAPlacedPropInFrontOfTheRoad) {
                                         .heading = 0.0});
   const auto aabbs = compute_road_aabbs(mesh);
 
-  // Straight down through the tree: its bounding sphere is nearer than the
+  // Straight down through the crown: the tree's geometry is nearer than the
   // road surface below it, so the prop wins the pick.
-  const auto on_tree = pick(mesh, aabbs, straight_down(25.0, 25.0));
+  const auto on_tree = pick(mesh, aabbs, straight_down(25.5, 25.0));
   ASSERT_TRUE(on_tree.has_value());
   EXPECT_EQ(on_tree->object, tree);
   EXPECT_EQ(on_tree->road, mesh.roads[0].road);
@@ -487,12 +487,19 @@ TEST(Pick, HitsAPlacedSignalInFrontOfTheRoad) {
                                                  .heading = 0.0});
   const auto aabbs = compute_road_aabbs(mesh);
 
-  // Straight down through the signal: its bounding sphere wins over the road.
+  // Straight down through the signal: its geometry wins over the road.
   const auto on_signal = pick(mesh, aabbs, straight_down(25.0, 25.0));
   ASSERT_TRUE(on_signal.has_value());
   EXPECT_EQ(on_signal->signal, light);
   EXPECT_EQ(on_signal->road, mesh.roads[0].road);
   EXPECT_FALSE(on_signal->object.is_valid());
+
+  // 1 m off the pole — inside the old hit sphere but wide of pole and housing
+  // alike: the road, not the signal (#419).
+  const auto beside = pick(mesh, aabbs, straight_down(26.0, 25.0));
+  ASSERT_TRUE(beside.has_value());
+  EXPECT_FALSE(beside->signal.is_valid());
+  EXPECT_EQ(beside->road, mesh.roads[0].road);
 
   // Away from the signal the road is still picked (signal invalid).
   const auto on_road = pick(mesh, aabbs, straight_down(5.0, 5.0));
@@ -569,17 +576,146 @@ NetworkMesh lone_tree(double scale) {
 
 } // namespace
 
-// tree_pine is 4.2 m tall / 1.2 m in radius, so its unit hit sphere has radius
-// max(1.2, 2.1) = 2.1 m. A ray 3 m off-axis clears it at model size but must hit
-// once the prop is drawn at twice that size.
-TEST(Pick, ScaledPropGrowsHitSphere) {
-  EXPECT_FALSE(pick(lone_tree(1.0), {}, straight_down(28.0, 25.0)).has_value());
-  EXPECT_TRUE(pick(lone_tree(2.0), {}, straight_down(28.0, 25.0)).has_value());
+// tree_pine's crown reaches 1.2 m from the trunk axis. A ray 2 m off-axis
+// clears the geometry at model size but must hit once the prop is drawn at
+// twice that size (#335) — the hit surface tracks the rendered geometry.
+TEST(Pick, ScaledPropGrowsItsHitGeometry) {
+  EXPECT_FALSE(pick(lone_tree(1.0), {}, straight_down(27.0, 25.0)).has_value());
+  const auto hit = pick(lone_tree(2.0), {}, straight_down(27.0, 25.0));
+  ASSERT_TRUE(hit.has_value());
+  EXPECT_TRUE(hit->object.is_valid());
 }
 
 TEST(Pick, ShrunkPropMisses) {
   EXPECT_TRUE(pick(lone_tree(1.0), {}, straight_down(26.0, 25.0)).has_value());
   EXPECT_FALSE(pick(lone_tree(0.25), {}, straight_down(26.0, 25.0)).has_value());
+}
+
+// --- instance-accurate prop picking (#419) ----------------------------------
+// Props used to be depth-tested by their whole-model bounding sphere, which
+// mis-targeted three ways: an oversized sphere stole clicks that visually
+// landed on the road, a camera inside the sphere was answered with the far-side
+// exit so the road behind won instead of the prop in front, and overlapping
+// spheres resolved to the wrong neighbour. The pick must resolve against the
+// instanced triangles; the sphere is a broad-phase filter only.
+
+namespace {
+
+/// A quad road with building_low (10 x 8 m body, 10.4 x 8.4 m roof slab,
+/// 7.5 m tall — old hit-sphere radius ~6.7 m) at (25, 25).
+NetworkMesh road_with_house(RoadNetwork& network, ObjectId house, double heading = 0.0) {
+  NetworkMesh mesh;
+  mesh.roads.push_back(make_quad_road(network, "1", 0.0, 50.0));
+  mesh.objects.push_back(ObjectInstance{.object = house,
+                                        .road = mesh.roads[0].road,
+                                        .model_id = "building_low",
+                                        .position = {25.0, 25.0, 0.0},
+                                        .heading = heading});
+  return mesh;
+}
+
+} // namespace
+
+TEST(Pick, ClickBesideAPropNoLongerStealsThePickFromTheRoad) {
+  RoadNetwork network;
+  const ObjectId house{.index = 3, .gen = 0};
+  const NetworkMesh mesh = road_with_house(network, house);
+  const auto aabbs = compute_road_aabbs(mesh);
+
+  // On the roof: the building.
+  const auto on_roof = pick(mesh, aabbs, straight_down(25.0, 25.0));
+  ASSERT_TRUE(on_roof.has_value());
+  EXPECT_EQ(on_roof->object, house);
+
+  // 6 m out — well inside the old sphere, outside every wall: the road. With
+  // sphere depth this picked the building, and deleting the selection took
+  // the building instead of nothing.
+  const auto beside = pick(mesh, aabbs, straight_down(31.0, 25.0));
+  ASSERT_TRUE(beside.has_value());
+  EXPECT_FALSE(beside->object.is_valid());
+  EXPECT_EQ(beside->road, mesh.roads[0].road);
+}
+
+TEST(Pick, CameraInsideThePropSphereStillPicksTheProp) {
+  RoadNetwork network;
+  const ObjectId house{.index = 3, .gen = 0};
+  const NetworkMesh mesh = road_with_house(network, house);
+  const auto aabbs = compute_road_aabbs(mesh);
+
+  // Eye 5.5 m from the building centre — inside the ~6.7 m sphere — looking
+  // slightly down at the near wall (hit at z ≈ 0.4 m, t ≈ 4.9 m; the road
+  // plane lies at t ≈ 5.3 m behind it). Sphere depth answered with the
+  // sphere's far exit (t ≈ 7.5 m), so the ROAD won and a delete aimed at the
+  // building removed the road — the reported field defect.
+  const double len = std::sqrt((1.3 * 1.3) + (4.0 * 4.0));
+  const Ray ray{.origin = {25.0, 19.5, 5.0}, .direction = {0.0, 1.3 / len, -4.0 / len}};
+  const auto hit = pick(mesh, aabbs, ray);
+  ASSERT_TRUE(hit.has_value());
+  EXPECT_EQ(hit->object, house);
+}
+
+TEST(Pick, AdjacentPropsResolveToTheInstanceUnderTheCursor) {
+  RoadNetwork network;
+  const ObjectId house{.index = 3, .gen = 0};
+  NetworkMesh mesh = road_with_house(network, house);
+  const ObjectId tree{.index = 7, .gen = 0};
+  mesh.objects.push_back(ObjectInstance{.object = tree,
+                                        .road = mesh.roads[0].road,
+                                        .model_id = "tree_pine",
+                                        .position = {32.0, 25.0, 0.0},
+                                        .heading = 0.0});
+  const auto aabbs = compute_road_aabbs(mesh);
+
+  // Straight down through the tree's crown, 1.3 m clear of the building's
+  // roof edge but still inside the building's old sphere — whose entry point
+  // is nearer than the crown, so sphere depth resolved this click to the
+  // BUILDING. The instance under the cursor must win.
+  const auto hit = pick(mesh, aabbs, straight_down(31.5, 25.0));
+  ASSERT_TRUE(hit.has_value());
+  EXPECT_EQ(hit->object, tree);
+}
+
+TEST(Pick, PropHeadingRotatesItsHitGeometry) {
+  RoadNetwork network;
+  const ObjectId house{.index = 3, .gen = 0};
+  // Quarter turn: the 10 m body axis now spans world Y, the 8 m axis world X.
+  const NetworkMesh mesh = road_with_house(network, house, kPi / 2.0);
+  const auto aabbs = compute_road_aabbs(mesh);
+
+  // 4.5 m out along +X: inside the unrotated body (half extent 5 m) but
+  // outside the rotated one (4 m + 0.2 m roof) — the road.
+  const auto beside = pick(mesh, aabbs, straight_down(29.5, 25.0));
+  ASSERT_TRUE(beside.has_value());
+  EXPECT_FALSE(beside->object.is_valid());
+
+  // 4.5 m out along +Y: outside the unrotated body but inside the rotated
+  // one — the building.
+  const auto on_wall = pick(mesh, aabbs, straight_down(25.0, 29.5));
+  ASSERT_TRUE(on_wall.has_value());
+  EXPECT_EQ(on_wall->object, house);
+}
+
+TEST(Pick, PropOverAJunctionFloorClaimsOnlyItsGeometry) {
+  RoadNetwork network;
+  NetworkMesh mesh;
+  mesh.junction_floors.push_back(make_quad_floor(network, "j", 0.0, 10.0));
+  const ObjectId tree{.index = 7, .gen = 0};
+  mesh.objects.push_back(ObjectInstance{.object = tree,
+                                        .road = RoadId{.index = 1, .gen = 0},
+                                        .model_id = "tree_pine",
+                                        .position = {5.0, 5.0, 0.0},
+                                        .heading = 0.0});
+
+  // On the crown: the prop, not the floor beneath it.
+  const auto on_tree = pick(mesh, {}, straight_down(5.5, 5.0));
+  ASSERT_TRUE(on_tree.has_value());
+  EXPECT_EQ(on_tree->object, tree);
+
+  // 2 m off the trunk — inside the old sphere, wide of the crown: the floor.
+  const auto beside = pick(mesh, {}, straight_down(7.0, 5.0));
+  ASSERT_TRUE(beside.has_value());
+  EXPECT_FALSE(beside->object.is_valid());
+  EXPECT_EQ(beside->junction, mesh.junction_floors[0].junction);
 }
 
 // --- screen-space polyline distance (p4-s6, issue #227) ----------------------

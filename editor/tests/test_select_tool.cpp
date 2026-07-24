@@ -461,6 +461,36 @@ TEST(SelectTool, DeleteKeyIsInertDuringADrag) {
   EXPECT_EQ(xodr(scene.document), scene.base_xodr);
 }
 
+TEST(SelectTool, DeletingAClickedPropNeverTouchesTheRoad) {
+  // #419: a prop pick carries its owning road in the same PickHit, but a
+  // click-select of the prop must put ONLY the prop in play — deleting the
+  // selection may never cascade to the road (or anything else), and undo must
+  // restore the prop exactly.
+  Scene scene;
+  const roadmaker::ObjectId prop = place_prop(scene.document, scene.dragged, 20.0, 0.0);
+  const int base = scene.document.undo_stack()->count();
+  const std::string base_xodr = xodr(scene.document);
+
+  SelectTool tool(scene.document, scene.selection);
+  PickHit hit = scene.hit(scene.dragged);
+  hit.object = prop; // instance-accurate pick: the cursor is on the prop itself
+
+  ASSERT_TRUE(tool.mouse_press(at(20.0, 0.0, Qt::LeftButton, Qt::NoModifier, hit)));
+  ASSERT_TRUE(tool.mouse_release(at(20.0, 0.0, Qt::NoButton, Qt::NoModifier, hit)));
+  EXPECT_EQ(scene.selection.primary().object, prop);
+  EXPECT_TRUE(scene.selection.selected_roads().empty()); // no road in play
+
+  ASSERT_TRUE(tool.key_press(Qt::Key_Delete, Qt::NoModifier));
+  EXPECT_EQ(scene.document.network().object(prop), nullptr);
+  ASSERT_NE(scene.document.network().road(scene.dragged), nullptr); // road survives
+  EXPECT_EQ(scene.document.undo_stack()->count(), base + 1);
+
+  // Undo restores the prop under its original id, byte-identically.
+  scene.document.undo_stack()->undo();
+  ASSERT_NE(scene.document.network().object(prop), nullptr);
+  EXPECT_EQ(xodr(scene.document), base_xodr);
+}
+
 // --- whole-road body move (M3a) ---------------------------------------------
 
 TEST(SelectTool, BodyDragMovesWholeRoadAutoSelectingItOneUndo) {
