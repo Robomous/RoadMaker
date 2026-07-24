@@ -109,6 +109,15 @@ the same change. `Road Plan tool` in step 2 was corrected to its real name,
    this step (`scripts/gw2_replay.py`, step 7) covers creating the field,
    the road-driven re-mesh, undo/redo of both edits, and the sidecar
    round-trip; the hand-run is watching the ground follow the road in 3D.
+   Then sculpt the ground directly with the **Terrain Brush** (**⇧B**):
+   raise, lower and smooth strokes each land as one undo step, and
+   **Edit ▸ Terrain ▸ Import DEM…** brings in an ESRI ASCII (`.asc`) grid as
+   the field (p5-s4). **Expected:** a brush stroke deforms the ground live and
+   the roads keep meeting the kerb; an imported DEM gives believable ground the
+   roads conform to. The headless slice (`scripts/gw2_replay.py`, step 7b)
+   covers the brush command's one-undo edit, the DEM `.asc` round-trip, and that
+   the sculpted scene still validates and round-trips; the hand-run is watching
+   the hill form under the brush in 3D.
 8. [ ] Run the Road Construction tool's automatic bridge assignment on
    the raised span (**Edit ▸ Bridge ▸ Generate Bridge Structures**).
    **Expected:** the elevated span becomes a bridge — a deck with piers,

@@ -193,7 +193,7 @@ TEST(ToolbarRegistry, LayoutMatchesTheIssue) {
   // Terrain stopped being reserved-empty when p5-s1 (#231) landed the Surface
   // tool in it; Scenario is still waiting on P8.
   EXPECT_EQ(ids_of(shortcuts::toolbar_layout(ToolbarTab::kTerrain), "Terrain & Structures"),
-            (std::vector{Id::ToolSurface}));
+            (std::vector{Id::ToolSurface, Id::ToolTerrainBrush}));
 
   const std::vector<ToolbarGroupLayout> scenario = shortcuts::toolbar_layout(ToolbarTab::kScenario);
   ASSERT_EQ(scenario.size(), 1u);

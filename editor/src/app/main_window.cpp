@@ -22,15 +22,18 @@
 #include "roadmaker/road/grade_separation.hpp"
 #include "roadmaker/road/road.hpp"
 #include "roadmaker/version.hpp"
+#include "roadmaker/xodr/terrain_sidecar.hpp"
 
 #include <spdlog/spdlog.h>
 
 #include <QApplication>
 #include <QCheckBox>
 #include <QCloseEvent>
+#include <QComboBox>
 #include <QDateTime>
 #include <QDesktopServices>
 #include <QDockWidget>
+#include <QDoubleSpinBox>
 #include <QDragEnterEvent>
 #include <QDropEvent>
 #include <QFile>
@@ -99,6 +102,7 @@
 #include "tools/split_tool.hpp"
 #include "tools/stopline_tool.hpp"
 #include "tools/surface_tool.hpp"
+#include "tools/terrain_brush_tool.hpp"
 
 namespace roadmaker::editor {
 
@@ -546,6 +550,14 @@ MainWindow::MainWindow(QWidget* parent, bool restore_saved_layout)
   properties_panel_->set_surface_tool(surface_tool.get());
   tool_manager_.register_tool(ToolId::Surface, std::move(surface_tool));
 
+  // Terrain Brush: sculpt the height field (p5-s4, #234). Drag-paints a stroke
+  // as ONE preview session + ONE command; its radius/strength/mode live in the
+  // Tool Options row (build_tool_options_bar), so keep a pointer for them.
+  auto terrain_brush_tool = std::make_unique<TerrainBrushTool>(document_);
+  wire_status(terrain_brush_tool.get());
+  terrain_brush_tool_ = terrain_brush_tool.get();
+  tool_manager_.register_tool(ToolId::TerrainBrush, std::move(terrain_brush_tool));
+
   connect(actions_->tool_corner, &QAction::triggered, this, [this] {
     tool_manager_.set_active(ToolId::Corner);
   });
@@ -560,6 +572,9 @@ MainWindow::MainWindow(QWidget* parent, bool restore_saved_layout)
   });
   connect(actions_->tool_surface, &QAction::triggered, this, [this] {
     tool_manager_.set_active(ToolId::Surface);
+  });
+  connect(actions_->tool_terrain_brush, &QAction::triggered, this, [this] {
+    tool_manager_.set_active(ToolId::TerrainBrush);
   });
   connect(actions_->tool_maneuver, &QAction::triggered, this, [this] {
     tool_manager_.set_active(ToolId::Maneuver);
@@ -657,6 +672,41 @@ MainWindow::MainWindow(QWidget* parent, bool restore_saved_layout)
           tr("Cannot remove terrain: %1").arg(QString::fromStdString(removed.error().message)),
           ToastSeverity::Warning);
     }
+  });
+  // DEM import (p5-s4, #234): read an ESRI ASCII grid and install it as the
+  // scene field, as-is in the kernel frame (decision D1). The reader already
+  // exists (p5-s2's sidecar); a malformed/unsafe grid warns and imports nothing.
+  connect(actions_->terrain_import, &QAction::triggered, this, [this] {
+    const QString path = QFileDialog::getOpenFileName(
+        this, tr("Import DEM (ESRI ASCII grid)"), QString(), tr("ESRI ASCII grid (*.asc)"));
+    if (path.isEmpty()) {
+      return;
+    }
+    Expected<roadmaker::TerrainParseResult> parsed =
+        roadmaker::load_terrain_asc(std::filesystem::path(path.toStdString()));
+    if (!parsed.has_value()) {
+      viewport_->show_toast(
+          tr("Cannot import DEM: %1").arg(QString::fromStdString(parsed.error().message)),
+          ToastSeverity::Warning);
+      return;
+    }
+    if (!parsed->diagnostics.empty()) {
+      viewport_->show_toast(
+          tr("Imported DEM with %n warning(s)", "", static_cast<int>(parsed->diagnostics.size())),
+          ToastSeverity::Warning);
+    }
+    const int cols = static_cast<int>(parsed->field.cols);
+    const int rows = static_cast<int>(parsed->field.rows);
+    const Expected<void> installed = document_.push_command(
+        edit::set_terrain_field(document_.network(), std::move(parsed->field)));
+    if (!installed.has_value()) {
+      viewport_->show_toast(
+          tr("Cannot import DEM: %1").arg(QString::fromStdString(installed.error().message)),
+          ToastSeverity::Warning);
+      return;
+    }
+    viewport_->show_toast(tr("Imported DEM: %1×%2 posts").arg(cols).arg(rows),
+                          ToastSeverity::Success);
   });
   // The Road Construction tool's automatic bridge assignment (p5-s3, #233):
   // detect grade-separated crossings and author a bridge over each. author_bridge
@@ -909,6 +959,8 @@ void MainWindow::build_menus() {
   QMenu* terrain_menu = edit_menu->addMenu(tr("&Terrain"));
   terrain_menu->addAction(actions_->terrain_create);
   terrain_menu->addAction(actions_->terrain_remove);
+  terrain_menu->addSeparator();
+  terrain_menu->addAction(actions_->terrain_import);
   QMenu* bridge_menu = edit_menu->addMenu(tr("&Bridge"));
   bridge_menu->addAction(actions_->bridge_generate);
 
@@ -1100,6 +1152,61 @@ void MainWindow::build_tool_options_bar() {
           [mirror_template](QAction* action) { mirror_template(action); });
   template_action_ = options_bar_->addWidget(template_button_);
 
+  // Terrain Brush options (p5-s4, #234): mode/radius/strength. Fixed-width
+  // controls added once and shown only while the brush is active (a variable
+  // per-tool label here once shifted the row above — issue #332). They drive
+  // the tool through its setters; the tool starts from these defaults.
+  auto* mode_caption = new QLabel(tr("Brush:"), options_bar_);
+  mode_caption->setObjectName(QStringLiteral("toolOptionCaption"));
+  brush_option_actions_.push_back(options_bar_->addWidget(mode_caption));
+
+  brush_mode_combo_ = new QComboBox(options_bar_);
+  brush_mode_combo_->addItem(tr("Raise"), static_cast<int>(BrushMode::Raise));
+  brush_mode_combo_->addItem(tr("Lower"), static_cast<int>(BrushMode::Lower));
+  brush_mode_combo_->addItem(tr("Smooth"), static_cast<int>(BrushMode::Smooth));
+  brush_mode_combo_->setToolTip(tr("What a brush stroke does to the ground"));
+  brush_option_actions_.push_back(options_bar_->addWidget(brush_mode_combo_));
+
+  auto* radius_caption = new QLabel(tr("Radius:"), options_bar_);
+  radius_caption->setObjectName(QStringLiteral("toolOptionCaption"));
+  brush_option_actions_.push_back(options_bar_->addWidget(radius_caption));
+  brush_radius_spin_ = new QDoubleSpinBox(options_bar_);
+  brush_radius_spin_->setRange(1.0, 500.0);
+  brush_radius_spin_->setDecimals(0);
+  brush_radius_spin_->setSingleStep(5.0);
+  brush_radius_spin_->setSuffix(tr(" m"));
+  brush_radius_spin_->setValue(20.0);
+  brush_radius_spin_->setToolTip(tr("Brush radius in meters"));
+  brush_option_actions_.push_back(options_bar_->addWidget(brush_radius_spin_));
+
+  auto* strength_caption = new QLabel(tr("Strength:"), options_bar_);
+  strength_caption->setObjectName(QStringLiteral("toolOptionCaption"));
+  brush_option_actions_.push_back(options_bar_->addWidget(strength_caption));
+  brush_strength_spin_ = new QDoubleSpinBox(options_bar_);
+  brush_strength_spin_->setRange(0.01, 50.0);
+  brush_strength_spin_->setDecimals(2);
+  brush_strength_spin_->setSingleStep(0.1);
+  brush_strength_spin_->setSuffix(tr(" m"));
+  brush_strength_spin_->setValue(0.5);
+  brush_strength_spin_->setToolTip(tr("How hard one pass pushes (raise/lower) or blends (smooth)"));
+  brush_option_actions_.push_back(options_bar_->addWidget(brush_strength_spin_));
+
+  if (terrain_brush_tool_ != nullptr) {
+    terrain_brush_tool_->set_radius(brush_radius_spin_->value());
+    terrain_brush_tool_->set_strength(brush_strength_spin_->value());
+    terrain_brush_tool_->set_mode(BrushMode::Raise);
+    connect(brush_mode_combo_, &QComboBox::currentIndexChanged, this, [this](int) {
+      terrain_brush_tool_->set_mode(
+          static_cast<BrushMode>(brush_mode_combo_->currentData().toInt()));
+    });
+    connect(brush_radius_spin_, &QDoubleSpinBox::valueChanged, this, [this](double value) {
+      terrain_brush_tool_->set_radius(value);
+    });
+    connect(brush_strength_spin_, &QDoubleSpinBox::valueChanged, this, [this](double value) {
+      terrain_brush_tool_->set_strength(value);
+    });
+  }
+
   connect(&tool_manager_, &ToolManager::active_changed, this, &MainWindow::update_tool_options);
   update_tool_options();
 }
@@ -1115,6 +1222,11 @@ void MainWindow::update_tool_options() {
   // sit clear of the toolbars.
   options_caption_action_->setVisible(create_road);
   template_action_->setVisible(create_road);
+
+  const bool terrain_brush = active == actions_->tool_terrain_brush;
+  for (QAction* option : brush_option_actions_) {
+    option->setVisible(terrain_brush);
+  }
 }
 
 void MainWindow::build_status_bar() {

@@ -6792,6 +6792,64 @@ private:
   HeightField before_;
 };
 
+/// A terrain brush stroke (p5-s4, #234). Unlike SetTerrainFieldCommand it does
+/// NOT snapshot the whole grid — a sculpt session pushes many strokes and each
+/// touches only a small disc, so this captures just the post rectangle that
+/// changed, before and after. apply/revert copy the field, overwrite that
+/// sub-rectangle, and set it back — the undo entry's memory is the rectangle,
+/// not the grid. Refuses to touch a field whose shape no longer matches the one
+/// the stroke was built against (linear undo makes that unreachable, but a
+/// mismatched write would corrupt a neighbour's heights).
+class StampTerrainCommand : public Command {
+public:
+  StampTerrainCommand(std::size_t cols,
+                      std::size_t rows,
+                      std::size_t col0,
+                      std::size_t row0,
+                      std::size_t ncol,
+                      std::size_t nrow,
+                      std::vector<double> before,
+                      std::vector<double> after)
+      : cols_(cols), rows_(rows), col0_(col0), row0_(row0), ncol_(ncol), nrow_(nrow),
+        before_(std::move(before)), after_(std::move(after)) {}
+
+  Expected<void> apply(RoadNetwork& network) override { return write(network, after_); }
+
+  Expected<void> revert(RoadNetwork& network) override { return write(network, before_); }
+
+  std::string_view name() const override { return kName; }
+
+  DirtySet dirty() const override { return DirtySet{.terrain = true}; }
+
+private:
+  static constexpr std::string_view kName = "Sculpt Terrain";
+
+  Expected<void> write(RoadNetwork& network, const std::vector<double>& block) {
+    HeightField field = network.terrain();
+    if (field.cols != cols_ || field.rows != rows_ || field.heights.size() != cols_ * rows_) {
+      return make_error(ErrorCode::InvalidArgument,
+                        "the terrain field shape changed under a sculpt command",
+                        "stamp_terrain");
+    }
+    for (std::size_t r = 0; r < nrow_; ++r) {
+      for (std::size_t c = 0; c < ncol_; ++c) {
+        field.heights[((row0_ + r) * cols_) + (col0_ + c)] = block[(r * ncol_) + c];
+      }
+    }
+    network.set_terrain(std::move(field));
+    return {};
+  }
+
+  std::size_t cols_;
+  std::size_t rows_;
+  std::size_t col0_;
+  std::size_t row0_;
+  std::size_t ncol_;
+  std::size_t nrow_;
+  std::vector<double> before_;
+  std::vector<double> after_;
+};
+
 } // namespace
 
 std::unique_ptr<Command>
@@ -6919,6 +6977,53 @@ std::unique_ptr<Command> remove_terrain_field(const RoadNetwork& network) {
                                  .message = "there is no terrain field to remove"});
   }
   return std::make_unique<SetTerrainFieldCommand>(kName, HeightField{}, network.terrain());
+}
+
+Expected<std::unique_ptr<Command>> stamp_terrain(const RoadNetwork& network,
+                                                 const std::vector<BrushStamp>& stamps) {
+  if (network.terrain().empty()) {
+    return make_error(
+        ErrorCode::InvalidArgument, "there is no terrain field to sculpt", "stamp_terrain");
+  }
+  if (stamps.empty()) {
+    return make_error(ErrorCode::InvalidArgument, "the brush stroke is empty", "stamp_terrain");
+  }
+
+  // Replay the whole stroke onto a copy of the field, unioning each dab's
+  // footprint. Working from a copy of the live field (not the base) is safe: the
+  // tool builds this against the base network in a preview factory, so "before"
+  // is the pre-stroke state either way.
+  const HeightField& before = network.terrain();
+  HeightField after = before;
+  BrushFootprint stroke;
+  for (const BrushStamp& stamp : stamps) {
+    stroke.merge(apply_brush_stamp(after, stamp));
+  }
+  if (!stroke.touched) {
+    return make_error(
+        ErrorCode::InvalidArgument, "the brush stroke changed nothing", "stamp_terrain");
+  }
+
+  // Capture only the touched rectangle, before and after, row-major within it.
+  const std::size_t ncol = (stroke.col1 - stroke.col0) + 1;
+  const std::size_t nrow = (stroke.row1 - stroke.row0) + 1;
+  std::vector<double> before_block(ncol * nrow);
+  std::vector<double> after_block(ncol * nrow);
+  for (std::size_t r = 0; r < nrow; ++r) {
+    for (std::size_t c = 0; c < ncol; ++c) {
+      const std::size_t src = ((stroke.row0 + r) * before.cols) + (stroke.col0 + c);
+      before_block[(r * ncol) + c] = before.heights[src];
+      after_block[(r * ncol) + c] = after.heights[src];
+    }
+  }
+  return std::unique_ptr<Command>(std::make_unique<StampTerrainCommand>(before.cols,
+                                                                        before.rows,
+                                                                        stroke.col0,
+                                                                        stroke.row0,
+                                                                        ncol,
+                                                                        nrow,
+                                                                        std::move(before_block),
+                                                                        std::move(after_block)));
 }
 
 namespace {

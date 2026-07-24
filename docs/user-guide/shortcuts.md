@@ -67,6 +67,7 @@ conventions below.
 | Signal Phase editor (2D) | `Shift+G` | G is the Signal tool; ⇧G opens its phase timeline |
 | Sign tool (place a road sign; its face text is editable) | `B` |  |
 | Surface tool (reshape a ground surface's boundary) | `U` | S is the Marking Point tool and ⇧S the Prop Span tool |
+| Terrain Brush tool (raise/lower/smooth the height field) | `Shift+B` | ⇧T is the Prop Curve tool, so the brush takes ⇧B |
 
 ## View
 

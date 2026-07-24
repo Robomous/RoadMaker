@@ -87,6 +87,7 @@ public:
   QAction* tool_junction_span = nullptr;
   QAction* tool_junction_surface = nullptr;
   QAction* tool_surface = nullptr;
+  QAction* tool_terrain_brush = nullptr;
   QAction* tool_maneuver = nullptr;
   QAction* tool_signal = nullptr;
   QAction* tool_sign = nullptr;
@@ -134,6 +135,10 @@ public:
   // height field currently exists.
   QAction* terrain_create = nullptr;
   QAction* terrain_remove = nullptr;
+
+  // DEM import (p5-s4, #234): Edit ▸ Terrain ▸ Import DEM — reads an ESRI ASCII
+  // grid (.asc) and installs it as the scene field. Menu-only (no registry id).
+  QAction* terrain_import = nullptr;
 
   // Bridges (p5-s3, #233): the Road Construction tool's automatic bridge
   // assignment — a menu action (no registry id, so no shortcut) that detects

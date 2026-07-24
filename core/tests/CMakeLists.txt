@@ -51,6 +51,7 @@ add_executable(roadmaker_core_tests
   test_surface_derivation.cpp
   test_surface_mesh.cpp
   test_surface_boundary.cpp
+  test_terrain_brush.cpp
   test_terrain_field.cpp
   test_terrain_mesh.cpp
   test_terrain_operations.cpp

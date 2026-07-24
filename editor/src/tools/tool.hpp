@@ -60,6 +60,7 @@ enum class ToolId {
   Signal,
   Sign,
   Surface,
+  TerrainBrush,
 };
 
 struct ToolEvent {

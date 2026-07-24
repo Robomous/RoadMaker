@@ -19,6 +19,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 Current version on `main`: **0.0.1**.
 
 ### Added
+- **Sculpt the terrain by hand and import a DEM**
+  ([#234](https://github.com/Robomous/RoadMaker/issues/234)): the new **Terrain
+  Brush** tool (**⇧B**) raises, lowers and smooths the scene height field with a
+  drag — the ground deforms live and a whole stroke is one undo step, while the
+  roads keep meeting the kerb through the existing skirt. **Edit ▸ Terrain ▸
+  Import DEM…** reads an ESRI ASCII grid (`.asc`) as the scene's ground, placed
+  as-is in the scene frame (GDAL raster formats arrive with the wider GIS
+  import). Sculpted and imported fields persist to the same `.asc` sidecar a
+  created field does. Kernel: `apply_brush_stamp` and the region-delta
+  `edit::stamp_terrain` command; both are exposed to Python
+  (`BrushStamp`, `BrushMode`, `edit.stamp_terrain`, `load_terrain_asc`).
 - **Roads that cross without a junction can become bridges**
   ([#233](https://github.com/Robomous/RoadMaker/issues/233)): raise a road over
   another and RoadMaker detects the grade separation. **Edit ▸ Bridge ▸ Generate

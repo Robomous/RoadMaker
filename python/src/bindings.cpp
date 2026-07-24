@@ -45,6 +45,7 @@
 #include "roadmaker/road/repeat_expansion.hpp"
 #include "roadmaker/road/surface_derivation.hpp"
 #include "roadmaker/road/terrain.hpp"
+#include "roadmaker/road/terrain_brush.hpp"
 #include "roadmaker/version.hpp"
 #include "roadmaker/xodr/reader.hpp"
 #include "roadmaker/xodr/terrain_sidecar.hpp"
@@ -1150,6 +1151,57 @@ NB_MODULE(_roadmaker, m) {
       },
       "text"_a,
       "Parse an ESRI ASCII grid (.asc) into a HeightField.");
+  m.def(
+      "load_terrain_asc",
+      [](const std::string& path) {
+        auto parsed = roadmaker::load_terrain_asc(std::filesystem::path(path));
+        if (!parsed) {
+          throw std::runtime_error(parsed.error().message);
+        }
+        return parsed->field;
+      },
+      "path"_a,
+      "Read an ESRI ASCII grid (.asc) DEM file from disk into a HeightField.");
+
+  // Terrain brushes (p5-s4, #234): the raise/lower/smooth stamp math.
+  nb::enum_<roadmaker::BrushMode>(m, "BrushMode")
+      .value("RAISE", roadmaker::BrushMode::Raise)
+      .value("LOWER", roadmaker::BrushMode::Lower)
+      .value("SMOOTH", roadmaker::BrushMode::Smooth);
+  nb::class_<roadmaker::BrushStamp>(m, "BrushStamp")
+      .def(nb::init<>())
+      .def(
+          "__init__",
+          [](roadmaker::BrushStamp* self,
+             double center_x,
+             double center_y,
+             double radius,
+             double strength,
+             roadmaker::BrushMode mode) {
+            new (self) roadmaker::BrushStamp{.center_x = center_x,
+                                             .center_y = center_y,
+                                             .radius = radius,
+                                             .strength = strength,
+                                             .mode = mode};
+          },
+          "center_x"_a = 0.0,
+          "center_y"_a = 0.0,
+          "radius"_a = 20.0,
+          "strength"_a = 0.5,
+          "mode"_a = roadmaker::BrushMode::Raise)
+      .def_rw("center_x", &roadmaker::BrushStamp::center_x)
+      .def_rw("center_y", &roadmaker::BrushStamp::center_y)
+      .def_rw("radius", &roadmaker::BrushStamp::radius)
+      .def_rw("strength", &roadmaker::BrushStamp::strength)
+      .def_rw("mode", &roadmaker::BrushStamp::mode);
+  m.def(
+      "apply_brush_stamp",
+      [](roadmaker::HeightField& field, const roadmaker::BrushStamp& stamp) {
+        roadmaker::apply_brush_stamp(field, stamp);
+      },
+      "field"_a,
+      "stamp"_a,
+      "Apply one brush stamp to a height field in place (raise/lower/smooth).");
 
   // Bridges (p5-s3, #233).
   nb::class_<roadmaker::GradeSeparation>(m, "GradeSeparation")
@@ -3684,6 +3736,20 @@ NB_MODULE(_roadmaker, m) {
       },
       "network"_a,
       "Removes the scene height field. Rejects when there is none.");
+  edit.def(
+      "stamp_terrain",
+      [](const roadmaker::RoadNetwork& network, const std::vector<roadmaker::BrushStamp>& stamps) {
+        auto built = roadmaker::edit::stamp_terrain(network, stamps);
+        if (!built) {
+          throw std::runtime_error(built.error().message);
+        }
+        return std::move(*built);
+      },
+      "network"_a,
+      "stamps"_a,
+      "Sculpts the height field with a brush stroke (an ordered list of BrushStamp), "
+      "as ONE region-delta command (p5-s4). Raises on no field, an empty stroke, or a "
+      "stroke that changed nothing.");
   edit.def(
       "author_bridge",
       [](const roadmaker::RoadNetwork& network,
