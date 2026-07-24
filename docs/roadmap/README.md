@@ -288,12 +288,12 @@ v0.1.0 may be published only when **all** of the following hold:
 2. Every **cross-pillar workstream** issue (`help`, `fmt`, `docs-site`,
    `cascade` — including every sprint of the
    [move-with-cascade epic #406](https://github.com/Robomous/RoadMaker/issues/406))
-   and every follow-up/bug issue **existing as of 2026-07-23** (the
-   [batch-2 field triage](updates/2026-07-field-triage-2.md)) is closed via
-   merged PRs. Concretely: **an open issue created on or before 2026-07-23
-   blocks the release unless the maintainer explicitly re-scopes it** — the
-   gate is checkable from the issue tracker alone (maintainer decision,
-   2026-07-23).
+   and every follow-up/bug issue **existing as of the
+   [batch-2 field triage](updates/2026-07-field-triage-2.md)** (issues up to
+   and including #406) is closed via merged PRs. Concretely: **an open issue
+   numbered ≤ #406 blocks the release unless the maintainer explicitly
+   re-scopes it** — the gate is checkable from the issue tracker alone
+   (maintainer decision, 2026-07-23).
 3. The maintainer has executed **every golden workflow (GW-1 … GW-6) by
    hand** on macOS, Linux, and Windows, and recorded a pass in each
    workflow's results table (date, OS, commit).
