@@ -303,7 +303,10 @@ tinygltf::Model export_text_signs(int count, const std::string& text) {
   }
   const auto mesh = roadmaker::build_network_mesh(network, {});
 
-  const auto path = temp_glb("rm_text_sign.glb");
+  // Unique per call: two tests exercise this helper with different counts, and a
+  // fixed temp name would let their export/read/remove race under `ctest -j`
+  // (parallel-safety is a test contract — docs/testing/audit-2026-07.md).
+  const auto path = temp_glb(("rm_text_sign_" + std::to_string(count) + ".glb").c_str());
   const auto exported = roadmaker::export_glb(mesh, path);
   if (!exported) {
     throw std::runtime_error("export_glb failed: " + exported.error().message);

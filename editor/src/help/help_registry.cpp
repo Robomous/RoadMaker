@@ -26,7 +26,7 @@ namespace {
 // both live on Moving and transforming; Delete's behaviour is documented with
 // the right-click menus. Keep this exhaustive — the coverage test loops the
 // whole ToolId enum and fails the build on a hole.
-constexpr std::array<ToolPage, 27> kToolPages{{
+constexpr std::array<ToolPage, 28> kToolPages{{
     {ToolId::Select, "moving-and-transforming"},
     {ToolId::Move, "moving-and-transforming"},
     {ToolId::CreateRoad, "create-road"},
@@ -55,9 +55,10 @@ constexpr std::array<ToolPage, 27> kToolPages{{
     {ToolId::JunctionSpan, "junction"},
     {ToolId::JunctionSurface, "junction"},
     {ToolId::Maneuver, "junction"},
-    {ToolId::Signal, "junction"},         // signalization is authored on a junction
-    {ToolId::Sign, "objects-signals"},    // road signs are placed signal entities
-    {ToolId::Surface, "ground-surfaces"}, // P5 terrain: the ground surface itself
+    {ToolId::Signal, "junction"},            // signalization is authored on a junction
+    {ToolId::Sign, "objects-signals"},       // road signs are placed signal entities
+    {ToolId::Surface, "ground-surfaces"},    // P5 terrain: the ground surface itself
+    {ToolId::TerrainBrush, "terrain-brush"}, // P5 terrain: sculpting the height field
 }};
 
 // Every dockable panel, keyed by the QDockWidget objectName set in

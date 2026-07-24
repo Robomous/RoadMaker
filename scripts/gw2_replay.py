@@ -402,6 +402,68 @@ def step8_bridge_from_crossing() -> str:
             f"{meshed.bridge_vertex_count} vertices; inflated the span to "
             f"{wider.bridge_vertex_count}; <bridge> round-trip byte-identical; undo clean")
 
+def step9_terrain_sculpt_and_dem() -> str:
+    """Step 7b (p5-s4) — sculpt the terrain with brushes and import a DEM.
+
+    What this slice of the terrain step claims headlessly: a brush stroke is ONE
+    undoable command that lifts the ground, undo restores it byte-for-byte, an
+    imported ESRI ASCII (.asc) DEM installs as the scene field, and a sculpted
+    scene still validates and round-trips through its sidecar.
+    """
+    import os
+    import tempfile
+
+    net = rm.RoadNetwork()
+    rm.author_clothoid_road(
+        net, [(0.0, 0.0), (120.0, 0.0)], rm.LaneProfile.two_lane_rural(), "", "r0")
+    stack = rm.edit.EditStack()
+    stack.push(net, rm.edit.create_terrain_field(net))
+
+    lo_x, lo_y, hi_x, hi_y = rm.field_extent(net.terrain)
+    cx, cy = (lo_x + hi_x) / 2.0, (lo_y + hi_y) / 2.0
+    before = list(net.terrain.heights)
+
+    # A brush stroke (two dabs) as ONE command; the ground under it rises.
+    stack.push(net, rm.edit.stamp_terrain(
+        net, [rm.BrushStamp(cx, cy, 30.0, 5.0, rm.BrushMode.RAISE),
+              rm.BrushStamp(cx + 10.0, cy, 30.0, 5.0, rm.BrushMode.RAISE)]))
+    peak = rm.sample_height(net.terrain, cx, cy)
+    assert peak > 0.0, "the raise brush did not lift the ground"
+    assert rm.build_network_mesh(net).terrain_vertex_count > 0
+
+    # One undo restores the pre-stroke grid exactly.
+    stack.undo(net)
+    assert net.terrain.heights == before, "undo did not restore the sculpted grid"
+    stack.redo(net)
+
+    # DEM import: serialize the sculpted field, read it back with the SAME .asc
+    # reader Edit ▸ Import DEM uses, and install it verbatim.
+    workdir = tempfile.mkdtemp()
+    dem = os.path.join(workdir, "dem.asc")
+    with open(dem, "w", encoding="utf-8") as handle:
+        handle.write(rm.write_terrain_asc(net.terrain))
+    imported = rm.load_terrain_asc(dem)
+    assert imported.heights == net.terrain.heights, "the DEM did not round-trip through .asc"
+    # Import replaces the scene field: clear the current one, then install the
+    # DEM (as Edit ▸ Import DEM does onto a scene with no terrain of its own).
+    stack.push(net, rm.edit.remove_terrain_field(net))
+    stack.push(net, rm.edit.set_terrain_field(net, imported))
+    assert net.terrain.heights == imported.heights, "the imported DEM was not installed"
+
+    # The sculpted scene validates and its sidecar round-trips.
+    findings = rm.validate_network(net, target_version=rm.XodrVersion.V1_8_1)
+    errors = [f for f in findings if f.severity == rm.Severity.ERROR]
+    assert not errors, f"validate found {len(errors)} error(s) after sculpting"
+    xodr = os.path.join(workdir, "sculpted.xodr")
+    rm.save_xodr(net, xodr, "sculpted")
+    reloaded, _diags = rm.load_xodr(xodr)
+    assert reloaded.terrain.heights == net.terrain.heights, "sculpted grid changed on reload"
+
+    return (f"raised the ground to {peak:.2f} m as ONE command; undo/redo clean; "
+            f"imported a {imported.cols}x{imported.rows} DEM; validate 0 errors; "
+            f".asc sidecar round-trip byte-identical")
+
+
 def step11_road_style(network, stack) -> str:
     """Step 11 — apply a road style: profile replaced, everything else preserved."""
     road_id = created_road(
@@ -631,6 +693,7 @@ def main() -> int:
     run_official("6. Surface boundary as a node graph", step6_surface_boundary)
     run_official("7. Terrain follows the road", step7_terrain_follows_road)
     run_official("8. Bridge from a grade-separated crossing", step8_bridge_from_crossing)
+    run_official("7b. Sculpt terrain (brushes) + import a DEM", step9_terrain_sculpt_and_dem)
     run_official("11. Apply road style (replace + preserve)",
                  lambda: step11_road_style(network, stack))
 

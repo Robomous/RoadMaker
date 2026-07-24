@@ -49,9 +49,15 @@ the `.asc` beside the scene when you move or share it. If the sidecar is missing
 when you open a scene, the roads still load; only the ground comes back flat,
 with a note in the diagnostics.
 
+## Sculpting and DEM import
+
+Beyond letting the roads shape it, you can shape the ground **directly**: the
+[Terrain Brush](terrain-brush.md) tool (**⇧B**) raises, lowers and smooths the
+field with a drag, and **Edit ▸ Terrain ▸ Import DEM…** loads a real-world
+elevation grid (ESRI ASCII `.asc`) as the scene's ground. See the
+[Terrain Brush](terrain-brush.md) page for both.
+
 ## Not yet in this release
 
-This release gives you the height field and the road coupling. **Raise/lower
-brushes** for sculpting the ground directly, and **importing a DEM** (real-world
-elevation) are the next terrain sprint — until then, terrain shape comes from
-the roads.
+Only the dependency-free ESRI ASCII (`.asc`) DEM format is read here; other
+raster formats (GeoTIFF and friends) arrive with the wider GIS import work.

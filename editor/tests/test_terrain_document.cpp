@@ -22,19 +22,28 @@
 #include "roadmaker/edit/operations.hpp"
 #include "roadmaker/road/authoring.hpp"
 #include "roadmaker/road/network.hpp"
+#include "roadmaker/road/terrain.hpp"
+#include "roadmaker/road/terrain_brush.hpp"
 
 #include <gtest/gtest.h>
 
+#include <QtGlobal>
 #include <algorithm>
+#include <array>
 #include <cstddef>
 #include <vector>
 
 #include "document/document.hpp"
+#include "tools/terrain_brush_tool.hpp"
 
+using roadmaker::BrushMode;
+using roadmaker::BrushStamp;
 using roadmaker::LaneProfile;
 using roadmaker::RoadId;
 using roadmaker::Waypoint;
 using roadmaker::editor::Document;
+using roadmaker::editor::TerrainBrushTool;
+using roadmaker::editor::ToolEvent;
 
 namespace {
 
@@ -143,4 +152,115 @@ TEST(TerrainDocument, NoFieldMeansNoTerrainChannel) {
   Document document;
   lay_road(document);
   EXPECT_EQ(terrain_vertex_count(document), 0U);
+}
+
+// --- terrain brush (p5-s4, #234) --------------------------------------------
+
+namespace {
+
+/// Centre of the field's plan extent — where a brush surely lands on the grid.
+std::array<double, 2> field_centre(const Document& document) {
+  const auto extent = roadmaker::field_extent(document.network().terrain());
+  return {(extent[0] + extent[2]) / 2.0, (extent[1] + extent[3]) / 2.0};
+}
+
+} // namespace
+
+TEST(TerrainDocument, BrushPreviewRebuildsTerrainLiveUnlikeARoadDrag) {
+  Document document;
+  lay_road(document);
+  ASSERT_TRUE(
+      document.push_command(roadmaker::edit::create_terrain_field(document.network())).has_value());
+  const std::vector<double> before = document.mesh().terrain.positions;
+  ASSERT_FALSE(before.empty());
+
+  // Begin a brush preview (a strong central raise). Unlike a road-drag preview
+  // (which defers terrain to commit), a brush IS the terrain edit, so the mesh
+  // must already reflect it WHILE the session is still open.
+  const auto centre = field_centre(document);
+  auto built = roadmaker::edit::stamp_terrain(
+      document.network(), {BrushStamp{centre[0], centre[1], 40.0, 6.0, BrushMode::Raise}});
+  ASSERT_TRUE(built.has_value());
+  ASSERT_TRUE(document.begin_preview(std::move(*built)).has_value());
+  ASSERT_TRUE(document.preview_active());
+  EXPECT_NE(document.mesh().terrain.positions, before)
+      << "the brush preview did not re-triangulate terrain live";
+
+  document.commit_preview();
+  EXPECT_FALSE(document.preview_active());
+  EXPECT_NE(document.mesh().terrain.positions, before);
+}
+
+TEST(TerrainDocument, BrushStrokeIsOneUndoEntryAndUndoRestoresTheField) {
+  Document document;
+  lay_road(document);
+  ASSERT_TRUE(
+      document.push_command(roadmaker::edit::create_terrain_field(document.network())).has_value());
+  const std::vector<double> field_before = document.network().terrain().heights;
+  const int base = document.undo_stack()->index();
+
+  const auto centre = field_centre(document);
+  auto built = roadmaker::edit::stamp_terrain(
+      document.network(), {BrushStamp{centre[0], centre[1], 35.0, 5.0, BrushMode::Raise}});
+  ASSERT_TRUE(built.has_value());
+  ASSERT_TRUE(document.begin_preview(std::move(*built)).has_value());
+  document.commit_preview();
+
+  EXPECT_EQ(document.undo_stack()->index(), base + 1); // exactly one entry
+  EXPECT_NE(document.network().terrain().heights, field_before);
+
+  document.undo_stack()->undo();
+  EXPECT_EQ(document.network().terrain().heights, field_before); // byte-exact restore
+}
+
+TEST(TerrainDocument, BrushToolDragCommitsOneUndoEntry) {
+  Document document;
+  lay_road(document);
+  ASSERT_TRUE(
+      document.push_command(roadmaker::edit::create_terrain_field(document.network())).has_value());
+  const int base = document.undo_stack()->index();
+  const std::vector<double> field_before = document.network().terrain().heights;
+
+  TerrainBrushTool tool(document);
+  tool.set_radius(35.0);
+  tool.set_strength(5.0);
+  tool.set_mode(BrushMode::Raise);
+  tool.activate();
+
+  const auto centre = field_centre(document);
+  ToolEvent press;
+  press.world_x = centre[0];
+  press.world_y = centre[1];
+  press.buttons = Qt::LeftButton;
+  EXPECT_TRUE(tool.mouse_press(press));
+  EXPECT_TRUE(tool.stroking());
+
+  ToolEvent move = press;
+  move.world_x = centre[0] + 20.0; // far enough to seat a second dab
+  EXPECT_TRUE(tool.mouse_move(move));
+
+  ToolEvent release = move;
+  release.buttons = Qt::NoButton;
+  EXPECT_TRUE(tool.mouse_release(release));
+  EXPECT_FALSE(tool.stroking());
+
+  EXPECT_EQ(document.undo_stack()->index(), base + 1); // the whole stroke = one entry
+  EXPECT_NE(document.network().terrain().heights, field_before);
+}
+
+TEST(TerrainDocument, BrushToolWithoutAFieldDoesNothing) {
+  Document document;
+  lay_road(document); // a road, but no terrain field
+  const int base = document.undo_stack()->index();
+
+  TerrainBrushTool tool(document);
+  tool.activate();
+  ToolEvent press;
+  press.world_x = 40.0;
+  press.world_y = 0.0;
+  press.buttons = Qt::LeftButton;
+  EXPECT_TRUE(tool.mouse_press(press)); // consumed (it toasted), but...
+  EXPECT_FALSE(tool.stroking());        // ...no stroke started
+  EXPECT_FALSE(document.preview_active());
+  EXPECT_EQ(document.undo_stack()->index(), base); // nothing pushed
 }

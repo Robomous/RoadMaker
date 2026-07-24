@@ -28,6 +28,7 @@
 #include "roadmaker/road/authoring.hpp"
 #include "roadmaker/road/network.hpp"
 #include "roadmaker/road/terrain.hpp"
+#include "roadmaker/road/terrain_brush.hpp"
 #include "roadmaker/xodr/terrain_sidecar.hpp"
 #include "roadmaker/xodr/writer.hpp"
 
@@ -35,7 +36,10 @@
 
 #include <limits>
 #include <string>
+#include <vector>
 
+using roadmaker::BrushMode;
+using roadmaker::BrushStamp;
 using roadmaker::HeightField;
 using roadmaker::LaneProfile;
 using roadmaker::RoadNetwork;
@@ -46,6 +50,7 @@ using roadmaker::edit::Command;
 using roadmaker::edit::create_terrain_field;
 using roadmaker::edit::remove_terrain_field;
 using roadmaker::edit::set_terrain_field;
+using roadmaker::edit::stamp_terrain;
 
 namespace {
 
@@ -192,4 +197,94 @@ TEST(TerrainOperations, SetRejectsANoOp) {
   ASSERT_TRUE(create_terrain_field(network)->apply(network).has_value());
   auto command = set_terrain_field(network, network.terrain());
   EXPECT_FALSE(command->apply(network).has_value());
+}
+
+// --- brush strokes (p5-s4, #234) --------------------------------------------
+
+TEST(TerrainBrushOperations, StrokeRoundTripsOverTheGridNotJustTheReference) {
+  RoadNetwork network = straight_network();
+  ASSERT_TRUE(create_terrain_field(network)->apply(network).has_value());
+  // Centre the stroke on the network so it lands inside the flat field.
+  const auto extent = roadmaker::field_extent(network.terrain());
+  const double cx = (extent[0] + extent[2]) / 2.0;
+  const double cy = (extent[1] + extent[3]) / 2.0;
+  std::vector<BrushStamp> stroke{
+      {cx, cy, 20.0, 3.0, BrushMode::Raise},
+      {cx + 8.0, cy, 20.0, 3.0, BrushMode::Raise},
+  };
+  auto built = stamp_terrain(network, stroke);
+  ASSERT_TRUE(built.has_value());
+  // The non-vacuous oracle: apply→revert must restore the SERIALIZED GRID too.
+  expect_terrain_round_trip(network, **built);
+}
+
+TEST(TerrainBrushOperations, StrokeCommandCapturesOnlyTheTerrainDirtyChannel) {
+  RoadNetwork network = straight_network();
+  ASSERT_TRUE(create_terrain_field(network)->apply(network).has_value());
+  const auto extent = roadmaker::field_extent(network.terrain());
+  auto built = stamp_terrain(network,
+                             {{(extent[0] + extent[2]) / 2.0,
+                               (extent[1] + extent[3]) / 2.0,
+                               25.0,
+                               2.0,
+                               BrushMode::Raise}});
+  ASSERT_TRUE(built.has_value());
+  const auto dirty = (*built)->dirty();
+  EXPECT_TRUE(dirty.terrain);
+  EXPECT_TRUE(dirty.roads.empty());
+  EXPECT_FALSE(dirty.topology);
+}
+
+TEST(TerrainBrushOperations, StrokeLeavesPostsOutsideItsFootprintUntouched) {
+  RoadNetwork network = straight_network();
+  ASSERT_TRUE(create_terrain_field(network)->apply(network).has_value());
+  const HeightField before = network.terrain();
+  const auto extent = roadmaker::field_extent(network.terrain());
+  // A small brush at one corner of the field.
+  auto built =
+      stamp_terrain(network, {{extent[0] + 5.0, extent[1] + 5.0, 12.0, 4.0, BrushMode::Raise}});
+  ASSERT_TRUE(built.has_value());
+  ASSERT_TRUE((*built)->apply(network).has_value());
+  const HeightField after = network.terrain();
+  ASSERT_EQ(before.heights.size(), after.heights.size());
+  // A post far from the corner (the opposite corner) is unchanged.
+  EXPECT_DOUBLE_EQ(after.heights.back(), before.heights.back());
+  // ...but SOMETHING changed overall.
+  EXPECT_NE(after.heights, before.heights);
+}
+
+// --- DEM import (p5-s4, #234) -----------------------------------------------
+// The `.asc` reader already exists (p5-s2's sidecar). Import is just: parse the
+// grid, then set_terrain_field installs it verbatim (as-is in the kernel frame,
+// decision D1). This locks that path end to end at the command layer.
+TEST(TerrainDemImport, ParsedAscInstallsAsTheSceneFieldAndRoundTrips) {
+  RoadNetwork network = straight_network();
+  const std::string dem =
+      "ncols 3\nnrows 2\nxllcorner 10\nyllcorner 20\ncellsize 5\nNODATA_value -9999\n"
+      "3 4 5\n0 1 2\n"; // rows are NORTH-first; low-y row {0,1,2} ends up first in heights
+  auto parsed = roadmaker::parse_terrain_asc(dem, "dem");
+  ASSERT_TRUE(parsed.has_value());
+  EXPECT_EQ(parsed->field.cols, 3u);
+  EXPECT_EQ(parsed->field.rows, 2u);
+  EXPECT_DOUBLE_EQ(parsed->field.origin_x, 10.0);
+  EXPECT_DOUBLE_EQ(parsed->field.spacing, 5.0);
+
+  auto command = set_terrain_field(network, parsed->field);
+  ASSERT_TRUE(command->apply(network).has_value());
+  EXPECT_EQ(network.terrain(), parsed->field); // installed verbatim, as-is
+  // The installed grid re-serializes byte-identically to what we read.
+  EXPECT_EQ(*write_terrain_asc(network.terrain()), *write_terrain_asc(parsed->field));
+}
+
+TEST(TerrainBrushOperations, RejectsNoFieldEmptyStrokeAndNoOpStroke) {
+  RoadNetwork network = straight_network();
+  // No field yet.
+  EXPECT_FALSE(stamp_terrain(network, {{0.0, 0.0, 10.0, 1.0, BrushMode::Raise}}).has_value());
+
+  ASSERT_TRUE(create_terrain_field(network)->apply(network).has_value());
+  // Empty stroke.
+  EXPECT_FALSE(stamp_terrain(network, {}).has_value());
+  // A stroke that misses the grid entirely changes nothing → rejected.
+  EXPECT_FALSE(
+      stamp_terrain(network, {{100000.0, 100000.0, 10.0, 5.0, BrushMode::Raise}}).has_value());
 }

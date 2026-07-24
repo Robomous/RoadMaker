@@ -268,6 +268,15 @@ Actions::Actions(QUndoStack& undo_stack, QObject* parent) : QObject(parent) {
          "tangent tip to curve the edge, click a midpoint to insert a node (U)"));
   tool_group->addAction(tool_surface);
 
+  tool_terrain_brush = new QAction(tr("Terrain &Brush"), this);
+  tool_terrain_brush->setCheckable(true);
+  tool_terrain_brush->setShortcuts(shortcuts::sequences(shortcuts::Id::ToolTerrainBrush));
+  tool_terrain_brush->setIconText(tr("Terrain Brush"));
+  tool_terrain_brush->setToolTip(
+      tr("Terrain Brush — drag over the ground to sculpt the height field: raise, lower or "
+         "smooth; set radius, strength and mode in the options row (⇧B)"));
+  tool_group->addAction(tool_terrain_brush);
+
   tool_maneuver = new QAction(tr("&Maneuver"), this);
   tool_maneuver->setCheckable(true);
   tool_maneuver->setShortcuts(shortcuts::sequences(shortcuts::Id::ToolManeuver));
@@ -409,6 +418,11 @@ Actions::Actions(QUndoStack& undo_stack, QObject* parent) : QObject(parent) {
   terrain_remove = new QAction(tr("Remove Terrain Field"), this);
   terrain_remove->setToolTip(tr("Remove the terrain height field, returning to the flat ground"));
 
+  terrain_import = new QAction(tr("&Import DEM…"), this);
+  terrain_import->setToolTip(
+      tr("Import an ESRI ASCII grid (.asc) digital elevation model as the scene's terrain "
+         "height field"));
+
   bridge_generate = new QAction(tr("&Generate Bridge Structures"), this);
   bridge_generate->setToolTip(
       tr("Detect roads that cross without a junction and build a bridge deck, piers and "
@@ -501,6 +515,8 @@ QAction* Actions::action(shortcuts::Id id) const {
     return tool_sign;
   case Id::ToolSurface:
     return tool_surface;
+  case Id::ToolTerrainBrush:
+    return tool_terrain_brush;
   case Id::LaneWidthEditor:
     return lane_width_editor;
   case Id::SignalPhaseEditor:
@@ -583,6 +599,7 @@ void Actions::apply_icons() {
   tool_junction_surface->setIcon(Icons::get(QStringLiteral("junction-surface")));
   tool_maneuver->setIcon(Icons::get(QStringLiteral("maneuver")));
   tool_surface->setIcon(Icons::get(QStringLiteral("surface-nodes")));
+  tool_terrain_brush->setIcon(Icons::get(QStringLiteral("terrain-brush")));
   tool_signal->setIcon(Icons::get(QStringLiteral("signal")));
   tool_sign->setIcon(Icons::get(QStringLiteral("sign")));
   template_rural->setIcon(Icons::get(QStringLiteral("template-rural")));

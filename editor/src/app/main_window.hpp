@@ -47,6 +47,9 @@
 #include "tools/tool_manager.hpp"
 #include "viewport/viewport_widget.hpp"
 
+class QComboBox;
+class QDoubleSpinBox;
+
 namespace roadmaker::editor {
 
 namespace help {
@@ -282,6 +285,14 @@ private:
   /// any toolbar may have tool-dependent width (issue #332).
   QAction* options_caption_action_ = nullptr;
   QAction* template_action_ = nullptr;
+  /// Terrain Brush options (p5-s4, #234): mode/radius/strength live in the same
+  /// options row, shown only while the brush is active. Fixed-width controls so
+  /// switching to them never shifts the toolbar above (issue #332).
+  class TerrainBrushTool* terrain_brush_tool_ = nullptr;
+  QComboBox* brush_mode_combo_ = nullptr;
+  QDoubleSpinBox* brush_radius_spin_ = nullptr;
+  QDoubleSpinBox* brush_strength_spin_ = nullptr;
+  std::vector<QAction*> brush_option_actions_;
   QDockWidget* scene_dock_;
   QDockWidget* library_dock_;
   QDockWidget* properties_dock_;

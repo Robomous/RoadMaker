@@ -475,7 +475,12 @@ void Document::after_kernel_mutation(const edit::DirtySet& dirty) {
   // for terrain because it reads the network directly, not the surface channel.
   bool terrain_changed = false;
   const bool has_field = !network_.terrain().empty();
-  if (!preview_active() &&
+  // A brush stroke (dirty.terrain, p5-s4) is the ONE preview that wants live
+  // terrain — the user is sculpting the field itself — so it re-triangulates
+  // every frame. A road/junction preview still defers terrain to commit_preview:
+  // a per-frame whole-terrain re-mesh would stall the drag, and the road's
+  // moving footprint reads fine without the ground until release.
+  if ((!preview_active() || dirty.terrain) &&
       (dirty.terrain || (has_field && (dirty.topology || !dirty.roads.empty())))) {
     // dirty.terrain covers create/remove (a remove leaves has_field false but
     // must still clear the stale channel); the has_field guard keeps a plain

@@ -300,6 +300,13 @@ constexpr std::array kTable{
           .note = "S is the Marking Point tool and ⇧S the Prop Span tool",
           .toolbar_group = "Terrain & Structures",
           .toolbar_order = 10},
+    Entry{.id = Id::ToolTerrainBrush,
+          .category = "Tools",
+          .description = "Terrain Brush tool (raise/lower/smooth the height field)",
+          .primary = QKeyCombination(Qt::ShiftModifier, Qt::Key_B),
+          .note = "⇧T is the Prop Curve tool, so the brush takes ⇧B",
+          .toolbar_group = "Terrain & Structures",
+          .toolbar_order = 20},
     // Toolbar-only: enabled only for a mergeable two-road selection.
     Entry{.id = Id::MergeRoads,
           .category = "Tools",

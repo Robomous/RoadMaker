@@ -26,6 +26,7 @@
 #include "roadmaker/road/road_style.hpp"
 #include "roadmaker/road/surface.hpp"
 #include "roadmaker/road/terrain.hpp"
+#include "roadmaker/road/terrain_brush.hpp"
 
 #include <cstddef>
 #include <memory>
@@ -1113,6 +1114,21 @@ create_terrain_field(const RoadNetwork& network,
 /// Removes the scene height field, returning the ground to the flat render
 /// plane. `DirtySet{.terrain = true}`. Rejects when there is no field.
 [[nodiscard]] RM_API std::unique_ptr<Command> remove_terrain_field(const RoadNetwork& network);
+
+/// Sculpts the scene height field: replays a brush stroke (`stamps`, in order)
+/// onto a COPY of the network's field, then builds ONE command that captures
+/// only the post rectangle the stroke changed — before and after, by value —
+/// so a long sculpt session does not snapshot the whole grid on every stroke.
+/// apply/revert overwrite exactly that sub-rectangle, so undo is byte-exact.
+/// `DirtySet{.terrain = true}`.
+///
+/// The editor's Terrain Brush tool builds this once per press-drag-release from
+/// a preview factory (replay-from-base makes it composable with the preview
+/// session, no mergeWith). Returns an InvalidArgument error — pushing nothing —
+/// when there is no field, the stroke is empty, or it changed nothing (a stamp
+/// entirely off-grid, or zero radius/strength).
+[[nodiscard]] RM_API Expected<std::unique_ptr<Command>>
+stamp_terrain(const RoadNetwork& network, const std::vector<BrushStamp>& stamps);
 
 // --- bridges (p5-s3, #233) --------------------------------------------------
 

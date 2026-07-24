@@ -108,6 +108,7 @@ TEST(Icons, EveryMappedIconIsBundled) {
                                "maneuver",
                                "signal",
                                "sign",
+                               "terrain-brush",
                                "marking-point",
                                "marking-curve",
                                "template-highway",
