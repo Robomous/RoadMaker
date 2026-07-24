@@ -628,10 +628,11 @@ TEST(PropertiesPanel, DroppingOnTheRoadStyleSlotRestylesTheRoadInOneCommand) {
   emit slot->item_dropped(QStringLiteral("style.urban"));
 
   EXPECT_EQ(h.document.undo_stack()->count(), base + 1);
-  // Urban two-lane flattens the road to one section with 5 lanes (centre + 2/side).
+  // style.urban resolves to the arterial class (#413): one section with 7
+  // lanes (centre + 2 driving + sidewalk per side).
   ASSERT_EQ(h.document.network().road(road)->sections.size(), 1U);
   const LaneSectionId section = h.document.network().road(road)->sections.front();
-  EXPECT_EQ(h.document.network().lane_section(section)->lanes.size(), 5U);
+  EXPECT_EQ(h.document.network().lane_section(section)->lanes.size(), 7U);
 
   h.document.undo_stack()->undo();
   EXPECT_GT(h.document.network().road(road)->sections.size(), 0U);
@@ -1104,7 +1105,9 @@ struct CornerScene {
 /// At this reach the four corners still solve, but each leaves only ~0.3 m of
 /// free edge — below the panel's 0.5 m floor.
 struct TightCornerScene : CornerScene {
-  TightCornerScene() : CornerScene(4.8) {}
+  // 0.3 m of face clearance at the collector template's 5.1 m half-width —
+  // tight enough to hide the radius row, roomy enough to still solve corners.
+  TightCornerScene() : CornerScene(5.4) {}
 };
 
 /// Click-selects `info`'s corner the way the viewport reports a click on the

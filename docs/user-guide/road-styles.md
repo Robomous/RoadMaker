@@ -33,7 +33,7 @@ Everything **orthogonal** to the cross-section **survives** unchanged:
 - the road's name, and
 - any objects or signals already placed on it.
 
-This is why a style is a *restyle*, not a rebuild: drop *Urban 2-lane* onto a
+This is why a style is a *restyle*, not a rebuild: drop *Arterial style* onto a
 road you have already raised over a crossing and placed trees along, and the
 bridge and the trees stay put — only the lanes and their markings change.
 

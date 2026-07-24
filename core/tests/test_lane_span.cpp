@@ -28,6 +28,7 @@
 #include "roadmaker/edit/operations.hpp"
 #include "roadmaker/geometry/poly3.hpp"
 #include "roadmaker/road/authoring.hpp"
+#include "roadmaker/road/defaults.hpp"
 #include "roadmaker/road/network.hpp"
 #include "roadmaker/tol.hpp"
 #include "roadmaker/xodr/diagnostic.hpp"
@@ -44,6 +45,7 @@
 #include "support/network_compare.hpp"
 
 using roadmaker::ContactPoint;
+namespace defaults = roadmaker::defaults;
 using roadmaker::JunctionId;
 using roadmaker::Lane;
 using roadmaker::LaneId;
@@ -201,8 +203,10 @@ TEST(LaneSpan, AddLaneSpanRoundTrips) {
   EXPECT_NEAR(roadmaker::eval_profile(pocket->widths, 0.0), 0.0, roadmaker::tol::kLength);
   EXPECT_NEAR(roadmaker::eval_profile(pocket->widths, L), 0.0, 1e-6);
   // ...and its full plateau width in the middle is a real driving-lane width
-  // (the -1 driving lane's 3.5 m on two_lane_default), not the -2 shoulder.
-  EXPECT_NEAR(roadmaker::eval_profile(pocket->widths, L / 2.0), 3.5, 1e-6);
+  // (the -1 driving lane's collector width on two_lane_default), not the -2
+  // shoulder.
+  EXPECT_NEAR(
+      roadmaker::eval_profile(pocket->widths, L / 2.0), defaults::kCollectorLaneWidth, 1e-6);
 
   ASSERT_TRUE(roadmaker::write_xodr(network, "ok").has_value());
   EXPECT_EQ(roadmaker::count_errors(roadmaker::validate_network(network)), 0U);
@@ -441,7 +445,9 @@ TEST(LaneSpan, FormLaneAcrossManySeamsRunsToRoadEnd) {
   const Lane* formed_last = lane_by_odr(network, last, -1);
   ASSERT_NE(formed_last, nullptr);
   const double L = *section_end(network, last) - network.lane_section(last)->s0;
-  EXPECT_NEAR(roadmaker::eval_profile(formed_last->widths, L), 3.5, 1e-6);
+  EXPECT_NEAR(roadmaker::eval_profile(formed_last->widths, L),
+              defaults::lane_width(LaneType::Driving),
+              1e-6);
   EXPECT_FALSE(formed_last->successor.has_value()); // road end: unlinked, legal
 
   ASSERT_TRUE(roadmaker::write_xodr(network, "ok").has_value());
@@ -523,7 +529,9 @@ TEST(LaneSpan, FormLaneIntoNarrowerDownstreamSection) {
   const Lane* down = network.lane(down_id);
   EXPECT_EQ(up->successor, -2);
   EXPECT_EQ(down->predecessor, -2);
-  EXPECT_NEAR(roadmaker::eval_profile(down->widths, 0.0), 3.5, 1e-6); // appended at full width
+  EXPECT_NEAR(roadmaker::eval_profile(down->widths, 0.0),
+              defaults::lane_width(LaneType::Driving),
+              1e-6); // appended at full width
 
   ASSERT_TRUE(roadmaker::write_xodr(network, "ok").has_value());
   EXPECT_EQ(roadmaker::count_errors(roadmaker::validate_network(network)), 0U);
@@ -599,11 +607,12 @@ TEST(LaneSpan, CarveLaneTapersOverTheDraggedSpanThenHoldsFull) {
   EXPECT_EQ(carved->type, LaneType::Driving);
   // section-local: 0 at s_start (60), full at the end of the dragged span (90 ->
   // local 30), and still full at the terminus (120 -> local 60).
+  const double full = defaults::kCollectorLaneWidth; // nearest driving lane's width
   EXPECT_NEAR(roadmaker::eval_profile(carved->widths, 0.0), 0.0, roadmaker::tol::kLength);
-  EXPECT_NEAR(roadmaker::eval_profile(carved->widths, 30.0), 3.5, 1e-6);
-  EXPECT_NEAR(roadmaker::eval_profile(carved->widths, 60.0), 3.5, 1e-6);
+  EXPECT_NEAR(roadmaker::eval_profile(carved->widths, 30.0), full, 1e-6);
+  EXPECT_NEAR(roadmaker::eval_profile(carved->widths, 60.0), full, 1e-6);
   // Half-way up the taper the lane is roughly half width — it is a real ramp.
-  EXPECT_NEAR(roadmaker::eval_profile(carved->widths, 15.0), 1.75, 1e-6);
+  EXPECT_NEAR(roadmaker::eval_profile(carved->widths, 15.0), full / 2.0, 1e-6);
 
   ASSERT_TRUE(roadmaker::write_xodr(network, "ok").has_value());
   EXPECT_EQ(roadmaker::count_errors(roadmaker::validate_network(network)), 0U);
@@ -623,9 +632,10 @@ TEST(LaneSpan, CarveLaneDraggedToTerminusIsASingleDiagonal) {
   const Lane* carved = lane_by_odr(network, last, -1);
   ASSERT_NE(carved, nullptr);
   const double L = *section_end(network, last) - network.lane_section(last)->s0;
+  const double full = defaults::kCollectorLaneWidth; // nearest driving lane's width
   EXPECT_NEAR(roadmaker::eval_profile(carved->widths, 0.0), 0.0, roadmaker::tol::kLength);
-  EXPECT_NEAR(roadmaker::eval_profile(carved->widths, L / 2.0), 1.75, 1e-2); // still ramping
-  EXPECT_NEAR(roadmaker::eval_profile(carved->widths, L), 3.5, 1e-2);        // full at the end
+  EXPECT_NEAR(roadmaker::eval_profile(carved->widths, L / 2.0), full / 2.0, 1e-2); // still ramping
+  EXPECT_NEAR(roadmaker::eval_profile(carved->widths, L), full, 1e-2); // full at the end
   ASSERT_TRUE(roadmaker::write_xodr(network, "ok").has_value());
   EXPECT_EQ(roadmaker::count_errors(roadmaker::validate_network(network)), 0U);
 }

@@ -29,6 +29,7 @@
 #include "roadmaker/mesh/junction_signals.hpp"
 #include "roadmaker/mesh/junction_stoplines.hpp"
 #include "roadmaker/mesh/junction_surface_spans.hpp"
+#include "roadmaker/road/defaults.hpp"
 
 #include <QCheckBox>
 #include <QComboBox>
@@ -142,8 +143,9 @@ public:
 
   /// The editor's road-mark width conventions [m]. OpenDRIVE's @width has no
   /// normative values (weight standard/bold is the spec's coarse axis) —
-  /// these presets are RoadMaker conventions (docs/domain/opendrive.md).
-  static constexpr double kMarkWidthStandard = 0.12;
+  /// standard is the registry's normal-line width; bold stays a RoadMaker
+  /// convention (docs/domain/opendrive.md).
+  static constexpr double kMarkWidthStandard = defaults::kLineWidth;
   static constexpr double kMarkWidthBold = 0.25;
 
 private:

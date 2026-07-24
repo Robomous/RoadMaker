@@ -49,7 +49,7 @@ constexpr double kMarkingZOffset = 0.005;
 /// Paint-line width of the interop stripes marking [m]. The mesher renders the
 /// zebra from CrosswalkData; this is a reasonable value for a foreign consumer
 /// drawing the dashed outline ring.
-constexpr double kStripePaintWidth = 0.12;
+constexpr double kStripePaintWidth = defaults::kLineWidth;
 
 } // namespace
 

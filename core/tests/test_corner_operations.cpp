@@ -526,7 +526,19 @@ TEST(CornerOperations, JunctionDefaultRadiusResolutionOrder) {
 
 TEST(CornerOperations, JunctionDefaultRadiusUncappedButClampedToMaxRadius) {
   RoadNetwork network;
-  const JunctionId junction = make_cross(network);
+  // A roomier cross than make_cross: arms stop 25 m out so the geometry
+  // still allows ~15.5+ m corners at the collector template's half-width.
+  const RoadId west = author(network, {Waypoint{-80.0, 0.0}, Waypoint{-25.0, 0.0}}, "1");
+  const RoadId east = author(network, {Waypoint{80.0, 0.0}, Waypoint{25.0, 0.0}}, "2");
+  const RoadId south = author(network, {Waypoint{0.0, -80.0}, Waypoint{0.0, -25.0}}, "3");
+  const RoadId north = author(network, {Waypoint{0.0, 80.0}, Waypoint{0.0, 25.0}}, "4");
+  const std::vector<RoadEnd> ends{end_of(west), end_of(east), end_of(south), end_of(north)};
+  auto create = roadmaker::edit::create_junction(network, ends);
+  ASSERT_NE(create, nullptr);
+  ASSERT_TRUE(create->apply(network).has_value());
+  JunctionId junction{};
+  network.for_each_junction([&](JunctionId id, const roadmaker::Junction&) { junction = id; });
+  ASSERT_TRUE(junction.is_valid());
 
   // Above the DERIVED band's cap (kFilletRadiusCap = 15 m) but still within
   // what this crossing's geometry allows (~15.5 m): honored verbatim.

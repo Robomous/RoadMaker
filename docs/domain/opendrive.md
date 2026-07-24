@@ -69,9 +69,10 @@ branch on the primitive type. Clothoid evaluation and continuity rules:
   mark list per lane, so the rule holds by construction.
 - The spec's `@width` is optional and has **no normative numeric values**
   (`@weight` standard/bold is its coarse axis). RoadMaker's *conventions*:
-  **0.12 m** for a standard-weight line (the kernel default) and **0.25 m**
-  for a bold one — these are the editor's road-mark width presets, not spec
-  requirements.
+  the [realism defaults](realism_defaults.md) §1.3 normal-line width
+  (`defaults::kLineWidth`, the kernel default since #413) for a
+  standard-weight line and **0.25 m** for a bold one — these are the
+  editor's road-mark width presets, not spec requirements.
 - Multiple `<roadMark>` records per lane (ascending `sOffset`, rule
   `asam.net:xodr:1.4.0:road.lane.road_mark.elem_asc_order`) are preserved in
   data; the M2 editor edits the first (`sOffset` 0) record only.

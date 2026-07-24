@@ -435,26 +435,40 @@ def test_invalid_commands_raise_on_push(factory):
 
 
 def test_lane_profile_templates_contents():
-    rural = rm.LaneProfile.two_lane_rural()
+    # The four road classes (#413, realism_defaults.md 1.2); the pre-#413
+    # names remain as aliases of their nearest class.
+    rural = rm.LaneProfile.two_lane_rural()  # alias of collector()
     assert [lane.type for lane in rural.left] == [rm.LaneType.DRIVING]
     assert [lane.type for lane in rural.right] == [rm.LaneType.DRIVING, rm.LaneType.SHOULDER]
     assert rural.center_marking
+    assert rural.left[0].width == pytest.approx(3.3)
 
-    urban = rm.LaneProfile.urban_sidewalk()
-    for side in (urban.left, urban.right):
+    local = rm.LaneProfile.local_road()
+    for side in (local.left, local.right):
         assert [lane.type for lane in side] == [rm.LaneType.DRIVING, rm.LaneType.SIDEWALK]
-        assert [lane.width for lane in side] == [pytest.approx(3.5), pytest.approx(2.0)]
+        assert [lane.width for lane in side] == [pytest.approx(3.0), pytest.approx(1.8)]
+    assert not local.center_marking
 
-    highway = rm.LaneProfile.highway()
-    for side in (highway.left, highway.right):
+    freeway = rm.LaneProfile.freeway()
+    for side in (freeway.left, freeway.right):
         assert [lane.type for lane in side] == [
+            rm.LaneType.SHOULDER,
             rm.LaneType.DRIVING,
             rm.LaneType.DRIVING,
             rm.LaneType.SHOULDER,
         ]
-    assert not highway.center_marking
+    assert not freeway.center_marking
 
-    # two_lane_default stays as an alias of the rural template.
+    arterial = rm.LaneProfile.arterial()
+    for side in (arterial.left, arterial.right):
+        assert [lane.type for lane in side] == [
+            rm.LaneType.DRIVING,
+            rm.LaneType.DRIVING,
+            rm.LaneType.SIDEWALK,
+        ]
+    assert arterial.center_marking
+
+    # two_lane_default stays an alias of the collector template.
     alias = rm.LaneProfile.two_lane_default()
     assert [lane.type for lane in alias.right] == [lane.type for lane in rural.right]
 

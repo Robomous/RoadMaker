@@ -29,6 +29,7 @@
 #include "roadmaker/mesh/junction_surface_spans.hpp"
 #include "roadmaker/mesh/surface_boundary.hpp"
 #include "roadmaker/road/authoring.hpp"
+#include "roadmaker/road/defaults.hpp"
 #include "roadmaker/road/network.hpp"
 #include "roadmaker/tol.hpp"
 #include "roadmaker/xodr/rules.hpp"
@@ -2656,7 +2657,8 @@ std::unique_ptr<Command> close_gap(const RoadNetwork& network,
   // Width for the connector's single driving lane: the incoming end's outermost
   // driving-lane width, or a default when the end carries none.
   const std::vector<ContactLane> lanes = driving_lanes_at(network, a, ca, /*incoming=*/true);
-  const double lane_width = lanes.empty() ? 3.5 : lanes.back().width;
+  const double lane_width =
+      lanes.empty() ? defaults::lane_width(LaneType::Driving) : lanes.back().width;
 
   command->creator = [a,
                       b,
@@ -5496,7 +5498,7 @@ add_lane(const RoadNetwork& network, LaneSectionId section_id, int side, LaneTyp
   const int new_odr_id = outermost + side;
   std::vector<Poly3> widths = outermost_lane != nullptr && !outermost_lane->widths.empty()
                                   ? outermost_lane->widths
-                                  : std::vector<Poly3>{Poly3{.a = 3.5}};
+                                  : std::vector<Poly3>{Poly3{.a = defaults::lane_width(type)}};
 
   // A lane on an end section changes what driving_lanes_at reports, and so the
   // junction's turn set: name the junctions so the editor regenerates them.
@@ -5716,7 +5718,7 @@ insert_lane(const RoadNetwork& network, LaneSectionId section_id, int at_odr_id,
     if (!lane_id.is_valid()) {
       return make_error(ErrorCode::InvalidArgument, "insert position is still occupied");
     }
-    target.lane(lane_id)->widths = {Poly3{.a = 3.5}};
+    target.lane(lane_id)->widths = {Poly3{.a = defaults::lane_width(type)}};
     created.lanes.emplace_back(lane_id, Lane{});
     // 3. Remap every link that named a shifted lane by id.
     const Road& owner = *target.road(road_id);
@@ -6124,7 +6126,8 @@ LaneId lane_with_odr(const RoadNetwork& network, LaneSectionId section_id, int o
 }
 
 // The width of the driving lane on `side` nearest to `exclude` (the freshly
-// added pocket lane), or 3.5 m when the side carries no other driving lane.
+// added pocket lane), or the registry's driving-lane default when the side
+// carries no other driving lane.
 // add_lane copies the literal outermost lane — which is often a shoulder — so a
 // pocket meant as a travel lane takes a real driving-lane width instead.
 double driving_lane_width_on_side(const RoadNetwork& network,
@@ -6133,7 +6136,7 @@ double driving_lane_width_on_side(const RoadNetwork& network,
                                   LaneId exclude) {
   const LaneSection* section = network.lane_section(section_id);
   if (section == nullptr) {
-    return 3.5;
+    return defaults::lane_width(LaneType::Driving);
   }
   const Lane* nearest = nullptr;
   for (const LaneId lane_id : section->lanes) {
@@ -6152,7 +6155,7 @@ double driving_lane_width_on_side(const RoadNetwork& network,
     }
   }
   if (nearest == nullptr || nearest->widths.empty()) {
-    return 3.5;
+    return defaults::lane_width(LaneType::Driving);
   }
   return nearest->widths.front().a;
 }
@@ -6212,8 +6215,8 @@ std::unique_ptr<Command> add_lane_span(
     }
     const double L = *span - net.lane_section(mid)->s0;
     // The pocket is a travel lane: shape it to the nearest driving lane's width
-    // (3.5 m default), not add_lane's copy of the outermost lane, which is often
-    // a narrow shoulder.
+    // (registry driving-lane default), not add_lane's copy of the outermost
+    // lane, which is often a narrow shoulder.
     const double W = driving_lane_width_on_side(net, mid, side, lane);
     const double t = std::min(kTaperLen, L / 2.0 - tol::kLength);
     return set_lane_width_profile(net, lane, taper_records(L, W, t, /*ramp_down=*/true));
@@ -6294,7 +6297,7 @@ std::unique_ptr<Command> carve_lane(const RoadNetwork& network,
           return invalid_command(std::string(kName), span.error());
         }
         const double L = *span - net.lane_section(target)->s0;
-        // A real travel lane's width (nearest driving lane, 3.5 m default) —
+        // A real travel lane's width (nearest driving lane, registry default) —
         // not insert_lane's placeholder.
         const double W = driving_lane_width_on_side(net, target, side, lane);
         // The taper occupies the dragged distance, capped at the section length.
@@ -6437,24 +6440,26 @@ std::unique_ptr<Command> form_lane(const RoadNetwork& network,
         const LaneSectionId target = section_at(net, road_id, s_start + tol::kLength);
         return insert_lane(net, target, at_odr_id, type);
       });
-  builders.push_back([road_id, s_start, at_odr_id](RoadNetwork& net) -> std::unique_ptr<Command> {
-    const LaneSectionId target = section_at(net, road_id, s_start + tol::kLength);
-    const LaneId lane = lane_with_odr(net, target, at_odr_id);
-    if (!lane.is_valid()) {
-      return invalid_command(
-          std::string(kName),
-          Error{.code = ErrorCode::InvalidArgument,
-                .message = "the formed lane vanished before it could be shaped"});
-    }
-    auto span = section_end(net, target);
-    if (!span.has_value()) {
-      return invalid_command(std::string(kName), span.error());
-    }
-    const double L = *span - net.lane_section(target)->s0;
-    constexpr double W = 3.5; // insert_lane gives the fresh lane width 3.5
-    const double t = std::min(kTaperLen, L - tol::kLength);
-    return set_lane_width_profile(net, lane, taper_records(L, W, t, /*ramp_down=*/false));
-  });
+  builders.push_back(
+      [road_id, s_start, at_odr_id, type](RoadNetwork& net) -> std::unique_ptr<Command> {
+        const LaneSectionId target = section_at(net, road_id, s_start + tol::kLength);
+        const LaneId lane = lane_with_odr(net, target, at_odr_id);
+        if (!lane.is_valid()) {
+          return invalid_command(
+              std::string(kName),
+              Error{.code = ErrorCode::InvalidArgument,
+                    .message = "the formed lane vanished before it could be shaped"});
+        }
+        auto span = section_end(net, target);
+        if (!span.has_value()) {
+          return invalid_command(std::string(kName), span.error());
+        }
+        const double L = *span - net.lane_section(target)->s0;
+        // insert_lane gives the fresh lane its per-type default width.
+        const double W = defaults::lane_width(type);
+        const double t = std::min(kTaperLen, L - tol::kLength);
+        return set_lane_width_profile(net, lane, taper_records(L, W, t, /*ramp_down=*/false));
+      });
 
   // Carry the lane into each downstream section: first host it (insert where
   // the position exists, else append the ACTUAL new lane one step outward —
@@ -6469,7 +6474,7 @@ std::unique_ptr<Command> form_lane(const RoadNetwork& network,
           }
           return add_lane(net, section, side, type);
         });
-    builders.push_back([section, at_odr_id](RoadNetwork& net) -> std::unique_ptr<Command> {
+    builders.push_back([section, at_odr_id, type](RoadNetwork& net) -> std::unique_ptr<Command> {
       const LaneId lane = lane_with_odr(net, section, at_odr_id);
       if (!lane.is_valid()) {
         return invalid_command(
@@ -6477,10 +6482,10 @@ std::unique_ptr<Command> form_lane(const RoadNetwork& network,
             Error{.code = ErrorCode::InvalidArgument,
                   .message = "the carried lane vanished before it could be shaped"});
       }
-      // insert_lane already gives its fresh lane width 3.5; add_lane copies the
-      // outermost (often a shoulder), so set 3.5 explicitly — a no-op on the
-      // insert path, load-bearing on the append path.
-      return set_lane_width_profile(net, lane, {Poly3{.a = 3.5}});
+      // insert_lane already gives its fresh lane the per-type default width;
+      // add_lane copies the outermost (often a shoulder), so set it explicitly
+      // — a no-op on the insert path, load-bearing on the append path.
+      return set_lane_width_profile(net, lane, {Poly3{.a = defaults::lane_width(type)}});
     });
   }
   // Join every seam START -> D_1 -> ... -> D_n with the matched pair. Each

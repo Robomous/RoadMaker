@@ -87,10 +87,11 @@ struct LibraryDropAction {
   PlacementPreview preview; ///< where the ghost/commit lands (ghost==commit)
 };
 
-/// The LaneProfile for a road-template profile name (two_lane_rural default).
+/// The LaneProfile for a road-template profile name (local_road default);
+/// pre-#413 names resolve to their nearest road class.
 [[nodiscard]] LaneProfile profile_for(const QString& name);
 
-/// The RoadStyle for a road-style name (urban_two_lane default). Shared with the
+/// The RoadStyle for a road-style name (arterial default). Shared with the
 /// Attributes-pane road-style slot so the drop and the slot agree.
 [[nodiscard]] RoadStyle style_for(const QString& name);
 

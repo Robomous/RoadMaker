@@ -331,14 +331,17 @@ MainWindow::MainWindow(QWidget* parent, bool restore_saved_layout)
     actions_->tool_create_road->setChecked(true);
     tool_manager_.set_active(ToolId::CreateRoad);
   };
-  connect(actions_->template_rural, &QAction::triggered, this, [arm_template] {
-    arm_template(LaneProfile::two_lane_rural());
+  connect(actions_->template_freeway, &QAction::triggered, this, [arm_template] {
+    arm_template(LaneProfile::freeway());
   });
-  connect(actions_->template_urban, &QAction::triggered, this, [arm_template] {
-    arm_template(LaneProfile::urban_sidewalk());
+  connect(actions_->template_arterial, &QAction::triggered, this, [arm_template] {
+    arm_template(LaneProfile::arterial());
   });
-  connect(actions_->template_highway, &QAction::triggered, this, [arm_template] {
-    arm_template(LaneProfile::highway());
+  connect(actions_->template_collector, &QAction::triggered, this, [arm_template] {
+    arm_template(LaneProfile::collector());
+  });
+  connect(actions_->template_local, &QAction::triggered, this, [arm_template] {
+    arm_template(LaneProfile::local_road());
   });
   auto edit_nodes_tool = std::make_unique<EditNodesTool>(document_, selection_);
   wire_status(edit_nodes_tool.get());
@@ -1163,9 +1166,10 @@ void MainWindow::build_tool_options_bar() {
   template_button_->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
   template_button_->setToolTip(tr("Cross-section template the Create Road tool draws with"));
   auto* template_menu = new QMenu(template_button_);
-  template_menu->addAction(actions_->template_rural);
-  template_menu->addAction(actions_->template_urban);
-  template_menu->addAction(actions_->template_highway);
+  template_menu->addAction(actions_->template_freeway);
+  template_menu->addAction(actions_->template_arterial);
+  template_menu->addAction(actions_->template_collector);
+  template_menu->addAction(actions_->template_local);
   template_button_->setMenu(template_menu);
   const auto mirror_template = [this](const QAction* action) {
     template_button_->setIcon(action->icon());

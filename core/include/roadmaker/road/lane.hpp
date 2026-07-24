@@ -17,6 +17,7 @@
 #pragma once
 
 #include "roadmaker/geometry/poly3.hpp"
+#include "roadmaker/road/defaults.hpp"
 #include "roadmaker/road/id.hpp"
 #include "roadmaker/xodr/raw_xml.hpp"
 
@@ -90,11 +91,11 @@ enum class RoadMarkColor {
 /// multi-line marks (solid_solid etc.); empty for the common single-stripe
 /// case where RoadMark::width is authoritative (M2 behaviour, byte-stable).
 struct RoadMarkLine {
-  double width = 0.12;   ///< stripe width [m]
-  double length = 0.0;   ///< painted length [m] (0 = continuous)
-  double space = 0.0;    ///< gap length [m] (0 = solid)
-  double t_offset = 0.0; ///< lateral offset of this stripe from the mark line [m]
-  double s_offset = 0.0; ///< longitudinal start offset within the mark [m]
+  double width = defaults::kLineWidth; ///< stripe width [m]
+  double length = 0.0;                 ///< painted length [m] (0 = continuous)
+  double space = 0.0;                  ///< gap length [m] (0 = solid)
+  double t_offset = 0.0;               ///< lateral offset of this stripe from the mark line [m]
+  double s_offset = 0.0;               ///< longitudinal start offset within the mark [m]
 
   friend bool operator==(const RoadMarkLine&, const RoadMarkLine&) = default;
 };
@@ -106,8 +107,9 @@ struct RoadMark {
 
   RoadMarkType type = RoadMarkType::None;
 
-  /// Painted width [m]; OpenDRIVE default when absent.
-  double width = 0.12;
+  /// Painted width [m]; the registry's normal-line width when absent (the
+  /// OpenDRIVE @width attribute is optional with no normative default).
+  double width = defaults::kLineWidth;
 
   /// e_roadMarkColor (§11.9). Written explicitly only when not Standard.
   RoadMarkColor color = RoadMarkColor::Standard;

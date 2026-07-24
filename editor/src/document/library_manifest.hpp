@@ -25,6 +25,7 @@
 // newer manifest (Phase 3 props) never breaks an older editor.
 
 #include "roadmaker/error.hpp"
+#include "roadmaker/road/defaults.hpp"
 
 #include <QByteArray>
 #include <QJsonObject>
@@ -76,8 +77,8 @@ struct LibraryItem {
   QString thumbnail; ///< manifest-relative image path (may be empty/absent on disk)
 
   Kind kind = Kind::Unknown;
-  QString profile;  ///< RoadTemplate: "two_lane_rural" | "urban_sidewalk" | "highway"
-  QString style;    ///< RoadStyle: "urban_two_lane" | "two_lane_rural" | "highway"
+  QString profile;  ///< RoadTemplate: "freeway" | "arterial" | "collector" | "local"
+  QString style;    ///< RoadStyle: "freeway" | "arterial" | "collector" | "local"
   QString assembly; ///< Assembly: "t" | "x"
   QString model;    ///< Tree: a bundled prop model id (e.g. "tree_pine")
   QString signal;   ///< Signal: "light" (traffic light) | "sign" (static sign)
@@ -87,17 +88,19 @@ struct LibraryItem {
   /// model's native size. Prop (Kind::Tree) kinds only; ignored otherwise.
   double default_scale = 1.0;
 
-  QString mark_type;        ///< Marking: "solid" | "broken" | "solid_solid" | …
-  QString mark_color;       ///< Marking: "white" | "yellow" | …
-  double mark_width = 0.12; ///< Marking: painted width [m] (OpenDRIVE default)
-  QString material;         ///< Material: "asphalt" | "concrete" | …
+  QString mark_type;  ///< Marking: "solid" | "broken" | "solid_solid" | …
+  QString mark_color; ///< Marking: "white" | "yellow" | …
+  /// Marking: painted width [m] (the registry's normal-line width).
+  double mark_width = roadmaker::defaults::kLineWidth;
+  QString material; ///< Material: "asphalt" | "concrete" | …
 
   /// Crosswalk (parametric asset, p3-s2): stripe geometry + paint material +
   /// segmentation category. Materialized into each placed instance's object.
-  double crosswalk_width = 3.0;   ///< walking depth along the road [m]
-  double crosswalk_border = 0.0;  ///< edge-line width [m]; 0 = no border
-  double crosswalk_dash = 0.5;    ///< stripe length along the crossing [m]; 0 = solid
-  double crosswalk_gap = 0.5;     ///< gap between stripes [m]
+  double crosswalk_width = roadmaker::defaults::kCrosswalkWidth; ///< walking depth [m]
+  double crosswalk_border = 0.0; ///< edge-line width [m]; 0 = no border
+  /// Zebra bar length along the crossing [m] (realism_defaults.md §1.3); 0 = solid.
+  double crosswalk_dash = roadmaker::defaults::kCrosswalkStripeLength;
+  double crosswalk_gap = roadmaker::defaults::kCrosswalkStripeGap; ///< gap between stripes [m]
   QString crosswalk_material;     ///< paint material code (e.g. "material.paint_white")
   QString crosswalk_segmentation; ///< segmentation category tag
 

@@ -18,6 +18,7 @@
 
 #include "roadmaker/error.hpp"
 #include "roadmaker/export.hpp"
+#include "roadmaker/road/defaults.hpp"
 #include "roadmaker/road/lane.hpp"
 #include "roadmaker/road/network.hpp"
 
@@ -31,8 +32,9 @@ namespace roadmaker {
 struct LaneSpec {
   LaneType type = LaneType::Driving;
 
-  /// Constant width [m]; must be > 0.
-  double width = 3.5;
+  /// Constant width [m]; must be > 0. Defaults to the registry's classless
+  /// driving-lane width (realism_defaults.md §1.2).
+  double width = defaults::kArterialLaneWidth;
 
   /// Paint a solid marking on this lane's outer boundary.
   bool outer_marking = false;
@@ -49,24 +51,38 @@ struct LaneProfile {
   /// Paint a broken center-line marking on lane 0.
   bool center_marking = true;
 
-  // Cross-section templates the Create Road tool offers (02_editing_tools.md
-  // §2). Contents are content-tested — changing a template is a visible
-  // product change, not a refactor.
+  // Cross-section templates the Create Road tool offers — the four road
+  // classes of docs/domain/realism_defaults.md §1.2, deriving every width
+  // from the defaults registry (#413). Contents are content-tested —
+  // changing a template is a visible product change, not a refactor.
 
-  /// Two-lane rural: one driving lane each way with solid edge lines and a
-  /// right-hand shoulder, broken center line.
+  /// Freeway: left shoulder, two driving lanes and a wide right shoulder
+  /// each way; no center marking (directions are treated as separated —
+  /// median modelling is out of scope).
+  [[nodiscard]] RM_API static LaneProfile freeway();
+
+  /// Arterial: two driving lanes each way with a solid outer edge line and
+  /// a sidewalk on both sides, center line.
+  [[nodiscard]] RM_API static LaneProfile arterial();
+
+  /// Collector: one driving lane each way with solid edge lines and a
+  /// right-hand shoulder, center line.
+  [[nodiscard]] RM_API static LaneProfile collector();
+
+  /// Local/residential street: one driving lane each way with a sidewalk on
+  /// both sides; residential streets carry no painted lines by default.
+  [[nodiscard]] RM_API static LaneProfile local_road();
+
+  /// Historical alias of collector() (the pre-#413 two-lane rural template).
   [[nodiscard]] RM_API static LaneProfile two_lane_rural();
 
-  /// Urban street: one driving lane each way with solid edge lines and a
-  /// sidewalk on both sides, broken center line.
+  /// Historical alias of local_road() (the pre-#413 urban sidewalk template).
   [[nodiscard]] RM_API static LaneProfile urban_sidewalk();
 
-  /// Highway: two driving lanes each way with a solid outer edge line and a
-  /// wide shoulder on both sides; no center marking (directions are treated
-  /// as separated — median modelling is out of M2 scope).
+  /// Historical alias of freeway() (the pre-#413 highway template).
   [[nodiscard]] RM_API static LaneProfile highway();
 
-  /// Historical alias of two_lane_rural().
+  /// Historical alias of collector().
   [[nodiscard]] RM_API static LaneProfile two_lane_default();
 };
 

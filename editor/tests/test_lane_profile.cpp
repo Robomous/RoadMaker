@@ -22,6 +22,7 @@
 #include "roadmaker/edit/operations.hpp"
 #include "roadmaker/geometry/poly3.hpp"
 #include "roadmaker/road/authoring.hpp"
+#include "roadmaker/road/defaults.hpp"
 #include "roadmaker/road/lane.hpp"
 #include "roadmaker/xodr/writer.hpp"
 
@@ -117,7 +118,8 @@ TEST(LaneProfilePanel, WidthSpinCommitsOneCommandAndUndoRestores) {
   scene.select_lane(-1);
   auto* spin = scene.editor<QDoubleSpinBox>("lane_width_spin");
   ASSERT_TRUE(spin->isEnabled());
-  EXPECT_NEAR(spin->value(), 3.5, 1e-9); // synced from the network
+  EXPECT_NEAR(spin->value(), roadmaker::defaults::kCollectorLaneWidth, 1e-9)
+      << "synced from the network";
 
   const std::string before = xodr(scene.document);
   spin->setValue(5.25);

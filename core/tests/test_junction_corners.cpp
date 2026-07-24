@@ -104,10 +104,12 @@ JunctionId build_four_way(RoadNetwork& network) {
 /// radius (not the geometric bound) is what limits the fillet, and enough room
 /// for asymmetric authored extents.
 JunctionId build_roomy_four_way(RoadNetwork& network) {
-  const RoadId west = author(network, {Waypoint{-80.0, 0.0}, Waypoint{-20.0, 0.0}}, "1");
-  const RoadId east = author(network, {Waypoint{80.0, 0.0}, Waypoint{20.0, 0.0}}, "2");
-  const RoadId south = author(network, {Waypoint{0.0, -80.0}, Waypoint{0.0, -20.0}}, "3");
-  const RoadId north = author(network, {Waypoint{0.0, 80.0}, Waypoint{0.0, 20.0}}, "4");
+  // Arms stop 25 m out: roomy enough that the corner derivation's [3, 15]
+  // band binds (not the geometry) at the collector template's half-width.
+  const RoadId west = author(network, {Waypoint{-80.0, 0.0}, Waypoint{-25.0, 0.0}}, "1");
+  const RoadId east = author(network, {Waypoint{80.0, 0.0}, Waypoint{25.0, 0.0}}, "2");
+  const RoadId south = author(network, {Waypoint{0.0, -80.0}, Waypoint{0.0, -25.0}}, "3");
+  const RoadId north = author(network, {Waypoint{0.0, 80.0}, Waypoint{0.0, 25.0}}, "4");
   return make_junction(network, {end_of(west), end_of(east), end_of(south), end_of(north)});
 }
 

@@ -55,7 +55,7 @@ def test_four_arms_expose_four_derived_defaults(cross):
         assert not info.distance_authored
         assert not info.flipped
         assert info.distance == pytest.approx(4.0)
-        assert info.thickness == pytest.approx(0.3)
+        assert info.thickness == pytest.approx(0.6)
         assert info.span > 2.0
         assert info.max_distance > info.distance
         assert info.crosswalk_odr_id == ""

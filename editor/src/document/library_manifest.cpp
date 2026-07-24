@@ -183,12 +183,16 @@ Expected<LibraryManifest> LibraryManifest::parse(const QByteArray& json) {
     item.signal = create.value(QStringLiteral("signal")).toString();
     item.mark_type = create.value(QStringLiteral("mark_type")).toString();
     item.mark_color = create.value(QStringLiteral("mark_color")).toString();
-    item.mark_width = create.value(QStringLiteral("mark_width")).toDouble(0.12);
+    item.mark_width =
+        create.value(QStringLiteral("mark_width")).toDouble(roadmaker::defaults::kLineWidth);
     item.material = create.value(QStringLiteral("material")).toString();
-    item.crosswalk_width = create.value(QStringLiteral("width")).toDouble(3.0);
+    item.crosswalk_width =
+        create.value(QStringLiteral("width")).toDouble(roadmaker::defaults::kCrosswalkWidth);
     item.crosswalk_border = create.value(QStringLiteral("border_width")).toDouble(0.0);
-    item.crosswalk_dash = create.value(QStringLiteral("dash_length")).toDouble(0.5);
-    item.crosswalk_gap = create.value(QStringLiteral("dash_gap")).toDouble(0.5);
+    item.crosswalk_dash = create.value(QStringLiteral("dash_length"))
+                              .toDouble(roadmaker::defaults::kCrosswalkStripeLength);
+    item.crosswalk_gap =
+        create.value(QStringLiteral("dash_gap")).toDouble(roadmaker::defaults::kCrosswalkStripeGap);
     item.crosswalk_material = create.value(QStringLiteral("material")).toString();
     item.crosswalk_segmentation = create.value(QStringLiteral("segmentation")).toString();
     item.stencil_subtype = create.value(QStringLiteral("subtype")).toString();

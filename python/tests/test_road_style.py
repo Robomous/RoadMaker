@@ -40,16 +40,19 @@ def lane_by_odr_id(net, section_id, odr_id):
 
 
 def test_urban_two_lane_preset_contents():
+    # urban_two_lane is the pre-#413 alias of the arterial class style.
     style = rm.RoadStyle.urban_two_lane()
-    assert len(style.left) == 2
-    assert len(style.right) == 2
+    assert len(style.left) == 3
+    assert len(style.right) == 3
     # Inner same-direction lane: dashed white divider on its outer boundary.
     assert style.left[0].type == rm.LaneType.DRIVING
-    assert style.left[0].width.a == pytest.approx(3.5)
+    assert style.left[0].width.a == pytest.approx(3.6)
     assert style.left[0].outer_mark is not None
     assert style.left[0].outer_mark.type == rm.RoadMarkType.BROKEN
     assert style.left[0].outer_mark.color == rm.RoadMarkColor.WHITE
-    assert style.center_mark.type == rm.RoadMarkType.SOLID
+    assert style.left[2].type == rm.LaneType.SIDEWALK
+    # Double yellow centerline (realism_defaults.md 1.3).
+    assert style.center_mark.type == rm.RoadMarkType.SOLID_SOLID
     assert style.center_mark.color == rm.RoadMarkColor.YELLOW
 
 
@@ -61,7 +64,7 @@ def test_apply_road_style_flattens_and_replaces(network):
     sections = network.road(road).sections
     assert len(sections) == 1  # flattened to one section
     section = network.lane_section(sections[0])
-    assert len(section.lanes) == 5  # center + 2 each side
+    assert len(section.lanes) == 7  # center + 2 driving + sidewalk each side
     inner = network.lane(lane_by_odr_id(network, sections[0], 1))
     assert inner.road_marks[0].type == rm.RoadMarkType.BROKEN
     assert inner.road_marks[0].color == rm.RoadMarkColor.WHITE

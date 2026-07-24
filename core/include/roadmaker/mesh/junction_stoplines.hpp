@@ -17,6 +17,7 @@
 #pragma once
 
 #include "roadmaker/export.hpp"
+#include "roadmaker/road/defaults.hpp"
 #include "roadmaker/road/network.hpp"
 
 #include <array>
@@ -30,11 +31,12 @@ namespace roadmaker {
 /// files authored before the entity existed reload unchanged.
 inline constexpr double kStopLineDefaultDistance = 4.0;
 
-/// Extent [m] of the painted band ALONG the road. Note the axis convention this
+/// Extent [m] of the painted band ALONG the road — the registry's stop-line
+/// width (docs/domain/realism_defaults.md §1.3). Note the axis convention this
 /// shares with the old generator and with the exported object: `@length` is the
 /// (thin) along-road extent and `@width` spans ACROSS the lanes — inverted with
 /// respect to the crosswalk object, whose band runs across the road.
-inline constexpr double kStopLineThickness = 0.3;
+inline constexpr double kStopLineThickness = defaults::kStopLineWidth;
 
 /// The solved geometry of one junction stop line — the single source shared by
 /// the mesher, the writer's object materialization, the editor's StopLine tool

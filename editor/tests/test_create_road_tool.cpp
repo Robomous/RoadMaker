@@ -300,7 +300,7 @@ TEST(CreateRoadTool, PreviewShowsGhostFitAndSnapHint) {
 TEST(CreateRoadTool, TemplateProfileIsAppliedOnCommit) {
   Document document;
   CreateRoadTool tool(document);
-  tool.set_profile(LaneProfile::highway());
+  tool.set_profile(LaneProfile::freeway());
 
   click(tool, 0.0, 0.0);
   click(tool, 90.0, 0.0);
@@ -310,8 +310,8 @@ TEST(CreateRoadTool, TemplateProfileIsAppliedOnCommit) {
   ASSERT_TRUE(created.is_valid());
   const auto* road = document.network().road(created);
   ASSERT_EQ(road->sections.size(), 1U);
-  // highway(): 3 left + center + 3 right.
-  EXPECT_EQ(document.network().lane_section(road->sections.front())->lanes.size(), 7U);
+  // freeway(): 4 left + center + 4 right.
+  EXPECT_EQ(document.network().lane_section(road->sections.front())->lanes.size(), 9U);
 }
 
 // #355: the Create Road default template is urban-with-sidewalks. Committing

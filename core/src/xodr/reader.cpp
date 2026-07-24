@@ -18,6 +18,7 @@
 
 #include "roadmaker/edit/connection.hpp"
 #include "roadmaker/geometry/reference_line.hpp"
+#include "roadmaker/road/defaults.hpp"
 #include "roadmaker/tol.hpp"
 #include "roadmaker/xodr/rules.hpp"
 #include "roadmaker/xodr/terrain_sidecar.hpp"
@@ -582,7 +583,7 @@ private:
       RoadMark mark{
           .s_offset = attr_double(mark_node, "sOffset", location, 0.0, false),
           .type = road_mark_type_from_string(mark_node.attribute("type").value()),
-          .width = attr_double(mark_node, "width", location, 0.12, false),
+          .width = attr_double(mark_node, "width", location, defaults::kLineWidth, false),
           .color = road_mark_color_from_string(mark_node.attribute("color").value()),
       };
       // @material (§11.9, Table 47) — kept verbatim whenever present (incl. an
@@ -1286,7 +1287,7 @@ private:
       ok = false;
       return fallback;
     };
-    data.width = num("width", 0.12);
+    data.width = num("width", defaults::kLineWidth);
     data.dash_length = num("dashLength", 0.0);
     data.dash_gap = num("dashGap", 0.0);
 

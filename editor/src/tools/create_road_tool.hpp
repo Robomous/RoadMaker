@@ -104,7 +104,7 @@ private:
   Document& document_;
   // The default creation template is urban-with-sidewalks (#355); the toolbar
   // dropdown (actions.cpp) and the Library fallback (library_drop.cpp) agree.
-  LaneProfile profile_ = LaneProfile::urban_sidewalk();
+  LaneProfile profile_ = LaneProfile::local_road();
   edit::SnapOptions snap_options_{};
   std::vector<PlacedPoint> points_;
   std::optional<edit::SnapResult> hover_snap_;

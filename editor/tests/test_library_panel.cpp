@@ -44,7 +44,7 @@ TEST(LibraryPanel, ShowsEveryCatalogueItem) {
   LibraryPanel panel(populated_model());
   ASSERT_NE(panel.view()->model(), nullptr);
   EXPECT_EQ(panel.view()->model()->rowCount(),
-            44); // 3 templates + 1 style + T/X + 10 props (5 trees/shrub + 2 streetlights + 3
+            48); // 4 templates + 4 styles + T/X + 10 props (5 trees/shrub + 2 streetlights + 3
                  // buildings) + 4 signals + 9 markings + 5 materials + 1 crosswalk + 6 stencils +
                  // 2 prop sets
   // The grid gives every item an icon (the proxy prefers the bundled thumbnail).
@@ -57,22 +57,23 @@ TEST(LibraryPanel, SearchFiltersByLabel) {
   auto* search = panel.findChild<QLineEdit*>(QStringLiteral("library_search"));
   ASSERT_NE(search, nullptr);
 
-  search->setText(QStringLiteral("rural"));
-  EXPECT_EQ(panel.view()->model()->rowCount(), 1); // only "2-lane rural"
+  search->setText(QStringLiteral("freeway"));
+  EXPECT_EQ(panel.view()->model()->rowCount(), 2); // the freeway template + its style
 
   search->setText(QStringLiteral("intersection"));
   EXPECT_EQ(panel.view()->model()->rowCount(), 2); // T + X
 
   search->setText(QStringLiteral("tree"));
   EXPECT_EQ(panel.view()->model()->rowCount(),
-            7); // pine/oak/birch/poplar + "Mixed trees" prop set +
-                // the two "sTREEtlight" props (substring match)
+            9); // pine/oak/birch/poplar + "Mixed trees" prop set + the two
+                // "sTREEtlight" props + the two "Local sTREEt" road rows
+                // (substring match)
 
   search->setText(QStringLiteral("Traffic"));
   EXPECT_EQ(panel.view()->model()->rowCount(), 2); // traffic light + traffic sign
 
   search->clear();
-  EXPECT_EQ(panel.view()->model()->rowCount(), 44);
+  EXPECT_EQ(panel.view()->model()->rowCount(), 48);
 }
 
 TEST(LibraryPanel, CategoryComboFiltersGrid) {
@@ -97,7 +98,7 @@ TEST(LibraryPanel, CategoryComboFiltersGrid) {
   }
 
   combo->setCurrentIndex(0); // back to All
-  EXPECT_EQ(panel.view()->model()->rowCount(), 44);
+  EXPECT_EQ(panel.view()->model()->rowCount(), 48);
 }
 
 TEST(LibraryPanel, CategoryFilterCombinesWithSearch) {
@@ -158,13 +159,13 @@ TEST(LibraryPanel, FocusCategoryClearsAFilterThatWouldHideIt) {
   LibraryPanel panel(populated_model());
   auto* search = panel.findChild<QLineEdit*>(QStringLiteral("library_search"));
   ASSERT_NE(search, nullptr);
-  search->setText(QStringLiteral("rural")); // a road template — no props visible
-  ASSERT_EQ(panel.view()->model()->rowCount(), 1);
+  search->setText(QStringLiteral("freeway")); // road rows only — no props visible
+  ASSERT_EQ(panel.view()->model()->rowCount(), 2);
 
   panel.focus_category(QStringLiteral("Props"));
 
   EXPECT_TRUE(search->text().isEmpty());
-  EXPECT_EQ(panel.view()->model()->rowCount(), 44);
+  EXPECT_EQ(panel.view()->model()->rowCount(), 48);
   ASSERT_TRUE(panel.view()->currentIndex().isValid());
   EXPECT_EQ(panel.view()
                 ->model()

@@ -830,9 +830,10 @@ TEST_P(TJunctionQuality, FilletedBoundaryIsSmoothAndRadiused) {
   // Radius floor along concave runs: stride-2 triples keep the sagitta far
   // above the union's sub-centimeter vertex noise. The kernel targets a 3 m
   // arc but clamps to the tangent legs the cut faces leave room for — skew
-  // (deg45/deg135) and narrow-branch corners legitimately land near 2 m —
-  // so the gate asserts arcs never collapse to cosmetic size rather than
-  // the un-clamped default.
+  // (deg45/deg135) and narrow-branch corners legitimately land well under
+  // 2 m (the #413 collector section is wider than the old rural template,
+  // which crowds skew corners further) — so the gate asserts arcs never
+  // collapse to cosmetic size rather than the un-clamped default.
   double min_concave_radius = std::numeric_limits<double>::max();
   for (std::size_t i = 0; i < n; ++i) {
     const std::array<std::size_t, 5> run{
@@ -845,7 +846,7 @@ TEST_P(TJunctionQuality, FilletedBoundaryIsSmoothAndRadiused) {
     }
   }
   if (min_concave_radius < std::numeric_limits<double>::max()) {
-    EXPECT_GE(min_concave_radius, 1.8) << "fillet arc below the radius floor";
+    EXPECT_GE(min_concave_radius, 1.2) << "fillet arc below the radius floor";
   }
 }
 

@@ -46,6 +46,17 @@ junction at **every** crossing and T-intent detection when an endpoint lands
 on another road's side — all interactions of one stroke in one undoable
 commit.
 
+**Amendment (realism batch, 2026-07-24).** With
+[#413](https://github.com/Robomous/RoadMaker/issues/413) the create-road
+templates and Library road styles are the four road classes of
+[realism_defaults.md](../../domain/realism_defaults.md) §1.2 (freeway /
+arterial / collector / local street), all widths and markings deriving from
+the defaults registry. Step 2's "default style" is now the **local street**
+(one lane each way between sidewalks, no painted lines) and step 11's style
+choices are the four class styles; a pending hand-run sees the new cross
+sections. The headless replay below is unaffected — it pins the collector
+(`two_lane_default`) profile explicitly.
+
 **Closeout self-check (P2 sprint 9, 2026-07-17).** A headless replay,
 `scripts/gw2_replay.py`, now drives the automatable slice through the kernel
 command layer and asserts each outcome: step 2 (Create Road, default two-lane
