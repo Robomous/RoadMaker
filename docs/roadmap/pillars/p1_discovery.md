@@ -15,6 +15,14 @@ means for the sprint cut. Written 2026-07-15, before p1-s1 landed. Roadmap:
 > [#405](https://github.com/Robomous/RoadMaker/issues/405) (`p1-f8`:
 > viewport axis-navigation widget). GW-1 hand-run status is unaffected until
 > the items land (#404/#405 amend GW-1 with their PRs).
+>
+> **Status (2026-07-24):** the reopen **extends** with the
+> [2026-07 realism batch](../updates/2026-07-realism-batch.md) (#411):
+> [#412](https://github.com/Robomous/RoadMaker/issues/412) (`p1-f9`:
+> metric/imperial display-units toggle — the Attributes pane and status-bar
+> readouts are this pillar's universal-editor scope). Release-blocking;
+> unit policy governed by the
+> [realism defaults spec](../../domain/realism_defaults.md).
 
 ## Why this document exists
 
