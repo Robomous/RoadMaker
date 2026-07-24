@@ -16,6 +16,24 @@ feeds into GW-3 and GW-5.*
 > runs pollute/evict the production recents list) and
 > [#400](https://github.com/Robomous/RoadMaker/issues/400) (prop instances
 > stale after road translate/rotate). All release-blocking for v0.1.0.
+>
+> **Status (2026-07-24):** the still-open sprint stream gains the
+> [2026-07 realism batch](../updates/2026-07-realism-batch.md) (#411) —
+> five sprints and one bug, all release-blocking (no "reopen": the pillar
+> never closed): [#414](https://github.com/Robomous/RoadMaker/issues/414)
+> (`p6-s12`: US sign pack),
+> [#415](https://github.com/Robomous/RoadMaker/issues/415) (`p6-s13`: prop
+> dimensions audit),
+> [#416](https://github.com/Robomous/RoadMaker/issues/416) (`p6-s14`:
+> sign/signal auto-orientation),
+> [#417](https://github.com/Robomous/RoadMaker/issues/417) (`p6-s15`: prop
+> Z-rotation ring polish),
+> [#418](https://github.com/Robomous/RoadMaker/issues/418) (`p6-s16`:
+> properties-panel completeness audit), and bug
+> [#419](https://github.com/Robomous/RoadMaker/issues/419) (prop deletion
+> mis-targets — first implementation PR of the batch). Every
+> dimension/orientation value is governed by the
+> [realism defaults spec](../../domain/realism_defaults.md).
 
 ## Why this document exists
 

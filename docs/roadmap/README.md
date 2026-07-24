@@ -123,6 +123,14 @@ a categorized toolbar.
   single owner, so it carries the `cascade` label **without** a pillar
   milestone; the [release gate](#release-gate) names the workstream
   explicitly, which is what makes label-only tracking sufficient.
+- **Governing spec docs**: issues that touch shared defaults, dimensions,
+  or interaction conventions must link the governing spec doc and must not
+  redefine its values; changes go through the spec doc first. The first
+  governing doc is the [realism defaults spec](../domain/realism_defaults.md)
+  (dimensions, proportions, unit policy, sign-pack content, orientation
+  rules — enforced by a CI divergence test, not review); the
+  [road connection contract (#403)](https://github.com/Robomous/RoadMaker/issues/403)
+  follows the same pattern for continuity guarantees.
 
 ### Tracking on GitHub
 
@@ -178,6 +186,13 @@ update documents under [updates/](updates/):
   maintainer reports diagnosed (#397): issues #398–#406, the #338 spec
   release, the `cascade` workstream, the P1/P2/P4 reopens, and the
   everything-before-release gate amendment.
+- [2026-07 realism batch](updates/2026-07-realism-batch.md) — seven
+  maintainer directives (#411 → #412–#419): the
+  [realism defaults spec](../domain/realism_defaults.md) as the first
+  governing spec doc, the metric/imperial display toggle, the US sign
+  pack, prop proportions, auto-orientation, the rotation ring, the
+  properties-panel audit, the deletion bug, and the release-gate
+  extension.
 
 ## Documentation site
 
@@ -290,10 +305,13 @@ v0.1.0 may be published only when **all** of the following hold:
    [move-with-cascade epic #406](https://github.com/Robomous/RoadMaker/issues/406))
    and every follow-up/bug issue **existing as of the
    [batch-2 field triage](updates/2026-07-field-triage-2.md)** (issues up to
-   and including #406) is closed via merged PRs. Concretely: **an open issue
-   numbered ≤ #406 blocks the release unless the maintainer explicitly
-   re-scopes it** — the gate is checkable from the issue tracker alone
-   (maintainer decision, 2026-07-23).
+   and including #406), **and every issue belonging to the
+   [2026-07 realism batch](updates/2026-07-realism-batch.md) (tracking
+   issue [#411](https://github.com/Robomous/RoadMaker/issues/411) and all
+   issues it lists)**, is closed via merged PRs. Concretely: **an open
+   issue numbered ≤ #406, or listed by #411, blocks the release unless the
+   maintainer explicitly re-scopes it** — the gate is checkable from the
+   issue tracker alone (maintainer decisions, 2026-07-23 and 2026-07-24).
 3. The maintainer has executed **every golden workflow (GW-1 … GW-6) by
    hand** on macOS, Linux, and Windows, and recorded a pass in each
    workflow's results table (date, OS, commit).

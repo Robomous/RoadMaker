@@ -14,6 +14,14 @@ means for the sprint cut. Written 2026-07-15, before p2-s1 landed. Roadmap:
 > connection contract — prerequisite of the `cascade` epic
 > [#406](https://github.com/Robomous/RoadMaker/issues/406)). GW-2 hand-run
 > status is unaffected until the items land.
+>
+> **Status (2026-07-24):** the pillar **reopens a second time** via the
+> [2026-07 realism batch](../updates/2026-07-realism-batch.md) (#411) for
+> sprint [#413](https://github.com/Robomous/RoadMaker/issues/413)
+> (`p2-s11`: road-class cross-section & marking defaults per the
+> [realism defaults spec](../../domain/realism_defaults.md), plus the CI
+> divergence guard; extends p2-s8's road styles). Release-blocking. #398
+> has since merged (PR #410).
 
 ## Why this document exists
 
