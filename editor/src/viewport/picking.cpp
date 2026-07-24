@@ -218,27 +218,78 @@ std::vector<RoadAabb> compute_road_aabbs(const NetworkMesh& mesh) {
   return boxes;
 }
 
-/// Nearest positive ray/sphere hit distance, or nullopt on a miss. `ray`
-/// direction is unit length.
-std::optional<double>
-intersect_sphere(const Ray& ray, const std::array<double, 3>& center, double radius) {
+/// True when the ray touches the sphere anywhere at t >= 0 (including an
+/// origin inside it). Broad-phase prefilter ONLY — the sphere never decides
+/// pick depth (#419): its entry distance is not where the visible geometry is,
+/// and with the camera inside it the entry lies behind the origin entirely.
+bool ray_touches_sphere(const Ray& ray, const std::array<double, 3>& center, double radius) {
   const Vec3 oc = to_vec(ray.origin) - to_vec(center);
   const Vec3 dir = to_vec(ray.direction);
   const double b = dir.dot(oc);
   const double c = oc.dot(oc) - (radius * radius);
   const double disc = (b * b) - c;
   if (disc < 0.0) {
+    return false;
+  }
+  return (-b + std::sqrt(disc)) >= 0.0; // exit point not behind the origin
+}
+
+/// Nearest ray hit on a prop model instanced at position/heading/scale, as the
+/// WORLD ray parameter, or nullopt on a miss. The pick ray is transformed into
+/// model space, where the authored triangles live: with
+/// m(t) = Rz(-heading)·(w(t) − position)/scale affine in t, intersecting the
+/// model triangles with the transformed (non-unit) ray yields the same t as
+/// intersecting the instanced triangles in world space — Möller–Trumbore does
+/// not require a unit direction. So props/signals share one honest depth race
+/// with road triangles: clicking a prop targets exactly that instance, and a
+/// click that visually misses it falls through to what is really behind (#419).
+std::optional<double> intersect_prop_instance(const Ray& ray,
+                                              const props::PropModel& model,
+                                              const std::array<double, 3>& position,
+                                              double heading,
+                                              double scale) {
+  if (!(scale > 0.0)) {
     return std::nullopt;
   }
-  const double root = std::sqrt(disc);
-  double t = -b - root;
-  if (t < 0.0) {
-    t = -b + root;
-  }
-  if (t < 0.0) {
+  // Broad phase: the same generous whole-prop sphere as before, demoted to a
+  // yes/no filter. The sphere tracks the instance's rendered size (#335).
+  const double half_height = model.height * 0.5 * scale;
+  const std::array<double, 3> center{position[0], position[1], position[2] + half_height};
+  const double sphere_radius = std::max(model.radius * scale, half_height);
+  if (!ray_touches_sphere(ray, center, sphere_radius)) {
     return std::nullopt;
   }
-  return t;
+
+  const double cos_h = std::cos(heading);
+  const double sin_h = std::sin(heading);
+  const double inv_scale = 1.0 / scale;
+  const auto to_model = [&](const std::array<double, 3>& world, bool translate) {
+    const double x = world[0] - (translate ? position[0] : 0.0);
+    const double y = world[1] - (translate ? position[1] : 0.0);
+    const double z = world[2] - (translate ? position[2] : 0.0);
+    // Rz(-heading), then the uniform 1/scale.
+    return Vec3{((x * cos_h) + (y * sin_h)) * inv_scale,
+                ((-x * sin_h) + (y * cos_h)) * inv_scale,
+                z * inv_scale};
+  };
+  const Vec3 model_origin = to_model(ray.origin, /*translate=*/true);
+  const Vec3 model_dir = to_model(ray.direction, /*translate=*/false);
+  const Ray model_ray{.origin = {model_origin.x(), model_origin.y(), model_origin.z()},
+                      .direction = {model_dir.x(), model_dir.y(), model_dir.z()}};
+
+  std::optional<double> best;
+  for (const props::PropPart& part : model.parts) {
+    for (std::size_t i = 0; i + 2 < part.indices.size(); i += 3) {
+      const auto t = intersect_triangle(model_ray,
+                                        vertex(part.positions, part.indices[i]),
+                                        vertex(part.positions, part.indices[i + 1]),
+                                        vertex(part.positions, part.indices[i + 2]));
+      if (t && (!best.has_value() || *t < *best)) {
+        best = t;
+      }
+    }
+  }
+  return best;
 }
 
 std::optional<PickHit>
@@ -322,21 +373,18 @@ pick(const NetworkMesh& mesh, std::span<const RoadAabb> road_aabbs, const Ray& r
     }
   }
 
-  // Placed props, bounding-sphere tested and sharing best_t so a prop in front
-  // of a road wins the pick. A generous whole-tree sphere makes trunks (thin)
-  // as easy to grab as crowns.
+  // Placed props, ray-cast against their actual instanced triangles
+  // (bounding sphere as broad phase only) and sharing best_t: a prop in front
+  // of a road wins the pick, a click that visually misses the prop falls
+  // through to the road, and neither an oversized sphere nor a camera inside
+  // it can mis-target the road under a prop (#419).
   for (const ObjectInstance& instance : mesh.objects) {
     const props::PropModel* model = props::model(instance.model_id);
     if (model == nullptr) {
       continue;
     }
-    // The sphere tracks the instance's rendered size (#335) — a prop scaled to
-    // twice the model height must be twice as easy to grab, not half.
-    const double half_height = model->height * 0.5 * instance.scale;
-    const std::array<double, 3> center{
-        instance.position[0], instance.position[1], instance.position[2] + half_height};
-    const double radius = std::max(model->radius * instance.scale, half_height);
-    const auto t = intersect_sphere(ray, center, radius);
+    const auto t =
+        intersect_prop_instance(ray, *model, instance.position, instance.heading, instance.scale);
     if (t && *t < best_t) {
       best_t = *t;
       best = PickHit{
@@ -351,18 +399,15 @@ pick(const NetworkMesh& mesh, std::span<const RoadAabb> road_aabbs, const Ray& r
     }
   }
 
-  // Placed signals, same bounding-sphere test as props (their models resolve
-  // through props::model too) so a traffic light in front of a road wins.
+  // Placed signals, same instance-accurate test as props (their models
+  // resolve through props::model too; signals draw at model size, scale 1).
   for (const SignalInstance& instance : mesh.signal_instances) {
     const props::PropModel* model = props::model(instance.model_id);
     if (model == nullptr) {
       continue;
     }
-    const double half_height = model->height * 0.5;
-    const std::array<double, 3> center{
-        instance.position[0], instance.position[1], instance.position[2] + half_height};
-    const double radius = std::max(model->radius, half_height);
-    const auto t = intersect_sphere(ray, center, radius);
+    const auto t =
+        intersect_prop_instance(ray, *model, instance.position, instance.heading, /*scale=*/1.0);
     if (t && *t < best_t) {
       best_t = *t;
       best = PickHit{
