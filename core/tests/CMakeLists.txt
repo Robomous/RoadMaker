@@ -59,6 +59,7 @@ add_executable(roadmaker_core_tests
   test_bridge_model.cpp
   test_grade_separation.cpp
   test_bridge_solids.cpp
+  test_bridge_operations.cpp
   test_surface_roundtrip.cpp
   test_material_roundtrip.cpp
   test_assembly.cpp

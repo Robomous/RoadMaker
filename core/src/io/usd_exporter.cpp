@@ -277,6 +277,21 @@ Expected<void> export_usda(const NetworkMesh& mesh, const std::filesystem::path&
     }
   }
 
+  // Generated bridge solids (p5-s3, #233): one prim per <bridge> span. The deck
+  // material carrier lives on the record; the solid renders from its lane type.
+  for (const BridgeMesh& span : mesh.bridges) {
+    const std::string material = io_common::lane_material_name(span.mesh.material);
+    materials.emplace(material,
+                      MaterialDef{lane_color3(span.mesh.material), io_common::kLaneRoughness});
+    worldPrim.add_child(make_mesh(sanitize_identifier(span.mesh.name, "bridge"),
+                                  span.mesh.positions,
+                                  span.mesh.normals,
+                                  span.mesh.indices,
+                                  material),
+                        /*rename=*/true,
+                        &err);
+  }
+
   // Placed props (trees/vegetation) and signals (lights/signs). tinyusdz has no
   // ergonomic prototype instancing, so each instance's geometry is baked into
   // world space (Z-up, then make_mesh rotates to Y-up) — a simulator receives

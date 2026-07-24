@@ -6921,6 +6921,154 @@ std::unique_ptr<Command> remove_terrain_field(const RoadNetwork& network) {
   return std::make_unique<SetTerrainFieldCommand>(kName, HeightField{}, network.terrain());
 }
 
+namespace {
+
+/// Mutates one road's `<bridge>` list, capturing the whole list before and
+/// after (a list at this scale is tiny). The SPAN is what a command owns; the
+/// solids re-derive on the roads mesh channel, so DirtySet names only the road.
+class SetBridgesCommand : public Command {
+public:
+  SetBridgesCommand(std::string_view name,
+                    RoadId road,
+                    std::vector<Bridge> after,
+                    std::vector<Bridge> before)
+      : name_(name), road_(road), after_(std::move(after)), before_(std::move(before)) {}
+
+  Expected<void> apply(RoadNetwork& network) override { return write(network, after_); }
+
+  Expected<void> revert(RoadNetwork& network) override { return write(network, before_); }
+
+  std::string_view name() const override { return name_; }
+
+  DirtySet dirty() const override { return DirtySet{.roads = {road_}}; }
+
+private:
+  Expected<void> write(RoadNetwork& network, const std::vector<Bridge>& value) {
+    Road* road = network.road(road_);
+    if (road == nullptr) {
+      return tl::unexpected<Error>(
+          Error{.code = ErrorCode::InvalidArgument, .message = "bridge road is stale or unknown"});
+    }
+    road->bridges = value;
+    return {};
+  }
+
+  std::string_view name_;
+  RoadId road_;
+  std::vector<Bridge> after_;
+  std::vector<Bridge> before_;
+};
+
+/// A stable, collision-free `<bridge>` id: the smallest "bridge<n>" not already
+/// used on the road, so re-authoring after a remove reuses the freed id and the
+/// output stays deterministic.
+std::string next_bridge_id(const std::vector<Bridge>& bridges) {
+  for (std::size_t n = 1;; ++n) {
+    std::string candidate = fmt::format("bridge{}", n);
+    const bool taken = std::any_of(
+        bridges.begin(), bridges.end(), [&](const Bridge& b) { return b.odr_id == candidate; });
+    if (!taken) {
+      return candidate;
+    }
+  }
+}
+
+/// Shared span validation for author/set: returns an error message or nullopt.
+std::optional<std::string> validate_span(const Road& road, double s, double length) {
+  if (!(length >= kMinBridgeSpan)) {
+    return "bridge span is too short";
+  }
+  if (s < -tol::kLength || s + length > road.plan_view.length() + tol::kLength) {
+    return "bridge span runs past the road";
+  }
+  return std::nullopt;
+}
+
+} // namespace
+
+std::unique_ptr<Command> author_bridge(const RoadNetwork& network,
+                                       RoadId road_id,
+                                       double s,
+                                       double length,
+                                       std::string type,
+                                       std::string id) {
+  static constexpr std::string_view kName = "Add Bridge";
+  const auto fail = [&](std::string message) {
+    return invalid_command(
+        std::string(kName),
+        Error{.code = ErrorCode::InvalidArgument, .message = std::move(message)});
+  };
+  const Road* road = network.road(road_id);
+  if (road == nullptr) {
+    return fail("bridge road is stale or unknown");
+  }
+  if (std::optional<std::string> bad = validate_span(*road, s, length); bad.has_value()) {
+    return fail(std::move(*bad));
+  }
+  const bool duplicate =
+      std::any_of(road->bridges.begin(), road->bridges.end(), [&](const Bridge& b) {
+        return std::abs(b.s - s) < tol::kLength && std::abs(b.length - length) < tol::kLength;
+      });
+  if (duplicate) {
+    return fail("a bridge already covers this span");
+  }
+  std::vector<Bridge> after = road->bridges;
+  Bridge bridge;
+  bridge.odr_id = id.empty() ? next_bridge_id(road->bridges) : std::move(id);
+  bridge.s = s;
+  bridge.length = length;
+  bridge.type = std::move(type);
+  after.push_back(std::move(bridge));
+  return std::make_unique<SetBridgesCommand>(kName, road_id, std::move(after), road->bridges);
+}
+
+std::unique_ptr<Command>
+remove_bridge(const RoadNetwork& network, RoadId road_id, std::size_t index) {
+  static constexpr std::string_view kName = "Remove Bridge";
+  const Road* road = network.road(road_id);
+  if (road == nullptr) {
+    return invalid_command(
+        std::string(kName),
+        Error{.code = ErrorCode::InvalidArgument, .message = "bridge road is stale or unknown"});
+  }
+  if (index >= road->bridges.size()) {
+    return invalid_command(
+        std::string(kName),
+        Error{.code = ErrorCode::InvalidArgument, .message = "bridge index is out of range"});
+  }
+  std::vector<Bridge> after = road->bridges;
+  after.erase(after.begin() + static_cast<std::ptrdiff_t>(index));
+  return std::make_unique<SetBridgesCommand>(kName, road_id, std::move(after), road->bridges);
+}
+
+std::unique_ptr<Command> set_bridge_span(
+    const RoadNetwork& network, RoadId road_id, std::size_t index, double s, double length) {
+  static constexpr std::string_view kName = "Resize Bridge";
+  const auto fail = [&](std::string message) {
+    return invalid_command(
+        std::string(kName),
+        Error{.code = ErrorCode::InvalidArgument, .message = std::move(message)});
+  };
+  const Road* road = network.road(road_id);
+  if (road == nullptr) {
+    return fail("bridge road is stale or unknown");
+  }
+  if (index >= road->bridges.size()) {
+    return fail("bridge index is out of range");
+  }
+  if (std::optional<std::string> bad = validate_span(*road, s, length); bad.has_value()) {
+    return fail(std::move(*bad));
+  }
+  const Bridge& current = road->bridges[index];
+  if (std::abs(current.s - s) < tol::kLength && std::abs(current.length - length) < tol::kLength) {
+    return fail("the bridge span is unchanged");
+  }
+  std::vector<Bridge> after = road->bridges;
+  after[index].s = s;
+  after[index].length = length;
+  return std::make_unique<SetBridgesCommand>(kName, road_id, std::move(after), road->bridges);
+}
+
 std::vector<ElevationPoint> elevation_profile_points(const Road& road) {
   std::vector<ElevationPoint> points;
   const double length = road.plan_view.length();

@@ -134,6 +134,13 @@ public:
   // height field currently exists.
   QAction* terrain_create = nullptr;
   QAction* terrain_remove = nullptr;
+
+  // Bridges (p5-s3, #233): the Road Construction tool's automatic bridge
+  // assignment — a menu action (no registry id, so no shortcut) that detects
+  // grade-separated crossings and builds a bridge over each. The interactive
+  // span-inflation control is a follow-up.
+  QAction* bridge_generate = nullptr;
+
   QAction* reset_layout = nullptr;
 
   /// Opens the in-app user guide (Help menu, F1).

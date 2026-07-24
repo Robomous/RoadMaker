@@ -437,6 +437,19 @@ Scene build_scene(const NetworkMesh& mesh, const RoadNetwork* network) {
     });
     grow_bounds(scene.bounds, mesh.terrain.positions);
   }
+  // Generated bridge solids (p5-s3, #233): the deck/piers/abutments/guardrails,
+  // drawn a concrete grey. Not selectable this sprint (no entity id) — the
+  // interactive span control is a follow-up; a pick lands on the road beneath.
+  for (const BridgeMesh& span : mesh.bridges) {
+    scene.items.push_back(SceneItem{
+        .data = to_render_data(span.mesh.positions,
+                               span.mesh.normals,
+                               span.mesh.indices,
+                               std::array<float, 4>{0.62F, 0.62F, 0.64F, 1.0F}),
+        .surface = SurfaceKind::Concrete,
+    });
+    grow_bounds(scene.bounds, span.mesh.positions);
+  }
   for (const ObjectInstance& instance : mesh.objects) {
     append_object_items(instance, scene);
   }

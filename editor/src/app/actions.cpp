@@ -409,6 +409,11 @@ Actions::Actions(QUndoStack& undo_stack, QObject* parent) : QObject(parent) {
   terrain_remove = new QAction(tr("Remove Terrain Field"), this);
   terrain_remove->setToolTip(tr("Remove the terrain height field, returning to the flat ground"));
 
+  bridge_generate = new QAction(tr("&Generate Bridge Structures"), this);
+  bridge_generate->setToolTip(
+      tr("Detect roads that cross without a junction and build a bridge deck, piers and "
+         "guardrails over each raised span"));
+
   reset_layout = new QAction(tr("Reset &Layout"), this);
 
   help_contents = new QAction(tr("&User Guide"), this);

@@ -1114,6 +1114,38 @@ create_terrain_field(const RoadNetwork& network,
 /// plane. `DirtySet{.terrain = true}`. Rejects when there is no field.
 [[nodiscard]] RM_API std::unique_ptr<Command> remove_terrain_field(const RoadNetwork& network);
 
+// --- bridges (p5-s3, #233) --------------------------------------------------
+
+/// Shortest bridge span that builds a sensible solid: ~2x the default deck
+/// depth (design §5). A shorter span is refused by author/set commands and
+/// skipped by the generator — a structure thicker than it is long is degenerate.
+inline constexpr double kMinBridgeSpan = 1.6;
+
+/// Adds a `<bridge>` span [s, s+length] over `road` (ASAM §13.12). Mutates only
+/// the road's `bridges` list — the SPAN serializes, and the deck/pier/abutment/
+/// guardrail solids re-derive on the mesh channel. `DirtySet{.roads = {road}}`,
+/// so the solids follow the road's geometry. `id` empty auto-generates a stable,
+/// collision-free one. Rejects: a stale road, a non-positive/too-short span
+/// (< kMinBridgeSpan), a span running past the road, and a span that exactly
+/// duplicates an existing bridge (design §5's overlapping-identical warning).
+[[nodiscard]] RM_API std::unique_ptr<Command> author_bridge(const RoadNetwork& network,
+                                                            RoadId road,
+                                                            double s,
+                                                            double length,
+                                                            std::string type = "concrete",
+                                                            std::string id = {});
+
+/// Removes the bridge at `index` in `road`'s `bridges` list.
+/// `DirtySet{.roads = {road}}`. Rejects a stale road or an out-of-range index.
+[[nodiscard]] RM_API std::unique_ptr<Command>
+remove_bridge(const RoadNetwork& network, RoadId road, std::size_t index);
+
+/// The span-inflation command: retargets bridge `index` to [s, s+length].
+/// `DirtySet{.roads = {road}}`. Rejects the same degeneracies as author_bridge
+/// plus a no-op (the span is unchanged).
+[[nodiscard]] RM_API std::unique_ptr<Command> set_bridge_span(
+    const RoadNetwork& network, RoadId road, std::size_t index, double s, double length);
+
 // --- profiles ---------------------------------------------------------------
 
 /// Sets the elevation at one authoring waypoint; the road's elevation
