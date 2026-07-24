@@ -20,6 +20,7 @@
 
 #include "roadmaker/edit/connection.hpp"
 #include "roadmaker/edit/operations.hpp"
+#include "roadmaker/geometry/poly3.hpp"
 #include "roadmaker/road/authoring.hpp"
 #include "roadmaker/road/junction.hpp"
 #include "roadmaker/road/network.hpp"
@@ -33,6 +34,7 @@
 #include <cmath>
 #include <numbers>
 #include <string>
+#include <utility>
 #include <vector>
 
 using roadmaker::ContactPoint;
@@ -94,6 +96,27 @@ TEST(Connection, ContactStateStartAndEndSignConventions) {
   EXPECT_NEAR(norm_angle(end->into_hdg - s1.hdg), 0.0, 1e-9);
   EXPECT_NEAR(norm_angle(end->out_hdg - (s1.hdg + std::numbers::pi)), 0.0, 1e-9);
   EXPECT_NEAR(end->curvature, s1.curvature, 1e-9);
+
+  // Grade, UNLIKE curvature, is NOT contact-adjusted: it stays dz/ds along the
+  // road's own +s at BOTH contacts (connection.hpp documents this). Consumers
+  // fitting along into_hdg/out_hdg must flip it themselves — forgetting that
+  // was issue #398's V-kink. This pins the asymmetry so it cannot drift.
+  auto slope = roadmaker::edit::set_elevation_profile(
+      network,
+      road,
+      {roadmaker::edit::ElevationPoint{.s = 0.0, .z = 0.0, .grade = 0.05},
+       roadmaker::edit::ElevationPoint{.s = line.length(), .z = 3.0, .grade = 0.01}});
+  ASSERT_TRUE(slope->apply(network).has_value());
+  const auto start_sloped =
+      roadmaker::edit::contact_state(network, RoadEnd{road, ContactPoint::Start});
+  const auto end_sloped = roadmaker::edit::contact_state(network, RoadEnd{road, ContactPoint::End});
+  ASSERT_TRUE(start_sloped.has_value());
+  ASSERT_TRUE(end_sloped.has_value());
+  const auto& profile = network.road(road)->elevation;
+  EXPECT_NEAR(start_sloped->grade, roadmaker::eval_profile_derivative(profile, 0.0), 1e-9);
+  EXPECT_NEAR(end_sloped->grade, roadmaker::eval_profile_derivative(profile, line.length()), 1e-9);
+  EXPECT_NEAR(start_sloped->grade, 0.05, 1e-6); // raw +s grade, not flipped for Start
+  EXPECT_NEAR(end_sloped->grade, 0.01, 1e-6);
 }
 
 TEST(Connection, AlignedPoseFollowsTangentAndSide) {
@@ -361,6 +384,114 @@ TEST(Connection, CloseGapNoCurvatureKinkWhenArcStartsAtJoint) {
   // G2 weld: the connector's curvature meets each neighbour's without a step.
   EXPECT_NEAR(line.evaluate(0.0).curvature, a_terminal, roadmaker::tol::kWeldCurvature);
   EXPECT_NEAR(line.evaluate(line.length()).curvature, b_start, roadmaker::tol::kWeldCurvature);
+}
+
+TEST(Connection, CloseGapConnectorElevationContinuityAllFourContacts) {
+  // Issue #398: contact_state.grade is dz/ds along each road's own +s (see the
+  // sign-conventions test above), so close_gap must flip it by contact before
+  // fitting the connector's elevation Hermite — exactly as the junction
+  // generator does. Unflipped, three of the four contact combinations built an
+  // inverted end grade: a V-kink ramp at the join. Only End->Start (the common
+  // chain) was correct, which is why it survived testing.
+  //
+  // The oracle is PHYSICAL, not the fix's formula: walk the composite path
+  // a -> connector -> b in the travel direction and finite-difference z across
+  // each weld; the one-sided slopes must agree. With the bug the mismatch at a
+  // broken weld measures ~2x the road's grade (0.08-0.12 here), far above the
+  // Hermite-curvature finite-difference error at eps (=< ~1e-3).
+  constexpr double kEps = 0.25; // finite-difference step [m]
+  constexpr double kTol = 0.01; // slope-agreement tolerance (bug signal >= 0.08)
+
+  const std::array<std::pair<ContactPoint, ContactPoint>, 4> combos{{
+      {ContactPoint::End, ContactPoint::Start}, // the one combo that was correct
+      {ContactPoint::End, ContactPoint::End},
+      {ContactPoint::Start, ContactPoint::Start},
+      {ContactPoint::Start, ContactPoint::End},
+  }};
+
+  for (const auto& [contact_a, contact_b] : combos) {
+    SCOPED_TRACE(std::string("a=") + (contact_a == ContactPoint::End ? "End" : "Start") +
+                 " b=" + (contact_b == ContactPoint::End ? "End" : "Start"));
+    RoadNetwork network;
+    // Road a occupies x in [0,100], road b x in [130,230]; reversing the
+    // waypoint order puts a Start contact on the gap side. Linear profiles
+    // (explicit constant grade) so the road-side slope is exact: a rises to
+    // z=4 at its contact (|grade| 0.04), b falls from z=2 there (|grade| 0.06).
+    const bool a_end = contact_a == ContactPoint::End;
+    const bool b_start = contact_b == ContactPoint::Start;
+    const RoadId a = author(network,
+                            a_end ? std::vector<Waypoint>{{0.0, 0.0}, {100.0, 0.0}}
+                                  : std::vector<Waypoint>{{100.0, 0.0}, {0.0, 0.0}},
+                            "1");
+    const RoadId b = author(network,
+                            b_start ? std::vector<Waypoint>{{130.0, 0.0}, {230.0, 0.0}}
+                                    : std::vector<Waypoint>{{230.0, 0.0}, {130.0, 0.0}},
+                            "2");
+    const double len_a = network.road(a)->plan_view.length();
+    const double len_b = network.road(b)->plan_view.length();
+    const auto linear = [&](RoadId road, double z0, double z1, double length) {
+      const double grade = (z1 - z0) / length;
+      auto cmd = roadmaker::edit::set_elevation_profile(
+          network,
+          road,
+          {roadmaker::edit::ElevationPoint{.s = 0.0, .z = z0, .grade = grade},
+           roadmaker::edit::ElevationPoint{.s = length, .z = z1, .grade = grade}});
+      ASSERT_TRUE(cmd->apply(network).has_value());
+    };
+    // Contact z: a=4, b=2 regardless of orientation.
+    linear(a, a_end ? 0.0 : 4.0, a_end ? 4.0 : 0.0, len_a);
+    linear(b, b_start ? 2.0 : 8.0, b_start ? 8.0 : 2.0, len_b);
+
+    const std::string before = snapshot(network);
+    auto command =
+        roadmaker::edit::close_gap(network, RoadEnd{a, contact_a}, RoadEnd{b, contact_b});
+    ASSERT_TRUE(command->apply(network).has_value());
+    RoadId connector;
+    network.for_each_road([&](RoadId id, const roadmaker::Road&) {
+      if (id != a && id != b) {
+        connector = id;
+      }
+    });
+    ASSERT_TRUE(connector.is_valid());
+    const roadmaker::Road& conn = *network.road(connector);
+    const double len_c = conn.plan_view.length();
+    const auto& elev_a = network.road(a)->elevation;
+    const auto& elev_b = network.road(b)->elevation;
+
+    // z continuity at both welds.
+    EXPECT_NEAR(roadmaker::eval_profile(conn.elevation, 0.0), 4.0, 1e-6);
+    EXPECT_NEAR(roadmaker::eval_profile(conn.elevation, len_c), 2.0, 1e-6);
+
+    // Weld A: step eps back into road a along the travel direction (toward a's
+    // interior), and eps forward into the connector.
+    const double a_interior = a_end ? len_a - kEps : kEps;
+    const double slope_into_a = (4.0 - roadmaker::eval_profile(elev_a, a_interior)) / kEps;
+    const double slope_out_conn = (roadmaker::eval_profile(conn.elevation, kEps) - 4.0) / kEps;
+    EXPECT_NEAR(slope_out_conn, slope_into_a, kTol) << "V-kink at the a-side weld";
+
+    // Weld B: eps back into the connector, and eps forward into road b along
+    // the travel direction (toward b's interior).
+    const double slope_into_b =
+        (2.0 - roadmaker::eval_profile(conn.elevation, len_c - kEps)) / kEps;
+    const double b_interior = b_start ? kEps : len_b - kEps;
+    const double slope_out_b = (roadmaker::eval_profile(elev_b, b_interior) - 2.0) / kEps;
+    EXPECT_NEAR(slope_out_b, slope_into_b, kTol) << "V-kink at the b-side weld";
+
+    // The exact endpoint grades, stated directionally from each ROAD's own
+    // profile (the physical directional derivative, independent of close_gap):
+    // travel leaves a along +s only for an End contact, enters b along +s only
+    // for a Start contact.
+    const double travel_grade_a =
+        (a_end ? 1.0 : -1.0) * roadmaker::eval_profile_derivative(elev_a, a_end ? len_a : 0.0);
+    const double travel_grade_b =
+        (b_start ? 1.0 : -1.0) * roadmaker::eval_profile_derivative(elev_b, b_start ? 0.0 : len_b);
+    EXPECT_NEAR(roadmaker::eval_profile_derivative(conn.elevation, 0.0), travel_grade_a, 1e-6);
+    EXPECT_NEAR(roadmaker::eval_profile_derivative(conn.elevation, len_c), travel_grade_b, 1e-6);
+
+    // Undo restores the pre-link document byte-for-byte.
+    ASSERT_TRUE(command->revert(network).has_value());
+    EXPECT_EQ(snapshot(network), before);
+  }
 }
 
 TEST(Connection, CloseGapAndCheckLinkableRefusals) {

@@ -2628,19 +2628,28 @@ std::unique_ptr<Command> close_gap(const RoadNetwork& network,
   // arc starting at either end shows no kink (finding 3). contact_state
   // curvature is signed along into_hdg; the connector's END travels along b's
   // out_hdg (the opposite sense), so b's endpoint curvature is negated.
-  auto connector = fit_connector(ConnectorEndpoint{.x = ca.x,
-                                                   .y = ca.y,
-                                                   .heading = ca.into_hdg,
-                                                   .curvature = ca.curvature,
-                                                   .z = ca.z,
-                                                   .grade = ca.grade},
-                                 ConnectorEndpoint{.x = cb.x,
-                                                   .y = cb.y,
-                                                   .heading = cb.out_hdg,
-                                                   .curvature = -cb.curvature,
-                                                   .z = cb.z,
-                                                   .grade = cb.grade},
-                                 ConnectorParams{.g2 = true});
+  //
+  // Grade has the OPPOSITE convention: contact_state pre-flips curvature by
+  // contact but leaves grade as dz/ds along each road's own +s (connection.hpp).
+  // The connector travels along into_hdg/out_hdg, which runs against +s for a
+  // Start contact at a / an End contact at b, so grade needs the same
+  // contact-dependent sign the junction generator applies — unflipped it built
+  // an inverted end grade (a V-kink ramp) for three of the four contact
+  // combinations (#398).
+  auto connector = fit_connector(
+      ConnectorEndpoint{.x = ca.x,
+                        .y = ca.y,
+                        .heading = ca.into_hdg,
+                        .curvature = ca.curvature,
+                        .z = ca.z,
+                        .grade = (a.contact == ContactPoint::End ? 1.0 : -1.0) * ca.grade},
+      ConnectorEndpoint{.x = cb.x,
+                        .y = cb.y,
+                        .heading = cb.out_hdg,
+                        .curvature = -cb.curvature,
+                        .z = cb.z,
+                        .grade = (b.contact == ContactPoint::Start ? 1.0 : -1.0) * cb.grade},
+      ConnectorParams{.g2 = true});
   if (!connector.has_value()) {
     return invalid_command(std::string(kName), connector.error());
   }
