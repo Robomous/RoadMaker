@@ -25,8 +25,27 @@
 
 namespace roadmaker {
 
+/// Deterministic bridge-solid generator parameters (p5-s3, #233, design §4).
+/// These live on the mesh options, NOT in the `.xodr` — the `<bridge>` record is
+/// the span, and regenerating with different parameters is a mesh concern, not a
+/// document edit. Defaults are the seed's approved values.
+struct BridgeParams {
+  /// Emit the bridge-solid channel at all. Off ⇒ mesh.bridges stays empty.
+  bool enabled = true;
+  double deck_depth = 0.8;       ///< visible deck thickness [m]
+  double deck_overhang = 0.5;    ///< deck extends this far past each outer lane edge [m]
+  double pier_free_span = 30.0;  ///< spans up to this need no pier [m]
+  double pier_spacing = 25.0;    ///< above pier_free_span, a pier at least this often [m]
+  double pier_size = 1.2;        ///< square pier section [m]
+  double guardrail_height = 1.0; ///< guardrail height above the deck [m]
+  double guardrail_width = 0.2;  ///< guardrail thickness [m]
+};
+
 struct MeshOptions {
   SamplingOptions sampling;
+
+  /// Bridge-solid generation (p5-s3, #233).
+  BridgeParams bridges;
 
   /// Emit lane-marking strips.
   bool markings = true;
@@ -98,5 +117,15 @@ RM_API void remesh_surfaces(const RoadNetwork& network,
 /// like every other channel — this never mutates the field.
 RM_API void
 remesh_terrain(const RoadNetwork& network, NetworkMesh& mesh, const MeshOptions& options = {});
+
+/// Rebuilds the bridge-solid channel wholesale (p5-s3, #233). Clears
+/// `mesh.bridges` and, when `options.bridges.enabled`, regenerates one solid per
+/// `<bridge>` span on every road. Const-meshed from the network: the solids are
+/// derived from the span record plus the current road geometry (elevation,
+/// superelevation, width) and the height field (for pier footings), so they
+/// follow an elevation edit without a command. A span too short to build a
+/// sensible solid is skipped, not an error.
+RM_API void
+remesh_bridges(const RoadNetwork& network, NetworkMesh& mesh, const MeshOptions& options = {});
 
 } // namespace roadmaker
