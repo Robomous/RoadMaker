@@ -158,10 +158,10 @@ the epic checklist is the skeleton.
 
 The [release gate](../README.md#release-gate) now requires, in addition to
 the eight pillars: every cross-pillar workstream issue (`help`, `fmt`,
-`docs-site`, `cascade`) and every follow-up/bug closed — concretely, **any
-open issue created on or before 2026-07-23 blocks v0.1.0 unless the
-maintainer explicitly re-scopes it**. The gate is checkable from the issue
-tracker alone.
+`docs-site`, `cascade`) and every follow-up/bug existing as of this triage
+(issues up to and including #406) closed — concretely, **any open issue
+numbered ≤ #406 blocks v0.1.0 unless the maintainer explicitly re-scopes
+it**. The gate is checkable from the issue tracker alone.
 
 ## Fix queue (approved priority)
 
