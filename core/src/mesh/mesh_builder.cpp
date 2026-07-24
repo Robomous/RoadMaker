@@ -35,6 +35,7 @@
 #include <utility>
 #include <vector>
 
+#include "bridge_solids.hpp"
 #include "fill_backend.hpp"
 #include "junction_surface.hpp"
 #include "mesh_detail.hpp"
@@ -1025,10 +1026,13 @@ NetworkMesh build_network_mesh(const RoadNetwork& network, const MeshOptions& op
       result.surfaces.push_back(std::move(built));
     }
   });
-  // Terrain LAST: it fills the ground AROUND the roads and surfaces, so it reads
+  // Terrain: it fills the ground AROUND the roads and surfaces, so it reads
   // their footprints and must run after they exist. Empty unless the network
   // carries a height field.
   remesh_terrain(network, result, options);
+  // Bridge solids LAST: piers read the terrain height field for their footings,
+  // so terrain must exist first. Empty unless a road carries a <bridge>.
+  remesh_bridges(network, result, options);
   return result;
 }
 

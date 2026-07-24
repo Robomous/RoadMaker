@@ -18,6 +18,7 @@ add_library(roadmaker_core ${_rm_core_type}
   src/road/road_style.cpp
   src/road/surface_derivation.cpp
   src/road/terrain.cpp
+  src/road/grade_separation.cpp
   src/edit/edit_stack.cpp
   src/edit/connection.cpp
   src/edit/markings.cpp
@@ -39,6 +40,8 @@ add_library(roadmaker_core ${_rm_core_type}
   src/mesh/surface_boundary.cpp
   src/mesh/surface_fill.cpp
   src/mesh/terrain_mesh.cpp
+  src/mesh/manifold_bridge.cpp
+  src/mesh/bridge_solids.cpp
   src/assets/prop_meshes.gen.cpp
   src/assets/sign_face.cpp
   src/assets/sign_font.gen.cpp

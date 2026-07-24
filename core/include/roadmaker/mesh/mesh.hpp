@@ -20,6 +20,7 @@
 #include "roadmaker/road/lane.hpp"
 
 #include <array>
+#include <cstddef>
 #include <cstdint>
 #include <optional>
 #include <string>
@@ -119,6 +120,18 @@ struct SurfaceMesh {
   SubMesh mesh;
 };
 
+/// One generated bridge solid (p5-s3, #233): the deck + abutments + piers +
+/// guardrails for a single `<bridge>` span, built by bridge_solids.cpp with
+/// Manifold and NEVER serialized (OpenDRIVE has no vocabulary for them; the
+/// generator is deterministic, so nothing is lost). Keyed by owning road and the
+/// bridge's index within that road's `bridges` list, so incremental
+/// re-derivation replaces exactly one entry when a span or elevation changes.
+struct BridgeMesh {
+  RoadId road;           ///< carrying road
+  std::size_t index = 0; ///< index into Road::bridges
+  SubMesh mesh;          ///< the unioned watertight solid, faceted with planar UVs
+};
+
 /// A placed prop (tree/vegetation) as an INSTANCE of a bundled prop model
 /// (roadmaker::props). The renderer and the glTF/USD exporters draw
 /// props::model(model_id) at this world transform — no per-prop geometry is
@@ -196,6 +209,12 @@ struct NetworkMesh {
   /// exactly as it did before this channel existed, bit for bit. There is one
   /// field per network, so this is a single SubMesh, not a keyed vector.
   SubMesh terrain;
+
+  /// Generated bridge solids (p5-s3, #233), one per `<bridge>` span. EMPTY when
+  /// no road carries a bridge — a scene without bridges meshes exactly as it did
+  /// before this channel existed. Regenerated on the DirtySet re-mesh channel
+  /// when a span or an elevation changes; the solids are derived, never stored.
+  std::vector<BridgeMesh> bridges;
 
   /// Placed props (trees/vegetation), instanced from the bundled prop library
   /// — regenerated per owning road via the DirtySet::objects channel

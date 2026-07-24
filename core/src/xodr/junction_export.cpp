@@ -254,7 +254,11 @@ std::optional<Arm> link_arm(const RoadNetwork& network, const std::optional<Road
 
 /// One connecting road with the two arms it bridges (from = predecessor,
 /// to = successor — connecting roads run start→end from incoming to outgoing).
-struct Bridge {
+///
+/// Named BoundaryBridge (not Bridge) to avoid colliding with the road-level
+/// `roadmaker::Bridge` (§13.12 `<bridge>` span, p5-s3) that road.hpp now pulls
+/// into scope — this is a junction-boundary gap-bridge, an unrelated concept.
+struct BoundaryBridge {
   RoadId road;
   Arm from;
   Arm to;
@@ -352,7 +356,7 @@ JunctionBoundaryExport build_junction_boundary(const RoadNetwork& network,
   // 1. Every connecting road with the two arms it bridges. A connecting road
   //    missing either road link cannot be placed on the boundary — bail to the
   //    warning path rather than emit a partial (non-closing) boundary.
-  std::vector<Bridge> bridges;
+  std::vector<BoundaryBridge> bridges;
   for (const JunctionConnection& connection : junction.connections) {
     const Road* connecting = network.road(connection.connecting_road);
     if (connecting == nullptr || connecting->plan_view.empty()) {
@@ -364,7 +368,7 @@ JunctionBoundaryExport build_junction_boundary(const RoadNetwork& network,
       return out; // no arm metadata (foreign junction) — keep the warning
     }
     const PathPoint mid = connecting->plan_view.evaluate(connecting->plan_view.length() / 2.0);
-    bridges.push_back(Bridge{
+    bridges.push_back(BoundaryBridge{
         .road = connection.connecting_road, .from = *from, .to = *to, .mid = {mid.x, mid.y}});
   }
   if (bridges.empty()) {
@@ -378,7 +382,7 @@ JunctionBoundaryExport build_junction_boundary(const RoadNetwork& network,
       arms.push_back(arm);
     }
   };
-  for (const Bridge& bridge : bridges) {
+  for (const BoundaryBridge& bridge : bridges) {
     note_arm(bridge.from);
     note_arm(bridge.to);
   }
@@ -408,8 +412,8 @@ JunctionBoundaryExport build_junction_boundary(const RoadNetwork& network,
   for (std::size_t i = 0; i < n; ++i) {
     const Arm& a = arms[i];
     const Arm& b = arms[(i + 1) % n];
-    const Bridge* outer = nullptr;
-    for (const Bridge& bridge : bridges) {
+    const BoundaryBridge* outer = nullptr;
+    for (const BoundaryBridge& bridge : bridges) {
       const bool matches =
           (bridge.from == a && bridge.to == b) || (bridge.from == b && bridge.to == a);
       if (!matches) {

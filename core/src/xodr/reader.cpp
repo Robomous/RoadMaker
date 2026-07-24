@@ -793,15 +793,70 @@ private:
       return;
     }
     std::size_t index = 0;
+    std::size_t bridge_index = 0;
     for (const pugi::xml_node child : objects_node.children()) {
-      if (std::string_view(child.name()) == "object") {
+      const std::string_view child_name(child.name());
+      if (child_name == "object") {
         parse_object(child, road_id, fmt::format("{}/objects/object[{}]", location, index++));
+      } else if (child_name == "bridge") {
+        parse_bridge(
+            child, road_id, fmt::format("{}/objects/bridge[{}]", location, bridge_index++));
       } else {
-        // <objectReference>/<tunnel>/<bridge> (§13.10–§13.12) are not modeled
-        // in M3a — preserved verbatim so round-trip loses nothing.
+        // <objectReference>/<tunnel> (§13.10–§13.11) are not modeled — preserved
+        // verbatim so round-trip loses nothing. <bridge> (§13.12) is now the
+        // typed Road::bridges list, parsed above (p5-s3, #233).
         network().road(road_id)->object_extras.push_back(node_to_string(child));
       }
     }
+  }
+
+  /// A `<bridge>` span (§13.12) — the standard record RoadMaker now models
+  /// first-class (the generated solids are derived on load, never parsed). The
+  /// @type spelling is kept verbatim even outside e_bridgeType, and unmodeled
+  /// attributes plus any narrowing `<laneValidity>` child survive in `extras`.
+  void parse_bridge(const pugi::xml_node& node, RoadId road_id, const std::string& location) {
+    Bridge bridge;
+    bridge.odr_id = node.attribute("id").value();
+    if (!node.attribute("id")) {
+      diag(Severity::Warning, location, "bridge without 'id' attribute");
+    }
+    bridge.name = node.attribute("name").value();
+    bridge.s = node.attribute("s").as_double(0.0);
+    if (!node.attribute("length")) {
+      diag(Severity::Warning, location, "bridge without required 'length' attribute");
+    }
+    bridge.length = node.attribute("length").as_double(0.0);
+    if (!node.attribute("type")) {
+      diag(Severity::Warning,
+           location,
+           "bridge without required 'type' attribute",
+           rules::kBridgeDefineType);
+    }
+    // @type keeps its literal spelling (empty if absent); the writer re-emits it
+    // only when non-empty, so a foreign file missing @type round-trips as missing.
+    bridge.type = node.attribute("type").value();
+
+    // Preserved tier: unknown attributes survive verbatim (never dropped).
+    static constexpr std::string_view kModeledAttrs[] = {"id", "name", "s", "length", "type"};
+    for (const pugi::xml_attribute attr : node.attributes()) {
+      const std::string_view name = attr.name();
+      if (std::find(std::begin(kModeledAttrs), std::end(kModeledAttrs), name) ==
+          std::end(kModeledAttrs)) {
+        bridge.extras.attributes.emplace_back(std::string(name), attr.value());
+      }
+    }
+    // <userData code="rm:material.bridge_deck"> is RoadMaker's own carrier for
+    // the deck surface material (no standard carrier — design §2); every other
+    // child, notably a narrowing <laneValidity>, round-trips verbatim.
+    for (const pugi::xml_node child : node.children()) {
+      if (std::string_view(child.name()) == "userData" &&
+          std::string_view(child.attribute("code").value()) == "rm:material.bridge_deck") {
+        bridge.deck_material = child.attribute("value").value();
+        continue;
+      }
+      bridge.extras.children.push_back(node_to_string(child));
+    }
+    network().road(road_id)->bridges.push_back(std::move(bridge));
   }
 
   void parse_object(const pugi::xml_node& node, RoadId road_id, const std::string& location) {

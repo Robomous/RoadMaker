@@ -18,6 +18,9 @@
 
 #include "roadmaker/edit/operations.hpp"
 #include "roadmaker/mesh/junction_stoplines.hpp"
+#include "roadmaker/road/bridge.hpp"
+#include "roadmaker/road/grade_separation.hpp"
+#include "roadmaker/road/road.hpp"
 #include "roadmaker/version.hpp"
 
 #include <spdlog/spdlog.h>
@@ -49,6 +52,8 @@
 #include <QUrl>
 #include <QUuid>
 #include <QVBoxLayout>
+#include <algorithm>
+#include <memory>
 
 #include "app/context_menu.hpp"
 #include "app/crash_handler.hpp"
@@ -653,6 +658,60 @@ MainWindow::MainWindow(QWidget* parent, bool restore_saved_layout)
           ToastSeverity::Warning);
     }
   });
+  // The Road Construction tool's automatic bridge assignment (p5-s3, #233):
+  // detect grade-separated crossings and author a bridge over each. author_bridge
+  // no-ops on a span already bridged, so re-running is safe.
+  connect(actions_->bridge_generate, &QAction::triggered, this, [this] {
+    const std::vector<roadmaker::GradeSeparation> crossings =
+        roadmaker::find_grade_separations(document_.network());
+    int built = 0;
+    for (const roadmaker::GradeSeparation& sep : crossings) {
+      constexpr double kAutoSpan = 24.0;
+      const double s = std::max(0.0, sep.s_upper - (kAutoSpan / 2.0));
+      if (document_.push_command(edit::author_bridge(document_.network(), sep.upper, s, kAutoSpan))
+              .has_value()) {
+        ++built;
+      }
+    }
+    if (built > 0) {
+      viewport_->show_toast(
+          tr("Built %1 bridge structure(s) over grade-separated crossings").arg(built),
+          ToastSeverity::Success);
+    } else {
+      viewport_->show_toast(tr("No un-bridged grade-separated crossings found"),
+                            ToastSeverity::Info);
+    }
+  });
+  // Passive detection hint: when a crossing appears that no bridge covers, nudge
+  // the user toward the menu ONCE (the actionable one-click toast is a follow-up).
+  // Reset when there are none, so a later crossing hints again.
+  auto bridge_hint_shown = std::make_shared<bool>(false);
+  connect(&document_,
+          &Document::mesh_changed,
+          this,
+          [this, bridge_hint_shown](const std::vector<RoadId>&) {
+            int unbridged = 0;
+            for (const roadmaker::GradeSeparation& sep :
+                 roadmaker::find_grade_separations(document_.network())) {
+              const roadmaker::Road* road = document_.network().road(sep.upper);
+              const bool covered =
+                  road != nullptr &&
+                  std::any_of(road->bridges.begin(), road->bridges.end(), [&](const auto& b) {
+                    return b.s <= sep.s_upper && sep.s_upper <= b.s + b.length;
+                  });
+              if (!covered) {
+                ++unbridged;
+              }
+            }
+            if (unbridged > 0 && !*bridge_hint_shown) {
+              viewport_->show_toast(
+                  tr("Roads cross without a junction — Edit ▸ Bridge ▸ Generate Bridge Structures"),
+                  ToastSeverity::Info);
+              *bridge_hint_shown = true;
+            } else if (unbridged == 0) {
+              *bridge_hint_shown = false;
+            }
+          });
 
   // The freshly-built arrangement is the canonical layout Reset Layout
   // restores; user geometry (if any) is applied on top of it.
@@ -850,6 +909,8 @@ void MainWindow::build_menus() {
   QMenu* terrain_menu = edit_menu->addMenu(tr("&Terrain"));
   terrain_menu->addAction(actions_->terrain_create);
   terrain_menu->addAction(actions_->terrain_remove);
+  QMenu* bridge_menu = edit_menu->addMenu(tr("&Bridge"));
+  bridge_menu->addAction(actions_->bridge_generate);
 
   QMenu* view_menu = menuBar()->addMenu(tr("&View"));
   view_menu->addAction(scene_dock_->toggleViewAction());

@@ -77,6 +77,12 @@ public:
         scene.nodes.push_back(add_submesh_node(detail, material_for(detail.material)));
       }
     }
+    // Generated bridge solids (p5-s3, #233): the deck/piers/abutments/guardrails
+    // for each <bridge> span, one node each. Faceted with planar UVs — the deck
+    // material carrier lives on the record; the mesh renders from its lane type.
+    for (const BridgeMesh& span : mesh.bridges) {
+      scene.nodes.push_back(add_submesh_node(span.mesh, material_for(span.mesh.material)));
+    }
     // Placed props: one shared mesh per prop model, one node per instance —
     // idiomatic glTF instancing, so many trees stay one mesh in the file.
     for (const ObjectInstance& instance : mesh.objects) {

@@ -18,6 +18,7 @@
 
 #include "roadmaker/geometry/poly3.hpp"
 #include "roadmaker/geometry/reference_line.hpp"
+#include "roadmaker/road/bridge.hpp"
 #include "roadmaker/road/id.hpp"
 
 #include <optional>
@@ -104,10 +105,18 @@ struct Road {
   /// (docs/m2/01_editing_framework.md §2.5).
   std::optional<std::vector<Waypoint>> authoring_waypoints;
 
+  /// `<bridge>` spans over this road (ASAM 1.9.0 §13.12) — p5-s3, #233. Modeled
+  /// as first-class records so a raised span can carry generated deck/pier/
+  /// abutment/guardrail solids; the span serializes, the solids do not. Empty on
+  /// a road with no bridge. The reader routes `<bridge>` here; `<tunnel>` and
+  /// `<objectReference>` still fall through to `object_extras`.
+  std::vector<Bridge> bridges;
+
   /// Non-<object> children of this road's <objects> container
-  /// (<objectReference>, <tunnel>, <bridge> — §13.10–§13.12), preserved as
-  /// verbatim XML fragments in document order. M3a does not model them; the
-  /// writer re-emits them inside <objects> so round-trip loses nothing.
+  /// (<objectReference>, <tunnel> — §13.10–§13.11), preserved as verbatim XML
+  /// fragments in document order. RoadMaker does not model them; the writer
+  /// re-emits them inside <objects> so round-trip loses nothing. `<bridge>` USED
+  /// to live here too but is now the typed `bridges` list above.
   std::vector<std::string> object_extras;
 
   /// Non-<signal> children of this road's <signals> container

@@ -363,6 +363,16 @@ void Document::commit_preview(bool already_regenerated) {
   const bool terrain_needs_rebuild =
       !network_.terrain().empty() &&
       (committed.terrain || committed.topology || !committed.roads.empty());
+  // Bridges skip preview frames too (p5-s3): a road dragged over/with a bridge
+  // leaves its solids stale until release. Rebuild once if a bridge exists.
+  bool bridge_needs_rebuild = !mesh_.bridges.empty();
+  if (!bridge_needs_rebuild && (committed.topology || !committed.roads.empty())) {
+    network_.for_each_road([&](RoadId, const Road& road) {
+      if (!road.bridges.empty()) {
+        bridge_needs_rebuild = true;
+      }
+    });
+  }
 
   // Already applied by begin/update — KernelEditorCommand skips the redo()
   // that QUndoStack fires on push, and the mesh already reflects the state.
@@ -379,6 +389,10 @@ void Document::commit_preview(bool already_regenerated) {
   // no-regeneration case that skips that hook.)
   if (terrain_needs_rebuild) {
     remesh_terrain(network_, mesh_);
+    emit mesh_changed({});
+  }
+  if (bridge_needs_rebuild) {
+    remesh_bridges(network_, mesh_);
     emit mesh_changed({});
   }
 }
@@ -470,12 +484,33 @@ void Document::after_kernel_mutation(const edit::DirtySet& dirty) {
     terrain_changed = true;
   }
 
-  // Topology, junction-floor, surface AND terrain changes reshape the item list
-  // wholesale; only pure road-geometry edits with nothing else touched ride the
-  // partial-upload path. An objects-only edit (roads empty) rebuilds wholesale
-  // via the empty list, which now re-reads the prop instances too.
+  // Bridge solids (p5-s3, #233) follow the road geometry: a road or elevation
+  // edit re-derives the deck and piers, and authoring/removing a <bridge> rides
+  // dirty.roads for its owning road. Skipped mid-drag like terrain (commit_preview
+  // runs it once on release). Rebuilt when a road changed AND a bridge exists now
+  // or already meshed — so removing the last bridge still clears the channel.
+  bool bridges_changed = false;
+  if (!preview_active() && (dirty.topology || !dirty.roads.empty())) {
+    bool any_bridge = !mesh_.bridges.empty();
+    if (!any_bridge) {
+      network_.for_each_road([&](RoadId, const Road& road) {
+        if (!road.bridges.empty()) {
+          any_bridge = true;
+        }
+      });
+    }
+    if (any_bridge) {
+      remesh_bridges(network_, mesh_);
+      bridges_changed = true;
+    }
+  }
+
+  // Topology, junction-floor, surface, terrain AND bridge changes reshape the
+  // item list wholesale; only pure road-geometry edits with nothing else touched
+  // ride the partial-upload path. An objects-only edit (roads empty) rebuilds
+  // wholesale via the empty list, which now re-reads the prop instances too.
   const bool partial = !dirty.topology && dirty.junctions.empty() && !surfaces_changed &&
-                       !terrain_changed && !dirty.roads.empty();
+                       !terrain_changed && !bridges_changed && !dirty.roads.empty();
   emit mesh_changed(partial ? dirty.roads : std::vector<RoadId>{});
   if (!dirty.objects.empty()) {
     emit objects_changed(dirty.objects); // prunes stale prop selections

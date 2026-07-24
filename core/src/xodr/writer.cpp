@@ -980,6 +980,37 @@ StopLineExports build_stopline_exports(const RoadNetwork& network) {
   return out;
 }
 
+/// A `<bridge>` span (§13.12) — p5-s3, #233. The record round-trips; the deck/
+/// pier/abutment/guardrail solids are regenerated on load and never written. The
+/// deck surface material rides a `<userData code="rm:material.bridge_deck">`
+/// (design §2 — no standard carrier). Attribute order matches the spec's example
+/// (s, length, id, name, type); unmodeled attributes and children (a narrowing
+/// `<laneValidity>`) re-emit verbatim after the modeled content, so a foreign
+/// bridge survives a round-trip byte-identically.
+void write_bridge(pugi::xml_node objects_node, const Bridge& bridge) {
+  pugi::xml_node node = objects_node.append_child("bridge");
+  set_num(node, "s", bridge.s);
+  set_num(node, "length", bridge.length);
+  node.append_attribute("id").set_value(bridge.odr_id.c_str());
+  if (!bridge.name.empty()) {
+    node.append_attribute("name").set_value(bridge.name.c_str());
+  }
+  if (!bridge.type.empty()) {
+    node.append_attribute("type").set_value(bridge.type.c_str());
+  }
+  for (const auto& [name, value] : bridge.extras.attributes) {
+    node.append_attribute(name.c_str()).set_value(value.c_str());
+  }
+  if (!bridge.deck_material.empty()) {
+    pugi::xml_node user_data = node.append_child("userData");
+    user_data.append_attribute("code").set_value("rm:material.bridge_deck");
+    user_data.append_attribute("value").set_value(bridge.deck_material.c_str());
+  }
+  for (const std::string& fragment : bridge.extras.children) {
+    append_fragment(node, fragment);
+  }
+}
+
 void write_objects(pugi::xml_node road_node,
                    const RoadNetwork& network,
                    RoadId road_id,
@@ -989,12 +1020,17 @@ void write_objects(pugi::xml_node road_node,
   const std::vector<ObjectId> owned = objects_of(network, road_id);
   const auto materialized = stoplines.find(road.odr_id);
   const bool has_stoplines = materialized != stoplines.end();
-  if (owned.empty() && road.object_extras.empty() && !has_stoplines) {
+  if (owned.empty() && road.bridges.empty() && road.object_extras.empty() && !has_stoplines) {
     return;
   }
   pugi::xml_node objects_node = road_node.append_child("objects");
   for (const ObjectId object_id : owned) {
     write_object(objects_node, *network.object(object_id), options);
+  }
+  // Bridge spans follow the road's real objects (both are authored content);
+  // derived stop lines and preserved foreign fragments come after.
+  for (const Bridge& bridge : road.bridges) {
+    write_bridge(objects_node, bridge);
   }
   // Materialized stop lines come after the road's real objects: they are
   // derived output, not part of the arena, and keeping them last leaves the
