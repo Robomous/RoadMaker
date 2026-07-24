@@ -20,6 +20,7 @@
 #include "roadmaker/edit/connection.hpp"
 #include "roadmaker/geometry/poly3.hpp"
 #include "roadmaker/mesh/junction_stoplines.hpp"
+#include "roadmaker/road/defaults.hpp"
 #include "roadmaker/road/repeat_expansion.hpp"
 #include "roadmaker/tol.hpp"
 
@@ -53,9 +54,10 @@ using mesh_detail::mandatory_stations;
 using mesh_detail::StationFrame;
 using mesh_detail::surface_normal;
 
-// M1 marking pattern for RoadMarkType::Broken: 3 m dash / 6 m gap.
-constexpr double kDashLength = 3.0;
-constexpr double kDashCycle = 9.0;
+// Marking pattern for RoadMarkType::Broken — the registry's broken lane line
+// (docs/domain/realism_defaults.md §1.3).
+constexpr double kDashLength = defaults::kDashLength;
+constexpr double kDashCycle = defaults::kDashLength + defaults::kDashGap;
 
 // Lift markings slightly above the surface to avoid z-fighting.
 constexpr double kMarkingLift = 0.002;
@@ -132,7 +134,9 @@ std::vector<RoadMarkLine> resolve_stripes(const RoadMark& mark) {
   const double w = mark.width;
   const RoadMarkLine solid{.width = w};
   const RoadMarkLine broken{.width = w, .length = kDashLength, .space = kDashCycle - kDashLength};
-  // Symmetric split for the *_family: two stripes one mark-width apart.
+  // Symmetric split for the *_family: stripe centers sit so the clear space
+  // between the two stripes is the registry's double-line separation (§1.3).
+  const double half = (w + defaults::kDoubleLineSeparation) / 2.0;
   const auto at = [](RoadMarkLine stripe, double t) {
     stripe.t_offset = t;
     return stripe;
@@ -141,13 +145,13 @@ std::vector<RoadMarkLine> resolve_stripes(const RoadMark& mark) {
   case RoadMarkType::Broken:
     return {broken};
   case RoadMarkType::SolidSolid:
-    return {at(solid, +w), at(solid, -w)};
+    return {at(solid, +half), at(solid, -half)};
   case RoadMarkType::SolidBroken:
-    return {at(solid, +w), at(broken, -w)};
+    return {at(solid, +half), at(broken, -half)};
   case RoadMarkType::BrokenSolid:
-    return {at(broken, +w), at(solid, -w)};
+    return {at(broken, +half), at(solid, -half)};
   case RoadMarkType::BrokenBroken:
-    return {at(broken, +w), at(broken, -w)};
+    return {at(broken, +half), at(broken, -half)};
   case RoadMarkType::Solid:
   case RoadMarkType::Other:
   case RoadMarkType::None:

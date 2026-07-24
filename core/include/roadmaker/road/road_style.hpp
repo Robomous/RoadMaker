@@ -18,6 +18,7 @@
 
 #include "roadmaker/export.hpp"
 #include "roadmaker/geometry/poly3.hpp"
+#include "roadmaker/road/defaults.hpp"
 #include "roadmaker/road/lane.hpp"
 
 #include <optional>
@@ -37,8 +38,9 @@ struct StyleLane {
   LaneType type = LaneType::Driving;
 
   /// Width polynomial, sOffset local to the (single) section — a constant lane
-  /// leaves `b/c/d` at zero. Must evaluate positive over the section.
-  Poly3 width{.a = 3.5};
+  /// leaves `b/c/d` at zero. Must evaluate positive over the section. Defaults
+  /// to the registry's classless driving-lane width (realism_defaults.md §1.2).
+  Poly3 width{.a = defaults::kArterialLaneWidth};
 
   /// Mark painted on this lane's OUTER boundary (the one farther from the
   /// reference line). nullopt paints nothing. For the innermost same-direction
@@ -62,20 +64,35 @@ struct RoadStyle {
   /// Mark on lane 0 (the center line). nullopt paints nothing.
   std::optional<RoadMark> center_mark;
 
-  // Starter styles the Library ships. Contents are content-tested — changing a
-  // style is a visible product change, not a refactor.
+  // Starter styles the Library ships — the four road classes of
+  // docs/domain/realism_defaults.md §1.2/§1.3, deriving every width and mark
+  // from the defaults registry (#413). Contents are content-tested —
+  // changing a style is a visible product change, not a refactor.
 
-  /// Urban two-lane-per-direction: two 3.5 m driving lanes each way, a dashed
-  /// white line between the same-direction lanes and a solid white edge line,
-  /// with a solid yellow center line (#194).
+  /// Freeway: left shoulder with a yellow left edge line, two driving lanes
+  /// (dashed white lane line, solid white edge line) and a wide right
+  /// shoulder each way; no center marking.
+  [[nodiscard]] RM_API static RoadStyle freeway();
+
+  /// Arterial: two driving lanes each way with a dashed white lane line, a
+  /// solid white edge line and a sidewalk, double yellow center line.
+  [[nodiscard]] RM_API static RoadStyle arterial();
+
+  /// Collector: one driving lane each way with solid white edge lines and a
+  /// right-hand shoulder, broken yellow center line.
+  [[nodiscard]] RM_API static RoadStyle collector();
+
+  /// Local/residential street: one driving lane each way with a sidewalk on
+  /// both sides; no painted lines.
+  [[nodiscard]] RM_API static RoadStyle local_road();
+
+  /// Historical alias of arterial() (the pre-#413 urban two-lane style).
   [[nodiscard]] RM_API static RoadStyle urban_two_lane();
 
-  /// Two-lane rural: one 3.5 m driving lane each way with solid white edge
-  /// lines and a right-hand shoulder, broken white center line.
+  /// Historical alias of collector() (the pre-#413 two-lane rural style).
   [[nodiscard]] RM_API static RoadStyle two_lane_rural();
 
-  /// Highway: two 3.75 m driving lanes each way with a dashed white lane line,
-  /// a solid white edge line and a wide shoulder; no center marking.
+  /// Historical alias of freeway() (the pre-#413 highway style).
   [[nodiscard]] RM_API static RoadStyle highway();
 };
 

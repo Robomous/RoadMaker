@@ -18,6 +18,7 @@
 #include "roadmaker/edit/edit_stack.hpp"
 #include "roadmaker/edit/operations.hpp"
 #include "roadmaker/road/authoring.hpp"
+#include "roadmaker/road/defaults.hpp"
 #include "roadmaker/road/network.hpp"
 #include "roadmaker/tol.hpp"
 #include "roadmaker/xodr/diagnostic.hpp"
@@ -869,7 +870,8 @@ TEST(EditOperations, CreateJunctionGeneratesTJunctionAndRoundTrips) {
         EXPECT_EQ(lane.predecessor, -1);
         EXPECT_EQ(lane.successor, 1);
         ASSERT_FALSE(lane.widths.empty());
-        EXPECT_NEAR(lane.widths.front().a, 3.5, 1e-9); // source width
+        EXPECT_NEAR(lane.widths.front().a, roadmaker::defaults::kCollectorLaneWidth, 1e-9)
+            << "source width";
       }
     }
   }
@@ -1581,9 +1583,9 @@ TEST(EditOperations, AddLaneAppendsOutermostAndRoundTrips) {
   const LaneId added = network.lane_section(section)->lanes.back(); // outermost right
   EXPECT_EQ(network.lane(added)->odr_id, -3);                       // default profile has -1, -2
   EXPECT_EQ(network.lane(added)->type, LaneType::Biking);
-  // Width copied from the previous outermost (shoulder, 1.0 m).
+  // Width copied from the previous outermost (the collector shoulder).
   ASSERT_FALSE(network.lane(added)->widths.empty());
-  EXPECT_NEAR(network.lane(added)->widths[0].a, 1.0, 1e-12);
+  EXPECT_NEAR(network.lane(added)->widths[0].a, roadmaker::defaults::kShoulderWidth, 1e-12);
 }
 
 TEST(EditOperations, RemoveLaneOutermostOnlyAndRoundTrips) {

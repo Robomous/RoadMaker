@@ -3,32 +3,60 @@
   "generated": "2026-07-13",
   "items": [
     {
-      "key": "road.rural",
-      "label": "2-lane rural",
+      "key": "road.freeway",
+      "label": "Freeway",
       "category": "Road templates",
-      "thumbnail": "assets/library/thumbnails/road_rural.png",
-      "create": { "kind": "road_template", "profile": "two_lane_rural" }
+      "thumbnail": "assets/library/thumbnails/road_freeway.png",
+      "create": { "kind": "road_template", "profile": "freeway" }
     },
     {
-      "key": "road.urban",
-      "label": "Urban w/ sidewalks",
+      "key": "road.arterial",
+      "label": "Arterial",
       "category": "Road templates",
-      "thumbnail": "assets/library/thumbnails/road_urban.png",
-      "create": { "kind": "road_template", "profile": "urban_sidewalk" }
+      "thumbnail": "assets/library/thumbnails/road_arterial.png",
+      "create": { "kind": "road_template", "profile": "arterial" }
     },
     {
-      "key": "road.highway",
-      "label": "4-lane divided",
+      "key": "road.collector",
+      "label": "Collector",
       "category": "Road templates",
-      "thumbnail": "assets/library/thumbnails/road_highway.png",
-      "create": { "kind": "road_template", "profile": "highway" }
+      "thumbnail": "assets/library/thumbnails/road_collector.png",
+      "create": { "kind": "road_template", "profile": "collector" }
     },
     {
-      "key": "style.urban",
-      "label": "Urban 2-lane",
+      "key": "road.local",
+      "label": "Local street",
+      "category": "Road templates",
+      "thumbnail": "assets/library/thumbnails/road_local.png",
+      "create": { "kind": "road_template", "profile": "local" }
+    },
+    {
+      "key": "style.freeway",
+      "label": "Freeway style",
       "category": "Road styles",
-      "thumbnail": "assets/library/thumbnails/style_urban.png",
-      "create": { "kind": "road_style", "style": "urban_two_lane" }
+      "thumbnail": "assets/library/thumbnails/style_freeway.png",
+      "create": { "kind": "road_style", "style": "freeway" }
+    },
+    {
+      "key": "style.arterial",
+      "label": "Arterial style",
+      "category": "Road styles",
+      "thumbnail": "assets/library/thumbnails/style_arterial.png",
+      "create": { "kind": "road_style", "style": "arterial" }
+    },
+    {
+      "key": "style.collector",
+      "label": "Collector style",
+      "category": "Road styles",
+      "thumbnail": "assets/library/thumbnails/style_collector.png",
+      "create": { "kind": "road_style", "style": "collector" }
+    },
+    {
+      "key": "style.local",
+      "label": "Local street style",
+      "category": "Road styles",
+      "thumbnail": "assets/library/thumbnails/style_local.png",
+      "create": { "kind": "road_style", "style": "local" }
     },
     {
       "key": "assembly.t",
@@ -154,69 +182,69 @@
       "label": "Solid single white",
       "category": "Markings",
       "thumbnail": "assets/library/thumbnails/marking_solid_white.png",
-      "create": { "kind": "marking", "mark_type": "solid", "mark_color": "white", "mark_width": 0.12 }
+      "create": { "kind": "marking", "mark_type": "solid", "mark_color": "white", "mark_width": 0.1 }
     },
     {
       "key": "marking.double_yellow",
       "label": "Double yellow",
       "category": "Markings",
       "thumbnail": "assets/library/thumbnails/marking_double_yellow.png",
-      "create": { "kind": "marking", "mark_type": "solid_solid", "mark_color": "yellow", "mark_width": 0.12 }
+      "create": { "kind": "marking", "mark_type": "solid_solid", "mark_color": "yellow", "mark_width": 0.1 }
     },
     {
       "key": "marking.dashed_white",
       "label": "Dashed white",
       "category": "Markings",
       "thumbnail": "assets/library/thumbnails/marking_dashed_white.png",
-      "create": { "kind": "marking", "mark_type": "broken", "mark_color": "white", "mark_width": 0.12 }
+      "create": { "kind": "marking", "mark_type": "broken", "mark_color": "white", "mark_width": 0.1 }
     },
     {
       "key": "marking.dashed_yellow",
       "label": "Dashed yellow",
       "category": "Markings",
       "thumbnail": "assets/library/thumbnails/marking_dashed_yellow.png",
-      "create": { "kind": "marking", "mark_type": "broken", "mark_color": "yellow", "mark_width": 0.12 }
+      "create": { "kind": "marking", "mark_type": "broken", "mark_color": "yellow", "mark_width": 0.1 }
     },
     {
       "key": "marking.double_white",
       "label": "Double white",
       "category": "Markings",
       "thumbnail": "assets/library/thumbnails/marking_double_white.png",
-      "create": { "kind": "marking", "mark_type": "solid_solid", "mark_color": "white", "mark_width": 0.12 }
+      "create": { "kind": "marking", "mark_type": "solid_solid", "mark_color": "white", "mark_width": 0.1 }
     },
     {
       "key": "marking.solid_broken_yellow",
       "label": "Solid–broken yellow",
       "category": "Markings",
       "thumbnail": "assets/library/thumbnails/marking_solid_broken_yellow.png",
-      "create": { "kind": "marking", "mark_type": "solid_broken", "mark_color": "yellow", "mark_width": 0.12 }
+      "create": { "kind": "marking", "mark_type": "solid_broken", "mark_color": "yellow", "mark_width": 0.1 }
     },
     {
       "key": "marking.broken_solid_yellow",
       "label": "Broken–solid yellow",
       "category": "Markings",
       "thumbnail": "assets/library/thumbnails/marking_broken_solid_yellow.png",
-      "create": { "kind": "marking", "mark_type": "broken_solid", "mark_color": "yellow", "mark_width": 0.12 }
+      "create": { "kind": "marking", "mark_type": "broken_solid", "mark_color": "yellow", "mark_width": 0.1 }
     },
     {
       "key": "marking.double_dashed_yellow",
       "label": "Double dashed yellow",
       "category": "Markings",
       "thumbnail": "assets/library/thumbnails/marking_double_dashed_yellow.png",
-      "create": { "kind": "marking", "mark_type": "broken_broken", "mark_color": "yellow", "mark_width": 0.12 }
+      "create": { "kind": "marking", "mark_type": "broken_broken", "mark_color": "yellow", "mark_width": 0.1 }
     },
     {
       "key": "marking.edge_white",
       "label": "Wide edge white",
       "category": "Markings",
       "thumbnail": "assets/library/thumbnails/marking_edge_white.png",
-      "create": { "kind": "marking", "mark_type": "solid", "mark_color": "white", "mark_width": 0.30 }
+      "create": { "kind": "marking", "mark_type": "solid", "mark_color": "white", "mark_width": 0.15 }
     },
     {
       "key": "crosswalk.zebra",
       "label": "Zebra crosswalk",
       "category": "Crosswalks",
-      "create": { "kind": "crosswalk", "width": 3.0, "border_width": 0.0, "dash_length": 0.5, "dash_gap": 0.5, "material": "material.paint_white", "segmentation": "crosswalk" }
+      "create": { "kind": "crosswalk", "width": 3.0, "border_width": 0.0, "dash_length": 0.6, "dash_gap": 0.6, "material": "material.paint_white", "segmentation": "crosswalk" }
     },
     {
       "key": "stencil.arrow_left",

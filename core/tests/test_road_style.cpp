@@ -125,25 +125,29 @@ const Lane* lane_of(const RoadNetwork& network, RoadId road, int odr_id) {
 
 // --- preset contents (content-tested: a change here is a product change) ----
 
-TEST(RoadStyle, UrbanTwoLaneContents) {
+TEST(RoadStyle, ArterialContents) {
+  // urban_two_lane is the pre-#413 alias of the arterial class style.
   const RoadStyle style = RoadStyle::urban_two_lane();
-  ASSERT_EQ(style.left.size(), 2U);
-  ASSERT_EQ(style.right.size(), 2U);
+  ASSERT_EQ(style.left.size(), 3U);
+  ASSERT_EQ(style.right.size(), 3U);
 
   // Inner same-direction lane: dashed white divider on its outer boundary.
   EXPECT_EQ(style.left[0].type, LaneType::Driving);
-  EXPECT_DOUBLE_EQ(style.left[0].width.a, 3.5);
+  EXPECT_DOUBLE_EQ(style.left[0].width.a, roadmaker::defaults::kArterialLaneWidth);
   ASSERT_TRUE(style.left[0].outer_mark.has_value());
   EXPECT_EQ(style.left[0].outer_mark->type, RoadMarkType::Broken);
   EXPECT_EQ(style.left[0].outer_mark->color, RoadMarkColor::White);
 
-  // Outer lane: solid white edge line.
+  // Outer lane: solid white edge line, then the sidewalk.
   ASSERT_TRUE(style.left[1].outer_mark.has_value());
   EXPECT_EQ(style.left[1].outer_mark->type, RoadMarkType::Solid);
   EXPECT_EQ(style.left[1].outer_mark->color, RoadMarkColor::White);
+  EXPECT_EQ(style.left[2].type, LaneType::Sidewalk);
+  EXPECT_DOUBLE_EQ(style.left[2].width.a, roadmaker::defaults::kSidewalkWidth);
 
+  // Double yellow centerline (§1.3).
   ASSERT_TRUE(style.center_mark.has_value());
-  EXPECT_EQ(style.center_mark->type, RoadMarkType::Solid);
+  EXPECT_EQ(style.center_mark->type, RoadMarkType::SolidSolid);
   EXPECT_EQ(style.center_mark->color, RoadMarkColor::Yellow);
 }
 
@@ -171,25 +175,31 @@ TEST(RoadStyle, ApplyReplacesTheLaneProfileAndMarks) {
                   ->apply(network)
                   .has_value());
 
-  // Urban two-lane: two 3.5 m driving lanes each side (odr +1,+2,-1,-2) + center.
+  // Arterial: two driving lanes each side (odr +1,+2,-1,-2) + sidewalks
+  // (odr +3,-3) + center.
   const LaneSection* section = network.lane_section(network.road(road)->sections.front());
-  EXPECT_EQ(section->lanes.size(), 5U);
+  EXPECT_EQ(section->lanes.size(), 7U);
   for (const int odr : {1, 2, -1, -2}) {
     const Lane* lane = lane_of(network, road, odr);
     ASSERT_NE(lane, nullptr) << "missing lane " << odr;
     EXPECT_EQ(lane->type, LaneType::Driving);
     ASSERT_EQ(lane->widths.size(), 1U);
-    EXPECT_DOUBLE_EQ(lane->widths.front().a, 3.5);
+    EXPECT_DOUBLE_EQ(lane->widths.front().a, roadmaker::defaults::kArterialLaneWidth);
+  }
+  for (const int odr : {3, -3}) {
+    const Lane* lane = lane_of(network, road, odr);
+    ASSERT_NE(lane, nullptr) << "missing sidewalk " << odr;
+    EXPECT_EQ(lane->type, LaneType::Sidewalk);
   }
   // Inner lane's outer boundary = the dashed white same-direction line.
   const Lane* inner = lane_of(network, road, 1);
   ASSERT_EQ(inner->road_marks.size(), 1U);
   EXPECT_EQ(inner->road_marks.front().type, RoadMarkType::Broken);
   EXPECT_EQ(inner->road_marks.front().color, RoadMarkColor::White);
-  // Center line replaced (default was broken; urban is solid yellow).
+  // Center line replaced (default was broken; arterial is double yellow).
   const Lane* center = lane_of(network, road, 0);
   ASSERT_EQ(center->road_marks.size(), 1U);
-  EXPECT_EQ(center->road_marks.front().type, RoadMarkType::Solid);
+  EXPECT_EQ(center->road_marks.front().type, RoadMarkType::SolidSolid);
   EXPECT_EQ(center->road_marks.front().color, RoadMarkColor::Yellow);
 }
 

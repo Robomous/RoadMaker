@@ -103,9 +103,10 @@ public:
   /// Create Road cross-section templates (exclusive, one always checked);
   /// the toolbar presents them as a dropdown next to the tool button.
   QActionGroup* template_group = nullptr;
-  QAction* template_rural = nullptr;
-  QAction* template_urban = nullptr;
-  QAction* template_highway = nullptr;
+  QAction* template_freeway = nullptr;
+  QAction* template_arterial = nullptr;
+  QAction* template_collector = nullptr;
+  QAction* template_local = nullptr;
 
   QAction* reset_camera = nullptr;
   QAction* frame_selection = nullptr;

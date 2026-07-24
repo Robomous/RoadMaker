@@ -199,27 +199,7 @@ def _dashes(buf, x, y0, y1, w, color, dash=7, gap=6):
         y += dash + gap
 
 
-def road_rural() -> bytearray:
-    buf = new_canvas()
-    fill_rect(buf, 28, 6, 68, 90, ASPHALT)
-    fill_rect(buf, 30, 6, 32, 90, WHITE_PAINT)   # left edge line
-    fill_rect(buf, 64, 6, 66, 90, WHITE_PAINT)   # right edge line
-    _dashes(buf, 48, 6, 90, 2.4, YELLOW_PAINT)   # dashed centre line
-    return buf
-
-
-def road_urban() -> bytearray:
-    buf = new_canvas()
-    fill_rect(buf, 12, 6, 22, 90, CONCRETE)      # left sidewalk
-    fill_rect(buf, 74, 6, 84, 90, CONCRETE)      # right sidewalk
-    fill_rect(buf, 24, 6, 72, 90, ASPHALT)
-    fill_rect(buf, 26, 6, 28, 90, WHITE_PAINT)
-    fill_rect(buf, 68, 6, 70, 90, WHITE_PAINT)
-    _dashes(buf, 48, 6, 90, 2.4, WHITE_PAINT)
-    return buf
-
-
-def road_highway() -> bytearray:
+def road_freeway() -> bytearray:
     buf = new_canvas()
     fill_rect(buf, 18, 6, 44, 90, ASPHALT)       # carriageway A
     fill_rect(buf, 52, 6, 78, 90, ASPHALT)       # carriageway B
@@ -228,11 +208,44 @@ def road_highway() -> bytearray:
         _dashes(buf, x, 6, 90, 2.0, WHITE_PAINT)
     fill_rect(buf, 18, 6, 20, 90, WHITE_PAINT)
     fill_rect(buf, 76, 6, 78, 90, WHITE_PAINT)
+    fill_rect(buf, 42, 6, 44, 90, YELLOW_PAINT)  # left edge lines (divided)
+    fill_rect(buf, 52, 6, 54, 90, YELLOW_PAINT)
     return buf
 
 
-def style_urban() -> bytearray:
-    buf = road_urban()
+def road_arterial() -> bytearray:
+    buf = new_canvas()
+    fill_rect(buf, 8, 6, 16, 90, CONCRETE)       # left sidewalk
+    fill_rect(buf, 80, 6, 88, 90, CONCRETE)      # right sidewalk
+    fill_rect(buf, 18, 6, 78, 90, ASPHALT)
+    fill_rect(buf, 20, 6, 22, 90, WHITE_PAINT)   # edge lines
+    fill_rect(buf, 74, 6, 76, 90, WHITE_PAINT)
+    for x in (33, 63):
+        _dashes(buf, x, 6, 90, 2.0, WHITE_PAINT)  # lane lines
+    fill_rect(buf, 45, 6, 47, 90, YELLOW_PAINT)  # double yellow centre
+    fill_rect(buf, 49, 6, 51, 90, YELLOW_PAINT)
+    return buf
+
+
+def road_collector() -> bytearray:
+    buf = new_canvas()
+    fill_rect(buf, 28, 6, 68, 90, ASPHALT)
+    fill_rect(buf, 30, 6, 32, 90, WHITE_PAINT)   # left edge line
+    fill_rect(buf, 64, 6, 66, 90, WHITE_PAINT)   # right edge line
+    _dashes(buf, 48, 6, 90, 2.4, YELLOW_PAINT)   # dashed centre line
+    return buf
+
+
+def road_local() -> bytearray:
+    buf = new_canvas()
+    fill_rect(buf, 14, 6, 24, 90, CONCRETE)      # left sidewalk
+    fill_rect(buf, 72, 6, 82, 90, CONCRETE)      # right sidewalk
+    fill_rect(buf, 26, 6, 70, 90, ASPHALT)       # unmarked residential street
+    return buf
+
+
+def _style(template) -> bytearray:
+    buf = template()
     # Accent chips mark this as a saved *style*, not a bare template.
     fill_rect(buf, 62, 10, 78, 26, CHIP_A)
     fill_rect(buf, 62, 30, 78, 46, CHIP_B)
@@ -315,10 +328,14 @@ THUMBNAILS = {
     "building_mid": lambda: render_model(_model("building_mid")),
     "building_tower": lambda: render_model(_model("building_tower")),
     # Stylised swatches.
-    "road_rural": road_rural,
-    "road_urban": road_urban,
-    "road_highway": road_highway,
-    "style_urban": style_urban,
+    "road_freeway": road_freeway,
+    "road_arterial": road_arterial,
+    "road_collector": road_collector,
+    "road_local": road_local,
+    "style_freeway": lambda: _style(road_freeway),
+    "style_arterial": lambda: _style(road_arterial),
+    "style_collector": lambda: _style(road_collector),
+    "style_local": lambda: _style(road_local),
     "assembly_t": assembly_t,
     "assembly_x": assembly_x,
     "marking_solid_white": lambda: marking_swatch([(48, False)], WHITE_PAINT),

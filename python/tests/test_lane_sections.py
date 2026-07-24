@@ -398,6 +398,6 @@ def test_lane_boundary_offsets(network):
     the mesher uses, exposed for boundary picking."""
     road = network.find_road("1")
     offsets = network.lane_boundary_offsets(road, 30.0)
-    # two_lane_default: +1 (3.5) | centre | -1 (3.5) | -2 shoulder (1.0).
-    assert offsets == pytest.approx([3.5, 0.0, -3.5, -4.5])
+    # two_lane_default (collector, #413): +1 | centre | -1 | -2 shoulder.
+    assert offsets == pytest.approx([3.3, 0.0, -3.3, -5.1])
     assert network.lane_boundary_offsets(rm.RoadId(), 30.0) == []

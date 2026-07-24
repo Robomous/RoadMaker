@@ -16,6 +16,7 @@
 
 #include "roadmaker/mesh/mesh_builder.hpp"
 #include "roadmaker/road/authoring.hpp"
+#include "roadmaker/road/defaults.hpp"
 #include "roadmaker/road/network.hpp"
 
 #include <gtest/gtest.h>
@@ -512,29 +513,31 @@ TEST(NearestLaneBoundary, ResolvesTheEdgeAndInsertPositionFromCursorT) {
   const std::array<Waypoint, 2> waypoints{Waypoint{0.0, 0.0}, Waypoint{100.0, 0.0}};
   const auto road_id = author_clothoid_road(network, waypoints, LaneProfile::two_lane_default());
   ASSERT_TRUE(road_id.has_value());
-  // two_lane_default boundaries at any s: [+3.5, 0, -3.5, -4.5] (+1 | centre |
-  // -1 | -2 shoulder), lane offset 0.
+  // two_lane_default (collector) boundaries at any s: [+lane, 0, -lane,
+  // -(lane+shoulder)] (+1 | centre | -1 | -2 shoulder), lane offset 0.
+  const double lane_w = roadmaker::defaults::kCollectorLaneWidth;
+  const double shoulder_w = roadmaker::defaults::kShoulderWidth;
 
   // Just inside the -1 | -2 edge: picks that edge, carve inserts at -1 (right).
   auto edge = nearest_lane_boundary(network, *road_id, 50.0, -3.4);
   ASSERT_TRUE(edge.has_value());
   EXPECT_EQ(edge->side, -1);
   EXPECT_EQ(edge->at_odr_id, -1);
-  EXPECT_NEAR(edge->t, -3.5, 1e-9);
+  EXPECT_NEAR(edge->t, -lane_w, 1e-9);
 
   // Near the outer shoulder edge: carve inserts at -2.
   auto shoulder = nearest_lane_boundary(network, *road_id, 50.0, -4.4);
   ASSERT_TRUE(shoulder.has_value());
   EXPECT_EQ(shoulder->side, -1);
   EXPECT_EQ(shoulder->at_odr_id, -2);
-  EXPECT_NEAR(shoulder->t, -4.5, 1e-9);
+  EXPECT_NEAR(shoulder->t, -(lane_w + shoulder_w), 1e-9);
 
   // Outer edge of the +1 lane: left side, insert at +1.
   auto left = nearest_lane_boundary(network, *road_id, 50.0, 3.4);
   ASSERT_TRUE(left.has_value());
   EXPECT_EQ(left->side, 1);
   EXPECT_EQ(left->at_odr_id, 1);
-  EXPECT_NEAR(left->t, 3.5, 1e-9);
+  EXPECT_NEAR(left->t, lane_w, 1e-9);
 
   // Nearest the centre line, cursor slightly right: carve on the right.
   auto centre = nearest_lane_boundary(network, *road_id, 50.0, -0.2);

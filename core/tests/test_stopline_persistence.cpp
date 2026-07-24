@@ -159,7 +159,7 @@ TEST(StopLinePersistence, TheExportedObjectIsAPlainValidStopLine) {
   // dimensioned road-mark object. @length is the along-road thickness and
   // @width the across-lanes span (inverted vs the crosswalk — see the header).
   EXPECT_EQ(count(xml, "type=\"roadMark\" subtype=\"signalLines\""), 4U);
-  EXPECT_EQ(count(xml, "length=\"0.3\""), 4U);
+  EXPECT_EQ(count(xml, "length=\"0.6\""), 4U);
   const std::optional<JunctionStopLineInfo> info =
       solved(fixture.network, fixture.junction, fixture.arm_end(fixture.west));
   ASSERT_TRUE(info.has_value());

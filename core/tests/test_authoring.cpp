@@ -26,6 +26,7 @@
 
 using roadmaker::EndpointHeadings;
 using roadmaker::LaneProfile;
+namespace defaults = roadmaker::defaults;
 using roadmaker::LaneSpec;
 using roadmaker::LaneType;
 using roadmaker::ReferenceLine;
@@ -48,43 +49,59 @@ const std::vector<Waypoint> kBend = {
 
 // Template contents are product behavior (02_editing_tools.md §2): a changed
 // lane count, type, width, or marking must fail a test, not slip through.
+// Widths are asserted against the defaults registry — the #413 divergence
+// guard keeps the registry itself honest against the spec doc.
 
-TEST(LaneProfileTemplates, TwoLaneRuralContents) {
-  const LaneProfile profile = LaneProfile::two_lane_rural();
+TEST(LaneProfileTemplates, CollectorContents) {
+  const LaneProfile profile = LaneProfile::collector();
   ASSERT_EQ(profile.left.size(), 1U);
   ASSERT_EQ(profile.right.size(), 2U);
-  expect_lane(profile.left[0], LaneType::Driving, 3.5, true);
-  expect_lane(profile.right[0], LaneType::Driving, 3.5, true);
-  expect_lane(profile.right[1], LaneType::Shoulder, 1.0, false);
+  expect_lane(profile.left[0], LaneType::Driving, defaults::kCollectorLaneWidth, true);
+  expect_lane(profile.right[0], LaneType::Driving, defaults::kCollectorLaneWidth, true);
+  expect_lane(profile.right[1], LaneType::Shoulder, defaults::kShoulderWidth, false);
   EXPECT_TRUE(profile.center_marking);
 }
 
-TEST(LaneProfileTemplates, UrbanSidewalkContents) {
-  const LaneProfile profile = LaneProfile::urban_sidewalk();
+TEST(LaneProfileTemplates, LocalRoadContents) {
+  const LaneProfile profile = LaneProfile::local_road();
   ASSERT_EQ(profile.left.size(), 2U);
   ASSERT_EQ(profile.right.size(), 2U);
   for (const auto& side : {profile.left, profile.right}) {
-    expect_lane(side[0], LaneType::Driving, 3.5, true);
-    expect_lane(side[1], LaneType::Sidewalk, 2.0, false);
+    expect_lane(side[0], LaneType::Driving, defaults::kLocalLaneWidth, false);
+    expect_lane(side[1], LaneType::Sidewalk, defaults::kSidewalkWidth, false);
+  }
+  EXPECT_FALSE(profile.center_marking) << "residential streets carry no painted lines";
+}
+
+TEST(LaneProfileTemplates, ArterialContents) {
+  const LaneProfile profile = LaneProfile::arterial();
+  ASSERT_EQ(profile.left.size(), 3U);
+  ASSERT_EQ(profile.right.size(), 3U);
+  for (const auto& side : {profile.left, profile.right}) {
+    expect_lane(side[0], LaneType::Driving, defaults::kArterialLaneWidth, false);
+    expect_lane(side[1], LaneType::Driving, defaults::kArterialLaneWidth, true);
+    expect_lane(side[2], LaneType::Sidewalk, defaults::kSidewalkWidth, false);
   }
   EXPECT_TRUE(profile.center_marking);
 }
 
-TEST(LaneProfileTemplates, HighwayContents) {
-  const LaneProfile profile = LaneProfile::highway();
-  ASSERT_EQ(profile.left.size(), 3U);
-  ASSERT_EQ(profile.right.size(), 3U);
+TEST(LaneProfileTemplates, FreewayContents) {
+  const LaneProfile profile = LaneProfile::freeway();
+  ASSERT_EQ(profile.left.size(), 4U);
+  ASSERT_EQ(profile.right.size(), 4U);
   for (const auto& side : {profile.left, profile.right}) {
-    expect_lane(side[0], LaneType::Driving, 3.75, false);
-    expect_lane(side[1], LaneType::Driving, 3.75, true);
-    expect_lane(side[2], LaneType::Shoulder, 2.5, false);
+    expect_lane(side[0], LaneType::Shoulder, defaults::kFreewayLeftShoulderWidth, false);
+    expect_lane(side[1], LaneType::Driving, defaults::kFreewayLaneWidth, false);
+    expect_lane(side[2], LaneType::Driving, defaults::kFreewayLaneWidth, true);
+    expect_lane(side[3], LaneType::Shoulder, defaults::kFreewayRightShoulderWidth, false);
   }
   EXPECT_FALSE(profile.center_marking);
 }
 
+// The pre-#413 names stay usable: both resolve to the collector class.
 TEST(LaneProfileTemplates, TwoLaneDefaultIsTheRuralTemplate) {
   const LaneProfile alias = LaneProfile::two_lane_default();
-  const LaneProfile rural = LaneProfile::two_lane_rural();
+  const LaneProfile rural = LaneProfile::collector();
   ASSERT_EQ(alias.left.size(), rural.left.size());
   ASSERT_EQ(alias.right.size(), rural.right.size());
   for (std::size_t i = 0; i < rural.left.size(); ++i) {

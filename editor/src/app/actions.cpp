@@ -320,24 +320,30 @@ Actions::Actions(QUndoStack& undo_stack, QObject* parent) : QObject(parent) {
   signal_phase_editor->setToolTip(tr("Open the 2D Editor's Signal Phases tab for the selected "
                                      "junction — scrub the red-yellow-green cycle (⇧G)"));
 
-  // Road templates for the Create Road tool (02_editing_tools.md §2):
-  // exclusive and always checked; the toolbar shows them as a dropdown.
+  // Road templates for the Create Road tool — the four road classes of
+  // docs/domain/realism_defaults.md §1.2 (#413): exclusive and always
+  // checked; the toolbar shows them as a dropdown.
   template_group = new QActionGroup(this);
-  template_rural = new QAction(tr("Two-lane &Rural"), this);
-  template_rural->setCheckable(true);
-  template_rural->setToolTip(tr("One driving lane each way, right-hand shoulder"));
-  template_group->addAction(template_rural);
+  template_freeway = new QAction(tr("&Freeway"), this);
+  template_freeway->setCheckable(true);
+  template_freeway->setToolTip(tr("Two driving lanes each way between left and right shoulders"));
+  template_group->addAction(template_freeway);
 
-  template_urban = new QAction(tr("&Urban Sidewalk"), this);
-  template_urban->setCheckable(true);
-  template_urban->setChecked(true); // the tool's default profile (#355)
-  template_urban->setToolTip(tr("One driving lane each way, sidewalks both sides"));
-  template_group->addAction(template_urban);
+  template_arterial = new QAction(tr("&Arterial"), this);
+  template_arterial->setCheckable(true);
+  template_arterial->setToolTip(tr("Two driving lanes each way, sidewalks both sides"));
+  template_group->addAction(template_arterial);
 
-  template_highway = new QAction(tr("&Highway"), this);
-  template_highway->setCheckable(true);
-  template_highway->setToolTip(tr("Two driving lanes each way, wide shoulders"));
-  template_group->addAction(template_highway);
+  template_collector = new QAction(tr("&Collector"), this);
+  template_collector->setCheckable(true);
+  template_collector->setToolTip(tr("One driving lane each way, right-hand shoulder"));
+  template_group->addAction(template_collector);
+
+  template_local = new QAction(tr("&Local Street"), this);
+  template_local->setCheckable(true);
+  template_local->setChecked(true); // the tool's default profile (#355)
+  template_local->setToolTip(tr("One driving lane each way, sidewalks both sides"));
+  template_group->addAction(template_local);
 
   reset_camera = new QAction(tr("Reset &Camera"), this);
   reset_camera->setShortcuts(shortcuts::sequences(shortcuts::Id::ResetCamera));
@@ -602,9 +608,10 @@ void Actions::apply_icons() {
   tool_terrain_brush->setIcon(Icons::get(QStringLiteral("terrain-brush")));
   tool_signal->setIcon(Icons::get(QStringLiteral("signal")));
   tool_sign->setIcon(Icons::get(QStringLiteral("sign")));
-  template_rural->setIcon(Icons::get(QStringLiteral("template-rural")));
-  template_urban->setIcon(Icons::get(QStringLiteral("template-urban")));
-  template_highway->setIcon(Icons::get(QStringLiteral("template-highway")));
+  template_freeway->setIcon(Icons::get(QStringLiteral("template-highway")));
+  template_arterial->setIcon(Icons::get(QStringLiteral("template-urban")));
+  template_collector->setIcon(Icons::get(QStringLiteral("template-rural")));
+  template_local->setIcon(Icons::get(QStringLiteral("template-local")));
   reset_camera->setIcon(Icons::get(QStringLiteral("rotate-ccw")));
   frame_selection->setIcon(Icons::get(QStringLiteral("scan")));
   add_from_library->setIcon(Icons::get(QStringLiteral("circle-plus")));

@@ -143,28 +143,40 @@ LaneId lane_containing_t(const RoadNetwork& network, RoadId road, double s, doub
 } // namespace
 
 LaneProfile profile_for(const QString& name) {
-  if (name == QStringLiteral("urban_sidewalk")) {
-    return LaneProfile::urban_sidewalk();
+  // The four road classes (#413); pre-#413 manifest names keep resolving to
+  // their nearest class so an old saved reference still creates a road.
+  if (name == QStringLiteral("freeway") || name == QStringLiteral("highway")) {
+    return LaneProfile::freeway();
   }
-  if (name == QStringLiteral("highway")) {
-    return LaneProfile::highway();
+  if (name == QStringLiteral("arterial")) {
+    return LaneProfile::arterial();
   }
-  // Unknown name falls back to the default creation template (#355), matching the
-  // Create Road tool default and the toolbar's initial selection.
-  return LaneProfile::urban_sidewalk();
+  if (name == QStringLiteral("collector") || name == QStringLiteral("two_lane_rural")) {
+    return LaneProfile::collector();
+  }
+  // Unknown name falls back to the default creation template (#355), matching
+  // the Create Road tool default and the toolbar's initial selection.
+  return LaneProfile::local_road();
 }
 
 RoadStyle style_for(const QString& name) {
-  // Accepts both the manifest style name ("urban_two_lane", from the drop
-  // resolver) and the library item key ("style.urban", from the Attributes
-  // slot, which passes the dropped key straight through). urban is the default.
-  if (name == QStringLiteral("two_lane_rural") || name == QStringLiteral("style.rural")) {
-    return RoadStyle::two_lane_rural();
+  // Accepts both the manifest style name ("arterial", from the drop resolver)
+  // and the library item key ("style.arterial", from the Attributes slot,
+  // which passes the dropped key straight through). Pre-#413 names keep
+  // resolving to their nearest class; arterial is the default (successor of
+  // the old urban_two_lane).
+  if (name == QStringLiteral("freeway") || name == QStringLiteral("style.freeway") ||
+      name == QStringLiteral("highway") || name == QStringLiteral("style.highway")) {
+    return RoadStyle::freeway();
   }
-  if (name == QStringLiteral("highway") || name == QStringLiteral("style.highway")) {
-    return RoadStyle::highway();
+  if (name == QStringLiteral("collector") || name == QStringLiteral("style.collector") ||
+      name == QStringLiteral("two_lane_rural") || name == QStringLiteral("style.rural")) {
+    return RoadStyle::collector();
   }
-  return RoadStyle::urban_two_lane();
+  if (name == QStringLiteral("local") || name == QStringLiteral("style.local")) {
+    return RoadStyle::local_road();
+  }
+  return RoadStyle::arterial();
 }
 
 LibraryDropAction resolve_library_drop(const LibraryItem& item,

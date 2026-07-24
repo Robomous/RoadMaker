@@ -23,8 +23,8 @@ text sign the Sign tool, and a prop set the Prop Curve tool. See
 
 | Category | Items | Drops as |
 |---|---|---|
-| **Road templates** | 2-lane rural, urban with sidewalks, 4-lane divided | a road with that lane template |
-| **Road styles** | Urban 2-lane | re-styles the road you drop it on |
+| **Road templates** | Freeway, Arterial, Collector, Local street | a road with that road class's lane template |
+| **Road styles** | Freeway, Arterial, Collector, Local street | re-styles the road you drop it on |
 | **Assemblies** | T-intersection, X-intersection | a pre-built junction |
 | **Buildings** | Low block, Mid-rise, Tower | an OpenDRIVE `<object>` (typed `building`) on the nearest road |
 | **Props** | Pine / Oak / Birch / Poplar tree, Shrub, Streetlight (single / double), City block set | an OpenDRIVE `<object>` on the nearest road — trees are typed `tree`, streetlights `pole`; the set scatters a mix of buildings |

@@ -2154,18 +2154,29 @@ NB_MODULE(_roadmaker, m) {
       .def_rw("left", &roadmaker::LaneProfile::left)
       .def_rw("right", &roadmaker::LaneProfile::right)
       .def_rw("center_marking", &roadmaker::LaneProfile::center_marking)
+      .def_static("freeway",
+                  &roadmaker::LaneProfile::freeway,
+                  "Two driving lanes each way between left and right shoulders, no "
+                  "center mark (realism_defaults.md §1.2).")
+      .def_static("arterial",
+                  &roadmaker::LaneProfile::arterial,
+                  "Two driving lanes each way, sidewalks both sides.")
+      .def_static("collector",
+                  &roadmaker::LaneProfile::collector,
+                  "One driving lane each way, right-hand shoulder.")
+      .def_static("local_road",
+                  &roadmaker::LaneProfile::local_road,
+                  "One driving lane each way, sidewalks both sides, no painted lines.")
       .def_static("two_lane_rural",
                   &roadmaker::LaneProfile::two_lane_rural,
-                  "One driving lane each way, right-hand shoulder.")
+                  "Historical alias of collector().")
       .def_static("urban_sidewalk",
                   &roadmaker::LaneProfile::urban_sidewalk,
-                  "One driving lane each way, sidewalks both sides.")
-      .def_static("highway",
-                  &roadmaker::LaneProfile::highway,
-                  "Two driving lanes each way, wide shoulders, no center mark.")
+                  "Historical alias of local_road().")
+      .def_static("highway", &roadmaker::LaneProfile::highway, "Historical alias of freeway().")
       .def_static("two_lane_default",
                   &roadmaker::LaneProfile::two_lane_default,
-                  "Historical alias of two_lane_rural().");
+                  "Historical alias of collector().");
 
   nb::class_<roadmaker::StyleLane>(m, "StyleLane")
       .def(nb::init<>())
@@ -2179,7 +2190,7 @@ NB_MODULE(_roadmaker, m) {
                 .type = type, .width = width, .outer_mark = std::move(outer_mark)};
           },
           "type"_a = roadmaker::LaneType::Driving,
-          "width"_a = roadmaker::Poly3{.a = 3.5},
+          "width"_a = roadmaker::Poly3{.a = roadmaker::defaults::kArterialLaneWidth},
           "outer_mark"_a = std::nullopt)
       .def_rw("type", &roadmaker::StyleLane::type)
       .def_rw("width", &roadmaker::StyleLane::width)
@@ -2192,17 +2203,28 @@ NB_MODULE(_roadmaker, m) {
       .def_rw("left", &roadmaker::RoadStyle::left)
       .def_rw("right", &roadmaker::RoadStyle::right)
       .def_rw("center_mark", &roadmaker::RoadStyle::center_mark)
+      .def_static("freeway",
+                  &roadmaker::RoadStyle::freeway,
+                  "Two driving lanes each way between shoulders, yellow left edge "
+                  "lines, no center mark (realism_defaults.md §1.2/§1.3).")
+      .def_static("arterial",
+                  &roadmaker::RoadStyle::arterial,
+                  "Two driving lanes each way, sidewalks, dashed white lane lines, "
+                  "double yellow center.")
+      .def_static("collector",
+                  &roadmaker::RoadStyle::collector,
+                  "One driving lane each way, solid white edges, right-hand shoulder, "
+                  "broken yellow center.")
+      .def_static("local_road",
+                  &roadmaker::RoadStyle::local_road,
+                  "One driving lane each way, sidewalks both sides, no painted lines.")
       .def_static("urban_two_lane",
                   &roadmaker::RoadStyle::urban_two_lane,
-                  "Two driving lanes each way, dashed white same-direction lines, solid "
-                  "white edges, solid yellow center.")
+                  "Historical alias of arterial().")
       .def_static("two_lane_rural",
                   &roadmaker::RoadStyle::two_lane_rural,
-                  "One driving lane each way, solid white edges, right-hand shoulder.")
-      .def_static("highway",
-                  &roadmaker::RoadStyle::highway,
-                  "Two driving lanes each way, dashed lane lines, wide shoulders, no "
-                  "center mark.");
+                  "Historical alias of collector().")
+      .def_static("highway", &roadmaker::RoadStyle::highway, "Historical alias of freeway().");
 
   m.def(
       "author_clothoid_road",

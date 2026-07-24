@@ -93,7 +93,8 @@ feature (e.g. clearance checks) that needs the number meanwhile.
 | Double yellow centerline | two normal lines, **0.10 m** apart | 4 in |
 | Stop line | **0.60 m** wide; min 0.30 m | 24 in; 12 in |
 | Crosswalk transverse lines | 0.15–0.60 m wide | 6–24 in |
-| Crosswalk width | **min 1.8 m** | 6 ft |
+| Crosswalk zebra stripe | **0.60 m bar / 0.60 m gap** | 24 in / 24 in |
+| Crosswalk width | **3.0 m** walking depth; min 1.8 m | 10 ft; 6 ft |
 | Edge lines | white right edge; yellow left edge (divided) | — |
 
 ## 1.4 Signs (MUTCD, conventional-road sizes)
@@ -220,6 +221,18 @@ governing table above; dispositions land with the implementing PRs.
 | Parking / bike / median / TWLTL widths | no defaults existed | — | §1.2 |
 | Road classes | 3 templates (rural / urban / highway); 1 shipped style | `authoring.cpp`, `road_style.cpp`, `assets/library/manifest.json` | 4 classes, §1.2, templates + styles from one table |
 
+*Dispositions (landed with #413):* the registry is
+`core/include/roadmaker/road/defaults.hpp` (`roadmaker::defaults`); the doc
+tables above are rendered by its `cross_section_markdown()` /
+`markings_markdown()` and gated by `core/tests/test_defaults_registry.cpp`.
+The legacy template/style names remain as aliases of their nearest class —
+`two_lane_rural`/`two_lane_default` → collector, `urban_sidewalk` → local,
+`highway` → freeway, `urban_two_lane` → arterial — and the Library now ships
+the four class templates and styles. The Create Road tool's default template
+is the local street (successor of the old urban-sidewalk default). Classless
+add-lane/taper paths use the per-lane-type column of §1.2, with the arterial
+driving lane as the fallback for unlisted types.
+
 ### Markings (→ #413)
 
 | Item | Old (code) | Where | New |
@@ -228,7 +241,7 @@ governing table above; dispositions land with the implementing PRs.
 | Broken-line pattern | 3.0 m dash / 6.0 m gap | `core/src/mesh/mesh_builder.cpp` | §1.3 |
 | Double-line separation | one mark-width (0.12 m) | `core/src/mesh/mesh_builder.cpp` | §1.3 |
 | Stop line | 0.30 m | `core/include/roadmaker/mesh/junction_stoplines.hpp`, manifest | §1.3 |
-| Crosswalk | depth 3.0 m, zebra 0.5/0.5 | `core/include/roadmaker/edit/markings.hpp`, manifest | compliant with §1.3 (≥ 1.8 m); stripe pattern re-derived per MUTCD longitudinal style with #413 |
+| Crosswalk | depth 3.0 m, zebra 0.5/0.5 | `core/include/roadmaker/edit/markings.hpp`, manifest | §1.3: depth 3.0 m kept (≥ 1.8 m min), zebra re-derived to 0.60/0.60 (MUTCD longitudinal style) |
 
 ### Signs & signals (→ #414)
 

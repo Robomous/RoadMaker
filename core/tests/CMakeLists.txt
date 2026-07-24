@@ -6,6 +6,7 @@ add_executable(roadmaker_core_tests
   test_poly3.cpp
   test_profile_fit.cpp
   test_authoring.cpp
+  test_defaults_registry.cpp
   test_raw_xml.cpp
   test_xodr_reader.cpp
   test_xodr_diagnostics.cpp
@@ -81,6 +82,7 @@ if(RM_BUILD_USD)
 endif()
 
 target_compile_definitions(roadmaker_core_tests PRIVATE
+  RM_DOCS_DIR="${CMAKE_SOURCE_DIR}/docs"
   RM_SAMPLES_DIR="${CMAKE_SOURCE_DIR}/assets/samples"
   RM_FIXTURES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/fixtures/junctions"
   RM_FUZZ_CORPUS_DIR="${CMAKE_CURRENT_SOURCE_DIR}/fuzz/corpus"

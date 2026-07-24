@@ -17,6 +17,7 @@
 #include "roadmaker/road/authoring.hpp"
 
 #include "roadmaker/geometry/reference_line.hpp"
+#include "roadmaker/road/defaults.hpp"
 #include "roadmaker/tol.hpp"
 
 // Implementation detail — Clothoids headers never leak into public headers.
@@ -29,42 +30,67 @@
 
 namespace roadmaker {
 
-LaneProfile LaneProfile::two_lane_rural() {
+LaneProfile LaneProfile::freeway() {
+  // The inner driving lane has no outer_marking: LaneSpec only paints solid
+  // lines, and the lane-to-lane divider would be broken. Lane dividers
+  // beyond the M2 profile model land with the Lane Profile editor. The
+  // innermost (+1/-1) lane is the left shoulder of each carriageway.
+  const double lane = defaults::driving_lane_width(defaults::RoadClass::Freeway);
+  const auto side = [lane] {
+    return std::vector<LaneSpec>{
+        LaneSpec{.type = LaneType::Shoulder, .width = defaults::kFreewayLeftShoulderWidth},
+        LaneSpec{.type = LaneType::Driving, .width = lane},
+        LaneSpec{.type = LaneType::Driving, .width = lane, .outer_marking = true},
+        LaneSpec{.type = LaneType::Shoulder, .width = defaults::kFreewayRightShoulderWidth}};
+  };
+  return LaneProfile{.left = side(), .right = side(), .center_marking = false};
+}
+
+LaneProfile LaneProfile::arterial() {
+  const double lane = defaults::driving_lane_width(defaults::RoadClass::Arterial);
+  const auto side = [lane] {
+    return std::vector<LaneSpec>{
+        LaneSpec{.type = LaneType::Driving, .width = lane},
+        LaneSpec{.type = LaneType::Driving, .width = lane, .outer_marking = true},
+        LaneSpec{.type = LaneType::Sidewalk, .width = defaults::kSidewalkWidth}};
+  };
+  return LaneProfile{.left = side(), .right = side(), .center_marking = true};
+}
+
+LaneProfile LaneProfile::collector() {
+  const double lane = defaults::driving_lane_width(defaults::RoadClass::Collector);
   return LaneProfile{
-      .left = {LaneSpec{.type = LaneType::Driving, .width = 3.5, .outer_marking = true}},
-      .right = {LaneSpec{.type = LaneType::Driving, .width = 3.5, .outer_marking = true},
-                LaneSpec{.type = LaneType::Shoulder, .width = 1.0}},
+      .left = {LaneSpec{.type = LaneType::Driving, .width = lane, .outer_marking = true}},
+      .right = {LaneSpec{.type = LaneType::Driving, .width = lane, .outer_marking = true},
+                LaneSpec{.type = LaneType::Shoulder, .width = defaults::kShoulderWidth}},
       .center_marking = true,
   };
+}
+
+LaneProfile LaneProfile::local_road() {
+  const double lane = defaults::driving_lane_width(defaults::RoadClass::Local);
+  const auto side = [lane] {
+    return std::vector<LaneSpec>{
+        LaneSpec{.type = LaneType::Driving, .width = lane},
+        LaneSpec{.type = LaneType::Sidewalk, .width = defaults::kSidewalkWidth}};
+  };
+  return LaneProfile{.left = side(), .right = side(), .center_marking = false};
+}
+
+LaneProfile LaneProfile::two_lane_rural() {
+  return collector();
 }
 
 LaneProfile LaneProfile::urban_sidewalk() {
-  return LaneProfile{
-      .left = {LaneSpec{.type = LaneType::Driving, .width = 3.5, .outer_marking = true},
-               LaneSpec{.type = LaneType::Sidewalk, .width = 2.0}},
-      .right = {LaneSpec{.type = LaneType::Driving, .width = 3.5, .outer_marking = true},
-                LaneSpec{.type = LaneType::Sidewalk, .width = 2.0}},
-      .center_marking = true,
-  };
+  return local_road();
 }
 
 LaneProfile LaneProfile::highway() {
-  // The inner driving lane has no outer_marking: LaneSpec only paints solid
-  // lines, and the lane-to-lane divider would be broken. Lane dividers
-  // beyond the M2 profile model land with the Lane Profile editor.
-  return LaneProfile{
-      .left = {LaneSpec{.type = LaneType::Driving, .width = 3.75},
-               LaneSpec{.type = LaneType::Driving, .width = 3.75, .outer_marking = true},
-               LaneSpec{.type = LaneType::Shoulder, .width = 2.5}},
-      .right = {LaneSpec{.type = LaneType::Driving, .width = 3.75},
-                LaneSpec{.type = LaneType::Driving, .width = 3.75, .outer_marking = true},
-                LaneSpec{.type = LaneType::Shoulder, .width = 2.5}},
-      .center_marking = false,
-  };
+  return freeway();
 }
 
 LaneProfile LaneProfile::two_lane_default() {
-  return two_lane_rural();
+  return collector();
 }
 
 namespace {

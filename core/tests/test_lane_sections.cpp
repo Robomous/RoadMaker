@@ -27,6 +27,7 @@
 #include "roadmaker/edit/operations.hpp"
 #include "roadmaker/geometry/poly3.hpp"
 #include "roadmaker/road/authoring.hpp"
+#include "roadmaker/road/defaults.hpp"
 #include "roadmaker/road/network.hpp"
 #include "roadmaker/tol.hpp"
 #include "roadmaker/xodr/reader.hpp"
@@ -275,14 +276,17 @@ TEST(LaneSections, SectionEndComesFromTheNextSectionOrTheRoadLength) {
 TEST(LaneSections, LaneBoundaryOffsetsAccumulateWidthsFromTheCenter) {
   RoadNetwork network;
   const RoadId road_id = author_straight(network, "1");
-  // two_lane_default: +1 driving (3.5), centre 0, -1 driving (3.5), -2 shoulder
-  // (1.0), lane offset 0 — four boundaries accumulating outward from the centre.
+  // two_lane_default (collector): +1 driving, centre 0, -1 driving, -2
+  // shoulder, lane offset 0 — four boundaries accumulating outward from the
+  // centre, at the registry's collector widths.
+  const double lane = roadmaker::defaults::kCollectorLaneWidth;
+  const double shoulder = roadmaker::defaults::kShoulderWidth;
   const auto offsets = roadmaker::lane_boundary_offsets(network, road_id, 30.0);
   ASSERT_EQ(offsets.size(), 4U);
-  EXPECT_NEAR(offsets[0], 3.5, 1e-9);  // outer edge of +1
-  EXPECT_NEAR(offsets[1], 0.0, 1e-9);  // the centre boundary sits at laneOffset(s)
-  EXPECT_NEAR(offsets[2], -3.5, 1e-9); // -1 | -2 boundary
-  EXPECT_NEAR(offsets[3], -4.5, 1e-9); // outer edge of the -2 shoulder
+  EXPECT_NEAR(offsets[0], lane, 1e-9);               // outer edge of +1
+  EXPECT_NEAR(offsets[1], 0.0, 1e-9);                // the centre boundary sits at laneOffset(s)
+  EXPECT_NEAR(offsets[2], -lane, 1e-9);              // -1 | -2 boundary
+  EXPECT_NEAR(offsets[3], -(lane + shoulder), 1e-9); // outer edge of the -2 shoulder
   for (std::size_t i = 1; i < offsets.size(); ++i) {
     EXPECT_LT(offsets[i], offsets[i - 1]) << "boundaries must read left-to-right";
   }

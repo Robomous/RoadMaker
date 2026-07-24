@@ -23,6 +23,7 @@
 
 #include "roadmaker/edit/connection.hpp"
 #include "roadmaker/export.hpp"
+#include "roadmaker/road/defaults.hpp"
 #include "roadmaker/road/id.hpp"
 #include "roadmaker/road/lane.hpp"
 #include "roadmaker/road/object.hpp"
@@ -46,12 +47,14 @@ namespace roadmaker::edit {
 /// authored crosswalk's outline + <markings> + rm:crosswalk userData (p3-s2):
 /// stripe geometry, paint material/colour, and the source asset/category tags.
 struct CrosswalkParams {
-  double depth_m = 3.0;   ///< crosswalk extent ALONG the road (walking depth)
+  /// Crosswalk extent ALONG the road (walking depth, §1.3).
+  double depth_m = defaults::kCrosswalkWidth;
   double setback_m = 1.0; ///< gap from the junction edge to the near stripe
 
   double border_width_m = 0.0; ///< edge-line width [m]; 0 = no border lines
-  double dash_length_m = 0.5;  ///< stripe length along the crossing [m]; 0 = solid
-  double dash_gap_m = 0.5;     ///< gap between stripes [m]
+  /// Zebra bar length along the crossing [m] (§1.3); 0 = solid.
+  double dash_length_m = defaults::kCrosswalkStripeLength;
+  double dash_gap_m = defaults::kCrosswalkStripeGap; ///< gap between stripes [m]
   std::string material;        ///< paint material code (e.g. "material.paint_white")
   std::string color = "white"; ///< e_roadMarkColor for the <marking>s
   std::string asset;           ///< source Library asset key (rm:crosswalk)
@@ -86,14 +89,14 @@ RM_API void apply_crosswalk_asset(Object& object, const CrosswalkParams& params)
 /// crosswalk-asset band (striped, `<object type="crosswalk">`) versus a plain
 /// line marking (`<object type="roadMark">`).
 struct MarkingCurveParams {
-  double width_m = 0.12;       ///< band width across the curve [m] (>0)
-  double dash_length_m = 0.0;  ///< visible run along the curve [m]; 0 = solid
-  double dash_gap_m = 0.0;     ///< gap between runs [m]
-  std::string material;        ///< paint material code (e.g. "material.paint_white")
-  std::string color = "white"; ///< e_roadMarkColor for the <marking>s
-  std::string asset;           ///< source Library asset key (rm:markingCurve)
-  std::string category;        ///< segmentation category tag
-  bool striped = false;        ///< crosswalk-asset band vs. plain line marking
+  double width_m = defaults::kLineWidth; ///< band width across the curve [m] (>0)
+  double dash_length_m = 0.0;            ///< visible run along the curve [m]; 0 = solid
+  double dash_gap_m = 0.0;               ///< gap between runs [m]
+  std::string material;                  ///< paint material code (e.g. "material.paint_white")
+  std::string color = "white";           ///< e_roadMarkColor for the <marking>s
+  std::string asset;                     ///< source Library asset key (rm:markingCurve)
+  std::string category;                  ///< segmentation category tag
+  bool striped = false;                  ///< crosswalk-asset band vs. plain line marking
 };
 
 /// Authors the OpenDRIVE interop projection of a free-form marking curve onto
