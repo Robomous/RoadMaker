@@ -19,6 +19,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 Current version on `main`: **0.0.1**.
 
 ### Added
+- **Roads that cross without a junction can become bridges**
+  ([#233](https://github.com/Robomous/RoadMaker/issues/233)): raise a road over
+  another and RoadMaker detects the grade separation. **Edit ▸ Bridge ▸ Generate
+  Bridge Structures** builds a deck with piers, abutments and guardrails over each
+  raised span — solid geometry (via Manifold, its first use in the kernel), swept
+  along the road so curved and superelevated decks follow it. Only the standard
+  `<bridge>` span (ASAM OpenDRIVE §13.12) is saved to the `.xodr`; the solids are
+  regenerated deterministically on load, so the file round-trips byte-identically
+  and the deck follows an elevation edit with no extra undo step. Bridge solids
+  export to glTF and USD. The one-click actionable toast and an interactive
+  span-inflation handle are the next iteration.
 - **The scene has a ground height field the roads shape**
   ([#232](https://github.com/Robomous/RoadMaker/issues/232)): **Edit ▸ Terrain**
   creates a height field over the whole scene, turning the ground from a flat

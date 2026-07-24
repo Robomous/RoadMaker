@@ -87,6 +87,26 @@ three questions:
 
 The spike's result is recorded as an As-built note in this document.
 
+> **As-built (2026-07-23, p5-s3 / #233).** The spike landed as
+> `core/src/mesh/manifold_bridge.{hpp,cpp}` and answered the three questions:
+> 1. **`MANIFOLD_CROSS_SECTION` stays OFF.** The deck is a hand-parametrised
+>    sweep: `Manifold::Extrude` raises a rectangular cross-section along a
+>    parametric span (with intermediate divisions), then `Manifold::Warp` bends
+>    every station onto the road's own frame (plan view + elevation +
+>    superelevation). Extrude guarantees closed, correctly-wound topology and
+>    Warp only moves vertices, so a curved or superelevated deck is watertight
+>    *by construction* — no hand-rolled winding, and no need for Manifold's own
+>    cross-section sweep.
+> 2. **`MANIFOLD_PAR` stays OFF.** A full bridge (deck + guardrails + piers +
+>    abutments) unions and meshes in single-digit milliseconds; parallelism buys
+>    nothing at this size.
+> 3. **Handoff:** `to_submesh(const manifold::Manifold&)` reads `GetMeshGL()` and
+>    emits a faceted `roadmaker::SubMesh` with per-triangle normals and planar
+>    (world x/y) UVs, so `01`'s materials tile. `box()` wraps `Manifold::Cube`
+>    for piers/abutments. The generator (`bridge_solids.cpp`) unions the parts
+>    with `BatchBoolean(OpType::Add)`. This is the whole Manifold surface — the
+>    API touches exactly these two files.
+
 ### Why Manifold at all
 
 The deck is a swept solid; abutments and piers are boxes that must **union**

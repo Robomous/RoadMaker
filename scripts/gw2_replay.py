@@ -343,6 +343,65 @@ def step7_terrain_follows_road() -> str:
             f"{raised.terrain_vertex_count} skirt vertices; undo/redo clean; "
             f".asc sidecar round-trip byte-identical")
 
+
+def step8_bridge_from_crossing() -> str:
+    """Step 8 — a raised span over a crossing road becomes a bridge (p5-s3).
+
+    What the step claims headlessly: two roads that cross without a junction, with
+    one raised, are detected as a grade separation; authoring a bridge over the
+    raised span builds a watertight solid; a span-inflation command widens the
+    bridged extent; and the <bridge> record round-trips byte-identically. The
+    hand-run is watching the deck, piers and guardrails appear over the crossing.
+    """
+    net = rm.RoadNetwork()
+    high = rm.author_clothoid_road(
+        net, [(-60.0, 0.0), (60.0, 0.0)], rm.LaneProfile.two_lane_rural(), "", "high")
+    low = rm.author_clothoid_road(
+        net, [(0.0, -60.0), (0.0, 60.0)], rm.LaneProfile.two_lane_rural(), "", "low")
+
+    stack = rm.edit.EditStack()
+    length = net.road(high).length
+    stack.push(net, rm.edit.set_elevation_profile(
+        net, high,
+        [rm.edit.ElevationPoint(0.0, 6.0, 0.0), rm.edit.ElevationPoint(length, 6.0, 0.0)]))
+
+    # The crossing is now a grade separation: crosses in plan view, 6 m of
+    # clearance, and no junction connects them.
+    seps = rm.find_grade_separations(net)
+    assert len(seps) == 1, "the raised crossing was not detected as a grade separation"
+    assert seps[0].upper == high and seps[0].lower == low, "wrong road on top"
+    assert seps[0].clearance >= 3.0, "clearance under threshold"
+
+    # Author a 24 m bridge centred on the crossing; a solid is generated.
+    s = max(0.0, seps[0].s_upper - 12.0)
+    stack.push(net, rm.edit.author_bridge(net, high, s, 24.0))
+    meshed = rm.build_network_mesh(net)
+    assert meshed.bridge_count == 1, "no bridge solid was generated"
+    assert meshed.bridge_vertex_count > 0, "the bridge solid is empty"
+
+    # Span-inflation: widen the bridged extent past the pier-free span so a pier
+    # appears — the vertex count must change.
+    stack.push(net, rm.edit.set_bridge_span(net, high, 0, s, 44.0))
+    wider = rm.build_network_mesh(net)
+    assert wider.bridge_vertex_count != meshed.bridge_vertex_count, "the span did not inflate"
+
+    # The <bridge> record round-trips byte-identically (the solids are derived,
+    # never written).
+    once = rm.write_xodr(net)
+    assert "<bridge" in once, "the bridge span was not written"
+    reparsed, _diags = rm.parse_xodr(once)
+    assert rm.write_xodr(reparsed) == once, "the bridge span is not byte-stable"
+
+    # Unwind the resize, the author, and the raise: no bridge remains.
+    stack.undo(net)
+    stack.undo(net)
+    stack.undo(net)
+    assert rm.build_network_mesh(net).bridge_count == 0, "undo left a bridge behind"
+
+    return (f"detected a {seps[0].clearance:.1f} m grade separation; built a bridge solid of "
+            f"{meshed.bridge_vertex_count} vertices; inflated the span to "
+            f"{wider.bridge_vertex_count}; <bridge> round-trip byte-identical; undo clean")
+
 def step11_road_style(network, stack) -> str:
     """Step 11 — apply a road style: profile replaced, everything else preserved."""
     road_id = created_road(
@@ -571,6 +630,7 @@ def main() -> int:
     run_official("5. Enclosed-area ground surface", step5_surface)
     run_official("6. Surface boundary as a node graph", step6_surface_boundary)
     run_official("7. Terrain follows the road", step7_terrain_follows_road)
+    run_official("8. Bridge from a grade-separated crossing", step8_bridge_from_crossing)
     run_official("11. Apply road style (replace + preserve)",
                  lambda: step11_road_style(network, stack))
 

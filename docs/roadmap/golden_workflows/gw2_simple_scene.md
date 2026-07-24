@@ -110,9 +110,16 @@ the same change. `Road Plan tool` in step 2 was corrected to its real name,
    the road-driven re-mesh, undo/redo of both edits, and the sidecar
    round-trip; the hand-run is watching the ground follow the road in 3D.
 8. [ ] Run the Road Construction tool's automatic bridge assignment on
-   the raised span. **Expected:** the elevated span becomes a bridge with
-   sensible span limits; a span-inflation control widens/narrows the
-   bridged extent.
+   the raised span (**Edit ▸ Bridge ▸ Generate Bridge Structures**).
+   **Expected:** the elevated span becomes a bridge — a deck with piers,
+   abutments and guardrails — with sensible span limits; a span-inflation
+   control widens/narrows the bridged extent. The headless slice of this step
+   (`scripts/gw2_replay.py`, step 8) covers the grade-separation detection, the
+   author-bridge command building a watertight solid, the span-inflation command
+   changing the extent, and the `<bridge>` record round-tripping byte-identically
+   while the solids stay derived. The hand-run is watching the deck, piers and
+   guardrails appear over the crossing in 3D, plus the interactive span-inflation
+   handle (a follow-up UI; the span-inflation *command* is covered headlessly).
 
 ### Junction corner and crosswalk
 

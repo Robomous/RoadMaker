@@ -38,7 +38,9 @@
 #include "roadmaker/mesh/mesh_builder.hpp"
 #include "roadmaker/mesh/surface_boundary.hpp"
 #include "roadmaker/road/authoring.hpp"
+#include "roadmaker/road/bridge.hpp"
 #include "roadmaker/road/controller.hpp"
+#include "roadmaker/road/grade_separation.hpp"
 #include "roadmaker/road/network.hpp"
 #include "roadmaker/road/repeat_expansion.hpp"
 #include "roadmaker/road/surface_derivation.hpp"
@@ -1148,6 +1150,25 @@ NB_MODULE(_roadmaker, m) {
       },
       "text"_a,
       "Parse an ESRI ASCII grid (.asc) into a HeightField.");
+
+  // Bridges (p5-s3, #233).
+  nb::class_<roadmaker::GradeSeparation>(m, "GradeSeparation")
+      .def_ro("upper", &roadmaker::GradeSeparation::upper, "Road carried over (the higher one).")
+      .def_ro("lower", &roadmaker::GradeSeparation::lower, "Road passed under.")
+      .def_ro(
+          "s_upper", &roadmaker::GradeSeparation::s_upper, "Crossing station on the upper road.")
+      .def_ro(
+          "s_lower", &roadmaker::GradeSeparation::s_lower, "Crossing station on the lower road.")
+      .def_ro("clearance", &roadmaker::GradeSeparation::clearance, "Vertical gap [m], >= 0.");
+  m.def(
+      "find_grade_separations",
+      [](const roadmaker::RoadNetwork& network, double clearance) {
+        return roadmaker::find_grade_separations(network, clearance);
+      },
+      "network"_a,
+      "clearance"_a = roadmaker::kDefaultClearance,
+      "Every overpass in the network: two roads that cross in plan view, differ in "
+      "elevation by >= clearance, and are NOT connected by a junction (p5-s3).");
 
   nb::class_<roadmaker::Signal>(m, "Signal")
       .def(nb::init<>())
@@ -3663,6 +3684,46 @@ NB_MODULE(_roadmaker, m) {
       },
       "network"_a,
       "Removes the scene height field. Rejects when there is none.");
+  edit.def(
+      "author_bridge",
+      [](const roadmaker::RoadNetwork& network,
+         roadmaker::RoadId road,
+         double s,
+         double length,
+         std::string type) {
+        return roadmaker::edit::author_bridge(network, road, s, length, std::move(type));
+      },
+      "network"_a,
+      "road"_a,
+      "s"_a,
+      "length"_a,
+      "type"_a = "concrete",
+      "Adds a <bridge> span [s, s+length] to a road (p5-s3). Rejects a stale road, a "
+      "too-short/past-the-end span, and an exact duplicate.");
+  edit.def(
+      "remove_bridge",
+      [](const roadmaker::RoadNetwork& network, roadmaker::RoadId road, std::size_t index) {
+        return roadmaker::edit::remove_bridge(network, road, index);
+      },
+      "network"_a,
+      "road"_a,
+      "index"_a,
+      "Removes the bridge at `index` in the road's bridges list.");
+  edit.def(
+      "set_bridge_span",
+      [](const roadmaker::RoadNetwork& network,
+         roadmaker::RoadId road,
+         std::size_t index,
+         double s,
+         double length) {
+        return roadmaker::edit::set_bridge_span(network, road, index, s, length);
+      },
+      "network"_a,
+      "road"_a,
+      "index"_a,
+      "s"_a,
+      "length"_a,
+      "The span-inflation command: retargets bridge `index` to [s, s+length].");
   edit.def("apply_road_style",
            &roadmaker::edit::apply_road_style,
            "network"_a,
@@ -3883,6 +3944,16 @@ NB_MODULE(_roadmaker, m) {
       .def_prop_ro(
           "terrain_vertex_count",
           [](const roadmaker::NetworkMesh& mesh) { return mesh.terrain.positions.size() / 3; })
+      .def_prop_ro("bridge_count",
+                   [](const roadmaker::NetworkMesh& mesh) { return mesh.bridges.size(); })
+      .def_prop_ro("bridge_vertex_count",
+                   [](const roadmaker::NetworkMesh& mesh) {
+                     std::size_t count = 0;
+                     for (const auto& span : mesh.bridges) {
+                       count += span.mesh.positions.size() / 3;
+                     }
+                     return count;
+                   })
       .def_prop_ro("object_count",
                    [](const roadmaker::NetworkMesh& mesh) { return mesh.objects.size(); })
       .def_prop_ro("signal_count",
