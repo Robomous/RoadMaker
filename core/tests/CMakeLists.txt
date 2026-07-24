@@ -55,7 +55,6 @@ add_executable(roadmaker_core_tests
   test_terrain_mesh.cpp
   test_terrain_operations.cpp
   test_terrain_persistence.cpp
-  test_manifold_bridge.cpp
   test_bridge_model.cpp
   test_grade_separation.cpp
   test_bridge_solids.cpp

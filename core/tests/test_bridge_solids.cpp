@@ -14,10 +14,16 @@
  * limitations under the License.
  */
 
-// Phase 4 (WP4) — the Manifold solid generator. The deck sweeps along the road's
-// own frame (so curved/superelevated/widening decks are tapers, not
-// discontinuities), guardrails/piers/abutments union in, and the result is a
-// single watertight solid. A span too short to build is refused, not slivered.
+// Phase 4 (WP4) — the Manifold solid generator, exercised through the public
+// remesh_bridges() entry point (the internal build_bridge_solid / manifold_bridge
+// helpers are not exported from the shared kernel, and the house rule is that
+// tests use the public API only). The deck sweeps along the road's own frame, so
+// curved/superelevated/widening decks are tapers not discontinuities;
+// guardrails/piers/abutments union in; the result is a single watertight solid;
+// and a span too short to build is skipped, not slivered.
+
+#include "roadmaker/mesh/mesh.hpp"
+#include "roadmaker/mesh/mesh_builder.hpp"
 
 #include "roadmaker/edit/operations.hpp"
 #include "roadmaker/road/authoring.hpp"
@@ -35,8 +41,6 @@
 #include <utility>
 #include <vector>
 
-#include "../src/mesh/bridge_solids.hpp"
-
 namespace roadmaker {
 namespace {
 
@@ -47,8 +51,8 @@ RoadId road_between(RoadNetwork& network, std::vector<Waypoint> waypoints, const
   return author_clothoid_road(network, waypoints, LaneProfile::two_lane_rural(), "", id).value();
 }
 
-/// Add a `<bridge>` record directly to a road (the command layer is Phase 5;
-/// here we exercise the generator on the record).
+/// Add a `<bridge>` record directly to a road (the command layer has its own
+/// test; here we drive the generator on the record).
 void add_bridge(RoadNetwork& network, RoadId road_id, double s, double length) {
   Bridge bridge;
   bridge.odr_id = "b";
@@ -64,9 +68,19 @@ void raise_road(RoadNetwork& network, RoadId road_id, double z) {
   ASSERT_TRUE(set_elevation_profile(network, road_id, profile)->apply(network).has_value());
 }
 
+/// The first bridge solid the public generator produces for `network` (empty
+/// SubMesh when none was built — e.g. a refused short span).
+SubMesh bridge_solid(const RoadNetwork& network, const BridgeParams& params = {}) {
+  NetworkMesh mesh;
+  MeshOptions options;
+  options.bridges = params;
+  remesh_bridges(network, mesh, options);
+  return mesh.bridges.empty() ? SubMesh{} : mesh.bridges.front().mesh;
+}
+
 /// A closed 2-manifold: welding the faceted vertices by quantized position, every
-/// undirected edge is shared by exactly two triangles. This is the real
-/// watertightness assertion on the emitted geometry.
+/// undirected edge is shared by exactly two triangles. The real watertightness
+/// assertion on the emitted geometry.
 bool is_watertight(const SubMesh& mesh) {
   if (mesh.indices.empty()) {
     return false;
@@ -101,41 +115,49 @@ bool is_watertight(const SubMesh& mesh) {
   return true;
 }
 
-TEST(BridgeSolids, StraightSpanIsANonEmptyWatertightSolid) {
+TEST(BridgeSolids, StraightSpanIsAFacetedWatertightSolidWithPlanarUVs) {
   RoadNetwork network;
   const RoadId road = road_between(network, {{0, 0}, {120, 0}}, "r");
   add_bridge(network, road, 40.0, 24.0);
-  const std::optional<SubMesh> solid =
-      build_bridge_solid(network, *network.road(road), network.road(road)->bridges[0], {});
-  ASSERT_TRUE(solid.has_value());
-  EXPECT_EQ(solid->positions.size() % 9, 0U); // faceted
-  EXPECT_TRUE(is_watertight(*solid));
+  const SubMesh solid = bridge_solid(network);
+  ASSERT_FALSE(solid.indices.empty());
+  EXPECT_EQ(solid.positions.size() % 9, 0U); // faceted: 3 unique verts per triangle
+  const std::size_t verts = solid.positions.size() / 3;
+  EXPECT_EQ(solid.normals.size(), solid.positions.size());
+  EXPECT_EQ(solid.uvs.size(), verts * 2); // planar UV per vertex
+  for (std::size_t v = 0; v < verts; ++v) {
+    const double nx = solid.normals[(v * 3) + 0];
+    const double ny = solid.normals[(v * 3) + 1];
+    const double nz = solid.normals[(v * 3) + 2];
+    EXPECT_NEAR(std::sqrt((nx * nx) + (ny * ny) + (nz * nz)), 1.0, 1e-9);
+  }
+  EXPECT_TRUE(is_watertight(solid));
 }
 
 TEST(BridgeSolids, CurvedSpanStillWatertight) {
   RoadNetwork network;
   const RoadId road = road_between(network, {{0, 0}, {60, 30}, {120, 0}}, "arc");
   add_bridge(network, road, 30.0, 40.0);
-  const std::optional<SubMesh> solid =
-      build_bridge_solid(network, *network.road(road), network.road(road)->bridges[0], {});
-  ASSERT_TRUE(solid.has_value());
-  EXPECT_TRUE(is_watertight(*solid));
+  EXPECT_TRUE(is_watertight(bridge_solid(network)));
 }
 
-TEST(BridgeSolids, ShortSpanIsRefused) {
+TEST(BridgeSolids, ShortSpanProducesNoSolid) {
   RoadNetwork network;
   const RoadId road = road_between(network, {{0, 0}, {120, 0}}, "r");
   add_bridge(network, road, 50.0, 1.0); // 1 m < 2 * 0.8 m deck depth
-  EXPECT_FALSE(build_bridge_solid(network, *network.road(road), network.road(road)->bridges[0], {})
-                   .has_value());
+  EXPECT_TRUE(bridge_solid(network).indices.empty());
 }
 
-TEST(BridgeSolids, PierCountFollowsTheSpanLengthRule) {
-  const BridgeParams params;                      // free span 30, spacing 25
-  EXPECT_EQ(bridge_pier_count(20.0, params), 0U); // short: no pier
-  EXPECT_EQ(bridge_pier_count(30.0, params), 0U); // at the free-span limit
-  EXPECT_EQ(bridge_pier_count(40.0, params), 1U); // ceil(40/25)=2 gaps -> 1 pier
-  EXPECT_EQ(bridge_pier_count(80.0, params), 3U); // ceil(80/25)=4 gaps -> 3 piers
+TEST(BridgeSolids, ALongerSpanGrowsGeometryFromThePierRule) {
+  // The span-length pier rule is observable: a span past the pier-free length
+  // gains piers, so its solid carries more geometry than a short pier-free span.
+  RoadNetwork shortn;
+  const RoadId sr = road_between(shortn, {{0, 0}, {200, 0}}, "s");
+  add_bridge(shortn, sr, 10.0, 24.0); // < 30 m free span: no pier
+  RoadNetwork longn;
+  const RoadId lr = road_between(longn, {{0, 0}, {200, 0}}, "l");
+  add_bridge(longn, lr, 10.0, 90.0); // > 30 m: piers appear
+  EXPECT_GT(bridge_solid(longn).positions.size(), bridge_solid(shortn).positions.size());
 }
 
 TEST(BridgeSolids, ViaductOverNoFieldStillBuilds) {
@@ -144,10 +166,7 @@ TEST(BridgeSolids, ViaductOverNoFieldStillBuilds) {
   const RoadId road = road_between(network, {{0, 0}, {120, 0}}, "r");
   raise_road(network, road, 8.0);
   add_bridge(network, road, 40.0, 40.0);
-  const std::optional<SubMesh> solid =
-      build_bridge_solid(network, *network.road(road), network.road(road)->bridges[0], {});
-  ASSERT_TRUE(solid.has_value());
-  EXPECT_TRUE(is_watertight(*solid));
+  EXPECT_TRUE(is_watertight(bridge_solid(network)));
 }
 
 TEST(BridgeSolids, DeckRidesWithTheRoadElevation) {
@@ -155,12 +174,11 @@ TEST(BridgeSolids, DeckRidesWithTheRoadElevation) {
   const RoadId road = road_between(network, {{0, 0}, {120, 0}}, "r");
   raise_road(network, road, 6.0);
   add_bridge(network, road, 40.0, 24.0);
-  const std::optional<SubMesh> solid =
-      build_bridge_solid(network, *network.road(road), network.road(road)->bridges[0], {});
-  ASSERT_TRUE(solid.has_value());
+  const SubMesh solid = bridge_solid(network);
+  ASSERT_FALSE(solid.indices.empty());
   double max_z = -1e9;
-  for (std::size_t v = 0; v < solid->positions.size(); v += 3) {
-    max_z = std::max(max_z, solid->positions[v + 2]);
+  for (std::size_t v = 0; v < solid.positions.size(); v += 3) {
+    max_z = std::max(max_z, solid.positions[v + 2]);
   }
   // The deck top sits at the road surface (6 m), lifted by the guardrail (1 m).
   EXPECT_NEAR(max_z, 7.0, 0.5);
@@ -170,13 +188,10 @@ TEST(BridgeSolids, DeterministicSolid) {
   RoadNetwork network;
   const RoadId road = road_between(network, {{0, 0}, {120, 0}}, "r");
   add_bridge(network, road, 40.0, 24.0);
-  const auto a =
-      build_bridge_solid(network, *network.road(road), network.road(road)->bridges[0], {});
-  const auto b =
-      build_bridge_solid(network, *network.road(road), network.road(road)->bridges[0], {});
-  ASSERT_TRUE(a.has_value() && b.has_value());
-  EXPECT_EQ(a->positions, b->positions);
-  EXPECT_EQ(a->indices, b->indices);
+  const SubMesh a = bridge_solid(network);
+  const SubMesh b = bridge_solid(network);
+  EXPECT_EQ(a.positions, b.positions);
+  EXPECT_EQ(a.indices, b.indices);
 }
 
 } // namespace
