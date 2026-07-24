@@ -22,10 +22,9 @@
 // guardrails/piers/abutments union in; the result is a single watertight solid;
 // and a span too short to build is skipped, not slivered.
 
+#include "roadmaker/edit/operations.hpp"
 #include "roadmaker/mesh/mesh.hpp"
 #include "roadmaker/mesh/mesh_builder.hpp"
-
-#include "roadmaker/edit/operations.hpp"
 #include "roadmaker/road/authoring.hpp"
 #include "roadmaker/road/bridge.hpp"
 #include "roadmaker/road/network.hpp"
