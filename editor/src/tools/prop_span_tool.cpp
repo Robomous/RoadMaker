@@ -32,6 +32,7 @@
 #include "document/document.hpp"
 #include "document/prop_placement.hpp"
 #include "document/selection_model.hpp"
+#include "document/units.hpp"
 
 namespace roadmaker::editor {
 
@@ -183,7 +184,7 @@ bool PropSpanTool::key_press(int key, Qt::KeyboardModifiers modifiers) {
 
 void PropSpanTool::adjust_distance(double delta) {
   distance_m_ = std::clamp(distance_m_ + delta, kDistanceMin, kDistanceMax);
-  emit status_message(tr("Prop span spacing %1 m").arg(distance_m_, 0, 'f', 1));
+  emit status_message(tr("Prop span spacing %1").arg(units::format_length(distance_m_, 1)));
   emit preview_changed();
 }
 

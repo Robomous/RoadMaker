@@ -31,6 +31,7 @@
 #include "document/document.hpp"
 #include "document/prop_placement.hpp"
 #include "document/selection_model.hpp"
+#include "document/units.hpp"
 
 namespace roadmaker::editor {
 
@@ -152,7 +153,7 @@ void PropCurveTool::place_point(double world_x, double world_y) {
 
 void PropCurveTool::adjust_spacing(double delta) {
   spacing_m_ = std::clamp(spacing_m_ + delta, kSpacingMin, kSpacingMax);
-  emit status_message(tr("Prop spacing %1 m").arg(spacing_m_, 0, 'f', 1));
+  emit status_message(tr("Prop spacing %1").arg(units::format_length(spacing_m_, 1)));
   emit preview_changed();
 }
 
@@ -240,9 +241,9 @@ PreviewGeometry PropCurveTool::preview() const {
 }
 
 QString PropCurveTool::instruction() const {
-  return tr("Click to place prop-curve points; Enter bakes, [ / ] set spacing (%1 m), "
+  return tr("Click to place prop-curve points; Enter bakes, [ / ] set spacing (%1), "
             "Backspace undoes a point, Esc cancels")
-      .arg(spacing_m_, 0, 'f', 1);
+      .arg(units::format_length(spacing_m_, 1));
 }
 
 } // namespace roadmaker::editor

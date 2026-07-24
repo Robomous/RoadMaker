@@ -122,4 +122,19 @@ void Settings::set_viewport_hints(bool enabled) {
   settings_.setValue(QStringLiteral("view/viewport_hints"), enabled);
 }
 
+units::UnitSystem Settings::display_units() const {
+  // Anything that is not the imperial opt-in reads as the metric default —
+  // including values written by a future version this build does not know.
+  const QString stored =
+      settings_.value(QStringLiteral("view/display_units"), QStringLiteral("metric")).toString();
+  return stored == QLatin1String("imperial") ? units::UnitSystem::Imperial
+                                             : units::UnitSystem::Metric;
+}
+
+void Settings::set_display_units(units::UnitSystem system) {
+  settings_.setValue(QStringLiteral("view/display_units"),
+                     system == units::UnitSystem::Imperial ? QStringLiteral("imperial")
+                                                           : QStringLiteral("metric"));
+}
+
 } // namespace roadmaker::editor

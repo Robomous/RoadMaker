@@ -292,6 +292,9 @@ private:
   QComboBox* brush_mode_combo_ = nullptr;
   QDoubleSpinBox* brush_radius_spin_ = nullptr;
   QDoubleSpinBox* brush_strength_spin_ = nullptr;
+  /// Last hover payload, kept so the status bar can re-render its formatted
+  /// lengths in place when the display-unit system flips (#412).
+  HoverInfo last_hover_{};
   std::vector<QAction*> brush_option_actions_;
   QDockWidget* scene_dock_;
   QDockWidget* library_dock_;

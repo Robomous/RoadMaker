@@ -25,6 +25,7 @@
 
 #include "document/document.hpp"
 #include "document/selection_model.hpp"
+#include "document/units.hpp"
 
 namespace roadmaker::editor {
 
@@ -70,8 +71,9 @@ void ElevationTool::set_active(std::optional<std::pair<RoadId, std::size_t>> nod
       const auto stations = edit::waypoint_stations(*road);
       if (stations.has_value() && active_->second < stations->size()) {
         const double z = eval_profile(road->elevation, (*stations)[active_->second]);
-        emit status_message(
-            tr("Node %1 selected — elevation %2 m").arg(active_->second).arg(z, 0, 'f', 3));
+        emit status_message(tr("Node %1 selected — elevation %2")
+                                .arg(active_->second)
+                                .arg(units::format_length(z, 3)));
       }
     }
   }

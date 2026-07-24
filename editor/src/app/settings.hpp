@@ -24,6 +24,8 @@
 #include <QSettings>
 #include <QStringList>
 
+#include "document/units.hpp"
+
 namespace roadmaker::editor {
 
 class Settings {
@@ -69,6 +71,13 @@ public:
   /// #103 discoverability), false = viewport only, status bar unaffected.
   [[nodiscard]] bool viewport_hints() const;
   void set_viewport_hints(bool enabled);
+
+  /// Display units (#412): metric (the default) or imperial. Display + input
+  /// parsing only — files, commands and the kernel stay SI meters
+  /// (docs/domain/realism_defaults.md, Unit policy), so this never dirties a
+  /// document.
+  [[nodiscard]] units::UnitSystem display_units() const;
+  void set_display_units(units::UnitSystem system);
 
   static constexpr int kMaxRecentFiles = 10;
 

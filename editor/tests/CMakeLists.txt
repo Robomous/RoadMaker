@@ -110,6 +110,7 @@ add_executable(roadmaker_editor_tests
   test_toast_queue.cpp
   test_tour_controller.cpp
   test_tools.cpp
+  test_units.cpp
   test_welcome_widget.cpp
   test_width_panel.cpp
 )
