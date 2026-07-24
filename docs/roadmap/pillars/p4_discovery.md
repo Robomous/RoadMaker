@@ -8,6 +8,14 @@ materials) merged and as part of the
 [GW-3](../golden_workflows/gw3_corner_materials.md) and
 [GW-4](../golden_workflows/gw4_signals.md).*
 
+> **Status (2026-07-23):** the pillar was sprint-complete; it is **reopened**
+> by the [2026-07 field triage, batch 2](../updates/2026-07-field-triage-2.md)
+> (#397) for one release-blocking item: bug
+> [#402](https://github.com/Robomous/RoadMaker/issues/402) (junction-floor
+> sidewalk band segmentation — jagged seams + zero-band collapse; lands
+> **before** [#356](https://github.com/Robomous/RoadMaker/issues/356)).
+> GW-3/GW-4 hand-run status is unaffected until the item lands.
+
 ## Why this document exists
 
 P4 started (two sprints merged) without a discovery report. Read against

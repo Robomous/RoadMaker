@@ -72,6 +72,8 @@ graph TD
     P4 --> P8[P8 Scenarios]
     P7 --> P8
     FMT --> P8
+    P2 --> CASC[cascade — move with<br/>cascade recalculation]
+    CASC --> GATE
     P8 --> GATE{{Release gate:<br/>GW-1..6 pass on<br/>macOS + Linux + Windows<br/>+ maintainer approval}}
     GATE --> R[(v0.1.0 — first and only release)]
 ```
@@ -110,7 +112,17 @@ a categorized toolbar.
   (`docs-site` + `pillar:P2`), which grows the help system into a published
   versioned manual per
   [ADR-0009](../decisions/0009-documentation-site-tiered-docs.md), is the
-  third — see [Documentation site](#documentation-site).
+  third — see [Documentation site](#documentation-site). The
+  **move-with-cascade** workstream — moving a road recalculates mid-network
+  connections, junction geometry, and derived layers, and flags obstructed
+  props, tracked by epic
+  [#406](https://github.com/Robomous/RoadMaker/issues/406) and gated on the
+  road connection contract
+  ([#403](https://github.com/Robomous/RoadMaker/issues/403)) — is the
+  fourth. Unlike the first three it spans four pillars (P2/P4/P5/P6) with no
+  single owner, so it carries the `cascade` label **without** a pillar
+  milestone; the [release gate](#release-gate) names the workstream
+  explicitly, which is what makes label-only tracking sufficient.
 
 ### Tracking on GitHub
 
@@ -159,6 +171,13 @@ update documents under [updates/](updates/):
   asset-import and file-explorer sprints in P6; georeferencing named in
   P7; OpenSCENARIO 1.x/2.x named in P8; the `fmt` persistence workstream
   and [ADR-0008](../decisions/0008-persistence-layers-asam-first.md).
+- [2026-07 field triage](updates/2026-07-field-triage.md) — five maintainer
+  reports diagnosed (#351): issues #352–#358, GW-1/GW-2 amendments, fix
+  queue.
+- [2026-07 field triage, batch 2](updates/2026-07-field-triage-2.md) — six
+  maintainer reports diagnosed (#397): issues #398–#406, the #338 spec
+  release, the `cascade` workstream, the P1/P2/P4 reopens, and the
+  everything-before-release gate amendment.
 
 ## Documentation site
 
@@ -266,12 +285,21 @@ today and grows versions when v0.1.0 lands.
 v0.1.0 may be published only when **all** of the following hold:
 
 1. Every sprint issue of P1–P8 is closed via merged PRs with green CI.
-2. The maintainer has executed **every golden workflow (GW-1 … GW-6) by
+2. Every **cross-pillar workstream** issue (`help`, `fmt`, `docs-site`,
+   `cascade` — including every sprint of the
+   [move-with-cascade epic #406](https://github.com/Robomous/RoadMaker/issues/406))
+   and every follow-up/bug issue **existing as of 2026-07-23** (the
+   [batch-2 field triage](updates/2026-07-field-triage-2.md)) is closed via
+   merged PRs. Concretely: **an open issue created on or before 2026-07-23
+   blocks the release unless the maintainer explicitly re-scopes it** — the
+   gate is checkable from the issue tracker alone (maintainer decision,
+   2026-07-23).
+3. The maintainer has executed **every golden workflow (GW-1 … GW-6) by
    hand** on macOS, Linux, and Windows, and recorded a pass in each
    workflow's results table (date, OS, commit).
-3. A 24 h ASan soak run on the release-candidate commit completes with
+4. A 24 h ASan soak run on the release-candidate commit completes with
    zero crashes.
-4. `docs/` is fully synchronized (no references to the retired
+5. `docs/` is fully synchronized (no references to the retired
    milestone/version model anywhere in the repo outside the archive), and
    the [documentation site](#documentation-site) is release-ready:
    1. the Starlight build is green in CI;
@@ -279,5 +307,5 @@ v0.1.0 may be published only when **all** of the following hold:
       correctly from `file://` in a browser on macOS, Linux, and Windows;
    3. the Help-menu "open manual" action works in the packaged app;
    4. reference→guide bridge links resolve in both directions.
-5. The maintainer gives explicit written approval ("publish v0.1.0").
+6. The maintainer gives explicit written approval ("publish v0.1.0").
    Automation and AI agents never tag or publish.
