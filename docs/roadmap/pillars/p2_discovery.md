@@ -5,6 +5,16 @@ means for the sprint cut. Written 2026-07-15, before p2-s1 landed. Roadmap:
 [Road to Parity](../README.md) · Acceptance:
 [GW-2](../golden_workflows/gw2_simple_scene.md).*
 
+> **Status (2026-07-23):** the pillar was sprint-complete; it is **reopened**
+> by the [2026-07 field triage, batch 2](../updates/2026-07-field-triage-2.md)
+> (#397) for two release-blocking items: bug
+> [#398](https://github.com/Robomous/RoadMaker/issues/398) (`close_gap`
+> connector elevation grade-sign V-kink) and sprint
+> [#403](https://github.com/Robomous/RoadMaker/issues/403) (`p2-s10`: road
+> connection contract — prerequisite of the `cascade` epic
+> [#406](https://github.com/Robomous/RoadMaker/issues/406)). GW-2 hand-run
+> status is unaffected until the items land.
+
 ## Why this document exists
 
 The P2 sprint bodies were written from the roadmap, not from the code. Read

@@ -5,6 +5,17 @@ means for the sprint cut. Written 2026-07-15, before p1-s1 landed. Roadmap:
 [Road to Parity](../README.md) · Acceptance:
 [GW-1](../golden_workflows/gw1_camera.md).*
 
+> **Status (2026-07-23):** the pillar was sprint-complete; it is **reopened**
+> by the [2026-07 field triage, batch 2](../updates/2026-07-field-triage-2.md)
+> (#397) for three release-blocking items: bug
+> [#401](https://github.com/Robomous/RoadMaker/issues/401) (gizmo
+> junction-arm refusal is silent),
+> [#404](https://github.com/Robomous/RoadMaker/issues/404) (`p1-f7`:
+> below-ground navigation), and
+> [#405](https://github.com/Robomous/RoadMaker/issues/405) (`p1-f8`:
+> viewport axis-navigation widget). GW-1 hand-run status is unaffected until
+> the items land (#404/#405 amend GW-1 with their PRs).
+
 ## Why this document exists
 
 The P1 sprint bodies were written from the roadmap, not from the code. Three

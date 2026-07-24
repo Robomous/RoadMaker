@@ -6,6 +6,17 @@ means for the sprint cut. Written 2026-07-17, before p6-s1 landed. Roadmap:
 [GW-2](../golden_workflows/gw2_simple_scene.md) steps 1 and 16–20, plus
 feeds into GW-3 and GW-5.*
 
+> **Status (2026-07-23):** per the
+> [2026-07 field triage, batch 2](../updates/2026-07-field-triage-2.md)
+> (#397), [#338](https://github.com/Robomous/RoadMaker/issues/338)
+> (free-canvas prop placement) has its **spec approved and the hold lifted**
+> — released for implementation, including the orphaned-anchor road-deletion
+> policy. Two bugs join the pillar:
+> [#399](https://github.com/Robomous/RoadMaker/issues/399) (capture-mode
+> runs pollute/evict the production recents list) and
+> [#400](https://github.com/Robomous/RoadMaker/issues/400) (prop instances
+> stale after road translate/rotate). All release-blocking for v0.1.0.
+
 ## Why this document exists
 
 The P6 sprint bodies were written from the roadmap, not from the code. Read
