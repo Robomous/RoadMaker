@@ -27,7 +27,9 @@
 #include "roadmaker/road/authoring.hpp"
 #include "roadmaker/road/defaults.hpp"
 #include "roadmaker/road/lane.hpp"
+#include "roadmaker/road/network.hpp"
 #include "roadmaker/road/road_style.hpp"
+#include "roadmaker/road/signal_facing.hpp"
 
 #include <gtest/gtest.h>
 
@@ -35,6 +37,7 @@
 #include <cmath>
 #include <filesystem>
 #include <fstream>
+#include <numbers>
 #include <sstream>
 #include <string>
 #include <string_view>
@@ -112,6 +115,15 @@ TEST(DefaultsRegistry, DocTreesBuildingsTableMatchesRegistry) {
       << generated;
 }
 
+TEST(DefaultsRegistry, DocOrientationTableMatchesRegistry) {
+  const std::string generated = defaults::orientation_markdown();
+  EXPECT_TRUE(committed_spec_doc().find(generated) != std::string::npos)
+      << "docs/domain/realism_defaults.md's auto-orientation table is out of date with the "
+         "defaults registry.\nRegenerate the marked table from "
+         "defaults::orientation_markdown():\n\n"
+      << generated;
+}
+
 // Every renderer must emit its marker comment so the doc's tables stay
 // findable (and replaceable) by name.
 TEST(DefaultsRegistry, RenderersEmitTheirMarkers) {
@@ -123,6 +135,7 @@ TEST(DefaultsRegistry, RenderersEmitTheirMarkers) {
       defaults::signals_lighting_markdown().rfind("<!-- rm-defaults: signals-lighting -->", 0), 0U);
   EXPECT_EQ(defaults::trees_buildings_markdown().rfind("<!-- rm-defaults: trees-buildings -->", 0),
             0U);
+  EXPECT_EQ(defaults::orientation_markdown().rfind("<!-- rm-defaults: orientation -->", 0), 0U);
 }
 
 // The four create-road templates are table consumers: every width they author
@@ -200,6 +213,28 @@ TEST(DefaultsRegistry, PerLaneTypeWidths) {
 TEST(DefaultsRegistry, MarkingConstantsAreTheRegistrys) {
   EXPECT_DOUBLE_EQ(RoadMark{}.width, defaults::kLineWidth);
   EXPECT_DOUBLE_EQ(RoadMarkLine{}.width, defaults::kLineWidth);
+}
+
+// Auto-orientation's cant is a registry value, not a literal copied into the
+// facing rule (#416). Asserted through the rule itself rather than by reading
+// the constant back, so a hand-rolled toe-out in signal_facing.cpp fails here.
+TEST(DefaultsRegistry, AutoOrientationToeOutIsTheRegistrys) {
+  RoadNetwork network;
+  const std::vector<Waypoint> waypoints{Waypoint{.x = 0.0, .y = 0.0},
+                                        Waypoint{.x = 120.0, .y = 0.0}};
+  auto road = author_clothoid_road(network, waypoints, LaneProfile::two_lane_default(), "", "1");
+  ASSERT_TRUE(road.has_value());
+  const Expected<SignalFacing> facing = auto_signal_facing(network, *road, 60.0, -5.0);
+  ASSERT_TRUE(facing.has_value());
+  EXPECT_DOUBLE_EQ(std::abs(facing->h_offset), defaults::kSignToeOut);
+}
+
+// The registry's angles are constructed from their degree measure, never from
+// the doc's rounded radian display: 0.052 rad would be 2.979 degrees, a
+// different angle from the 3 degrees the spec names.
+TEST(DefaultsRegistry, AngleConstantsAreExactDegreeMeasures) {
+  EXPECT_DOUBLE_EQ(defaults::kSignToeOut * 180.0 / std::numbers::pi, 3.0);
+  EXPECT_DOUBLE_EQ(defaults::kPropRotationSnap * 180.0 / std::numbers::pi, 15.0);
 }
 
 // --- Shipped props vs §1.5/§1.6 (#415) ------------------------------------

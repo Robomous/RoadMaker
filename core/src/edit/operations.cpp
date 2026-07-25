@@ -32,6 +32,7 @@
 #include "roadmaker/road/authoring.hpp"
 #include "roadmaker/road/defaults.hpp"
 #include "roadmaker/road/network.hpp"
+#include "roadmaker/road/signal_facing.hpp"
 #include "roadmaker/tol.hpp"
 #include "roadmaker/xodr/rules.hpp"
 
@@ -7547,6 +7548,41 @@ std::unique_ptr<Command> set_signal_value(const RoadNetwork& network,
   return command;
 }
 
+std::unique_ptr<Command> auto_orient_signal(const RoadNetwork& network, SignalId signal) {
+  // One of the TWO places in the tree that may compute a facing (the other is
+  // the editor's placement path). See roadmaker/road/signal_facing.hpp.
+  static constexpr std::string_view kName = "Auto Facing";
+  const Signal* current = network.signal(signal);
+  if (current == nullptr) {
+    return invalid_command(std::string(kName), stale_signal_error());
+  }
+  const Road* owner = network.road(current->road);
+  if (owner == nullptr) {
+    return invalid_command(std::string(kName),
+                           Error{.code = ErrorCode::InvalidArgument,
+                                 .message = "signal has a stale road back-reference"});
+  }
+  const Expected<SignalFacing> facing =
+      auto_signal_facing(network, current->road, current->s, current->t);
+  if (!facing.has_value()) {
+    return invalid_command(std::string(kName), facing.error());
+  }
+  // Reject a no-op EXPLICITLY, like set_signal_text above.
+  if (facing->orientation == current->orientation && facing->h_offset == current->h_offset) {
+    return invalid_command(
+        std::string(kName),
+        Error{.code = ErrorCode::InvalidArgument, .message = "signal already faces its traffic"});
+  }
+  Signal edited = *current;
+  edited.orientation = facing->orientation;
+  edited.h_offset = facing->h_offset;
+  auto command =
+      std::make_unique<GenericCommand>(std::string(kName), DirtySet{.objects = {current->road}});
+  command->before.signals.emplace_back(signal, *current);
+  command->after.signals.emplace_back(signal, std::move(edited));
+  return command;
+}
+
 // --- signalization (p4-s7, issue #228) ---------------------------------------
 
 namespace {
@@ -7942,10 +7978,22 @@ std::unique_ptr<Command> signalize_junction(const RoadNetwork& network,
     head.signal.t = lateral;
     head.signal.z_offset = dynamic ? kLightHeadZOffset : kSignPlateZOffset;
     head.signal.dynamic = dynamic;
-    // §14.1: "+" applies to traffic travelling in the positive reference-line
-    // direction, which is the traffic reaching a road's End.
-    head.signal.orientation = approach.arm.contact == ContactPoint::Start ? ObjectOrientation::Minus
-                                                                          : ObjectOrientation::Plus;
+    // Facing: the shared auto-orientation rule (#416), which reads the arm's
+    // own incoming driving lane and adds the spec's toe-out. It agrees with the
+    // contact-point shorthand this used to open-code — §14.1's "+" applies to
+    // traffic travelling toward +s, which is the traffic reaching a road's End
+    // — and test_signalization pins that agreement. The shorthand survives only
+    // as the fallback for a road whose geometry cannot yield a facing.
+    if (const Expected<SignalFacing> facing =
+            auto_signal_facing(network, approach.arm.road, head.signal.s, head.signal.t);
+        facing.has_value()) {
+      head.signal.orientation = facing->orientation;
+      head.signal.h_offset = facing->h_offset;
+    } else {
+      head.signal.orientation = approach.arm.contact == ContactPoint::Start
+                                    ? ObjectOrientation::Minus
+                                    : ObjectOrientation::Plus;
+    }
     head.signal.type = std::string(code.type);
     head.signal.subtype = std::string(code.subtype);
     head.signal.country = std::string(code.country);

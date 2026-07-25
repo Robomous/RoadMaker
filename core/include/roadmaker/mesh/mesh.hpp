@@ -172,7 +172,9 @@ struct SignalFaceOverlay {
 /// a static one). Same instanced draw path as ObjectInstance: no per-signal
 /// geometry is baked, so many signals share one mesh. World frame is Z-up,
 /// meters; `position` is the pole base (sits on the road surface at z_offset);
-/// `heading` faces the model's +x front along the road tangent + hOffset.
+/// `heading` faces the model's +x front along the datum its @orientation
+/// names, rotated by @hOffset (ASAM OpenDRIVE 1.9.0 §14.1 — see
+/// build_signal_instances).
 struct SignalInstance {
   SignalId signal;                  ///< source OpenDRIVE <signal>
   RoadId road;                      ///< owning road (DirtySet::objects channel)

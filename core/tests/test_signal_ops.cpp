@@ -323,5 +323,89 @@ TEST(SignalOps, PostedSpeedRoundTripsThroughXodr) {
   EXPECT_EQ(again->unit, "mph");
 }
 
+// --- auto_orient_signal (p6-s14, #416) ---------------------------------------
+//
+// The explicit "auto" action. Same command contract as the rest of this file;
+// what makes it interesting is the OTHER half of its job — being one of only
+// two places a facing is ever derived, so that a hand-set heading survives.
+
+TEST(SignalOps, AutoOrientApplyRevertIsByteIdentical) {
+  RoadNetwork network;
+  const RoadId road = author_street(network);
+  const SignalId id = network.add_signal(road, make_sign("1", 10.0, -5.0));
+  const std::string before = snapshot_xodr(network);
+
+  auto command = edit::auto_orient_signal(network, id);
+  ASSERT_TRUE(command->apply(network).has_value());
+  EXPECT_NE(snapshot_xodr(network), before);
+  const Signal* aimed = network.signal(id);
+  ASSERT_NE(aimed, nullptr);
+  EXPECT_EQ(aimed->orientation, ObjectOrientation::Plus);
+  EXPECT_NE(aimed->h_offset, 0.0);
+
+  ASSERT_TRUE(command->revert(network).has_value());
+  EXPECT_EQ(snapshot_xodr(network), before) << "undo must be byte-identical";
+}
+
+TEST(SignalOps, AutoOrientRejectsASignalAlreadyFacingItsTraffic) {
+  RoadNetwork network;
+  const RoadId road = author_street(network);
+  const SignalId id = network.add_signal(road, make_sign("1", 10.0, -5.0));
+  ASSERT_TRUE(edit::auto_orient_signal(network, id)->apply(network).has_value());
+  const std::string before = snapshot_xodr(network);
+
+  auto again = edit::auto_orient_signal(network, id);
+  EXPECT_FALSE(again->apply(network).has_value())
+      << "a second auto must be rejected as a no-op, not pushed as an empty undo step";
+  EXPECT_EQ(snapshot_xodr(network), before);
+}
+
+TEST(SignalOps, AutoOrientRejectsStaleSignalWithoutMutating) {
+  RoadNetwork network;
+  const RoadId road = author_street(network);
+  const SignalId id = network.add_signal(road, make_sign("1", 10.0, -5.0));
+  network.erase_signal(id);
+  const std::string before = snapshot_xodr(network);
+
+  auto command = edit::auto_orient_signal(network, id);
+  EXPECT_FALSE(command->apply(network).has_value());
+  EXPECT_EQ(snapshot_xodr(network), before);
+}
+
+// The override rule, stated as a test: NOTHING but the auto action re-derives
+// a facing. Moving a signal — the edit most likely to want to "helpfully"
+// re-aim it — must leave a hand-set heading exactly where the user put it.
+TEST(SignalOps, MovingASignalNeverRecomputesAHandSetHeading) {
+  RoadNetwork network;
+  const RoadId road = author_street(network);
+  const SignalId id = network.add_signal(road, make_sign("1", 10.0, -5.0));
+  ASSERT_TRUE(edit::move_signal(network, id, 10.0, -5.0, 1.234)->apply(network).has_value());
+
+  // Move it far along the road and across to the other side, which is exactly
+  // where auto-orientation would answer differently.
+  ASSERT_TRUE(edit::move_signal(network, id, 90.0, 5.0)->apply(network).has_value());
+
+  const Signal* moved = network.signal(id);
+  ASSERT_NE(moved, nullptr);
+  EXPECT_DOUBLE_EQ(moved->h_offset, 1.234) << "a user's heading is an override, not a suggestion";
+}
+
+TEST(SignalOps, AHandSetHeadingSurvivesARoundTrip) {
+  RoadNetwork network;
+  const RoadId road = author_street(network);
+  const SignalId id = network.add_signal(road, make_sign("1", 10.0, -5.0));
+  ASSERT_TRUE(edit::move_signal(network, id, 10.0, -5.0, 1.234)->apply(network).has_value());
+
+  const auto written = write_xodr(network, "override");
+  ASSERT_TRUE(written.has_value());
+  const auto reparsed = parse_xodr(*written, "override");
+  ASSERT_TRUE(reparsed.has_value());
+
+  const Signal* again = nullptr;
+  reparsed->network.for_each_signal([&](SignalId /*sid*/, const Signal& sig) { again = &sig; });
+  ASSERT_NE(again, nullptr);
+  EXPECT_DOUBLE_EQ(again->h_offset, 1.234);
+}
+
 } // namespace
 } // namespace roadmaker

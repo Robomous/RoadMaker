@@ -46,17 +46,21 @@
 #include "roadmaker/mesh/junction_signals.hpp"
 #include "roadmaker/road/authoring.hpp"
 #include "roadmaker/road/controller.hpp"
+#include "roadmaker/road/defaults.hpp"
 #include "roadmaker/road/junction.hpp"
 #include "roadmaker/road/network.hpp"
+#include "roadmaker/road/road.hpp"
 #include "roadmaker/road/signal.hpp"
 
 #include <gtest/gtest.h>
 
 #include <algorithm>
+#include <cmath>
 #include <cstddef>
 #include <memory>
 #include <stdexcept>
 #include <string>
+#include <variant>
 #include <vector>
 
 #include "support/network_compare.hpp"
@@ -376,6 +380,32 @@ TEST(Signalize, FourWayProtectedLeftGroupsThroughAndLeftPerAxis) {
     EXPECT_EQ(signal.type, "1000001");
     EXPECT_EQ(signal.subtype, "-1");
     EXPECT_EQ(signal.country, "OpenDRIVE");
+  });
+}
+
+// Auto-signalized heads go through the SAME facing rule as hand placement
+// (#416), which collapsed a duplicated contact-point ternary. The two must
+// agree: an arm meeting the junction at its End carries "+" either way. What
+// the shared rule adds is the toe-out, which the open-coded version never set.
+TEST(Signalize, HeadsUseTheSharedFacingRuleAndGainItsToeOut) {
+  CrossFixture fixture;
+  auto command = signalize_junction(
+      fixture.network, fixture.junction, {.tmpl = SignalizeTemplate::FourWayProtectedLeft});
+  apply_command(fixture.network, command);
+  ASSERT_GT(signal_count(fixture.network), 0U);
+
+  fixture.network.for_each_signal([&](SignalId, const Signal& signal) {
+    // The contact-point shorthand this replaced, asserted independently.
+    const roadmaker::Road* arm = fixture.network.road(signal.road);
+    ASSERT_NE(arm, nullptr);
+    const ObjectOrientation by_contact =
+        arm->successor.has_value() && std::holds_alternative<JunctionId>(arm->successor->target)
+            ? ObjectOrientation::Plus
+            : ObjectOrientation::Minus;
+    EXPECT_EQ(signal.orientation, by_contact)
+        << "the shared rule must agree with the contact-point shorthand it replaced";
+    EXPECT_DOUBLE_EQ(std::abs(signal.h_offset), roadmaker::defaults::kSignToeOut)
+        << "auto-signalized heads used to leave hOffset at 0, which was a latent bug";
   });
 }
 

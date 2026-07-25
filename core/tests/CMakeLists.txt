@@ -17,6 +17,7 @@ add_executable(roadmaker_core_tests
   test_object_ops.cpp
   test_repeat_expansion.cpp
   test_signal_ops.cpp
+  test_signal_facing.cpp
   test_signal_meshes.cpp
   test_xodr_signals.cpp
   test_road_marks.cpp

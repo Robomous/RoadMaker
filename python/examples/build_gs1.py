@@ -130,6 +130,15 @@ def main() -> int:
             signal.value, signal.unit = value, "mph"
         stack.push(network, rm.edit.add_signal(network, road_id, signal))
 
+    # Aim every head and sign at the traffic it governs (#416). @orientation
+    # says whose traffic a signal applies to and, per section 14.1, is also the
+    # datum its face looks along; @hOffset cants it away from the roadway.
+    # Without this the scene's signals carry orientation="none" and every face
+    # points down +s, which reads as backwards on half the arms.
+    for road_id in arms:
+        for signal_id in network.signals_of(road_id):
+            stack.push(network, rm.edit.auto_orient_signal(network, signal_id))
+
     # 4. Street trees along the arms — three per side, behind the sidewalk.
     # Three s-stations per arm (4 arms x 3 s x 2 sides = 24) clears the spec's
     # "~20 vegetation props" target; two stations only reached 16.

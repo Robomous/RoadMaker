@@ -15,14 +15,16 @@
  */
 
 // Sign tool (p4-s9, issue #230): headless ToolEvent sequences place a road sign
-// as ONE undo entry, defaulting to a StVO 310 text plate when the Library offers
-// no sign, placing a selected sign asset otherwise, committing a drag as exactly
-// one command, and leaving the document byte-identical when Esc cancels.
+// as ONE undo entry, defaulting to the pack's street-name blade when the Library
+// offers no sign, placing a selected sign asset otherwise, committing a drag as
+// exactly one command, and leaving the document byte-identical when Esc cancels.
+// Since p6-s14 (#416) a placed sign also faces the traffic it governs.
 //
 // Runs under QT_QPA_PLATFORM=offscreen like every other editor test.
 
 #include "roadmaker/assets/sign_catalog.hpp"
 #include "roadmaker/edit/operations.hpp"
+#include "roadmaker/road/defaults.hpp"
 #include "roadmaker/road/network.hpp"
 #include "roadmaker/road/signal.hpp"
 #include "roadmaker/xodr/writer.hpp"
@@ -171,6 +173,24 @@ TEST(SignTool, EscCancelLeavesXodrByteIdentical) {
   EXPECT_FALSE(scene.document.preview_active());
   EXPECT_EQ(scene.document.network().signal_count(), 0U);
   EXPECT_EQ(xodr(scene.document), scene.base_xodr) << "cancel restores the document";
+}
+
+TEST(SignTool, APlacedSignFacesTheTrafficItGoverns) {
+  // Placement is one of the two paths allowed to derive a facing (#416); the
+  // tool must go through it rather than authoring a fixed "+" along +s.
+  Scene scene;
+  SignTool tool(scene.document, scene.selection);
+  tool.set_params_provider([] { return LibraryItem{}; });
+  tool.activate();
+
+  ASSERT_TRUE(tool.mouse_press(at(60.0, -3.0, Qt::LeftButton)));
+  EXPECT_TRUE(tool.mouse_release(at(60.0, -3.0)));
+  ASSERT_EQ(scene.document.network().signal_count(), 1U);
+
+  const Signal* placed = only_signal(scene.document);
+  ASSERT_NE(placed, nullptr);
+  EXPECT_EQ(placed->orientation, ObjectOrientation::Plus);
+  EXPECT_DOUBLE_EQ(placed->h_offset, defaults::kSignToeOut);
 }
 
 } // namespace roadmaker::editor

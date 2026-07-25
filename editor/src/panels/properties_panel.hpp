@@ -387,6 +387,11 @@ private:
   QSpinBox* signal_value_spin_;
   /// The row label for signal_value_spin_, hidden with it.
   QLabel* signal_value_label_;
+  /// The explicit "auto" action of the spec's auto-orientation section (#416):
+  /// re-derives @orientation and @hOffset from the road. A hand-set heading is
+  /// an override that nothing recomputes silently, so this button is the ONLY
+  /// way back to the derived facing.
+  QPushButton* signal_auto_facing_button_;
 
   /// Object section: a selected <object>. A prop shows the Model slot; a marking
   /// instance (crosswalk / stencil / marking-curve) shows the Material slot

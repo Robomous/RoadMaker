@@ -19,6 +19,7 @@
 #include "roadmaker/assets/prop_library.hpp"
 #include "roadmaker/assets/sign_face.hpp"
 #include "roadmaker/edit/operations.hpp"
+#include "roadmaker/road/defaults.hpp"
 #include "roadmaker/road/network.hpp"
 #include "roadmaker/road/object.hpp"
 
@@ -1137,10 +1138,12 @@ void ViewportWidget::draw_signal_phase(QPainter& painter) const {
 // --- transform gizmo (A3, #177) --------------------------------------------
 
 namespace {
-constexpr double kGizmoYawDetent = std::numbers::pi / 12.0; // 15°
-const QColor kAxisColorX{0xE0, 0x5A, 0x47};                 // red
-const QColor kAxisColorY{0x4C, 0xB8, 0x5A};                 // green
-const QColor kAxisColorZ{0x4A, 0x90, 0xE0};                 // blue
+// 15°, from the realism-defaults registry's auto-orientation table (#416) —
+// the spec doc names it, so the literal does not live here.
+constexpr double kGizmoYawDetent = defaults::kPropRotationSnap;
+const QColor kAxisColorX{0xE0, 0x5A, 0x47}; // red
+const QColor kAxisColorY{0x4C, 0xB8, 0x5A}; // green
+const QColor kAxisColorZ{0x4A, 0x90, 0xE0}; // blue
 } // namespace
 
 std::optional<ViewportWidget::GizmoTarget> ViewportWidget::gizmo_target() const {

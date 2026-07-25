@@ -815,6 +815,25 @@ PropertiesPanel::PropertiesPanel(Document& document,
                                signal_s_spin_->value(), signal_t_spin_->value(), value)(network);
                          }}),
       signal_h_spin_);
+  // The explicit "auto" action of the spec's auto-orientation section (#416).
+  // Editing the heading above (or, later, dragging the rotation ring) is an
+  // OVERRIDE that nothing recomputes on its own; this button is the only way
+  // back to the derived facing, which is why it exists as a deliberate action
+  // rather than as a silent recalculation on every move.
+  signal_auto_facing_button_ = new QPushButton(tr("Auto facing"), signal_group_);
+  signal_auto_facing_button_->setObjectName(QStringLiteral("signal_auto_facing_button"));
+  signal_auto_facing_button_->setToolTip(
+      tr("Re-aim this sign at the traffic it governs, discarding a hand-set heading offset. "
+         "Placement does this once; nothing else ever re-derives it."));
+  connect(signal_auto_facing_button_, &QPushButton::clicked, this, [this] {
+    // The signal is read at CLICK time from the live selection.
+    const std::vector<SignalId> ids = selection_.selected_signals();
+    if (ids.empty()) {
+      return;
+    }
+    push(edit::auto_orient_signal(document_.network(), ids.back()));
+  });
+  signal_form->addRow(QString(), signal_auto_facing_button_);
   // Editable face text (§14 Table 122). Compact multi-line editor; @text may
   // carry literal newlines, so it commits on focus-out (eventFilter), not Enter.
   signal_text_edit_->setObjectName(QStringLiteral("signal_text_edit"));

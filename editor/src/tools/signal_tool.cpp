@@ -337,7 +337,9 @@ void SignalTool::update_drag(const ToolEvent& event) {
   // add_signal is simply replaced — one command, one undo entry on release.
   const Document::PreviewFactory factory = [tag, station](const RoadNetwork& base) {
     return edit::add_signal(
-        base, station->road, make_signal(tag, next_signal_odr_id(base), station->s, station->t));
+        base,
+        station->road,
+        make_signal(base, station->road, tag, next_signal_odr_id(base), station->s, station->t));
   };
   if (!document_.preview_active()) {
     if (!document_.begin_preview(factory(document_.network())).has_value()) {
@@ -355,8 +357,12 @@ void SignalTool::place_signal(const RoadStation& placement) {
     emit toast_requested(tr("Select a signal in the Library to place one"), ToastSeverity::Warning);
     return;
   }
-  Signal signal =
-      make_signal(item.signal, next_signal_odr_id(document_.network()), placement.s, placement.t);
+  Signal signal = make_signal(document_.network(),
+                              placement.road,
+                              item.signal,
+                              next_signal_odr_id(document_.network()),
+                              placement.s,
+                              placement.t);
   const std::string odr = signal.odr_id;
   const RoadId road = placement.road;
   if (!document_.push_command(edit::add_signal(document_.network(), road, std::move(signal)))

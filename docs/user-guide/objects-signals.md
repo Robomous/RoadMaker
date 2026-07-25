@@ -56,6 +56,25 @@ type / subtype and country, and lets you nudge its road-relative pose —
 `s` along the road, `t` across it, and the heading offset — each edit an
 undoable command.
 
+### Signs face their traffic automatically
+
+A sign or signal is aimed when you place it: RoadMaker reads the road heading
+where it landed, which side of the reference line it sits on, and which way the
+nearest driving lane runs, then points the face **against** that traffic and
+cants it a few degrees away from the roadway so headlights do not reflect
+straight back. Drop the same sign on the opposite side of a two-way street and
+it turns to meet the traffic on that side instead.
+
+The facing is stored the ASAM way: `orientation` records whose traffic the sign
+applies to (`+` for traffic running with the road, `−` for traffic running
+against it) and a heading offset holds the cant.
+
+**A heading you set by hand wins and stays.** Editing **Heading offset** makes
+that heading yours, and nothing recomputes it afterwards — not moving the sign,
+not editing anything else about it. The one way back to the automatic facing is
+the **Auto facing** button in the properties panel, which is an ordinary
+undoable edit like any other.
+
 ### Placing props: Prop Point & Prop Curve
 
 Two tools place the selected [**Library**](library.md) prop (a tree or shrub)

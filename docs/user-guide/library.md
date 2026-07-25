@@ -53,9 +53,10 @@ road — so it never ends up floating with no reference line.
 Placed props and signals are selectable and deletable like any other entity
 (click to select; **Delete**; right-click for **Delete / Frame / Duplicate**),
 and they round-trip through save/reload and into the glTF and USD exports
-([save & export](save-export.md)). A selected signal's road-relative pose
-(`s` / `t` / heading offset) edits in the properties panel — see
-[objects & signals](objects-signals.md).
+([save & export](save-export.md)). A dropped sign or signal also arrives
+**facing the traffic it governs**, derived from the side of the road it landed
+on. A selected signal's road-relative pose (`s` / `t` / heading offset) edits in
+the properties panel — see [objects & signals](objects-signals.md).
 
 Each prop has a **Default scale** — a uniform multiplier on the bundled model's
 size that new placements spawn at (the shipped trees default to 2×). Select a

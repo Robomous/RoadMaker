@@ -301,8 +301,12 @@ LibraryDropAction resolve_library_drop(const LibraryItem& item,
       action.toast = QStringLiteral("Drop a signal onto or beside a road");
       return action; // kind stays None, preview invalid — caller hints
     }
-    Signal signal =
-        make_signal(item.signal, next_signal_odr_id(network), placement->s, placement->t);
+    Signal signal = make_signal(network,
+                                placement->road,
+                                item.signal,
+                                next_signal_odr_id(network),
+                                placement->s,
+                                placement->t);
     action.command = edit::add_signal(network, placement->road, std::move(signal));
     if (action.command != nullptr) {
       action.kind = LibraryDropKind::Signal;

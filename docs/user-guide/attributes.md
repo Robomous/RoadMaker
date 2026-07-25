@@ -35,7 +35,8 @@ jumping somewhere new.
 
 Scrubbing is available on lane **Width**, road-mark **Mark width**, elevation
 **Height**, a prop's **Height**, and a signal's **s**, **t**, and **Heading
-offset**. Each has its
+offset** (which, once you touch it, becomes a hand-set override that only the
+signal's **Auto facing** button undoes). Each has its
 own rate, chosen so a comfortable drag covers a useful range — roughly 2 m of
 lane width, or 10 m along a road, per screen-width drag. Scrubbing respects the
 same limits as typing: it cannot push a value out of the attribute's range.

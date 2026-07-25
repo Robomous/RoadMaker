@@ -236,6 +236,51 @@ TEST(PropertiesPanel, SignalSelectionShowsPoseSectionAndEditCommitsMoveSignal) {
   EXPECT_EQ(h.document.undo_stack()->count(), base + 1);
 }
 
+// The "auto" action of the spec's auto-orientation section (p6-s14, #416). The
+// heading spin and this button are the two halves of the override rule: the
+// spin authors a heading that NOTHING recomputes on its own, and the button is
+// the only way back to the derived facing.
+TEST(PropertiesPanel, AutoFacingRestoresTheDerivedHeadingAfterAManualEdit) {
+  Harness h;
+  ASSERT_TRUE(h.document.load(kSample).has_value());
+  PropertiesPanel panel(h.document, h.selection);
+  auto* h_spin = panel.findChild<QDoubleSpinBox*>(QStringLiteral("signal_h_spin"));
+  auto* button = panel.findChild<QPushButton*>(QStringLiteral("signal_auto_facing_button"));
+  ASSERT_NE(h_spin, nullptr);
+  ASSERT_NE(button, nullptr);
+
+  const RoadId road = all_roads(h.document).front();
+  Signal sign;
+  sign.odr_id = "p1";
+  sign.type = "274";
+  sign.subtype = "50";
+  sign.country = "DE";
+  sign.dynamic = false;
+  sign.s = 20.0;
+  sign.t = -3.0;
+  ASSERT_TRUE(
+      h.document.push_command(edit::add_signal(h.document.network(), road, sign)).has_value());
+  SignalId signal;
+  h.document.network().for_each_signal([&](SignalId id, const Signal&) { signal = id; });
+  h.selection.select({.signal = signal});
+  ASSERT_TRUE(h_spin->isVisibleTo(&panel));
+
+  // Author a heading by hand. This is the override.
+  h_spin->setValue(1.25);
+  emit h_spin->editingFinished();
+  EXPECT_DOUBLE_EQ(h.document.network().signal(signal)->h_offset, 1.25);
+
+  // One click, one undo step, back to the derived facing.
+  const int base = h.document.undo_stack()->count();
+  button->click();
+  EXPECT_EQ(h.document.undo_stack()->count(), base + 1);
+  EXPECT_NE(h.document.network().signal(signal)->h_offset, 1.25);
+
+  // ...and undo puts the override back, so the action is an ordinary edit.
+  h.document.undo_stack()->undo();
+  EXPECT_DOUBLE_EQ(h.document.network().signal(signal)->h_offset, 1.25);
+}
+
 // --- editable sign-face text (p4-s9, #230) ----------------------------------
 
 namespace {

@@ -20,6 +20,8 @@
 
 #include <fmt/format.h>
 
+#include <numbers>
+
 namespace roadmaker::defaults {
 
 namespace {
@@ -36,6 +38,19 @@ std::string len(double meters) {
 /// would round 1.07 to 1.1 and lose the derivation.
 std::string len_cm(double meters) {
   return fmt::format("{:.2f}", meters);
+}
+
+/// The doc names angles in degrees; the registry stores radians. Whole degrees
+/// are the only measures the spec quotes, so no fractional form is needed.
+std::string deg(double radians) {
+  return fmt::format("{:.0f}°", radians * 180.0 / std::numbers::pi);
+}
+
+/// The radian companion the doc prints beside the toe-out. THREE decimals is
+/// the doc's precision, not the constant's: 3° is 0.05235987…, and baking a
+/// rounded 0.052 into the registry would be a different angle (2.979°).
+std::string rad(double radians) {
+  return fmt::format("{:.3f}", radians);
 }
 
 } // namespace
@@ -290,6 +305,19 @@ std::string trees_buildings_markdown() {
                   len(kHouseFootprintLength),
                   len(kHouseFootprintWidth)),
       "—");
+  return out;
+}
+
+std::string orientation_markdown() {
+  std::string out = "<!-- rm-defaults: orientation -->\n"
+                    "| Constant | Value |\n"
+                    "|---|---|\n";
+  const auto row = [&out](const char* constant, const std::string& value) {
+    out += fmt::format("| {} | {} |\n", constant, value);
+  };
+  row("Sign/signal toe-out from perpendicular",
+      fmt::format("**{} ({} rad)**", deg(kSignToeOut), rad(kSignToeOut)));
+  row("Prop rotation-ring snap increment", fmt::format("**{}**", deg(kPropRotationSnap)));
   return out;
 }
 

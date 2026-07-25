@@ -31,6 +31,7 @@
 #include <array>
 #include <cmath>
 #include <cstddef>
+#include <numbers>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -796,9 +797,18 @@ SignalFaceOverlay make_face_overlay(const std::string& text, const props::FacePl
 
 /// Placed signals a road owns, as INSTANCES of bundled signal models — the
 /// signal analogue of build_object_instances. The pole base sits on the road
-/// surface at the signal's s/t, lifted by z_offset; the model's +x front faces
-/// the road tangent rotated by hOffset (so a signal reads as facing across or
-/// along the road per its authored orientation).
+/// surface at the signal's s/t, lifted by z_offset.
+///
+/// The FACING follows ASAM OpenDRIVE 1.9.0 §14.1 exactly: @orientation names
+/// the traffic the signal applies to, and a signal so marked with @hOffset 0
+/// "faces to the drivers travelling in" that direction — so "+" traffic runs
+/// toward +s and the face therefore looks back down -s. §14.1 says as much
+/// about the offset's datum: for "+", @hOffset is applied counter-clockwise
+/// from the NEGATIVE reference line direction, i.e. from where the face
+/// already points. "-" and "none" measure from the positive direction.
+///
+/// Until p6-s14 (#416) this ignored @orientation entirely and aimed every
+/// signal along +s, which rendered the "-" datum in all three cases.
 void build_signal_instances(const RoadNetwork& network,
                             const Road& road,
                             RoadId road_id,
@@ -808,7 +818,9 @@ void build_signal_instances(const RoadNetwork& network,
     const StationFrame frame = make_frame(road, signal.s);
     std::array<double, 3> position = lateral_point(frame, signal.t);
     position[2] += signal.z_offset;
-    const double heading = std::atan2(frame.sin_h, frame.cos_h) + signal.h_offset;
+    const double datum = std::atan2(frame.sin_h, frame.cos_h) +
+                         (signal.orientation == ObjectOrientation::Plus ? std::numbers::pi : 0.0);
+    const double heading = datum + signal.h_offset;
     SignalInstance instance{.signal = signal_id,
                             .road = road_id,
                             .model_id = std::string(signal_model_id(signal)),
