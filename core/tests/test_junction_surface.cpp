@@ -559,6 +559,31 @@ TEST(JunctionSurface, SidewalkedFourWayWrapsAllCornersContinuously) {
   expect_watertight(mesh);
 }
 
+// #360: junction geometry is emitted untextured — no uvs on the floor, none on
+// any band or overlay (SubMesh::uvs documents this: "Empty = untextured
+// (markings, junction floors...)"). The renderer substitutes (0,0) for a uv-less
+// mesh, which leaves the surface shader's screen-space tangent frame with no
+// extent; that combination has to stay survivable, so it is pinned here rather
+// than only in the render layer that consumes it.
+TEST(JunctionSurface, JunctionGeometryCarriesNoTextureCoordinates) {
+  RoadNetwork network;
+  build_roomy_four_way(network, LaneProfile::urban_sidewalk());
+  const NetworkMesh mesh = roadmaker::build_network_mesh(network);
+  ASSERT_FALSE(mesh.junction_floors.empty());
+
+  for (const roadmaker::JunctionFloor& floor : mesh.junction_floors) {
+    EXPECT_FALSE(floor.mesh.positions.empty());
+    EXPECT_TRUE(floor.mesh.uvs.empty());
+    for (const SubMesh& detail : floor.details) {
+      EXPECT_TRUE(detail.uvs.empty());
+    }
+  }
+  // The contrast that makes the case real: road lanes DO carry uvs, so the
+  // same textured material is drawn both with and without a uv gradient.
+  ASSERT_FALSE(mesh.roads.empty());
+  EXPECT_FALSE(mesh.roads[0].uvs.empty());
+}
+
 // The p4-s2 authored `sidewalk_material` becomes an OVERRIDE on the generated
 // band's surface — one corner's band, not the whole floor, and never a re-cut.
 TEST(JunctionSurface, CornerSidewalkMaterialOverridesBandSurface) {

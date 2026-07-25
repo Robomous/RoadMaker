@@ -95,6 +95,15 @@ out vec4 frag_color;
 // Per-fragment cotangent frame from screen-space derivatives (design doc §5:
 // no vertex-format/tangent change). Stable for the planar-UV road/deck geometry
 // this milestone maps.
+//
+// A mesh WITHOUT uvs is uploaded with (0,0) at every vertex (see `upload`), so
+// both uv derivatives are zero and the frame has no extent: inversesqrt(0) is
+// +inf and t * inv_max is 0 * inf = NaN, which poisons the normal, the lighting
+// and frag_color. Converting NaN to UNORM8 is undefined — Mesa/llvmpipe writes
+// 0 (the junction floor rendered as a solid black polygon in the CI
+// visual-artifacts job, issue #360) while real drivers happened not to. The
+// geometric normal is the correct answer for a surface with no uv gradient, so
+// take it directly rather than deriving a frame that does not exist.
 vec3 perturb_normal(vec3 geom_n, vec2 uv) {
   vec3 dp1 = dFdx(v_world_pos);
   vec3 dp2 = dFdy(v_world_pos);
@@ -104,7 +113,11 @@ vec3 perturb_normal(vec3 geom_n, vec2 uv) {
   vec3 dp1perp = cross(geom_n, dp1);
   vec3 t = dp2perp * duv1.x + dp1perp * duv2.x;
   vec3 b = dp2perp * duv1.y + dp1perp * duv2.y;
-  float inv_max = inversesqrt(max(dot(t, t), dot(b, b)));
+  float extent = max(dot(t, t), dot(b, b));
+  if (extent <= 0.0) {
+    return geom_n;
+  }
+  float inv_max = inversesqrt(extent);
   mat3 tbn = mat3(t * inv_max, b * inv_max, geom_n);
   vec3 sample_n = texture(u_normal, uv).xyz * 2.0 - 1.0;
   sample_n.xy *= u_normal_strength;

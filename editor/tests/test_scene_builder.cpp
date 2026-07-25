@@ -29,6 +29,7 @@
 #include <string>
 #include <vector>
 
+#include "render/material_catalog.hpp"
 #include "render/prop_batching.hpp"
 #include "render/scene_builder.hpp"
 
@@ -354,6 +355,44 @@ TEST(BuildScene, JunctionFloorSceneItemCarriesMaterialCode) {
   ASSERT_EQ(scene.items.size(), 1U);
   EXPECT_EQ(scene.items[0].material, "concrete");
   EXPECT_EQ(scene.items[0].surface, SurfaceKind::Concrete);
+}
+
+// #360: the combination the surface shader has to survive — a junction floor
+// (and every corner overlay) reaches the renderer with NO uvs, while the
+// material it resolves to DOES carry a normal map. The renderer uploads (0,0)
+// for a uv-less mesh, so both uv derivatives are zero and the tangent frame has
+// no extent; without a guard the frame is NaN and the polygon renders black on
+// drivers that flush NaN to zero (Mesa/llvmpipe, the CI visual-artifacts job).
+//
+// If junction floors ever gain real uvs (the deferred texturing follow-up),
+// this test is the record of what changed — update it, don't delete the guard.
+TEST(BuildScene, JunctionFloorHasNoUvsWhileItsMaterialIsNormalMapped) {
+  const JunctionId junction{.index = 4, .gen = 0};
+  JunctionFloor floor{.junction = junction,
+                      .mesh = SubMesh{.positions = {-5, -5, 0, 0, -5, 0, 0, 0, 0},
+                                      .normals = {0, 0, 1, 0, 0, 1, 0, 0, 1},
+                                      .indices = {0, 1, 2}}};
+  floor.details.push_back(SubMesh{.positions = {0, 0, 0.02, 2, 0, 0.02, 2, 2, 0.02},
+                                  .normals = {0, 0, 1, 0, 0, 1, 0, 0, 1},
+                                  .indices = {0, 1, 2},
+                                  .material = LaneType::Sidewalk});
+  ASSERT_TRUE(floor.mesh.uvs.empty()) << "the kernel emits junction floors untextured";
+
+  NetworkMesh mesh;
+  mesh.junction_floors.push_back(std::move(floor));
+  const Scene scene = build_scene(mesh);
+  ASSERT_EQ(scene.items.size(), 2U);
+
+  const MaterialCatalog catalog;
+  for (const SceneItem& item : scene.items) {
+    EXPECT_TRUE(item.data.uvs.empty()) << "junction geometry reaches the renderer without uvs";
+    // Both fall back through SurfaceKind: the floor to asphalt, the band to
+    // concrete — and both of those catalog entries are normal-mapped.
+    const MaterialDef* def =
+        catalog.find_material(item.surface == SurfaceKind::Concrete ? "concrete" : "asphalt");
+    ASSERT_NE(def, nullptr);
+    EXPECT_FALSE(def->normal.empty());
+  }
 }
 
 // Each authored corner overlay becomes its own item: same junction id (a click

@@ -326,6 +326,20 @@ Current version on `main`: **0.0.1**.
   about silently never matched.
 
 ### Fixed
+- **Junction interiors are no longer a black hole in the review renders**
+  ([#360](https://github.com/Robomous/RoadMaker/issues/360)): in the textured
+  daytime look, a junction floor rendered as a solid black polygon on software
+  OpenGL — which is what CI uses to produce the screenshots the project reviews
+  appearance with. Roads, sidewalks and grass in the very same frame were fine.
+  Junction geometry is emitted untextured (no texture coordinates), so the
+  shader's per-fragment tangent frame had nothing to measure and collapsed to
+  NaN; drivers are free to do anything with that, and the software rasterizer
+  chose black while desktop GPUs did not. A surface with no texture gradient now
+  simply keeps its geometric normal. No change to what real-GL hardware draws —
+  this restores the rendering everywhere else that it was already correct, and
+  makes the CI artifact trustworthy again for reviewing what is *inside* a
+  junction, which is where the sidewalk-band defects of
+  [#402](https://github.com/Robomous/RoadMaker/issues/402) live.
 - **Trees, signs and street furniture move with the road you move them onto**
   ([#400](https://github.com/Robomous/RoadMaker/issues/400)): dragging,
   translating or rotating a road left every prop and sign it carried rendered at
