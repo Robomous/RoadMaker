@@ -601,6 +601,23 @@ TEST(SignalizationPersistence, TheFuzzCorpusSeedsParseAndReExport) {
   EXPECT_EQ(junction.signal_mounts[0].object_odr_ids, (std::vector<std::string>{"70", "71"}));
   EXPECT_FALSE(write(seed->network).empty());
 
+  // The US pack's seed (#414): MUTCD designations under @country="US", a
+  // posted speed as @value + @unit="mph", face sizes in @height/@width. Parses
+  // clean and re-exports, so the fuzzer has a well-formed pack document to
+  // mutate from.
+  auto pack = roadmaker::load_xodr(corpus / "signs_us_pack.xodr");
+  ASSERT_TRUE(pack.has_value()) << "signs_us_pack.xodr must parse";
+  EXPECT_TRUE(pack->diagnostics.empty());
+  EXPECT_EQ(pack->network.signal_count(), 5U);
+  EXPECT_FALSE(write(pack->network).empty());
+
+  // The legacy German seeds stay German on purpose: a file authored against
+  // another country's catalogue must keep loading after the pack switch.
+  auto legacy = roadmaker::load_xodr(corpus / "signals_gs1_set.xodr");
+  ASSERT_TRUE(legacy.has_value()) << "signals_gs1_set.xodr must still parse";
+  EXPECT_TRUE(legacy->diagnostics.empty());
+  EXPECT_FALSE(write(legacy->network).empty());
+
   // The hand-derived malformed companions degrade with a warning; none fails
   // the load and none crashes.
   for (const char* name : {"bad_signal_template.xodr", "bad_signalmount_dup.xodr"}) {

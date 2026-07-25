@@ -16,6 +16,7 @@
 
 #include "document/signal_placement.hpp"
 
+#include "roadmaker/assets/sign_catalog.hpp"
 #include "roadmaker/road/network.hpp"
 #include "roadmaker/road/object.hpp"
 #include "roadmaker/road/road.hpp"
@@ -60,40 +61,52 @@ bool is_signal_asset(const LibraryItem& item) {
   return item.kind == LibraryItem::Kind::Signal && !item.signal.isEmpty();
 }
 
+bool authors_editable_legend(const LibraryItem& item) {
+  if (!is_signal_asset(item)) {
+    return false;
+  }
+  const signs::SignDef* def = signs::find_by_key(item.signal.toStdString());
+  return def != nullptr && def->legend_editable;
+}
+
 Signal make_signal(const QString& tag, std::string odr_id, double s, double t) {
   Signal signal;
   signal.odr_id = std::move(odr_id);
   signal.orientation = ObjectOrientation::Plus;
   signal.s = s;
   signal.t = t;
-  if (tag == QStringLiteral("light")) {
-    signal.dynamic = true;
-    signal.type = "1000001"; // OpenDRIVE traffic-light catalog type
-    signal.subtype = "-1";
-    signal.country = "OpenDRIVE";
-  } else if (tag == QStringLiteral("sign_stop")) {
-    signal.dynamic = false;
-    signal.type = "206"; // StVO 206: Halt! Vorfahrt gewähren — STOP
-    signal.subtype = "-1";
-    signal.country = "DE";
-  } else if (tag == QStringLiteral("sign_yield")) {
-    signal.dynamic = false;
-    signal.type = "205"; // StVO 205: Vorfahrt gewähren — yield/give way
-    signal.subtype = "-1";
-    signal.country = "DE";
-  } else if (tag == QStringLiteral("sign_text")) {
-    // StVO 310 Ortstafel (town-entrance plate): the spec's own @text example.
-    // Placed with a recognisable default the user edits in the Attributes panel.
-    signal.dynamic = false;
-    signal.type = "310";
-    signal.subtype = "-1";
-    signal.country = "DE";
-    signal.text = "City";
-  } else { // "sign" — generic regulatory plate (speed-limit 50)
-    signal.dynamic = false;
-    signal.type = "274"; // German regulatory speed-limit sign
-    signal.subtype = "50";
-    signal.country = "DE";
+
+  // The shipped sign catalogue (roadmaker::signs, spec §1.4) IS the identity:
+  // this function transcribes an entry, it does not decide one. An unknown tag
+  // can only come from a hand-edited manifest, so it falls back to the pack's
+  // stop sign rather than authoring a signal with no type at all.
+  const signs::SignDef* def = signs::find_by_key(tag.toStdString());
+  if (def == nullptr) {
+    def = signs::find_by_key("us.r1_1");
+  }
+  if (def == nullptr) {
+    return signal;
+  }
+  signal.dynamic = def->dynamic;
+  signal.type = std::string(def->type);
+  signal.subtype = std::string(def->subtype);
+  signal.country = std::string(def->country);
+  signal.text = std::string(def->default_text);
+  // §14.1 recommends @height/@width "for proper representation"; §1.4 supplies
+  // both. A street-name blade's length follows its legend (face_width 0), so it
+  // declares no @width — the spec's "length fits text".
+  if (def->face_height > 0.0) {
+    signal.height = def->face_height;
+  }
+  if (def->face_width > 0.0) {
+    signal.width = def->face_width;
+  }
+  // §14.1 Table 122: @unit is mandatory exactly when @value is given. The
+  // catalogue holds that invariant (test_defaults_registry asserts it), so the
+  // two move together here too.
+  if (def->default_value.has_value()) {
+    signal.value = def->default_value;
+    signal.unit = std::string(def->unit);
   }
   return signal;
 }

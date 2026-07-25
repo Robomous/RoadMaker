@@ -28,7 +28,7 @@ text sign the Sign tool, and a prop set the Prop Curve tool. See
 | **Assemblies** | T-intersection, X-intersection | a pre-built junction |
 | **Buildings** | Low block, Mid-rise, Tower | an OpenDRIVE `<object>` (typed `building`) on the nearest road |
 | **Props** | Pine / Oak / Birch / Poplar tree, Shrub, Streetlight (single / double), City block set | an OpenDRIVE `<object>` on the nearest road — trees are typed `tree`, streetlights `pole`; the set scatters a mix of buildings |
-| **Signals** | Traffic light, Traffic sign, Stop sign, Yield sign | an OpenDRIVE `<signal>` on the nearest road — the light is a dynamic control; the signs are static (Stop = DE 206, Yield = DE 205) |
+| **Signals** | Traffic light plus the US sign pack (Stop, Yield, Speed limit, Do not enter, One way, turn restrictions, Keep right, warning diamonds, School, Street name) | an OpenDRIVE `<signal>` on the nearest road — the light is a dynamic control, the signs are static and carry their MUTCD designation as `@type` with `country="US"` (see the [realism defaults](../domain/realism_defaults.md#14-signs-mutcd-conventional-road-sizes)) |
 | **Markings** | Solid single white, Double yellow, Dashed white / yellow, Double white, Solid–broken / Broken–solid yellow, Double dashed yellow, Wide edge white | a `<roadMark>` on the lane boundary you drop it on |
 | **Materials** | Asphalt, Asphalt (worn), Concrete, Paint (white / yellow) | a `<material>` on the lane (or ground surface) you drop it on ([materials](materials.md)) |
 

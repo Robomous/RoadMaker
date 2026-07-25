@@ -161,22 +161,41 @@ The **Sign tool** (`B`) places a single road sign on a click, or on a drag that
 slides it along the nearest road and drops on release — the same snapping as the
 Signal tool, so a sign always lands on a road, never in open space. With a sign
 selected in the Library it places that sign; otherwise it defaults to a
-**town-entrance plate** (German **StVO 310**, the spec's own `@text` example), so
-the tool is usable the moment you pick it. Each placement is one undo step, and
-the placed sign is selected.
+**street-name blade** (`D3-1`), so the tool is usable the moment you pick it.
+Each placement is one undo step, and the placed sign is selected.
 
-A text plate's face text is **editable**. Select the sign and use the **Text**
-row in the Attributes pane — a small multi-line box (a sign name can wrap, e.g.
-`City` over `Bad Aibling`). The edit commits when the box loses focus and is a
-**single undo step**; Escape discards it. The text is written to the `.xodr` as
-the standard OpenDRIVE `@text` (§14, Table 122), so it round-trips through save
-and reload — newlines included — and any other OpenDRIVE tool reads it back.
+The signs RoadMaker ships are the **US pack**: the MUTCD set listed in the
+[realism defaults](../domain/realism_defaults.md#14-signs-mutcd-conventional-road-sizes),
+each with its designation, face size and mounting height. A placement writes
+that identity straight into the `.xodr` — `country="US"` with the designation as
+`@type` (for example `R1-1` for a stop sign), plus the face size in
+`@height`/`@width`. A sign's definition is **data, not code**, so a future
+country pack is another data set rather than a new build.
+
+A sign's legend is **editable**, in one of two ways depending on the sign.
+
+- **Text.** Select the sign and use the **Text** row in the Attributes pane — a
+  small multi-line box, so a street name can wrap (`MAIN ST` over `W 4TH`). The
+  edit commits when the box loses focus and is a **single undo step**; Escape
+  discards it. The text is written as the standard OpenDRIVE `@text` (§14,
+  Table 122), so it round-trips through save and reload — newlines included —
+  and any other OpenDRIVE tool reads it back.
+- **Speed limit.** A speed-limit sign (`R2-1`) shows a **Speed limit** row
+  instead of a fixed number baked into its type. The posted speed is stored as
+  OpenDRIVE `@value` with the `@unit` the spec requires alongside it, so a
+  simulator reads the limit rather than having to recognise the sign. The face
+  is always drawn in **mph**, whichever display units the editor is set to —
+  that is what a US sign reads.
 
 The words are rendered onto the plate as a texture, so a text sign shows its text
 in the 3D viewport and in **exported glTF** (`.glb`). USD export keeps the flat
 plate (single-file USDA cannot embed an image), but the `@text` is still written
 to the stage's `.xodr` companion. The Text row is available for any static sign
 (text is legal on all of them) and is disabled for dynamic traffic lights.
+
+A `.xodr` authored against another country's sign catalogue still opens: its
+signals round-trip untouched, and any identity this build does not ship simply
+draws on the generic silhouette.
 
 ### Junction markings
 

@@ -15,11 +15,13 @@
  */
 
 #include "roadmaker/assets/prop_library.hpp"
+#include "roadmaker/assets/sign_catalog.hpp"
 #include "roadmaker/edit/assembly.hpp"
 #include "roadmaker/edit/connection.hpp"
 #include "roadmaker/edit/operations.hpp"
 #include "roadmaker/mesh/junction_stoplines.hpp"
 #include "roadmaker/road/authoring.hpp"
+#include "roadmaker/road/defaults.hpp"
 #include "roadmaker/road/lane.hpp"
 #include "roadmaker/road/lane_section.hpp"
 #include "roadmaker/road/network.hpp"
@@ -268,7 +270,7 @@ TEST(LibraryDrop, ShrubMapsToVegetation) {
 
 TEST(LibraryDrop, TrafficLightSnapsToTheNearbyRoadAndAddsADynamicSignal) {
   RoadNetwork network = with_straight_road();
-  LibraryDropAction action = resolve_library_drop(signal("light"), network, 90.0, -6.0);
+  LibraryDropAction action = resolve_library_drop(signal("us.signal_head"), network, 90.0, -6.0);
   ASSERT_EQ(action.kind, LibraryDropKind::Signal);
   ASSERT_NE(action.command, nullptr);
   EXPECT_FALSE(action.toast.isEmpty());
@@ -289,9 +291,12 @@ TEST(LibraryDrop, TrafficLightSnapsToTheNearbyRoadAndAddsADynamicSignal) {
   EXPECT_EQ(network.signal_count(), 0U);
 }
 
-TEST(LibraryDrop, TrafficSignMapsToAStaticSignal) {
+// An unknown tag can only come from a hand-edited manifest. It must still
+// author a valid signal — falling back to the pack's stop sign — rather than
+// producing a <signal> with no type at all.
+TEST(LibraryDrop, UnknownSignalTagFallsBackToAValidStaticSign) {
   RoadNetwork network = with_straight_road();
-  LibraryDropAction action = resolve_library_drop(signal("sign"), network, 40.0, -6.0);
+  LibraryDropAction action = resolve_library_drop(signal("not.a.designation"), network, 40.0, -6.0);
   ASSERT_EQ(action.kind, LibraryDropKind::Signal);
   ASSERT_TRUE(action.command->apply(network).has_value());
   roadmaker::SignalId id;
@@ -300,37 +305,60 @@ TEST(LibraryDrop, TrafficSignMapsToAStaticSignal) {
   EXPECT_EQ(count_errors(validate_network(network)), 0U);
 }
 
-TEST(LibraryDrop, StopSignMapsToStaticGermanStVo206) {
+TEST(LibraryDrop, StopSignMapsToTheMutcdR1_1) {
   RoadNetwork network = with_straight_road();
-  LibraryDropAction action = resolve_library_drop(signal("sign_stop"), network, 40.0, -6.0);
+  LibraryDropAction action = resolve_library_drop(signal("us.r1_1"), network, 40.0, -6.0);
   ASSERT_EQ(action.kind, LibraryDropKind::Signal);
   ASSERT_TRUE(action.command->apply(network).has_value());
   roadmaker::SignalId id;
   network.for_each_signal([&](roadmaker::SignalId sid, const roadmaker::Signal&) { id = sid; });
   const roadmaker::Signal* sig = network.signal(id);
   EXPECT_FALSE(sig->dynamic.value_or(true)); // static sign, not a traffic light
-  EXPECT_EQ(sig->type, "206");               // StVO 206: STOP
-  EXPECT_EQ(sig->country, "DE");
+  EXPECT_EQ(sig->type, "R1-1");              // MUTCD stop sign (spec §1.4)
+  EXPECT_EQ(sig->country, "US");             // ISO 3166-1 alpha-2 (§14.1 Table 122)
+  // §14.1 recommends @height/@width "for proper representation"; §1.4 supplies both.
+  ASSERT_TRUE(sig->height.has_value());
+  ASSERT_TRUE(sig->width.has_value());
+  EXPECT_DOUBLE_EQ(*sig->height, defaults::kSignStopFace);
+  EXPECT_DOUBLE_EQ(*sig->width, defaults::kSignStopFace);
   EXPECT_EQ(count_errors(validate_network(network)), 0U);
 }
 
-TEST(LibraryDrop, YieldSignMapsToStaticGermanStVo205) {
+TEST(LibraryDrop, YieldSignMapsToTheMutcdR1_2) {
   RoadNetwork network = with_straight_road();
-  LibraryDropAction action = resolve_library_drop(signal("sign_yield"), network, 40.0, -6.0);
+  LibraryDropAction action = resolve_library_drop(signal("us.r1_2"), network, 40.0, -6.0);
   ASSERT_EQ(action.kind, LibraryDropKind::Signal);
   ASSERT_TRUE(action.command->apply(network).has_value());
   roadmaker::SignalId id;
   network.for_each_signal([&](roadmaker::SignalId sid, const roadmaker::Signal&) { id = sid; });
   const roadmaker::Signal* sig = network.signal(id);
   EXPECT_FALSE(sig->dynamic.value_or(true));
-  EXPECT_EQ(sig->type, "205"); // StVO 205: yield/give way
-  EXPECT_EQ(sig->country, "DE");
+  EXPECT_EQ(sig->type, "R1-2"); // MUTCD yield sign
+  EXPECT_EQ(sig->country, "US");
+  EXPECT_EQ(count_errors(validate_network(network)), 0U);
+}
+
+// §1.4: the posted speed persists as @value + the @unit that §14.1 makes
+// mandatory alongside it — not baked into a country-coded @subtype string.
+TEST(LibraryDrop, SpeedLimitPostsItsValueInMph) {
+  RoadNetwork network = with_straight_road();
+  LibraryDropAction action = resolve_library_drop(signal("us.r2_1"), network, 40.0, -6.0);
+  ASSERT_EQ(action.kind, LibraryDropKind::Signal);
+  ASSERT_TRUE(action.command->apply(network).has_value());
+  roadmaker::SignalId id;
+  network.for_each_signal([&](roadmaker::SignalId sid, const roadmaker::Signal&) { id = sid; });
+  const roadmaker::Signal* sig = network.signal(id);
+  EXPECT_EQ(sig->type, "R2-1");
+  ASSERT_TRUE(sig->value.has_value());
+  EXPECT_GT(*sig->value, 0.0);
+  EXPECT_EQ(sig->unit, "mph"); // an e_unitSpeed literal
   EXPECT_EQ(count_errors(validate_network(network)), 0U);
 }
 
 TEST(LibraryDrop, SignalDroppedAwayFromAnyRoadIsRejectedWithAHint) {
   RoadNetwork network = with_straight_road();
-  const LibraryDropAction action = resolve_library_drop(signal("light"), network, 50.0, 200.0);
+  const LibraryDropAction action =
+      resolve_library_drop(signal("us.signal_head"), network, 50.0, 200.0);
   EXPECT_EQ(action.kind, LibraryDropKind::None);
   EXPECT_EQ(action.command, nullptr);
   EXPECT_FALSE(action.toast.isEmpty());

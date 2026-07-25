@@ -21,6 +21,7 @@
 //
 // Runs under QT_QPA_PLATFORM=offscreen like every other editor test.
 
+#include "roadmaker/assets/sign_catalog.hpp"
 #include "roadmaker/edit/operations.hpp"
 #include "roadmaker/road/network.hpp"
 #include "roadmaker/road/signal.hpp"
@@ -36,6 +37,7 @@
 #include "document/document.hpp"
 #include "document/library_manifest.hpp"
 #include "document/selection_model.hpp"
+#include "document/signal_placement.hpp" // kDefaultSignTag
 #include "tools/sign_tool.hpp"
 
 namespace roadmaker::editor {
@@ -90,7 +92,7 @@ const Signal* only_signal(const Document& document) {
 
 } // namespace
 
-TEST(SignTool, ClickPlacesTextSignWithDefaultText) {
+TEST(SignTool, ClickPlacesTheDefaultSignWithItsCatalogueLegend) {
   Scene scene;
   SignTool tool(scene.document, scene.selection);
   tool.set_params_provider([] { return LibraryItem{}; }); // no Library sign
@@ -104,12 +106,14 @@ TEST(SignTool, ClickPlacesTextSignWithDefaultText) {
   ASSERT_EQ(scene.document.network().signal_count(), 1U);
   const Signal* placed = only_signal(scene.document);
   ASSERT_NE(placed, nullptr);
-  EXPECT_EQ(placed->type, "310");
-  EXPECT_EQ(placed->text, "City");
+  const signs::SignDef* def = signs::find_by_key(kDefaultSignTag);
+  ASSERT_NE(def, nullptr);
+  EXPECT_EQ(placed->type, def->type);
+  EXPECT_EQ(placed->text, def->default_text);
   EXPECT_TRUE(scene.selection.primary().signal.is_valid()) << "the placed sign is selected";
 }
 
-TEST(SignTool, DefaultsToTextSignWhenLibraryHasNoSign) {
+TEST(SignTool, DefaultsToTheStreetNameBladeWhenLibraryHasNoSign) {
   Scene scene;
   SignTool tool(scene.document, scene.selection);
   // A non-sign item (or empty) must still place a usable text sign.
@@ -119,19 +123,19 @@ TEST(SignTool, DefaultsToTextSignWhenLibraryHasNoSign) {
   ASSERT_TRUE(tool.mouse_press(at(60.0, 3.0, Qt::LeftButton)));
   EXPECT_TRUE(tool.mouse_release(at(60.0, 3.0)));
   ASSERT_EQ(scene.document.network().signal_count(), 1U);
-  EXPECT_EQ(only_signal(scene.document)->type, "310");
+  EXPECT_EQ(only_signal(scene.document)->type, signs::find_by_key(kDefaultSignTag)->type);
 }
 
 TEST(SignTool, PlacesTheSelectedSignAsset) {
   Scene scene;
   SignTool tool(scene.document, scene.selection);
-  tool.set_params_provider([] { return sign_asset("sign_stop"); });
+  tool.set_params_provider([] { return sign_asset("us.r1_1"); });
   tool.activate();
 
   ASSERT_TRUE(tool.mouse_press(at(60.0, 3.0, Qt::LeftButton)));
   EXPECT_TRUE(tool.mouse_release(at(60.0, 3.0)));
   ASSERT_EQ(scene.document.network().signal_count(), 1U);
-  EXPECT_EQ(only_signal(scene.document)->type, "206"); // StVO 206 STOP
+  EXPECT_EQ(only_signal(scene.document)->type, "R1-1"); // MUTCD stop sign
 }
 
 TEST(SignTool, DragCommitsExactlyOneCommand) {

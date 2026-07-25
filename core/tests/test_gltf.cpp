@@ -15,6 +15,7 @@
  */
 
 #include "roadmaker/assets/prop_library.hpp"
+#include "roadmaker/assets/sign_catalog.hpp"
 #include "roadmaker/io/gltf_exporter.hpp"
 #include "roadmaker/mesh/mesh_builder.hpp"
 #include "roadmaker/road/authoring.hpp"
@@ -293,12 +294,18 @@ tinygltf::Model export_text_signs(int count, const std::string& text) {
     throw std::runtime_error("author failed");
   }
   for (int i = 0; i < count; ++i) {
+    // A D3-1 street-name blade: the shipped pack's editable-legend sign, and
+    // the only kind whose face is a texture rather than flat geometry.
+    const roadmaker::signs::SignDef* def = roadmaker::signs::find_by_key("us.d3_1");
+    if (def == nullptr) {
+      throw std::runtime_error("no us.d3_1 catalogue entry");
+    }
     roadmaker::Signal sign;
     sign.odr_id = "t" + std::to_string(i);
-    sign.type = "310";
-    sign.subtype = "-1";
-    sign.country = "DE";
-    sign.dynamic = false;
+    sign.type = std::string(def->type);
+    sign.subtype = std::string(def->subtype);
+    sign.country = std::string(def->country);
+    sign.dynamic = def->dynamic;
     sign.s = 20.0 + 10.0 * i;
     sign.t = 6.0;
     sign.text = text;

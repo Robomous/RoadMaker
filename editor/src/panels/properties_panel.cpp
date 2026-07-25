@@ -17,6 +17,7 @@
 #include "panels/properties_panel.hpp"
 
 #include "roadmaker/assets/prop_library.hpp"
+#include "roadmaker/assets/sign_catalog.hpp"
 #include "roadmaker/edit/operations.hpp"
 #include "roadmaker/geometry/poly3.hpp"
 #include "roadmaker/road/network.hpp"
@@ -287,6 +288,7 @@ PropertiesPanel::PropertiesPanel(Document& document,
       signal_group_(new QGroupBox(tr("Signal"), this)), signal_s_spin_(new UnitSpinBox),
       signal_t_spin_(new UnitSpinBox), signal_h_spin_(new QDoubleSpinBox),
       signal_kind_label_(new QLabel(this)), signal_text_edit_(new QPlainTextEdit),
+      signal_value_spin_(new QSpinBox), signal_value_label_(new QLabel(tr("Speed limit"), this)),
       object_group_(new QGroupBox(tr("Prop"), this)), object_kind_label_(new QLabel(this)),
       model_slot_(new SlotWidget(QStringLiteral("Props"), this)),
       instance_material_slot_(new SlotWidget(QStringLiteral("Materials"), this)),
@@ -821,6 +823,16 @@ PropertiesPanel::PropertiesPanel(Document& document,
   signal_text_edit_->setFixedHeight(2 * signal_text_edit_->fontMetrics().lineSpacing() + 12);
   signal_text_edit_->installEventFilter(this);
   signal_form->addRow(tr("Text"), signal_text_edit_);
+  // Posted speed (§14.1 Table 122: @value + the @unit that is mandatory with
+  // it). Shown only for a designation the catalogue marks as carrying a value,
+  // so a stop sign never grows a speed field. NOT a UnitSpinBox: §1.4 puts mph
+  // on the face regardless of the display-unit toggle, so the number here is
+  // the authored mph and must not be converted for display or on input.
+  signal_value_spin_->setObjectName(QStringLiteral("signal_value_spin"));
+  signal_value_spin_->setRange(5, 120);
+  signal_value_spin_->setSingleStep(5);
+  signal_value_spin_->setSuffix(tr(" mph"));
+  signal_form->addRow(signal_value_label_, signal_value_spin_);
 
   // Prop: a placed <object> that renders a bundled prop model. The Model slot
   // takes a Library drag and re-points the prop at what was dropped.
@@ -1195,6 +1207,7 @@ PropertiesPanel::PropertiesPanel(Document& document,
        std::initializer_list<QDoubleSpinBox*>{signal_s_spin_, signal_t_spin_, signal_h_spin_}) {
     connect(spin, &QDoubleSpinBox::editingFinished, this, [this] { push_signal_move(); });
   }
+  connect(signal_value_spin_, &QSpinBox::editingFinished, this, [this] { push_signal_value(); });
 
   // A scene selection change leaves the crosswalk asset editor (dual-mode
   // flag), then rebuilds the normal view.
@@ -1805,6 +1818,13 @@ void PropertiesPanel::refresh_signal(const Signal& signal) {
   const bool dynamic = signal.dynamic.value_or(false);
   signal_kind_label_->setText(dynamic ? tr("Dynamic signal (traffic light)")
                                       : tr("Static signal (sign)"));
+  // The designation as the shipped catalogue names it, when this build knows
+  // it; a foreign or legacy identity still shows its raw type/subtype rather
+  // than nothing.
+  const signs::SignDef* def = signs::find_by_identity(signal.country, signal.type);
+  if (def != nullptr) {
+    add_row(tr("Designation"), QString::fromUtf8(def->label.data(), qsizetype(def->label.size())));
+  }
   add_row(tr("Type / subtype"),
           tr("%1 / %2")
               .arg(QString::fromStdString(signal.type.empty() ? "—" : signal.type))
@@ -1828,6 +1848,15 @@ void PropertiesPanel::refresh_signal(const Signal& signal) {
     signal_text_edit_->setPlainText(QString::fromStdString(signal.text));
   }
   signal_text_edit_->setEnabled(!dynamic);
+  // The posted-speed row exists only for a designation that carries a value.
+  // Seeded under a blocker so the re-seed never commits back.
+  const bool posts_a_speed = def != nullptr && def->default_value.has_value();
+  signal_value_label_->setVisible(posts_a_speed);
+  signal_value_spin_->setVisible(posts_a_speed);
+  if (posts_a_speed) {
+    const QSignalBlocker block_value(signal_value_spin_);
+    signal_value_spin_->setValue(int(std::lround(signal.value.value_or(*def->default_value))));
+  }
   signal_group_->show();
 }
 
@@ -1845,6 +1874,29 @@ void PropertiesPanel::push_signal_text() {
     return; // no-op: the re-entrancy guard (a refresh re-seed must not commit)
   }
   push(edit::set_signal_text(document_.network(), signal_ids.back(), text));
+}
+
+void PropertiesPanel::push_signal_value() {
+  const std::vector<SignalId> signal_ids = selection_.selected_signals();
+  if (signal_ids.empty()) {
+    return;
+  }
+  const Signal* signal = document_.network().signal(signal_ids.back());
+  if (signal == nullptr) {
+    return;
+  }
+  const signs::SignDef* def = signs::find_by_identity(signal->country, signal->type);
+  if (def == nullptr || !def->default_value.has_value()) {
+    return; // the row is hidden for this designation; ignore a stray signal
+  }
+  const double value = signal_value_spin_->value();
+  if (signal->value.has_value() && *signal->value == value && signal->unit == def->unit) {
+    return; // no-op: the re-entrancy guard (a refresh re-seed must not commit)
+  }
+  // §14.1 binds @unit to @value, so the command takes both and the catalogue
+  // supplies the unit — mph, which the face shows regardless of the UI toggle.
+  push(edit::set_signal_value(
+      document_.network(), signal_ids.back(), value, std::string(def->unit)));
 }
 
 bool PropertiesPanel::eventFilter(QObject* watched, QEvent* event) {

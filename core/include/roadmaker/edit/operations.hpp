@@ -1257,6 +1257,23 @@ move_signal(const RoadNetwork& network,
 [[nodiscard]] RM_API std::unique_ptr<Command>
 set_signal_text(const RoadNetwork& network, SignalId signal, std::string text);
 
+/// Sets a signal's numeric value and its unit (ASAM OpenDRIVE 1.9.0 §14.1,
+/// Table 122: @value — "value of the signal, if value is given, unit is
+/// mandatory"; @unit — "unit of @value", an e_unit literal). This is what makes
+/// a US speed-limit sign's posted speed editable: the pack authors
+/// `value=25 unit="mph"`, and §1.4 puts mph on the face regardless of the
+/// editor's display-unit toggle, so the stored value needs no conversion.
+///
+/// The pair is edited together because the spec binds them: pass an engaged
+/// `value` with a non-empty `unit`, or `std::nullopt` with an empty `unit` to
+/// clear both. Undo is byte-identical from the value snapshot. Fails for a
+/// stale signal id, a stale road back-reference, a value/unit pair that
+/// violates the mandatory-together rule, and a no-op.
+[[nodiscard]] RM_API std::unique_ptr<Command> set_signal_value(const RoadNetwork& network,
+                                                               SignalId signal,
+                                                               std::optional<double> value,
+                                                               std::string unit);
+
 // --- signalization (p4-s7, issue #228) ---------------------------------------
 
 // `kSignalizeAxisTolerance` and `cluster_signal_axes` were promoted to

@@ -3902,6 +3902,21 @@ NB_MODULE(_roadmaker, m) {
       "Sets a signal's @text (§14 Table 122 — editable sign-face text; multi-line "
       "uses literal \\n). Rejects a no-op; one undo step.");
   edit.def(
+      "set_signal_value",
+      [](const roadmaker::RoadNetwork& network,
+         roadmaker::SignalId signal,
+         std::optional<double> value,
+         std::string unit) {
+        return roadmaker::edit::set_signal_value(network, signal, value, std::move(unit));
+      },
+      "network"_a,
+      "signal"_a,
+      "value"_a,
+      "unit"_a,
+      "Sets a signal's @value and @unit together (§14.1 Table 122 — 'if value is "
+      "given, unit is mandatory'), e.g. a US speed limit as (25, 'mph'). Pass "
+      "(None, '') to clear both. Rejects a half pair and a no-op; one undo step.");
+  edit.def(
       "rename_road",
       [](const roadmaker::RoadNetwork& network, roadmaker::RoadId road, std::string name) {
         return roadmaker::edit::rename_road(network, road, std::move(name));

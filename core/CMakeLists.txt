@@ -45,6 +45,7 @@ add_library(roadmaker_core ${_rm_core_type}
   src/mesh/manifold_bridge.cpp
   src/mesh/bridge_solids.cpp
   src/assets/prop_meshes.gen.cpp
+  src/assets/sign_catalog.cpp
   src/assets/sign_face.cpp
   src/assets/sign_font.gen.cpp
   src/io/gltf_exporter.cpp

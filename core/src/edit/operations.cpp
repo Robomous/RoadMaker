@@ -17,6 +17,7 @@
 #include "roadmaker/edit/operations.hpp"
 
 #include "roadmaker/assets/prop_library.hpp"
+#include "roadmaker/assets/sign_catalog.hpp"
 #include "roadmaker/edit/assembly.hpp"
 #include "roadmaker/edit/connection.hpp"
 #include "roadmaker/geometry/profile_fit.hpp"
@@ -7505,6 +7506,47 @@ set_signal_text(const RoadNetwork& network, SignalId signal, std::string text) {
   return command;
 }
 
+std::unique_ptr<Command> set_signal_value(const RoadNetwork& network,
+                                          SignalId signal,
+                                          std::optional<double> value,
+                                          std::string unit) {
+  // ASAM OpenDRIVE 1.9.0 §14.1, Table 122: @value is "the value of the signal,
+  // if value is given, unit is mandatory" and @unit is the "unit of @value".
+  // The two are therefore edited together and never independently — clearing
+  // the value clears the unit with it, which is why this takes both.
+  static constexpr std::string_view kName = "Edit Sign Value";
+  const Signal* current = network.signal(signal);
+  if (current == nullptr) {
+    return invalid_command(std::string(kName), stale_signal_error());
+  }
+  const Road* owner = network.road(current->road);
+  if (owner == nullptr) {
+    return invalid_command(std::string(kName),
+                           Error{.code = ErrorCode::InvalidArgument,
+                                 .message = "signal has a stale road back-reference"});
+  }
+  if (value.has_value() == unit.empty()) {
+    return invalid_command(std::string(kName),
+                           Error{.code = ErrorCode::InvalidArgument,
+                                 .message = "@unit is mandatory with @value and meaningless "
+                                            "without it (1.9.0 §14.1, Table 122)"});
+  }
+  // Reject a no-op EXPLICITLY, like set_signal_text above.
+  if (value == current->value && unit == current->unit) {
+    return invalid_command(
+        std::string(kName),
+        Error{.code = ErrorCode::InvalidArgument, .message = "signal value is unchanged"});
+  }
+  Signal edited = *current;
+  edited.value = value;
+  edited.unit = std::move(unit);
+  auto command =
+      std::make_unique<GenericCommand>(std::string(kName), DirtySet{.objects = {current->road}});
+  command->before.signals.emplace_back(signal, *current);
+  command->after.signals.emplace_back(signal, std::move(edited));
+  return command;
+}
+
 // --- signalization (p4-s7, issue #228) ---------------------------------------
 
 namespace {
@@ -7517,6 +7559,18 @@ struct SignalCode {
   std::string_view country;
 };
 
+/// The identity a catalogue key resolves to, so this file never spells a
+/// (type, subtype, country) triple of its own: the shipped sign catalogue
+/// (roadmaker::signs, spec §1.4) is the single place the product decides what
+/// a stop sign is, and the auto-signalize templates are just another consumer.
+SignalCode signalize_code(std::string_view key) {
+  const signs::SignDef* def = signs::find_by_key(key);
+  if (def == nullptr) {
+    return {};
+  }
+  return SignalCode{.type = def->type, .subtype = def->subtype, .country = def->country};
+}
+
 /// The vehicle traffic light.
 ///
 /// ASAM OpenDRIVE 1.9.0 §14.1 (14_signals.md:61-65): "some elements that are
@@ -7527,21 +7581,21 @@ struct SignalCode {
 /// VEHICLE head as type 1000001 / subtype -1 (06_general_architecture.md:216, a
 /// `<signalRegulations type="1000001" subType="-1">` carrying
 /// `turnOnRedAllowed` — a semantic that exists only for a vehicle traffic
-/// light) and the pedestrian head as 1000002 (14_signals.md:408-415).
-/// RoadMaker already places 1000001/-1/OpenDRIVE from the library-drop path, so
-/// the engine authors the same code rather than a second spelling of it.
-constexpr SignalCode kTrafficLightCode{.type = "1000001", .subtype = "-1", .country = "OpenDRIVE"};
+/// light) and the pedestrian head as 1000002 (14_signals.md:408-415). The
+/// catalogue's "us.signal_head" entry carries exactly that code.
+const SignalCode kTrafficLightCode = signalize_code("us.signal_head");
 
 /// The STOP sign.
 ///
-/// NO code is invented here. The local ASAM reference names no
-/// OpenDRIVE-catalog code for a stop or a yield sign: §14.8 mentions the stop
-/// sign only as an example of `<priority>` semantics (14_signals.md:1019), and
-/// every concrete sign code the reference spells out is a German StVO one (274,
-/// 101, 1010, 1012, 1040, 386, 405 — 14_signals.md:164, 726-738, 896-902). So
-/// the engine reuses the StVO code RoadMaker itself already places from the
-/// library-drop path: 206 "Halt! Vorfahrt gewähren", @country="DE".
-constexpr SignalCode kStopSignCode{.type = "206", .subtype = "-1", .country = "DE"};
+/// NO code is invented here — but it is no longer borrowed either. The local
+/// ASAM reference names no OpenDRIVE-catalog code for a stop or a yield sign
+/// (§14.8 mentions the stop sign only as an example of `<priority>` semantics,
+/// 14_signals.md:1019) and §14.1 defines @type as a "type identifier according
+/// to country code", so the correct spelling for a US network is the MUTCD
+/// designation R1-1 with @country="US" (an ISO 3166-1 alpha-2 code, Table 122).
+/// That is what the catalogue's "us.r1_1" entry carries; before #414 the engine
+/// reused the German StVO 206 the library-drop path happened to place.
+const SignalCode kStopSignCode = signalize_code("us.r1_1");
 
 /// Mounting height [m] above the road surface. §14.1 prescribes none (it only
 /// recommends @height/@width "for proper representation"), so these are

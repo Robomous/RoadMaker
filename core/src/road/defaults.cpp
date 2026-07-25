@@ -146,6 +146,86 @@ std::string markings_markdown() {
   return out;
 }
 
+std::string signs_markdown() {
+  std::string out = "<!-- rm-defaults: signs -->\n"
+                    "| Sign | Face size (default) | Imperial display | Notes |\n"
+                    "|---|---|---|---|\n";
+  const auto row = [&out](const char* sign,
+                          const std::string& size,
+                          const char* imperial,
+                          const std::string& notes) {
+    // An empty Notes cell renders as "| |", not "|  |".
+    out += fmt::format("| {} | {} | {} |{} |\n",
+                       sign,
+                       size,
+                       imperial,
+                       notes.empty() ? std::string() : fmt::format(" {}", notes));
+  };
+  const auto square = [](double face) { return fmt::format("{} × {} m", len(face), len(face)); };
+  row("Stop (R1-1)",
+      fmt::format("**{}** octagon", square(kSignStopFace)),
+      "30 in",
+      fmt::format("{} m multilane option", len(kSignStopFaceMultilane)));
+  row("Yield (R1-2)", fmt::format("**{} m** triangle", len(kSignYieldFace)), "36 in", "");
+  row("Speed Limit (R2-1)",
+      fmt::format("**{} × {} m**", len(kSignSpeedLimitWidth), len(kSignSpeedLimitHeight)),
+      "24 × 30 in",
+      "value editable; the face displays **mph** regardless of UI units");
+  row("Do Not Enter (R5-1)", square(kSignDoNotEnterFace), "30 in", "");
+  row("One Way (R6-1)",
+      fmt::format("{} × {} m", len(kSignOneWayWidth), len(kSignOneWayHeight)),
+      "36 × 12 in",
+      "arrow direction = variant");
+  row("Turn restriction (R3-1/R3-2)", square(kSignTurnRestrictionFace), "24 in", "symbol");
+  row("Keep Right (R4-7)",
+      fmt::format("{} × {} m", len(kSignKeepRightWidth), len(kSignKeepRightHeight)),
+      "24 × 30 in",
+      "");
+  row("Warning diamonds (W1-2 curve, W3-1 stop ahead, W11-2 pedestrian)",
+      fmt::format("**{}**", square(kSignWarningFace)),
+      "30 in",
+      "");
+  row("School (S1-1)", fmt::format("{} m pentagon", len(kSignSchoolFace)), "36 in", "");
+  row("Street name (D3-1)",
+      fmt::format("{}–{} m tall, length fits text",
+                  len(kSignStreetNameMinHeight),
+                  len(kSignStreetNameHeight)),
+      "10–12 in",
+      fmt::format("text editable; letter height ≥ {} m", len(kSignStreetNameMinLetterHeight)));
+  return out;
+}
+
+std::string sign_mounting_markdown() {
+  std::string out = "<!-- rm-defaults: sign-mounting -->\n"
+                    "| Mounting | Default | Imperial display | Notes |\n"
+                    "|---|---|---|---|\n";
+  const auto row = [&out](const char* mounting,
+                          const std::string& value,
+                          const char* imperial,
+                          const char* notes) {
+    out += fmt::format("| {} | {} | {} |{} |\n",
+                       mounting,
+                       value,
+                       imperial,
+                       *notes == '\0' ? std::string() : fmt::format(" {}", notes));
+  };
+  row("Mounting height (bottom edge above pavement)",
+      fmt::format("**urban {} m**; rural option {} m", len(kSignMountUrban), len(kSignMountRural)),
+      "7 ft; 5 ft",
+      "");
+  row("Lateral offset",
+      fmt::format("min **{} m** from shoulder edge; urban min **{} m** from curb face",
+                  len(kSignLateralShoulder),
+                  len(kSignLateralCurb)),
+      "6 ft; 2 ft",
+      "interacts with #338's outermost-lane-edge soft-snap — placement must compose with it");
+  row("Post",
+      fmt::format("breakaway single post, visual Ø ≈ {} m", len(kSignPostDiameter)),
+      "—",
+      "");
+  return out;
+}
+
 std::string signals_lighting_markdown() {
   std::string out = "<!-- rm-defaults: signals-lighting -->\n"
                     "| Item | Default | Imperial display |\n"

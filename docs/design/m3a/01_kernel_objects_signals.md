@@ -206,6 +206,15 @@ phase-1 executor must **not** add signal commands "for parity".
 
 ## 3. GS-1 signal & object catalog (hard-coded, decision 1)
 
+> **Superseded 2026-07-25 by [#414](https://github.com/Robomous/RoadMaker/issues/414).**
+> This section is kept as the M3a design record. The "country catalogs are
+> backlog" decision has since been taken: the shipped set is the **US pack**,
+> defined as data in `roadmaker::signs::catalog()` and governed by
+> [realism defaults §1.4](../../domain/realism_defaults.md#14-signs-mutcd-conventional-road-sizes).
+> `core/src/xodr/signal_catalog.hpp` was deleted with that change (it had no
+> remaining consumer). The German codes below are what M3a shipped; files that
+> carry them still load and round-trip.
+
 M3a ships **no signal-catalog data file**; it hard-codes exactly the GS-1 set as
 `type`/`subtype`/`country` constants in `core/src/xodr/signal_catalog.hpp`
 (kernel-internal; the editor's placement UI reads the same table). Country

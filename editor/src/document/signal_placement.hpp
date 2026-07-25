@@ -65,13 +65,29 @@ nearest_signal_station(const RoadNetwork& network, double x, double y);
 /// the tool refuses to place from before it touches the network.
 [[nodiscard]] bool is_signal_asset(const LibraryItem& item);
 
+/// True when `item`'s catalogue entry carries a user-editable legend (a stop
+/// word, a posted speed, a street name) — the signs the Sign tool exists to
+/// place, and what arms it from a Library selection. Reads the shipped sign
+/// catalogue's `legend_editable` flag instead of naming individual tags, so a
+/// designation joining the pack does not mean editing the window.
+[[nodiscard]] bool authors_editable_legend(const LibraryItem& item);
+
+/// The Sign tool's fallback tag when the Library selection is not a sign: the
+/// street-name blade, the pack's most obviously text-driven entry.
+inline constexpr auto kDefaultSignTag = "us.d3_1";
+
 /// The `Signal` a library item's `signal` tag authors at road-relative (s, t).
 ///
-/// "light" is a dynamic traffic light (OpenDRIVE catalog type); the sign tags
-/// are static German StVO (VzKat) regulatory plates the mesh builder renders by
-/// their catalog type: "sign_stop" → 206 (STOP), "sign_yield" → 205 (yield),
-/// and the generic "sign" → 274/50 (speed-limit-50, a recognisable default the
-/// user can retype). Orientation "+" faces the signal along increasing s.
+/// The tag IS a key into the shipped sign catalogue (roadmaker::signs, spec
+/// §1.4): "us.r1_1" is the MUTCD stop sign, "us.r2_1" a speed limit posted as
+/// @value + @unit="mph", "us.signal_head" the country-neutral ASAM traffic
+/// light. Everything the placement authors — @type, @subtype, @country,
+/// @dynamic, @text, @height/@width, @value/@unit — is transcribed from that
+/// entry, so adding a designation never means editing this function.
+///
+/// Orientation "+" faces the signal along increasing s; deriving it from the
+/// approach is #416's scope, and mounting pose (@zOffset, @pitch, @roll) is
+/// #418's.
 [[nodiscard]] Signal make_signal(const QString& tag, std::string odr_id, double s, double t);
 
 /// World position of a signal head: its (s, t) on the owning road, lifted by its

@@ -23,6 +23,7 @@
 // changed in one place without the other fails CI, not review.
 
 #include "roadmaker/assets/prop_library.hpp"
+#include "roadmaker/assets/sign_catalog.hpp"
 #include "roadmaker/road/authoring.hpp"
 #include "roadmaker/road/defaults.hpp"
 #include "roadmaker/road/lane.hpp"
@@ -36,6 +37,8 @@
 #include <fstream>
 #include <sstream>
 #include <string>
+#include <string_view>
+#include <vector>
 
 namespace roadmaker {
 namespace {
@@ -73,6 +76,24 @@ TEST(DefaultsRegistry, DocMarkingsTableMatchesRegistry) {
       << generated;
 }
 
+TEST(DefaultsRegistry, DocSignsTableMatchesRegistry) {
+  const std::string generated = defaults::signs_markdown();
+  EXPECT_TRUE(committed_spec_doc().find(generated) != std::string::npos)
+      << "docs/domain/realism_defaults.md §1.4 is out of date with the defaults "
+         "registry.\nRegenerate the marked table from "
+         "defaults::signs_markdown():\n\n"
+      << generated;
+}
+
+TEST(DefaultsRegistry, DocSignMountingTableMatchesRegistry) {
+  const std::string generated = defaults::sign_mounting_markdown();
+  EXPECT_TRUE(committed_spec_doc().find(generated) != std::string::npos)
+      << "docs/domain/realism_defaults.md §1.4 mounting table is out of date with "
+         "the defaults registry.\nRegenerate the marked table from "
+         "defaults::sign_mounting_markdown():\n\n"
+      << generated;
+}
+
 TEST(DefaultsRegistry, DocSignalsLightingTableMatchesRegistry) {
   const std::string generated = defaults::signals_lighting_markdown();
   EXPECT_TRUE(committed_spec_doc().find(generated) != std::string::npos)
@@ -96,6 +117,8 @@ TEST(DefaultsRegistry, DocTreesBuildingsTableMatchesRegistry) {
 TEST(DefaultsRegistry, RenderersEmitTheirMarkers) {
   EXPECT_EQ(defaults::cross_section_markdown().rfind("<!-- rm-defaults: cross-section -->", 0), 0U);
   EXPECT_EQ(defaults::markings_markdown().rfind("<!-- rm-defaults: markings -->", 0), 0U);
+  EXPECT_EQ(defaults::signs_markdown().rfind("<!-- rm-defaults: signs -->", 0), 0U);
+  EXPECT_EQ(defaults::sign_mounting_markdown().rfind("<!-- rm-defaults: sign-mounting -->", 0), 0U);
   EXPECT_EQ(
       defaults::signals_lighting_markdown().rfind("<!-- rm-defaults: signals-lighting -->", 0), 0U);
   EXPECT_EQ(defaults::trees_buildings_markdown().rfind("<!-- rm-defaults: trees-buildings -->", 0),
@@ -236,6 +259,81 @@ TEST(DefaultsRegistry, BuildingsFollowThePerFloorRule) {
   EXPECT_GE(
       low.radius,
       std::hypot(defaults::kHouseFootprintLength / 2.0, defaults::kHouseFootprintWidth / 2.0));
+}
+
+// --- The US sign pack vs §1.4 (#414) --------------------------------------
+//
+// roadmaker::signs::catalog() is the product's answer to "what is a stop
+// sign?" — one table feeding identity authoring, mesh selection, the junction
+// signalize templates and the Library manifest. Its face extents must be the
+// §1.4 constants and nothing else, so a designation cannot quietly acquire a
+// size the spec never granted it.
+
+const signs::SignDef& pack(std::string_view key) {
+  const signs::SignDef* def = signs::find_by_key(key);
+  EXPECT_NE(def, nullptr) << "no catalogue entry \"" << key << '"';
+  static const signs::SignDef k_missing{};
+  return def != nullptr ? *def : k_missing;
+}
+
+TEST(DefaultsRegistry, PackFaceSizesComeFromTheRegistry) {
+  EXPECT_DOUBLE_EQ(pack("us.r1_1").face_width, defaults::kSignStopFace);
+  EXPECT_DOUBLE_EQ(pack("us.r1_1").face_height, defaults::kSignStopFace);
+  EXPECT_DOUBLE_EQ(pack("us.r1_2").face_width, defaults::kSignYieldFace);
+  EXPECT_DOUBLE_EQ(pack("us.r2_1").face_width, defaults::kSignSpeedLimitWidth);
+  EXPECT_DOUBLE_EQ(pack("us.r2_1").face_height, defaults::kSignSpeedLimitHeight);
+  EXPECT_DOUBLE_EQ(pack("us.r5_1").face_width, defaults::kSignDoNotEnterFace);
+  EXPECT_DOUBLE_EQ(pack("us.r6_1_right").face_width, defaults::kSignOneWayWidth);
+  EXPECT_DOUBLE_EQ(pack("us.r6_1_right").face_height, defaults::kSignOneWayHeight);
+  EXPECT_DOUBLE_EQ(pack("us.r6_1_left").face_width, defaults::kSignOneWayWidth);
+  EXPECT_DOUBLE_EQ(pack("us.r3_1").face_width, defaults::kSignTurnRestrictionFace);
+  EXPECT_DOUBLE_EQ(pack("us.r3_2").face_width, defaults::kSignTurnRestrictionFace);
+  EXPECT_DOUBLE_EQ(pack("us.r4_7").face_width, defaults::kSignKeepRightWidth);
+  EXPECT_DOUBLE_EQ(pack("us.r4_7").face_height, defaults::kSignKeepRightHeight);
+  EXPECT_DOUBLE_EQ(pack("us.w1_2").face_width, defaults::kSignWarningFace);
+  EXPECT_DOUBLE_EQ(pack("us.w3_1").face_width, defaults::kSignWarningFace);
+  EXPECT_DOUBLE_EQ(pack("us.w11_2").face_width, defaults::kSignWarningFace);
+  EXPECT_DOUBLE_EQ(pack("us.s1_1").face_width, defaults::kSignSchoolFace);
+  EXPECT_DOUBLE_EQ(pack("us.d3_1").face_height, defaults::kSignStreetNameHeight);
+  // §1.4: a street-name blade's length follows its legend, so it declares none.
+  EXPECT_DOUBLE_EQ(pack("us.d3_1").face_width, 0.0);
+}
+
+// §14.1 (Table 122): @unit is the unit OF @value — the two travel together.
+// The catalogue is where a placement gets both, so enforce the pairing here
+// rather than discovering a unit-less speed limit in an exported file.
+TEST(DefaultsRegistry, PackValuesAlwaysCarryTheirUnit) {
+  for (const signs::SignDef& def : signs::catalog()) {
+    EXPECT_EQ(def.default_value.has_value(), !def.unit.empty()) << def.key;
+    if (def.default_value.has_value()) {
+      // e_unitSpeed literal; §1.4 puts mph on the face regardless of the
+      // editor's display-unit toggle, so the authored value is already mph.
+      EXPECT_EQ(def.unit, "mph") << def.key;
+    }
+  }
+}
+
+// Every static entry is a plated sign that a face can be baked onto, and every
+// entry names a distinct tag. The traffic-light head is the one shapeless
+// entry: it is an ASAM catalogue signal, not a US sign.
+TEST(DefaultsRegistry, PackEntriesAreWellFormed) {
+  std::vector<std::string_view> keys;
+  for (const signs::SignDef& def : signs::catalog()) {
+    keys.push_back(def.key);
+    EXPECT_FALSE(def.type.empty()) << def.key;
+    EXPECT_FALSE(def.subtype.empty()) << def.key;
+    EXPECT_FALSE(def.country.empty()) << def.key;
+    EXPECT_FALSE(def.model_id.empty()) << def.key;
+    EXPECT_FALSE(def.label.empty()) << def.key;
+    if (def.dynamic) {
+      EXPECT_EQ(def.shape, signs::FaceShape::None) << def.key;
+    } else {
+      EXPECT_NE(def.shape, signs::FaceShape::None) << def.key;
+      EXPECT_GT(def.face_height, 0.0) << def.key;
+    }
+  }
+  std::sort(keys.begin(), keys.end());
+  EXPECT_EQ(std::adjacent_find(keys.begin(), keys.end()), keys.end()) << "duplicate catalogue key";
 }
 
 TEST(DefaultsRegistry, RoadClassNames) {

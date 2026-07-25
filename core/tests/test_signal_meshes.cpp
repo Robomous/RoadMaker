@@ -15,12 +15,16 @@
  */
 
 // Tests for signal INSTANCE emission in the mesh builder. A <signal> renders as
-// an instance of a bundled signal model (props::model): dynamic → "signal_light",
-// static → "sign_generic". The instance carries the signal's world pose derived
-// from its s/t/zOffset + hOffset, and the object/signal re-mesh channel rebuilds
-// it without touching the road surface. Meshing never mutates the network.
+// an instance of a bundled signal model (props::model), chosen by looking its
+// (@country, @type) up in the shipped sign catalogue (roadmaker::signs, spec
+// §1.4); an identity no shipped pack claims degrades to "signal_light" or
+// "sign_generic" rather than vanishing. The instance carries the signal's world
+// pose derived from its s/t/zOffset + hOffset, and the object/signal re-mesh
+// channel rebuilds it without touching the road surface. Meshing never mutates
+// the network.
 
 #include "roadmaker/assets/prop_library.hpp"
+#include "roadmaker/assets/sign_catalog.hpp"
 #include "roadmaker/mesh/mesh_builder.hpp"
 #include "roadmaker/road/authoring.hpp"
 #include "roadmaker/road/network.hpp"
@@ -34,6 +38,7 @@
 #include <optional>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace roadmaker {
@@ -49,6 +54,10 @@ RoadId author_street(RoadNetwork& network) {
   return *road;
 }
 
+/// A signal carrying a LEGACY German StVO identity — the one RoadMaker itself
+/// authored before the US pack (#414). Nothing in the shipped catalogue matches
+/// it, so every test built on this helper is also asserting the degradation
+/// path: an unknown identity still meshes, on the generic silhouette.
 Signal make_signal(std::string odr_id, bool dynamic, double s, double t) {
   Signal sig;
   sig.odr_id = std::move(odr_id);
@@ -58,6 +67,30 @@ Signal make_signal(std::string odr_id, bool dynamic, double s, double t) {
   sig.country = "DE";
   sig.s = s;
   sig.t = t;
+  return sig;
+}
+
+/// A signal authored from the shipped catalogue, exactly the way the editor's
+/// make_signal does — so these tests exercise the real pack identities instead
+/// of a second spelling of them.
+Signal make_pack_signal(std::string odr_id, std::string_view key, double s, double t) {
+  const signs::SignDef* def = signs::find_by_key(key);
+  EXPECT_NE(def, nullptr) << "no catalogue entry \"" << key << '"';
+  Signal sig;
+  sig.odr_id = std::move(odr_id);
+  sig.s = s;
+  sig.t = t;
+  if (def != nullptr) {
+    sig.dynamic = def->dynamic;
+    sig.type = std::string(def->type);
+    sig.subtype = std::string(def->subtype);
+    sig.country = std::string(def->country);
+    sig.text = std::string(def->default_text);
+    if (def->default_value.has_value()) {
+      sig.value = def->default_value;
+      sig.unit = std::string(def->unit);
+    }
+  }
   return sig;
 }
 
@@ -153,25 +186,58 @@ TEST(SignalMeshes, MissingDynamicFlagDefaultsToSign) {
   EXPECT_EQ(mesh.signal_instances[0].model_id, "sign_generic");
 }
 
-// --- editable text faces (p4-s9, #230) --------------------------------------
+// --- editable text faces (p4-s9, #230; US pack #414) ------------------------
 
-// A StVO 310 town-entrance plate with text.
+// A D3-1 street-name blade with an editable legend.
 Signal make_text_sign(std::string odr_id, double s, double t, std::string text) {
-  Signal sig = make_signal(std::move(odr_id), /*dynamic=*/false, s, t);
-  sig.type = "310";
-  sig.subtype = "-1";
+  Signal sig = make_pack_signal(std::move(odr_id), "us.d3_1", s, t);
   sig.text = std::move(text);
   return sig;
 }
 
-TEST(SignalMeshes, Type310ResolvesSignPlate) {
+TEST(SignalMeshes, PackDesignationsResolveTheirModels) {
   RoadNetwork network;
   const RoadId road = author_street(network);
-  network.add_signal(road, make_text_sign("t", 40.0, 6.0, "City"));
+  network.add_signal(road, make_pack_signal("n", "us.d3_1", 40.0, 6.0));
 
   const NetworkMesh mesh = build_network_mesh(network);
   ASSERT_EQ(mesh.signal_instances.size(), 1U);
-  EXPECT_EQ(mesh.signal_instances[0].model_id, "sign_plate");
+  const signs::SignDef* def = signs::find_by_key("us.d3_1");
+  ASSERT_NE(def, nullptr);
+  EXPECT_EQ(mesh.signal_instances[0].model_id, def->model_id);
+}
+
+// The degradation contract. A German StVO plate — the identity RoadMaker wrote
+// before #414 — is in no shipped catalogue, so it must still mesh rather than
+// vanish. This is what keeps pre-#414 scenes openable.
+TEST(SignalMeshes, LegacyIdentityDegradesToTheGenericSilhouette) {
+  RoadNetwork network;
+  const RoadId road = author_street(network);
+  Signal stvo = make_signal("de", /*dynamic=*/false, 40.0, 6.0);
+  stvo.type = "206"; // StVO stop sign: used to have its own silhouette
+  stvo.subtype = "-1";
+  network.add_signal(road, stvo);
+
+  const NetworkMesh mesh = build_network_mesh(network);
+  ASSERT_EQ(mesh.signal_instances.size(), 1U);
+  EXPECT_EQ(mesh.signal_instances[0].model_id, "sign_generic");
+}
+
+// §1.4: a speed limit's face reads its @value, and it reads it in mph — the
+// authored unit — with no conversion and no reference to any display setting.
+TEST(SignalMeshes, SpeedLimitFaceComesFromItsValue) {
+  RoadNetwork network;
+  const RoadId road = author_street(network);
+  Signal limit = make_pack_signal("sl", "us.r2_1", 40.0, 6.0);
+  ASSERT_TRUE(limit.value.has_value());
+  EXPECT_EQ(limit.unit, "mph");
+  limit.value = 45.0;
+  network.add_signal(road, limit);
+
+  const NetworkMesh mesh = build_network_mesh(network);
+  ASSERT_EQ(mesh.signal_instances.size(), 1U);
+  ASSERT_TRUE(mesh.signal_instances[0].face.has_value());
+  EXPECT_EQ(mesh.signal_instances[0].face->text, "SPEED\nLIMIT\n45");
 }
 
 TEST(SignalMeshes, TextSignCarriesFaceOverlay) {
@@ -212,7 +278,9 @@ TEST(SignalMeshes, EmptyTextHasNoFace) {
 
   const NetworkMesh mesh = build_network_mesh(network);
   ASSERT_EQ(mesh.signal_instances.size(), 1U);
-  EXPECT_EQ(mesh.signal_instances[0].model_id, "sign_plate");
+  const signs::SignDef* def = signs::find_by_key("us.d3_1");
+  ASSERT_NE(def, nullptr);
+  EXPECT_EQ(mesh.signal_instances[0].model_id, def->model_id);
   EXPECT_FALSE(mesh.signal_instances[0].face.has_value());
 }
 

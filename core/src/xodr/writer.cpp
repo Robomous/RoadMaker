@@ -2157,6 +2157,21 @@ std::vector<Diagnostic> validate_network(const RoadNetwork& network, const Write
     if (signal.country.empty()) {
       finding("signal has no country code", rules::kSignalUseCountryCode);
     }
+    // §14.1 Table 122 binds the pair: @value is the "value of the signal, if
+    // value is given, unit is mandatory", and @unit is the "unit of @value".
+    // ASAM lists no checker rule id for it (the §14.1 rule list names only
+    // signal_type, priority and use_country_code), so — like the dangling
+    // @signalId advisory below — rule_id stays EMPTY rather than citing an
+    // invented one. This matters now that the US pack authors speed limits as
+    // value + unit="mph" instead of baking the number into @subtype (#414).
+    if (signal.value.has_value() && signal.unit.empty()) {
+      findings.push_back(
+          Diagnostic{.severity = Severity::Warning,
+                     .location = location,
+                     .message = "advisory: signal declares @value but no @unit, which §14.1 "
+                                "makes mandatory whenever a value is given",
+                     .road = signal.road});
+    }
   });
 
   // Signal controllers (§14.6): id uniqueness across the database, the

@@ -14,11 +14,10 @@
       <laneSection s="0">
         <left>
           <lane id="2" type="sidewalk" level="false">
-            <width sOffset="0" a="2" b="0" c="0" d="0" />
+            <width sOffset="0" a="1.8" b="0" c="0" d="0" />
           </lane>
           <lane id="1" type="driving" level="false">
-            <width sOffset="0" a="3.5" b="0" c="0" d="0" />
-            <roadMark sOffset="0" type="solid" width="0.12" />
+            <width sOffset="0" a="3" b="0" c="0" d="0" />
           </lane>
         </left>
         <center>
@@ -28,29 +27,48 @@
         </center>
         <right>
           <lane id="-1" type="driving" level="false">
-            <width sOffset="0" a="3.5" b="0" c="0" d="0" />
-            <roadMark sOffset="0" type="solid" width="0.12" />
+            <width sOffset="0" a="3" b="0" c="0" d="0" />
           </lane>
           <lane id="-2" type="sidewalk" level="false">
-            <width sOffset="0" a="2" b="0" c="0" d="0" />
+            <width sOffset="0" a="1.8" b="0" c="0" d="0" />
           </lane>
         </right>
       </laneSection>
     </lanes>
     <objects>
-      <object type="crosswalk" subtype="zebra" id="1" s="2.5" t="0" zOffset="0" orientation="none" hdg="1.5707963267948966" length="7" width="3" />
-      <object type="roadMark" subtype="signalLines" id="5" s="4.15" t="1.75" zOffset="0" orientation="none" length="0.3" width="3.5" />
-      <object type="roadMark" subtype="arrowStraight" id="9" s="9" t="1.75" zOffset="0" orientation="none" hdg="3.141592653589793" length="4" width="1.75" />
+      <object type="crosswalk" subtype="zebra" id="1" s="2.5" t="0" zOffset="0" orientation="none" hdg="1.5707963267948966" length="6" width="3">
+        <outlines>
+          <outline id="0" fillType="paint" outer="true" closed="true">
+            <cornerRoad s="1" t="-3" dz="0" height="0" id="0" />
+            <cornerRoad s="4" t="-3" dz="0" height="0" id="1" />
+            <cornerRoad s="4" t="3" dz="0" height="0" id="2" />
+            <cornerRoad s="1" t="3" dz="0" height="0" id="3" />
+          </outline>
+        </outlines>
+        <markings>
+          <marking color="white" width="0.1" zOffset="0.005" spaceLength="0.6" lineLength="0.6" startOffset="0" stopOffset="0">
+            <cornerReference id="0" />
+            <cornerReference id="1" />
+            <cornerReference id="2" />
+            <cornerReference id="3" />
+          </marking>
+        </markings>
+        <userData code="rm:crosswalk" dashLength="0.6" dashGap="0.6" />
+      </object>
+      <object type="roadMark" subtype="arrowStraight" id="5" s="9" t="1.5" zOffset="0" orientation="none" hdg="3.141592653589793" length="4" width="1.5" />
       <object type="tree" name="tree_pine" id="tree1" s="12" t="-8.5" zOffset="0" orientation="none" radius="1.2" height="4.5" />
       <object type="tree" name="tree_oak" id="tree2" s="12" t="8.5" zOffset="0" orientation="none" radius="1.2" height="4.5" />
       <object type="tree" name="tree_birch" id="tree3" s="22" t="-8.5" zOffset="0" orientation="none" radius="1.2" height="4.5" />
       <object type="tree" name="tree_poplar" id="tree4" s="22" t="8.5" zOffset="0" orientation="none" radius="1.2" height="4.5" />
       <object type="tree" name="tree_pine" id="tree5" s="32" t="-8.5" zOffset="0" orientation="none" radius="1.2" height="4.5" />
       <object type="tree" name="tree_oak" id="tree6" s="32" t="8.5" zOffset="0" orientation="none" radius="1.2" height="4.5" />
+      <object type="roadMark" subtype="signalLines" id="sl_1_1_s" s="4.3" t="1.5" zOffset="0" orientation="none" length="0.6" width="3">
+        <userData code="rm:stopline" contact="start" />
+      </object>
     </objects>
     <signals>
       <signal s="8" t="-6" id="tl1" dynamic="yes" orientation="none" zOffset="0" country="OpenDRIVE" type="1000001" subtype="-1" />
-      <signal s="18" t="-6.5" id="sg1" dynamic="no" orientation="none" zOffset="0" country="DE" type="274" subtype="50" />
+      <signal s="18" t="-6.5" id="sg1" dynamic="no" orientation="none" zOffset="0" country="US" type="R2-1" subtype="-1" value="25" unit="mph" height="0.75" width="0.6" />
     </signals>
     <userData code="rm:waypoints" value="7,0;47,0" />
   </road>
@@ -67,11 +85,10 @@
       <laneSection s="0">
         <left>
           <lane id="2" type="sidewalk" level="false">
-            <width sOffset="0" a="2" b="0" c="0" d="0" />
+            <width sOffset="0" a="1.8" b="0" c="0" d="0" />
           </lane>
           <lane id="1" type="driving" level="false">
-            <width sOffset="0" a="3.5" b="0" c="0" d="0" />
-            <roadMark sOffset="0" type="solid" width="0.12" />
+            <width sOffset="0" a="3" b="0" c="0" d="0" />
           </lane>
         </left>
         <center>
@@ -81,29 +98,48 @@
         </center>
         <right>
           <lane id="-1" type="driving" level="false">
-            <width sOffset="0" a="3.5" b="0" c="0" d="0" />
-            <roadMark sOffset="0" type="solid" width="0.12" />
+            <width sOffset="0" a="3" b="0" c="0" d="0" />
           </lane>
           <lane id="-2" type="sidewalk" level="false">
-            <width sOffset="0" a="2" b="0" c="0" d="0" />
+            <width sOffset="0" a="1.8" b="0" c="0" d="0" />
           </lane>
         </right>
       </laneSection>
     </lanes>
     <objects>
-      <object type="crosswalk" subtype="zebra" id="2" s="2.5" t="0" zOffset="0" orientation="none" hdg="1.5707963267948966" length="7" width="3" />
-      <object type="roadMark" subtype="signalLines" id="6" s="4.15" t="1.75" zOffset="0" orientation="none" length="0.3" width="3.5" />
-      <object type="roadMark" subtype="arrowStraight" id="10" s="9" t="1.75" zOffset="0" orientation="none" hdg="3.141592653589793" length="4" width="1.75" />
+      <object type="crosswalk" subtype="zebra" id="2" s="2.5" t="0" zOffset="0" orientation="none" hdg="1.5707963267948966" length="6" width="3">
+        <outlines>
+          <outline id="0" fillType="paint" outer="true" closed="true">
+            <cornerRoad s="1" t="-3" dz="0" height="0" id="0" />
+            <cornerRoad s="4" t="-3" dz="0" height="0" id="1" />
+            <cornerRoad s="4" t="3" dz="0" height="0" id="2" />
+            <cornerRoad s="1" t="3" dz="0" height="0" id="3" />
+          </outline>
+        </outlines>
+        <markings>
+          <marking color="white" width="0.1" zOffset="0.005" spaceLength="0.6" lineLength="0.6" startOffset="0" stopOffset="0">
+            <cornerReference id="0" />
+            <cornerReference id="1" />
+            <cornerReference id="2" />
+            <cornerReference id="3" />
+          </marking>
+        </markings>
+        <userData code="rm:crosswalk" dashLength="0.6" dashGap="0.6" />
+      </object>
+      <object type="roadMark" subtype="arrowStraight" id="6" s="9" t="1.5" zOffset="0" orientation="none" hdg="3.141592653589793" length="4" width="1.5" />
       <object type="tree" name="tree_birch" id="tree7" s="12" t="-8.5" zOffset="0" orientation="none" radius="1.2" height="4.5" />
       <object type="tree" name="tree_poplar" id="tree8" s="12" t="8.5" zOffset="0" orientation="none" radius="1.2" height="4.5" />
       <object type="tree" name="tree_pine" id="tree9" s="22" t="-8.5" zOffset="0" orientation="none" radius="1.2" height="4.5" />
       <object type="tree" name="tree_oak" id="tree10" s="22" t="8.5" zOffset="0" orientation="none" radius="1.2" height="4.5" />
       <object type="tree" name="tree_birch" id="tree11" s="32" t="-8.5" zOffset="0" orientation="none" radius="1.2" height="4.5" />
       <object type="tree" name="tree_poplar" id="tree12" s="32" t="8.5" zOffset="0" orientation="none" radius="1.2" height="4.5" />
+      <object type="roadMark" subtype="signalLines" id="sl_1_2_s" s="4.3" t="1.5" zOffset="0" orientation="none" length="0.6" width="3">
+        <userData code="rm:stopline" contact="start" />
+      </object>
     </objects>
     <signals>
       <signal s="8" t="-6" id="tl2" dynamic="yes" orientation="none" zOffset="0" country="OpenDRIVE" type="1000001" subtype="-1" />
-      <signal s="18" t="-6.5" id="sg2" dynamic="no" orientation="none" zOffset="0" country="DE" type="133" subtype="10" />
+      <signal s="18" t="-6.5" id="sg2" dynamic="no" orientation="none" zOffset="0" country="US" type="W11-2" subtype="-1" height="0.75" width="0.75" />
     </signals>
     <userData code="rm:waypoints" value="4.286263797015736e-16,7;2.87791997799628e-15,47" />
   </road>
@@ -120,11 +156,10 @@
       <laneSection s="0">
         <left>
           <lane id="2" type="sidewalk" level="false">
-            <width sOffset="0" a="2" b="0" c="0" d="0" />
+            <width sOffset="0" a="1.8" b="0" c="0" d="0" />
           </lane>
           <lane id="1" type="driving" level="false">
-            <width sOffset="0" a="3.5" b="0" c="0" d="0" />
-            <roadMark sOffset="0" type="solid" width="0.12" />
+            <width sOffset="0" a="3" b="0" c="0" d="0" />
           </lane>
         </left>
         <center>
@@ -134,25 +169,44 @@
         </center>
         <right>
           <lane id="-1" type="driving" level="false">
-            <width sOffset="0" a="3.5" b="0" c="0" d="0" />
-            <roadMark sOffset="0" type="solid" width="0.12" />
+            <width sOffset="0" a="3" b="0" c="0" d="0" />
           </lane>
           <lane id="-2" type="sidewalk" level="false">
-            <width sOffset="0" a="2" b="0" c="0" d="0" />
+            <width sOffset="0" a="1.8" b="0" c="0" d="0" />
           </lane>
         </right>
       </laneSection>
     </lanes>
     <objects>
-      <object type="crosswalk" subtype="zebra" id="3" s="2.5" t="0" zOffset="0" orientation="none" hdg="1.5707963267948966" length="7" width="3" />
-      <object type="roadMark" subtype="signalLines" id="7" s="4.15" t="1.75" zOffset="0" orientation="none" length="0.3" width="3.5" />
-      <object type="roadMark" subtype="arrowStraight" id="11" s="9" t="1.75" zOffset="0" orientation="none" hdg="3.141592653589793" length="4" width="1.75" />
+      <object type="crosswalk" subtype="zebra" id="3" s="2.5" t="0" zOffset="0" orientation="none" hdg="1.5707963267948966" length="6" width="3">
+        <outlines>
+          <outline id="0" fillType="paint" outer="true" closed="true">
+            <cornerRoad s="1" t="-3" dz="0" height="0" id="0" />
+            <cornerRoad s="4" t="-3" dz="0" height="0" id="1" />
+            <cornerRoad s="4" t="3" dz="0" height="0" id="2" />
+            <cornerRoad s="1" t="3" dz="0" height="0" id="3" />
+          </outline>
+        </outlines>
+        <markings>
+          <marking color="white" width="0.1" zOffset="0.005" spaceLength="0.6" lineLength="0.6" startOffset="0" stopOffset="0">
+            <cornerReference id="0" />
+            <cornerReference id="1" />
+            <cornerReference id="2" />
+            <cornerReference id="3" />
+          </marking>
+        </markings>
+        <userData code="rm:crosswalk" dashLength="0.6" dashGap="0.6" />
+      </object>
+      <object type="roadMark" subtype="arrowStraight" id="7" s="9" t="1.5" zOffset="0" orientation="none" hdg="3.141592653589793" length="4" width="1.5" />
       <object type="tree" name="tree_pine" id="tree13" s="12" t="-8.5" zOffset="0" orientation="none" radius="1.2" height="4.5" />
       <object type="tree" name="tree_oak" id="tree14" s="12" t="8.5" zOffset="0" orientation="none" radius="1.2" height="4.5" />
       <object type="tree" name="tree_birch" id="tree15" s="22" t="-8.5" zOffset="0" orientation="none" radius="1.2" height="4.5" />
       <object type="tree" name="tree_poplar" id="tree16" s="22" t="8.5" zOffset="0" orientation="none" radius="1.2" height="4.5" />
       <object type="tree" name="tree_pine" id="tree17" s="32" t="-8.5" zOffset="0" orientation="none" radius="1.2" height="4.5" />
       <object type="tree" name="tree_oak" id="tree18" s="32" t="8.5" zOffset="0" orientation="none" radius="1.2" height="4.5" />
+      <object type="roadMark" subtype="signalLines" id="sl_1_3_s" s="4.3" t="1.5" zOffset="0" orientation="none" length="0.6" width="3">
+        <userData code="rm:stopline" contact="start" />
+      </object>
     </objects>
     <signals>
       <signal s="8" t="-6" id="tl3" dynamic="yes" orientation="none" zOffset="0" country="OpenDRIVE" type="1000001" subtype="-1" />
@@ -172,11 +226,10 @@
       <laneSection s="0">
         <left>
           <lane id="2" type="sidewalk" level="false">
-            <width sOffset="0" a="2" b="0" c="0" d="0" />
+            <width sOffset="0" a="1.8" b="0" c="0" d="0" />
           </lane>
           <lane id="1" type="driving" level="false">
-            <width sOffset="0" a="3.5" b="0" c="0" d="0" />
-            <roadMark sOffset="0" type="solid" width="0.12" />
+            <width sOffset="0" a="3" b="0" c="0" d="0" />
           </lane>
         </left>
         <center>
@@ -186,25 +239,44 @@
         </center>
         <right>
           <lane id="-1" type="driving" level="false">
-            <width sOffset="0" a="3.5" b="0" c="0" d="0" />
-            <roadMark sOffset="0" type="solid" width="0.12" />
+            <width sOffset="0" a="3" b="0" c="0" d="0" />
           </lane>
           <lane id="-2" type="sidewalk" level="false">
-            <width sOffset="0" a="2" b="0" c="0" d="0" />
+            <width sOffset="0" a="1.8" b="0" c="0" d="0" />
           </lane>
         </right>
       </laneSection>
     </lanes>
     <objects>
-      <object type="crosswalk" subtype="zebra" id="4" s="2.5" t="0" zOffset="0" orientation="none" hdg="1.5707963267948966" length="7" width="3" />
-      <object type="roadMark" subtype="signalLines" id="8" s="4.15" t="1.75" zOffset="0" orientation="none" length="0.3" width="3.5" />
-      <object type="roadMark" subtype="arrowStraight" id="12" s="9" t="1.75" zOffset="0" orientation="none" hdg="3.141592653589793" length="4" width="1.75" />
+      <object type="crosswalk" subtype="zebra" id="4" s="2.5" t="0" zOffset="0" orientation="none" hdg="1.5707963267948966" length="6" width="3">
+        <outlines>
+          <outline id="0" fillType="paint" outer="true" closed="true">
+            <cornerRoad s="1" t="-3" dz="0" height="0" id="0" />
+            <cornerRoad s="4" t="-3" dz="0" height="0" id="1" />
+            <cornerRoad s="4" t="3" dz="0" height="0" id="2" />
+            <cornerRoad s="1" t="3" dz="0" height="0" id="3" />
+          </outline>
+        </outlines>
+        <markings>
+          <marking color="white" width="0.1" zOffset="0.005" spaceLength="0.6" lineLength="0.6" startOffset="0" stopOffset="0">
+            <cornerReference id="0" />
+            <cornerReference id="1" />
+            <cornerReference id="2" />
+            <cornerReference id="3" />
+          </marking>
+        </markings>
+        <userData code="rm:crosswalk" dashLength="0.6" dashGap="0.6" />
+      </object>
+      <object type="roadMark" subtype="arrowStraight" id="8" s="9" t="1.5" zOffset="0" orientation="none" hdg="3.141592653589793" length="4" width="1.5" />
       <object type="tree" name="tree_birch" id="tree19" s="12" t="-8.5" zOffset="0" orientation="none" radius="1.2" height="4.5" />
       <object type="tree" name="tree_poplar" id="tree20" s="12" t="8.5" zOffset="0" orientation="none" radius="1.2" height="4.5" />
       <object type="tree" name="tree_pine" id="tree21" s="22" t="-8.5" zOffset="0" orientation="none" radius="1.2" height="4.5" />
       <object type="tree" name="tree_oak" id="tree22" s="22" t="8.5" zOffset="0" orientation="none" radius="1.2" height="4.5" />
       <object type="tree" name="tree_birch" id="tree23" s="32" t="-8.5" zOffset="0" orientation="none" radius="1.2" height="4.5" />
       <object type="tree" name="tree_poplar" id="tree24" s="32" t="8.5" zOffset="0" orientation="none" radius="1.2" height="4.5" />
+      <object type="roadMark" subtype="signalLines" id="sl_1_4_s" s="4.3" t="1.5" zOffset="0" orientation="none" length="0.6" width="3">
+        <userData code="rm:stopline" contact="start" />
+      </object>
     </objects>
     <signals>
       <signal s="8" t="-6" id="tl4" dynamic="yes" orientation="none" zOffset="0" country="OpenDRIVE" type="1000001" subtype="-1" />
@@ -235,7 +307,7 @@
               <predecessor id="1" />
               <successor id="-1" />
             </link>
-            <width sOffset="0" a="3.5" b="0" c="0" d="0" />
+            <width sOffset="0" a="3" b="0" c="0" d="0" />
           </lane>
         </right>
       </laneSection>
@@ -262,7 +334,7 @@
               <predecessor id="1" />
               <successor id="-1" />
             </link>
-            <width sOffset="0" a="3.5" b="0" c="0" d="0" />
+            <width sOffset="0" a="3" b="0" c="0" d="0" />
           </lane>
         </right>
       </laneSection>
@@ -292,7 +364,7 @@
               <predecessor id="1" />
               <successor id="-1" />
             </link>
-            <width sOffset="0" a="3.5" b="0" c="0" d="0" />
+            <width sOffset="0" a="3" b="0" c="0" d="0" />
           </lane>
         </right>
       </laneSection>
@@ -322,7 +394,7 @@
               <predecessor id="1" />
               <successor id="-1" />
             </link>
-            <width sOffset="0" a="3.5" b="0" c="0" d="0" />
+            <width sOffset="0" a="3" b="0" c="0" d="0" />
           </lane>
         </right>
       </laneSection>
@@ -352,7 +424,7 @@
               <predecessor id="1" />
               <successor id="-1" />
             </link>
-            <width sOffset="0" a="3.5" b="0" c="0" d="0" />
+            <width sOffset="0" a="3" b="0" c="0" d="0" />
           </lane>
         </right>
       </laneSection>
@@ -379,7 +451,7 @@
               <predecessor id="1" />
               <successor id="-1" />
             </link>
-            <width sOffset="0" a="3.5" b="0" c="0" d="0" />
+            <width sOffset="0" a="3" b="0" c="0" d="0" />
           </lane>
         </right>
       </laneSection>
@@ -406,7 +478,7 @@
               <predecessor id="1" />
               <successor id="-1" />
             </link>
-            <width sOffset="0" a="3.5" b="0" c="0" d="0" />
+            <width sOffset="0" a="3" b="0" c="0" d="0" />
           </lane>
         </right>
       </laneSection>
@@ -436,7 +508,7 @@
               <predecessor id="1" />
               <successor id="-1" />
             </link>
-            <width sOffset="0" a="3.5" b="0" c="0" d="0" />
+            <width sOffset="0" a="3" b="0" c="0" d="0" />
           </lane>
         </right>
       </laneSection>
@@ -466,7 +538,7 @@
               <predecessor id="1" />
               <successor id="-1" />
             </link>
-            <width sOffset="0" a="3.5" b="0" c="0" d="0" />
+            <width sOffset="0" a="3" b="0" c="0" d="0" />
           </lane>
         </right>
       </laneSection>
@@ -496,7 +568,7 @@
               <predecessor id="1" />
               <successor id="-1" />
             </link>
-            <width sOffset="0" a="3.5" b="0" c="0" d="0" />
+            <width sOffset="0" a="3" b="0" c="0" d="0" />
           </lane>
         </right>
       </laneSection>
@@ -523,7 +595,7 @@
               <predecessor id="1" />
               <successor id="-1" />
             </link>
-            <width sOffset="0" a="3.5" b="0" c="0" d="0" />
+            <width sOffset="0" a="3" b="0" c="0" d="0" />
           </lane>
         </right>
       </laneSection>
@@ -553,7 +625,7 @@
               <predecessor id="1" />
               <successor id="-1" />
             </link>
-            <width sOffset="0" a="3.5" b="0" c="0" d="0" />
+            <width sOffset="0" a="3" b="0" c="0" d="0" />
           </lane>
         </right>
       </laneSection>
@@ -607,23 +679,23 @@
       <segment type="joint" roadId="4" contactPoint="start" />
     </boundary>
     <planView>
-      <geometry s="0" x="-7.664213562373072" y="-7.664213562373123" hdg="0.7853981633974518" length="22">
+      <geometry s="0" x="-7.591986889670729" y="7.03644023507546" hdg="-0.7853981633974483" length="22">
         <line />
       </geometry>
     </planView>
     <elevationGrid sStart="0" gridSpacing="2">
-      <elevation left="0 0 0 0 0 0" center="0" right="0 0 0 0 0 0" />
-      <elevation left="0 0 0 0 0 0" center="0" right="0 0 0 0 0 0" />
-      <elevation left="0 0 0 0 0 0" center="0" right="0 0 0 0 0 0" />
-      <elevation left="0 0 0 0 0 0" center="0" right="0 0 0 0 0 0" />
-      <elevation left="0 0 0 0 0 0" center="0" right="0 0 0 0 0 0" />
-      <elevation left="0 0 0 0 0 0" center="0" right="0 0 0 0 0 0" />
-      <elevation left="0 0 0 0 0 0" center="0" right="0 0 0 0 0 0" />
-      <elevation left="0 0 0 0 0 0" center="0" right="0 0 0 0 0 0" />
-      <elevation left="0 0 0 0 0 0" center="0" right="0 0 0 0 0 0" />
-      <elevation left="0 0 0 0 0 0" center="0" right="0 0 0 0 0 0" />
-      <elevation left="0 0 0 0 0 0" center="0" right="0 0 0 0 0 0" />
-      <elevation left="0 0 0 0 0 0" center="0" right="0 0 0 0 0 0" />
+      <elevation left="0 0 0 0 0 0" center="0" right="0 0 0 0 0" />
+      <elevation left="0 0 0 0 0 0" center="0" right="0 0 0 0 0" />
+      <elevation left="0 0 0 0 0 0" center="0" right="0 0 0 0 0" />
+      <elevation left="0 0 0 0 0 0" center="0" right="0 0 0 0 0" />
+      <elevation left="0 0 0 0 0 0" center="0" right="0 0 0 0 0" />
+      <elevation left="0 0 0 0 0 0" center="0" right="0 0 0 0 0" />
+      <elevation left="0 0 0 0 0 0" center="0" right="0 0 0 0 0" />
+      <elevation left="0 0 0 0 0 0" center="0" right="0 0 0 0 0" />
+      <elevation left="0 0 0 0 0 0" center="0" right="0 0 0 0 0" />
+      <elevation left="0 0 0 0 0 0" center="0" right="0 0 0 0 0" />
+      <elevation left="0 0 0 0 0 0" center="0" right="0 0 0 0 0" />
+      <elevation left="0 0 0 0 0 0" center="0" right="0 0 0 0 0" />
     </elevationGrid>
     <userData code="rm:arms" value="1:start;2:start;3:start;4:start" />
   </junction>
