@@ -19,6 +19,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 Current version on `main`: **0.0.1**.
 
 ### Added
+- **A road says what it connects to, and a lane's surface is a surface you can
+  describe** ([#431](https://github.com/Robomous/RoadMaker/issues/431),
+  [#430](https://github.com/Robomous/RoadMaker/issues/430)): two of the three
+  gaps [#418](https://github.com/Robomous/RoadMaker/issues/418)'s audit left
+  open. Selecting a road now shows **Start link** and **End link** — the one
+  piece of a road's state the pane reported nowhere, so a wrongly linked end
+  stayed invisible until the mesh looked wrong. Each row names the neighbour by
+  its OpenDRIVE id and, where it exists, its name, plus which of its ends the
+  connection meets: `Road 12 "Main Street" (start)`, `Junction 3`, `Not
+  connected`, or **`Dangling link`** when a road still points at something that
+  is no longer there — which is exactly the fault these rows exist to expose.
+  The id leads because road names are not unique: splitting a road copies the
+  original's name onto the tail, so a row quoting the name alone could not say
+  which half it meant. The rows are a read-out only; links are still made and
+  broken with the topology tools.
+  A lane's **Friction** and **Roughness** are now editable next to its material
+  (ASAM OpenDRIVE §11.8.2 Table 44). RoadMaker modelled both and preserved them
+  through a round trip but offered no way to set either, so every lane it
+  authored shipped the catalogue's nominal friction — there was no way to
+  describe a wet, worn or gravel surface for a simulator to drive on. Roughness
+  can be cleared back to **—**, which writes the attribute as genuinely absent
+  rather than as zero, since zero is a physical claim of its own; friction
+  cannot, because the standard requires it wherever a `<material>` record
+  exists. Re-paving a lane keeps the roughness you authored, which the material
+  catalogue itself does not carry.
 - **The Attributes pane now exposes what the model already held**
   ([#418](https://github.com/Robomous/RoadMaker/issues/418)): a completeness
   audit of every selectable element against its data model, with the
@@ -34,12 +59,13 @@ Current version on `main`: **0.0.1**.
   where they actually stand once the road's curve and elevation are applied,
   read from the same data the viewport draws. New kernel command
   `edit::set_signal_z_offset` (ASAM OpenDRIVE §14.1 `@zOffset`), with its Python
-  binding. Filed for later, and release-blocking:
-  [#429](https://github.com/Robomous/RoadMaker/issues/429) (a placed sign's
-  designation and face size are still fixed after placement),
-  [#430](https://github.com/Robomous/RoadMaker/issues/430) (lane material
-  friction/roughness), [#431](https://github.com/Robomous/RoadMaker/issues/431)
-  (a road's links are reported nowhere).
+  binding. The audit also filed three gaps it could not close in place, all
+  release-blocking; [#430](https://github.com/Robomous/RoadMaker/issues/430)
+  (lane material friction/roughness) and
+  [#431](https://github.com/Robomous/RoadMaker/issues/431) (a road's links are
+  reported nowhere) are closed above, leaving
+  [#429](https://github.com/Robomous/RoadMaker/issues/429) — a placed sign's
+  designation and face size are still fixed after placement.
 - **The rotation ring reaches signs, and lands on real angles**
   ([#417](https://github.com/Robomous/RoadMaker/issues/417)): selecting a sign
   or signal with the Move tool now gives it its own gizmo, at the sign, whose
