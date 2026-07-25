@@ -83,10 +83,19 @@ highlighting.
     has no Z arrow (p6-s15, #417). Drag the **yaw ring**. **Expected:** the
     sign turns and the road underneath it does **not** move at all; the
     Heading offset row follows the drag and lands on a 15° multiple; the
-    Attributes pane still reports the same traffic direction — turning a sign
-    never changes which traffic it applies to. Now move the sign with the
-    centre pad. **Expected:** it slides along the road with the dragged
-    heading untouched, and **Auto facing** is still the only way back.
+    Attributes pane's **Applies to** row still reports the same traffic
+    direction — turning a sign never changes which traffic it applies to
+    (p6-s16, #418, which added the row this step checks). Now move the sign
+    with the centre pad. **Expected:** it slides along the road with the
+    dragged heading untouched, and **Auto facing** is still the only way back.
+    Finally, click into another field without typing anything. **Expected:**
+    the undo history does **not** grow and the Heading offset keeps the exact
+    angle the drag produced — leaving a field is not an edit (p6-s16, #418).
+12d. [ ] With the sign still selected, drag the **Mounting height** label and
+    then type an exact value (p6-s16, #418). **Expected:** the sign rises and
+    falls on its post, each gesture is one undo step, and the **Applies to**
+    row and Heading offset are untouched — raising a sign never re-aims it.
+    A negative value is accepted (for a sign hung below the reference line).
 13. [ ] Save, reload, and re-select the sign. **Expected:** the face text
     round-trips (the Text row shows the same multi-line value; the exported
     `.xodr` carries `@text`), and so does the facing — including the hand-set

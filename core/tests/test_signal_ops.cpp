@@ -27,6 +27,7 @@
 
 #include <gtest/gtest.h>
 
+#include <limits>
 #include <string>
 #include <vector>
 
@@ -195,6 +196,73 @@ TEST(SignalOps, SetTextRejectsStaleSignalWithoutMutating) {
   const std::string before = snapshot_xodr(network);
 
   auto command = edit::set_signal_text(network, id, "City");
+  EXPECT_FALSE(command->apply(network).has_value());
+  EXPECT_EQ(snapshot_xodr(network), before);
+}
+
+// --- set_signal_z_offset (p6-s16, #418) --------------------------------------
+
+TEST(SignalOps, SetZOffsetApplyRevertIsByteIdentical) {
+  RoadNetwork network;
+  const RoadId road = author_street(network);
+  const SignalId id = network.add_signal(road, make_sign("1", 10.0, -5.0));
+  const double before_z = network.signal(id)->z_offset;
+  const std::string before = snapshot_xodr(network);
+
+  auto command = edit::set_signal_z_offset(network, id, 3.2);
+  ASSERT_TRUE(command->apply(network).has_value());
+  EXPECT_DOUBLE_EQ(network.signal(id)->z_offset, 3.2);
+  EXPECT_NE(snapshot_xodr(network), before) << "@zOffset is required, so it always writes";
+
+  ASSERT_TRUE(command->revert(network).has_value());
+  EXPECT_DOUBLE_EQ(network.signal(id)->z_offset, before_z);
+  EXPECT_EQ(snapshot_xodr(network), before) << "undo must be byte-identical";
+}
+
+TEST(SignalOps, SetZOffsetAcceptsANegativeHeight) {
+  // A signal below the reference line is legal (§14.1 puts no bound on
+  // @zOffset) — think of one hung under an overpass deck.
+  RoadNetwork network;
+  const RoadId road = author_street(network);
+  const SignalId id = network.add_signal(road, make_sign("1", 10.0, -5.0));
+
+  auto command = edit::set_signal_z_offset(network, id, -1.5);
+  ASSERT_TRUE(command->apply(network).has_value());
+  EXPECT_DOUBLE_EQ(network.signal(id)->z_offset, -1.5);
+}
+
+TEST(SignalOps, NoOpZOffsetIsRejected) {
+  RoadNetwork network;
+  const RoadId road = author_street(network);
+  Signal sign = make_sign("1", 10.0, -5.0);
+  sign.z_offset = 2.1;
+  const SignalId id = network.add_signal(road, sign);
+  const std::string before = snapshot_xodr(network);
+
+  auto command = edit::set_signal_z_offset(network, id, 2.1);
+  EXPECT_FALSE(command->apply(network).has_value());
+  EXPECT_EQ(snapshot_xodr(network), before) << "a rejected no-op must not mutate";
+}
+
+TEST(SignalOps, SetZOffsetRejectsNonFiniteWithoutMutating) {
+  RoadNetwork network;
+  const RoadId road = author_street(network);
+  const SignalId id = network.add_signal(road, make_sign("1", 10.0, -5.0));
+  const std::string before = snapshot_xodr(network);
+
+  auto command = edit::set_signal_z_offset(network, id, std::numeric_limits<double>::quiet_NaN());
+  EXPECT_FALSE(command->apply(network).has_value());
+  EXPECT_EQ(snapshot_xodr(network), before);
+}
+
+TEST(SignalOps, SetZOffsetRejectsStaleSignalWithoutMutating) {
+  RoadNetwork network;
+  const RoadId road = author_street(network);
+  const SignalId id = network.add_signal(road, make_sign("1", 10.0, -5.0));
+  network.erase_signal(id);
+  const std::string before = snapshot_xodr(network);
+
+  auto command = edit::set_signal_z_offset(network, id, 3.2);
   EXPECT_FALSE(command->apply(network).has_value());
   EXPECT_EQ(snapshot_xodr(network), before);
 }

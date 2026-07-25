@@ -90,6 +90,25 @@ constexpr std::array<std::pair<RoadMarkType, const char*>, 3> kMarkChoices{{
     {RoadMarkType::None, "None"},
 }};
 
+/// e_lane_direction in full (§11, OpenDRIVE 1.8.0+) — only three values exist,
+/// so unlike the type and mark tables this one is exhaustive.
+constexpr std::array<std::pair<LaneDirection, const char*>, 3> kDirectionChoices{{
+    {LaneDirection::Standard, "Standard"},
+    {LaneDirection::Reversed, "Reversed"},
+    {LaneDirection::Both, "Both"},
+}};
+
+/// The road-mark colours worth offering (§11.9 @color). Standard means "as the
+/// application sees fit" and is what an unset mark carries, so it leads the
+/// list; a mark already carrying one of the exotic values joins it via
+/// rebuild_choice_combo's fallback.
+constexpr std::array<std::pair<RoadMarkColor, const char*>, 4> kMarkColorChoices{{
+    {RoadMarkColor::Standard, "Standard"},
+    {RoadMarkColor::White, "White"},
+    {RoadMarkColor::Yellow, "Yellow"},
+    {RoadMarkColor::Red, "Red"},
+}};
+
 /// Total surface area [m²] of a triangle mesh: half the summed magnitude of each
 /// triangle's edge cross product. Read-only display for a ground surface (#215).
 double mesh_area(const SubMesh& mesh) {
@@ -154,6 +173,49 @@ QString mark_type_name(RoadMarkType type) {
     return QStringLiteral("Broken solid");
   default:
     return QStringLiteral("Other");
+  }
+}
+
+/// Both tables below are exhaustive over their enum, so these exist only to
+/// satisfy rebuild_choice_combo's fallback signature.
+QString lane_direction_name(LaneDirection direction) {
+  for (const auto& [value, name] : kDirectionChoices) {
+    if (value == direction) {
+      return QString::fromLatin1(name);
+    }
+  }
+  return QStringLiteral("Standard");
+}
+
+QString mark_color_name(RoadMarkColor color) {
+  for (const auto& [value, name] : kMarkColorChoices) {
+    if (value == color) {
+      return QString::fromLatin1(name);
+    }
+  }
+  switch (color) {
+  case RoadMarkColor::Blue:
+    return QStringLiteral("Blue");
+  case RoadMarkColor::Green:
+    return QStringLiteral("Green");
+  case RoadMarkColor::Orange:
+    return QStringLiteral("Orange");
+  default:
+    return QStringLiteral("Other");
+  }
+}
+
+/// Which traffic a signal governs, in words (§14.1 @orientation). GW-4 step 12c
+/// asserts the pane reports this and that turning a sign never changes it, so
+/// the row is what makes that check performable.
+QString signal_orientation_name(ObjectOrientation orientation) {
+  switch (orientation) {
+  case ObjectOrientation::Plus:
+    return QObject::tr("Traffic travelling along +s");
+  case ObjectOrientation::Minus:
+    return QObject::tr("Traffic travelling along −s");
+  default:
+    return QObject::tr("Both directions");
   }
 }
 
@@ -261,8 +323,9 @@ PropertiesPanel::PropertiesPanel(Document& document,
     : QWidget(parent), document_(document), selection_(selection), form_(new QFormLayout),
       placeholder_(new QLabel(tr("Select a road or lane."), this)), name_row_(new QWidget(this)),
       name_edit_(new QLineEdit), lane_group_(new QGroupBox(tr("Lane profile"), this)),
-      type_combo_(new QComboBox), width_spin_(new UnitSpinBox), mark_combo_(new QComboBox),
-      mark_width_spin_(new UnitSpinBox),
+      type_combo_(new QComboBox), direction_combo_(new QComboBox), width_spin_(new UnitSpinBox),
+      mark_combo_(new QComboBox), mark_width_spin_(new UnitSpinBox),
+      mark_color_combo_(new QComboBox),
       marking_slot_(new SlotWidget(QStringLiteral("Markings"), this)),
       lane_material_slot_(new SlotWidget(QStringLiteral("Materials"), this)),
       add_left_(new QPushButton(tr("Add left"))), add_right_(new QPushButton(tr("Add right"))),
@@ -287,12 +350,15 @@ PropertiesPanel::PropertiesPanel(Document& document,
       junction_material_slot_(new SlotWidget(QStringLiteral("Materials"), this)),
       signal_group_(new QGroupBox(tr("Signal"), this)), signal_s_spin_(new UnitSpinBox),
       signal_t_spin_(new UnitSpinBox), signal_h_spin_(new QDoubleSpinBox),
-      signal_kind_label_(new QLabel(this)), signal_text_edit_(new QPlainTextEdit),
-      signal_value_spin_(new QSpinBox), signal_value_label_(new QLabel(tr("Speed limit"), this)),
+      signal_z_spin_(new UnitSpinBox), signal_kind_label_(new QLabel(this)),
+      signal_text_edit_(new QPlainTextEdit), signal_value_spin_(new QSpinBox),
+      signal_value_label_(new QLabel(tr("Speed limit"), this)),
       object_group_(new QGroupBox(tr("Prop"), this)), object_kind_label_(new QLabel(this)),
       model_slot_(new SlotWidget(QStringLiteral("Props"), this)),
       instance_material_slot_(new SlotWidget(QStringLiteral("Materials"), this)),
-      object_height_spin_(new UnitSpinBox), style_group_(new QGroupBox(tr("Road style"), this)),
+      object_height_spin_(new UnitSpinBox), object_s_spin_(new UnitSpinBox),
+      object_t_spin_(new UnitSpinBox), object_hdg_spin_(new QDoubleSpinBox),
+      object_z_spin_(new UnitSpinBox), style_group_(new QGroupBox(tr("Road style"), this)),
       style_slot_(new SlotWidget(QStringLiteral("Road styles"), this)),
       surface_group_(new QGroupBox(tr("Ground surface"), this)),
       material_slot_(new SlotWidget(QStringLiteral("Materials"), this)),
@@ -316,6 +382,14 @@ PropertiesPanel::PropertiesPanel(Document& document,
   name_form->addRow(tr("Name"), name_edit_);
 
   type_combo_->setObjectName(QStringLiteral("lane_type_combo"));
+  direction_combo_->setObjectName(QStringLiteral("lane_direction_combo"));
+  direction_combo_->setToolTip(
+      tr("Which way traffic runs in this lane, relative to the road's s-direction. The centre "
+         "lane has no travel of its own."));
+  mark_color_combo_->setObjectName(QStringLiteral("road_mark_color_combo"));
+  mark_color_combo_->setToolTip(
+      tr("Paint colour of this lane's boundary line. Standard leaves the choice to the "
+         "consuming application."));
   width_spin_->setObjectName(QStringLiteral("lane_width_spin"));
   width_spin_->setRange(0.01, 50.0);
   width_spin_->setSingleStep(0.25);
@@ -343,6 +417,7 @@ PropertiesPanel::PropertiesPanel(Document& document,
   // lane width, 0.2 m of mark width, 5 m of height, 10 m along s.
   auto* lane_form = new QFormLayout;
   lane_form->addRow(tr("Type"), type_combo_);
+  lane_form->addRow(tr("Direction"), direction_combo_);
   width_scrub_label_ = install_scrub(
       new ScrubLabel(tr("Width"), this),
       {.spin = width_spin_,
@@ -365,6 +440,7 @@ PropertiesPanel::PropertiesPanel(Document& document,
   width_scrub_label_->setObjectName(QStringLiteral("lane_width_scrub"));
   lane_form->addRow(width_scrub_label_, width_spin_);
   lane_form->addRow(tr("Road mark"), mark_combo_);
+  lane_form->addRow(tr("Mark colour"), mark_color_combo_);
   lane_form->addRow(
       install_scrub(new ScrubLabel(tr("Mark width"), this),
                     {.spin = mark_width_spin_,
@@ -759,6 +835,15 @@ PropertiesPanel::PropertiesPanel(Document& document,
   configure_signal_spin(signal_h_spin_, "signal_h_spin", -6.2832, 6.2832);
   signal_h_spin_->setSuffix(tr(" rad"));
   signal_h_spin_->setSingleStep(0.1);
+  // Mounting height (§14.1 @zOffset). A UnitSpinBox — it IS a length, so it
+  // follows the display-unit toggle. Its own command, not a move_signal
+  // argument: raising a sign never re-aims it. Negative is legal (a signal hung
+  // below the reference line, e.g. under an overpass deck).
+  signal_z_spin_->setObjectName(QStringLiteral("signal_z_spin"));
+  signal_z_spin_->setRange(-10.0, 30.0);
+  signal_z_spin_->setDecimals(2);
+  signal_z_spin_->setSingleStep(0.1);
+  signal_z_spin_->setToolTip(tr("Height of this signal's origin above the road reference line."));
   auto* signal_form = new QFormLayout(signal_group_);
   signal_form->addRow(signal_kind_label_);
   // The pose fields all commit through move_signal, so each scrub reads its two
@@ -815,6 +900,21 @@ PropertiesPanel::PropertiesPanel(Document& document,
                                signal_s_spin_->value(), signal_t_spin_->value(), value)(network);
                          }}),
       signal_h_spin_);
+  signal_form->addRow(
+      install_scrub(new ScrubLabel(tr("Mounting height"), this),
+                    {.spin = signal_z_spin_,
+                     .units_per_pixel = 0.02,
+                     .baseline = [primary_signal]() -> std::optional<double> {
+                       const Signal* signal = primary_signal();
+                       return signal == nullptr ? std::nullopt
+                                                : std::optional<double>(signal->z_offset);
+                     },
+                     .factory =
+                         [this](const RoadNetwork& network, double value) {
+                           return edit::set_signal_z_offset(
+                               network, selection_.selected_signals().back(), value);
+                         }}),
+      signal_z_spin_);
   // The explicit "auto" action of the spec's auto-orientation section (#416).
   // Editing the heading above (or, later, dragging the rotation ring) is an
   // OVERRIDE that nothing recomputes on its own; this button is the only way
@@ -883,12 +983,126 @@ PropertiesPanel::PropertiesPanel(Document& document,
                            return resize_selected_props(network, value, /*absolute=*/false);
                          }});
   object_height_scrub->setObjectName(QStringLiteral("object_height_scrub"));
+
+  // Prop pose (p6-s16, #418): @s/@t/@hdg/@zOffset, all of which already existed
+  // on Object with working commands while the pane showed them as one read-only
+  // line. s/t/heading commit ONE move_object together (they are one command's
+  // arguments); the vertical rides update_objects, which is the only command
+  // that carries @zOffset. Every row targets the PRIMARY prop only — batch
+  // semantics stay the Height row's, which is where they were designed.
+  const auto configure_object_spin =
+      [](QDoubleSpinBox* spin, const char* name, double lo, double hi, double step) {
+        spin->setObjectName(QString::fromLatin1(name));
+        spin->setRange(lo, hi);
+        spin->setDecimals(3);
+        spin->setSingleStep(step);
+      };
+  configure_object_spin(object_s_spin_, "object_s_spin", 0.0, 100000.0, 1.0);
+  configure_object_spin(object_t_spin_, "object_t_spin", -1000.0, 1000.0, 0.5);
+  // An ANGLE, so it stays unit-invariant with a literal " rad" (#412's rule is
+  // about lengths). The step is the ring's own detent, read from the registry
+  // so the spin and the gizmo can never drift apart (#417).
+  configure_object_spin(
+      object_hdg_spin_, "object_hdg_spin", -6.2832, 6.2832, defaults::kPropRotationSnap);
+  object_hdg_spin_->setSuffix(tr(" rad"));
+  object_hdg_spin_->setToolTip(
+      tr("Rotation about the vertical axis, relative to the road's heading — the same value the "
+         "gizmo's yaw ring writes."));
+  configure_object_spin(object_z_spin_, "object_z_spin", -50.0, 500.0, 0.1);
+  object_z_spin_->setToolTip(
+      tr("Height of this prop's base above the road surface at its position."));
+
+  const auto primary_prop = [this]() -> const Object* {
+    const Object* object = primary_object();
+    return object != nullptr && object_is_prop(*object) ? object : nullptr;
+  };
+  // The three pose fields are one command's arguments, so each scrub reads its
+  // siblings from their spin boxes — the selection cannot change mid-gesture.
+  const auto object_pose = [this](double s, double t, double hdg) {
+    return [this, s, t, hdg](const RoadNetwork& network) {
+      return edit::move_object(network, selection_.primary().object, s, t, hdg);
+    };
+  };
+  ScrubLabel* object_s_scrub = install_scrub(
+      new ScrubLabel(tr("s"), this),
+      {.spin = object_s_spin_,
+       .units_per_pixel = 0.1,
+       .baseline = [primary_prop]() -> std::optional<double> {
+         const Object* object = primary_prop();
+         return object == nullptr ? std::nullopt : std::optional<double>(object->s);
+       },
+       .factory =
+           [this, object_pose](const RoadNetwork& network, double value) {
+             return object_pose(value, object_t_spin_->value(), object_hdg_spin_->value())(network);
+           }});
+  object_s_scrub->setObjectName(QStringLiteral("object_s_scrub"));
+  ScrubLabel* object_t_scrub = install_scrub(
+      new ScrubLabel(tr("t"), this),
+      {.spin = object_t_spin_,
+       .units_per_pixel = 0.05,
+       .baseline = [primary_prop]() -> std::optional<double> {
+         const Object* object = primary_prop();
+         return object == nullptr ? std::nullopt : std::optional<double>(object->t);
+       },
+       .factory =
+           [this, object_pose](const RoadNetwork& network, double value) {
+             return object_pose(object_s_spin_->value(), value, object_hdg_spin_->value())(network);
+           }});
+  object_t_scrub->setObjectName(QStringLiteral("object_t_scrub"));
+  ScrubLabel* object_hdg_scrub = install_scrub(
+      new ScrubLabel(tr("Heading"), this),
+      {.spin = object_hdg_spin_,
+       .units_per_pixel = 0.01,
+       .baseline = [primary_prop]() -> std::optional<double> {
+         const Object* object = primary_prop();
+         return object == nullptr ? std::nullopt : std::optional<double>(object->hdg);
+       },
+       .factory =
+           [this, object_pose](const RoadNetwork& network, double value) {
+             return object_pose(object_s_spin_->value(), object_t_spin_->value(), value)(network);
+           }});
+  object_hdg_scrub->setObjectName(QStringLiteral("object_hdg_scrub"));
+  ScrubLabel* object_z_scrub = install_scrub(
+      new ScrubLabel(tr("Z offset"), this),
+      {.spin = object_z_spin_,
+       .units_per_pixel = 0.02,
+       .baseline = [primary_prop]() -> std::optional<double> {
+         const Object* object = primary_prop();
+         return object == nullptr ? std::nullopt : std::optional<double>(object->z_offset);
+       },
+       .factory = [this](const RoadNetwork& network,
+                         double value) { return set_primary_object_z(network, value); }});
+  object_z_scrub->setObjectName(QStringLiteral("object_z_scrub"));
+
   auto* object_form = new QFormLayout(object_group_);
   object_form->addRow(object_kind_label_);
   object_form->addRow(tr("Model"), model_slot_);
+  object_form->addRow(object_s_scrub, object_s_spin_);
+  object_form->addRow(object_t_scrub, object_t_spin_);
+  object_form->addRow(object_hdg_scrub, object_hdg_spin_);
+  object_form->addRow(object_z_scrub, object_z_spin_);
   object_form->addRow(object_height_scrub, object_height_spin_);
   object_form->addRow(tr("Material"), instance_material_slot_);
   object_form_ = object_form;
+
+  // s/t/heading commit together through move_object; the vertical commits on
+  // its own. Both skip an unchanged value (the refresh-echo guard) and both
+  // stand down while a scrub owns the preview session.
+  for (QDoubleSpinBox* spin :
+       std::initializer_list<QDoubleSpinBox*>{object_s_spin_, object_t_spin_, object_hdg_spin_}) {
+    connect(spin, &QDoubleSpinBox::editingFinished, this, [this] { push_object_pose(); });
+  }
+  connect(object_z_spin_, &QDoubleSpinBox::editingFinished, this, [this] {
+    if (scrub_active_.has_value()) {
+      return;
+    }
+    const Object* object = primary_object();
+    if (object == nullptr || !object_is_prop(*object) ||
+        !differs_from_display(*object_z_spin_, object->z_offset)) {
+      return;
+    }
+    push(set_primary_object_z(document_.network(), object_z_spin_->value()));
+  });
 
   // Typing a height is the ABSOLUTE gesture: every selected prop becomes that
   // tall. Guarded against a scrub's live re-seed and against the refresh echo —
@@ -1095,6 +1309,16 @@ PropertiesPanel::PropertiesPanel(Document& document,
                                static_cast<LaneType>(type_combo_->itemData(index).toInt())));
     }
   });
+  connect(direction_combo_, &QComboBox::activated, this, [this](int index) {
+    const Lane* lane = primary_lane();
+    const auto direction = static_cast<LaneDirection>(direction_combo_->itemData(index).toInt());
+    // The centre lane is refused by the kernel and the combo is disabled there;
+    // guard anyway so a stray activation never reaches a doomed command.
+    if (lane == nullptr || lane->odr_id == 0 || lane->direction == direction) {
+      return;
+    }
+    push(edit::set_lane_direction(document_.network(), selection_.primary().lane, direction));
+  });
   connect(width_spin_, &QDoubleSpinBox::editingFinished, this, [this] {
     const Lane* lane = primary_lane();
     if (lane == nullptr || lane->widths.empty()) {
@@ -1120,9 +1344,13 @@ PropertiesPanel::PropertiesPanel(Document& document,
     RoadMark mark = lane->road_marks.empty() ? RoadMark{} : lane->road_marks.front();
     mark.type = static_cast<RoadMarkType>(mark_combo_->currentData().toInt());
     mark.width = mark_width_spin_->value();
+    // Colour rides the same record: set_road_mark replaces the whole first
+    // <roadMark>, so the three editors must always send it whole.
+    mark.color = static_cast<RoadMarkColor>(mark_color_combo_->currentData().toInt());
     push(edit::set_road_mark(document_.network(), selection_.primary().lane, mark));
   };
   connect(mark_combo_, &QComboBox::activated, this, push_mark);
+  connect(mark_color_combo_, &QComboBox::activated, this, push_mark);
   connect(mark_width_spin_, &QDoubleSpinBox::editingFinished, this, [this, push_mark] {
     const Lane* lane = primary_lane();
     if (lane == nullptr) {
@@ -1226,6 +1454,9 @@ PropertiesPanel::PropertiesPanel(Document& document,
        std::initializer_list<QDoubleSpinBox*>{signal_s_spin_, signal_t_spin_, signal_h_spin_}) {
     connect(spin, &QDoubleSpinBox::editingFinished, this, [this] { push_signal_move(); });
   }
+  // Mounting height rides its own command, so it commits separately.
+  connect(
+      signal_z_spin_, &QDoubleSpinBox::editingFinished, this, [this] { push_signal_z_offset(); });
   connect(signal_value_spin_, &QSpinBox::editingFinished, this, [this] { push_signal_value(); });
 
   // A scene selection change leaves the crosswalk asset editor (dual-mode
@@ -1502,6 +1733,23 @@ void PropertiesPanel::refresh_object(const Object& object) {
   const bool is_marking = marking_material.has_value();
   object_form_->setRowVisible(model_slot_, !is_marking);
   object_form_->setRowVisible(instance_material_slot_, is_marking);
+  // The pose rows join the same per-kind switch: a marking's geometry lives in
+  // its outline/samples, so editing its origin here would desync the two.
+  for (QDoubleSpinBox* spin : std::initializer_list<QDoubleSpinBox*>{
+           object_s_spin_, object_t_spin_, object_hdg_spin_, object_z_spin_}) {
+    object_form_->setRowVisible(spin, !is_marking);
+  }
+  if (!is_marking) {
+    const QSignalBlocker block_s(object_s_spin_);
+    const QSignalBlocker block_t(object_t_spin_);
+    const QSignalBlocker block_hdg(object_hdg_spin_);
+    const QSignalBlocker block_z(object_z_spin_);
+    object_s_spin_->setValue(object.s);
+    object_t_spin_->setValue(object.t);
+    object_hdg_spin_->setValue(object.hdg);
+    object_z_spin_->setValue(object.z_offset);
+  }
+  add_world_row(object_world_position(selection_.primary().object));
   if (is_marking) {
     instance_material_slot_->set_item(QString::fromStdString(*marking_material));
     object_group_->setTitle(tr("Marking"));
@@ -1523,6 +1771,59 @@ void PropertiesPanel::refresh_object(const Object& object) {
     }
   }
   object_group_->show();
+}
+
+const Object* PropertiesPanel::primary_object() const {
+  return document_.network().object(selection_.primary().object);
+}
+
+bool PropertiesPanel::object_is_prop(const Object& object) {
+  // A marking instance (crosswalk / stencil / marking-curve) carries its own
+  // authoring record and draws from an outline or a sample list, NOT from a
+  // bundled model — which is why its (s, t) must stay read-only here: moving
+  // the origin without the outline would desync the two. Relocating one is
+  // #307's job.
+  return !object.crosswalk.has_value() && !object.stencil.has_value() &&
+         !object.marking_curve.has_value();
+}
+
+std::unique_ptr<edit::Command> PropertiesPanel::set_primary_object_z(const RoadNetwork& network,
+                                                                     double value) const {
+  // update_objects is the only command carrying @zOffset (move_object takes
+  // s/t/hdg). Read the baseline from `network`, never captured — update_preview
+  // rebuilds this factory against the session's BASE state each tick.
+  const ObjectId id = selection_.primary().object;
+  const Object* object = network.object(id);
+  if (object == nullptr || !object_is_prop(*object)) {
+    return nullptr;
+  }
+  Object updated = *object;
+  updated.z_offset = value;
+  std::vector<std::pair<ObjectId, Object>> updates;
+  updates.emplace_back(id, std::move(updated));
+  return edit::update_objects(network, std::move(updates), "Set Prop Z Offset");
+}
+
+void PropertiesPanel::push_object_pose() {
+  if (scrub_active_.has_value()) {
+    return;
+  }
+  const Object* object = primary_object();
+  if (object == nullptr || !object_is_prop(*object)) {
+    return;
+  }
+  // Skip the push when nothing changed, at each spin's own display precision —
+  // see differs_from_display() for why a fixed epsilon is the wrong guard.
+  if (!differs_from_display(*object_s_spin_, object->s) &&
+      !differs_from_display(*object_t_spin_, object->t) &&
+      !differs_from_display(*object_hdg_spin_, object->hdg)) {
+    return;
+  }
+  push(edit::move_object(document_.network(),
+                         selection_.primary().object,
+                         object_s_spin_->value(),
+                         object_t_spin_->value(),
+                         object_hdg_spin_->value()));
 }
 
 std::optional<double>
@@ -1851,14 +2152,30 @@ void PropertiesPanel::refresh_signal(const Signal& signal) {
   if (!signal.country.empty()) {
     add_row(tr("Country"), QString::fromStdString(signal.country));
   }
+  // WHICH traffic this signal governs (§14.1 @orientation) — a validity
+  // declaration, not a facing: the rotation ring writes @hOffset only and must
+  // leave this row untouched (p6-s15, #417; GW-4 step 12c checks exactly that).
+  add_row(tr("Applies to"), signal_orientation_name(signal.orientation))
+      ->setObjectName(QStringLiteral("signal_orientation_value"));
+  // Face size, when the file declares one. Read-only: the shipped pack authors
+  // it from the §1.4 table, so retyping a plate is what changes its size.
+  if (signal.width.has_value() && signal.height.has_value()) {
+    add_row(tr("Face size"),
+            tr("%1 × %2")
+                .arg(units::format_length(*signal.width))
+                .arg(units::format_length(*signal.height)));
+  }
+  add_world_row(signal_world_position(selection_.primary().signal));
   // Programmatic sync must not echo a move_signal back — block the editingFinished
   // guard's siblings while we set values.
   const QSignalBlocker block_s(signal_s_spin_);
   const QSignalBlocker block_t(signal_t_spin_);
   const QSignalBlocker block_h(signal_h_spin_);
+  const QSignalBlocker block_z(signal_z_spin_);
   signal_s_spin_->setValue(signal.s);
   signal_t_spin_->setValue(signal.t);
   signal_h_spin_->setValue(signal.h_offset);
+  signal_z_spin_->setValue(signal.z_offset);
   // @text is legal on any signal but only meaningful on a static sign; disable
   // the editor for a dynamic head. Seeded under a blocker so the re-seed never
   // commits back.
@@ -1949,10 +2266,12 @@ void PropertiesPanel::push_signal_move() {
     return;
   }
   // Skip the push when nothing changed — the re-entrancy guard that keeps a
-  // refresh()-driven setValue from committing a redundant command.
-  if (std::abs(signal->s - signal_s_spin_->value()) < 1e-9 &&
-      std::abs(signal->t - signal_t_spin_->value()) < 1e-9 &&
-      std::abs(signal->h_offset - signal_h_spin_->value()) < 1e-9) {
+  // refresh()-driven setValue from committing a redundant command. The
+  // tolerance is each spin's own display quantum, NOT a fixed 1e-9: see
+  // differs_from_display().
+  if (!differs_from_display(*signal_s_spin_, signal->s) &&
+      !differs_from_display(*signal_t_spin_, signal->t) &&
+      !differs_from_display(*signal_h_spin_, signal->h_offset)) {
     return;
   }
   push(edit::move_signal(document_.network(),
@@ -1960,6 +2279,31 @@ void PropertiesPanel::push_signal_move() {
                          signal_s_spin_->value(),
                          signal_t_spin_->value(),
                          signal_h_spin_->value()));
+}
+
+void PropertiesPanel::push_signal_z_offset() {
+  const std::vector<SignalId> signal_ids = selection_.selected_signals();
+  if (signal_ids.empty()) {
+    return;
+  }
+  const Signal* signal = document_.network().signal(signal_ids.back());
+  if (signal == nullptr) {
+    return;
+  }
+  if (!differs_from_display(*signal_z_spin_, signal->z_offset)) {
+    return;
+  }
+  push(edit::set_signal_z_offset(document_.network(), signal_ids.back(), signal_z_spin_->value()));
+}
+
+bool PropertiesPanel::differs_from_display(const QDoubleSpinBox& spin, double stored) {
+  // A spin box cannot REPRESENT a change smaller than one display quantum, so
+  // anything below half of one is the widget rounding the value it was seeded
+  // with — not something the user asked for. Comparing against a fixed 1e-9
+  // instead made a focus-out after a gizmo ring drag commit a "move" that
+  // silently rounded the heading to three decimals (p6-s15's handoff, #417).
+  const double quantum = std::pow(10.0, -spin.decimals());
+  return std::abs(spin.value() - stored) >= 0.5 * quantum;
 }
 
 void PropertiesPanel::set_elevation_tool(ElevationTool* tool) {
@@ -2546,6 +2890,9 @@ void PropertiesPanel::refresh_lane_section() {
   add_right_->setEnabled(true);
 
   type_combo_->setEnabled(lane_selected && !center);
+  // edit::set_lane_direction refuses the centre lane — a width-less separator
+  // has no travel of its own — so the combo follows the kernel exactly.
+  direction_combo_->setEnabled(lane_selected && !center);
   // The centre lane carries no material by rule (center_lane_no_material), so
   // the Materials slot only accepts a drop on a real lane.
   lane_material_slot_->setEnabled(lane_selected && !center);
@@ -2592,6 +2939,7 @@ void PropertiesPanel::refresh_lane_section() {
   // marking slot (a write-only drop target for the variants beyond the combo's
   // Solid/Broken/None shortlist) is enabled on the centre lane too.
   mark_combo_->setEnabled(lane_selected);
+  mark_color_combo_->setEnabled(lane_selected);
   mark_width_spin_->setEnabled(lane_selected);
   marking_slot_->setEnabled(lane_selected);
 
@@ -2599,12 +2947,14 @@ void PropertiesPanel::refresh_lane_section() {
     return;
   }
   rebuild_choice_combo(*type_combo_, kTypeChoices, lane->type, lane_type_name);
+  rebuild_choice_combo(*direction_combo_, kDirectionChoices, lane->direction, lane_direction_name);
   if (!lane->widths.empty()) {
     const QSignalBlocker blocker(width_spin_);
     width_spin_->setValue(lane->widths.front().a);
   }
   const RoadMark mark = lane->road_marks.empty() ? RoadMark{} : lane->road_marks.front();
   rebuild_choice_combo(*mark_combo_, kMarkChoices, mark.type, mark_type_name);
+  rebuild_choice_combo(*mark_color_combo_, kMarkColorChoices, mark.color, mark_color_name);
   {
     const QSignalBlocker blocker(mark_width_spin_);
     mark_width_spin_->setValue(mark.width);
@@ -2653,10 +3003,42 @@ LaneSectionId PropertiesPanel::target_section() const {
   return road != nullptr && !road->sections.empty() ? road->sections.front() : LaneSectionId{};
 }
 
-void PropertiesPanel::add_row(const QString& label, const QString& value) {
+void PropertiesPanel::add_world_row(std::optional<std::array<double, 3>> position) {
+  if (!position.has_value()) {
+    return;
+  }
+  add_row(tr("World"),
+          tr("x %1, y %2, z %3")
+              .arg(units::format_length((*position)[0]))
+              .arg(units::format_length((*position)[1]))
+              .arg(units::format_length((*position)[2])))
+      ->setObjectName(QStringLiteral("world_position_value"));
+}
+
+std::optional<std::array<double, 3>> PropertiesPanel::object_world_position(ObjectId object) const {
+  for (const ObjectInstance& instance : document_.mesh().objects) {
+    if (instance.object == object) {
+      return instance.position;
+    }
+  }
+  return std::nullopt;
+}
+
+std::optional<std::array<double, 3>> PropertiesPanel::signal_world_position(SignalId signal) const {
+  // `signal_instances`, not `signals` — Qt's moc macro would rewrite the latter.
+  for (const SignalInstance& instance : document_.mesh().signal_instances) {
+    if (instance.signal == signal) {
+      return instance.position;
+    }
+  }
+  return std::nullopt;
+}
+
+QLabel* PropertiesPanel::add_row(const QString& label, const QString& value) {
   auto* value_label = new QLabel(value, this);
   value_label->setTextInteractionFlags(Qt::TextSelectableByMouse);
   form_->addRow(label, value_label);
+  return value_label;
 }
 
 void PropertiesPanel::clear_rows() {

@@ -19,6 +19,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 Current version on `main`: **0.0.1**.
 
 ### Added
+- **The Attributes pane now exposes what the model already held**
+  ([#418](https://github.com/Robomous/RoadMaker/issues/418)): a completeness
+  audit of every selectable element against its data model, with the
+  [matrix committed](docs/roadmap/updates/2026-07-realism-batch.md#wi-7-element--parameter-matrix)
+  and every gap either closed or filed. Closed here: a **prop's full
+  placement** — `s`, `t`, **Heading** and **Z offset** — is typeable and
+  scrubbable, where before its position was a read-only line, its heading could
+  only be set by dragging the gizmo ring, and its vertical offset could not be
+  set at all; a **sign's mounting height**; a **lane's travel direction**, which
+  the kernel has supported since P2 with no control in the pane; and a **road
+  mark's colour**, which road templates authored and nothing could change
+  afterwards. Props and signs also gained a read-only **World** row reporting
+  where they actually stand once the road's curve and elevation are applied,
+  read from the same data the viewport draws. New kernel command
+  `edit::set_signal_z_offset` (ASAM OpenDRIVE §14.1 `@zOffset`), with its Python
+  binding. Filed for later, and release-blocking:
+  [#429](https://github.com/Robomous/RoadMaker/issues/429) (a placed sign's
+  designation and face size are still fixed after placement),
+  [#430](https://github.com/Robomous/RoadMaker/issues/430) (lane material
+  friction/roughness), [#431](https://github.com/Robomous/RoadMaker/issues/431)
+  (a road's links are reported nowhere).
 - **The rotation ring reaches signs, and lands on real angles**
   ([#417](https://github.com/Robomous/RoadMaker/issues/417)): selecting a sign
   or signal with the Move tool now gives it its own gizmo, at the sign, whose
@@ -279,6 +300,19 @@ Current version on `main`: **0.0.1**.
   about silently never matched.
 
 ### Fixed
+- **Clicking away from a pose field no longer quietly rounds it**
+  ([#418](https://github.com/Robomous/RoadMaker/issues/418)): the s / t /
+  heading fields show three decimals, so a value carrying more precision than
+  that — exactly what a gizmo ring drag produces — was rounded the moment it was
+  displayed, and merely clicking somewhere else then committed that rounding as
+  though you had typed it. A field now treats a difference smaller than what it
+  can even show as no edit at all, so a dragged angle keeps its full precision
+  until you deliberately change it.
+- **A sign's Attributes pane reports which traffic it applies to**
+  ([#418](https://github.com/Robomous/RoadMaker/issues/418)): the pane showed a
+  sign's designation, country and pose but never `@orientation`, so there was no
+  way to confirm that turning a sign had not changed what it governs — the exact
+  thing the sign golden workflow asks you to check.
 - **Selecting a sign no longer hands you the road's gizmo**
   ([#417](https://github.com/Robomous/RoadMaker/issues/417)): a sign carries a
   reference to the road it stands on, and the transform gizmo resolved that road

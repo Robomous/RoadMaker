@@ -1257,6 +1257,19 @@ move_signal(const RoadNetwork& network,
 [[nodiscard]] RM_API std::unique_ptr<Command>
 set_signal_text(const RoadNetwork& network, SignalId signal, std::string text);
 
+/// Sets a signal's mounting height (ASAM OpenDRIVE 1.9.0 §14.1, Table 122:
+/// @zOffset — "z-offset of signal's origin relative to the elevation of the road
+/// reference line", required, in meters; identical in 1.8.1 §14.1, so no version
+/// gating). This is the pane's mounting-height row: `move_signal` carries s/t and
+/// the facing but deliberately not the vertical, because a height change never
+/// re-derives an orientation.
+///
+/// Undo is byte-identical from the value snapshot. Fails for a stale signal id, a
+/// stale road back-reference, a non-finite height, and a no-op (`z` equal to the
+/// current value) so the round-trip harness never sees an empty command.
+[[nodiscard]] RM_API std::unique_ptr<Command>
+set_signal_z_offset(const RoadNetwork& network, SignalId signal, double z);
+
 /// Sets a signal's numeric value and its unit (ASAM OpenDRIVE 1.9.0 §14.1,
 /// Table 122: @value — "value of the signal, if value is given, unit is
 /// mandatory"; @unit — "unit of @value", an e_unit literal). This is what makes

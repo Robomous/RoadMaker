@@ -188,6 +188,15 @@ the same change. `Road Plan tool` in step 2 was corrected to its real name,
     toast, one undo step, and **Ctrl+Z** restores the exact prior heading.
     Now drag the ring on a **Prop Span**. **Expected:** every instance in the
     series turns by the same angle relative to the road.
+16c. [ ] Select a single prop and read the Attributes pane (p6-s16, #418).
+    **Expected:** **s**, **t**, **Heading** and **Z offset** are all editable,
+    seeded from the prop, with a read-only **World** row beneath them. Type a
+    **Heading** and a **Z offset**. **Expected:** the prop turns and lifts, one
+    undo step each, the World row follows, and the viewport agrees with it.
+    Drag the **s** label. **Expected:** the prop slides along its road in one
+    undo step. Now select a **crosswalk**. **Expected:** the pose rows are
+    gone — a marking's shape is stored as an outline, so its origin is not
+    typeable here.
 17. [ ] Prop Curve: lay props along a curve, then **Bake**. **Expected:**
     instances distribute along the curve; baking converts them to
     individually editable props.

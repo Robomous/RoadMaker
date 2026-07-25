@@ -52,6 +52,7 @@
 #include <filesystem>
 #include <fstream>
 #include <optional>
+#include <ranges>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -63,6 +64,7 @@
 #include "document/library_manifest.hpp"
 #include "document/scene_tree_model.hpp"
 #include "document/selection_model.hpp"
+#include "document/units.hpp"
 #include "panels/diagnostics_panel.hpp"
 #include "panels/properties_panel.hpp"
 #include "panels/scene_tree_panel.hpp"
@@ -2144,6 +2146,331 @@ TEST(PropertiesPanel, PropHeightRefreshAndEqualTypedValueCommitNothing) {
   spin->setValue(4.0);
   emit spin->editingFinished();
   EXPECT_EQ(h.document.undo_stack()->count(), base);
+  EXPECT_EQ(xodr(h.document), xodr_before);
+}
+
+// --- properties-panel completeness audit (p6-s16, #418) ----------------------
+
+TEST(PropertiesPanel, PropPoseRowsSeedFromTheObjectAndHideForAMarking) {
+  Harness h;
+  ASSERT_TRUE(h.document.load(kSample).has_value());
+  PropertiesPanel panel(h.document, h.selection);
+  const RoadId road = all_roads(h.document).front();
+  auto* s_spin = panel.findChild<QDoubleSpinBox*>(QStringLiteral("object_s_spin"));
+  auto* t_spin = panel.findChild<QDoubleSpinBox*>(QStringLiteral("object_t_spin"));
+  auto* hdg_spin = panel.findChild<QDoubleSpinBox*>(QStringLiteral("object_hdg_spin"));
+  auto* z_spin = panel.findChild<QDoubleSpinBox*>(QStringLiteral("object_z_spin"));
+  ASSERT_NE(s_spin, nullptr);
+  ASSERT_NE(t_spin, nullptr);
+  ASSERT_NE(hdg_spin, nullptr);
+  ASSERT_NE(z_spin, nullptr);
+
+  const ObjectId tree = add_prop(h.document, road, "t1", 20.0, 4.0);
+  const int base = h.document.undo_stack()->count();
+  h.selection.select({.road = road, .object = tree});
+
+  EXPECT_TRUE(s_spin->isVisibleTo(&panel));
+  EXPECT_DOUBLE_EQ(s_spin->value(), 20.0);
+  EXPECT_DOUBLE_EQ(t_spin->value(), 6.0); // add_prop's t
+  EXPECT_DOUBLE_EQ(hdg_spin->value(), 0.0);
+  EXPECT_DOUBLE_EQ(z_spin->value(), 0.0);
+  EXPECT_EQ(h.document.undo_stack()->count(), base) << "seeding must not push a command";
+
+  // A marking's geometry lives in its outline, so its origin stays read-only.
+  const ObjectId crosswalk = add_crosswalk(h.document, road, "cw", "material.paint_white");
+  h.selection.select({.road = road, .object = crosswalk});
+  EXPECT_FALSE(s_spin->isVisibleTo(&panel));
+  EXPECT_FALSE(hdg_spin->isVisibleTo(&panel));
+  EXPECT_FALSE(z_spin->isVisibleTo(&panel));
+}
+
+TEST(PropertiesPanel, TypingAPropHeadingCommitsOneMoveObjectAndUndoRestores) {
+  // Before p6-s16 the gizmo's yaw ring was the ONLY way to author a prop
+  // heading — there was no numeric row at all (#417's handoff).
+  Harness h;
+  ASSERT_TRUE(h.document.load(kSample).has_value());
+  PropertiesPanel panel(h.document, h.selection);
+  const RoadId road = all_roads(h.document).front();
+  const ObjectId tree = add_prop(h.document, road, "t1", 20.0, 4.0);
+  h.selection.select({.road = road, .object = tree});
+
+  auto* hdg_spin = panel.findChild<QDoubleSpinBox*>(QStringLiteral("object_hdg_spin"));
+  ASSERT_NE(hdg_spin, nullptr);
+  const std::string xodr_before = xodr(h.document);
+  const int base = h.document.undo_stack()->count();
+
+  hdg_spin->setValue(0.785);
+  emit hdg_spin->editingFinished();
+
+  EXPECT_EQ(h.document.undo_stack()->count(), base + 1);
+  EXPECT_NEAR(h.document.network().object(tree)->hdg, 0.785, 1e-9);
+  // s and t travel with it (one move_object carries all three) but are unchanged.
+  EXPECT_DOUBLE_EQ(h.document.network().object(tree)->s, 20.0);
+
+  h.document.undo_stack()->undo();
+  EXPECT_EQ(xodr(h.document), xodr_before);
+}
+
+TEST(PropertiesPanel, TypingAPropZOffsetCommitsOneUpdateObjectsAndUndoRestores) {
+  Harness h;
+  ASSERT_TRUE(h.document.load(kSample).has_value());
+  PropertiesPanel panel(h.document, h.selection);
+  const RoadId road = all_roads(h.document).front();
+  const ObjectId tree = add_prop(h.document, road, "t1", 20.0, 4.0);
+  h.selection.select({.road = road, .object = tree});
+
+  auto* z_spin = panel.findChild<QDoubleSpinBox*>(QStringLiteral("object_z_spin"));
+  ASSERT_NE(z_spin, nullptr);
+  const std::string xodr_before = xodr(h.document);
+  const int base = h.document.undo_stack()->count();
+
+  z_spin->setValue(1.5);
+  emit z_spin->editingFinished();
+
+  EXPECT_EQ(h.document.undo_stack()->count(), base + 1);
+  EXPECT_DOUBLE_EQ(h.document.network().object(tree)->z_offset, 1.5);
+  // The vertical must not disturb the rest of the pose.
+  EXPECT_DOUBLE_EQ(h.document.network().object(tree)->s, 20.0);
+  EXPECT_DOUBLE_EQ(h.document.network().object(tree)->hdg, 0.0);
+
+  h.document.undo_stack()->undo();
+  EXPECT_EQ(xodr(h.document), xodr_before);
+}
+
+TEST(PropertiesPanel, ScrubbingPropSSlidesTheObjectInOneUndoEntry) {
+  Harness h;
+  ASSERT_TRUE(h.document.load(kSample).has_value());
+  PropertiesPanel panel(h.document, h.selection);
+  const RoadId road = all_roads(h.document).front();
+  const ObjectId tree = add_prop(h.document, road, "t1", 20.0, 4.0);
+  h.selection.select({.road = road, .object = tree});
+
+  auto* label = panel.findChild<ScrubLabel*>(QStringLiteral("object_s_scrub"));
+  ASSERT_NE(label, nullptr);
+  const int base = h.document.undo_stack()->count();
+
+  scrub(label, 100); // +10 m at 0.1 m/px
+
+  EXPECT_EQ(h.document.undo_stack()->count(), base + 1) << "one gesture, one undo entry";
+  EXPECT_GT(h.document.network().object(tree)->s, 20.0);
+}
+
+TEST(PropertiesPanel, PropPoseRefreshAndEqualTypedValueCommitNothing) {
+  Harness h;
+  ASSERT_TRUE(h.document.load(kSample).has_value());
+  PropertiesPanel panel(h.document, h.selection);
+  const RoadId road = all_roads(h.document).front();
+  const ObjectId tree = add_prop(h.document, road, "t1", 20.0, 4.0);
+  h.selection.select({.road = road, .object = tree});
+
+  auto* s_spin = panel.findChild<QDoubleSpinBox*>(QStringLiteral("object_s_spin"));
+  auto* z_spin = panel.findChild<QDoubleSpinBox*>(QStringLiteral("object_z_spin"));
+  ASSERT_NE(s_spin, nullptr);
+  ASSERT_NE(z_spin, nullptr);
+  const std::string xodr_before = xodr(h.document);
+  const int base = h.document.undo_stack()->count();
+
+  emit s_spin->editingFinished();
+  emit z_spin->editingFinished();
+  s_spin->setValue(20.0);
+  emit s_spin->editingFinished();
+
+  EXPECT_EQ(h.document.undo_stack()->count(), base);
+  EXPECT_EQ(xodr(h.document), xodr_before);
+}
+
+// The p6-s15 (#417) handoff: the pose spins display 3 decimals, so a value
+// carrying more precision — exactly what a gizmo ring drag authors — gets
+// ROUNDED when it is seeded. A focus-out then used to commit that rounding as
+// if the user had typed it. The no-op guard is now the spin's own quantum.
+TEST(PropertiesPanel, AFocusOutNeverCommitsTheSpinsOwnDisplayRounding) {
+  Harness h;
+  ASSERT_TRUE(h.document.load(kSample).has_value());
+  PropertiesPanel panel(h.document, h.selection);
+  const RoadId road = all_roads(h.document).front();
+  Signal sign;
+  sign.odr_id = "p1";
+  sign.type = "274";
+  sign.subtype = "50";
+  sign.country = "DE";
+  sign.dynamic = false;
+  sign.s = 2.0;
+  sign.t = -3.0;
+  // More precision than the 3-decimal spin can show — a ring drag's output.
+  sign.h_offset = 0.5235987755982988;
+  ASSERT_TRUE(
+      h.document.push_command(edit::add_signal(h.document.network(), road, sign)).has_value());
+  SignalId signal;
+  h.document.network().for_each_signal([&](SignalId id, const Signal&) { signal = id; });
+  h.selection.select({.signal = signal});
+
+  auto* h_spin = panel.findChild<QDoubleSpinBox*>(QStringLiteral("signal_h_spin"));
+  ASSERT_NE(h_spin, nullptr);
+  EXPECT_NEAR(h_spin->value(), 0.524, 5e-4) << "the spin shows the rounded value";
+  const int base = h.document.undo_stack()->count();
+
+  emit h_spin->editingFinished();
+
+  EXPECT_EQ(h.document.undo_stack()->count(), base) << "display rounding is not an edit";
+  EXPECT_DOUBLE_EQ(h.document.network().signal(signal)->h_offset, 0.5235987755982988)
+      << "the authored precision survives a focus-out";
+}
+
+TEST(PropertiesPanel, SignalMountingHeightCommitsOneCommandAndReportsItsTraffic) {
+  Harness h;
+  ASSERT_TRUE(h.document.load(kSample).has_value());
+  PropertiesPanel panel(h.document, h.selection);
+  const RoadId road = all_roads(h.document).front();
+  Signal sign;
+  sign.odr_id = "p1";
+  sign.type = "274";
+  sign.subtype = "50";
+  sign.country = "DE";
+  sign.dynamic = false;
+  sign.s = 2.0;
+  sign.t = -3.0;
+  sign.z_offset = 2.1;
+  sign.orientation = ObjectOrientation::Plus;
+  ASSERT_TRUE(
+      h.document.push_command(edit::add_signal(h.document.network(), road, sign)).has_value());
+  SignalId signal;
+  h.document.network().for_each_signal([&](SignalId id, const Signal&) { signal = id; });
+  h.selection.select({.signal = signal});
+
+  auto* z_spin = panel.findChild<QDoubleSpinBox*>(QStringLiteral("signal_z_spin"));
+  ASSERT_NE(z_spin, nullptr);
+  EXPECT_TRUE(z_spin->isVisibleTo(&panel));
+  EXPECT_DOUBLE_EQ(z_spin->value(), 2.1);
+
+  // GW-4 step 12c checks that the pane REPORTS which traffic a sign governs.
+  auto* orientation = panel.findChild<QLabel*>(QStringLiteral("signal_orientation_value"));
+  ASSERT_NE(orientation, nullptr) << "the traffic-direction row GW-4 asserts must exist";
+  EXPECT_TRUE(orientation->text().contains(QStringLiteral("+s")));
+
+  const std::string xodr_before = xodr(h.document);
+  const int base = h.document.undo_stack()->count();
+  z_spin->setValue(3.4);
+  emit z_spin->editingFinished();
+
+  EXPECT_EQ(h.document.undo_stack()->count(), base + 1);
+  EXPECT_DOUBLE_EQ(h.document.network().signal(signal)->z_offset, 3.4);
+  // Raising a sign must never re-aim it (the #416 override rule).
+  EXPECT_EQ(h.document.network().signal(signal)->orientation, ObjectOrientation::Plus);
+  EXPECT_DOUBLE_EQ(h.document.network().signal(signal)->h_offset, 0.0);
+
+  emit z_spin->editingFinished(); // unchanged: pushes nothing
+  EXPECT_EQ(h.document.undo_stack()->count(), base + 1);
+
+  h.document.undo_stack()->undo();
+  EXPECT_EQ(xodr(h.document), xodr_before);
+}
+
+TEST(PropertiesPanel, AWorldRowReportsTheMeshInstancePosition) {
+  Harness h;
+  ASSERT_TRUE(h.document.load(kSample).has_value());
+  PropertiesPanel panel(h.document, h.selection);
+  const RoadId road = all_roads(h.document).front();
+  const ObjectId tree = add_prop(h.document, road, "t1", 20.0, 4.0);
+  h.selection.select({.road = road, .object = tree});
+
+  auto* world = panel.findChild<QLabel*>(QStringLiteral("world_position_value"));
+  ASSERT_NE(world, nullptr);
+  // The row quotes the mesh instance verbatim, so the pane and the viewport can
+  // never disagree about where the prop stands.
+  const auto& instances = h.document.mesh().objects;
+  const auto it = std::ranges::find_if(
+      instances, [tree](const ObjectInstance& instance) { return instance.object == tree; });
+  ASSERT_NE(it, instances.end());
+  EXPECT_TRUE(world->text().contains(units::format_length(it->position[0])));
+  EXPECT_TRUE(world->text().contains(units::format_length(it->position[2])));
+}
+
+TEST(PropertiesPanel, LaneDirectionCommitsOneCommandAndIsDisabledOnTheCentreLane) {
+  Harness h;
+  ASSERT_TRUE(h.document.load(kSample).has_value());
+  PropertiesPanel panel(h.document, h.selection);
+  auto* combo = panel.findChild<QComboBox*>(QStringLiteral("lane_direction_combo"));
+  ASSERT_NE(combo, nullptr);
+
+  const RoadId road = all_roads(h.document).front();
+  const Road* road_ptr = h.document.network().road(road);
+  ASSERT_NE(road_ptr, nullptr);
+  const LaneSection* section = h.document.network().lane_section(road_ptr->sections.front());
+  ASSERT_NE(section, nullptr);
+  LaneId driving;
+  LaneId centre;
+  for (const LaneId id : section->lanes) {
+    const Lane* lane = h.document.network().lane(id);
+    if (lane->odr_id == 0) {
+      centre = id;
+    } else if (lane->odr_id == -1) {
+      driving = id;
+    }
+  }
+  ASSERT_TRUE(driving.is_valid());
+  ASSERT_TRUE(centre.is_valid());
+
+  h.selection.select({.road = road, .lane = centre});
+  EXPECT_FALSE(combo->isEnabled()) << "set_lane_direction refuses the centre lane";
+
+  h.selection.select({.road = road, .lane = driving});
+  EXPECT_TRUE(combo->isEnabled());
+  const std::string xodr_before = xodr(h.document);
+  const int base = h.document.undo_stack()->count();
+
+  const int reversed = combo->findData(static_cast<int>(LaneDirection::Reversed));
+  ASSERT_GE(reversed, 0);
+  combo->setCurrentIndex(reversed);
+  emit combo->activated(reversed);
+
+  EXPECT_EQ(h.document.undo_stack()->count(), base + 1);
+  EXPECT_EQ(h.document.network().lane(driving)->direction, LaneDirection::Reversed);
+
+  h.document.undo_stack()->undo();
+  EXPECT_EQ(xodr(h.document), xodr_before);
+}
+
+TEST(PropertiesPanel, MarkColourCommitsOneCommandAndKeepsTheTypeAndWidth) {
+  Harness h;
+  ASSERT_TRUE(h.document.load(kSample).has_value());
+  PropertiesPanel panel(h.document, h.selection);
+  auto* combo = panel.findChild<QComboBox*>(QStringLiteral("road_mark_color_combo"));
+  ASSERT_NE(combo, nullptr);
+
+  const RoadId road = all_roads(h.document).front();
+  const Road* road_ptr = h.document.network().road(road);
+  ASSERT_NE(road_ptr, nullptr);
+  const LaneSection* section = h.document.network().lane_section(road_ptr->sections.front());
+  ASSERT_NE(section, nullptr);
+  LaneId lane_id;
+  for (const LaneId id : section->lanes) {
+    if (h.document.network().lane(id)->odr_id == -1) {
+      lane_id = id;
+    }
+  }
+  ASSERT_TRUE(lane_id.is_valid());
+  h.selection.select({.road = road, .lane = lane_id});
+
+  const RoadMark before = h.document.network().lane(lane_id)->road_marks.empty()
+                              ? RoadMark{}
+                              : h.document.network().lane(lane_id)->road_marks.front();
+  const std::string xodr_before = xodr(h.document);
+  const int base = h.document.undo_stack()->count();
+
+  const int yellow = combo->findData(static_cast<int>(RoadMarkColor::Yellow));
+  ASSERT_GE(yellow, 0);
+  combo->setCurrentIndex(yellow);
+  emit combo->activated(yellow);
+
+  EXPECT_EQ(h.document.undo_stack()->count(), base + 1);
+  const RoadMark& after = h.document.network().lane(lane_id)->road_marks.front();
+  EXPECT_EQ(after.color, RoadMarkColor::Yellow);
+  // set_road_mark replaces the whole record, so the siblings must ride along
+  // unchanged rather than being reset to the struct's defaults.
+  EXPECT_EQ(after.type, before.type);
+  EXPECT_DOUBLE_EQ(after.width, before.width);
+
+  h.document.undo_stack()->undo();
   EXPECT_EQ(xodr(h.document), xodr_before);
 }
 

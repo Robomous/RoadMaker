@@ -43,6 +43,7 @@
 #include <QSpinBox>
 #include <QVBoxLayout>
 #include <QWidget>
+#include <array>
 #include <functional>
 #include <optional>
 #include <vector>
@@ -178,8 +179,22 @@ private:
   /// of refresh(), after the read-only topology rows.
   void refresh_junction(const Junction& junction);
 
-  void add_row(const QString& label, const QString& value);
+  /// Appends a read-only row and returns its VALUE label, so a caller that
+  /// needs to name the row for tests (or restyle it) can, without every other
+  /// call site changing.
+  QLabel* add_row(const QString& label, const QString& value);
   void clear_rows();
+
+  /// Read-only "World" row for a placed prop or signal — where the thing
+  /// actually stands, as opposed to the road-relative (s, t) that authors it.
+  ///
+  /// The value comes from the MESH instance rather than being recomputed here:
+  /// the mesher is what already resolves the reference line, the elevation
+  /// profile and @zOffset into a world origin, so this row and the viewport can
+  /// never disagree. No-op when the instance is absent (nothing is drawn yet).
+  void add_world_row(std::optional<std::array<double, 3>> position);
+  [[nodiscard]] std::optional<std::array<double, 3>> object_world_position(ObjectId object) const;
+  [[nodiscard]] std::optional<std::array<double, 3>> signal_world_position(SignalId signal) const;
 
   // --- scrub-editing (P1/GW-2) ------------------------------------------------
   // One numeric attribute a ScrubLabel can drag. The table is deliberately
@@ -276,12 +291,22 @@ private:
 
   QGroupBox* lane_group_;
   QComboBox* type_combo_;
+  /// Travel direction (§11 @direction, OpenDRIVE 1.8.0+). The Lane Profile tool
+  /// cycles it in the viewport; this is the pane's direct control. Disabled for
+  /// the centre lane because edit::set_lane_direction refuses it — the pane's
+  /// predicate and the kernel's must never disagree (the width precedent).
+  QComboBox* direction_combo_;
   UnitSpinBox* width_spin_;
   /// The "Width" scrub handle — kept so it can be disabled alongside width_spin_
   /// on a lane whose width varies along s (that edit belongs in the 2D Editor).
   ScrubLabel* width_scrub_label_ = nullptr;
   QComboBox* mark_combo_;
   UnitSpinBox* mark_width_spin_;
+  /// Paint colour of the lane's first road mark (§11.9 @color). Road styles
+  /// author it (yellow centre lines, white lane lines); before p6-s16 nothing
+  /// could change it afterwards, which is the gap this closes. Rides the same
+  /// set_road_mark command as the type and width rows.
+  QComboBox* mark_color_combo_;
   /// Lane marking slot (p3-s1): a Library slot that sets the selected lane's
   /// road mark from a dropped Markings item (parity with the viewport drop).
   /// Enabled on any lane, centre included — lane 0 carries the centre-line mark.
@@ -374,6 +399,11 @@ private:
   UnitSpinBox* signal_s_spin_;
   UnitSpinBox* signal_t_spin_;
   QDoubleSpinBox* signal_h_spin_;
+  /// Mounting height above the road reference line (§14.1 Table 122 @zOffset,
+  /// required, meters). Its own command rather than a fourth move_signal
+  /// argument: raising a sign never changes which traffic it governs, so the
+  /// vertical must not travel with the pose that carries the facing.
+  UnitSpinBox* signal_z_spin_;
   QLabel* signal_kind_label_;
   /// Editable @text face (§14 Table 122). A compact multi-line editor — @text
   /// may carry literal newlines — that commits ONE set_signal_text on focus-out
@@ -408,6 +438,18 @@ private:
   /// first batch edit — through a single update_objects command. Hidden for
   /// markings and for props whose @name resolves to no bundled model.
   UnitSpinBox* object_height_spin_;
+  /// Road-relative pose of a placed prop (§13.1 @s/@t/@hdg/@zOffset). All four
+  /// already existed on Object with working commands; before p6-s16 the pane
+  /// showed them as one read-only line, so a heading could only be authored by
+  /// dragging the gizmo ring and a z-offset not at all. Shown for props only —
+  /// a marking's geometry lives in its outline/samples, so moving it by (s, t)
+  /// would desync the two (relocation is #307's scope).
+  UnitSpinBox* object_s_spin_;
+  UnitSpinBox* object_t_spin_;
+  /// Heading is an ANGLE: unit-invariant, so it keeps a literal " rad" suffix
+  /// rather than becoming a UnitSpinBox (#412's rule cuts on lengths only).
+  QDoubleSpinBox* object_hdg_spin_;
+  UnitSpinBox* object_z_spin_;
   /// The object group's form — kept so refresh_object can setRowVisible the
   /// Model vs Material rows per object kind.
   QFormLayout* object_form_ = nullptr;
@@ -471,6 +513,34 @@ private:
   /// it.
   void refresh_object(const Object& object);
 
+  /// The primary selection's object (nullptr when the primary is not one).
+  [[nodiscard]] const Object* primary_object() const;
+
+  /// Whether `object` is a PROP — an <object> that renders a bundled model —
+  /// rather than a marking instance. The single predicate the pose rows, the
+  /// Model slot and the Height row all agree on.
+  [[nodiscard]] static bool object_is_prop(const Object& object);
+
+  /// Commits one move_object from the s/t/heading spins for the primary prop,
+  /// skipping the push when nothing changed (the refresh-echo guard).
+  void push_object_pose();
+
+  /// ONE update_objects command setting the primary prop's @zOffset. Reads its
+  /// baseline from `network`, never captured, so a preview session rebuilding
+  /// this factory against its BASE state each tick cannot compound.
+  [[nodiscard]] std::unique_ptr<edit::Command> set_primary_object_z(const RoadNetwork& network,
+                                                                    double value) const;
+
+  /// True when `spin` shows a value that differs from `stored` by more than
+  /// half its own display quantum — the no-op guard every spin editor uses.
+  ///
+  /// A spin box cannot REPRESENT a change smaller than 10^-decimals, so a
+  /// difference below half of that is the display rounding its seed, never a
+  /// user's intent. Comparing against a fixed 1e-9 instead made a focus-out
+  /// after a gizmo drag push a command that silently rounded the value it was
+  /// only supposed to display (p6-s15's handoff, #417).
+  [[nodiscard]] static bool differs_from_display(const QDoubleSpinBox& spin, double stored);
+
   /// Populates the Signal section (position spinboxes + read-only type rows)
   /// from the primary selection's signal, and shows it.
   void refresh_signal(const Signal& signal);
@@ -483,6 +553,9 @@ private:
 
   /// Commits a move_signal from the spinbox values for the primary signal.
   void push_signal_move();
+  /// Commits the mounting-height spin as ONE set_signal_z_offset, skipping a
+  /// value that did not change so a refresh re-seed never pushes a command.
+  void push_signal_z_offset();
   /// Commits the posted speed as ONE set_signal_value (value + its mandatory
   /// unit), skipping a value that did not change so a refresh re-seed never
   /// pushes a command.
