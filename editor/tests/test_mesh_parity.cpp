@@ -85,25 +85,30 @@ void expect_mesh_parity(const NetworkMesh& editor_mesh, const NetworkMesh& fresh
   // that moves its road must re-derive it. Comparing it here makes that a
   // standing guarantee — the next op that moves a road without re-anchoring its
   // props fails this, not a hand-run.
+  // Compared BY INDEX, not by id lookup: re-deriving a road's placements
+  // appends them, and the channel's order reaches exported files (USD prim
+  // names, glTF node sequence), so the incremental path restores arena order
+  // and parity has to include it. An id-keyed comparison would pass on a
+  // silently renumbered channel.
   ASSERT_EQ(editor_mesh.objects.size(), fresh.objects.size()) << "prop instance count drifted";
-  for (const ObjectInstance& expected : fresh.objects) {
-    const auto found =
-        std::ranges::find(editor_mesh.objects, expected.object, &ObjectInstance::object);
-    ASSERT_NE(found, editor_mesh.objects.end()) << "prop missing from the editor mesh";
-    EXPECT_EQ(found->position, expected.position);
-    EXPECT_EQ(found->heading, expected.heading);
-    EXPECT_EQ(found->scale, expected.scale);
-    EXPECT_EQ(found->road, expected.road);
+  for (std::size_t i = 0; i < fresh.objects.size(); ++i) {
+    const ObjectInstance& expected = fresh.objects[i];
+    const ObjectInstance& actual = editor_mesh.objects[i];
+    EXPECT_EQ(actual.object, expected.object) << "prop instance order drifted at " << i;
+    EXPECT_EQ(actual.position, expected.position);
+    EXPECT_EQ(actual.heading, expected.heading);
+    EXPECT_EQ(actual.scale, expected.scale);
+    EXPECT_EQ(actual.road, expected.road);
   }
   ASSERT_EQ(editor_mesh.signal_instances.size(), fresh.signal_instances.size())
       << "signal instance count drifted";
-  for (const SignalInstance& expected : fresh.signal_instances) {
-    const auto found =
-        std::ranges::find(editor_mesh.signal_instances, expected.signal, &SignalInstance::signal);
-    ASSERT_NE(found, editor_mesh.signal_instances.end()) << "signal missing from the editor mesh";
-    EXPECT_EQ(found->position, expected.position);
-    EXPECT_EQ(found->heading, expected.heading);
-    EXPECT_EQ(found->road, expected.road);
+  for (std::size_t i = 0; i < fresh.signal_instances.size(); ++i) {
+    const SignalInstance& expected = fresh.signal_instances[i];
+    const SignalInstance& actual = editor_mesh.signal_instances[i];
+    EXPECT_EQ(actual.signal, expected.signal) << "signal instance order drifted at " << i;
+    EXPECT_EQ(actual.position, expected.position);
+    EXPECT_EQ(actual.heading, expected.heading);
+    EXPECT_EQ(actual.road, expected.road);
   }
 }
 

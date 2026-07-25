@@ -68,9 +68,10 @@ enum class SurfaceKind {
 [[nodiscard]] SurfaceKind surface_for(LaneType type);
 
 /// One uploadable mesh plus the entity it visualizes. `lane` is invalid for
-/// markings and junction floors; `object` is valid only for prop parts (a
-/// placed tree/vegetation instance), where `road` is its owning road and
-/// `lane` is invalid. All three ids are invalid for undecorated geometry.
+/// markings and junction floors. `object` and `signal` are part of the shared
+/// highlight/pick vocabulary but NO producer sets them here any more: placed
+/// props and signals became instanced batches (ScenePropBatch below), so they
+/// never reach the item list. All ids are invalid for undecorated geometry.
 struct SceneItem {
   RenderMeshData data;
   RoadId road;

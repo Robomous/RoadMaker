@@ -1118,20 +1118,45 @@ void remesh_roads(const RoadNetwork& network,
 void remesh_object_instances(const RoadNetwork& network,
                              NetworkMesh& mesh,
                              std::span<const RoadId> roads) {
+  bool touched = false;
   for (const RoadId road_id : roads) {
     const Road* road = network.road(road_id);
     // Instanced-prop layer: drop this road's placed props and signals and
     // re-derive them from the network. Idempotent — it reads only stored state,
     // so running it twice in a tick (an edit that named both channels) costs a
     // rebuild, never a wrong answer.
-    std::erase_if(mesh.objects, [&](const ObjectInstance& inst) { return inst.road == road_id; });
-    std::erase_if(mesh.signal_instances,
-                  [&](const SignalInstance& inst) { return inst.road == road_id; });
+    std::size_t moved = std::erase_if(
+        mesh.objects, [&](const ObjectInstance& inst) { return inst.road == road_id; });
+    moved += std::erase_if(mesh.signal_instances,
+                           [&](const SignalInstance& inst) { return inst.road == road_id; });
     if (road != nullptr) {
+      const std::size_t objects_before = mesh.objects.size();
+      const std::size_t signals_before = mesh.signal_instances.size();
       build_object_instances(network, *road, road_id, mesh.objects);
       build_signal_instances(network, *road, road_id, mesh.signal_instances);
+      moved +=
+          (mesh.objects.size() - objects_before) + (mesh.signal_instances.size() - signals_before);
     }
+    touched = touched || moved > 0;
   }
+  if (!touched) {
+    return; // the listed roads carry no placements — nothing to reorder
+  }
+  // Re-deriving APPENDS, so restore the order a full build_network_mesh()
+  // produces: instances grouped by their road in arena order (Arena::for_each
+  // walks slots ascending). A stable sort is enough — it preserves each road's
+  // own object order, which is the order build_object_instances just emitted.
+  //
+  // This is not cosmetic. The channel's order is observable in exported files:
+  // the USD backend names every prim after its index (`prop_<i>`, `signal_<i>`
+  // in usd_exporter.cpp) and the glTF backend emits one node per instance in
+  // sequence, so without this a translated road would silently renumber every
+  // prop that follows it — the same scene exporting differently depending on
+  // whether it was edited or freshly loaded.
+  std::ranges::stable_sort(
+      mesh.objects, {}, [](const ObjectInstance& inst) { return inst.road.index; });
+  std::ranges::stable_sort(
+      mesh.signal_instances, {}, [](const SignalInstance& inst) { return inst.road.index; });
 }
 
 void remesh_objects(const RoadNetwork& network,

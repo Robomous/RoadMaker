@@ -295,11 +295,14 @@ void ViewportWidget::apply_pending_road_updates() {
   pending_roads_.erase(duplicates.begin(), duplicates.end());
 
   for (const RoadId road_id : pending_roads_) {
-    // Drop the road's previous surface meshes and items — but NOT its prop
-    // items: props never flow through items_ at all (their instances live in
-    // prop_batches_), so apply_prop_updates below re-seats them instead.
+    // Drop the road's previous surface meshes and items. Props are not among
+    // them: they never flow through items_ at all (their instances live in
+    // prop_batches_), so apply_prop_updates below re-seats them instead. This
+    // loop used to spare items carrying a valid object id, which was dead —
+    // no producer sets SceneItem::object — and would have been wrong for a
+    // road that MOVED, which needs every item it owns rebuilt.
     for (auto it = items_.begin(); it != items_.end();) {
-      if (it->road == road_id && !it->object.is_valid()) {
+      if (it->road == road_id) {
         renderer_->remove(it->handle);
         it = items_.erase(it);
       } else {

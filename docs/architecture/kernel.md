@@ -120,6 +120,14 @@ object datum, which is what `remesh_object_instances()` re-derives (the cheap
 half of `remesh_objects` — placements only, no markings). Consumers drive it off
 the roads that changed, not off an object-edit flag, so no edit can forget it.
 
+Re-deriving a road's placements appends them, so that entry point restores the
+arena ordering a full build produces before it returns. Order is part of the
+parity guarantee here rather than an implementation detail: the exporters
+address instances positionally — USD names each prim after its index, glTF
+emits one node per instance in sequence — so a channel ordered by
+most-recent-edit would export the same scene differently depending on whether
+it had been edited or freshly loaded.
+
 ## Exporters
 
 - **glTF** — `export_glb(mesh, path)` (`io/gltf_exporter.hpp`) writes binary

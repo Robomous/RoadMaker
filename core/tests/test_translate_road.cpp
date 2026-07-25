@@ -294,6 +294,47 @@ TEST(TranslateRoad, PlacedPropsAndSignsFollowTheMovedRoad) {
   EXPECT_EQ(fresh.signal_instances.front().position, mesh.signal_instances.front().position);
 }
 
+// Re-deriving a road's placements APPENDS them, so a move would leave the
+// channel ordered by most-recent edit instead of by road. That order is not
+// cosmetic: the USD exporter names each prim after its index and the glTF
+// exporter emits one node per instance in sequence, so a renumbered channel
+// exports the same scene differently depending on its edit history. Moving the
+// FIRST of two roads is the case a single-road test cannot see.
+TEST(TranslateRoad, MovedRoadKeepsTheInstanceChannelInArenaOrder) {
+  RoadNetwork network;
+  const RoadId first = author_line(network, "1");
+  const RoadId second = author_line(network, "2");
+  network.add_object(first, make_tree("1", 20.0, 4.0));
+  network.add_object(second, make_tree("2", 30.0, 4.0));
+  network.add_signal(first, make_sign("3", 40.0, -4.0));
+  network.add_signal(second, make_sign("4", 50.0, -4.0));
+
+  NetworkMesh mesh = roadmaker::build_network_mesh(network);
+  ASSERT_EQ(mesh.objects.size(), 2U);
+  ASSERT_EQ(mesh.signal_instances.size(), 2U);
+
+  auto command = roadmaker::edit::translate_road(network, first, 9.0, 3.0);
+  ASSERT_TRUE(command->apply(network).has_value());
+  const roadmaker::edit::DirtySet dirty = command->dirty();
+  roadmaker::remesh_roads(network, mesh, dirty.roads);
+  roadmaker::remesh_object_instances(network, mesh, dirty.roads);
+
+  // Index for index against a from-scratch build — the guarantee the exporters
+  // rely on (docs/architecture/kernel.md).
+  const NetworkMesh fresh = roadmaker::build_network_mesh(network);
+  ASSERT_EQ(mesh.objects.size(), fresh.objects.size());
+  for (std::size_t i = 0; i < fresh.objects.size(); ++i) {
+    EXPECT_EQ(mesh.objects[i].object, fresh.objects[i].object) << "prop order drifted at " << i;
+    EXPECT_EQ(mesh.objects[i].position, fresh.objects[i].position);
+  }
+  ASSERT_EQ(mesh.signal_instances.size(), fresh.signal_instances.size());
+  for (std::size_t i = 0; i < fresh.signal_instances.size(); ++i) {
+    EXPECT_EQ(mesh.signal_instances[i].signal, fresh.signal_instances[i].signal)
+        << "signal order drifted at " << i;
+    EXPECT_EQ(mesh.signal_instances[i].position, fresh.signal_instances[i].position);
+  }
+}
+
 // A road that is gone takes its props with it: the instance channel is keyed by
 // owning road, so re-deriving an erased road drops what it owned instead of
 // leaving ghosts floating where the road used to be.

@@ -300,6 +300,18 @@ Current version on `main`: **0.0.1**.
   about silently never matched.
 
 ### Fixed
+- **Trees, signs and street furniture move with the road you move them onto**
+  ([#400](https://github.com/Robomous/RoadMaker/issues/400)): dragging,
+  translating or rotating a road left every prop and sign it carried rendered at
+  the road's *old* position. The scene was only misdrawn, never mis-saved — a
+  placed object is anchored to the road in `s`/`t`, so the file was always
+  right and a reload snapped everything back into place — but until you
+  reloaded, what you saw was a lie. Placements are now re-derived as part of the
+  same edit, so they follow the road on every frame of a drag, and through undo
+  and redo. Deleting a road no longer leaves its props floating over the gap
+  either. Exports gained a guarantee in passing: an edited scene now writes its
+  props in the same order a freshly-loaded one does, so a translated road no
+  longer renumbers every prop after it in exported USD or glTF.
 - **Your recent scenes survive automation, and survive being opened from a
   different folder** ([#399](https://github.com/Robomous/RoadMaker/issues/399)):
   the welcome screen's **Recent** list could empty itself. Two causes, both
