@@ -651,6 +651,29 @@ TEST(LibraryListModel, ServesABundledThumbnailForEveryBuiltInItem) {
   }
 }
 
+// The manifest half of the #415 prop-dimension gate: scripts/gen_prop_meshes.py
+// authors every bundled prop at its true world size, so no built-in item may
+// re-scale one — the plants' `default_scale: 2.0` from p6-s11 was retired when
+// the meshes themselves grew. The other half (those sizes matching
+// docs/domain/realism_defaults.md §1.5–1.6) is core's test_defaults_registry;
+// core cannot parse this Qt-JSON manifest, which is why the gate is split.
+TEST(LibraryListModel, BuiltInPropsSpawnAtNativeSize) {
+  LibraryListModel model;
+  const auto manifest = LibraryManifest::load(kManifest);
+  ASSERT_TRUE(manifest.has_value());
+  model.set_manifest(*manifest);
+  for (const LibraryItem& item : manifest->items()) {
+    EXPECT_DOUBLE_EQ(item.default_scale, 1.0) << item.key.toStdString();
+    if (!item.model.isEmpty()) {
+      EXPECT_DOUBLE_EQ(model.default_scale_for_model(item.model), 1.0) << item.key.toStdString();
+    }
+    for (const LibraryItem::PropSetEntry& entry : item.prop_entries) {
+      EXPECT_DOUBLE_EQ(model.default_scale_for_model(entry.model), 1.0)
+          << item.key.toStdString() << " -> " << entry.model.toStdString();
+    }
+  }
+}
+
 // A project-overlay item's thumbnail is resolved on disk against the project
 // directory; the loaded icon proves the resolution and read work end to end.
 TEST(LibraryListModel, ResolvesOverlayThumbnailsAgainstTheProjectDir) {

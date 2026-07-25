@@ -65,6 +65,12 @@ emit an instance per object from the same table — no divergent art paths.
 | `tree_poplar` | Poplar tree | `tree` | 6.0 m | 0.85 m |
 | `shrub` | Shrub | `vegetation` | 1.1 m | 1.1 m |
 
+The sizes above are the ones this phase shipped; they were re-authored to real
+world dimensions by
+[#415](https://github.com/Robomous/RoadMaker/issues/415) — see
+[realism defaults](../../domain/realism_defaults.md) §1.6 for the current
+numbers, which the kernel test suite gates.
+
 Each prop's origin is its base centre (z=0 sits on the road surface); `height`
 and `radius` map to the OpenDRIVE object attributes. The Library catalogue
 entries (a **Props** category in `assets/library/manifest.json` with

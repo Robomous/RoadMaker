@@ -31,6 +31,13 @@ std::string len(double meters) {
   return meters < 1.0 ? fmt::format("{:.2f}", meters) : fmt::format("{:.1f}", meters);
 }
 
+/// Centimetre precision for the few metre-scale values whose basis is an exact
+/// inch measure (a signal housing is 42 in): len()'s one-decimal metre style
+/// would round 1.07 to 1.1 and lose the derivation.
+std::string len_cm(double meters) {
+  return fmt::format("{:.2f}", meters);
+}
+
 } // namespace
 
 double driving_lane_width(RoadClass road_class) {
@@ -136,6 +143,73 @@ std::string markings_markdown() {
           "**{} m** walking depth; min {} m", len(kCrosswalkWidth), len(kCrosswalkMinWidth)),
       "10 ft; 6 ft");
   row("Edge lines", "white right edge; yellow left edge (divided)", "—");
+  return out;
+}
+
+std::string signals_lighting_markdown() {
+  std::string out = "<!-- rm-defaults: signals-lighting -->\n"
+                    "| Item | Default | Imperial display |\n"
+                    "|---|---|---|\n";
+  const auto row = [&out](const char* item, const std::string& value, const char* imperial) {
+    out += fmt::format("| {} | {} | {} |\n", item, value, imperial);
+  };
+  row("Signal head",
+      fmt::format("3-section, **{} m** lenses, housing ≈ {} m tall",
+                  len(kSignalLensDiameter),
+                  len_cm(kSignalHousingHeight)),
+      "12 in");
+  row("Signal vertical clearance",
+      fmt::format("bottom of housing **{}–{} m** over roadway; default **{} m** with mast arm",
+                  len(kSignalClearanceMin),
+                  len(kSignalClearanceMax),
+                  len(kSignalClearance)),
+      "15–19 ft; 17 ft");
+  row("Post-mounted / pedestrian signal",
+      fmt::format("mounting {}–{} m", len(kPedSignalMountMin), len(kPedSignalMountMax)),
+      "7–10 ft");
+  row("Street light",
+      fmt::format("mounting height **{} m**; residential {} m, arterial up to {} m",
+                  len(kStreetlightMountingHeight),
+                  len(kStreetlightResidentialHeight),
+                  len(kStreetlightArterialHeight)),
+      "30 ft; 25 ft; 40 ft");
+  row("Fire hydrant", fmt::format("{} m", len(kFireHydrantHeight)), "30 in");
+  return out;
+}
+
+std::string trees_buildings_markdown() {
+  std::string out = "<!-- rm-defaults: trees-buildings -->\n"
+                    "| Item | Default | Range |\n"
+                    "|---|---|---|\n";
+  const auto row = [&out](const char* item, const std::string& value, const std::string& range) {
+    out += fmt::format("| {} | {} | {} |\n", item, value, range);
+  };
+  row("Street tree (default asset)",
+      fmt::format("**height {} m**, canopy Ø ≈ {} m, trunk Ø {} m; clear trunk ≥ {} m over "
+                  "sidewalk / {} m over roadway",
+                  len(kStreetTreeHeight),
+                  len(kStreetTreeCanopyDiameter),
+                  len(kStreetTreeTrunkDiameter),
+                  len(kTreeClearTrunkSidewalk),
+                  len(kTreeClearTrunkRoadway)),
+      fmt::format("small ornamental {}–{} m; large mature {}–{} m",
+                  len(kOrnamentalTreeMinHeight),
+                  len(kOrnamentalTreeMaxHeight),
+                  len(kMatureTreeMinHeight),
+                  len(kMatureTreeMaxHeight)));
+  row("House, 1-story", fmt::format("**{} m** to ridge", len(kHouse1StoryHeight)), "4.0–6.0 m");
+  row("House, 2-story",
+      fmt::format("**{} m**", len(kHouse2StoryHeight)),
+      fmt::format("{}–{} m", len(kHouse2StoryMinHeight), len(kHouse2StoryMaxHeight)));
+  row("Commercial 1-story", fmt::format("**{} m**", len(kCommercial1StoryHeight)), "4.5–6.0 m");
+  row("Mid-rise",
+      fmt::format("**{} m per floor** + {} m parapet", len(kFloorHeight), len(kParapetHeight)),
+      fmt::format("residential floors {} m", len(kResidentialFloorHeight)));
+  row("Building footprint sanity",
+      fmt::format("a house is not smaller than 2 car lengths per side (≈ {} × {} m typical)",
+                  len(kHouseFootprintLength),
+                  len(kHouseFootprintWidth)),
+      "—");
   return out;
 }
 

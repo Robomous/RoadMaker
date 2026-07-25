@@ -34,6 +34,14 @@ Regenerate after changing any tree parameter:
 
     python3 scripts/gen_prop_meshes.py
 
+Every dimension here is authored at its **true world size**: the models declare
+the metres a prop actually measures, so a placed instance needs no scale
+factor. The targets come from ``docs/domain/realism_defaults.md`` §1.5–1.6 and
+are mirrored by ``roadmaker::defaults``; this script is stdlib-only (it must
+run on a bare CI runner) so it cannot include that header, and
+``core/tests/test_defaults_registry.cpp`` is what holds the two in step —
+retune a prop away from the spec and CI fails there.
+
 Stdlib only — must run on any CI runner. Kernel frame: right-handed, Z-up,
 meters; a prop's origin is the base centre (z=0 sits on the road surface).
 """
@@ -151,9 +159,22 @@ def _icosahedron() -> tuple[list[Vec3], list[tuple[int, int, int]]]:
     return verts, faces
 
 
+# A normalized icosahedron's extreme vertex component: its surface reaches only
+# this fraction of a blob()'s per-axis scale, so a crown sized straight from a
+# spec diameter would come out ~15% short. blob_scale() undoes it.
+ICOSPHERE_REACH = 0.85065080835204
+
+
+def blob_scale(reach: float) -> float:
+    """The blob() per-axis scale whose surface sits `reach` metres from centre."""
+    return reach / ICOSPHERE_REACH
+
+
 def blob(cx: float, cy: float, cz: float,
          sx: float, sy: float, sz: float) -> list[Tri]:
-    """A low-poly icosahedral crown, scaled per axis and centred at (cx,cy,cz)."""
+    """A low-poly icosahedral crown, scaled per axis and centred at (cx,cy,cz).
+    The surface reaches ICOSPHERE_REACH * s along each axis, not s — use
+    blob_scale() when sizing from a real-world extent."""
     verts, faces = _icosahedron()
     placed = [(cx + v[0] * sx, cy + v[1] * sy, cz + v[2] * sz) for v in verts]
     tris = [(placed[a], placed[b], placed[c]) for a, b, c in faces]
@@ -226,58 +247,75 @@ BIRCH_BARK = (0.83, 0.83, 0.78)
 
 
 def tree_pine() -> dict:
-    trunk = cylinder(0.15, 0.0, 1.2)
-    crown = (cone(1.2, 1.0, 2.4) + cone(0.95, 1.9, 3.2)
-             + cone(0.65, 2.8, 4.2))
+    """A conifer at 8.4 m — inside §1.6's street-tree band, kept slimmer and
+    taller-crowned than the oak because a pine is not a shade tree."""
+    trunk = cylinder(0.30, 0.0, 2.4)
+    crown = (cone(2.4, 2.0, 4.8) + cone(1.9, 3.8, 6.4)
+             + cone(1.3, 5.6, 8.4))
     return {
         "id": "tree_pine", "label": "Pine tree", "type": "Tree",
-        "height": 4.2, "radius": 1.2,
+        "height": 8.4, "radius": 2.4,
         "parts": [("trunk", BROWN, trunk),
                   ("crown", (0.16, 0.38, 0.22), crown)],
     }
 
 
 def tree_oak() -> dict:
-    trunk = cylinder(0.22, 0.0, 1.9)
-    crown = blob(0.0, 0.0, 3.0, 1.8, 1.8, 1.6)
+    """THE §1.6 default street tree: 10.0 m tall, canopy Ø 6.0 m, trunk Ø
+    0.40 m. The crown starts at 4.4 m, the roadway clear-trunk rule — which
+    also satisfies the 2.4 m sidewalk one, so the tree is legal on either
+    side of a curb."""
+    height, canopy_radius, trunk_radius = 10.0, 3.0, 0.20
+    crown_bottom = 4.4
+    crown_center = (height + crown_bottom) / 2.0
+    trunk = cylinder(trunk_radius, 0.0, crown_center)  # top hidden in the crown
+    crown = blob(0.0, 0.0, crown_center,
+                 blob_scale(canopy_radius), blob_scale(canopy_radius),
+                 blob_scale((height - crown_bottom) / 2.0))
     return {
         "id": "tree_oak", "label": "Oak tree", "type": "Tree",
-        "height": 4.6, "radius": 1.8,
+        "height": height, "radius": canopy_radius,
         "parts": [("trunk", BROWN, trunk),
                   ("crown", (0.24, 0.50, 0.24), crown)],
     }
 
 
 def tree_birch() -> dict:
-    trunk = cylinder(0.12, 0.0, 2.4)
-    crown = blob(0.0, 0.0, 3.3, 1.0, 1.0, 1.4)
+    """A slender birch at 9.4 m — §1.6 street-tree band, narrow crown."""
+    trunk = cylinder(0.24, 0.0, 4.8)
+    crown = blob(0.0, 0.0, 6.6, 2.0, 2.0, 2.8)
     return {
         "id": "tree_birch", "label": "Birch tree", "type": "Tree",
-        "height": 4.7, "radius": 1.0,
+        "height": 9.4, "radius": 2.0,
         "parts": [("trunk", BIRCH_BARK, trunk),
                   ("crown", (0.44, 0.63, 0.32), crown)],
     }
 
 
 def tree_poplar() -> dict:
-    trunk = cylinder(0.15, 0.0, 1.0)
-    crown = blob(0.0, 0.0, 3.4, 0.85, 0.85, 2.6)
+    """A columnar poplar at 12.0 m — taller than the §1.6 default street tree
+    but below the 15–20 m mature band, which is what a planted poplar reads
+    as before it matures."""
+    trunk = cylinder(0.30, 0.0, 2.0)
+    crown = blob(0.0, 0.0, 6.8, 1.7, 1.7, 5.2)
     return {
         "id": "tree_poplar", "label": "Poplar tree", "type": "Tree",
-        "height": 6.0, "radius": 0.85,
+        "height": 12.0, "radius": 1.7,
         "parts": [("trunk", BROWN, trunk),
                   ("crown", (0.30, 0.52, 0.26), crown)],
     }
 
 
 def shrub() -> dict:
+    """An ornamental shrub at 2.4 m — deliberately below §1.6's 4 m small-tree
+    minimum, since a shrub is not a tree."""
     # Blob centres are lifted so the crown rests on z=0 (icosphere reaches
     # ~0.851*sz below centre) rather than sinking into the road surface.
-    crown = (blob(0.0, 0.0, 0.56, 1.1, 1.1, 0.6)
-             + blob(0.6, 0.2, 0.42, 0.6, 0.6, 0.45))
+    crown = (blob(0.0, 0.0, 1.12, 2.2, 2.2, 1.2)
+             + blob(1.2, 0.4, 0.84, 1.2, 1.2, 0.9))
     return {
         "id": "shrub", "label": "Shrub", "type": "Vegetation",
-        "height": 1.2, "radius": 1.1,
+        "height": 2.4, "radius": 2.2,
         "parts": [("foliage", (0.28, 0.46, 0.24), crown)],
     }
 
@@ -426,7 +464,9 @@ ROOFTOP_UNIT = (0.46, 0.47, 0.49)
 
 
 def building_low() -> dict:
-    """A small commercial box: a body with a flat roof slab overhanging it."""
+    """A small commercial box: a body with a flat roof slab overhanging it.
+    Untouched by #415 — 7.5 m already sits in §1.6's 7–9 m two-storey house
+    band and the 10.4 × 8.4 m footprint clears the ≈10 × 8 m sanity check."""
     body = box(0.0, 0.0, 3.5, 10.0, 8.0, 7.0)          # 0..7
     roof = box(0.0, 0.0, 7.25, 10.4, 8.4, 0.5)         # 7..7.5, slight overhang
     return {
@@ -439,13 +479,15 @@ def building_low() -> dict:
 
 
 def building_mid() -> dict:
-    """A mid-rise block: a tall body, a roof slab, and a rooftop plant unit."""
-    body = box(0.0, 0.0, 9.0, 12.0, 12.0, 18.0)        # 0..18
-    roof = box(0.0, 0.0, 18.25, 12.6, 12.6, 0.5)       # 18..18.5
-    unit = box(-1.5, 1.5, 19.4, 4.0, 4.0, 1.8)         # rooftop HVAC, 18.5..20.3
+    """A mid-rise block on §1.6's per-floor rule: five 3.7 m floors (18.5 m)
+    plus a 1 m parapet zone, total 19.5 m. The roof slab and the rooftop plant
+    unit both live inside that zone, so nothing pokes above the rule."""
+    body = box(0.0, 0.0, 9.25, 12.0, 12.0, 18.5)       # 0..18.5 = 5 floors
+    roof = box(0.0, 0.0, 18.70, 12.6, 12.6, 0.4)       # 18.5..18.9
+    unit = box(-1.5, 1.5, 19.20, 4.0, 4.0, 0.6)        # rooftop HVAC, 18.9..19.5
     return {
         "id": "building_mid", "label": "Mid-rise building", "type": "Building",
-        "height": 20.3,
+        "height": 19.5,
         "radius": _footprint_radius((6.3, 6.3)),
         "parts": [("body", WALL_COOL, body),
                   ("roof", ROOF_GREY, roof),
@@ -454,17 +496,21 @@ def building_mid() -> dict:
 
 
 def building_tower() -> dict:
-    """A stepped tower: three set-back box stages, each narrower than the last."""
-    base = box(0.0, 0.0, 9.0, 14.0, 14.0, 18.0)        # 0..18
-    mid = box(0.0, 0.0, 25.5, 11.0, 11.0, 15.0)        # 18..33
-    cap = box(0.0, 0.0, 36.5, 8.0, 8.0, 7.0)           # 33..40
+    """A stepped tower: three set-back box stages, each narrower than the last,
+    on §1.6's per-floor rule — 5 + 4 + 1 floors of 3.7 m (37.0 m) capped by a
+    1 m parapet, total 38.0 m."""
+    base = box(0.0, 0.0, 9.25, 14.0, 14.0, 18.5)       # 0..18.5 = 5 floors
+    mid = box(0.0, 0.0, 25.90, 11.0, 11.0, 14.8)       # 18.5..33.3 = 4 floors
+    cap = box(0.0, 0.0, 35.15, 8.0, 8.0, 3.7)          # 33.3..37.0 = 1 floor
+    parapet = box(0.0, 0.0, 37.50, 8.4, 8.4, 1.0)      # 37.0..38.0
     return {
         "id": "building_tower", "label": "Tower building", "type": "Building",
-        "height": 40.0,
+        "height": 38.0,
         "radius": _footprint_radius((7.0, 7.0)),
         "parts": [("base", WALL_TAN, base),
                   ("mid", WALL_WARM, mid),
-                  ("cap", WALL_COOL, cap)],
+                  ("cap", WALL_COOL, cap),
+                  ("parapet", ROOF_GREY, parapet)],
     }
 
 
@@ -482,23 +528,32 @@ LAMP_HOUSING = (0.15, 0.16, 0.17)
 LAMP_LENS = (0.98, 0.90, 0.66)
 
 
+# §1.5 street lighting: the luminaire mounts at 9.0 m, so the pole rises to
+# that height and the arm carries the lamp head just under the top. The arm
+# reach is a typical 1.8 m overhang toward the roadway.
+LAMP_MOUNTING_HEIGHT = 9.0
+LAMP_ARM_REACH = 1.8
+
+
 def _lamp_arm(direction: float) -> list:
     """One horizontal arm + lamp head reaching `direction` (+1 → +x, -1 → -x)
     from the pole top. Returns (arm_tris, head_tris, lens_tris)."""
-    tip = 1.2 * direction
-    arm = box(0.6 * direction, 0.0, 5.4, 1.2, 0.10, 0.10)
-    head = box(tip, 0.0, 5.32, 0.44, 0.24, 0.18)
-    lens = box(tip, 0.0, 5.21, 0.40, 0.20, 0.04)  # downward-facing lens
+    tip = LAMP_ARM_REACH * direction
+    top = LAMP_MOUNTING_HEIGHT
+    arm = box(tip / 2.0, 0.0, top - 0.15, LAMP_ARM_REACH, 0.12, 0.12)
+    head = box(tip, 0.0, top - 0.27, 0.60, 0.30, 0.24)
+    lens = box(tip, 0.0, top - 0.42, 0.54, 0.26, 0.06)  # downward-facing lens
     return arm, head, lens
 
 
 def streetlight_single() -> dict:
-    """A single-arm streetlight: pole r0.12 h5.5, one arm + lamp head."""
-    pole = cylinder(0.12, 0.0, 5.5)
+    """A single-arm streetlight: pole r0.15 to the §1.5 mounting height of
+    9.0 m, one arm + lamp head hanging just below the top."""
+    pole = cylinder(0.15, 0.0, LAMP_MOUNTING_HEIGHT)
     arm, head, lens = _lamp_arm(1.0)
     return {
         "id": "streetlight_single", "label": "Streetlight", "type": "Pole",
-        "height": 5.5, "radius": 1.4,
+        "height": LAMP_MOUNTING_HEIGHT, "radius": LAMP_ARM_REACH + 0.30,
         "parts": [("pole", POLE_GREY, pole),
                   ("arm", POLE_GREY, arm),
                   ("head", LAMP_HOUSING, head),
@@ -508,12 +563,13 @@ def streetlight_single() -> dict:
 
 def streetlight_double() -> dict:
     """A double-arm streetlight: two opposed arms + lamp heads on one pole."""
-    pole = cylinder(0.12, 0.0, 5.5)
+    pole = cylinder(0.15, 0.0, LAMP_MOUNTING_HEIGHT)
     arm_a, head_a, lens_a = _lamp_arm(1.0)
     arm_b, head_b, lens_b = _lamp_arm(-1.0)
     return {
         "id": "streetlight_double", "label": "Streetlight (double)",
-        "type": "Pole", "height": 5.5, "radius": 1.4,
+        "type": "Pole", "height": LAMP_MOUNTING_HEIGHT,
+        "radius": LAMP_ARM_REACH + 0.30,
         "parts": [("pole", POLE_GREY, pole),
                   ("arm_a", POLE_GREY, arm_a),
                   ("head_a", LAMP_HOUSING, head_a),

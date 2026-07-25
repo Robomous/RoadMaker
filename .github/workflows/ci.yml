@@ -210,8 +210,8 @@ jobs:
     name: editor visual artifacts
     runs-on: ubuntu-latest
     timeout-minutes: 60
-    # Renders the canonical scenes (4-arm crossing, the tee, an overpass)
-    # through the editor's --screenshot mode and uploads the PNGs for HUMAN
+    # Renders the canonical scenes (4-arm crossing, the tee, an overpass, and
+    # the prop-scale street) through --screenshot mode and uploads PNGs for HUMAN
     # review — metrics gate correctness, the maintainer gates appearance
     # (docs/standards/product-parity.md). Not a pixel-diff: the artifacts
     # exist so a reviewer can look at what the editor actually draws.
@@ -252,7 +252,7 @@ jobs:
       - name: Render canonical scenes
         run: |
           mkdir -p shots
-          for scene in crossing t_attach overpass; do
+          for scene in crossing t_attach overpass props_scale; do
             for camera in orbit top; do
               xvfb-run -a python3 scripts/editor_screenshot.py \
                 "assets/samples/${scene}.xodr" "shots/${scene}_${camera}.png" \

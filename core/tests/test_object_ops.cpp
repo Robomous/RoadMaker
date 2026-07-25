@@ -58,8 +58,13 @@ Object make_tree(std::string odr_id, double s, double t) {
   tree.type = ObjectType::Tree;
   tree.s = s;
   tree.t = t;
-  tree.radius = 1.2;
-  tree.height = 4.2;
+  // Declared at the bundled model's own size, so the mesh instance draws at
+  // scale 1.0. Read from the table rather than pinned: the props are authored
+  // at their real-world size and #415 retuned every one of them.
+  if (const props::PropModel* model = props::model(tree.name)) {
+    tree.radius = model->radius;
+    tree.height = model->height;
+  }
   return tree;
 }
 
