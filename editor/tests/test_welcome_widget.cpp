@@ -55,8 +55,11 @@ protected:
   void TearDown() override {
     settings_.reset();
     QSettings().clear();
-    QCoreApplication::setOrganizationName(QStringLiteral("Robomous"));
-    QCoreApplication::setApplicationName(QStringLiteral("RoadMaker"));
+    // Back to the suite-wide test scope (qt_gtest_main.cpp), NOT the shipped
+    // Robomous/RoadMaker names: restoring those would re-arm the developer's
+    // real settings store for every later case in this process (#399).
+    QCoreApplication::setOrganizationName(QStringLiteral("RobomousTests"));
+    QCoreApplication::setApplicationName(QStringLiteral("RoadMakerEditorTests"));
   }
 
   std::unique_ptr<Settings> settings_;

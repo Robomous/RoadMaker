@@ -300,6 +300,23 @@ Current version on `main`: **0.0.1**.
   about silently never matched.
 
 ### Fixed
+- **Your recent scenes survive automation, and survive being opened from a
+  different folder** ([#399](https://github.com/Robomous/RoadMaker/issues/399)):
+  the welcome screen's **Recent** list could empty itself. Two causes, both
+  long-standing. Screenshot/capture runs (`--screenshot`, `--screenshot-ui`)
+  recorded every scene they rendered into the *real* recent list, so ten
+  scripted runs — one CI-style sweep, or one loop of
+  `scripts/editor_screenshot.py` — pushed every genuine entry off the end of the
+  ten-slot list. A capture session is now **read-only with respect to your
+  settings**: it still renders with your theme and units, but it cannot write
+  the recent list, the window layout, or any preference. Separately, a scene
+  opened by a relative path (`roadmaker-editor assets/samples/crossing.xodr`)
+  was *stored* relative, so it resolved against whatever folder the next launch
+  happened to start in — from Finder or Explorer, nothing. Entries are now
+  stored as absolute paths, which also means the relative and absolute forms of
+  one scene stop taking two slots, and a scene's thumbnail is found again. Any
+  relative leftovers from an older build are hidden immediately and dropped from
+  the store the next time you open something.
 - **Clicking away from a pose field no longer quietly rounds it**
   ([#418](https://github.com/Robomous/RoadMaker/issues/418)): the s / t /
   heading fields show three decimals, so a value carrying more precision than

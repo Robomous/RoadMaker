@@ -25,6 +25,15 @@
 
 int main(int argc, char** argv) {
   qputenv("QT_QPA_PLATFORM", "offscreen");
+  // QSettings resolves its store from the organization/application names, and
+  // without these it falls back to the executable name — which on some
+  // platforms lands in, or next to, the shipped RoadMaker store. Any case that
+  // forgets the per-suite isolation preamble would then edit the DEVELOPER's
+  // real settings; the recent list is destroyed exactly that way (#399). These
+  // are the process-wide floor: suites still rename the application per test
+  // for parallel safety, and restore THESE names, never the shipped ones.
+  QCoreApplication::setOrganizationName(QStringLiteral("RobomousTests"));
+  QCoreApplication::setApplicationName(QStringLiteral("RoadMakerEditorTests"));
   ::testing::InitGoogleTest(&argc, argv);
   QApplication app(argc, argv);
   return RUN_ALL_TESTS();
