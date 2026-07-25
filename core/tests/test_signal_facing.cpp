@@ -320,8 +320,10 @@ TEST(SignalFacing, RejectsAStaleRoadAndAnOffRoadStation) {
 // --- fuzz corpus -------------------------------------------------------------
 //
 // Regenerate with:
-//   roadmaker_core_tests --gtest_also_run_disabled_tests \
+//   roadmaker_core_tests --gtest_also_run_disabled_tests
 //                        --gtest_filter='SignalFacing.DISABLED_WriteCorpusSeed'
+// (no trailing backslash: a line continuation inside a // comment is a
+//  multi-line comment, which GCC rejects under -Werror=comment)
 TEST(SignalFacing, DISABLED_WriteCorpusSeed) {
   namespace fs = std::filesystem;
   RoadNetwork network;
