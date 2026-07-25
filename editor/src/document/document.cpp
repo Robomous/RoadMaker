@@ -423,6 +423,18 @@ void Document::after_kernel_mutation(const edit::DirtySet& dirty) {
   if (!dirty.objects.empty()) {
     remesh_objects(network_, mesh_, dirty.objects);
   }
+  // A prop or signal stores no world pose — its transform is DERIVED from the
+  // owning road's frame at mesh time (#400). So a road that moved invalidates
+  // every instance it carries even though not one object datum changed:
+  // translate/rotate, a node drag's re-fit, an elevation edit, and an erased
+  // road (whose instances must go, or they render as ghosts). Deriving it from
+  // `roads` here, rather than asking each command to also name `objects`, is the
+  // same principle the surfaces below already follow: a derived layer tracks its
+  // source's dirt, so no command can forget to say so. Instances only — the
+  // markings for these roads were just rebuilt by remesh_roads.
+  if (!dirty.roads.empty()) {
+    remesh_object_instances(network_, mesh_, dirty.roads);
+  }
 
   // Enclosed-area ground surfaces (#215) follow the roads, driven off the SAME
   // dirty fields — no command sets a surface flag. A topology change can add or

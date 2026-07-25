@@ -108,10 +108,25 @@ every road and junction into a `NetworkMesh` (`mesh/mesh.hpp`):
   surface blending is Milestone 2 — the seam is explicit in the code and
   designed in [junction blending](../design/m2/03_junction_blending.md).
 
-`remesh_roads()` / `remesh_junctions()` re-tessellate only the listed
-entities, updating a `NetworkMesh` in place — the incremental entry point the
-editor uses after edits, guaranteed to produce the same result as a full
-`build_network_mesh`.
+`remesh_roads()` / `remesh_junctions()` / `remesh_objects()` re-tessellate only
+the listed entities, updating a `NetworkMesh` in place — the incremental entry
+point the editor uses after edits, guaranteed to produce the same result as a
+full `build_network_mesh`.
+
+Placed props and signals are the one **derived** layer here: they store no world
+pose, so every instance transform comes from its road's frame at mesh time. A
+road that merely moves therefore invalidates them without changing a single
+object datum, which is what `remesh_object_instances()` re-derives (the cheap
+half of `remesh_objects` — placements only, no markings). Consumers drive it off
+the roads that changed, not off an object-edit flag, so no edit can forget it.
+
+Re-deriving a road's placements appends them, so that entry point restores the
+arena ordering a full build produces before it returns. Order is part of the
+parity guarantee here rather than an implementation detail: the exporters
+address instances positionally — USD names each prim after its index, glTF
+emits one node per instance in sequence — so a channel ordered by
+most-recent-edit would export the same scene differently depending on whether
+it had been edited or freshly loaded.
 
 ## Exporters
 

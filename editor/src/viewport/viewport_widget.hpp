@@ -30,6 +30,7 @@
 #include <limits>
 #include <memory>
 #include <optional>
+#include <span>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -247,6 +248,7 @@ private:
   /// instances (for per-instance hover/selection state), and the parallel
   /// per-instance transforms fed to the GL instanced draw.
   struct UploadedPropBatch {
+    std::string model_id; ///< matches ScenePropBatch::model_id on a partial refresh
     std::vector<RenderMeshHandle> parts;
     std::vector<ScenePropInstance> instances;
     std::vector<InstanceData> transforms; ///< index-parallel to `instances`
@@ -289,6 +291,14 @@ private:
   /// Re-uploads only the pending roads' items (GL context must be current —
   /// called from paintGL, like rebuild_scene). Camera stays put.
   void apply_pending_road_updates();
+
+  /// Re-seats the placed props/signals of `roads` after those roads moved
+  /// (#400): their model parts are model-space and stay uploaded, so only the
+  /// per-instance transforms are rebuilt — plus the text-sign faces, which are
+  /// baked to world space and do need a re-upload. Falls back to a full
+  /// rebuild (scene_dirty_) if a model has no uploaded batch yet. GL context
+  /// must be current.
+  void apply_prop_updates(std::span<const RoadId> roads);
 
   /// Refreshes the cached AABB slots of `roads` (index-parallel to
   /// document_.mesh().roads; replaced-in-place roads keep their index).

@@ -20,6 +20,7 @@
 #include <gtest/gtest.h>
 
 #include <QImage>
+#include <algorithm>
 #include <array>
 #include <cmath>
 #include <cstddef>
@@ -503,6 +504,55 @@ TEST(BuildScene, UnknownPropModelEmitsNothing) {
   const Scene scene = build_scene(mesh);
   EXPECT_TRUE(scene.items.empty());
   EXPECT_TRUE(scene.prop_batches.empty());
+}
+
+// The partial prop re-upload after a road move (#400): the fragment carries the
+// named roads' placements and nothing else, with transforms identical to the
+// wholesale build — the viewport swaps these in without re-uploading the parts.
+TEST(BuildObjectScene, CarriesOnlyTheNamedRoadsPlacements) {
+  constexpr RoadId kMoved{.index = 2, .gen = 0};
+  constexpr RoadId kStill{.index = 3, .gen = 0};
+  NetworkMesh mesh;
+  mesh.objects.push_back(ObjectInstance{.object = ObjectId{.index = 5, .gen = 0},
+                                        .road = kMoved,
+                                        .model_id = "tree_pine",
+                                        .position = {10.0, 20.0, 0.0},
+                                        .heading = 0.3});
+  mesh.objects.push_back(ObjectInstance{.object = ObjectId{.index = 6, .gen = 0},
+                                        .road = kStill,
+                                        .model_id = "tree_pine",
+                                        .position = {90.0, 5.0, 0.0},
+                                        .heading = 0.0});
+
+  const std::array<RoadId, 1> roads{kMoved};
+  const Scene fragment = build_object_scene(mesh, roads);
+
+  EXPECT_TRUE(fragment.items.empty());
+  ASSERT_EQ(fragment.prop_batches.size(), 1U);
+  const ScenePropBatch& batch = fragment.prop_batches.front();
+  EXPECT_EQ(batch.model_id, "tree_pine");
+  ASSERT_EQ(batch.instances.size(), 1U) << "the road that did not move must not appear";
+  EXPECT_EQ(batch.instances.front().road, kMoved);
+
+  // Same transform the wholesale build produces for that instance.
+  const Scene whole = build_scene(mesh);
+  ASSERT_EQ(whole.prop_batches.size(), 1U);
+  const auto& all = whole.prop_batches.front().instances;
+  const auto moved = std::ranges::find(all, kMoved, &ScenePropInstance::road);
+  ASSERT_NE(moved, all.end());
+  EXPECT_EQ(batch.instances.front().transform.model, moved->transform.model);
+}
+
+TEST(BuildObjectScene, EmptyRoadListYieldsNothing) {
+  NetworkMesh mesh;
+  mesh.objects.push_back(ObjectInstance{.object = ObjectId{.index = 5, .gen = 0},
+                                        .road = RoadId{.index = 2, .gen = 0},
+                                        .model_id = "tree_pine",
+                                        .position = {10.0, 20.0, 0.0},
+                                        .heading = 0.0});
+  const Scene fragment = build_object_scene(mesh, {});
+  EXPECT_TRUE(fragment.prop_batches.empty());
+  EXPECT_TRUE(fragment.sign_faces.empty());
 }
 
 // Perf proxy for "1k props interactive": 1000 placements of one model collapse

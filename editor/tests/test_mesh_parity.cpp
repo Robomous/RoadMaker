@@ -25,6 +25,8 @@
 
 #include "roadmaker/edit/operations.hpp"
 #include "roadmaker/mesh/mesh_builder.hpp"
+#include "roadmaker/road/object.hpp"
+#include "roadmaker/road/signal.hpp"
 
 #include <gtest/gtest.h>
 
@@ -37,8 +39,10 @@
 
 using roadmaker::JunctionFloor;
 using roadmaker::NetworkMesh;
+using roadmaker::ObjectInstance;
 using roadmaker::RoadId;
 using roadmaker::RoadMesh;
+using roadmaker::SignalInstance;
 using roadmaker::editor::Document;
 
 namespace {
@@ -76,6 +80,35 @@ void expect_mesh_parity(const NetworkMesh& editor_mesh, const NetworkMesh& fresh
     EXPECT_EQ(found->mesh.normals, expected.mesh.normals);
     EXPECT_EQ(found->mesh.indices, expected.mesh.indices);
     EXPECT_EQ(found->mesh.material, expected.mesh.material);
+  }
+  // The derived placement layer (#400): a prop stores no world pose, so any edit
+  // that moves its road must re-derive it. Comparing it here makes that a
+  // standing guarantee — the next op that moves a road without re-anchoring its
+  // props fails this, not a hand-run.
+  // Compared BY INDEX, not by id lookup: re-deriving a road's placements
+  // appends them, and the channel's order reaches exported files (USD prim
+  // names, glTF node sequence), so the incremental path restores arena order
+  // and parity has to include it. An id-keyed comparison would pass on a
+  // silently renumbered channel.
+  ASSERT_EQ(editor_mesh.objects.size(), fresh.objects.size()) << "prop instance count drifted";
+  for (std::size_t i = 0; i < fresh.objects.size(); ++i) {
+    const ObjectInstance& expected = fresh.objects[i];
+    const ObjectInstance& actual = editor_mesh.objects[i];
+    EXPECT_EQ(actual.object, expected.object) << "prop instance order drifted at " << i;
+    EXPECT_EQ(actual.position, expected.position);
+    EXPECT_EQ(actual.heading, expected.heading);
+    EXPECT_EQ(actual.scale, expected.scale);
+    EXPECT_EQ(actual.road, expected.road);
+  }
+  ASSERT_EQ(editor_mesh.signal_instances.size(), fresh.signal_instances.size())
+      << "signal instance count drifted";
+  for (std::size_t i = 0; i < fresh.signal_instances.size(); ++i) {
+    const SignalInstance& expected = fresh.signal_instances[i];
+    const SignalInstance& actual = editor_mesh.signal_instances[i];
+    EXPECT_EQ(actual.signal, expected.signal) << "signal instance order drifted at " << i;
+    EXPECT_EQ(actual.position, expected.position);
+    EXPECT_EQ(actual.heading, expected.heading);
+    EXPECT_EQ(actual.road, expected.road);
   }
 }
 
@@ -121,6 +154,60 @@ TEST(MeshParity, AttachEditKeepsIncrementalMeshIdenticalToScratchBuild) {
   expect_mesh_parity(document.mesh(), roadmaker::build_network_mesh(document.network()));
 
   // Undo runs the incremental path in reverse — parity must survive it too.
+  document.undo_stack()->undo();
+  expect_mesh_parity(document.mesh(), roadmaker::build_network_mesh(document.network()));
+}
+
+// #400 in its most general form: an edit that moves a road must leave the
+// incremental mesh indistinguishable from a rebuild — props included. Before the
+// fix the prop instances kept their pre-move transform and this diverged.
+TEST(MeshParity, MovingARoadKeepsItsPropsAndSignsInParity) {
+  Document document;
+  document.reset();
+  ASSERT_TRUE(
+      document
+          .push_command(roadmaker::edit::create_road(
+              {roadmaker::Waypoint{.x = 0.0, .y = 0.0}, roadmaker::Waypoint{.x = 120.0, .y = 0.0}},
+              roadmaker::LaneProfile::two_lane_default(),
+              ""))
+          .has_value());
+  RoadId road;
+  document.network().for_each_road([&](RoadId id, const roadmaker::Road&) { road = id; });
+  ASSERT_TRUE(road.is_valid());
+
+  roadmaker::Object tree;
+  tree.odr_id = "1";
+  tree.name = "tree_pine";
+  tree.type = roadmaker::ObjectType::Tree;
+  tree.s = 40.0;
+  tree.t = 6.0;
+  ASSERT_TRUE(document.push_command(roadmaker::edit::add_object(document.network(), road, tree))
+                  .has_value());
+
+  roadmaker::Signal sign;
+  sign.odr_id = "1";
+  sign.type = "R1-1";
+  sign.country = "US";
+  sign.s = 60.0;
+  sign.t = -5.0;
+  ASSERT_TRUE(document.push_command(roadmaker::edit::add_signal(document.network(), road, sign))
+                  .has_value());
+  ASSERT_FALSE(document.mesh().objects.empty()) << "the prop must mesh, or this proves nothing";
+  ASSERT_FALSE(document.mesh().signal_instances.empty());
+
+  ASSERT_TRUE(
+      document.push_command(roadmaker::edit::translate_road(document.network(), road, 15.0, -8.0))
+          .has_value());
+  expect_mesh_parity(document.mesh(), roadmaker::build_network_mesh(document.network()));
+
+  ASSERT_TRUE(
+      document.push_command(roadmaker::edit::rotate_road(document.network(), road, 0.4, 10.0, 10.0))
+          .has_value());
+  expect_mesh_parity(document.mesh(), roadmaker::build_network_mesh(document.network()));
+
+  // Undo walks the same incremental path backwards.
+  document.undo_stack()->undo();
+  expect_mesh_parity(document.mesh(), roadmaker::build_network_mesh(document.network()));
   document.undo_stack()->undo();
   expect_mesh_parity(document.mesh(), roadmaker::build_network_mesh(document.network()));
 }

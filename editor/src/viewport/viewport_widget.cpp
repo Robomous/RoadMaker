@@ -243,6 +243,7 @@ void ViewportWidget::rebuild_scene() {
   prop_batches_.reserve(scene.prop_batches.size());
   for (const ScenePropBatch& batch : scene.prop_batches) {
     UploadedPropBatch uploaded;
+    uploaded.model_id = batch.model_id;
     uploaded.parts.reserve(batch.parts.size());
     for (const RenderMeshData& part : batch.parts) {
       uploaded.parts.push_back(renderer_->upload(part));
@@ -294,11 +295,14 @@ void ViewportWidget::apply_pending_road_updates() {
   pending_roads_.erase(duplicates.begin(), duplicates.end());
 
   for (const RoadId road_id : pending_roads_) {
-    // Drop the road's previous surface meshes and items — but NOT its prop
-    // items (props re-upload on the objects channel; a road-geometry edit
-    // leaves them in place).
+    // Drop the road's previous surface meshes and items. Props are not among
+    // them: they never flow through items_ at all (their instances live in
+    // prop_batches_), so apply_prop_updates below re-seats them instead. This
+    // loop used to spare items carrying a valid object id, which was dead —
+    // no producer sets SceneItem::object — and would have been wrong for a
+    // road that MOVED, which needs every item it owns rebuilt.
     for (auto it = items_.begin(); it != items_.end();) {
-      if (it->road == road_id && !it->object.is_valid()) {
+      if (it->road == road_id) {
         renderer_->remove(it->handle);
         it = items_.erase(it);
       } else {
@@ -323,7 +327,70 @@ void ViewportWidget::apply_pending_road_updates() {
       break;
     }
   }
+  // The roads moved, so the props they carry moved with them (#400) — the mesh
+  // already re-derived the instances; re-seat their transforms here.
+  apply_prop_updates(pending_roads_);
   pending_roads_.clear();
+}
+
+void ViewportWidget::apply_prop_updates(std::span<const RoadId> roads) {
+  if (roads.empty()) {
+    return;
+  }
+  const auto moved = [roads](RoadId road) { return std::ranges::find(roads, road) != roads.end(); };
+
+  Scene fragment = build_object_scene(document_.mesh(), roads);
+  // Every instance the fragment carries needs an uploaded batch to land in. A
+  // model that has never been uploaded (a prop class new to the scene) cannot
+  // be added without its part meshes, so hand the whole job to the next paint's
+  // full rebuild rather than dropping the instance on the floor.
+  for (const ScenePropBatch& batch : fragment.prop_batches) {
+    if (std::ranges::find(prop_batches_, batch.model_id, &UploadedPropBatch::model_id) ==
+        prop_batches_.end()) {
+      scene_dirty_ = true;
+      return;
+    }
+  }
+
+  // Out with the stale placements: a road that moved, and a road that was
+  // erased (which contributes nothing to the fragment, so its instances simply
+  // stay dropped instead of rendering as ghosts).
+  for (UploadedPropBatch& batch : prop_batches_) {
+    for (std::size_t i = batch.instances.size(); i > 0; --i) {
+      const std::size_t index = i - 1;
+      if (moved(batch.instances[index].road)) {
+        batch.instances.erase(batch.instances.begin() + static_cast<std::ptrdiff_t>(index));
+        batch.transforms.erase(batch.transforms.begin() + static_cast<std::ptrdiff_t>(index));
+      }
+    }
+  }
+  for (auto it = sign_faces_.begin(); it != sign_faces_.end();) {
+    if (moved(it->road)) {
+      renderer_->remove(it->mesh); // world-space quad — unlike a prop part, it must re-upload
+      it = sign_faces_.erase(it);
+    } else {
+      ++it;
+    }
+  }
+
+  // ...and in with the re-derived ones. The model parts stay uploaded: they are
+  // model-space, so a move changes nothing but the per-instance transform.
+  for (const ScenePropBatch& batch : fragment.prop_batches) {
+    const auto uploaded =
+        std::ranges::find(prop_batches_, batch.model_id, &UploadedPropBatch::model_id);
+    for (const ScenePropInstance& instance : batch.instances) {
+      uploaded->instances.push_back(instance);
+      uploaded->transforms.push_back(instance.transform);
+    }
+  }
+  for (const SceneSignFace& face : fragment.sign_faces) {
+    sign_faces_.push_back(UploadedSignFace{
+        .mesh = renderer_->upload(face.data),
+        .texture = sign_face_texture(face.model_id, face.text),
+        .road = face.road,
+        .signal = face.signal,
+    });
+  }
 }
 
 void ViewportWidget::refresh_road_aabbs(const std::vector<RoadId>& roads) {

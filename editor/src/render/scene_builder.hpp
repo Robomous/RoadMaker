@@ -23,6 +23,7 @@
 #include "roadmaker/mesh/mesh.hpp"
 
 #include <array>
+#include <span>
 #include <string>
 #include <vector>
 
@@ -67,9 +68,10 @@ enum class SurfaceKind {
 [[nodiscard]] SurfaceKind surface_for(LaneType type);
 
 /// One uploadable mesh plus the entity it visualizes. `lane` is invalid for
-/// markings and junction floors; `object` is valid only for prop parts (a
-/// placed tree/vegetation instance), where `road` is its owning road and
-/// `lane` is invalid. All three ids are invalid for undecorated geometry.
+/// markings and junction floors. `object` and `signal` are part of the shared
+/// highlight/pick vocabulary but NO producer sets them here any more: placed
+/// props and signals became instanced batches (ScenePropBatch below), so they
+/// never reach the item list. All ids are invalid for undecorated geometry.
 struct SceneItem {
   RenderMeshData data;
   RoadId road;
@@ -180,5 +182,12 @@ void append_signal_items(const SignalInstance& instance, Scene& scene);
 /// non-null, each ground surface's stored material selects its render class
 /// (asphalt/concrete vs. the default grass); a null network keeps grass.
 [[nodiscard]] Scene build_scene(const NetworkMesh& mesh, const RoadNetwork* network = nullptr);
+
+/// Scene fragment carrying ONLY the placed props/signals `roads` own — their
+/// batches and text-sign faces, no road items, no bounds beyond what they grow.
+/// The unit of work for a partial prop re-upload after those roads moved (#400):
+/// a prop's model parts are model-space and never change, so the viewport keeps
+/// them uploaded and swaps in the per-instance transforms this returns.
+[[nodiscard]] Scene build_object_scene(const NetworkMesh& mesh, std::span<const RoadId> roads);
 
 } // namespace roadmaker::editor

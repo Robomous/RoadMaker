@@ -459,4 +459,22 @@ Scene build_scene(const NetworkMesh& mesh, const RoadNetwork* network) {
   return scene;
 }
 
+Scene build_object_scene(const NetworkMesh& mesh, std::span<const RoadId> roads) {
+  const auto owned = [&roads](RoadId road) {
+    return std::ranges::find(roads, road) != roads.end();
+  };
+  Scene scene;
+  for (const ObjectInstance& instance : mesh.objects) {
+    if (owned(instance.road)) {
+      append_object_items(instance, scene);
+    }
+  }
+  for (const SignalInstance& instance : mesh.signal_instances) {
+    if (owned(instance.road)) {
+      append_signal_items(instance, scene);
+    }
+  }
+  return scene;
+}
+
 } // namespace roadmaker::editor
