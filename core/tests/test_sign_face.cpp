@@ -23,6 +23,8 @@
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
+#include <cmath>
 #include <cstddef>
 #include <string>
 
@@ -128,6 +130,101 @@ TEST(SignFace, OpaqueEverywhere) {
   for (std::size_t i = 3; i < bmp.rgba.size(); i += 4) {
     EXPECT_EQ(bmp.rgba[i], 255);
   }
+}
+
+// --- artwork, fixed legends and boxes (US sign pack, #414) -------------------
+
+/// Count texels that differ from the plate's flat fill — "did anything draw
+/// here", never a golden-pixel comparison.
+std::size_t ink_texels(const FaceBitmap& bmp, const props::FacePlate& plate) {
+  const auto to_u8 = [](float v) {
+    return static_cast<unsigned char>(std::lround(std::clamp(v, 0.0f, 1.0f) * 255.0f));
+  };
+  const unsigned char r = to_u8(plate.background[0]);
+  const unsigned char g = to_u8(plate.background[1]);
+  const unsigned char b = to_u8(plate.background[2]);
+  std::size_t count = 0;
+  for (std::size_t o = 0; o + 3 < bmp.rgba.size(); o += 4) {
+    if (bmp.rgba[o] != r || bmp.rgba[o + 1] != g || bmp.rgba[o + 2] != b) {
+      ++count;
+    }
+  }
+  return count;
+}
+
+TEST(SignFace, BundledArtworkDrawsWithNoText) {
+  // The whole point of the symbol layer: a Do Not Enter face carries no @text
+  // at all and must still render its roundel.
+  props::FacePlate plate = make_plate();
+  plate.symbol = "R5-1";
+  const FaceBitmap bmp = render_face("", plate);
+  EXPECT_GT(ink_texels(bmp, plate), 0U) << "artwork must composite over the fill";
+}
+
+TEST(SignFace, AnUnknownArtworkKeyIsAPlainPlate) {
+  // A catalogue can outrun the asset bundle. That must degrade to a blank
+  // plate, never to a crash or a hole in the texture.
+  props::FacePlate plate = make_plate();
+  plate.symbol = "no-such-designation";
+  const FaceBitmap bmp = render_face("", plate);
+  EXPECT_EQ(ink_texels(bmp, plate), 0U);
+  for (std::size_t i = 3; i < bmp.rgba.size(); i += 4) {
+    EXPECT_EQ(bmp.rgba[i], 255) << "a degraded face is still opaque";
+  }
+}
+
+TEST(SignFace, LegendAndTextDrawInTheirOwnBoxes) {
+  // A speed-limit face: the SPEED LIMIT wordmark up top, the posted number
+  // below. Each layer must stay inside its box, or the two overprint.
+  props::FacePlate plate = make_plate();
+  plate.legend = "SPEED\nLIMIT";
+  plate.legend_ink = {0.0f, 0.0f, 0.0f};
+  plate.legend_box = {0.05, 0.04, 0.90, 0.34};
+  plate.text_box = {0.10, 0.42, 0.80, 0.54};
+
+  const FaceBitmap legend_only = render_face("", plate);
+  const FaceBitmap both = render_face("25", plate);
+  EXPECT_GT(ink_texels(legend_only, plate), 0U) << "the fixed legend draws on its own";
+  EXPECT_GT(ink_texels(both, plate), ink_texels(legend_only, plate))
+      << "the editable value adds ink below the wordmark";
+
+  // The wordmark's band must be untouched by the value, and vice versa.
+  const int split = static_cast<int>(std::lround(0.40 * both.height));
+  const auto band_ink = [&](const FaceBitmap& bmp, int y0, int y1) {
+    std::size_t count = 0;
+    for (int y = y0; y < y1; ++y) {
+      for (int x = 0; x < bmp.width; ++x) {
+        const std::size_t o = (static_cast<std::size_t>(y) * static_cast<std::size_t>(bmp.width) +
+                               static_cast<std::size_t>(x)) *
+                              4;
+        if (bmp.rgba[o] != legend_only.rgba[o]) {
+          ++count;
+        }
+      }
+    }
+    return count;
+  };
+  EXPECT_EQ(band_ink(both, 0, split), 0U) << "the value must not reach the wordmark's band";
+  EXPECT_GT(band_ink(both, split, both.height), 0U) << "the value draws in its own band";
+}
+
+TEST(SignFace, ArtworkAndLegendCompose) {
+  // A ONE WAY face is both at once: the arrow is artwork, the words are a
+  // legend. Together they must draw more than either alone.
+  props::FacePlate plate = make_plate();
+  plate.symbol = "R6-1-right";
+  plate.legend = "ONE WAY";
+  plate.legend_ink = {1.0f, 1.0f, 1.0f};
+  plate.legend_box = {0.03, 0.18, 0.38, 0.64};
+
+  props::FacePlate symbol_only = plate;
+  symbol_only.legend.clear();
+  props::FacePlate legend_only = plate;
+  legend_only.symbol.clear();
+
+  const std::size_t both = ink_texels(render_face("", plate), plate);
+  EXPECT_GT(both, ink_texels(render_face("", symbol_only), plate));
+  EXPECT_GT(both, ink_texels(render_face("", legend_only), plate));
 }
 
 } // namespace

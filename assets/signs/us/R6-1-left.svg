@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 34" width="100" height="34">
+  <!-- MUTCD R6-1 ONE WAY arrow, pointing left; the legend sits in the right
+       half. -->
+  <path d="M 56 12 L 24 12 L 24 2 L 3 17 L 24 32 L 24 22 L 56 22 Z" fill="#ffffff"/>
+</svg>

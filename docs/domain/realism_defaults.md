@@ -298,10 +298,35 @@ catalogue, with `editor/tests/test_library_model.cpp` covering the manifest half
 - **`assets/samples/gs1_urban_intersection.xodr`** was regenerated from
   `python/examples/build_gs1.py`, which also picked up the §1.2 cross-section
   and crosswalk-outline drift that had accumulated since it was last written.
-- **Still to land (#414, geometry):** the sign *meshes* — per-designation
-  silhouettes at the §1.4 face sizes, the Ø 0.06 m post, the 2.1 m bottom-edge
-  mounting — and the baked symbol artwork with the SIL-OFL highway typeface.
-  Until then the pack draws on the pre-existing silhouettes.
+- **Meshes and artwork (landed second).** Every pack sign is built by a data
+  table in `scripts/gen_prop_meshes.py` — silhouette, §1.4 face size, Ø 0.06 m
+  post, face bottom edge at the 2.1 m mounting height — and
+  `test_defaults_registry.cpp` asserts all of it against the registry, the same
+  enforced-not-compiled arrangement the §1.5/§1.6 props use. The face size is
+  the OVERALL plate, so the border is an inset ring rather than an addition.
+- **Faces are three composited layers**: the flat field, the sign's artwork,
+  and up to two text layers (the sign's *fixed* legend and the placed signal's
+  *editable* one), each in its own normalised box so a speed-limit face can
+  carry its wordmark above and its posted number below. Artwork is authored
+  in-repo as SVG in `assets/signs/us/` after the public-domain US federal sign
+  specifications — no third-party artwork file — and the kernel rasterises it
+  with **nanosvg** (zlib), because `core/` must never link Qt and faces are
+  baked headless by the glTF exporter and from Python. nanosvg parses shapes
+  only, which is why every legend is a text layer rather than outlined
+  lettering, and why they all share one typeface.
+- **The typeface is Overpass** (OFL-1.1), the open highway-gothic alike, and it
+  replaced Roboto — `render_face` was Roboto's only consumer. The OFL text
+  ships beside the font; upstream is dual OFL/LGPL and RoadMaker takes the OFL
+  half only, so Qt remains the project's single LGPL dependency.
+- **A face is attached only when there is something to draw** — artwork, a
+  fixed legend, or an editable one. The old gate was "non-empty `@text`", which
+  a symbol sign fails by construction; the new one also means a blank plate
+  costs no texture. A legacy sign's `@text` now draws on the fallback
+  silhouette instead of being silently dropped.
+- **`assets/samples/sign_pack.xodr`** (built by `scripts/make_canonical_scenes.py`,
+  rendered by CI's visual-artifacts job) is the standing visual check: every
+  pack sign along a local street, against the same ruler `props_scale.xodr`
+  uses.
 
 ### Props (→ #415)
 

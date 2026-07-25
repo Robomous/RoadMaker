@@ -153,98 +153,98 @@
       "key": "signal.r1_1",
       "label": "Stop sign (R1-1)",
       "category": "Signals",
-      "thumbnail": "assets/library/thumbnails/sign_stop.png",
+      "thumbnail": "assets/library/thumbnails/sign_us_r1_1.png",
       "create": { "kind": "signal", "signal": "us.r1_1" }
     },
     {
       "key": "signal.r1_2",
       "label": "Yield sign (R1-2)",
       "category": "Signals",
-      "thumbnail": "assets/library/thumbnails/sign_yield.png",
+      "thumbnail": "assets/library/thumbnails/sign_us_r1_2.png",
       "create": { "kind": "signal", "signal": "us.r1_2" }
     },
     {
       "key": "signal.r2_1",
       "label": "Speed limit (R2-1)",
       "category": "Signals",
-      "thumbnail": "assets/library/thumbnails/sign_text.png",
+      "thumbnail": "assets/library/thumbnails/sign_us_r2_1.png",
       "create": { "kind": "signal", "signal": "us.r2_1" }
     },
     {
       "key": "signal.r5_1",
       "label": "Do not enter (R5-1)",
       "category": "Signals",
-      "thumbnail": "assets/library/thumbnails/signal_sign.png",
+      "thumbnail": "assets/library/thumbnails/sign_us_r5_1.png",
       "create": { "kind": "signal", "signal": "us.r5_1" }
     },
     {
       "key": "signal.r6_1_right",
       "label": "One way, right (R6-1)",
       "category": "Signals",
-      "thumbnail": "assets/library/thumbnails/sign_text.png",
+      "thumbnail": "assets/library/thumbnails/sign_us_r6_1_right.png",
       "create": { "kind": "signal", "signal": "us.r6_1_right" }
     },
     {
       "key": "signal.r6_1_left",
       "label": "One way, left (R6-1)",
       "category": "Signals",
-      "thumbnail": "assets/library/thumbnails/sign_text.png",
+      "thumbnail": "assets/library/thumbnails/sign_us_r6_1_left.png",
       "create": { "kind": "signal", "signal": "us.r6_1_left" }
     },
     {
       "key": "signal.r3_1",
       "label": "No right turn (R3-1)",
       "category": "Signals",
-      "thumbnail": "assets/library/thumbnails/signal_sign.png",
+      "thumbnail": "assets/library/thumbnails/sign_us_r3_1.png",
       "create": { "kind": "signal", "signal": "us.r3_1" }
     },
     {
       "key": "signal.r3_2",
       "label": "No left turn (R3-2)",
       "category": "Signals",
-      "thumbnail": "assets/library/thumbnails/signal_sign.png",
+      "thumbnail": "assets/library/thumbnails/sign_us_r3_2.png",
       "create": { "kind": "signal", "signal": "us.r3_2" }
     },
     {
       "key": "signal.r4_7",
       "label": "Keep right (R4-7)",
       "category": "Signals",
-      "thumbnail": "assets/library/thumbnails/signal_sign.png",
+      "thumbnail": "assets/library/thumbnails/sign_us_r4_7.png",
       "create": { "kind": "signal", "signal": "us.r4_7" }
     },
     {
       "key": "signal.w1_2",
       "label": "Curve ahead (W1-2)",
       "category": "Signals",
-      "thumbnail": "assets/library/thumbnails/signal_sign.png",
+      "thumbnail": "assets/library/thumbnails/sign_us_w1_2.png",
       "create": { "kind": "signal", "signal": "us.w1_2" }
     },
     {
       "key": "signal.w3_1",
       "label": "Stop ahead (W3-1)",
       "category": "Signals",
-      "thumbnail": "assets/library/thumbnails/signal_sign.png",
+      "thumbnail": "assets/library/thumbnails/sign_us_w3_1.png",
       "create": { "kind": "signal", "signal": "us.w3_1" }
     },
     {
       "key": "signal.w11_2",
       "label": "Pedestrian crossing (W11-2)",
       "category": "Signals",
-      "thumbnail": "assets/library/thumbnails/signal_sign.png",
+      "thumbnail": "assets/library/thumbnails/sign_us_w11_2.png",
       "create": { "kind": "signal", "signal": "us.w11_2" }
     },
     {
       "key": "signal.s1_1",
       "label": "School (S1-1)",
       "category": "Signals",
-      "thumbnail": "assets/library/thumbnails/signal_sign.png",
+      "thumbnail": "assets/library/thumbnails/sign_us_s1_1.png",
       "create": { "kind": "signal", "signal": "us.s1_1" }
     },
     {
       "key": "signal.d3_1",
       "label": "Street name (D3-1)",
       "category": "Signals",
-      "thumbnail": "assets/library/thumbnails/sign_text.png",
+      "thumbnail": "assets/library/thumbnails/sign_us_d3_1.png",
       "create": { "kind": "signal", "signal": "us.d3_1" }
     },
     {

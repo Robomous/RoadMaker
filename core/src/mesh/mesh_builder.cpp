@@ -814,14 +814,28 @@ void build_signal_instances(const RoadNetwork& network,
                             .model_id = std::string(signal_model_id(signal)),
                             .position = position,
                             .heading = heading};
-    // Editable text face: only a STATIC sign with a legend (an authored @text,
-    // or a speed limit's @value) on a model that carries a face plate. Dynamic
-    // signals (traffic lights) never do.
+    // The face: a STATIC sign whose model carries a face plate AND has
+    // something to show on it.
+    //
+    // The gate used to be "non-empty @text", from when a face could only ever
+    // be typed words. It cannot be that any more: a US pack sign's face is
+    // baked artwork plus a fixed legend (a Do Not Enter roundel, a ONE WAY
+    // arrow), and those carry no @text at all. What the signal contributes is
+    // the EDITABLE layer — its @text, or a speed limit's @value — which may
+    // legitimately be empty.
+    //
+    // A plate with none of the three still gets no face, which is the point:
+    // rendering a flat fill as a texture would cost an image per sign and look
+    // identical to the plate underneath. Dynamic signals (traffic lights) never
+    // take a face.
     if (!signal.dynamic.value_or(false)) {
-      const std::string face_text = signal_face_text(signal);
       const props::PropModel* model = props::model(instance.model_id);
-      if (!face_text.empty() && model != nullptr && model->face_plate.has_value()) {
-        instance.face = make_face_overlay(face_text, *model->face_plate);
+      if (model != nullptr && model->face_plate.has_value()) {
+        const props::FacePlate& plate = *model->face_plate;
+        const std::string face_text = signal_face_text(signal);
+        if (!plate.symbol.empty() || !plate.legend.empty() || !face_text.empty()) {
+          instance.face = make_face_overlay(face_text, plate);
+        }
       }
     }
     out.push_back(std::move(instance));

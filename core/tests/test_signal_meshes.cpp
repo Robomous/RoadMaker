@@ -271,17 +271,34 @@ TEST(SignalMeshes, TextSignCarriesFaceOverlay) {
   EXPECT_GT(face.positions[2], face.positions[5]);
 }
 
-TEST(SignalMeshes, EmptyTextHasNoFace) {
+TEST(SignalMeshes, ABlankPlateNeedsNoFaceTexture) {
+  // A street-name blade with no legend has nothing to draw: no artwork, no
+  // fixed wording, no @text. It must NOT get a face — a texture of the plate's
+  // own flat colour would cost an image per sign and look identical to the
+  // plate under it.
   RoadNetwork network;
   const RoadId road = author_street(network);
-  network.add_signal(road, make_text_sign("t", 40.0, 6.0, "")); // blank plate
+  network.add_signal(road, make_text_sign("t", 40.0, 6.0, ""));
 
-  const NetworkMesh mesh = build_network_mesh(network);
+  const NetworkMesh mesh = build_network_mesh(network, {});
   ASSERT_EQ(mesh.signal_instances.size(), 1U);
   const signs::SignDef* def = signs::find_by_key("us.d3_1");
   ASSERT_NE(def, nullptr);
   EXPECT_EQ(mesh.signal_instances[0].model_id, def->model_id);
   EXPECT_FALSE(mesh.signal_instances[0].face.has_value());
+}
+
+// A symbol sign carries no @text at all, and must still show its face — this
+// is exactly what the old "non-empty @text" gate got wrong.
+TEST(SignalMeshes, ASymbolSignHasAFaceWithNoText) {
+  RoadNetwork network;
+  const RoadId road = author_street(network);
+  network.add_signal(road, make_pack_signal("dne", "us.r5_1", 40.0, 6.0));
+
+  const NetworkMesh mesh = build_network_mesh(network, {});
+  ASSERT_EQ(mesh.signal_instances.size(), 1U);
+  ASSERT_TRUE(mesh.signal_instances[0].face.has_value());
+  EXPECT_TRUE(mesh.signal_instances[0].face->text.empty());
 }
 
 TEST(SignalMeshes, DynamicSignalHasNoFace) {
@@ -298,19 +315,21 @@ TEST(SignalMeshes, DynamicSignalHasNoFace) {
   EXPECT_FALSE(mesh.signal_instances[0].face.has_value());
 }
 
-TEST(SignalMeshes, GenericSignWithTextHasNoFace) {
+TEST(SignalMeshes, ALegacySignsTextStillDrawsOnTheFallbackPlate) {
+  // A German StVO 274 plate resolves to the generic silhouette, which now
+  // carries a face plate — so its @text is drawn rather than silently dropped
+  // as it was before the US pack.
   RoadNetwork network;
   const RoadId road = author_street(network);
-  // A 274 sign renders on the generic disc, which carries no FacePlate: text is
-  // preserved in the .xodr but not drawn this sprint.
   Signal sig = make_signal("g", /*dynamic=*/false, 40.0, 6.0);
   sig.text = "50";
   network.add_signal(road, sig);
 
-  const NetworkMesh mesh = build_network_mesh(network);
+  const NetworkMesh mesh = build_network_mesh(network, {});
   ASSERT_EQ(mesh.signal_instances.size(), 1U);
   EXPECT_EQ(mesh.signal_instances[0].model_id, "sign_generic");
-  EXPECT_FALSE(mesh.signal_instances[0].face.has_value());
+  ASSERT_TRUE(mesh.signal_instances[0].face.has_value());
+  EXPECT_EQ(mesh.signal_instances[0].face->text, "50");
 }
 
 } // namespace

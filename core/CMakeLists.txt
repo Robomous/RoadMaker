@@ -46,6 +46,7 @@ add_library(roadmaker_core ${_rm_core_type}
   src/mesh/bridge_solids.cpp
   src/assets/prop_meshes.gen.cpp
   src/assets/sign_catalog.cpp
+  src/assets/sign_symbols.gen.cpp
   src/assets/sign_face.cpp
   src/assets/sign_font.gen.cpp
   src/io/gltf_exporter.cpp
@@ -113,6 +114,7 @@ target_link_libraries(roadmaker_core
     manifold::manifold
     tinygltf::tinygltf
     stb::stb
+    nanosvg::nanosvg
 )
 
 # Single source of truth for the version string returned by rm::version().

@@ -14,12 +14,19 @@
  * limitations under the License.
  */
 
-// CPU text-to-texture rasteriser for editable sign faces. The single
-// STB_TRUETYPE_IMPLEMENTATION translation unit in the kernel — stb_truetype.h is
-// pulled in as a SYSTEM header (angle brackets, via the rm_stb include dir) so
-// its implementation compiles clean under -Werror, exactly like the tinygltf
-// implementation TU. STB_TRUETYPE_STATIC keeps every stbtt symbol internal so
-// the shared-kernel export check sees only our RM_API surface.
+// CPU rasteriser for sign faces: flat fill, then the sign's SVG artwork, then
+// its fixed legend and its editable @text. The single STB_TRUETYPE_IMPLEMENTATION
+// and NANOSVG*_IMPLEMENTATION translation unit in the kernel — both headers are
+// pulled in as SYSTEM headers (angle brackets, via the rm_stb / rm_nanosvg
+// include dirs) so their implementations compile clean under -Werror, exactly
+// like the tinygltf implementation TU. STB_TRUETYPE_STATIC keeps every stbtt
+// symbol internal so the shared-kernel export check sees only our RM_API
+// surface.
+//
+// nanosvg rather than Qt's renderer: core must never link Qt, and faces are
+// baked headless by the glTF exporter and from Python. nanosvg parses shapes
+// only — no <text> — which is why every legend is a text layer here rather than
+// artwork, and why they all share the bundled highway typeface.
 
 #include "roadmaker/assets/sign_face.hpp"
 
@@ -28,14 +35,23 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <memory>
 #include <span>
+#include <string>
+#include <utility>
 #include <vector>
 
-#include "sign_font.hpp" // core-private embedded font bytes
+#include "sign_font.hpp"    // core-private embedded font bytes
+#include "sign_symbols.hpp" // core-private embedded SVG artwork
 
 #define STB_TRUETYPE_STATIC
 #define STB_TRUETYPE_IMPLEMENTATION
 #include <stb_truetype.h>
+
+#define NANOSVG_IMPLEMENTATION
+#include <nanosvg.h>
+#define NANOSVGRAST_IMPLEMENTATION
+#include <nanosvgrast.h>
 
 namespace roadmaker::signs {
 
@@ -124,6 +140,197 @@ int line_advance_width(const stbtt_fontinfo& font, const std::vector<int>& line)
   return width;
 }
 
+/// A texel rectangle inside the bitmap, derived from a normalised FaceBox and
+/// shrunk by the ink-free margin. Never empty: a degenerate box collapses to a
+/// single texel rather than making the caller check.
+struct PixelBox {
+  int x0 = 0;
+  int y0 = 0;
+  int x1 = 1; ///< exclusive
+  int y1 = 1; ///< exclusive
+
+  [[nodiscard]] int width() const { return x1 - x0; }
+
+  [[nodiscard]] int height() const { return y1 - y0; }
+};
+
+/// A 4-texel ink-free margin on every side of the FACE (not of each box), so
+/// the border stays clean for mipmapping however the boxes are laid out.
+constexpr int kMargin = 4;
+
+PixelBox to_pixels(const props::FaceBox& box, int width, int height) {
+  const auto span = [](double origin, double extent, int total) {
+    const int lo = static_cast<int>(std::lround(std::clamp(origin, 0.0, 1.0) * total));
+    const int hi =
+        static_cast<int>(std::lround(std::clamp(origin + std::max(extent, 0.0), 0.0, 1.0) * total));
+    return std::pair<int, int>{lo, std::max(hi, lo + 1)};
+  };
+  const auto [x0, x1] = span(box[0], box[2], width);
+  const auto [y0, y1] = span(box[1], box[3], height);
+  PixelBox out;
+  out.x0 = std::max(x0, kMargin);
+  out.y0 = std::max(y0, kMargin);
+  out.x1 = std::min(x1, width - kMargin);
+  out.y1 = std::min(y1, height - kMargin);
+  out.x1 = std::max(out.x1, out.x0 + 1);
+  out.y1 = std::max(out.y1, out.y0 + 1);
+  return out;
+}
+
+/// Composite the bundled artwork for `key` over `bmp`, fitted to the face and
+/// centred. A key this build ships no artwork for, or one nanosvg refuses, is a
+/// silent no-op: a sign whose artwork is missing must still render as a plate,
+/// never as a crash or a hole.
+void draw_symbol(FaceBitmap& bmp, std::string_view key) {
+  const std::span<const unsigned char> svg = symbol_data(key);
+  if (svg.empty()) {
+    return;
+  }
+  // nsvgParse mutates its input, so hand it a private null-terminated copy.
+  std::string source(reinterpret_cast<const char*>(svg.data()), svg.size());
+  const std::unique_ptr<NSVGimage, decltype(&nsvgDelete)> image(
+      nsvgParse(source.data(), "px", 96.0F), &nsvgDelete);
+  if (image == nullptr || !(image->width > 0.0F) || !(image->height > 0.0F)) {
+    return;
+  }
+  const std::unique_ptr<NSVGrasterizer, decltype(&nsvgDeleteRasterizer)> rasterizer(
+      nsvgCreateRasterizer(), &nsvgDeleteRasterizer);
+  if (rasterizer == nullptr) {
+    return;
+  }
+
+  // Uniform fit, centred — the artwork's viewBox already matches the face
+  // aspect, so this only absorbs the multiple-of-4 rounding.
+  const float scale = std::min(static_cast<float>(bmp.width) / image->width,
+                               static_cast<float>(bmp.height) / image->height);
+  const float tx = (static_cast<float>(bmp.width) - image->width * scale) * 0.5F;
+  const float ty = (static_cast<float>(bmp.height) - image->height * scale) * 0.5F;
+
+  std::vector<unsigned char> layer(
+      static_cast<std::size_t>(bmp.width) * static_cast<std::size_t>(bmp.height) * 4, 0);
+  nsvgRasterize(rasterizer.get(),
+                image.get(),
+                tx,
+                ty,
+                scale,
+                layer.data(),
+                bmp.width,
+                bmp.height,
+                bmp.width * 4);
+
+  // Source-over onto the opaque background; the face stays fully opaque.
+  for (std::size_t o = 0; o + 3 < layer.size(); o += 4) {
+    const float a = static_cast<float>(layer[o + 3]) / 255.0F;
+    if (a <= 0.0F) {
+      continue;
+    }
+    for (std::size_t ch = 0; ch < 3; ++ch) {
+      const float mixed =
+          static_cast<float>(layer[o + ch]) * a + static_cast<float>(bmp.rgba[o + ch]) * (1.0F - a);
+      bmp.rgba[o + ch] = static_cast<unsigned char>(std::lround(mixed));
+    }
+  }
+}
+
+/// Draw `text` into `box`, centred both ways, scaled to fit. Multi-line splits
+/// on '\n'. Glyphs blend onto whatever is already in the bitmap (the fill and
+/// the artwork), and are clipped to the box so two layers never bleed into each
+/// other. A no-glyph string is a no-op.
+void draw_text(FaceBitmap& bmp,
+               const stbtt_fontinfo& font,
+               std::string_view text,
+               const props::FaceBox& box,
+               const std::array<unsigned char, 3>& ink) {
+  const std::vector<std::vector<int>> lines = split_lines_utf8(text);
+  const bool any_glyph =
+      std::any_of(lines.begin(), lines.end(), [](const auto& l) { return !l.empty(); });
+  if (!any_glyph) {
+    return;
+  }
+  const PixelBox area = to_pixels(box, bmp.width, bmp.height);
+
+  int ascent = 0;
+  int descent = 0;
+  int line_gap = 0;
+  stbtt_GetFontVMetrics(&font, &ascent, &descent, &line_gap);
+  const int line_advance = std::max(ascent - descent + line_gap, 1);
+
+  int max_line_width = 1;
+  for (const auto& line : lines) {
+    max_line_width = std::max(max_line_width, line_advance_width(font, line));
+  }
+  const int num_lines = static_cast<int>(lines.size());
+
+  const float scale_w = static_cast<float>(area.width()) / static_cast<float>(max_line_width);
+  const float scale_h =
+      static_cast<float>(area.height()) / static_cast<float>(num_lines * line_advance);
+  const float scale = std::min(scale_w, scale_h);
+
+  const float block_h = static_cast<float>(num_lines * line_advance) * scale;
+  const float block_top =
+      static_cast<float>(area.y0) + (static_cast<float>(area.height()) - block_h) * 0.5F;
+
+  const auto texel = [&bmp](int x, int y) {
+    return (static_cast<std::size_t>(y) * static_cast<std::size_t>(bmp.width) +
+            static_cast<std::size_t>(x)) *
+           4;
+  };
+
+  for (int li = 0; li < num_lines; ++li) {
+    const auto& line = lines[static_cast<std::size_t>(li)];
+    const float line_w_px = static_cast<float>(line_advance_width(font, line)) * scale;
+    float pen_x =
+        static_cast<float>(area.x0) + (static_cast<float>(area.width()) - line_w_px) * 0.5F;
+    const float baseline_y = block_top + static_cast<float>(li * line_advance) * scale +
+                             static_cast<float>(ascent) * scale;
+
+    for (const int cp : line) {
+      int advance = 0;
+      int lsb = 0;
+      stbtt_GetCodepointHMetrics(&font, cp, &advance, &lsb);
+
+      int gw = 0;
+      int gh = 0;
+      int gx_off = 0;
+      int gy_off = 0;
+      unsigned char* coverage =
+          stbtt_GetCodepointBitmap(&font, scale, scale, cp, &gw, &gh, &gx_off, &gy_off);
+      if (coverage != nullptr) {
+        const int dst_x0 = static_cast<int>(std::lround(pen_x)) + gx_off;
+        const int dst_y0 = static_cast<int>(std::lround(baseline_y)) + gy_off;
+        for (int gy = 0; gy < gh; ++gy) {
+          const int dy = dst_y0 + gy;
+          if (dy < area.y0 || dy >= area.y1) {
+            continue;
+          }
+          for (int gx = 0; gx < gw; ++gx) {
+            const int dx = dst_x0 + gx;
+            if (dx < area.x0 || dx >= area.x1) {
+              continue;
+            }
+            const float a =
+                static_cast<float>(
+                    coverage[static_cast<std::size_t>(gy) * static_cast<std::size_t>(gw) +
+                             static_cast<std::size_t>(gx)]) /
+                255.0F;
+            if (a <= 0.0F) {
+              continue;
+            }
+            const std::size_t o = texel(dx, dy);
+            for (std::size_t ch = 0; ch < 3; ++ch) {
+              const float mixed = static_cast<float>(ink[ch]) * a +
+                                  static_cast<float>(bmp.rgba[o + ch]) * (1.0F - a);
+              bmp.rgba[o + ch] = static_cast<unsigned char>(std::lround(mixed));
+            }
+          }
+        }
+        stbtt_FreeBitmap(coverage, nullptr);
+      }
+      pen_x += static_cast<float>(advance) * scale;
+    }
+  }
+}
+
 } // namespace
 
 FaceBitmap render_face(std::string_view text, const props::FacePlate& plate) {
@@ -149,116 +356,37 @@ FaceBitmap render_face(std::string_view text, const props::FacePlate& plate) {
   bmp.height = height;
   bmp.rgba.assign(static_cast<std::size_t>(width) * static_cast<std::size_t>(height) * 4, 0);
 
+  // Layer 1: opaque background fill.
   const std::array<unsigned char, 3> bg = to_u8(plate.background);
-  const std::array<unsigned char, 3> ink = to_u8(plate.ink);
-  const auto texel = [&](int x, int y) {
-    return (static_cast<std::size_t>(y) * static_cast<std::size_t>(width) +
-            static_cast<std::size_t>(x)) *
-           4;
-  };
-
-  // Opaque background fill.
-  for (int y = 0; y < height; ++y) {
-    for (int x = 0; x < width; ++x) {
-      const std::size_t o = texel(x, y);
-      bmp.rgba[o + 0] = bg[0];
-      bmp.rgba[o + 1] = bg[1];
-      bmp.rgba[o + 2] = bg[2];
-      bmp.rgba[o + 3] = 255;
-    }
+  for (std::size_t o = 0; o + 3 < bmp.rgba.size(); o += 4) {
+    bmp.rgba[o + 0] = bg[0];
+    bmp.rgba[o + 1] = bg[1];
+    bmp.rgba[o + 2] = bg[2];
+    bmp.rgba[o + 3] = 255;
   }
 
-  const std::vector<std::vector<int>> lines = split_lines_utf8(text);
-  const bool any_glyph =
-      std::any_of(lines.begin(), lines.end(), [](const auto& l) { return !l.empty(); });
-  if (!any_glyph) {
-    return bmp; // plain plate
+  // Layer 2: the sign's artwork.
+  if (!plate.symbol.empty()) {
+    draw_symbol(bmp, plate.symbol);
   }
 
+  // Layers 3 and 4: the fixed legend, then the editable text. Both need the
+  // font; if it fails to load (it cannot, it is compiled in) the face is still
+  // a valid plate.
+  if (plate.legend.empty() && text.empty()) {
+    return bmp;
+  }
   const std::span<const unsigned char> font_bytes = font_data();
   stbtt_fontinfo font;
   if (stbtt_InitFont(&font, font_bytes.data(), stbtt_GetFontOffsetForIndex(font_bytes.data(), 0)) ==
       0) {
-    return bmp; // font failed to load (should not happen with the embedded font)
+    return bmp;
   }
-
-  int ascent = 0;
-  int descent = 0;
-  int line_gap = 0;
-  stbtt_GetFontVMetrics(&font, &ascent, &descent, &line_gap);
-  const int line_advance = std::max(ascent - descent + line_gap, 1);
-
-  int max_line_width = 1;
-  for (const auto& line : lines) {
-    max_line_width = std::max(max_line_width, line_advance_width(font, line));
+  if (!plate.legend.empty()) {
+    draw_text(bmp, font, plate.legend, plate.legend_box, to_u8(plate.legend_ink));
   }
-  const int num_lines = static_cast<int>(lines.size());
-
-  // A 4-texel ink-free margin on every side; text is fit inside the rest.
-  constexpr int kMargin = 4;
-  const int avail_w = std::max(1, width - 2 * kMargin);
-  const int avail_h = std::max(1, height - 2 * kMargin);
-
-  const float scale_w = static_cast<float>(avail_w) / static_cast<float>(max_line_width);
-  const float scale_h = static_cast<float>(avail_h) / static_cast<float>(num_lines * line_advance);
-  const float scale = std::min(scale_w, scale_h);
-
-  const float block_h = static_cast<float>(num_lines * line_advance) * scale;
-  const float block_top = (static_cast<float>(height) - block_h) * 0.5f;
-
-  for (int li = 0; li < num_lines; ++li) {
-    const auto& line = lines[static_cast<std::size_t>(li)];
-    const float line_w_px = static_cast<float>(line_advance_width(font, line)) * scale;
-    float pen_x = (static_cast<float>(width) - line_w_px) * 0.5f;
-    const float baseline_y = block_top + static_cast<float>(li * line_advance) * scale +
-                             static_cast<float>(ascent) * scale;
-
-    for (const int cp : line) {
-      int advance = 0;
-      int lsb = 0;
-      stbtt_GetCodepointHMetrics(&font, cp, &advance, &lsb);
-
-      int gw = 0;
-      int gh = 0;
-      int gx_off = 0;
-      int gy_off = 0;
-      unsigned char* coverage =
-          stbtt_GetCodepointBitmap(&font, scale, scale, cp, &gw, &gh, &gx_off, &gy_off);
-      if (coverage != nullptr) {
-        const int dst_x0 = static_cast<int>(std::lround(pen_x)) + gx_off;
-        const int dst_y0 = static_cast<int>(std::lround(baseline_y)) + gy_off;
-        for (int gy = 0; gy < gh; ++gy) {
-          const int dy = dst_y0 + gy;
-          // Clip to the ink-free margin box, guaranteeing a clean border.
-          if (dy < kMargin || dy >= height - kMargin) {
-            continue;
-          }
-          for (int gx = 0; gx < gw; ++gx) {
-            const int dx = dst_x0 + gx;
-            if (dx < kMargin || dx >= width - kMargin) {
-              continue;
-            }
-            const float a =
-                static_cast<float>(
-                    coverage[static_cast<std::size_t>(gy) * static_cast<std::size_t>(gw) +
-                             static_cast<std::size_t>(gx)]) /
-                255.0f;
-            if (a <= 0.0f) {
-              continue;
-            }
-            const std::size_t o = texel(dx, dy);
-            for (int ch = 0; ch < 3; ++ch) {
-              const float mixed = static_cast<float>(ink[static_cast<std::size_t>(ch)]) * a +
-                                  static_cast<float>(bg[static_cast<std::size_t>(ch)]) * (1.0f - a);
-              bmp.rgba[o + static_cast<std::size_t>(ch)] =
-                  static_cast<unsigned char>(std::lround(mixed));
-            }
-          }
-        }
-        stbtt_FreeBitmap(coverage, nullptr);
-      }
-      pen_x += static_cast<float>(advance) * scale;
-    }
+  if (!text.empty()) {
+    draw_text(bmp, font, text, plate.text_box, to_u8(plate.ink));
   }
   return bmp;
 }

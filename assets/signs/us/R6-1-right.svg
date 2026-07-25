@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 34" width="100" height="34">
+  <!-- MUTCD R6-1 ONE WAY arrow, pointing right. The arrow occupies the right
+       half of the face; the ONE WAY legend is a text layer in the left half
+       (see the legend_box in scripts/gen_prop_meshes.py). The arrow direction
+       is the sign's variant (@subtype). -->
+  <path d="M 44 12 L 76 12 L 76 2 L 97 17 L 76 32 L 76 22 L 44 22 Z" fill="#ffffff"/>
+</svg>

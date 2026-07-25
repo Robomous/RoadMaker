@@ -179,8 +179,11 @@ struct SignalInstance {
   std::string model_id;             ///< prop_library id ("signal_light"/"sign_generic")
   std::array<double, 3> position{}; ///< world origin (pole base), xyz
   double heading = 0.0;             ///< world heading [rad] about +Z
-  /// Editable text face, present only for a static sign with non-empty @text on
-  /// a face-plate model (e.g. "sign_plate"). Absent on lights and blank signs.
+  /// The sign's face: baked artwork, its fixed legend, and the editable layer
+  /// (@text, or a speed limit's @value) composited into one texture. Present
+  /// for any STATIC sign whose model carries a face plate — the editable layer
+  /// may be empty, since a symbol sign's face is complete without it. Absent on
+  /// traffic lights and on models with no face plate.
   std::optional<SignalFaceOverlay> face;
 };
 

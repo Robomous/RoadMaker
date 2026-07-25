@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<OpenDRIVE>
+  <header revMajor="1" revMinor="8" name="sign_pack" vendor="RoadMaker" />
+  <road name="main" length="75" id="1" junction="-1">
+    <planView>
+      <geometry s="0" x="0" y="0" hdg="0" length="75">
+        <line />
+      </geometry>
+    </planView>
+    <lanes>
+      <laneSection s="0">
+        <left>
+          <lane id="2" type="sidewalk" level="false">
+            <width sOffset="0" a="1.8" b="0" c="0" d="0" />
+          </lane>
+          <lane id="1" type="driving" level="false">
+            <width sOffset="0" a="3" b="0" c="0" d="0" />
+          </lane>
+        </left>
+        <center>
+          <lane id="0" type="none" level="false" />
+        </center>
+        <right>
+          <lane id="-1" type="driving" level="false">
+            <width sOffset="0" a="3" b="0" c="0" d="0" />
+          </lane>
+          <lane id="-2" type="sidewalk" level="false">
+            <width sOffset="0" a="1.8" b="0" c="0" d="0" />
+          </lane>
+        </right>
+      </laneSection>
+    </lanes>
+    <signals>
+      <signal s="5" t="-4.8" id="1" dynamic="no" orientation="+" zOffset="0" country="US" type="R1-1" subtype="-1" text="STOP" height="0.75" width="0.75" />
+      <signal s="9.7" t="4.8" id="2" dynamic="no" orientation="+" zOffset="0" country="US" type="R1-2" subtype="-1" text="YIELD" height="0.9" width="0.9" />
+      <signal s="14.4" t="-4.8" id="3" dynamic="no" orientation="+" zOffset="0" country="US" type="R2-1" subtype="-1" value="25" unit="mph" height="0.75" width="0.6" />
+      <signal s="19.1" t="4.8" id="4" dynamic="no" orientation="+" zOffset="0" country="US" type="R5-1" subtype="-1" height="0.75" width="0.75" />
+      <signal s="23.8" t="-4.8" id="5" dynamic="no" orientation="+" zOffset="0" country="US" type="R6-1" subtype="R" height="0.3" width="0.9" />
+      <signal s="28.5" t="4.8" id="6" dynamic="no" orientation="+" zOffset="0" country="US" type="R6-1" subtype="L" height="0.3" width="0.9" />
+      <signal s="33.2" t="-4.8" id="7" dynamic="no" orientation="+" zOffset="0" country="US" type="R3-1" subtype="-1" height="0.6" width="0.6" />
+      <signal s="37.9" t="4.8" id="8" dynamic="no" orientation="+" zOffset="0" country="US" type="R3-2" subtype="-1" height="0.6" width="0.6" />
+      <signal s="42.6" t="-4.8" id="9" dynamic="no" orientation="+" zOffset="0" country="US" type="R4-7" subtype="-1" height="0.75" width="0.6" />
+      <signal s="47.3" t="4.8" id="10" dynamic="no" orientation="+" zOffset="0" country="US" type="W1-2" subtype="-1" height="0.75" width="0.75" />
+      <signal s="52" t="-4.8" id="11" dynamic="no" orientation="+" zOffset="0" country="US" type="W3-1" subtype="-1" height="0.75" width="0.75" />
+      <signal s="56.7" t="4.8" id="12" dynamic="no" orientation="+" zOffset="0" country="US" type="W11-2" subtype="-1" height="0.75" width="0.75" />
+      <signal s="61.4" t="-4.8" id="13" dynamic="no" orientation="+" zOffset="0" country="US" type="S1-1" subtype="-1" height="0.9" width="0.9" />
+      <signal s="66.1" t="4.8" id="14" dynamic="no" orientation="+" zOffset="0" country="US" type="D3-1" subtype="-1" text="MAIN ST" height="0.3" width="0.9612" />
+    </signals>
+    <userData code="rm:waypoints" value="0,0;75,0" />
+  </road>
+</OpenDRIVE>

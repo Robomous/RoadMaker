@@ -336,6 +336,59 @@ TEST(DefaultsRegistry, PackEntriesAreWellFormed) {
   EXPECT_EQ(std::adjacent_find(keys.begin(), keys.end()), keys.end()) << "duplicate catalogue key";
 }
 
+// The mesh half of the §1.4 gate. scripts/gen_prop_meshes.py builds every pack
+// sign to the spec's face size and mounting height, and is stdlib-only so it
+// cannot include defaults.hpp — this is what holds it to the registry, exactly
+// as the §1.5/§1.6 props are held (#415).
+TEST(DefaultsRegistry, PackSignsAreBuiltToTheRegistrysFaceAndMounting) {
+  // prop_meshes.gen.cpp is emitted at four decimals, so that — not the double
+  // epsilon — is the resolution these comparisons can have.
+  constexpr double kGenerated = 1e-4;
+  for (const signs::SignDef& def : signs::catalog()) {
+    if (def.dynamic) {
+      continue; // a traffic-light head is not a plated sign
+    }
+    const props::PropModel& mesh = shipped(def.model_id);
+    // §1.4 mounts a sign by its face's BOTTOM edge, so the model's bounding
+    // height is the mounting height plus the face height. A blade whose length
+    // follows its legend still has a spec'd height.
+    EXPECT_NEAR(mesh.height, defaults::kSignMountUrban + def.face_height, kGenerated)
+        << def.key << ": face bottom edge must sit at the §1.4 mounting height";
+    ASSERT_TRUE(mesh.face_plate.has_value()) << def.key;
+    // The plate's centre follows from the same rule.
+    EXPECT_NEAR(mesh.face_plate->z, defaults::kSignMountUrban + def.face_height / 2.0, kGenerated)
+        << def.key;
+    // The texture area is inscribed in the field, so it can never exceed the
+    // face the spec grants the sign.
+    if (def.face_width > 0.0) {
+      EXPECT_LE(mesh.face_plate->half_w, def.face_width / 2.0 + kGenerated) << def.key;
+      EXPECT_NEAR(mesh.radius, std::hypot(def.face_width / 2.0, def.face_height / 2.0), kGenerated)
+          << def.key;
+    }
+    EXPECT_LE(mesh.face_plate->half_h, def.face_height / 2.0 + kGenerated) << def.key;
+    // Artwork the catalogue names must be artwork the mesh actually shows.
+    EXPECT_EQ(mesh.face_plate->symbol, def.symbol) << def.key;
+  }
+}
+
+// The post is spec'd, so it is gated too — a sign on a fence post reads wrong
+// at a glance even when its face is right.
+TEST(DefaultsRegistry, PackSignsStandOnTheRegistrysPost) {
+  const props::PropModel& stop = shipped("sign_us_r1_1");
+  const props::PropPart* post = nullptr;
+  for (const props::PropPart& part : stop.parts) {
+    if (part.name == "post") {
+      post = &part;
+    }
+  }
+  ASSERT_NE(post, nullptr) << "a pack sign is post-mounted";
+  double max_radius = 0.0;
+  for (std::size_t i = 0; i + 2 < post->positions.size(); i += 3) {
+    max_radius = std::max(max_radius, std::hypot(post->positions[i], post->positions[i + 1]));
+  }
+  EXPECT_NEAR(max_radius, defaults::kSignPostDiameter / 2.0, 1e-4);
+}
+
 TEST(DefaultsRegistry, RoadClassNames) {
   EXPECT_STREQ(defaults::road_class_name(RoadClass::Freeway), "freeway");
   EXPECT_STREQ(defaults::road_class_name(RoadClass::Arterial), "arterial");

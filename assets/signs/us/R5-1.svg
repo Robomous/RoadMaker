@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="100" height="100">
+  <!-- MUTCD R5-1 DO NOT ENTER symbol: a red disc with a white horizontal bar.
+       Authored after the public-domain US federal sign specifications. Symbol
+       ink only, on a transparent ground — the plate silhouette, its border and
+       its field colour are mesh geometry, and the legend is a text layer. -->
+  <circle cx="50" cy="50" r="44" fill="#c8102e"/>
+  <rect x="12" y="41" width="76" height="18" fill="#ffffff"/>
+</svg>
