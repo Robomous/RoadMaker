@@ -39,11 +39,17 @@ struct DirtySet {
   /// Junctions whose incoming roads changed — need surface regeneration.
   std::vector<JunctionId> junctions;
 
-  /// Roads whose object layer changed (an object/signal was added, moved, or
+  /// Roads whose object DATA changed (an object/signal was added, moved, or
   /// removed) — keyed by the owning road so the editor re-anchors props and
   /// object markings via remesh_objects() WITHOUT re-tessellating the road
   /// surface (docs/design/m3a/01 §2.4). First mesh consumer is the marking
   /// pass in phase 2 (#69); phase 4 (#71) reuses it for instanced props.
+  ///
+  /// A road that merely MOVED does not belong here: object s/t are unchanged,
+  /// only the transform derived from the road frame is, so that case rides
+  /// `roads` and the editor re-derives the placements with
+  /// remesh_object_instances() (#400). Keeping this channel to data edits is
+  /// what lets it also drive selection pruning — a move invalidates no id.
   std::vector<RoadId> objects;
 
   /// Ground surfaces whose OWN stored data changed — their material (p6-s2) or

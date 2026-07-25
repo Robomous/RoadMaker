@@ -23,6 +23,7 @@
 #include "roadmaker/mesh/mesh.hpp"
 
 #include <array>
+#include <span>
 #include <string>
 #include <vector>
 
@@ -180,5 +181,12 @@ void append_signal_items(const SignalInstance& instance, Scene& scene);
 /// non-null, each ground surface's stored material selects its render class
 /// (asphalt/concrete vs. the default grass); a null network keeps grass.
 [[nodiscard]] Scene build_scene(const NetworkMesh& mesh, const RoadNetwork* network = nullptr);
+
+/// Scene fragment carrying ONLY the placed props/signals `roads` own — their
+/// batches and text-sign faces, no road items, no bounds beyond what they grow.
+/// The unit of work for a partial prop re-upload after those roads moved (#400):
+/// a prop's model parts are model-space and never change, so the viewport keeps
+/// them uploaded and swaps in the per-instance transforms this returns.
+[[nodiscard]] Scene build_object_scene(const NetworkMesh& mesh, std::span<const RoadId> roads);
 
 } // namespace roadmaker::editor

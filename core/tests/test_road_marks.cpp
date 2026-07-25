@@ -425,6 +425,39 @@ TEST(RoadMarks, RemeshObjectsRebuildsMarkingsOnly) {
   EXPECT_NE(find_marking(mesh, "stop line"), nullptr);
 }
 
+// The cheap half (#400): a road that merely moved needs its placed props
+// re-derived, NOT its markings — those were just rebuilt by remesh_roads, so
+// re-running them per drag frame would be pure waste.
+TEST(RoadMarks, RemeshObjectInstancesLeavesMarkingsAlone) {
+  RoadId road;
+  RoadNetwork network = straight_road_network(road);
+  Object stop;
+  stop.odr_id = "s1";
+  stop.type_str = "roadMark";
+  stop.subtype = "signalLines";
+  stop.s = 50.0;
+  stop.width = 3.5;
+  stop.length = 0.3;
+  network.add_object(road, stop);
+
+  NetworkMesh mesh = roadmaker::build_network_mesh(network);
+  ASSERT_EQ(mesh.roads.size(), 1U);
+  // Mark the markings so a rebuild is detectable: the instance-only path must
+  // hand back the very same submeshes, not equal-valued replacements.
+  ASSERT_NE(find_marking(mesh, "stop line"), nullptr);
+  ASSERT_FALSE(mesh.roads.front().markings.empty());
+  const void* marking_buffer = mesh.roads.front().markings.front().positions.data();
+  const std::vector<double> surface_before = mesh.roads.front().positions;
+
+  const std::vector<RoadId> dirty{road};
+  roadmaker::remesh_object_instances(network, mesh, dirty);
+
+  ASSERT_EQ(mesh.roads.size(), 1U);
+  EXPECT_EQ(mesh.roads.front().positions, surface_before);
+  EXPECT_EQ(mesh.roads.front().markings.front().positions.data(), marking_buffer)
+      << "instance-only re-mesh must not touch the marking buffers";
+}
+
 // --- validation --------------------------------------------------------------
 
 TEST(RoadMarks, ValidateFlagsMultiLineMarkWithWrongLineCount) {

@@ -1115,17 +1115,15 @@ void remesh_roads(const RoadNetwork& network,
   }
 }
 
-void remesh_objects(const RoadNetwork& network,
-                    NetworkMesh& mesh,
-                    std::span<const RoadId> roads,
-                    const MeshOptions& options) {
+void remesh_object_instances(const RoadNetwork& network,
+                             NetworkMesh& mesh,
+                             std::span<const RoadId> roads) {
   for (const RoadId road_id : roads) {
-    const auto existing = std::ranges::find(mesh.roads, road_id, &RoadMesh::road);
     const Road* road = network.road(road_id);
-
-    // Instanced-prop layer: drop this road's placed props and rebuild them
-    // (an object was added, moved, or removed). Independent of the road's
-    // surface mesh, so it runs before the marking-only fast path below.
+    // Instanced-prop layer: drop this road's placed props and signals and
+    // re-derive them from the network. Idempotent — it reads only stored state,
+    // so running it twice in a tick (an edit that named both channels) costs a
+    // rebuild, never a wrong answer.
     std::erase_if(mesh.objects, [&](const ObjectInstance& inst) { return inst.road == road_id; });
     std::erase_if(mesh.signal_instances,
                   [&](const SignalInstance& inst) { return inst.road == road_id; });
@@ -1133,6 +1131,19 @@ void remesh_objects(const RoadNetwork& network,
       build_object_instances(network, *road, road_id, mesh.objects);
       build_signal_instances(network, *road, road_id, mesh.signal_instances);
     }
+  }
+}
+
+void remesh_objects(const RoadNetwork& network,
+                    NetworkMesh& mesh,
+                    std::span<const RoadId> roads,
+                    const MeshOptions& options) {
+  // An object was added, moved or removed: the placements go first (independent
+  // of the road's surface mesh), then the marking-only fast path below.
+  remesh_object_instances(network, mesh, roads);
+  for (const RoadId road_id : roads) {
+    const auto existing = std::ranges::find(mesh.roads, road_id, &RoadMesh::road);
+    const Road* road = network.road(road_id);
 
     if (existing == mesh.roads.end()) {
       // Road not meshed yet — fall back to a full build so the object markings

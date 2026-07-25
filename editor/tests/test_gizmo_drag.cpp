@@ -23,6 +23,7 @@
 // QT_QPA_PLATFORM=offscreen like every other editor test.
 
 #include "roadmaker/edit/operations.hpp"
+#include "roadmaker/mesh/mesh.hpp"
 #include "roadmaker/road/defaults.hpp"
 #include "roadmaker/road/network.hpp"
 #include "roadmaker/road/object.hpp"
@@ -33,6 +34,8 @@
 #include <gtest/gtest.h>
 
 #include <QUndoStack>
+#include <algorithm>
+#include <array>
 #include <cmath>
 #include <numbers>
 #include <stdexcept>
@@ -81,7 +84,7 @@ struct Scene {
     Object object;
     object.odr_id = "1";
     object.type = ObjectType::Tree;
-    object.name = "tree";
+    object.name = "tree_pine"; // a BUNDLED model, so the placement also meshes
     object.s = s;
     object.t = t;
     object.hdg = hdg;
@@ -426,6 +429,83 @@ TEST(GizmoDrag, RoadRotationSnapsTheDelta) {
   ASSERT_NE(after, nullptr);
   // 20° of drag snaps to one increment of DELTA, not to an absolute bearing.
   EXPECT_NEAR(deg(wrap_angle(after->plan_view.evaluate(0.0).hdg - base_hdg)), deg(kSnap), 1e-6);
+}
+
+// #400: the props a road carries must follow it in the MESH, on every preview
+// frame — not snap into place on release. The commit path runs with
+// already_meshed=true, so a fix that only re-derived on commit would leave the
+// whole drag stale; this asserts mid-drag and after release.
+TEST(GizmoDrag, PropsAndSignsFollowARoadTranslationEveryFrame) {
+  Scene scene;
+  const ObjectId prop = scene.add_prop(40.0, 4.0, 0.0);
+  const SignalId sign = scene.add_sign(30.0, -5.0, ObjectOrientation::Plus, 0.0);
+
+  const auto instance = [&scene, prop] {
+    const auto found =
+        std::ranges::find(scene.document.mesh().objects, prop, &ObjectInstance::object);
+    return found != scene.document.mesh().objects.end() ? *found : ObjectInstance{};
+  };
+  const auto sign_instance = [&scene, sign] {
+    const auto found =
+        std::ranges::find(scene.document.mesh().signal_instances, sign, &SignalInstance::signal);
+    return found != scene.document.mesh().signal_instances.end() ? *found : SignalInstance{};
+  };
+  ASSERT_TRUE(instance().object.is_valid()) << "the prop must mesh for this test to mean anything";
+  const std::array<double, 3> prop_before = instance().position;
+  const std::array<double, 3> sign_before = sign_instance().position;
+
+  const auto target = gizmo_target(scene.document.network(), {.road = scene.road});
+  ASSERT_TRUE(target.has_value());
+  GizmoDragSession session(scene.document);
+  ASSERT_TRUE(session.begin(*target, GizmoHandle::AxisX, {target->pivot[0], target->pivot[1]}));
+
+  constexpr double kDx = 25.0;
+  ASSERT_TRUE(
+      session.update(GizmoDragInput{.cursor_world = {target->pivot[0] + kDx, target->pivot[1]}})
+          .has_value());
+  // Mid-drag: the preview mesh already carries the moved props.
+  EXPECT_NEAR(instance().position[0], prop_before[0] + kDx, 1e-9);
+  EXPECT_NEAR(instance().position[1], prop_before[1], 1e-9);
+  EXPECT_NEAR(sign_instance().position[0], sign_before[0] + kDx, 1e-9);
+
+  session.commit();
+  EXPECT_NEAR(instance().position[0], prop_before[0] + kDx, 1e-9);
+  EXPECT_NEAR(sign_instance().position[0], sign_before[0] + kDx, 1e-9);
+
+  // ...and undo brings them home.
+  scene.document.undo_stack()->undo();
+  EXPECT_NEAR(instance().position[0], prop_before[0], 1e-9);
+  EXPECT_NEAR(sign_instance().position[0], sign_before[0], 1e-9);
+}
+
+TEST(GizmoDrag, PropsRideARoadRotation) {
+  Scene scene;
+  const ObjectId prop = scene.add_prop(40.0, 4.0, 0.0);
+  const auto instance = [&scene, prop] {
+    const auto found =
+        std::ranges::find(scene.document.mesh().objects, prop, &ObjectInstance::object);
+    return found != scene.document.mesh().objects.end() ? *found : ObjectInstance{};
+  };
+  ASSERT_TRUE(instance().object.is_valid());
+  const std::array<double, 3> before = instance().position;
+  const double heading_before = instance().heading;
+
+  const auto target = gizmo_target(scene.document.network(), {.road = scene.road});
+  ASSERT_TRUE(target.has_value());
+  GizmoDragSession session(scene.document);
+  ring_drag(session, *target, 20.0 * std::numbers::pi / 180.0);
+
+  // The ring snapped the delta to one increment; the prop rode it about the
+  // gizmo pivot and turned with the road.
+  const double c = std::cos(kSnap);
+  const double s = std::sin(kSnap);
+  const double ex = target->pivot[0] + (c * (before[0] - target->pivot[0])) -
+                    (s * (before[1] - target->pivot[1]));
+  const double ey = target->pivot[1] + (s * (before[0] - target->pivot[0])) +
+                    (c * (before[1] - target->pivot[1]));
+  EXPECT_NEAR(instance().position[0], ex, 1e-6);
+  EXPECT_NEAR(instance().position[1], ey, 1e-6);
+  EXPECT_NEAR(deg(wrap_angle(instance().heading - heading_before)), deg(kSnap), 1e-6);
 }
 
 TEST(GizmoDrag, ACancelledDragLeavesTheDocumentByteIdentical) {

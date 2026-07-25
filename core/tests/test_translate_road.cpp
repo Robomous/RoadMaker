@@ -19,9 +19,13 @@
 // lengths, s, lanes, elevation and marks are untouched, undo is byte-identical,
 // links leaving the moved set break on both sides, and junction roads refuse.
 
+#include "roadmaker/assets/prop_library.hpp"
 #include "roadmaker/edit/operations.hpp"
+#include "roadmaker/mesh/mesh_builder.hpp"
 #include "roadmaker/road/authoring.hpp"
 #include "roadmaker/road/network.hpp"
+#include "roadmaker/road/object.hpp"
+#include "roadmaker/road/signal.hpp"
 #include "roadmaker/tol.hpp"
 
 #include <gtest/gtest.h>
@@ -37,11 +41,15 @@
 using roadmaker::ContactPoint;
 using roadmaker::JunctionId;
 using roadmaker::LaneProfile;
+using roadmaker::NetworkMesh;
+using roadmaker::Object;
+using roadmaker::ObjectType;
 using roadmaker::PathPoint;
 using roadmaker::Road;
 using roadmaker::RoadId;
 using roadmaker::RoadLink;
 using roadmaker::RoadNetwork;
+using roadmaker::Signal;
 using roadmaker::Waypoint;
 using roadmaker::edit::Command;
 using roadmaker::test::expect_network_matches;
@@ -78,6 +86,34 @@ void expect_command_round_trip(RoadNetwork& network, Command& command) {
   expect_network_matches(network, after);
   ASSERT_TRUE(command.revert(network).has_value());
   expect_network_matches(network, before);
+}
+
+/// A tree declared at its bundled model's own size, so its mesh instance draws
+/// at scale 1.0 (mirrors the helper in test_object_ops.cpp).
+Object make_tree(std::string odr_id, double s, double t) {
+  Object tree;
+  tree.odr_id = std::move(odr_id);
+  tree.name = "tree_pine"; // a bundled prop model
+  tree.type = ObjectType::Tree;
+  tree.s = s;
+  tree.t = t;
+  if (const roadmaker::props::PropModel* model = roadmaker::props::model(tree.name)) {
+    tree.radius = model->radius;
+    tree.height = model->height;
+  }
+  return tree;
+}
+
+Signal make_sign(std::string odr_id, double s, double t) {
+  Signal sign;
+  sign.odr_id = std::move(odr_id);
+  sign.dynamic = false;
+  sign.type = "274";
+  sign.subtype = "50";
+  sign.country = "DE";
+  sign.s = s;
+  sign.t = t;
+  return sign;
 }
 
 void expect_rejected(RoadNetwork& network, std::unique_ptr<Command> command) {
@@ -200,6 +236,83 @@ TEST(TranslateRoad, RejectsEmptyAndStale) {
   auto del = roadmaker::edit::delete_road(network, road);
   ASSERT_TRUE(del->apply(network).has_value());
   expect_rejected(network, roadmaker::edit::translate_road(network, road, 1.0, 1.0));
+}
+
+// #400: a prop stores no world pose — its instance transform is derived from
+// the road frame at mesh time — so moving the road must re-derive it. The move
+// itself changes no object datum, which is exactly why the mesh went stale: the
+// re-derivation keys off the roads channel, not the objects one.
+TEST(TranslateRoad, PlacedPropsAndSignsFollowTheMovedRoad) {
+  RoadNetwork network;
+  const RoadId road = author_line(network, "1");
+  network.add_object(road, make_tree("1", 40.0, 4.0));
+  network.add_signal(road, make_sign("2", 60.0, -4.0));
+
+  NetworkMesh mesh = roadmaker::build_network_mesh(network);
+  ASSERT_EQ(mesh.objects.size(), 1U);
+  ASSERT_EQ(mesh.signal_instances.size(), 1U);
+  const std::array<double, 3> tree_before = mesh.objects.front().position;
+  const double tree_heading_before = mesh.objects.front().heading;
+  const std::array<double, 3> sign_before = mesh.signal_instances.front().position;
+
+  constexpr double kDx = 12.5;
+  constexpr double kDy = -7.25;
+  auto command = roadmaker::edit::translate_road(network, road, kDx, kDy);
+  ASSERT_TRUE(command->apply(network).has_value());
+
+  // The object data is untouched by the move — this is a RENDER bug, not a data
+  // one — so the objects channel stays empty and the roads channel carries it.
+  const roadmaker::edit::DirtySet dirty = command->dirty();
+  EXPECT_TRUE(dirty.objects.empty());
+  ASSERT_FALSE(dirty.roads.empty());
+
+  roadmaker::remesh_roads(network, mesh, dirty.roads);
+  roadmaker::remesh_object_instances(network, mesh, dirty.roads);
+
+  ASSERT_EQ(mesh.objects.size(), 1U);
+  ASSERT_EQ(mesh.signal_instances.size(), 1U);
+  EXPECT_NEAR(mesh.objects.front().position[0], tree_before[0] + kDx, 1e-9);
+  EXPECT_NEAR(mesh.objects.front().position[1], tree_before[1] + kDy, 1e-9);
+  EXPECT_NEAR(mesh.objects.front().position[2], tree_before[2], 1e-9);
+  // A translation is a pure shift: the prop keeps its facing.
+  EXPECT_NEAR(mesh.objects.front().heading, tree_heading_before, 1e-12);
+  EXPECT_NEAR(mesh.signal_instances.front().position[0], sign_before[0] + kDx, 1e-9);
+  EXPECT_NEAR(mesh.signal_instances.front().position[1], sign_before[1] + kDy, 1e-9);
+
+  // Undo puts them back, through the same channel.
+  ASSERT_TRUE(command->revert(network).has_value());
+  roadmaker::remesh_roads(network, mesh, dirty.roads);
+  roadmaker::remesh_object_instances(network, mesh, dirty.roads);
+  EXPECT_NEAR(mesh.objects.front().position[0], tree_before[0], 1e-9);
+  EXPECT_NEAR(mesh.objects.front().position[1], tree_before[1], 1e-9);
+  EXPECT_NEAR(mesh.signal_instances.front().position[0], sign_before[0], 1e-9);
+
+  // Incremental and from-scratch must agree — the parity that #400 broke.
+  const NetworkMesh fresh = roadmaker::build_network_mesh(network);
+  ASSERT_EQ(fresh.objects.size(), mesh.objects.size());
+  EXPECT_EQ(fresh.objects.front().position, mesh.objects.front().position);
+  EXPECT_EQ(fresh.signal_instances.front().position, mesh.signal_instances.front().position);
+}
+
+// A road that is gone takes its props with it: the instance channel is keyed by
+// owning road, so re-deriving an erased road drops what it owned instead of
+// leaving ghosts floating where the road used to be.
+TEST(TranslateRoad, ErasedRoadLeavesNoGhostProps) {
+  RoadNetwork network;
+  const RoadId road = author_line(network, "1");
+  network.add_object(road, make_tree("1", 40.0, 4.0));
+
+  NetworkMesh mesh = roadmaker::build_network_mesh(network);
+  ASSERT_EQ(mesh.objects.size(), 1U);
+
+  auto command = roadmaker::edit::delete_road(network, road);
+  ASSERT_TRUE(command->apply(network).has_value());
+  const roadmaker::edit::DirtySet dirty = command->dirty();
+  roadmaker::remesh_roads(network, mesh, dirty.roads);
+  roadmaker::remesh_object_instances(network, mesh, dirty.roads);
+
+  EXPECT_TRUE(mesh.objects.empty());
+  EXPECT_TRUE(mesh.roads.empty());
 }
 
 TEST(TranslateRoad, DeduplicatesRepeatedIds) {

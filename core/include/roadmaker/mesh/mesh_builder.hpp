@@ -83,12 +83,26 @@ RM_API void remesh_roads(const RoadNetwork& network,
                          std::span<const RoadId> roads,
                          const MeshOptions& options = {});
 
-/// Re-tessellates ONLY the marking layer (lane road marks + object markings:
-/// crosswalks, stop lines, lane arrows) of the listed roads, in place — the
-/// road surface grid and lane patches are left untouched, so the editor
-/// re-uploads only what an object edit changed. This is the mesh consumer of
-/// edit::DirtySet::objects (docs/design/m3a/01 §2.4). A road not yet present
-/// in `mesh` is built in full; markings off clears them.
+/// Re-derives ONLY the instanced prop/signal placements the listed roads own,
+/// in place. That layer stores no world pose — every instance transform comes
+/// from its road's frame at mesh time (make_frame: plan_view + elevation +
+/// superelevation) — so it goes stale whenever a road MOVES, even though not one
+/// object datum changed: translate/rotate, a node drag's re-fit, an elevation
+/// edit (#400). Cheap on purpose: no road surface, no markings. A road that no
+/// longer exists simply loses the instances it owned, which is what clears the
+/// ghost props a deleted road would otherwise leave behind.
+RM_API void remesh_object_instances(const RoadNetwork& network,
+                                    NetworkMesh& mesh,
+                                    std::span<const RoadId> roads);
+
+/// Re-tessellates ONLY the object layer (the instanced props/signals above plus
+/// the marking layer: lane road marks, crosswalks, stop lines, lane arrows) of
+/// the listed roads, in place — the road surface grid and lane patches are left
+/// untouched, so the editor re-uploads only what an object edit changed. This is
+/// the mesh consumer of edit::DirtySet::objects (docs/design/m3a/01 §2.4), i.e.
+/// of object DATA edits; a road that merely moved wants the cheaper
+/// remesh_object_instances above. A road not yet present in `mesh` is built in
+/// full; markings off clears them.
 RM_API void remesh_objects(const RoadNetwork& network,
                            NetworkMesh& mesh,
                            std::span<const RoadId> roads,
