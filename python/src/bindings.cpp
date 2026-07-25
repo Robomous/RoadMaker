@@ -32,6 +32,7 @@
 #include "roadmaker/mesh/junction_corners.hpp"
 #include "roadmaker/mesh/junction_maneuvers.hpp"
 #include "roadmaker/mesh/junction_phases.hpp"
+#include "roadmaker/mesh/junction_sidewalk_bands.hpp"
 #include "roadmaker/mesh/junction_signals.hpp"
 #include "roadmaker/mesh/junction_stoplines.hpp"
 #include "roadmaker/mesh/junction_surface_spans.hpp"
@@ -1672,6 +1673,49 @@ NB_MODULE(_roadmaker, m) {
       "JunctionCorner overrides — the same solve the mesher uses. Returns an "
       "empty list for a stale id or a junction with fewer than two usable arms; "
       "degenerate pairs (parallel or behind a face) are skipped.");
+
+  nb::class_<roadmaker::JunctionSidewalkBand>(m, "JunctionSidewalkBand")
+      .def_ro("arm_a",
+              &roadmaker::JunctionSidewalkBand::arm_a,
+              "The corner's ordered arm pair, CCW: A's right edge meets B's left.")
+      .def_ro("arm_b", &roadmaker::JunctionSidewalkBand::arm_b)
+      .def_prop_ro(
+          "outer",
+          [](const roadmaker::JunctionSidewalkBand& band) { return to_xy(band.outer); },
+          "The curb line as a list of (x, y) tuples.")
+      .def_prop_ro(
+          "inner",
+          [](const roadmaker::JunctionSidewalkBand& band) { return to_xy(band.inner); },
+          "The seam against the carriageway, parallel to `outer`: inner[k] is "
+          "the point across the band from outer[k], so the two have equal "
+          "length and their midpoint is the band's mid-line.")
+      .def_ro("surface",
+              &roadmaker::JunctionSidewalkBand::surface,
+              "The corner's authored sidewalk material (bare catalog name), "
+              "empty when unset.")
+      .def_ro("wraps_corner",
+              &roadmaker::JunctionSidewalkBand::wraps_corner,
+              "True when the band follows the corner curve; False for a sharp "
+              "corner (it runs to the apex) or a straight-through corridor.")
+      .def("__repr__", [](const roadmaker::JunctionSidewalkBand& band) {
+        return "JunctionSidewalkBand(" + road_end_text(band.arm_a) + ", " +
+               road_end_text(band.arm_b) + ", " + std::to_string(band.outer.size()) + " samples" +
+               (band.wraps_corner ? ", wraps" : "") + ")";
+      });
+
+  m.def(
+      "junction_sidewalk_bands",
+      [](const roadmaker::RoadNetwork& network, roadmaker::JunctionId junction) {
+        return roadmaker::junction_sidewalk_bands(network, junction);
+      },
+      "network"_a,
+      "junction"_a,
+      "Every sidewalk band of the junction — one per corner with at least one "
+      "sidewalked adjacent arm, in the mesher's CCW corner order. This is the "
+      "IDEAL geometry the mesher constrains its floor triangulation to, so it "
+      "is independent of the floor's extent: a band may reach past a tight "
+      "junction's floor, which the mesher clips. Returns an empty list for a "
+      "stale id or a junction whose arms carry no sidewalk.");
 
   nb::class_<roadmaker::JunctionStopLineInfo>(m, "JunctionStopLineInfo")
       .def_ro("arm",

@@ -60,6 +60,9 @@ def main() -> int:
     # faces room, so the derived fillet is well under its geometric maximum.
     params = assembly.IntersectionParams()
     params.gap_m = 24.0
+    # A sidewalked cross section, so the junction also carries sidewalk bands
+    # (the plain rural default would have none to report).
+    params.profile = rm.LaneProfile.local_road()
     stack.push(network, assembly.x_intersection(network, assembly.Pose(0.0, 0.0, 0.0), params))
     junction = network.junction_ids[0]
 
@@ -74,6 +77,25 @@ def main() -> int:
     )
     describe(network, junction, f"\nafter set_corner_radius({target:.2f}):")
     print(f"  Junction.corners = {network.junction(junction).corners}")
+
+    # The corner solve is also what the sidewalk bands hang off: where the
+    # adjacent arms carry a sidewalk, `junction_sidewalk_bands` reports the
+    # strip of junction floor that continues that pavement round the corner.
+    # It is the IDEAL geometry — the mesher constrains the floor triangulation
+    # to the `inner` polyline so the material seam lands exactly there, then
+    # clips the band to whatever floor the junction actually has (#402).
+    bands = rm.junction_sidewalk_bands(network, junction)
+    print(f"\nsidewalk bands: {len(bands)}")
+    for index, band in enumerate(bands):
+        width = min(
+            ((o[0] - i[0]) ** 2 + (o[1] - i[1]) ** 2) ** 0.5
+            for o, i in zip(band.outer, band.inner)
+        )
+        shape = "wraps the fillet" if band.wraps_corner else "sharp/straight"
+        print(
+            f"  band {index}: {shape}, {len(band.outer)} samples, "
+            f"width>={width:4.2f} m, material={band.surface or '(derived)'}"
+        )
 
     # Undo restores the derived fillet exactly (byte-identical .xodr); redo
     # re-applies it.
