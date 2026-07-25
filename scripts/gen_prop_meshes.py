@@ -360,93 +360,196 @@ def signal_light() -> dict:
     }
 
 
+# --------------------------------------------------------------------------- #
+# The US sign pack (spec §1.4).
+#
+# A sign is DATA here, exactly as it is in the kernel's roadmaker::signs
+# catalogue: one row per designation giving its silhouette, its face size and
+# its colours. The mesh is always the same three pieces — post, border plate,
+# field plate — assembled so the field's BOTTOM EDGE sits at the spec's
+# mounting height.
+#
+# This script is stdlib-only (it must run on a bare CI runner) so it cannot
+# include roadmaker/road/defaults.hpp. core/tests/test_defaults_registry.cpp is
+# what holds these numbers to the registry — the same enforced-not-compiled
+# arrangement the §1.5/§1.6 props use.
+# --------------------------------------------------------------------------- #
+
+SIGN_MOUNT = 2.10        # §1.4 urban mounting height: field bottom edge above z=0
+SIGN_POST_DIAMETER = 0.06  # §1.4 breakaway single post, visual
+SIGN_BORDER = 0.035      # border reveal around the field, each side
+PLATE_BACK = 0.00        # plate back face x
+PLATE_MID = 0.02         # border front / field back
+PLATE_FRONT = 0.04       # field front face x
+
+SIGN_WHITE = (0.93, 0.93, 0.91)
+SIGN_BLACK = (0.09, 0.09, 0.10)
+SIGN_RED = (0.70, 0.09, 0.14)
+SIGN_YELLOW = (0.90, 0.72, 0.05)
+SIGN_GREEN = (0.02, 0.35, 0.20)
+SIGN_LIME = (0.72, 0.86, 0.05)   # fluorescent yellow-green (school series)
+
+
+def _sign_outline(shape: str, width: float, height: float) -> list[tuple[float, float]]:
+    """The silhouette of a `shape` sign spanning width × height, as (y, z)
+    offsets from the field centre. Every MUTCD shape is convex, so
+    extruded_polygon can prism all of them."""
+    hw, hh = width / 2.0, height / 2.0
+    if shape == "octagon":  # flat top and bottom, inscribed in the face box
+        return _regular_polygon(8, hw / math.cos(math.pi / 8.0), math.pi / 8.0)
+    if shape == "triangle_down":
+        return [(-hw, hh), (hw, hh), (0.0, -hh)]
+    if shape == "diamond":
+        return [(0.0, hh), (hw, 0.0), (0.0, -hh), (-hw, 0.0)]
+    if shape == "pentagon":  # point up (school series)
+        return _regular_polygon(5, hh, math.pi / 2.0)
+    if shape == "disc":
+        return _regular_polygon(24, hw)
+    return [(-hw, -hh), (hw, -hh), (hw, hh), (-hw, hh)]  # rectangle
+
+
+def _inscribed_half_extents(shape: str, width: float, height: float) -> tuple[float, float]:
+    """Half-width/half-height of the largest centred axis-aligned rectangle that
+    fits inside `shape` — the area the face texture may use. A rectangle gets
+    the whole field; a diamond gets half of each extent; an octagon gets what
+    its diagonal edges allow. Keeping the texture INSIDE the silhouette is why
+    the artwork carries no background of its own: the shape, its border and its
+    field colour are all mesh, so a stop sign reads as an octagon from every
+    angle instead of a rectangle wearing an octagon picture."""
+    hw, hh = width / 2.0, height / 2.0
+    if shape == "octagon":
+        r = hw / math.cos(math.pi / 8.0)
+        a = r * math.cos(math.pi / 8.0) / math.sqrt(2.0)
+        return a, a
+    if shape == "triangle_down":
+        # A band across the wide upper part of the triangle.
+        return hw * 0.58, hh * 0.30
+    if shape == "diamond":
+        return hw * 0.5, hh * 0.5
+    if shape == "pentagon":
+        return hw * 0.55, hh * 0.5
+    if shape == "disc":
+        return hw / math.sqrt(2.0), hh / math.sqrt(2.0)
+    return hw, hh
+
+
+def _street_blade_length(legend: str, height: float) -> float:
+    """§1.4 gives a D3-1 blade no length: "length fits text". So derive one —
+    the default legend set at the blade's letter height, with a half-letter
+    margin at each end. A derivation, not a new default."""
+    letter = max(height * 0.6, 0.15)  # §1.4 floor: letters ≥ 0.15 m
+    return len(legend) * letter * 0.62 + letter
+
+
+# One row per catalogue designation. `symbol` names the artwork in
+# assets/signs/us (empty = none); `legend` is the sign's FIXED wording and
+# `text` its editable default, each with its own normalised box inside the
+# texture area ({left, top, width, height}, origin top-left).
+SIGN_PACK = [
+    dict(id="sign_us_r1_1", label="Stop sign (R1-1)", shape="octagon",
+         width=0.75, height=0.75, field=SIGN_RED, border=SIGN_WHITE,
+         symbol="", legend="", legend_ink=SIGN_WHITE, ink=SIGN_WHITE,
+         text_box=(0.0, 0.15, 1.0, 0.70)),
+    dict(id="sign_us_r1_2", label="Yield sign (R1-2)", shape="triangle_down",
+         width=0.90, height=0.90, field=SIGN_WHITE, border=SIGN_RED,
+         symbol="", legend="", legend_ink=SIGN_RED, ink=SIGN_RED,
+         text_box=(0.0, 0.1, 1.0, 0.8)),
+    dict(id="sign_us_r2_1", label="Speed limit (R2-1)", shape="rectangle",
+         width=0.60, height=0.75, field=SIGN_WHITE, border=SIGN_BLACK,
+         symbol="", legend="SPEED\nLIMIT", legend_ink=SIGN_BLACK, ink=SIGN_BLACK,
+         legend_box=(0.05, 0.04, 0.90, 0.34), text_box=(0.1, 0.42, 0.8, 0.54)),
+    dict(id="sign_us_r5_1", label="Do not enter (R5-1)", shape="disc",
+         width=0.75, height=0.75, field=SIGN_WHITE, border=SIGN_RED,
+         symbol="R5-1", legend="", legend_ink=SIGN_BLACK, ink=SIGN_BLACK,
+         text_box=(0.0, 0.0, 1.0, 1.0)),
+    dict(id="sign_us_r6_1_right", label="One way, right (R6-1)", shape="rectangle",
+         width=0.90, height=0.30, field=SIGN_BLACK, border=SIGN_WHITE,
+         symbol="R6-1-right", legend="ONE WAY", legend_ink=SIGN_WHITE, ink=SIGN_WHITE,
+         legend_box=(0.03, 0.18, 0.38, 0.64)),
+    dict(id="sign_us_r6_1_left", label="One way, left (R6-1)", shape="rectangle",
+         width=0.90, height=0.30, field=SIGN_BLACK, border=SIGN_WHITE,
+         symbol="R6-1-left", legend="ONE WAY", legend_ink=SIGN_WHITE, ink=SIGN_WHITE,
+         legend_box=(0.59, 0.18, 0.38, 0.64)),
+    dict(id="sign_us_r3_1", label="No right turn (R3-1)", shape="rectangle",
+         width=0.60, height=0.60, field=SIGN_WHITE, border=SIGN_BLACK,
+         symbol="R3-1", legend="", legend_ink=SIGN_BLACK, ink=SIGN_BLACK),
+    dict(id="sign_us_r3_2", label="No left turn (R3-2)", shape="rectangle",
+         width=0.60, height=0.60, field=SIGN_WHITE, border=SIGN_BLACK,
+         symbol="R3-2", legend="", legend_ink=SIGN_BLACK, ink=SIGN_BLACK),
+    dict(id="sign_us_r4_7", label="Keep right (R4-7)", shape="rectangle",
+         width=0.60, height=0.75, field=SIGN_WHITE, border=SIGN_BLACK,
+         symbol="R4-7", legend="", legend_ink=SIGN_BLACK, ink=SIGN_BLACK),
+    dict(id="sign_us_w1_2", label="Curve ahead (W1-2)", shape="diamond",
+         width=0.75, height=0.75, field=SIGN_YELLOW, border=SIGN_BLACK,
+         symbol="W1-2", legend="", legend_ink=SIGN_BLACK, ink=SIGN_BLACK),
+    dict(id="sign_us_w3_1", label="Stop ahead (W3-1)", shape="diamond",
+         width=0.75, height=0.75, field=SIGN_YELLOW, border=SIGN_BLACK,
+         symbol="W3-1", legend="", legend_ink=SIGN_BLACK, ink=SIGN_BLACK),
+    dict(id="sign_us_w11_2", label="Pedestrian crossing (W11-2)", shape="diamond",
+         width=0.75, height=0.75, field=SIGN_YELLOW, border=SIGN_BLACK,
+         symbol="W11-2", legend="", legend_ink=SIGN_BLACK, ink=SIGN_BLACK),
+    dict(id="sign_us_s1_1", label="School (S1-1)", shape="pentagon",
+         width=0.90, height=0.90, field=SIGN_LIME, border=SIGN_BLACK,
+         symbol="S1-1", legend="", legend_ink=SIGN_BLACK, ink=SIGN_BLACK),
+    dict(id="sign_us_d3_1", label="Street name (D3-1)", shape="rectangle",
+         width=_street_blade_length("MAIN ST", 0.30), height=0.30,
+         field=SIGN_GREEN, border=SIGN_WHITE,
+         symbol="", legend="", legend_ink=SIGN_WHITE, ink=SIGN_WHITE,
+         text_box=(0.04, 0.12, 0.92, 0.76)),
+]
+
+
+def _sign_model(spec: dict) -> dict:
+    """Assemble one pack sign: post, border plate, field plate, face plate."""
+    width, height = spec["width"], spec["height"]
+    shape = spec["shape"]
+    # §1.4's face size is the OVERALL plate, so the border is an inset ring and
+    # the coloured field sits inside it. That also makes the model's bounding
+    # height exactly mount + face height, which is what the registry gate
+    # asserts.
+    centre_z = SIGN_MOUNT + height / 2.0   # plate bottom edge at the mounting height
+    border = _sign_outline(shape, width, height)
+    field = _sign_outline(shape, width - 2.0 * SIGN_BORDER, height - 2.0 * SIGN_BORDER)
+
+    # The post rises behind the plate to the field centre, so it never pokes
+    # above a short blade and always supports a tall one.
+    post = cylinder(SIGN_POST_DIAMETER / 2.0, 0.0, centre_z)
+    parts = [
+        ("post", POLE_GREY, post),
+        ("border", spec["border"], extruded_polygon(border, PLATE_MID, PLATE_BACK, cz=centre_z)),
+        ("field", spec["field"], extruded_polygon(field, PLATE_FRONT, PLATE_MID, cz=centre_z)),
+    ]
+    half_w, half_h = _inscribed_half_extents(
+        shape, width - 2.0 * SIGN_BORDER, height - 2.0 * SIGN_BORDER)
+    model = {
+        "id": spec["id"], "label": spec["label"], "type": "None",
+        "height": SIGN_MOUNT + height,
+        "radius": math.hypot(width / 2.0, height / 2.0),
+        "parts": parts,
+        "face_plate": {
+            "x": PLATE_FRONT + 0.005, "z": centre_z, "half_w": half_w, "half_h": half_h,
+            "background": spec["field"], "ink": spec["ink"],
+            "symbol": spec.get("symbol", ""),
+            "legend": spec.get("legend", ""), "legend_ink": spec["legend_ink"],
+            "legend_box": spec.get("legend_box", (0.0, 0.0, 1.0, 1.0)),
+            "text_box": spec.get("text_box", (0.0, 0.0, 1.0, 1.0)),
+        },
+    }
+    return model
+
+
 def sign_generic() -> dict:
-    """A generic round-ish regulatory sign: a thin plate on a pole, plate face
-    down +x. The plate is a white disc with a red rim (two coplanar boxes, the
-    rim slightly larger and behind) — enough to read as a sign at scene scale
-    without importing MUTCD artwork. Overall height 2.55 m."""
-    pole = cylinder(0.05, 0.0, 2.2)
-    rim = box(0.02, 0.0, 2.32, 0.03, 0.64, 0.64)
-    face = box(0.04, 0.0, 2.32, 0.03, 0.52, 0.52)
-    return {
-        "id": "sign_generic", "label": "Traffic sign", "type": "None",
-        "height": 2.7, "radius": 0.32,
-        "parts": [("pole", POLE_GREY, pole),
-                  ("rim", PLATE_RIM, rim),
-                  ("face", PLATE_WHITE, face)],
-    }
+    """The fallback silhouette for a <signal> whose (@country, @type) this build
+    ships no catalogue entry for — a foreign-country sign, or the German StVO
+    plates RoadMaker authored before the US pack. A plain white plate with a
+    dark border, sized like a regulatory sign so it reads as one."""
+    spec = dict(id="sign_generic", label="Traffic sign", shape="rectangle",
+                width=0.60, height=0.60, field=SIGN_WHITE, border=SIGN_BLACK,
+                symbol="", legend="", legend_ink=SIGN_BLACK, ink=SIGN_BLACK)
+    return _sign_model(spec)
 
 
-STOP_RED = (0.78, 0.11, 0.12)
-YIELD_RED = (0.80, 0.13, 0.13)
-
-# StVO 310 Ortstafel (town-entrance sign): a yellow rectangular plate with
-# near-black text and a dark rim. Flat linear RGB — the same gamma treatment as
-# every other flat prop colour; the face rasteriser paints ink over background.
-PLATE_YELLOW = (0.93, 0.75, 0.10)
-PLATE_INK = (0.09, 0.09, 0.10)
-PLATE_RIM_DARK = (0.16, 0.16, 0.17)
-
-
-def sign_stop() -> dict:
-    """A STOP sign: a red octagonal plate with a white border on a pole, plate
-    face down +x (German StVO 206 / MUTCD R1-1 silhouette). The white rim sits
-    just behind the red face so the plate reads as a bordered octagon."""
-    pole = cylinder(0.05, 0.0, 2.2)
-    octagon = _regular_polygon(8, 0.42, math.pi / 8.0)  # flat top + bottom
-    inner = _regular_polygon(8, 0.36, math.pi / 8.0)
-    rim = extruded_polygon(octagon, 0.03, 0.00, cz=2.35)   # white border, behind
-    face = extruded_polygon(inner, 0.06, 0.03, cz=2.35)    # red face, in front
-    return {
-        "id": "sign_stop", "label": "Stop sign", "type": "None",
-        "height": 2.77, "radius": 0.42,
-        "parts": [("pole", POLE_GREY, pole),
-                  ("rim", PLATE_WHITE, rim),
-                  ("face", STOP_RED, face)],
-    }
-
-
-def sign_yield() -> dict:
-    """A YIELD sign: a downward-pointing triangular plate, white face with a red
-    border, on a pole (German StVO 205 / MUTCD R1-2 silhouette). Plate face down
-    +x; the red rim triangle sits just behind the white face."""
-    pole = cylinder(0.05, 0.0, 2.2)
-    outer = [(-0.50, 0.42), (0.50, 0.42), (0.0, -0.52)]  # red rim (down-point)
-    inner = [(-0.38, 0.34), (0.38, 0.34), (0.0, -0.38)]  # white face
-    rim = extruded_polygon(outer, 0.03, 0.00, cz=2.45)
-    face = extruded_polygon(inner, 0.06, 0.03, cz=2.45)
-    return {
-        "id": "sign_yield", "label": "Yield sign", "type": "None",
-        "height": 2.87, "radius": 0.52,
-        "parts": [("pole", POLE_GREY, pole),
-                  ("rim", YIELD_RED, rim),
-                  ("face", PLATE_WHITE, face)],
-    }
-
-
-def sign_plate() -> dict:
-    """A text sign: a rectangular yellow plate on a pole, plate face down +x
-    (German StVO 310 Ortstafel / town-entrance silhouette). The plate carries a
-    FacePlate so a placed <signal> renders its editable @text over the yellow
-    fill in near-black ink. A dark rim sits just behind the yellow face so the
-    plate reads as a bordered rectangle. Overall height 2.91 m (rim top)."""
-    pole = cylinder(0.05, 0.0, 2.2)
-    rim = box(0.0, 0.0, 2.55, 0.03, 1.16, 0.72)   # dark border, behind
-    face = box(0.03, 0.0, 2.55, 0.03, 1.10, 0.66)  # yellow plate, in front
-    return {
-        "id": "sign_plate", "label": "Text sign", "type": "None",
-        "height": 2.91, "radius": 0.58,
-        "parts": [("pole", POLE_GREY, pole),
-                  ("rim", PLATE_RIM_DARK, rim),
-                  ("face", PLATE_YELLOW, face)],
-        # Front surface of the yellow face box: cx 0.03 + half-depth 0.015.
-        "face_plate": {"x": 0.045, "z": 2.55, "half_w": 0.55, "half_h": 0.33,
-                       "background": PLATE_YELLOW, "ink": PLATE_INK},
-    }
-
-
-SIGNALS = [signal_light(), sign_generic(), sign_stop(), sign_yield(),
-           sign_plate()]
+SIGNALS = [signal_light(), sign_generic()] + [_sign_model(spec) for spec in SIGN_PACK]
 
 
 # --------------------------------------------------------------------------- #
@@ -640,6 +743,15 @@ def _fmt_doubles(values: list[float]) -> str:
     return ", ".join(f"{v:.5f}" for v in values)
 
 
+def _cpp_string(text: str) -> str:
+    """A C++ string literal for `text`, escaping the few characters the sign
+    tables can carry (backslash, quote, newline)."""
+    escaped = (text.replace("\\", "\\\\")
+                   .replace('"', '\\"')
+                   .replace("\n", "\\n"))
+    return f'"{escaped}"'
+
+
 def write_cpp() -> None:
     lines = [
         "// GENERATED by scripts/gen_prop_meshes.py — DO NOT EDIT BY HAND.",
@@ -683,12 +795,20 @@ def write_cpp() -> None:
         lines.append(f"    ObjectType::{tree['type']},")
         fp = tree.get("face_plate")
         if fp is not None:
+            # POSITIONAL aggregate init — this must stay in lockstep with the
+            # field order of props::FacePlate (prop_library.hpp), which says so
+            # too. A reorder there without one here mis-assigns silently.
             bg, ink = fp["background"], fp["ink"]
+            lg_ink = fp["legend_ink"]
+            lg_box, tx_box = fp["legend_box"], fp["text_box"]
+            rgb = lambda c: f"{{{c[0]:.4f}f, {c[1]:.4f}f, {c[2]:.4f}f}}"
+            box = lambda b: "{" + ", ".join(f"{v:.4f}" for v in b) + "}"
             lines.append(
                 f"    FacePlate{{{fp['x']:.4f}, {fp['z']:.4f}, "
                 f"{fp['half_w']:.4f}, {fp['half_h']:.4f}, "
-                f"{{{bg[0]:.4f}f, {bg[1]:.4f}f, {bg[2]:.4f}f}}, "
-                f"{{{ink[0]:.4f}f, {ink[1]:.4f}f, {ink[2]:.4f}f}}}},")
+                f"{rgb(bg)}, {rgb(ink)}, "
+                f"{_cpp_string(fp['symbol'])}, {_cpp_string(fp['legend'])}, "
+                f"{rgb(lg_ink)}, {box(lg_box)}, {box(tx_box)}}},")
         lines.append("};")
         lines.append("")
     lines.append("const std::array<const PropModel*, "

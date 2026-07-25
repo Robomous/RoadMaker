@@ -318,10 +318,13 @@ THUMBNAILS = {
     "prop_tree_poplar": lambda: render_model(_model("tree_poplar")),
     "prop_shrub": lambda: render_model(_model("shrub")),
     "signal_traffic_light": lambda: render_model(_model("signal_light")),
-    "signal_sign": lambda: render_model(_model("sign_generic")),
-    "sign_stop": lambda: render_model(_model("sign_stop")),
-    "sign_yield": lambda: render_model(_model("sign_yield")),
-    "sign_text": lambda: render_model(_model("sign_plate")),
+    # The US sign pack: one thumbnail per catalogue designation, keyed by the
+    # model id so a designation joining the pack needs no edit here. The
+    # renderer draws flat part colours, so a thumbnail shows the sign's
+    # silhouette, border and field — not its baked face artwork.
+    **{spec["id"]: (lambda mid=spec["id"]: render_model(_model(mid)))
+       for spec in props.SIGN_PACK},
+    "sign_generic": lambda: render_model(_model("sign_generic")),
     "streetlight_single": lambda: render_model(_model("streetlight_single")),
     "streetlight_double": lambda: render_model(_model("streetlight_double")),
     "building_low": lambda: render_model(_model("building_low")),

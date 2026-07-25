@@ -39,8 +39,17 @@ Current version on `main`: **0.0.1**.
   future country pack is another data set rather than a new build. Kernel:
   `edit::set_signal_value`, exposed to Python as `edit.set_signal_value`.
   Scenes authored against another country's catalogue still open and round-trip
-  byte-identically. The sign *artwork* — per-designation silhouettes and baked
-  symbol faces — follows in the same issue.
+  byte-identically.
+
+  Each sign is also **built** to its spec: its own silhouette — octagon,
+  triangle, diamond, pentagon, disc — at the §1.4 face size, on a breakaway
+  post, with the face's bottom edge at the standard mounting height. The faces
+  carry real artwork: the Do Not Enter roundel, the ONE WAY arrow, the turn
+  prohibitions, the warning and school figures are drawn in-repo as SVG after
+  the public-domain US federal sign specifications and rasterised by the kernel,
+  so they show in the viewport and in exported glTF alike. Legends render in
+  **Overpass**, the open highway-gothic typeface, which replaces Roboto.
+  `assets/samples/sign_pack.xodr` shows the whole set along a street.
 - **Sculpt the terrain by hand and import a DEM**
   ([#234](https://github.com/Robomous/RoadMaker/issues/234)): the new **Terrain
   Brush** tool (**⇧B**) raises, lowers and smooths the scene height field with a

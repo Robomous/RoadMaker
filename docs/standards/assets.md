@@ -32,11 +32,19 @@
 - Primary: **ambientCG** (ambientcg.com, CC0).
 - Fallback: **Poly Haven** (polyhaven.com, CC0).
 
-**Future 3D props and signs** (scouted, nothing shipped yet)
+**Sign artwork** (shipped)
 
-- Candidate kits: **Kenney.nl** and **Quaternius** packs (CC0). Sign
-  graphics need per-file verification — Wikimedia Commons SVGs are licensed
-  individually. The scouted list lives in
+- The US sign pack's symbols are **authored in-repo**, not sourced: they live
+  in `assets/signs/us/` and are drawn after the **public-domain US federal sign
+  specifications**, with no third-party artwork file copied. That side-steps the
+  per-file verification third-party sign graphics would need (Wikimedia Commons
+  SVGs, for instance, are licensed individually) and keeps the whole pack
+  Apache-2.0 project work.
+
+**Future 3D props** (scouted, nothing shipped yet)
+
+- Candidate kits: **Kenney.nl** and **Quaternius** packs (CC0). The scouted
+  list lives in
   [roadmap/asset_candidates](../roadmap/archive/2026-07-pre-reset/asset_candidates.md).
 
 ## AI-generated assets
@@ -71,6 +79,34 @@ provenance norms shift.
   grid, live under `editor/resources/icons/custom/`, and are licensed Apache-2.0 as
   project assets (their `ASSETS_LICENSES.md` rows list author = RoadMaker
   contributors).
+
+## SVG artwork (not icons)
+
+Sign symbols are **artwork, not icons**, and the icon rules above do not apply
+to them: they carry fills and full colour, and their viewBox is the sign face's
+own proportions rather than a 24×24 grid. They live in `assets/signs/<country>/`,
+one file per designation, licensed Apache-2.0 as project work with author =
+RoadMaker contributors.
+
+Two constraints come from the consumer rather than from style. The kernel
+rasterises them (`roadmaker::signs::render_face`) because faces are baked
+headless by the glTF exporter and from Python, and `core/` must never link Qt —
+so the rasteriser is **nanosvg**, which parses shapes only. No `<text>`: every
+legend is a text layer the renderer draws, which is also what keeps legends
+editable and consistently typeset. `scripts/gen_sign_symbols.py` embeds the SVG
+source text into the kernel, so there is no runtime file IO and no rasteriser at
+build time.
+
+## Fonts
+
+Fonts are assets, and the allowed-license set has one **maintainer-approved
+exception** for them: **SIL OFL-1.1**. It exists because the open faces that
+match real-world signage are OFL, and the OFL's obligations are satisfied by
+shipping the licence text beside the font, which
+`assets/fonts/Overpass-LICENSE.md` does. When a font is offered under more than
+one licence, the `ASSETS_LICENSES.md` row must record **which one RoadMaker
+takes** — Overpass is dual OFL-1.1/LGPL-2.1 and we take the OFL half, so Qt
+remains the project's only LGPL dependency.
 
 ## Pipeline
 

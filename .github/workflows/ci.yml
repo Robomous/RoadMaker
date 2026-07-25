@@ -252,7 +252,7 @@ jobs:
       - name: Render canonical scenes
         run: |
           mkdir -p shots
-          for scene in crossing t_attach overpass props_scale; do
+          for scene in crossing t_attach overpass props_scale sign_pack; do
             for camera in orbit top; do
               xvfb-run -a python3 scripts/editor_screenshot.py \
                 "assets/samples/${scene}.xodr" "shots/${scene}_${camera}.png" \

@@ -23,6 +23,8 @@ Four scenes cover what the renderer must get right
                      core test TJunctionQualityTools.DISABLED_WriteTeeSample)
   overpass.xodr    — two roads crossing at different elevations (graded
                      shading + no junction where there is no junction)
+  sign_pack.xodr   — every US pack sign along a local street, so §1.4 face
+                     sizes and mounting height read against a known ruler.
   props_scale.xodr — one of every bundled prop along a local street, so prop
                      proportions can be read against a known cross-section
                      (#415; the numbers themselves are gated by
@@ -151,7 +153,50 @@ def props_scale() -> None:
     print(f"wrote {SAMPLES / 'props_scale.xodr'}")
 
 
+def sign_pack() -> None:
+    """Every US pack sign along a 160 m local street (#414).
+
+    The standing visual check for §1.4: face sizes, mounting height and post,
+    all against the same ruler props_scale uses (a 3.0 m lane, a 1.8 m
+    sidewalk). Signs alternate sides so both the faces and the backs are in
+    frame, and the ones with editable legends carry a legible example.
+    """
+    network = rm.RoadNetwork()
+    stack = rm.edit.EditStack()
+    stack.push(
+        network,
+        rm.edit.create_road([(0.0, 0.0), (160.0, 0.0)], rm.LaneProfile.local_road(), "main"),
+    )
+    road_id = network.find_road("1")
+
+    # Legends worth reading in the render; everything else shows its artwork.
+    legends = {"R1-1": "STOP", "R1-2": "YIELD", "D3-1": "MAIN ST"}
+    pack = [spec for spec in props.SIGN_PACK]
+    for index, spec in enumerate(pack):
+        designation = spec["label"].rsplit("(", 1)[1].rstrip(")")
+        right = index % 2 == 0
+        signal = rm.Signal()
+        signal.odr_id = str(index + 1)
+        signal.type = designation
+        signal.subtype = "R" if designation == "R6-1" and right else (
+            "L" if designation == "R6-1" else "-1")
+        signal.country = "US"
+        signal.dynamic = False
+        signal.orientation = rm.ObjectOrientation.PLUS
+        signal.s = 10.0 + 10.0 * index
+        signal.t = -4.8 if right else 4.8
+        signal.width, signal.height = spec["width"], spec["height"]
+        signal.text = legends.get(designation, "")
+        if designation == "R2-1":
+            signal.value, signal.unit = 25.0, "mph"
+        stack.push(network, rm.edit.add_signal(network, road_id, signal))
+
+    rm.save_xodr(network, str(SAMPLES / "sign_pack.xodr"), "sign_pack")
+    print(f"wrote {SAMPLES / 'sign_pack.xodr'}")
+
+
 if __name__ == "__main__":
     crossing()
     overpass()
     props_scale()
+    sign_pack()

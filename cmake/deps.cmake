@@ -107,6 +107,22 @@ FetchContent_Declare(stb
 )
 
 # ---------------------------------------------------------------------------
+# nanosvg (zlib) — nanosvg.h + nanosvgrast.h, for CPU rasterisation of the
+# baked US sign-pack symbol artwork (roadmaker::signs::render_face). The
+# symbols are authored as SVG and embedded as SVG *text*, so the kernel
+# rasterises them at the size each face needs — Qt's SVG renderer is
+# editor-only and core must never link Qt, and the glTF exporter bakes faces
+# headless and from Python. Header-only; NANOSVG_IMPLEMENTATION and
+# NANOSVGRAST_IMPLEMENTATION are defined in exactly one TU
+# (core/src/assets/sign_face.cpp). No tagged releases upstream, so pin the
+# exact commit archive + SHA256 (disclosed in THIRD_PARTY_LICENSES.md).
+FetchContent_Declare(nanosvg
+  URL https://github.com/memononen/nanosvg/archive/239e102ec2c691f2902e20ace2ed36ee4a35cfe6.tar.gz
+  URL_HASH SHA256=2bc68bdb518d7800252042e5cad50a0ab321596f0cbf49ef2a752926329063d2
+  SOURCE_SUBDIR cmake-disabled
+)
+
+# ---------------------------------------------------------------------------
 # Clothoids 2.1.0 (BSD-2) + its submodules, pinned at the exact commits the
 # 2.1.0 tag references (GitHub release tarballs do not include submodules).
 # We compile all four source drops into a single static library below
@@ -214,7 +230,7 @@ endif()
 
 # ---------------------------------------------------------------------------
 FetchContent_MakeAvailable(
-  fmt spdlog eigen pugixml clipper2 cdt manifold tinygltf stb
+  fmt spdlog eigen pugixml clipper2 cdt manifold tinygltf stb nanosvg
   clothoids utilslite quartic gencon tlexpected fastfloat)
 if(RM_BUILD_TESTS)
   FetchContent_MakeAvailable(googletest)
@@ -303,6 +319,11 @@ target_compile_definitions(rm_tinygltf INTERFACE
 add_library(rm_stb INTERFACE)
 add_library(stb::stb ALIAS rm_stb)
 target_include_directories(rm_stb SYSTEM INTERFACE ${stb_SOURCE_DIR})
+
+# nanosvg (header-only; NANOSVG*_IMPLEMENTATION lives in core/src/assets)
+add_library(rm_nanosvg INTERFACE)
+add_library(nanosvg::nanosvg ALIAS rm_nanosvg)
+target_include_directories(rm_nanosvg SYSTEM INTERFACE ${nanosvg_SOURCE_DIR}/src)
 
 # tl::expected (header-only)
 add_library(rm_tlexpected INTERFACE)

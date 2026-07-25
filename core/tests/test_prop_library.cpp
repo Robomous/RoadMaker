@@ -102,29 +102,49 @@ TEST(PropLibrary, GeometrySitsOnOriginBaseWithinHeight) {
   }
 }
 
-TEST(PropLibrary, SignPlateModelHasFacePlate) {
-  // The text sign carries a FacePlate so a placed <signal> renders its @text;
-  // it is the only model that does. The plate sits in front of the pole (+x),
-  // spans a positive area, and declares distinct fill/ink colours.
-  const PropModel* plate_model = model("sign_plate");
-  ASSERT_NE(plate_model, nullptr) << "sign_plate must be in the catalogue";
-  ASSERT_TRUE(plate_model->face_plate.has_value());
-  const FacePlate& fp = *plate_model->face_plate;
-  EXPECT_GT(fp.x, 0.0) << "face is in front of the pole";
-  EXPECT_GT(fp.half_w, 0.0);
-  EXPECT_GT(fp.half_h, 0.0);
-  EXPECT_NE(fp.background, fp.ink) << "ink must be visible against the fill";
-}
-
-TEST(PropLibrary, OnlySignPlateCarriesAFacePlate) {
+TEST(PropLibrary, EverySignFacePlateIsUsable) {
+  // A face plate has to be somewhere a face can actually be drawn: in front of
+  // the pole (+x), spanning a positive area, with ink that reads against the
+  // fill. Every sign in the pack carries one; a face that fails any of these is
+  // a face nobody will be able to read.
   for (const auto& id : ids()) {
     const PropModel* m = model(id);
     ASSERT_NE(m, nullptr);
-    if (id == "sign_plate") {
-      EXPECT_TRUE(m->face_plate.has_value()) << id;
-    } else {
-      EXPECT_FALSE(m->face_plate.has_value()) << id << " should not carry a face plate";
+    if (!m->face_plate.has_value()) {
+      continue;
     }
+    const FacePlate& fp = *m->face_plate;
+    EXPECT_GT(fp.x, 0.0) << id << ": face is in front of the pole";
+    EXPECT_GT(fp.half_w, 0.0) << id;
+    EXPECT_GT(fp.half_h, 0.0) << id;
+    EXPECT_NE(fp.background, fp.ink) << id << ": ink must be visible against the fill";
+    if (!fp.legend.empty()) {
+      EXPECT_NE(fp.background, fp.legend_ink) << id << ": legend ink must be visible too";
+    }
+    // The boxes are normalised sub-rects of the face, so they must stay inside
+    // it — a box that runs off the face silently clips the legend.
+    for (const FaceBox& box : {fp.legend_box, fp.text_box}) {
+      EXPECT_GE(box[0], 0.0) << id;
+      EXPECT_GE(box[1], 0.0) << id;
+      EXPECT_GT(box[2], 0.0) << id;
+      EXPECT_GT(box[3], 0.0) << id;
+      EXPECT_LE(box[0] + box[2], 1.0 + 1e-9) << id;
+      EXPECT_LE(box[1] + box[3], 1.0 + 1e-9) << id;
+    }
+  }
+}
+
+TEST(PropLibrary, SignsCarryFacePlatesAndPlainPropsDoNot) {
+  // Which models get a face is not arbitrary: every sign the pack ships shows
+  // one (its artwork, its fixed legend, or its editable text), and nothing that
+  // is not a sign does. This is the test that used to say "only sign_plate" —
+  // the whole US pack replaced that single model (#414).
+  for (const auto& id : ids()) {
+    const PropModel* m = model(id);
+    ASSERT_NE(m, nullptr);
+    const bool is_sign = id.rfind("sign_", 0) == 0;
+    EXPECT_EQ(m->face_plate.has_value(), is_sign)
+        << id << (is_sign ? " must carry a face plate" : " should not carry a face plate");
   }
 }
 

@@ -4,7 +4,8 @@
     "CC0",
     "MIT",
     "ISC",
-    "Apache-2.0"
+    "Apache-2.0",
+    "OFL-1.1"
   ],
   "assets": [
     {
@@ -332,13 +333,19 @@
       "retrieved": "2026-07-17"
     },
     {
-      "url": "https://github.com/googlefonts/roboto/raw/v2.138/src/hinted/Roboto-Regular.ttf",
-      "sha256": "56a45233d29f11b4dfb86d248e921939d115778f87325e7ae8cc108383d6664d",
-      "license": "Apache-2.0",
-      "license_url": "https://github.com/googlefonts/roboto/blob/v2.138/LICENSE",
-      "author": "Google Inc. (Christian Robertson)",
-      "destination": "assets/fonts/Roboto-Regular.ttf",
-      "retrieved": "2026-07-21"
+      "url": "https://github.com/RedHatOfficial/Overpass/releases/download/v3.0.5/overpass-3.0.5.zip",
+      "sha256": "5a0305fcc71e7b4e5b942f62e00315788be72ea7f3a3bda55098ad7f404e78e8",
+      "source_sha256": "87d738d647546f95996f8a2ad9e2d4b19f93718e7a1695a3831d2d900d132562",
+      "license": "OFL-1.1",
+      "license_url": "https://github.com/RedHatOfficial/Overpass/blob/v3.0.5/LICENSE.md",
+      "author": "Red Hat, Inc. (Delve Fonts)",
+      "destination": "assets/fonts/Overpass-Regular.ttf",
+      "retrieved": "2026-07-25",
+      "postprocess": [
+        "unzip overpass-3.0.5.zip",
+        "copy Overpass-3.0.5/webfonts/overpass-webfont/overpass-regular.ttf to assets/fonts/Overpass-Regular.ttf",
+        "copy Overpass-3.0.5/LICENSE.md to assets/fonts/Overpass-LICENSE.md (the OFL text ships beside the font, per docs/standards/assets.md)"
+      ]
     }
   ]
 }

@@ -187,11 +187,21 @@ A sign's legend is **editable**, in one of two ways depending on the sign.
   is always drawn in **mph**, whichever display units the editor is set to —
   that is what a US sign reads.
 
-The words are rendered onto the plate as a texture, so a text sign shows its text
-in the 3D viewport and in **exported glTF** (`.glb`). USD export keeps the flat
-plate (single-file USDA cannot embed an image), but the `@text` is still written
-to the stage's `.xodr` companion. The Text row is available for any static sign
-(text is legal on all of them) and is disabled for dynamic traffic lights.
+Each sign's face is a texture the kernel bakes: its **artwork** — the Do Not
+Enter roundel, the ONE WAY arrow, the turn prohibitions, the warning and school
+figures, all drawn in-repo after the public-domain US federal sign
+specifications — plus the sign's fixed wording and whatever legend you typed,
+set in a highway typeface. So a sign shows its real face in the 3D viewport and
+in **exported glTF** (`.glb`). USD export keeps the flat plate (single-file USDA
+cannot embed an image), but the `@text` is still written to the stage's `.xodr`
+companion. The Text row is available for any static sign (text is legal on all
+of them) and is disabled for dynamic traffic lights.
+
+The sign itself is built to the spec too: its own silhouette — octagon,
+triangle, diamond, pentagon, disc — at the standard face size, on a breakaway
+post, with the face's bottom edge at the standard mounting height. Placing a
+sign therefore gets you something a reviewer recognises at a glance, not a
+generic plate.
 
 A `.xodr` authored against another country's sign catalogue still opens: its
 signals round-trip untouched, and any identity this build does not ship simply

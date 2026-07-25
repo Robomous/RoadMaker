@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="100" height="100">
+  <!-- MUTCD W1-2 CURVE AHEAD: a black curving arrow. -->
+  <path d="M 38 92 L 38 48 A 22 22 0 0 1 60 26 L 66 26 L 66 38 L 60 38
+           A 10 10 0 0 0 50 48 L 50 92 Z" fill="#111111"/>
+  <path d="M 60 12 L 88 32 L 60 52 Z" fill="#111111"/>
+</svg>
