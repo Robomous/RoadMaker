@@ -357,8 +357,8 @@ Current version on `main`: **0.0.1**.
   simply keeps its geometric normal. No change to what real-GL hardware draws —
   this restores the rendering everywhere else that it was already correct, and
   makes the CI artifact trustworthy again for reviewing what is *inside* a
-  junction, which is where the sidewalk-band defects of
-  [#402](https://github.com/Robomous/RoadMaker/issues/402) live.
+  junction — which is where the sidewalk-band defects fixed above
+  ([#402](https://github.com/Robomous/RoadMaker/issues/402)) had been hiding.
 - **Trees, signs and street furniture move with the road you move them onto**
   ([#400](https://github.com/Robomous/RoadMaker/issues/400)): dragging,
   translating or rotating a road left every prop and sign it carried rendered at
