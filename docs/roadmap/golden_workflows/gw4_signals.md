@@ -78,6 +78,15 @@ highlighting.
     Press **Auto facing** in the Attributes pane. **Expected:** it returns to
     facing its traffic, in one undo step, and **Ctrl+Z** brings the hand-set
     heading back.
+12c. [ ] With that sign selected, switch to the **Move** tool. **Expected:**
+    the gizmo appears **at the sign**, not out at the road's midpoint, and it
+    has no Z arrow (p6-s15, #417). Drag the **yaw ring**. **Expected:** the
+    sign turns and the road underneath it does **not** move at all; the
+    Heading offset row follows the drag and lands on a 15° multiple; the
+    Attributes pane still reports the same traffic direction — turning a sign
+    never changes which traffic it applies to. Now move the sign with the
+    centre pad. **Expected:** it slides along the road with the dragged
+    heading untouched, and **Auto facing** is still the only way back.
 13. [ ] Save, reload, and re-select the sign. **Expected:** the face text
     round-trips (the Text row shows the same multi-line value; the exported
     `.xodr` carries `@text`), and so does the facing — including the hand-set

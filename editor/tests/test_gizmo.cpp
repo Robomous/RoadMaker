@@ -17,6 +17,8 @@
 // Pure transform-gizmo math (A3): screen projection at constant pixel size,
 // handle hit-testing, axis-constrained translation, and detented yaw. No Qt/GL.
 
+#include "roadmaker/road/defaults.hpp"
+
 #include <gtest/gtest.h>
 
 #include <array>
@@ -132,18 +134,45 @@ TEST(Gizmo, YawAngleIsTheSignedWrappedDelta) {
   EXPECT_NEAR(gizmo_yaw_angle(pivot, {1.0, 0.0}, {0.0, -1.0}), -std::numbers::pi / 2.0, 1e-9);
 }
 
-TEST(Gizmo, YawDetentSnapsToFifteenDegrees) {
+// The detent is the REGISTRY's, not a number repeated here. Before p6-s15 this
+// test declared its own `pi / 12`, so changing defaults::kPropRotationSnap
+// would have left it green asserting the old increment — the editor's link to
+// the registry was compile-time only and nothing tested it.
+TEST(Gizmo, YawDetentSnapsToTheRegistrysIncrement) {
   const std::array<double, 2> pivot{0.0, 0.0};
-  constexpr double kDetent = std::numbers::pi / 12.0; // 15°
-  // A drag of ~20° snaps to 15°; ~52° snaps to 45°.
+  constexpr double kDetent = defaults::kPropRotationSnap;
+  // A drag of ~20° snaps to one increment; ~52° to three.
   const double twenty = 20.0 * std::numbers::pi / 180.0;
   const double fifty_two = 52.0 * std::numbers::pi / 180.0;
   const std::array<double, 2> at20{std::cos(twenty), std::sin(twenty)};
   const std::array<double, 2> at52{std::cos(fifty_two), std::sin(fifty_two)};
-  EXPECT_NEAR(gizmo_yaw_angle(pivot, {1.0, 0.0}, at20, kDetent), kDetent, 1e-9);
-  EXPECT_NEAR(gizmo_yaw_angle(pivot, {1.0, 0.0}, at52, kDetent), 3.0 * kDetent, 1e-9);
-  // Free (detent 0) keeps the exact angle.
-  EXPECT_NEAR(gizmo_yaw_angle(pivot, {1.0, 0.0}, at20, 0.0), twenty, 1e-9);
+  EXPECT_NEAR(snap_to_increment(gizmo_yaw_angle(pivot, {1.0, 0.0}, at20), kDetent), kDetent, 1e-9);
+  EXPECT_NEAR(
+      snap_to_increment(gizmo_yaw_angle(pivot, {1.0, 0.0}, at52), kDetent), 3.0 * kDetent, 1e-9);
+  // Free (increment 0) keeps the exact angle.
+  EXPECT_NEAR(snap_to_increment(gizmo_yaw_angle(pivot, {1.0, 0.0}, at20), 0.0), twenty, 1e-9);
+}
+
+TEST(Gizmo, SnapToIncrementRoundsAndPassesThroughTheFreeCase) {
+  EXPECT_DOUBLE_EQ(snap_to_increment(2.6, 1.0), 3.0);
+  EXPECT_DOUBLE_EQ(snap_to_increment(-2.6, 1.0), -3.0); // rounds away from zero, symmetrically
+  EXPECT_DOUBLE_EQ(snap_to_increment(0.4, 1.0), 0.0);
+  // Zero and negative increments mean "free" — that is how the suppression
+  // modifier is expressed, so it must be a passthrough rather than a division.
+  EXPECT_DOUBLE_EQ(snap_to_increment(2.6, 0.0), 2.6);
+  EXPECT_DOUBLE_EQ(snap_to_increment(2.6, -1.0), 2.6);
+  // Unit-agnostic: #337's scale affordance snaps a factor through this too.
+  EXPECT_DOUBLE_EQ(snap_to_increment(1.13, 0.25), 1.25);
+}
+
+TEST(Gizmo, WrapAngleLandsInTheHalfOpenTurn) {
+  constexpr double kPi = std::numbers::pi;
+  EXPECT_NEAR(wrap_angle(0.5), 0.5, 1e-12);
+  EXPECT_NEAR(wrap_angle(kPi + 0.5), -kPi + 0.5, 1e-12);
+  EXPECT_NEAR(wrap_angle(-kPi - 0.5), kPi - 0.5, 1e-12);
+  // Several turns of accumulated rotation collapse to one.
+  EXPECT_NEAR(wrap_angle((6.0 * kPi) + 0.25), 0.25, 1e-12);
+  EXPECT_NEAR(wrap_angle(kPi), kPi, 1e-12);
 }
 
 } // namespace roadmaker::editor

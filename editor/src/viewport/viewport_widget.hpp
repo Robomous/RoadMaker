@@ -36,6 +36,7 @@
 
 #include "app/context_menu.hpp"
 #include "document/document.hpp"
+#include "document/gizmo_drag.hpp"
 #include "document/selection_model.hpp"
 #include "document/signal_phase_overlay.hpp"
 #include "render/material_catalog.hpp"
@@ -390,29 +391,19 @@ private:
   [[nodiscard]] HighlightState phase_highlight(RoadId road, HighlightState base) const;
 
   // --- transform gizmo (A3, #177) --------------------------------------------
-  /// The single transformable entity under the gizmo: a road or a prop, with its
-  /// world pivot. Present only when the Move tool is active with exactly one such
-  /// entity selected; nullopt otherwise (so the gizmo shows/hides automatically).
-  struct GizmoTarget {
-    RoadId road;
-    ObjectId object;
-    std::array<double, 3> pivot{};
-  };
+  // The DRAG lives in document/gizmo_drag.hpp (p6-s15, #417) so the gesture is
+  // testable headless; what stays here is only what needs a camera or a
+  // painter: hit-testing on screen, un-projecting to the ground plane, the
+  // AxisZ pixel scale, painting, and the suppression-modifier mapping.
 
-  /// An in-flight gizmo drag: the grabbed handle, the entity, its pivot, and the
-  /// press anchors (world + pixels) the constraint math resolves against.
-  struct GizmoDrag {
-    GizmoHandle handle = GizmoHandle::None;
-    RoadId road;
-    ObjectId object;
-    std::array<double, 3> pivot{};
-    std::array<double, 2> press_world{};
-    QPoint press_px;
-    double base_hdg = 0.0; ///< prop heading at press (for yaw)
-    QString summary;       ///< toast text, refreshed each frame
-  };
-
+  /// The Move tool's gizmo target for the current selection, or nullopt (so the
+  /// gizmo shows and hides automatically). Wraps the pure resolver with the
+  /// tool gate, which only the widget knows about.
   [[nodiscard]] std::optional<GizmoTarget> gizmo_target() const;
+
+  /// World-Z delta [m] for an AxisZ drag from `press_px` to `pos`, via the
+  /// pivot's screen pixels-per-metre. 0 when the pivot will not project.
+  [[nodiscard]] double gizmo_axis_z_delta(const QPointF& pos) const;
 
   /// Draws the gizmo (axis arrows, yaw ring, XY pad) when gizmo_target() exists.
   void draw_gizmo(QPainter& painter) const;
@@ -421,8 +412,8 @@ private:
   /// the press); false lets the press fall through to the active tool.
   [[nodiscard]] bool begin_gizmo_drag(const QPointF& pos);
 
-  /// One gizmo-drag frame: constrains the motion to the grabbed handle and
-  /// previews the matching edit command (translate / rotate / elevation).
+  /// One gizmo-drag frame: un-projects `pos` and hands the session this
+  /// frame's world input, with Shift mapped to free rotation.
   void update_gizmo_drag(const QPointF& pos, Qt::KeyboardModifiers modifiers);
 
   /// Commits the gizmo drag as ONE undo step with a summary toast.
@@ -553,9 +544,12 @@ private:
   /// QPainter overlay pass and folded into the road highlight (moving roads).
   SignalPhasePreview signal_phase_preview_;
 
-  /// Active gizmo drag (nullopt when idle) and the handle currently hovered
-  /// (for the highlight). See the transform-gizmo methods above.
-  std::optional<GizmoDrag> gizmo_drag_;
+  /// The gizmo drag (inactive when idle) and the handle currently hovered (for
+  /// the highlight). See the transform-gizmo methods above.
+  GizmoDragSession gizmo_drag_;
+  /// Press pixel of the live drag — the AxisZ scale is the one part of the
+  /// gesture that is still measured in screen space.
+  QPoint gizmo_press_px_;
   GizmoHandle gizmo_hover_ = GizmoHandle::None;
 
   /// Entity under the cursor, tracked by update_hover for the hover highlight

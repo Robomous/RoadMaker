@@ -202,7 +202,10 @@ markings) and are extended by
 [#414](https://github.com/Robomous/RoadMaker/issues/414) (signs) and
 [#416](https://github.com/Robomous/RoadMaker/issues/416) (auto-orientation —
 the registry's first ANGLES, stored in radians and constructed from their
-degree measure). #413 may
+degree measure) and
+[#417](https://github.com/Robomous/RoadMaker/issues/417) (which bound the
+viewport's rotation ring to the orientation table's increment through a test,
+not merely through the compiler). #413 may
 regularize table formatting for the comparator; if it does, these tables
 are regenerated from the registry in that PR.
 
@@ -395,7 +398,17 @@ street.
 | Item | Old | New |
 |---|---|---|
 | Sign/signal facing | none (always along +s) | auto-orientation section |
-| Prop Z-rotation snapping | none (free ring) | 15° + suppression modifier (orientation table) |
+| Prop Z-rotation snapping | 15° on the drag *delta*, props only | absolute 15° from the road, props **and** signs (orientation table); suppression modifier in [Moving & transforming](../user-guide/moving-and-transforming.md) |
+
+*(The "Old" column here was audited at `e18592b` as "none (free ring)". The
+detent and its Shift suppression had in fact shipped with the gizmo in #188;
+what #417 found missing was absolute snapping, sign/signal coverage, and any
+test at all. Corrected with #417 rather than left standing.)*
+
+The suppression modifier is deliberately **not** a row in the machine-gated
+orientation table: it is a keyboard binding, and the kernel's defaults registry
+does not name editor keys. The increment is the registry's; the key is the user
+guide's.
 
 *Dispositions (landed with #416):* placement and one explicit **Auto facing**
 action now derive `@orientation` and `@hOffset` from the road, the side, and the
@@ -410,3 +423,17 @@ The renderer was corrected in the same pass. It had ignored `@orientation`
 entirely and aimed every signal along +s — the datum §14.1 defines for `"-"`,
 applied to all three literals. Existing files with `orientation="+"` therefore
 re-aim by 180°, which is the correction, not a regression.
+
+*Dispositions (landed with #417):* the viewport's rotation ring now reaches
+signs and signals, snaps props and signs to absolute increments, and is driven
+from a headless-testable session rather than from inside the viewport widget.
+A ring drag on a sign writes `@hOffset` and nothing else — `@orientation` is a
+*validity* declaration under §14.1, so a gesture that turns a sign must not
+change which traffic it applies to. The ring is therefore not one of the three
+sites allowed to derive a facing, and a heading dragged there is an override on
+exactly the same terms as one typed into the Attributes pane.
+
+The sprint also fixed a selection bug: a sign carries its owning road, and the
+gizmo resolved that road first, so **selecting a sign and dragging the ring
+rotated the whole road**. Leaf entities now win, as they already did everywhere
+else in the selection model.

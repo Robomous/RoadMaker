@@ -148,18 +148,24 @@ std::array<double, 2> gizmo_constrain_translation(GizmoHandle handle,
   }
 }
 
-double gizmo_yaw_angle(std::array<double, 2> pivot,
-                       std::array<double, 2> from,
-                       std::array<double, 2> to,
-                       double detent) {
+double
+gizmo_yaw_angle(std::array<double, 2> pivot, std::array<double, 2> from, std::array<double, 2> to) {
   const double a0 = std::atan2(from[1] - pivot[1], from[0] - pivot[0]);
   const double a1 = std::atan2(to[1] - pivot[1], to[0] - pivot[0]);
-  // Wrapped delta in (-pi, pi].
-  double delta = std::atan2(std::sin(a1 - a0), std::cos(a1 - a0));
-  if (detent > 0.0) {
-    delta = std::round(delta / detent) * detent;
+  return wrap_angle(a1 - a0);
+}
+
+double snap_to_increment(double value, double increment) {
+  if (increment <= 0.0) {
+    return value;
   }
-  return delta;
+  return std::round(value / increment) * increment;
+}
+
+double wrap_angle(double radians) {
+  // atan2 of the angle's own sine/cosine is the branch-free wrap; it lands in
+  // (-pi, pi] and is exact at the boundaries a modulo would straddle.
+  return std::atan2(std::sin(radians), std::cos(radians));
 }
 
 } // namespace roadmaker::editor
