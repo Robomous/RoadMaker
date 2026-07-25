@@ -353,7 +353,11 @@ class SidewalkBandMatrix : public testing::TestWithParam<Case> {};
 INSTANTIATE_TEST_SUITE_P(Probe,
                          SidewalkBandMatrix,
                          testing::ValuesIn(matrix()),
-                         [](const testing::TestParamInfo<Case>& info) { return info.param.name; });
+                         // `info` would shadow a parameter inside the macro's
+                         // own expansion — GCC errors on it, clang does not.
+                         [](const testing::TestParamInfo<Case>& probe) {
+                           return probe.param.name;
+                         });
 
 // Criterion 3: every corner with at least one sidewalked adjacent arm emits a
 // band. The tight five-way and the sidewalk-inside-shoulder profile used to
