@@ -39,6 +39,7 @@
 #include <cstdint>
 #include <string>
 #include <utility>
+#include <variant>
 
 #include "document/crosswalk_item.hpp"
 #include "document/library_drop.hpp"
@@ -328,6 +329,7 @@ PropertiesPanel::PropertiesPanel(Document& document,
       mark_color_combo_(new QComboBox),
       marking_slot_(new SlotWidget(QStringLiteral("Markings"), this)),
       lane_material_slot_(new SlotWidget(QStringLiteral("Materials"), this)),
+      lane_friction_spin_(new QDoubleSpinBox), lane_roughness_spin_(new QDoubleSpinBox),
       add_left_(new QPushButton(tr("Add left"))), add_right_(new QPushButton(tr("Add right"))),
       remove_left_(new QPushButton(tr("Remove left lane"))),
       remove_right_(new QPushButton(tr("Remove right lane"))),
@@ -489,6 +491,33 @@ PropertiesPanel::PropertiesPanel(Document& document,
           &SlotWidget::engage_requested,
           this,
           &PropertiesPanel::library_category_requested);
+  // Friction and roughness (#430): the two Table 44 attributes the Materials
+  // slot leaves at the catalogue nominal. Dimensionless, so plain
+  // QDoubleSpinBoxes rather than UnitSpinBox — there is no length to convert.
+  // t_grEqZero bounds them below at 0; the minimum sits ONE display quantum
+  // under that and renders as "—", which is how an absent attribute reads and
+  // how @roughness is cleared. The upper bounds are editor conventions: the
+  // spec caps neither, but a spin has to stop somewhere and no real surface
+  // approaches them.
+  const auto configure_material_spin = [](QDoubleSpinBox* spin, const char* name, double maximum) {
+    spin->setObjectName(QString::fromLatin1(name));
+    spin->setDecimals(2);
+    spin->setSingleStep(0.05);
+    spin->setRange(-0.01, maximum);
+    spin->setSpecialValueText(tr("—"));
+  };
+  configure_material_spin(lane_friction_spin_, "lane_friction_spin", 10.0);
+  configure_material_spin(lane_roughness_spin_, "lane_roughness_spin", 10.0);
+  lane_friction_spin_->setToolTip(
+      tr("Friction coefficient of this lane's surface (OpenDRIVE <material> @friction)"));
+  lane_roughness_spin_->setToolTip(tr(
+      "Surface roughness, for sound and motion systems (<material> @roughness) — clear for none"));
+  lane_form->addRow(tr("Friction"), lane_friction_spin_);
+  lane_form->addRow(tr("Roughness"), lane_roughness_spin_);
+  for (QDoubleSpinBox* spin : {lane_friction_spin_, lane_roughness_spin_}) {
+    connect(
+        spin, &QDoubleSpinBox::editingFinished, this, [this] { push_lane_material_properties(); });
+  }
   auto* buttons = new QHBoxLayout;
   buttons->addWidget(add_left_);
   buttons->addWidget(add_right_);
@@ -1599,6 +1628,14 @@ void PropertiesPanel::refresh() {
   add_row(tr("Length"), units::format_length(road->length, 3));
   add_row(tr("Geometry records"), QString::number(road->plan_view.records().size()));
   add_row(tr("Lane sections"), QString::number(road->sections.size()));
+  // Topology read-out (#431). <link> is authored by Link Ends, junction creation
+  // and the node tools, but was reported nowhere — which left a mis-linked end
+  // invisible until the mesh looked wrong or a validator fired. Read-only: these
+  // rows echo the network, they never push.
+  add_row(tr("Start link"), link_description(road->predecessor))
+      ->setObjectName(QStringLiteral("road_start_link_value"));
+  add_row(tr("End link"), link_description(road->successor))
+      ->setObjectName(QStringLiteral("road_end_link_value"));
 
   const Lane* lane = document_.network().lane(primary.lane);
   if (lane != nullptr) {
@@ -2054,11 +2091,73 @@ void PropertiesPanel::push_lane_material(const QString& key) {
   // A slot/drop authors ONE constant record covering the lane (the first-record
   // simplification set_road_mark uses); a multi-record profile comes from the
   // kernel API. surface = "rm:<name>" marks it as RoadMaker-authored.
-  const LaneMaterial record{.s_offset = 0.0, .friction = friction, .surface = "rm:" + *material};
+  // @roughness is NOT a catalogue property — the pane authors it (#430) — so a
+  // re-pave carries the lane's own value across instead of silently dropping it.
+  const LaneMaterial record{
+      .s_offset = 0.0,
+      .friction = friction,
+      .roughness = lane->materials.empty() ? std::nullopt : lane->materials.front().roughness,
+      .surface = "rm:" + *material};
   if (lane->materials.size() == 1 && lane->materials.front() == record) {
     return; // no change — a drop that changes nothing pushes no command
   }
   push(edit::set_lane_material(document_.network(), selection_.primary().lane, {record}));
+}
+
+std::optional<double> PropertiesPanel::spin_optional(const QDoubleSpinBox& spin) {
+  // The special value is the only negative the range admits, so "below zero"
+  // and "showing —" are the same test.
+  return spin.value() < 0.0 ? std::nullopt : std::optional(spin.value());
+}
+
+void PropertiesPanel::seed_optional(QDoubleSpinBox& spin, std::optional<double> value) {
+  const QSignalBlocker blocker(&spin);
+  spin.setValue(value.value_or(spin.minimum()));
+}
+
+bool PropertiesPanel::matches_display(const QDoubleSpinBox& spin, std::optional<double> stored) {
+  const std::optional<double> shown = spin_optional(spin);
+  if (shown.has_value() != stored.has_value()) {
+    return false; // set → unset (or back) is always a real change
+  }
+  return !shown.has_value() || !differs_from_display(spin, *stored);
+}
+
+void PropertiesPanel::push_lane_material_properties() {
+  const Lane* lane = primary_lane();
+  if (lane == nullptr) {
+    return;
+  }
+  if (lane->odr_id == 0) {
+    return; // centre lane — the spins are disabled, but a stray focus-out must not push
+  }
+  const LaneMaterial first = lane->materials.empty() ? LaneMaterial{} : lane->materials.front();
+  if (matches_display(*lane_friction_spin_, first.friction) &&
+      matches_display(*lane_roughness_spin_, first.roughness)) {
+    return; // the re-entrancy guard: a refresh()-driven setValue pushes nothing
+  }
+  // Table 44 marks @friction REQUIRED. The "—" state exists so a foreign record
+  // that omits it reads back honestly — not as something this editor authors, so
+  // clearing a friction the file actually carries is refused rather than written.
+  if (first.friction.has_value() && !spin_optional(*lane_friction_spin_).has_value()) {
+    seed_optional(*lane_friction_spin_, first.friction);
+    emit status_message(tr("Friction is required on a <material> record — §11.8.2 Table 44"));
+    return;
+  }
+  // set_lane_material replaces the record vector wholesale, so the command has to
+  // carry every record the lane already had; only the first one is edited here
+  // (the record the spins are seeded from). A lane with no record yet
+  // materialises one at sOffset 0 — no other path authors <material>, so
+  // refusing would leave friction unauthorable on every road this editor
+  // creates. Its @surface stays unset (optional per Table 44) and the mesher
+  // falls back to the lane-type palette, so the new record changes no pixels.
+  std::vector<LaneMaterial> records = lane->materials;
+  if (records.empty()) {
+    records.push_back(LaneMaterial{});
+  }
+  records.front().friction = spin_optional(*lane_friction_spin_);
+  records.front().roughness = spin_optional(*lane_roughness_spin_);
+  push(edit::set_lane_material(document_.network(), selection_.primary().lane, std::move(records)));
 }
 
 void PropertiesPanel::push_corner_sidewalk_material(const QString& key) {
@@ -2896,6 +2995,10 @@ void PropertiesPanel::refresh_lane_section() {
   // The centre lane carries no material by rule (center_lane_no_material), so
   // the Materials slot only accepts a drop on a real lane.
   lane_material_slot_->setEnabled(lane_selected && !center);
+  // The friction/roughness spins edit the same <material> record the slot writes,
+  // so they follow the same rule to the letter (#430).
+  lane_friction_spin_->setEnabled(lane_selected && !center);
+  lane_roughness_spin_->setEnabled(lane_selected && !center);
   // The center lane is width-less by rule …road.lane.center_lane_no_width, and
   // a lane whose width varies along s is edited on the 2D Width curve — the
   // constant-width spin/scrub here would only be refused by set_lane_width.
@@ -2952,6 +3055,12 @@ void PropertiesPanel::refresh_lane_section() {
     const QSignalBlocker blocker(width_spin_);
     width_spin_->setValue(lane->widths.front().a);
   }
+  // Seeded from the FIRST <material> record — the one push_lane_material_properties
+  // edits. A lane with none (or the centre lane) reads "—" on both, which is the
+  // honest report: nothing is invented here.
+  const LaneMaterial material = lane->materials.empty() ? LaneMaterial{} : lane->materials.front();
+  seed_optional(*lane_friction_spin_, material.friction);
+  seed_optional(*lane_roughness_spin_, material.roughness);
   const RoadMark mark = lane->road_marks.empty() ? RoadMark{} : lane->road_marks.front();
   rebuild_choice_combo(*mark_combo_, kMarkChoices, mark.type, mark_type_name);
   rebuild_choice_combo(*mark_color_combo_, kMarkColorChoices, mark.color, mark_color_name);
@@ -3032,6 +3141,35 @@ std::optional<std::array<double, 3>> PropertiesPanel::signal_world_position(Sign
     }
   }
   return std::nullopt;
+}
+
+QString PropertiesPanel::link_description(const std::optional<RoadLink>& link) const {
+  if (!link.has_value()) {
+    return tr("Not connected");
+  }
+  if (const RoadId* target = std::get_if<RoadId>(&link->target)) {
+    const Road* neighbour = document_.network().road(*target);
+    if (neighbour == nullptr) {
+      return tr("Dangling link"); // a stale id is exactly what this row exists to expose
+    }
+    // …road.linkage.road_link_attribute_usage: a road link carries @contactPoint,
+    // so the end matters and is named. The OpenDRIVE id leads because it is the
+    // identity — names are NOT unique (split_road copies the original's name onto
+    // the tail, so a link row quoting the name alone cannot say which half it
+    // means). The name follows when set, since that is what the scene tree shows.
+    const QString name = neighbour->name.empty()
+                             ? tr("Road %1").arg(QString::fromStdString(neighbour->odr_id))
+                             : tr("Road %1 “%2”")
+                                   .arg(QString::fromStdString(neighbour->odr_id),
+                                        QString::fromStdString(neighbour->name));
+    return link->contact == ContactPoint::Start ? tr("%1 (start)").arg(name)
+                                                : tr("%1 (end)").arg(name);
+  }
+  // …road.linkage.junc_link_attribute_usage: a junction link uses only
+  // @elementType and @elementId — there is no contact point to report.
+  const Junction* junction = document_.network().junction(std::get<JunctionId>(link->target));
+  return junction != nullptr ? tr("Junction %1").arg(QString::fromStdString(junction->odr_id))
+                             : tr("Dangling link");
 }
 
 QLabel* PropertiesPanel::add_row(const QString& label, const QString& value) {

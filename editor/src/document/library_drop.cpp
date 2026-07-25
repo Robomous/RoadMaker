@@ -393,11 +393,17 @@ LibraryDropAction resolve_library_drop(const LibraryItem& item,
     // One record replaces the whole profile — the same first-record
     // simplification set_road_mark uses (documented on the op): a viewport drop
     // authors a single constant material, not a multi-record profile. Author
-    // "rm:<name>" + the catalog's nominal friction.
-    const LaneMaterial record{
-        .s_offset = 0.0, .friction = def->friction, .surface = "rm:" + item.material.toStdString()};
-    if (const Lane* target = network.lane(lane);
-        target != nullptr && target->materials.size() == 1 && target->materials.front() == record) {
+    // "rm:<name>" + the catalog's nominal friction. @roughness has no catalogue
+    // value and is authored in the Attributes pane (#430), so a re-pave carries
+    // the lane's own across rather than silently dropping it.
+    const Lane* target = network.lane(lane);
+    const LaneMaterial record{.s_offset = 0.0,
+                              .friction = def->friction,
+                              .roughness = target == nullptr || target->materials.empty()
+                                               ? std::nullopt
+                                               : target->materials.front().roughness,
+                              .surface = "rm:" + item.material.toStdString()};
+    if (target != nullptr && target->materials.size() == 1 && target->materials.front() == record) {
       action.toast = QStringLiteral("That lane already has this material");
       return action;
     }

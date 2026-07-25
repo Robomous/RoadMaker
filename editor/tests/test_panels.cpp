@@ -28,6 +28,7 @@
 #include "roadmaker/road/authoring.hpp"
 #include "roadmaker/road/junction.hpp"
 #include "roadmaker/road/surface_derivation.hpp"
+#include "roadmaker/xodr/reader.hpp"
 #include "roadmaker/xodr/writer.hpp"
 
 #include <gtest/gtest.h>
@@ -2744,6 +2745,330 @@ TEST(PropertiesPanel, RebuildManeuversIsDisabledUntilSomethingGeometricIsAuthore
   EXPECT_EQ(scene.document.undo_stack()->index(), base + 1);
   EXPECT_TRUE(scene.document.network().junction(scene.junction)->maneuvers.empty())
       << "the rebuild cleared the lock it was offered for";
+}
+
+// --- road <link> read-out (#431) ---------------------------------------------
+
+namespace {
+
+/// The road carrying `odr_id` in the loaded sample.
+RoadId road_by_odr_id(const Document& document, std::string_view odr_id) {
+  RoadId found;
+  document.network().for_each_road([&](RoadId id, const Road& road) {
+    if (road.odr_id == odr_id) {
+      found = id;
+    }
+  });
+  return found;
+}
+
+QString link_row(const PropertiesPanel& panel, const char* name) {
+  auto* label = panel.findChild<QLabel*>(QString::fromLatin1(name));
+  return label != nullptr ? label->text() : QString();
+}
+
+} // namespace
+
+// The three cases the rows have to tell apart: an end with no <link> at all, an
+// end linked road-to-road (which names the neighbour AND the contact point), and
+// an end entering a junction (which has no contact point to name).
+TEST(PropertiesPanel, RoadLinkRowsReportFreeRoadToRoadAndJunctionEnds) {
+  Harness h;
+  ASSERT_TRUE(h.document.load(kSample).has_value());
+  PropertiesPanel panel(h.document, h.selection);
+
+  // Road 1 "West Approach": no <predecessor>, successor = junction 100.
+  const RoadId approach = road_by_odr_id(h.document, "1");
+  ASSERT_TRUE(approach.is_valid());
+  h.selection.select({.road = approach});
+  EXPECT_EQ(link_row(panel, "road_start_link_value"), QStringLiteral("Not connected"));
+  EXPECT_EQ(link_row(panel, "road_end_link_value"), QStringLiteral("Junction 100"));
+
+  // Road 10 "Through Connection": predecessor road 1 @ end, successor road 2 @
+  // start. Both neighbours are named, so the rows quote the name, not the id.
+  const RoadId through = road_by_odr_id(h.document, "10");
+  ASSERT_TRUE(through.is_valid());
+  h.selection.select({.road = through});
+  EXPECT_EQ(link_row(panel, "road_start_link_value"),
+            QString::fromUtf8("Road 1 “West Approach” (end)"));
+  EXPECT_EQ(link_row(panel, "road_end_link_value"), QString::fromUtf8("Road 2 “East Leg” (start)"));
+}
+
+// The rows are read-only: a topology edit and its undo re-seed them from the
+// network without the pane echoing a command back.
+TEST(PropertiesPanel, RoadLinkRowsFollowTopologyEditsWithoutEchoingACommand) {
+  Harness h;
+  ASSERT_TRUE(h.document.load(kSample).has_value());
+  PropertiesPanel panel(h.document, h.selection);
+
+  const RoadId approach = road_by_odr_id(h.document, "1");
+  ASSERT_TRUE(approach.is_valid());
+  h.selection.select({.road = approach});
+  ASSERT_EQ(link_row(panel, "road_end_link_value"), QStringLiteral("Junction 100"));
+
+  // A split re-points the original's successor at the new tail, which inherits
+  // the junction link — exactly the kind of topology change that used to leave
+  // the pane silent.
+  const std::vector<RoadId> before = all_roads(h.document);
+  const int base = h.document.undo_stack()->count();
+  ASSERT_TRUE(
+      h.document.push_command(edit::split_road(h.document.network(), approach, 25.0)).has_value());
+  EXPECT_EQ(h.document.undo_stack()->count(), base + 1) << "the rows pushed nothing of their own";
+
+  const std::vector<RoadId> after = all_roads(h.document);
+  RoadId tail;
+  for (const RoadId id : after) {
+    if (std::ranges::find(before, id) == before.end()) {
+      tail = id;
+    }
+  }
+  ASSERT_TRUE(tail.is_valid());
+  // The split copies the original's NAME onto the tail, so two roads now answer
+  // to "West Approach" — the row has to lead with the id or it cannot say which
+  // half road 1 now ends at.
+  const Road* tail_road = h.document.network().road(tail);
+  EXPECT_EQ(tail_road->name, "West Approach");
+  EXPECT_EQ(link_row(panel, "road_end_link_value"),
+            QString::fromUtf8("Road %1 “West Approach” (start)")
+                .arg(QString::fromStdString(tail_road->odr_id)));
+
+  h.document.undo_stack()->undo();
+  EXPECT_EQ(h.document.undo_stack()->count(), base + 1);
+  EXPECT_EQ(link_row(panel, "road_end_link_value"), QStringLiteral("Junction 100"));
+}
+
+// --- lane <material> friction / roughness (#430) ------------------------------
+
+namespace {
+
+/// The lane carrying `odr_id` in the first section of `road`.
+LaneId lane_by_odr_id(const Document& document, RoadId road, int odr_id) {
+  const Road* ptr = document.network().road(road);
+  const LaneSection* section = document.network().lane_section(ptr->sections.front());
+  for (const LaneId id : section->lanes) {
+    if (document.network().lane(id)->odr_id == odr_id) {
+      return id;
+    }
+  }
+  return LaneId{};
+}
+
+/// Types `value` into `spin` and focuses out, the way a user commits.
+void type_into(QDoubleSpinBox* spin, double value) {
+  spin->setValue(value);
+  emit spin->editingFinished();
+}
+
+struct MaterialScene {
+  Harness h;
+  RoadId road;
+  LaneId lane;
+  LaneId centre;
+
+  MaterialScene() {
+    if (!h.document.load(kSample).has_value()) {
+      throw std::runtime_error("sample failed to load");
+    }
+    road = road_by_odr_id(h.document, "1");
+    lane = lane_by_odr_id(h.document, road, -1);
+    centre = lane_by_odr_id(h.document, road, 0);
+  }
+};
+
+} // namespace
+
+// The sample's lanes carry no <material>, so the first friction edit has to
+// materialise the record — otherwise friction would be unauthorable on every
+// road this editor creates (nothing but the Materials slot writes one).
+TEST(PropertiesPanel, FrictionOnALaneWithNoMaterialMaterialisesOneRecord) {
+  MaterialScene scene;
+  PropertiesPanel panel(scene.h.document, scene.h.selection);
+  auto* friction = panel.findChild<QDoubleSpinBox*>(QStringLiteral("lane_friction_spin"));
+  ASSERT_NE(friction, nullptr);
+
+  scene.h.selection.select({.road = scene.road, .lane = scene.lane});
+  ASSERT_TRUE(scene.h.document.network().lane(scene.lane)->materials.empty());
+  EXPECT_LT(friction->value(), 0.0) << "an absent attribute reads as the — special value";
+
+  const std::string xodr_before = xodr(scene.h.document);
+  const int base = scene.h.document.undo_stack()->count();
+  type_into(friction, 0.4);
+
+  EXPECT_EQ(scene.h.document.undo_stack()->count(), base + 1);
+  const std::vector<LaneMaterial>& records = scene.h.document.network().lane(scene.lane)->materials;
+  ASSERT_EQ(records.size(), 1U);
+  EXPECT_DOUBLE_EQ(records.front().s_offset, 0.0);
+  ASSERT_TRUE(records.front().friction.has_value());
+  EXPECT_DOUBLE_EQ(*records.front().friction, 0.4);
+  // @surface is optional (Table 44) and the mesher falls back to the lane-type
+  // palette, so the materialised record must not invent a surface code either.
+  EXPECT_FALSE(records.front().surface.has_value());
+  EXPECT_FALSE(records.front().roughness.has_value());
+
+  scene.h.document.undo_stack()->undo();
+  EXPECT_EQ(xodr(scene.h.document), xodr_before);
+}
+
+// set_lane_material replaces the record vector wholesale, so a friction edit on a
+// paved lane must carry the surface code along rather than appending a record.
+TEST(PropertiesPanel, FrictionEditsTheExistingRecordAndKeepsItsSurface) {
+  MaterialScene scene;
+  PropertiesPanel panel(scene.h.document, scene.h.selection);
+  auto* friction = panel.findChild<QDoubleSpinBox*>(QStringLiteral("lane_friction_spin"));
+  auto* roughness = panel.findChild<QDoubleSpinBox*>(QStringLiteral("lane_roughness_spin"));
+  ASSERT_NE(friction, nullptr);
+  ASSERT_NE(roughness, nullptr);
+
+  const LaneMaterial paved{.s_offset = 0.0, .friction = 0.9, .surface = "rm:asphalt"};
+  ASSERT_TRUE(
+      scene.h.document
+          .push_command(edit::set_lane_material(scene.h.document.network(), scene.lane, {paved}))
+          .has_value());
+  scene.h.selection.select({.road = scene.road, .lane = scene.lane});
+  EXPECT_DOUBLE_EQ(friction->value(), 0.9) << "seeded from the first record";
+  EXPECT_LT(roughness->value(), 0.0) << "absent @roughness stays absent";
+
+  const int base = scene.h.document.undo_stack()->count();
+  type_into(friction, 0.35);
+
+  EXPECT_EQ(scene.h.document.undo_stack()->count(), base + 1);
+  const std::vector<LaneMaterial>& records = scene.h.document.network().lane(scene.lane)->materials;
+  ASSERT_EQ(records.size(), 1U) << "edited in place, not appended";
+  EXPECT_DOUBLE_EQ(*records.front().friction, 0.35);
+  ASSERT_TRUE(records.front().surface.has_value());
+  EXPECT_EQ(*records.front().surface, "rm:asphalt");
+
+  // The value has to survive the writer and the reader, not just the arena.
+  const auto reparsed = roadmaker::parse_xodr(xodr(scene.h.document));
+  ASSERT_TRUE(reparsed.has_value());
+  const RoadNetwork& reloaded = reparsed->network;
+  RoadId reloaded_road;
+  reloaded.for_each_road([&](RoadId id, const Road& road) {
+    if (road.odr_id == "1") {
+      reloaded_road = id;
+    }
+  });
+  ASSERT_TRUE(reloaded_road.is_valid());
+  const LaneSection* reloaded_section =
+      reloaded.lane_section(reloaded.road(reloaded_road)->sections.front());
+  ASSERT_NE(reloaded_section, nullptr);
+  bool checked = false;
+  for (const LaneId id : reloaded_section->lanes) {
+    const Lane& reloaded_lane = *reloaded.lane(id);
+    if (reloaded_lane.odr_id != -1) {
+      continue;
+    }
+    ASSERT_EQ(reloaded_lane.materials.size(), 1U);
+    ASSERT_TRUE(reloaded_lane.materials.front().friction.has_value());
+    EXPECT_DOUBLE_EQ(*reloaded_lane.materials.front().friction, 0.35);
+    EXPECT_EQ(reloaded_lane.materials.front().surface, std::optional<std::string>("rm:asphalt"));
+    checked = true;
+  }
+  EXPECT_TRUE(checked);
+}
+
+// @roughness is optional: clearing it must write nullopt, because an absent
+// attribute round-trips as absent while 0.0 is a physical claim about the road.
+TEST(PropertiesPanel, ClearingRoughnessWritesNulloptNotZero) {
+  MaterialScene scene;
+  PropertiesPanel panel(scene.h.document, scene.h.selection);
+  auto* roughness = panel.findChild<QDoubleSpinBox*>(QStringLiteral("lane_roughness_spin"));
+  ASSERT_NE(roughness, nullptr);
+
+  const LaneMaterial rough{
+      .s_offset = 0.0, .friction = 0.9, .roughness = 0.2, .surface = "rm:gravel"};
+  ASSERT_TRUE(
+      scene.h.document
+          .push_command(edit::set_lane_material(scene.h.document.network(), scene.lane, {rough}))
+          .has_value());
+  scene.h.selection.select({.road = scene.road, .lane = scene.lane});
+  EXPECT_DOUBLE_EQ(roughness->value(), 0.2);
+
+  type_into(roughness, roughness->minimum()); // the "—" special value = cleared
+
+  const LaneMaterial& record = scene.h.document.network().lane(scene.lane)->materials.front();
+  EXPECT_FALSE(record.roughness.has_value()) << "cleared to absent, not to 0.0";
+  EXPECT_TRUE(record.friction.has_value()) << "the sibling attribute rode along untouched";
+  EXPECT_EQ(xodr(scene.h.document).find("roughness"), std::string::npos)
+      << "an absent optional attribute is not written";
+}
+
+// Re-paving a lane rebuilds its record from the material catalogue, which has no
+// roughness of its own — so an authored @roughness has to ride across, or making
+// it editable would just make it easy to lose.
+TEST(PropertiesPanel, RepavingALaneKeepsItsAuthoredRoughness) {
+  MaterialScene scene;
+  PropertiesPanel panel(scene.h.document, scene.h.selection);
+  auto* roughness = panel.findChild<QDoubleSpinBox*>(QStringLiteral("lane_roughness_spin"));
+  auto* slot = panel.findChild<SlotWidget*>(QStringLiteral("lane_material_slot"));
+  ASSERT_NE(roughness, nullptr);
+  ASSERT_NE(slot, nullptr);
+
+  scene.h.selection.select({.road = scene.road, .lane = scene.lane});
+  type_into(roughness, 0.3);
+  ASSERT_DOUBLE_EQ(*scene.h.document.network().lane(scene.lane)->materials.front().roughness, 0.3);
+
+  emit slot->item_dropped(QStringLiteral("asphalt"));
+
+  const LaneMaterial& record = scene.h.document.network().lane(scene.lane)->materials.front();
+  ASSERT_TRUE(record.surface.has_value());
+  EXPECT_EQ(*record.surface, "rm:asphalt") << "the drop still repaved the lane";
+  ASSERT_TRUE(record.roughness.has_value()) << "the authored roughness survived the re-pave";
+  EXPECT_DOUBLE_EQ(*record.roughness, 0.3);
+}
+
+// @friction is REQUIRED by Table 44. The "—" state is an honest read-out for a
+// foreign record that omits it, never something this editor authors, so clearing
+// a friction the file carries is refused and the spin re-seeds.
+TEST(PropertiesPanel, ClearingFrictionIsRefusedAndReseedsTheSpin) {
+  MaterialScene scene;
+  PropertiesPanel panel(scene.h.document, scene.h.selection);
+  auto* friction = panel.findChild<QDoubleSpinBox*>(QStringLiteral("lane_friction_spin"));
+  ASSERT_NE(friction, nullptr);
+  QSignalSpy status(&panel, &PropertiesPanel::status_message);
+
+  const LaneMaterial paved{.s_offset = 0.0, .friction = 0.9, .surface = "rm:asphalt"};
+  ASSERT_TRUE(
+      scene.h.document
+          .push_command(edit::set_lane_material(scene.h.document.network(), scene.lane, {paved}))
+          .has_value());
+  scene.h.selection.select({.road = scene.road, .lane = scene.lane});
+  const int base = scene.h.document.undo_stack()->count();
+
+  type_into(friction, friction->minimum());
+
+  EXPECT_EQ(scene.h.document.undo_stack()->count(), base) << "nothing was pushed";
+  EXPECT_EQ(status.count(), 1);
+  EXPECT_DOUBLE_EQ(friction->value(), 0.9) << "the spin re-seeded from the record";
+  EXPECT_TRUE(scene.h.document.network().lane(scene.lane)->materials.front().friction.has_value());
+}
+
+// The centre lane carries no material by rule, and a refresh()-driven re-seed
+// must never commit — the pane's predicate and the kernel's cannot disagree.
+TEST(PropertiesPanel, MaterialSpinsAreDisabledOnTheCentreLaneAndReseedsPushNothing) {
+  MaterialScene scene;
+  PropertiesPanel panel(scene.h.document, scene.h.selection);
+  auto* friction = panel.findChild<QDoubleSpinBox*>(QStringLiteral("lane_friction_spin"));
+  auto* roughness = panel.findChild<QDoubleSpinBox*>(QStringLiteral("lane_roughness_spin"));
+  ASSERT_NE(friction, nullptr);
+  ASSERT_NE(roughness, nullptr);
+
+  scene.h.selection.select({.road = scene.road, .lane = scene.centre});
+  EXPECT_FALSE(friction->isEnabled()) << "…road.lane.material.center_lane_no_material";
+  EXPECT_FALSE(roughness->isEnabled());
+  const int base = scene.h.document.undo_stack()->count();
+  emit friction->editingFinished(); // a stray focus-out on the centre lane
+  EXPECT_EQ(scene.h.document.undo_stack()->count(), base);
+
+  // On a real lane, a focus-out that changes nothing is equally inert.
+  scene.h.selection.select({.road = scene.road, .lane = scene.lane});
+  EXPECT_TRUE(friction->isEnabled());
+  type_into(friction, 0.55);
+  const int after_edit = scene.h.document.undo_stack()->count();
+  emit friction->editingFinished();
+  emit roughness->editingFinished();
+  EXPECT_EQ(scene.h.document.undo_stack()->count(), after_edit)
+      << "re-seeded values commit nothing";
 }
 
 } // namespace roadmaker::editor

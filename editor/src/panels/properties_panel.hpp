@@ -314,6 +314,14 @@ private:
   /// Lane Materials slot (p6-s3): a write-only Library slot that paves the
   /// selected lane's surface. Disabled for the centre lane (no material by rule).
   SlotWidget* lane_material_slot_;
+  /// The rest of the <material> record the Materials slot only half-authors
+  /// (§11.8.2 Table 44, #430): @friction — what a vehicle-dynamics consumer
+  /// reads off the lane — and @roughness. Both display "—" (specialValueText one
+  /// step below zero) when the attribute is absent, so a foreign file that omits
+  /// an optional attribute reads back honestly and refresh() never invents a
+  /// value. Disabled for the centre lane, exactly like the slot above.
+  QDoubleSpinBox* lane_friction_spin_;
+  QDoubleSpinBox* lane_roughness_spin_;
   QPushButton* add_left_;
   QPushButton* add_right_;
   QPushButton* remove_left_;
@@ -504,6 +512,35 @@ private:
   /// as a single constant <material> record (§11.8.2). Refuses the centre lane,
   /// toasts an unknown key, and pushes nothing when the material is unchanged.
   void push_lane_material(const QString& key);
+
+  /// Commits the friction/roughness spins as ONE set_lane_material carrying the
+  /// lane's FULL record vector — the command replaces it wholesale, so a partial
+  /// record would silently drop the surface code (#430). Edits the first record
+  /// (the one the spins are seeded from), or materialises a `sOffset=0` record on
+  /// a lane that carries none; refuses the centre lane
+  /// (…road.lane.material.center_lane_no_material) and a cleared @friction
+  /// (required by Table 44). Clearing @roughness writes nullopt, never 0.0 — an
+  /// absent optional attribute must round-trip as absent.
+  void push_lane_material_properties();
+
+  /// A material spin's value as the optional it stands for: nullopt while it
+  /// shows its "—" special value, otherwise the number.
+  [[nodiscard]] static std::optional<double> spin_optional(const QDoubleSpinBox& spin);
+
+  /// Seeds a material spin from an optional attribute: "—" when absent.
+  static void seed_optional(QDoubleSpinBox& spin, std::optional<double> value);
+
+  /// Whether a material spin still shows exactly what `stored` seeded it with —
+  /// the no-op guard, extended over the set/unset transition that
+  /// differs_from_display() alone cannot see.
+  [[nodiscard]] static bool matches_display(const QDoubleSpinBox& spin,
+                                            std::optional<double> stored);
+
+  /// One end's <link> (§8) as display text: the neighbour road's name or
+  /// OpenDRIVE id plus the contact point, the junction it enters, or
+  /// "Not connected". Purely presentational (#431) — the pane is the only place
+  /// a mis-linked end is visible before the mesh looks wrong.
+  [[nodiscard]] QString link_description(const std::optional<RoadLink>& link) const;
 
   /// Sets the primary selected lane's road mark from the dropped Markings item
   /// (§11.9). Toasts an unknown key; pushes nothing when the mark is unchanged.
