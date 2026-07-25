@@ -77,7 +77,7 @@ ViewportWidget::ViewportWidget(Document& document,
                                ToolManager& tools,
                                QWidget* parent)
     : QOpenGLWidget(parent), document_(document), selection_(selection), tools_(tools),
-      renderer_(std::make_unique<GLRenderer>()) {
+      renderer_(std::make_unique<GLRenderer>()), gizmo_drag_(document) {
   setMouseTracking(true); // hover s/t without a pressed button
   setFocusPolicy(Qt::StrongFocus);
   setMinimumSize(320, 240);
@@ -1138,41 +1138,18 @@ void ViewportWidget::draw_signal_phase(QPainter& painter) const {
 // --- transform gizmo (A3, #177) --------------------------------------------
 
 namespace {
-// 15°, from the realism-defaults registry's auto-orientation table (#416) —
-// the spec doc names it, so the literal does not live here.
-constexpr double kGizmoYawDetent = defaults::kPropRotationSnap;
 const QColor kAxisColorX{0xE0, 0x5A, 0x47}; // red
 const QColor kAxisColorY{0x4C, 0xB8, 0x5A}; // green
 const QColor kAxisColorZ{0x4A, 0x90, 0xE0}; // blue
 } // namespace
 
-std::optional<ViewportWidget::GizmoTarget> ViewportWidget::gizmo_target() const {
-  // The gizmo belongs to the Move tool, on a single road or prop.
+std::optional<GizmoTarget> ViewportWidget::gizmo_target() const {
+  // The gizmo belongs to the Move tool, on a single entity; which entity is
+  // document-layer logic (document/gizmo_drag.hpp), the tool gate is ours.
   if (tools_.active_id() != ToolId::Move) {
     return std::nullopt;
   }
-  const SelectionEntry sel = selection_.primary();
-  if (sel.object.is_valid()) {
-    const Object* object = document_.network().object(sel.object);
-    if (object == nullptr) {
-      return std::nullopt;
-    }
-    const Road* road = document_.network().road(object->road);
-    if (road == nullptr || road->plan_view.empty()) {
-      return std::nullopt;
-    }
-    const auto p = station_to_world(road->plan_view, object->s, object->t);
-    return GizmoTarget{.object = sel.object, .pivot = {p[0], p[1], 0.0}};
-  }
-  if (sel.road.is_valid()) {
-    const Road* road = document_.network().road(sel.road);
-    if (road == nullptr || road->plan_view.empty()) {
-      return std::nullopt;
-    }
-    const PathPoint pose = road->plan_view.evaluate(road->plan_view.length() / 2.0);
-    return GizmoTarget{.road = sel.road, .pivot = {pose.x, pose.y, 0.0}};
-  }
-  return std::nullopt;
+  return roadmaker::editor::gizmo_target(document_.network(), selection_.primary());
 }
 
 void ViewportWidget::draw_gizmo(QPainter& painter) const {
@@ -1180,7 +1157,8 @@ void ViewportWidget::draw_gizmo(QPainter& painter) const {
   if (!target.has_value()) {
     return;
   }
-  const bool is_prop = target->object.is_valid();
+  // Only a road has a Z arm: props and signals have no kernel z-move op yet.
+  const bool has_z_arm = target->road.is_valid();
   const float aspect =
       height() > 0 ? static_cast<float>(width()) / static_cast<float>(height()) : 1.0F;
   const GizmoScreen gizmo = gizmo_screen(camera_.matrices(aspect),
@@ -1192,7 +1170,7 @@ void ViewportWidget::draw_gizmo(QPainter& painter) const {
   }
   const Theme& theme = theme::current();
   const QPointF origin(gizmo.origin[0], gizmo.origin[1]);
-  const GizmoHandle active = gizmo_drag_.has_value() ? gizmo_drag_->handle : gizmo_hover_;
+  const GizmoHandle active = gizmo_drag_.active() ? gizmo_drag_.handle() : gizmo_hover_;
 
   painter.save();
   painter.setRenderHint(QPainter::Antialiasing);
@@ -1205,8 +1183,7 @@ void ViewportWidget::draw_gizmo(QPainter& painter) const {
     painter.drawEllipse(origin, gizmo.ring_radius, gizmo.ring_radius);
   }
 
-  // Axis arrows (X red, Y green, Z blue) — Z only for roads (props have no
-  // kernel z-move op yet).
+  // Axis arrows (X red, Y green, Z blue) — Z only for roads.
   const auto draw_arrow = [&](GizmoHandle handle, std::array<double, 2> tip, QColor color) {
     if (std::hypot(tip[0] - gizmo.origin[0], tip[1] - gizmo.origin[1]) < 1e-6) {
       return; // arm points almost straight at the camera — hide it
@@ -1233,7 +1210,7 @@ void ViewportWidget::draw_gizmo(QPainter& painter) const {
   };
   draw_arrow(GizmoHandle::AxisX, gizmo.x_tip, kAxisColorX);
   draw_arrow(GizmoHandle::AxisY, gizmo.y_tip, kAxisColorY);
-  if (!is_prop) {
+  if (has_z_arm) {
     draw_arrow(GizmoHandle::AxisZ, gizmo.z_tip, kAxisColorZ);
   }
 
@@ -1262,180 +1239,86 @@ bool ViewportWidget::begin_gizmo_drag(const QPointF& pos) {
                                          target->pivot,
                                          static_cast<double>(width()),
                                          static_cast<double>(height()));
-  GizmoHandle handle = gizmo_hit_test(gizmo, {pos.x(), pos.y()});
-  // Props have no z-move: treat a Z-arm grab (they don't draw it) as a miss.
-  if (handle == GizmoHandle::None || (handle == GizmoHandle::AxisZ && target->object.is_valid())) {
-    return false;
-  }
+  const GizmoHandle handle = gizmo_hit_test(gizmo, {pos.x(), pos.y()});
   const auto ground = ground_point_at(pos);
   const std::array<double, 2> press_world =
       ground ? std::array<double, 2>{(*ground)[0], (*ground)[1]}
              : std::array<double, 2>{target->pivot[0], target->pivot[1]};
-  double base_hdg = 0.0;
-  if (target->object.is_valid()) {
-    if (const Object* object = document_.network().object(target->object)) {
-      base_hdg = object->hdg;
-    }
+  if (!gizmo_drag_.begin(*target, handle, press_world)) {
+    return false; // no handle, or an arm this target does not offer
   }
-  gizmo_drag_ = GizmoDrag{.handle = handle,
-                          .road = target->road,
-                          .object = target->object,
-                          .pivot = target->pivot,
-                          .press_world = press_world,
-                          .press_px = pos.toPoint(),
-                          .base_hdg = base_hdg,
-                          .summary = QString()};
+  gizmo_press_px_ = pos.toPoint();
   update();
   return true;
 }
 
+double ViewportWidget::gizmo_axis_z_delta(const QPointF& pos) const {
+  const auto target = gizmo_target();
+  if (!target.has_value()) {
+    return 0.0;
+  }
+  const auto matrices = camera_.matrices(
+      static_cast<float>(height() > 0 ? static_cast<double>(width()) / height() : 1.0));
+  const auto origin = project_to_screen(matrices,
+                                        target->pivot[0],
+                                        target->pivot[1],
+                                        target->pivot[2],
+                                        static_cast<double>(width()),
+                                        static_cast<double>(height()));
+  const auto up = project_to_screen(matrices,
+                                    target->pivot[0],
+                                    target->pivot[1],
+                                    target->pivot[2] + 1.0,
+                                    static_cast<double>(width()),
+                                    static_cast<double>(height()));
+  if (!origin.has_value() || !up.has_value()) {
+    return 0.0;
+  }
+  const double ppm = (*origin)[1] - (*up)[1]; // screen-y up = smaller, so +z -> -y
+  if (std::abs(ppm) < 1e-6) {
+    return 0.0;
+  }
+  return (static_cast<double>(gizmo_press_px_.y()) - pos.y()) / ppm;
+}
+
 void ViewportWidget::update_gizmo_drag(const QPointF& pos, Qt::KeyboardModifiers modifiers) {
-  if (!gizmo_drag_.has_value()) {
+  if (!gizmo_drag_.active()) {
     return;
   }
-  GizmoDrag& drag = *gizmo_drag_;
   const auto ground = ground_point_at(pos);
-  const std::array<double, 2> cursor =
-      ground ? std::array<double, 2>{(*ground)[0], (*ground)[1]} : drag.press_world;
-
-  // Build the preview factory (const RoadNetwork& base -> command) for this
-  // handle + entity; base is the pre-drag network (the session reverts to it
-  // each frame), so all deltas are absolute from the press.
-  std::function<std::unique_ptr<edit::Command>(const RoadNetwork&)> factory;
-  const bool is_prop = drag.object.is_valid();
-
-  if (drag.handle == GizmoHandle::YawRing) {
-    const double detent = (modifiers & Qt::ShiftModifier) != 0 ? 0.0 : kGizmoYawDetent;
-    const double angle =
-        gizmo_yaw_angle({drag.pivot[0], drag.pivot[1]}, drag.press_world, cursor, detent);
-    const double degrees = angle * 180.0 / std::numbers::pi;
-    if (is_prop) {
-      const ObjectId object = drag.object;
-      const double base_hdg = drag.base_hdg;
-      factory = [object, base_hdg, angle](const RoadNetwork& base) {
-        const Object* o = base.object(object);
-        return o != nullptr ? edit::move_object(base, object, o->s, o->t, base_hdg + angle)
-                            : std::unique_ptr<edit::Command>{};
-      };
-      drag.summary = tr("Rotated prop by %1°").arg(degrees, 0, 'f', 0);
-    } else {
-      const RoadId road = drag.road;
-      const std::array<double, 3> pivot = drag.pivot;
-      factory = [road, angle, pivot](const RoadNetwork& base) {
-        return edit::rotate_road(base, road, angle, pivot[0], pivot[1]);
-      };
-      const Road* r = document_.network().road(drag.road);
-      drag.summary = tr("Rotated road %1 by %2°")
-                         .arg(r != nullptr ? QString::fromStdString(r->odr_id) : QString())
-                         .arg(degrees, 0, 'f', 0);
-    }
-  } else if (drag.handle == GizmoHandle::AxisZ) {
-    // Vertical drag → world Z via the pivot's screen pixels-per-metre.
-    const auto o =
-        project_to_screen(camera_.matrices(static_cast<float>(
-                              height() > 0 ? static_cast<double>(width()) / height() : 1.0)),
-                          drag.pivot[0],
-                          drag.pivot[1],
-                          drag.pivot[2],
-                          static_cast<double>(width()),
-                          static_cast<double>(height()));
-    const auto up =
-        project_to_screen(camera_.matrices(static_cast<float>(
-                              height() > 0 ? static_cast<double>(width()) / height() : 1.0)),
-                          drag.pivot[0],
-                          drag.pivot[1],
-                          drag.pivot[2] + 1.0,
-                          static_cast<double>(width()),
-                          static_cast<double>(height()));
-    double dz = 0.0;
-    if (o.has_value() && up.has_value()) {
-      const double ppm = (*o)[1] - (*up)[1]; // screen-y up = smaller, so +z → -y
-      if (std::abs(ppm) > 1e-6) {
-        dz = (static_cast<double>(drag.press_px.y()) - pos.y()) / ppm;
-      }
-    }
-    const RoadId road = drag.road;
-    factory = [road, dz](const RoadNetwork& base) -> std::unique_ptr<edit::Command> {
-      const Road* r = base.road(road);
-      if (r == nullptr) {
-        return {};
-      }
-      std::vector<edit::ElevationPoint> points = edit::elevation_profile_points(*r);
-      if (points.empty()) {
-        points = {edit::ElevationPoint{.s = 0.0, .z = dz},
-                  edit::ElevationPoint{.s = r->plan_view.length(), .z = dz}};
-      } else {
-        for (edit::ElevationPoint& point : points) {
-          point.z += dz;
-        }
-      }
-      return edit::set_elevation_profile(base, road, std::move(points));
-    };
-    drag.summary = tr("Raised road by %1").arg(units::format_length(dz));
-  } else {
-    // Planar translate (AxisX / AxisY / PlaneXY).
-    const auto delta = gizmo_constrain_translation(drag.handle, drag.press_world, cursor);
-    if (is_prop) {
-      const ObjectId object = drag.object;
-      const double nx = drag.pivot[0] + delta[0];
-      const double ny = drag.pivot[1] + delta[1];
-      factory = [object, nx, ny](const RoadNetwork& base) -> std::unique_ptr<edit::Command> {
-        const Object* o = base.object(object);
-        const Road* r = o != nullptr ? base.road(o->road) : nullptr;
-        if (r == nullptr) {
-          return {};
-        }
-        // Same road-relative guard as the prop move-drag: a gizmo dragged clear
-        // of the road yields no command, so update_preview keeps the last good
-        // frame rather than flinging the prop out to a huge t.
-        const std::optional<StationCoord> station =
-            station_within(r->plan_view, nx, ny, kObjectSnapThreshold);
-        if (!station.has_value()) {
-          return {};
-        }
-        return edit::move_object(base, object, station->s, station->t);
-      };
-      drag.summary = tr("Moved prop");
-    } else {
-      const RoadId road = drag.road;
-      const double dx = delta[0];
-      const double dy = delta[1];
-      factory = [road, dx, dy](const RoadNetwork& base) {
-        return edit::translate_roads(base, std::array<RoadId, 1>{road}, dx, dy);
-      };
-      drag.summary = tr("Moved road");
-    }
+  GizmoDragInput input;
+  if (ground.has_value()) {
+    input.cursor_world = {(*ground)[0], (*ground)[1]};
   }
-
-  if (!factory) {
-    return;
-  }
-  const auto result = document_.preview_active()
-                          ? document_.update_preview(factory)
-                          : document_.begin_preview(factory(document_.network()));
+  input.dz = gizmo_drag_.handle() == GizmoHandle::AxisZ ? gizmo_axis_z_delta(pos) : 0.0;
+  // Shift suppresses the rotation detent — the editor's shipped convention
+  // (docs/user-guide/moving-and-transforming.md). Sampled every frame, so it
+  // takes effect mid-drag.
+  input.free_rotation = (modifiers & Qt::ShiftModifier) != 0;
+  const auto result = gizmo_drag_.update(input);
+  // The kernel's refusal (a junction arm's generated pose) is still swallowed
+  // here: surfacing it is #401's, and GizmoDragSession::update now returns it
+  // so there is exactly one place to do that from.
   static_cast<void>(result);
 }
 
 void ViewportWidget::commit_gizmo_drag() {
-  if (!gizmo_drag_.has_value()) {
+  if (!gizmo_drag_.active()) {
     return;
   }
-  const QString summary = gizmo_drag_->summary;
-  const bool had_preview = document_.preview_active();
-  document_.commit_preview();
-  gizmo_drag_.reset();
-  if (had_preview && !summary.isEmpty()) {
+  const QString summary = gizmo_drag_.summary();
+  const bool committed = gizmo_drag_.commit();
+  if (committed && !summary.isEmpty()) {
     show_toast(tr("%1 — Ctrl+Z to undo").arg(summary), ToastSeverity::Success);
   }
   update();
 }
 
 void ViewportWidget::cancel_gizmo_drag() {
-  if (!gizmo_drag_.has_value()) {
+  if (!gizmo_drag_.active()) {
     return;
   }
-  document_.cancel_preview();
-  gizmo_drag_.reset();
+  gizmo_drag_.cancel();
   update();
 }
 
@@ -1501,7 +1384,7 @@ void ViewportWidget::mousePressEvent(QMouseEvent* event) {
   last_mouse_pos_ = event->pos();
   // A live gizmo drag owns the mouse until its release — a chord must not
   // hijack it mid-edit (and, as before P1, cannot pan out from under it).
-  if (!gizmo_drag_.has_value() &&
+  if (!gizmo_drag_.active() &&
       nav_.press(event->button(), event->buttons(), event->modifiers(), event->pos())) {
     sync_pan_anchor(event->position());
     event->accept();
@@ -1524,7 +1407,7 @@ void ViewportWidget::mouseMoveEvent(QMouseEvent* event) {
   last_mouse_pos_ = event->pos();
 
   // Drive an active gizmo drag before anything else.
-  if (gizmo_drag_.has_value()) {
+  if (gizmo_drag_.active()) {
     update_gizmo_drag(event->position(), event->modifiers());
     update();
     event->accept();
@@ -1553,8 +1436,8 @@ void ViewportWidget::mouseMoveEvent(QMouseEvent* event) {
                                           static_cast<double>(width()),
                                           static_cast<double>(height())),
                              {event->position().x(), event->position().y()});
-      if (target->object.is_valid() && hover == GizmoHandle::AxisZ) {
-        hover = GizmoHandle::None; // props don't expose Z
+      if (!target->road.is_valid() && hover == GizmoHandle::AxisZ) {
+        hover = GizmoHandle::None; // only roads expose Z
       }
     }
     if (hover != gizmo_hover_) {
@@ -1584,7 +1467,7 @@ void ViewportWidget::mouseMoveEvent(QMouseEvent* event) {
 }
 
 void ViewportWidget::mouseReleaseEvent(QMouseEvent* event) {
-  if (event->button() == Qt::LeftButton && gizmo_drag_.has_value()) {
+  if (event->button() == Qt::LeftButton && gizmo_drag_.active()) {
     commit_gizmo_drag();
     event->accept();
     return;
@@ -1639,7 +1522,7 @@ void ViewportWidget::mouseDoubleClickEvent(QMouseEvent* event) {
 
 void ViewportWidget::keyPressEvent(QKeyEvent* event) {
   // Esc cancels an in-flight gizmo drag before the tool sees the key.
-  if (event->key() == Qt::Key_Escape && gizmo_drag_.has_value()) {
+  if (event->key() == Qt::Key_Escape && gizmo_drag_.active()) {
     cancel_gizmo_drag();
     event->accept();
     return;

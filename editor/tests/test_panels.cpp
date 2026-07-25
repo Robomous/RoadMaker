@@ -58,6 +58,7 @@
 
 #include "document/diagnostics_model.hpp"
 #include "document/document.hpp"
+#include "document/gizmo_drag.hpp"
 #include "document/library_list_model.hpp"
 #include "document/library_manifest.hpp"
 #include "document/scene_tree_model.hpp"
@@ -279,6 +280,63 @@ TEST(PropertiesPanel, AutoFacingRestoresTheDerivedHeadingAfterAManualEdit) {
   // ...and undo puts the override back, so the action is an ordinary edit.
   h.document.undo_stack()->undo();
   EXPECT_DOUBLE_EQ(h.document.network().signal(signal)->h_offset, 1.25);
+}
+
+// The OTHER half of the override rule, added in p6-s15 (#417): the rotation
+// ring authors a heading exactly as the spin does, and Auto facing is still the
+// only way back. The ring is deliberately NOT one of the three sites allowed to
+// derive a facing (roadmaker/road/signal_facing.hpp), so this closes the loop
+// between the two authoring gestures and the one re-derivation.
+TEST(PropertiesPanel, ARingDragAuthorsAHeadingThatOnlyAutoFacingUndoes) {
+  Harness h;
+  ASSERT_TRUE(h.document.load(kSample).has_value());
+  PropertiesPanel panel(h.document, h.selection);
+  auto* h_spin = panel.findChild<QDoubleSpinBox*>(QStringLiteral("signal_h_spin"));
+  auto* button = panel.findChild<QPushButton*>(QStringLiteral("signal_auto_facing_button"));
+  ASSERT_NE(h_spin, nullptr);
+  ASSERT_NE(button, nullptr);
+
+  const RoadId road = all_roads(h.document).front();
+  Signal sign;
+  sign.odr_id = "p1";
+  sign.type = "R1-1";
+  sign.country = "US";
+  sign.dynamic = false;
+  sign.s = 20.0;
+  sign.t = -3.0;
+  ASSERT_TRUE(
+      h.document.push_command(edit::add_signal(h.document.network(), road, sign)).has_value());
+  SignalId signal;
+  h.document.network().for_each_signal([&](SignalId id, const Signal&) { signal = id; });
+  h.selection.select({.signal = signal});
+
+  const auto target = gizmo_target(h.document.network(), h.selection.primary());
+  ASSERT_TRUE(target.has_value());
+  ASSERT_EQ(target->signal, signal); // the sign, not the road under it
+
+  // A ring drag, committed as one entry.
+  const int base = h.document.undo_stack()->count();
+  GizmoDragSession session(h.document);
+  ASSERT_TRUE(
+      session.begin(*target, GizmoHandle::YawRing, {target->pivot[0] + 10.0, target->pivot[1]}));
+  ASSERT_TRUE(
+      session.update(GizmoDragInput{.cursor_world = {target->pivot[0], target->pivot[1] + 10.0}})
+          .has_value());
+  ASSERT_TRUE(session.commit());
+  EXPECT_EQ(h.document.undo_stack()->count(), base + 1);
+
+  const double dragged = h.document.network().signal(signal)->h_offset;
+  EXPECT_NE(dragged, 0.0);
+  // The pane shows what the ring wrote — to the spin's three decimals, which is
+  // a DISPLAY rounding: the stored heading keeps full precision.
+  EXPECT_NEAR(h_spin->value(), dragged, 5e-4);
+
+  // Auto facing is still the only path back, and it is an ordinary edit.
+  button->click();
+  EXPECT_EQ(h.document.undo_stack()->count(), base + 2);
+  EXPECT_NE(h.document.network().signal(signal)->h_offset, dragged);
+  h.document.undo_stack()->undo();
+  EXPECT_DOUBLE_EQ(h.document.network().signal(signal)->h_offset, dragged);
 }
 
 // --- editable sign-face text (p4-s9, #230) ----------------------------------

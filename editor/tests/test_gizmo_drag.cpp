@@ -1,0 +1,493 @@
+/*
+ * Copyright 2026 Robomous
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+// The transform gizmo's GESTURE (p6-s15, #417), driven headless: which entity a
+// selection puts under the gizmo, what each handle edits, and the one-command
+// contract. Before this sprint the whole drag lived in ViewportWidget's private
+// section, so none of it could be tested at all.
+//
+// No ViewportWidget here — that is the point of the extraction. Runs under
+// QT_QPA_PLATFORM=offscreen like every other editor test.
+
+#include "roadmaker/edit/operations.hpp"
+#include "roadmaker/road/defaults.hpp"
+#include "roadmaker/road/network.hpp"
+#include "roadmaker/road/object.hpp"
+#include "roadmaker/road/signal.hpp"
+#include "roadmaker/xodr/reader.hpp"
+#include "roadmaker/xodr/writer.hpp"
+
+#include <gtest/gtest.h>
+
+#include <QUndoStack>
+#include <cmath>
+#include <numbers>
+#include <stdexcept>
+#include <string>
+
+#include "document/document.hpp"
+#include "document/gizmo_drag.hpp"
+#include "document/selection_model.hpp"
+#include "viewport/picking.hpp" // station_to_world
+
+namespace roadmaker::editor {
+namespace {
+
+using roadmaker::LaneProfile;
+
+constexpr double kSnap = defaults::kPropRotationSnap;
+
+double deg(double radians) {
+  return radians * 180.0 / std::numbers::pi;
+}
+
+std::string xodr(const Document& document) {
+  auto text = roadmaker::write_xodr(document.network());
+  if (!text) {
+    throw std::runtime_error(text.error().message);
+  }
+  return *text;
+}
+
+/// One straight road along +x from the origin, so a road-relative heading and a
+/// world heading coincide and the sums stay readable.
+struct Scene {
+  Document document;
+  SelectionModel selection{document};
+  RoadId road;
+
+  Scene() {
+    if (!document.push_command(roadmaker::edit::create_road(
+            {{0.0, 0.0}, {120.0, 0.0}}, LaneProfile::two_lane_default(), ""))) {
+      throw std::runtime_error("create_road failed");
+    }
+    document.network().for_each_road([&](RoadId id, const Road&) { road = id; });
+  }
+
+  ObjectId add_prop(double s, double t, double hdg) {
+    Object object;
+    object.odr_id = "1";
+    object.type = ObjectType::Tree;
+    object.name = "tree";
+    object.s = s;
+    object.t = t;
+    object.hdg = hdg;
+    if (!document.push_command(edit::add_object(document.network(), road, object))) {
+      throw std::runtime_error("add_object failed");
+    }
+    ObjectId placed;
+    document.network().for_each_object([&](ObjectId id, const Object&) { placed = id; });
+    return placed;
+  }
+
+  SignalId add_sign(double s, double t, ObjectOrientation orientation, double h_offset) {
+    Signal signal;
+    signal.odr_id = "1";
+    signal.type = "R1-1";
+    signal.country = "US";
+    signal.dynamic = false;
+    signal.s = s;
+    signal.t = t;
+    signal.orientation = orientation;
+    signal.h_offset = h_offset;
+    if (!document.push_command(edit::add_signal(document.network(), road, signal))) {
+      throw std::runtime_error("add_signal failed");
+    }
+    SignalId placed;
+    document.network().for_each_signal([&](SignalId id, const Signal&) { placed = id; });
+    return placed;
+  }
+
+  /// The world point a ring drag must reach for the pivot-relative bearing to
+  /// be `bearing`, at a comfortable radius.
+  [[nodiscard]] static std::array<double, 2> on_ring(const std::array<double, 3>& pivot,
+                                                     double bearing) {
+    constexpr double kRadius = 10.0;
+    return {pivot[0] + (kRadius * std::cos(bearing)), pivot[1] + (kRadius * std::sin(bearing))};
+  }
+};
+
+/// Runs a whole ring drag: press at bearing 0, release at `bearing`.
+void ring_drag(GizmoDragSession& session,
+               const GizmoTarget& target,
+               double bearing,
+               bool free_rotation = false) {
+  ASSERT_TRUE(session.begin(target, GizmoHandle::YawRing, Scene::on_ring(target.pivot, 0.0)));
+  ASSERT_TRUE(session
+                  .update(GizmoDragInput{.cursor_world = Scene::on_ring(target.pivot, bearing),
+                                         .free_rotation = free_rotation})
+                  .has_value());
+  session.commit();
+}
+
+} // namespace
+
+// --- which entity the gizmo attaches to -------------------------------------
+
+// The bug p6-s15 fixes. A signal pick carries its owning road (picking.hpp), so
+// a resolver that tested `.road` first put the ROAD under the gizmo: selecting
+// a sign drew the gizmo at the road midpoint and its ring rotated the whole
+// road. Leaf entities must win.
+TEST(GizmoTargetResolution, ASelectedSignGizmosItselfAndNotTheRoadItStandsOn) {
+  Scene scene;
+  const SignalId sign = scene.add_sign(30.0, -5.0, ObjectOrientation::Plus, 0.0);
+
+  const auto target = gizmo_target(scene.document.network(), {.road = scene.road, .signal = sign});
+  ASSERT_TRUE(target.has_value());
+  EXPECT_EQ(target->signal, sign);
+  EXPECT_FALSE(target->road.is_valid());
+
+  // ...and the pivot is the sign's own station, not the road's midpoint.
+  const Road* road = scene.document.network().road(scene.road);
+  ASSERT_NE(road, nullptr);
+  const auto expected = station_to_world(road->plan_view, 30.0, -5.0);
+  EXPECT_NEAR(target->pivot[0], expected[0], 1e-9);
+  EXPECT_NEAR(target->pivot[1], expected[1], 1e-9);
+  EXPECT_NE(target->pivot[0], road->plan_view.length() / 2.0);
+}
+
+TEST(GizmoTargetResolution, ASelectedPropGizmosItselfAndNotItsRoad) {
+  Scene scene;
+  const ObjectId prop = scene.add_prop(40.0, 4.0, 0.0);
+
+  const auto target = gizmo_target(scene.document.network(), {.road = scene.road, .object = prop});
+  ASSERT_TRUE(target.has_value());
+  EXPECT_EQ(target->object, prop);
+  EXPECT_FALSE(target->road.is_valid());
+  EXPECT_FALSE(target->signal.is_valid());
+}
+
+TEST(GizmoTargetResolution, ARoadOnlySelectionStillGizmosTheRoad) {
+  Scene scene;
+  const auto target = gizmo_target(scene.document.network(), {.road = scene.road});
+  ASSERT_TRUE(target.has_value());
+  EXPECT_EQ(target->road, scene.road);
+  EXPECT_FALSE(target->object.is_valid());
+  EXPECT_FALSE(target->signal.is_valid());
+}
+
+TEST(GizmoTargetResolution, EntitiesWithNoTransformAndStaleIdsResolveToNothing) {
+  Scene scene;
+  const RoadNetwork& network = scene.document.network();
+  // Junctions and surfaces pick with an INVALID road, so they fall through.
+  EXPECT_FALSE(gizmo_target(network, {}).has_value());
+  // A stale leaf id must not resolve either — not even to the road beside it.
+  const ObjectId prop = scene.add_prop(40.0, 4.0, 0.0);
+  ASSERT_TRUE(scene.document.push_command(edit::delete_object(network, prop)).has_value());
+  EXPECT_FALSE(gizmo_target(network, {.road = scene.road, .object = prop}).has_value());
+}
+
+// --- rotation: absolute detents ----------------------------------------------
+
+// Absolute, not delta. A prop already at an odd angle lands on an exact
+// multiple of the registry increment relative to the road, so a bench ends up
+// genuinely perpendicular rather than perpendicular-plus-its-old-offset.
+TEST(GizmoDrag, PropRotationSnapsTheResultingHeadingNotTheDelta) {
+  Scene scene;
+  const double odd = 7.0 * std::numbers::pi / 180.0;
+  const ObjectId prop = scene.add_prop(40.0, 4.0, odd);
+  const auto target = gizmo_target(scene.document.network(), {.object = prop});
+  ASSERT_TRUE(target.has_value());
+
+  GizmoDragSession session(scene.document);
+  ring_drag(session, *target, 20.0 * std::numbers::pi / 180.0);
+
+  // 7° + 20° = 27°, which snaps to 30° — NOT 7° + 15° = 22°.
+  const Object* placed = scene.document.network().object(prop);
+  ASSERT_NE(placed, nullptr);
+  EXPECT_NEAR(deg(placed->hdg), 30.0, 1e-9);
+  EXPECT_NEAR(std::remainder(placed->hdg, kSnap), 0.0, 1e-12);
+}
+
+TEST(GizmoDrag, TheSuppressionModifierKeepsTheExactAngle) {
+  Scene scene;
+  const ObjectId prop = scene.add_prop(40.0, 4.0, 0.0);
+  const auto target = gizmo_target(scene.document.network(), {.object = prop});
+  ASSERT_TRUE(target.has_value());
+
+  const double twenty = 20.0 * std::numbers::pi / 180.0;
+  GizmoDragSession session(scene.document);
+  ring_drag(session, *target, twenty, /*free_rotation=*/true);
+
+  const Object* placed = scene.document.network().object(prop);
+  ASSERT_NE(placed, nullptr);
+  EXPECT_NEAR(placed->hdg, twenty, 1e-9);
+}
+
+TEST(GizmoDrag, ARotationIsOneUndoEntryRestoringTheExactPriorHeading) {
+  Scene scene;
+  const double odd = 7.0 * std::numbers::pi / 180.0;
+  const ObjectId prop = scene.add_prop(40.0, 4.0, odd);
+  const std::string before = xodr(scene.document);
+  const int base = scene.document.undo_stack()->count();
+  const auto target = gizmo_target(scene.document.network(), {.object = prop});
+  ASSERT_TRUE(target.has_value());
+
+  // Several frames, as a real drag delivers them.
+  GizmoDragSession session(scene.document);
+  ASSERT_TRUE(session.begin(*target, GizmoHandle::YawRing, Scene::on_ring(target->pivot, 0.0)));
+  for (const double bearing : {0.2, 0.5, 20.0 * std::numbers::pi / 180.0}) {
+    ASSERT_TRUE(
+        session.update(GizmoDragInput{.cursor_world = Scene::on_ring(target->pivot, bearing)})
+            .has_value());
+  }
+  EXPECT_TRUE(session.commit());
+  EXPECT_FALSE(session.active());
+
+  EXPECT_EQ(scene.document.undo_stack()->count(), base + 1);
+  scene.document.undo_stack()->undo();
+  EXPECT_EQ(xodr(scene.document), before);
+}
+
+TEST(GizmoDrag, APressThatNeverMovedPushesNothing) {
+  Scene scene;
+  const ObjectId prop = scene.add_prop(40.0, 4.0, 0.0);
+  const int base = scene.document.undo_stack()->count();
+  const auto target = gizmo_target(scene.document.network(), {.object = prop});
+  ASSERT_TRUE(target.has_value());
+
+  GizmoDragSession session(scene.document);
+  ASSERT_TRUE(session.begin(*target, GizmoHandle::YawRing, Scene::on_ring(target->pivot, 0.0)));
+  EXPECT_FALSE(session.commit()); // no update() ran, so nothing was previewed
+  EXPECT_EQ(scene.document.undo_stack()->count(), base);
+}
+
+TEST(GizmoDrag, AnAccumulatedRotationStaysWithinOneTurn) {
+  Scene scene;
+  // Just under half a turn already authored; another near-half-turn drag would
+  // push an unwrapped heading past pi, out of the range the Attributes pane's
+  // heading spin can show or round-trip.
+  const ObjectId prop = scene.add_prop(40.0, 4.0, 3.0);
+  const auto target = gizmo_target(scene.document.network(), {.object = prop});
+  ASSERT_TRUE(target.has_value());
+
+  GizmoDragSession session(scene.document);
+  ring_drag(session, *target, 3.0, /*free_rotation=*/true);
+
+  const Object* placed = scene.document.network().object(prop);
+  ASSERT_NE(placed, nullptr);
+  EXPECT_LE(placed->hdg, std::numbers::pi);
+  EXPECT_GT(placed->hdg, -std::numbers::pi);
+}
+
+// A span prop's hdg is an offset added to every instance's road-frame heading,
+// so one ring drag turns the whole series by the same relative angle. That is
+// the intended reading of the field, not an accident.
+TEST(GizmoDrag, RotatingASpanPropTurnsTheWholeSeries) {
+  Scene scene;
+  Object object;
+  object.odr_id = "1";
+  object.type = ObjectType::Tree;
+  object.s = 10.0;
+  object.t = 5.0;
+  object.repeats.push_back(ObjectRepeat{.s = 10.0, .length = 60.0, .distance = 10.0});
+  ASSERT_TRUE(
+      scene.document.push_command(edit::add_object(scene.document.network(), scene.road, object))
+          .has_value());
+  ObjectId span;
+  scene.document.network().for_each_object([&](ObjectId id, const Object&) { span = id; });
+
+  const auto target = gizmo_target(scene.document.network(), {.object = span});
+  ASSERT_TRUE(target.has_value());
+  GizmoDragSession session(scene.document);
+  ring_drag(session, *target, 20.0 * std::numbers::pi / 180.0);
+
+  const Object* placed = scene.document.network().object(span);
+  ASSERT_NE(placed, nullptr);
+  EXPECT_NEAR(deg(placed->hdg), 15.0, 1e-9); // 0° + 20° snaps to one increment
+  EXPECT_EQ(placed->repeats.size(), 1U);     // the series itself is untouched
+}
+
+// --- signs --------------------------------------------------------------------
+
+// @orientation declares which traffic the sign APPLIES to (OpenDRIVE §14.1), so
+// a rotation gesture writes the heading offset and nothing else — turning a
+// sign must never silently change what it governs.
+TEST(GizmoDrag, RotatingASignWritesItsHeadingOffsetAndLeavesOrientationAlone) {
+  Scene scene;
+  // An authored 7° cant, as auto-orientation's toe-out would leave it.
+  const double odd = 7.0 * std::numbers::pi / 180.0;
+  const SignalId sign = scene.add_sign(30.0, -5.0, ObjectOrientation::Plus, odd);
+  const auto target = gizmo_target(scene.document.network(), {.signal = sign});
+  ASSERT_TRUE(target.has_value());
+
+  GizmoDragSession session(scene.document);
+  ring_drag(session, *target, 20.0 * std::numbers::pi / 180.0);
+
+  const Signal* placed = scene.document.network().signal(sign);
+  ASSERT_NE(placed, nullptr);
+  // Absolute here too: 7° + 20° = 27° snaps to 30°, off the facing datum.
+  EXPECT_NEAR(deg(placed->h_offset), 30.0, 1e-9);
+  EXPECT_EQ(placed->orientation, ObjectOrientation::Plus);
+  EXPECT_DOUBLE_EQ(placed->s, 30.0);
+  EXPECT_DOUBLE_EQ(placed->t, -5.0);
+}
+
+// The override half of the auto-orientation rule (#416): the ring is not one of
+// the three sites allowed to DERIVE a facing, so a heading dragged here is the
+// user's and survives everything that is not an explicit re-derivation.
+TEST(GizmoDrag, ADraggedSignHeadingSurvivesALaterMoveAndARoundTrip) {
+  Scene scene;
+  const SignalId sign = scene.add_sign(30.0, -5.0, ObjectOrientation::Plus, 0.0);
+  const auto target = gizmo_target(scene.document.network(), {.signal = sign});
+  ASSERT_TRUE(target.has_value());
+  GizmoDragSession session(scene.document);
+  ring_drag(session, *target, 20.0 * std::numbers::pi / 180.0);
+  const double dragged = scene.document.network().signal(sign)->h_offset;
+
+  // Relocating the sign leaves the authored heading exactly as it was.
+  ASSERT_TRUE(
+      scene.document
+          .push_command(edit::move_signal(scene.document.network(), sign, 60.0, -5.0, std::nullopt))
+          .has_value());
+  EXPECT_DOUBLE_EQ(scene.document.network().signal(sign)->h_offset, dragged);
+
+  // ...and so does a write/read round trip.
+  const std::string text = xodr(scene.document);
+  const auto reparsed = roadmaker::parse_xodr(text);
+  ASSERT_TRUE(reparsed.has_value());
+  double round_tripped = 0.0;
+  reparsed->network.for_each_signal([&](SignalId, const Signal& s) { round_tripped = s.h_offset; });
+  EXPECT_NEAR(round_tripped, dragged, 1e-12);
+}
+
+TEST(GizmoDrag, TranslatingASignReprojectsItWithoutTouchingItsHeading) {
+  Scene scene;
+  const SignalId sign = scene.add_sign(30.0, -5.0, ObjectOrientation::Plus, 0.4);
+  const auto target = gizmo_target(scene.document.network(), {.signal = sign});
+  ASSERT_TRUE(target.has_value());
+
+  GizmoDragSession session(scene.document);
+  ASSERT_TRUE(session.begin(*target, GizmoHandle::PlaneXY, {target->pivot[0], target->pivot[1]}));
+  ASSERT_TRUE(
+      session
+          .update(GizmoDragInput{.cursor_world = {target->pivot[0] + 20.0, target->pivot[1] + 2.0}})
+          .has_value());
+  EXPECT_TRUE(session.commit());
+
+  const Signal* placed = scene.document.network().signal(sign);
+  ASSERT_NE(placed, nullptr);
+  EXPECT_NEAR(placed->s, 50.0, 1e-6);
+  EXPECT_NEAR(placed->t, -3.0, 1e-6);
+  EXPECT_DOUBLE_EQ(placed->h_offset, 0.4);
+}
+
+TEST(GizmoDrag, OnlyARoadOffersTheZArm) {
+  Scene scene;
+  const ObjectId prop = scene.add_prop(40.0, 4.0, 0.0);
+  const SignalId sign = scene.add_sign(30.0, -5.0, ObjectOrientation::Plus, 0.0);
+  GizmoDragSession session(scene.document);
+
+  const auto prop_target = gizmo_target(scene.document.network(), {.object = prop});
+  ASSERT_TRUE(prop_target.has_value());
+  EXPECT_FALSE(session.begin(*prop_target, GizmoHandle::AxisZ, {0.0, 0.0}));
+
+  const auto sign_target = gizmo_target(scene.document.network(), {.signal = sign});
+  ASSERT_TRUE(sign_target.has_value());
+  EXPECT_FALSE(session.begin(*sign_target, GizmoHandle::AxisZ, {0.0, 0.0}));
+
+  const auto road_target = gizmo_target(scene.document.network(), {.road = scene.road});
+  ASSERT_TRUE(road_target.has_value());
+  EXPECT_TRUE(session.begin(*road_target, GizmoHandle::AxisZ, {0.0, 0.0}));
+  session.cancel();
+
+  EXPECT_FALSE(session.begin(*road_target, GizmoHandle::None, {0.0, 0.0}));
+}
+
+// --- roads ---------------------------------------------------------------------
+
+// A road is rotated BY a delta about a pivot, so the DELTA is what snaps —
+// a road has no single heading to be absolute about.
+TEST(GizmoDrag, RoadRotationSnapsTheDelta) {
+  Scene scene;
+  const auto target = gizmo_target(scene.document.network(), {.road = scene.road});
+  ASSERT_TRUE(target.has_value());
+  const Road* before = scene.document.network().road(scene.road);
+  ASSERT_NE(before, nullptr);
+  const double base_hdg = before->plan_view.evaluate(0.0).hdg;
+
+  GizmoDragSession session(scene.document);
+  ring_drag(session, *target, 20.0 * std::numbers::pi / 180.0);
+
+  const Road* after = scene.document.network().road(scene.road);
+  ASSERT_NE(after, nullptr);
+  // 20° of drag snaps to one increment of DELTA, not to an absolute bearing.
+  EXPECT_NEAR(deg(wrap_angle(after->plan_view.evaluate(0.0).hdg - base_hdg)), deg(kSnap), 1e-6);
+}
+
+TEST(GizmoDrag, ACancelledDragLeavesTheDocumentByteIdentical) {
+  Scene scene;
+  const ObjectId prop = scene.add_prop(40.0, 4.0, 0.0);
+  const std::string before = xodr(scene.document);
+  const int base = scene.document.undo_stack()->count();
+  const auto target = gizmo_target(scene.document.network(), {.object = prop});
+  ASSERT_TRUE(target.has_value());
+
+  GizmoDragSession session(scene.document);
+  ASSERT_TRUE(session.begin(*target, GizmoHandle::YawRing, Scene::on_ring(target->pivot, 0.0)));
+  ASSERT_TRUE(session.update(GizmoDragInput{.cursor_world = Scene::on_ring(target->pivot, 1.0)})
+                  .has_value());
+  session.cancel();
+
+  EXPECT_FALSE(session.active());
+  EXPECT_EQ(xodr(scene.document), before);
+  EXPECT_EQ(scene.document.undo_stack()->count(), base);
+}
+
+// The kernel refuses to transform a road that participates in a junction (its
+// pose is generated). The session RETURNS that refusal instead of swallowing
+// it — the hook #401 needs to surface feedback from. The widget still discards
+// it today, which is exactly the gap #401 owns.
+TEST(GizmoDrag, AKernelRefusalIsReturnedRatherThanSwallowed) {
+  Document document;
+  const auto arm = [&document](double x0, double y0, double x1, double y1, const char* id) {
+    if (!document.push_command(
+            edit::create_road({{x0, y0}, {x1, y1}}, LaneProfile::two_lane_default(), id))) {
+      throw std::runtime_error("create_road failed");
+    }
+    RoadId road;
+    document.network().for_each_road([&](RoadId found, const Road& r) {
+      if (r.odr_id == id) {
+        road = found;
+      }
+    });
+    return road;
+  };
+  const RoadId west = arm(-80.0, 0.0, -20.0, 0.0, "1");
+  const RoadId east = arm(80.0, 0.0, 20.0, 0.0, "2");
+  const RoadId south = arm(0.0, -80.0, 0.0, -20.0, "3");
+  const RoadId north = arm(0.0, 80.0, 0.0, 20.0, "4");
+  const std::array<RoadEnd, 4> ends{RoadEnd{west, ContactPoint::End},
+                                    RoadEnd{east, ContactPoint::End},
+                                    RoadEnd{south, ContactPoint::End},
+                                    RoadEnd{north, ContactPoint::End}};
+  ASSERT_TRUE(document.push_command(edit::create_junction(document.network(), ends)).has_value());
+  const std::string before = xodr(document);
+
+  const auto target = gizmo_target(document.network(), {.road = west});
+  ASSERT_TRUE(target.has_value());
+  GizmoDragSession session(document);
+  ASSERT_TRUE(session.begin(*target, GizmoHandle::PlaneXY, {target->pivot[0], target->pivot[1]}));
+  const auto result = session.update(
+      GizmoDragInput{.cursor_world = {target->pivot[0] + 5.0, target->pivot[1] + 5.0}});
+  EXPECT_FALSE(result.has_value());
+  EXPECT_FALSE(result.error().message.empty());
+
+  session.cancel();
+  EXPECT_EQ(xodr(document), before);
+}
+
+} // namespace roadmaker::editor

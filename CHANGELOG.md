@@ -19,6 +19,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 Current version on `main`: **0.0.1**.
 
 ### Added
+- **The rotation ring reaches signs, and lands on real angles**
+  ([#417](https://github.com/Robomous/RoadMaker/issues/417)): selecting a sign
+  or signal with the Move tool now gives it its own gizmo, at the sign, whose
+  ring turns the sign. Rotation snapping became **absolute** for props and
+  signs — the angle lands on an exact 15° multiple *measured from the road*
+  rather than 15° from wherever the drag began, so turning a bench toward the
+  kerb leaves it genuinely perpendicular instead of perpendicular-plus-its-old-
+  offset. Hold <kbd>Shift</kbd> for a free angle, as before. Roads still snap
+  the amount they are turned by, since a road has no single heading to measure
+  against. A ring drag on a sign edits its **Heading offset** only: which
+  traffic the sign applies to is never rewritten by a gesture that turns it, and
+  the dragged heading is an override that
+  [auto-orientation](docs/domain/realism_defaults.md#auto-orientation-of-signs--signals)
+  never recomputes — **Auto facing** remains the one way back.
 - **Signs face their traffic**
   ([#416](https://github.com/Robomous/RoadMaker/issues/416)): placing a sign or
   signal now aims it. RoadMaker reads the road heading where it landed, which
@@ -265,6 +279,13 @@ Current version on `main`: **0.0.1**.
   about silently never matched.
 
 ### Fixed
+- **Selecting a sign no longer hands you the road's gizmo**
+  ([#417](https://github.com/Robomous/RoadMaker/issues/417)): a sign carries a
+  reference to the road it stands on, and the transform gizmo resolved that road
+  first — so picking a sign with the Move tool drew the gizmo out at the road's
+  midpoint, and dragging its ring **rotated the entire road**. The pad and Z
+  arrow moved the road too. Leaf entities now win over the road they reference,
+  which is the rule the rest of the selection model already followed.
 - **A signal's `@orientation` is finally what aims it**
   ([#416](https://github.com/Robomous/RoadMaker/issues/416)): the renderer had
   ignored `@orientation` outright and pointed every signal along increasing `s`,

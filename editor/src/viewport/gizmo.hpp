@@ -73,11 +73,25 @@ gizmo_hit_test(const GizmoScreen& gizmo, std::array<double, 2> cursor, double to
                                                                 std::array<double, 2> to);
 
 /// Signed yaw angle [rad] for a ring drag about `pivot` (xy): the wrapped angle
-/// from (from−pivot) to (to−pivot). When `detent` > 0 the result snaps to the
-/// nearest multiple of `detent` (e.g. 15° = π/12); pass 0 for a free rotation.
-[[nodiscard]] double gizmo_yaw_angle(std::array<double, 2> pivot,
-                                     std::array<double, 2> from,
-                                     std::array<double, 2> to,
-                                     double detent = 0.0);
+/// from (from−pivot) to (to−pivot), in (-pi, pi]. Raw — callers compose it with
+/// snap_to_increment, because WHAT gets snapped differs by entity: a prop or a
+/// signal snaps its resulting road-relative angle (absolute detents), while a
+/// road snaps the delta it is rotated by (a road has no single heading to be
+/// absolute about). See document/gizmo_drag.hpp.
+[[nodiscard]] double
+gizmo_yaw_angle(std::array<double, 2> pivot, std::array<double, 2> from, std::array<double, 2> to);
+
+/// Rounds `value` to the nearest multiple of `increment`, or returns it
+/// unchanged when `increment <= 0` — the "free" case, which is how holding the
+/// suppression modifier is expressed (no branch at the call site).
+///
+/// Deliberately unit-agnostic: #337's scale affordance snaps a factor through
+/// this same function, so the detent logic is written once (p6-s15, #417).
+[[nodiscard]] double snap_to_increment(double value, double increment);
+
+/// Wraps an angle [rad] into (-pi, pi]. Snapped absolute angles accumulate
+/// across drags, and an unwrapped heading eventually leaves the range the
+/// Attributes pane's heading spin can show or round-trip.
+[[nodiscard]] double wrap_angle(double radians);
 
 } // namespace roadmaker::editor

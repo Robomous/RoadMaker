@@ -179,6 +179,15 @@ the same change. `Road Plan tool` in step 2 was corrected to its real name,
 
 16. [ ] Prop Point: drag a single prop from the Library into the scene.
     **Expected:** it lands under the cursor and is movable.
+16b. [ ] Switch to the **Move** tool with that prop still selected.
+    **Expected:** the gizmo appears **at the prop**. Drag the **yaw ring**
+    slowly: the prop turns in 15° steps and stops on exact multiples of 15°
+    measured from the road, not 15° from where the drag started (p6-s15,
+    #417) — so from an odd starting angle the first step *tidies* it. Hold
+    **Shift** while dragging: the angle goes free. Release. **Expected:** one
+    toast, one undo step, and **Ctrl+Z** restores the exact prior heading.
+    Now drag the ring on a **Prop Span**. **Expected:** every instance in the
+    series turns by the same angle relative to the road.
 17. [ ] Prop Curve: lay props along a curve, then **Bake**. **Expected:**
     instances distribute along the curve; baking converts them to
     individually editable props.
