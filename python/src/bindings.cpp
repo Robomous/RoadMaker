@@ -3935,6 +3935,14 @@ NB_MODULE(_roadmaker, m) {
       "text"_a,
       "Sets a signal's @text (§14 Table 122 — editable sign-face text; multi-line "
       "uses literal \\n). Rejects a no-op; one undo step.");
+  edit.def("set_signal_z_offset",
+           &roadmaker::edit::set_signal_z_offset,
+           "network"_a,
+           "signal"_a,
+           "z"_a,
+           "Sets a signal's @zOffset (§14.1 Table 122 — the mounting height above the road "
+           "reference line, in meters). Negative is legal; rejects a non-finite value and a "
+           "no-op; one undo step.");
   edit.def(
       "set_signal_value",
       [](const roadmaker::RoadNetwork& network,

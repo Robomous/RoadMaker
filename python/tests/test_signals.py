@@ -183,6 +183,34 @@ def test_set_signal_value_posts_a_speed_in_one_undo_step(network_with_road):
     assert network.signal(signal_id).value == pytest.approx(25.0)
 
 
+def test_set_signal_z_offset_is_one_undo_step(network_with_road):
+    # Section 14.1, Table 122: @zOffset is the mounting height above the road
+    # reference line's elevation. Edited on its own — raising a sign never
+    # changes which traffic it applies to, so no facing is re-derived.
+    network, road_id = network_with_road
+    signal_id = network.add_signal(road_id, make_speed_limit())
+    before = network.signal(signal_id).z_offset
+
+    stack = rm.edit.EditStack()
+    stack.push(network, rm.edit.set_signal_z_offset(network, signal_id, 3.2))
+    assert network.signal(signal_id).z_offset == pytest.approx(3.2)
+    assert stack.size == 1
+
+    stack.undo(network)
+    assert network.signal(signal_id).z_offset == pytest.approx(before)
+
+
+def test_set_signal_z_offset_rejects_no_op(network_with_road):
+    network, road_id = network_with_road
+    signal = make_speed_limit()
+    signal.z_offset = 2.1
+    signal_id = network.add_signal(road_id, signal)
+
+    stack = rm.edit.EditStack()
+    with pytest.raises(ValueError):
+        stack.push(network, rm.edit.set_signal_z_offset(network, signal_id, 2.1))
+
+
 def test_set_signal_value_rejects_a_value_without_its_unit(network_with_road):
     # Section 14.1, Table 122: "if value is given, unit is mandatory".
     network, road_id = network_with_road

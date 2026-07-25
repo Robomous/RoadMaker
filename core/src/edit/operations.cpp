@@ -7507,6 +7507,43 @@ set_signal_text(const RoadNetwork& network, SignalId signal, std::string text) {
   return command;
 }
 
+std::unique_ptr<Command>
+set_signal_z_offset(const RoadNetwork& network, SignalId signal, double z) {
+  // ASAM OpenDRIVE 1.9.0 §14.1, Table 122: @zOffset — "z-offset of signal's
+  // origin relative to the elevation of the road reference line" (required, m).
+  // A negative height is legal (a signal below the reference line, e.g. under an
+  // overpass), so only non-finite input is rejected.
+  static constexpr std::string_view kName = "Edit Sign Height";
+  const Signal* current = network.signal(signal);
+  if (current == nullptr) {
+    return invalid_command(std::string(kName), stale_signal_error());
+  }
+  const Road* owner = network.road(current->road);
+  if (owner == nullptr) {
+    return invalid_command(std::string(kName),
+                           Error{.code = ErrorCode::InvalidArgument,
+                                 .message = "signal has a stale road back-reference"});
+  }
+  if (!std::isfinite(z)) {
+    return invalid_command(
+        std::string(kName),
+        Error{.code = ErrorCode::InvalidArgument, .message = "signal zOffset must be finite"});
+  }
+  // Reject a no-op EXPLICITLY, like set_signal_text above.
+  if (z == current->z_offset) {
+    return invalid_command(
+        std::string(kName),
+        Error{.code = ErrorCode::InvalidArgument, .message = "signal zOffset is unchanged"});
+  }
+  Signal edited = *current;
+  edited.z_offset = z;
+  auto command =
+      std::make_unique<GenericCommand>(std::string(kName), DirtySet{.objects = {current->road}});
+  command->before.signals.emplace_back(signal, *current);
+  command->after.signals.emplace_back(signal, std::move(edited));
+  return command;
+}
+
 std::unique_ptr<Command> set_signal_value(const RoadNetwork& network,
                                           SignalId signal,
                                           std::optional<double> value,

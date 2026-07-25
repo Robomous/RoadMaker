@@ -34,9 +34,10 @@ partway through refines from wherever the value has already reached rather than
 jumping somewhere new.
 
 Scrubbing is available on lane **Width**, road-mark **Mark width**, elevation
-**Height**, a prop's **Height**, and a signal's **s**, **t**, and **Heading
-offset** (which, once you touch it, becomes a hand-set override that only the
-signal's **Auto facing** button undoes). Each has its
+**Height**, a prop's **s**, **t**, **Heading**, **Z offset** and **Height**, and
+a signal's **s**, **t**, **Heading offset** (which, once you touch it, becomes a
+hand-set override that only the signal's **Auto facing** button undoes) and
+**Mounting height**. Each has its
 own rate, chosen so a comfortable drag covers a useful range — roughly 2 m of
 lane width, or 10 m along a road, per screen-width drag. Scrubbing respects the
 same limits as typing: it cannot push a value out of the attribute's range.
@@ -48,6 +49,35 @@ object: select any number of props and one drag resizes them all by the same
 factor — relative sizes preserved — while typing a height makes them all exactly
 that tall. It is still one undo step. See
 [Resizing props](objects-signals.md#resizing-props).
+
+## Where a thing stands
+
+Props and signals are placed *along a road*, so their position is two numbers in
+the road's own frame — **s**, the distance travelled along it, and **t**, the
+sideways offset (negative to the right of the reference line, positive to the
+left) — plus **Z offset** / **Mounting height** above the road surface and a
+**Heading** about the vertical axis. All of them are editable, and all of them
+are what the gizmo writes when you drag it, so typing and dragging are the same
+edit by two routes.
+
+Underneath sits a read-only **World** row: where the thing actually ends up in
+world coordinates once the road's curve and elevation profile are applied. It is
+read from the same data the viewport draws, so it can never disagree with what
+you see.
+
+A marking — a crosswalk, a stencil, a marking curve — shows its position but
+does not let you type it. Its shape is stored as an outline in road coordinates,
+and moving only the origin would leave the two out of step. Move markings in the
+viewport instead.
+
+## Lane direction and mark colour
+
+A selected lane also carries a **Direction** — which way traffic runs in it,
+relative to the road's own direction — and its boundary line carries a **Mark
+colour**. Road templates set both (North American practice: yellow for the
+centre line, white for lane lines), and you can change either afterwards. The
+Direction control is disabled for the centre lane, which has no travel of its
+own.
 
 ## Slots: drop an asset in
 

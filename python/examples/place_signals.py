@@ -22,8 +22,9 @@ edit.move_signal / edit.delete_signal round-trip with the same SignalId.
 Sign identities come from the shipped US pack (docs/domain/realism_defaults.md
 §1.4): @country="US" with the MUTCD designation as @type. A sign's legend is
 editable afterwards — edit.set_signal_text for a street name (§14 Table 122
-@text) and edit.set_signal_value for a posted speed (§14.1 @value, with the
-@unit the spec makes mandatory alongside it).
+@text), edit.set_signal_value for a posted speed (§14.1 @value, with the @unit
+the spec makes mandatory alongside it), and edit.set_signal_z_offset for the
+mounting height (§14.1 @zOffset).
 
 Run:  python place_signals.py out.xodr
 """
@@ -90,6 +91,13 @@ def main() -> int:
     plate_id = next(s for s in network.signals_of(road) if network.signal(s).odr_id == "3")
     stack.push(network, rm.edit.set_signal_text(network, plate_id, "MAIN ST\nW 4TH"))
     assert network.signal(plate_id).text == "MAIN ST\nW 4TH"
+
+    # Mounting height is @zOffset (§14.1 Table 122), measured from the road
+    # reference line's elevation — a street-name blade hangs higher than a
+    # roadside sign. It is edited on its own because raising a sign never
+    # changes which traffic it applies to, so nothing here re-derives a facing.
+    stack.push(network, rm.edit.set_signal_z_offset(network, plate_id, 3.2))
+    assert network.signal(plate_id).z_offset == 3.2
 
     # Aim every sign at the traffic it governs. The editor does this on
     # placement; here it is the same rule applied explicitly. @orientation says

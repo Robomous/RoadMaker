@@ -71,9 +71,27 @@ against it) and a heading offset holds the cant.
 
 **A heading you set by hand wins and stays.** Editing **Heading offset** makes
 that heading yours, and nothing recomputes it afterwards — not moving the sign,
-not editing anything else about it. The one way back to the automatic facing is
-the **Auto facing** button in the properties panel, which is an ordinary
-undoable edit like any other.
+not raising it, not editing anything else about it. The one way back to the
+automatic facing is the **Auto facing** button in the properties panel, which is
+an ordinary undoable edit like any other.
+
+Which traffic a sign applies to is reported separately, on the **Applies to**
+row: *traffic travelling along +s*, *along −s*, or *both directions*. Turning a
+sign never changes it — aiming the face and declaring what the sign governs are
+two different things, and only placement or **Auto facing** decides the second.
+
+### How high a sign sits
+
+A selected sign shows a **Mounting height**: how far its origin sits above the
+road's surface at that point. Drag the label or type a value; either is one undo
+step, and neither re-aims the sign. Signs from the shipped US pack are placed at
+the standard mounting height already, so this is for the exceptions — a blade
+hung over a lane, or a sign fixed low on a barrier. Negative values are allowed,
+for anything mounted below the road's reference line.
+
+A sign's face size and its designation are shown but not editable yet
+(issue [#429](https://github.com/Robomous/RoadMaker/issues/429)); to change what
+a sign says, place the designation you want.
 
 ### Placing props: Prop Point & Prop Curve
 
@@ -173,6 +191,18 @@ viewport: the glTF instance node carries the scale and the USD stage bakes it
 into the geometry.
 
 Signals are placed from their own models and are not resizable.
+
+### Moving a prop by the numbers
+
+The Attributes pane also carries a prop's full placement: **s** and **t** along
+and across its road, a **Heading** about the vertical axis, and a **Z offset**
+above the road surface. These are the same values the transform gizmo writes, so
+you can nudge a prop precisely by typing where dragging is fiddly — and the
+Heading row steps in the same 15° increments the gizmo's yaw ring snaps to.
+Underneath, a read-only **World** row reports where the prop actually ends up
+once the road's curve and elevation are applied.
+
+Unlike **Height**, these rows act on the primary selection only.
 
 ### Placing signs: the Sign tool
 
