@@ -30,6 +30,7 @@
 // exact positions (§5). Anything with external linkage lives here as `inline`
 // so there is exactly one definition across both includers (ODR).
 
+#include "roadmaker/mesh/fill_params.hpp"
 #include "roadmaker/mesh/mesh.hpp"
 
 #include <CDT.h>
@@ -67,7 +68,10 @@ inline constexpr double kFlatFloorMinArea = 4.0;
 
 // Interior Steiner spacing for the elevation field (03 §3, "~1–2 m"). Grid
 // points give the harmonic membrane room to bend between the road edges.
-inline constexpr double kSteinerStep = 2.0;
+// Defined in the public header so tolerances derived from the fill's feature
+// size — the sidewalk-band seam accuracy of #402 — can name it instead of
+// restating the number.
+inline constexpr double kSteinerStep = fill_params::kSteinerStep;
 
 // Soft-constraint weight pinning the field toward connecting-road centerline
 // elevations (03 §2) so long through-paths do not sag.

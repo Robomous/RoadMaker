@@ -38,6 +38,7 @@ add_library(roadmaker_core ${_rm_core_type}
   src/mesh/junction_phases.cpp
   src/mesh/junction_signals.cpp
   src/mesh/junction_stoplines.cpp
+  src/mesh/junction_sidewalk_bands.cpp
   src/mesh/junction_surface.cpp
   src/mesh/junction_surface_spans.cpp
   src/mesh/surface_boundary.cpp

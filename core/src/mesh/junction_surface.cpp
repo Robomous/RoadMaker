@@ -42,6 +42,7 @@
 #include "fill_backend.hpp"
 #include "junction_corner_detail.hpp"
 #include "junction_fill_spans.hpp"
+#include "junction_sidewalk_bands.hpp"
 #include "mesh_detail.hpp"
 
 namespace roadmaker {
@@ -50,9 +51,12 @@ namespace {
 
 using namespace fill_backend;
 
+using junction_corner_detail::arm_face;
+using junction_corner_detail::ArmFace;
 using junction_corner_detail::connecting_roads;
 using junction_corner_detail::corner_curve;
 using junction_corner_detail::corner_faces;
+using junction_corner_detail::corner_override;
 using junction_corner_detail::CornerFace;
 using junction_corner_detail::CornerSolution;
 using junction_corner_detail::solve_corner;
@@ -215,52 +219,6 @@ constexpr double kJunctionDetailLift = 0.01;
 // painted/raised nose that keeps opposing traffic apart at the mouth.
 constexpr double kMedianNoseDepth = 2.0;
 
-/// One arm's end cross-section, resolved once and reused by every overlay on
-/// that arm. `types` runs left-to-right in EXACTLY the order `boundary_offsets`
-/// lays out its gaps, so `types[k]` is the lane between `offsets[k]` and
-/// `offsets[k + 1]`.
-struct ArmFace {
-  StationFrame frame;
-  std::vector<double> offsets;
-  std::vector<LaneType> types;
-  double ix = 0.0; // unit direction INTO the junction
-  double iy = 0.0;
-};
-
-/// Resolves `arm`'s end cross-section, or nullopt when the arm is unusable.
-std::optional<ArmFace> arm_face(const RoadNetwork& network, const RoadEnd& arm) {
-  const Road* road = network.road(arm.road);
-  if (road == nullptr || road->plan_view.empty() || road->sections.empty()) {
-    return std::nullopt;
-  }
-  const double station = arm.contact == ContactPoint::Start ? 0.0 : road->plan_view.length();
-  const LaneSection& section = section_at(network, *road, station);
-  ArmFace face;
-  face.frame = make_frame(*road, station);
-  face.offsets = boundary_offsets(network, *road, section, station);
-  const double sign = arm.contact == ContactPoint::Start ? -1.0 : 1.0;
-  face.ix = sign * face.frame.cos_h;
-  face.iy = sign * face.frame.sin_h;
-  // Same walk lane_boundary_offsets does — left lanes in section order, then
-  // the right ones — so the type list stays aligned with the offset gaps even
-  // if the section's lane ordering ever changes.
-  std::vector<LaneType> left;
-  std::vector<LaneType> right;
-  for (const LaneId lane_id : section.lanes) {
-    const Lane* lane = network.lane(lane_id);
-    if (lane == nullptr || lane->odr_id == 0) {
-      continue;
-    }
-    (lane->odr_id > 0 ? left : right).push_back(lane->type);
-  }
-  face.types = std::move(left);
-  face.types.insert(face.types.end(), right.begin(), right.end());
-  if (face.offsets.size() != face.types.size() + 1) {
-    return std::nullopt; // profile the offset walk and the type walk disagree on
-  }
-  return face;
-}
-
 /// Appends one flat-shaded triangle (its own three vertices, one face normal
 /// forced into the +Z hemisphere so the overlay is never backfaced).
 void push_triangle(SubMesh& sub,
@@ -318,18 +276,6 @@ void fan_triangulate(SubMesh& sub, std::vector<std::array<double, 3>> ring) {
   for (std::size_t i = 1; i + 1 < ring.size(); ++i) {
     push_triangle(sub, ring[0], ring[i], ring[i + 1]);
   }
-}
-
-/// The authored override naming exactly the ordered arm pair (a, b), if any.
-/// Mirrors junction_corner_detail's own lookup: corners are ordered pairs.
-const JunctionCorner*
-corner_override(const Junction& junction, const RoadEnd& a, const RoadEnd& b) {
-  for (const JunctionCorner& entry : junction.corners) {
-    if (entry.arm_a == a && entry.arm_b == b) {
-      return &entry;
-    }
-  }
-  return nullptr;
 }
 
 /// The median material governing `arm`'s nose. An arm belongs to two corners:
@@ -463,119 +409,222 @@ void assign_prioritized_elevation(CompactMesh& mesh,
 // per-corner band polygon, so the split shares the floor's exact vertices
 // (watertight) and never re-triangulates (deterministic, byte-stable).
 
-/// One side of an arm face: is the outermost lane a sidewalk, and if so where
-/// its outer (curb) and inner (carriageway-facing) edges sit at the face.
-struct SidewalkSide {
-  bool present = false;
-  std::array<double, 2> outer{}; // curb edge at the face
-  std::array<double, 2> inner{}; // sidewalk/carriageway boundary at the face
-  double width = 0.0;
+// ---------------------------------------------------------------------------
+// Sidewalk bands (issues #357, #402)
+//
+// A junction of sidewalked roads must carry the sidewalk band continuously
+// around each corner and stamp it with LaneType::Sidewalk, instead of paving
+// the whole floor as one Driving slab. The floor union already reaches the
+// sidewalk OUTER edge at every arm mouth and rounds the corners, so the
+// sidewalk pavement is already IN the floor — it only needs segmenting.
+//
+// The band geometry itself lives in junction_sidewalk_bands.cpp and is shared
+// with the public query, so the seam a test measures is the seam the mesher
+// builds. Here we do the two things that need the floor: clip each band to the
+// footprint union (a tight junction gets the band it has room for rather than
+// none), and CONSTRAIN the triangulation to the seam. That constraint is what
+// makes the split exact: classifying finished triangles against an
+// unconstrained triangulation is wrong by one triangle, and at a kSteinerStep
+// of 2 m against a 1.8 m sidewalk one triangle is the whole band (#402).
+// ---------------------------------------------------------------------------
+
+/// Point-in-polygon for PLAN-VIEW METER coordinates.
+///
+/// Not `fill_backend::inside_region` / `Clipper2Lib::PointInPolygon`: those are
+/// only sound on integer paths. Clipper2's `CrossProductSign` casts the edge
+/// deltas to `__int128_t`, so on a PathD every difference below 1.0 truncates
+/// to zero, the sign comes out 0 and the point is reported "on the edge" — for
+/// a decimeter-scale polygon like a sidewalk band, that is almost every
+/// interior point. It is exactly why classification looked hopeless here.
+bool point_in_paths(const Clipper2Lib::PathsD& paths, const Clipper2Lib::PointD& pt) {
+  bool inside = false;
+  for (const Clipper2Lib::PathD& path : paths) {
+    bool in_this = false;
+    for (std::size_t i = 0, j = path.size() - 1; i < path.size(); j = i++) {
+      const Clipper2Lib::PointD& a = path[i];
+      const Clipper2Lib::PointD& b = path[j];
+      if ((a.y > pt.y) != (b.y > pt.y) &&
+          pt.x < (((b.x - a.x) * (pt.y - a.y)) / (b.y - a.y)) + a.x) {
+        in_this = !in_this;
+      }
+    }
+    if (in_this) {
+      if (Clipper2Lib::Area(path) <= 0.0) {
+        return false; // inside a hole
+      }
+      inside = true;
+    }
+  }
+  return inside;
+}
+
+/// One corner's band as the floor pipeline needs it: the region to classify
+/// against, and the seam polylines to constrain the triangulation to. Both are
+/// clipped to the floor, so both are empty where the floor has no room.
+struct BandDef {
+  Clipper2Lib::PathsD region;
+  std::vector<Clipper2Lib::PathD> seams;
+  std::string surface;
 };
 
-/// The sidewalk side of `face` that meets `corner_pt` (one of the two outer
-/// face corners). `corner_pt` selects which extreme — offsets.front() (left)
-/// or offsets.back() (right) — so the caller never has to know CornerFace's
-/// left/right convention.
-SidewalkSide sidewalk_side_at(const ArmFace& face, const std::array<double, 2>& corner_pt) {
-  SidewalkSide side;
-  if (face.types.empty() || face.offsets.size() < 2) {
-    return side;
-  }
-  const std::array<double, 3> back = lateral_point(face.frame, face.offsets.back());
-  const std::array<double, 3> front = lateral_point(face.frame, face.offsets.front());
-  const double db = ((back[0] - corner_pt[0]) * (back[0] - corner_pt[0])) +
-                    ((back[1] - corner_pt[1]) * (back[1] - corner_pt[1]));
-  const double df = ((front[0] - corner_pt[0]) * (front[0] - corner_pt[0])) +
-                    ((front[1] - corner_pt[1]) * (front[1] - corner_pt[1]));
-  const bool use_back = db <= df;
-  const LaneType outer_type = use_back ? face.types.back() : face.types.front();
-  if (outer_type != LaneType::Sidewalk) {
-    return side;
-  }
-  const double outer_off = use_back ? face.offsets.back() : face.offsets.front();
-  const double inner_off = use_back ? face.offsets[face.offsets.size() - 2] : face.offsets[1];
-  const std::array<double, 3> o = lateral_point(face.frame, outer_off);
-  const std::array<double, 3> in = lateral_point(face.frame, inner_off);
-  side.present = true;
-  side.outer = {o[0], o[1]};
-  side.inner = {in[0], in[1]};
-  side.width = std::abs(outer_off - inner_off);
-  return side;
-}
-
-/// Unit 2D vector b - a, or {0,0} when the two coincide.
-std::array<double, 2> unit_delta(const std::array<double, 2>& a, const std::array<double, 2>& b) {
-  const double dx = b[0] - a[0];
-  const double dy = b[1] - a[1];
-  const double len = std::hypot(dx, dy);
-  return len > tol::kLength ? std::array<double, 2>{dx / len, dy / len}
-                            : std::array<double, 2>{0.0, 0.0};
-}
-
-/// The plan-view band polygon for one corner. Its OUTER edge is the curb line
-/// (the exact arm curb legs plus the corner curve where both arms are
-/// sidewalked); its INNER edge is that line pushed one sidewalk-width toward the
-/// pavement. Empty when neither adjacent side carries a sidewalk. Used only to
-/// classify floor triangles, so its winding is irrelevant.
-Clipper2Lib::PathD
-corner_band_polygon(const CornerSolution& solution, const SidewalkSide& a, const SidewalkSide& b) {
-  if (!a.present && !b.present) {
-    return {};
-  }
-  std::vector<std::array<double, 2>> outer;
-  std::vector<std::array<double, 2>> inner;
-  const bool both = a.present && b.present;
-  const bool curved = both && solution.valid && !solution.parallel_edges;
-
-  if (a.present) {
-    outer.push_back(a.outer);
-    inner.push_back(a.inner);
-  }
-  if (curved) {
-    const std::array<double, 2> na = unit_delta(a.outer, a.inner); // perpendicular, inward
-    outer.push_back(solution.tangent_a);
-    inner.push_back(
-        {solution.tangent_a[0] + (na[0] * a.width), solution.tangent_a[1] + (na[1] * a.width)});
-    const std::vector<std::array<double, 2>> curve = corner_curve(solution);
-    for (std::size_t j = 0; j < curve.size(); ++j) {
-      const std::array<double, 2>& q = curve[j];
-      const std::array<double, 2> prev = j > 0 ? curve[j - 1] : solution.tangent_a;
-      const std::array<double, 2> next = j + 1 < curve.size() ? curve[j + 1] : solution.tangent_b;
-      const std::array<double, 2> dir = unit_delta(prev, next);
-      std::array<double, 2> nrm{-dir[1], dir[0]};
-      // Orient the normal toward the pavement (the corner apex is interior).
-      const double to_apex_x = solution.corner[0] - q[0];
-      const double to_apex_y = solution.corner[1] - q[1];
-      if ((nrm[0] * to_apex_x) + (nrm[1] * to_apex_y) < 0.0) {
-        nrm = {-nrm[0], -nrm[1]};
+/// Distance from `pt` to the outline of `paths` — used to tell an edge that
+/// merely COINCIDES with the floor boundary from one that runs through the
+/// floor's interior.
+double distance_to_outline(const Clipper2Lib::PathsD& paths, const Clipper2Lib::PointD& pt) {
+  double best = std::numeric_limits<double>::max();
+  for (const Clipper2Lib::PathD& path : paths) {
+    for (std::size_t i = 0, j = path.size() - 1; i < path.size(); j = i++) {
+      const Clipper2Lib::PointD& a = path[j];
+      const Clipper2Lib::PointD& b = path[i];
+      const double ex = b.x - a.x;
+      const double ey = b.y - a.y;
+      const double len2 = (ex * ex) + (ey * ey);
+      double t = 0.0;
+      if (len2 > 1e-18) {
+        t = std::clamp((((pt.x - a.x) * ex) + ((pt.y - a.y) * ey)) / len2, 0.0, 1.0);
       }
-      const double f =
-          curve.size() > 1 ? static_cast<double>(j) / static_cast<double>(curve.size() - 1) : 0.0;
-      const double w = a.width + (f * (b.width - a.width));
-      outer.push_back(q);
-      inner.push_back({q[0] + (nrm[0] * w), q[1] + (nrm[1] * w)});
+      best = std::min(best, std::hypot(pt.x - (a.x + (t * ex)), pt.y - (a.y + (t * ey))));
     }
-    const std::array<double, 2> nb = unit_delta(b.outer, b.inner);
-    outer.push_back(solution.tangent_b);
-    inner.push_back(
-        {solution.tangent_b[0] + (nb[0] * b.width), solution.tangent_b[1] + (nb[1] * b.width)});
   }
-  if (b.present) {
-    outer.push_back(b.outer);
-    inner.push_back(b.inner);
+  return best;
+}
+
+/// Clips one ideal band to the floor union and works out which parts of the
+/// clipped outline the triangulation has to be constrained to.
+///
+/// Only the INTERIOR parts: an outline edge that coincides with the floor's own
+/// boundary (the arm faces, the curb line where the sidewalk is the outermost
+/// lane) is already a constraint of the triangulation, while an edge running
+/// through the floor's interior — the seam against the carriageway, the far cap
+/// of a one-sided stub, the curb side of a band that has a shoulder outboard of
+/// it — is what triangles would otherwise straddle.
+///
+/// Each interior run is an OPEN chord with both ends on the floor boundary,
+/// never a closed ring. That distinction is load-bearing: CDT's
+/// `eraseOuterTrianglesAndHoles` classifies by crossing depth, so a closed
+/// interior loop would be read as a HOLE and erased, punching the band out of
+/// the floor. A band whose outline is interior all the way round would be
+/// exactly that, so it is left unconstrained rather than risked.
+BandDef clip_band(const JunctionSidewalkBand& band, const Clipper2Lib::PathsD& floor) {
+  // A band edge within this distance of the floor boundary IS that boundary:
+  // the union rounds to kUnionPrecision and the weld apron adds a centimeter.
+  constexpr double kOnBoundary = 0.02;
+
+  BandDef out;
+  out.surface = band.surface;
+  const Clipper2Lib::PathsD ring{band_ring(band)};
+  out.region = Clipper2Lib::Intersect(ring, floor, Clipper2Lib::FillRule::NonZero, kUnionPrecision);
+
+  for (const Clipper2Lib::PathD& path : out.region) {
+    const std::size_t n = path.size();
+    if (n < 3) {
+      continue;
+    }
+    // interior[i] describes the edge from path[i] to path[i + 1].
+    std::vector<bool> interior(n, false);
+    std::size_t interior_count = 0;
+    for (std::size_t i = 0; i < n; ++i) {
+      const Clipper2Lib::PointD& a = path[i];
+      const Clipper2Lib::PointD& b = path[(i + 1) % n];
+      const Clipper2Lib::PointD mid{0.5 * (a.x + b.x), 0.5 * (a.y + b.y)};
+      interior[i] = distance_to_outline(floor, mid) > kOnBoundary;
+      interior_count += interior[i] ? 1 : 0;
+    }
+    if (interior_count == 0 || interior_count == n) {
+      continue; // nothing to constrain, or a ring CDT would erase as a hole
+    }
+    // Walk from an edge the floor boundary already owns, so every run this
+    // collects starts and ends on that boundary.
+    std::size_t start = 0;
+    while (interior[start]) {
+      ++start;
+    }
+    Clipper2Lib::PathD run;
+    for (std::size_t step = 0; step < n; ++step) {
+      const std::size_t i = (start + step) % n;
+      if (interior[i]) {
+        if (run.empty()) {
+          run.push_back(path[i]);
+        }
+        run.push_back(path[(i + 1) % n]);
+      } else if (!run.empty()) {
+        out.seams.push_back(std::move(run));
+        run.clear();
+      }
+    }
+    if (!run.empty()) {
+      out.seams.push_back(std::move(run));
+    }
   }
-  if (outer.size() < 2 || outer.size() != inner.size()) {
-    return {};
+  return out;
+}
+
+/// Adds one interior run to the CDT input as a chain of constrained edges,
+/// subdivided to
+/// the Steiner step so the seam carries the same vertex density as the
+/// boundary rings it meets (an unsubdivided long constraint would fan
+/// sub-degree triangles across it, exactly as fill_backend's boundary comment
+/// explains).
+///
+/// Each endpoint lands ON a boundary edge rather than on one of its vertices,
+/// so the boundary edge is SPLIT there: the chord then terminates on a shared
+/// vertex instead of crossing a constraint, which is what keeps the seam
+/// exactly where the band says it is. Snapping to the nearest ring vertex
+/// instead would drag the seam end by up to half a Steiner step.
+void inject_seam_constraints(const Clipper2Lib::PathD& seam,
+                             std::vector<CDT::V2d<double>>& vertices,
+                             std::vector<CDT::Edge>& edges) {
+  constexpr double kOnEdge = 1e-4; // 0.1 mm: Clipper2 rounds to kUnionPrecision
+
+  const auto split_boundary_edge_at = [&vertices, &edges](const Clipper2Lib::PointD& p) {
+    for (std::size_t e = 0; e < edges.size(); ++e) {
+      const CDT::V2d<double>& va = vertices[edges[e].v1()];
+      const CDT::V2d<double>& vb = vertices[edges[e].v2()];
+      const double ex = vb.x - va.x;
+      const double ey = vb.y - va.y;
+      const double len2 = (ex * ex) + (ey * ey);
+      if (len2 < kOnEdge * kOnEdge) {
+        continue;
+      }
+      const double t = (((p.x - va.x) * ex) + ((p.y - va.y) * ey)) / len2;
+      if (t <= 0.0 || t >= 1.0) {
+        continue; // beyond the segment, or exactly on a vertex (nothing to split)
+      }
+      if (std::hypot(p.x - (va.x + (t * ex)), p.y - (va.y + (t * ey))) > kOnEdge) {
+        continue;
+      }
+      const auto split = static_cast<CDT::VertInd>(vertices.size());
+      vertices.push_back(CDT::V2d<double>{p.x, p.y});
+      const CDT::VertInd far_end = edges[e].v2();
+      edges[e] = CDT::Edge(edges[e].v1(), split);
+      edges.emplace_back(split, far_end);
+      return;
+    }
+  };
+
+  split_boundary_edge_at(seam.front());
+  split_boundary_edge_at(seam.back());
+
+  std::vector<CDT::VertInd> chain;
+  const auto push_point = [&vertices, &chain](double x, double y) {
+    chain.push_back(static_cast<CDT::VertInd>(vertices.size()));
+    vertices.push_back(CDT::V2d<double>{x, y});
+  };
+  for (std::size_t i = 0; i + 1 < seam.size(); ++i) {
+    const Clipper2Lib::PointD& a = seam[i];
+    const Clipper2Lib::PointD& b = seam[i + 1];
+    push_point(a.x, a.y);
+    const double len = std::hypot(b.x - a.x, b.y - a.y);
+    const int pieces = static_cast<int>(len / kSteinerStep);
+    for (int k = 1; k <= pieces - 1; ++k) {
+      const double f = static_cast<double>(k) / static_cast<double>(pieces);
+      push_point(a.x + (f * (b.x - a.x)), a.y + (f * (b.y - a.y)));
+    }
   }
-  Clipper2Lib::PathD ring;
-  ring.reserve(outer.size() * 2);
-  for (const std::array<double, 2>& p : outer) {
-    ring.emplace_back(p[0], p[1]);
+  push_point(seam.back().x, seam.back().y);
+  for (std::size_t i = 0; i + 1 < chain.size(); ++i) {
+    edges.emplace_back(chain[i], chain[i + 1]);
   }
-  for (std::size_t j = inner.size(); j-- > 0;) {
-    ring.emplace_back(inner[j][0], inner[j][1]);
-  }
-  return ring;
 }
 
 /// Emits the triangles of `floor` whose per-triangle `assignment` equals
@@ -616,11 +665,16 @@ SubMesh emit_floor_region(const SubMesh& floor,
   return out;
 }
 
-} // namespace
+/// The floor plus the bands it was triangulated against — the two halves of
+/// one pass, kept together so the classifier and the constraints can never
+/// disagree about where a band is.
+struct FloorBuild {
+  SubMesh floor;
+  std::vector<BandDef> bands;
+};
 
-SubMesh build_junction_surface(const RoadNetwork& network,
-                               const Junction& junction,
-                               const SamplingOptions& sampling) {
+FloorBuild
+build_floor(const RoadNetwork& network, const Junction& junction, const SamplingOptions& sampling) {
   // 1. Gather footprints, exact border rings, and centerline samples.
   Clipper2Lib::PathsD footprints;
   std::vector<Vec3> border;
@@ -822,6 +876,24 @@ SubMesh build_junction_surface(const RoadNetwork& network,
   double min_x = std::numeric_limits<double>::max(), min_y = min_x;
   double max_x = std::numeric_limits<double>::lowest(), max_y = max_x;
   subdivide_rings_to_cdt(merged, vertices, edges, min_x, min_y, max_x, max_y);
+
+  // Sidewalk bands, clipped to this floor. Their seams become constrained
+  // edges BEFORE the triangulation, which is what makes the material split
+  // exact (#402). Nothing is injected when no arm carries a sidewalk, so a
+  // rural junction triangulates exactly as it always did and its floor stays
+  // byte-identical.
+  std::vector<BandDef> bands;
+  for (const JunctionSidewalkBand& ideal : junction_sidewalk_bands_of(network, junction)) {
+    BandDef band = clip_band(ideal, merged);
+    if (band.region.empty()) {
+      continue;
+    }
+    for (const Clipper2Lib::PathD& seam : band.seams) {
+      inject_seam_constraints(seam, vertices, edges);
+    }
+    bands.push_back(std::move(band));
+  }
+
   // Arm-face vertices (lane boundaries along each joint edge) become CDT
   // vertices so the floor's boundary carries the road mesh's exact
   // end-cross-section vertices — no T-vertices on joint seams (03 §5). This
@@ -891,56 +963,38 @@ SubMesh build_junction_surface(const RoadNetwork& network,
   // Junction-wide carriageway material (p4-s2): empty means the derived
   // asphalt look, mirroring Surface::material.
   out.surface = junction.material;
-  return out;
+  return FloorBuild{.floor = std::move(out), .bands = std::move(bands)};
 }
 
-JunctionFloorSplit split_junction_floor_sidewalks(const RoadNetwork& network,
-                                                  const Junction& junction,
-                                                  const SubMesh& floor) {
+} // namespace
+
+SubMesh build_junction_surface(const RoadNetwork& network,
+                               const Junction& junction,
+                               const SamplingOptions& sampling) {
+  return build_floor(network, junction, sampling).floor;
+}
+
+JunctionFloorSplit build_junction_floor_split(const RoadNetwork& network,
+                                              const Junction& junction,
+                                              const SamplingOptions& sampling) {
   JunctionFloorSplit result;
+  FloorBuild built = build_floor(network, junction, sampling);
+  const SubMesh& floor = built.floor;
 
-  // Build one band polygon (+ its authored surface override) per corner where a
-  // CCW-adjacent arm carries a sidewalk. `corner_faces` returns the same CCW
-  // face order the mesher fillets, so A's right edge meets B's left edge.
-  struct BandDef {
-    Clipper2Lib::PathD polygon;
-    std::string surface; // authored sidewalk_material override, else empty
-  };
-
-  std::vector<BandDef> bands;
-  const std::vector<CornerFace> faces = corner_faces(network, junction);
-  for (std::size_t i = 0; faces.size() >= 2 && i < faces.size(); ++i) {
-    const CornerFace& a = faces[i];
-    const CornerFace& b = faces[(i + 1) % faces.size()];
-    const std::optional<ArmFace> af_a = arm_face(network, a.arm);
-    const std::optional<ArmFace> af_b = arm_face(network, b.arm);
-    const SidewalkSide sa = af_a ? sidewalk_side_at(*af_a, a.right) : SidewalkSide{};
-    const SidewalkSide sb = af_b ? sidewalk_side_at(*af_b, b.left) : SidewalkSide{};
-    if (!sa.present && !sb.present) {
-      continue; // neither adjacent arm is sidewalked — plain corner, no band
-    }
-    const CornerSolution solution = solve_corner(network, junction, a, b);
-    Clipper2Lib::PathD polygon = corner_band_polygon(solution, sa, sb);
-    if (polygon.size() < 3) {
-      continue;
-    }
-    const JunctionCorner* entry = corner_override(junction, a.arm, b.arm);
-    std::string surface =
-        (entry != nullptr && entry->sidewalk_material.has_value()) ? *entry->sidewalk_material : "";
-    bands.push_back(BandDef{.polygon = std::move(polygon), .surface = std::move(surface)});
-  }
-
-  // No sidewalks anywhere ⇒ the floor is returned VERBATIM (byte-identical to
-  // the pre-#357 single-material floor); the feature never touches a rural
-  // junction.
-  if (bands.empty() || floor.indices.empty()) {
+  // No sidewalks anywhere (or nothing the floor had room for) => the floor is
+  // returned VERBATIM, byte-identical to the pre-#357 single-material floor.
+  // No constraint was injected in that case either, so the triangulation
+  // itself is untouched: the feature never reaches a rural junction.
+  if (built.bands.empty() || floor.indices.empty()) {
     result.carriageway = floor;
     return result;
   }
 
   // Classify every floor triangle by the band (if any) that contains its
-  // centroid. -1 is the carriageway. Bands never overlap (each corner owns one
-  // arm edge per side), so first match wins.
+  // centroid. -1 is the carriageway. The seams are constrained edges of this
+  // triangulation, so no triangle straddles one and the centroid decides
+  // exactly — this is a lookup now, not an approximation. Bands never overlap
+  // (each corner owns one arm edge per side), so first match wins.
   const std::size_t tri_count = floor.indices.size() / 3;
   std::vector<int> assignment(tri_count, -1);
   bool any_sidewalk = false;
@@ -953,9 +1007,8 @@ JunctionFloorSplit split_junction_floor_sidewalks(const RoadNetwork& network,
         (floor.positions[(i0 * 3) + 1] + floor.positions[(i1 * 3) + 1] +
          floor.positions[(i2 * 3) + 1]) /
             3.0};
-    for (std::size_t k = 0; k < bands.size(); ++k) {
-      if (Clipper2Lib::PointInPolygon(centroid, bands[k].polygon) ==
-          Clipper2Lib::PointInPolygonResult::IsInside) {
+    for (std::size_t k = 0; k < built.bands.size(); ++k) {
+      if (point_in_paths(built.bands[k].region, centroid)) {
         assignment[t] = static_cast<int>(k);
         any_sidewalk = true;
         break;
@@ -978,12 +1031,12 @@ JunctionFloorSplit split_junction_floor_sidewalks(const RoadNetwork& network,
 
   result.carriageway =
       emit_floor_region(floor, assignment, -1, LaneType::Driving, floor.surface, floor.name);
-  for (std::size_t k = 0; k < bands.size(); ++k) {
+  for (std::size_t k = 0; k < built.bands.size(); ++k) {
     SubMesh band = emit_floor_region(floor,
                                      assignment,
                                      static_cast<int>(k),
                                      LaneType::Sidewalk,
-                                     bands[k].surface,
+                                     built.bands[k].surface,
                                      fmt::format("junction {} corner sidewalk", junction.odr_id));
     if (!band.indices.empty()) {
       result.sidewalk_bands.push_back(std::move(band));
