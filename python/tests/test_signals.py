@@ -32,17 +32,24 @@ def network_with_road():
 
 
 def make_speed_limit() -> rm.Signal:
+    """A US speed-limit sign (MUTCD R2-1), the way the shipped pack authors one.
+
+    Section 14.1 defines @type as a "type identifier according to country code"
+    and @country as an ISO 3166-1 alpha-2 code, so "R2-1" / "US" is conforming.
+    The posted speed is @value with its mandatory @unit -- an e_unitSpeed
+    literal -- rather than a number baked into @subtype.
+    """
     signal = rm.Signal()
     signal.odr_id = "1"
-    signal.name = "SpeedLimit50"
+    signal.name = "SpeedLimit25"
     signal.s, signal.t = 50.0, -4.0
     signal.z_offset = 1.9
     signal.dynamic = False
     signal.orientation = rm.ObjectOrientation.PLUS
-    signal.country, signal.country_revision = "DE", "2017"
-    signal.type, signal.subtype = "274", "50"
-    signal.value, signal.unit = 50.0, "km/h"
-    signal.height, signal.width = 0.77, 0.77
+    signal.country = "US"
+    signal.type, signal.subtype = "R2-1", "-1"
+    signal.value, signal.unit = 25.0, "mph"
+    signal.height, signal.width = 0.75, 0.60  # spec section 1.4 face size
     return signal
 
 
@@ -54,11 +61,12 @@ def test_add_lookup_erase(network_with_road):
     assert network.signals_of(road_id) == [signal_id]
 
     stored = network.signal(signal_id)
-    assert stored.type == "274"
-    assert stored.subtype == "50"
+    assert stored.type == "R2-1"
+    assert stored.country == "US"
     assert stored.s == pytest.approx(50.0)
     assert stored.road == road_id
-    assert stored.value == pytest.approx(50.0)
+    assert stored.value == pytest.approx(25.0)
+    assert stored.unit == "mph"
 
     assert network.erase_signal(signal_id)
     assert network.signal(signal_id) is None
@@ -93,7 +101,10 @@ def test_signals_round_trip_through_xodr(network_with_road, tmp_path):
     light.type, light.subtype = "1000001", "-1"
     network.add_signal(road_id, light)
 
-    # A StVO 310 town-entrance plate with multi-line @text (§14 Table 122).
+    # A German StVO 310 town-entrance plate with multi-line @text (section 14,
+    # Table 122). Deliberately a FOREIGN identity: persistence is
+    # identity-agnostic, so a file authored against another country's catalogue
+    # has to round-trip untouched even though the shipped pack is US.
     plate = rm.Signal()
     plate.odr_id = "3"
     plate.s, plate.t = 20.0, 6.0
@@ -111,9 +122,9 @@ def test_signals_round_trip_through_xodr(network_with_road, tmp_path):
     assert reloaded.signal_count == 3
 
     signals = {reloaded.signal(i).odr_id: reloaded.signal(i) for i in reloaded.signal_ids}
-    assert signals["1"].type == "274"
-    assert signals["1"].value == pytest.approx(50.0)
-    assert signals["1"].unit == "km/h"
+    assert signals["1"].type == "R2-1"
+    assert signals["1"].value == pytest.approx(25.0)
+    assert signals["1"].unit == "mph"
     assert signals["2"].dynamic is True
     assert signals["2"].country == "OpenDRIVE"
     assert signals["3"].type == "310"
@@ -156,6 +167,30 @@ def test_set_signal_text_rejects_no_op(network_with_road):
     stack = rm.edit.EditStack()
     with pytest.raises(ValueError):
         stack.push(network, rm.edit.set_signal_text(network, signal_id, "City"))
+
+
+def test_set_signal_value_posts_a_speed_in_one_undo_step(network_with_road):
+    network, road_id = network_with_road
+    signal_id = network.add_signal(road_id, make_speed_limit())
+
+    stack = rm.edit.EditStack()
+    stack.push(network, rm.edit.set_signal_value(network, signal_id, 45.0, "mph"))
+    assert network.signal(signal_id).value == pytest.approx(45.0)
+    assert network.signal(signal_id).unit == "mph"
+    assert stack.size == 1
+
+    stack.undo(network)  # ONE undo restores the previous posting
+    assert network.signal(signal_id).value == pytest.approx(25.0)
+
+
+def test_set_signal_value_rejects_a_value_without_its_unit(network_with_road):
+    # Section 14.1, Table 122: "if value is given, unit is mandatory".
+    network, road_id = network_with_road
+    signal_id = network.add_signal(road_id, make_speed_limit())
+
+    stack = rm.edit.EditStack()
+    with pytest.raises(ValueError):
+        stack.push(network, rm.edit.set_signal_value(network, signal_id, 45.0, ""))
 
 
 def test_validate_cites_signal_rules(network_with_road):

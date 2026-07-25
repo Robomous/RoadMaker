@@ -19,6 +19,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 Current version on `main`: **0.0.1**.
 
 ### Added
+- **Signs are American, and they are data**
+  ([#414](https://github.com/Robomous/RoadMaker/issues/414)): the Library's
+  Signals shelf now carries the **US sign pack** — Stop, Yield, Speed limit, Do
+  not enter, One way (left and right), the turn restrictions, Keep right, the
+  warning diamonds, School and Street name — each with the face size and
+  mounting height the
+  [realism defaults](docs/domain/realism_defaults.md#14-signs-mutcd-conventional-road-sizes)
+  prescribe. Placing one writes the plain OpenDRIVE identity a simulator
+  expects: `country="US"` with the MUTCD designation as `@type` (§14.1 defines
+  `@type` as a "type identifier according to country code"), plus the face size
+  in `@height`/`@width`. **A speed limit's posted speed is now a number you can
+  edit** — a **Speed limit** row in the Attributes pane, stored as OpenDRIVE
+  `@value` with its mandatory `@unit`, instead of being baked into a
+  country-coded `@subtype` string; the sign face always reads mph, whichever
+  display units the editor is set to. Every sign definition lives in **one data
+  table** (`roadmaker::signs::catalog()`) that the placement, the mesh builder,
+  the junction signalize templates and the Library manifest all read, so a
+  future country pack is another data set rather than a new build. Kernel:
+  `edit::set_signal_value`, exposed to Python as `edit.set_signal_value`.
+  Scenes authored against another country's catalogue still open and round-trip
+  byte-identically. The sign *artwork* — per-designation silhouettes and baked
+  symbol faces — follows in the same issue.
 - **Sculpt the terrain by hand and import a DEM**
   ([#234](https://github.com/Robomous/RoadMaker/issues/234)): the new **Terrain
   Brush** tool (**⇧B**) raises, lowers and smooths the scene height field with a

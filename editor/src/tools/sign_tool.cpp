@@ -54,12 +54,12 @@ void SignTool::set_params_provider(std::function<LibraryItem()> provider) {
 
 QString SignTool::current_tag() const {
   const LibraryItem item = params_provider_ ? params_provider_() : LibraryItem{};
-  // A selected sign asset places that sign; anything else defaults to the text
-  // plate so the tool is usable with no Library interaction.
+  // A selected sign asset places that sign; anything else defaults to the
+  // street-name blade so the tool is usable with no Library interaction.
   if (is_signal_asset(item) && !item.signal.isEmpty()) {
     return item.signal;
   }
-  return QStringLiteral("sign_text");
+  return QString::fromLatin1(kDefaultSignTag);
 }
 
 void SignTool::activate() {}

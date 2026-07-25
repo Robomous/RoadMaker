@@ -106,19 +106,28 @@ def main() -> int:
         light.t = -6.0  # right of the reference line
         stack.push(network, rm.edit.add_signal(network, road_id, light))
 
-    # A speed-limit sign and a pedestrian-crossing warning sign on the first two arms.
-    static_signs = [("274", "50"), ("133", "10")]  # DE speed-limit 50; pedestrian crossing
-    for index, (sign_type, sub) in enumerate(static_signs):
+    # A speed-limit sign and a pedestrian-crossing warning sign on the first two
+    # arms, from the shipped US pack (docs/domain/realism_defaults.md section
+    # 1.4): MUTCD designations as @type with @country="US", face sizes in
+    # @height/@width, and the posted speed as @value + its mandatory @unit.
+    static_signs = [
+        ("R2-1", 0.60, 0.75, 25.0),  # speed limit, mph
+        ("W11-2", 0.75, 0.75, None),  # pedestrian crossing warning diamond
+    ]
+    for index, (designation, width, height, value) in enumerate(static_signs):
         road_id = arms[index]
         s_end, sign = junction_facing_end(network, road_id)
         signal = rm.Signal()
         signal.odr_id = f"sg{index + 1}"
-        signal.type = sign_type
-        signal.subtype = sub
-        signal.country = "DE"
+        signal.type = designation
+        signal.subtype = "-1"
+        signal.country = "US"
         signal.dynamic = False
         signal.s = s_end - (sign * 18.0)
         signal.t = -6.5
+        signal.width, signal.height = width, height
+        if value is not None:
+            signal.value, signal.unit = value, "mph"
         stack.push(network, rm.edit.add_signal(network, road_id, signal))
 
     # 4. Street trees along the arms — three per side, behind the sidewalk.

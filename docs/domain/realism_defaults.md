@@ -120,7 +120,7 @@ Face sizes are authored geometry; symbols and legends are baked textures
 | Mounting | Default | Imperial display | Notes |
 |---|---|---|---|
 | Mounting height (bottom edge above pavement) | **urban 2.1 m**; rural option 1.5 m | 7 ft; 5 ft | |
-| Lateral offset | min **1.8 m** from shoulder edge; urban min **0.6 m** from curb face | 6 ft; 2 ft | interacts with #338's outermost-lane-edge soft-snap — placement must compose with it |
+| Lateral offset | min **1.8 m** from shoulder edge; urban min **0.60 m** from curb face | 6 ft; 2 ft | interacts with #338's outermost-lane-edge soft-snap — placement must compose with it |
 | Post | breakaway single post, visual Ø ≈ 0.06 m | — | |
 
 ### Sign definitions are data
@@ -263,6 +263,45 @@ driving lane as the fallback for unlisted types.
 | Signal head | housing 0.84 m, lenses 0.14 m, pole 3.0 m | `scripts/gen_prop_meshes.py` | §1.5 |
 | Signal mounting | hand-placed zOffset 0; template heads 3.0 m / plates 2.2 m | `signal_placement.cpp`, `core/src/edit/operations.cpp` | §1.5 clearances / §1.4 mounting |
 | Orientation on placement | always `+`, hOffset 0, no side logic | `signal_placement.cpp` | auto-orientation section |
+
+*Dispositions (landed with #414, identities first):* the three hard-coded
+identity tables — `make_signal`'s tag chain, the mesh builder's
+`signal_model_id`, and the junction signalize templates' `SignalCode`s — were
+replaced by **one data table**, `roadmaker::signs::catalog()`
+(`core/include/roadmaker/assets/sign_catalog.hpp`), whose every face extent is a
+`roadmaker::defaults` §1.4 constant. `signs_markdown()` /
+`sign_mounting_markdown()` render the two tables above and
+`core/tests/test_defaults_registry.cpp` gates both the doc text and the
+catalogue, with `editor/tests/test_library_model.cpp` covering the manifest half
+(core cannot read the Qt-JSON manifest). Per item:
+
+- **Identities** — the pack ships as `country="US"` with the MUTCD designation
+  as `@type` (§14.1 defines `@type` as a "type identifier according to country
+  code" and `@country` as an ISO 3166-1 alpha-2 code, so no vendor extension is
+  needed). The Library lists one entry per designation, and its tag **is** the
+  catalogue key. The traffic-light head keeps the country-neutral ASAM
+  catalogue code `1000001`/`OpenDRIVE`.
+- **Speed-limit value** — now `@value` + `@unit="mph"` (an `e_unitSpeed`
+  literal, Table 158), editable through a new `edit::set_signal_value` command
+  and a **Speed limit** row in the Attributes pane. The face renders the value
+  in mph regardless of the display-unit toggle, because the kernel derives the
+  legend from `@value` and never consults a UI setting. A `@value` without its
+  `@unit` now raises a validator advisory (ASAM lists no rule id for the
+  pairing, so the finding cites none).
+- **Face sizes** — a placement writes `@height`/`@width` from §1.4. A D3-1
+  street-name blade declares no `@width`: its length follows its legend.
+- **Legacy German identities degrade, they do not break.** A pre-#414 scene
+  still parses, re-exports byte-identically, and renders on the generic
+  silhouette; the German fuzz-corpus seeds stay German on purpose as the
+  regression for it. The generic-drop default moved off the StVO catalog to the
+  pack's stop sign.
+- **`assets/samples/gs1_urban_intersection.xodr`** was regenerated from
+  `python/examples/build_gs1.py`, which also picked up the §1.2 cross-section
+  and crosswalk-outline drift that had accumulated since it was last written.
+- **Still to land (#414, geometry):** the sign *meshes* — per-designation
+  silhouettes at the §1.4 face sizes, the Ø 0.06 m post, the 2.1 m bottom-edge
+  mounting — and the baked symbol artwork with the SIL-OFL highway typeface.
+  Until then the pack draws on the pre-existing silhouettes.
 
 ### Props (→ #415)
 

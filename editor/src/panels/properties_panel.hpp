@@ -40,6 +40,7 @@
 #include <QLineEdit>
 #include <QPlainTextEdit>
 #include <QPushButton>
+#include <QSpinBox>
 #include <QVBoxLayout>
 #include <QWidget>
 #include <functional>
@@ -378,6 +379,14 @@ private:
   /// may carry literal newlines — that commits ONE set_signal_text on focus-out
   /// (the single-undo rule); Escape restores. Disabled for dynamic signals.
   QPlainTextEdit* signal_text_edit_;
+  /// Posted speed for a speed-limit designation (§14.1 Table 122: @value, with
+  /// @unit mandatory alongside it). Deliberately a plain QSpinBox and NOT a
+  /// UnitSpinBox: a speed is not a length, and spec §1.4 puts **mph on the
+  /// sign face regardless of the display-unit toggle**, so this value never
+  /// passes through the unit layer. Hidden for every other designation.
+  QSpinBox* signal_value_spin_;
+  /// The row label for signal_value_spin_, hidden with it.
+  QLabel* signal_value_label_;
 
   /// Object section: a selected <object>. A prop shows the Model slot; a marking
   /// instance (crosswalk / stencil / marking-curve) shows the Material slot
@@ -469,6 +478,10 @@ private:
 
   /// Commits a move_signal from the spinbox values for the primary signal.
   void push_signal_move();
+  /// Commits the posted speed as ONE set_signal_value (value + its mandatory
+  /// unit), skipping a value that did not change so a refresh re-seed never
+  /// pushes a command.
+  void push_signal_value();
 
   // --- crosswalk asset editor (p3-s2) ----------------------------------------
 

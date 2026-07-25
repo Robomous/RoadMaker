@@ -348,3 +348,68 @@ TEST(XodrSignals, WellFormedGs1SetProducesNoSignalFindings) {
     EXPECT_EQ(finding.rule_id.find("road.signal"), std::string::npos) << finding.message;
   }
 }
+
+// --- the US pack's persistence (§1.4, #414) ---------------------------------
+
+TEST(XodrSignals, UsPackIdentitiesRoundTripAsAFixedPoint) {
+  // §14.1 Table 122: @country is an e_countryCode (ISO 3166-1 alpha-2) and
+  // @type is a "type identifier according to country code", so a MUTCD
+  // designation under @country="US" is conforming — as is "mph", an e_unitSpeed
+  // literal (Table 158). Nothing here needs a vendor extension.
+  const std::string first = document_with_signals(R"(
+      <signal s="20" t="-4" id="20" dynamic="no" orientation="+" zOffset="2.1"
+              country="US" type="R1-1" subtype="-1" text="STOP" height="0.75" width="0.75"/>
+      <signal s="40" t="-4" id="21" dynamic="no" orientation="+" zOffset="2.1"
+              country="US" type="R2-1" subtype="-1" value="25" unit="mph"
+              height="0.75" width="0.6"/>
+      <signal s="55" t="-4" id="22" dynamic="no" orientation="+" zOffset="2.1"
+              country="US" type="R6-1" subtype="R" height="0.3" width="0.9"/>)");
+
+  const auto parsed = parse(first);
+  EXPECT_EQ(roadmaker::count_errors(parsed.diagnostics), 0U);
+  const auto written = roadmaker::write_xodr(parsed.network, "signals-test");
+  ASSERT_TRUE(written.has_value());
+  const auto reparsed = parse(*written);
+  const auto rewritten = roadmaker::write_xodr(reparsed.network, "signals-test");
+  ASSERT_TRUE(rewritten.has_value());
+  EXPECT_EQ(*written, *rewritten) << "writer output must be a fixed point";
+
+  std::vector<const Signal*> signals;
+  reparsed.network.for_each_signal(
+      [&](SignalId, const Signal& signal) { signals.push_back(&signal); });
+  ASSERT_EQ(signals.size(), 3U);
+  EXPECT_EQ(signals[0]->type, "R1-1");
+  EXPECT_EQ(signals[0]->country, "US");
+  EXPECT_EQ(signals[0]->text, "STOP");
+  ASSERT_TRUE(signals[0]->width.has_value());
+  EXPECT_DOUBLE_EQ(*signals[0]->width, 0.75);
+  ASSERT_TRUE(signals[1]->value.has_value());
+  EXPECT_DOUBLE_EQ(*signals[1]->value, 25.0);
+  EXPECT_EQ(signals[1]->unit, "mph");
+  EXPECT_EQ(signals[2]->subtype, "R") << "the One Way arrow direction is the variant";
+
+  // A conforming pack sign raises no signal finding.
+  for (const auto& finding : roadmaker::validate_network(reparsed.network)) {
+    EXPECT_EQ(finding.rule_id.find("road.signal"), std::string::npos) << finding.message;
+  }
+}
+
+TEST(XodrSignals, AValueWithoutItsUnitIsAdvised) {
+  // §14.1 Table 122 makes @unit mandatory whenever @value is given. ASAM lists
+  // no checker rule id for it, so the finding carries an EMPTY rule_id rather
+  // than an invented asam.net: one — the same convention as the dangling
+  // @signalId advisory.
+  const auto parsed = parse(document_with_signals(R"(
+      <signal s="40" t="-4" id="21" dynamic="no" orientation="+" zOffset="2.1"
+              country="US" type="R2-1" subtype="-1" value="25"/>)"));
+  EXPECT_EQ(roadmaker::count_errors(parsed.diagnostics), 0U);
+
+  bool advised = false;
+  for (const auto& finding : roadmaker::validate_network(parsed.network)) {
+    if (finding.message.find("@value but no @unit") != std::string::npos) {
+      advised = true;
+      EXPECT_TRUE(finding.rule_id.empty()) << "never cite an invented rule id";
+    }
+  }
+  EXPECT_TRUE(advised);
+}

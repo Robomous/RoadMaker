@@ -33,9 +33,10 @@ enum class LaneType;
 /// constants — nothing else in the tree restates them. The prop meshes are
 /// authored by scripts/gen_prop_meshes.py (stdlib-only, so it cannot include
 /// this header) and are held to the §1.5/§1.6 constants by the same tests.
-/// The §1.2/§1.3/§1.5/§1.6 tables in the spec doc are rendered by
-/// cross_section_markdown() / markings_markdown() /
-/// signals_lighting_markdown() / trees_buildings_markdown(), and
+/// The §1.2/§1.3/§1.4/§1.5/§1.6 tables in the spec doc are rendered by
+/// cross_section_markdown() / markings_markdown() / signs_markdown() /
+/// sign_mounting_markdown() / signals_lighting_markdown() /
+/// trees_buildings_markdown(), and
 /// test_defaults_registry.cpp fails CI when the
 /// committed doc and this registry disagree (the shortcut_registry
 /// mechanism). Change a default by PRing the spec doc and this file
@@ -85,6 +86,44 @@ inline constexpr double kCrosswalkWidth = 3.0; ///< default walking depth
 inline constexpr double kCrosswalkMinWidth = 1.8;
 inline constexpr double kCrosswalkStripeLength = 0.60; ///< zebra bar
 inline constexpr double kCrosswalkStripeGap = 0.60;    ///< zebra gap
+
+// --- §1.4 Signs (MUTCD, conventional-road sizes) --------------------------
+//
+// Face sizes are authored geometry. The US pack itself is a data table in
+// roadmaker::signs (core/include/roadmaker/assets/sign_catalog.hpp) that takes
+// every dimension from here, and the sign meshes in
+// scripts/gen_prop_meshes.py are built to the same extents —
+// test_defaults_registry.cpp asserts both against these constants, exactly as
+// it does for the §1.5/§1.6 props.
+
+inline constexpr double kSignStopFace = 0.75;            ///< R1-1 octagon, 30 in
+inline constexpr double kSignStopFaceMultilane = 0.90;   ///< R1-1 multilane option, 36 in
+inline constexpr double kSignYieldFace = 0.90;           ///< R1-2 triangle, 36 in
+inline constexpr double kSignSpeedLimitWidth = 0.60;     ///< R2-1, 24 in
+inline constexpr double kSignSpeedLimitHeight = 0.75;    ///< R2-1, 30 in
+inline constexpr double kSignDoNotEnterFace = 0.75;      ///< R5-1, 30 in
+inline constexpr double kSignOneWayWidth = 0.90;         ///< R6-1, 36 in
+inline constexpr double kSignOneWayHeight = 0.30;        ///< R6-1, 12 in
+inline constexpr double kSignTurnRestrictionFace = 0.60; ///< R3-1/R3-2, 24 in
+inline constexpr double kSignKeepRightWidth = 0.60;      ///< R4-7, 24 in
+inline constexpr double kSignKeepRightHeight = 0.75;     ///< R4-7, 30 in
+inline constexpr double kSignWarningFace = 0.75;         ///< W-series diamond, 30 in
+inline constexpr double kSignSchoolFace = 0.90;          ///< S1-1 pentagon, 36 in
+inline constexpr double kSignStreetNameMinHeight = 0.25; ///< D3-1 blade, 10 in
+inline constexpr double kSignStreetNameHeight = 0.30;    ///< D3-1 blade, 12 in
+/// D3-1 legends are sized to this; the blade length follows the text, so a
+/// street-name sign declares no @width (§1.4 "length fits text").
+inline constexpr double kSignStreetNameMinLetterHeight = 0.15;
+
+// §1.4 sign mounting. The mesh assembles post + face so that the face's bottom
+// edge sits at kSignMountUrban above z=0; the lateral values are placement
+// guidance that composes with #338's outermost-lane-edge soft-snap.
+
+inline constexpr double kSignMountUrban = 2.1;      ///< bottom edge over pavement, 7 ft
+inline constexpr double kSignMountRural = 1.5;      ///< rural option, 5 ft
+inline constexpr double kSignLateralShoulder = 1.8; ///< min from shoulder edge, 6 ft
+inline constexpr double kSignLateralCurb = 0.60;    ///< urban min from curb face, 2 ft
+inline constexpr double kSignPostDiameter = 0.06;   ///< breakaway single post, visual
 
 // --- §1.5 Signals, lighting, street furniture -----------------------------
 //
@@ -146,6 +185,12 @@ inline constexpr double kHouseFootprintWidth = 8.0;
 
 /// Renders the spec doc's §1.3 table, same contract.
 [[nodiscard]] RM_API std::string markings_markdown();
+
+/// Renders the spec doc's §1.4 sign-face table, same contract.
+[[nodiscard]] RM_API std::string signs_markdown();
+
+/// Renders the spec doc's §1.4 sign-mounting table, same contract.
+[[nodiscard]] RM_API std::string sign_mounting_markdown();
 
 /// Renders the spec doc's §1.5 table, same contract.
 [[nodiscard]] RM_API std::string signals_lighting_markdown();

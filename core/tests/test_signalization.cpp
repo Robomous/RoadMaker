@@ -39,6 +39,7 @@
 // here to stop the templates from quietly hard-coding four arms: the axis
 // clustering must give it one two-arm axis and one single-arm axis.
 
+#include "roadmaker/assets/sign_catalog.hpp"
 #include "roadmaker/edit/operations.hpp"
 #include "roadmaker/mesh/junction_maneuvers.hpp"
 #include "roadmaker/mesh/junction_phases.hpp"
@@ -409,10 +410,14 @@ TEST(Signalize, StaticTemplatesCreateNoPhaseData) {
   EXPECT_EQ(junction.signalization.tmpl, "all_way_stop");
   EXPECT_TRUE(junction.junction_controllers.empty());
 
+  // The template takes its identity from the shipped catalogue (spec §1.4), so
+  // an all-way stop signs with the MUTCD designation, not a borrowed StVO code.
+  const roadmaker::signs::SignDef* stop = roadmaker::signs::find_by_key("us.r1_1");
+  ASSERT_NE(stop, nullptr);
   fixture.network.for_each_signal([&](SignalId, const Signal& signal) {
     EXPECT_FALSE(signal.dynamic.value_or(true));
-    EXPECT_EQ(signal.type, "206");
-    EXPECT_EQ(signal.country, "DE");
+    EXPECT_EQ(signal.type, stop->type);
+    EXPECT_EQ(signal.country, stop->country);
   });
 }
 

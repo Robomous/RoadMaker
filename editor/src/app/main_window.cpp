@@ -69,6 +69,7 @@
 #include "document/library_drop.hpp"
 #include "document/library_manifest.hpp"
 #include "document/signal_phase_overlay.hpp"
+#include "document/signal_placement.hpp"
 #include "document/units.hpp"
 #include "help/help_registry.hpp"
 #include "help/help_viewer.hpp"
@@ -1455,13 +1456,12 @@ LibraryItem MainWindow::resolve_default_signal_item() const {
 }
 
 LibraryItem MainWindow::resolve_default_sign_item() const {
-  // The Library's text-sign asset (signal tag "sign_text") — the Sign tool's
-  // default. An empty item just makes SignTool fall back to the built-in text
-  // plate, so the tool is always usable.
+  // The Library's first editable-legend sign — the Sign tool's default. An
+  // empty item just makes SignTool fall back to kDefaultSignTag, so the tool is
+  // always usable.
   for (int row = 0; row < library_model_.rowCount(); ++row) {
     const LibraryItem* item = library_model_.item(row);
-    if (item != nullptr && item->kind == LibraryItem::Kind::Signal &&
-        item->signal == QStringLiteral("sign_text")) {
+    if (item != nullptr && authors_editable_legend(*item)) {
       return *item;
     }
   }
@@ -1543,10 +1543,11 @@ void MainWindow::arm_tool_for_library_item(const LibraryItem& item) {
     tool = actions_->tool_crosswalk;
     break;
   case LibraryItem::Kind::Signal:
-    // The Sign tool authors text signs; other signals (traffic lights, stop /
-    // yield) place through the Library drop or auto-signalize, not a single
-    // placement tool, so they do not arm anything.
-    if (item.signal == QStringLiteral("sign_text")) {
+    // The Sign tool authors signs whose legend the user types; the rest
+    // (traffic lights, symbol-only regulatory and warning signs) place through
+    // the Library drop or auto-signalize, not a single placement tool, so they
+    // do not arm anything.
+    if (authors_editable_legend(item)) {
       tool = actions_->tool_sign;
     }
     break;

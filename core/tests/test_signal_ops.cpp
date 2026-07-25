@@ -47,8 +47,11 @@ RoadId author_street(RoadNetwork& network) {
   return *road;
 }
 
-/// A valid static sign (speed limit 50) — type/subtype/country satisfy the
-/// signal validation rules so write_xodr accepts the network.
+/// A valid static sign — type/subtype/country satisfy the signal validation
+/// rules so write_xodr accepts the network. This is deliberately a LEGACY
+/// German StVO identity: these tests are about the command layer, and using an
+/// identity no shipped pack claims keeps them independent of what the US
+/// catalogue happens to contain.
 Signal make_sign(std::string odr_id, double s, double t) {
   Signal sign;
   sign.odr_id = std::move(odr_id);
@@ -217,6 +220,107 @@ TEST(SignalOps, MultiLineTextRoundTripsThroughXodr) {
   reparsed->network.for_each_signal([&](SignalId /*sid*/, const Signal& sig) { again = &sig; });
   ASSERT_NE(again, nullptr);
   EXPECT_EQ(again->text, "City\nBadAibling");
+}
+
+// --- set_signal_value (US sign pack, #414) ----------------------------------
+//
+// §14.1 Table 122 binds @value to @unit: "value of the signal, if value is
+// given, unit is mandatory". The command therefore edits the pair, never one
+// half of it — that invariant is what these tests pin.
+
+TEST(SignalOps, SetValueApplyRevertIsByteIdentical) {
+  RoadNetwork network;
+  const RoadId road = author_street(network);
+  const SignalId id = network.add_signal(road, make_sign("1", 10.0, -5.0));
+  const std::string before = snapshot_xodr(network);
+
+  auto command = edit::set_signal_value(network, id, 25.0, "mph");
+  ASSERT_TRUE(command->apply(network).has_value());
+  ASSERT_TRUE(network.signal(id)->value.has_value());
+  EXPECT_DOUBLE_EQ(*network.signal(id)->value, 25.0);
+  EXPECT_EQ(network.signal(id)->unit, "mph");
+  EXPECT_NE(snapshot_xodr(network), before) << "posting a speed must change the output";
+
+  ASSERT_TRUE(command->revert(network).has_value());
+  EXPECT_FALSE(network.signal(id)->value.has_value());
+  EXPECT_EQ(network.signal(id)->unit, "");
+  EXPECT_EQ(snapshot_xodr(network), before) << "undo must be byte-identical";
+
+  ASSERT_TRUE(command->apply(network).has_value());
+  EXPECT_DOUBLE_EQ(*network.signal(id)->value, 25.0); // redo
+}
+
+TEST(SignalOps, ClearingTheValueClearsTheUnitWithIt) {
+  RoadNetwork network;
+  const RoadId road = author_street(network);
+  Signal sign = make_sign("1", 10.0, -5.0);
+  sign.value = 25.0;
+  sign.unit = "mph";
+  const SignalId id = network.add_signal(road, sign);
+
+  auto command = edit::set_signal_value(network, id, std::nullopt, "");
+  ASSERT_TRUE(command->apply(network).has_value());
+  EXPECT_FALSE(network.signal(id)->value.has_value());
+  EXPECT_EQ(network.signal(id)->unit, "") << "a unit without a value is meaningless";
+}
+
+TEST(SignalOps, HalfAPairIsRejectedWithoutMutating) {
+  RoadNetwork network;
+  const RoadId road = author_street(network);
+  const SignalId id = network.add_signal(road, make_sign("1", 10.0, -5.0));
+  const std::string before = snapshot_xodr(network);
+
+  // A value with no unit, and a unit with no value: both violate §14.1.
+  EXPECT_FALSE(edit::set_signal_value(network, id, 25.0, "")->apply(network).has_value());
+  EXPECT_FALSE(
+      edit::set_signal_value(network, id, std::nullopt, "mph")->apply(network).has_value());
+  EXPECT_EQ(snapshot_xodr(network), before) << "a rejected command must not mutate";
+}
+
+TEST(SignalOps, NoOpValueIsRejected) {
+  RoadNetwork network;
+  const RoadId road = author_street(network);
+  Signal sign = make_sign("1", 10.0, -5.0);
+  sign.value = 25.0;
+  sign.unit = "mph";
+  const SignalId id = network.add_signal(road, sign);
+  const std::string before = snapshot_xodr(network);
+
+  auto command = edit::set_signal_value(network, id, 25.0, "mph");
+  EXPECT_FALSE(command->apply(network).has_value());
+  EXPECT_EQ(snapshot_xodr(network), before);
+}
+
+TEST(SignalOps, SetValueRejectsStaleSignalWithoutMutating) {
+  RoadNetwork network;
+  const RoadId road = author_street(network);
+  const SignalId id = network.add_signal(road, make_sign("1", 10.0, -5.0));
+  network.erase_signal(id);
+  const std::string before = snapshot_xodr(network);
+
+  auto command = edit::set_signal_value(network, id, 25.0, "mph");
+  EXPECT_FALSE(command->apply(network).has_value());
+  EXPECT_EQ(snapshot_xodr(network), before);
+}
+
+TEST(SignalOps, PostedSpeedRoundTripsThroughXodr) {
+  RoadNetwork network;
+  const RoadId road = author_street(network);
+  const SignalId id = network.add_signal(road, make_sign("1", 10.0, -5.0));
+  ASSERT_TRUE(edit::set_signal_value(network, id, 45.0, "mph")->apply(network).has_value());
+
+  const auto written = write_xodr(network, "speed-limit");
+  ASSERT_TRUE(written.has_value());
+  const auto reparsed = parse_xodr(*written, "speed-limit");
+  ASSERT_TRUE(reparsed.has_value());
+  ASSERT_EQ(reparsed->network.signal_count(), 1U);
+
+  const Signal* again = nullptr;
+  reparsed->network.for_each_signal([&](SignalId /*sid*/, const Signal& sig) { again = &sig; });
+  ASSERT_NE(again, nullptr);
+  ASSERT_TRUE(again->value.has_value());
+  EXPECT_DOUBLE_EQ(*again->value, 45.0);
+  EXPECT_EQ(again->unit, "mph");
 }
 
 } // namespace

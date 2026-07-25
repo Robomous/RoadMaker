@@ -17,6 +17,7 @@
 #include "roadmaker/mesh/mesh_builder.hpp"
 
 #include "roadmaker/assets/prop_library.hpp"
+#include "roadmaker/assets/sign_catalog.hpp"
 #include "roadmaker/edit/connection.hpp"
 #include "roadmaker/geometry/poly3.hpp"
 #include "roadmaker/mesh/junction_stoplines.hpp"
@@ -729,26 +730,47 @@ void build_object_instances(const RoadNetwork& network,
   }
 }
 
-/// The bundled signal model a <signal> renders as: a dynamic signal (traffic
-/// light) is "signal_light", a static one (sign) is "sign_generic". @dynamic is
-/// optional in the schema; an absent value is treated as static (a sign) — the
-/// conservative default, and the reader already warns on the missing attribute.
+/// The bundled signal model a <signal> renders as.
+///
+/// The shipped sign catalogue (roadmaker::signs, spec §1.4) IS the mapping: a
+/// placed signal's (@country, @type) names its model, so a designation gains a
+/// silhouette by joining the table rather than by growing a branch here. Two
+/// degradations are deliberate and must both stay:
+///
+///  - an identity this build does not ship (a foreign-country sign, or the
+///    German StVO plates RoadMaker itself authored before #414) still has to
+///    draw, so it falls back to the generic silhouette rather than vanishing;
+///  - a catalogue entry whose model the asset bundle does not carry falls back
+///    the same way, because the table can legitimately outrun the meshes.
+///
+/// @dynamic is optional in the schema; an absent value is treated as static (a
+/// sign) — the conservative default, and the reader already warns on the
+/// missing attribute.
 std::string_view signal_model_id(const Signal& signal) {
-  if (signal.dynamic.value_or(false)) {
-    return "signal_light";
+  const signs::SignDef* def = signs::find_by_identity(signal.country, signal.type);
+  if (def != nullptr && props::model(def->model_id) != nullptr) {
+    return def->model_id;
   }
-  // A couple of common German StVO (VzKat) regulatory plates render as their own
-  // bundled silhouette; every other static sign falls back to the generic plate.
-  if (signal.type == "206") { // StVO 206: Halt! Vorfahrt gewähren — STOP
-    return "sign_stop";
+  return signal.dynamic.value_or(false) ? "signal_light" : "sign_generic";
+}
+
+/// The legend a sign's face shows.
+///
+/// An authored @text always wins. A speed-limit designation with no @text
+/// derives its legend from @value instead, so the value the properties pane
+/// edits is what the face reads. §1.4 puts **mph on the face regardless of the
+/// editor's display-unit toggle**, which is why this takes the authored value
+/// straight: it never converts, and it never consults a UI setting (the kernel
+/// could not, and must not, see one).
+std::string signal_face_text(const Signal& signal) {
+  if (!signal.text.empty()) {
+    return signal.text;
   }
-  if (signal.type == "205") { // StVO 205: Vorfahrt gewähren — yield/give way
-    return "sign_yield";
+  const signs::SignDef* def = signs::find_by_identity(signal.country, signal.type);
+  if (def == nullptr || !def->default_value.has_value() || !signal.value.has_value()) {
+    return {};
   }
-  if (signal.type == "310") { // StVO 310: Ortstafel — town-entrance text plate
-    return "sign_plate";
-  }
-  return "sign_generic";
+  return fmt::format("SPEED\nLIMIT\n{:.0f}", *signal.value);
 }
 
 /// A model-space text-face quad for a sign plate: a rectangle +0.005 m in front
@@ -792,12 +814,14 @@ void build_signal_instances(const RoadNetwork& network,
                             .model_id = std::string(signal_model_id(signal)),
                             .position = position,
                             .heading = heading};
-    // Editable text face: only a STATIC sign with non-empty @text on a model
-    // that carries a face plate. Dynamic signals (traffic lights) never do.
-    if (!signal.dynamic.value_or(false) && !signal.text.empty()) {
+    // Editable text face: only a STATIC sign with a legend (an authored @text,
+    // or a speed limit's @value) on a model that carries a face plate. Dynamic
+    // signals (traffic lights) never do.
+    if (!signal.dynamic.value_or(false)) {
+      const std::string face_text = signal_face_text(signal);
       const props::PropModel* model = props::model(instance.model_id);
-      if (model != nullptr && model->face_plate.has_value()) {
-        instance.face = make_face_overlay(signal.text, *model->face_plate);
+      if (!face_text.empty() && model != nullptr && model->face_plate.has_value()) {
+        instance.face = make_face_overlay(face_text, *model->face_plate);
       }
     }
     out.push_back(std::move(instance));
