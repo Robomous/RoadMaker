@@ -154,18 +154,22 @@ def props_scale() -> None:
 
 
 def sign_pack() -> None:
-    """Every US pack sign along a 160 m local street (#414).
+    """Every US pack sign along a 75 m local street (#414).
 
     The standing visual check for §1.4: face sizes, mounting height and post,
     all against the same ruler props_scale uses (a 3.0 m lane, a 1.8 m
     sidewalk). Signs alternate sides so both the faces and the backs are in
     frame, and the ones with editable legends carry a legible example.
+
+    The street is deliberately SHORT and the spacing tight: the screenshot
+    harness frames the whole scene, so a sign spread over 160 m came out a few
+    pixels tall and checked nothing.
     """
     network = rm.RoadNetwork()
     stack = rm.edit.EditStack()
     stack.push(
         network,
-        rm.edit.create_road([(0.0, 0.0), (160.0, 0.0)], rm.LaneProfile.local_road(), "main"),
+        rm.edit.create_road([(0.0, 0.0), (75.0, 0.0)], rm.LaneProfile.local_road(), "main"),
     )
     road_id = network.find_road("1")
 
@@ -183,7 +187,7 @@ def sign_pack() -> None:
         signal.country = "US"
         signal.dynamic = False
         signal.orientation = rm.ObjectOrientation.PLUS
-        signal.s = 10.0 + 10.0 * index
+        signal.s = round(5.0 + 4.7 * index, 2)
         signal.t = -4.8 if right else 4.8
         signal.width, signal.height = spec["width"], spec["height"]
         signal.text = legends.get(designation, "")
