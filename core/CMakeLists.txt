@@ -17,6 +17,7 @@ add_library(roadmaker_core ${_rm_core_type}
   src/road/defaults.cpp
   src/road/repeat_expansion.cpp
   src/road/road_style.cpp
+  src/road/signal_facing.cpp
   src/road/surface_derivation.cpp
   src/road/terrain.cpp
   src/road/terrain_brush.cpp

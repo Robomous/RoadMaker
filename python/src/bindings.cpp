@@ -43,6 +43,7 @@
 #include "roadmaker/road/grade_separation.hpp"
 #include "roadmaker/road/network.hpp"
 #include "roadmaker/road/repeat_expansion.hpp"
+#include "roadmaker/road/signal_facing.hpp"
 #include "roadmaker/road/surface_derivation.hpp"
 #include "roadmaker/road/terrain.hpp"
 #include "roadmaker/road/terrain_brush.hpp"
@@ -2015,6 +2016,31 @@ NB_MODULE(_roadmaker, m) {
       "approaches, inspectable but not authorable. Empty for a stale id and for "
       "a SPAN (virtual) junction, which has no connections at all.");
 
+  // --- auto-orientation (p6-s14, #416) -------------------------------------------
+  nb::class_<roadmaker::SignalFacing>(m, "SignalFacing")
+      .def(nb::init<>())
+      .def_rw("orientation", &roadmaker::SignalFacing::orientation)
+      .def_rw("h_offset", &roadmaker::SignalFacing::h_offset)
+      .def("__repr__", [](const roadmaker::SignalFacing& facing) {
+        return "SignalFacing(h_offset=" + std::to_string(facing.h_offset) + ")";
+      });
+
+  m.def(
+      "auto_signal_facing",
+      [](const roadmaker::RoadNetwork& network, roadmaker::RoadId road, double s, double t) {
+        return unwrap(roadmaker::auto_signal_facing(network, road, s, t));
+      },
+      "network"_a,
+      "road"_a,
+      "s"_a,
+      "t"_a,
+      "The facing a sign or signal placed at road-relative (s, t) should carry: the "
+      "@orientation of the traffic it governs, and the @hOffset that aims it against "
+      "that traffic with the spec's toe-out. Derived from the road heading, the side "
+      "(sign of t) and the travel direction of the nearest driving lane; a connecting "
+      "road inside a junction is read from its approach instead of its interior lanes. "
+      "Raises for a stale road or an s off the road.");
+
   // --- signal phases (p4-s8, #229) -----------------------------------------------
   // The signal CYCLE — Layer 1 (§14.6 excludes timing; ADR-0008). The derived
   // and authored cycles are reported identically; only JunctionPhasePlan.authored
@@ -3891,6 +3917,14 @@ NB_MODULE(_roadmaker, m) {
            "t"_a,
            "h_offset"_a = std::optional<double>{},
            "Re-locates a signal to road-relative (s, t); h_offset (rad) optional.");
+  edit.def("auto_orient_signal",
+           &roadmaker::edit::auto_orient_signal,
+           "network"_a,
+           "signal"_a,
+           "Re-derives a signal's @orientation and @hOffset from the road it stands on "
+           "(auto_signal_facing). The explicit 'auto' action: placement and this are the "
+           "only two places a facing is ever computed, so a hand-set heading is never "
+           "silently recomputed. Rejects a no-op; one undo step.");
   edit.def(
       "set_signal_text",
       [](const roadmaker::RoadNetwork& network, roadmaker::SignalId signal, std::string text) {

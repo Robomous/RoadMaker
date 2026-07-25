@@ -35,6 +35,7 @@
 #include <array>
 #include <cmath>
 #include <cstddef>
+#include <numbers>
 #include <optional>
 #include <stdexcept>
 #include <string>
@@ -156,6 +157,58 @@ TEST(SignalMeshes, HeadingAddsHOffsetAndZOffsetLifts) {
   ASSERT_EQ(mesh.signal_instances.size(), 1U);
   EXPECT_NEAR(mesh.signal_instances[0].heading, 1.5, 1e-6);
   EXPECT_NEAR(mesh.signal_instances[0].position[2], 2.0, 1e-6);
+}
+
+// --- the @orientation datum (p6-s14, #416) -----------------------------------
+//
+// ASAM OpenDRIVE 1.9.0 §14.1: "+" applies to traffic travelling toward +s, and
+// such a signal with @hOffset 0 FACES that traffic — so its face looks back
+// down -s, and @hOffset is measured counter-clockwise from there. "-" and
+// "none" measure from the positive direction. Until #416 the mesher ignored
+// @orientation entirely and rendered the "-" datum in all three cases.
+
+TEST(SignalMeshes, PlusOrientationFacesBackDownTheRoad) {
+  RoadNetwork network;
+  const RoadId road = author_street(network);
+  Signal sig = make_signal("s1", /*dynamic=*/false, 30.0, -6.0);
+  sig.orientation = ObjectOrientation::Plus;
+  network.add_signal(road, sig);
+
+  const NetworkMesh mesh = build_network_mesh(network);
+  ASSERT_EQ(mesh.signal_instances.size(), 1U);
+  // Road tangent is 0 (the street runs along +x), so the face looks at pi.
+  EXPECT_NEAR(mesh.signal_instances[0].heading, std::numbers::pi, 1e-6);
+}
+
+TEST(SignalMeshes, MinusAndNoneOrientationsFaceAlongTheRoad) {
+  RoadNetwork network;
+  const RoadId road = author_street(network);
+  Signal minus = make_signal("s1", /*dynamic=*/false, 30.0, 6.0);
+  minus.orientation = ObjectOrientation::Minus;
+  network.add_signal(road, minus);
+  Signal none = make_signal("s2", /*dynamic=*/false, 60.0, 6.0);
+  none.orientation = ObjectOrientation::None;
+  network.add_signal(road, none);
+
+  const NetworkMesh mesh = build_network_mesh(network);
+  ASSERT_EQ(mesh.signal_instances.size(), 2U);
+  for (const SignalInstance& instance : mesh.signal_instances) {
+    EXPECT_NEAR(instance.heading, 0.0, 1e-6);
+  }
+}
+
+TEST(SignalMeshes, HOffsetRotatesFromTheOrientationsDatumNotTheTangent) {
+  RoadNetwork network;
+  const RoadId road = author_street(network);
+  Signal sig = make_signal("s1", /*dynamic=*/false, 30.0, -6.0);
+  sig.orientation = ObjectOrientation::Plus;
+  sig.h_offset = 0.25;
+  network.add_signal(road, sig);
+
+  const NetworkMesh mesh = build_network_mesh(network);
+  ASSERT_EQ(mesh.signal_instances.size(), 1U);
+  EXPECT_NEAR(mesh.signal_instances[0].heading, std::numbers::pi + 0.25, 1e-6)
+      << "the offset must accumulate on the datum, not on the raw road tangent";
 }
 
 TEST(SignalMeshes, RemeshObjectsRebuildsSignalInstances) {

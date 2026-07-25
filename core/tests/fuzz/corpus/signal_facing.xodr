@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<OpenDRIVE>
+  <header revMajor="1" revMinor="8" name="signal_facing" vendor="RoadMaker" />
+  <road length="120" id="1" junction="-1">
+    <planView>
+      <geometry s="0" x="0" y="0" hdg="0" length="120">
+        <line />
+      </geometry>
+    </planView>
+    <lanes>
+      <laneSection s="0">
+        <left>
+          <lane id="1" type="driving" level="false">
+            <width sOffset="0" a="3.3" b="0" c="0" d="0" />
+            <roadMark sOffset="0" type="solid" width="0.1" />
+          </lane>
+        </left>
+        <center>
+          <lane id="0" type="none" level="false">
+            <roadMark sOffset="0" type="broken" width="0.1" />
+          </lane>
+        </center>
+        <right>
+          <lane id="-1" type="driving" level="false">
+            <width sOffset="0" a="3.3" b="0" c="0" d="0" />
+            <roadMark sOffset="0" type="solid" width="0.1" />
+          </lane>
+          <lane id="-2" type="shoulder" level="false">
+            <width sOffset="0" a="1.8" b="0" c="0" d="0" />
+          </lane>
+        </right>
+      </laneSection>
+    </lanes>
+    <signals>
+      <signal s="20" t="-5" id="1" dynamic="no" orientation="+" zOffset="0" country="US" type="R1-1" subtype="-1" hOffset="0.05235987755982988" />
+      <signal s="40" t="5" id="2" dynamic="no" orientation="-" zOffset="0" country="US" type="R1-1" subtype="-1" hOffset="0.05235987755982988" />
+      <signal s="90" t="-5" id="3" dynamic="no" orientation="none" zOffset="0" country="US" type="R1-2" subtype="-1" hOffset="-0.75" />
+    </signals>
+    <userData code="rm:waypoints" value="0,0;120,0" />
+  </road>
+</OpenDRIVE>

@@ -76,7 +76,8 @@ nearest_signal_station(const RoadNetwork& network, double x, double y);
 /// street-name blade, the pack's most obviously text-driven entry.
 inline constexpr auto kDefaultSignTag = "us.d3_1";
 
-/// The `Signal` a library item's `signal` tag authors at road-relative (s, t).
+/// The `Signal` a library item's `signal` tag authors on `road` at
+/// road-relative (s, t).
 ///
 /// The tag IS a key into the shipped sign catalogue (roadmaker::signs, spec
 /// §1.4): "us.r1_1" is the MUTCD stop sign, "us.r2_1" a speed limit posted as
@@ -85,10 +86,21 @@ inline constexpr auto kDefaultSignTag = "us.d3_1";
 /// @dynamic, @text, @height/@width, @value/@unit — is transcribed from that
 /// entry, so adding a designation never means editing this function.
 ///
-/// Orientation "+" faces the signal along increasing s; deriving it from the
-/// approach is #416's scope, and mounting pose (@zOffset, @pitch, @roll) is
-/// #418's.
-[[nodiscard]] Signal make_signal(const QString& tag, std::string odr_id, double s, double t);
+/// The FACING comes from auto_signal_facing (spec's auto-orientation section):
+/// the sign looks against the traffic of the driving lane it governs, canted
+/// by the registry's toe-out. This is ONE of the two places in the tree
+/// allowed to derive a facing — see roadmaker/road/signal_facing.hpp for the
+/// invariant and why it, not a stored flag, is what makes a user's heading
+/// edit stick. A road whose geometry yields no facing falls back to the
+/// pre-#416 "+" along increasing s rather than refusing the placement.
+///
+/// Mounting pose (@zOffset, @pitch, @roll) remains #418's.
+[[nodiscard]] Signal make_signal(const RoadNetwork& network,
+                                 RoadId road,
+                                 const QString& tag,
+                                 std::string odr_id,
+                                 double s,
+                                 double t);
 
 /// World position of a signal head: its (s, t) on the owning road, lifted by its
 /// own zOffset — the exact projection the mesh builder instances the head at, so

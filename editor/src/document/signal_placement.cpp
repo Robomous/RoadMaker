@@ -20,6 +20,7 @@
 #include "roadmaker/road/network.hpp"
 #include "roadmaker/road/object.hpp"
 #include "roadmaker/road/road.hpp"
+#include "roadmaker/road/signal_facing.hpp"
 
 #include <array>
 #include <set>
@@ -69,12 +70,28 @@ bool authors_editable_legend(const LibraryItem& item) {
   return def != nullptr && def->legend_editable;
 }
 
-Signal make_signal(const QString& tag, std::string odr_id, double s, double t) {
+Signal make_signal(const RoadNetwork& network,
+                   RoadId road,
+                   const QString& tag,
+                   std::string odr_id,
+                   double s,
+                   double t) {
   Signal signal;
   signal.odr_id = std::move(odr_id);
-  signal.orientation = ObjectOrientation::Plus;
   signal.s = s;
   signal.t = t;
+
+  // Auto-orientation (#416): the sign faces the traffic of the lane it
+  // governs. One of the two sanctioned places to derive a facing — see
+  // roadmaker/road/signal_facing.hpp. A road with no usable geometry keeps the
+  // pre-#416 default rather than blocking the placement.
+  if (const Expected<SignalFacing> facing = auto_signal_facing(network, road, s, t);
+      facing.has_value()) {
+    signal.orientation = facing->orientation;
+    signal.h_offset = facing->h_offset;
+  } else {
+    signal.orientation = ObjectOrientation::Plus;
+  }
 
   // The shipped sign catalogue (roadmaker::signs, spec §1.4) IS the identity:
   // this function transcribes an entry, it does not decide one. An unknown tag

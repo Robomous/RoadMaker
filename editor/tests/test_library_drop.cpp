@@ -841,6 +841,40 @@ TEST(LibraryDrop, CrosswalkDropOnAnApproachPlacesItOnThatArm) {
   EXPECT_EQ(count_errors(validate_network(network)), 0U);
 }
 
+// --- auto-orientation on placement (p6-s14, #416) ----------------------------
+//
+// Dropping is one of only two paths allowed to derive a facing, so the drop
+// resolver is where the editor-side rule is pinned. The kernel owns the maths
+// (test_signal_facing); what matters here is that placement CONSULTS it
+// instead of authoring a fixed "+".
+
+TEST(LibraryDrop, ASignDroppedOnTheRightFacesTrafficRunningWithTheRoad) {
+  RoadNetwork network = with_straight_road();
+  LibraryDropAction action = resolve_library_drop(signal("us.r1_1"), network, 40.0, -6.0);
+  ASSERT_EQ(action.kind, LibraryDropKind::Signal);
+  ASSERT_TRUE(action.command->apply(network).has_value());
+  roadmaker::SignalId id;
+  network.for_each_signal([&](roadmaker::SignalId sid, const roadmaker::Signal&) { id = sid; });
+  const roadmaker::Signal* sig = network.signal(id);
+  ASSERT_NE(sig, nullptr);
+  EXPECT_EQ(sig->orientation, roadmaker::ObjectOrientation::Plus);
+  EXPECT_DOUBLE_EQ(sig->h_offset, defaults::kSignToeOut);
+}
+
+TEST(LibraryDrop, ASignDroppedOnTheLeftFacesTheOtherWay) {
+  RoadNetwork network = with_straight_road();
+  LibraryDropAction action = resolve_library_drop(signal("us.r1_1"), network, 40.0, 6.0);
+  ASSERT_EQ(action.kind, LibraryDropKind::Signal);
+  ASSERT_TRUE(action.command->apply(network).has_value());
+  roadmaker::SignalId id;
+  network.for_each_signal([&](roadmaker::SignalId sid, const roadmaker::Signal&) { id = sid; });
+  const roadmaker::Signal* sig = network.signal(id);
+  ASSERT_NE(sig, nullptr);
+  EXPECT_EQ(sig->orientation, roadmaker::ObjectOrientation::Minus)
+      << "left-of-reference lanes run against +s, so the sign applies to '-' traffic";
+  EXPECT_DOUBLE_EQ(sig->h_offset, defaults::kSignToeOut);
+}
+
 TEST(LibraryDrop, CrosswalkDroppedInOpenSpaceIsRejectedWithAHint) {
   RoadNetwork network = crosswalk_junction();
   const LibraryDropAction action = resolve_library_drop(crosswalk_item(), network, 0.0, 50.0);

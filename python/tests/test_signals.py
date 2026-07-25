@@ -205,3 +205,53 @@ def test_validate_cites_signal_rules(network_with_road):
     assert any(
         f.rule_id == "asam.net:xodr:1.7.0:road.signal.use_country_code" for f in findings
     )
+
+
+# --- auto-orientation (p6-s14, #416) ----------------------------------------
+
+
+def test_auto_signal_facing_reads_the_lane_a_sign_governs(network_with_road):
+    """A sign faces the traffic of the driving lane nearest it.
+
+    Right-of-reference lanes run toward +s in right-hand traffic, so a
+    right-side sign applies to "+" traffic; a left-side one applies to "-".
+    """
+    network, road_id = network_with_road
+
+    right = rm.auto_signal_facing(network, road_id, 50.0, -4.0)
+    assert right.orientation == rm.ObjectOrientation.PLUS
+
+    left = rm.auto_signal_facing(network, road_id, 50.0, 4.0)
+    assert left.orientation == rm.ObjectOrientation.MINUS
+
+    # Both are canted away from the roadway by the same toe-out.
+    assert right.h_offset == pytest.approx(left.h_offset)
+    assert right.h_offset != 0.0
+
+
+def test_auto_orient_signal_aims_a_placed_sign(network_with_road):
+    network, road_id = network_with_road
+    signal_id = network.add_signal(road_id, make_speed_limit())
+
+    stack = rm.edit.EditStack()
+    stack.push(network, rm.edit.auto_orient_signal(network, signal_id))
+    aimed = network.signal(signal_id)
+    assert aimed.orientation == rm.ObjectOrientation.PLUS
+    assert aimed.h_offset != 0.0
+
+    # Idempotent: a second auto is a no-op and is rejected rather than pushed.
+    with pytest.raises(ValueError):
+        stack.push(network, rm.edit.auto_orient_signal(network, signal_id))
+
+
+def test_a_hand_set_heading_is_never_recomputed(network_with_road):
+    """The override rule: only placement and the explicit auto action derive a
+    facing, so moving a signal leaves a user's heading exactly where it was."""
+    network, road_id = network_with_road
+    signal_id = network.add_signal(road_id, make_speed_limit())
+
+    stack = rm.edit.EditStack()
+    stack.push(network, rm.edit.move_signal(network, signal_id, 50.0, -4.0, 1.25))
+    # Move it across the centre line, where auto-orientation would disagree.
+    stack.push(network, rm.edit.move_signal(network, signal_id, 80.0, 4.0))
+    assert network.signal(signal_id).h_offset == pytest.approx(1.25)

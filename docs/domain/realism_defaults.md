@@ -198,8 +198,11 @@ same mechanism that keeps `docs/user-guide/shortcuts.md` honest against
 Divergence fails CI, not review. The registry and test land with
 [#413](https://github.com/Robomous/RoadMaker/issues/413) (cross-section +
 markings) and are extended by
-[#415](https://github.com/Robomous/RoadMaker/issues/415) (props) and
-[#414](https://github.com/Robomous/RoadMaker/issues/414) (signs). #413 may
+[#415](https://github.com/Robomous/RoadMaker/issues/415) (props),
+[#414](https://github.com/Robomous/RoadMaker/issues/414) (signs) and
+[#416](https://github.com/Robomous/RoadMaker/issues/416) (auto-orientation —
+the registry's first ANGLES, stored in radians and constructed from their
+degree measure). #413 may
 regularize table formatting for the comparator; if it does, these tables
 are regenerated from the registry in that PR.
 
@@ -262,7 +265,7 @@ driving lane as the fallback for unlisted types.
 | Speed-limit value | baked into StVO `subtype` string, km/h, not editable | `signal_placement.cpp` | `value`+`unit` (mph face), editable, §1.4 |
 | Signal head | housing 0.84 m, lenses 0.14 m, pole 3.0 m | `scripts/gen_prop_meshes.py` | §1.5 |
 | Signal mounting | hand-placed zOffset 0; template heads 3.0 m / plates 2.2 m | `signal_placement.cpp`, `core/src/edit/operations.cpp` | §1.5 clearances / §1.4 mounting |
-| Orientation on placement | always `+`, hOffset 0, no side logic | `signal_placement.cpp` | auto-orientation section |
+| Orientation on placement | always `+`, hOffset 0, no side logic; the renderer ignored `@orientation` | `signal_placement.cpp`, `core/src/mesh/mesh_builder.cpp` | auto-orientation section |
 
 *Dispositions (landed with #414, identities first):* the three hard-coded
 identity tables — `make_signal`'s tag chain, the mesh builder's
@@ -393,3 +396,17 @@ street.
 |---|---|---|
 | Sign/signal facing | none (always along +s) | auto-orientation section |
 | Prop Z-rotation snapping | none (free ring) | 15° + suppression modifier (orientation table) |
+
+*Dispositions (landed with #416):* placement and one explicit **Auto facing**
+action now derive `@orientation` and `@hOffset` from the road, the side, and the
+travel direction of the nearest driving lane — `roadmaker::auto_signal_facing`,
+shared by hand placement and junction signalization (which previously
+open-coded the direction and never set a heading at all). Those two call sites
+are the ONLY places a facing is computed, which is how "a user-set heading is
+never re-auto-computed silently" holds without a stored flag: nothing else can
+recompute one.
+
+The renderer was corrected in the same pass. It had ignored `@orientation`
+entirely and aimed every signal along +s — the datum §14.1 defines for `"-"`,
+applied to all three literals. Existing files with `orientation="+"` therefore
+re-aim by 180°, which is the correction, not a regression.

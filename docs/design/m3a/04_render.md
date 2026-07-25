@@ -253,6 +253,10 @@ Signals now render, reusing the §3 prop-instancing path end to end:
   emitting one `SignalInstance` (kernel `mesh.hpp`) per `<signal>` — model id by
   `@dynamic` (light vs. sign; absent ⇒ sign, the conservative default), world
   pose from `s/t` → position, road tangent + `hOffset` → heading, `zOffset` lift.
+  *(Superseded by p6-s14, [#416](https://github.com/Robomous/RoadMaker/issues/416):
+  the heading datum is the one `@orientation` names, per ASAM OpenDRIVE §14.1 —
+  `"+"` measures `@hOffset` from the negative reference-line direction, not from
+  the tangent.)*
   Stored in `NetworkMesh::signal_instances` (named so, not `signals`, because Qt's
   moc `signals` macro would rewrite the member in an editor TU).
 - **Dirty channel:** signals rebuild inside `remesh_objects` on the

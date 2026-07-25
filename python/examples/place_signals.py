@@ -91,6 +91,24 @@ def main() -> int:
     stack.push(network, rm.edit.set_signal_text(network, plate_id, "MAIN ST\nW 4TH"))
     assert network.signal(plate_id).text == "MAIN ST\nW 4TH"
 
+    # Aim every sign at the traffic it governs. The editor does this on
+    # placement; here it is the same rule applied explicitly. @orientation says
+    # which direction's traffic the sign applies to, and @hOffset cants the face
+    # away from the roadway so headlights do not retroreflect straight back.
+    for signal_id in network.signals_of(road):
+        stack.push(network, rm.edit.auto_orient_signal(network, signal_id))
+
+    # The blade sits on the LEFT, so it governs traffic running the other way
+    # and ends up with the opposite orientation to the two right-side signs.
+    assert network.signal(plate_id).orientation == rm.ObjectOrientation.MINUS
+    assert network.signal(sign_id).orientation == rm.ObjectOrientation.PLUS
+
+    # A heading set by hand is an OVERRIDE: nothing recomputes it silently, not
+    # even a later move. Only auto_orient_signal derives a facing again.
+    stack.push(network, rm.edit.move_signal(network, sign_id, 40.0, -6.0, 0.5))
+    stack.push(network, rm.edit.move_signal(network, sign_id, 70.0, -6.0))
+    assert network.signal(sign_id).h_offset == 0.5
+
     print(f"placed {network.signal_count} signals")
     assert rm.validate_network(network) == []
 

@@ -19,6 +19,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 Current version on `main`: **0.0.1**.
 
 ### Added
+- **Signs face their traffic**
+  ([#416](https://github.com/Robomous/RoadMaker/issues/416)): placing a sign or
+  signal now aims it. RoadMaker reads the road heading where it landed, which
+  side of the reference line it sits on, and which way the nearest driving lane
+  runs, then points the face **against** that traffic and cants it away from the
+  roadway by the
+  [realism defaults](docs/domain/realism_defaults.md#auto-orientation-of-signs--signals)
+  toe-out so approaching headlights do not retroreflect straight back. Drop the
+  same sign on the opposite side of a two-way street and it turns to meet the
+  traffic on that side. It persists the plain ASAM way — `@orientation` plus
+  `@hOffset`, no vendor extension. Auto-signalized junction heads go through the
+  same rule, which also fixes their heading offset never having been set at all.
+  **A heading you set by hand is an override and is never silently
+  recomputed** — not by moving the sign, not by any later edit; the new **Auto
+  facing** button in the Attributes pane is the one way back to the derived
+  facing. That rule holds by construction rather than by a stored flag:
+  placement and that button are the only two places in the product that derive a
+  facing. Kernel: `roadmaker::auto_signal_facing` and
+  `edit::auto_orient_signal`, both exposed to Python.
+
 - **Signs are American, and they are data**
   ([#414](https://github.com/Robomous/RoadMaker/issues/414)): the Library's
   Signals shelf now carries the **US sign pack** — Stop, Yield, Speed limit, Do
@@ -245,6 +265,16 @@ Current version on `main`: **0.0.1**.
   about silently never matched.
 
 ### Fixed
+- **A signal's `@orientation` is finally what aims it**
+  ([#416](https://github.com/Robomous/RoadMaker/issues/416)): the renderer had
+  ignored `@orientation` outright and pointed every signal along increasing `s`,
+  which is the datum ASAM OpenDRIVE §14.1 defines for `"-"` — applied to all
+  three literals. It now faces the datum the signal's own orientation names,
+  with `@hOffset` measured from there as §14.1 specifies. **Signals in existing
+  files that carry `orientation="+"` therefore turn 180°**, in the viewport and
+  in the glTF/USD exports. That is the correction: those signals were always
+  meant to face the traffic they apply to.
+
 - **`write_xodr` no longer crashes on a dangling road link**
   ([#311](https://github.com/Robomous/RoadMaker/issues/311)): a road whose
   predecessor/successor named an erased road (or junction) was dereferenced

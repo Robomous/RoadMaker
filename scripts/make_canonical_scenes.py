@@ -186,7 +186,6 @@ def sign_pack() -> None:
             "L" if designation == "R6-1" else "-1")
         signal.country = "US"
         signal.dynamic = False
-        signal.orientation = rm.ObjectOrientation.PLUS
         signal.s = round(5.0 + 4.7 * index, 2)
         signal.t = -4.8 if right else 4.8
         signal.width, signal.height = spec["width"], spec["height"]
@@ -194,6 +193,15 @@ def sign_pack() -> None:
         if designation == "R2-1":
             signal.value, signal.unit = 25.0, "mph"
         stack.push(network, rm.edit.add_signal(network, road_id, signal))
+
+    # Aim each sign at the traffic it governs (#416). The signs alternate sides,
+    # so this is also what makes the scene a check ON auto-orientation: the
+    # left-hand ones must come out with the opposite @orientation, and every
+    # face must be readable from the lane it belongs to rather than showing its
+    # back. Before #416 this loop was a hardcoded "+" and half of them faced the
+    # wrong way.
+    for signal_id in network.signals_of(road_id):
+        stack.push(network, rm.edit.auto_orient_signal(network, signal_id))
 
     rm.save_xodr(network, str(SAMPLES / "sign_pack.xodr"), "sign_pack")
     print(f"wrote {SAMPLES / 'sign_pack.xodr'}")

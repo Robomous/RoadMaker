@@ -18,6 +18,7 @@
 
 #include "roadmaker/export.hpp"
 
+#include <numbers>
 #include <string>
 
 namespace roadmaker {
@@ -33,16 +34,17 @@ enum class LaneType;
 /// constants — nothing else in the tree restates them. The prop meshes are
 /// authored by scripts/gen_prop_meshes.py (stdlib-only, so it cannot include
 /// this header) and are held to the §1.5/§1.6 constants by the same tests.
-/// The §1.2/§1.3/§1.4/§1.5/§1.6 tables in the spec doc are rendered by
-/// cross_section_markdown() / markings_markdown() / signs_markdown() /
-/// sign_mounting_markdown() / signals_lighting_markdown() /
-/// trees_buildings_markdown(), and
+/// The §1.2/§1.3/§1.4/§1.5/§1.6 tables and the auto-orientation table in the
+/// spec doc are rendered by cross_section_markdown() / markings_markdown() /
+/// signs_markdown() / sign_mounting_markdown() / signals_lighting_markdown() /
+/// trees_buildings_markdown() / orientation_markdown(), and
 /// test_defaults_registry.cpp fails CI when the
 /// committed doc and this registry disagree (the shortcut_registry
 /// mechanism). Change a default by PRing the spec doc and this file
 /// together, then regenerating the doc tables from the renderers.
 ///
-/// Units are SI meters throughout (kernel frame).
+/// Units are SI meters, except the auto-orientation angles, which are radians
+/// (the kernel frame's angular unit).
 namespace defaults {
 
 /// The four default authoring presets (spec §1.2). Both create-road
@@ -125,6 +127,23 @@ inline constexpr double kSignLateralShoulder = 1.8; ///< min from shoulder edge,
 inline constexpr double kSignLateralCurb = 0.60;    ///< urban min from curb face, 2 ft
 inline constexpr double kSignPostDiameter = 0.06;   ///< breakaway single post, visual
 
+// --- Auto-orientation ------------------------------------------------------
+//
+// The spec's auto-orientation section. These are the registry's only ANGLES:
+// stored in radians like every other angle in the kernel (Signal::h_offset,
+// Object::hdg), but CONSTRUCTED from their degree measure so the derivation
+// survives — a hand-rounded 0.052 would be 2.979°, a different angle from the
+// one the doc specifies.
+
+/// Cant away from perpendicular applied to an auto-oriented sign or signal
+/// face, so approaching headlights do not retroreflect straight back (3°).
+/// Consumed by auto_signal_facing() — see roadmaker/road/signal_facing.hpp.
+inline constexpr double kSignToeOut = 3.0 * std::numbers::pi / 180.0;
+
+/// Detent of the viewport's prop rotation ring (15°), suppressed while Shift
+/// is held. Consumed by the editor's transform gizmo.
+inline constexpr double kPropRotationSnap = 15.0 * std::numbers::pi / 180.0;
+
 // --- §1.5 Signals, lighting, street furniture -----------------------------
 //
 // The signal rows are registry-rendered here so the whole §1.5 table is under
@@ -197,6 +216,9 @@ inline constexpr double kHouseFootprintWidth = 8.0;
 
 /// Renders the spec doc's §1.6 table, same contract.
 [[nodiscard]] RM_API std::string trees_buildings_markdown();
+
+/// Renders the spec doc's auto-orientation table, same contract.
+[[nodiscard]] RM_API std::string orientation_markdown();
 
 } // namespace defaults
 } // namespace roadmaker

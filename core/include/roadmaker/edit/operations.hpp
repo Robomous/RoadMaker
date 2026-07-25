@@ -1274,6 +1274,20 @@ set_signal_text(const RoadNetwork& network, SignalId signal, std::string text);
                                                                std::optional<double> value,
                                                                std::string unit);
 
+/// Re-derives a signal's facing from the road it stands on — the explicit
+/// "auto" action of the spec's auto-orientation section (p6-s14, #416). Sets
+/// @orientation and @hOffset from auto_signal_facing(); see
+/// roadmaker/road/signal_facing.hpp for the rule and, importantly, for the
+/// invariant this command is half of: placement and THIS are the only two
+/// places a facing is ever computed, which is what keeps a user-set heading
+/// from being silently re-derived by anything else.
+///
+/// Undo is byte-identical from the value snapshot. Fails for a stale signal
+/// id, a stale road back-reference, a road whose geometry cannot yield a
+/// facing, and a no-op (already facing where auto would put it).
+[[nodiscard]] RM_API std::unique_ptr<Command> auto_orient_signal(const RoadNetwork& network,
+                                                                 SignalId signal);
+
 // --- signalization (p4-s7, issue #228) ---------------------------------------
 
 // `kSignalizeAxisTolerance` and `cluster_signal_axes` were promoted to

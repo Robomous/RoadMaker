@@ -27,10 +27,13 @@ highlighting.
 2. [ ] Apply a four-way **protected-left** template. **Expected:** signal
    heads (prop assemblies) are placed automatically at each approach and
    each is **auto-linked** to a logical signal; the junction is marked
-   dynamically signalized.
+   dynamically signalized. Every head **faces its own approach** — fly down
+   each arm toward the junction and the lenses look back at you (p6-s14,
+   #416).
 3. [ ] Verify the static alternative: on a copy of the junction, apply a
    static template (stop signs). **Expected:** stop-sign props place at
-   the approaches; no phase data is created.
+   the approaches, each facing its approaching traffic; no phase data is
+   created.
 4. [ ] Open the **Signal Phase Editor** for the dynamic junction — via
    **⇧G**, by activating the Signal tool, or the junction's right-click
    **Signal Phases…**. **Expected:** it opens as a page in the 2D Editor
@@ -60,14 +63,26 @@ highlighting.
     byte-identically; a junction still on its derived default cycle writes
     no `rm:phases` at all.)*
 12. [ ] Activate the **Sign tool** (**B**) and click a road away from the
-    junction. **Expected:** a town-entrance plate places on the road and is
-    selected (added as of p4-s9, #230). Edit its **Text** row in the
-    Attributes pane to a two-line name (e.g. `City` / `Bad Aibling`).
-    **Expected:** the plate shows the text in the viewport; the edit is one
-    undo step.
+    junction, **on the right-hand side**. **Expected:** a street-name blade
+    places on the road and is selected (added as of p4-s9, #230; the pack
+    default moved to the US catalogue in p6-s12, #414). It **faces the
+    traffic coming toward it**, not along the road (p6-s14, #416). Edit its
+    **Text** row in the Attributes pane to a two-line name (e.g. `MAIN ST` /
+    `W 4TH`). **Expected:** the plate shows the text in the viewport; the
+    edit is one undo step.
+12b. [ ] Click again on the **left-hand** side of the same road.
+    **Expected:** the second sign faces the opposite way — it is aimed at the
+    traffic on that side. Now scrub the first sign's **Heading offset** to an
+    obviously wrong angle, then move that sign along the road with **s**.
+    **Expected:** the hand-set heading is **kept** — nothing re-derives it.
+    Press **Auto facing** in the Attributes pane. **Expected:** it returns to
+    facing its traffic, in one undo step, and **Ctrl+Z** brings the hand-set
+    heading back.
 13. [ ] Save, reload, and re-select the sign. **Expected:** the face text
     round-trips (the Text row shows the same multi-line value; the exported
-    `.xodr` carries `@text`). Export glTF (`.glb`) and open it. **Expected:**
+    `.xodr` carries `@text`), and so does the facing — including the hand-set
+    heading from step 12b, which the file carries as `@orientation` plus
+    `@hOffset` and which reload must not recompute. Export glTF (`.glb`) and open it. **Expected:**
     the sign's face texture carries the text. *(USD export keeps the flat
     plate — single-file USDA cannot embed textures, #364 — but the `@text` is
     still written.)*
@@ -77,6 +92,9 @@ highlighting.
 - Every step's expected result holds; zero crashes.
 - At least one template produces a working protected-left arrangement.
 - Every placed signal prop is linked to a logical signal (no orphans).
+- Every sign and signal head — placed by hand or by a template — faces the
+  traffic it governs, and a hand-set heading survives every later edit and a
+  save/reload round trip.
 
 ## Results
 
