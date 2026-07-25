@@ -326,6 +326,25 @@ Current version on `main`: **0.0.1**.
   about silently never matched.
 
 ### Fixed
+- **Sidewalks now go round the corner properly — and exist at all on tight and
+  mixed junctions** ([#402](https://github.com/Robomous/RoadMaker/issues/402)):
+  where two sidewalked roads met, the sidewalk pavement inside the junction was
+  cut out of the floor by asking each finished triangle which side of the band
+  it fell on. Triangles inside a junction are about 2 m across and a sidewalk is
+  1.8 m wide, so the answer was wrong by roughly a whole band: the sidewalk edge
+  came out as a sawtooth with teeth reaching a metre and a half into the
+  carriageway. Three cases produced **no sidewalk at all** — a tight junction of
+  five sidewalked streets, a corner where only one of the two roads had a
+  sidewalk, and any road whose cross-section puts a shoulder or a verge outside
+  its sidewalk (that last one silently disabled sidewalks for the whole
+  junction). The junction floor is now cut *along* the sidewalk edge instead of
+  near it: the edge is built into the surface before it is triangulated, so the
+  boundary between footway and carriageway is exactly where the cross-sections
+  say it is, and every corner next to a sidewalked road gets its sidewalk. A
+  corner shared with a road that has no sidewalk carries the footway round to
+  the crown of the corner and stops there, rather than running on across the
+  other road's mouth. Junctions with no sidewalks anywhere are untouched, down
+  to the byte.
 - **Junction interiors are no longer a black hole in the review renders**
   ([#360](https://github.com/Robomous/RoadMaker/issues/360)): in the textured
   daytime look, a junction floor rendered as a solid black polygon on software

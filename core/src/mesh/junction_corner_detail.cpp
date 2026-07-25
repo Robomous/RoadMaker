@@ -105,12 +105,7 @@ double corner_fillet_radius(const RoadNetwork& network,
 /// The authored override naming exactly the ordered pair (a, b), if any.
 const JunctionCorner*
 override_for(const Junction& junction, const CornerFace& a, const CornerFace& b) {
-  for (const JunctionCorner& entry : junction.corners) {
-    if (entry.arm_a == a.arm && entry.arm_b == b.arm) {
-      return &entry;
-    }
-  }
-  return nullptr;
+  return corner_override(junction, a.arm, b.arm);
 }
 
 /// Perpendicular distance from `p` to the line through `on` with direction
@@ -201,6 +196,49 @@ std::vector<CornerFace> corner_faces(const RoadNetwork& network, const Junction&
   return faces;
 }
 
+const JunctionCorner*
+corner_override(const Junction& junction, const RoadEnd& a, const RoadEnd& b) {
+  for (const JunctionCorner& entry : junction.corners) {
+    if (entry.arm_a == a && entry.arm_b == b) {
+      return &entry;
+    }
+  }
+  return nullptr;
+}
+
+std::optional<ArmFace> arm_face(const RoadNetwork& network, const RoadEnd& arm) {
+  const Road* road = network.road(arm.road);
+  if (road == nullptr || road->plan_view.empty() || road->sections.empty()) {
+    return std::nullopt;
+  }
+  const double station = arm.contact == ContactPoint::Start ? 0.0 : road->plan_view.length();
+  const LaneSection& section = section_at(network, *road, station);
+  ArmFace face;
+  face.frame = make_frame(*road, station);
+  face.offsets = boundary_offsets(network, *road, section, station);
+  const double sign = arm.contact == ContactPoint::Start ? -1.0 : 1.0;
+  face.ix = sign * face.frame.cos_h;
+  face.iy = sign * face.frame.sin_h;
+  // Same walk lane_boundary_offsets does — left lanes in section order, then
+  // the right ones — so the type list stays aligned with the offset gaps even
+  // if the section's lane ordering ever changes.
+  std::vector<LaneType> left;
+  std::vector<LaneType> right;
+  for (const LaneId lane_id : section.lanes) {
+    const Lane* lane = network.lane(lane_id);
+    if (lane == nullptr || lane->odr_id == 0) {
+      continue;
+    }
+    (lane->odr_id > 0 ? left : right).push_back(lane->type);
+  }
+  face.types = std::move(left);
+  face.types.insert(face.types.end(), right.begin(), right.end());
+  if (face.offsets.size() != face.types.size() + 1) {
+    return std::nullopt; // profile the offset walk and the type walk disagree on
+  }
+  return face;
+}
+
 CornerSolution solve_corner(const RoadNetwork& network,
                             const Junction& junction,
                             const CornerFace& a,
@@ -227,6 +265,22 @@ CornerSolution solve_corner(const RoadNetwork& network,
   const std::array<double, 2> corner{pa[0] + (ta * a.ix), pa[1] + (ta * a.iy)};
   const double cos_phi = std::clamp((a.ix * b.ix) + (a.iy * b.iy), -1.0, 1.0);
   const double phi = std::acos(cos_phi); // angle between the edge rays at the corner
+  // The corner itself is now known, so record it before any fillet decision:
+  // callers that need the sharp corner (the sidewalk bands of #402) get it even
+  // when no fillet is emitted. `valid` still gates everything fillet-shaped.
+  solution.corner_exists = true;
+  solution.corner = corner;
+  solution.phi = phi;
+  solution.max_extent_a = ta;
+  solution.max_extent_b = tb;
+  {
+    double bx = -(a.ix + b.ix);
+    double by = -(a.iy + b.iy);
+    const double blen = std::hypot(bx, by);
+    if (blen > tol::kLength) {
+      solution.bisector = {bx / blen, by / blen};
+    }
+  }
   if (phi < 0.1 || phi > std::numbers::pi - 0.1) {
     return solution; // near-tangent arms; a fillet would degenerate
   }

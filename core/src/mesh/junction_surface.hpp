@@ -48,28 +48,35 @@ struct Junction;
                                              const Junction& junction,
                                              const SamplingOptions& sampling = {});
 
-/// Splits a junction floor (from `build_junction_surface`) into its carriageway
-/// core and per-corner sidewalk bands (issue #357). Lane-type-aware: a corner's
-/// band exists only where a CCW-adjacent arm carries a `LaneType::Sidewalk`
-/// outermost lane, and it wraps continuously around the corner curve when BOTH
-/// adjacent arms do. The carriageway keeps the floor's `Driving` material and
-/// its `surface` (the junction material code); each band is a SEPARATE SubMesh
-/// with `material = LaneType::Sidewalk` and (optionally) the authored
+/// Builds the junction floor and splits it into its carriageway core and
+/// per-corner sidewalk bands in ONE pass (issues #357, #402). The carriageway
+/// keeps the floor's `Driving` material and its `surface` (the junction
+/// material code); each band is a SEPARATE SubMesh with
+/// `material = LaneType::Sidewalk` and (optionally) the authored
 /// `JunctionCorner::sidewalk_material` as its `surface` override.
+///
+/// One pass, because the two halves are not independent: the band seams are
+/// injected as CONSTRAINED EDGES of the floor's triangulation (their geometry
+/// comes from the shared `junction_sidewalk_bands()` query, clipped to this
+/// junction's footprint), and the triangles are then labelled by centroid
+/// against the very same clipped bands. That is what makes the seam exact —
+/// classifying an unconstrained triangulation put the material boundary
+/// wherever the triangles happened to fall, an error of one triangle, which at
+/// a 2 m Steiner step against a 1.8 m sidewalk is the entire band (#402).
 ///
 /// The two regions share their seam vertices bit-for-bit (both copy the floor's
 /// exact positions AND normals), so the split is watertight with no cracks. A
-/// junction whose arms carry NO sidewalks is returned VERBATIM as the
-/// carriageway (byte-identical to the un-split floor) with no bands — the
-/// feature never fires on a rural junction.
+/// junction whose arms carry NO sidewalks gets no constraints and is returned
+/// VERBATIM as the carriageway (byte-identical to the un-split floor) with no
+/// bands — the feature never fires on a rural junction.
 struct JunctionFloorSplit {
   SubMesh carriageway;                 ///< Driving core, surface = junction material.
   std::vector<SubMesh> sidewalk_bands; ///< Sidewalk bands, one per sidewalked corner.
 };
 
-[[nodiscard]] JunctionFloorSplit split_junction_floor_sidewalks(const RoadNetwork& network,
-                                                                const Junction& junction,
-                                                                const SubMesh& floor);
+[[nodiscard]] JunctionFloorSplit build_junction_floor_split(const RoadNetwork& network,
+                                                            const Junction& junction,
+                                                            const SamplingOptions& sampling = {});
 
 /// The junction's authored corner overlays (p4-s2, issue #226): one median nose
 /// per contiguous median span of every arm whose corner pair names a

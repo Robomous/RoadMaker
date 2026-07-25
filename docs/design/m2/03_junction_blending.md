@@ -50,6 +50,36 @@ refinement: insert grid points at the mesh sampling step (default `kChord`-drive
 ~1–2 m) so the elevation field has room to bend; CDT's `eraseOuterTrianglesAndHoles`
 removes everything outside the boundary.
 
+**(3b) Material seams as constraints** (issue #402). Anything that divides the
+finished floor by *material* — today the per-corner sidewalk bands of #357 —
+contributes its interior outline as constraint edges here, before the
+triangulation runs. The floor is then cut *along* the seam rather than
+classified near it: no triangle straddles a material boundary, so labelling the
+finished triangles is exact rather than accurate to within one triangle. That
+distinction is not cosmetic at this scale — a sidewalk is ~1.8 m wide and the
+Steiner step is 2.0 m, so an unconstrained classification is wrong by about the
+width of the whole band.
+
+Two rules govern what may be injected:
+
+- **Open chords only, never closed rings.** `eraseOuterTrianglesAndHoles`
+  classifies triangles by crossing depth, so a closed loop of constraints in the
+  interior is read as a *hole* and erased — it would punch the band out of the
+  floor. Each injected run therefore starts and ends on the floor's own
+  boundary, and a region whose outline is interior all the way round is left
+  unconstrained instead.
+- **Only the interior part of the outline.** An outline edge that coincides with
+  the floor boundary is already a constraint; only edges running through the
+  interior (the seam against the carriageway, and the curb side too when the
+  cross-section puts a shoulder outboard of the sidewalk) need injecting. A run
+  is subdivided to the Steiner step like any other constraint, and the boundary
+  edge each end lands on is *split* at that point so the chord terminates on a
+  shared vertex.
+
+The seam geometry itself is not computed here: `junction_sidewalk_bands()` is a
+public, floor-independent query, so the mesher's constraints, the classifier and
+the acceptance tests all measure the same ideal geometry.
+
 ## 2. Elevation field: harmonic vs natural-neighbor
 
 Two candidates were evaluated on paper (prototype comparison is a Phase 4 task

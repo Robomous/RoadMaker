@@ -26,11 +26,15 @@
 #include "roadmaker/road/road.hpp"
 
 #include <array>
+#include <optional>
 #include <vector>
+
+#include "mesh_detail.hpp"
 
 namespace roadmaker {
 
 struct Junction;
+struct JunctionCorner;
 
 namespace junction_corner_detail {
 
@@ -69,6 +73,28 @@ inline constexpr double kMinFilletExtent = 0.05;
 /// Connecting roads of this junction, in connection order, de-duplicated.
 [[nodiscard]] std::vector<RoadId> connecting_roads(const Junction& junction);
 
+/// One arm's end cross-section, resolved once and reused by every consumer on
+/// that arm (corner overlays, median noses, sidewalk bands). `types` runs
+/// left-to-right in EXACTLY the order `boundary_offsets` lays out its gaps, so
+/// `types[k]` is the lane between `offsets[k]` and `offsets[k + 1]`.
+struct ArmFace {
+  mesh_detail::StationFrame frame;
+  std::vector<double> offsets;
+  std::vector<LaneType> types;
+  double ix = 0.0; // unit direction INTO the junction
+  double iy = 0.0;
+};
+
+/// Resolves `arm`'s end cross-section, or nullopt when the arm is unusable.
+[[nodiscard]] std::optional<ArmFace> arm_face(const RoadNetwork& network, const RoadEnd& arm);
+
+/// The authored JunctionCorner naming exactly the ordered arm pair (a, b), if
+/// any — corners are ORDERED pairs, so (b, a) is a different corner. Shared by
+/// the solver, the floor mesher and the sidewalk bands so all three agree on
+/// what "this corner is authored" means.
+[[nodiscard]] const JunctionCorner*
+corner_override(const Junction& junction, const RoadEnd& a, const RoadEnd& b);
+
 /// One arm's face for corner construction, oriented INTO the junction:
 /// `left`/`right` are the outermost pavement corners as seen entering, and
 /// (ix, iy) the unit into-junction direction. `arm` is the corner's identity
@@ -93,9 +119,17 @@ struct CornerFace {
 /// pairs the mesher does not fillet; `parallel_edges` singles out the
 /// straight-through corridor case (no corner at all), which the mesher paves
 /// with an edge strip instead.
+///
+/// A rejected fillet is not the same as an absent corner: whenever the two
+/// edge lines DO meet ahead of both faces, `corner_exists` is set and
+/// `corner`, `phi`, `bisector` and `max_extent_a/b` are filled in even though
+/// `valid` stays false (the radius may be below the floor, or the arms too
+/// near-tangent to fillet). The sidewalk bands of issue #402 need that sharp
+/// corner: before, every such pair produced no band at all.
 struct CornerSolution {
   bool valid = false;
   bool parallel_edges = false;
+  bool corner_exists = false;
 
   /// Edge-line intersection: A's right edge meeting B's left edge.
   std::array<double, 2> corner{};

@@ -162,19 +162,12 @@ triangle_area_xy(const std::vector<double>& p, std::uint32_t a, std::uint32_t b,
 /// The junction submesh is a valid 2.5D height-field surface stitched to the
 /// road meshes (03 §5): manifold-with-boundary, no flipped normals, no slivers,
 /// and every boundary vertex coincident with a road vertex shares its z exactly.
-void expect_watertight(const NetworkMesh& mesh) {
-  ASSERT_FALSE(mesh.junction_floors.empty());
-
-  // All road (lane-grid) vertices, for the seam-coincidence check.
-  std::vector<std::array<double, 3>> road_vertices;
-  for (const RoadMesh& road : mesh.roads) {
-    for (std::size_t i = 0; i + 2 < road.positions.size(); i += 3) {
-      road_vertices.push_back({road.positions[i], road.positions[i + 1], road.positions[i + 2]});
-    }
-  }
-
-  for (const roadmaker::JunctionFloor& jf : mesh.junction_floors) {
-    const SubMesh& s = jf.mesh;
+/// The four watertightness checks, for ONE surface of a junction floor.
+void expect_surface_watertight(const SubMesh& s,
+                               const std::vector<std::array<double, 3>>& road_vertices,
+                               const char* what) {
+  SCOPED_TRACE(what);
+  {
     ASSERT_FALSE(s.indices.empty());
     ASSERT_EQ(s.positions.size(), s.normals.size());
     const std::size_t vertex_count = s.positions.size() / 3;
@@ -230,6 +223,31 @@ void expect_watertight(const NetworkMesh& mesh) {
         if (d2 < 1e-12) { // coincident in plan → must share elevation
           EXPECT_NEAR(rv[2], z, 1e-9) << "seam z mismatch at boundary vertex " << i;
         }
+      }
+    }
+  }
+}
+
+void expect_watertight(const NetworkMesh& mesh) {
+  ASSERT_FALSE(mesh.junction_floors.empty());
+
+  // All road (lane-grid) vertices, for the seam-coincidence check.
+  std::vector<std::array<double, 3>> road_vertices;
+  for (const RoadMesh& road : mesh.roads) {
+    for (std::size_t i = 0; i + 2 < road.positions.size(); i += 3) {
+      road_vertices.push_back({road.positions[i], road.positions[i + 1], road.positions[i + 2]});
+    }
+  }
+
+  for (const roadmaker::JunctionFloor& jf : mesh.junction_floors) {
+    expect_surface_watertight(jf.mesh, road_vertices, "carriageway");
+    // The sidewalk bands are cut from the same triangulation and are surfaces
+    // in their own right — they were never checked before #402, which is how a
+    // band could be a ragged fringe of slivers and still pass. The authored
+    // overlays are excluded on purpose: they float above the floor by design.
+    for (const SubMesh& detail : jf.details) {
+      if (detail.material == LaneType::Sidewalk) {
+        expect_surface_watertight(detail, road_vertices, "sidewalk band");
       }
     }
   }
