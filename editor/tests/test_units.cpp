@@ -202,8 +202,12 @@ TEST_F(UnitSpinBoxTest, SpecialValueTextSurvivesTheToggle) {
 }
 
 TEST_F(Units, SettingPersistsAcrossInstancesAndDefaultsMetric) {
-  // Same isolation as the other Settings suites: a test-only QSettings scope.
+  // Same isolation as the other Settings suites: a test-only QSettings scope,
+  // named per case so that `ctest -j` siblings never race on one store.
   QCoreApplication::setOrganizationName(QStringLiteral("RobomousTests"));
+  QCoreApplication::setApplicationName(
+      QStringLiteral("RoadMakerUnitsTest_") +
+      QString::fromUtf8(::testing::UnitTest::GetInstance()->current_test_info()->name()));
   QSettings().clear();
   {
     Settings fresh;
@@ -216,7 +220,10 @@ TEST_F(Units, SettingPersistsAcrossInstancesAndDefaultsMetric) {
         << "the choice must survive a restart";
   }
   QSettings().clear();
-  QCoreApplication::setOrganizationName(QStringLiteral("Robomous"));
+  // Back to the suite-wide test scope (qt_gtest_main.cpp), never the shipped
+  // Robomous/RoadMaker names — see the note in the other fixtures (#399).
+  QCoreApplication::setOrganizationName(QStringLiteral("RobomousTests"));
+  QCoreApplication::setApplicationName(QStringLiteral("RoadMakerEditorTests"));
 }
 
 TEST_F(Units, TogglingUnitsNeverDirtiesTheDocument) {

@@ -16,9 +16,16 @@
 
 #include "app/settings.hpp"
 
+#include <QDir>
+#include <QFileInfo>
+
 namespace roadmaker::editor {
 
 namespace {
+
+/// Session write policy (#399) — see Settings::set_read_only. A plain
+/// process-global: the editor touches settings from the GUI thread only.
+bool g_read_only = false;
 
 const auto* kGeometryKey = "window/geometry";
 const auto* kStateKey = "window/state";
@@ -32,9 +39,29 @@ const auto* kRecentProjectsKey = "files/recent_projects";
 // tabbed toolbar (#374): core strip + one tool row, no nested page toolbars.
 constexpr int kWindowStateVersion = 2;
 
+/// A no-op for an already-absolute path; otherwise resolved against the
+/// current working directory (#399).
+QString absolute(const QString& path) {
+  if (path.isEmpty()) {
+    return path;
+  }
+  return QDir::cleanPath(QFileInfo(path).absoluteFilePath());
+}
+
 } // namespace
 
+void Settings::set_read_only(bool read_only) {
+  g_read_only = read_only;
+}
+
+bool Settings::read_only() {
+  return g_read_only;
+}
+
 void Settings::save_window(const QMainWindow& window) {
+  if (read_only()) {
+    return;
+  }
   settings_.setValue(kGeometryKey, window.saveGeometry());
   settings_.setValue(kStateKey, window.saveState(kWindowStateVersion));
 }
@@ -50,32 +77,45 @@ bool Settings::restore_window(QMainWindow& window) {
   return window.restoreGeometry(geometry) && window.restoreState(state, kWindowStateVersion);
 }
 
+QStringList Settings::recent_list(const char* key) const {
+  QStringList stored = settings_.value(QString::fromLatin1(key)).toStringList();
+  // A relative entry can only have been written by a pre-#399 build, and it is
+  // unresolvable now: whatever directory it was relative to is long gone
+  // (#399). Hiding it here and writing the filtered list back in
+  // prepend_recent() prunes it from the store on the next open — no explicit
+  // migration step.
+  stored.removeIf([](const QString& path) { return !QFileInfo(path).isAbsolute(); });
+  return stored;
+}
+
+void Settings::prepend_recent(const char* key, const QString& path) {
+  if (read_only()) {
+    return;
+  }
+  const QString entry = absolute(path);
+  QStringList recent = recent_list(key);
+  recent.removeAll(entry);
+  recent.prepend(entry);
+  while (recent.size() > kMaxRecentFiles) {
+    recent.removeLast();
+  }
+  settings_.setValue(QString::fromLatin1(key), recent);
+}
+
 QStringList Settings::recent_files() const {
-  return settings_.value(kRecentKey).toStringList();
+  return recent_list(kRecentKey);
 }
 
 void Settings::add_recent_file(const QString& path) {
-  QStringList recent = recent_files();
-  recent.removeAll(path);
-  recent.prepend(path);
-  while (recent.size() > kMaxRecentFiles) {
-    recent.removeLast();
-  }
-  settings_.setValue(kRecentKey, recent);
+  prepend_recent(kRecentKey, path);
 }
 
 QStringList Settings::recent_projects() const {
-  return settings_.value(kRecentProjectsKey).toStringList();
+  return recent_list(kRecentProjectsKey);
 }
 
 void Settings::add_recent_project(const QString& path) {
-  QStringList recent = recent_projects();
-  recent.removeAll(path);
-  recent.prepend(path);
-  while (recent.size() > kMaxRecentFiles) {
-    recent.removeLast();
-  }
-  settings_.setValue(kRecentProjectsKey, recent);
+  prepend_recent(kRecentProjectsKey, path);
 }
 
 QString Settings::theme_name() const {
@@ -83,6 +123,9 @@ QString Settings::theme_name() const {
 }
 
 void Settings::set_theme_name(const QString& name) {
+  if (read_only()) {
+    return;
+  }
   settings_.setValue(QStringLiteral("ui/theme"), name);
 }
 
@@ -91,6 +134,9 @@ bool Settings::autosave_enabled() const {
 }
 
 void Settings::set_autosave_enabled(bool enabled) {
+  if (read_only()) {
+    return;
+  }
   settings_.setValue(QStringLiteral("autosave/enabled"), enabled);
 }
 
@@ -99,6 +145,9 @@ bool Settings::tour_seen() const {
 }
 
 void Settings::set_tour_seen(bool seen) {
+  if (read_only()) {
+    return;
+  }
   settings_.setValue(QStringLiteral("tour/seen"), seen);
 }
 
@@ -109,6 +158,9 @@ bool Settings::textured_rendering() const {
 }
 
 void Settings::set_textured_rendering(bool textured) {
+  if (read_only()) {
+    return;
+  }
   settings_.setValue(QStringLiteral("view/textured_rendering"), textured);
 }
 
@@ -119,6 +171,9 @@ bool Settings::viewport_hints() const {
 }
 
 void Settings::set_viewport_hints(bool enabled) {
+  if (read_only()) {
+    return;
+  }
   settings_.setValue(QStringLiteral("view/viewport_hints"), enabled);
 }
 
@@ -132,6 +187,9 @@ units::UnitSystem Settings::display_units() const {
 }
 
 void Settings::set_display_units(units::UnitSystem system) {
+  if (read_only()) {
+    return;
+  }
   settings_.setValue(QStringLiteral("view/display_units"),
                      system == units::UnitSystem::Imperial ? QStringLiteral("imperial")
                                                            : QStringLiteral("metric"));

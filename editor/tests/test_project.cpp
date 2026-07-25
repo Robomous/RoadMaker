@@ -190,39 +190,55 @@ protected:
   void TearDown() override {
     settings_.reset();
     QSettings().clear();
-    QCoreApplication::setOrganizationName(QStringLiteral("Robomous"));
-    QCoreApplication::setApplicationName(QStringLiteral("RoadMaker"));
+    // Back to the suite-wide test scope (qt_gtest_main.cpp), NOT the shipped
+    // Robomous/RoadMaker names: restoring those would re-arm the developer's
+    // real settings store for every later case in this process (#399).
+    QCoreApplication::setOrganizationName(QStringLiteral("RobomousTests"));
+    QCoreApplication::setApplicationName(QStringLiteral("RoadMakerEditorTests"));
   }
 
   std::unique_ptr<Settings> settings_;
 };
 
+namespace {
+
+// Recents are stored absolute (#399), so a fixture path must already BE
+// absolute on every platform or the round-trip assertions below compare
+// against a drive-qualified rewrite on Windows. QDir::rootPath() is "/" on
+// POSIX and "C:/" (the current drive) on Windows, which is exactly the prefix
+// QFileInfo::absoluteFilePath would add.
+QString rooted(const QString& relative) {
+  return QDir::rootPath() + relative;
+}
+
+} // namespace
+
 TEST_F(RecentProjectsSettingsTest, MostRecentFirstDedupAndCap) {
   EXPECT_TRUE(settings_->recent_projects().isEmpty());
-  settings_->add_recent_project(QStringLiteral("/p/one"));
-  settings_->add_recent_project(QStringLiteral("/p/two"));
-  settings_->add_recent_project(QStringLiteral("/p/one")); // re-open moves to front
+  settings_->add_recent_project(rooted(QStringLiteral("p/one")));
+  settings_->add_recent_project(rooted(QStringLiteral("p/two")));
+  settings_->add_recent_project(rooted(QStringLiteral("p/one"))); // re-open moves to front
   QStringList recent = settings_->recent_projects();
   ASSERT_EQ(recent.size(), 2);
-  EXPECT_EQ(recent[0], QStringLiteral("/p/one"));
-  EXPECT_EQ(recent[1], QStringLiteral("/p/two"));
+  EXPECT_EQ(recent[0], rooted(QStringLiteral("p/one")));
+  EXPECT_EQ(recent[1], rooted(QStringLiteral("p/two")));
 
   for (int i = 0; i < Settings::kMaxRecentFiles + 3; ++i) {
-    settings_->add_recent_project(QStringLiteral("/p/cap%1").arg(i));
+    settings_->add_recent_project(rooted(QStringLiteral("p/cap%1").arg(i)));
   }
   recent = settings_->recent_projects();
   EXPECT_EQ(recent.size(), Settings::kMaxRecentFiles);
   EXPECT_EQ(recent.front(),
-            QStringLiteral("/p/cap%1").arg(Settings::kMaxRecentFiles + 2)); // newest kept
+            rooted(QStringLiteral("p/cap%1").arg(Settings::kMaxRecentFiles + 2))); // newest kept
 }
 
 TEST_F(RecentProjectsSettingsTest, PersistsAcrossSettingsInstancesAndIsSeparateFromScenes) {
-  settings_->add_recent_project(QStringLiteral("/p/persisted"));
-  settings_->add_recent_file(QStringLiteral("/s/scene.xodr"));
+  settings_->add_recent_project(rooted(QStringLiteral("p/persisted")));
+  settings_->add_recent_file(rooted(QStringLiteral("s/scene.xodr")));
 
   const Settings reread; // a fresh wrapper over the same QSettings store
-  EXPECT_EQ(reread.recent_projects(), QStringList{QStringLiteral("/p/persisted")});
-  EXPECT_EQ(reread.recent_files(), QStringList{QStringLiteral("/s/scene.xodr")});
+  EXPECT_EQ(reread.recent_projects(), QStringList{rooted(QStringLiteral("p/persisted"))});
+  EXPECT_EQ(reread.recent_files(), QStringList{rooted(QStringLiteral("s/scene.xodr"))});
 }
 
 // #333: the viewport-hint toggle is a persisted view setting. On (the pre-#333

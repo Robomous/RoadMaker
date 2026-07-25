@@ -104,6 +104,7 @@ add_executable(roadmaker_editor_tests
   test_slot_widget.cpp
   test_scene_tree_model.cpp
   test_selection_model.cpp
+  test_settings.cpp
   test_shortcut_registry.cpp
   test_toolbar_registry.cpp
   test_soak_smoke.cpp

@@ -61,7 +61,12 @@ class MainWindow : public QMainWindow {
 
 public:
   /// `restore_saved_layout` false skips the persisted window geometry/dock
-  /// state (screenshot modes need the pristine default arrangement).
+  /// state (screenshot modes need the pristine default arrangement) and the
+  /// first-run tour. It is the de-facto "this is a capture window" flag, but it
+  /// is only half of what a capture session owes the user: the other half is
+  /// Settings::set_read_only(true), which run_screenshot() installs so that a
+  /// scripted run cannot rewrite the recent list (#399). A new capture entry
+  /// point needs BOTH.
   explicit MainWindow(QWidget* parent = nullptr, bool restore_saved_layout = true);
 
   /// Loads a .xodr; failures land in the Diagnostics panel and a message box.

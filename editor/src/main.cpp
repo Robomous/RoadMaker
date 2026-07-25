@@ -140,6 +140,13 @@ constexpr int kScreenshotError = 1;
 constexpr int kScreenshotNoGl = 3;
 
 int run_screenshot(const ScreenshotArgs& args) {
+  // A capture is somebody else's automation running in the user's own settings
+  // scope: it opens scenes, so without this every run would record into the
+  // real recent list and ten of them would evict every genuine entry (#399).
+  // Reads stay live — the capture is meant to render with the persisted theme
+  // and units — so this must be a write guard, not a redirected store.
+  roadmaker::editor::Settings::set_read_only(true);
+
   // Probe GL before building any widget: ViewportWidget treats a failed GL
   // init as fatal (interactive sessions cannot continue), but screenshot
   // mode must degrade to a skip on GL-less runners.
