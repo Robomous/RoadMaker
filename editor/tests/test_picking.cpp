@@ -14,6 +14,7 @@
  * limitations under the License.
  */
 
+#include "roadmaker/assets/prop_library.hpp"
 #include "roadmaker/mesh/mesh_builder.hpp"
 #include "roadmaker/road/authoring.hpp"
 #include "roadmaker/road/defaults.hpp"
@@ -577,21 +578,32 @@ NetworkMesh lone_tree(double scale) {
   return mesh;
 }
 
+/// How far tree_pine's crown reaches from its trunk axis at model size. Read
+/// from the table rather than pinned: #415 re-authored every prop at its real
+/// world size, and these rays are only meaningful relative to the crown.
+double pine_crown_reach() {
+  const props::PropModel* pine = props::model("tree_pine");
+  EXPECT_NE(pine, nullptr);
+  return pine != nullptr ? pine->radius : 0.0;
+}
+
 } // namespace
 
-// tree_pine's crown reaches 1.2 m from the trunk axis. A ray 2 m off-axis
-// clears the geometry at model size but must hit once the prop is drawn at
-// twice that size (#335) — the hit surface tracks the rendered geometry.
+// A ray half a crown beyond the crown clears the geometry at model size but
+// must hit once the prop is drawn at twice that size (#335) — the hit surface
+// tracks the rendered geometry.
 TEST(Pick, ScaledPropGrowsItsHitGeometry) {
-  EXPECT_FALSE(pick(lone_tree(1.0), {}, straight_down(27.0, 25.0)).has_value());
-  const auto hit = pick(lone_tree(2.0), {}, straight_down(27.0, 25.0));
+  const double outside = 25.0 + (pine_crown_reach() * 1.5);
+  EXPECT_FALSE(pick(lone_tree(1.0), {}, straight_down(outside, 25.0)).has_value());
+  const auto hit = pick(lone_tree(2.0), {}, straight_down(outside, 25.0));
   ASSERT_TRUE(hit.has_value());
   EXPECT_TRUE(hit->object.is_valid());
 }
 
 TEST(Pick, ShrunkPropMisses) {
-  EXPECT_TRUE(pick(lone_tree(1.0), {}, straight_down(26.0, 25.0)).has_value());
-  EXPECT_FALSE(pick(lone_tree(0.25), {}, straight_down(26.0, 25.0)).has_value());
+  const double inside = 25.0 + (pine_crown_reach() * 0.5);
+  EXPECT_TRUE(pick(lone_tree(1.0), {}, straight_down(inside, 25.0)).has_value());
+  EXPECT_FALSE(pick(lone_tree(0.25), {}, straight_down(inside, 25.0)).has_value());
 }
 
 // --- instance-accurate prop picking (#419) ----------------------------------
@@ -714,8 +726,8 @@ TEST(Pick, PropOverAJunctionFloorClaimsOnlyItsGeometry) {
   ASSERT_TRUE(on_tree.has_value());
   EXPECT_EQ(on_tree->object, tree);
 
-  // 2 m off the trunk — inside the old sphere, wide of the crown: the floor.
-  const auto beside = pick(mesh, {}, straight_down(7.0, 5.0));
+  // Wide of the crown but inside the old sphere: the floor, not the prop.
+  const auto beside = pick(mesh, {}, straight_down(5.0 + (pine_crown_reach() * 1.5), 5.0));
   ASSERT_TRUE(beside.has_value());
   EXPECT_FALSE(beside->object.is_valid());
   EXPECT_EQ(beside->junction, mesh.junction_floors[0].junction);

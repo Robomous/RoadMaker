@@ -150,7 +150,7 @@ limits.
 | Signal head | 3-section, **0.30 m** lenses, housing ≈ 1.07 m tall | 12 in |
 | Signal vertical clearance | bottom of housing **4.6–5.8 m** over roadway; default **5.2 m** with mast arm | 15–19 ft; 17 ft |
 | Post-mounted / pedestrian signal | mounting 2.1–3.0 m | 7–10 ft |
-| Street light | mounting height **9.0 m**; residential 7.6 m, arterial up to 12 m | 30 ft; 25 ft; 40 ft |
+| Street light | mounting height **9.0 m**; residential 7.6 m, arterial up to 12.0 m | 30 ft; 25 ft; 40 ft |
 | Fire hydrant | 0.75 m | 30 in |
 
 ## 1.6 Trees & buildings
@@ -158,12 +158,12 @@ limits.
 <!-- rm-defaults: trees-buildings -->
 | Item | Default | Range |
 |---|---|---|
-| Street tree (default asset) | **height 10 m**, canopy Ø ≈ 6 m, trunk Ø 0.4 m; clear trunk ≥ 2.4 m over sidewalk / 4.4 m over roadway | small ornamental 4–6 m; large mature 15–20 m |
-| House, 1-story | **5 m** to ridge | 4–6 m |
-| House, 2-story | **8 m** | 7–9 m |
-| Commercial 1-story | **5.5 m** | 4.5–6 m |
-| Mid-rise | **3.7 m per floor** + 1 m parapet | residential floors 3.0 m |
-| Building footprint sanity | a house is not smaller than 2 car lengths per side (≈ 10 × 8 m typical) | — |
+| Street tree (default asset) | **height 10.0 m**, canopy Ø ≈ 6.0 m, trunk Ø 0.40 m; clear trunk ≥ 2.4 m over sidewalk / 4.4 m over roadway | small ornamental 4.0–6.0 m; large mature 15.0–20.0 m |
+| House, 1-story | **5.0 m** to ridge | 4.0–6.0 m |
+| House, 2-story | **8.0 m** | 7.0–9.0 m |
+| Commercial 1-story | **5.5 m** | 4.5–6.0 m |
+| Mid-rise | **3.7 m per floor** + 1.0 m parapet | residential floors 3.0 m |
+| Building footprint sanity | a house is not smaller than 2 car lengths per side (≈ 10.0 × 8.0 m typical) | — |
 
 ## Auto-orientation of signs & signals
 
@@ -202,6 +202,12 @@ markings) and are extended by
 [#414](https://github.com/Robomous/RoadMaker/issues/414) (signs). #413 may
 regularize table formatting for the comparator; if it does, these tables
 are regenerated from the registry in that PR.
+
+Props are the one consumer that cannot *include* the code table:
+`scripts/gen_prop_meshes.py` is stdlib-only so it runs on a bare CI runner.
+It therefore bakes the §1.5/§1.6 targets into the meshes, and the same test
+asserts the bundled model dimensions against the registry — the derivation
+is enforced rather than compiled, but it fails CI just the same.
 
 ## Changelog — old → new (audited at `main` @ e18592b, 2026-07-24)
 
@@ -275,6 +281,47 @@ Effective default = intrinsic model size × manifest `default_scale`
 | Mid-rise building | 20.3 m | §1.6 per-floor rule (≈ 5 floors + parapet) — verify with #415 |
 | Tower building | 40.0 m | §1.6 per-floor rule — verify with #415 |
 | Fire hydrant / street furniture | not shipped | recorded absent; additions only as follow-ups on #411 |
+
+*Dispositions (landed with #415):* every bundled prop is now authored at its
+**true world size** in `scripts/gen_prop_meshes.py`, and the plants'
+`default_scale: 2.0` was retired from `assets/library/manifest.json` — the
+scale mechanism itself stays (it is per-asset data), but nothing shipped uses
+it, so a prop's declared model size is what a placement spawns. That is what
+lets §1.5/§1.6 be gated in the kernel: `signals_lighting_markdown()` /
+`trees_buildings_markdown()` render the tables above, and
+`core/tests/test_defaults_registry.cpp` asserts both the doc text and
+`props::model()` against the registry, with
+`editor/tests/test_library_model.cpp` covering the manifest half (core cannot
+read the Qt-JSON manifest). Per asset:
+
+- **Oak** — retuned to *the* §1.6 default street tree: 10.0 m tall, canopy
+  Ø 6.0 m, trunk Ø 0.40 m, crown starting at 4.4 m (the roadway clear-trunk
+  rule, which also satisfies the 2.4 m sidewalk one).
+- **Pine** (8.4 m), **birch** (9.4 m), **shrub** (2.4 m) — already compliant;
+  their previous ×2 spawn size was baked into the meshes unchanged. The shrub
+  stays deliberately below the 4 m small-ornamental minimum: it is not a tree.
+- **Poplar** (12.0 m) — kept as authored. Above the 10 m default street tree
+  and below the 15–20 m mature band, which is what a planted columnar poplar
+  reads as; no retune.
+- **Streetlight, single and double** — pole raised to the §1.5 mounting height
+  of 9.0 m (from 5.5 m), pole Ø 0.30 m, arm reach 1.8 m with the lamp head
+  hanging just below the top.
+- **Low building** — already compliant, untouched: 7.5 m sits in the 7–9 m
+  two-storey house band and the 10.4 × 8.4 m footprint clears the ≈ 10 × 8 m
+  sanity check.
+- **Mid-rise** — 20.3 m → **19.5 m**: five 3.7 m floors plus the 1 m parapet
+  zone, which now contains the roof slab and the rooftop plant unit.
+- **Tower** — 40.0 m → **38.0 m**: set-back stages of 5 + 4 + 1 floors of
+  3.7 m, capped by a 1 m parapet.
+- **Fire hydrant / street furniture** — still not shipped, recorded absent
+  here; #415 added no new assets (that path stays a follow-up on #411).
+
+Signal and sign *meshes* are untouched by #415 — the §1.5 signal rows are
+rendered by the registry so the whole table is gated, but retuning the heads
+themselves belongs to #414. `assets/samples/props_scale.xodr` (built by
+`scripts/make_canonical_scenes.py`, rendered by CI's visual-artifacts job) is
+the standing visual check: one of every prop at native size along a local
+street.
 
 ### Interaction defaults (→ #416/#417)
 

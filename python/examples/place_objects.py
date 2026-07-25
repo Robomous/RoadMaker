@@ -99,7 +99,7 @@ def main() -> int:
     standalone.type = rm.ObjectType.TREE
     standalone.name = "tree_oak"  # a bundled prop model (renders + exports)
     standalone.s, standalone.t = 90.0, -8.0
-    standalone.radius, standalone.height = 1.8, 4.6
+    standalone.radius, standalone.height = 3.0, 10.0  # the bundled oak's native size
     stack.push(network, rm.edit.add_object(network, road_id, standalone))
     added_id = network.objects_of(road_id)[-1]
     stack.push(network, rm.edit.move_object(network, added_id, 100.0, -8.0))  # nudge along s

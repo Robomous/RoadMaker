@@ -30,9 +30,13 @@ enum class LaneType;
 /// here; this namespace is its single code mirror. The authoring templates
 /// (LaneProfile), the Library road styles (RoadStyle), the per-lane-type
 /// fallback widths, and the marking constants all derive from these
-/// constants — nothing else in the tree restates them. The §1.2/§1.3 tables
-/// in the spec doc are rendered by cross_section_markdown() /
-/// markings_markdown(), and test_defaults_registry.cpp fails CI when the
+/// constants — nothing else in the tree restates them. The prop meshes are
+/// authored by scripts/gen_prop_meshes.py (stdlib-only, so it cannot include
+/// this header) and are held to the §1.5/§1.6 constants by the same tests.
+/// The §1.2/§1.3/§1.5/§1.6 tables in the spec doc are rendered by
+/// cross_section_markdown() / markings_markdown() /
+/// signals_lighting_markdown() / trees_buildings_markdown(), and
+/// test_defaults_registry.cpp fails CI when the
 /// committed doc and this registry disagree (the shortcut_registry
 /// mechanism). Change a default by PRing the spec doc and this file
 /// together, then regenerating the doc tables from the renderers.
@@ -82,6 +86,47 @@ inline constexpr double kCrosswalkMinWidth = 1.8;
 inline constexpr double kCrosswalkStripeLength = 0.60; ///< zebra bar
 inline constexpr double kCrosswalkStripeGap = 0.60;    ///< zebra gap
 
+// --- §1.5 Signals, lighting, street furniture -----------------------------
+//
+// The signal rows are registry-rendered here so the whole §1.5 table is under
+// the divergence gate; the signal *meshes* are retuned by #414. The
+// streetlight and hydrant values are what the shipped props must measure —
+// test_defaults_registry.cpp asserts props::model() against them.
+
+inline constexpr double kSignalLensDiameter = 0.30;  ///< 12 in lens
+inline constexpr double kSignalHousingHeight = 1.07; ///< 3-section, 42 in
+inline constexpr double kSignalClearanceMin = 4.6;   ///< housing bottom over roadway
+inline constexpr double kSignalClearanceMax = 5.8;
+inline constexpr double kSignalClearance = 5.2; ///< default, mast-arm mounted
+inline constexpr double kPedSignalMountMin = 2.1;
+inline constexpr double kPedSignalMountMax = 3.0;
+inline constexpr double kStreetlightMountingHeight = 9.0; ///< default luminaire height
+inline constexpr double kStreetlightResidentialHeight = 7.6;
+inline constexpr double kStreetlightArterialHeight = 12.0;
+inline constexpr double kFireHydrantHeight = 0.75; ///< no asset ships (see spec doc)
+
+// --- §1.6 Trees & buildings -----------------------------------------------
+
+inline constexpr double kStreetTreeHeight = 10.0;        ///< the default street tree
+inline constexpr double kStreetTreeCanopyDiameter = 6.0; ///< model radius = half this
+inline constexpr double kStreetTreeTrunkDiameter = 0.40;
+inline constexpr double kTreeClearTrunkSidewalk = 2.4; ///< crown bottom over a walk
+inline constexpr double kTreeClearTrunkRoadway = 4.4;
+inline constexpr double kOrnamentalTreeMinHeight = 4.0; ///< small-ornamental band
+inline constexpr double kOrnamentalTreeMaxHeight = 6.0;
+inline constexpr double kMatureTreeMinHeight = 15.0; ///< large-mature band
+inline constexpr double kMatureTreeMaxHeight = 20.0;
+inline constexpr double kHouse1StoryHeight = 5.0; ///< to the ridge
+inline constexpr double kHouse2StoryHeight = 8.0;
+inline constexpr double kHouse2StoryMinHeight = 7.0;
+inline constexpr double kHouse2StoryMaxHeight = 9.0;
+inline constexpr double kCommercial1StoryHeight = 5.5;
+inline constexpr double kFloorHeight = 3.7;            ///< commercial/mid-rise floor
+inline constexpr double kResidentialFloorHeight = 3.0; ///< residential floor
+inline constexpr double kParapetHeight = 1.0;          ///< above the top floor
+inline constexpr double kHouseFootprintLength = 10.0;  ///< footprint sanity, plan view
+inline constexpr double kHouseFootprintWidth = 8.0;
+
 /// Driving-lane default for the given road class (spec §1.2).
 [[nodiscard]] RM_API double driving_lane_width(RoadClass road_class);
 
@@ -101,6 +146,12 @@ inline constexpr double kCrosswalkStripeGap = 0.60;    ///< zebra gap
 
 /// Renders the spec doc's §1.3 table, same contract.
 [[nodiscard]] RM_API std::string markings_markdown();
+
+/// Renders the spec doc's §1.5 table, same contract.
+[[nodiscard]] RM_API std::string signals_lighting_markdown();
+
+/// Renders the spec doc's §1.6 table, same contract.
+[[nodiscard]] RM_API std::string trees_buildings_markdown();
 
 } // namespace defaults
 } // namespace roadmaker

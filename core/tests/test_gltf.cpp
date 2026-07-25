@@ -163,8 +163,11 @@ TEST(Gltf, TreePropExportsASharedMeshAndInstanceNode) {
   tree.type = roadmaker::ObjectType::Tree;
   tree.s = 50.0;
   tree.t = 6.0;
-  tree.radius = 1.2;
-  tree.height = 4.2;
+  // Declared at the bundled model's own size, so it exports at unit scale.
+  const roadmaker::props::PropModel* pine = roadmaker::props::model("tree_pine");
+  ASSERT_NE(pine, nullptr);
+  tree.radius = pine->radius;
+  tree.height = pine->height;
   network.add_object(*road, tree);
 
   const auto mesh = roadmaker::build_network_mesh(network, {});
@@ -207,7 +210,7 @@ TEST(Gltf, TreePropExportsASharedMeshAndInstanceNode) {
 }
 
 // A prop resized in the editor must export at its rendered size (#335) — a
-// glTF consumer sees the 8.4 m tree the viewport shows, not a 4.2 m one.
+// glTF consumer sees the double-height tree the viewport shows, not the model's.
 // Signals are not resizable, so they stay unit in the same file.
 TEST(Gltf, ScaledPropExportsAUniformNodeScale) {
   roadmaker::RoadNetwork network;

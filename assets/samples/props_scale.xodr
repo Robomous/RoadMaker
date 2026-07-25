@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<OpenDRIVE>
+  <header revMajor="1" revMinor="8" name="props_scale" vendor="RoadMaker" />
+  <road name="main" length="150" id="1" junction="-1">
+    <planView>
+      <geometry s="0" x="0" y="0" hdg="0" length="150">
+        <line />
+      </geometry>
+    </planView>
+    <lanes>
+      <laneSection s="0">
+        <left>
+          <lane id="2" type="sidewalk" level="false">
+            <width sOffset="0" a="1.8" b="0" c="0" d="0" />
+          </lane>
+          <lane id="1" type="driving" level="false">
+            <width sOffset="0" a="3" b="0" c="0" d="0" />
+          </lane>
+        </left>
+        <center>
+          <lane id="0" type="none" level="false" />
+        </center>
+        <right>
+          <lane id="-1" type="driving" level="false">
+            <width sOffset="0" a="3" b="0" c="0" d="0" />
+          </lane>
+          <lane id="-2" type="sidewalk" level="false">
+            <width sOffset="0" a="1.8" b="0" c="0" d="0" />
+          </lane>
+        </right>
+      </laneSection>
+    </lanes>
+    <objects>
+      <object type="tree" name="tree_pine" id="1" s="20" t="-6.5" zOffset="0" orientation="none" radius="2.4" height="8.4" />
+      <object type="tree" name="tree_oak" id="2" s="40" t="-6.5" zOffset="0" orientation="none" radius="3" height="10" />
+      <object type="tree" name="tree_birch" id="3" s="60" t="-6.5" zOffset="0" orientation="none" radius="2" height="9.4" />
+      <object type="tree" name="tree_poplar" id="4" s="80" t="-6.5" zOffset="0" orientation="none" radius="1.7" height="12" />
+      <object type="vegetation" name="shrub" id="5" s="100" t="-6.5" zOffset="0" orientation="none" radius="2.2" height="2.4" />
+      <object type="pole" name="streetlight_single" id="6" s="35" t="-5.5" zOffset="0" orientation="none" hdg="1.5707963267948966" radius="2.1" height="9" />
+      <object type="pole" name="streetlight_double" id="7" s="95" t="-5.5" zOffset="0" orientation="none" hdg="1.5707963267948966" radius="2.1" height="9" />
+      <object type="building" name="building_low" id="8" s="25" t="-18" zOffset="0" orientation="none" radius="6.684309986827362" height="7.5" />
+      <object type="building" name="building_mid" id="9" s="70" t="-18" zOffset="0" orientation="none" radius="8.909545442950499" height="19.5" />
+      <object type="building" name="building_tower" id="10" s="115" t="-18" zOffset="0" orientation="none" radius="9.899494936611665" height="38" />
+    </objects>
+    <userData code="rm:waypoints" value="0,0;150,0" />
+  </road>
+</OpenDRIVE>

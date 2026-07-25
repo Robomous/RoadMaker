@@ -22,6 +22,7 @@
 // rm-defaults tables must be exactly what the registry renders, so a value
 // changed in one place without the other fails CI, not review.
 
+#include "roadmaker/assets/prop_library.hpp"
 #include "roadmaker/road/authoring.hpp"
 #include "roadmaker/road/defaults.hpp"
 #include "roadmaker/road/lane.hpp"
@@ -29,6 +30,8 @@
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
+#include <cmath>
 #include <filesystem>
 #include <fstream>
 #include <sstream>
@@ -70,11 +73,33 @@ TEST(DefaultsRegistry, DocMarkingsTableMatchesRegistry) {
       << generated;
 }
 
-// Both renderers must emit their marker comment so the doc's tables stay
+TEST(DefaultsRegistry, DocSignalsLightingTableMatchesRegistry) {
+  const std::string generated = defaults::signals_lighting_markdown();
+  EXPECT_TRUE(committed_spec_doc().find(generated) != std::string::npos)
+      << "docs/domain/realism_defaults.md §1.5 is out of date with the defaults "
+         "registry.\nRegenerate the marked table from "
+         "defaults::signals_lighting_markdown():\n\n"
+      << generated;
+}
+
+TEST(DefaultsRegistry, DocTreesBuildingsTableMatchesRegistry) {
+  const std::string generated = defaults::trees_buildings_markdown();
+  EXPECT_TRUE(committed_spec_doc().find(generated) != std::string::npos)
+      << "docs/domain/realism_defaults.md §1.6 is out of date with the defaults "
+         "registry.\nRegenerate the marked table from "
+         "defaults::trees_buildings_markdown():\n\n"
+      << generated;
+}
+
+// Every renderer must emit its marker comment so the doc's tables stay
 // findable (and replaceable) by name.
 TEST(DefaultsRegistry, RenderersEmitTheirMarkers) {
   EXPECT_EQ(defaults::cross_section_markdown().rfind("<!-- rm-defaults: cross-section -->", 0), 0U);
   EXPECT_EQ(defaults::markings_markdown().rfind("<!-- rm-defaults: markings -->", 0), 0U);
+  EXPECT_EQ(
+      defaults::signals_lighting_markdown().rfind("<!-- rm-defaults: signals-lighting -->", 0), 0U);
+  EXPECT_EQ(defaults::trees_buildings_markdown().rfind("<!-- rm-defaults: trees-buildings -->", 0),
+            0U);
 }
 
 // The four create-road templates are table consumers: every width they author
@@ -152,6 +177,65 @@ TEST(DefaultsRegistry, PerLaneTypeWidths) {
 TEST(DefaultsRegistry, MarkingConstantsAreTheRegistrys) {
   EXPECT_DOUBLE_EQ(RoadMark{}.width, defaults::kLineWidth);
   EXPECT_DOUBLE_EQ(RoadMarkLine{}.width, defaults::kLineWidth);
+}
+
+// --- Shipped props vs §1.5/§1.6 (#415) ------------------------------------
+//
+// scripts/gen_prop_meshes.py authors every prop at its true world size and is
+// stdlib-only, so it cannot include defaults.hpp. These tests are the join:
+// retune a mesh away from the spec (or move a constant without regenerating)
+// and CI fails here. The editor's half of the gate — that the shipped manifest
+// no longer scales the plants — lives in test_library_model.cpp, because core
+// cannot parse the Qt-JSON manifest.
+
+const props::PropModel& shipped(std::string_view id) {
+  const props::PropModel* model = props::model(id);
+  EXPECT_NE(model, nullptr) << "no bundled prop model \"" << id << '"';
+  static const props::PropModel k_missing{};
+  return model != nullptr ? *model : k_missing;
+}
+
+TEST(DefaultsRegistry, StreetlightsMountAtTheRegistryHeight) {
+  EXPECT_DOUBLE_EQ(shipped("streetlight_single").height, defaults::kStreetlightMountingHeight);
+  EXPECT_DOUBLE_EQ(shipped("streetlight_double").height, defaults::kStreetlightMountingHeight);
+}
+
+// The oak IS §1.6's default street tree; the other plants only have to stay in
+// their band — a pine is not a shade tree and a shrub is not a tree at all.
+TEST(DefaultsRegistry, StreetTreeIsTheRegistrys) {
+  const props::PropModel& oak = shipped("tree_oak");
+  EXPECT_DOUBLE_EQ(oak.height, defaults::kStreetTreeHeight);
+  EXPECT_DOUBLE_EQ(oak.radius, defaults::kStreetTreeCanopyDiameter / 2.0);
+
+  for (const char* id : {"tree_pine", "tree_birch", "tree_poplar"}) {
+    const props::PropModel& tree = shipped(id);
+    EXPECT_GE(tree.height, defaults::kOrnamentalTreeMinHeight) << id;
+    EXPECT_LE(tree.height, defaults::kMatureTreeMaxHeight) << id;
+  }
+
+  EXPECT_LT(shipped("shrub").height, defaults::kOrnamentalTreeMinHeight)
+      << "a shrub must read as smaller than the smallest ornamental tree";
+}
+
+TEST(DefaultsRegistry, BuildingsFollowThePerFloorRule) {
+  // §1.6's rule is whole floors plus a parapet. fmod lands just under the
+  // divisor as often as just over it (3.7 has no exact binary form), so the
+  // distance to the *nearest* multiple is what the rule means.
+  const auto off_floor_grid = [](double height) {
+    const double rem = std::fmod(height - defaults::kParapetHeight, defaults::kFloorHeight);
+    return std::min(rem, defaults::kFloorHeight - rem);
+  };
+  EXPECT_NEAR(off_floor_grid(shipped("building_mid").height), 0.0, 1e-9);
+  EXPECT_NEAR(off_floor_grid(shipped("building_tower").height), 0.0, 1e-9);
+
+  // The low building is a two-storey house: in band, and big enough in plan
+  // that its picking radius covers the footprint sanity rectangle.
+  const props::PropModel& low = shipped("building_low");
+  EXPECT_GE(low.height, defaults::kHouse2StoryMinHeight);
+  EXPECT_LE(low.height, defaults::kHouse2StoryMaxHeight);
+  EXPECT_GE(
+      low.radius,
+      std::hypot(defaults::kHouseFootprintLength / 2.0, defaults::kHouseFootprintWidth / 2.0));
 }
 
 TEST(DefaultsRegistry, RoadClassNames) {

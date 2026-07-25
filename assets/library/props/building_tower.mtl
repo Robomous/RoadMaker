@@ -5,3 +5,5 @@ newmtl mid
 Kd 0.7200 0.6900 0.6300
 newmtl cap
 Kd 0.6000 0.6200 0.6600
+newmtl parapet
+Kd 0.3300 0.3400 0.3600
