@@ -31,9 +31,27 @@ one platform.
 
 This is a change-detection **job**, not `paths-ignore`. `paths-ignore` leaves
 skipped checks *pending* forever, which blocks a PR the moment a check is
-marked required; a job that evaluates a condition always reports a conclusion.
-(`main` is not branch-protected today, so nothing is formally required — the
-design is written so that enabling protection needs no workflow change.)
+marked required; a job whose `if:` evaluates false reports `skipped`, which
+counts as a conclusion.
+
+**One caveat if you enable branch protection.** A skipped **matrix** job never
+expands its matrix, so on a docs-only PR the per-OS names do not appear at
+all — GitHub reports the single unexpanded job (`build+test ${{ matrix.os }}`)
+rather than `build+test macos-latest` and `build+test windows-latest`. A
+missing check is not a skipped check: requiring those two names would block
+every docs-only PR forever. Draw the required set from the jobs that run
+unconditionally on every PR:
+
+| Always runs | Safe to require |
+|---|---|
+| `change detection` | yes |
+| `build+test ubuntu-latest` | yes — a plain job, not a matrix leg, precisely so it can be required |
+| `clang-format` | yes |
+| `docs link check` | yes |
+| everything else | **no** — skipped on docs-only PRs, and the matrix legs vanish entirely |
+
+`main` is not branch-protected today (`GET /repos/Robomous/RoadMaker/branches/main/protection`
+returns 404), so nothing is formally required yet.
 
 **The matrix is staged.** On PRs *and* on `main`, `build+test ubuntu-latest`
 runs first and every other build job `needs:` it. Linux is the cheapest runner
@@ -164,10 +182,19 @@ broken relative links in this documentation tree fail the PR.
   quietly stop caching.
 - **FetchContent** — the downloaded dependency **tarballs**, keyed on the hash
   of `cmake/deps.cmake` (where every dependency is pinned — see
-  [dependency policy](../standards/dependencies.md)). Compiled dependency
-  objects are *not* cached separately; the compiler cache already covers them,
-  and jobs use different `binaryDir`s (`build/` vs `build/<preset>/`), so each
-  job keys its own entry rather than racing another job for one.
+  [dependency policy](../standards/dependencies.md)). Jobs use different
+  `binaryDir`s (`build/` vs `build/<preset>/`), so each keys its own entry
+  rather than racing another job for one.
+
+  Compiled dependency objects are deliberately **not** cached as a separate
+  `_deps` archive. The compiler cache already covers them: once sccache was
+  wired up, a warm `build+test windows-latest` — checkout, Qt provisioning,
+  configure, full dependency and first-party build, and the whole test suite —
+  came down to 3.3 minutes from 19.2. A second cache over the same objects
+  would buy little and would introduce a stale-artifact failure mode, since a
+  restored `_deps` tree carries generated build files that must agree with the
+  current CMake and compiler. If dependency build time ever does become
+  visible again, measure first: the compiler cache is the cheaper lever.
 
 ### Forcing a clean build
 
