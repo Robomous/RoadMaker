@@ -317,12 +317,16 @@ struct SpanPriority {
 /// ribbon covers the point at all (the joint quads, corner fillets and edge
 /// strips pave ground no connecting road claims), which lets every included
 /// span speak.
+///
+/// `fill_backend::inside_path`, never `Clipper2Lib::PointInPolygon` — the
+/// latter truncates PathD edge deltas to integers and is wrong below 1 m
+/// (#442). A ribbon footprint is meter-scale so this misfired less often than
+/// the Steiner gate did, but by the identical mechanism.
 std::optional<int> max_sort_at(const std::vector<SpanPriority>& priorities, double px, double py) {
   std::optional<int> best;
   const Clipper2Lib::PointD probe{px, py};
   for (const SpanPriority& entry : priorities) {
-    if (Clipper2Lib::PointInPolygon(probe, *entry.footprint) ==
-        Clipper2Lib::PointInPolygonResult::IsInside) {
+    if (fill_backend::inside_path(*entry.footprint, probe)) {
       best = best.has_value() ? std::max(*best, entry.sort_index) : entry.sort_index;
     }
   }
@@ -427,36 +431,6 @@ void assign_prioritized_elevation(CompactMesh& mesh,
 // unconstrained triangulation is wrong by one triangle, and at a kSteinerStep
 // of 2 m against a 1.8 m sidewalk one triangle is the whole band (#402).
 // ---------------------------------------------------------------------------
-
-/// Point-in-polygon for PLAN-VIEW METER coordinates.
-///
-/// Not `fill_backend::inside_region` / `Clipper2Lib::PointInPolygon`: those are
-/// only sound on integer paths. Clipper2's `CrossProductSign` casts the edge
-/// deltas to `__int128_t`, so on a PathD every difference below 1.0 truncates
-/// to zero, the sign comes out 0 and the point is reported "on the edge" — for
-/// a decimeter-scale polygon like a sidewalk band, that is almost every
-/// interior point. It is exactly why classification looked hopeless here.
-bool point_in_paths(const Clipper2Lib::PathsD& paths, const Clipper2Lib::PointD& pt) {
-  bool inside = false;
-  for (const Clipper2Lib::PathD& path : paths) {
-    bool in_this = false;
-    for (std::size_t i = 0, j = path.size() - 1; i < path.size(); j = i++) {
-      const Clipper2Lib::PointD& a = path[i];
-      const Clipper2Lib::PointD& b = path[j];
-      if ((a.y > pt.y) != (b.y > pt.y) &&
-          pt.x < (((b.x - a.x) * (pt.y - a.y)) / (b.y - a.y)) + a.x) {
-        in_this = !in_this;
-      }
-    }
-    if (in_this) {
-      if (Clipper2Lib::Area(path) <= 0.0) {
-        return false; // inside a hole
-      }
-      inside = true;
-    }
-  }
-  return inside;
-}
 
 /// One corner's band as the floor pipeline needs it: the region to classify
 /// against, and the seam polylines to constrain the triangulation to. Both are
@@ -1008,7 +982,7 @@ JunctionFloorSplit build_junction_floor_split(const RoadNetwork& network,
          floor.positions[(i2 * 3) + 1]) /
             3.0};
     for (std::size_t k = 0; k < built.bands.size(); ++k) {
-      if (point_in_paths(built.bands[k].region, centroid)) {
+      if (fill_backend::inside_region(built.bands[k].region, centroid)) {
         assignment[t] = static_cast<int>(k);
         any_sidewalk = true;
         break;

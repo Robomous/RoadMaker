@@ -157,12 +157,43 @@ build_contribution(const RoadNetwork& network, const Road& road, const SamplingO
   return out;
 }
 
+/// True if `pt` is enclosed by the single ring `path`, in PLAN-VIEW METERS.
+///
+/// NOT `Clipper2Lib::PointInPolygon`, which is only sound on INTEGER paths:
+/// its `CrossProductSign` (clipper.core.h) casts the edge deltas to
+/// `__int128_t`, so on a PathD every difference below 1.0 truncates to zero,
+/// the sign comes out 0 and the point is reported "on the edge". The rings
+/// this backend tests against are `InflatePaths(..., JoinType::Round)` results
+/// whose arc corners are chords a few centimeters long, so that misfired
+/// across a large share of the interior grid (#442, found via #402).
+///
+/// Even-odd ray cast, deterministic but with NO on-boundary state: a point
+/// exactly on an edge falls to one side or the other by the half-open
+/// `(a.y > pt.y) != (b.y > pt.y)` rule. `PointInPolygon` reported `IsOn` there
+/// and `inside_region` counted that as outside; the distinction is moot at the
+/// only caller, which erodes its region by half a Steiner step first, so a grid
+/// point landing exactly on the eroded outline is a measure-zero event.
+inline bool inside_path(const Clipper2Lib::PathD& path, const Clipper2Lib::PointD& pt) {
+  if (path.size() < 3) {
+    return false; // `InflatePaths` can return a degenerate 0-2 point ring
+  }
+  bool inside = false;
+  for (std::size_t i = 0, j = path.size() - 1; i < path.size(); j = i++) {
+    const Clipper2Lib::PointD& a = path[i];
+    const Clipper2Lib::PointD& b = path[j];
+    if ((a.y > pt.y) != (b.y > pt.y) && pt.x < (((b.x - a.x) * (pt.y - a.y)) / (b.y - a.y)) + a.x) {
+      inside = !inside;
+    }
+  }
+  return inside;
+}
+
 /// True if `pt` lies within the filled (NonZero) region of `paths`: inside an
 /// outer contour (positive area) and outside every hole (negative area).
 inline bool inside_region(const Clipper2Lib::PathsD& paths, const Clipper2Lib::PointD& pt) {
   bool inside = false;
   for (const Clipper2Lib::PathD& path : paths) {
-    if (Clipper2Lib::PointInPolygon(pt, path) == Clipper2Lib::PointInPolygonResult::IsInside) {
+    if (inside_path(path, pt)) {
       if (Clipper2Lib::Area(path) > 0.0) {
         inside = true;
       } else {

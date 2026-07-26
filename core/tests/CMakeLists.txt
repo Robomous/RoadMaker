@@ -75,7 +75,14 @@ add_executable(roadmaker_core_tests
   test_merge_roads.cpp
   test_edit_snap.cpp
   test_remesh_budget.cpp
+  test_fill_predicates.cpp
 )
+
+# test_fill_predicates.cpp pins the surface-fill point-in-polygon predicate
+# (#442), which lives in the internal, non-installed core/src/mesh/fill_backend.hpp
+# — the defect is invisible through the public mesh API. The header is entirely
+# `inline`, so including it from a test TU is ODR-safe.
+target_include_directories(roadmaker_core_tests PRIVATE ${CMAKE_SOURCE_DIR}/core/src)
 
 # The USD exporter and its golden tests only exist when RM_BUILD_USD=ON. The
 # test reads back the emitted USDA text, so it needs no tinyusdz link.
