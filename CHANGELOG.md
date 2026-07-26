@@ -347,6 +347,31 @@ Current version on `main`: **0.0.1**.
   about silently never matched.
 
 ### Fixed
+- **Skew and tight-radius junction corners were meshed with holes in them**
+  ([#442](https://github.com/Robomous/RoadMaker/issues/442)): the predicate that
+  decides which interior grid points a paved surface gets was
+  `Clipper2Lib::PointInPolygon`, which is only sound on *integer* paths — it
+  casts the edge deltas to a 128-bit integer, so on the floating-point paths
+  this kernel uses, every difference below one metre truncates to zero and the
+  answer degenerates to "on the edge". The junction floor, ground surface and
+  terrain fills all seed their interiors through it, against a boundary shrunk
+  with rounded joins, and where two roads meet at a sharp angle that boundary
+  resolves into edges a few millimetres long. Points several metres inside the
+  pavement were therefore dropped, and points outside it were let in. The
+  predicate is now an exact double-precision ray cast — the one written for
+  [#402](https://github.com/Robomous/RoadMaker/issues/402), promoted out of the
+  junction mesher so there is a single copy — with the same outer/hole rules as
+  before. In practice this moves only the corners that were actually affected:
+  of the eleven junction shapes in the quality matrix, the four skew and
+  tight-radius ones (45°, 135°, and both 30 m-radius curves) recover interior
+  points, and nothing else changes at all — the other seven come out
+  byte-identical. Where the quality numbers move they move the right way: the
+  135° corner had been sitting on the sliver budget, spending both of the two
+  degenerate triangles it is allowed, and now spends one, with its worst angle
+  going from 4.63° to 4.97°; the 45° corner improves from 5.86° to 6.93°. (The
+  30 m inside curve re-triangulates without changing any quality number.) The
+  same defect in the span-priority arbitration, which picks which surface span
+  supplies a corner's elevation, is fixed in the same pass.
 - **A left-arrow One Way sign drew the right arrow**
   ([#429](https://github.com/Robomous/RoadMaker/issues/429)): a sign is
   identified by its type *and* its subtype — ASAM OpenDRIVE §14.1 says as much —
