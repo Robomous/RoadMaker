@@ -5,30 +5,78 @@ on:
     branches: [main]
   pull_request:
 
+# A superseded PR run is pure waste: its Windows jobs alone are ~30 gross
+# runner-minutes. Pushes to main are deliberately NOT cancelled — main's
+# sanitize job carries the full 9-minute soak, and every commit on main must
+# stay individually verified.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
-  build-test:
-    name: build+test ${{ matrix.os }}
-    runs-on: ${{ matrix.os }}
+  # Decides whether a PR touches anything a compiler or a test can observe.
+  # Docs-only PRs still build and test on ONE platform (build+test
+  # ubuntu-latest below): seven test files read docs/ directly — the
+  # realism-defaults registry and the shortcut/help registries are doc<->code
+  # divergence gates — so a Markdown-only edit really can break the build.
+  # What a docs-only change skips is the macOS/Windows matrix and the
+  # ancillary heavy jobs.
+  #
+  # This is a change-detection job rather than `paths-ignore` on purpose: every
+  # check keeps reporting a conclusion instead of hanging pending, which is
+  # what branch protection needs once main is protected (it is not today).
+  changes:
+    name: change detection
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      code: ${{ steps.filter.outputs.code }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Classify the diff
+        id: filter
+        shell: bash
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" != 'pull_request' ]; then
+            echo 'Not a pull request — running the full matrix.'
+            echo 'code=true' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          changed=$(git diff --name-only "$BASE_SHA" "$HEAD_SHA")
+          echo 'Changed files:'
+          printf '%s\n' "$changed" | sed 's/^/  /'
+          # Anything that is neither under docs/ nor a root-level .md file
+          # counts as code.
+          if printf '%s\n' "$changed" | grep -qvE '^(docs/|[^/]*\.md$)'; then
+            echo 'code=true' >> "$GITHUB_OUTPUT"
+            echo 'Verdict: code change — full matrix.'
+          else
+            echo 'code=false' >> "$GITHUB_OUTPUT"
+            echo 'Verdict: docs-only — Linux build+test, format and link check only.'
+          fi
+
+  # Linux is the gate. It is by far the cheapest build (x1 multiplier, ~1.6 min
+  # warm) and catches nearly every compile and test failure, so the macOS (x10)
+  # and Windows (x2) jobs wait for it rather than burning ~99 gross minutes in
+  # parallel on a branch that does not compile.
+  build-test-linux:
+    name: build+test ubuntu-latest
+    needs: changes
+    runs-on: ubuntu-latest
     timeout-minutes: 60
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - os: macos-latest
-            preset: ci-macos
-          - os: ubuntu-latest
-            preset: ci-linux
-          - os: windows-latest
-            preset: ci-windows
     steps:
       - uses: actions/checkout@v4
 
       - name: Install Ninja + CMake
         uses: lukka/get-cmake@latest
 
-
       - name: Linux Qt runtime deps
-        if: runner.os == 'Linux'
         run: >
           sudo apt-get update && sudo apt-get install -y
           libgl1-mesa-dev
@@ -37,6 +85,70 @@ jobs:
           libxcb-cursor0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1
           libxcb-randr0 libxcb-render-util0 libxcb-shape0
           libxcb-xinerama0 libxcb-xkb1
+
+      - name: Cache Qt
+        uses: actions/cache@v4
+        with:
+          path: |
+            .qt
+            !.qt/venv
+          key: qt-${{ runner.os }}-${{ hashFiles('cmake/QtVersion.cmake', 'scripts/setup_qt.py') }}
+
+      - name: Provision Qt
+        run: python3 scripts/setup_qt.py
+
+      - name: Compiler cache
+        uses: hendrikmuhs/ccache-action@v1.2
+        with:
+          key: ubuntu-latest-build
+          variant: ccache
+          max-size: 500M
+
+      - name: Cache FetchContent downloads
+        uses: actions/cache@v4
+        with:
+          path: build/*/_deps/*-subbuild/*-populate-prefix/src/*.tar.gz
+          key: deps-src-build-ubuntu-latest-${{ hashFiles('cmake/deps.cmake') }}
+
+      # The launcher is passed here, never hardcoded in CMakeLists.txt: the tool
+      # has to match whatever the step above installed, and a developer's local
+      # build must stay free to use its own (or none).
+      - name: Configure
+        run: >
+          cmake --preset ci-linux
+          -DCMAKE_C_COMPILER_LAUNCHER=ccache
+          -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
+
+      - name: Build
+        run: cmake --build --preset ci-linux
+
+      - name: Test
+        # -j 4: the runners have 4 cores and every test is its own process
+        # (gtest_discover_tests); measured ~3x on the serial step
+        # (docs/testing/audit-2026-07.md §C1).
+        run: ctest --preset ci-linux -j 4
+
+  build-test:
+    name: build+test ${{ matrix.os }}
+    needs: [changes, build-test-linux]
+    if: needs.changes.outputs.code == 'true'
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            preset: ci-macos
+            launcher: ccache
+          - os: windows-latest
+            preset: ci-windows
+            launcher: sccache
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Ninja + CMake
+        uses: lukka/get-cmake@latest
 
       - name: MSVC environment
         if: runner.os == 'Windows'
@@ -65,16 +177,25 @@ jobs:
         uses: hendrikmuhs/ccache-action@v1.2
         with:
           key: ${{ matrix.os }}-build
-          variant: ${{ runner.os == 'Windows' && 'sccache' || 'ccache' }}
+          variant: ${{ matrix.launcher }}
+          max-size: 500M
 
       - name: Cache FetchContent downloads
         uses: actions/cache@v4
         with:
           path: build/*/_deps/*-subbuild/*-populate-prefix/src/*.tar.gz
-          key: deps-${{ matrix.os }}-${{ hashFiles('cmake/deps.cmake') }}
+          key: deps-src-build-${{ matrix.os }}-${{ hashFiles('cmake/deps.cmake') }}
 
+      # sccache on MSVC: the ci-* presets build Release, which carries no
+      # separate-PDB debug info, so the /Zi incompatibility that would otherwise
+      # silently disable sccache does not arise. Do not add /Zi to a CI preset
+      # without also switching it to /Z7
+      # (CMAKE_MSVC_DEBUG_INFORMATION_FORMAT=Embedded).
       - name: Configure
-        run: cmake --preset ${{ matrix.preset }}
+        run: >
+          cmake --preset ${{ matrix.preset }}
+          -DCMAKE_C_COMPILER_LAUNCHER=${{ matrix.launcher }}
+          -DCMAKE_CXX_COMPILER_LAUNCHER=${{ matrix.launcher }}
 
       - name: Build
         run: cmake --build --preset ${{ matrix.preset }}
@@ -87,12 +208,20 @@ jobs:
 
   shared-core:
     name: shared kernel ${{ matrix.os }}
+    needs: [changes, build-test-linux]
+    if: needs.changes.outputs.code == 'true'
     runs-on: ${{ matrix.os }}
     timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-latest, ubuntu-latest, windows-latest]
+        include:
+          - os: macos-latest
+            launcher: ccache
+          - os: ubuntu-latest
+            launcher: ccache
+          - os: windows-latest
+            launcher: sccache
     steps:
       - uses: actions/checkout@v4
       - uses: lukka/get-cmake@latest
@@ -102,12 +231,16 @@ jobs:
       - uses: hendrikmuhs/ccache-action@v1.2
         with:
           key: ${{ matrix.os }}-shared
-          variant: ${{ runner.os == 'Windows' && 'sccache' || 'ccache' }}
+          variant: ${{ matrix.launcher }}
+          max-size: 500M
+      # Distinct key from the build+test jobs: this job's binaryDir is build/,
+      # theirs is build/<preset>/, so the two cache different paths and must not
+      # share a key.
       - name: Cache FetchContent downloads
         uses: actions/cache@v4
         with:
           path: build/_deps/*-subbuild/*-populate-prefix/src/*.tar.gz
-          key: deps-${{ matrix.os }}-${{ hashFiles('cmake/deps.cmake') }}
+          key: deps-src-shared-${{ matrix.os }}-${{ hashFiles('cmake/deps.cmake') }}
       # Hidden visibility + explicit exports: a missed RM_API is a link error
       # here; the install+consume step proves the CMake package works outside
       # the build tree.
@@ -116,6 +249,8 @@ jobs:
           cmake -B build -G Ninja
           -DCMAKE_BUILD_TYPE=Release -DRM_WERROR=ON
           -DRM_BUILD_SHARED=ON -DRM_BUILD_TESTS=ON -DRM_BUILD_EDITOR=OFF
+          -DCMAKE_C_COMPILER_LAUNCHER=${{ matrix.launcher }}
+          -DCMAKE_CXX_COMPILER_LAUNCHER=${{ matrix.launcher }}
       - name: Build
         run: cmake --build build
       - name: Test against the shared kernel
@@ -137,6 +272,8 @@ jobs:
 
   sanitize:
     name: ASan+UBSan (Linux clang)
+    needs: [changes, build-test-linux]
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
@@ -162,11 +299,12 @@ jobs:
       - uses: hendrikmuhs/ccache-action@v1.2
         with:
           key: sanitize
+          max-size: 500M
       - name: Cache FetchContent downloads
         uses: actions/cache@v4
         with:
           path: build/_deps/*-subbuild/*-populate-prefix/src/*.tar.gz
-          key: deps-sanitize-${{ hashFiles('cmake/deps.cmake') }}
+          key: deps-src-sanitize-${{ hashFiles('cmake/deps.cmake') }}
       # Editor included: ASan surfaces signal/slot lifetime bugs.
       - name: Configure
         run: >
@@ -175,6 +313,8 @@ jobs:
           -DCMAKE_BUILD_TYPE=RelWithDebInfo
           -DRM_BUILD_TESTS=ON -DRM_BUILD_EDITOR=ON
           -DRM_SANITIZE=address,undefined
+          -DCMAKE_C_COMPILER_LAUNCHER=ccache
+          -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
       - name: Build
         run: cmake --build build
       - name: Test
@@ -208,6 +348,8 @@ jobs:
 
   visual-artifacts:
     name: editor visual artifacts
+    needs: [changes, build-test-linux]
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 60
     # Renders the canonical scenes (4-arm crossing, the tee, an overpass, and
@@ -240,13 +382,19 @@ jobs:
       - uses: hendrikmuhs/ccache-action@v1.2
         with:
           key: visual-artifacts
+          max-size: 500M
+      # Own key: this used to reuse the build+test ubuntu key, so the two jobs
+      # raced to save the same entry.
       - name: Cache FetchContent downloads
         uses: actions/cache@v4
         with:
           path: build/*/_deps/*-subbuild/*-populate-prefix/src/*.tar.gz
-          key: deps-ubuntu-latest-${{ hashFiles('cmake/deps.cmake') }}
+          key: deps-src-visual-ubuntu-latest-${{ hashFiles('cmake/deps.cmake') }}
       - name: Configure
-        run: cmake --preset ci-linux
+        run: >
+          cmake --preset ci-linux
+          -DCMAKE_C_COMPILER_LAUNCHER=ccache
+          -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
       - name: Build editor
         run: cmake --build --preset ci-linux --target roadmaker-editor
       - name: Render canonical scenes
@@ -328,6 +476,8 @@ jobs:
           path: shots/
           if-no-files-found: warn # GL-less runner skipped the renders
 
+  # Always runs, on every event: 30 seconds on the cheapest runner, and a
+  # docs-only PR can still touch an asset license manifest.
   format:
     name: clang-format
     runs-on: ubuntu-latest
@@ -343,6 +493,8 @@ jobs:
 
   python:
     name: Python wheel + pytest
+    needs: [changes, build-test-linux]
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
@@ -354,6 +506,7 @@ jobs:
       - uses: hendrikmuhs/ccache-action@v1.2
         with:
           key: python
+          max-size: 500M
       - name: Build wheel
         run: pip wheel python/ -w dist -v
       - name: Install wheel + pytest
@@ -374,6 +527,8 @@ jobs:
 
   fuzz-smoke:
     name: xodr fuzz smoke (30 s)
+    needs: [changes, build-test-linux]
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -382,12 +537,15 @@ jobs:
       - uses: hendrikmuhs/ccache-action@v1.2
         with:
           key: fuzz
+          max-size: 500M
       - name: Configure
         run: >
           cmake -B build -G Ninja
           -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++
           -DCMAKE_BUILD_TYPE=RelWithDebInfo
           -DRM_BUILD_TESTS=ON -DRM_BUILD_FUZZERS=ON
+          -DCMAKE_C_COMPILER_LAUNCHER=ccache
+          -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
       - name: Build fuzzer
         run: cmake --build build --target roadmaker_fuzz_xodr
       - name: Run 30 s smoke
@@ -395,6 +553,8 @@ jobs:
 
   usd-export:
     name: USD export (usdchecker)
+    needs: [changes, build-test-linux]
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 45
     # The OpenUSD exporter is gated behind RM_BUILD_USD (off in the default
@@ -412,11 +572,12 @@ jobs:
       - uses: hendrikmuhs/ccache-action@v1.2
         with:
           key: usd-export
+          max-size: 500M
       - name: Cache FetchContent downloads
         uses: actions/cache@v4
         with:
           path: build/_deps/*-subbuild/*-populate-prefix/src/*.tar.gz
-          key: deps-usd-${{ hashFiles('cmake/deps.cmake') }}
+          key: deps-src-usd-${{ hashFiles('cmake/deps.cmake') }}
       # Pinned below 26.8: that release removed UsdUtils.ComplianceChecker in
       # favour of the new pxr.UsdValidation framework, which broke this job on
       # a docs-only commit. Migrating the wrapper script is tracked separately;
@@ -429,6 +590,8 @@ jobs:
           -DCMAKE_BUILD_TYPE=Release
           -DRM_BUILD_USD=ON -DRM_BUILD_TESTS=ON -DRM_BUILD_PYTHON=ON
           -DRM_BUILD_EDITOR=OFF -DRM_WERROR=ON
+          -DCMAKE_C_COMPILER_LAUNCHER=ccache
+          -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
       - name: Build
         run: cmake --build build
       - name: Golden gtests (writes /tmp/rm_usd_golden.usda)
@@ -440,6 +603,8 @@ jobs:
 
   esmini-roundtrip:
     name: esmini round-trip smoke
+    needs: [changes, build-test-linux]
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     # Cross-cutting quality gate owned by M3a, then permanent (issue #51,
@@ -474,6 +639,7 @@ jobs:
       - name: Broken fixture must fail (guards the gate itself)
         run: python3 scripts/esmini_smoke.py --esmini .esmini/esmini/bin/esmini --expect-fail tests/esmini/broken.xodr
 
+  # Always runs, on every event — this is the gate a docs-only change most needs.
   docs:
     name: docs link check
     runs-on: ubuntu-latest
