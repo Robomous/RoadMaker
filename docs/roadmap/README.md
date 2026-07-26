@@ -123,6 +123,11 @@ a categorized toolbar.
   single owner, so it carries the `cascade` label **without** a pillar
   milestone; the [release gate](#release-gate) names the workstream
   explicitly, which is what makes label-only tracking sufficient.
+  **Build and CI infrastructure** (`ci-sM`, label `ci` — see
+  [Build and CI infrastructure](#build-and-ci-infrastructure)) is the fifth
+  and the only one that is not a release-gate item: it changes how the
+  project is built and verified, never what the product does. Label-only,
+  no milestone.
 - **Governing spec docs**: issues that touch shared defaults, dimensions,
   or interaction conventions must link the governing spec doc and must not
   redefine its values; changes go through the spec doc first. The first
@@ -294,6 +299,21 @@ today and grows versions when v0.1.0 lands.
 | [`docs-s2`](https://github.com/Robomous/RoadMaker/issues/346) | Local reader build, release packaging behind `ROADMAKER_BUNDLE_MANUAL`, Help-menu "open manual" action, reference→guide bridge convention | Packaged build on one platform opens the manual from the Help menu; local build passes the no-absolute-paths check; bridge targets verified in CI; `F1` untouched |
 | [`docs-s3`](https://github.com/Robomous/RoadMaker/issues/347) | Web build with configurable base, versioned assembly workflows, header version dropdown, `amplify.yml`, maintainer publishing runbook | `dev/` assembly works from `main`; a `workflow_dispatch` dry run demonstrates versioned assembly into a scratch prefix; nothing creates tags |
 | [`docs-s4`](https://github.com/Robomous/RoadMaker/issues/348) | Link-check hardening, contributor authoring guide for the two tiers, `docs-site/` dependency hygiene, IP-rule sweep, drift check against this section and ADR-0009 | A reviewer following the guide adds one reference page and one guide page and each appears in its correct pipeline(s) with no extra steps |
+
+## Build and CI infrastructure
+
+A cross-pillar workstream (`ci-sM` issues, label
+[`ci`](https://github.com/Robomous/RoadMaker/labels/ci)) covering the build and
+continuous-integration machinery every pillar depends on. Unlike the four
+workstreams above it belongs to no pillar and carries **no milestone**: it
+changes how the project is built and verified, never what the product does.
+For the same reason it is **not a release-gate item** — a slow pipeline does
+not make v0.1.0 less of a promise of maturity. It is sequenced early purely
+because every later sprint compounds the saving.
+
+| Sprint | Scope | Exit criteria |
+|---|---|---|
+| [`ci-s1`](https://github.com/Robomous/RoadMaker/issues/446) | Compiler cache active on all three platforms — MSVC had none, because `CMakeLists.txt` auto-detected a binary named `ccache` while the Windows jobs install `sccache`; launcher passed from the workflow instead of hardcoded; bounded per-platform cache sizes; superseded PR runs cancelled; docs-only changes skip the macOS/Windows matrix while every doc↔code divergence gate still runs; Linux staged ahead of macOS/Windows | Warm-cache CI measurably faster than cold with identical test outcomes; before/after gross-minute table recorded on the issue; every existing check name unchanged; `docs/contributing/ci.md` documents the cache keys and how to force a clean build |
 
 ## Release gate
 
