@@ -187,7 +187,13 @@ TeeSetup setup_deg135() {
 
 /// Curved target of radius `r`, branch attached at the apex from outside
 /// (`inside=false`, convex side) or inside (toward the arc center).
-TeeSetup setup_curved(double r, bool inside) {
+///
+/// `profile` applies to BOTH arms. Passing `urban_sidewalk()` builds the
+/// scenario issue #356 reports — a curved road meeting a junction of sidewalked
+/// roads — which nothing else in this matrix, and no scene in assets/samples,
+/// covers.
+TeeSetup
+setup_curved(double r, bool inside, const LaneProfile& profile = LaneProfile::two_lane_rural()) {
   TeeSetup setup;
   // Waypoints on a circle centered at (0, r); apex at the origin.
   const double half_angle = r > 50.0 ? 35.0 * kPi / 180.0 : 60.0 * kPi / 180.0;
@@ -196,11 +202,11 @@ TeeSetup setup_curved(double r, bool inside) {
     const double theta = half_angle * static_cast<double>(i) / 2.0;
     arc.push_back({r * std::sin(theta), r - (r * std::cos(theta))});
   }
-  setup.target = author(setup.network, arc, "1");
+  setup.target = author(setup.network, arc, "1", profile);
   setup.s = setup.network.road(setup.target)->length / 2.0;
   const RoadId branch =
-      inside ? author(setup.network, {{0.0, std::min(r - 6.0, 24.0)}, {0.0, 6.0}}, "2")
-             : author(setup.network, {{0.0, -40.0}, {0.0, -6.0}}, "2");
+      inside ? author(setup.network, {{0.0, std::min(r - 6.0, 24.0)}, {0.0, 6.0}}, "2", profile)
+             : author(setup.network, {{0.0, -40.0}, {0.0, -6.0}}, "2", profile);
   setup.branch_end = RoadEnd{branch, ContactPoint::End};
   return setup;
 }
@@ -785,6 +791,38 @@ double circumradius(const std::array<double, 2>& a,
   return (la * lb * lc) / (2.0 * area2);
 }
 
+/// Per-vertex re-entrant turn angle [deg] along a CCW boundary loop; 0 at
+/// convex vertices. Shared by the fillet gate and the #356 reproduction so both
+/// measure the corner the same way.
+std::vector<double> concave_turns_deg(const std::vector<std::array<double, 2>>& ccw_loop) {
+  const std::size_t n = ccw_loop.size();
+  std::vector<double> turns(n, 0.0);
+  for (std::size_t i = 0; i < n; ++i) {
+    const auto& a = ccw_loop[(i + n - 1) % n];
+    const auto& b = ccw_loop[i];
+    const auto& c = ccw_loop[(i + 1) % n];
+    const double ux = b[0] - a[0], uy = b[1] - a[1];
+    const double vx = c[0] - b[0], vy = c[1] - b[1];
+    const double cross = (ux * vy) - (uy * vx);
+    const double dot = (ux * vx) + (uy * vy);
+    // CCW loop: right turns (cross < 0) are re-entrant corners.
+    if (cross < 0.0) {
+      turns[i] = std::atan2(std::abs(cross), dot) * 180.0 / kPi;
+    }
+  }
+  return turns;
+}
+
+/// `boundary_loop` normalized to CCW, so the interior is on the left and
+/// `concave_turns_deg` means what it says.
+std::vector<std::array<double, 2>> ccw_boundary_loop(const SubMesh& floor) {
+  std::vector<std::array<double, 2>> loop = boundary_loop(floor);
+  if (signed_area(loop) < 0.0) {
+    std::ranges::reverse(loop);
+  }
+  return loop;
+}
+
 } // namespace
 
 // Fillet existence (tee visual spec §3): the floor's outer boundary must be
@@ -797,30 +835,13 @@ TEST_P(TJunctionQuality, FilletedBoundaryIsSmoothAndRadiused) {
   const NetworkMesh mesh = roadmaker::build_network_mesh(tee.network);
   ASSERT_FALSE(mesh.junction_floors.empty());
 
-  std::vector<std::array<double, 2>> loop = boundary_loop(mesh.junction_floors.front().mesh);
+  const std::vector<std::array<double, 2>> loop =
+      ccw_boundary_loop(mesh.junction_floors.front().mesh);
   ASSERT_GE(loop.size(), 8u);
-  if (signed_area(loop) < 0.0) {
-    std::ranges::reverse(loop); // normalize to CCW: interior on the left
-  }
 
   const std::size_t n = loop.size();
-  std::vector<double> concave_turn_deg(n, 0.0);
-  double max_concave_turn = 0.0;
-  for (std::size_t i = 0; i < n; ++i) {
-    const auto& a = loop[(i + n - 1) % n];
-    const auto& b = loop[i];
-    const auto& c = loop[(i + 1) % n];
-    const double ux = b[0] - a[0], uy = b[1] - a[1];
-    const double vx = c[0] - b[0], vy = c[1] - b[1];
-    const double cross = (ux * vy) - (uy * vx);
-    const double dot = (ux * vx) + (uy * vy);
-    const double turn = std::atan2(std::abs(cross), dot) * 180.0 / kPi;
-    // CCW loop: right turns (cross < 0) are re-entrant corners.
-    if (cross < 0.0) {
-      concave_turn_deg[i] = turn;
-      max_concave_turn = std::max(max_concave_turn, turn);
-    }
-  }
+  const std::vector<double> concave_turn_deg = concave_turns_deg(loop);
+  const double max_concave_turn = std::ranges::max(concave_turn_deg);
   // A missing fillet shows up as one sharp re-entrant corner (90° for a perp
   // tee); a filleted boundary turns through the same total angle in small
   // per-vertex steps. 20° accommodates the coarsest legitimate arc step plus
@@ -988,6 +1009,56 @@ TEST_P(TJunctionQuality, SurfaceNormalsAreSmoothAndWelded) {
   }
 }
 
+// Standing reproduction of issue #356 — a curved approach meeting a junction of
+// sidewalked roads, attached on the CONCAVE side. DISABLED because it fails:
+// it is the bug, not a regression guard, and it is enabled by whoever fixes it.
+//
+// Run it with (no line continuation — a trailing backslash would make this a
+// multi-line comment, which GCC rejects under -Werror=comment):
+//   roadmaker_core_tests --gtest_also_run_disabled_tests
+//       --gtest_filter='*DISABLED_CurvedInsideApproachWithSidewalks*'
+//
+// Measured on 7ac3c75, against the same curve WITHOUT sidewalks in parentheses:
+//
+//   worst triangle angle   0.51 deg  (6.62 deg)
+//   sliver triangles       4         (0),        budget 2
+//   max concave turn      88.2 deg   (passes),   gate < 20 deg
+//
+// The 88 degree re-entrant corner is the visible artifact. `corner_faces`
+// samples each arm at ONE end station and treats its outer edge as an infinite
+// straight ray (junction_corner_detail.cpp:141-197); `solve_corner` intersects
+// those rays (:250-265). On a curved arm the true pavement edge peels away from
+// its own tangent, so the rays meet at a fabricated apex metres outside the
+// pavement and `append_corner_fillets` (junction_surface.cpp:135-209) paves a
+// wedge all the way out to it. Both curved cases show that wedge in the
+// viewport; adding the sidewalk band wraps it and turns the far end into a
+// needle sharp enough to trip the gates.
+//
+// Two things the 2026-07-22 investigation comment on #356 says are NOT true
+// here, both re-checked while writing this:
+//   - It does reproduce in the headless harness. That pass looked at
+//     watertightness and floor-vs-arm plan overlap, which still hold
+//     (boundary_crossings = 0). The fillet and sliver gates are what expose it.
+//   - `FloorCarriesDrivingMaterial` does NOT need relaxing for a sidewalked
+//     profile. `build_one_junction_floor` keeps the bands in JunctionFloor
+//     ::details and leaves .mesh as the carriageway, so it passes unchanged
+//     (mesh_builder.cpp:1039-1046). That comment predates #402 / PR #441.
+TEST(TJunctionQualityRepro, DISABLED_CurvedInsideApproachWithSidewalksFailsTheFilletGate) {
+  Tee tee = attach(setup_curved(30.0, true, LaneProfile::urban_sidewalk()));
+  const NetworkMesh mesh = roadmaker::build_network_mesh(tee.network);
+  ASSERT_FALSE(mesh.junction_floors.empty());
+
+  const QualityMetrics metrics = compute_metrics(tee, mesh);
+  EXPECT_LE(metrics.slivers, kSliverBudget) << format_metrics(metrics);
+  EXPECT_GE(metrics.min_angle_deg, kMinTriangleAngleDeg) << format_metrics(metrics);
+
+  const std::vector<std::array<double, 2>> loop =
+      ccw_boundary_loop(mesh.junction_floors.front().mesh);
+  ASSERT_GE(loop.size(), 8U);
+  EXPECT_LT(std::ranges::max(concave_turns_deg(loop)), 20.0)
+      << "re-entrant corner without a fillet arc";
+}
+
 // Regenerates the committed tee golden (assets/samples + fuzz corpus per the
 // new-xodr-feature rule). Run manually:
 // roadmaker_core_tests --gtest_also_run_disabled_tests
@@ -1013,6 +1084,21 @@ INSTANTIATE_TEST_SUITE_P(
                       TeeCase{"r100_inside", [] { return setup_curved(100.0, true); }},
                       TeeCase{"r30_outside", [] { return setup_curved(30.0, false); }},
                       TeeCase{"r30_inside", [] { return setup_curved(30.0, true); }},
+                      // Issue #356: a curved approach meeting a junction of
+                      // SIDEWALKED roads — the scenario the field report shows
+                      // and the one thing this matrix never covered. Only the
+                      // convex side is in the matrix; the concave side does not
+                      // pass today, and is the DISABLED reproduction below.
+                      //
+                      // NOTE this case clears the sliver budget EXACTLY (2 of 2)
+                      // with a 1.54 deg worst triangle, against 6.62 deg for the
+                      // same curve without sidewalks. It is deliberately left
+                      // that tight: it is the early-warning sibling of the
+                      // reproduction, and anything that costs it one more sliver
+                      // should fail loudly rather than drift.
+                      TeeCase{
+                          "r30_sidewalk_outside",
+                          [] { return setup_curved(30.0, false, LaneProfile::urban_sidewalk()); }},
                       TeeCase{"asymmetric", setup_asymmetric},
                       TeeCase{"start_contact", setup_start_contact},
                       TeeCase{"graded", setup_graded},
