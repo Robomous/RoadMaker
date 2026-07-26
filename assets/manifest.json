@@ -54,6 +54,24 @@
       "retrieved": "2026-07-10"
     },
     {
+      "url": "https://raw.githubusercontent.com/lucide-icons/lucide/1.24.0/icons/file.svg",
+      "sha256": "499039795d7412d67664ff79d2eb6b7412e746b24c18c8fd8aba383c24ddada0",
+      "license": "ISC",
+      "license_url": "https://github.com/lucide-icons/lucide/blob/1.24.0/LICENSE",
+      "author": "Lucide Contributors",
+      "destination": "editor/resources/icons/lucide/file.svg",
+      "retrieved": "2026-07-26"
+    },
+    {
+      "url": "https://raw.githubusercontent.com/lucide-icons/lucide/1.24.0/icons/folder.svg",
+      "sha256": "f0d92b94b797a8ab7d4c4ae33c3236c47f64068351b4e14bdb5014ee42898a39",
+      "license": "ISC",
+      "license_url": "https://github.com/lucide-icons/lucide/blob/1.24.0/LICENSE",
+      "author": "Lucide Contributors",
+      "destination": "editor/resources/icons/lucide/folder.svg",
+      "retrieved": "2026-07-26"
+    },
+    {
       "url": "https://raw.githubusercontent.com/lucide-icons/lucide/1.24.0/icons/folder-open.svg",
       "sha256": "ee57452b40e71df310214091dd9da1941a397c83197b8ff8d7ae66dd4242578b",
       "license": "ISC",
@@ -61,6 +79,15 @@
       "author": "Lucide Contributors",
       "destination": "editor/resources/icons/lucide/folder-open.svg",
       "retrieved": "2026-07-10"
+    },
+    {
+      "url": "https://raw.githubusercontent.com/lucide-icons/lucide/1.24.0/icons/image.svg",
+      "sha256": "619c9db58c879dce6250376ba67d9c9102ca6dbb3b1efb9294c9f180e22273a5",
+      "license": "ISC",
+      "license_url": "https://github.com/lucide-icons/lucide/blob/1.24.0/LICENSE",
+      "author": "Lucide Contributors",
+      "destination": "editor/resources/icons/lucide/image.svg",
+      "retrieved": "2026-07-26"
     },
     {
       "url": "https://raw.githubusercontent.com/lucide-icons/lucide/1.24.0/icons/info.svg",

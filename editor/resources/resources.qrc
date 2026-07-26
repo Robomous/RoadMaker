@@ -9,7 +9,10 @@
     <file alias="git-merge.svg">icons/lucide/git-merge.svg</file>
     <file alias="file-output.svg">icons/lucide/file-output.svg</file>
     <file alias="file-plus.svg">icons/lucide/file-plus.svg</file>
+    <file alias="file.svg">icons/lucide/file.svg</file>
+    <file alias="folder.svg">icons/lucide/folder.svg</file>
     <file alias="folder-open.svg">icons/lucide/folder-open.svg</file>
+    <file alias="image.svg">icons/lucide/image.svg</file>
     <file alias="info.svg">icons/lucide/info.svg</file>
     <file alias="magnet.svg">icons/lucide/magnet.svg</file>
     <file alias="mountain.svg">icons/lucide/mountain.svg</file>

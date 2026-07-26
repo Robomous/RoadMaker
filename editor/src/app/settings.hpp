@@ -66,6 +66,12 @@ public:
   /// Returns false when no saved layout exists yet (first run).
   [[nodiscard]] bool restore_window(QMainWindow& window);
 
+  /// The Library dock's catalogue/files splitter geometry (p6-s7). A splitter
+  /// INSIDE a dock is not part of QMainWindow::saveState(), so it needs its own
+  /// key or the balance resets on every launch. Empty on first run.
+  [[nodiscard]] QByteArray library_splitter_state() const;
+  void set_library_splitter_state(const QByteArray& state);
+
   /// Absolute paths only — see add_recent_file. Entries left behind by a
   /// pre-#399 build that stored a relative path are dropped.
   [[nodiscard]] QStringList recent_files() const;

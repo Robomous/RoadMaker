@@ -77,6 +77,7 @@ add_library(roadmaker_editor_lib STATIC
   src/document/signal_placement.cpp
   src/document/signal_phase_overlay.cpp
   src/document/project.cpp
+  src/document/project_files_model.cpp
   src/document/elevation_utils.cpp
   src/document/editor_command.cpp
   src/document/scene_tree_model.cpp
@@ -89,6 +90,7 @@ add_library(roadmaker_editor_lib STATIC
   src/panels/diagnostics_panel.cpp
   src/panels/editor2d_host.cpp
   src/panels/library_panel.cpp
+  src/panels/project_files_panel.cpp
   src/panels/phase_panel.cpp
   src/panels/profile_panel.cpp
   src/panels/properties_panel.cpp

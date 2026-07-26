@@ -29,6 +29,7 @@ bool g_read_only = false;
 
 const auto* kGeometryKey = "window/geometry";
 const auto* kStateKey = "window/state";
+const auto* kLibrarySplitterKey = "window/library_splitter";
 const auto* kRecentKey = "files/recent";
 const auto* kRecentProjectsKey = "files/recent_projects";
 
@@ -64,6 +65,17 @@ void Settings::save_window(const QMainWindow& window) {
   }
   settings_.setValue(kGeometryKey, window.saveGeometry());
   settings_.setValue(kStateKey, window.saveState(kWindowStateVersion));
+}
+
+void Settings::set_library_splitter_state(const QByteArray& state) {
+  if (read_only()) {
+    return;
+  }
+  settings_.setValue(kLibrarySplitterKey, state);
+}
+
+QByteArray Settings::library_splitter_state() const {
+  return settings_.value(kLibrarySplitterKey).toByteArray();
 }
 
 bool Settings::restore_window(QMainWindow& window) {

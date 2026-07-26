@@ -21,10 +21,12 @@
 #include <QLineEdit>
 #include <QListView>
 #include <QMenu>
+#include <QSplitter>
 #include <QStringList>
 #include <QVBoxLayout>
 
 #include "app/icons.hpp"
+#include "panels/project_files_panel.hpp"
 
 namespace roadmaker::editor {
 
@@ -151,15 +153,65 @@ LibraryPanel::LibraryPanel(LibraryListModel& model, QWidget* parent)
   view_->setContextMenuPolicy(Qt::CustomContextMenu);
   connect(view_, &QListView::customContextMenuRequested, this, &LibraryPanel::show_context_menu);
 
+  // A project overlay is adopted AFTER the panel is built, and it can introduce
+  // categories the built-in catalogue has never heard of. Without this the
+  // combo kept whatever it was born with and those items were unreachable by
+  // category.
+  connect(&model_, &QAbstractItemModel::modelReset, this, &LibraryPanel::populate_categories);
+
+  // The catalogue half (combo + search + grid) is one splitter pane; the
+  // project's asset folder is the other (p6-s7). A plain QSplitter, not a tab
+  // stack: both halves stay visible and the user sets the balance.
+  auto* catalogue = new QWidget(this);
+  auto* catalogue_layout = new QVBoxLayout(catalogue);
+  catalogue_layout->setContentsMargins(0, 0, 0, 0);
+  catalogue_layout->setSpacing(6);
+  catalogue_layout->addWidget(category_combo_);
+  catalogue_layout->addWidget(search_);
+  catalogue_layout->addWidget(view_, 1);
+
+  files_ = new ProjectFilesPanel(this);
+  files_->hide(); // no project open yet — nothing to browse
+
+  splitter_ = new QSplitter(Qt::Vertical, this);
+  splitter_->setObjectName(QStringLiteral("library_splitter"));
+  splitter_->setChildrenCollapsible(true);
+  splitter_->addWidget(catalogue);
+  splitter_->addWidget(files_);
+  splitter_->setStretchFactor(0, 3);
+  splitter_->setStretchFactor(1, 2);
+
   auto* layout = new QVBoxLayout(this);
   layout->setContentsMargins(6, 6, 6, 6);
   layout->setSpacing(6);
-  layout->addWidget(category_combo_);
-  layout->addWidget(search_);
-  layout->addWidget(view_, 1);
+  layout->addWidget(splitter_, 1);
+}
+
+void LibraryPanel::set_project(const std::filesystem::path& project_dir) {
+  files_->set_project(project_dir);
+  files_->show();
+}
+
+void LibraryPanel::clear_project() {
+  files_->clear_project();
+  files_->hide();
+}
+
+QByteArray LibraryPanel::splitter_state() const {
+  return splitter_->saveState();
+}
+
+void LibraryPanel::restore_splitter_state(const QByteArray& state) {
+  if (!state.isEmpty()) {
+    splitter_->restoreState(state);
+  }
 }
 
 void LibraryPanel::populate_categories() {
+  // Repopulating must not silently drop the filter the user is looking at, so
+  // the current category is restored when the rebuilt list still offers it.
+  const QString selected = category_combo_->currentData().toString();
+  const QSignalBlocker block(category_combo_);
   category_combo_->clear();
   category_combo_->addItem(tr("All categories"), QString());
   // First-seen order over the merged model — the manifest already lists items
@@ -173,6 +225,11 @@ void LibraryPanel::populate_categories() {
     seen.append(item->category);
     category_combo_->addItem(item->category, item->category);
   }
+  const int restored = selected.isEmpty() ? 0 : category_combo_->findData(selected);
+  category_combo_->setCurrentIndex(restored < 0 ? 0 : restored);
+  // The combo's signal is blocked above, so push the resulting filter through
+  // by hand — a category that vanished with its overlay must stop filtering.
+  proxy_.set_category_filter(category_combo_->currentData().toString());
 }
 
 void LibraryPanel::handle_current_changed(const QModelIndex& index) {

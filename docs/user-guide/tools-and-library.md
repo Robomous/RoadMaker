@@ -68,5 +68,6 @@ placement tools take their asset from the Library.
 The Library groups its catalogue by **category** — road templates, assemblies,
 markings, materials, props, buildings, signals. Use the **category filter** at
 the top of the dock to narrow the grid to one category, and the search box to
-match by name. (A richer folder view over a project's asset files is planned —
-see the roadmap's Library file explorer.)
+match by name. With a project open, the dock's lower half additionally browses
+the project's `assets` folder as a live file tree — see
+[Library ▸ project files](library.md#project-files).

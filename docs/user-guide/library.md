@@ -65,6 +65,24 @@ properties panel; the change applies to props you place afterward, not to ones
 already in the scene. Every placed prop still records its own absolute size, so
 resizing a single instance and changing the asset default stay independent.
 
+## Project files
+
+With a project open, the lower half of the Library dock is a **file explorer
+over the project's `assets` folder**. It mirrors the folders on disk, images
+show their own thumbnail, and every other kind of file gets a glyph for what it
+is — a scene, a 3-D model, a manifest, or a plain file.
+
+It updates itself. Copy a texture in from Finder or Explorer, rename it, delete
+it — the tree follows without restarting RoadMaker, because the editor watches
+the folder rather than reading it once at startup. Drag the divider to give the
+catalogue or the files more room; the balance is remembered between sessions.
+
+A project that has no `assets` folder yet says so and names the exact path to
+create — RoadMaker never creates it for you, and browsing never writes anything
+into your project. Files are **read-only** here for now: the explorer shows you
+what the project contains. Turning a browsed texture into a material, or a
+`.glb` into a prop, is the next sprint.
+
 ## Markings drop on a lane boundary
 
 Drag a **marking** onto the viewport and drop it near a lane edge: RoadMaker
