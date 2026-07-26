@@ -35,10 +35,22 @@ add_compile_definitions($<$<PLATFORM_ID:Windows>:NOMINMAX>)
 # MSVC: sources and string literals are UTF-8 (fmt refuses to build without).
 add_compile_options("$<$<COMPILE_LANG_AND_ID:CXX,MSVC>:/utf-8>")
 
-find_program(RM_CCACHE ccache)
-if(RM_CCACHE)
-  set(CMAKE_CXX_COMPILER_LAUNCHER ${RM_CCACHE})
-  set(CMAKE_C_COMPILER_LAUNCHER ${RM_CCACHE})
+# Compiler cache. The caller decides: CI passes -DCMAKE_CXX_COMPILER_LAUNCHER
+# explicitly (ccache on Linux/macOS, sccache on Windows) because the tool has
+# to match what the workflow installed. Only when the caller says nothing do we
+# fall back to auto-detecting ccache, which keeps developer builds behaving as
+# they always have.
+#
+# This used to be an unconditional find_program(ccache), which silently gave
+# MSVC no launcher at all — sccache is not named "ccache", so every Windows CI
+# job was a full cold compile (19 min against Linux's 1.6 min). Never hardcode
+# one cache tool's name here again.
+if(NOT CMAKE_CXX_COMPILER_LAUNCHER AND NOT CMAKE_C_COMPILER_LAUNCHER)
+  find_program(RM_CCACHE ccache)
+  if(RM_CCACHE)
+    set(CMAKE_CXX_COMPILER_LAUNCHER ${RM_CCACHE})
+    set(CMAKE_C_COMPILER_LAUNCHER ${RM_CCACHE})
+  endif()
 endif()
 
 include(cmake/warnings.cmake)

@@ -7,10 +7,68 @@ All jobs must be green before a PR merges — CI is the objective gate (see
 
 ## `ci.yml` — every PR and push to `main`
 
-### `build-test` (matrix: macOS, Linux, Windows)
+### Orchestration
 
-The core gate. For each OS it provisions Qt via `scripts/setup_qt.py`, then
-runs the matching `ci-*` preset end to end:
+Three rules decide *whether* and *when* each job below runs.
+
+**Superseded PR runs are cancelled.** A `concurrency` group keyed on
+`github.ref` cancels an in-flight run when a new commit lands on the same PR.
+Pushes to `main` are deliberately **never** cancelled — `sanitize` carries the
+full 9-minute soak there, and every commit on `main` must stay individually
+verified.
+
+**`change detection` classifies the diff.** A PR whose every changed path is
+under `docs/` or is a root-level `.md` file is *docs-only*. Docs-only PRs skip
+the macOS/Windows matrix and the ancillary jobs, but still run **`build+test
+ubuntu-latest`**, `clang-format`, and `docs link check`.
+
+That Linux build is not a formality: seven test files read `docs/` directly and
+are real doc↔code divergence gates — `test_defaults_registry.cpp` against
+[realism defaults](../domain/realism_defaults.md), plus the shortcut, help,
+library, lane-profile, units, and T-junction-quality tests. A Markdown-only
+edit genuinely can turn the build red, so it is always compiled and tested on
+one platform.
+
+This is a change-detection **job**, not `paths-ignore`. `paths-ignore` leaves
+skipped checks *pending* forever, which blocks a PR the moment a check is
+marked required; a job whose `if:` evaluates false reports `skipped`, which
+counts as a conclusion.
+
+**One caveat if you enable branch protection.** A skipped **matrix** job never
+expands its matrix, so on a docs-only PR the per-OS names do not appear at
+all — GitHub reports the single unexpanded job (`build+test ${{ matrix.os }}`)
+rather than `build+test macos-latest` and `build+test windows-latest`. A
+missing check is not a skipped check: requiring those two names would block
+every docs-only PR forever. Draw the required set from the jobs that run
+unconditionally on every PR:
+
+| Always runs | Safe to require |
+|---|---|
+| `change detection` | yes |
+| `build+test ubuntu-latest` | yes — a plain job, not a matrix leg, precisely so it can be required |
+| `clang-format` | yes |
+| `docs link check` | yes |
+| everything else | **no** — skipped on docs-only PRs, and the matrix legs vanish entirely |
+
+`main` is not branch-protected today (`GET /repos/Robomous/RoadMaker/branches/main/protection`
+returns 404), so nothing is formally required yet.
+
+**The matrix is staged.** On PRs *and* on `main`, `build+test ubuntu-latest`
+runs first and every other build job `needs:` it. Linux is the cheapest runner
+(×1 multiplier, ~1.5 min warm) and catches nearly every compile and test
+failure, so a branch that does not build never reaches the Windows (×2) and
+macOS (×10) jobs. The cost is that `main` serializes ~1.5 min behind Linux
+instead of starting everything at once; the Windows jobs dominate wall clock
+either way.
+
+### `build+test ubuntu-latest` and `build-test` (macOS, Windows)
+
+The core gate, split into the Linux gate job and the macOS/Windows matrix that
+depends on it. Check names are identical to the three the single matrix
+produced before, so nothing downstream needs to know about the split.
+
+For each OS it provisions Qt via `scripts/setup_qt.py`, then runs the matching
+`ci-*` preset end to end:
 
 ```sh
 cmake --preset ci-<os>
@@ -93,14 +151,67 @@ broken relative links in this documentation tree fail the PR.
 
 ## Caching
 
-- **Qt**: `./.qt/` is cached with a key that hashes `cmake/QtVersion.cmake`
-  **and** `scripts/setup_qt.py` — bumping the Qt pin or changing the
-  provisioning script automatically invalidates the cache; otherwise
-  `setup_qt.py` is a no-op on a cache hit.
-- **Compiler**: ccache (sccache on Windows), keyed per OS and job.
-- **FetchContent**: dependency download tarballs cached, keyed on the hash of
-  `cmake/deps.cmake` (where every dependency is pinned — see
-  [dependency policy](../standards/dependencies.md)).
+| Cache | Path | Key |
+|---|---|---|
+| Qt | `./.qt/` (minus `venv`) | `qt-<os>-hash(cmake/QtVersion.cmake, scripts/setup_qt.py)` |
+| Compiler | ccache/sccache dir | `<os>-<job>`, managed by `hendrikmuhs/ccache-action` |
+| FetchContent downloads | `…/_deps/*-subbuild/*-populate-prefix/src/*.tar.gz` | `deps-src-<job>-<os>-hash(cmake/deps.cmake)` |
+| esmini binary | `.esmini/` | `esmini-<os>-<pinned version>` |
+
+- **Qt** — the key hashes `cmake/QtVersion.cmake` **and**
+  `scripts/setup_qt.py`, so bumping the Qt pin or changing the provisioning
+  script invalidates it automatically; on a hit `setup_qt.py` is a no-op.
+- **Compiler** — ccache on Linux and macOS, **sccache on Windows/MSVC**, each
+  bounded at 500M. Ten caches at that ceiling stay well inside the 10 GB
+  per-repo quota, and `ccache-action` maintains its own restore-key fallback
+  chain so a partial hit still helps.
+
+  The launcher is passed **from the workflow**
+  (`-DCMAKE_C/CXX_COMPILER_LAUNCHER=…`), never hardcoded in `CMakeLists.txt`.
+  This matters: `CMakeLists.txt` previously auto-detected a program literally
+  named `ccache`, which Windows never has — the workflow installs `sccache` —
+  so MSVC silently ran uncached for the entire life of the workflow. If you add
+  a build job, pass the launcher explicitly and match it to the `variant:` the
+  cache step installed. `CMakeLists.txt` still auto-detects ccache when the
+  caller specifies nothing, so local developer builds are unaffected.
+
+  A caveat for MSVC: sccache cannot cache compilations that use `/Zi`
+  (separate PDB). The `ci-*` presets build `Release`, which emits no debug
+  info, so this does not bite today. A CI preset that wants MSVC debug info
+  must use `/Z7` (`CMAKE_MSVC_DEBUG_INFORMATION_FORMAT=Embedded`) or it will
+  quietly stop caching.
+- **FetchContent** — the downloaded dependency **tarballs**, keyed on the hash
+  of `cmake/deps.cmake` (where every dependency is pinned — see
+  [dependency policy](../standards/dependencies.md)). Jobs use different
+  `binaryDir`s (`build/` vs `build/<preset>/`), so each keys its own entry
+  rather than racing another job for one.
+
+  Compiled dependency objects are deliberately **not** cached as a separate
+  `_deps` archive. The compiler cache already covers them: once sccache was
+  wired up, a warm `build+test windows-latest` — checkout, Qt provisioning,
+  configure, full dependency and first-party build, and the whole test suite —
+  came down to 3.3 minutes from 19.2. A second cache over the same objects
+  would buy little and would introduce a stale-artifact failure mode, since a
+  restored `_deps` tree carries generated build files that must agree with the
+  current CMake and compiler. If dependency build time ever does become
+  visible again, measure first: the compiler cache is the cheaper lever.
+
+### Forcing a clean build
+
+Caches are keyed on content, so the normal way to invalidate one is to change
+the file it hashes. To force a full cold build without touching pins:
+
+- **All caches** — delete them: `gh cache list` then
+  `gh cache delete <id>` (or `gh cache delete --all`). The next run repopulates
+  from scratch.
+- **Compiler cache only** — bump the `key:` on the relevant
+  `hendrikmuhs/ccache-action` step, or delete just those entries.
+- **Locally** — `ccache --clear`, or configure with
+  `-DCMAKE_CXX_COMPILER_LAUNCHER=` (empty) to bypass the cache entirely.
+
+If you ever suspect the compiler cache of producing a wrong result, clear it
+and re-run before investigating anything else — a cold run and a warm run must
+produce identical test outcomes.
 
 ## `release.yml` — on `v*` tags
 
