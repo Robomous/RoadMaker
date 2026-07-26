@@ -404,6 +404,13 @@ private:
   SlotWidget* junction_material_slot_;
 
   QGroupBox* signal_group_;
+  /// The sign this is, chosen from the shipped catalogue (§1.4). Committing one
+  /// pushes ONE edit::set_signal_identity, which carries the catalogue's face
+  /// size, @dynamic and posted value with it — see that command's contract. A
+  /// signal whose designation this build does not ship gets a display-only
+  /// entry naming its raw @type/@subtype so the combo can still show what it
+  /// is; selecting that entry pushes nothing.
+  QComboBox* signal_designation_combo_;
   UnitSpinBox* signal_s_spin_;
   UnitSpinBox* signal_t_spin_;
   QDoubleSpinBox* signal_h_spin_;
@@ -412,6 +419,16 @@ private:
   /// argument: raising a sign never changes which traffic it governs, so the
   /// vertical must not travel with the pose that carries the facing.
   UnitSpinBox* signal_z_spin_;
+  /// Face bounding box (§14.1 Table 122 @height / @width / @length, all
+  /// optional t_grEqZero meters). All three commit together as ONE
+  /// edit::set_signal_dimensions, whose arguments are the whole state — so each
+  /// push carries the other two spins' current values and an untouched
+  /// dimension is never materialised. Each spin's MINIMUM is a sentinel below
+  /// zero displaying "not set": that is how a dimension is cleared back to
+  /// absent, since zero is itself a legal value under t_grEqZero.
+  UnitSpinBox* signal_face_height_spin_;
+  UnitSpinBox* signal_face_width_spin_;
+  UnitSpinBox* signal_face_length_spin_;
   QLabel* signal_kind_label_;
   /// Editable @text face (§14 Table 122). A compact multi-line editor — @text
   /// may carry literal newlines — that commits ONE set_signal_text on focus-out
@@ -597,6 +614,27 @@ private:
   /// unit), skipping a value that did not change so a refresh re-seed never
   /// pushes a command.
   void push_signal_value();
+  /// Commits all three face-size spins as ONE set_signal_dimensions, skipping
+  /// the push when none of them changed so a refresh re-seed never echoes back.
+  /// Reads all three every time because the command's arguments are the whole
+  /// state, which is what keeps an untouched dimension absent.
+  void push_signal_dimensions();
+  /// The one set_signal_dimensions the face-size rows push: the three spins'
+  /// current dimensions for the primary signal. A scrub passes `overridden` and
+  /// `value` for the dimension it is dragging, because update_scrub rebuilds
+  /// the preview BEFORE it writes the spin — reading that spin would be a frame
+  /// behind. Returns nullptr when there is no signal selected.
+  [[nodiscard]] std::unique_ptr<edit::Command>
+  signal_dimensions_command(const RoadNetwork& network,
+                            std::optional<double> Signal::*overridden = nullptr,
+                            double value = 0.0) const;
+  /// The face dimension a spin currently expresses: std::nullopt when it sits
+  /// at its "not set" sentinel minimum, the value otherwise. Zero is a real
+  /// value here (t_grEqZero), so absent cannot be spelled as 0.0.
+  [[nodiscard]] static std::optional<double> face_dimension(const UnitSpinBox& spin);
+  /// Seeds a face-size spin from a stored optional, parking it at the "not set"
+  /// sentinel when the attribute is absent. Blocks the spin's signals.
+  static void seed_face_dimension(UnitSpinBox& spin, const std::optional<double>& stored);
 
   // --- crosswalk asset editor (p3-s2) ----------------------------------------
 

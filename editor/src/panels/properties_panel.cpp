@@ -206,6 +206,14 @@ QString mark_color_name(RoadMarkColor color) {
   }
 }
 
+/// Step of the three face-size spins, in meters.
+constexpr double kFaceDimensionStep = 0.05;
+/// The "not set" sentinel the face-size spins park at, one step below zero.
+/// §14.1's @height/@width/@length are optional t_grEqZero lengths, so ABSENT
+/// and 0.0 are different states and absent cannot be spelled as a number in
+/// range — hence a sentinel outside it rather than an overloaded zero.
+constexpr double kFaceDimensionUnset = -kFaceDimensionStep;
+
 /// Which traffic a signal governs, in words (§14.1 @orientation). GW-4 step 12c
 /// asserts the pane reports this and that turning a sign never changes it, so
 /// the row is what makes that check performable.
@@ -350,11 +358,13 @@ PropertiesPanel::PropertiesPanel(Document& document,
       junction_locked_check_(new QCheckBox(tr("Locked"), this)),
       junction_radius_spin_(new UnitSpinBox),
       junction_material_slot_(new SlotWidget(QStringLiteral("Materials"), this)),
-      signal_group_(new QGroupBox(tr("Signal"), this)), signal_s_spin_(new UnitSpinBox),
+      signal_group_(new QGroupBox(tr("Signal"), this)),
+      signal_designation_combo_(new QComboBox(this)), signal_s_spin_(new UnitSpinBox),
       signal_t_spin_(new UnitSpinBox), signal_h_spin_(new QDoubleSpinBox),
-      signal_z_spin_(new UnitSpinBox), signal_kind_label_(new QLabel(this)),
-      signal_text_edit_(new QPlainTextEdit), signal_value_spin_(new QSpinBox),
-      signal_value_label_(new QLabel(tr("Speed limit"), this)),
+      signal_z_spin_(new UnitSpinBox), signal_face_height_spin_(new UnitSpinBox),
+      signal_face_width_spin_(new UnitSpinBox), signal_face_length_spin_(new UnitSpinBox),
+      signal_kind_label_(new QLabel(this)), signal_text_edit_(new QPlainTextEdit),
+      signal_value_spin_(new QSpinBox), signal_value_label_(new QLabel(tr("Speed limit"), this)),
       object_group_(new QGroupBox(tr("Prop"), this)), object_kind_label_(new QLabel(this)),
       model_slot_(new SlotWidget(QStringLiteral("Props"), this)),
       instance_material_slot_(new SlotWidget(QStringLiteral("Materials"), this)),
@@ -844,11 +854,50 @@ PropertiesPanel::PropertiesPanel(Document& document,
           &PropertiesPanel::library_category_requested);
   junction_group_->hide();
 
-  // Signal: a placed <signal>'s road-relative pose. s/t/heading edit through
-  // move_signal (one command each); type/subtype stay read-only for now (a
-  // retype command is a later slice).
+  // Signal: a placed <signal>'s designation, road-relative pose and face size.
+  // s/t/heading edit through move_signal (one command each); the designation
+  // and the face box have their own commands (#429).
   signal_kind_label_->setObjectName(QStringLiteral("signal_kind_label"));
   signal_kind_label_->setWordWrap(true);
+  // The designation combo (§1.4's shipped pack, in Library order). Retyping a
+  // placed sign is one command that keeps its pose, text and mounting height —
+  // see edit::set_signal_identity for what a retype carries over and what it
+  // re-seeds from the catalogue.
+  signal_designation_combo_->setObjectName(QStringLiteral("signal_designation_combo"));
+  signal_designation_combo_->setToolTip(
+      tr("Which sign this is. Changing it keeps the sign where it stands — its position, "
+         "mounting height, facing and text — and takes the new designation's face size and "
+         "posted value."));
+  for (const signs::SignDef& def : signs::catalog()) {
+    signal_designation_combo_->addItem(
+        QString::fromUtf8(def.label.data(), qsizetype(def.label.size())),
+        QString::fromUtf8(def.key.data(), qsizetype(def.key.size())));
+  }
+  // Face bounding box (§14.1 Table 122). UnitSpinBoxes — these ARE lengths, so
+  // they follow the display-unit toggle (#412). Each spin's minimum is one step
+  // BELOW zero and displays "not set": that sentinel is how an optional
+  // dimension is cleared back to absent, because t_grEqZero makes a real 0 a
+  // legal value that must stay reachable.
+  const auto configure_face_spin = [this](UnitSpinBox* spin, const char* name) {
+    spin->setObjectName(QString::fromLatin1(name));
+    spin->setDecimals(2);
+    spin->setSingleStep(kFaceDimensionStep);
+    spin->setRange(kFaceDimensionUnset, 30.0);
+    spin->setSpecialValueText(tr("not set"));
+    connect(spin, &QDoubleSpinBox::editingFinished, this, [this] { push_signal_dimensions(); });
+  };
+  configure_face_spin(signal_face_height_spin_, "signal_face_height_spin");
+  configure_face_spin(signal_face_width_spin_, "signal_face_width_spin");
+  configure_face_spin(signal_face_length_spin_, "signal_face_length_spin");
+  signal_face_height_spin_->setToolTip(
+      tr("Height of the sign's face, measured from its bottom edge. Step below the minimum to "
+         "leave it undeclared."));
+  signal_face_width_spin_->setToolTip(
+      tr("Width of the sign's face. Step below the minimum to leave it undeclared — a street-name "
+         "blade's length follows its legend."));
+  signal_face_length_spin_->setToolTip(
+      tr("Thickness of the sign's bounding box. Rarely declared; step below the minimum to leave "
+         "it undeclared."));
   // s/t are UnitSpinBoxes and own their length suffix; the heading spin is
   // angle-valued (unit-invariant, #412) and keeps its literal " rad".
   const auto configure_signal_spin =
@@ -875,6 +924,7 @@ PropertiesPanel::PropertiesPanel(Document& document,
   signal_z_spin_->setToolTip(tr("Height of this signal's origin above the road reference line."));
   auto* signal_form = new QFormLayout(signal_group_);
   signal_form->addRow(signal_kind_label_);
+  signal_form->addRow(tr("Designation"), signal_designation_combo_);
   // The pose fields all commit through move_signal, so each scrub reads its two
   // siblings from their spin boxes — the selection cannot change mid-gesture.
   const auto signal_pose = [this](double s, double t, double h) {
@@ -981,6 +1031,37 @@ PropertiesPanel::PropertiesPanel(Document& document,
   signal_value_spin_->setSingleStep(5);
   signal_value_spin_->setSuffix(tr(" mph"));
   signal_form->addRow(signal_value_label_, signal_value_spin_);
+  // Face size. Each row scrubs like the pose rows, but drives its OWN dimension
+  // through the factory argument rather than reading its spin: update_scrub
+  // rebuilds the preview before it writes the spin, so the spin is a frame
+  // behind. The other two dimensions come from their spins, because
+  // set_signal_dimensions takes the whole state and an untouched dimension must
+  // not be materialised. A dimension that is absent has no baseline, so its
+  // label is inert until a value is typed — there is nothing to drag from.
+  const auto face_scrub =
+      [this](const QString& label, UnitSpinBox* spin, std::optional<double> Signal::*field) {
+        return install_scrub(new ScrubLabel(label, this),
+                             {.spin = spin,
+                              .units_per_pixel = 0.01,
+                              .baseline = [this, field]() -> std::optional<double> {
+                                const std::vector<SignalId> ids = selection_.selected_signals();
+                                if (ids.empty()) {
+                                  return std::nullopt;
+                                }
+                                const Signal* signal = document_.network().signal(ids.back());
+                                return signal == nullptr ? std::nullopt : signal->*field;
+                              },
+                              .factory =
+                                  [this, field](const RoadNetwork& network, double value) {
+                                    return signal_dimensions_command(network, field, value);
+                                  }});
+      };
+  signal_form->addRow(face_scrub(tr("Face height"), signal_face_height_spin_, &Signal::height),
+                      signal_face_height_spin_);
+  signal_form->addRow(face_scrub(tr("Face width"), signal_face_width_spin_, &Signal::width),
+                      signal_face_width_spin_);
+  signal_form->addRow(face_scrub(tr("Face length"), signal_face_length_spin_, &Signal::length),
+                      signal_face_length_spin_);
 
   // Prop: a placed <object> that renders a bundled prop model. The Model slot
   // takes a Library drag and re-points the prop at what was dropped.
@@ -1487,6 +1568,25 @@ PropertiesPanel::PropertiesPanel(Document& document,
   connect(
       signal_z_spin_, &QDoubleSpinBox::editingFinished, this, [this] { push_signal_z_offset(); });
   connect(signal_value_spin_, &QSpinBox::editingFinished, this, [this] { push_signal_value(); });
+  // Retype (#429). `activated` is user gestures only — a refresh() re-seed uses
+  // setCurrentIndex, which must never push. The display-only entry a foreign
+  // designation gets carries no key, so it pushes nothing either.
+  connect(signal_designation_combo_, &QComboBox::activated, this, [this](int index) {
+    const std::vector<SignalId> ids = selection_.selected_signals();
+    const QString key = signal_designation_combo_->itemData(index).toString();
+    if (ids.empty() || key.isEmpty()) {
+      return;
+    }
+    const signs::SignDef* def = signs::find_by_key(key.toStdString());
+    if (def == nullptr) {
+      return;
+    }
+    push(edit::set_signal_identity(document_.network(),
+                                   ids.back(),
+                                   std::string(def->type),
+                                   std::string(def->subtype),
+                                   std::string(def->country)));
+  });
 
   // A scene selection change leaves the crosswalk asset editor (dual-mode
   // flag), then rebuilds the normal view.
@@ -2239,10 +2339,37 @@ void PropertiesPanel::refresh_signal(const Signal& signal) {
                                       : tr("Static signal (sign)"));
   // The designation as the shipped catalogue names it, when this build knows
   // it; a foreign or legacy identity still shows its raw type/subtype rather
-  // than nothing.
-  const signs::SignDef* def = signs::find_by_identity(signal.country, signal.type);
-  if (def != nullptr) {
-    add_row(tr("Designation"), QString::fromUtf8(def->label.data(), qsizetype(def->label.size())));
+  // than nothing. Resolved on the FULL (@country, @type, @subtype) triple —
+  // matching without @subtype labelled every left One Way as the right variant
+  // (#429).
+  const signs::SignDef* def =
+      signs::resolve_designation(signal.country, signal.type, signal.subtype);
+  // The combo's selection is the EXACT designation only: a signal whose triple
+  // this build does not ship must not read as the entry it merely resembles, or
+  // leaving the pane alone would silently retype it.
+  {
+    const QSignalBlocker block_designation(signal_designation_combo_);
+    const signs::SignDef* exact =
+        signs::find_by_designation(signal.country, signal.type, signal.subtype);
+    // Drop a display-only entry a previous selection left behind, so the extra
+    // never outlives the signal it described.
+    while (signal_designation_combo_->count() > int(signs::catalog().size())) {
+      signal_designation_combo_->removeItem(signal_designation_combo_->count() - 1);
+    }
+    if (exact != nullptr) {
+      signal_designation_combo_->setCurrentIndex(signal_designation_combo_->findData(
+          QString::fromUtf8(exact->key.data(), qsizetype(exact->key.size()))));
+    } else {
+      // Not ours to name: show the raw designation, with no key, so choosing it
+      // again pushes nothing.
+      signal_designation_combo_->addItem(
+          tr("%1 / %2 (%3)")
+              .arg(QString::fromStdString(signal.type.empty() ? "—" : signal.type))
+              .arg(QString::fromStdString(signal.subtype.empty() ? "—" : signal.subtype))
+              .arg(QString::fromStdString(signal.country.empty() ? "—" : signal.country)),
+          QString());
+      signal_designation_combo_->setCurrentIndex(signal_designation_combo_->count() - 1);
+    }
   }
   add_row(tr("Type / subtype"),
           tr("%1 / %2")
@@ -2256,14 +2383,6 @@ void PropertiesPanel::refresh_signal(const Signal& signal) {
   // leave this row untouched (p6-s15, #417; GW-4 step 12c checks exactly that).
   add_row(tr("Applies to"), signal_orientation_name(signal.orientation))
       ->setObjectName(QStringLiteral("signal_orientation_value"));
-  // Face size, when the file declares one. Read-only: the shipped pack authors
-  // it from the §1.4 table, so retyping a plate is what changes its size.
-  if (signal.width.has_value() && signal.height.has_value()) {
-    add_row(tr("Face size"),
-            tr("%1 × %2")
-                .arg(units::format_length(*signal.width))
-                .arg(units::format_length(*signal.height)));
-  }
   add_world_row(signal_world_position(selection_.primary().signal));
   // Programmatic sync must not echo a move_signal back — block the editingFinished
   // guard's siblings while we set values.
@@ -2275,6 +2394,11 @@ void PropertiesPanel::refresh_signal(const Signal& signal) {
   signal_t_spin_->setValue(signal.t);
   signal_h_spin_->setValue(signal.h_offset);
   signal_z_spin_->setValue(signal.z_offset);
+  // Face size: an absent dimension parks at the "not set" sentinel rather than
+  // showing a zero it does not have (§14.1 makes all three optional).
+  seed_face_dimension(*signal_face_height_spin_, signal.height);
+  seed_face_dimension(*signal_face_width_spin_, signal.width);
+  seed_face_dimension(*signal_face_length_spin_, signal.length);
   // @text is legal on any signal but only meaningful on a static sign; disable
   // the editor for a dynamic head. Seeded under a blocker so the re-seed never
   // commits back.
@@ -2320,7 +2444,8 @@ void PropertiesPanel::push_signal_value() {
   if (signal == nullptr) {
     return;
   }
-  const signs::SignDef* def = signs::find_by_identity(signal->country, signal->type);
+  const signs::SignDef* def =
+      signs::resolve_designation(signal->country, signal->type, signal->subtype);
   if (def == nullptr || !def->default_value.has_value()) {
     return; // the row is hidden for this designation; ignore a stray signal
   }
@@ -2393,6 +2518,67 @@ void PropertiesPanel::push_signal_z_offset() {
     return;
   }
   push(edit::set_signal_z_offset(document_.network(), signal_ids.back(), signal_z_spin_->value()));
+}
+
+std::optional<double> PropertiesPanel::face_dimension(const UnitSpinBox& spin) {
+  // The sentinel is the spin's minimum, and it is BELOW zero: §14.1's face
+  // dimensions are t_grEqZero, so a real 0.0 is a legal declared value and
+  // "absent" cannot be spelled with a number inside the range. Every negative
+  // reads as absent, not just the sentinel itself — a typed "-0.03" is the user
+  // reaching for "not set", and mapping it there beats handing the kernel a
+  // value it must refuse.
+  return spin.value() < 0.0 ? std::nullopt : std::optional<double>(spin.value());
+}
+
+void PropertiesPanel::seed_face_dimension(UnitSpinBox& spin, const std::optional<double>& stored) {
+  const QSignalBlocker blocker(&spin);
+  spin.setValue(stored.value_or(kFaceDimensionUnset));
+}
+
+std::unique_ptr<edit::Command> PropertiesPanel::signal_dimensions_command(
+    const RoadNetwork& network, std::optional<double> Signal::*overridden, double value) const {
+  const std::vector<SignalId> signal_ids = selection_.selected_signals();
+  if (signal_ids.empty()) {
+    return nullptr;
+  }
+  std::optional<double> height = face_dimension(*signal_face_height_spin_);
+  std::optional<double> width = face_dimension(*signal_face_width_spin_);
+  std::optional<double> length = face_dimension(*signal_face_length_spin_);
+  // A scrub drives one dimension through the argument, not through its spin.
+  if (overridden == &Signal::height) {
+    height = value;
+  } else if (overridden == &Signal::width) {
+    width = value;
+  } else if (overridden == &Signal::length) {
+    length = value;
+  }
+  return edit::set_signal_dimensions(network, signal_ids.back(), height, width, length);
+}
+
+void PropertiesPanel::push_signal_dimensions() {
+  const std::vector<SignalId> signal_ids = selection_.selected_signals();
+  if (signal_ids.empty()) {
+    return;
+  }
+  const Signal* signal = document_.network().signal(signal_ids.back());
+  if (signal == nullptr) {
+    return;
+  }
+  // Engaged-vs-absent is always a change; two engaged values are compared
+  // through the spin's own display quantum, never a fixed epsilon (#417).
+  const auto changed = [](const UnitSpinBox& spin, const std::optional<double>& stored) {
+    const std::optional<double> shown = face_dimension(spin);
+    if (shown.has_value() != stored.has_value()) {
+      return true;
+    }
+    return shown.has_value() && differs_from_display(spin, *stored);
+  };
+  if (!changed(*signal_face_height_spin_, signal->height) &&
+      !changed(*signal_face_width_spin_, signal->width) &&
+      !changed(*signal_face_length_spin_, signal->length)) {
+    return;
+  }
+  push(signal_dimensions_command(document_.network()));
 }
 
 bool PropertiesPanel::differs_from_display(const QDoubleSpinBox& spin, double stored) {

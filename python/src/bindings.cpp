@@ -4003,6 +4003,49 @@ NB_MODULE(_roadmaker, m) {
       "given, unit is mandatory'), e.g. a US speed limit as (25, 'mph'). Pass "
       "(None, '') to clear both. Rejects a half pair and a no-op; one undo step.");
   edit.def(
+      "set_signal_identity",
+      [](const roadmaker::RoadNetwork& network,
+         roadmaker::SignalId signal,
+         std::string type,
+         std::string subtype,
+         std::string country) {
+        return roadmaker::edit::set_signal_identity(
+            network, signal, std::move(type), std::move(subtype), std::move(country));
+      },
+      "network"_a,
+      "signal"_a,
+      "type"_a,
+      "subtype"_a,
+      "country"_a,
+      "Re-designates a placed signal (§14.1 Table 122 — @type and @subtype, both "
+      "required, plus the @country they are coded against), e.g. ('R1-1', '-1', "
+      "'US'). The sign keeps its pose, @text, @zOffset and facing. When the triple "
+      "names a designation the shipped catalogue carries, the command ALSO re-seeds "
+      "that designation's @dynamic, @height/@width and @value/@unit — clearing a "
+      "posted value the new sign does not carry, since §14.1 binds @value to @unit. "
+      "An identity the catalogue does not ship changes the three strings only. "
+      "@countryRevision is cleared exactly when @country changes. Rejects an empty "
+      "field and a no-op; one undo step.");
+  edit.def(
+      "set_signal_dimensions",
+      [](const roadmaker::RoadNetwork& network,
+         roadmaker::SignalId signal,
+         std::optional<double> height,
+         std::optional<double> width,
+         std::optional<double> length) {
+        return roadmaker::edit::set_signal_dimensions(network, signal, height, width, length);
+      },
+      "network"_a,
+      "signal"_a,
+      "height"_a,
+      "width"_a,
+      "length"_a,
+      "Sets a signal's bounding box (§14.1 Table 122 — @height, @width and @length, "
+      "all optional t_grEqZero meters). The three arguments are the WHOLE state, not "
+      "a patch: pass None to leave an attribute undeclared, and pass the current "
+      "values of the two you are not editing so they are not materialised. Rejects a "
+      "negative or non-finite dimension and a no-op; one undo step.");
+  edit.def(
       "rename_road",
       [](const roadmaker::RoadNetwork& network, roadmaker::RoadId road, std::string name) {
         return roadmaker::edit::rename_road(network, road, std::move(name));

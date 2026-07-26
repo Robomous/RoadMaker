@@ -30,7 +30,7 @@ namespace {
 //
 // model_id names the mesh a placement draws with, and symbol the artwork its
 // face composites (assets/signs/us/<symbol>.svg, embedded by
-// scripts/gen_sign_symbols.py). find_by_identity() callers must still tolerate
+// scripts/gen_sign_symbols.py). resolve_designation() callers must still tolerate
 // a model id that props::model() does not know: a catalogue can outrun the
 // asset bundle, and a sign whose mesh is missing has to degrade rather than
 // vanish.
@@ -277,7 +277,21 @@ const SignDef* find_by_key(std::string_view key) {
   return found == k_catalog.end() ? nullptr : &*found;
 }
 
-const SignDef* find_by_identity(std::string_view country, std::string_view type) {
+const SignDef*
+find_by_designation(std::string_view country, std::string_view type, std::string_view subtype) {
+  const auto found = std::find_if(
+      k_catalog.begin(), k_catalog.end(), [country, type, subtype](const SignDef& def) {
+        return def.country == country && def.type == type && def.subtype == subtype;
+      });
+  return found == k_catalog.end() ? nullptr : &*found;
+}
+
+const SignDef*
+resolve_designation(std::string_view country, std::string_view type, std::string_view subtype) {
+  if (const SignDef* exact = find_by_designation(country, type, subtype); exact != nullptr) {
+    return exact;
+  }
+  // A @subtype this build does not ship still names a designation we know.
   const auto found =
       std::find_if(k_catalog.begin(), k_catalog.end(), [country, type](const SignDef& def) {
         return def.country == country && def.type == type;

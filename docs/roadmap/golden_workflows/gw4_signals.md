@@ -96,11 +96,28 @@ highlighting.
     falls on its post, each gesture is one undo step, and the **Applies to**
     row and Heading offset are untouched — raising a sign never re-aims it.
     A negative value is accepted (for a sign hung below the reference line).
+12e. [ ] Place a **Speed Limit (R2-1)** sign, note its position and raise its
+    mounting height, then change its **Designation** to **Stop (R1-1)** (#429).
+    **Expected:** ONE undo step; the model in the viewport becomes an octagon
+    where the plate stood — same position, same mounting height, same facing,
+    same Text; the **Speed limit** row disappears with the posted value it
+    carried, and **Face width** becomes 0.75 m. Undo. **Expected:** the speed
+    plate returns complete, posted value and all. Now edit **Face height**
+    alone. **Expected:** one undo step, and **Face length** stays **not set** —
+    editing one dimension never invents another. Finally step **Face width**
+    below its minimum until it reads **not set**. **Expected:** one undo step,
+    and the saved `.xodr`'s `<signal>` carries no `@width` at all rather than
+    `width="0"`. Select a sign placed from a *left* **One Way (R6-1)** and check
+    the viewport. **Expected:** it draws the LEFT arrow and the Designation row
+    names the left variant (before #429 both variants drew the right arrow).
 13. [ ] Save, reload, and re-select the sign. **Expected:** the face text
     round-trips (the Text row shows the same multi-line value; the exported
     `.xodr` carries `@text`), and so does the facing — including the hand-set
     heading from step 12b, which the file carries as `@orientation` plus
-    `@hOffset` and which reload must not recompute. Export glTF (`.glb`) and open it. **Expected:**
+    `@hOffset` and which reload must not recompute. The designation from step
+    12e and its face size round-trip too (`@type`/`@subtype`/`@country` and the
+    declared dimensions come back exactly, and a dimension left **not set**
+    comes back not set). Export glTF (`.glb`) and open it. **Expected:**
     the sign's face texture carries the text. *(USD export keeps the flat
     plate — single-file USDA cannot embed textures, #364 — but the `@text` is
     still written.)*

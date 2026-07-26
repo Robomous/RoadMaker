@@ -731,10 +731,23 @@ void build_object_instances(const RoadNetwork& network,
   }
 }
 
+/// The catalogue entry a placed <signal> is drawn and labelled as, or nullptr.
+///
+/// The full designation is (@country, @type, @subtype) — §14.1 is explicit that
+/// @type and @subtype only identify a signal together — and the shipped pack
+/// depends on it: One Way (R6-1) ships a right- and a left-arrow variant that
+/// differ ONLY in @subtype and draw different models. Resolving on
+/// (@country, @type) alone therefore drew every left One Way with the right
+/// arrow, which is what #429 fixes. signs::resolve_designation keeps the
+/// @subtype-blind match as its fallback; see its header comment.
+const signs::SignDef* signal_designation(const Signal& signal) {
+  return signs::resolve_designation(signal.country, signal.type, signal.subtype);
+}
+
 /// The bundled signal model a <signal> renders as.
 ///
 /// The shipped sign catalogue (roadmaker::signs, spec §1.4) IS the mapping: a
-/// placed signal's (@country, @type) names its model, so a designation gains a
+/// placed signal's designation names its model, so a designation gains a
 /// silhouette by joining the table rather than by growing a branch here. Two
 /// degradations are deliberate and must both stay:
 ///
@@ -748,7 +761,7 @@ void build_object_instances(const RoadNetwork& network,
 /// sign) — the conservative default, and the reader already warns on the
 /// missing attribute.
 std::string_view signal_model_id(const Signal& signal) {
-  const signs::SignDef* def = signs::find_by_identity(signal.country, signal.type);
+  const signs::SignDef* def = signal_designation(signal);
   if (def != nullptr && props::model(def->model_id) != nullptr) {
     return def->model_id;
   }
@@ -767,7 +780,7 @@ std::string signal_face_text(const Signal& signal) {
   if (!signal.text.empty()) {
     return signal.text;
   }
-  const signs::SignDef* def = signs::find_by_identity(signal.country, signal.type);
+  const signs::SignDef* def = signal_designation(signal);
   if (def == nullptr || !def->default_value.has_value() || !signal.value.has_value()) {
     return {};
   }

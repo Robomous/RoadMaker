@@ -211,6 +211,72 @@ def test_set_signal_z_offset_rejects_no_op(network_with_road):
         stack.push(network, rm.edit.set_signal_z_offset(network, signal_id, 2.1))
 
 
+def test_set_signal_identity_is_one_undo_step(network_with_road):
+    # Section 14.1, Table 122: @type and @subtype are required and are read
+    # against @country -- a designation is the triple, so it moves as one.
+    network, road_id = network_with_road
+    signal_id = network.add_signal(road_id, make_speed_limit())
+
+    stack = rm.edit.EditStack()
+    stack.push(network, rm.edit.set_signal_identity(network, signal_id, "R1-1", "-1", "US"))
+    assert network.signal(signal_id).type == "R1-1"
+    assert stack.size == 1
+    # The sign stays where it stands...
+    assert network.signal(signal_id).s == pytest.approx(50.0)
+    assert network.signal(signal_id).z_offset == pytest.approx(1.9)
+    # ...but takes the new designation's data: a stop sign posts no speed, and
+    # section 14.1 binds @unit to @value, so both go.
+    assert network.signal(signal_id).value is None
+    assert network.signal(signal_id).unit == ""
+    assert network.signal(signal_id).width == pytest.approx(0.75)
+
+    stack.undo(network)
+    assert network.signal(signal_id).type == "R2-1"
+    assert network.signal(signal_id).value == pytest.approx(25.0)
+
+
+def test_set_signal_identity_rejects_no_op_and_empty_fields(network_with_road):
+    network, road_id = network_with_road
+    signal_id = network.add_signal(road_id, make_speed_limit())
+
+    stack = rm.edit.EditStack()
+    with pytest.raises(ValueError):
+        stack.push(network, rm.edit.set_signal_identity(network, signal_id, "R2-1", "-1", "US"))
+    with pytest.raises(ValueError):
+        stack.push(network, rm.edit.set_signal_identity(network, signal_id, "", "-1", "US"))
+    with pytest.raises(ValueError):
+        stack.push(network, rm.edit.set_signal_identity(network, signal_id, "R1-1", "-1", ""))
+
+
+def test_set_signal_dimensions_is_one_undo_step(network_with_road):
+    # Section 14.1, Table 122: @height/@width/@length are optional t_grEqZero
+    # lengths. The three arguments are the whole state, so None leaves an
+    # attribute undeclared instead of inventing one.
+    network, road_id = network_with_road
+    signal_id = network.add_signal(road_id, make_speed_limit())
+
+    stack = rm.edit.EditStack()
+    stack.push(network, rm.edit.set_signal_dimensions(network, signal_id, 0.90, None, None))
+    assert network.signal(signal_id).height == pytest.approx(0.90)
+    assert network.signal(signal_id).width is None  # cleared, not zeroed
+    assert network.signal(signal_id).length is None  # never materialised
+    assert stack.size == 1
+
+    stack.undo(network)
+    assert network.signal(signal_id).width == pytest.approx(0.60)
+
+
+def test_set_signal_dimensions_rejects_no_op_and_a_negative(network_with_road):
+    network, road_id = network_with_road
+    signal_id = network.add_signal(road_id, make_speed_limit())
+
+    stack = rm.edit.EditStack()
+    with pytest.raises(ValueError):
+        stack.push(network, rm.edit.set_signal_dimensions(network, signal_id, 0.75, 0.60, None))
+    with pytest.raises(ValueError):
+        stack.push(network, rm.edit.set_signal_dimensions(network, signal_id, -0.1, 0.60, None))
+
+
 def test_set_signal_value_rejects_a_value_without_its_unit(network_with_road):
     # Section 14.1, Table 122: "if value is given, unit is mandatory".
     network, road_id = network_with_road

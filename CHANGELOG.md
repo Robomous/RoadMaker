@@ -19,6 +19,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 Current version on `main`: **0.0.1**.
 
 ### Added
+- **A placed sign can become another sign, and can be resized**
+  ([#429](https://github.com/Robomous/RoadMaker/issues/429)): the last of the
+  three gaps [#418](https://github.com/Robomous/RoadMaker/issues/418)'s audit
+  left open. A selected sign's **Designation** is now a list of everything the
+  shipped pack carries, and picking another one converts the sign in place — one
+  undo step, same position, same mounting height, same facing, same text, and
+  the model in the viewport follows. Until now the only way to change a stop
+  sign into a speed limit was to delete it and place a new one, which threw away
+  everything about *that* sign except what it was. A retype carries the
+  designation's own data with it: the §1.4 face size, `@dynamic`, and the posted
+  `@value` — which it **clears** when the new sign posts nothing, since ASAM
+  OpenDRIVE §14.1 binds `@value` to `@unit` and a stop sign reading 25 mph is
+  not a stop sign. A designation this build does not ship still shows its raw
+  type/subtype/country and is edited, never reinterpreted. Separately, the
+  face's **height**, **width** and **length** became three editable rows, for
+  signs that arrive from another authoring tool with the wrong dimensions or
+  none; all three are optional in the standard, so a spin stepped below its
+  minimum reads **not set** and *removes* the attribute rather than writing a
+  zero — zero being a legal size of its own. Two new kernel commands,
+  `edit::set_signal_identity` and `edit::set_signal_dimensions` (§14.1
+  Table 122), with their Python bindings.
 - **A road says what it connects to, and a lane's surface is a surface you can
   describe** ([#431](https://github.com/Robomous/RoadMaker/issues/431),
   [#430](https://github.com/Robomous/RoadMaker/issues/430)): two of the three
@@ -60,12 +81,12 @@ Current version on `main`: **0.0.1**.
   read from the same data the viewport draws. New kernel command
   `edit::set_signal_z_offset` (ASAM OpenDRIVE §14.1 `@zOffset`), with its Python
   binding. The audit also filed three gaps it could not close in place, all
-  release-blocking; [#430](https://github.com/Robomous/RoadMaker/issues/430)
-  (lane material friction/roughness) and
-  [#431](https://github.com/Robomous/RoadMaker/issues/431) (a road's links are
-  reported nowhere) are closed above, leaving
-  [#429](https://github.com/Robomous/RoadMaker/issues/429) — a placed sign's
-  designation and face size are still fixed after placement.
+  release-blocking; all three —
+  [#430](https://github.com/Robomous/RoadMaker/issues/430) (lane material
+  friction/roughness), [#431](https://github.com/Robomous/RoadMaker/issues/431)
+  (a road's links are reported nowhere) and
+  [#429](https://github.com/Robomous/RoadMaker/issues/429) (a placed sign's
+  designation and face size are fixed after placement) — are closed above.
 - **The rotation ring reaches signs, and lands on real angles**
   ([#417](https://github.com/Robomous/RoadMaker/issues/417)): selecting a sign
   or signal with the Move tool now gives it its own gizmo, at the sign, whose
@@ -326,6 +347,16 @@ Current version on `main`: **0.0.1**.
   about silently never matched.
 
 ### Fixed
+- **A left-arrow One Way sign drew the right arrow**
+  ([#429](https://github.com/Robomous/RoadMaker/issues/429)): a sign is
+  identified by its type *and* its subtype — ASAM OpenDRIVE §14.1 says as much —
+  but the lookup that turns a placed `<signal>` into a model ignored the
+  subtype, and One Way (R6-1) is the one designation in the shipped pack whose
+  two variants differ only there. Every left One Way therefore rendered as, and
+  was named in the Attributes pane as, the right-hand variant. Sign lookup now
+  resolves on the full designation, keeping the subtype-blind match only as the
+  fallback for a variant this build does not ship, and a registry test asserts
+  no two catalogue entries can share a designation again.
 - **Sidewalks now go round the corner properly — and exist at all on tight and
   mixed junctions** ([#402](https://github.com/Robomous/RoadMaker/issues/402)):
   where two sidewalked roads met, the sidewalk pavement inside the junction was

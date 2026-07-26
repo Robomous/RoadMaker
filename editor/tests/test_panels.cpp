@@ -2366,6 +2366,170 @@ TEST(PropertiesPanel, SignalMountingHeightCommitsOneCommandAndReportsItsTraffic)
   EXPECT_EQ(xodr(h.document), xodr_before);
 }
 
+// --- retype and face size (#429) ---------------------------------------------
+
+/// A US speed-limit plate exactly as the shipped pack authors one, placed on
+/// `road`. The catalogue identity matters: the retype command's re-seeding rule
+/// only engages for a designation this build ships.
+SignalId add_us_speed_limit(Document& document, RoadId road) {
+  Signal sign;
+  sign.odr_id = "sp1";
+  sign.type = "R2-1";
+  sign.subtype = "-1";
+  sign.country = "US";
+  sign.dynamic = false;
+  sign.s = 12.0;
+  sign.t = -6.0;
+  sign.z_offset = 2.1;
+  sign.h_offset = 0.5;
+  sign.orientation = ObjectOrientation::Plus;
+  sign.text = "SCHOOL";
+  sign.value = 25.0;
+  sign.unit = "mph";
+  sign.width = 0.60;
+  sign.height = 0.75;
+  EXPECT_TRUE(document.push_command(edit::add_signal(document.network(), road, sign)).has_value());
+  SignalId id;
+  document.network().for_each_signal([&](SignalId sid, const Signal&) { id = sid; });
+  return id;
+}
+
+TEST(PropertiesPanel, DesignationComboRetypesAndKeepsPoseTextAndMountingHeight) {
+  Harness h;
+  ASSERT_TRUE(h.document.load(kSample).has_value());
+  PropertiesPanel panel(h.document, h.selection);
+  const SignalId signal = add_us_speed_limit(h.document, all_roads(h.document).front());
+  h.selection.select({.signal = signal});
+
+  auto* combo = panel.findChild<QComboBox*>(QStringLiteral("signal_designation_combo"));
+  ASSERT_NE(combo, nullptr);
+  EXPECT_EQ(combo->currentData().toString(), QStringLiteral("us.r2_1")) << "seeded from the file";
+
+  const int stop = combo->findData(QStringLiteral("us.r1_1"));
+  ASSERT_GE(stop, 0);
+  const std::string xodr_before = xodr(h.document);
+  const int base = h.document.undo_stack()->count();
+  combo->setCurrentIndex(stop);
+  emit combo->activated(stop);
+
+  EXPECT_EQ(h.document.undo_stack()->count(), base + 1) << "a retype is one undo step";
+  const Signal* retyped = h.document.network().signal(signal);
+  ASSERT_NE(retyped, nullptr);
+  EXPECT_EQ(retyped->type, "R1-1");
+  // The sign stays where it stands — this is the whole reason retyping exists
+  // instead of delete-and-replace.
+  EXPECT_DOUBLE_EQ(retyped->s, 12.0);
+  EXPECT_DOUBLE_EQ(retyped->z_offset, 2.1);
+  EXPECT_DOUBLE_EQ(retyped->h_offset, 0.5);
+  EXPECT_EQ(retyped->text, "SCHOOL");
+  // …and takes the new designation's data with it.
+  EXPECT_FALSE(retyped->value.has_value()) << "a stop sign posts no speed";
+  EXPECT_DOUBLE_EQ(*retyped->width, 0.75);
+  // The mesh follows, because the model is derived from the identity.
+  const auto& instances = h.document.mesh().signal_instances;
+  const auto it = std::ranges::find_if(
+      instances, [signal](const SignalInstance& inst) { return inst.signal == signal; });
+  ASSERT_NE(it, instances.end());
+  EXPECT_EQ(it->model_id, "sign_us_r1_1");
+
+  h.document.undo_stack()->undo();
+  EXPECT_EQ(xodr(h.document), xodr_before) << "undo must be byte-identical";
+}
+
+TEST(PropertiesPanel, DesignationComboShowsAForeignIdentityAndPushesNothingForIt) {
+  Harness h;
+  ASSERT_TRUE(h.document.load(kSample).has_value());
+  PropertiesPanel panel(h.document, h.selection);
+  const RoadId road = all_roads(h.document).front();
+  Signal stvo; // a legacy German StVO plate — in no shipped catalogue
+  stvo.odr_id = "de1";
+  stvo.type = "274";
+  stvo.subtype = "50";
+  stvo.country = "DE";
+  stvo.dynamic = false;
+  stvo.s = 8.0;
+  stvo.t = -5.0;
+  ASSERT_TRUE(
+      h.document.push_command(edit::add_signal(h.document.network(), road, stvo)).has_value());
+  SignalId signal;
+  h.document.network().for_each_signal([&](SignalId id, const Signal&) { signal = id; });
+  h.selection.select({.signal = signal});
+
+  auto* combo = panel.findChild<QComboBox*>(QStringLiteral("signal_designation_combo"));
+  ASSERT_NE(combo, nullptr);
+  // Not ours to name, so it reads as its raw designation and carries no key.
+  EXPECT_TRUE(combo->currentText().contains(QStringLiteral("274")));
+  EXPECT_TRUE(combo->currentData().toString().isEmpty());
+
+  const int base = h.document.undo_stack()->count();
+  emit combo->activated(combo->currentIndex());
+  EXPECT_EQ(h.document.undo_stack()->count(), base) << "the display-only entry pushes nothing";
+}
+
+TEST(PropertiesPanel, FaceSizeCommitsOneCommandAndNeverMaterialisesTheOthers) {
+  Harness h;
+  ASSERT_TRUE(h.document.load(kSample).has_value());
+  PropertiesPanel panel(h.document, h.selection);
+  const SignalId signal = add_us_speed_limit(h.document, all_roads(h.document).front());
+  h.selection.select({.signal = signal});
+
+  auto* height = panel.findChild<QDoubleSpinBox*>(QStringLiteral("signal_face_height_spin"));
+  auto* width = panel.findChild<QDoubleSpinBox*>(QStringLiteral("signal_face_width_spin"));
+  auto* length = panel.findChild<QDoubleSpinBox*>(QStringLiteral("signal_face_length_spin"));
+  ASSERT_NE(height, nullptr);
+  ASSERT_NE(width, nullptr);
+  ASSERT_NE(length, nullptr);
+  EXPECT_DOUBLE_EQ(height->value(), 0.75);
+  EXPECT_DOUBLE_EQ(width->value(), 0.60);
+  // @length is undeclared on this sign, so its spin parks on the sentinel.
+  EXPECT_EQ(length->text(), length->specialValueText());
+
+  const std::string xodr_before = xodr(h.document);
+  const int base = h.document.undo_stack()->count();
+  height->setValue(0.90);
+  emit height->editingFinished();
+
+  EXPECT_EQ(h.document.undo_stack()->count(), base + 1);
+  const Signal* sized = h.document.network().signal(signal);
+  EXPECT_DOUBLE_EQ(*sized->height, 0.90);
+  EXPECT_DOUBLE_EQ(*sized->width, 0.60) << "the untouched width keeps its value";
+  EXPECT_FALSE(sized->length.has_value()) << "editing one dimension must not materialise another";
+
+  emit height->editingFinished(); // unchanged: pushes nothing
+  EXPECT_EQ(h.document.undo_stack()->count(), base + 1);
+
+  h.document.undo_stack()->undo();
+  EXPECT_EQ(xodr(h.document), xodr_before);
+}
+
+TEST(PropertiesPanel, ClearingAFaceDimensionWritesNulloptNotZero) {
+  Harness h;
+  ASSERT_TRUE(h.document.load(kSample).has_value());
+  PropertiesPanel panel(h.document, h.selection);
+  const SignalId signal = add_us_speed_limit(h.document, all_roads(h.document).front());
+  h.selection.select({.signal = signal});
+
+  auto* width = panel.findChild<QDoubleSpinBox*>(QStringLiteral("signal_face_width_spin"));
+  ASSERT_NE(width, nullptr);
+  const int base = h.document.undo_stack()->count();
+  // Stepping to the minimum is the "not set" gesture (§14.1 makes @width
+  // optional, and t_grEqZero makes 0 a real value that must stay reachable).
+  width->setValue(width->minimum());
+  emit width->editingFinished();
+
+  EXPECT_EQ(h.document.undo_stack()->count(), base + 1);
+  EXPECT_FALSE(h.document.network().signal(signal)->width.has_value());
+  EXPECT_TRUE(h.document.network().signal(signal)->height.has_value()) << "only width was cleared";
+  // The attribute must be OMITTED, not written as zero — scoped to the <signal>
+  // start tag so a lane's own width cannot answer for it.
+  const std::string written = xodr(h.document);
+  const std::size_t open = written.find("<signal ");
+  ASSERT_NE(open, std::string::npos);
+  const std::string element = written.substr(open, written.find('>', open) - open);
+  EXPECT_EQ(element.find("width="), std::string::npos) << element;
+  EXPECT_NE(element.find("height="), std::string::npos) << element;
+}
+
 TEST(PropertiesPanel, AWorldRowReportsTheMeshInstancePosition) {
   Harness h;
   ASSERT_TRUE(h.document.load(kSample).has_value());

@@ -371,6 +371,42 @@ TEST(DefaultsRegistry, PackEntriesAreWellFormed) {
   EXPECT_EQ(std::adjacent_find(keys.begin(), keys.end()), keys.end()) << "duplicate catalogue key";
 }
 
+// §14.1: a signal's @type and @subtype identify it only in combination with
+// @country — the DESIGNATION is the triple. signs::find_by_designation resolves
+// on exactly that, and edit::set_signal_identity seeds a retype from whatever it
+// returns, so the triple has to be unique or both are guessing.
+//
+// This is not hypothetical: One Way (R6-1) ships a right- and a left-arrow
+// variant differing only in @subtype and drawing different models, and while the
+// lookup ignored @subtype every left One Way rendered with the right arrow and
+// read as the right variant in the pane (#429). A second entry sharing a full
+// triple would put the ambiguity back, in a form no test elsewhere would notice.
+TEST(DefaultsRegistry, PackDesignationsAreUnique) {
+  std::vector<std::string> designations;
+  for (const signs::SignDef& def : signs::catalog()) {
+    designations.push_back(std::string(def.country) + '|' + std::string(def.type) + '|' +
+                           std::string(def.subtype));
+    // The resolver must land back on this very entry, not on a namesake.
+    EXPECT_EQ(signs::find_by_designation(def.country, def.type, def.subtype), &def) << def.key;
+  }
+  std::sort(designations.begin(), designations.end());
+  EXPECT_EQ(std::adjacent_find(designations.begin(), designations.end()), designations.end())
+      << "two catalogue entries share one (@country, @type, @subtype)";
+}
+
+// The @subtype-blind fallback is the tolerant half of the pair: a file carrying
+// a variant this build does not ship must still read as the designation it
+// names, rather than collapsing to the generic silhouette.
+TEST(DefaultsRegistry, AnUnshippedSubtypeStillResolvesToItsDesignation) {
+  const signs::SignDef* resolved = signs::resolve_designation("US", "R6-1", "unshipped-variant");
+  ASSERT_NE(resolved, nullptr);
+  EXPECT_EQ(resolved->type, "R6-1");
+  // …but the strict lookup says no, which is what stops a retype from seeding
+  // a foreign variant with a neighbour's face.
+  EXPECT_EQ(signs::find_by_designation("US", "R6-1", "unshipped-variant"), nullptr);
+  EXPECT_EQ(signs::resolve_designation("US", "no-such-sign", "-1"), nullptr);
+}
+
 // The mesh half of the §1.4 gate. scripts/gen_prop_meshes.py builds every pack
 // sign to the spec's face size and mounting height, and is stdlib-only so it
 // cannot include defaults.hpp — this is what holds it to the registry, exactly

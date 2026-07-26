@@ -260,6 +260,28 @@ TEST(SignalMeshes, PackDesignationsResolveTheirModels) {
   EXPECT_EQ(mesh.signal_instances[0].model_id, def->model_id);
 }
 
+// §14.1: @type and @subtype identify a signal only together, and the pack
+// depends on it — One Way ships a right- and a left-arrow R6-1 differing ONLY in
+// @subtype, with different models. Resolving on (@country, @type) alone returned
+// whichever entry came first, so every left One Way drew the right arrow (#429).
+TEST(SignalMeshes, OneWayVariantsResolveByTheirSubtype) {
+  RoadNetwork network;
+  const RoadId road = author_street(network);
+  network.add_signal(road, make_pack_signal("right", "us.r6_1_right", 30.0, -6.0));
+  network.add_signal(road, make_pack_signal("left", "us.r6_1_left", 60.0, -6.0));
+
+  const NetworkMesh mesh = build_network_mesh(network);
+  ASSERT_EQ(mesh.signal_instances.size(), 2U);
+  const signs::SignDef* right = signs::find_by_key("us.r6_1_right");
+  const signs::SignDef* left = signs::find_by_key("us.r6_1_left");
+  ASSERT_NE(right, nullptr);
+  ASSERT_NE(left, nullptr);
+  ASSERT_NE(right->model_id, left->model_id) << "the variants must not share a model";
+  EXPECT_EQ(mesh.signal_instances[0].model_id, right->model_id);
+  EXPECT_EQ(mesh.signal_instances[1].model_id, left->model_id)
+      << "a left One Way must not draw the right arrow";
+}
+
 // The degradation contract. A German StVO plate — the identity RoadMaker wrote
 // before #414 — is in no shipped catalogue, so it must still mesh rather than
 // vanish. This is what keeps pre-#414 scenes openable.
