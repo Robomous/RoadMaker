@@ -58,7 +58,10 @@ models, fonts, images). Policy — see [`docs/standards/assets.md`](docs/standar
 | `editor/resources/icons/lucide/git-merge.svg` | [lucide 1.24.0](https://github.com/lucide-icons/lucide/tree/1.24.0) | Lucide Contributors | ISC | 2026-07-12 |
 | `editor/resources/icons/lucide/file-output.svg` | [lucide 1.24.0](https://github.com/lucide-icons/lucide/tree/1.24.0) | Lucide Contributors | ISC | 2026-07-10 |
 | `editor/resources/icons/lucide/file-plus.svg` | [lucide 1.24.0](https://github.com/lucide-icons/lucide/tree/1.24.0) | Lucide Contributors | ISC | 2026-07-10 |
+| `editor/resources/icons/lucide/file.svg` | [lucide 1.24.0](https://github.com/lucide-icons/lucide/tree/1.24.0) | Lucide Contributors | ISC | 2026-07-26 |
+| `editor/resources/icons/lucide/folder.svg` | [lucide 1.24.0](https://github.com/lucide-icons/lucide/tree/1.24.0) | Lucide Contributors | ISC | 2026-07-26 |
 | `editor/resources/icons/lucide/folder-open.svg` | [lucide 1.24.0](https://github.com/lucide-icons/lucide/tree/1.24.0) | Lucide Contributors | ISC | 2026-07-10 |
+| `editor/resources/icons/lucide/image.svg` | [lucide 1.24.0](https://github.com/lucide-icons/lucide/tree/1.24.0) | Lucide Contributors | ISC | 2026-07-26 |
 | `editor/resources/icons/lucide/info.svg` | [lucide 1.24.0](https://github.com/lucide-icons/lucide/tree/1.24.0) | Lucide Contributors | ISC | 2026-07-10 |
 | `editor/resources/icons/lucide/magnet.svg` | [lucide 1.24.0](https://github.com/lucide-icons/lucide/tree/1.24.0) | Lucide Contributors | ISC | 2026-07-10 |
 | `editor/resources/icons/lucide/mountain.svg` | [lucide 1.24.0](https://github.com/lucide-icons/lucide/tree/1.24.0) | Lucide Contributors | ISC | 2026-07-10 |

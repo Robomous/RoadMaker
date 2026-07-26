@@ -11,9 +11,9 @@ A project is a directory containing:
 - **Scenes** — ordinary `.xodr` files at the top level of the directory. There
   is no separate scene format or registry: any scene in the folder belongs to
   the project, and every scene still opens standalone outside it.
-- `assets/library/manifest.json` *(optional)* — a per-project Library
-  catalogue that overlays the built-in one while the project is open (see
-  below).
+- `assets/` *(optional)* — the project's asset folder, browsable from the
+  Library while the project is open (see below). `assets/library/manifest.json`
+  inside it is a per-project Library catalogue that overlays the built-in one.
 
 ## Steps
 
@@ -44,6 +44,15 @@ built-in Library catalogue) and its items appear in the
 - new keys (and new categories) are **added** to the catalogue.
 
 The overlay is removed when the project closes or another project opens.
+
+## Browsing the asset folder
+
+Everything under `assets/` — not just the overlay manifest — is browsable from
+the lower half of the [Library](library.md#project-files) dock while the project
+is open, as a live folder tree with thumbnails. RoadMaker watches the folder, so
+files copied in, renamed, or deleted from the OS file manager appear and
+disappear without a restart. Nothing creates `assets/` for you: the Library says
+which path to make, and browsing never writes into the project.
 
 ## Notes
 

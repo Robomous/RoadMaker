@@ -130,8 +130,12 @@ QStringList Project::scenes() const {
   return result;
 }
 
+std::filesystem::path Project::assets_dir() const {
+  return dir_ / "assets";
+}
+
 std::optional<std::filesystem::path> Project::library_manifest_path() const {
-  const std::filesystem::path candidate = dir_ / "assets" / "library" / "manifest.json";
+  const std::filesystem::path candidate = assets_dir() / "library" / "manifest.json";
   std::error_code ec;
   if (std::filesystem::is_regular_file(candidate, ec)) {
     return candidate;

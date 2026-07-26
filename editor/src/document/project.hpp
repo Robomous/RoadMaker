@@ -68,6 +68,13 @@ public:
   /// every call so it reflects the directory as it is now.
   [[nodiscard]] QStringList scenes() const;
 
+  /// The project's asset root, `<dir>/assets` — the folder the Library's file
+  /// explorer browses (p6-s7) and the parent of the Library overlay. Returned
+  /// unconditionally, whether or not it exists on disk: the browser watches for
+  /// it to appear. NOTHING in RoadMaker creates it; a project only grows one
+  /// once the user, or an asset commit, puts something there.
+  [[nodiscard]] std::filesystem::path assets_dir() const;
+
   /// `<dir>/assets/library/manifest.json` when that file exists — the
   /// per-project Library overlay (same schema as the built-in qrc manifest).
   [[nodiscard]] std::optional<std::filesystem::path> library_manifest_path() const;

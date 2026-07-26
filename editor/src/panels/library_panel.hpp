@@ -23,16 +23,21 @@
 // model. The drag source and the viewport drop handler land in a follow-up
 // (P2.4); this PR is the browsable panel.
 
+#include <QByteArray>
 #include <QSortFilterProxyModel>
 #include <QWidget>
+#include <filesystem>
 
 #include "document/library_list_model.hpp"
 
 class QComboBox;
 class QLineEdit;
 class QListView;
+class QSplitter;
 
 namespace roadmaker::editor {
+
+class ProjectFilesPanel;
 
 /// Filters the catalogue by the search box (case-insensitive, on the label),
 /// sorts items by category then label so classes cluster, and injects a
@@ -79,6 +84,23 @@ public:
   /// The category filter combo, exposed for headless tests.
   [[nodiscard]] QComboBox* category_combo() { return category_combo_; }
 
+  /// Points the file explorer at the open project's asset folder and reveals
+  /// the lower splitter pane (p6-s7). Read-only: the Library browses that
+  /// folder, it never writes to it.
+  void set_project(const std::filesystem::path& project_dir);
+
+  /// Project closed — the explorer empties, drops its watches, and hides.
+  void clear_project();
+
+  /// Splitter geometry, persisted by MainWindow: a splitter INSIDE a dock is
+  /// not covered by QMainWindow::saveState(), so without this the catalogue /
+  /// files balance resets on every launch.
+  [[nodiscard]] QByteArray splitter_state() const;
+  void restore_splitter_state(const QByteArray& state);
+
+  /// The file explorer pane, exposed for headless tests.
+  [[nodiscard]] ProjectFilesPanel* files() { return files_; }
+
 signals:
   /// A parametric asset (currently Kind::Crosswalk) was selected — MainWindow
   /// routes it to the Attributes-pane asset editor (PropertiesPanel::edit_asset).
@@ -115,6 +137,8 @@ private:
   QComboBox* category_combo_;
   QLineEdit* search_;
   QListView* view_;
+  QSplitter* splitter_;
+  ProjectFilesPanel* files_;
 };
 
 } // namespace roadmaker::editor

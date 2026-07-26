@@ -19,6 +19,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 Current version on `main`: **0.0.1**.
 
 ### Added
+- **The Library browses the project's asset folder, live**
+  ([#321](https://github.com/Robomous/RoadMaker/issues/321)): with a project
+  open, the lower half of the Library dock is a file explorer over
+  `<project>/assets` — a folder tree mirroring what is on disk, with image files
+  showing their own thumbnail and everything else a glyph for what it is. Until
+  now the only part of a project's asset folder the editor acknowledged was
+  `assets/library/manifest.json`; a texture or a `.glb` sitting next to it was
+  invisible unless you left for Finder or Explorer. The tree keeps itself
+  current through a filesystem watcher — the first in the project, so nothing
+  polls — which means a file copied in, renamed, or deleted from the OS file
+  manager is reflected without restarting RoadMaker. A project with no `assets`
+  folder yet says so and names the exact path to create: this feature is
+  **strictly read-side**, it never creates, moves or deletes anything, and
+  `New Project` still writes nothing but `project.json`. Files are not draggable
+  and not importable yet — turning a browsed texture into a material and a
+  `.glb` into a prop is [#322](https://github.com/Robomous/RoadMaker/issues/322).
+  The catalogue grid is unchanged and keeps its
+  `application/x-roadmaker-library-item` drag behaviour; the two halves share a
+  splitter whose balance persists between sessions.
+
 - **A placed sign can become another sign, and can be resized**
   ([#429](https://github.com/Robomous/RoadMaker/issues/429)): the last of the
   three gaps [#418](https://github.com/Robomous/RoadMaker/issues/418)'s audit
@@ -347,6 +367,13 @@ Current version on `main`: **0.0.1**.
   about silently never matched.
 
 ### Fixed
+- **A project's own Library categories are reachable from the category filter**
+  ([#321](https://github.com/Robomous/RoadMaker/issues/321)): the Library's
+  category combo was filled once, when the dock was built. A project overlay is
+  adopted afterwards, so a category that only the project defined never entered
+  the list — its items could be found by search but never by category. The combo
+  now follows the catalogue, keeping the selected category across a reload and
+  dropping the filter when that category leaves with its project.
 - **Skew and tight-radius junction corners were meshed with holes in them**
   ([#442](https://github.com/Robomous/RoadMaker/issues/442)): the predicate that
   decides which interior grid points a paved surface gets was

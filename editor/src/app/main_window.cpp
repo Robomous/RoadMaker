@@ -782,6 +782,10 @@ MainWindow::MainWindow(QWidget* parent, bool restore_saved_layout)
     // First run (no saved layout) or a scripted capture: keep the default
     // arrangement built above.
   }
+  if (restore_saved_layout) {
+    // The Library's internal splitter lives outside saveState() (p6-s7).
+    library_panel_->restore_splitter_state(settings_.library_splitter_state());
+  }
 
   update_window_title();
   update_status_entities();
@@ -1372,6 +1376,9 @@ void MainWindow::adopt_project(Project project) {
   project_ = std::move(project);
   settings_.add_recent_project(QString::fromStdString(project_->dir().string()));
   apply_project_overlay();
+  // The Library's file explorer follows the project (p6-s7): it browses the
+  // project's asset folder and watches it live.
+  library_panel_->set_project(project_->dir());
   update_window_title();
   welcome_->set_active_project(QString::fromStdString(project_->dir().string()));
 }
@@ -1381,7 +1388,8 @@ void MainWindow::clear_project() {
     return;
   }
   project_.reset();
-  library_model_.clear_overlay(); // the overlay leaves with its project
+  library_model_.clear_overlay();  // the overlay leaves with its project
+  library_panel_->clear_project(); // so does the file explorer
   update_window_title();
   welcome_->set_active_project(QString());
 }
@@ -2251,6 +2259,7 @@ void MainWindow::closeEvent(QCloseEvent* event) {
   // recovery set is moot (§3 cleanup rule).
   autosave_.clear_recovery();
   settings_.save_window(*this);
+  settings_.set_library_splitter_state(library_panel_->splitter_state());
   QMainWindow::closeEvent(event);
 }
 

@@ -128,6 +128,23 @@ TEST(Project, ScenesGlobsTopLevelXodrSortedByName) {
   EXPECT_TRUE(QDir::isAbsolutePath(scenes[0]));
 }
 
+// The asset root the Library's file explorer browses (p6-s7). Unlike
+// library_manifest_path() it is unconditional — the browser has to know the
+// folder to watch for BEFORE it exists — and nothing creates it.
+TEST(Project, AssetsDirIsUnconditionalAndNeverCreated) {
+  QTemporaryDir dir;
+  const auto project = Project::create(fs_path(dir.path()), QStringLiteral("Assets"));
+  ASSERT_TRUE(project.has_value());
+
+  EXPECT_EQ(project->assets_dir(), project->dir() / "assets");
+  EXPECT_FALSE(std::filesystem::exists(project->assets_dir()));
+  // create() writes the manifest and nothing else — opening a project must
+  // never leave a folder behind in it.
+  EXPECT_EQ(QDir(dir.path()).entryList(QDir::NoDotAndDotDot | QDir::AllEntries),
+            QStringList({QStringLiteral("project.json")}));
+  EXPECT_EQ(project->library_manifest_path(), std::nullopt);
+}
+
 TEST(Project, LibraryManifestPathIsOptional) {
   QTemporaryDir dir;
   const auto project = Project::create(fs_path(dir.path()), QStringLiteral("Overlay"));
