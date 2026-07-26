@@ -26,6 +26,12 @@ editable afterwards — edit.set_signal_text for a street name (§14 Table 122
 the spec makes mandatory alongside it), and edit.set_signal_z_offset for the
 mounting height (§14.1 @zOffset).
 
+So is the sign itself: edit.set_signal_identity re-designates a placed sign in
+one step, keeping its pose, text and mounting height while taking the new
+designation's face size and posted value; edit.set_signal_dimensions corrects
+the §14.1 @height/@width/@length bounding box of a sign that arrived with the
+wrong one.
+
 Run:  python place_signals.py out.xodr
 """
 
@@ -116,6 +122,27 @@ def main() -> int:
     stack.push(network, rm.edit.move_signal(network, sign_id, 40.0, -6.0, 0.5))
     stack.push(network, rm.edit.move_signal(network, sign_id, 70.0, -6.0))
     assert network.signal(sign_id).h_offset == 0.5
+
+    # Re-designating a placed sign is one command, and the sign stays where it
+    # stands: set_signal_identity keeps @s/@t, the mounting height, the facing
+    # and @text. What it DOES carry over is the new designation's own data —
+    # this speed plate becomes a stop sign, so it takes the octagon's face size
+    # and LOSES the posted 25 mph, because §14.1 binds @value to @unit and a
+    # stop sign posts neither.
+    before_s = network.signal(sign_id).s
+    stack.push(network, rm.edit.set_signal_identity(network, sign_id, "R1-1", "-1", "US"))
+    assert network.signal(sign_id).type == "R1-1"
+    assert network.signal(sign_id).value is None and network.signal(sign_id).unit == ""
+    assert network.signal(sign_id).width == 0.75  # §1.4 stop-sign face
+    assert network.signal(sign_id).s == before_s
+    assert network.signal(sign_id).h_offset == 0.5  # the hand-set heading survives
+
+    # Face dimensions are the three optional §14.1 attributes, and the command
+    # takes the WHOLE state: pass None to leave one undeclared. @length stays
+    # absent here, so the written <signal> carries no @length at all.
+    stack.push(network, rm.edit.set_signal_dimensions(network, sign_id, 0.90, 0.90, None))
+    assert network.signal(sign_id).height == 0.90
+    assert network.signal(sign_id).length is None
 
     print(f"placed {network.signal_count} signals")
     assert rm.validate_network(network) == []

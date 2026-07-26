@@ -1287,6 +1287,74 @@ set_signal_z_offset(const RoadNetwork& network, SignalId signal, double z);
                                                                std::optional<double> value,
                                                                std::string unit);
 
+/// Re-designates a placed signal (ASAM OpenDRIVE 1.9.0 §14.1, Table 122: @type
+/// and @subtype — both REQUIRED, "identifier according to country code"; and
+/// @country, an ISO 3166-1 alpha-2 code that rule
+/// asam.net:xodr:1.7.0:road.signal.use_country_code asks for). Identical in
+/// 1.8.1 §14.1, so no version gating.
+///
+/// This is what makes a sign re-typable in place. Before it, changing R1-1 to
+/// R2-1 meant deleting the signal and placing a new one, which threw away its
+/// pose, its @text, its posted @value and its mounting height (#429).
+///
+/// **The identity carries the catalogue with it.** When (@country, @type,
+/// @subtype) names a designation this build ships (signs::find_by_designation —
+/// the EXACT triple, never the @subtype-blind fallback), the command also
+/// re-seeds the attributes the pack authors from that designation, exactly as a
+/// fresh placement would:
+///
+///  - @dynamic, since a sign and a signal head are not interchangeable;
+///  - @height / @width from the §1.4 face table — CLEARED when the entry
+///    declares no width, which is the "length fits text" street-name blade;
+///  - @value and @unit together, seeded from the entry's posted default and
+///    otherwise CLEARED, because §14.1 binds them ("if value is given, unit is
+///    mandatory") and a stop sign carrying a leftover 25 mph is not a stop
+///    sign.
+///
+/// An identity the catalogue does not ship writes the three strings and nothing
+/// else — a foreign sign is edited, not reinterpreted.
+///
+/// Never touched either way: @s, @t, @zOffset, @hOffset, @pitch, @roll,
+/// @orientation, @id, @name, @text, @length and the preserved tier. @text
+/// survives because a legend is the user's, not the designation's; the facing
+/// survives because only placement and auto_orient_signal may ever compute one
+/// (see roadmaker/road/signal_facing.hpp). @countryRevision is cleared exactly
+/// when @country changes — a rules year is meaningless under another country's
+/// code — and kept otherwise.
+///
+/// The mesh needs no separate re-point: the model and the face are derived from
+/// the identity at build time, so marking the objects channel is the whole of
+/// it. Undo is byte-identical from the value snapshot. Fails for a stale signal
+/// id, a stale road back-reference, an empty @type, @subtype or @country (the
+/// writer's own validator flags all three), and a no-op.
+[[nodiscard]] RM_API std::unique_ptr<Command> set_signal_identity(const RoadNetwork& network,
+                                                                  SignalId signal,
+                                                                  std::string type,
+                                                                  std::string subtype,
+                                                                  std::string country);
+
+/// Sets a signal's bounding-box dimensions (ASAM OpenDRIVE 1.9.0 §14.1, Table
+/// 122: @height "measured from bottom edge of the signal", @width "along the
+/// v-axis", @length "along the u-axis" — all three optional, all `t_grEqZero`,
+/// in meters). @length is 1.8.0+, but both writer targets are >= 1.8, so there
+/// is no version gate. This is what lets a sign imported with wrong or missing
+/// face dimensions be corrected without replacing it (#429).
+///
+/// **The three arguments are the new state, not a patch.** An absent argument
+/// writes std::nullopt and the writer omits the attribute entirely, which is
+/// how a legally dimension-less signal round-trips unchanged. It follows that
+/// "editing one dimension must not materialise the other two" is the CALLER's
+/// contract: pass the current values of the two you are not editing.
+///
+/// Undo is byte-identical from the value snapshot. Fails for a stale signal id,
+/// a stale road back-reference, an engaged dimension that is non-finite or
+/// negative (`t_grEqZero` admits zero), and a no-op.
+[[nodiscard]] RM_API std::unique_ptr<Command> set_signal_dimensions(const RoadNetwork& network,
+                                                                    SignalId signal,
+                                                                    std::optional<double> height,
+                                                                    std::optional<double> width,
+                                                                    std::optional<double> length);
+
 /// Re-derives a signal's facing from the road it stands on — the explicit
 /// "auto" action of the spec's auto-orientation section (p6-s14, #416). Sets
 /// @orientation and @hOffset from auto_signal_facing(); see

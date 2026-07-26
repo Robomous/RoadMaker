@@ -58,7 +58,7 @@ every issue this table lists):
 
 | Follow-up | Issue | Kind | Pillar |
 |---|---|---|---|
-| signal identity + face dimensions are fixed after placement | [#429](https://github.com/Robomous/RoadMaker/issues/429) | enhancement | P6 |
+| signal identity + face dimensions are fixed after placement — **shipped** | [#429](https://github.com/Robomous/RoadMaker/issues/429) | enhancement | P6 |
 | lane material friction/roughness not editable | [#430](https://github.com/Robomous/RoadMaker/issues/430) | enhancement | P6 |
 | road predecessor/successor links not reported | [#431](https://github.com/Robomous/RoadMaker/issues/431) | enhancement | P2 |
 
@@ -217,8 +217,8 @@ signal mounting height, because the WI's acceptance names z-offset explicitly.
 | `text` | `Signal::text` | exposed |
 | `value` + `unit` (posted speed) | `Signal::value`, `::unit` | exposed |
 | world position | mesh `SignalInstance::position` | **fixed here** — read-only |
-| `height`, `width`, `length` (face size) | `Signal::height` etc. | **read-only here, editing is follow-up [#429](https://github.com/Robomous/RoadMaker/issues/429)** |
-| `type`, `subtype`, `country` (designation) | `Signal::*` | **read-only, retype is follow-up [#429](https://github.com/Robomous/RoadMaker/issues/429)** — today a re-designation means delete-and-replace |
+| `height`, `width`, `length` (face size) | `Signal::height` etc. | exposed — three spins, one `set_signal_dimensions` per edit; a spin below its minimum reads "not set" and clears the optional ([#429](https://github.com/Robomous/RoadMaker/issues/429)) |
+| `type`, `subtype`, `country` (designation) | `Signal::*` | exposed — a catalogue combo pushing `set_signal_identity`, which keeps the pose, text and mounting height and carries the new designation's face size, `@dynamic` and posted value ([#429](https://github.com/Robomous/RoadMaker/issues/429)) |
 
 ### Ground surface
 

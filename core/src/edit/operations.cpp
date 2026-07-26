@@ -7585,6 +7585,129 @@ std::unique_ptr<Command> set_signal_value(const RoadNetwork& network,
   return command;
 }
 
+std::unique_ptr<Command> set_signal_identity(const RoadNetwork& network,
+                                             SignalId signal,
+                                             std::string type,
+                                             std::string subtype,
+                                             std::string country) {
+  // ASAM OpenDRIVE 1.9.0 §14.1, Table 122: @type and @subtype are REQUIRED
+  // ("identifier according to country code or '-1' / 'none'") and @country is
+  // the ISO 3166-1 alpha-2 code rule
+  // asam.net:xodr:1.7.0:road.signal.use_country_code asks for. All three move
+  // together because §14.1 says a signal's @type/@subtype "is only unique in
+  // combination with the @country attribute" — a designation is the triple.
+  static constexpr std::string_view kName = "Retype Sign";
+  const Signal* current = network.signal(signal);
+  if (current == nullptr) {
+    return invalid_command(std::string(kName), stale_signal_error());
+  }
+  const Road* owner = network.road(current->road);
+  if (owner == nullptr) {
+    return invalid_command(std::string(kName),
+                           Error{.code = ErrorCode::InvalidArgument,
+                                 .message = "signal has a stale road back-reference"});
+  }
+  // Empty is not "unset" for a required attribute: write_xodr's own validator
+  // raises kSignalType / kSignalUseCountryCode on an empty one, so a command
+  // that authored it would leave the network failing its own writer.
+  if (type.empty() || subtype.empty()) {
+    return invalid_command(std::string(kName),
+                           Error{.code = ErrorCode::InvalidArgument,
+                                 .message = "@type and @subtype are required (1.9.0 §14.1, "
+                                            "Table 122); use \"-1\" for no variant"});
+  }
+  if (country.empty()) {
+    return invalid_command(std::string(kName),
+                           Error{.code = ErrorCode::InvalidArgument,
+                                 .message = "@country is required to resolve country-specific "
+                                            "rules (asam.net:xodr:1.7.0:road.signal."
+                                            "use_country_code)"});
+  }
+  // Reject a no-op EXPLICITLY, like set_signal_text above.
+  if (type == current->type && subtype == current->subtype && country == current->country) {
+    return invalid_command(
+        std::string(kName),
+        Error{.code = ErrorCode::InvalidArgument, .message = "signal designation is unchanged"});
+  }
+  // The EXACT triple, never resolve_designation's @subtype-blind fallback:
+  // seeding a retype from a neighbouring variant would author the wrong face.
+  const signs::SignDef* def = signs::find_by_designation(country, type, subtype);
+  Signal edited = *current;
+  const bool country_changed = country != current->country;
+  edited.type = std::move(type);
+  edited.subtype = std::move(subtype);
+  edited.country = std::move(country);
+  if (country_changed) {
+    // A rules year belongs to the country whose rules they are.
+    edited.country_revision.clear();
+  }
+  if (def != nullptr) {
+    // Mirrors the placement path (editor's signal_placement.cpp make_signal),
+    // so a retyped sign and a freshly placed one are indistinguishable.
+    edited.dynamic = def->dynamic;
+    edited.height = def->face_height > 0.0 ? std::optional<double>(def->face_height) : std::nullopt;
+    // face_width == 0 is §1.4's "length fits text" blade, which declares no
+    // @width — so this must CLEAR a width the old designation had.
+    edited.width = def->face_width > 0.0 ? std::optional<double>(def->face_width) : std::nullopt;
+    // §14.1 binds @value and @unit; a designation that posts nothing clears
+    // both rather than leaving a stop sign reading 25 mph.
+    edited.value = def->default_value;
+    edited.unit = def->default_value.has_value() ? std::string(def->unit) : std::string{};
+  }
+  auto command =
+      std::make_unique<GenericCommand>(std::string(kName), DirtySet{.objects = {current->road}});
+  command->before.signals.emplace_back(signal, *current);
+  command->after.signals.emplace_back(signal, std::move(edited));
+  return command;
+}
+
+std::unique_ptr<Command> set_signal_dimensions(const RoadNetwork& network,
+                                               SignalId signal,
+                                               std::optional<double> height,
+                                               std::optional<double> width,
+                                               std::optional<double> length) {
+  // ASAM OpenDRIVE 1.9.0 §14.1, Table 122: @height, @width and @length are all
+  // optional t_grEqZero lengths in meters. They are set together because the
+  // three arguments ARE the new state — an absent one writes nullopt and the
+  // writer omits the attribute, which is the only way a legally dimension-less
+  // signal round-trips unchanged.
+  static constexpr std::string_view kName = "Edit Sign Face Size";
+  const Signal* current = network.signal(signal);
+  if (current == nullptr) {
+    return invalid_command(std::string(kName), stale_signal_error());
+  }
+  const Road* owner = network.road(current->road);
+  if (owner == nullptr) {
+    return invalid_command(std::string(kName),
+                           Error{.code = ErrorCode::InvalidArgument,
+                                 .message = "signal has a stale road back-reference"});
+  }
+  const auto usable = [](const std::optional<double>& dimension) {
+    return !dimension.has_value() || (std::isfinite(*dimension) && *dimension >= 0.0);
+  };
+  if (!usable(height) || !usable(width) || !usable(length)) {
+    return invalid_command(std::string(kName),
+                           Error{.code = ErrorCode::InvalidArgument,
+                                 .message = "signal dimensions must be finite and >= 0 "
+                                            "(t_grEqZero, 1.9.0 §14.1, Table 122)"});
+  }
+  // Reject a no-op EXPLICITLY, like set_signal_text above.
+  if (height == current->height && width == current->width && length == current->length) {
+    return invalid_command(
+        std::string(kName),
+        Error{.code = ErrorCode::InvalidArgument, .message = "signal dimensions are unchanged"});
+  }
+  Signal edited = *current;
+  edited.height = height;
+  edited.width = width;
+  edited.length = length;
+  auto command =
+      std::make_unique<GenericCommand>(std::string(kName), DirtySet{.objects = {current->road}});
+  command->before.signals.emplace_back(signal, *current);
+  command->after.signals.emplace_back(signal, std::move(edited));
+  return command;
+}
+
 std::unique_ptr<Command> auto_orient_signal(const RoadNetwork& network, SignalId signal) {
   // One of the TWO places in the tree that may compute a facing (the other is
   // the editor's placement path). See roadmaker/road/signal_facing.hpp.

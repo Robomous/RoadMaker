@@ -101,11 +101,34 @@ struct SignDef {
 /// The entry named by a Library/tool tag, or nullptr.
 [[nodiscard]] RM_API const SignDef* find_by_key(std::string_view key);
 
-/// The entry a placed <signal> matches on (@country, @type), or nullptr when
-/// the file carries an identity this build does not ship — a foreign-country
-/// sign, or one from a pack that is not loaded. Callers must degrade rather
-/// than fail: a scene authored against another catalogue still has to open.
-[[nodiscard]] RM_API const SignDef* find_by_identity(std::string_view country,
-                                                     std::string_view type);
+/// The entry whose designation is EXACTLY (@country, @type, @subtype), or
+/// nullptr.
+///
+/// §14.1 makes @subtype part of a signal's identity — "a signal with the @type
+/// and @subtype attributes is only unique in combination with the @country and
+/// @countryRevision attributes" — and the shipped pack depends on it: One Way
+/// (R6-1) ships a right- and a left-arrow variant differing ONLY in @subtype,
+/// drawing DIFFERENT models. test_defaults_registry asserts the triple is
+/// unique across the catalogue, so the answer is never ambiguous.
+///
+/// This is the strict question — "does this build ship this exact
+/// designation?" — and the one edit::set_signal_identity asks before it seeds a
+/// retyped sign from the table. For drawing or labelling a signal that is
+/// already placed, use resolve_designation() instead.
+[[nodiscard]] RM_API const SignDef*
+find_by_designation(std::string_view country, std::string_view type, std::string_view subtype);
+
+/// The entry that best describes a placed <signal>: its exact designation when
+/// this build ships it, otherwise the first entry matching (@country, @type)
+/// alone, otherwise nullptr.
+///
+/// The @subtype-blind fallback is deliberate and must stay: a file may carry a
+/// variant of a designation we do know (another country's revision, a pack that
+/// is not loaded), and it should still draw and read as that designation rather
+/// than collapse to the generic silhouette. Callers must degrade rather than
+/// fail on nullptr — a scene authored against another catalogue still has to
+/// open.
+[[nodiscard]] RM_API const SignDef*
+resolve_designation(std::string_view country, std::string_view type, std::string_view subtype);
 
 } // namespace roadmaker::signs

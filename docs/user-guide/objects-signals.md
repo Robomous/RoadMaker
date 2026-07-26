@@ -89,9 +89,36 @@ the standard mounting height already, so this is for the exceptions — a blade
 hung over a lane, or a sign fixed low on a barrier. Negative values are allowed,
 for anything mounted below the road's reference line.
 
-A sign's face size and its designation are shown but not editable yet
-(issue [#429](https://github.com/Robomous/RoadMaker/issues/429)); to change what
-a sign says, place the designation you want.
+### Changing what a sign is
+
+A selected sign's **Designation** is a list of every sign the shipped pack
+carries. Pick another one and the sign becomes it, in one undo step, without
+moving: its position, mounting height, facing and text are all untouched, and
+the model in the viewport changes to match.
+
+What *does* change is everything the designation itself decides. A stop sign is
+0.75 m across and posts no speed, so retyping a 25 mph plate into one takes the
+octagon's face size and drops the **Speed limit** row along with the posted
+value — a stop sign reading 25 mph would not be a stop sign. Retyping into a
+street-name blade likewise leaves its width undeclared, because a blade's length
+follows its legend. Undo puts all of it back together.
+
+A sign whose designation this build does not ship — one imported from a file
+written against another catalogue — shows its raw type, subtype and country in
+the list instead of a name. Leaving it selected changes nothing; picking a real
+designation converts it.
+
+### A sign's face size
+
+**Face height**, **Face width** and **Face length** are the sign's bounding box.
+Drag a label or type a value, as anywhere else in the pane. They exist mainly for
+signs that arrive from elsewhere with the wrong dimensions or none at all —
+signs you place are already sized from the pack.
+
+All three are optional in OpenDRIVE, and "undeclared" is a real state, distinct
+from zero: step a spin below its minimum and it reads **not set**, which removes
+the attribute from the saved file rather than writing a zero into it. Editing one
+dimension never invents the other two.
 
 ### Placing props: Prop Point & Prop Curve
 
