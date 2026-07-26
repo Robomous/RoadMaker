@@ -212,3 +212,4 @@ Anything CI does, you can run locally with the same presets — see
 cmake --preset ci-<os> && cmake --build --preset ci-<os> && ctest --preset ci-<os>
 git clang-format
 ```
+
