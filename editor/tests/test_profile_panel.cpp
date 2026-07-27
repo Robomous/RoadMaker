@@ -224,8 +224,7 @@ TEST(ProfilePanel, WeldedBoundaryEditIsReportedAndNeverPinned) {
   // ...and the divergence is named, with the neighbour's OpenDRIVE id.
   const QString warning = rig.panel.weld_warning();
   ASSERT_FALSE(warning.isEmpty()) << "a stepped weld must be reported";
-  EXPECT_TRUE(warning.contains(QStringLiteral("2.00")))
-      << warning.toStdString();
+  EXPECT_TRUE(warning.contains(QStringLiteral("2.00"))) << warning.toStdString();
   EXPECT_TRUE(warning.contains(QStringLiteral("End"))) << warning.toStdString();
 
   // Undo reconciles the joint again, and the warning clears.

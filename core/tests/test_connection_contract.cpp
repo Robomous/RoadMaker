@@ -137,7 +137,8 @@ TEST(ConnectionContract, CitesTheConnectionRulesAndOnlyRealOnes) {
   for (std::size_t at = doc.find(kVendorPrefix); at != std::string::npos;
        at = doc.find(kVendorPrefix, at + 1)) {
     const std::size_t end = doc.find_first_not_of("abcdefghijklmnopqrstuvwxyz0123456789.:_", at);
-    const std::string_view cited(doc.data() + at, (end == std::string::npos ? doc.size() : end) - at);
+    const std::string_view cited(doc.data() + at,
+                                 (end == std::string::npos ? doc.size() : end) - at);
     if (cited == kVendorPrefix) {
       continue; // prose naming the namespace itself, not a citation
     }

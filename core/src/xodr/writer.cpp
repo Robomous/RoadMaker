@@ -2073,13 +2073,13 @@ std::vector<Diagnostic> validate_network(const RoadNetwork& network, const Write
           }
           what += fmt::format("a {:.1f} % grade break", report->max_grade_gap * 100.0);
         }
-        findings.push_back(
-            Diagnostic{.severity = Severity::Warning,
-                       .location = fmt::format("road id={}", road.odr_id),
-                       .message = fmt::format(
-                           "the {} links to road {} with {}", here, neighbour->odr_id, what),
-                       .rule_id = std::string(rules::kLinkElevationContinuity),
-                       .road = road_id});
+        findings.push_back(Diagnostic{
+            .severity = Severity::Warning,
+            .location = fmt::format("road id={}", road.odr_id),
+            .message =
+                fmt::format("the {} links to road {} with {}", here, neighbour->odr_id, what),
+            .rule_id = std::string(rules::kLinkElevationContinuity),
+            .road = road_id});
       }
     };
     check_weld(ContactPoint::Start, road.predecessor);

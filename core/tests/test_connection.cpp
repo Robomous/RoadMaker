@@ -560,10 +560,10 @@ Pair coincident_pair(RoadNetwork& network,
     auto cmd = roadmaker::edit::set_elevation_profile(
         network,
         road,
-        {roadmaker::edit::ElevationPoint{.s = 0.0, .z = z + (grade * (0.0 - station)),
-                                         .grade = grade},
-         roadmaker::edit::ElevationPoint{.s = length, .z = z + (grade * (length - station)),
-                                         .grade = grade}});
+        {roadmaker::edit::ElevationPoint{
+             .s = 0.0, .z = z + (grade * (0.0 - station)), .grade = grade},
+         roadmaker::edit::ElevationPoint{
+             .s = length, .z = z + (grade * (length - station)), .grade = grade}});
     if (!cmd->apply(network).has_value()) {
       throw std::runtime_error("set_elevation_profile");
     }
@@ -602,8 +602,8 @@ TEST(Connection, CheckLinkableRefusesAVerticalStepAtCoincidentEnds) {
 
     // close_gap refuses through the same gate and leaves the document alone.
     const std::string before = snapshot(network);
-    auto command = roadmaker::edit::close_gap(
-        network, RoadEnd{pair.a, contact_a}, RoadEnd{pair.b, contact_b});
+    auto command =
+        roadmaker::edit::close_gap(network, RoadEnd{pair.a, contact_a}, RoadEnd{pair.b, contact_b});
     EXPECT_FALSE(command->apply(network).has_value());
     EXPECT_EQ(snapshot(network), before);
   }
@@ -680,8 +680,8 @@ TEST(Connection, VerifyLinkWeldReportsElevationAndGradeGaps) {
   // way a user still can: weld two sound ends, then edit one road's profile.
   // That is exactly the case the contract reports rather than pins.
   RoadNetwork network;
-  const Pair pair = coincident_pair(
-      network, ContactPoint::End, 0.0, 0.0, ContactPoint::Start, 0.0, 0.0);
+  const Pair pair =
+      coincident_pair(network, ContactPoint::End, 0.0, 0.0, ContactPoint::Start, 0.0, 0.0);
   auto weld = roadmaker::edit::close_gap(
       network, RoadEnd{pair.a, ContactPoint::End}, RoadEnd{pair.b, ContactPoint::Start});
   ASSERT_TRUE(weld->apply(network).has_value());
@@ -724,8 +724,8 @@ TEST(Connection, VerifyLinkWeldRefusesEndsItCannotMeasure) {
   const RoadId a = author(network, {Waypoint{0.0, 0.0}, Waypoint{100.0, 0.0}}, "1");
   const RoadId b = author(network, {Waypoint{100.0, 0.0}, Waypoint{200.0, 0.0}}, "2");
   // Unlinked.
-  EXPECT_FALSE(roadmaker::edit::verify_link_weld(network, RoadEnd{a, ContactPoint::End})
-                   .has_value());
+  EXPECT_FALSE(
+      roadmaker::edit::verify_link_weld(network, RoadEnd{a, ContactPoint::End}).has_value());
   // Stale road id.
   EXPECT_FALSE(
       roadmaker::edit::verify_link_weld(network, RoadEnd{RoadId{}, ContactPoint::End}).has_value());
@@ -845,13 +845,14 @@ TEST(Connection, ChainedRoadInheritsTheContactGradeAndEasesToLevel) {
   EXPECT_NEAR(roadmaker::eval_profile_derivative(road.elevation, ease * 0.5), kGrade * 0.5, 1e-9);
   EXPECT_NEAR(roadmaker::eval_profile_derivative(road.elevation, ease), 0.0, 1e-9);
   // ...climbing exactly half of what a constant grade would have given it...
-  EXPECT_NEAR(roadmaker::eval_profile(road.elevation, ease), contact_z + (kGrade * ease * 0.5),
-              1e-9);
+  EXPECT_NEAR(
+      roadmaker::eval_profile(road.elevation, ease), contact_z + (kGrade * ease * 0.5), 1e-9);
   // ...and level from there to the end, instead of running away to z=+6 more.
-  EXPECT_NEAR(roadmaker::eval_profile_derivative(road.elevation, road.plan_view.length()), 0.0,
-              1e-9);
+  EXPECT_NEAR(
+      roadmaker::eval_profile_derivative(road.elevation, road.plan_view.length()), 0.0, 1e-9);
   EXPECT_NEAR(roadmaker::eval_profile(road.elevation, road.plan_view.length()),
-              contact_z + (kGrade * ease * 0.5), 1e-9);
+              contact_z + (kGrade * ease * 0.5),
+              1e-9);
 
   ASSERT_TRUE(command->revert(network).has_value());
   EXPECT_EQ(snapshot(network), before);

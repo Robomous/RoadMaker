@@ -2637,20 +2637,19 @@ std::unique_ptr<Command> close_gap(const RoadNetwork& network,
   // needs the matching contact-dependent sign — unflipped it built an inverted
   // end grade (a V-kink ramp) for three of the four contact combinations (#398),
   // which is why the two signs are named functions now and not ternaries here.
-  auto connector =
-      fit_connector(ConnectorEndpoint{.x = ca.x,
-                                      .y = ca.y,
-                                      .heading = ca.into_hdg,
-                                      .curvature = ca.curvature,
-                                      .z = ca.z,
-                                      .grade = grade_sign_into(a.contact) * ca.grade},
-                    ConnectorEndpoint{.x = cb.x,
-                                      .y = cb.y,
-                                      .heading = cb.out_hdg,
-                                      .curvature = -cb.curvature,
-                                      .z = cb.z,
-                                      .grade = grade_sign_out(b.contact) * cb.grade},
-                    ConnectorParams{.g2 = true});
+  auto connector = fit_connector(ConnectorEndpoint{.x = ca.x,
+                                                   .y = ca.y,
+                                                   .heading = ca.into_hdg,
+                                                   .curvature = ca.curvature,
+                                                   .z = ca.z,
+                                                   .grade = grade_sign_into(a.contact) * ca.grade},
+                                 ConnectorEndpoint{.x = cb.x,
+                                                   .y = cb.y,
+                                                   .heading = cb.out_hdg,
+                                                   .curvature = -cb.curvature,
+                                                   .z = cb.z,
+                                                   .grade = grade_sign_out(b.contact) * cb.grade},
+                                 ConnectorParams{.g2 = true});
   if (!connector.has_value()) {
     return invalid_command(std::string(kName), connector.error());
   }

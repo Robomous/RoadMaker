@@ -261,11 +261,12 @@ std::pair<RoadId, RoadId> welded_pair(RoadNetwork& network) {
   const RoadId a = author_default(network, "1");
   const std::array<Waypoint, 2> onward{Waypoint{.x = 100.0, .y = 0.0},
                                        Waypoint{.x = 200.0, .y = 0.0}};
-  const auto b = roadmaker::author_clothoid_road(
-      network, onward, LaneProfile::two_lane_default(), "", "2");
+  const auto b =
+      roadmaker::author_clothoid_road(network, onward, LaneProfile::two_lane_default(), "", "2");
   EXPECT_TRUE(b.has_value());
-  auto weld = roadmaker::edit::close_gap(
-      network, roadmaker::RoadEnd{a, ContactPoint::End}, roadmaker::RoadEnd{*b, ContactPoint::Start});
+  auto weld = roadmaker::edit::close_gap(network,
+                                         roadmaker::RoadEnd{a, ContactPoint::End},
+                                         roadmaker::RoadEnd{*b, ContactPoint::Start});
   EXPECT_TRUE(weld->apply(network).has_value());
   return {a, *b};
 }
@@ -306,9 +307,9 @@ TEST(XodrWriter, LinkedEndsWithAZStepCiteTheContinuityRule) {
       << matched.front().message;
   EXPECT_TRUE(matched.front().road.is_valid()) << "the panel navigates by road id";
   // A z step is not a coincidence failure: the ends do still meet in plan.
-  EXPECT_TRUE(findings_with_rule(roadmaker::validate_network(network),
-                                 roadmaker::rules::kLinkEndsCoincide)
-                  .empty());
+  EXPECT_TRUE(
+      findings_with_rule(roadmaker::validate_network(network), roadmaker::rules::kLinkEndsCoincide)
+          .empty());
 }
 
 TEST(XodrWriter, LinkedEndsWithAGradeBreakCiteTheContinuityRule) {
@@ -340,8 +341,8 @@ TEST(XodrWriter, AStaleLinkAfterMovingAWaypointCitesTheCoincidenceRule) {
   auto move = roadmaker::edit::move_waypoint(network, a, 1, Waypoint{.x = 60.0, .y = 0.0});
   ASSERT_TRUE(move->apply(network).has_value());
 
-  const auto matched = findings_with_rule(roadmaker::validate_network(network),
-                                          roadmaker::rules::kLinkEndsCoincide);
+  const auto matched =
+      findings_with_rule(roadmaker::validate_network(network), roadmaker::rules::kLinkEndsCoincide);
   ASSERT_EQ(matched.size(), 1U);
   EXPECT_EQ(matched.front().severity, Severity::Warning);
   EXPECT_NE(matched.front().message.find("40.00 m apart"), std::string::npos)

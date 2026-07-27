@@ -91,6 +91,7 @@ struct ContactState {
 [[nodiscard]] constexpr double grade_sign_into(ContactPoint contact) {
   return contact == ContactPoint::End ? 1.0 : -1.0;
 }
+
 [[nodiscard]] constexpr double grade_sign_out(ContactPoint contact) {
   return contact == ContactPoint::Start ? 1.0 : -1.0;
 }

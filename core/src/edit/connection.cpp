@@ -387,8 +387,8 @@ Expected<WeldReport> verify_junction_welds(const RoadNetwork& network, JunctionI
                  std::abs(std::remainder(tip.hdg - expected_heading, 2.0 * std::numbers::pi)));
     report.max_curvature_gap =
         std::max(report.max_curvature_gap, std::abs(tip.curvature - arm.curvature));
-    report.max_elevation_gap = std::max(report.max_elevation_gap,
-                                        std::abs(eval_profile(connector.elevation, station) - arm.z));
+    report.max_elevation_gap = std::max(
+        report.max_elevation_gap, std::abs(eval_profile(connector.elevation, station) - arm.z));
     report.max_grade_gap =
         std::max(report.max_grade_gap,
                  std::abs(profile_grade(connector.elevation, station) - expected_grade));
@@ -428,8 +428,12 @@ Expected<WeldReport> verify_junction_welds(const RoadNetwork& network, JunctionI
       if (auto arm = contact_state(network, *to); arm.has_value()) {
         const auto inner_t = inner_t_of(driving_lanes_at(network, *to, *arm, false), to_lane);
         if (inner_t.has_value()) {
-          accumulate(
-              *road, length, arm->out_hdg, *arm, *inner_t, grade_sign_out(to->contact) * arm->grade);
+          accumulate(*road,
+                     length,
+                     arm->out_hdg,
+                     *arm,
+                     *inner_t,
+                     grade_sign_out(to->contact) * arm->grade);
         }
       }
     }
@@ -438,10 +442,9 @@ Expected<WeldReport> verify_junction_welds(const RoadNetwork& network, JunctionI
   // step (only a G2 close_gap drives that to zero), so max_curvature_gap is
   // reported for information and never breaches. Elevation and grade DO: a
   // junction contact guarantees C1 in z (connection contract §guarantees).
-  report.breaches = report.max_position_gap > tol::kWeldPosition ||
-                    report.max_heading_gap > tol::kWeldHeading ||
-                    report.max_elevation_gap > tol::kWeldElevation ||
-                    report.max_grade_gap > tol::kWeldGrade;
+  report.breaches =
+      report.max_position_gap > tol::kWeldPosition || report.max_heading_gap > tol::kWeldHeading ||
+      report.max_elevation_gap > tol::kWeldElevation || report.max_grade_gap > tol::kWeldGrade;
   return report;
 }
 
@@ -467,9 +470,8 @@ Expected<WeldReport> verify_link_weld(const RoadNetwork& network, const RoadEnd&
   // joints belong to verify_junction_welds, which knows the anchor.
   const Road* other = network.road(*target);
   if (road->junction.is_valid() || (other != nullptr && other->junction.is_valid())) {
-    return make_error(ErrorCode::InvalidArgument,
-                      "the end belongs to a junction connecting road",
-                      road->odr_id);
+    return make_error(
+        ErrorCode::InvalidArgument, "the end belongs to a junction connecting road", road->odr_id);
   }
   const auto here = contact_state(network, end);
   if (!here.has_value()) {
@@ -494,10 +496,9 @@ Expected<WeldReport> verify_link_weld(const RoadNetwork& network, const RoadEnd&
                                   (grade_sign_into(neighbour.contact) * there->grade));
   // A plain link asserts no curvature continuity — two roads may legitimately
   // meet tangentially with different curvatures — so it never breaches.
-  report.breaches = report.max_position_gap > tol::kWeldPosition ||
-                    report.max_heading_gap > tol::kWeldHeading ||
-                    report.max_elevation_gap > tol::kWeldElevation ||
-                    report.max_grade_gap > tol::kWeldGrade;
+  report.breaches =
+      report.max_position_gap > tol::kWeldPosition || report.max_heading_gap > tol::kWeldHeading ||
+      report.max_elevation_gap > tol::kWeldElevation || report.max_grade_gap > tol::kWeldGrade;
   return report;
 }
 
