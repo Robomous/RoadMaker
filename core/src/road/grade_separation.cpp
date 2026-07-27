@@ -16,6 +16,7 @@
 
 #include "roadmaker/road/grade_separation.hpp"
 
+#include "junction_adjacency.hpp"
 #include "roadmaker/edit/connection.hpp"
 #include "roadmaker/geometry/poly3.hpp"
 #include "roadmaker/geometry/reference_line.hpp"
@@ -85,34 +86,8 @@ double lerp(double a, double b, double f) {
   return a + ((b - a) * f);
 }
 
-/// Junctions a road touches: the junction at either end plus, for a connecting
-/// road, its owning junction. Two roads sharing any of these are "connected"
-/// and can never form an overpass (design §4).
-std::array<std::optional<JunctionId>, 3>
-touched_junctions(const RoadNetwork& network, RoadId id, const Road& road) {
-  std::array<std::optional<JunctionId>, 3> out{};
-  out[0] = edit::junction_at_end(network, RoadEnd{.road = id, .contact = ContactPoint::Start});
-  out[1] = edit::junction_at_end(network, RoadEnd{.road = id, .contact = ContactPoint::End});
-  if (road.junction.is_valid()) {
-    out[2] = road.junction;
-  }
-  return out;
-}
-
-bool junction_connected(const std::array<std::optional<JunctionId>, 3>& a,
-                        const std::array<std::optional<JunctionId>, 3>& b) {
-  for (const std::optional<JunctionId>& ja : a) {
-    if (!ja.has_value()) {
-      continue;
-    }
-    for (const std::optional<JunctionId>& jb : b) {
-      if (jb.has_value() && *jb == *ja) {
-        return true;
-      }
-    }
-  }
-  return false;
-}
+using road_detail::junction_connected;
+using road_detail::touched_junctions;
 
 } // namespace
 
