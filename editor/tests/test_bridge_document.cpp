@@ -27,7 +27,6 @@
 #include <gtest/gtest.h>
 
 #include <QSignalSpy>
-
 #include <algorithm>
 #include <cstddef>
 #include <vector>
@@ -77,10 +76,10 @@ RoadId lay_overpass_high(Document& document) {
   const double length = document.network().road(road)->plan_view.length();
   const std::vector<roadmaker::edit::ElevationPoint> profile{{.s = 0.0, .z = 5.0, .grade = 0.0},
                                                              {.s = length, .z = 5.0, .grade = 0.0}};
-  EXPECT_TRUE(document
-                  .push_command(roadmaker::edit::set_elevation_profile(
-                      document.network(), road, profile))
-                  .has_value());
+  EXPECT_TRUE(
+      document
+          .push_command(roadmaker::edit::set_elevation_profile(document.network(), road, profile))
+          .has_value());
   return road;
 }
 

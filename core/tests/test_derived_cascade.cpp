@@ -26,8 +26,6 @@
 //
 // See docs/domain/connection_contract.md §derived-layer recompute on move.
 
-#include "support/network_compare.hpp"
-
 #include "roadmaker/edit/operations.hpp"
 #include "roadmaker/mesh/mesh.hpp"
 #include "roadmaker/mesh/mesh_builder.hpp"
@@ -48,6 +46,8 @@
 #include <string>
 #include <vector>
 
+#include "support/network_compare.hpp"
+
 namespace roadmaker {
 namespace {
 
@@ -58,11 +58,8 @@ using test::expect_network_matches;
 using test::snapshot_xodr;
 
 /// A straight two-lane road, optionally raised to a constant elevation.
-RoadId segment(RoadNetwork& network,
-               const char* odr_id,
-               Waypoint from,
-               Waypoint to,
-               double z = 0.0) {
+RoadId
+segment(RoadNetwork& network, const char* odr_id, Waypoint from, Waypoint to, double z = 0.0) {
   const std::array<Waypoint, 2> waypoints{from, to};
   const auto road =
       author_clothoid_road(network, waypoints, LaneProfile::two_lane_default(), "", odr_id);
@@ -230,10 +227,8 @@ TEST(DerivedCascade, AnAuthoredBoundarySurvivesAMoveAndIsReported) {
   const SurfaceId id = all_surfaces(network).front();
 
   // Reshaping detaches it: the boundary stops being a function of the roads.
-  const std::vector<SurfaceNode> nodes{{.x = 5, .y = 5},
-                                       {.x = 35, .y = 5},
-                                       {.x = 35, .y = 35},
-                                       {.x = 5, .y = 35}};
+  const std::vector<SurfaceNode> nodes{
+      {.x = 5, .y = 5}, {.x = 35, .y = 5}, {.x = 35, .y = 35}, {.x = 5, .y = 35}};
   ASSERT_TRUE(edit::set_surface_boundary(network, id, nodes)->apply(network).has_value());
   ASSERT_EQ(network.surface(id)->source, BoundarySource::Authored);
   const Surface before = *network.surface(id);
@@ -247,8 +242,7 @@ TEST(DerivedCascade, AnAuthoredBoundarySurvivesAMoveAndIsReported) {
   EXPECT_EQ(after->nodes, before.nodes) << "a move must never re-derive an authored boundary";
   EXPECT_EQ(after->bounding_roads, before.bounding_roads);
 
-  const std::vector<DerivedRecord> stale =
-      records_of(move, DerivedChange::AuthoredBoundaryStale);
+  const std::vector<DerivedRecord> stale = records_of(move, DerivedChange::AuthoredBoundaryStale);
   ASSERT_EQ(stale.size(), 1U) << "leaving it alone must be said out loud, not inferred";
   EXPECT_EQ(stale.front().surface, id);
   EXPECT_EQ(stale.front().road, square[0]);
@@ -334,11 +328,14 @@ TEST(DerivedCascade, NoGestureLeavesTheSurfaceSetStale) {
     const char* label;
     std::unique_ptr<edit::Command> (*build)(RoadNetwork&, RoadId);
   };
+
   const std::array<Gesture, 6> gestures{
-      Gesture{"translate",
-              [](RoadNetwork& net, RoadId road) { return edit::translate_road(net, road, 0, -25); }},
-      Gesture{"rotate",
-              [](RoadNetwork& net, RoadId road) { return edit::rotate_road(net, road, 0.6, 0, 0); }},
+      Gesture{
+          "translate",
+          [](RoadNetwork& net, RoadId road) { return edit::translate_road(net, road, 0, -25); }},
+      Gesture{
+          "rotate",
+          [](RoadNetwork& net, RoadId road) { return edit::rotate_road(net, road, 0.6, 0, 0); }},
       Gesture{"move_waypoint",
               [](RoadNetwork& net, RoadId road) {
                 return edit::move_waypoint(net, road, 0, Waypoint{.x = 0, .y = -25});
@@ -495,8 +492,7 @@ TEST(DerivedCascade, RemoveOrphanedBridgesClearsExactlyTheOrphans) {
   expect_applies(network, sweep);
 
   ASSERT_EQ(network.road(over.high)->bridges.size(), 1U);
-  EXPECT_TRUE(
-      bridge_covering(network.road(over.high)->bridges, over.s_upper).has_value())
+  EXPECT_TRUE(bridge_covering(network.road(over.high)->bridges, over.s_upper).has_value())
       << "the span still carrying the crossing must survive";
   ASSERT_TRUE(sweep->revert(network).has_value());
   expect_network_matches(network, before);

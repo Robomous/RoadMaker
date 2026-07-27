@@ -1244,7 +1244,9 @@ NB_MODULE(_roadmaker, m) {
       "elevation by >= clearance, and are NOT connected by a junction (p5-s3).");
   m.def(
       "bridge_covering",
-      [](const roadmaker::Road& road, double s) { return roadmaker::bridge_covering(road.bridges, s); },
+      [](const roadmaker::Road& road, double s) {
+        return roadmaker::bridge_covering(road.bridges, s);
+      },
       "road"_a,
       "s"_a,
       "Index of the first <bridge> span covering station `s`, or None. The one "

@@ -1227,8 +1227,7 @@ remove_bridge(const RoadNetwork& network, RoadId road, std::size_t index);
 ///
 /// `DirtySet{.roads = <every road that lost a span>}`. Refused when there are no
 /// orphans, so the caller can say so instead of pushing an empty undo entry.
-[[nodiscard]] RM_API std::unique_ptr<Command>
-remove_orphaned_bridges(const RoadNetwork& network);
+[[nodiscard]] RM_API std::unique_ptr<Command> remove_orphaned_bridges(const RoadNetwork& network);
 
 // --- profiles ---------------------------------------------------------------
 

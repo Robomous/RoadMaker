@@ -1450,9 +1450,7 @@ std::unique_ptr<Command> derived_stage(const RoadNetwork& network,
                                        std::span<const RoadId> moved,
                                        std::span<const BridgeAnchor> anchors) {
   static constexpr std::string_view kName = "Recompute Derived Layers";
-  const auto was_moved = [&](RoadId road) {
-    return std::ranges::find(moved, road) != moved.end();
-  };
+  const auto was_moved = [&](RoadId road) { return std::ranges::find(moved, road) != moved.end(); };
 
   auto command = std::make_unique<GenericCommand>(std::string(kName), DirtySet{});
   DirtySet dirty;
@@ -1485,11 +1483,11 @@ std::unique_ptr<Command> derived_stage(const RoadNetwork& network,
         return record.change == DerivedChange::AuthoredBoundaryStale && record.surface == id;
       });
       if (!already) {
-        command->derived.push_back(
-            DerivedRecord{.change = DerivedChange::AuthoredBoundaryStale,
-                          .surface = id,
-                          .road = road_id,
-                          .detail = "the boundary was reshaped by hand, so the move left it alone"});
+        command->derived.push_back(DerivedRecord{
+            .change = DerivedChange::AuthoredBoundaryStale,
+            .surface = id,
+            .road = road_id,
+            .detail = "the boundary was reshaped by hand, so the move left it alone"});
       }
     }
   }
@@ -1642,10 +1640,9 @@ std::unique_ptr<Command> wrap_with_cascade(const RoadNetwork& network,
   builders.push_back([edited, broken = std::move(already_broken), refit](RoadNetwork& net) {
     return follow_stage(net, edited, broken, refit);
   });
-  builders.push_back(
-      [edited, carried = std::move(carried), moved_set, policy](RoadNetwork& net) {
-        return junction_stage(net, moved_set(edited), carried, policy);
-      });
+  builders.push_back([edited, carried = std::move(carried), moved_set, policy](RoadNetwork& net) {
+    return junction_stage(net, moved_set(edited), carried, policy);
+  });
   builders.push_back(
       [edited = std::move(edited), anchors = std::move(anchors), moved_set](RoadNetwork& net) {
         return derived_stage(net, moved_set(edited), anchors);

@@ -50,6 +50,12 @@ appears at the entity's pivot, always on top at a constant on-screen size:
   Nothing asks first, because there is nothing to ask about. On the rare
   occasion the neighbour genuinely cannot follow, the connection is cut and the
   editor says which one and why, after the fact.
+- What the roads *imply* moves too. A [ground surface](ground-surfaces.md)
+  appears, changes shape or disappears as the block its roads enclose does, and a
+  [bridge](bridges.md) slides along to stay over the crossing it was built for.
+  The two things a move will not do quietly are re-draw a boundary you reshaped
+  by hand, and delete a bridge whose crossing has gone — both are reported and
+  left as you made them.
 
 ### Per-entity behavior
 

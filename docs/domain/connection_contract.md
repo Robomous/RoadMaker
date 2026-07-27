@@ -119,9 +119,9 @@ edit. This is the current, deliberate policy per operation.
 | `close_gap` | Coincidence is **3D**. Ends within `coincident_gap_m` in plan but disagreeing in z or grade are **refused**, not welded — a pure link generates nothing to reconcile them, and a vertical-only mismatch cannot be bridged by a connector either (the clothoid fit has no planar distance to work with). |
 | Chain creation (`create_linked_road`, `assembly::create_road_with_interactions`) | The new road inherits the contact's z and grade and eases the inherited slope back to level over `edit::kGradeEaseLength` — see below. |
 | `extend_road` | Refuses an end that is already linked, so it only ever continues. Pins both z and grade at the contact and extends at constant grade. |
-| `translate_roads` | **Neighbours follow** — see below. Links between roads moving together are untouched by the shift; a link leaving the moved set drags its neighbour's contacting end along. **Junctions follow too** — see [junction regeneration](#junction-regeneration-on-move). |
-| `rotate_roads` | **Neighbours follow.** Every road-level link swings its neighbour's contacting end round onto the rotated pose. Same junction policy as `translate_roads` — which is why it takes a road SET: rotating a junction rigidly means rotating every one of its arms in one gesture. |
-| `move_waypoint`, `insert_waypoint`, `delete_waypoint`, `insert_node_at` | **Neighbours follow.** A junction at the moved end is marked dirty and regenerates, and a plain road-to-road link is re-fit. Note that a re-fit changes the road's *length*, so an interior waypoint edit can move a joint at either end. |
+| `translate_roads` | **Neighbours follow** — see below. Links between roads moving together are untouched by the shift; a link leaving the moved set drags its neighbour's contacting end along. **Junctions follow too** — see [junction regeneration](#junction-regeneration-on-move) — and so do the [derived layers](#derived-layer-recompute-on-move). |
+| `rotate_roads` | **Neighbours follow.** Every road-level link swings its neighbour's contacting end round onto the rotated pose. Same junction and derived-layer policy as `translate_roads` — which is why it takes a road SET: rotating a junction rigidly means rotating every one of its arms in one gesture. |
+| `move_waypoint`, `insert_waypoint`, `delete_waypoint`, `insert_node_at` | **Neighbours follow.** A junction at the moved end is marked dirty and regenerates, the derived layers are recomputed, and a plain road-to-road link is re-fit. Note that a re-fit changes the road's *length*, so an interior waypoint edit can move a joint at either end. |
 | `set_elevation_profile`, `set_node_elevation`, the Z gizmo | Write exactly what the user asked for. A welded boundary that diverges is **reported, never pinned** — the Profile panel names it live and the validator reports it on save. This is deliberately NOT a follow: a profile edit is a statement about one road's height, and pinning it would fight the user. |
 | `merge_roads` | Refuses unless the seam is already continuous in position, heading, lanes **and elevation**. |
 
@@ -168,8 +168,9 @@ contract.
 
 Joints where either side is a junction **connecting** road are skipped entirely:
 they weld on the linked lane's inner boundary, so they belong to
-`verify_junction_welds` and junction regeneration — the next section. Derived
-layers and props are sprints s3–s4 of the move-with-cascade epic
+`verify_junction_welds` and junction regeneration — the next section. The layers
+derived from the roads are the section after that; props are sprint s4 of the
+move-with-cascade epic
 ([#406](https://github.com/Robomous/RoadMaker/issues/406)).
 
 ### Junction regeneration on move
@@ -209,6 +210,47 @@ churning connecting roads at frame rate.
 `edit::verify_junction_welds` is the oracle, and [#403](https://github.com/Robomous/RoadMaker/issues/403)
 gave it the elevation and grade dimensions it lacked, so a junction that
 regenerates into a vertical step now fails the check rather than passing it.
+
+### Derived-layer recompute on move
+
+*Sprint record: [#463](https://github.com/Robomous/RoadMaker/issues/463)
+(`cascade-s3`).*
+
+The funnel's fourth and last stage. Roads and junctions have settled; what is
+left is the layers derived **from** them. There are two, and they fail in
+opposite directions. An enclosed-area ground surface is a function of the road
+ring, so it can simply be recomputed. A `<bridge>` span is anchored by `@s` in
+its own road's station and records nothing whatever about the crossing it was
+built for, so it cannot be recomputed — only re-anchored, against provenance read
+**before** the gesture, the same trick `already_broken_ends` uses one layer down.
+
+| Case | Behaviour |
+|---|---|
+| A move changes which areas the roads enclose | **The surface set is reconciled** — vanished blocks erased, new ones created — inside the move command, so undo restores each surface under its own id **with its material**. A re-derivation on undo would hand back the same loop repainted grass, and the saved file would differ. |
+| A `Derived` boundary whose ring is unchanged | **Nothing to do.** The boundary *is* `bounding_roads`; the geometry follows the roads at mesh time and always has. |
+| An `Authored` boundary | **Never re-derived, and reported.** The moment the user reshapes a surface it detaches to `Authored` and the loop becomes their own geometry; re-deriving it would destroy an edit to satisfy a drag. This is the report-don't-correct stance profile edits at a welded end already take. |
+| A bridge span whose crossing survives the move | **Relocated** by the change in the crossing station, keeping `@id`, `@length`, `@type`, the deck material and any foreign children. |
+| A bridge span whose crossing is gone — the roads no longer cross, a junction now connects them, the clearance closed, or the road is too short to reach the new crossing | **Reported orphaned and left exactly as authored.** A move that deleted authored data would be a far worse defect than one that leaves a deck in the air. `Edit ▸ Bridge ▸ Remove Orphaned Spans` is the explicit way to clear them. |
+| A surface or span the gesture did not reach | **Untouched, bit for bit.** Re-derivation is scoped to the affected ids — `remesh_surfaces` rebuilds only what it is handed, and an empty span is a no-op rather than "all". |
+
+Everything the stage could not fix is reported as an `edit::DerivedRecord`,
+readable through `Command::derived_records()` and
+`EditStack::last_derived_records()` — the shape `FollowRecord` established, and
+for the same reason: the outcomes a move cannot repair must never be silent.
+
+Two supporting rules make the above true rather than merely intended.
+`plan_surface_reconciliation` is the read-only half of `derive_surfaces`, and an
+authored surface never enters the set it offers for erasure — **that is where the
+authored guarantee lives**, so the stage inherits it instead of restating it. And
+`DirtySet::surfaces_are_current`, the sibling of `junctions_are_current`, tells
+the editor that the move already reconciled the set: re-deriving over it would be
+idempotent, but it would be a network mutation outside the command layer on the
+one edit whose undo has to restore a material.
+
+`bridge_covering` is the single definition of "is this stretch already carried".
+Before this sprint the detection hint asked that question while `author_bridge`
+asked a different one — exact `(s, length)` equality — so re-running Generate
+after a move stacked a **second** deck beside the stale one instead of noticing.
 
 ### Chain creation and grade easing
 
@@ -255,11 +297,11 @@ be derivative noise.
 
 ## Out of scope
 
-- **Cascade beyond roads and junctions** — derived layers (ground surfaces,
-  bridge spans) and props are sprints s3–s4 of the move-with-cascade epic
+- **Prop obstruction** — a prop driven into another road by the move that
+  carried it is sprint s4 of the move-with-cascade epic
   [#406](https://github.com/Robomous/RoadMaker/issues/406). Road-level
-  neighbour-follow and junction regeneration have landed and are specified
-  [above](#neighbour-follow-on-move).
+  neighbour-follow, junction regeneration and derived-layer recompute have all
+  landed and are specified [above](#neighbour-follow-on-move).
 - **Junction quality under curved approaches** —
   [#356](https://github.com/Robomous/RoadMaker/issues/356), a separate open bug.
   A regenerated junction is exactly as good as a freshly generated one; making
@@ -287,5 +329,5 @@ fails CI, not review, when it drifts from the code:
 
 The behaviour itself is covered by `core/tests/test_connection.cpp`,
 `core/tests/test_link_follow.cpp`, `core/tests/test_junction_cascade.cpp`,
-`core/tests/test_xodr_writer.cpp`, `editor/tests/test_profile_panel.cpp` and
-`python/tests/test_edit.py`.
+`core/tests/test_derived_cascade.cpp`, `core/tests/test_xodr_writer.cpp`,
+`editor/tests/test_profile_panel.cpp` and `python/tests/test_edit.py`.

@@ -292,9 +292,8 @@ TEST(Document, MovingABoundingRoadOutOfTheLoopDropsTheSurfaceFromTheMesh) {
       first = id;
     }
   });
-  ASSERT_TRUE(
-      document.push_command(edit::translate_road(document.network(), first, 0.0, -15.0))
-          .has_value());
+  ASSERT_TRUE(document.push_command(edit::translate_road(document.network(), first, 0.0, -15.0))
+                  .has_value());
 
   EXPECT_EQ(document.network().surface_count(), 0U) << "the loop opened, so the block is gone";
   EXPECT_TRUE(document.mesh().surfaces.empty()) << "and the mesh channel followed it";
