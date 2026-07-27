@@ -705,3 +705,134 @@ def test_add_object_bad_station_raises(network):
     road = network.find_road("1")
     with pytest.raises(ValueError):
         stack.push(network, rm.edit.add_object(network, road, _tree("1", 9999.0, 5.0)))
+
+
+# --- #403, the road connection contract -------------------------------------
+
+
+@pytest.fixture
+def welded():
+    """Two straight roads welded end-to-start at (100, 0), plus their ends."""
+    net = rm.RoadNetwork()
+    stack = rm.edit.EditStack()
+    stack.push(
+        net,
+        rm.edit.create_road([(0.0, 0.0), (100.0, 0.0)], rm.LaneProfile.two_lane_default(), "A"),
+    )
+    stack.push(
+        net,
+        rm.edit.create_road([(100.0, 0.0), (200.0, 0.0)], rm.LaneProfile.two_lane_default(), "B"),
+    )
+    a, b = net.find_road("1"), net.find_road("2")
+    a_end = rm.RoadEnd(a, rm.ContactPoint.END)
+    b_start = rm.RoadEnd(b, rm.ContactPoint.START)
+    stack.push(net, rm.edit.close_gap(net, a_end, b_start))
+    return net, stack, a, b, a_end, b_start
+
+
+def _flat_at(net, road, z):
+    length = net.road(road).length
+    return rm.edit.set_elevation_profile(
+        net, road, [rm.edit.ElevationPoint(0.0, z, 0.0), rm.edit.ElevationPoint(length, z, 0.0)]
+    )
+
+
+def test_verify_link_weld_is_clean_on_a_sound_joint(welded):
+    net, _stack, _a, _b, a_end, _b_start = welded
+    report = rm.edit.verify_link_weld(net, a_end)
+    assert not report.breaches
+    assert report.max_elevation_gap == pytest.approx(0.0)
+    assert report.max_grade_gap == pytest.approx(0.0)
+
+
+def test_verify_link_weld_sees_a_step_introduced_by_a_later_profile_edit(welded):
+    net, stack, _a, b, a_end, _b_start = welded
+    stack.push(net, _flat_at(net, b, 4.0))
+
+    report = rm.edit.verify_link_weld(net, a_end)
+    assert report.breaches
+    assert report.max_elevation_gap == pytest.approx(4.0)
+    # The ends still meet in plan — only the elevation dimension catches this.
+    assert report.max_position_gap == pytest.approx(0.0)
+
+    findings = [
+        f
+        for f in rm.validate_network(net)
+        if f.rule_id == "robomous.ai:rm:1.0.0:roads.link_elevation_continuity"
+    ]
+    assert len(findings) == 1, "each joint is reported once, not once per end"
+    assert "4.00 m elevation step" in findings[0].message
+
+
+def test_verify_link_weld_rejects_an_unlinked_end():
+    net = rm.RoadNetwork()
+    stack = rm.edit.EditStack()
+    stack.push(
+        net,
+        rm.edit.create_road([(0.0, 0.0), (100.0, 0.0)], rm.LaneProfile.two_lane_default(), "A"),
+    )
+    with pytest.raises(ValueError):
+        rm.edit.verify_link_weld(net, rm.RoadEnd(net.find_road("1"), rm.ContactPoint.END))
+
+
+def test_coincident_ends_that_differ_in_elevation_are_refused():
+    # Coincidence is 3D: a pure link generates no geometry to reconcile the two
+    # ends, so a vertical mismatch is refused rather than welded into a cliff.
+    net = rm.RoadNetwork()
+    stack = rm.edit.EditStack()
+    stack.push(
+        net,
+        rm.edit.create_road([(0.0, 0.0), (100.0, 0.0)], rm.LaneProfile.two_lane_default(), "A"),
+    )
+    stack.push(
+        net,
+        rm.edit.create_road([(100.0, 0.0), (200.0, 0.0)], rm.LaneProfile.two_lane_default(), "B"),
+    )
+    a, b = net.find_road("1"), net.find_road("2")
+    stack.push(net, _flat_at(net, a, 5.0))
+
+    with pytest.raises(ValueError, match="5.00 m apart vertically"):
+        rm.edit.check_linkable(
+            net, rm.RoadEnd(a, rm.ContactPoint.END), rm.RoadEnd(b, rm.ContactPoint.START)
+        )
+
+
+def test_a_chained_road_inherits_the_contact_grade_and_eases_to_level():
+    net = rm.RoadNetwork()
+    stack = rm.edit.EditStack()
+    stack.push(
+        net,
+        rm.edit.create_road([(0.0, 0.0), (100.0, 0.0)], rm.LaneProfile.two_lane_default(), "A"),
+    )
+    a = net.find_road("1")
+    length = net.road(a).length
+    stack.push(
+        net,
+        rm.edit.set_elevation_profile(
+            net,
+            a,
+            [
+                rm.edit.ElevationPoint(0.0, 0.0, 0.06),
+                rm.edit.ElevationPoint(length, 0.06 * length, 0.06),
+            ],
+        ),
+    )
+    stack.push(
+        net,
+        rm.edit.create_linked_road(
+            net,
+            [(100.0, 0.0), (200.0, 0.0)],
+            rm.LaneProfile.two_lane_default(),
+            "B",
+            rm.RoadEnd(a, rm.ContactPoint.END),
+        ),
+    )
+    chained = net.find_road("2")
+    # The chain must still WELD — the seeding runs before the weld precisely so
+    # the now-3D gate does not silently reject it.
+    assert net.road(chained).predecessor is not None
+    nodes = rm.edit.elevation_profile_points(net, chained)
+    assert nodes[0].z == pytest.approx(0.06 * length)
+    assert nodes[0].grade == pytest.approx(0.06)
+    assert nodes[-1].grade == pytest.approx(0.0)
+    assert not rm.edit.verify_link_weld(net, rm.RoadEnd(a, rm.ContactPoint.END)).breaches

@@ -89,6 +89,85 @@ def main() -> int:
     )
     print(f"linked road: {network.road_count} roads")
 
+    # verify_link_weld measures what a joint actually delivers, in all five
+    # dimensions the road connection contract names (position, heading,
+    # curvature, elevation, grade). See docs/domain/connection_contract.md.
+    print(f"weld at B's end: {rm.edit.verify_link_weld(network, b_end)}")
+
+    # --- grade matching, and the 3D coincidence gate ------------------------
+    #
+    # Road F (parked at y=500) climbs at 6 %. A road chained off its END used to
+    # be authored FLAT, welding a cliff into the network; now it inherits the
+    # contact's z and grade and eases that slope back to level over
+    # edit.GRADE_EASE_LENGTH.
+    f_length = network.road(far).length
+    stack.push(
+        network,
+        rm.edit.set_elevation_profile(
+            network,
+            far,
+            [
+                rm.edit.ElevationPoint(0.0, 0.0, 0.06),
+                rm.edit.ElevationPoint(f_length, 0.06 * f_length, 0.06),
+            ],
+        ),
+    )
+    far_end = rm.RoadEnd(far, rm.ContactPoint.END)
+    stack.push(
+        network,
+        rm.edit.create_linked_road(
+            network,
+            [(100.0, 500.0), (200.0, 500.0)],
+            rm.LaneProfile.two_lane_default(),
+            "G",
+            far_end,
+        ),
+    )
+    nodes = rm.edit.elevation_profile_points(network, network.find_road("6"))
+    print(
+        f"chained off a 6 % climb: starts at z={nodes[0].z:.2f} m "
+        f"grade={nodes[0].grade or 0.0:.3f}, level again after "
+        f"{rm.edit.GRADE_EASE_LENGTH:.0f} m"
+    )
+    print(f"weld at F's end: {rm.edit.verify_link_weld(network, far_end)}")
+
+    # And the gate that stops a cliff being authored in the first place: two
+    # ends that meet in plan but sit 5 m apart in z are refused, not welded.
+    stack.push(
+        network,
+        rm.edit.create_road(
+            [(0.0, 800.0), (100.0, 800.0)], rm.LaneProfile.two_lane_default(), "H"
+        ),
+    )
+    stack.push(
+        network,
+        rm.edit.create_road(
+            [(100.0, 800.0), (200.0, 800.0)], rm.LaneProfile.two_lane_default(), "I"
+        ),
+    )
+    high = network.find_road("7")
+    low = network.find_road("8")
+    high_length = network.road(high).length
+    stack.push(
+        network,
+        rm.edit.set_elevation_profile(
+            network,
+            high,
+            [
+                rm.edit.ElevationPoint(0.0, 5.0, 0.0),
+                rm.edit.ElevationPoint(high_length, 5.0, 0.0),
+            ],
+        ),
+    )
+    try:
+        rm.edit.check_linkable(
+            network,
+            rm.RoadEnd(high, rm.ContactPoint.END),
+            rm.RoadEnd(low, rm.ContactPoint.START),
+        )
+    except ValueError as exc:
+        print(f"refused: {exc}")
+
     rm.save_xodr(network, out_path, "close_gap")
     print(f"wrote {out_path}")
     return 0
