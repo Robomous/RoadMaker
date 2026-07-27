@@ -1624,9 +1624,11 @@ std::unique_ptr<Command> wrap_with_cascade(const RoadNetwork& network,
   // order at apply time, so the later ones always see what the first wrote.
   auto refit = std::make_shared<std::vector<RoadId>>();
   // Every road whose pose this gesture changed: the edited set plus whatever the
-  // follow stage refit. Computed the same way twice, so it is written once.
-  const auto moved_set = [refit](const std::vector<RoadId>& edited) {
-    std::vector<RoadId> moved = edited;
+  // follow stage refit. Computed the same way twice, so it is written once. The
+  // parameter is deliberately NOT called `edited` — GCC's -Werror=shadow fires
+  // on a lambda parameter shadowing an enclosing one, and clang never says so.
+  const auto moved_set = [refit](const std::vector<RoadId>& base_roads) {
+    std::vector<RoadId> moved = base_roads;
     for (const RoadId road : *refit) {
       if (std::ranges::find(moved, road) == moved.end()) {
         moved.push_back(road);
