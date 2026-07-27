@@ -134,7 +134,8 @@ std::string ring_key(const std::vector<RoadId>& ring) {
 
 } // namespace
 
-void derive_surfaces(RoadNetwork& network) {
+SurfaceReconciliation plan_surface_reconciliation(const RoadNetwork& network) {
+  SurfaceReconciliation plan;
   // --- 1. Collect edge roads (skip junction-internal connecting roads). ----
   std::vector<RoadId> edges;
   std::vector<Endpoint> endpoints; // 2 per edge: [2e] start, [2e+1] end
@@ -159,16 +160,12 @@ void derive_surfaces(RoadNetwork& network) {
   if (edge_count == 0) {
     // No edges: every DERIVED surface is stale. Authored surfaces own their
     // boundary outright, so they outlive the roads they were detached from.
-    std::vector<SurfaceId> doomed;
     network.for_each_surface([&](SurfaceId id, const Surface& surface) {
       if (surface.source == BoundarySource::Derived) {
-        doomed.push_back(id);
+        plan.erase.push_back(id);
       }
     });
-    for (const SurfaceId id : doomed) {
-      network.erase_surface(id);
-    }
-    return;
+    return plan;
   }
 
   // --- 2. Weld endpoints into nodes. ---------------------------------------
@@ -340,7 +337,6 @@ void derive_surfaces(RoadNetwork& network) {
     existing[key].push_back(id);
   });
 
-  std::vector<std::vector<RoadId>> to_create;
   for (auto& face : faces) {
     const std::string key = ring_key(face);
     if (const auto claimed = authored_claims.find(key);
@@ -352,26 +348,28 @@ void derive_surfaces(RoadNetwork& network) {
     if (it != existing.end() && !it->second.empty()) {
       it->second.pop_back(); // a survivor keeps its SurfaceId — do nothing
     } else {
-      to_create.push_back(std::move(face));
+      plan.create.push_back(std::move(face));
     }
   }
 
   // Erase derived surfaces with no matching face (deterministic order by
   // index). Authored surfaces are absent from `existing` by construction.
-  std::vector<SurfaceId> doomed;
   for (auto& [key, ids] : existing) {
     for (const SurfaceId id : ids) {
-      doomed.push_back(id);
+      plan.erase.push_back(id);
     }
   }
-  std::ranges::sort(doomed, {}, [](SurfaceId id) { return id.index; });
-  for (const SurfaceId id : doomed) {
+  std::ranges::sort(plan.erase, {}, [](SurfaceId id) { return id.index; });
+  return plan;
+}
+
+void derive_surfaces(RoadNetwork& network) {
+  const SurfaceReconciliation plan = plan_surface_reconciliation(network);
+  for (const SurfaceId id : plan.erase) {
     network.erase_surface(id);
   }
-
-  for (auto& ring : to_create) {
-    network.create_surface(
-        Surface{.source = BoundarySource::Derived, .bounding_roads = std::move(ring)});
+  for (const std::vector<RoadId>& ring : plan.create) {
+    network.create_surface(Surface{.source = BoundarySource::Derived, .bounding_roads = ring});
   }
 }
 

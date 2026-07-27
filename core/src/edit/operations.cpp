@@ -31,8 +31,10 @@
 #include "roadmaker/mesh/surface_boundary.hpp"
 #include "roadmaker/road/authoring.hpp"
 #include "roadmaker/road/defaults.hpp"
+#include "roadmaker/road/grade_separation.hpp"
 #include "roadmaker/road/network.hpp"
 #include "roadmaker/road/signal_facing.hpp"
+#include "roadmaker/road/surface_derivation.hpp"
 #include "roadmaker/tol.hpp"
 #include "roadmaker/xodr/rules.hpp"
 
@@ -41,6 +43,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <cstdint>
 #include <cstdlib>
 #include <functional>
 #include <limits>
@@ -49,6 +52,7 @@
 #include <set>
 #include <span>
 #include <string_view>
+#include <unordered_map>
 #include <utility>
 #include <variant>
 
@@ -78,6 +82,12 @@ struct Values {
   /// Signal controllers (§14.6). Top-level, owned by no road or junction, so
   /// they sit beside `signals` rather than under anything (p4-s7, issue #228).
   std::vector<std::pair<ControllerId, Controller>> controllers;
+  /// Enclosed-area ground surfaces (cascade-s3, #463). The purest leaf of the
+  /// lot — nothing in any arena points at a Surface, and a Surface points back
+  /// only at roads, by id. Added so a move can reconcile the surface set inside
+  /// its own command: `derive_surfaces` erases a vanished loop outright and
+  /// takes its `material` with it, which no undo could then restore.
+  std::vector<std::pair<SurfaceId, Surface>> surfaces;
 };
 
 Expected<void> ensure_live(const RoadNetwork& network, const Values& values) {
@@ -116,6 +126,11 @@ Expected<void> ensure_live(const RoadNetwork& network, const Values& values) {
       return make_error(ErrorCode::InvalidArgument, "stale controller id");
     }
   }
+  for (const auto& [id, value] : values.surfaces) {
+    if (network.surface(id) == nullptr) {
+      return make_error(ErrorCode::InvalidArgument, "stale surface id");
+    }
+  }
   return {};
 }
 
@@ -142,6 +157,9 @@ void write_values(RoadNetwork& network, const Values& values) {
   for (const auto& [id, value] : values.controllers) {
     *network.controller(id) = value;
   }
+  for (const auto& [id, value] : values.surfaces) {
+    *network.surface(id) = value;
+  }
 }
 
 /// Same ids as `ids`, values re-read from the network (post-mutation).
@@ -167,6 +185,9 @@ Values read_values(const RoadNetwork& network, const Values& ids) {
   }
   for (const auto& [id, value] : ids.controllers) {
     out.controllers.emplace_back(id, *network.controller(id));
+  }
+  for (const auto& [id, value] : ids.surfaces) {
+    out.surfaces.emplace_back(id, *network.surface(id));
   }
   return out;
 }
@@ -207,6 +228,11 @@ Expected<void> restore_values(RoadNetwork& network, const Values& values) {
       return tl::unexpected<Error>(restored.error());
     }
   }
+  for (const auto& [id, value] : values.surfaces) {
+    if (auto restored = network.restore_surface(id, value); !restored.has_value()) {
+      return tl::unexpected<Error>(restored.error());
+    }
+  }
   return {};
 }
 
@@ -214,8 +240,13 @@ Expected<void> erase_values_exact(RoadNetwork& network, const Values& values) {
   // Leaf to root, so a partially-visible intermediate state never has a
   // parent without its children. Objects are pure leaves (a road erase would
   // otherwise cascade them) — erase them first.
-  // Controllers are the purest leaf of all: nothing in any arena points at
-  // one, and they point at signals only by string id (§14.6).
+  // Surfaces and controllers are the purest leaves of all: nothing in any arena
+  // points at one, and they reference roads/signals only by id (§14.6, #215).
+  for (const auto& [id, value] : values.surfaces) {
+    if (auto erased = network.erase_surface_exact(id); !erased.has_value()) {
+      return erased;
+    }
+  }
   for (const auto& [id, value] : values.controllers) {
     if (auto erased = network.erase_controller_exact(id); !erased.has_value()) {
       return erased;
@@ -261,6 +292,9 @@ Expected<void> erase_values_exact(RoadNetwork& network, const Values& values) {
 /// slot from a not-actually-reverted command) into a harmless no-op, so the
 /// void-return, ignore-each-result contract is safe.
 void release_values_reserved(RoadNetwork& network, const Values& values) {
+  for (const auto& [id, value] : values.surfaces) {
+    (void)network.release_surface_reserved(id);
+  }
   for (const auto& [id, value] : values.controllers) {
     (void)network.release_controller_reserved(id);
   }
@@ -299,8 +333,9 @@ public:
   Values after; // precomputed; when `creator` is set it is re-read post-run
   Values erased;
   Creator creator;
-  std::optional<Error> invalid;     // factory-time validation failure
-  std::vector<FollowRecord> follow; // joints this command disturbed (#461)
+  std::optional<Error> invalid;       // factory-time validation failure
+  std::vector<FollowRecord> follow;   // joints this command disturbed (#461)
+  std::vector<DerivedRecord> derived; // derived layers this command moved (#463)
 
   Expected<void> apply(RoadNetwork& network) override {
     if (invalid.has_value()) {
@@ -324,6 +359,14 @@ public:
         }
         for (const auto& [id, value] : created_.junctions) {
           dirty_.junctions.push_back(id);
+        }
+        // Only the derived-layer stage (cascade-s3, #463) ever creates a
+        // Surface, and a surface appearing is exactly what it exists to report —
+        // so this is unconditional rather than opt-in. The id is not knowable
+        // until here, which is why the record cannot be built at factory time.
+        for (const auto& [id, value] : created_.surfaces) {
+          dirty_.surfaces.push_back(id);
+          derived.push_back(DerivedRecord{.change = DerivedChange::SurfaceAdded, .surface = id});
         }
       } else {
         write_values(network, after);
@@ -357,6 +400,8 @@ public:
   void set_dirty(DirtySet dirty) { dirty_ = std::move(dirty); }
 
   std::span<const FollowRecord> follow_records() const override { return follow; }
+
+  std::span<const DerivedRecord> derived_records() const override { return derived; }
 
   void discard(RoadNetwork& network) override {
     // Only `created_` reserves slots after a revert: `erased` values were
@@ -410,6 +455,7 @@ public:
                     make_error(ErrorCode::InvalidArgument, "composite stage yielded no command"));
       if (!applied.has_value()) {
         records_.clear();
+        derived_.clear();
         // Unwind the applied prefix — the whole composite is atomic.
         for (std::size_t k = i; k-- > 0;) {
           (void)children_[k]->revert(network);
@@ -424,14 +470,18 @@ public:
       }
     }
     // The union of what the children reported, in stage order — a follow stage
-    // is a child like any other, so the composite speaks for it (#461).
+    // is a child like any other, so the composite speaks for it (#461), and the
+    // same holds for the derived-layer stage (#463).
     records_.clear();
+    derived_.clear();
     for (const auto& child : children_) {
       if (child == nullptr) {
         continue;
       }
       const std::span<const FollowRecord> child_records = child->follow_records();
       records_.insert(records_.end(), child_records.begin(), child_records.end());
+      const std::span<const DerivedRecord> child_derived = child->derived_records();
+      derived_.insert(derived_.end(), child_derived.begin(), child_derived.end());
     }
     return {};
   }
@@ -477,6 +527,21 @@ public:
           dirty.junctions.push_back(junction);
         }
       }
+      // The remaining channels used to be dropped here, silently: a child could
+      // name surfaces, objects or the terrain field and the editor would never
+      // hear it. Every funnelled move is a CompositeCommand (wrap_with_cascade),
+      // so cascade-s3's derived-layer stage would have been invisible.
+      for (const SurfaceId surface : child_dirty.surfaces) {
+        if (std::ranges::find(dirty.surfaces, surface) == dirty.surfaces.end()) {
+          dirty.surfaces.push_back(surface);
+        }
+      }
+      for (const RoadId road : child_dirty.objects) {
+        if (std::ranges::find(dirty.objects, road) == dirty.objects.end()) {
+          dirty.objects.push_back(road);
+        }
+      }
+      dirty.terrain = dirty.terrain || child_dirty.terrain;
       dirty.topology = dirty.topology || child_dirty.topology;
       // One child that built its own junctions speaks for the composite: the
       // assemblies and attach_t_junction end in create_junction, so the
@@ -489,12 +554,15 @@ public:
 
   std::span<const FollowRecord> follow_records() const override { return records_; }
 
+  std::span<const DerivedRecord> derived_records() const override { return derived_; }
+
 private:
   std::string name_;
   DirtySet base_dirty_;
   std::vector<Builder> builders_;
   std::vector<std::unique_ptr<Command>> children_;
   std::vector<FollowRecord> records_;
+  std::vector<DerivedRecord> derived_;
 };
 
 // ---- shared lookups and geometry helpers -------------------------------------
@@ -1316,12 +1384,226 @@ std::unique_ptr<Command> follow_stage(const RoadNetwork& network,
   return command;
 }
 
+// ---- derived-layer recompute on move (cascade-s3, #463) ----------------------
+//
+// Stage [3] of the funnel. The roads have moved, their neighbours have followed
+// and their junctions have regenerated; what is left is the layers derived FROM
+// all of that. There are two, and they fail in opposite directions:
+//
+//   - An enclosed-area ground surface is a function of the road ring, so it can
+//     simply be recomputed — but only while it is still DERIVED. The moment the
+//     user reshapes one it detaches to AUTHORED and the boundary becomes their
+//     own geometry; re-deriving it then would destroy an edit to satisfy a drag.
+//     So an authored boundary is left exactly as it is and REPORTED, the same
+//     report-don't-correct stance #403 took for profile edits at a welded end.
+//     That rule lives in plan_surface_reconciliation, which never even offers an
+//     authored surface for erasure — this stage inherits it rather than repeats it.
+//   - A `<bridge>` span is anchored by @s in its own road's station and records
+//     NOTHING about the crossing it was built for, so it cannot be recomputed at
+//     all. It can only be re-anchored, against provenance read before the move.
+
+/// One `<bridge>` span and the crossing it carried, read BEFORE the gesture —
+/// the only moment at which "which crossing is this span for?" has an answer.
+struct BridgeAnchor {
+  RoadId upper;              ///< the carrying road, which owns the span
+  std::size_t index = 0;     ///< its position in Road::bridges (a Bridge has no id)
+  RoadId lower;              ///< the road passed under, identifying the crossing
+  double s_upper_before = 0; ///< the crossing station on `upper`, pre-move
+};
+
+/// Every bridged crossing in the network. Read at wrap time, like
+/// already_broken_ends, because the stage itself only ever sees the network after.
+/// Early-outs on a network with no bridges at all, which is nearly all of them —
+/// a preview drag rebuilds this every frame.
+std::vector<BridgeAnchor> bridge_anchors(const RoadNetwork& network) {
+  std::vector<BridgeAnchor> anchors;
+  bool any_bridge = false;
+  network.for_each_road([&](RoadId, const Road& road) {
+    if (!road.bridges.empty()) {
+      any_bridge = true;
+    }
+  });
+  if (!any_bridge) {
+    return anchors;
+  }
+  for (const GradeSeparation& separation : find_grade_separations(network)) {
+    const Road* road = network.road(separation.upper);
+    if (road == nullptr) {
+      continue;
+    }
+    const std::optional<std::size_t> index = bridge_covering(road->bridges, separation.s_upper);
+    if (!index.has_value()) {
+      continue; // an un-bridged crossing has no span to keep anchored
+    }
+    anchors.push_back(BridgeAnchor{.upper = separation.upper,
+                                   .index = *index,
+                                   .lower = separation.lower,
+                                   .s_upper_before = separation.s_upper});
+  }
+  return anchors;
+}
+
+/// Stage [3] of the funnel, built lazily against the network with the move, the
+/// follows and the regenerations ALREADY applied — the only state in which the
+/// derived layers can be recomputed. `moved` is every road whose pose changed.
+std::unique_ptr<Command> derived_stage(const RoadNetwork& network,
+                                       std::span<const RoadId> moved,
+                                       std::span<const BridgeAnchor> anchors) {
+  static constexpr std::string_view kName = "Recompute Derived Layers";
+  const auto was_moved = [&](RoadId road) {
+    return std::ranges::find(moved, road) != moved.end();
+  };
+
+  auto command = std::make_unique<GenericCommand>(std::string(kName), DirtySet{});
+  DirtySet dirty;
+
+  // --- enclosed-area ground surfaces --------------------------------------
+  SurfaceReconciliation plan = plan_surface_reconciliation(network);
+  for (const SurfaceId id : plan.erase) {
+    const Surface* surface = network.surface(id);
+    if (surface == nullptr) {
+      continue;
+    }
+    // The VALUE, not just the id: erase_surface drops the whole record, and a
+    // derived surface carries a `material`. Snapshotting it here is what makes
+    // undo byte-identical rather than "the same loop, repainted grass".
+    command->erased.surfaces.emplace_back(id, *surface);
+    dirty.surfaces.push_back(id);
+    command->derived.push_back(
+        DerivedRecord{.change = DerivedChange::SurfaceRemoved, .surface = id});
+  }
+  // An AUTHORED boundary is never re-derived — say so rather than letting it
+  // read as an oversight. Reported once per surface, however many of its
+  // provenance roads moved.
+  for (const RoadId road_id : moved) {
+    for (const SurfaceId id : surfaces_touching(network, road_id)) {
+      const Surface* surface = network.surface(id);
+      if (surface == nullptr || surface->source != BoundarySource::Authored) {
+        continue;
+      }
+      const bool already = std::ranges::any_of(command->derived, [&](const DerivedRecord& record) {
+        return record.change == DerivedChange::AuthoredBoundaryStale && record.surface == id;
+      });
+      if (!already) {
+        command->derived.push_back(
+            DerivedRecord{.change = DerivedChange::AuthoredBoundaryStale,
+                          .surface = id,
+                          .road = road_id,
+                          .detail = "the boundary was reshaped by hand, so the move left it alone"});
+      }
+    }
+  }
+
+  // --- `<bridge>` spans ----------------------------------------------------
+  std::vector<std::pair<RoadId, std::vector<Bridge>>> pending;
+  const auto stage_road = [&](RoadId road_id, const Road& road) -> std::vector<Bridge>& {
+    for (auto& entry : pending) {
+      if (entry.first == road_id) {
+        return entry.second;
+      }
+    }
+    pending.emplace_back(road_id, road.bridges);
+    return pending.back().second;
+  };
+  std::vector<GradeSeparation> crossings;
+  if (!anchors.empty()) {
+    crossings = find_grade_separations(network);
+  }
+  for (const BridgeAnchor& anchor : anchors) {
+    if (!was_moved(anchor.upper) && !was_moved(anchor.lower)) {
+      continue; // a crossing this gesture did not touch keeps its span untouched
+    }
+    const Road* road = network.road(anchor.upper);
+    if (road == nullptr || anchor.index >= road->bridges.size()) {
+      continue; // the span or its road went with some other edit
+    }
+    const Bridge& bridge = road->bridges[anchor.index];
+    const auto match = std::ranges::find_if(crossings, [&](const GradeSeparation& separation) {
+      return separation.upper == anchor.upper && separation.lower == anchor.lower;
+    });
+    const auto orphan = [&](std::string detail) {
+      command->derived.push_back(DerivedRecord{.change = DerivedChange::BridgeOrphaned,
+                                               .road = anchor.upper,
+                                               .bridge_index = anchor.index,
+                                               .detail = std::move(detail)});
+    };
+    if (match == crossings.end()) {
+      // The roads no longer cross, a junction now connects them, or the
+      // clearance closed. The span STAYS: a move that deleted authored data
+      // would be a far worse defect than one that leaves a deck in the air.
+      orphan("the roads it spanned no longer cross");
+      continue;
+    }
+    const double shift = match->s_upper - anchor.s_upper_before;
+    if (std::abs(shift) < tol::kLength) {
+      continue; // the crossing did not move along this road
+    }
+    const double limit = road->plan_view.length() - bridge.length;
+    if (limit < 0.0) {
+      orphan("the span is longer than the road it sits on");
+      continue;
+    }
+    const double s_new = std::clamp(bridge.s + shift, 0.0, limit);
+    if (match->s_upper < s_new - tol::kLength ||
+        match->s_upper > s_new + bridge.length + tol::kLength) {
+      // Clamping stopped the span short of where the crossing went.
+      orphan("the road is too short to carry the span over the new crossing");
+      continue;
+    }
+    std::vector<Bridge>& bridges = stage_road(anchor.upper, *road);
+    bridges[anchor.index].s = s_new;
+    command->derived.push_back(DerivedRecord{.change = DerivedChange::BridgeRelocated,
+                                             .road = anchor.upper,
+                                             .bridge_index = anchor.index,
+                                             .detail = "moved with the crossing it carries"});
+  }
+
+  const bool mutates = !plan.create.empty() || !pending.empty();
+  if (!mutates && command->erased.surfaces.empty()) {
+    // Nothing changed — the overwhelmingly common case. The records (if any) are
+    // pure reporting, and the dirty set stays empty so no channel is re-meshed.
+    command->set_dirty(std::move(dirty));
+    return command;
+  }
+  for (const auto& [road_id, bridges] : pending) {
+    command->before.roads.emplace_back(road_id, *network.road(road_id));
+    dirty.roads.push_back(road_id);
+  }
+  // A surface appearing or vanishing changes the item list, which the editor's
+  // partial per-road mesh upload cannot express — and it is what prunes a
+  // selection naming an erased surface.
+  dirty.topology = !plan.create.empty() || !command->erased.surfaces.empty();
+  if (mutates) {
+    // ONE creator does both halves. GenericCommand re-reads `after` from the
+    // network once the creator has run, so the bridge writes have to happen
+    // inside it rather than as a staged `after` that the re-read would clobber.
+    command->creator = [rings = std::move(plan.create), edits = std::move(pending)](
+                           RoadNetwork& net, Values& created) -> Expected<void> {
+      for (const auto& [road_id, bridges] : edits) {
+        Road* road = net.road(road_id);
+        if (road == nullptr) {
+          return make_error(ErrorCode::InvalidArgument, "stale road id");
+        }
+        road->bridges = bridges;
+      }
+      for (const std::vector<RoadId>& ring : rings) {
+        const SurfaceId id =
+            net.create_surface(Surface{.source = BoundarySource::Derived, .bounding_roads = ring});
+        created.surfaces.emplace_back(id, Surface{});
+      }
+      return {};
+    };
+  }
+  command->set_dirty(std::move(dirty));
+  return command;
+}
+
 /// Wraps a move so the joints it disturbs are followed or severed-and-reported,
-/// and the junctions it disturbs regenerate. `edited` names the roads the base
-/// command moves; `carried` names the junctions the base already transformed
-/// whole, which must not then be regenerated on top of the rigid move. Only ever
-/// called on a base that passed its own validation — a refused factory returns
-/// before this.
+/// the junctions it disturbs regenerate, and the layers derived from both are
+/// recomputed. `edited` names the roads the base command moves; `carried` names
+/// the junctions the base already transformed whole, which must not then be
+/// regenerated on top of the rigid move. Only ever called on a base that passed
+/// its own validation — a refused factory returns before this.
 std::unique_ptr<Command> wrap_with_cascade(const RoadNetwork& network,
                                            std::unique_ptr<Command> base,
                                            std::vector<RoadId> edited,
@@ -1334,31 +1616,43 @@ std::unique_ptr<Command> wrap_with_cascade(const RoadNetwork& network,
   // Read the already-broken joints HERE, while the network is still in its
   // pre-edit state — the stage itself only ever sees the network after.
   std::vector<RoadEnd> already_broken = already_broken_ends(network, edited);
+  // Same reason, one layer out: which crossing a bridge span was built for is
+  // only knowable before the roads move (cascade-s3, #463).
+  std::vector<BridgeAnchor> anchors = bridge_anchors(network);
   // std::function must be copyable, so the built base travels in a shared slot;
   // CompositeCommand calls each builder exactly once.
   auto slot = std::make_shared<std::unique_ptr<Command>>(std::move(base));
-  // Filled by stage [1] and read by stage [2]. The builders run in order at
-  // apply time, so the second always sees what the first wrote.
+  // Filled by stage [1] and read by stages [2] and [3]. The builders run in
+  // order at apply time, so the later ones always see what the first wrote.
   auto refit = std::make_shared<std::vector<RoadId>>();
+  // Every road whose pose this gesture changed: the edited set plus whatever the
+  // follow stage refit. Computed the same way twice, so it is written once.
+  const auto moved_set = [refit](const std::vector<RoadId>& edited) {
+    std::vector<RoadId> moved = edited;
+    for (const RoadId road : *refit) {
+      if (std::ranges::find(moved, road) == moved.end()) {
+        moved.push_back(road);
+      }
+    }
+    return moved;
+  };
   std::vector<CompositeCommand::Builder> builders;
-  builders.reserve(3);
+  builders.reserve(4);
   builders.push_back([slot](RoadNetwork&) { return std::move(*slot); });
   builders.push_back([edited, broken = std::move(already_broken), refit](RoadNetwork& net) {
     return follow_stage(net, edited, broken, refit);
   });
   builders.push_back(
-      [edited = std::move(edited), carried = std::move(carried), refit, policy](RoadNetwork& net) {
-        std::vector<RoadId> moved = edited;
-        for (const RoadId road : *refit) {
-          if (std::ranges::find(moved, road) == moved.end()) {
-            moved.push_back(road);
-          }
-        }
-        return junction_stage(net, moved, carried, policy);
+      [edited, carried = std::move(carried), moved_set, policy](RoadNetwork& net) {
+        return junction_stage(net, moved_set(edited), carried, policy);
       });
-  // Same undo-menu text as the base: whether a neighbour had to follow, or a
-  // junction had to regenerate, is not something the user should read in the
-  // Edit menu.
+  builders.push_back(
+      [edited = std::move(edited), anchors = std::move(anchors), moved_set](RoadNetwork& net) {
+        return derived_stage(net, moved_set(edited), anchors);
+      });
+  // Same undo-menu text as the base: whether a neighbour had to follow, a
+  // junction had to regenerate, or a ground surface had to re-derive, is not
+  // something the user should read in the Edit menu.
   return std::make_unique<CompositeCommand>(std::move(name), DirtySet{}, std::move(builders));
 }
 
@@ -7774,11 +8068,13 @@ std::unique_ptr<Command> author_bridge(const RoadNetwork& network,
   if (std::optional<std::string> bad = validate_span(*road, s, length); bad.has_value()) {
     return fail(std::move(*bad));
   }
-  const bool duplicate =
-      std::any_of(road->bridges.begin(), road->bridges.end(), [&](const Bridge& b) {
-        return std::abs(b.s - s) < tol::kLength && std::abs(b.length - length) < tol::kLength;
-      });
-  if (duplicate) {
+  // COVERAGE, not exact-span equality (cascade-s3, #463). The old guard asked
+  // whether some span had these very numbers, which meant a stale span that no
+  // longer covered anything did not stop a duplicate being authored over the
+  // relocated crossing, while a span that had merely drifted a metre did. The
+  // question worth asking is the one the detection hint always asked: is this
+  // stretch already carried?
+  if (bridge_covering(road->bridges, s + (length / 2.0)).has_value()) {
     return fail("a bridge already covers this span");
   }
   std::vector<Bridge> after = road->bridges;
@@ -7836,6 +8132,53 @@ std::unique_ptr<Command> set_bridge_span(
   after[index].s = s;
   after[index].length = length;
   return std::make_unique<SetBridgesCommand>(kName, road_id, std::move(after), road->bridges);
+}
+
+std::unique_ptr<Command> remove_orphaned_bridges(const RoadNetwork& network) {
+  static constexpr std::string_view kName = "Remove Orphaned Bridges";
+  // Which crossings each road still carries, from the same query the cascade and
+  // the Generate action use — so "orphaned" means exactly one thing product-wide.
+  std::unordered_map<std::uint32_t, std::vector<double>> carried;
+  for (const GradeSeparation& separation : find_grade_separations(network)) {
+    carried[separation.upper.index].push_back(separation.s_upper);
+  }
+
+  auto command = std::make_unique<GenericCommand>(std::string(kName), DirtySet{});
+  DirtySet dirty;
+  network.for_each_road([&](RoadId road_id, const Road& road) {
+    if (road.bridges.empty()) {
+      return;
+    }
+    std::vector<Bridge> kept;
+    for (const Bridge& bridge : road.bridges) {
+      const auto stations = carried.find(road_id.index);
+      const bool covers_a_crossing =
+          stations != carried.end() &&
+          std::any_of(stations->second.begin(), stations->second.end(), [&](double s_upper) {
+            return s_upper >= bridge.s - tol::kLength &&
+                   s_upper <= bridge.s + bridge.length + tol::kLength;
+          });
+      if (covers_a_crossing) {
+        kept.push_back(bridge);
+      }
+    }
+    if (kept.size() == road.bridges.size()) {
+      return;
+    }
+    Road after = road;
+    after.bridges = std::move(kept);
+    dirty.roads.push_back(road_id);
+    command->before.roads.emplace_back(road_id, road);
+    command->after.roads.emplace_back(road_id, std::move(after));
+  });
+
+  if (dirty.roads.empty()) {
+    return invalid_command(std::string(kName),
+                           Error{.code = ErrorCode::InvalidArgument,
+                                 .message = "every bridge span still carries a crossing"});
+  }
+  command->set_dirty(std::move(dirty));
+  return command;
 }
 
 std::vector<ElevationPoint> elevation_profile_points(const Road& road) {

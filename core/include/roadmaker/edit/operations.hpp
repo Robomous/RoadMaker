@@ -1195,8 +1195,9 @@ inline constexpr double kMinBridgeSpan = 1.6;
 /// guardrail solids re-derive on the mesh channel. `DirtySet{.roads = {road}}`,
 /// so the solids follow the road's geometry. `id` empty auto-generates a stable,
 /// collision-free one. Rejects: a stale road, a non-positive/too-short span
-/// (< kMinBridgeSpan), a span running past the road, and a span that exactly
-/// duplicates an existing bridge (design §5's overlapping-identical warning).
+/// (< kMinBridgeSpan), a span running past the road, and a span whose midpoint
+/// an existing bridge already covers (`bridge_covering` — cascade-s3 replaced
+/// the old exact-`(s, length)` test, which let a move produce a duplicate).
 [[nodiscard]] RM_API std::unique_ptr<Command> author_bridge(const RoadNetwork& network,
                                                             RoadId road,
                                                             double s,
@@ -1214,6 +1215,20 @@ remove_bridge(const RoadNetwork& network, RoadId road, std::size_t index);
 /// plus a no-op (the span is unchanged).
 [[nodiscard]] RM_API std::unique_ptr<Command> set_bridge_span(
     const RoadNetwork& network, RoadId road, std::size_t index, double s, double length);
+
+/// Drops every `<bridge>` span that no grade separation covers, network-wide, as
+/// ONE undoable command (cascade-s3, #463).
+///
+/// A move relocates a span onto its crossing where it can, and reports the rest
+/// as orphaned rather than deleting them — a move must never destroy authored
+/// data. This is the deliberate, explicit counterpart: the user asking for the
+/// orphans to go. Without it the orphan report would name a state with no exit,
+/// since the editor has no other way to remove a bridge.
+///
+/// `DirtySet{.roads = <every road that lost a span>}`. Refused when there are no
+/// orphans, so the caller can say so instead of pushing an empty undo entry.
+[[nodiscard]] RM_API std::unique_ptr<Command>
+remove_orphaned_bridges(const RoadNetwork& network);
 
 // --- profiles ---------------------------------------------------------------
 

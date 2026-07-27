@@ -16,6 +16,7 @@
 
 #pragma once
 
+#include "roadmaker/edit/derived.hpp"
 #include "roadmaker/edit/follow.hpp"
 #include "roadmaker/error.hpp"
 #include "roadmaker/export.hpp"
@@ -118,6 +119,15 @@ public:
   /// gestures can, and a link they had to sever must be reported rather than
   /// left for the user to discover on save — see edit::FollowRecord.
   [[nodiscard]] virtual std::span<const FollowRecord> follow_records() const { return {}; }
+
+  /// What this command did to the layers DERIVED from the roads — enclosed-area
+  /// ground surfaces and `<bridge>` spans (cascade-s3, #463). Same lifetime as
+  /// follow_records(): valid after a successful apply(), kept across a revert.
+  ///
+  /// Default empty. A move gesture fills it, because a derived layer that could
+  /// not follow — an authored boundary whose roads walked away, a bridge span
+  /// whose crossing is gone — must be reported rather than left to be noticed.
+  [[nodiscard]] virtual std::span<const DerivedRecord> derived_records() const { return {}; }
 
   /// Releases the reserved arena slots this command still holds because it
   /// created objects and is being DROPPED rather than reverted-then-reapplied:

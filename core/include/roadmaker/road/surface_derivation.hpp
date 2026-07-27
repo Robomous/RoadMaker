@@ -17,10 +17,38 @@
 #pragma once
 
 #include "roadmaker/export.hpp"
+#include "roadmaker/road/id.hpp"
+
+#include <vector>
 
 namespace roadmaker {
 
 class RoadNetwork;
+
+/// What `derive_surfaces` would change, computed without touching the arena
+/// (cascade-s3, #463). Empty on both counts means the surface set already
+/// matches the roads — the overwhelmingly common case, and the one a move's
+/// derived-layer stage must be able to detect for nothing.
+///
+/// The split exists because a move has to reconcile the set through an UNDOABLE
+/// command: `derive_surfaces` erases a vanished loop's Surface outright, taking
+/// its `material` with it, so a plan the command layer can apply itself (with
+/// `erase_surface_exact`/`restore_surface`) is what makes undo byte-identical.
+struct SurfaceReconciliation {
+  /// DERIVED surfaces whose face no longer exists. Never an Authored surface —
+  /// its boundary is its own data (p5-s1, decision D3).
+  std::vector<SurfaceId> erase;
+
+  /// Enclosed faces with no surface yet, as canonicalized bounding rings, in
+  /// the same deterministic order `derive_surfaces` creates them.
+  std::vector<std::vector<RoadId>> create;
+
+  [[nodiscard]] bool empty() const { return erase.empty() && create.empty(); }
+};
+
+/// The read-only half of `derive_surfaces`: enumerates the bounded faces and
+/// diffs them against the arena, without mutating it.
+[[nodiscard]] RM_API SurfaceReconciliation plan_surface_reconciliation(const RoadNetwork& network);
 
 /// Enumerates the BOUNDED faces of the road graph and reconciles the surface
 /// arena so that, after the call, the set of surfaces exactly matches the set
@@ -36,6 +64,8 @@ class RoadNetwork;
 /// Id-stable: a loop that persists across calls keeps its SurfaceId; new loops
 /// get a fresh surface; vanished loops are erased. Idempotent: a second call
 /// with no topology change touches the arena not at all.
+///
+/// Exactly `plan_surface_reconciliation` followed by applying the plan.
 RM_API void derive_surfaces(RoadNetwork& network);
 
 } // namespace roadmaker
