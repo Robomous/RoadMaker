@@ -458,21 +458,27 @@ TEST(DerivedCascade, UndoRestoresARelocatedSpanByteIdentically) {
   expect_network_matches(network, after_redo);
 }
 
-TEST(DerivedCascade, GenerateStopsNoOppingOnAStaleSpan) {
+TEST(DerivedCascade, GenerateNoLongerStacksASecondDeckOnACarriedCrossing) {
   RoadNetwork network;
   const Overpass over = author_overpass(network);
+  ASSERT_EQ(network.road(over.high)->bridges.size(), 1U);
 
-  // Author a span far from the crossing by hand, then ask for the crossing's.
-  // The old exact-(s, length) guard let this through and produced a duplicate;
-  // the coverage guard refuses the redundant one and allows the useful one.
-  auto duplicate =
-      edit::author_bridge(network, over.high, over.s_upper - 12.0, 24.0, "concrete", "again");
-  EXPECT_FALSE(duplicate->apply(network).has_value())
+  // The case that matters is the one Generate hits after a move: the crossing
+  // has drifted, so the span it asks for starts a few metres along from the one
+  // already there. Asking for the IDENTICAL span would be refused by either
+  // guard, which is why the exact-(s, length) test looked adequate for so long —
+  // it never saw this. Coverage refuses it; exact equality did not, and stacked
+  // a second deck on a stretch the first already carried.
+  auto drifted =
+      edit::author_bridge(network, over.high, over.s_upper - 9.0, 24.0, "concrete", "again");
+  EXPECT_FALSE(drifted->apply(network).has_value())
       << "a crossing already carried must not gain a second deck";
   EXPECT_EQ(network.road(over.high)->bridges.size(), 1U);
 
-  auto second = edit::author_bridge(network, over.high, 4.0, 24.0, "concrete", "far");
-  EXPECT_TRUE(second->apply(network).has_value())
+  // And the guard must not become a blanket refusal: a stretch no span covers is
+  // still authorable, or the fix Generate offers would be unreachable.
+  auto elsewhere = edit::author_bridge(network, over.high, 4.0, 24.0, "concrete", "far");
+  EXPECT_TRUE(elsewhere->apply(network).has_value())
       << "a stretch no span covers must still be authorable";
   EXPECT_EQ(network.road(over.high)->bridges.size(), 2U);
 }

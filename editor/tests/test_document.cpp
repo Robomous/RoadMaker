@@ -272,5 +272,39 @@ TEST(Document, RaisingABoundingRoadRemeshesTheSurface) {
   EXPECT_GT(surface_max_z(document), 0.5) << "the surface remeshed to follow the raised road";
 }
 
+// cascade-s3 (#463): a MOVE reconciles the surface set too, which it never did —
+// derive_surfaces only ever ran under dirty.topology and a move never sets it.
+// The reconciliation now happens inside the move command, so what this asserts
+// on the editor side is that the channel reaches the mesh at all: the stage's
+// dirty.surfaces has to survive CompositeCommand::dirty(), which used to drop it.
+TEST(Document, MovingABoundingRoadOutOfTheLoopDropsTheSurfaceFromTheMesh) {
+  Document document;
+  ASSERT_TRUE(document.push_command(seg(0.0, 0.0, 20.0, 0.0, "a")).has_value());
+  ASSERT_TRUE(document.push_command(seg(20.0, 0.0, 20.0, 20.0, "b")).has_value());
+  ASSERT_TRUE(document.push_command(seg(20.0, 20.0, 0.0, 20.0, "c")).has_value());
+  ASSERT_TRUE(document.push_command(seg(0.0, 20.0, 0.0, 0.0, "d")).has_value());
+  ASSERT_EQ(document.network().surface_count(), 1U);
+  ASSERT_EQ(document.mesh().surfaces.size(), 1U);
+
+  RoadId first;
+  document.network().for_each_road([&](RoadId id, const Road&) {
+    if (!first.is_valid()) {
+      first = id;
+    }
+  });
+  ASSERT_TRUE(
+      document.push_command(edit::translate_road(document.network(), first, 0.0, -15.0))
+          .has_value());
+
+  EXPECT_EQ(document.network().surface_count(), 0U) << "the loop opened, so the block is gone";
+  EXPECT_TRUE(document.mesh().surfaces.empty()) << "and the mesh channel followed it";
+
+  // Undo restores both — the command owns the surface, so this is a restore in
+  // place rather than a re-derive.
+  document.undo_stack()->undo();
+  EXPECT_EQ(document.network().surface_count(), 1U);
+  EXPECT_EQ(document.mesh().surfaces.size(), 1U);
+}
+
 } // namespace
 } // namespace roadmaker::editor

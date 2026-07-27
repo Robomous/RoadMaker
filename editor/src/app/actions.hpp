@@ -147,6 +147,12 @@ public:
   // span-inflation control is a follow-up.
   QAction* bridge_generate = nullptr;
 
+  /// Clears every span whose crossing has gone (cascade-s3, #463). A move
+  /// relocates a span onto its crossing where it can and reports the rest as
+  /// orphaned; this is the only way to act on that report, since a bridge is
+  /// not selectable and there is no span control yet.
+  QAction* bridge_remove_orphans = nullptr;
+
   QAction* reset_layout = nullptr;
 
   /// Opens the in-app user guide (Help menu, F1).

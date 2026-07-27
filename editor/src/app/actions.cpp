@@ -434,6 +434,11 @@ Actions::Actions(QUndoStack& undo_stack, QObject* parent) : QObject(parent) {
       tr("Detect roads that cross without a junction and build a bridge deck, piers and "
          "guardrails over each raised span"));
 
+  bridge_remove_orphans = new QAction(tr("Remove &Orphaned Spans"), this);
+  bridge_remove_orphans->setToolTip(
+      tr("Delete every bridge whose crossing has gone — the roads no longer cross, or a "
+         "junction now connects them"));
+
   reset_layout = new QAction(tr("Reset &Layout"), this);
 
   help_contents = new QAction(tr("&User Guide"), this);

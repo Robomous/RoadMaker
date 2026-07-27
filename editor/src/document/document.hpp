@@ -225,6 +225,14 @@ signals:
   /// it. MainWindow surfaces `reason` as a warning toast.
   void links_severed(const QString& reason);
 
+  /// A layer derived from the roads could not follow a move (cascade-s3, #463):
+  /// an AUTHORED ground-surface boundary whose roads walked away — never
+  /// re-derived, because it is the user's own geometry — or a `<bridge>` span
+  /// whose crossing is gone. Surfaces that simply re-derived, and spans that
+  /// were relocated onto their crossing, are logged and not surfaced: nothing
+  /// went wrong there. MainWindow surfaces `reason` as a warning toast.
+  void derived_layer_stale(const QString& reason);
+
   /// Written to disk successfully; file_path() points at the file and the
   /// undo stack is clean again.
   void saved();

@@ -84,6 +84,22 @@ struct DirtySet {
   /// (fast, wrong). Kept separate from `topology` deliberately — a lane
   /// appearing is topology AND needs regeneration, which one flag cannot say.
   bool junctions_are_current = false;
+
+  /// This command already reconciled the enclosed-area surface SET itself, so
+  /// the editor must not run `derive_surfaces` over it a second time
+  /// (cascade-s3, #463) — the sibling of `junctions_are_current`, and set for
+  /// the same reason: a move's derived-layer stage owns that decision, and the
+  /// surfaces it created or erased are named in `surfaces`.
+  ///
+  /// Without this the editor's own pass would re-derive on the topology path.
+  /// It is idempotent, so that would be harmless — but it would also be a
+  /// network mutation OUTSIDE the command layer, on the one edit whose undo has
+  /// to restore a surface's material, and it would mask the `surfaces` channel
+  /// entirely by rebuilding everything regardless.
+  ///
+  /// Default false is the safe direction, exactly as above: a command that
+  /// forgets the flag gets a redundant derivation (slow, correct).
+  bool surfaces_are_current = false;
 };
 
 /// One undoable kernel mutation (docs/m2/01_editing_framework.md §1.1).

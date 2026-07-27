@@ -244,3 +244,62 @@ def test_derived_surface_still_writes_no_nodes_attribute():
     xml = rm.write_xodr(net)
     assert "rm:surface" in xml
     assert "nodes=" not in xml
+
+
+# --- cascade-s3 (#463): a move reconciles the surface set --------------------
+
+
+def _cascade_square():
+    """Four roads whose ends coincide, enclosing one 40 m block."""
+    net = rm.RoadNetwork()
+    corners = [(0.0, 0.0), (40.0, 0.0), (40.0, 40.0), (0.0, 40.0)]
+    roads = []
+    for i, start in enumerate(corners):
+        end = corners[(i + 1) % len(corners)]
+        roads.append(
+            rm.author_clothoid_road(
+                net, [start, end], rm.LaneProfile.two_lane_default(), "", f"r{i}"
+            )
+        )
+    rm.derive_surfaces(net)
+    return net, roads
+
+
+def test_moving_a_bounding_road_reconciles_the_surface_set():
+    net, roads = _cascade_square()
+    assert net.surface_count == 1
+    stack = rm.edit.EditStack()
+
+    stack.push(net, rm.edit.translate_road(net, roads[0], 0.0, -25.0))
+
+    assert net.surface_count == 0
+    # Whatever the move did, the set now matches a from-scratch derivation.
+    assert rm.plan_surface_reconciliation(net).empty
+    changes = [r.change for r in stack.last_derived_records]
+    assert rm.edit.DerivedChange.SURFACE_REMOVED in changes
+
+    stack.undo(net)
+    assert net.surface_count == 1
+    assert rm.plan_surface_reconciliation(net).empty
+
+
+def test_a_move_never_re_derives_an_authored_boundary():
+    net, roads = _cascade_square()
+    surface = net.surface_ids[0]
+    nodes = []
+    for x, y in ((5.0, 5.0), (35.0, 5.0), (35.0, 35.0), (5.0, 35.0)):
+        node = rm.SurfaceNode()
+        node.x, node.y = x, y
+        nodes.append(node)
+    stack = rm.edit.EditStack()
+    stack.push(net, rm.edit.set_surface_boundary(net, surface, nodes))
+    assert net.surface(surface).source == rm.BoundarySource.AUTHORED
+    before = list(net.surface(surface).nodes)
+
+    stack.push(net, rm.edit.translate_road(net, roads[0], 0.0, -25.0))
+
+    # The boundary is the user's own geometry: it is left alone, and said so.
+    assert net.surface(surface).source == rm.BoundarySource.AUTHORED
+    assert list(net.surface(surface).nodes) == before
+    changes = [r.change for r in stack.last_derived_records]
+    assert rm.edit.DerivedChange.AUTHORED_BOUNDARY_STALE in changes

@@ -66,6 +66,26 @@ def main() -> None:
     assert "<bridge" in text
     print("the <bridge> record is in the .xodr; the solids are generated, not stored")
 
+    # cascade-s3 (#463): a span is anchored by @s in its own road's station and
+    # records nothing about the crossing, so moving either road used to leave the
+    # deck over open ground. A move re-anchors it instead, and says that it did.
+    low = sep.lower
+    s_before = net.road(high).bridges[0].s
+    stack.push(net, rm.edit.translate_road(net, low, 25.0, 0.0))
+    print(f"the deck followed the crossing: s {s_before:.1f} -> {net.road(high).bridges[0].s:.1f}")
+    for record in stack.last_derived_records:
+        print(f"  {record}")
+
+    # Push the lower road right out of the way and the crossing is gone. The span
+    # is REPORTED orphaned and left exactly as authored — a move never deletes
+    # authored data — and clearing it is a separate, explicit act.
+    stack.push(net, rm.edit.translate_road(net, low, 400.0, 0.0))
+    for record in stack.last_derived_records:
+        print(f"  {record}")
+    assert len(net.road(high).bridges) == 1
+    stack.push(net, rm.edit.remove_orphaned_bridges(net))
+    print(f"spans left after the sweep: {len(net.road(high).bridges)}")
+
 
 if __name__ == "__main__":
     main()
