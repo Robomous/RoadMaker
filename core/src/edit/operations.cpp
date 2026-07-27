@@ -28,6 +28,7 @@
 #include "roadmaker/mesh/junction_signals.hpp"
 #include "roadmaker/mesh/junction_stoplines.hpp"
 #include "roadmaker/mesh/junction_surface_spans.hpp"
+#include "roadmaker/mesh/prop_obstructions.hpp"
 #include "roadmaker/mesh/surface_boundary.hpp"
 #include "roadmaker/road/authoring.hpp"
 #include "roadmaker/road/defaults.hpp"
@@ -336,6 +337,7 @@ public:
   std::optional<Error> invalid;       // factory-time validation failure
   std::vector<FollowRecord> follow;   // joints this command disturbed (#461)
   std::vector<DerivedRecord> derived; // derived layers this command moved (#463)
+  std::vector<ObstructionRecord> obstructions; // props this move blocked (#464)
 
   Expected<void> apply(RoadNetwork& network) override {
     if (invalid.has_value()) {
@@ -403,6 +405,8 @@ public:
 
   std::span<const DerivedRecord> derived_records() const override { return derived; }
 
+  std::span<const ObstructionRecord> obstruction_records() const override { return obstructions; }
+
   void discard(RoadNetwork& network) override {
     // Only `created_` reserves slots after a revert: `erased` values were
     // restored (live again) and `before` values overwrote live objects — both
@@ -456,6 +460,7 @@ public:
       if (!applied.has_value()) {
         records_.clear();
         derived_.clear();
+        obstructions_.clear();
         // Unwind the applied prefix — the whole composite is atomic.
         for (std::size_t k = i; k-- > 0;) {
           (void)children_[k]->revert(network);
@@ -474,6 +479,7 @@ public:
     // same holds for the derived-layer stage (#463).
     records_.clear();
     derived_.clear();
+    obstructions_.clear();
     for (const auto& child : children_) {
       if (child == nullptr) {
         continue;
@@ -482,6 +488,9 @@ public:
       records_.insert(records_.end(), child_records.begin(), child_records.end());
       const std::span<const DerivedRecord> child_derived = child->derived_records();
       derived_.insert(derived_.end(), child_derived.begin(), child_derived.end());
+      const std::span<const ObstructionRecord> child_obstructions = child->obstruction_records();
+      obstructions_.insert(obstructions_.end(), child_obstructions.begin(),
+                           child_obstructions.end());
     }
     return {};
   }
@@ -556,6 +565,10 @@ public:
 
   std::span<const DerivedRecord> derived_records() const override { return derived_; }
 
+  std::span<const ObstructionRecord> obstruction_records() const override {
+    return obstructions_;
+  }
+
 private:
   std::string name_;
   DirtySet base_dirty_;
@@ -563,6 +576,7 @@ private:
   std::vector<std::unique_ptr<Command>> children_;
   std::vector<FollowRecord> records_;
   std::vector<DerivedRecord> derived_;
+  std::vector<ObstructionRecord> obstructions_;
 };
 
 // ---- shared lookups and geometry helpers -------------------------------------
@@ -1596,6 +1610,68 @@ std::unique_ptr<Command> derived_stage(const RoadNetwork& network,
   return command;
 }
 
+/// Two obstructions are about the same THING when they name the same prop
+/// instance and the same victim. Deliberately not `operator==`: the witness
+/// point `at` moves whenever either shape does, so comparing whole records
+/// would report a prop that was already in a lane as newly obstructed on every
+/// one-centimetre nudge.
+bool same_subject(const PropObstruction& a, const PropObstruction& b) {
+  return a.object == b.object && a.instance == b.instance && a.kind == b.kind &&
+         a.road == b.road && a.junction == b.junction && a.other == b.other &&
+         a.other_instance == b.other_instance;
+}
+
+/// Stage [4] of the move funnel: the props this gesture drove into something
+/// (cascade-s4, #464). PURE REPORTING — it mutates nothing and its DirtySet is
+/// empty. Props follow their anchor road's frame (#400), which is correct and
+/// is exactly what can carry one into another road.
+///
+/// `before` is the obstruction set read at wrap time, BEFORE the gesture. Only
+/// what is new is reported: a scene that already had a tree in a lane must not
+/// complain about it every time a road elsewhere is nudged, which is the same
+/// stance cascade-s1 takes towards an already-broken joint.
+std::unique_ptr<Command> obstruction_stage(const RoadNetwork& network,
+                                           std::span<const RoadId> moved,
+                                           const std::vector<PropObstruction>& before) {
+  auto command = std::make_unique<GenericCommand>("Report Prop Obstructions", DirtySet{});
+  // Narrowed: anything the narrowing drops involves neither a moved road nor a
+  // moved prop, so it cannot be something this gesture caused.
+  for (const PropObstruction& found : find_prop_obstructions(network, moved)) {
+    if (std::ranges::any_of(before,
+                            [&](const PropObstruction& was) { return same_subject(was, found); })) {
+      continue; // it was already like that; not this gesture's doing
+    }
+    const Object* object = network.object(found.object);
+    if (object == nullptr) {
+      continue;
+    }
+    std::string detail;
+    switch (found.kind) {
+    case ObstructionKind::RoadSurface: {
+      const Road* road = network.road(found.road);
+      detail = fmt::format("it now stands in road {}'s carriageway",
+                           road != nullptr ? road->odr_id : std::string("?"));
+      break;
+    }
+    case ObstructionKind::JunctionFloor: {
+      const Junction* junction = network.junction(found.junction);
+      detail = fmt::format("it now stands in junction {}",
+                           junction != nullptr ? junction->odr_id : std::string("?"));
+      break;
+    }
+    case ObstructionKind::Prop: {
+      const Object* other = network.object(found.other);
+      detail = fmt::format("it now overlaps prop {}",
+                           other != nullptr ? other->odr_id : std::string("?"));
+      break;
+    }
+    }
+    command->obstructions.push_back(ObstructionRecord{
+        .obstruction = found, .object_odr_id = object->odr_id, .detail = std::move(detail)});
+  }
+  return command;
+}
+
 /// Wraps a move so the joints it disturbs are followed or severed-and-reported,
 /// the junctions it disturbs regenerate, and the layers derived from both are
 /// recomputed. `edited` names the roads the base command moves; `carried` names
@@ -1617,6 +1693,13 @@ std::unique_ptr<Command> wrap_with_cascade(const RoadNetwork& network,
   // Same reason, one layer out: which crossing a bridge span was built for is
   // only knowable before the roads move (cascade-s3, #463).
   std::vector<BridgeAnchor> anchors = bridge_anchors(network);
+  // And once more, for the props: the stage reports only what is NEW, so it
+  // needs the set as it stood before. Whole-network deliberately — a narrowed
+  // pre-read would miss the joints the follow stage refits, and every one of
+  // those would then look newly obstructed. The query early-outs before
+  // building a single band when no prop declares a bounding volume, which is
+  // the common case and what keeps this off the per-frame drag path.
+  std::vector<PropObstruction> obstructed_before = find_prop_obstructions(network);
   // std::function must be copyable, so the built base travels in a shared slot;
   // CompositeCommand calls each builder exactly once.
   auto slot = std::make_shared<std::unique_ptr<Command>>(std::move(base));
@@ -1637,7 +1720,7 @@ std::unique_ptr<Command> wrap_with_cascade(const RoadNetwork& network,
     return moved;
   };
   std::vector<CompositeCommand::Builder> builders;
-  builders.reserve(4);
+  builders.reserve(5);
   builders.push_back([slot](RoadNetwork&) { return std::move(*slot); });
   builders.push_back([edited, broken = std::move(already_broken), refit](RoadNetwork& net) {
     return follow_stage(net, edited, broken, refit);
@@ -1645,10 +1728,17 @@ std::unique_ptr<Command> wrap_with_cascade(const RoadNetwork& network,
   builders.push_back([edited, carried = std::move(carried), moved_set, policy](RoadNetwork& net) {
     return junction_stage(net, moved_set(edited), carried, policy);
   });
-  builders.push_back(
-      [edited = std::move(edited), anchors = std::move(anchors), moved_set](RoadNetwork& net) {
-        return derived_stage(net, moved_set(edited), anchors);
-      });
+  builders.push_back([edited, anchors = std::move(anchors), moved_set](RoadNetwork& net) {
+    return derived_stage(net, moved_set(edited), anchors);
+  });
+  // Last, so it sees the network with the move, the follows, the junction
+  // regenerations and the derived recompute all applied — a prop is obstructing
+  // whatever is actually there when the gesture is finished, not what was there
+  // mid-way through it.
+  builders.push_back([edited = std::move(edited), before = std::move(obstructed_before),
+                      moved_set](RoadNetwork& net) {
+    return obstruction_stage(net, moved_set(edited), before);
+  });
   // Same undo-menu text as the base: whether a neighbour had to follow, a
   // junction had to regenerate, or a ground surface had to re-derive, is not
   // something the user should read in the Edit menu.

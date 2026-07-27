@@ -18,6 +18,7 @@
 
 #include "roadmaker/edit/derived.hpp"
 #include "roadmaker/edit/follow.hpp"
+#include "roadmaker/edit/obstruction.hpp"
 #include "roadmaker/error.hpp"
 #include "roadmaker/export.hpp"
 #include "roadmaker/road/id.hpp"
@@ -144,6 +145,19 @@ public:
   /// not follow — an authored boundary whose roads walked away, a bridge span
   /// whose crossing is gone — must be reported rather than left to be noticed.
   [[nodiscard]] virtual std::span<const DerivedRecord> derived_records() const { return {}; }
+
+  /// The props this command drove into a road, a junction floor or each other
+  /// (cascade-s4, #464). Same lifetime as the other two record channels: valid
+  /// after a successful apply(), kept across a revert.
+  ///
+  /// Default empty. A move gesture fills it with the obstructions that are NEW
+  /// since before the gesture — a prop that was already obstructed is left
+  /// alone and unmentioned, exactly as an already-broken joint is. Nothing here
+  /// is corrected: edit::relocate_obstructed_props is the offered fix, and the
+  /// user has to ask for it.
+  [[nodiscard]] virtual std::span<const ObstructionRecord> obstruction_records() const {
+    return {};
+  }
 
   /// Releases the reserved arena slots this command still holds because it
   /// created objects and is being DROPPED rather than reverted-then-reapplied:

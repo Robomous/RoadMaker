@@ -80,6 +80,14 @@ public:
                         : commands_[cursor_ - 1]->derived_records();
   }
 
+  /// The props the most recently applied command drove into something
+  /// (cascade-s4, #464), or empty when nothing is applied. Same reason this
+  /// exists as `last_follow_records`.
+  [[nodiscard]] std::span<const ObstructionRecord> last_obstruction_records() const {
+    return cursor_ == 0 ? std::span<const ObstructionRecord>{}
+                        : commands_[cursor_ - 1]->obstruction_records();
+  }
+
   RM_API void clear();
 
   /// Caps recorded history, dropping oldest entries first (their edits stay
