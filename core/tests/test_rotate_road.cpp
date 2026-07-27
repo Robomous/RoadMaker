@@ -17,10 +17,12 @@
 // Kernel tests for edit::rotate_road (A3 transform gizmo). A rigid rotation
 // about a world pivot: plan-view start positions and authoring waypoints rotate,
 // each record's heading gains the angle, lengths/lanes/elevation are untouched,
-// undo is byte-identical, a link to a non-rotating road breaks on both sides,
-// and a junction road refuses (named diagnostic).
+// undo is byte-identical, a link to a non-rotating road swings that road's
+// contacting end round with it (cascade-s1), and a junction road refuses
+// (named diagnostic).
 
 #include "roadmaker/assets/prop_library.hpp"
+#include "roadmaker/edit/connection.hpp"
 #include "roadmaker/edit/operations.hpp"
 #include "roadmaker/mesh/mesh_builder.hpp"
 #include "roadmaker/road/authoring.hpp"
@@ -175,18 +177,38 @@ TEST(RotateRoad, ZeroAngleLeavesGeometryUnchangedAndUndoIsPristine) {
   expect_network_matches(network, before);
 }
 
-TEST(RotateRoad, LinkToANonRotatingRoadBreaksOnBothSides) {
+// cascade-s1 (#461): rotate used to clear EVERY road-level link it had, on the
+// reasoning that a road turning about a pivot meets nothing any more. It now
+// swings its neighbours' contacting ends round with it. The fixture has to weld
+// a genuinely coincident pair for that to be testable at all.
+TEST(RotateRoad, ANonRotatingNeighbourIsSwungRoundNotCutLoose) {
   RoadNetwork network;
-  const RoadId a = author_line(network, "1");
-  const RoadId b = author_line(network, "2", 100.0);
-  network.road(a)->successor = RoadLink{.target = b, .contact = ContactPoint::Start};
-  network.road(b)->predecessor = RoadLink{.target = a, .contact = ContactPoint::End};
+  auto author = [&](std::vector<Waypoint> waypoints, const char* odr_id) {
+    auto road = roadmaker::author_clothoid_road(
+        network, waypoints, LaneProfile::two_lane_default(), "", odr_id);
+    if (!road.has_value()) {
+      throw std::runtime_error("author: " + road.error().message);
+    }
+    return *road;
+  };
+  const RoadId a = author({{0.0, 0.0}, {100.0, 0.0}}, "1");
+  const RoadId b = author({{100.0, 0.0}, {200.0, 0.0}}, "2");
+  ASSERT_TRUE(roadmaker::edit::close_gap(network,
+                                         roadmaker::RoadEnd{a, ContactPoint::End},
+                                         roadmaker::RoadEnd{b, ContactPoint::Start})
+                  ->apply(network)
+                  .has_value());
 
-  // Rotate only A: the A↔B links no longer meet and clear on both sides.
-  auto command = roadmaker::edit::rotate_road(network, a, std::numbers::pi / 6.0, 0.0, 0.0);
+  // Rotate only A, about its own free end so the joint swings but stays close.
+  auto command = roadmaker::edit::rotate_road(network, a, std::numbers::pi / 12.0, 0.0, 0.0);
   ASSERT_TRUE(command->apply(network).has_value());
-  EXPECT_FALSE(network.road(a)->successor.has_value());
-  EXPECT_FALSE(network.road(b)->predecessor.has_value());
+
+  ASSERT_TRUE(network.road(a)->successor.has_value());
+  ASSERT_TRUE(network.road(b)->predecessor.has_value());
+  const auto weld =
+      roadmaker::edit::verify_link_weld(network, roadmaker::RoadEnd{a, ContactPoint::End});
+  ASSERT_TRUE(weld.has_value()) << weld.error().message;
+  EXPECT_FALSE(weld->breaches);
   const auto& dirty_roads = command->dirty().roads;
   EXPECT_NE(std::ranges::find(dirty_roads, b), dirty_roads.end());
 }
