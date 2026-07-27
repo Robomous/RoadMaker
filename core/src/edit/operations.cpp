@@ -885,9 +885,11 @@ Expected<void> check_fit_bounded(const ReferenceLine& line, std::span<const Wayp
 // ---- linked-neighbour follow on move (cascade-s1, #461) ----------------------
 //
 // ONE POLICY, ONE FUNNEL. Every gesture that can move a road end wraps itself in
-// wrap_with_follow, so a gesture added later cannot forget the rule: after the
+// wrap_with_cascade, so a gesture added later cannot forget the rule: after the
 // edit lands, each joint it disturbed either has its neighbour REFIT to keep up,
-// or is SEVERED AND REPORTED. No move may leave a silently stale link.
+// or is SEVERED AND REPORTED, and every junction it disturbed REGENERATES from
+// the arm poses the gesture actually produced. No move may leave a silently
+// stale link, and none may leave a silently stale junction (cascade-s2, #462).
 //
 // Depth is ONE HOP, and that bound is a theorem rather than a policy: the
 // follower's far end is held fixed in every dimension a pure link asserts — its
@@ -897,6 +899,15 @@ Expected<void> check_fit_bounded(const ReferenceLine& line, std::span<const Wayp
 // to drift and the joint beyond the follower cannot move.
 //
 // See docs/domain/connection_contract.md §neighbour follow on move.
+
+/// Stage [2] of the funnel, defined next to the junction generator it drives.
+/// `moved` is every road whose pose the gesture changed — the edited set plus
+/// whatever the follow stage refit — and `carried` names the junctions a rigid
+/// transform already moved whole, which must NOT be regenerated.
+std::unique_ptr<Command> junction_stage(const RoadNetwork& network,
+                                        std::span<const RoadId> moved,
+                                        std::span<const JunctionId> carried,
+                                        TurnSetPolicy policy);
 
 /// The road end a link names, or nullopt when the link is absent or points at a
 /// junction rather than a road.
@@ -1130,9 +1141,15 @@ std::vector<RoadEnd> already_broken_ends(const RoadNetwork& network,
 /// It never creates arena objects — a preview drag rebuilds this command every
 /// frame, and a stage that created roads would reserve slots per frame for the
 /// rest of the session (see move_waypoint_following_junctions).
+///
+/// `refit_out`, when given, receives the roads this stage actually rewrote. A
+/// followed neighbour may be a junction arm, so stage [2] has to know about it —
+/// and it can only be known once this stage has run, which is why it travels
+/// through a slot the two builders share rather than being recomputed.
 std::unique_ptr<Command> follow_stage(const RoadNetwork& network,
                                       std::span<const RoadId> edited,
-                                      std::span<const RoadEnd> already_broken) {
+                                      std::span<const RoadEnd> already_broken,
+                                      const std::shared_ptr<std::vector<RoadId>>& refit_out = {}) {
   auto command = std::make_unique<GenericCommand>("Follow Links", DirtySet{});
 
   // Roads this stage rewrites, in first-touch order so the command is
@@ -1293,15 +1310,23 @@ std::unique_ptr<Command> follow_stage(const RoadNetwork& network,
     command->after.roads.emplace_back(touched[i], std::move(values[i]));
   }
   command->set_dirty(std::move(dirty));
+  if (refit_out != nullptr) {
+    *refit_out = touched;
+  }
   return command;
 }
 
-/// Wraps a move so the joints it disturbs are followed or severed-and-reported.
-/// `edited` names the roads the base command moves. Only ever called on a base
-/// that passed its own validation — a refused factory returns before this.
-std::unique_ptr<Command> wrap_with_follow(const RoadNetwork& network,
-                                          std::unique_ptr<Command> base,
-                                          std::vector<RoadId> edited) {
+/// Wraps a move so the joints it disturbs are followed or severed-and-reported,
+/// and the junctions it disturbs regenerate. `edited` names the roads the base
+/// command moves; `carried` names the junctions the base already transformed
+/// whole, which must not then be regenerated on top of the rigid move. Only ever
+/// called on a base that passed its own validation — a refused factory returns
+/// before this.
+std::unique_ptr<Command> wrap_with_cascade(const RoadNetwork& network,
+                                           std::unique_ptr<Command> base,
+                                           std::vector<RoadId> edited,
+                                           std::vector<JunctionId> carried = {},
+                                           TurnSetPolicy policy = TurnSetPolicy::AllowChange) {
   if (base == nullptr) {
     return base;
   }
@@ -1312,13 +1337,28 @@ std::unique_ptr<Command> wrap_with_follow(const RoadNetwork& network,
   // std::function must be copyable, so the built base travels in a shared slot;
   // CompositeCommand calls each builder exactly once.
   auto slot = std::make_shared<std::unique_ptr<Command>>(std::move(base));
+  // Filled by stage [1] and read by stage [2]. The builders run in order at
+  // apply time, so the second always sees what the first wrote.
+  auto refit = std::make_shared<std::vector<RoadId>>();
   std::vector<CompositeCommand::Builder> builders;
-  builders.reserve(2);
+  builders.reserve(3);
   builders.push_back([slot](RoadNetwork&) { return std::move(*slot); });
-  builders.push_back([edited = std::move(edited), broken = std::move(already_broken)](
-                         RoadNetwork& net) { return follow_stage(net, edited, broken); });
-  // Same undo-menu text as the base: whether a neighbour had to follow is not
-  // something the user should read in the Edit menu.
+  builders.push_back([edited, broken = std::move(already_broken), refit](RoadNetwork& net) {
+    return follow_stage(net, edited, broken, refit);
+  });
+  builders.push_back(
+      [edited = std::move(edited), carried = std::move(carried), refit, policy](RoadNetwork& net) {
+        std::vector<RoadId> moved = edited;
+        for (const RoadId road : *refit) {
+          if (std::ranges::find(moved, road) == moved.end()) {
+            moved.push_back(road);
+          }
+        }
+        return junction_stage(net, moved, carried, policy);
+      });
+  // Same undo-menu text as the base: whether a neighbour had to follow, or a
+  // junction had to regenerate, is not something the user should read in the
+  // Edit menu.
   return std::make_unique<CompositeCommand>(std::move(name), DirtySet{}, std::move(builders));
 }
 
@@ -1326,7 +1366,8 @@ std::unique_ptr<Command> refit_command(const RoadNetwork& network,
                                        RoadId road_id,
                                        std::string command_name,
                                        std::vector<Waypoint> waypoints,
-                                       std::span<const double> headings = {}) {
+                                       std::span<const double> headings = {},
+                                       TurnSetPolicy policy = TurnSetPolicy::AllowChange) {
   const Road* road = network.road(road_id);
   auto line =
       headings.empty() ? fit_clothoid_path(waypoints) : fit_clothoid_path(waypoints, headings);
@@ -1361,10 +1402,11 @@ std::unique_ptr<Command> refit_command(const RoadNetwork& network,
       DirtySet{.roads = {road_id}, .junctions = junctions_touching(network, road_id)});
   command->before.roads.emplace_back(road_id, *road);
   command->after.roads.emplace_back(road_id, std::move(after));
-  // A re-fit moves this road's ends, so its neighbours follow (#461). Wrapping
-  // HERE covers move_waypoint, insert_waypoint, delete_waypoint and
-  // insert_node_at at once — the funnel every node edit already passes through.
-  return wrap_with_follow(network, std::move(command), {road_id});
+  // A re-fit moves this road's ends, so its neighbours follow (#461) and the
+  // junctions it is an arm of regenerate (#462). Wrapping HERE covers
+  // move_waypoint, insert_waypoint, delete_waypoint and insert_node_at at once —
+  // the funnel every node edit already passes through.
+  return wrap_with_cascade(network, std::move(command), {road_id}, {}, policy);
 }
 
 // ---- junction connecting-road generator (docs/design/m2/02 §6) ----------------
@@ -1575,6 +1617,103 @@ Expected<void> ends_link_slots_free(const RoadNetwork& network, std::span<const 
   return {};
 }
 
+/// What a rigid transform of `moved` does to the junctions it reaches: which of
+/// them it carries WHOLE, and the connecting roads that must ride along.
+struct CarriedJunctions {
+  std::vector<JunctionId> junctions;
+  std::vector<RoadId> connecting_roads;
+};
+
+/// The junction gate every whole-road transform passes (cascade-s2, #462).
+///
+/// It refuses exactly one thing: a CONNECTING road named by the caller. Its pose
+/// is generated from the arm poses, so moving it by hand means nothing — the
+/// next regeneration overwrites it. An ARM is a different matter, and letting an
+/// arm move is what this sprint is for: the junction follows it, exactly as it
+/// already follows a node drag.
+///
+/// A junction every one of whose arms is in the moved set is carried RIGIDLY.
+/// The whole assembly translates or rotates as one body, which cannot invalidate
+/// anything, so its connecting roads come along untouched rather than being
+/// replanned — that is what makes a rigid move write the same file, translated,
+/// and what keeps hand-shaped maneuvers, corners and stop lines exactly as they
+/// were.
+Expected<CarriedJunctions> plan_carried_junctions(const RoadNetwork& network,
+                                                  std::span<const RoadId> moved) {
+  for (const RoadId id : moved) {
+    const Road* road = network.road(id);
+    if (road == nullptr || !road->junction.is_valid()) {
+      continue;
+    }
+    const Junction* junction = network.junction(road->junction);
+    return make_error(
+        ErrorCode::InvalidArgument,
+        fmt::format("road {} is a connecting road of junction {} — its pose is generated from the "
+                    "arms, so move the arms instead",
+                    road->odr_id,
+                    junction != nullptr ? junction->odr_id : std::string("?")));
+  }
+
+  CarriedJunctions carried;
+  for (const RoadId id : moved) {
+    for (const JunctionId junction_id : junctions_touching(network, id)) {
+      if (std::ranges::find(carried.junctions, junction_id) != carried.junctions.end()) {
+        continue;
+      }
+      const Junction* junction = network.junction(junction_id);
+      // A foreign junction (no recorded arms) is never "carried whole": there is
+      // no arm list to be whole, and nothing to regenerate either way.
+      if (junction == nullptr || junction->arms.empty()) {
+        continue;
+      }
+      if (std::ranges::all_of(junction->arms, [moved](const RoadEnd& arm) {
+            return std::ranges::find(moved, arm.road) != moved.end();
+          })) {
+        carried.junctions.push_back(junction_id);
+      }
+    }
+  }
+  if (!carried.junctions.empty()) {
+    network.for_each_road([&](RoadId id, const Road& road) {
+      if (std::ranges::find(carried.junctions, road.junction) != carried.junctions.end() &&
+          std::ranges::find(moved, id) == moved.end()) {
+        carried.connecting_roads.push_back(id);
+      }
+    });
+  }
+  return carried;
+}
+
+/// Moves the WORLD-space authored data a carried junction holds, so a rigid move
+/// takes the whole assembly and not just its roads.
+///
+/// Only `Maneuver::control_points` qualifies, and it is easy to miss: a
+/// JunctionCorner stores radii and setbacks, a StopLine a setback and a flip, a
+/// SurfaceSpan a flag and a sort index — all frame-independent. Interior
+/// maneuver waypoints are plain world x/y (road/junction.hpp), so a hand-shaped
+/// turn would otherwise stay behind while its connecting road moved.
+void carry_junction_records(const RoadNetwork& network,
+                            GenericCommand& command,
+                            std::span<const JunctionId> carried,
+                            const std::function<Waypoint(Waypoint)>& transform) {
+  for (const JunctionId junction_id : carried) {
+    const Junction* junction = network.junction(junction_id);
+    if (junction == nullptr || std::ranges::none_of(junction->maneuvers, [](const Maneuver& m) {
+          return !m.control_points.empty();
+        })) {
+      continue;
+    }
+    Junction after = *junction;
+    for (Maneuver& maneuver : after.maneuvers) {
+      for (Waypoint& point : maneuver.control_points) {
+        point = transform(point);
+      }
+    }
+    command.before.junctions.emplace_back(junction_id, *junction);
+    command.after.junctions.emplace_back(junction_id, std::move(after));
+  }
+}
+
 } // namespace
 
 std::vector<Waypoint> effective_waypoints(const Road& road) {
@@ -1585,8 +1724,11 @@ Expected<std::vector<double>> waypoint_stations(const Road& road) {
   return waypoint_stations(road, effective_waypoints(road).size());
 }
 
-std::unique_ptr<Command>
-move_waypoint(const RoadNetwork& network, RoadId road_id, std::size_t index, Waypoint to) {
+std::unique_ptr<Command> move_waypoint(const RoadNetwork& network,
+                                       RoadId road_id,
+                                       std::size_t index,
+                                       Waypoint to,
+                                       TurnSetPolicy policy) {
   static constexpr std::string_view kName = "Move Waypoint";
   const Road* road = network.road(road_id);
   if (road == nullptr) {
@@ -1604,7 +1746,8 @@ move_waypoint(const RoadNetwork& network, RoadId road_id, std::size_t index, Way
     headings = derived_headings(*road); // the moved node keeps the chain's heading
   }
   waypoints[index] = to;
-  return refit_command(network, road_id, std::string(kName), std::move(waypoints), headings);
+  return refit_command(
+      network, road_id, std::string(kName), std::move(waypoints), headings, policy);
 }
 
 std::unique_ptr<Command>
@@ -1787,58 +1930,62 @@ std::unique_ptr<Command> delete_road(const RoadNetwork& network, RoadId road_id)
   return command;
 }
 
-std::unique_ptr<Command> translate_roads(const RoadNetwork& network,
-                                         std::span<const RoadId> road_ids,
-                                         double dx,
-                                         double dy) {
-  static constexpr std::string_view kName = "Move Road";
-  if (road_ids.empty()) {
-    return invalid_command(
-        std::string(kName),
-        Error{.code = ErrorCode::InvalidArgument, .message = "no roads to move"});
-  }
+namespace {
 
-  // Distinct, live ids (a duplicate would otherwise be shifted twice).
+/// The distinct, live ids of a transform's moved set, or the factory error a
+/// caller-supplied list earns. A duplicate would otherwise be transformed twice.
+Expected<std::vector<RoadId>>
+transform_set(const RoadNetwork& network, std::span<const RoadId> road_ids, std::string_view what) {
+  if (road_ids.empty()) {
+    return make_error(ErrorCode::InvalidArgument, fmt::format("no roads to {}", what));
+  }
   std::vector<RoadId> moved;
   moved.reserve(road_ids.size());
   for (const RoadId id : road_ids) {
     if (network.road(id) == nullptr) {
-      return invalid_command(std::string(kName),
-                             Error{.code = ErrorCode::InvalidArgument, .message = "stale road id"});
+      return make_error(ErrorCode::InvalidArgument, "stale road id");
     }
     if (std::ranges::find(moved, id) == moved.end()) {
       moved.push_back(id);
     }
   }
+  return moved;
+}
 
-  // Junction roads can't be moved as free bodies — their geometry is generated
-  // from the arm poses, and an approach road's pose is welded to the junction.
-  // Refuse, naming the first offending junction (junctions_touching covers the
-  // connecting-road case, the arm/approach case, and the junction back-ref).
-  for (const RoadId id : moved) {
-    const std::vector<JunctionId> touched = junctions_touching(network, id);
-    if (!touched.empty()) {
-      const Junction* junction = network.junction(touched.front());
-      return invalid_command(
-          std::string(kName),
-          Error{.code = ErrorCode::InvalidArgument,
-                .message =
-                    fmt::format("road {} participates in junction {} — junction roads can't be "
-                                "moved; delete the junction or move its free end nodes instead",
-                                network.road(id)->odr_id,
-                                junction != nullptr ? junction->odr_id : std::string("?"))});
-    }
+} // namespace
+
+std::unique_ptr<Command> translate_roads(const RoadNetwork& network,
+                                         std::span<const RoadId> road_ids,
+                                         double dx,
+                                         double dy,
+                                         TurnSetPolicy policy) {
+  static constexpr std::string_view kName = "Move Road";
+  auto moved = transform_set(network, road_ids, "move");
+  if (!moved.has_value()) {
+    return invalid_command(std::string(kName), moved.error());
   }
+
+  // A connecting road is refused; an ARM moves and its junction follows, and a
+  // junction whose every arm is moving is carried whole (cascade-s2, #462).
+  auto carried = plan_carried_junctions(network, *moved);
+  if (!carried.has_value()) {
+    return invalid_command(std::string(kName), carried.error());
+  }
+  // The connecting roads of a carried junction shift with the assembly, so the
+  // rigid move reproduces the file translated instead of replanning the turns.
+  std::vector<RoadId> shifted_roads = *moved;
+  shifted_roads.insert(
+      shifted_roads.end(), carried->connecting_roads.begin(), carried->connecting_roads.end());
 
   // Links are NOT cleared here. A link between two roads moving together is
   // untouched by the shift and a link leaving the set is the follow stage's
   // business — it refits the neighbour to keep up, or severs and reports
   // (#461). Lane-level links are left as delete_road leaves them.
   DirtySet dirty;
-  dirty.roads = moved;
+  dirty.roads = shifted_roads;
 
   auto command = std::make_unique<GenericCommand>(std::string(kName), std::move(dirty));
-  for (const RoadId id : moved) {
+  for (const RoadId id : shifted_roads) {
     const Road& original = *network.road(id);
     Road after = original;
 
@@ -1863,37 +2010,38 @@ std::unique_ptr<Command> translate_roads(const RoadNetwork& network,
     command->before.roads.emplace_back(id, original);
     command->after.roads.emplace_back(id, std::move(after));
   }
-  return wrap_with_follow(network, std::move(command), std::move(moved));
+  carry_junction_records(network, *command, carried->junctions, [dx, dy](Waypoint point) {
+    return Waypoint{.x = point.x + dx, .y = point.y + dy};
+  });
+  return wrap_with_cascade(
+      network, std::move(command), std::move(shifted_roads), std::move(carried->junctions), policy);
 }
 
-std::unique_ptr<Command>
-translate_road(const RoadNetwork& network, RoadId road, double dx, double dy) {
+std::unique_ptr<Command> translate_road(
+    const RoadNetwork& network, RoadId road, double dx, double dy, TurnSetPolicy policy) {
   const std::array<RoadId, 1> ids{road};
-  return translate_roads(network, ids, dx, dy);
+  return translate_roads(network, ids, dx, dy, policy);
 }
 
-std::unique_ptr<Command> rotate_road(
-    const RoadNetwork& network, RoadId road_id, double angle, double pivot_x, double pivot_y) {
+std::unique_ptr<Command> rotate_roads(const RoadNetwork& network,
+                                      std::span<const RoadId> road_ids,
+                                      double angle,
+                                      double pivot_x,
+                                      double pivot_y,
+                                      TurnSetPolicy policy) {
   static constexpr std::string_view kName = "Rotate Road";
-  const Road* original_ptr = network.road(road_id);
-  if (original_ptr == nullptr) {
-    return invalid_command(std::string(kName),
-                           Error{.code = ErrorCode::InvalidArgument, .message = "stale road id"});
+  auto moved = transform_set(network, road_ids, "rotate");
+  if (!moved.has_value()) {
+    return invalid_command(std::string(kName), moved.error());
   }
 
-  // Junction roads have generated poses (see translate_roads) — refuse.
-  const std::vector<JunctionId> touched = junctions_touching(network, road_id);
-  if (!touched.empty()) {
-    const Junction* junction = network.junction(touched.front());
-    return invalid_command(
-        std::string(kName),
-        Error{.code = ErrorCode::InvalidArgument,
-              .message =
-                  fmt::format("road {} participates in junction {} — junction roads can't be "
-                              "rotated; delete the junction or move its free end nodes instead",
-                              original_ptr->odr_id,
-                              junction != nullptr ? junction->odr_id : std::string("?"))});
+  auto carried = plan_carried_junctions(network, *moved);
+  if (!carried.has_value()) {
+    return invalid_command(std::string(kName), carried.error());
   }
+  std::vector<RoadId> turned_roads = *moved;
+  turned_roads.insert(
+      turned_roads.end(), carried->connecting_roads.begin(), carried->connecting_roads.end());
 
   const double cos_a = std::cos(angle);
   const double sin_a = std::sin(angle);
@@ -1904,43 +2052,58 @@ std::unique_ptr<Command> rotate_road(
     return pivot_y + (sin_a * (x - pivot_x)) + (cos_a * (y - pivot_y));
   };
 
-  // Every road-level link this road has now points somewhere it no longer
+  // Every road-level link a rotating road has now points somewhere it no longer
   // meets — a road turning about a pivot takes all of its own ends with it. The
   // links are NOT cleared here: the follow stage refits each neighbour's
   // contacting end onto the rotated pose, or severs and reports (#461).
   DirtySet dirty;
-  dirty.roads.push_back(road_id);
+  dirty.roads = turned_roads;
 
   auto command = std::make_unique<GenericCommand>(std::string(kName), std::move(dirty));
-
-  const Road& original = *original_ptr;
-  Road after = original;
-  ReferenceLine rotated;
-  for (GeometryRecord record : original.plan_view.records()) {
-    const double nx = rot_x(record.x, record.y);
-    const double ny = rot_y(record.x, record.y);
-    record.x = nx;
-    record.y = ny;
-    // hdg' = hdg + angle, normalized to [-pi, pi] (atan2 is periodic, so the
-    // shape variant — arc/spiral/paramPoly3, all in the local heading frame —
-    // needs no change).
-    record.hdg = std::atan2(std::sin(record.hdg + angle), std::cos(record.hdg + angle));
-    rotated.append(record);
-  }
-  after.plan_view = std::move(rotated);
-
-  if (after.authoring_waypoints.has_value()) {
-    for (Waypoint& waypoint : *after.authoring_waypoints) {
-      const double nx = rot_x(waypoint.x, waypoint.y);
-      const double ny = rot_y(waypoint.x, waypoint.y);
-      waypoint.x = nx;
-      waypoint.y = ny;
+  for (const RoadId id : turned_roads) {
+    const Road& original = *network.road(id);
+    Road after = original;
+    ReferenceLine rotated;
+    for (GeometryRecord record : original.plan_view.records()) {
+      const double nx = rot_x(record.x, record.y);
+      const double ny = rot_y(record.x, record.y);
+      record.x = nx;
+      record.y = ny;
+      // hdg' = hdg + angle, normalized to [-pi, pi] (atan2 is periodic, so the
+      // shape variant — arc/spiral/paramPoly3, all in the local heading frame —
+      // needs no change).
+      record.hdg = std::atan2(std::sin(record.hdg + angle), std::cos(record.hdg + angle));
+      rotated.append(record);
     }
-  }
+    after.plan_view = std::move(rotated);
 
-  command->before.roads.emplace_back(road_id, original);
-  command->after.roads.emplace_back(road_id, std::move(after));
-  return wrap_with_follow(network, std::move(command), {road_id});
+    if (after.authoring_waypoints.has_value()) {
+      for (Waypoint& waypoint : *after.authoring_waypoints) {
+        const double nx = rot_x(waypoint.x, waypoint.y);
+        const double ny = rot_y(waypoint.x, waypoint.y);
+        waypoint.x = nx;
+        waypoint.y = ny;
+      }
+    }
+
+    command->before.roads.emplace_back(id, original);
+    command->after.roads.emplace_back(id, std::move(after));
+  }
+  carry_junction_records(network, *command, carried->junctions, [&](Waypoint point) {
+    return Waypoint{.x = rot_x(point.x, point.y), .y = rot_y(point.x, point.y)};
+  });
+  return wrap_with_cascade(
+      network, std::move(command), std::move(turned_roads), std::move(carried->junctions), policy);
+}
+
+std::unique_ptr<Command> rotate_road(const RoadNetwork& network,
+                                     RoadId road,
+                                     double angle,
+                                     double pivot_x,
+                                     double pivot_y,
+                                     TurnSetPolicy policy) {
+  const std::array<RoadId, 1> ids{road};
+  return rotate_roads(network, ids, angle, pivot_x, pivot_y, policy);
 }
 
 std::unique_ptr<Command> split_road(const RoadNetwork& network, RoadId road_id, double split_s) {
@@ -3835,6 +3998,85 @@ retarget_junction(const RoadNetwork& network,
   return command;
 }
 
+/// Stage [2] of the move funnel (cascade-s2, #462) — declared beside the follow
+/// stage, defined here because it drives retarget_junction.
+///
+/// ONE REGENERATION DECISION. Every junction the gesture disturbed is classified
+/// exactly once, here, so translate, rotate and the four waypoint edits cannot
+/// disagree about what a moved arm means — which is precisely how they came to
+/// disagree in the first place (node drag followed live; translate and rotate
+/// refused outright). Four junctions are deliberately left alone:
+///
+///   - CARRIED: a rigid transform took the junction and all of its arms, so its
+///     connecting roads moved with them. Regenerating would replace hand-shaped
+///     geometry with a fresh plan for no gain, and would break the guarantee
+///     that a rigid move writes the same file translated.
+///   - FOREIGN (no recorded arms): there is nothing to regenerate FROM, and a
+///     move must not fail because someone else's file is in the scene.
+///   - LOCKED (#319): the user asked the hand-tuned result to survive edits to
+///     the arms. The lock binds the automatic loops, and this is one.
+///   - A junction reached only through a road whose pose did not change.
+///
+/// Everything else regenerates, and a regeneration that cannot plan REFUSES the
+/// whole gesture: retarget_junction validates at BUILD time, so the failure is
+/// known here, before the composite has applied anything it would have to unwind
+/// — and the message can name the junction, which "ends farther apart than 50 m"
+/// on its own cannot.
+std::unique_ptr<Command> junction_stage(const RoadNetwork& network,
+                                        std::span<const RoadId> moved,
+                                        std::span<const JunctionId> carried,
+                                        TurnSetPolicy policy) {
+  static constexpr std::string_view kName = "Regenerate Junctions";
+  // This stage speaks for EVERY junction the move touched, regenerated or not:
+  // the editor must not run its own pass over a gesture that already decided.
+  DirtySet dirty;
+  dirty.junctions_are_current = true;
+
+  std::vector<JunctionId> regenerate;
+  for (const RoadId road_id : moved) {
+    for (const JunctionId junction_id : junctions_touching(network, road_id)) {
+      if (std::ranges::find(carried, junction_id) != carried.end() ||
+          std::ranges::find(regenerate, junction_id) != regenerate.end()) {
+        continue;
+      }
+      const Junction* junction = network.junction(junction_id);
+      if (junction == nullptr || junction->arms.empty() || junction->locked) {
+        continue;
+      }
+      regenerate.push_back(junction_id);
+    }
+  }
+  if (regenerate.empty()) {
+    return std::make_unique<GenericCommand>(std::string(kName), std::move(dirty));
+  }
+
+  std::vector<CompositeCommand::Builder> builders;
+  builders.reserve(regenerate.size());
+  for (const JunctionId junction_id : regenerate) {
+    // Built EAGERLY, unlike the follow stage's children: regeneration plans at
+    // build time and never MOVES an arm, only the connecting roads between
+    // them, so no regeneration can invalidate another's plan and there is
+    // nothing to gain by deferring. Building now is what lets a failure be
+    // reported as a refusal that names the junction.
+    auto regen = retarget_junction(
+        network, junction_id, network.junction(junction_id)->arms, {}, policy, kName);
+    if (regen->invalid.has_value()) {
+      const Junction* junction = network.junction(junction_id);
+      return invalid_command(
+          std::string(kName),
+          Error{.code = regen->invalid->code,
+                .message = fmt::format("the move leaves junction {} unbuildable: {}",
+                                       junction != nullptr ? junction->odr_id : std::string("?"),
+                                       regen->invalid->message),
+                .context = regen->invalid->context});
+    }
+    builders.push_back([slot = std::make_shared<std::unique_ptr<Command>>(std::move(regen))](
+                           RoadNetwork&) { return std::move(*slot); });
+  }
+  return std::make_unique<CompositeCommand>(
+      std::string(kName), std::move(dirty), std::move(builders));
+}
+
 } // namespace
 
 std::unique_ptr<Command> regenerate_junction(const RoadNetwork& network,
@@ -3864,58 +4106,18 @@ std::unique_ptr<Command> move_waypoint_following_junctions(const RoadNetwork& ne
                                                            RoadId road_id,
                                                            std::size_t index,
                                                            Waypoint to) {
-  // Only junctions that can actually regenerate: one with no recorded arms came
-  // from a foreign file, and regenerate_junction calls that an error. Skipping
-  // it keeps the drag alive (the junction stays stale, exactly as it does on
-  // the commit path) instead of refusing every frame.
+  // A forwarder since cascade-s2 (#462): junction regeneration is no longer
+  // something a gesture opts into, it is stage [2] of the funnel every move
+  // passes through, so "move_waypoint" and "move_waypoint following junctions"
+  // differ in exactly one thing — the turn-set policy.
   //
-  // A LOCKED junction (#319) is skipped by the same rule for the opposite
-  // reason: it CAN regenerate, but the user asked it not to. Dragging an arm
-  // node of a locked junction is therefore a plain move with no mid-drag regen,
-  // matching Document's post-command loop; only an explicit regenerate_junction
-  // re-derives it.
-  std::vector<JunctionId> followed;
-  for (const JunctionId junction_id : junctions_touching(network, road_id)) {
-    const Junction* junction = network.junction(junction_id);
-    if (junction != nullptr && !junction->arms.empty() && !junction->locked) {
-      followed.push_back(junction_id);
-    }
-  }
-  if (followed.empty()) {
-    return move_waypoint(network, road_id, index, to);
-  }
-
-  // Validate here rather than inside a stage: a refused move should come back
-  // as the same invalid_command the plain factory returns, not as a composite
-  // that fails on apply.
-  auto probe = move_waypoint(network, road_id, index, to);
-  if (probe == nullptr) {
-    return nullptr;
-  }
-
-  std::vector<CompositeCommand::Builder> builders;
-  builders.reserve(followed.size() + 1);
-  builders.push_back(
-      [road_id, index, to](RoadNetwork& net) { return move_waypoint(net, road_id, index, to); });
-  for (const JunctionId junction_id : followed) {
-    // Built lazily, so each regeneration plans against the network with the
-    // move already applied — the whole point of following mid-drag.
-    //
-    // InPlaceOnly: this command is a preview factory, rebuilt and discarded on
-    // every drag frame. A regeneration that created connecting roads would have
-    // them erase_exact'd by the frame's revert and then lose the only handle
-    // that could restore those slots when the command is destroyed — reserving
-    // arena slots, per frame, for the rest of the session. A drag that changes
-    // the turn set therefore leaves the junction stale (and toasts) exactly as
-    // it does today; lane edits, which are not previewed, regenerate normally.
-    builders.push_back([junction_id](RoadNetwork& net) {
-      return regenerate_junction(net, junction_id, {}, TurnSetPolicy::InPlaceOnly);
-    });
-  }
-  // Same undo-menu text as the plain move: whether the drag happened to touch a
-  // junction is not something the user should read in the Edit menu.
-  return std::make_unique<CompositeCommand>(
-      std::string(probe->name()), DirtySet{}, std::move(builders));
+  // InPlaceOnly, because this is the PREVIEW factory, rebuilt and discarded on
+  // every drag frame. A regeneration that created connecting roads would have
+  // them erase_exact'd by the frame's revert and then lose the only handle that
+  // could restore those slots when the command is destroyed. A drag that would
+  // change the turn set is therefore refused for that frame and the last good
+  // preview stands; lane edits, which are not previewed, regenerate normally.
+  return move_waypoint(network, road_id, index, to, TurnSetPolicy::InPlaceOnly);
 }
 
 namespace {

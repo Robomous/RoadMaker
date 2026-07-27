@@ -234,19 +234,63 @@ def test_translate_roads_moves_many_as_one_command(network):
     assert network.road(a).plan_view.evaluate(0.0).y == pytest.approx(0.0)
 
 
-def test_translate_road_refuses_junction_road(network):
+def _junction_with_arms(network):
+    """A real junction whose arms leave the generator room to plan turns.
+
+    Ends that coincide exactly give it no room at all, so every turn is dropped
+    as looping and the junction ends up with no connecting roads.
+    """
     stack = rm.edit.EditStack()
-    # Build a junction so an incoming road touches it, then refuse to move it.
     rm.author_clothoid_road(
-        network, [(200.0, 0.0), (140.0, 0.0)], rm.LaneProfile.two_lane_default(), "", "9"
+        network, [(200.0, 0.0), (152.0, 0.0)], rm.LaneProfile.two_lane_default(), "", "9"
     )
     ends = [
         rm.RoadEnd(network.find_road("1"), rm.ContactPoint.END),
         rm.RoadEnd(network.find_road("9"), rm.ContactPoint.END),
     ]
     stack.push(network, rm.edit.create_junction(network, ends))
-    with pytest.raises(Exception):
-        stack.push(network, rm.edit.translate_road(network, network.find_road("1"), 1.0, 1.0))
+    return stack
+
+
+def test_translate_road_moves_a_junction_arm(network):
+    """cascade-s2 (#462): an arm moves and its junction follows.
+
+    This used to assert the opposite — every junction-touching road was refused,
+    which made a junction unmovable through anything but a node drag.
+    """
+    stack = _junction_with_arms(network)
+    arm = network.find_road("1")
+    before = network.road(arm).plan_view.evaluate(0.0).x
+
+    stack.push(network, rm.edit.translate_road(network, arm, 0.0, 1.5))
+    assert network.road(arm).plan_view.evaluate(0.0).x == pytest.approx(before)
+    assert network.road(arm).plan_view.evaluate(0.0).y == pytest.approx(1.5)
+
+
+def test_translate_road_refuses_a_connecting_road(network):
+    """The one junction refusal that remains: a generated pose is not authorable."""
+    stack = _junction_with_arms(network)
+    connecting = [
+        road_id for road_id in network.road_ids if network.road(road_id).junction
+    ]
+    assert connecting, "the fixture must generate at least one connecting road"
+
+    with pytest.raises(Exception, match="connecting road"):
+        stack.push(network, rm.edit.translate_road(network, connecting[0], 1.0, 1.0))
+
+
+def test_rotate_roads_turns_a_junction_rigidly(network):
+    """Every arm in one gesture: the junction turns as a body, turns intact."""
+    stack = _junction_with_arms(network)
+    arms = [network.find_road("1"), network.find_road("9")]
+    junction = network.junction_ids[0]
+    connections = len(network.junction(junction).connections)
+
+    stack.push(network, rm.edit.rotate_roads(network, arms, 0.2, 100.0, 0.0))
+
+    assert len(network.junction(junction).connections) == connections
+    welds = rm.edit.verify_junction_welds(network, junction)
+    assert not welds.breaches
 
 
 def test_insert_node_at_preserves_shape(network):

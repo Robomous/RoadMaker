@@ -32,6 +32,7 @@ add_executable(roadmaker_core_tests
   test_junction_crosswalks.cpp
   test_junction_stoplines.cpp
   test_junction_maneuvers.cpp
+  test_junction_cascade.cpp
   test_signalization.cpp
   test_signal_phases.cpp
   test_marking_curves.cpp

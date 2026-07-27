@@ -2773,15 +2773,19 @@ NB_MODULE(_roadmaker, m) {
            "b"_a,
            "Merges a's END into b's START into one road keeping a's id (b is erased).");
   edit.def("delete_road", &roadmaker::edit::delete_road, "network"_a, "road"_a);
-  edit.def("translate_road",
-           &roadmaker::edit::translate_road,
-           "network"_a,
-           "road"_a,
-           "dx"_a,
-           "dy"_a,
-           "Moves a whole road by (dx, dy) [m] in plan view. A linked neighbour "
-           "follows: its contacting end is re-fit onto the new pose. Refuses "
-           "junction roads.");
+  edit.def(
+      "translate_road",
+      [](const roadmaker::RoadNetwork& network, roadmaker::RoadId road, double dx, double dy) {
+        return roadmaker::edit::translate_road(network, road, dx, dy);
+      },
+      "network"_a,
+      "road"_a,
+      "dx"_a,
+      "dy"_a,
+      "Moves a whole road by (dx, dy) [m] in plan view. A linked neighbour "
+      "follows: its contacting end is re-fit onto the new pose. A junction ARM "
+      "moves too, and its junction regenerates; only a junction's generated "
+      "CONNECTING road is refused.");
   edit.def(
       "translate_roads",
       [](const roadmaker::RoadNetwork& network,
@@ -2795,18 +2799,48 @@ NB_MODULE(_roadmaker, m) {
       "Moves N roads together by (dx, dy) [m] as ONE command. Links between the "
       "moved roads ride along untouched; a link leaving the set drags its "
       "neighbour's contacting end with it, or — when the re-fit is impossible — "
-      "is severed and named in command.follow_records.");
-  edit.def("rotate_road",
-           &roadmaker::edit::rotate_road,
-           "network"_a,
-           "road"_a,
-           "angle"_a,
-           "pivot_x"_a,
-           "pivot_y"_a,
-           "Rotates a whole road about the world pivot (pivot_x, pivot_y) by angle "
-           "[rad] CCW; rigid (elevation and shape coefficients unchanged). Every "
-           "road-level link swings its neighbour's contacting end round too. "
-           "Refuses junction roads.");
+      "is severed and named in command.follow_records.\n\n"
+      "Junctions follow the same rule one level up: a moved ARM regenerates its "
+      "junction, and a junction whose EVERY arm is in the set is carried rigidly "
+      "(its connecting roads and hand-shaped maneuver paths move with it, so the "
+      "output is the input translated). A move that leaves a junction "
+      "unbuildable is refused with the network untouched.");
+  edit.def(
+      "rotate_road",
+      [](const roadmaker::RoadNetwork& network,
+         roadmaker::RoadId road,
+         double angle,
+         double pivot_x,
+         double pivot_y) {
+        return roadmaker::edit::rotate_road(network, road, angle, pivot_x, pivot_y);
+      },
+      "network"_a,
+      "road"_a,
+      "angle"_a,
+      "pivot_x"_a,
+      "pivot_y"_a,
+      "Rotates a whole road about the world pivot (pivot_x, pivot_y) by angle "
+      "[rad] CCW; rigid (elevation and shape coefficients unchanged). Every "
+      "road-level link swings its neighbour's contacting end round too. Same "
+      "junction policy as translate_road.");
+  edit.def(
+      "rotate_roads",
+      [](const roadmaker::RoadNetwork& network,
+         std::vector<roadmaker::RoadId> roads,
+         double angle,
+         double pivot_x,
+         double pivot_y) {
+        return roadmaker::edit::rotate_roads(network, roads, angle, pivot_x, pivot_y);
+      },
+      "network"_a,
+      "roads"_a,
+      "angle"_a,
+      "pivot_x"_a,
+      "pivot_y"_a,
+      "Rotates N roads together about (pivot_x, pivot_y) as ONE command — the "
+      "rotate half of translate_roads, junction rules included. This is how a "
+      "junction is turned rigidly: pass every one of its arms, and its "
+      "connecting roads come along instead of being replanned.");
   edit.def("insert_node_at",
            &roadmaker::edit::insert_node_at,
            "network"_a,

@@ -229,18 +229,23 @@ TEST(TranslateRoad, RefusesConnectingRoad) {
   expect_rejected(network, roadmaker::edit::translate_road(network, road, 1.0, 1.0));
 }
 
-TEST(TranslateRoad, RefusesRoadLinkedToJunction) {
+// cascade-s2 (#462) flipped this: an ARM used to be refused as firmly as a
+// connecting road, which is what made "move the junction" impossible through
+// every gesture but a node drag. It moves now, and the junction follows it —
+// see test_junction_cascade.cpp for the regeneration itself. This junction has
+// no recorded arms (it is foreign), so there is nothing to regenerate FROM and
+// the move is simply a move.
+TEST(TranslateRoad, MovesARoadLinkedToJunction) {
   RoadNetwork network;
   const RoadId road = author_line(network, "1");
   const JunctionId junction = network.create_junction("100", "X");
   network.road(road)->successor = RoadLink{.target = junction, .contact = ContactPoint::Start};
 
   auto command = roadmaker::edit::translate_road(network, road, 1.0, 1.0);
-  const auto applied = command->apply(network);
-  ASSERT_FALSE(applied.has_value());
-  // Diagnostic names the road and the junction.
-  EXPECT_NE(applied.error().message.find("junction 100"), std::string::npos)
-      << applied.error().message;
+  ASSERT_TRUE(command->apply(network).has_value());
+  EXPECT_DOUBLE_EQ(network.road(road)->plan_view.evaluate(0.0).x, 1.0);
+  // The link is untouched: an arm stays an arm.
+  EXPECT_TRUE(network.road(road)->successor.has_value());
 }
 
 TEST(TranslateRoad, RejectsEmptyAndStale) {
