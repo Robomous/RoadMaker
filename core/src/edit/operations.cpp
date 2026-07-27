@@ -1024,9 +1024,8 @@ Expected<JunctionPlan> plan_junction(const RoadNetwork& network,
       // contact_state precomputes z and the +s grade, so these read off it.
       const double z_in = arm_ends[i].z;
       const double z_out = arm_ends[j].z;
-      const double g_in = (ends[i].contact == ContactPoint::End ? 1.0 : -1.0) * arm_ends[i].grade;
-      const double g_out =
-          (ends[j].contact == ContactPoint::Start ? 1.0 : -1.0) * arm_ends[j].grade;
+      const double g_in = grade_sign_into(ends[i].contact) * arm_ends[i].grade;
+      const double g_out = grade_sign_out(ends[j].contact) * arm_ends[j].grade;
       for (std::size_t k = 0; k < pairs; ++k) {
         // Anchor the reference line on the linked lanes' inner boundaries:
         // the connecting road carries one right-hand lane (id -1) spanning
@@ -2634,25 +2633,24 @@ std::unique_ptr<Command> close_gap(const RoadNetwork& network,
   //
   // Grade has the OPPOSITE convention: contact_state pre-flips curvature by
   // contact but leaves grade as dz/ds along each road's own +s (connection.hpp).
-  // The connector travels along into_hdg/out_hdg, which runs against +s for a
-  // Start contact at a / an End contact at b, so grade needs the same
-  // contact-dependent sign the junction generator applies — unflipped it built
-  // an inverted end grade (a V-kink ramp) for three of the four contact
-  // combinations (#398).
-  auto connector = fit_connector(
-      ConnectorEndpoint{.x = ca.x,
-                        .y = ca.y,
-                        .heading = ca.into_hdg,
-                        .curvature = ca.curvature,
-                        .z = ca.z,
-                        .grade = (a.contact == ContactPoint::End ? 1.0 : -1.0) * ca.grade},
-      ConnectorEndpoint{.x = cb.x,
-                        .y = cb.y,
-                        .heading = cb.out_hdg,
-                        .curvature = -cb.curvature,
-                        .z = cb.z,
-                        .grade = (b.contact == ContactPoint::Start ? 1.0 : -1.0) * cb.grade},
-      ConnectorParams{.g2 = true});
+  // The connector travels along into_hdg at a and out_hdg at b, so each grade
+  // needs the matching contact-dependent sign — unflipped it built an inverted
+  // end grade (a V-kink ramp) for three of the four contact combinations (#398),
+  // which is why the two signs are named functions now and not ternaries here.
+  auto connector =
+      fit_connector(ConnectorEndpoint{.x = ca.x,
+                                      .y = ca.y,
+                                      .heading = ca.into_hdg,
+                                      .curvature = ca.curvature,
+                                      .z = ca.z,
+                                      .grade = grade_sign_into(a.contact) * ca.grade},
+                    ConnectorEndpoint{.x = cb.x,
+                                      .y = cb.y,
+                                      .heading = cb.out_hdg,
+                                      .curvature = -cb.curvature,
+                                      .z = cb.z,
+                                      .grade = grade_sign_out(b.contact) * cb.grade},
+                    ConnectorParams{.g2 = true});
   if (!connector.has_value()) {
     return invalid_command(std::string(kName), connector.error());
   }
@@ -2695,6 +2693,69 @@ std::unique_ptr<Command> close_gap(const RoadNetwork& network,
   return command;
 }
 
+namespace {
+
+/// The elevation profile a road chained off `link` should start life with:
+/// pinned to the contact's z and grade, then eased back to level over
+/// kGradeEaseLength (connection contract §chain creation). The extend path has
+/// always done this; the chain path authored flat, so chaining off a road at
+/// z = 4 used to produce a 4 m cliff at the joint.
+///
+/// The grade is expressed along the NEW road's +s — its Start LEAVES the joint,
+/// so it takes exactly the sign close_gap hands a connector leaving `link`.
+///
+/// Empty when a flat road would already satisfy the contract at that joint: a
+/// chain on level ground must write no <elevationProfile> at all, which is the
+/// shipped convention for every authoring path.
+std::vector<ElevationPoint>
+chained_elevation(const RoadNetwork& network, const RoadEnd& link, double length) {
+  const auto contact = contact_state(network, link);
+  if (!contact.has_value() || length <= tol::kLength) {
+    return {};
+  }
+  const double z0 = contact->z;
+  const double g0 = grade_sign_into(link.contact) * contact->grade;
+  if (std::abs(z0) <= tol::kWeldElevation && std::abs(g0) <= tol::kWeldGrade) {
+    return {};
+  }
+  const double ease = std::min(kGradeEaseLength, length);
+  // A LINEAR GRADE TAPER: the cubic Hermite through (0, z0, g0) and
+  // (ease, z0 + g0*ease/2, 0) is exactly the quadratic z0 + g0*s - g0*s²/(2*ease),
+  // whose derivative runs straight from g0 down to 0. So the mean grade over the
+  // ease is g0/2 and the road climbs half of what a constant g0 would give it.
+  const double rise = g0 * ease * 0.5;
+  std::vector<ElevationPoint> points{
+      ElevationPoint{.s = 0.0, .z = z0, .grade = g0},
+      ElevationPoint{.s = ease, .z = z0 + rise, .grade = 0.0},
+  };
+  if (length - ease > tol::kLength) {
+    points.push_back(ElevationPoint{.s = length, .z = z0 + rise, .grade = 0.0});
+  }
+  return points;
+}
+
+/// The composite stage that seeds a freshly created chained road's profile.
+///
+/// THIS STAGE MUST RUN BEFORE THE WELD. check_linkable refuses a coincident pair
+/// whose z or grade disagree, and both chain paths treat a refusal as a silent
+/// no-op, so with the order reversed a chain off any elevated end would simply
+/// land unlinked with no error anywhere.
+std::unique_ptr<Command>
+seed_chained_elevation(RoadNetwork& net, RoadId road_id, const RoadEnd& link) {
+  static constexpr std::string_view kStage = "Match Grade";
+  const Road* road = net.road(road_id);
+  if (road == nullptr) {
+    return std::make_unique<GenericCommand>(std::string(kStage), DirtySet{});
+  }
+  std::vector<ElevationPoint> points = chained_elevation(net, link, road->plan_view.length());
+  if (points.empty()) {
+    return std::make_unique<GenericCommand>(std::string(kStage), DirtySet{});
+  }
+  return set_elevation_profile(net, road_id, std::move(points));
+}
+
+} // namespace
+
 std::unique_ptr<Command> create_linked_road(const RoadNetwork& network,
                                             std::vector<Waypoint> waypoints,
                                             LaneProfile profile,
@@ -2713,23 +2774,30 @@ std::unique_ptr<Command> create_linked_road(const RoadNetwork& network,
     (void)net;
     return create_road(waypoints, profile, name, locked);
   });
-  builders.push_back(
-      [existing = std::move(existing), link_start](RoadNetwork& net) -> std::unique_ptr<Command> {
-        RoadId created;
-        net.for_each_road([&](RoadId id, const Road&) {
-          if (std::ranges::find(existing, id) == existing.end()) {
-            created = id;
-          }
-        });
-        const RoadEnd new_start{.road = created, .contact = ContactPoint::Start};
-        // Weld only when the two ends really can link; otherwise the road stands
-        // on its own (a no-op stage keeps create_linked_road from ever failing
-        // the create on the link).
-        if (check_linkable(net, new_start, link_start).has_value()) {
-          return close_gap(net, new_start, link_start);
-        }
-        return std::make_unique<GenericCommand>(std::string(kName), DirtySet{});
-      });
+  auto created = std::make_shared<RoadId>();
+  builders.push_back([existing = std::move(existing), created](RoadNetwork& net) {
+    net.for_each_road([&](RoadId id, const Road&) {
+      if (std::ranges::find(existing, id) == existing.end()) {
+        *created = id;
+      }
+    });
+    return std::make_unique<GenericCommand>(std::string(kName), DirtySet{});
+  });
+  // Grade-match the new road to the end it chains off BEFORE welding — the weld
+  // now refuses a joint whose elevations disagree (see seed_chained_elevation).
+  builders.push_back([created, link_start](RoadNetwork& net) {
+    return seed_chained_elevation(net, *created, link_start);
+  });
+  builders.push_back([created, link_start](RoadNetwork& net) -> std::unique_ptr<Command> {
+    const RoadEnd new_start{.road = *created, .contact = ContactPoint::Start};
+    // Weld only when the two ends really can link; otherwise the road stands
+    // on its own (a no-op stage keeps create_linked_road from ever failing
+    // the create on the link).
+    if (check_linkable(net, new_start, link_start).has_value()) {
+      return close_gap(net, new_start, link_start);
+    }
+    return std::make_unique<GenericCommand>(std::string(kName), DirtySet{});
+  });
   return std::make_unique<CompositeCommand>(
       std::string(kName), DirtySet{.topology = true}, std::move(builders));
 }
@@ -5348,6 +5416,11 @@ std::unique_ptr<Command> create_road_with_interactions(const RoadNetwork& networ
   // create never fails on the weld (mirrors create_linked_road). A start tee is
   // the side-snap alternative; the two are mutually exclusive.
   if (interactions.start_link.has_value()) {
+    // Grade-match before welding — the weld now refuses a joint whose
+    // elevations disagree (see seed_chained_elevation).
+    builders.push_back([run, link = *interactions.start_link](RoadNetwork& net) {
+      return seed_chained_elevation(net, run->active, link);
+    });
     builders.push_back(
         [run, link = *interactions.start_link](RoadNetwork& net) -> std::unique_ptr<Command> {
           const RoadEnd new_start{.road = run->active, .contact = ContactPoint::Start};
@@ -7271,7 +7344,14 @@ std::unique_ptr<Command> set_elevation_profile(const RoadNetwork& network,
   after.elevation =
       all_zero ? std::vector<Poly3>{} : fit_elevation_profile(s_values, z_values, grades);
 
-  auto command = std::make_unique<GenericCommand>(std::string(kName), DirtySet{.roads = {road_id}});
+  // Reshaping a road's profile moves the cut faces of every junction it is an
+  // arm of, so those junctions have to regenerate — the editor's only trigger is
+  // dirty.junctions. set_node_elevation has always said so; this command, which
+  // is what the Profile panel and the Z gizmo push, did not, and a profile drag
+  // on a junction arm left the junction stale.
+  auto command = std::make_unique<GenericCommand>(
+      std::string(kName),
+      DirtySet{.roads = {road_id}, .junctions = junctions_touching(network, road_id)});
   command->before.roads.emplace_back(road_id, *road);
   command->after.roads.emplace_back(road_id, std::move(after));
   return command;

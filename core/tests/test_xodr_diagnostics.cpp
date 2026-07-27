@@ -126,6 +126,8 @@ constexpr NamedRule kAllRules[] = {
     {"kJunctionBoundaryClosed", roadmaker::rules::kJunctionBoundaryClosed},
     {"kJunctionBoundaryReachAllRoads", roadmaker::rules::kJunctionBoundaryReachAllRoads},
     {"kJunctionArmSingleOwner", roadmaker::rules::kJunctionArmSingleOwner},
+    {"kLinkEndsCoincide", roadmaker::rules::kLinkEndsCoincide},
+    {"kLinkElevationContinuity", roadmaker::rules::kLinkElevationContinuity},
 };
 
 } // namespace

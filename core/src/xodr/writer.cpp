@@ -16,6 +16,7 @@
 
 #include "roadmaker/xodr/writer.hpp"
 
+#include "roadmaker/edit/connection.hpp"
 #include "roadmaker/geometry/reference_line.hpp"
 #include "roadmaker/mesh/junction_phases.hpp"
 #include "roadmaker/mesh/junction_stoplines.hpp"
@@ -2011,6 +2012,78 @@ std::vector<Diagnostic> validate_network(const RoadNetwork& network, const Write
             .road = road_id});
       }
     }
+    // The road connection contract's two vendor rules
+    // (docs/domain/connection_contract.md). ASAM constrains how a link is
+    // DECLARED but never that the two ends actually meet, and it has no
+    // road-to-road elevation-continuity rule at all — while a pure link
+    // generates no geometry to reconcile anything, so without this nothing in
+    // the product would ever notice a joint that has come apart.
+    const auto check_weld = [&](ContactPoint contact, const std::optional<RoadLink>& link) {
+      const RoadId* target = link.has_value() ? std::get_if<RoadId>(&link->target) : nullptr;
+      if (target == nullptr) {
+        return; // unlinked, or junction-owned — verify_junction_welds' business
+      }
+      const Road* neighbour = network.road(*target);
+      if (neighbour == nullptr) {
+        return; // a dangling target: already reported by check_link above
+      }
+      // Every joint is reachable from BOTH of its ends. Report it once, from
+      // the end whose (road id, contact) sorts first — unless the neighbour
+      // does not link back, in which case this end is the only vantage point
+      // the joint has.
+      const auto& mirror =
+          link->contact == ContactPoint::Start ? neighbour->predecessor : neighbour->successor;
+      const RoadId* back = mirror.has_value() ? std::get_if<RoadId>(&mirror->target) : nullptr;
+      const bool mutual = back != nullptr && *back == road_id && mirror->contact == contact;
+      if (mutual && std::pair(std::string_view(neighbour->odr_id), link->contact) <
+                        std::pair(std::string_view(road.odr_id), contact)) {
+        return;
+      }
+      const auto report =
+          edit::verify_link_weld(network, RoadEnd{.road = road_id, .contact = contact});
+      if (!report.has_value()) {
+        return;
+      }
+      const std::string_view here = contact == ContactPoint::Start ? "start" : "end";
+      // A joint whose ends are not even in the same place is not a joint: report
+      // that, and say nothing about its elevation, which is derivative noise.
+      if (report->max_position_gap > tol::kWeldPosition) {
+        findings.push_back(
+            Diagnostic{.severity = Severity::Warning,
+                       .location = fmt::format("road id={}", road.odr_id),
+                       .message = fmt::format("the {} links to road {} but the ends are {:.2f} m "
+                                              "apart — the link no longer describes the geometry",
+                                              here,
+                                              neighbour->odr_id,
+                                              report->max_position_gap),
+                       .rule_id = std::string(rules::kLinkEndsCoincide),
+                       .road = road_id});
+        return;
+      }
+      const bool z_step = report->max_elevation_gap > tol::kWeldElevation;
+      const bool grade_break = report->max_grade_gap > tol::kWeldGrade;
+      if (z_step || grade_break) {
+        std::string what;
+        if (z_step) {
+          what = fmt::format("a {:.2f} m elevation step", report->max_elevation_gap);
+        }
+        if (grade_break) {
+          if (!what.empty()) {
+            what += " and ";
+          }
+          what += fmt::format("a {:.1f} % grade break", report->max_grade_gap * 100.0);
+        }
+        findings.push_back(
+            Diagnostic{.severity = Severity::Warning,
+                       .location = fmt::format("road id={}", road.odr_id),
+                       .message = fmt::format(
+                           "the {} links to road {} with {}", here, neighbour->odr_id, what),
+                       .rule_id = std::string(rules::kLinkElevationContinuity),
+                       .road = road_id});
+      }
+    };
+    check_weld(ContactPoint::Start, road.predecessor);
+    check_weld(ContactPoint::End, road.successor);
     // "The width of the lane shall be defined for the full length of the
     // lane section" — a non-center lane needs a <width> at sOffset 0.
     for (const LaneSectionId section_id : road.sections) {

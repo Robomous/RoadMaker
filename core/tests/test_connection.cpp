@@ -515,3 +515,276 @@ TEST(Connection, CloseGapAndCheckLinkableRefusals) {
   EXPECT_FALSE(command->apply(network).has_value());
   EXPECT_EQ(snapshot(network), before);
 }
+
+// --- #403, the road connection contract -------------------------------------
+//
+// A pure link generates NO geometry to reconcile anything, so every guarantee it
+// makes has to hold before the link is made. Coincidence is therefore 3D: ends
+// that meet in plan but not in elevation are refused rather than silently welded
+// into a cliff (docs/domain/connection_contract.md).
+
+namespace {
+
+/// Two roads whose chosen ends both sit at (100, 0). Each carries a linear
+/// profile reaching `z` with `grade` (dz/ds along that road's OWN +s) at the
+/// contact, so the fixture states the contract's inputs directly.
+struct Pair {
+  RoadId a;
+  RoadId b;
+};
+
+Pair coincident_pair(RoadNetwork& network,
+                     ContactPoint contact_a,
+                     double z_a,
+                     double grade_a,
+                     ContactPoint contact_b,
+                     double z_b,
+                     double grade_b) {
+  const bool a_end = contact_a == ContactPoint::End;
+  const bool b_start = contact_b == ContactPoint::Start;
+  const RoadId a = author(network,
+                          a_end ? std::vector<Waypoint>{{0.0, 0.0}, {100.0, 0.0}}
+                                : std::vector<Waypoint>{{100.0, 0.0}, {0.0, 0.0}},
+                          "1");
+  const RoadId b = author(network,
+                          b_start ? std::vector<Waypoint>{{100.0, 0.0}, {200.0, 0.0}}
+                                  : std::vector<Waypoint>{{200.0, 0.0}, {100.0, 0.0}},
+                          "2");
+  const auto linear = [&](RoadId road, ContactPoint contact, double z, double grade) {
+    if (std::abs(z) < 1e-12 && std::abs(grade) < 1e-12) {
+      return; // leave it flat: the shipped "no <elevationProfile>" convention
+    }
+    const double length = network.road(road)->plan_view.length();
+    const double station = contact == ContactPoint::End ? length : 0.0;
+    auto cmd = roadmaker::edit::set_elevation_profile(
+        network,
+        road,
+        {roadmaker::edit::ElevationPoint{.s = 0.0, .z = z + (grade * (0.0 - station)),
+                                         .grade = grade},
+         roadmaker::edit::ElevationPoint{.s = length, .z = z + (grade * (length - station)),
+                                         .grade = grade}});
+    if (!cmd->apply(network).has_value()) {
+      throw std::runtime_error("set_elevation_profile");
+    }
+  };
+  linear(a, contact_a, z_a, grade_a);
+  linear(b, contact_b, z_b, grade_b);
+  return Pair{a, b};
+}
+
+const std::array<std::pair<ContactPoint, ContactPoint>, 4> kAllContactCombos{{
+    {ContactPoint::End, ContactPoint::Start}, // the common chain
+    {ContactPoint::End, ContactPoint::End},
+    {ContactPoint::Start, ContactPoint::Start},
+    {ContactPoint::Start, ContactPoint::End},
+}};
+
+std::string combo_label(ContactPoint a, ContactPoint b) {
+  return std::string("a=") + (a == ContactPoint::End ? "End" : "Start") +
+         " b=" + (b == ContactPoint::End ? "End" : "Start");
+}
+
+} // namespace
+
+TEST(Connection, CheckLinkableRefusesAVerticalStepAtCoincidentEnds) {
+  for (const auto& [contact_a, contact_b] : kAllContactCombos) {
+    SCOPED_TRACE(combo_label(contact_a, contact_b));
+    RoadNetwork network;
+    // Both ends flat, but 4 m apart in z: 5 cm apart in plan, 4 m apart in the
+    // world. Before #403 this welded silently.
+    const Pair pair = coincident_pair(network, contact_a, 4.0, 0.0, contact_b, 0.0, 0.0);
+    const auto ok = roadmaker::edit::check_linkable(
+        network, RoadEnd{pair.a, contact_a}, RoadEnd{pair.b, contact_b});
+    ASSERT_FALSE(ok.has_value());
+    EXPECT_NE(ok.error().message.find("4.00 m apart vertically"), std::string::npos)
+        << ok.error().message;
+
+    // close_gap refuses through the same gate and leaves the document alone.
+    const std::string before = snapshot(network);
+    auto command = roadmaker::edit::close_gap(
+        network, RoadEnd{pair.a, contact_a}, RoadEnd{pair.b, contact_b});
+    EXPECT_FALSE(command->apply(network).has_value());
+    EXPECT_EQ(snapshot(network), before);
+  }
+}
+
+TEST(Connection, CheckLinkableRefusesAGradeBreakAtCoincidentEnds) {
+  // The grade sign flips with the contact, which is the part #398 got wrong, so
+  // every combination is exercised. Both ends sit at z=0 — only the slope
+  // disagrees — so this cannot pass by accident on the elevation gate.
+  for (const auto& [contact_a, contact_b] : kAllContactCombos) {
+    SCOPED_TRACE(combo_label(contact_a, contact_b));
+    {
+      RoadNetwork network;
+      const Pair broken = coincident_pair(network, contact_a, 0.0, 0.04, contact_b, 0.0, 0.0);
+      const auto ok = roadmaker::edit::check_linkable(
+          network, RoadEnd{broken.a, contact_a}, RoadEnd{broken.b, contact_b});
+      ASSERT_FALSE(ok.has_value());
+      EXPECT_NE(ok.error().message.find("grades differ by 4.0 %"), std::string::npos)
+          << ok.error().message;
+    }
+    {
+      // THE CONTROL. A body leaving a along the joint enters b along it, so
+      // continuity means the two own-+s grades agree only after each is folded
+      // by its contact: a's grade must be mirrored when the contacts match.
+      RoadNetwork network;
+      const double grade_b = -roadmaker::edit::grade_sign_into(contact_a) *
+                             roadmaker::edit::grade_sign_into(contact_b) * 0.04;
+      const Pair sound = coincident_pair(network, contact_a, 0.0, 0.04, contact_b, 0.0, grade_b);
+      EXPECT_TRUE(roadmaker::edit::check_linkable(
+                      network, RoadEnd{sound.a, contact_a}, RoadEnd{sound.b, contact_b})
+                      .has_value())
+          << "a continuous joint must still link";
+    }
+  }
+}
+
+TEST(Connection, CloseGapStillBridgesARealGapWhenTheEndsDifferInZ) {
+  // The 3D gate applies ONLY inside the coincident branch. A real planar gap
+  // still routes to the connector, whose Hermite reconciles z and grade — that
+  // is the whole reason a vertical-only mismatch has to be refused instead.
+  RoadNetwork network;
+  const RoadId a = author(network, {Waypoint{0.0, 0.0}, Waypoint{100.0, 0.0}}, "1");
+  const RoadId b = author(network, {Waypoint{130.0, 0.0}, Waypoint{230.0, 0.0}}, "2");
+  const double len_a = network.road(a)->plan_view.length();
+  auto raise = roadmaker::edit::set_elevation_profile(
+      network,
+      a,
+      {roadmaker::edit::ElevationPoint{.s = 0.0, .z = 0.0, .grade = 4.0 / len_a},
+       roadmaker::edit::ElevationPoint{.s = len_a, .z = 4.0, .grade = 4.0 / len_a}});
+  ASSERT_TRUE(raise->apply(network).has_value());
+
+  const std::size_t roads_before = network.road_count();
+  const std::string before = snapshot(network);
+  auto command = roadmaker::edit::close_gap(
+      network, RoadEnd{a, ContactPoint::End}, RoadEnd{b, ContactPoint::Start});
+  ASSERT_TRUE(command->apply(network).has_value());
+  EXPECT_EQ(network.road_count(), roads_before + 1);
+  RoadId connector;
+  network.for_each_road([&](RoadId id, const roadmaker::Road&) {
+    if (id != a && id != b) {
+      connector = id;
+    }
+  });
+  ASSERT_TRUE(connector.is_valid());
+  const roadmaker::Road& conn = *network.road(connector);
+  EXPECT_NEAR(roadmaker::eval_profile(conn.elevation, 0.0), 4.0, 1e-6);
+  EXPECT_NEAR(roadmaker::eval_profile(conn.elevation, conn.plan_view.length()), 0.0, 1e-6);
+  ASSERT_TRUE(command->revert(network).has_value());
+  EXPECT_EQ(snapshot(network), before);
+}
+
+TEST(Connection, VerifyLinkWeldReportsElevationAndGradeGaps) {
+  // A step cannot be AUTHORED through close_gap any more, so it is created the
+  // way a user still can: weld two sound ends, then edit one road's profile.
+  // That is exactly the case the contract reports rather than pins.
+  RoadNetwork network;
+  const Pair pair = coincident_pair(
+      network, ContactPoint::End, 0.0, 0.0, ContactPoint::Start, 0.0, 0.0);
+  auto weld = roadmaker::edit::close_gap(
+      network, RoadEnd{pair.a, ContactPoint::End}, RoadEnd{pair.b, ContactPoint::Start});
+  ASSERT_TRUE(weld->apply(network).has_value());
+
+  const RoadEnd end{pair.a, ContactPoint::End};
+  {
+    const auto clean = roadmaker::edit::verify_link_weld(network, end);
+    ASSERT_TRUE(clean.has_value());
+    EXPECT_FALSE(clean->breaches);
+    EXPECT_NEAR(clean->max_elevation_gap, 0.0, 1e-9);
+    EXPECT_NEAR(clean->max_grade_gap, 0.0, 1e-9);
+  }
+
+  // Raise road b bodily by 4 m and tilt it: the joint now steps and kinks.
+  const double len_b = network.road(pair.b)->plan_view.length();
+  auto edit_b = roadmaker::edit::set_elevation_profile(
+      network,
+      pair.b,
+      {roadmaker::edit::ElevationPoint{.s = 0.0, .z = 4.0, .grade = 0.03},
+       roadmaker::edit::ElevationPoint{.s = len_b, .z = 4.0 + (0.03 * len_b), .grade = 0.03}});
+  ASSERT_TRUE(edit_b->apply(network).has_value());
+
+  const auto broken = roadmaker::edit::verify_link_weld(network, end);
+  ASSERT_TRUE(broken.has_value());
+  EXPECT_TRUE(broken->breaches);
+  EXPECT_NEAR(broken->max_elevation_gap, 4.0, 1e-9);
+  EXPECT_NEAR(broken->max_grade_gap, 0.03, 1e-9);
+  EXPECT_NEAR(broken->max_position_gap, 0.0, 1e-9) << "the ends still meet in plan";
+
+  // Symmetric: the joint reads the same from the other side.
+  const auto mirrored =
+      roadmaker::edit::verify_link_weld(network, RoadEnd{pair.b, ContactPoint::Start});
+  ASSERT_TRUE(mirrored.has_value());
+  EXPECT_NEAR(mirrored->max_elevation_gap, broken->max_elevation_gap, 1e-12);
+  EXPECT_NEAR(mirrored->max_grade_gap, broken->max_grade_gap, 1e-12);
+}
+
+TEST(Connection, VerifyLinkWeldRefusesEndsItCannotMeasure) {
+  RoadNetwork network;
+  const RoadId a = author(network, {Waypoint{0.0, 0.0}, Waypoint{100.0, 0.0}}, "1");
+  const RoadId b = author(network, {Waypoint{100.0, 0.0}, Waypoint{200.0, 0.0}}, "2");
+  // Unlinked.
+  EXPECT_FALSE(roadmaker::edit::verify_link_weld(network, RoadEnd{a, ContactPoint::End})
+                   .has_value());
+  // Stale road id.
+  EXPECT_FALSE(
+      roadmaker::edit::verify_link_weld(network, RoadEnd{RoadId{}, ContactPoint::End}).has_value());
+  // A plain link IS measurable.
+  auto weld = roadmaker::edit::close_gap(
+      network, RoadEnd{a, ContactPoint::End}, RoadEnd{b, ContactPoint::Start});
+  ASSERT_TRUE(weld->apply(network).has_value());
+  EXPECT_TRUE(
+      roadmaker::edit::verify_link_weld(network, RoadEnd{a, ContactPoint::End}).has_value());
+}
+
+TEST(Connection, VerifyLinkWeldDeclinesJunctionConnectingRoads) {
+  // A connecting road links road-to-road, so it looks measurable — but it is
+  // anchored on the LINKED LANE'S INNER BOUNDARY, metres off the arm's reference
+  // line on a multilane road. Measuring reference points there reports a large
+  // "gap" in a perfectly sound junction, so the whole joint is deferred to
+  // verify_junction_welds, which knows the anchor.
+  ArmedJunction fx;
+  RoadId connecting;
+  fx.network.for_each_road([&](RoadId id, const roadmaker::Road& road) {
+    if (road.junction == fx.junction) {
+      connecting = id;
+    }
+  });
+  ASSERT_TRUE(connecting.is_valid());
+  EXPECT_FALSE(
+      roadmaker::edit::verify_link_weld(fx.network, RoadEnd{connecting, ContactPoint::Start})
+          .has_value());
+  // ...and from the arm's side too, where the neighbour is the connecting road.
+  const auto welds = roadmaker::edit::verify_junction_welds(fx.network, fx.junction);
+  ASSERT_TRUE(welds.has_value());
+  EXPECT_FALSE(welds->breaches);
+}
+
+TEST(Connection, VerifyJunctionWeldsBreachesOnAVerticalDisplacement) {
+  // Before #403 WeldReport was plan-view only, so a connecting road could float
+  // metres above the arms it links and the checker called the junction clean.
+  ArmedJunction fx;
+  const auto clean = roadmaker::edit::verify_junction_welds(fx.network, fx.junction);
+  ASSERT_TRUE(clean.has_value());
+  EXPECT_FALSE(clean->breaches);
+  EXPECT_LE(clean->max_elevation_gap, roadmaker::tol::kWeldElevation);
+  EXPECT_LE(clean->max_grade_gap, roadmaker::tol::kWeldGrade);
+
+  RoadId connecting;
+  fx.network.for_each_road([&](RoadId id, const roadmaker::Road& road) {
+    if (road.junction == fx.junction) {
+      connecting = id;
+    }
+  });
+  ASSERT_TRUE(connecting.is_valid());
+  // Lift the connecting road 3 m without touching its plan view: position and
+  // heading stay perfect, so ONLY the new elevation dimension can catch it.
+  auto lifted = *fx.network.road(connecting);
+  lifted.elevation = {roadmaker::Poly3{.s = 0.0, .a = 3.0}};
+  *fx.network.road(connecting) = lifted;
+
+  const auto dirty = roadmaker::edit::verify_junction_welds(fx.network, fx.junction);
+  ASSERT_TRUE(dirty.has_value());
+  EXPECT_LE(dirty->max_position_gap, roadmaker::tol::kWeldPosition) << "the plan view is untouched";
+  EXPECT_NEAR(dirty->max_elevation_gap, 3.0, 1e-9);
+  EXPECT_TRUE(dirty->breaches);
+}
