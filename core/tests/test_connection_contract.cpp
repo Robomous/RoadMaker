@@ -91,7 +91,7 @@ constexpr std::string_view kJointOutlivingOps[] = {
     "create_linked_road",
     "extend_road",
     "translate_roads",
-    "rotate_road",
+    "rotate_roads",
     "move_waypoint",
     "insert_waypoint",
     "delete_waypoint",

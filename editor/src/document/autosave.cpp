@@ -61,11 +61,11 @@ AutosaveManager::AutosaveManager(Document& document,
           &AutosaveManager::on_command_committed);
   connect(&document_, &Document::saved, this, &AutosaveManager::clear_recovery);
   connect(&document_, &Document::loaded, this, &AutosaveManager::clear_recovery);
-  // A recovery copy of the pre-regeneration state: junction regeneration is
-  // the hairiest lifetime zone dogfooding found (hardening §4.6).
-  connect(&document_, &Document::about_to_regenerate, this, [this] {
+  // A recovery copy around junction regeneration: the hairiest lifetime zone
+  // dogfooding found (hardening §4.6).
+  connect(&document_, &Document::regeneration_checkpoint, this, [this] {
     if (auto written = autosave_now(); !written.has_value()) {
-      spdlog::warn("pre-regeneration autosave failed: {}", written.error().message);
+      spdlog::warn("regeneration-checkpoint autosave failed: {}", written.error().message);
     }
   });
 }

@@ -1494,24 +1494,35 @@ TEST(EditOperations, RegenerateJunctionTracksMovedIncomingEnd) {
   ASSERT_TRUE(roadmaker::edit::create_junction(network, t.ends)->apply(network).has_value());
   const JunctionId junction = network.find_junction("1");
 
-  // Move the west arm's junction end; the connecting roads must follow it.
+  // Move the west arm's junction end. Since cascade-s2 (#462) the move itself
+  // regenerates the junction — the connecting roads follow WITHIN the move
+  // command, with no separate regeneration step for anyone to forget.
   auto move = roadmaker::edit::move_waypoint(network, t.west, 1, Waypoint{.x = -8.0, .y = -1.0});
   ASSERT_TRUE(move->apply(network).has_value());
   ASSERT_TRUE(!roadmaker::junctions_touching(network, t.west).empty());
 
-  auto regen = roadmaker::edit::regenerate_junction(network, junction);
-  expect_command_round_trip(network, *regen);
-  ASSERT_TRUE(regen->apply(network).has_value());
-
-  for (const JunctionConnection& connection : network.junction(junction)->connections) {
-    if (connection.incoming_road != t.west) {
-      continue;
+  const auto expect_tracks_the_moved_end = [&]() {
+    for (const JunctionConnection& connection : network.junction(junction)->connections) {
+      if (connection.incoming_road != t.west) {
+        continue;
+      }
+      const roadmaker::Road* connecting = network.road(connection.connecting_road);
+      const auto start = connecting->plan_view.evaluate(0.0);
+      EXPECT_NEAR(start.x, -8.0, 1e-6);
+      EXPECT_NEAR(start.y, -1.0, 1e-6);
     }
-    const roadmaker::Road* connecting = network.road(connection.connecting_road);
-    const auto start = connecting->plan_view.evaluate(0.0);
-    EXPECT_NEAR(start.x, -8.0, 1e-6);
-    EXPECT_NEAR(start.y, -1.0, 1e-6);
-  }
+  };
+  expect_tracks_the_moved_end();
+
+  // An explicit regeneration on top is therefore a NO-OP, and a no-op
+  // regeneration writes byte-identical output (see regenerate_junction's
+  // contract). That is the idempotence the "one funnel" claim rests on: if the
+  // move had only half-followed, this second pass would move something.
+  const std::string settled = snapshot_xodr(network);
+  auto regen = roadmaker::edit::regenerate_junction(network, junction);
+  ASSERT_TRUE(regen->apply(network).has_value());
+  expect_network_matches(network, settled);
+  expect_tracks_the_moved_end();
 }
 
 TEST(EditOperations, RegenerateJunctionRejectsForeignJunction) {

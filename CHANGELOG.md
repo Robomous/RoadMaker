@@ -19,6 +19,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 Current version on `main`: **0.0.1**.
 
 ### Added
+- **Junctions now move with their roads**
+  ([#462](https://github.com/Robomous/RoadMaker/issues/462)): a junction used to
+  be movable through exactly one gesture. Dragging a road's shape node rebuilt
+  the junction around it live — but dragging or rotating the road itself was
+  refused outright, with the advice to *"delete the junction or move its free end
+  nodes instead"*, which is a workaround for a missing feature rather than a
+  design. The refusal did not even distinguish cases: sliding a junction and
+  **all** of its arms across the map cannot invalidate anything, and it was
+  turned away just as firmly as pulling one arm away on its own.
+  Now every gesture behaves the same way. Move or rotate an arm and the junction
+  rebuilds around its new position. Select **every** arm and the junction travels
+  as one rigid piece — its turns are carried across untouched rather than
+  recalculated, so hand-shaped paths, corner radii and stop lines come through
+  exactly as they were, and the saved file is the old one moved. Rotation gained
+  a multi-road form for this, and the yaw ring now turns the whole selection.
+  Junctions you loaded from someone else's file, and ones you have **locked**,
+  are still left alone.
+  Where a move would leave a junction that genuinely cannot be rebuilt — an arm
+  dragged out of reach of the others — **the whole gesture is refused and nothing
+  moves**, naming the junction. That is a deliberate choice over quietly
+  dissolving the junction, which would destroy authored turns and stop lines to
+  satisfy a drag you may not have meant. Mid-drag it simply stops following, and
+  says so once rather than once per frame.
+  The deeper change is that this decision is now made in **one** place, shared by
+  all six move gestures, so a gesture added later cannot forget it — which is
+  precisely how they came to disagree in the first place.
 - **Moving a road takes the roads connected to it along**
   ([#461](https://github.com/Robomous/RoadMaker/issues/461)): until now, nudging
   one road of a connected chain quietly wrecked the junction between them. Which

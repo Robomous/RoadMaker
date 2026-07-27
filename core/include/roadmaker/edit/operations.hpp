@@ -67,34 +67,59 @@ namespace roadmaker::edit {
 /// rm:waypoints metadata) — waypoint count must equal record count + 1.
 [[nodiscard]] RM_API Expected<std::vector<double>> waypoint_stations(const Road& road);
 
-[[nodiscard]] RM_API std::unique_ptr<Command>
-move_waypoint(const RoadNetwork& network, RoadId road, std::size_t index, Waypoint to);
+/// Whether a regeneration may change the junction's turn set.
+///
+/// Declared here rather than beside regenerate_junction because every move
+/// gesture now carries one: junction regeneration is stage [2] of the funnel
+/// each of them passes through (cascade-s2, #462).
+enum class TurnSetPolicy {
+  /// Turns may be added and dropped: new connecting roads are created, ones
+  /// whose turn disappeared are erased, and the connection table is rewritten.
+  /// The turns that survive keep their connecting-road IDs.
+  AllowChange,
+  /// Only geometry and widths may change; a different turn set is an error.
+  /// For the per-frame preview path ONLY — see regenerate_junction.
+  InPlaceOnly,
+};
 
-/// move_waypoint, plus in-place regeneration of every junction the road touches,
-/// as ONE command — so a mid-drag preview can show the connecting roads
-/// following the arm instead of snapping into place on release (#156).
+/// Moves authoring waypoint `index` to `to` and re-fits the reference line.
 ///
-/// Falls back to a plain move_waypoint when the road touches no junction that
-/// can regenerate, so a free-road drag keeps exactly its previous shape and
-/// cost. Junctions with no recorded arms (read from a foreign file) are skipped
-/// rather than refused: regenerate_junction treats them as an error, but a drag
-/// must not fail because some unrelated junction came from someone else's file.
+/// The joints this disturbs follow (#461) and the junctions it disturbs
+/// regenerate (#462) — see translate_roads for the full policy, which every
+/// move gesture shares. `policy` is that regeneration's turn-set policy; the
+/// per-frame preview path asks for InPlaceOnly via
+/// move_waypoint_following_junctions.
+[[nodiscard]] RM_API std::unique_ptr<Command>
+move_waypoint(const RoadNetwork& network,
+              RoadId road,
+              std::size_t index,
+              Waypoint to,
+              TurnSetPolicy policy = TurnSetPolicy::AllowChange);
+
+/// `move_waypoint` with the PREVIEW turn-set policy — the mid-drag path that
+/// shows the connecting roads following the arm instead of snapping into place
+/// on release (#156).
 ///
-/// LOCKED junctions (Junction::locked, p4-s4 #319) are skipped for the same
-/// reason with the opposite cause: the user asked for the hand-tuned result to
-/// survive edits to its arms, so dragging an arm node is a plain move and the
-/// connections stay exactly where they were put. The lock is a policy of the
-/// AUTOMATIC loops only — this one and Document's post-command regeneration —
-/// never of regenerate_junction itself, so an explicit "re-derive" action
-/// works on a locked junction with no bypass flag. edit::set_junction_locked
-/// toggles the flag.
+/// Since cascade-s2 (#462) this is all it is. Regeneration is no longer
+/// something a gesture opts into: every move passes through one funnel, and this
+/// factory differs from a plain move_waypoint in nothing but asking for
+/// TurnSetPolicy::InPlaceOnly. A preview command is rebuilt and discarded on
+/// every frame, and a regeneration that created connecting roads would have them
+/// erase_exact'd by the frame's revert, losing the only handle that could
+/// restore those slots.
 ///
-/// Unlike the editor's commit-time regeneration, this is **atomic** — if a
-/// regeneration fails the whole move is refused and the network is untouched.
-/// That is the right trade mid-drag: the frame is simply rejected and the last
-/// good preview stands. It is also close to unreachable, since regeneration
-/// only fails when the turn set changes and a node drag moves geometry, not
-/// lanes.
+/// Junctions with no recorded arms (read from a foreign file) are skipped rather
+/// than refused — a drag must not fail because some unrelated junction came from
+/// someone else's file — and LOCKED junctions (Junction::locked, p4-s4 #319) are
+/// skipped for the opposite reason: the user asked for the hand-tuned result to
+/// survive edits to its arms. The lock binds the AUTOMATIC loops only, never
+/// regenerate_junction itself, so an explicit "re-derive" action still works with
+/// no bypass flag. edit::set_junction_locked toggles it.
+///
+/// The move is **atomic**: if a regeneration cannot be planned the whole move is
+/// refused and the network is untouched. That is the right trade mid-drag — the
+/// frame is rejected and the last good preview stands — and it is the same trade
+/// every other move gesture now makes.
 [[nodiscard]] RM_API std::unique_ptr<Command> move_waypoint_following_junctions(
     const RoadNetwork& network, RoadId road, std::size_t index, Waypoint to);
 
@@ -200,29 +225,68 @@ extend_road(const RoadNetwork& network, RoadEnd end, Waypoint to);
 /// geometry-record start position and every authoring waypoint; headings,
 /// lengths, s-values, lanes, elevation and marks are untouched, so undo is
 /// byte-identical from the value snapshots. ONE command for N roads (not a
-/// macro): links BETWEEN two roads in the set survive the move, while a pred/
-/// succ link leaving the set is cleared on BOTH sides (break + move = one undo
-/// step). Refuses (invalid_command, junction named) any road participating in a
-/// junction — connecting road, arm, or junction back-reference — since its pose
-/// is generated, not free. `road_ids` is de-duplicated; empty is an error.
+/// macro). `road_ids` is de-duplicated; empty is an error.
+///
+/// CONNECTIVITY (docs/domain/connection_contract.md, the authority):
+/// - A link BETWEEN two roads in the set is untouched by the shift.
+/// - A link LEAVING the set drags its neighbour's contacting end along — the
+///   neighbour is re-fit, and only a re-fit that cannot be made severs the link,
+///   which is then reported through Command::follow_records (cascade-s1, #461).
+/// - A moved junction ARM regenerates its junction from the new arm poses; a
+///   junction whose every arm is in the set is carried RIGIDLY, connecting roads
+///   and hand-shaped maneuver paths included, so the output is the input
+///   translated. FOREIGN (no recorded arms) and LOCKED junctions are left alone
+///   (cascade-s2, #462).
+/// - Refuses (invalid_command, junction named) a CONNECTING road: its pose is
+///   generated from the arms, so move the arms instead.
+/// - Refuses, leaving the network untouched, when a junction cannot be
+///   regenerated from where the move puts its arms.
+///
+/// `policy` is the turn-set policy of that regeneration and exists for the
+/// editor's per-frame preview, which asks for InPlaceOnly exactly as a node drag
+/// does; every other caller wants the default.
 [[nodiscard]] RM_API std::unique_ptr<Command>
-translate_roads(const RoadNetwork& network, std::span<const RoadId> road_ids, double dx, double dy);
+translate_roads(const RoadNetwork& network,
+                std::span<const RoadId> road_ids,
+                double dx,
+                double dy,
+                TurnSetPolicy policy = TurnSetPolicy::AllowChange);
 
 /// Single-road convenience over translate_roads (same rules and diagnostics).
 [[nodiscard]] RM_API std::unique_ptr<Command>
-translate_road(const RoadNetwork& network, RoadId road, double dx, double dy);
+translate_road(const RoadNetwork& network,
+               RoadId road,
+               double dx,
+               double dy,
+               TurnSetPolicy policy = TurnSetPolicy::AllowChange);
 
-/// Rotates a single road about the world pivot (pivot_x, pivot_y) by `angle`
-/// [rad] CCW: every geometry record's start position rotates about the pivot and
+/// Rotates whole roads about the world pivot (pivot_x, pivot_y) by `angle` [rad]
+/// CCW: every geometry record's start position rotates about the pivot and
 /// `angle` is added to its heading, and authoring waypoints rotate too.
 /// Elevation (s-relative) and each record's shape coefficients (defined in the
 /// record's local u/v frame, which follows the heading) are unchanged — the
-/// rotation is rigid, so arcs/spirals/paramPoly3 need no coefficient edit. Same
-/// connectivity policy as translate_road: refuses a junction road (invalid_command,
-/// junction named), and a road-level link to a road that does not rotate with it
-/// breaks on BOTH sides (break + rotate = one undo step). Undo is byte-identical.
+/// rotation is rigid, so arcs/spirals/paramPoly3 need no coefficient edit. ONE
+/// command for N roads; `road_ids` is de-duplicated and empty is an error.
+///
+/// Same connectivity policy as translate_roads, junction rules included — which
+/// is why this takes a road SET: rotating a junction rigidly means rotating
+/// every one of its arms in one gesture. Undo is byte-identical.
 [[nodiscard]] RM_API std::unique_ptr<Command>
-rotate_road(const RoadNetwork& network, RoadId road, double angle, double pivot_x, double pivot_y);
+rotate_roads(const RoadNetwork& network,
+             std::span<const RoadId> road_ids,
+             double angle,
+             double pivot_x,
+             double pivot_y,
+             TurnSetPolicy policy = TurnSetPolicy::AllowChange);
+
+/// Single-road convenience over rotate_roads (same rules and diagnostics).
+[[nodiscard]] RM_API std::unique_ptr<Command>
+rotate_road(const RoadNetwork& network,
+            RoadId road,
+            double angle,
+            double pivot_x,
+            double pivot_y,
+            TurnSetPolicy policy = TurnSetPolicy::AllowChange);
 
 /// Splits at station s: the original keeps [0, s), a new road (auto id)
 /// gets [s, length). Sections, profiles, links and lane links are carried
@@ -360,17 +424,6 @@ struct TAttachOptions {
                                                                 RoadId target,
                                                                 double s,
                                                                 const TAttachOptions& options = {});
-
-/// Whether a regeneration may change the junction's turn set.
-enum class TurnSetPolicy {
-  /// Turns may be added and dropped: new connecting roads are created, ones
-  /// whose turn disappeared are erased, and the connection table is rewritten.
-  /// The turns that survive keep their connecting-road IDs.
-  AllowChange,
-  /// Only geometry and widths may change; a different turn set is an error.
-  /// For the per-frame preview path ONLY — see regenerate_junction.
-  InPlaceOnly,
-};
 
 /// What a regeneration does with the junction's authored maneuvers (p4-s6,
 /// issue #227).

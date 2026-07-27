@@ -213,16 +213,34 @@ TEST(RotateRoad, ANonRotatingNeighbourIsSwungRoundNotCutLoose) {
   EXPECT_NE(std::ranges::find(dirty_roads, b), dirty_roads.end());
 }
 
-TEST(RotateRoad, RefusesRoadLinkedToJunction) {
+// The rotate half of translate's flip (cascade-s2, #462): an ARM rotates and its
+// junction follows. See test_junction_cascade.cpp for the regeneration; this
+// junction is foreign (no recorded arms), so there is nothing to regenerate.
+TEST(RotateRoad, RotatesARoadLinkedToJunction) {
   RoadNetwork network;
   const RoadId road = author_line(network, "1");
   const JunctionId junction = network.create_junction("100", "X");
   network.road(road)->successor = RoadLink{.target = junction, .contact = ContactPoint::Start};
+  const double before_hdg = network.road(road)->plan_view.evaluate(0.0).hdg;
+
+  auto command = roadmaker::edit::rotate_road(network, road, 0.5, 0.0, 0.0);
+  ASSERT_TRUE(command->apply(network).has_value());
+  EXPECT_NEAR(network.road(road)->plan_view.evaluate(0.0).hdg, before_hdg + 0.5, 1e-9);
+  EXPECT_TRUE(network.road(road)->successor.has_value());
+}
+
+// The one junction refusal that remains: a CONNECTING road's pose is generated
+// from the arms, so moving it by hand means nothing.
+TEST(RotateRoad, RefusesConnectingRoad) {
+  RoadNetwork network;
+  const RoadId road = author_line(network, "1");
+  const JunctionId junction = network.create_junction("100", "X");
+  network.road(road)->junction = junction;
 
   auto command = roadmaker::edit::rotate_road(network, road, 0.5, 0.0, 0.0);
   const auto applied = command->apply(network);
   ASSERT_FALSE(applied.has_value());
-  EXPECT_NE(applied.error().message.find("junction 100"), std::string::npos)
+  EXPECT_NE(applied.error().message.find("connecting road"), std::string::npos)
       << applied.error().message;
 }
 

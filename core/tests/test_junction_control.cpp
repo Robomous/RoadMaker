@@ -633,13 +633,16 @@ TEST(JunctionControl, MergingAJunctionWithItselfIsRejected) {
 
 TEST(JunctionControl, MergingJunctionsFartherApartThanTheProximityLimitIsRejected) {
   MergeFixture fixture;
-  // Drag the right junction's arms far east. Neither junction is locked, but
-  // nothing regenerates here — the arm ends simply move out of reach.
-  for (const RoadId road : {fixture.east, fixture.north_east}) {
-    auto move = roadmaker::edit::move_waypoint(fixture.network, road, 1, Waypoint{400.0, 0.0});
-    ASSERT_NE(move, nullptr);
-    ASSERT_TRUE(move->apply(fixture.network).has_value());
-  }
+  // Carry the right junction far east as a RIGID body — both of its arms in one
+  // gesture, so the junction moves whole and stays perfectly buildable
+  // (cascade-s2, #462). Dragging ONE arm 400 m would now be refused outright,
+  // because it would leave that junction unbuildable; this is the gesture that
+  // actually expresses "move the junction away".
+  const std::array<RoadId, 2> arms{fixture.east, fixture.north_east};
+  auto move = roadmaker::edit::translate_roads(fixture.network, arms, 400.0, 0.0);
+  ASSERT_NE(move, nullptr);
+  ASSERT_TRUE(move->apply(fixture.network).has_value());
+
   expect_command_rejected(fixture.network,
                           merge_junctions(fixture.network, fixture.left, fixture.right));
 }

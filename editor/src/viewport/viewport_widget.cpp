@@ -1219,7 +1219,11 @@ std::optional<GizmoTarget> ViewportWidget::gizmo_target() const {
   if (tools_.active_id() != ToolId::Move) {
     return std::nullopt;
   }
-  return roadmaker::editor::gizmo_target(document_.network(), selection_.primary());
+  // The whole road selection travels with the target, so a plane or ring drag
+  // transforms every selected road — which is what makes a rigid whole-junction
+  // move or rotation expressible (cascade-s2, #462).
+  return roadmaker::editor::gizmo_target(
+      document_.network(), selection_.primary(), selection_.selected_roads());
 }
 
 void ViewportWidget::draw_gizmo(QPainter& painter) const {
@@ -1378,10 +1382,16 @@ void ViewportWidget::update_gizmo_drag(const QPointF& pos, Qt::KeyboardModifiers
   // takes effect mid-drag.
   input.free_rotation = (modifiers & Qt::ShiftModifier) != 0;
   const auto result = gizmo_drag_.update(input);
-  // Backstop only. The press-time gates in GizmoDragSession::begin turn away
-  // every refusal reachable by a gesture, and a frame that simply has nothing
-  // to edit reports success — so nothing known lands here. It exists so a
-  // kernel refusal added later cannot go silent again, which is #401 itself.
+  // A mid-drag kernel refusal — dragging a junction arm past the point where its
+  // junction can still be regenerated, say — arrives HERE, once, however many
+  // frames repeat it. The session absorbs the per-frame error and hands the
+  // reason over exactly once, because a toast per mouse-move is #401's own bug.
+  if (const std::optional<QString> refusal = gizmo_drag_.take_refusal()) {
+    show_toast(*refusal, ToastSeverity::Warning);
+  }
+  // Backstop only: the press-time gate and the absorption above account for
+  // every refusal a gesture can reach, so nothing known lands here. It exists so
+  // a kernel refusal added later cannot go silent again, which is #401 itself.
   if (!result.has_value()) {
     show_toast(tr("Cannot transform: %1").arg(QString::fromStdString(result.error().message)),
                ToastSeverity::Warning);

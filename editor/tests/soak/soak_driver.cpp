@@ -590,8 +590,10 @@ void SoakDriver::op_translate_road() {
   if (roads.empty()) {
     return;
   }
-  // Move one or two distinct roads together by a small random delta. The
-  // command refuses junction-touching roads, which push() records as rejected.
+  // Move one or two distinct roads together by a small random delta. A
+  // junction ARM is fair game — the junction regenerates from its new pose
+  // (cascade-s2, #462) — while a CONNECTING road, or a move that leaves a
+  // junction unbuildable, is refused and push() records it as rejected.
   const int count = std::min<int>(rand_int(1, 2), static_cast<int>(roads.size()));
   std::vector<RoadId> moved;
   for (int i = 0; i < count; ++i) {
@@ -605,8 +607,10 @@ void SoakDriver::op_translate_road() {
 }
 
 void SoakDriver::op_rotate_road() {
-  // Gizmo-style yaw: rotate one road about its mid-point by a random angle. The
-  // command refuses junction-touching roads, which push() records as rejected.
+  // Gizmo-style yaw: rotate one road about its mid-point by a random angle.
+  // Same junction policy as op_translate_road — an arm turns and its junction
+  // follows; a connecting road, or a rotation that puts an arm out of reach, is
+  // refused and push() records it as rejected.
   std::vector<RoadId> roads = live_roads(/*editable_only=*/true);
   if (roads.empty()) {
     return;

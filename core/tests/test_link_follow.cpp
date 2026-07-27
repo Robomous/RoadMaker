@@ -499,8 +499,11 @@ TEST(LinkFollow, AFollowedJunctionArmMarksItsJunctionDirty) {
   const roadmaker::edit::DirtySet dirty = command->dirty();
   EXPECT_NE(std::ranges::find(dirty.junctions, junction), dirty.junctions.end())
       << "the followed arm moved, so its junction must regenerate";
-  EXPECT_FALSE(dirty.junctions_are_current)
-      << "this stage regenerates nothing itself — the editor must";
+  // Since cascade-s2 (#462) the move OWNS that regeneration: stage [2] of the
+  // funnel decided about this junction (here, to skip it — it has no recorded
+  // arms, so it came from a foreign file), and the editor must not decide again.
+  EXPECT_TRUE(dirty.junctions_are_current)
+      << "the cascade funnel speaks for every junction the move touched";
 }
 
 // --- what follow does NOT do -----------------------------------------------------
