@@ -66,6 +66,7 @@ add_executable(roadmaker_core_tests
   test_terrain_persistence.cpp
   test_bridge_model.cpp
   test_grade_separation.cpp
+  test_prop_obstructions.cpp
   test_bridge_solids.cpp
   test_bridge_operations.cpp
   test_surface_roundtrip.cpp
