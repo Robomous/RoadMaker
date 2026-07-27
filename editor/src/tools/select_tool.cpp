@@ -27,6 +27,7 @@
 
 #include "document/document.hpp"
 #include "document/selection_model.hpp"
+#include "document/transform_gates.hpp"
 #include "viewport/picking.hpp"
 
 namespace roadmaker::editor {
@@ -429,40 +430,19 @@ void SelectTool::begin_move_drag(Qt::KeyboardModifiers modifiers) {
       pressed_selected && !selected.empty() ? selected : std::vector<RoadId>{pressed};
 
   // Junction roads have generated poses — refuse with a toast, touch nothing.
-  for (const RoadId road_id : roads) {
-    const std::vector<JunctionId> touched = junctions_touching(network, road_id);
-    if (!touched.empty()) {
-      const Road* road = network.road(road_id);
-      const Junction* junction = network.junction(touched.front());
-      emit status_message(
-          tr("Road %1 belongs to Junction %2 — junction roads can't be moved. Delete the "
-             "junction or move its free end nodes instead.")
-              .arg(road != nullptr ? QString::fromStdString(road->odr_id) : QString())
-              .arg(junction != nullptr ? QString::fromStdString(junction->odr_id) : QString()));
-      press_.reset();
-      return;
-    }
+  // The wording is shared with the transform gizmo (document/transform_gates.hpp)
+  // so the two surfaces cannot phrase the same refusal differently.
+  if (const std::optional<QString> refusal =
+          junction_transform_refusal(network, roads, TransformKind::Translate)) {
+    emit status_message(*refusal);
+    press_.reset();
+    return;
   }
 
   // A link leaving the moved set breaks — confirm BEFORE begin_preview (a modal
   // opened mid-drag would swallow the mouse-release).
-  const auto in_set = [&roads](RoadId id) { return std::ranges::find(roads, id) != roads.end(); };
-  const auto leaves_set = [&](const std::optional<RoadLink>& link) {
-    if (!link.has_value()) {
-      return false;
-    }
-    const auto* target = std::get_if<RoadId>(&link->target);
-    return target != nullptr && !in_set(*target);
-  };
-  bool breaks_link = false;
-  for (const RoadId road_id : roads) {
-    const Road* road = network.road(road_id);
-    if (road != nullptr && (leaves_set(road->predecessor) || leaves_set(road->successor))) {
-      breaks_link = true;
-      break;
-    }
-  }
-  if (breaks_link && confirm_link_break_ && !confirm_link_break_()) {
+  if (transform_breaks_links(network, roads, TransformKind::Translate) && confirm_link_break_ &&
+      !confirm_link_break_()) {
     press_.reset();
     return;
   }

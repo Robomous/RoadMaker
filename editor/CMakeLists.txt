@@ -76,6 +76,7 @@ add_library(roadmaker_editor_lib STATIC
   src/document/prop_placement.cpp
   src/document/signal_placement.cpp
   src/document/signal_phase_overlay.cpp
+  src/document/transform_gates.cpp
   src/document/project.cpp
   src/document/project_files_model.cpp
   src/document/elevation_utils.cpp
