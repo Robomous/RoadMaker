@@ -1274,6 +1274,48 @@ set_elevation_profile(const RoadNetwork& network, RoadId road, std::vector<Eleva
 [[nodiscard]] RM_API std::unique_ptr<Command>
 add_object(const RoadNetwork& network, RoadId road, Object object);
 
+/// Re-expresses an object in ANOTHER road's frame, preserving its WORLD pose
+/// and its ObjectId (cascade-s4, #464).
+///
+/// The first command that changes `Object::road` at all — `update_objects`
+/// refuses to, and delete+add would mint a new id and break every held
+/// reference and selection. The object's (s, t, hdg) are recomputed by
+/// projecting its current world position onto `road`'s reference line, so the
+/// prop does not visibly move: what changes is which road carries it, and
+/// therefore which road's future moves it follows.
+///
+/// Offered as the alternative to relocation when a prop has ended up beside a
+/// different road than the one that owns it. Note what it does NOT do: a prop
+/// re-anchored to the road it is standing IN stops being reported, because a
+/// prop is never flagged against its own anchor road — that is a
+/// placement-correctness fix, not an obstruction fix.
+///
+/// Fails (invalid_command) for a stale object or road id, for a road with no
+/// geometry, when `road` already owns the object, or when the object's world
+/// position does not project onto `road` within its station range.
+[[nodiscard]] RM_API std::unique_ptr<Command>
+reanchor_object(const RoadNetwork& network, ObjectId object, RoadId road);
+
+/// Moves every obstructed prop to the nearest place on its own anchor road
+/// where its footprint is clear — the explicit, consented counterpart to the
+/// obstruction report (cascade-s4, #464).
+///
+/// A move never relocates a prop by itself: it reports, and the user asks for
+/// this. Candidates are searched outward from the prop's current station, and
+/// then by drawing it back toward its anchor road's reference line, first clear
+/// one wins. A prop with no clear placement is left EXACTLY as authored, as is
+/// a prop whose instances come from a `<repeat>` series (the series carries its
+/// own stations, so moving the object's @s would move nothing the user sees).
+///
+/// Relocations are decided in sequence against the state the earlier ones
+/// produce, so the sweep cannot move one prop into another's new place.
+///
+/// Refused (invalid_command) when nothing is obstructed or nothing can be
+/// helped, so the caller can say so instead of pushing an empty undo entry —
+/// the same contract as `remove_orphaned_bridges`.
+[[nodiscard]] RM_API std::unique_ptr<Command>
+relocate_obstructed_props(const RoadNetwork& network);
+
 /// Removes an object; undo restores it exactly (same ObjectId). Fails for a
 /// stale object id.
 [[nodiscard]] RM_API std::unique_ptr<Command> delete_object(const RoadNetwork& network,

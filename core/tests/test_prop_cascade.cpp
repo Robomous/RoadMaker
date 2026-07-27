@@ -21,6 +21,7 @@
 
 #include "roadmaker/edit/edit_stack.hpp"
 #include "roadmaker/edit/operations.hpp"
+#include "roadmaker/mesh/mesh_builder.hpp"
 #include "roadmaker/mesh/prop_obstructions.hpp"
 #include "roadmaker/road/authoring.hpp"
 #include "roadmaker/road/network.hpp"
@@ -32,6 +33,7 @@
 #include <gtest/gtest.h>
 
 #include <array>
+#include <cmath>
 #include <memory>
 #include <numbers>
 #include <string>
@@ -272,6 +274,183 @@ TEST(PropCascade, TheEditStackExposesTheRecordsToHeadlessCallers) {
 
   ASSERT_TRUE(stack.undo(network).has_value());
   EXPECT_TRUE(stack.last_obstruction_records().empty()) << "nothing is applied any more";
+}
+
+// -----------------------------------------------------------------------------
+// The offered fixes — never applied without being asked for
+// -----------------------------------------------------------------------------
+
+TEST(PropCascade, RelocatingClearsTheObstructionInExactlyOneUndoEntry) {
+  RoadNetwork network;
+  const Scene scene = two_roads_and_a_tree(network);
+  const std::string before = test::snapshot_xodr(network);
+
+  auto move = edit::translate_road(network, scene.anchor, 0.0, -20.0);
+  expect_applies(network, move);
+  ASSERT_EQ(find_prop_obstructions(network).size(), 1U);
+
+  // The move did NOT fix it. That is the contract: report, never correct.
+  const Object* after_move = network.object(scene.prop);
+  ASSERT_NE(after_move, nullptr);
+  const double s_before = after_move->s;
+  const double t_before = after_move->t;
+
+  auto relocate = edit::relocate_obstructed_props(network);
+  expect_applies(network, relocate);
+  EXPECT_TRUE(find_prop_obstructions(network).empty()) << "the offered fix actually clears it";
+  const Object* relocated = network.object(scene.prop);
+  ASSERT_NE(relocated, nullptr);
+  EXPECT_TRUE(relocated->s != s_before || relocated->t != t_before) << "something moved";
+  EXPECT_EQ(relocated->road, scene.anchor) << "relocation stays on its own anchor road";
+
+  // Undo both, in order, and the file is byte-identical to the start.
+  ASSERT_TRUE(relocate->revert(network).has_value());
+  ASSERT_TRUE(move->revert(network).has_value());
+  EXPECT_EQ(test::snapshot_xodr(network), before);
+}
+
+/// A refusal, not an empty undo entry — the remove_orphaned_bridges contract.
+TEST(PropCascade, RelocateRefusesWhenNothingIsObstructed) {
+  RoadNetwork network;
+  (void)two_roads_and_a_tree(network);
+  ASSERT_TRUE(find_prop_obstructions(network).empty());
+
+  auto relocate = edit::relocate_obstructed_props(network);
+  ASSERT_NE(relocate, nullptr);
+  const auto applied = relocate->apply(network);
+  EXPECT_FALSE(applied.has_value()) << "the caller must be able to say 'nothing to do'";
+}
+
+/// A move must never destroy or silently rearrange authored data, so a prop
+/// with nowhere clear to go is left EXACTLY as it was.
+TEST(PropCascade, APropWithNowhereClearToGoIsLeftAsAuthored) {
+  RoadNetwork network;
+  // A short anchor road entirely inside a wide one: every station of the anchor
+  // is over the other road's carriageway, and t = 0 is no better.
+  const RoadId anchor = segment(network, "anchor", {-8, 0}, {8, 0});
+  segment(network, "wide", {-60, 0.2}, {60, 0.2});
+  const ObjectId prop = tree(network, anchor, 8.0, 0.0);
+  ASSERT_FALSE(find_prop_obstructions(network).empty());
+
+  const std::string before = test::snapshot_xodr(network);
+  auto relocate = edit::relocate_obstructed_props(network);
+  ASSERT_NE(relocate, nullptr);
+  const auto applied = relocate->apply(network);
+  EXPECT_FALSE(applied.has_value()) << "nowhere to go is a refusal, not a random move";
+  EXPECT_EQ(test::snapshot_xodr(network), before) << "and the prop is untouched";
+  EXPECT_NE(network.object(prop), nullptr) << "certainly not deleted";
+}
+
+/// A repeat series carries its own stations, so moving the object's @s would
+/// move nothing the user can see. Left alone rather than pretended-fixed.
+TEST(PropCascade, ARepeatSeriesIsNotPretendRelocated) {
+  RoadNetwork network;
+  const RoadId anchor = segment(network, "anchor", {-50, 40}, {50, 40});
+  segment(network, "crossed", {-50, 0}, {50, 0});
+
+  Object object;
+  object.road = anchor;
+  object.odr_id = "line";
+  object.name = "tree_pine";
+  object.type = ObjectType::Tree;
+  object.radius = 1.5;
+  object.height = 4.0;
+  ObjectRepeat repeat;
+  repeat.s = 40.0;
+  repeat.length = 20.0;
+  repeat.distance = 5.0;
+  repeat.t_start = -40.0; // the whole series sits on the crossed road
+  repeat.t_end = -40.0;
+  object.repeats.push_back(repeat);
+  network.add_object(anchor, std::move(object));
+  ASSERT_FALSE(find_prop_obstructions(network).empty());
+
+  const std::string before = test::snapshot_xodr(network);
+  auto relocate = edit::relocate_obstructed_props(network);
+  ASSERT_NE(relocate, nullptr);
+  EXPECT_FALSE(relocate->apply(network).has_value());
+  EXPECT_EQ(test::snapshot_xodr(network), before);
+}
+
+TEST(PropCascade, ReanchorPreservesTheWorldPoseAndTheObjectId) {
+  RoadNetwork network;
+  const Scene scene = two_roads_and_a_tree(network);
+
+  // Where the prop is drawn right now.
+  const NetworkMesh before_mesh = build_network_mesh(network);
+  std::array<double, 3> world_before{};
+  double heading_before = 0.0;
+  bool found = false;
+  for (const ObjectInstance& instance : before_mesh.objects) {
+    if (instance.object == scene.prop) {
+      world_before = instance.position;
+      heading_before = instance.heading;
+      found = true;
+    }
+  }
+  ASSERT_TRUE(found);
+
+  auto reanchor = edit::reanchor_object(network, scene.prop, scene.crossed);
+  expect_applies(network, reanchor);
+
+  const Object* moved = network.object(scene.prop);
+  ASSERT_NE(moved, nullptr) << "the ObjectId survives — that is the whole point";
+  EXPECT_EQ(moved->road, scene.crossed);
+
+  const NetworkMesh after_mesh = build_network_mesh(network);
+  found = false;
+  for (const ObjectInstance& instance : after_mesh.objects) {
+    if (instance.object == scene.prop) {
+      EXPECT_NEAR(instance.position[0], world_before[0], 1e-6);
+      EXPECT_NEAR(instance.position[1], world_before[1], 1e-6);
+      EXPECT_NEAR(instance.position[2], world_before[2], 1e-6);
+      EXPECT_NEAR(std::remainder(instance.heading - heading_before, 2.0 * kPi), 0.0, 1e-9);
+      found = true;
+    }
+  }
+  EXPECT_TRUE(found) << "a re-anchor must not make the prop vanish from the render";
+}
+
+TEST(PropCascade, ReanchorIsRefusedForARoadThatAlreadyOwnsItOrDoesNotExist) {
+  RoadNetwork network;
+  const Scene scene = two_roads_and_a_tree(network);
+
+  auto same = edit::reanchor_object(network, scene.prop, scene.anchor);
+  ASSERT_NE(same, nullptr);
+  EXPECT_FALSE(same->apply(network).has_value()) << "already anchored there";
+
+  auto stale = edit::reanchor_object(network, scene.prop, RoadId{});
+  ASSERT_NE(stale, nullptr);
+  EXPECT_FALSE(stale->apply(network).has_value()) << "stale target road";
+}
+
+TEST(PropCascade, ReanchorUndoIsByteIdentical) {
+  RoadNetwork network;
+  const Scene scene = two_roads_and_a_tree(network);
+  const std::string before = test::snapshot_xodr(network);
+
+  auto reanchor = edit::reanchor_object(network, scene.prop, scene.crossed);
+  expect_applies(network, reanchor);
+  EXPECT_NE(test::snapshot_xodr(network), before) << "it did something";
+
+  ASSERT_TRUE(reanchor->revert(network).has_value());
+  EXPECT_EQ(test::snapshot_xodr(network), before);
+}
+
+/// The honest caveat, pinned so it cannot quietly become a bug report:
+/// re-anchoring a prop to the road it is standing IN silences the flag without
+/// clearing anything, because a prop is never reported against its own anchor
+/// road. It is a placement-correctness fix; relocation is the obstruction fix.
+TEST(PropCascade, ReanchoringIntoTheObstructedRoadSilencesRatherThanClears) {
+  RoadNetwork network;
+  const Scene scene = two_roads_and_a_tree(network);
+  network.object(scene.prop)->t = -40.0; // world (0, 0): in the crossed road
+  ASSERT_EQ(find_prop_obstructions(network).size(), 1U);
+
+  auto reanchor = edit::reanchor_object(network, scene.prop, scene.crossed);
+  expect_applies(network, reanchor);
+  EXPECT_TRUE(find_prop_obstructions(network).empty())
+      << "R1 now exempts it — the prop has not moved a millimetre";
 }
 
 } // namespace
