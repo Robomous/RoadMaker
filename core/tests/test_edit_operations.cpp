@@ -671,6 +671,25 @@ TEST(EditOperations, SetNodeElevationMarksTouchingJunctionDirty) {
   EXPECT_NE(std::ranges::find(dirty.junctions, fixture.junction), dirty.junctions.end());
 }
 
+TEST(EditOperations, SetElevationProfileMarksTouchingJunctionDirty) {
+  RoadNetwork network;
+  const JunctionClosureFixture fixture = make_junction_closure(network);
+
+  // The sibling of the test above, and the asymmetry #403 closed: reshaping a
+  // profile moves the same cut faces set_node_elevation does, but this is the
+  // command the Profile panel and the Z gizmo push — and it named only the
+  // road, so a profile drag on a junction arm left the junction stale.
+  const double length = network.road(fixture.incoming)->plan_view.length();
+  auto command = roadmaker::edit::set_elevation_profile(
+      network,
+      fixture.incoming,
+      {roadmaker::edit::ElevationPoint{.s = 0.0, .z = 0.0, .grade = 3.0 / length},
+       roadmaker::edit::ElevationPoint{.s = length, .z = 3.0, .grade = 3.0 / length}});
+  const roadmaker::edit::DirtySet dirty = command->dirty();
+  EXPECT_NE(std::ranges::find(dirty.roads, fixture.incoming), dirty.roads.end());
+  EXPECT_NE(std::ranges::find(dirty.junctions, fixture.junction), dirty.junctions.end());
+}
+
 TEST(EditOperations, DeleteIncomingRoadDeletesItsConnectingRoads) {
   RoadNetwork network;
   const JunctionClosureFixture fixture = make_junction_closure(network);

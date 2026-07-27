@@ -19,6 +19,8 @@
 // revMinor, and validate_network cites normative rule UIDs — rules present
 // in only one version's catalog are cited only for that target.
 
+#include "roadmaker/edit/connection.hpp"
+#include "roadmaker/edit/operations.hpp"
 #include "roadmaker/road/authoring.hpp"
 #include "roadmaker/xodr/reader.hpp"
 #include "roadmaker/xodr/rules.hpp"
@@ -29,6 +31,7 @@
 #include <algorithm>
 #include <array>
 #include <string>
+#include <utility>
 #include <vector>
 
 using roadmaker::ContactPoint;
@@ -247,4 +250,117 @@ TEST(XodrWriter, ThreeArmJunctionDoesNotTriggerTheNotOnlyTwoRule) {
   const auto findings =
       roadmaker::validate_network(network, {.target_version = XodrVersion::v1_9_0});
   EXPECT_TRUE(findings_with_rule(findings, roadmaker::rules::kJunctionNotOnlyTwo).empty());
+}
+
+// --- #403, the road connection contract's two vendor rules ------------------
+
+namespace {
+
+/// Two roads welded end-to-start at (100, 0), the way close_gap leaves them.
+std::pair<RoadId, RoadId> welded_pair(RoadNetwork& network) {
+  const RoadId a = author_default(network, "1");
+  const std::array<Waypoint, 2> onward{Waypoint{.x = 100.0, .y = 0.0},
+                                       Waypoint{.x = 200.0, .y = 0.0}};
+  const auto b =
+      roadmaker::author_clothoid_road(network, onward, LaneProfile::two_lane_default(), "", "2");
+  EXPECT_TRUE(b.has_value());
+  auto weld = roadmaker::edit::close_gap(network,
+                                         roadmaker::RoadEnd{a, ContactPoint::End},
+                                         roadmaker::RoadEnd{*b, ContactPoint::Start});
+  EXPECT_TRUE(weld->apply(network).has_value());
+  return {a, *b};
+}
+
+} // namespace
+
+TEST(XodrWriter, AContinuousNetworkProducesNoConnectionFindings) {
+  // The control. Without it the two tests below would pass just as well on a
+  // validator that flagged every link it saw.
+  RoadNetwork network;
+  welded_pair(network);
+  const auto findings = roadmaker::validate_network(network);
+  EXPECT_TRUE(findings_with_rule(findings, roadmaker::rules::kLinkElevationContinuity).empty());
+  EXPECT_TRUE(findings_with_rule(findings, roadmaker::rules::kLinkEndsCoincide).empty());
+}
+
+TEST(XodrWriter, LinkedEndsWithAZStepCiteTheContinuityRule) {
+  RoadNetwork network;
+  const auto [a, b] = welded_pair(network);
+  (void)a;
+  // Raise b bodily AFTER welding — the edit path the contract reports rather
+  // than pins. The ends still meet in plan, so only elevation can catch it.
+  const double length = network.road(b)->plan_view.length();
+  auto raise = roadmaker::edit::set_elevation_profile(
+      network,
+      b,
+      {roadmaker::edit::ElevationPoint{.s = 0.0, .z = 4.0, .grade = 0.0},
+       roadmaker::edit::ElevationPoint{.s = length, .z = 4.0, .grade = 0.0}});
+  ASSERT_TRUE(raise->apply(network).has_value());
+
+  const auto matched = findings_with_rule(roadmaker::validate_network(network),
+                                          roadmaker::rules::kLinkElevationContinuity);
+  // EXACTLY one: the joint is reachable from both of its ends and must still be
+  // reported once, or every step in a network reads as two problems.
+  ASSERT_EQ(matched.size(), 1U);
+  EXPECT_EQ(matched.front().severity, Severity::Warning);
+  EXPECT_NE(matched.front().message.find("4.00 m elevation step"), std::string::npos)
+      << matched.front().message;
+  EXPECT_TRUE(matched.front().road.is_valid()) << "the panel navigates by road id";
+  // A z step is not a coincidence failure: the ends do still meet in plan.
+  EXPECT_TRUE(
+      findings_with_rule(roadmaker::validate_network(network), roadmaker::rules::kLinkEndsCoincide)
+          .empty());
+}
+
+TEST(XodrWriter, LinkedEndsWithAGradeBreakCiteTheContinuityRule) {
+  RoadNetwork network;
+  const auto [a, b] = welded_pair(network);
+  (void)a;
+  const double length = network.road(b)->plan_view.length();
+  auto tilt = roadmaker::edit::set_elevation_profile(
+      network,
+      b,
+      {roadmaker::edit::ElevationPoint{.s = 0.0, .z = 0.0, .grade = 0.05},
+       roadmaker::edit::ElevationPoint{.s = length, .z = 0.05 * length, .grade = 0.05}});
+  ASSERT_TRUE(tilt->apply(network).has_value());
+
+  const auto matched = findings_with_rule(roadmaker::validate_network(network),
+                                          roadmaker::rules::kLinkElevationContinuity);
+  ASSERT_EQ(matched.size(), 1U);
+  EXPECT_NE(matched.front().message.find("5.0 % grade break"), std::string::npos)
+      << matched.front().message;
+}
+
+TEST(XodrWriter, AStaleLinkAfterMovingAWaypointCitesTheCoincidenceRule) {
+  // move_waypoint deliberately leaves links alone (the cascade epic #406 owns
+  // making neighbours follow). Until then the contract at least makes the
+  // resulting stale link VISIBLE instead of silently wrong.
+  RoadNetwork network;
+  const auto [a, b] = welded_pair(network);
+  (void)b;
+  auto move = roadmaker::edit::move_waypoint(network, a, 1, Waypoint{.x = 60.0, .y = 0.0});
+  ASSERT_TRUE(move->apply(network).has_value());
+
+  const auto matched =
+      findings_with_rule(roadmaker::validate_network(network), roadmaker::rules::kLinkEndsCoincide);
+  ASSERT_EQ(matched.size(), 1U);
+  EXPECT_EQ(matched.front().severity, Severity::Warning);
+  EXPECT_NE(matched.front().message.find("40.00 m apart"), std::string::npos)
+      << matched.front().message;
+  // The elevation rule stays quiet: a joint whose ends are not in the same
+  // place is not a joint, and reporting its z too would be derivative noise.
+  EXPECT_TRUE(findings_with_rule(roadmaker::validate_network(network),
+                                 roadmaker::rules::kLinkElevationContinuity)
+                  .empty());
+}
+
+TEST(XodrWriter, JunctionConnectingRoadsAreNotReportedAsBrokenLinks) {
+  // A connecting road links road-to-road but welds on the linked lane's inner
+  // boundary, metres off the arm's reference line on a multilane road. Before
+  // this exclusion the validator called every multilane junction broken.
+  RoadNetwork network;
+  make_two_arm_junction(network);
+  const auto findings = roadmaker::validate_network(network);
+  EXPECT_TRUE(findings_with_rule(findings, roadmaker::rules::kLinkEndsCoincide).empty());
+  EXPECT_TRUE(findings_with_rule(findings, roadmaker::rules::kLinkElevationContinuity).empty());
 }

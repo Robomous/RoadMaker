@@ -79,6 +79,23 @@ struct ContactState {
   double station = 0.0;
 };
 
+/// THE GRADE SIGN TRAP, named once so nobody re-derives it. `ContactState`
+/// pre-flips `curvature` by contact but leaves `grade` as dz/ds along the road's
+/// OWN +s, so every consumer that compares two ends — or hands a grade to a
+/// connector — must re-express it in the joint's frame first. `grade_sign_into`
+/// gives the sign for travel INTO the joint at that end (the direction
+/// `into_hdg` names); `grade_sign_out` for travel OUT of it (`out_hdg`). They
+/// are exact negations, and picking the wrong one built inverted V-kink ramps
+/// for three of the four contact combinations (#398). See the road connection
+/// contract, docs/domain/connection_contract.md.
+[[nodiscard]] constexpr double grade_sign_into(ContactPoint contact) {
+  return contact == ContactPoint::End ? 1.0 : -1.0;
+}
+
+[[nodiscard]] constexpr double grade_sign_out(ContactPoint contact) {
+  return contact == ContactPoint::Start ? 1.0 : -1.0;
+}
+
 /// A driving lane at an arm's contact end, with the lateral offset of its INNER
 /// boundary (nearer lane 0, laneOffset included, positive = left of the arm's
 /// reference line). A connecting road anchors its reference line on that
@@ -123,6 +140,15 @@ struct Connector {
   std::vector<Poly3> elevation;
 };
 
+/// Length [m] over which a road chained off an existing end eases the grade it
+/// inherited there back to level. The taper is linear in grade (the cubic
+/// Hermite through (z0, g0) and (z0 + g0*L/2, 0) IS the quadratic whose
+/// derivative runs straight from g0 to 0), so the inherited slope dies out over
+/// a fixed, predictable distance instead of running to the end of however long
+/// the road happened to be drawn. See docs/domain/connection_contract.md
+/// §chain creation.
+inline constexpr double kGradeEaseLength = 20.0;
+
 /// Options for close_gap.
 struct CloseGapOptions {
   /// Ends farther apart than this [m] are refused.
@@ -135,13 +161,17 @@ struct CloseGapOptions {
 /// The post-regeneration coincidence report: the maxima between each connecting
 /// road's ends and the arms they link, computed with the SAME anchor math
 /// plan_junction uses so checker and generator cannot drift. `breaches` is true
-/// when position or heading exceeds tol::kWeldPosition / kWeldHeading; the
+/// when position, heading, elevation or grade exceeds its tolerance; the
 /// curvature gap is reported for information only, since a G1 weld legitimately
 /// leaves a curvature step (only a G2 close_gap drives it below kWeldCurvature).
+/// Elevation and grade are NOT informational: every join kind in the connection
+/// contract (docs/domain/connection_contract.md) guarantees both.
 struct WeldReport {
   double max_position_gap = 0.0;  ///< [m]
   double max_heading_gap = 0.0;   ///< [rad]
   double max_curvature_gap = 0.0; ///< [1/m]
+  double max_elevation_gap = 0.0; ///< [m]
+  double max_grade_gap = 0.0;     ///< [dz/ds]
   bool breaches = false;
 };
 
@@ -186,6 +216,22 @@ aligned_pose_on_road(const RoadNetwork& network, RoadId road, double s, std::opt
 /// Verify a junction's connecting roads still coincide with the arms they link.
 [[nodiscard]] RM_API Expected<WeldReport> verify_junction_welds(const RoadNetwork& network,
                                                                 JunctionId junction);
+
+/// The coincidence report at one road end that is linked directly to another
+/// ROAD — the plain-link sibling of verify_junction_welds. Reports the position,
+/// heading, elevation and grade gaps against the neighbour's contact state.
+/// Errors (InvalidArgument): a stale end, an end with no link, an end whose link
+/// targets a junction, or an end on either side of which sits a junction
+/// CONNECTING road — those weld on the linked lane's inner boundary rather than
+/// the reference line, so only verify_junction_welds knows where to measure.
+///
+/// Two linked ends run ANTI-PARALLEL in s whenever their contact points differ,
+/// so the grade comparison folds each side's dz/ds into the shared joint frame
+/// with the same contact-dependent sign close_gap applies (connection contract
+/// §the grade sign trap). Curvature is reported but never breaches: a plain link
+/// asserts no curvature continuity.
+[[nodiscard]] RM_API Expected<WeldReport> verify_link_weld(const RoadNetwork& network,
+                                                           const RoadEnd& end);
 
 /// Whether two free road ends can be linked/gap-closed (mirrors check_mergeable:
 /// both ends free, not in a junction, within max_gap_m). An enablement query

@@ -22,6 +22,12 @@ means for the sprint cut. Written 2026-07-15, before p2-s1 landed. Roadmap:
 > [realism defaults spec](../../domain/realism_defaults.md), plus the CI
 > divergence guard; extends p2-s8's road styles). Release-blocking. #398
 > has since merged (PR #410).
+>
+> **Status (2026-07-27):** #403 has since merged, landing the
+> [road connection contract](../../domain/connection_contract.md) as a
+> governing spec doc — both batch-2 items are now closed. The `cascade` epic
+> [#406](https://github.com/Robomous/RoadMaker/issues/406) is no longer gated:
+> the contract states the per-operation link policy its sprints implement.
 
 ## Why this document exists
 
@@ -292,6 +298,8 @@ Step 6 (Surface node graph) and 7–8 (terrain, bridges) are P5; 9 is P4;
 | [#215](https://github.com/Robomous/RoadMaker/issues/215) p2-s7 | Enclosed-area ground surfaces — scope unchanged, but the **representation is now decided**: a `Surface` entity with a derived boundary (§5), not a render-side by-product |
 | [#219](https://github.com/Robomous/RoadMaker/issues/219) p2-s8 | Road styles: new `RoadStyle` type (§6), `apply_road_style`, drop-target widening, urban two-lane style (#194) |
 | [#264](https://github.com/Robomous/RoadMaker/issues/264) p2-s9 | **New.** GW-2 P2-steps self-check, tool docs |
+| [#403](https://github.com/Robomous/RoadMaker/issues/403) p2-s10 | **New (batch-2 reopen).** The road connection contract: per-operation continuity guarantees in plan **and** elevation, 3D weld checks, two validator rules, chain-creation grade matching with easing, and the move/drag link policy the `cascade` epic implements |
+| [#413](https://github.com/Robomous/RoadMaker/issues/413) p2-s11 | **New (realism-batch reopen).** Road-class cross-section & marking defaults per the [realism defaults spec](../../domain/realism_defaults.md), plus the CI divergence guard |
 | [#265](https://github.com/Robomous/RoadMaker/issues/265) / [#266](https://github.com/Robomous/RoadMaker/issues/266) help-s1/s2 | **New.** In-app Help (Qt Help Framework) — pipeline + viewer, then F1 context help + coverage test + seed tutorials |
 
 Critical path: **s1 → s2 → s6**. s3 and s7 are independent.

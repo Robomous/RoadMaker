@@ -179,12 +179,27 @@ factories that consume them:
   is an arm of at most one junction, enforced by `create_junction` /
   `attach_t_junction` and by the validator rule
   `robomous.ai:rm:1.0.0:junctions.arm_single_owner`.
+- `grade_sign_into` / `grade_sign_out` — the contact-dependent sign that
+  re-expresses a `ContactState::grade` in the joint's frame. `grade` is the one
+  field `contact_state` does NOT pre-flip by contact, and picking the wrong sign
+  built V-kink ramps in three of the four contact combinations (#398).
 - `verify_junction_welds(network, JunctionId)` → `WeldReport`: post-regen
-  coincidence check (max position/heading/curvature gaps), computed with the
-  same anchor math the generator uses so checker and generator can't drift.
+  coincidence check (max position/heading/curvature/elevation/grade gaps),
+  computed with the same anchor math the generator uses so checker and generator
+  can't drift.
+- `verify_link_weld(network, RoadEnd)` → `WeldReport`: the same five gaps at a
+  plain road-to-road link. Declines junction connecting roads, which weld on the
+  linked lane's inner boundary rather than the reference line.
 - `check_linkable` + `close_gap(...)` — enablement query and the command that
   links two nearby free ends, with a local G2 weld so no curvature kink appears
-  at the joint (never a global refit — byte-goldens stay intact).
+  at the joint (never a global refit — byte-goldens stay intact). Coincidence is
+  **3D**: ends that meet in plan but disagree in elevation or grade are refused,
+  because a pure link generates no geometry to reconcile them.
+
+What each kind of join actually guarantees — in plan **and** in elevation — and
+what every later edit must preserve, is the
+[road connection contract](../domain/connection_contract.md), a governing spec
+doc gated by `core/tests/test_connection_contract.cpp`.
 
 Assembly factories (`edit/assembly.hpp`) build on the engine: `t_intersection` /
 `x_intersection` (standalone), and `tee_onto_road` / `cross_onto_road` — dropping

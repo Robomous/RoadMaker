@@ -16,8 +16,10 @@
 
 #include "panels/profile_panel.hpp"
 
+#include "roadmaker/edit/connection.hpp"
 #include "roadmaker/geometry/poly3.hpp"
 #include "roadmaker/road/network.hpp"
+#include "roadmaker/tol.hpp"
 
 #include <QDoubleSpinBox>
 #include <QHBoxLayout>
@@ -28,10 +30,12 @@
 #include <QPainter>
 #include <QPainterPath>
 #include <QPushButton>
+#include <QStringList>
 #include <QVBoxLayout>
 #include <algorithm>
 #include <cmath>
 #include <utility>
+#include <variant>
 
 #include "document/document.hpp"
 #include "document/elevation_utils.hpp"
@@ -87,9 +91,19 @@ ProfilePanel::ProfilePanel(Document& document, SelectionModel& selection, QWidge
   connect(under_button, &QPushButton::clicked, this, [this] { apply_overpass(false); });
   controls->addWidget(under_button);
 
+  // The connection contract REPORTS a welded boundary that has been edited away
+  // from its neighbour; it never pins the node back (making the neighbour follow
+  // is the cascade epic #406). Its own row, because it names a second road and
+  // does not fit beside the grade read-out.
+  weld_label_ = new QLabel(this);
+  weld_label_->setWordWrap(true);
+  weld_label_->setContentsMargins(6, 0, 6, 0);
+  weld_label_->hide();
+
   auto* layout = new QVBoxLayout(this);
   layout->setContentsMargins(0, 0, 0, 0);
   layout->addLayout(controls);
+  layout->addWidget(weld_label_);
   layout->addStretch(1); // the plot paints on the panel itself below the row
 
   connect(
@@ -155,6 +169,9 @@ void ProfilePanel::update_grade_label() {
   if (!road_.is_valid()) {
     grade_label_->setText(tr("No road selected"));
     grade_label_->setStyleSheet({});
+    if (weld_label_ != nullptr) {
+      weld_label_->hide(); // never leave the previous road's warning showing
+    }
     return;
   }
   const double worst = max_grade() * 100.0;
@@ -163,6 +180,53 @@ void ProfilePanel::update_grade_label() {
   // Palette-derived red keeps the warning visible in light and dark themes.
   grade_label_->setStyleSheet(too_steep ? QStringLiteral("color: #c62828; font-weight: bold;")
                                         : QString());
+  update_weld_label();
+}
+
+QString ProfilePanel::weld_warning() const {
+  return weld_label_ != nullptr && weld_label_->isVisibleTo(this) ? weld_label_->text() : QString();
+}
+
+void ProfilePanel::update_weld_label() {
+  if (weld_label_ == nullptr) {
+    return;
+  }
+  QStringList broken;
+  for (const ContactPoint contact : {ContactPoint::Start, ContactPoint::End}) {
+    const auto report = edit::verify_link_weld(document_.network(), RoadEnd{road_, contact});
+    // An unlinked, stale or junction-owned end simply has nothing to say here.
+    if (!report.has_value() || !report->breaches) {
+      continue;
+    }
+    // A joint whose ends are not in the same place is a stale link, not a
+    // profile problem — the Diagnostics dock reports that one on save.
+    if (report->max_position_gap > tol::kWeldPosition) {
+      continue;
+    }
+    const Road* road = document_.network().road(road_);
+    const auto& slot = contact == ContactPoint::Start ? road->predecessor : road->successor;
+    const RoadId* target = slot.has_value() ? std::get_if<RoadId>(&slot->target) : nullptr;
+    const Road* neighbour = target != nullptr ? document_.network().road(*target) : nullptr;
+    const QString who = neighbour != nullptr
+                            ? tr("road %1").arg(QString::fromStdString(neighbour->odr_id))
+                            : tr("its neighbour");
+    const QString where = contact == ContactPoint::Start ? tr("Start") : tr("End");
+    if (report->max_elevation_gap > tol::kWeldElevation) {
+      broken << tr("%1 is welded to %2 but sits %3 m above it")
+                    .arg(where, who)
+                    .arg(report->max_elevation_gap, 0, 'f', 2);
+    }
+    if (report->max_grade_gap > tol::kWeldGrade) {
+      broken << tr("%1 is welded to %2 but their grades differ by %3 %")
+                    .arg(where, who)
+                    .arg(report->max_grade_gap * 100.0, 0, 'f', 1);
+    }
+  }
+  weld_label_->setVisible(!broken.isEmpty());
+  if (!broken.isEmpty()) {
+    weld_label_->setText(broken.join(QStringLiteral("\n")));
+    weld_label_->setStyleSheet(QStringLiteral("color: #c62828;"));
+  }
 }
 
 double ProfilePanel::clearance() const {

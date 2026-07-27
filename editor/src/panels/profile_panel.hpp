@@ -54,6 +54,11 @@ public:
 
   [[nodiscard]] const std::vector<edit::ElevationPoint>& nodes() const { return nodes_; }
 
+  /// The road connection contract's read-out: what this road's welded ends no
+  /// longer promise, or empty when both are sound (or unlinked). Reported, never
+  /// pinned — the panel writes exactly the profile the user asked for.
+  [[nodiscard]] QString weld_warning() const;
+
   // --- interactive entry points (mouse handlers call these; tests too) ------
 
   /// Starts/updates a z-drag of node `index` by `dz` meters against the
@@ -95,6 +100,7 @@ private:
   void refresh_from_document();
   void push_profile(std::vector<edit::ElevationPoint> points);
   void update_grade_label();
+  void update_weld_label();
 
   /// Screen mapping for the plot area (margins applied).
   [[nodiscard]] double s_to_x(double s) const;
@@ -128,6 +134,7 @@ private:
   QDoubleSpinBox* clearance_spin_ = nullptr;
   QDoubleSpinBox* max_grade_spin_ = nullptr;
   QLabel* grade_label_ = nullptr;
+  QLabel* weld_label_ = nullptr;
   QWidget* canvas_ = nullptr;
 };
 

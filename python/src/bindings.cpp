@@ -2855,7 +2855,46 @@ NB_MODULE(_roadmaker, m) {
       "b"_a,
       "options"_a = roadmaker::edit::CloseGapOptions{},
       "Closes the gap between two free road ends: a pure link when they nearly "
-      "coincide, else a single-lane connector road, in one undoable command.");
+      "coincide, else a single-lane connector road, in one undoable command. "
+      "Coincidence is 3D — ends that meet in plan but not in elevation are "
+      "refused, since a pure link generates no geometry to reconcile them.");
+
+  edit.attr("GRADE_EASE_LENGTH") = roadmaker::edit::kGradeEaseLength;
+
+  nb::class_<roadmaker::edit::WeldReport>(edit, "WeldReport")
+      .def_ro("max_position_gap", &roadmaker::edit::WeldReport::max_position_gap)
+      .def_ro("max_heading_gap", &roadmaker::edit::WeldReport::max_heading_gap)
+      .def_ro("max_curvature_gap", &roadmaker::edit::WeldReport::max_curvature_gap)
+      .def_ro("max_elevation_gap", &roadmaker::edit::WeldReport::max_elevation_gap)
+      .def_ro("max_grade_gap", &roadmaker::edit::WeldReport::max_grade_gap)
+      .def_ro("breaches", &roadmaker::edit::WeldReport::breaches)
+      .def("__repr__", [](const roadmaker::edit::WeldReport& report) {
+        return "WeldReport(position=" + std::to_string(report.max_position_gap) +
+               " m, heading=" + std::to_string(report.max_heading_gap) +
+               " rad, curvature=" + std::to_string(report.max_curvature_gap) +
+               " 1/m, elevation=" + std::to_string(report.max_elevation_gap) +
+               " m, grade=" + std::to_string(report.max_grade_gap) +
+               ", breaches=" + (report.breaches ? "True" : "False") + ")";
+      });
+  edit.def(
+      "verify_link_weld",
+      [](const roadmaker::RoadNetwork& network, const roadmaker::RoadEnd& end) {
+        return unwrap(roadmaker::edit::verify_link_weld(network, end));
+      },
+      "network"_a,
+      "end"_a,
+      "The coincidence report at one road end linked directly to another road: "
+      "position, heading, curvature, elevation and grade gaps against the "
+      "neighbour. Raises ValueError for an unlinked or junction-owned end.");
+  edit.def(
+      "verify_junction_welds",
+      [](const roadmaker::RoadNetwork& network, roadmaker::JunctionId junction) {
+        return unwrap(roadmaker::edit::verify_junction_welds(network, junction));
+      },
+      "network"_a,
+      "junction"_a,
+      "The worst coincidence gaps between a junction's connecting roads and the "
+      "arms they link.");
 
   nb::class_<roadmaker::edit::ElevationPoint>(edit, "ElevationPoint")
       .def(nb::init<>())

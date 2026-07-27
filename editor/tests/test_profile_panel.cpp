@@ -20,6 +20,7 @@
 // the panel's public entry points are driven directly — the mouse handlers
 // call the same methods.
 
+#include "roadmaker/edit/connection.hpp"
 #include "roadmaker/edit/operations.hpp"
 #include "roadmaker/geometry/poly3.hpp"
 #include "roadmaker/xodr/writer.hpp"
@@ -197,3 +198,46 @@ TEST(ProfilePanel, DeletingACrossingRoadLeavesTheOverpassIntact) {
 }
 
 } // namespace
+
+// --- #403, the road connection contract -------------------------------------
+
+TEST(ProfilePanel, WeldedBoundaryEditIsReportedAndNeverPinned) {
+  // Two roads welded at (120, 0). Raising the shared boundary node on one of
+  // them steps the joint — the contract REPORTS that; it must not clamp the
+  // node back (making the neighbour follow is the cascade epic #406).
+  Rig rig;
+  const RoadId other = make_road(rig.document, Waypoint{120.0, 0.0}, Waypoint{240.0, 0.0});
+  ASSERT_TRUE(rig.document.push_command(
+      roadmaker::edit::close_gap(rig.document.network(),
+                                 roadmaker::RoadEnd{rig.road, roadmaker::ContactPoint::End},
+                                 roadmaker::RoadEnd{other, roadmaker::ContactPoint::Start})));
+  rig.selection.select({.road = rig.road, .lane = {}});
+  EXPECT_TRUE(rig.panel.weld_warning().isEmpty()) << "a sound weld says nothing";
+
+  // Drag the END node (the welded one) up by 2 m and commit.
+  rig.panel.drag_node(rig.panel.nodes().size() - 1, 2.0);
+  rig.panel.commit_drag();
+
+  // The edit LANDED — the command wrote what the user asked for.
+  const roadmaker::Road& road = *rig.document.network().road(rig.road);
+  EXPECT_NEAR(roadmaker::eval_profile(road.elevation, road.length), 2.0, 1e-9);
+  // ...and the divergence is named, with the neighbour's OpenDRIVE id.
+  const QString warning = rig.panel.weld_warning();
+  ASSERT_FALSE(warning.isEmpty()) << "a stepped weld must be reported";
+  EXPECT_TRUE(warning.contains(QStringLiteral("2.00"))) << warning.toStdString();
+  EXPECT_TRUE(warning.contains(QStringLiteral("End"))) << warning.toStdString();
+
+  // Undo reconciles the joint again, and the warning clears.
+  rig.document.undo_stack()->undo();
+  rig.selection.select({.road = rig.road, .lane = {}});
+  EXPECT_TRUE(rig.panel.weld_warning().isEmpty()) << "reconciled joints stop warning";
+}
+
+TEST(ProfilePanel, AnUnlinkedRoadNeverWarns) {
+  // The control: without it the test above would pass on a panel that warned
+  // about every profile edit it saw.
+  Rig rig;
+  rig.panel.drag_node(rig.panel.nodes().size() - 1, 5.0);
+  rig.panel.commit_drag();
+  EXPECT_TRUE(rig.panel.weld_warning().isEmpty());
+}

@@ -23,6 +23,8 @@
 #include "roadmaker/road/network.hpp"
 #include "roadmaker/tol.hpp"
 
+#include <fmt/format.h>
+
 #include <algorithm>
 #include <cmath>
 #include <numbers>
@@ -367,17 +369,30 @@ Expected<WeldReport> verify_junction_welds(const RoadNetwork& network, JunctionI
     }
     return std::nullopt;
   };
-  const auto accumulate =
-      [&](const PathPoint& tip, double expected_heading, const ContactState& arm, double inner_t) {
-        const std::array<double, 2> weld = contact_lateral(arm, inner_t);
-        report.max_position_gap =
-            std::max(report.max_position_gap, std::hypot(tip.x - weld[0], tip.y - weld[1]));
-        report.max_heading_gap =
-            std::max(report.max_heading_gap,
-                     std::abs(std::remainder(tip.hdg - expected_heading, 2.0 * std::numbers::pi)));
-        report.max_curvature_gap =
-            std::max(report.max_curvature_gap, std::abs(tip.curvature - arm.curvature));
-      };
+  // `expected_grade` is the arm's grade already expressed along the CONNECTING
+  // road's +s — plan_junction's g_in / g_out — so checker and generator read the
+  // same number (see grade_sign_into / grade_sign_out).
+  const auto accumulate = [&](const Road& connector,
+                              double station,
+                              double expected_heading,
+                              const ContactState& arm,
+                              double inner_t,
+                              double expected_grade) {
+    const PathPoint tip = connector.plan_view.evaluate(station);
+    const std::array<double, 2> weld = contact_lateral(arm, inner_t);
+    report.max_position_gap =
+        std::max(report.max_position_gap, std::hypot(tip.x - weld[0], tip.y - weld[1]));
+    report.max_heading_gap =
+        std::max(report.max_heading_gap,
+                 std::abs(std::remainder(tip.hdg - expected_heading, 2.0 * std::numbers::pi)));
+    report.max_curvature_gap =
+        std::max(report.max_curvature_gap, std::abs(tip.curvature - arm.curvature));
+    report.max_elevation_gap = std::max(
+        report.max_elevation_gap, std::abs(eval_profile(connector.elevation, station) - arm.z));
+    report.max_grade_gap =
+        std::max(report.max_grade_gap,
+                 std::abs(profile_grade(connector.elevation, station) - expected_grade));
+  };
   for (const JunctionConnection& connection : junction->connections) {
     const Road* road = network.road(connection.connecting_road);
     if (road == nullptr || !road->predecessor.has_value() || !road->successor.has_value() ||
@@ -399,7 +414,12 @@ Expected<WeldReport> verify_junction_welds(const RoadNetwork& network, JunctionI
       if (auto arm = contact_state(network, *from); arm.has_value()) {
         const auto inner_t = inner_t_of(driving_lanes_at(network, *from, *arm, true), from_lane);
         if (inner_t.has_value()) {
-          accumulate(road->plan_view.evaluate(0.0), arm->into_hdg, *arm, *inner_t);
+          accumulate(*road,
+                     0.0,
+                     arm->into_hdg,
+                     *arm,
+                     *inner_t,
+                     grade_sign_into(from->contact) * arm->grade);
         }
       }
     }
@@ -408,16 +428,77 @@ Expected<WeldReport> verify_junction_welds(const RoadNetwork& network, JunctionI
       if (auto arm = contact_state(network, *to); arm.has_value()) {
         const auto inner_t = inner_t_of(driving_lanes_at(network, *to, *arm, false), to_lane);
         if (inner_t.has_value()) {
-          accumulate(road->plan_view.evaluate(length), arm->out_hdg, *arm, *inner_t);
+          accumulate(*road,
+                     length,
+                     arm->out_hdg,
+                     *arm,
+                     *inner_t,
+                     grade_sign_out(to->contact) * arm->grade);
         }
       }
     }
   }
   // A G1 weld matches position and heading but legitimately leaves a curvature
-  // step (only a G2 close_gap drives that to zero), so `breaches` is
-  // position/heading only; max_curvature_gap is reported for information.
+  // step (only a G2 close_gap drives that to zero), so max_curvature_gap is
+  // reported for information and never breaches. Elevation and grade DO: a
+  // junction contact guarantees C1 in z (connection contract §guarantees).
   report.breaches =
-      report.max_position_gap > tol::kWeldPosition || report.max_heading_gap > tol::kWeldHeading;
+      report.max_position_gap > tol::kWeldPosition || report.max_heading_gap > tol::kWeldHeading ||
+      report.max_elevation_gap > tol::kWeldElevation || report.max_grade_gap > tol::kWeldGrade;
+  return report;
+}
+
+Expected<WeldReport> verify_link_weld(const RoadNetwork& network, const RoadEnd& end) {
+  const Road* road = network.road(end.road);
+  if (road == nullptr) {
+    return make_error(ErrorCode::InvalidArgument, "stale road id in road end");
+  }
+  const auto& slot = end.contact == ContactPoint::Start ? road->predecessor : road->successor;
+  if (!slot.has_value()) {
+    return make_error(ErrorCode::InvalidArgument, "the end is not linked", road->odr_id);
+  }
+  const RoadId* target = std::get_if<RoadId>(&slot->target);
+  if (target == nullptr) {
+    return make_error(
+        ErrorCode::InvalidArgument, "the end links to a junction, not a road", road->odr_id);
+  }
+  const RoadEnd neighbour{.road = *target, .contact = slot->contact};
+  // A junction's CONNECTING roads also link road-to-road, but they are welded on
+  // the linked lane's INNER BOUNDARY, not on the arm's reference line — on a
+  // multilane arm the two are metres apart by design. Comparing reference points
+  // there would report a 4.8 m "gap" in a perfectly good junction, so those
+  // joints belong to verify_junction_welds, which knows the anchor.
+  const Road* other = network.road(*target);
+  if (road->junction.is_valid() || (other != nullptr && other->junction.is_valid())) {
+    return make_error(
+        ErrorCode::InvalidArgument, "the end belongs to a junction connecting road", road->odr_id);
+  }
+  const auto here = contact_state(network, end);
+  if (!here.has_value()) {
+    return tl::unexpected<Error>(here.error());
+  }
+  const auto there = contact_state(network, neighbour);
+  if (!there.has_value()) {
+    return tl::unexpected<Error>(there.error());
+  }
+
+  WeldReport report;
+  report.max_position_gap = std::hypot(here->x - there->x, here->y - there->y);
+  // A body entering the joint here leaves it there, so the two headings are
+  // continuous when this end's into_hdg equals the neighbour's out_hdg.
+  report.max_heading_gap =
+      std::abs(std::remainder(here->into_hdg - there->out_hdg, 2.0 * std::numbers::pi));
+  report.max_curvature_gap = std::abs(here->curvature - there->curvature);
+  report.max_elevation_gap = std::abs(here->z - there->z);
+  // grade_sign_out is the exact negation of grade_sign_into, so folding both
+  // sides into the travel-into frame turns the difference into a sum.
+  report.max_grade_gap = std::abs((grade_sign_into(end.contact) * here->grade) +
+                                  (grade_sign_into(neighbour.contact) * there->grade));
+  // A plain link asserts no curvature continuity — two roads may legitimately
+  // meet tangentially with different curvatures — so it never breaches.
+  report.breaches =
+      report.max_position_gap > tol::kWeldPosition || report.max_heading_gap > tol::kWeldHeading ||
+      report.max_elevation_gap > tol::kWeldElevation || report.max_grade_gap > tol::kWeldGrade;
   return report;
 }
 
@@ -455,6 +536,28 @@ Expected<void> check_linkable(const RoadNetwork& network,
   const double gap = std::hypot(contact_a->x - contact_b->x, contact_a->y - contact_b->y);
   if (gap > options.max_gap_m + tol::kLength) {
     return make_error(ErrorCode::InvalidArgument, "ends are too far apart to link");
+  }
+  // Coincidence is 3D. Ends this close in plan become a PURE LINK — no geometry
+  // is generated to reconcile anything — so the contract's elevation guarantee
+  // has to hold before the link is made, not after. A vertical-only mismatch
+  // cannot be bridged by a connector either (the clothoid fit has no planar
+  // distance to work with), so it is refused rather than silently welded into a
+  // cliff. A real planar gap still routes to fit_connector, whose Hermite
+  // reconciles z and grade for us.
+  if (gap <= options.coincident_gap_m) {
+    const double elevation_step = std::abs(contact_a->z - contact_b->z);
+    if (elevation_step > tol::kWeldElevation) {
+      return make_error(
+          ErrorCode::InvalidArgument,
+          fmt::format("the ends meet in plan but are {:.2f} m apart vertically", elevation_step));
+    }
+    const double grade_step = std::abs((grade_sign_into(a.contact) * contact_a->grade) +
+                                       (grade_sign_into(b.contact) * contact_b->grade));
+    if (grade_step > tol::kWeldGrade) {
+      return make_error(
+          ErrorCode::InvalidArgument,
+          fmt::format("the ends meet but their grades differ by {:.1f} %", grade_step * 100.0));
+    }
   }
   return {};
 }

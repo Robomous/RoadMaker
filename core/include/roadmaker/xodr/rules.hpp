@@ -240,4 +240,22 @@ inline constexpr std::string_view kJunctionBoundaryReachAllRoads =
 inline constexpr std::string_view kJunctionArmSingleOwner =
     "robomous.ai:rm:1.0.0:junctions.arm_single_owner";
 
+/// RoadMaker-authored rule (NOT ASAM): "Two linked road ends shall coincide."
+/// ASAM constrains how a link is DECLARED (road.linkage.road_link_attribute_usage,
+/// and 1.9.0's road.linkage.both_sides_consistency) but never requires the two
+/// ends to actually meet, so an edit that moves one end away leaves a link that
+/// is well-formed and geometrically broken. Vendor namespace per the
+/// maintainer-approved convention extension; the version is RoadMaker's.
+inline constexpr std::string_view kLinkEndsCoincide =
+    "robomous.ai:rm:1.0.0:roads.link_ends_coincide";
+
+/// RoadMaker-authored rule (NOT ASAM): "Two linked road ends shall be continuous
+/// in elevation and grade." ASAM has no road-to-road elevation-continuity rule at
+/// all — the nearest is the junction should-rule
+/// junctions.elevation_grid.entry_exit_smoothness — so a step at a plain link is
+/// a product-quality matter, which is precisely why the road connection contract
+/// (docs/domain/connection_contract.md) states it and this rule enforces it.
+inline constexpr std::string_view kLinkElevationContinuity =
+    "robomous.ai:rm:1.0.0:roads.link_elevation_continuity";
+
 } // namespace roadmaker::rules

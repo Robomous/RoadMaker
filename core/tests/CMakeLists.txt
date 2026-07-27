@@ -7,6 +7,7 @@ add_executable(roadmaker_core_tests
   test_profile_fit.cpp
   test_authoring.cpp
   test_defaults_registry.cpp
+  test_connection_contract.cpp
   test_rm_registry.cpp
   test_raw_xml.cpp
   test_user_data_preservation.cpp

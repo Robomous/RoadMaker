@@ -51,4 +51,12 @@ inline constexpr double kWeldPosition = 1e-3;
 inline constexpr double kWeldHeading = 1e-3;
 inline constexpr double kWeldCurvature = 5e-3;
 
+/// The elevation half of the same weld: the z step [m] and the grade step
+/// [dz/ds, dimensionless] two ends meant to be continuous may show. Unlike
+/// curvature these are NOT informational — a pure link asserts both (see the
+/// road connection contract, docs/domain/connection_contract.md). Matched to
+/// merge's seam tolerance so a weldable seam is also a mergeable seam.
+inline constexpr double kWeldElevation = 1e-3;
+inline constexpr double kWeldGrade = 1e-3;
+
 } // namespace roadmaker::tol

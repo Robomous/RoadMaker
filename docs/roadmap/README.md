@@ -117,9 +117,10 @@ a categorized toolbar.
   connections, junction geometry, and derived layers, and flags obstructed
   props, tracked by epic
   [#406](https://github.com/Robomous/RoadMaker/issues/406) and gated on the
-  road connection contract
-  ([#403](https://github.com/Robomous/RoadMaker/issues/403)) — is the
-  fourth. Unlike the first three it spans four pillars (P2/P4/P5/P6) with no
+  [road connection contract](../domain/connection_contract.md)
+  ([#403](https://github.com/Robomous/RoadMaker/issues/403), **landed** — the
+  contract states the link policy each cascade sprint then implements) — is
+  the fourth. Unlike the first three it spans four pillars (P2/P4/P5/P6) with no
   single owner, so it carries the `cascade` label **without** a pillar
   milestone; the [release gate](#release-gate) names the workstream
   explicitly, which is what makes label-only tracking sufficient.
@@ -134,8 +135,10 @@ a categorized toolbar.
   governing doc is the [realism defaults spec](../domain/realism_defaults.md)
   (dimensions, proportions, unit policy, sign-pack content, orientation
   rules — enforced by a CI divergence test, not review); the
-  [road connection contract (#403)](https://github.com/Robomous/RoadMaker/issues/403)
-  follows the same pattern for continuity guarantees.
+  [road connection contract](../domain/connection_contract.md) follows the
+  same pattern for the continuity guarantees at a joint (landed by
+  [#403](https://github.com/Robomous/RoadMaker/issues/403), gated by
+  `core/tests/test_connection_contract.cpp`).
 
 ### Tracking on GitHub
 
