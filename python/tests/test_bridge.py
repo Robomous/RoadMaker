@@ -14,6 +14,8 @@
 
 """Bridges through the bindings (p5-s3, #233)."""
 
+import pytest
+
 import roadmaker as rm
 
 
@@ -94,3 +96,56 @@ def test_bridge_record_round_trips_but_no_bridge_writes_nothing():
     assert "<bridge" in once
     reparsed, _diags = rm.parse_xodr(once)
     assert rm.write_xodr(reparsed) == once
+
+
+# --- cascade-s3 (#463): a move re-anchors a span, or reports it orphaned ------
+
+
+def _bridged():
+    """A crossing with a 24 m deck already over it."""
+    net, high, low, stack = _crossing()
+    s = max(0.0, rm.find_grade_separations(net)[0].s_upper - 12.0)
+    stack.push(net, rm.edit.author_bridge(net, high, s, 24.0))
+    return net, high, low, stack
+
+
+def test_moving_a_road_takes_the_bridge_span_with_the_crossing():
+    net, high, low, stack = _bridged()
+    s_before = net.road(high).bridges[0].s
+
+    stack.push(net, rm.edit.translate_road(net, low, 25.0, 0.0))
+
+    assert net.road(high).bridges[0].s == pytest.approx(s_before + 25.0)
+    sep = rm.find_grade_separations(net)[0]
+    assert rm.bridge_covering(net.road(high), sep.s_upper) == 0
+    changes = [r.change for r in stack.last_derived_records]
+    assert rm.edit.DerivedChange.BRIDGE_RELOCATED in changes
+
+
+def test_a_span_whose_crossing_is_gone_is_reported_not_deleted():
+    net, high, low, stack = _bridged()
+    before = net.road(high).bridges[0].s
+
+    stack.push(net, rm.edit.translate_road(net, low, 400.0, 0.0))
+
+    assert rm.find_grade_separations(net) == []
+    assert len(net.road(high).bridges) == 1
+    assert net.road(high).bridges[0].s == pytest.approx(before)
+    changes = [r.change for r in stack.last_derived_records]
+    assert rm.edit.DerivedChange.BRIDGE_ORPHANED in changes
+
+
+def test_remove_orphaned_bridges_is_the_explicit_counterpart():
+    net, high, low, stack = _bridged()
+    stack.push(net, rm.edit.translate_road(net, low, 400.0, 0.0))
+
+    stack.push(net, rm.edit.remove_orphaned_bridges(net))
+    assert net.road(high).bridges == []
+
+    stack.undo(net)
+    assert len(net.road(high).bridges) == 1
+
+    # Nothing orphaned left once the sweep has run: the command refuses.
+    stack.redo(net)
+    with pytest.raises(ValueError):
+        stack.push(net, rm.edit.remove_orphaned_bridges(net))

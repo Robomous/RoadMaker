@@ -20,11 +20,13 @@
 // the bridge solids every frame, but the commit does.
 
 #include "roadmaker/edit/operations.hpp"
+#include "roadmaker/road/grade_separation.hpp"
 #include "roadmaker/road/network.hpp"
 #include "roadmaker/road/road.hpp"
 
 #include <gtest/gtest.h>
 
+#include <QSignalSpy>
 #include <algorithm>
 #include <cstddef>
 #include <vector>
@@ -48,6 +50,48 @@ RoadId lay_road(Document& document) {
   EXPECT_TRUE(ok);
   RoadId road;
   document.network().for_each_road([&](RoadId id, const roadmaker::Road&) { road = id; });
+  return road;
+}
+
+/// One arm of an overpass fixture: `high` runs west-east 5 m up, `low` runs
+/// south-north at ground level, so exactly one grade separation exists.
+/// The newest road: for_each_road walks slots ascending, so the last one seen is
+/// the one just created. `create_road`'s third argument is the display NAME, not
+/// the OpenDRIVE id, so matching on odr_id here would silently find nothing.
+RoadId newest_road(const Document& document) {
+  RoadId road;
+  document.network().for_each_road([&](RoadId id, const roadmaker::Road&) { road = id; });
+  return road;
+}
+
+RoadId lay_overpass_high(Document& document) {
+  EXPECT_TRUE(document
+                  .push_command(roadmaker::edit::create_road(
+                      {Waypoint{.x = -60.0, .y = 0.0}, Waypoint{.x = 60.0, .y = 0.0}},
+                      LaneProfile::two_lane_default(),
+                      "high"))
+                  .has_value());
+  const RoadId road = newest_road(document);
+  EXPECT_TRUE(road.is_valid());
+  const double length = document.network().road(road)->plan_view.length();
+  const std::vector<roadmaker::edit::ElevationPoint> profile{{.s = 0.0, .z = 5.0, .grade = 0.0},
+                                                             {.s = length, .z = 5.0, .grade = 0.0}};
+  EXPECT_TRUE(
+      document
+          .push_command(roadmaker::edit::set_elevation_profile(document.network(), road, profile))
+          .has_value());
+  return road;
+}
+
+RoadId lay_overpass_low(Document& document) {
+  EXPECT_TRUE(document
+                  .push_command(roadmaker::edit::create_road(
+                      {Waypoint{.x = 0.0, .y = -60.0}, Waypoint{.x = 0.0, .y = 60.0}},
+                      LaneProfile::two_lane_default(),
+                      "low"))
+                  .has_value());
+  const RoadId road = newest_road(document);
+  EXPECT_TRUE(road.is_valid());
   return road;
 }
 
@@ -138,4 +182,55 @@ TEST(BridgeDocument, PreviewDragDefersRebuildButCommitDoesIt) {
   document.commit_preview();
   // On release the solids follow the road: y shifted, so the deck moved.
   ASSERT_GT(bridge_vertex_count(document), 0U);
+}
+
+// cascade-s3 (#463): a span whose crossing has gone is reported, not deleted —
+// and the report has to reach the user, because a bridge is not selectable and
+// Remove Orphaned Spans is the only way to act on it.
+TEST(BridgeDocument, AnOrphanedSpanIsReportedAndThenSweepable) {
+  Document document;
+  const RoadId high = lay_overpass_high(document);
+  const RoadId low = lay_overpass_low(document);
+  const std::vector<roadmaker::GradeSeparation> crossings =
+      roadmaker::find_grade_separations(document.network());
+  ASSERT_EQ(crossings.size(), 1U);
+  ASSERT_TRUE(document
+                  .push_command(roadmaker::edit::author_bridge(
+                      document.network(), high, crossings.front().s_upper - 12.0, 24.0))
+                  .has_value());
+
+  QSignalSpy stale(&document, &Document::derived_layer_stale);
+  ASSERT_TRUE(
+      document.push_command(roadmaker::edit::translate_road(document.network(), low, 400.0, 0.0))
+          .has_value());
+
+  EXPECT_EQ(stale.count(), 1) << "the user has to be told the deck spans nothing now";
+  EXPECT_EQ(document.network().road(high)->bridges.size(), 1U)
+      << "and the span itself is left exactly as authored";
+
+  ASSERT_TRUE(document.push_command(roadmaker::edit::remove_orphaned_bridges(document.network()))
+                  .has_value());
+  EXPECT_TRUE(document.network().road(high)->bridges.empty());
+  EXPECT_EQ(bridge_vertex_count(document), 0U) << "the solid channel followed the sweep";
+
+  document.undo_stack()->undo();
+  EXPECT_EQ(document.network().road(high)->bridges.size(), 1U);
+}
+
+TEST(BridgeDocument, AnUnorphanedNetworkRefusesTheSweep) {
+  Document document;
+  const RoadId high = lay_overpass_high(document);
+  lay_overpass_low(document);
+  const std::vector<roadmaker::GradeSeparation> crossings =
+      roadmaker::find_grade_separations(document.network());
+  ASSERT_EQ(crossings.size(), 1U);
+  ASSERT_TRUE(document
+                  .push_command(roadmaker::edit::author_bridge(
+                      document.network(), high, crossings.front().s_upper - 12.0, 24.0))
+                  .has_value());
+
+  EXPECT_FALSE(document.push_command(roadmaker::edit::remove_orphaned_bridges(document.network()))
+                   .has_value())
+      << "a refusal, not an empty undo entry";
+  EXPECT_EQ(document.network().road(high)->bridges.size(), 1U);
 }

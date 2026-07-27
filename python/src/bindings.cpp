@@ -530,9 +530,28 @@ NB_MODULE(_roadmaker, m) {
               &roadmaker::Road::authoring_waypoints,
               "Waypoints the reference line was fitted through; None for "
               "roads loaded without rm:waypoints userData.")
+      .def_ro("bridges",
+              &roadmaker::Road::bridges,
+              "<bridge> spans over this road (§13.12). Empty on a road with no "
+              "bridge. Exposed so a caller can see where a span sits after a "
+              "move re-anchored it (cascade-s3).")
       .def("__repr__", [](const roadmaker::Road& road) {
         return "Road(odr_id='" + road.odr_id + "', name='" + road.name +
                "', length=" + std::to_string(road.length) + ")";
+      });
+
+  // A <bridge> span (p5-s3, #233). Read-only: authoring goes through the
+  // author_bridge / set_bridge_span / remove_bridge commands.
+  nb::class_<roadmaker::Bridge>(m, "Bridge")
+      .def_ro("odr_id", &roadmaker::Bridge::odr_id)
+      .def_ro("name", &roadmaker::Bridge::name)
+      .def_ro("s", &roadmaker::Bridge::s, "Span start in the carrying road's s-coordinate.")
+      .def_ro("length", &roadmaker::Bridge::length, "Span length along s.")
+      .def_ro("type", &roadmaker::Bridge::type, "e_bridgeType, kept verbatim.")
+      .def_ro("deck_material", &roadmaker::Bridge::deck_material)
+      .def("__repr__", [](const roadmaker::Bridge& bridge) {
+        return "Bridge(odr_id='" + bridge.odr_id + "', s=" + std::to_string(bridge.s) +
+               ", length=" + std::to_string(bridge.length) + ")";
       });
 
   nb::class_<roadmaker::JunctionConnection>(m, "JunctionConnection")
@@ -1223,6 +1242,16 @@ NB_MODULE(_roadmaker, m) {
       "clearance"_a = roadmaker::kDefaultClearance,
       "Every overpass in the network: two roads that cross in plan view, differ in "
       "elevation by >= clearance, and are NOT connected by a junction (p5-s3).");
+  m.def(
+      "bridge_covering",
+      [](const roadmaker::Road& road, double s) {
+        return roadmaker::bridge_covering(road.bridges, s);
+      },
+      "road"_a,
+      "s"_a,
+      "Index of the first <bridge> span covering station `s`, or None. The one "
+      "definition of 'is this stretch already carried' — author_bridge guards with "
+      "it and the cascade's orphan test reads it (cascade-s3).");
 
   nb::class_<roadmaker::Signal>(m, "Signal")
       .def(nb::init<>())
@@ -1571,6 +1600,21 @@ NB_MODULE(_roadmaker, m) {
         "Reconciles the surface arena so that, after the call, the set of "
         "surfaces exactly matches the areas enclosed by roads. Id-stable across "
         "calls and idempotent when the topology is unchanged.");
+
+  nb::class_<roadmaker::SurfaceReconciliation>(m, "SurfaceReconciliation")
+      .def_ro("erase",
+              &roadmaker::SurfaceReconciliation::erase,
+              "Derived surfaces whose face no longer exists. Never an authored one.")
+      .def_ro("create",
+              &roadmaker::SurfaceReconciliation::create,
+              "Enclosed faces with no surface yet, as bounding rings.")
+      .def_prop_ro("empty", &roadmaker::SurfaceReconciliation::empty);
+  m.def("plan_surface_reconciliation",
+        &roadmaker::plan_surface_reconciliation,
+        "network"_a,
+        "What derive_surfaces WOULD change, without touching the arena "
+        "(cascade-s3). An empty plan means the surface set already matches the "
+        "roads — which is what a move's derived-layer stage leaves behind.");
 
   // --- junction corners (the solve shared by mesher, tool and panel) -------------
 
@@ -2374,8 +2418,10 @@ NB_MODULE(_roadmaker, m) {
   nb::class_<roadmaker::edit::DirtySet>(edit, "DirtySet")
       .def_ro("roads", &roadmaker::edit::DirtySet::roads)
       .def_ro("junctions", &roadmaker::edit::DirtySet::junctions)
+      .def_ro("surfaces", &roadmaker::edit::DirtySet::surfaces)
       .def_ro("topology", &roadmaker::edit::DirtySet::topology)
-      .def_ro("junctions_are_current", &roadmaker::edit::DirtySet::junctions_are_current);
+      .def_ro("junctions_are_current", &roadmaker::edit::DirtySet::junctions_are_current)
+      .def_ro("surfaces_are_current", &roadmaker::edit::DirtySet::surfaces_are_current);
 
   nb::enum_<roadmaker::edit::FollowOutcome>(edit, "FollowOutcome")
       .value("FOLLOWED", roadmaker::edit::FollowOutcome::Followed)
@@ -2393,6 +2439,42 @@ NB_MODULE(_roadmaker, m) {
                (record.reason.empty() ? "" : ", '" + record.reason + "'") + ")";
       });
 
+  nb::enum_<roadmaker::edit::DerivedChange>(edit, "DerivedChange")
+      .value("SURFACE_ADDED", roadmaker::edit::DerivedChange::SurfaceAdded)
+      .value("SURFACE_REMOVED", roadmaker::edit::DerivedChange::SurfaceRemoved)
+      .value("AUTHORED_BOUNDARY_STALE", roadmaker::edit::DerivedChange::AuthoredBoundaryStale)
+      .value("BRIDGE_RELOCATED", roadmaker::edit::DerivedChange::BridgeRelocated)
+      .value("BRIDGE_ORPHANED", roadmaker::edit::DerivedChange::BridgeOrphaned);
+
+  nb::class_<roadmaker::edit::DerivedRecord>(edit, "DerivedRecord")
+      .def_ro("change", &roadmaker::edit::DerivedRecord::change)
+      .def_ro("surface", &roadmaker::edit::DerivedRecord::surface)
+      .def_ro("road", &roadmaker::edit::DerivedRecord::road)
+      .def_ro("bridge_index", &roadmaker::edit::DerivedRecord::bridge_index)
+      .def_ro("detail", &roadmaker::edit::DerivedRecord::detail)
+      .def("__repr__", [](const roadmaker::edit::DerivedRecord& record) {
+        const char* change = "SURFACE_ADDED";
+        switch (record.change) {
+        case roadmaker::edit::DerivedChange::SurfaceAdded:
+          change = "SURFACE_ADDED";
+          break;
+        case roadmaker::edit::DerivedChange::SurfaceRemoved:
+          change = "SURFACE_REMOVED";
+          break;
+        case roadmaker::edit::DerivedChange::AuthoredBoundaryStale:
+          change = "AUTHORED_BOUNDARY_STALE";
+          break;
+        case roadmaker::edit::DerivedChange::BridgeRelocated:
+          change = "BRIDGE_RELOCATED";
+          break;
+        case roadmaker::edit::DerivedChange::BridgeOrphaned:
+          change = "BRIDGE_ORPHANED";
+          break;
+        }
+        return std::string("DerivedRecord(") + change +
+               (record.detail.empty() ? "" : ", '" + record.detail + "'") + ")";
+      });
+
   nb::class_<roadmaker::edit::Command>(edit, "Command")
       .def_prop_ro(
           "name",
@@ -2407,6 +2489,18 @@ NB_MODULE(_roadmaker, m) {
           "after a successful apply. A move takes its linked neighbours with "
           "it; when one could not follow, the link was cut and the record says "
           "why. Empty for commands that cannot outlive a joint.")
+      .def_prop_ro(
+          "derived_records",
+          [](const roadmaker::edit::Command& command) {
+            const std::span<const roadmaker::edit::DerivedRecord> records =
+                command.derived_records();
+            return std::vector<roadmaker::edit::DerivedRecord>(records.begin(), records.end());
+          },
+          "What this command did to the layers derived from the roads — "
+          "enclosed-area ground surfaces and <bridge> spans. A move re-derives "
+          "a surface set and re-anchors a span onto the crossing it carries; a "
+          "boundary the user reshaped is left alone and reported, and so is a "
+          "span whose crossing has gone.")
       .def("__repr__", [](const roadmaker::edit::Command& command) {
         return "Command('" + std::string(command.name()) + "')";
       });
@@ -2452,7 +2546,16 @@ NB_MODULE(_roadmaker, m) {
           },
           "What the most recently pushed command did to the joints it "
           "disturbed. push() takes ownership of the command, so this is how a "
-          "headless caller learns that a move had to sever a link.");
+          "headless caller learns that a move had to sever a link.")
+      .def_prop_ro(
+          "last_derived_records",
+          [](const roadmaker::edit::EditStack& stack) {
+            const std::span<const roadmaker::edit::DerivedRecord> records =
+                stack.last_derived_records();
+            return std::vector<roadmaker::edit::DerivedRecord>(records.begin(), records.end());
+          },
+          "What the most recently pushed command did to the layers derived "
+          "from the roads. Same reason this exists as last_follow_records.");
 
   edit.def(
       "move_waypoint",
@@ -3973,7 +4076,18 @@ NB_MODULE(_roadmaker, m) {
       "length"_a,
       "type"_a = "concrete",
       "Adds a <bridge> span [s, s+length] to a road (p5-s3). Rejects a stale road, a "
-      "too-short/past-the-end span, and an exact duplicate.");
+      "too-short/past-the-end span, and a span whose midpoint an existing bridge "
+      "already covers.");
+  edit.def(
+      "remove_orphaned_bridges",
+      [](const roadmaker::RoadNetwork& network) {
+        return roadmaker::edit::remove_orphaned_bridges(network);
+      },
+      "network"_a,
+      "Drops every <bridge> span that no grade separation covers, network-wide, as "
+      "one undoable command (cascade-s3). A move reports an orphaned span rather "
+      "than deleting it; this is the explicit counterpart. Rejects when there are "
+      "no orphans.");
   edit.def(
       "remove_bridge",
       [](const roadmaker::RoadNetwork& network, roadmaker::RoadId road, std::size_t index) {

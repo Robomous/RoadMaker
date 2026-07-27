@@ -72,6 +72,14 @@ public:
                         : commands_[cursor_ - 1]->follow_records();
   }
 
+  /// What the most recently applied command did to the layers derived from the
+  /// roads — ground surfaces and bridge spans (cascade-s3, #463), or empty when
+  /// nothing is applied. Same reason this exists as `last_follow_records`.
+  [[nodiscard]] std::span<const DerivedRecord> last_derived_records() const {
+    return cursor_ == 0 ? std::span<const DerivedRecord>{}
+                        : commands_[cursor_ - 1]->derived_records();
+  }
+
   RM_API void clear();
 
   /// Caps recorded history, dropping oldest entries first (their edits stay

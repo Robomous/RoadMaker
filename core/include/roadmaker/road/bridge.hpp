@@ -16,8 +16,12 @@
 
 #pragma once
 
+#include "roadmaker/export.hpp"
 #include "roadmaker/xodr/raw_xml.hpp"
 
+#include <cstddef>
+#include <optional>
+#include <span>
 #include <string>
 
 namespace roadmaker {
@@ -70,5 +74,16 @@ struct Bridge {
 
   friend bool operator==(const Bridge&, const Bridge&) = default;
 };
+
+/// Index of the first span covering station `s`, or nullopt (cascade-s3, #463).
+///
+/// The one home for "does a bridge already carry this crossing". It used to be
+/// an inline lambda in the editor's passive detection hint while `author_bridge`
+/// asked a DIFFERENT question — exact `(s, length)` equality — so re-running
+/// Generate after a move authored a second, overlapping span instead of noticing
+/// the first no longer covered anything. A predicate two callers have to agree
+/// on belongs in one place.
+[[nodiscard]] RM_API std::optional<std::size_t> bridge_covering(std::span<const Bridge> bridges,
+                                                                double s);
 
 } // namespace roadmaker

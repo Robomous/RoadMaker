@@ -242,6 +242,9 @@ MainWindow::MainWindow(QWidget* parent, bool restore_saved_layout)
   connect(&document_, &Document::links_severed, this, [this](const QString& reason) {
     viewport_->show_toast(tr("Road link broken: %1").arg(reason), ToastSeverity::Warning);
   });
+  connect(&document_, &Document::derived_layer_stale, this, [this](const QString& reason) {
+    viewport_->show_toast(reason, ToastSeverity::Warning);
+  });
 
   // Autosave tick — the debounce and the recover-vs-clean decision live in
   // AutosaveManager (fake-clock testable, §3); this timer is the thin
@@ -709,14 +712,21 @@ MainWindow::MainWindow(QWidget* parent, bool restore_saved_layout)
                           ToastSeverity::Success);
   });
   // The Road Construction tool's automatic bridge assignment (p5-s3, #233):
-  // detect grade-separated crossings and author a bridge over each. author_bridge
-  // no-ops on a span already bridged, so re-running is safe.
+  // detect grade-separated crossings and author a bridge over each. Crossings a
+  // span already carries are SKIPPED here rather than left to be refused —
+  // `bridge_covering` is the same predicate `author_bridge` now guards with and
+  // the detection hint below reads, so all three agree on what "already
+  // bridged" means (cascade-s3, #463).
   connect(actions_->bridge_generate, &QAction::triggered, this, [this] {
     const std::vector<roadmaker::GradeSeparation> crossings =
         roadmaker::find_grade_separations(document_.network());
     int built = 0;
     for (const roadmaker::GradeSeparation& sep : crossings) {
       constexpr double kAutoSpan = 24.0;
+      const roadmaker::Road* road = document_.network().road(sep.upper);
+      if (road == nullptr || roadmaker::bridge_covering(road->bridges, sep.s_upper).has_value()) {
+        continue;
+      }
       const double s = std::max(0.0, sep.s_upper - (kAutoSpan / 2.0));
       if (document_.push_command(edit::author_bridge(document_.network(), sep.upper, s, kAutoSpan))
               .has_value()) {
@@ -732,6 +742,16 @@ MainWindow::MainWindow(QWidget* parent, bool restore_saved_layout)
                             ToastSeverity::Info);
     }
   });
+  // The counterpart to the cascade's orphan report (#463): a move leaves a span
+  // whose crossing has gone exactly as authored, so this is the one way to act
+  // on being told about it — a bridge is not selectable and has no span control.
+  connect(actions_->bridge_remove_orphans, &QAction::triggered, this, [this] {
+    const auto removed = document_.push_command(edit::remove_orphaned_bridges(document_.network()));
+    viewport_->show_toast(removed.has_value()
+                              ? tr("Removed the bridge spans that no longer cross anything")
+                              : tr("Every bridge span still carries a crossing"),
+                          removed.has_value() ? ToastSeverity::Success : ToastSeverity::Info);
+  });
   // Passive detection hint: when a crossing appears that no bridge covers, nudge
   // the user toward the menu ONCE (the actionable one-click toast is a follow-up).
   // Reset when there are none, so a later crossing hints again.
@@ -746,9 +766,7 @@ MainWindow::MainWindow(QWidget* parent, bool restore_saved_layout)
               const roadmaker::Road* road = document_.network().road(sep.upper);
               const bool covered =
                   road != nullptr &&
-                  std::any_of(road->bridges.begin(), road->bridges.end(), [&](const auto& b) {
-                    return b.s <= sep.s_upper && sep.s_upper <= b.s + b.length;
-                  });
+                  roadmaker::bridge_covering(road->bridges, sep.s_upper).has_value();
               if (!covered) {
                 ++unbridged;
               }
@@ -967,6 +985,7 @@ void MainWindow::build_menus() {
   terrain_menu->addAction(actions_->terrain_import);
   QMenu* bridge_menu = edit_menu->addMenu(tr("&Bridge"));
   bridge_menu->addAction(actions_->bridge_generate);
+  bridge_menu->addAction(actions_->bridge_remove_orphans);
 
   QMenu* view_menu = menuBar()->addMenu(tr("&View"));
   view_menu->addAction(scene_dock_->toggleViewAction());

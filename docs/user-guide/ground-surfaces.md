@@ -11,7 +11,10 @@ elevation solved so the ground meets every kerb without a step. You do not
 create one — it appears with the loop and follows the roads as you edit them.
 
 That automatic shape is called a **derived** boundary. It is exactly the block
-the roads surround, and it tracks them: move a road and the ground follows.
+the roads surround, and it tracks them: move a road and the ground follows it.
+Move a road far enough that the loop comes apart and the ground goes with it;
+close a new loop and a new ground surface appears to fill it. Undo puts back
+whatever was there, material and all.
 
 ## Reshaping a boundary
 
@@ -36,6 +39,10 @@ roads; once you move a node it no longer is, so the surface switches to an
 **authored** boundary and stops being re-derived. The Attributes pane shows
 which state it is in, and the roads it came from are kept as *provenance* — they
 still supply the elevation the ground is pinned to.
+
+**Once it is authored, moving the roads no longer moves the boundary.** The shape
+is yours, so RoadMaker will not quietly redraw it — it says the roads around it
+have moved and leaves it exactly where you put it.
 
 To go back, use **Revert to derived**, on the Attributes pane or in the
 surface's right-click menu. The boundary returns to whatever the roads currently

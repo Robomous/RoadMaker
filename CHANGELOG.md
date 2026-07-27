@@ -19,6 +19,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 Current version on `main`: **0.0.1**.
 
 ### Added
+- **The ground and the bridges move with the roads too**
+  ([#463](https://github.com/Robomous/RoadMaker/issues/463)): a road move now
+  reaches the things RoadMaker works out *from* the roads, which it never did.
+  Drag a road out of a block and the ground filling that block goes with it;
+  close a new loop and new ground appears to fill it. Undo puts back exactly what
+  was there — including the material you painted on it, which until now a
+  re-derivation quietly replaced with grass.
+  Bridges gained the harder half. A bridge saves only *where along its road the
+  span starts*, and nothing about the crossing it was built for, so moving either
+  road used to leave the deck standing over open ground — and re-running
+  **Generate Bridge Structures** built a *second* deck beside the stale one
+  rather than noticing. Now the span slides along to stay over its crossing,
+  keeping its length, type and deck material, and Generate skips a crossing that
+  is already carried.
+  Where a crossing has gone entirely — the roads pulled apart, or a junction
+  formed between them — the span is **left exactly where you authored it** and the
+  editor says it no longer spans anything. A move never deletes something you
+  made. **Edit ▸ Bridge ▸ Remove Orphaned Spans** is the deliberate way to clear
+  them, and it is the first way the editor has ever offered to remove a bridge.
+  The one thing a move deliberately will not touch is a ground boundary you
+  reshaped by hand. That shape is yours, so it is left alone and reported rather
+  than silently redrawn.
+  Like the two sprints before it, all of this is decided in **one** place shared
+  by every move gesture, so a gesture added later cannot forget it.
 - **Junctions now move with their roads**
   ([#462](https://github.com/Robomous/RoadMaker/issues/462)): a junction used to
   be movable through exactly one gesture. Dragging a road's shape node rebuilt

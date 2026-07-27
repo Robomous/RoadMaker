@@ -51,12 +51,19 @@ std::string describe_dirty(const edit::DirtySet& dirty) {
   for (std::size_t i = 0; i < dirty.junctions.size(); ++i) {
     text += (i == 0 ? "" : ",") + std::to_string(dirty.junctions[i].index);
   }
+  text += "] surfaces=[";
+  for (std::size_t i = 0; i < dirty.surfaces.size(); ++i) {
+    text += (i == 0 ? "" : ",") + std::to_string(dirty.surfaces[i].index);
+  }
   text += "]";
   if (dirty.topology) {
     text += " topology";
   }
   if (dirty.junctions_are_current) {
     text += " junctions_are_current";
+  }
+  if (dirty.surfaces_are_current) {
+    text += " surfaces_are_current";
   }
   return text;
 }
@@ -278,6 +285,29 @@ void Document::push_applied_with_regeneration(std::unique_ptr<edit::Command> com
                                     ? tr("Road %1").arg(QString::fromStdString(neighbour->odr_id))
                                     : tr("the neighbour"),
                                 QString::fromStdString(record.reason)));
+  }
+
+  // And the layers derived from those roads (cascade-s3, #463). Only the two
+  // outcomes the user has to know about are surfaced: an authored boundary the
+  // move deliberately left alone, and a bridge span with nothing under it. A
+  // surface that re-derived and a span that was relocated are the feature
+  // working, so they stay in the log.
+  for (const edit::DerivedRecord& record : command->derived_records()) {
+    if (record.change == edit::DerivedChange::AuthoredBoundaryStale) {
+      spdlog::info("authored surface left alone: {}", record.detail);
+      emit derived_layer_stale(
+          tr("A reshaped ground surface was left where it is — its roads moved"));
+    } else if (record.change == edit::DerivedChange::BridgeOrphaned) {
+      const Road* road = network_.road(record.road);
+      spdlog::warn("bridge span orphaned: {}", record.detail);
+      emit derived_layer_stale(
+          tr("The bridge on %1 no longer spans anything — %2")
+              .arg(road != nullptr ? tr("road %1").arg(QString::fromStdString(road->odr_id))
+                                   : tr("a moved road"),
+                   QString::fromStdString(record.detail)));
+    } else {
+      spdlog::info("derived layer recomputed: {}", record.detail);
+    }
   }
 
   // Editing an incoming road (geometry, elevation, or its lanes) regenerates
@@ -551,7 +581,13 @@ void Document::after_kernel_mutation(const edit::DirtySet& dirty) {
   if (surfaces_changed) {
     remesh_surfaces(network_, mesh_, dirty.surfaces);
   }
-  if (dirty.topology) {
+  // A MOVE reconciles the set inside its own command and says so with
+  // `surfaces_are_current` (cascade-s3, #463), exactly as it does for junctions.
+  // Re-deriving over it would be idempotent and therefore harmless — but it
+  // would be a network mutation outside the command layer on the one edit whose
+  // undo has to restore a surface's material, and rebuilding the whole channel
+  // would mask the scoped `surfaces` list the command already named.
+  if (dirty.topology && !dirty.surfaces_are_current) {
     derive_surfaces(network_);
     // remesh_surfaces only rebuilds the SurfaceIds it is handed — an empty span
     // is a no-op, NOT "all" — so gather every surface derive_surfaces left in

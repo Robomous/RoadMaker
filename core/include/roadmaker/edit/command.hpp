@@ -16,6 +16,7 @@
 
 #pragma once
 
+#include "roadmaker/edit/derived.hpp"
 #include "roadmaker/edit/follow.hpp"
 #include "roadmaker/error.hpp"
 #include "roadmaker/export.hpp"
@@ -83,6 +84,22 @@ struct DirtySet {
   /// (fast, wrong). Kept separate from `topology` deliberately — a lane
   /// appearing is topology AND needs regeneration, which one flag cannot say.
   bool junctions_are_current = false;
+
+  /// This command already reconciled the enclosed-area surface SET itself, so
+  /// the editor must not run `derive_surfaces` over it a second time
+  /// (cascade-s3, #463) — the sibling of `junctions_are_current`, and set for
+  /// the same reason: a move's derived-layer stage owns that decision, and the
+  /// surfaces it created or erased are named in `surfaces`.
+  ///
+  /// Without this the editor's own pass would re-derive on the topology path.
+  /// It is idempotent, so that would be harmless — but it would also be a
+  /// network mutation OUTSIDE the command layer, on the one edit whose undo has
+  /// to restore a surface's material, and it would mask the `surfaces` channel
+  /// entirely by rebuilding everything regardless.
+  ///
+  /// Default false is the safe direction, exactly as above: a command that
+  /// forgets the flag gets a redundant derivation (slow, correct).
+  bool surfaces_are_current = false;
 };
 
 /// One undoable kernel mutation (docs/m2/01_editing_framework.md §1.1).
@@ -118,6 +135,15 @@ public:
   /// gestures can, and a link they had to sever must be reported rather than
   /// left for the user to discover on save — see edit::FollowRecord.
   [[nodiscard]] virtual std::span<const FollowRecord> follow_records() const { return {}; }
+
+  /// What this command did to the layers DERIVED from the roads — enclosed-area
+  /// ground surfaces and `<bridge>` spans (cascade-s3, #463). Same lifetime as
+  /// follow_records(): valid after a successful apply(), kept across a revert.
+  ///
+  /// Default empty. A move gesture fills it, because a derived layer that could
+  /// not follow — an authored boundary whose roads walked away, a bridge span
+  /// whose crossing is gone — must be reported rather than left to be noticed.
+  [[nodiscard]] virtual std::span<const DerivedRecord> derived_records() const { return {}; }
 
   /// Releases the reserved arena slots this command still holds because it
   /// created objects and is being DROPPED rather than reverted-then-reapplied:
