@@ -123,12 +123,67 @@ struct Scene {
   }
 };
 
+/// Four arms meeting at the origin, welded into one junction. Every road here
+/// has a GENERATED pose, which is what the kernel refuses to transform.
+struct JunctionScene {
+  Document document;
+  RoadId west;
+  RoadId east;
+  RoadId south;
+  RoadId north;
+
+  JunctionScene() {
+    west = arm(-80.0, 0.0, -20.0, 0.0, "1");
+    east = arm(80.0, 0.0, 20.0, 0.0, "2");
+    south = arm(0.0, -80.0, 0.0, -20.0, "3");
+    north = arm(0.0, 80.0, 0.0, 20.0, "4");
+    const std::array<RoadEnd, 4> ends{RoadEnd{west, ContactPoint::End},
+                                      RoadEnd{east, ContactPoint::End},
+                                      RoadEnd{south, ContactPoint::End},
+                                      RoadEnd{north, ContactPoint::End}};
+    if (!document.push_command(edit::create_junction(document.network(), ends))) {
+      throw std::runtime_error("create_junction failed");
+    }
+  }
+
+private:
+  RoadId arm(double x0, double y0, double x1, double y1, const char* id) {
+    if (!document.push_command(
+            edit::create_road({{x0, y0}, {x1, y1}}, LaneProfile::two_lane_default(), id))) {
+      throw std::runtime_error("create_road failed");
+    }
+    RoadId road;
+    document.network().for_each_road([&](RoadId found, const Road& r) {
+      if (r.odr_id == id) {
+        road = found;
+      }
+    });
+    return road;
+  }
+};
+
+/// Scene's single road split in two, so head and tail are genuinely road-road
+/// linked — the shape a transform severs. `head` is the half the gizmo grabs.
+struct LinkedScene : Scene {
+  RoadId head;
+
+  LinkedScene() : head(road) {
+    if (!document.push_command(edit::split_road(document.network(), head, 60.0))) {
+      throw std::runtime_error("split_road failed");
+    }
+    if (!document.network().road(head)->successor.has_value()) {
+      throw std::runtime_error("split_road left no link");
+    }
+  }
+};
+
 /// Runs a whole ring drag: press at bearing 0, release at `bearing`.
 void ring_drag(GizmoDragSession& session,
                const GizmoTarget& target,
                double bearing,
                bool free_rotation = false) {
-  ASSERT_TRUE(session.begin(target, GizmoHandle::YawRing, Scene::on_ring(target.pivot, 0.0)));
+  ASSERT_EQ(session.begin(target, GizmoHandle::YawRing, Scene::on_ring(target.pivot, 0.0)),
+            GizmoDragStart::Armed);
   ASSERT_TRUE(session
                   .update(GizmoDragInput{.cursor_world = Scene::on_ring(target.pivot, bearing),
                                          .free_rotation = free_rotation})
@@ -241,7 +296,8 @@ TEST(GizmoDrag, ARotationIsOneUndoEntryRestoringTheExactPriorHeading) {
 
   // Several frames, as a real drag delivers them.
   GizmoDragSession session(scene.document);
-  ASSERT_TRUE(session.begin(*target, GizmoHandle::YawRing, Scene::on_ring(target->pivot, 0.0)));
+  ASSERT_EQ(session.begin(*target, GizmoHandle::YawRing, Scene::on_ring(target->pivot, 0.0)),
+            GizmoDragStart::Armed);
   for (const double bearing : {0.2, 0.5, 20.0 * std::numbers::pi / 180.0}) {
     ASSERT_TRUE(
         session.update(GizmoDragInput{.cursor_world = Scene::on_ring(target->pivot, bearing)})
@@ -263,7 +319,8 @@ TEST(GizmoDrag, APressThatNeverMovedPushesNothing) {
   ASSERT_TRUE(target.has_value());
 
   GizmoDragSession session(scene.document);
-  ASSERT_TRUE(session.begin(*target, GizmoHandle::YawRing, Scene::on_ring(target->pivot, 0.0)));
+  ASSERT_EQ(session.begin(*target, GizmoHandle::YawRing, Scene::on_ring(target->pivot, 0.0)),
+            GizmoDragStart::Armed);
   EXPECT_FALSE(session.commit()); // no update() ran, so nothing was previewed
   EXPECT_EQ(scene.document.undo_stack()->count(), base);
 }
@@ -374,7 +431,8 @@ TEST(GizmoDrag, TranslatingASignReprojectsItWithoutTouchingItsHeading) {
   ASSERT_TRUE(target.has_value());
 
   GizmoDragSession session(scene.document);
-  ASSERT_TRUE(session.begin(*target, GizmoHandle::PlaneXY, {target->pivot[0], target->pivot[1]}));
+  ASSERT_EQ(session.begin(*target, GizmoHandle::PlaneXY, {target->pivot[0], target->pivot[1]}),
+            GizmoDragStart::Armed);
   ASSERT_TRUE(
       session
           .update(GizmoDragInput{.cursor_world = {target->pivot[0] + 20.0, target->pivot[1] + 2.0}})
@@ -396,18 +454,21 @@ TEST(GizmoDrag, OnlyARoadOffersTheZArm) {
 
   const auto prop_target = gizmo_target(scene.document.network(), {.object = prop});
   ASSERT_TRUE(prop_target.has_value());
-  EXPECT_FALSE(session.begin(*prop_target, GizmoHandle::AxisZ, {0.0, 0.0}));
+  EXPECT_EQ(session.begin(*prop_target, GizmoHandle::AxisZ, {0.0, 0.0}), GizmoDragStart::Ignored);
+  EXPECT_TRUE(session.refusal().isEmpty());
 
   const auto sign_target = gizmo_target(scene.document.network(), {.signal = sign});
   ASSERT_TRUE(sign_target.has_value());
-  EXPECT_FALSE(session.begin(*sign_target, GizmoHandle::AxisZ, {0.0, 0.0}));
+  EXPECT_EQ(session.begin(*sign_target, GizmoHandle::AxisZ, {0.0, 0.0}), GizmoDragStart::Ignored);
+  EXPECT_TRUE(session.refusal().isEmpty());
 
   const auto road_target = gizmo_target(scene.document.network(), {.road = scene.road});
   ASSERT_TRUE(road_target.has_value());
-  EXPECT_TRUE(session.begin(*road_target, GizmoHandle::AxisZ, {0.0, 0.0}));
+  EXPECT_EQ(session.begin(*road_target, GizmoHandle::AxisZ, {0.0, 0.0}), GizmoDragStart::Armed);
   session.cancel();
 
-  EXPECT_FALSE(session.begin(*road_target, GizmoHandle::None, {0.0, 0.0}));
+  EXPECT_EQ(session.begin(*road_target, GizmoHandle::None, {0.0, 0.0}), GizmoDragStart::Ignored);
+  EXPECT_TRUE(session.refusal().isEmpty());
 }
 
 // --- roads ---------------------------------------------------------------------
@@ -457,7 +518,8 @@ TEST(GizmoDrag, PropsAndSignsFollowARoadTranslationEveryFrame) {
   const auto target = gizmo_target(scene.document.network(), {.road = scene.road});
   ASSERT_TRUE(target.has_value());
   GizmoDragSession session(scene.document);
-  ASSERT_TRUE(session.begin(*target, GizmoHandle::AxisX, {target->pivot[0], target->pivot[1]}));
+  ASSERT_EQ(session.begin(*target, GizmoHandle::AxisX, {target->pivot[0], target->pivot[1]}),
+            GizmoDragStart::Armed);
 
   constexpr double kDx = 25.0;
   ASSERT_TRUE(
@@ -517,7 +579,8 @@ TEST(GizmoDrag, ACancelledDragLeavesTheDocumentByteIdentical) {
   ASSERT_TRUE(target.has_value());
 
   GizmoDragSession session(scene.document);
-  ASSERT_TRUE(session.begin(*target, GizmoHandle::YawRing, Scene::on_ring(target->pivot, 0.0)));
+  ASSERT_EQ(session.begin(*target, GizmoHandle::YawRing, Scene::on_ring(target->pivot, 0.0)),
+            GizmoDragStart::Armed);
   ASSERT_TRUE(session.update(GizmoDragInput{.cursor_world = Scene::on_ring(target->pivot, 1.0)})
                   .has_value());
   session.cancel();
@@ -527,47 +590,199 @@ TEST(GizmoDrag, ACancelledDragLeavesTheDocumentByteIdentical) {
   EXPECT_EQ(scene.document.undo_stack()->count(), base);
 }
 
-// The kernel refuses to transform a road that participates in a junction (its
-// pose is generated). The session RETURNS that refusal instead of swallowing
-// it — the hook #401 needs to surface feedback from. The widget still discards
-// it today, which is exactly the gap #401 owns.
-TEST(GizmoDrag, AKernelRefusalIsReturnedRatherThanSwallowed) {
-  Document document;
-  const auto arm = [&document](double x0, double y0, double x1, double y1, const char* id) {
-    if (!document.push_command(
-            edit::create_road({{x0, y0}, {x1, y1}}, LaneProfile::two_lane_default(), id))) {
-      throw std::runtime_error("create_road failed");
-    }
-    RoadId road;
-    document.network().for_each_road([&](RoadId found, const Road& r) {
-      if (r.odr_id == id) {
-        road = found;
-      }
-    });
-    return road;
-  };
-  const RoadId west = arm(-80.0, 0.0, -20.0, 0.0, "1");
-  const RoadId east = arm(80.0, 0.0, 20.0, 0.0, "2");
-  const RoadId south = arm(0.0, -80.0, 0.0, -20.0, "3");
-  const RoadId north = arm(0.0, 80.0, 0.0, 20.0, "4");
-  const std::array<RoadEnd, 4> ends{RoadEnd{west, ContactPoint::End},
-                                    RoadEnd{east, ContactPoint::End},
-                                    RoadEnd{south, ContactPoint::End},
-                                    RoadEnd{north, ContactPoint::End}};
-  ASSERT_TRUE(document.push_command(edit::create_junction(document.network(), ends)).has_value());
-  const std::string before = xodr(document);
+// --- #401: the gizmo says why it refuses, and asks before it severs ----------
 
-  const auto target = gizmo_target(document.network(), {.road = west});
+// A road that participates in a junction has a GENERATED pose, and the kernel
+// refuses to transform it. Before #401 the gizmo armed anyway, failed on every
+// frame, and told the user nothing. Now the grab itself is turned away, with the
+// reason — and nothing at all is touched.
+TEST(GizmoDrag, AJunctionRoadIsRefusedAtTheGrabWithTheKernelsReason) {
+  JunctionScene scene;
+  const std::string before = xodr(scene.document);
+  const int base = scene.document.undo_stack()->count();
+  const auto target = gizmo_target(scene.document.network(), {.road = scene.west});
   ASSERT_TRUE(target.has_value());
-  GizmoDragSession session(document);
-  ASSERT_TRUE(session.begin(*target, GizmoHandle::PlaneXY, {target->pivot[0], target->pivot[1]}));
-  const auto result = session.update(
-      GizmoDragInput{.cursor_world = {target->pivot[0] + 5.0, target->pivot[1] + 5.0}});
-  EXPECT_FALSE(result.has_value());
-  EXPECT_FALSE(result.error().message.empty());
 
-  session.cancel();
-  EXPECT_EQ(xodr(document), before);
+  GizmoDragSession session(scene.document);
+  EXPECT_EQ(session.begin(*target, GizmoHandle::PlaneXY, {target->pivot[0], target->pivot[1]}),
+            GizmoDragStart::Refused);
+  // The sentence has to name BOTH ends of the problem, or it is not actionable.
+  EXPECT_TRUE(session.refusal().contains("can't be moved")) << session.refusal().toStdString();
+  EXPECT_TRUE(session.refusal().contains("Road 1")) << session.refusal().toStdString();
+  EXPECT_TRUE(session.refusal().contains("Junction")) << session.refusal().toStdString();
+
+  EXPECT_FALSE(session.active());
+  EXPECT_EQ(xodr(scene.document), before);
+  EXPECT_EQ(scene.document.undo_stack()->count(), base);
+}
+
+// The ring is refused too, in the kernel's OWN words for rotation — proving the
+// transform kind reaches the wording rather than every refusal reading "moved".
+TEST(GizmoDrag, TheYawRingRefusesAJunctionRoadToo) {
+  JunctionScene scene;
+  const auto target = gizmo_target(scene.document.network(), {.road = scene.west});
+  ASSERT_TRUE(target.has_value());
+
+  GizmoDragSession session(scene.document);
+  EXPECT_EQ(session.begin(*target, GizmoHandle::YawRing, Scene::on_ring(target->pivot, 0.0)),
+            GizmoDragStart::Refused);
+  EXPECT_TRUE(session.refusal().contains("can't be rotated")) << session.refusal().toStdString();
+}
+
+// The anti-over-gating guard. edit::set_elevation_profile ACCEPTS a junction arm
+// — it dirties the junction so it regenerates, which was itself a bug fix — so
+// raising an arm with the Z gizmo must keep working. Widening the junction gate
+// to AxisZ would look like tidying and would be a regression.
+TEST(GizmoDrag, TheZArmStillRaisesAJunctionArm) {
+  JunctionScene scene;
+  const std::string before = xodr(scene.document);
+  const int base = scene.document.undo_stack()->count();
+  const auto target = gizmo_target(scene.document.network(), {.road = scene.west});
+  ASSERT_TRUE(target.has_value());
+
+  GizmoDragSession session(scene.document);
+  ASSERT_EQ(session.begin(*target, GizmoHandle::AxisZ, {target->pivot[0], target->pivot[1]}),
+            GizmoDragStart::Armed);
+  ASSERT_TRUE(
+      session
+          .update(GizmoDragInput{.cursor_world = {target->pivot[0], target->pivot[1]}, .dz = 3.0})
+          .has_value());
+  EXPECT_TRUE(session.commit());
+
+  EXPECT_NE(xodr(scene.document), before);
+  EXPECT_EQ(scene.document.undo_stack()->count(), base + 1);
+}
+
+// Declining the confirmation must leave EVERYTHING alone — no preview, no undo
+// entry, and no refusal text either (the user made the choice; they don't need
+// to be told about it).
+TEST(GizmoDrag, DecliningTheLinkBreakConfirmLeavesTheDocumentByteIdentical) {
+  LinkedScene scene;
+  const std::string before = xodr(scene.document);
+  const int base = scene.document.undo_stack()->count();
+  const auto target = gizmo_target(scene.document.network(), {.road = scene.head});
+  ASSERT_TRUE(target.has_value());
+
+  int asked = 0;
+  GizmoDragSession session(scene.document);
+  session.set_link_break_confirm([&asked] {
+    ++asked;
+    return false;
+  });
+
+  EXPECT_EQ(session.begin(*target, GizmoHandle::PlaneXY, {target->pivot[0], target->pivot[1]}),
+            GizmoDragStart::Declined);
+  EXPECT_EQ(asked, 1);
+  EXPECT_FALSE(session.active());
+  EXPECT_TRUE(session.refusal().isEmpty());
+  EXPECT_EQ(xodr(scene.document), before);
+  EXPECT_EQ(scene.document.undo_stack()->count(), base);
+}
+
+TEST(GizmoDrag, AcceptingTheLinkBreakConfirmMovesTheRoadAndSeversTheLink) {
+  LinkedScene scene;
+  const std::string before = xodr(scene.document);
+  const int base = scene.document.undo_stack()->count();
+  const auto target = gizmo_target(scene.document.network(), {.road = scene.head});
+  ASSERT_TRUE(target.has_value());
+
+  GizmoDragSession session(scene.document);
+  session.set_link_break_confirm([] { return true; });
+  ASSERT_EQ(session.begin(*target, GizmoHandle::PlaneXY, {target->pivot[0], target->pivot[1]}),
+            GizmoDragStart::Armed);
+  ASSERT_TRUE(
+      session.update(GizmoDragInput{.cursor_world = {target->pivot[0], target->pivot[1] + 20.0}})
+          .has_value());
+  EXPECT_TRUE(session.commit());
+
+  EXPECT_FALSE(scene.document.network().road(scene.head)->successor.has_value());
+  // Break + move is ONE undo step, and it reverts exactly.
+  ASSERT_EQ(scene.document.undo_stack()->count(), base + 1);
+  scene.document.undo_stack()->undo();
+  EXPECT_EQ(xodr(scene.document), before);
+}
+
+// Rotation severs links too, so the ring has to ask as well — the gate is not
+// translate-only. (It does NOT pin the predicate difference between the two
+// kinds: rotate_road clears every road-level link while translate_roads clears
+// only those leaving the moved set, and the two disagree solely on a road linked
+// to ITSELF, which the command layer offers no way to build.)
+TEST(GizmoDrag, TheYawRingAsksBeforeSeveringToo) {
+  LinkedScene scene;
+  const std::string before = xodr(scene.document);
+  const auto target = gizmo_target(scene.document.network(), {.road = scene.head});
+  ASSERT_TRUE(target.has_value());
+
+  GizmoDragSession session(scene.document);
+  session.set_link_break_confirm([] { return false; });
+  EXPECT_EQ(session.begin(*target, GizmoHandle::YawRing, Scene::on_ring(target->pivot, 0.0)),
+            GizmoDragStart::Declined);
+  EXPECT_EQ(xodr(scene.document), before);
+
+  session.set_link_break_confirm([] { return true; });
+  ring_drag(session, *target, 20.0 * std::numbers::pi / 180.0);
+  EXPECT_FALSE(scene.document.network().road(scene.head)->successor.has_value());
+}
+
+// The over-prompting guard: a road with nothing to sever must not raise a dialog
+// asking permission to sever nothing.
+TEST(GizmoDrag, AnUnlinkedRoadIsNeverAskedAbout) {
+  Scene scene;
+  const auto target = gizmo_target(scene.document.network(), {.road = scene.road});
+  ASSERT_TRUE(target.has_value());
+
+  bool asked = false;
+  GizmoDragSession session(scene.document);
+  session.set_link_break_confirm([&asked] {
+    asked = true;
+    return false;
+  });
+
+  EXPECT_EQ(session.begin(*target, GizmoHandle::PlaneXY, {target->pivot[0], target->pivot[1]}),
+            GizmoDragStart::Armed);
+  EXPECT_FALSE(asked);
+}
+
+// The documented unset contract, shared with SelectTool: no hook ⇒ links break
+// without asking. A headless caller must not be blocked by a gate it never wired.
+TEST(GizmoDrag, WithNoConfirmHookLinksBreakWithoutAsking) {
+  LinkedScene scene;
+  const auto target = gizmo_target(scene.document.network(), {.road = scene.head});
+  ASSERT_TRUE(target.has_value());
+
+  GizmoDragSession session(scene.document);
+  EXPECT_EQ(session.begin(*target, GizmoHandle::PlaneXY, {target->pivot[0], target->pivot[1]}),
+            GizmoDragStart::Armed);
+}
+
+// A prop dragged clear of its road yields no command that frame — deliberately,
+// so the prop holds its last valid spot instead of flinging out to a huge t.
+// That is NOT an error: Document reports a missing command as one, and if the
+// session passed that through, this routine gesture would produce a wall of
+// "preview factory returned no command" toasts. Both frames matter: the first
+// goes through begin_preview, later ones through update_preview.
+TEST(GizmoDrag, DraggingAPropClearOfItsRoadIsNotAnError) {
+  Scene scene;
+  const ObjectId prop = scene.add_prop(40.0, 4.0, 0.0);
+  const auto target = gizmo_target(scene.document.network(), {.object = prop});
+  ASSERT_TRUE(target.has_value());
+
+  GizmoDragSession session(scene.document);
+  ASSERT_EQ(session.begin(*target, GizmoHandle::PlaneXY, {target->pivot[0], target->pivot[1]}),
+            GizmoDragStart::Armed);
+
+  // Frame 1, far off the road: no preview has begun, so this is the
+  // begin_preview path.
+  EXPECT_TRUE(session.update(GizmoDragInput{.cursor_world = {40.0, 50.0}}).has_value());
+  // A good frame, then off the road again: now the update_preview path.
+  ASSERT_TRUE(session.update(GizmoDragInput{.cursor_world = {50.0, 4.0}}).has_value());
+  EXPECT_TRUE(session.update(GizmoDragInput{.cursor_world = {50.0, 50.0}}).has_value());
+
+  // The last good frame is what survives.
+  session.commit();
+  const Object* placed = scene.document.network().object(prop);
+  ASSERT_NE(placed, nullptr);
+  EXPECT_NEAR(placed->s, 50.0, 1.0);
 }
 
 } // namespace roadmaker::editor

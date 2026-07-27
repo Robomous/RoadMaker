@@ -45,13 +45,22 @@ appears at the entity's pivot, always on top at a constant on-screen size:
   snap the amount they are turned *by* instead, since a curved road has no one
   heading to measure against.
 - <kbd>Esc</kbd> cancels a drag in progress, leaving the network untouched.
+- Moving or rotating a road that is **linked** to a road staying put breaks that
+  connection, so the gizmo asks first — the same *"Break road links?"* prompt the
+  Select and Move tools use, including its **Don't ask again this session**
+  switch, which then covers all three. The gizmo asks the moment you **grab** the
+  handle, before the road moves at all, so that answering the dialog can never
+  eat the release of a drag already in flight.
 
 ### Per-entity behavior
 
 - **Roads** — X/Y translate the whole road; the yaw ring rotates it about the
   selection pivot; the Z arrow applies a uniform elevation offset. A road that
-  participates in a junction can't be transformed (its pose is generated) — the
-  drop is refused with a toast; move the junction's free end nodes instead.
+  participates in a junction can't be moved or rotated (its pose is generated) —
+  grabbing an arrow, the pad or the ring is refused on the spot, with a toast
+  naming the road and the junction; move the junction's free end nodes instead.
+  The **Z arrow is the exception**: raising or lowering a junction arm is allowed,
+  and the junction regenerates around the new height.
 - **Props** — X/Y translate (re-projected onto the owning road) and the yaw ring
   rotates the instance. No Z arrow yet. On a **prop span**, the ring turns every
   instance in the series by the same angle relative to the road — the heading is

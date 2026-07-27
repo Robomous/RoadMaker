@@ -281,7 +281,8 @@ MainWindow::MainWindow(QWidget* parent, bool restore_saved_layout)
   // Moving a road that links to roads staying put breaks those links. Confirm
   // once (with a session-wide "don't ask again"), BEFORE the preview begins —
   // a modal opened mid-drag swallows the mouse-release. Shared by the Select
-  // tool (power path) and the Move tool (discoverable path).
+  // tool (power path), the Move tool (discoverable path) and the transform
+  // gizmo (#401) — one callable, so "don't ask again" means all three.
   const auto link_break_confirm = [this]() -> bool {
     if (suppress_link_break_confirm_) {
       return true;
@@ -318,6 +319,9 @@ MainWindow::MainWindow(QWidget* parent, bool restore_saved_layout)
   wire_status(move_tool.get());
   move_tool->set_link_break_confirm(link_break_confirm);
   tool_manager_.register_tool(ToolId::Move, std::move(move_tool));
+  // The gizmo rides the Move tool but owns its own drag, so it needs the same
+  // gate handed to it directly.
+  viewport_->set_link_break_confirm(link_break_confirm);
   connect(actions_->tool_move, &QAction::triggered, this, [this] {
     tool_manager_.set_active(ToolId::Move);
   });

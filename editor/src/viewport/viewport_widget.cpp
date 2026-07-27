@@ -1314,8 +1314,20 @@ bool ViewportWidget::begin_gizmo_drag(const QPointF& pos) {
   const std::array<double, 2> press_world =
       ground ? std::array<double, 2>{(*ground)[0], (*ground)[1]}
              : std::array<double, 2>{target->pivot[0], target->pivot[1]};
-  if (!gizmo_drag_.begin(*target, handle, press_world)) {
+  switch (gizmo_drag_.begin(*target, handle, press_world)) {
+  case GizmoDragStart::Ignored:
     return false; // no handle, or an arm this target does not offer
+  case GizmoDragStart::Refused:
+    // Consume the press: handing it back would let the Move tool clear the
+    // selection or start a node drag under the refusal the user just read.
+    show_toast(gizmo_drag_.refusal(), ToastSeverity::Warning);
+    return true;
+  case GizmoDragStart::Declined:
+    // The user said no. Say nothing back, as SelectTool's cancel does — but
+    // still consume the press, for the same reason as above.
+    return true;
+  case GizmoDragStart::Armed:
+    break;
   }
   gizmo_press_px_ = pos.toPoint();
   update();
@@ -1366,10 +1378,14 @@ void ViewportWidget::update_gizmo_drag(const QPointF& pos, Qt::KeyboardModifiers
   // takes effect mid-drag.
   input.free_rotation = (modifiers & Qt::ShiftModifier) != 0;
   const auto result = gizmo_drag_.update(input);
-  // The kernel's refusal (a junction arm's generated pose) is still swallowed
-  // here: surfacing it is #401's, and GizmoDragSession::update now returns it
-  // so there is exactly one place to do that from.
-  static_cast<void>(result);
+  // Backstop only. The press-time gates in GizmoDragSession::begin turn away
+  // every refusal reachable by a gesture, and a frame that simply has nothing
+  // to edit reports success — so nothing known lands here. It exists so a
+  // kernel refusal added later cannot go silent again, which is #401 itself.
+  if (!result.has_value()) {
+    show_toast(tr("Cannot transform: %1").arg(QString::fromStdString(result.error().message)),
+               ToastSeverity::Warning);
+  }
 }
 
 void ViewportWidget::commit_gizmo_drag() {
