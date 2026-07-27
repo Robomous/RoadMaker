@@ -299,7 +299,7 @@ public:
   Values after; // precomputed; when `creator` is set it is re-read post-run
   Values erased;
   Creator creator;
-  std::optional<Error> invalid; // factory-time validation failure
+  std::optional<Error> invalid;     // factory-time validation failure
   std::vector<FollowRecord> follow; // joints this command disturbed (#461)
 
   Expected<void> apply(RoadNetwork& network) override {
@@ -918,8 +918,7 @@ std::optional<RoadLink>& link_slot(Road& road, ContactPoint contact) {
 
 /// The follower's own reference-line heading at one of its ends.
 double end_heading(const Road& road, ContactPoint contact) {
-  return road.plan_view
-      .evaluate(contact == ContactPoint::Start ? 0.0 : road.plan_view.length())
+  return road.plan_view.evaluate(contact == ContactPoint::Start ? 0.0 : road.plan_view.length())
       .hdg;
 }
 
@@ -952,10 +951,9 @@ Expected<void> check_follow_bounded(const ReferenceLine& line,
   }
   const double bound = kMaxFitLoopFactor * std::max({old_length, polyline, tol::kLength});
   if (line.length() > bound) {
-    return make_error(ErrorCode::InvalidArgument,
-                      fmt::format("the re-fit loops ({:.0f} m for a {:.0f} m road)",
-                                  line.length(),
-                                  old_length));
+    return make_error(
+        ErrorCode::InvalidArgument,
+        fmt::format("the re-fit loops ({:.0f} m for a {:.0f} m road)", line.length(), old_length));
   }
   return {};
 }
@@ -1023,8 +1021,8 @@ Expected<Road> refit_follower(const RoadNetwork& network,
     }
   }
 
-  auto line = derived ? fit_clothoid_path(waypoints, headings)
-                      : fit_clothoid_path(waypoints, locked);
+  auto line =
+      derived ? fit_clothoid_path(waypoints, headings) : fit_clothoid_path(waypoints, locked);
   if (!line.has_value()) {
     return tl::unexpected<Error>(line.error());
   }
@@ -1055,8 +1053,8 @@ Expected<Road> refit_follower(const RoadNetwork& network,
   std::vector<ElevationPoint> points = elevation_profile_points(follower);
   std::vector<ElevationPoint> rebased;
   rebased.reserve(points.size() + 1);
-  rebased.push_back(ElevationPoint{
-      .s = 0.0, .z = points.front().z, .grade = points.front().grade.value_or(0.0)});
+  rebased.push_back(
+      ElevationPoint{.s = 0.0, .z = points.front().z, .grade = points.front().grade.value_or(0.0)});
   for (std::size_t i = 1; i + 1 < points.size(); ++i) {
     if (points[i].s > tol::kLength && points[i].s < new_length - tol::kLength) {
       rebased.push_back(points[i]);
@@ -1317,10 +1315,8 @@ std::unique_ptr<Command> wrap_with_follow(const RoadNetwork& network,
   std::vector<CompositeCommand::Builder> builders;
   builders.reserve(2);
   builders.push_back([slot](RoadNetwork&) { return std::move(*slot); });
-  builders.push_back(
-      [edited = std::move(edited), broken = std::move(already_broken)](RoadNetwork& net) {
-        return follow_stage(net, edited, broken);
-      });
+  builders.push_back([edited = std::move(edited), broken = std::move(already_broken)](
+                         RoadNetwork& net) { return follow_stage(net, edited, broken); });
   // Same undo-menu text as the base: whether a neighbour had to follow is not
   // something the user should read in the Edit menu.
   return std::make_unique<CompositeCommand>(std::move(name), DirtySet{}, std::move(builders));

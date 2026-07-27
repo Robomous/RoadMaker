@@ -35,8 +35,6 @@
 #include "roadmaker/xodr/rules.hpp"
 #include "roadmaker/xodr/writer.hpp"
 
-#include "support/network_compare.hpp"
-
 #include <gtest/gtest.h>
 
 #include <array>
@@ -46,6 +44,8 @@
 #include <string>
 #include <utility>
 #include <vector>
+
+#include "support/network_compare.hpp"
 
 using roadmaker::ContactPoint;
 using roadmaker::Junction;
@@ -91,11 +91,8 @@ std::string combo_label(ContactPoint a, ContactPoint b) {
 
 /// A linear profile reaching `z` with `grade` (dz/ds along the road's OWN +s) at
 /// `contact` — the fixture states the contract's inputs directly.
-void linear_profile(RoadNetwork& network,
-                    RoadId road,
-                    ContactPoint contact,
-                    double z,
-                    double grade) {
+void linear_profile(
+    RoadNetwork& network, RoadId road, ContactPoint contact, double z, double grade) {
   if (std::abs(z) < 1e-12 && std::abs(grade) < 1e-12) {
     return; // leave it flat: the shipped "no <elevationProfile>" convention
   }
@@ -104,7 +101,8 @@ void linear_profile(RoadNetwork& network,
   auto cmd = roadmaker::edit::set_elevation_profile(
       network,
       road,
-      {roadmaker::edit::ElevationPoint{.s = 0.0, .z = z + (grade * (0.0 - station)), .grade = grade},
+      {roadmaker::edit::ElevationPoint{
+           .s = 0.0, .z = z + (grade * (0.0 - station)), .grade = grade},
        roadmaker::edit::ElevationPoint{
            .s = length, .z = z + (grade * (length - station)), .grade = grade}});
   if (!cmd->apply(network).has_value()) {
@@ -127,22 +125,21 @@ Pair welded_pair(RoadNetwork& network,
                  ContactPoint contact_b,
                  double z = 0.0,
                  double grade_a = 0.0) {
-  const RoadId a = author(network,
-                          contact_a == ContactPoint::End
-                              ? std::vector<Waypoint>{{0.0, 0.0}, {100.0, 0.0}}
-                              : std::vector<Waypoint>{{100.0, 0.0}, {0.0, 0.0}},
-                          "1");
-  const RoadId b = author(network,
-                          contact_b == ContactPoint::Start
-                              ? std::vector<Waypoint>{{100.0, 0.0}, {200.0, 0.0}}
-                              : std::vector<Waypoint>{{200.0, 0.0}, {100.0, 0.0}},
-                          "2");
+  const RoadId a =
+      author(network,
+             contact_a == ContactPoint::End ? std::vector<Waypoint>{{0.0, 0.0}, {100.0, 0.0}}
+                                            : std::vector<Waypoint>{{100.0, 0.0}, {0.0, 0.0}},
+             "1");
+  const RoadId b =
+      author(network,
+             contact_b == ContactPoint::Start ? std::vector<Waypoint>{{100.0, 0.0}, {200.0, 0.0}}
+                                              : std::vector<Waypoint>{{200.0, 0.0}, {100.0, 0.0}},
+             "2");
   const double grade_b = -roadmaker::edit::grade_sign_into(contact_a) *
                          roadmaker::edit::grade_sign_into(contact_b) * grade_a;
   linear_profile(network, a, contact_a, z, grade_a);
   linear_profile(network, b, contact_b, z, grade_b);
-  auto weld = roadmaker::edit::close_gap(
-      network, RoadEnd{a, contact_a}, RoadEnd{b, contact_b});
+  auto weld = roadmaker::edit::close_gap(network, RoadEnd{a, contact_a}, RoadEnd{b, contact_b});
   if (!weld->apply(network).has_value()) {
     throw std::runtime_error("close_gap refused a fixture that should weld");
   }
@@ -299,8 +296,8 @@ TEST(LinkFollow, TheElevationBoundaryFollowsToo) {
     ASSERT_TRUE(before.has_value());
 
     const std::size_t far_index = contact_a == ContactPoint::End ? 0 : 1;
-    auto command = roadmaker::edit::move_waypoint(
-        network, pair.a, far_index, Waypoint{.x = -40.0, .y = 30.0});
+    auto command =
+        roadmaker::edit::move_waypoint(network, pair.a, far_index, Waypoint{.x = -40.0, .y = 30.0});
     ASSERT_TRUE(command->apply(network).has_value());
 
     const auto moved = roadmaker::edit::contact_state(network, RoadEnd{pair.a, contact_a});
@@ -335,7 +332,8 @@ TEST(LinkFollow, AMoveLeavesNoCoincidenceFinding) {
   };
   ASSERT_EQ(with_rule(before, roadmaker::rules::kLinkEndsCoincide), 0U);
 
-  auto command = roadmaker::edit::move_waypoint(network, pair.a, 1, Waypoint{.x = 140.0, .y = 20.0});
+  auto command =
+      roadmaker::edit::move_waypoint(network, pair.a, 1, Waypoint{.x = 140.0, .y = 20.0});
   ASSERT_TRUE(command->apply(network).has_value());
 
   const auto after = roadmaker::validate_network(network);
@@ -397,9 +395,8 @@ TEST(LinkFollow, AnImpossibleRefitSeversAndSaysWhy) {
   const Pair pair = welded_pair(network, ContactPoint::End, ContactPoint::Start);
   // A lane section 90 m along B: any re-fit that leaves B shorter than that is
   // refused rather than forced (refit's own long-standing guard).
-  ASSERT_TRUE(roadmaker::edit::split_lane_section(network, pair.b, 90.0)
-                  ->apply(network)
-                  .has_value());
+  ASSERT_TRUE(
+      roadmaker::edit::split_lane_section(network, pair.b, 90.0)->apply(network).has_value());
 
   // Push A's end almost all the way to B's far end: B would have to shrink to
   // ~5 m, taking its lane section past its own end.
@@ -422,9 +419,8 @@ TEST(LinkFollow, AnImpossibleRefitSeversAndSaysWhy) {
 TEST(LinkFollow, ASeverUndoesByteIdentically) {
   RoadNetwork network;
   const Pair pair = welded_pair(network, ContactPoint::End, ContactPoint::Start);
-  ASSERT_TRUE(roadmaker::edit::split_lane_section(network, pair.b, 90.0)
-                  ->apply(network)
-                  .has_value());
+  ASSERT_TRUE(
+      roadmaker::edit::split_lane_section(network, pair.b, 90.0)->apply(network).has_value());
   auto command = roadmaker::edit::translate_road(network, pair.a, 95.0, 0.0);
   ASSERT_NO_FATAL_FAILURE(expect_command_round_trip(network, *command));
 }
@@ -452,11 +448,10 @@ TEST(LinkFollow, NoGestureLeavesASilentlyStaleLink) {
             network, pair.a, 0.6, contact_a == ContactPoint::End ? 0.0 : 100.0, 0.0);
         break;
       default:
-        command = roadmaker::edit::move_waypoint(
-            network,
-            pair.a,
-            contact_a == ContactPoint::End ? 1 : 0,
-            Waypoint{.x = 130.0, .y = 30.0});
+        command = roadmaker::edit::move_waypoint(network,
+                                                 pair.a,
+                                                 contact_a == ContactPoint::End ? 1 : 0,
+                                                 Waypoint{.x = 130.0, .y = 30.0});
         break;
       }
       ASSERT_TRUE(command->apply(network).has_value());
@@ -492,9 +487,8 @@ TEST(LinkFollow, AFollowedJunctionArmMarksItsJunctionDirty) {
                          .lane_links = {{-1, -1}}});
 
   const RoadId approach = author(network, {{0.0, 0.0}, {100.0, 0.0}}, "4");
-  ASSERT_TRUE(roadmaker::edit::close_gap(network,
-                                         RoadEnd{approach, ContactPoint::End},
-                                         RoadEnd{arm, ContactPoint::Start})
+  ASSERT_TRUE(roadmaker::edit::close_gap(
+                  network, RoadEnd{approach, ContactPoint::End}, RoadEnd{arm, ContactPoint::Start})
                   ->apply(network)
                   .has_value());
 

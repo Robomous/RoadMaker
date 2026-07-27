@@ -341,8 +341,8 @@ TEST(XodrWriter, AnEndDeclaredLinkedToOneItNeverMetCitesTheCoincidenceRule) {
   const RoadId a = author_default(network, "1");
   const std::array<Waypoint, 2> elsewhere{Waypoint{.x = 60.0, .y = 0.0},
                                           Waypoint{.x = 160.0, .y = 0.0}};
-  const auto b = roadmaker::author_clothoid_road(
-      network, elsewhere, LaneProfile::two_lane_default(), "", "2");
+  const auto b =
+      roadmaker::author_clothoid_road(network, elsewhere, LaneProfile::two_lane_default(), "", "2");
   ASSERT_TRUE(b.has_value());
   network.road(a)->successor = roadmaker::RoadLink{.target = *b, .contact = ContactPoint::Start};
   network.road(*b)->predecessor = roadmaker::RoadLink{.target = a, .contact = ContactPoint::End};

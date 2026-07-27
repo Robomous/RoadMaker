@@ -2388,7 +2388,8 @@ NB_MODULE(_roadmaker, m) {
       .def_ro("reason", &roadmaker::edit::FollowRecord::reason)
       .def("__repr__", [](const roadmaker::edit::FollowRecord& record) {
         return std::string("FollowRecord(") +
-               (record.outcome == roadmaker::edit::FollowOutcome::Severed ? "SEVERED" : "FOLLOWED") +
+               (record.outcome == roadmaker::edit::FollowOutcome::Severed ? "SEVERED"
+                                                                          : "FOLLOWED") +
                (record.reason.empty() ? "" : ", '" + record.reason + "'") + ")";
       });
 

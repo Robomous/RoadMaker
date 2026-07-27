@@ -27,13 +27,13 @@
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <array>
 #include <cmath>
 #include <cstddef>
 #include <filesystem>
 #include <fstream>
 #include <sstream>
-#include <algorithm>
 #include <string>
 #include <string_view>
 #include <vector>

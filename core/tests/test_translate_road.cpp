@@ -213,9 +213,8 @@ TEST(TranslateRoad, LinkLeavingTheSetIsFollowedNotBroken) {
       roadmaker::edit::verify_link_weld(network, roadmaker::RoadEnd{a, ContactPoint::End});
   ASSERT_TRUE(weld.has_value()) << weld.error().message;
   EXPECT_FALSE(weld->breaches);
-  EXPECT_TRUE(command->follow_records().empty() ||
-              command->follow_records().front().outcome ==
-                  roadmaker::edit::FollowOutcome::Followed);
+  EXPECT_TRUE(command->follow_records().empty() || command->follow_records().front().outcome ==
+                                                       roadmaker::edit::FollowOutcome::Followed);
   // The neighbour is listed dirty so its re-fit geometry re-meshes.
   const auto& dirty_roads = command->dirty().roads;
   EXPECT_NE(std::ranges::find(dirty_roads, b), dirty_roads.end());

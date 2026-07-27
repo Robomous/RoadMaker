@@ -62,5 +62,4 @@ enum class TransformKind { Translate, Rotate };
                                                                 std::span<const RoadId> roads,
                                                                 TransformKind kind);
 
-
 } // namespace roadmaker::editor
