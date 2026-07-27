@@ -2502,6 +2502,64 @@ std::vector<Diagnostic> validate_network(const RoadNetwork& network, const Write
       }
     });
   }
+
+  // Prop obstruction (cascade-s4, #464). ASAM says an object should be
+  // "properly placed on a road" (§13.1, Figure 112) but has no checkable rule
+  // about one object blocking a DIFFERENT road, and none at all for
+  // object-vs-object — so without this a scene where a move drove a tree into a
+  // lane saves clean and reopens silent, and only the session that made the
+  // move would ever have been told.
+  //
+  // Warning, never Error: a file with a tree in a lane is valid OpenDRIVE and
+  // must still save. Gated like max_grade_warning, because this is a
+  // whole-network geometry sweep rather than a well-formedness check — and it
+  // early-outs before building anything when no prop declares a bounding
+  // volume, which is most files.
+  if (options.prop_obstruction_clearance > 0.0) {
+    for (const PropObstruction& found : find_prop_obstructions(
+             network, PropObstructionOptions{.vertical_clearance =
+                                                 options.prop_obstruction_clearance})) {
+      const Object* object = network.object(found.object);
+      if (object == nullptr) {
+        continue;
+      }
+      const Road* owner = network.road(object->road);
+      std::string blocked;
+      switch (found.kind) {
+      case ObstructionKind::RoadSurface: {
+        const Road* road = network.road(found.road);
+        blocked = fmt::format("road {}'s driving surface", road != nullptr ? road->odr_id : "?");
+        break;
+      }
+      case ObstructionKind::JunctionFloor: {
+        const Junction* junction = network.junction(found.junction);
+        blocked = fmt::format("junction {}", junction != nullptr ? junction->odr_id : "?");
+        break;
+      }
+      case ObstructionKind::Prop: {
+        const Object* other = network.object(found.other);
+        blocked = fmt::format("object {}", other != nullptr ? other->odr_id : "?");
+        break;
+      }
+      }
+      // Diagnostic carries no ObjectId, so the object is named in the location
+      // the same xpath-ish way the rest of this function names a lane. Adding a
+      // field would ripple through every parser diagnostic and deserves its own
+      // change with its own round-trip test.
+      findings.push_back(Diagnostic{
+          .severity = Severity::Warning,
+          .location = fmt::format("road id={}/objects/object id={}",
+                                  owner != nullptr ? owner->odr_id : "?",
+                                  object->odr_id),
+          .message = fmt::format("object {} obstructs {} at ({:.1f}, {:.1f})",
+                                 object->odr_id,
+                                 blocked,
+                                 found.at[0],
+                                 found.at[1]),
+          .rule_id = std::string(rules::kPropObstruction),
+          .road = object->road});
+    }
+  }
   return findings;
 }
 

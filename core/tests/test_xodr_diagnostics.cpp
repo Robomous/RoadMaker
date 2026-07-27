@@ -128,6 +128,7 @@ constexpr NamedRule kAllRules[] = {
     {"kJunctionArmSingleOwner", roadmaker::rules::kJunctionArmSingleOwner},
     {"kLinkEndsCoincide", roadmaker::rules::kLinkEndsCoincide},
     {"kLinkElevationContinuity", roadmaker::rules::kLinkElevationContinuity},
+    {"kPropObstruction", roadmaker::rules::kPropObstruction},
 };
 
 } // namespace

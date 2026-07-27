@@ -169,8 +169,10 @@ TEST(ConnectionContract, CitesTheConnectionRulesAndOnlyRealOnes) {
   // Every vendor UID the document quotes must be one the code actually emits —
   // a contract citing a rule that does not exist is worse than silence.
   constexpr std::string_view kVendorPrefix = "robomous.ai:rm:";
-  const std::array<std::string_view, 3> known{
-      rules::kLinkEndsCoincide, rules::kLinkElevationContinuity, rules::kJunctionArmSingleOwner};
+  const std::array<std::string_view, 4> known{rules::kLinkEndsCoincide,
+                                              rules::kLinkElevationContinuity,
+                                              rules::kJunctionArmSingleOwner,
+                                              rules::kPropObstruction};
   for (std::size_t at = doc.find(kVendorPrefix); at != std::string::npos;
        at = doc.find(kVendorPrefix, at + 1)) {
     const std::size_t end = doc.find_first_not_of("abcdefghijklmnopqrstuvwxyz0123456789.:_", at);

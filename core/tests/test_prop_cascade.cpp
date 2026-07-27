@@ -27,6 +27,8 @@
 #include "roadmaker/road/network.hpp"
 #include "roadmaker/road/object.hpp"
 #include "roadmaker/road/road.hpp"
+#include "roadmaker/xodr/rules.hpp"
+#include "roadmaker/xodr/writer.hpp"
 
 #include "support/network_compare.hpp"
 
@@ -451,6 +453,52 @@ TEST(PropCascade, ReanchoringIntoTheObstructedRoadSilencesRatherThanClears) {
   expect_applies(network, reanchor);
   EXPECT_TRUE(find_prop_obstructions(network).empty())
       << "R1 now exempts it — the prop has not moved a millimetre";
+}
+
+// -----------------------------------------------------------------------------
+// The validator rule — so a reopened file reports its own obstructed props
+// -----------------------------------------------------------------------------
+
+TEST(PropCascade, AnObstructedPropIsReportedByTheValidatorAndNamesItsRule) {
+  RoadNetwork network;
+  const Scene scene = two_roads_and_a_tree(network);
+  network.object(scene.prop)->t = -40.0; // world (0, 0): in the crossed road
+
+  std::vector<Diagnostic> matched;
+  for (const Diagnostic& finding : validate_network(network)) {
+    if (finding.rule_id == rules::kPropObstruction) {
+      matched.push_back(finding);
+    }
+  }
+  ASSERT_EQ(matched.size(), 1U)
+      << "an obstruction authored by ANY route must survive into the file's own report";
+  EXPECT_EQ(matched[0].severity, Severity::Warning)
+      << "a file with a tree in a lane is valid OpenDRIVE and must still save";
+  EXPECT_NE(matched[0].location.find("objects/object id=1"), std::string::npos)
+      << "Diagnostic carries no ObjectId, so the location names it: " << matched[0].location;
+  EXPECT_EQ(matched[0].road, scene.anchor) << "attributed to the road that OWNS the prop";
+}
+
+TEST(PropCascade, TheValidatorSaysNothingAboutAWellPlacedProp) {
+  RoadNetwork network;
+  (void)two_roads_and_a_tree(network);
+  for (const Diagnostic& finding : validate_network(network)) {
+    EXPECT_NE(finding.rule_id, rules::kPropObstruction) << finding.message;
+  }
+}
+
+/// The check is a whole-network geometry sweep, so it is gated the way the
+/// grade advisory is — a caller that wants well-formedness only can turn it off.
+TEST(PropCascade, TheObstructionCheckCanBeDisabled) {
+  RoadNetwork network;
+  const Scene scene = two_roads_and_a_tree(network);
+  network.object(scene.prop)->t = -40.0;
+
+  WriterOptions options;
+  options.prop_obstruction_clearance = 0.0;
+  for (const Diagnostic& finding : validate_network(network, options)) {
+    EXPECT_NE(finding.rule_id, rules::kPropObstruction);
+  }
 }
 
 } // namespace
