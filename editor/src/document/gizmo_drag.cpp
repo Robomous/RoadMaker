@@ -31,6 +31,7 @@
 
 #include "document/document.hpp"
 #include "document/signal_placement.hpp" // kSignalSnapThreshold
+#include "document/transform_gates.hpp"
 #include "document/units.hpp"
 #include "viewport/picking.hpp" // station_to_world, station_within, kObjectSnapThreshold
 
@@ -91,17 +92,40 @@ std::optional<GizmoTarget> gizmo_target(const RoadNetwork& network, const Select
 
 GizmoDragSession::GizmoDragSession(Document& document) : document_(document) {}
 
-bool GizmoDragSession::begin(const GizmoTarget& target,
-                             GizmoHandle handle,
-                             std::array<double, 2> press_world) {
+GizmoDragStart GizmoDragSession::begin(const GizmoTarget& target,
+                                       GizmoHandle handle,
+                                       std::array<double, 2> press_world) {
+  refusal_.clear();
   if (handle == GizmoHandle::None) {
-    return false;
+    return GizmoDragStart::Ignored;
   }
   // Only a road offers a Z arm (props and signals have no kernel z-move op
   // yet, and the arm is not drawn for them), so a Z grab on a leaf is a miss
   // rather than a dead drag.
   if (handle == GizmoHandle::AxisZ && !target.road.is_valid()) {
-    return false;
+    return GizmoDragStart::Ignored;
+  }
+  // The two gates a ROAD transform passes, in SelectTool's order: refuse what
+  // the kernel would refuse, then ask before severing. A leaf entity moves
+  // within its road and severs nothing, so neither applies to it.
+  //
+  // AxisZ is deliberately ungated: edit::set_elevation_profile ACCEPTS a
+  // junction arm (it dirties the junction so it regenerates), and raising an
+  // arm is a supported gesture — gating it here would be a regression.
+  if (target.road.is_valid() && !target.object.is_valid() && !target.signal.is_valid() &&
+      handle != GizmoHandle::AxisZ) {
+    const std::array<RoadId, 1> roads{target.road};
+    const TransformKind kind =
+        handle == GizmoHandle::YawRing ? TransformKind::Rotate : TransformKind::Translate;
+    if (std::optional<QString> refusal =
+            junction_transform_refusal(document_.network(), roads, kind)) {
+      refusal_ = *std::move(refusal);
+      return GizmoDragStart::Refused;
+    }
+    if (transform_breaks_links(document_.network(), roads, kind) && confirm_link_break_ &&
+        !confirm_link_break_()) {
+      return GizmoDragStart::Declined;
+    }
   }
   double base_angle = 0.0;
   if (target.object.is_valid()) {
@@ -118,7 +142,7 @@ bool GizmoDragSession::begin(const GizmoTarget& target,
                .press_world = press_world,
                .base_angle = base_angle,
                .summary = QString()};
-  return true;
+  return GizmoDragStart::Armed;
 }
 
 Expected<void> GizmoDragSession::update(const GizmoDragInput& input) {
@@ -250,11 +274,29 @@ Expected<void> GizmoDragSession::update(const GizmoDragInput& input) {
     }
   }
 
-  if (!factory) {
-    return {};
+  // A factory that yields NO command is a frame with nothing to edit (a prop
+  // dragged clear of its road), not a failure. Document reports both of those
+  // as errors ("null command" / "preview factory returned no command"), so the
+  // null has to be absorbed HERE — otherwise every such frame hands the caller
+  // an internal error to surface, and dragging a prop off its road becomes a
+  // wall of toasts (#401).
+  if (!document_.preview_active()) {
+    std::unique_ptr<edit::Command> command = factory(document_.network());
+    if (command == nullptr) {
+      return {};
+    }
+    return document_.begin_preview(std::move(command));
   }
-  return document_.preview_active() ? document_.update_preview(factory)
-                                    : document_.begin_preview(factory(document_.network()));
+  bool produced = false;
+  const Expected<void> result =
+      document_.update_preview([&factory, &produced](const RoadNetwork& base) {
+        std::unique_ptr<edit::Command> command = factory(base);
+        produced = command != nullptr;
+        return command;
+      });
+  // update_preview has already restored the last good preview, so a frame that
+  // produced nothing leaves the session exactly where it was.
+  return produced ? result : Expected<void>{};
 }
 
 bool GizmoDragSession::commit() {

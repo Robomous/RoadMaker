@@ -320,8 +320,9 @@ TEST(PropertiesPanel, ARingDragAuthorsAHeadingThatOnlyAutoFacingUndoes) {
   // A ring drag, committed as one entry.
   const int base = h.document.undo_stack()->count();
   GizmoDragSession session(h.document);
-  ASSERT_TRUE(
-      session.begin(*target, GizmoHandle::YawRing, {target->pivot[0] + 10.0, target->pivot[1]}));
+  ASSERT_EQ(
+      session.begin(*target, GizmoHandle::YawRing, {target->pivot[0] + 10.0, target->pivot[1]}),
+      GizmoDragStart::Armed);
   ASSERT_TRUE(
       session.update(GizmoDragInput{.cursor_world = {target->pivot[0], target->pivot[1] + 10.0}})
           .has_value());

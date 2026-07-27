@@ -35,7 +35,9 @@
 
 #include <QString>
 #include <array>
+#include <functional>
 #include <optional>
+#include <utility>
 
 #include "document/selection_model.hpp"
 #include "viewport/gizmo.hpp" // GizmoHandle
@@ -83,6 +85,21 @@ struct GizmoDragInput {
   bool free_rotation = false;
 };
 
+/// What a grab on a handle did.
+///
+/// `Ignored` is the ONLY value whose press may fall through to the active tool.
+/// A `Refused` or `Declined` grab must still be consumed: the gizmo lives on the
+/// Move tool, which is a SelectTool, so a press handed back to it would clear
+/// the selection on release, or start a bend-node drag (the pivot sits on the
+/// road, well inside the node pick radius), or re-open the very dialog the user
+/// just dismissed.
+enum class GizmoDragStart {
+  Armed,    ///< A drag is live; the caller owns the mouse until release.
+  Ignored,  ///< Not a handle this target offers — let the press through.
+  Refused,  ///< The transform can't happen; refusal() says why.
+  Declined, ///< The user declined the confirmation. Say nothing.
+};
+
 /// A gizmo drag, from press to release, over a Document's preview session.
 ///
 /// ROTATION SNAPPING is not uniform, and deliberately so (spec's
@@ -105,17 +122,36 @@ class GizmoDragSession {
 public:
   explicit GizmoDragSession(Document& document);
 
-  /// Arms a drag on `handle`. False (and no session) when the handle is None or
-  /// an axis the target does not offer, leaving the press to fall through.
-  /// `press_world` is the ground-plane point under the press.
-  [[nodiscard]] bool
+  /// Arms a drag on `handle`. `press_world` is the ground-plane point under the
+  /// press. See GizmoDragStart for what each outcome obliges the caller to do.
+  ///
+  /// A road transform passes both gates HERE, at the grab — earlier than
+  /// SelectTool, which gates once the pointer has moved past its click
+  /// tolerance. That is deliberate: at this instant nothing is armed and no
+  /// preview exists, so a mouse-release delivered while the confirmation dialog
+  /// is open is a clean no-op. Gating on the first drag frame instead would hold
+  /// a reference into the live drag across a nested modal that can destroy it.
+  /// The cost is that a bare click on a handle can raise the confirmation.
+  [[nodiscard]] GizmoDragStart
   begin(const GizmoTarget& target, GizmoHandle handle, std::array<double, 2> press_world);
 
-  /// One drag frame: previews the edit this handle implies. The kernel's
-  /// refusal (a junction arm's generated pose, say) is RETURNED rather than
-  /// swallowed — surfacing it to the user is #401's, and this is the one place
-  /// it has to hook. A frame that yields no command at all (dragged clear of
-  /// the road) is not an error: the session simply keeps its last good frame.
+  /// Confirmation gate for a road transform that would sever a link to a road
+  /// staying put: returns true to proceed, false to cancel. Asked at the grab,
+  /// before any preview. MainWindow injects the same QMessageBox (and the same
+  /// "don't ask again" switch) it gives SelectTool; tests inject a stub. Unset
+  /// ⇒ links break without asking.
+  void set_link_break_confirm(std::function<bool()> confirm) {
+    confirm_link_break_ = std::move(confirm);
+  }
+
+  /// One drag frame: previews the edit this handle implies. A kernel refusal is
+  /// RETURNED rather than swallowed, for the caller to surface. A frame that
+  /// yields no command at all (a prop dragged clear of its road) is NOT an
+  /// error — the session keeps its last good frame and reports success, so an
+  /// error out of here always means a real refusal worth showing.
+  ///
+  /// After begin() gained the press-time gates (#401) there is no reachable
+  /// gesture that fails here: this is a backstop, not the primary channel.
   [[nodiscard]] Expected<void> update(const GizmoDragInput& input);
 
   /// Commits as ONE undo entry, returning whether anything was actually
@@ -134,6 +170,10 @@ public:
   /// update().
   [[nodiscard]] QString summary() const;
 
+  /// Why the last begin() refused, for the caller to show. Empty unless that
+  /// begin() returned Refused — a Declined grab says nothing, by design.
+  [[nodiscard]] QString refusal() const { return refusal_; }
+
 private:
   /// The press-time state a drag resolves against.
   struct Drag {
@@ -148,6 +188,9 @@ private:
 
   Document& document_;
   std::optional<Drag> drag_;
+  std::function<bool()> confirm_link_break_;
+  /// Outside Drag: a refusal is precisely the case where no drag exists.
+  QString refusal_;
 };
 
 } // namespace roadmaker::editor

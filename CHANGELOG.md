@@ -429,6 +429,25 @@ Current version on `main`: **0.0.1**.
   about silently never matched.
 
 ### Fixed
+- **The transform gizmo says why it won't move a road, and asks before it cuts
+  one loose** ([#401](https://github.com/Robomous/RoadMaker/issues/401)): a road
+  that belongs to a junction has a pose the junction generates, so the kernel
+  refuses to move or rotate it. The refusal reached the viewport and was thrown
+  away there — drag a junction arm by its gizmo and nothing happened, with no
+  toast, no status line, and nothing in the log to explain the road that would
+  not budge. Worse, the gizmo would happily sever a road's connection to a
+  neighbour staying put, silently, while dragging the *same* road by its body
+  asked permission first. Both are fixed at the point of the grab: taking hold of
+  an arrow, the centre pad or the yaw ring on a junction road is refused straight
+  away, in the viewport, naming the road and the junction; taking hold of one on
+  a linked road raises the same *"Break road links?"* prompt the Select and Move
+  tools raise, and its **Don't ask again this session** switch now settles the
+  question for all three at once. Raising a junction arm with the Z arrow is
+  still allowed, as it always was. The wording and the "would this break a link?"
+  test are now written once and shared, so the gizmo and the drag path cannot
+  drift apart again. Along the way, a prop dragged clear of its road stopped
+  reporting an internal error on every frame: that gesture deliberately produces
+  no edit, and the session now treats it as the nothing-to-do it is.
 - **A project's own Library categories are reachable from the category filter**
   ([#321](https://github.com/Robomous/RoadMaker/issues/321)): the Library's
   category combo was filled once, when the dock was built. A project overlay is

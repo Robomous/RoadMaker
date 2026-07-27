@@ -27,12 +27,14 @@
 #include <QPoint>
 #include <QString>
 #include <array>
+#include <functional>
 #include <limits>
 #include <memory>
 #include <optional>
 #include <span>
 #include <string>
 #include <unordered_map>
+#include <utility>
 #include <vector>
 
 #include "app/context_menu.hpp"
@@ -188,6 +190,13 @@ public slots:
 
 public:
   [[nodiscard]] QString hint() const { return hint_text_; }
+
+  /// Confirmation gate for a gizmo transform that would sever a road link.
+  /// MainWindow passes the SAME callable it gives the Select and Move tools, so
+  /// the dialog's "don't ask again this session" covers all three (#401).
+  void set_link_break_confirm(std::function<bool()> confirm) {
+    gizmo_drag_.set_link_break_confirm(std::move(confirm));
+  }
 
   /// Camera preset for scripted captures: "top" (plan view, north up),
   /// "ortho" (plan view in orthographic projection), or "orbit" (the default

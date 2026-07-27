@@ -23,6 +23,11 @@ means for the sprint cut. Written 2026-07-15, before p1-s1 landed. Roadmap:
 > readouts are this pillar's universal-editor scope). Release-blocking;
 > unit policy governed by the
 > [realism defaults spec](../../domain/realism_defaults.md).
+>
+> **Status (2026-07-27):** #401 is **done** — the gizmo now refuses a junction
+> road at the grab, with the reason, and asks before severing a link, through
+> the same confirmation the Select and Move tools use. The pillar stays open on
+> #404, #405 and #412.
 
 ## Why this document exists
 
