@@ -135,15 +135,6 @@ public:
   [[nodiscard]] GizmoDragStart
   begin(const GizmoTarget& target, GizmoHandle handle, std::array<double, 2> press_world);
 
-  /// Confirmation gate for a road transform that would sever a link to a road
-  /// staying put: returns true to proceed, false to cancel. Asked at the grab,
-  /// before any preview. MainWindow injects the same QMessageBox (and the same
-  /// "don't ask again" switch) it gives SelectTool; tests inject a stub. Unset
-  /// ⇒ links break without asking.
-  void set_link_break_confirm(std::function<bool()> confirm) {
-    confirm_link_break_ = std::move(confirm);
-  }
-
   /// One drag frame: previews the edit this handle implies. A kernel refusal is
   /// RETURNED rather than swallowed, for the caller to surface. A frame that
   /// yields no command at all (a prop dragged clear of its road) is NOT an
@@ -188,7 +179,6 @@ private:
 
   Document& document_;
   std::optional<Drag> drag_;
-  std::function<bool()> confirm_link_break_;
   /// Outside Drag: a refusal is precisely the case where no drag exists.
   QString refusal_;
 };

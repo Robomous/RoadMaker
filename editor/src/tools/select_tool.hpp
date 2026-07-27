@@ -56,15 +56,6 @@ public:
   /// (its own moving endpoint would mask every other candidate).
   void set_snap_options(edit::SnapOptions options) { snap_options_ = options; }
 
-  /// Confirmation gate for a whole-road move that would break links to roads
-  /// outside the moved set: returns true to proceed, false to cancel. Shown
-  /// BEFORE the preview session begins (a modal opened mid-drag swallows the
-  /// mouse-release). MainWindow injects a QMessageBox with a "don't ask again"
-  /// switch; tests inject a stub. Unset ⇒ links break without asking.
-  void set_link_break_confirm(std::function<bool()> confirm) {
-    confirm_link_break_ = std::move(confirm);
-  }
-
   [[nodiscard]] bool moving() const { return move_.has_value(); }
 
   [[nodiscard]] bool moving_object() const { return object_move_.has_value(); }
@@ -150,9 +141,10 @@ private:
 
   /// Starts a whole-road move once the press crosses the click tolerance: picks
   /// the move set (the selection if the pressed road is in it, else just the
-  /// pressed road, auto-selected), refuses junction roads with a toast, and
-  /// asks confirm_link_break_ before breaking any link that leaves the set.
-  /// Leaves move_ unset (and the selection untouched) when it refuses.
+  /// pressed road, auto-selected) and refuses junction roads with a toast.
+  /// Leaves move_ unset (and the selection untouched) when it refuses. Links
+  /// leaving the set are no longer a reason to ask: their roads follow
+  /// (cascade-s1, #461).
   void begin_move_drag(Qt::KeyboardModifiers modifiers);
 
   /// One move frame: single-road drags snap the nearest endpoint to other
@@ -187,7 +179,6 @@ private:
   double pick_radius_ = 2.0;
   double click_tolerance_ = 0.5;
   edit::SnapOptions snap_options_{};
-  std::function<bool()> confirm_link_break_;
   std::optional<NodeDragState> drag_;
   std::optional<MoveDragState> move_;
   std::optional<ObjectMoveState> object_move_;

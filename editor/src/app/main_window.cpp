@@ -239,6 +239,9 @@ MainWindow::MainWindow(QWidget* parent, bool restore_saved_layout)
   connect(&document_, &Document::regeneration_skipped, this, [this](const QString& reason) {
     viewport_->show_toast(tr("Junction not updated: %1").arg(reason), ToastSeverity::Warning);
   });
+  connect(&document_, &Document::links_severed, this, [this](const QString& reason) {
+    viewport_->show_toast(tr("Road link broken: %1").arg(reason), ToastSeverity::Warning);
+  });
 
   // Autosave tick — the debounce and the recover-vs-clean decision live in
   // AutosaveManager (fake-clock testable, §3); this timer is the thin
@@ -278,33 +281,8 @@ MainWindow::MainWindow(QWidget* parent, bool restore_saved_layout)
       }
     });
   };
-  // Moving a road that links to roads staying put breaks those links. Confirm
-  // once (with a session-wide "don't ask again"), BEFORE the preview begins —
-  // a modal opened mid-drag swallows the mouse-release. Shared by the Select
-  // tool (power path), the Move tool (discoverable path) and the transform
-  // gizmo (#401) — one callable, so "don't ask again" means all three.
-  const auto link_break_confirm = [this]() -> bool {
-    if (suppress_link_break_confirm_) {
-      return true;
-    }
-    QMessageBox box(this);
-    box.setIcon(QMessageBox::Question);
-    box.setWindowTitle(tr("Break road links?"));
-    box.setText(tr("Moving this road will break its connection to roads that stay put."));
-    box.setInformativeText(tr("Move it anyway?"));
-    auto* dont_ask = new QCheckBox(tr("Don't ask again this session"), &box);
-    box.setCheckBox(dont_ask);
-    box.setStandardButtons(QMessageBox::Ok | QMessageBox::Cancel);
-    box.setDefaultButton(QMessageBox::Ok);
-    const int result = box.exec();
-    if (dont_ask->isChecked()) {
-      suppress_link_break_confirm_ = true;
-    }
-    return result == QMessageBox::Ok;
-  };
   auto select_tool = std::make_unique<SelectTool>(document_, selection_);
   wire_status(select_tool.get());
-  select_tool->set_link_break_confirm(link_break_confirm);
   SelectTool* select_tool_ptr = select_tool.get();
   tool_manager_.register_tool(ToolId::Select, std::move(select_tool));
   connect(actions_->tool_select, &QAction::triggered, this, [this] {
@@ -317,11 +295,7 @@ MainWindow::MainWindow(QWidget* parent, bool restore_saved_layout)
   auto move_tool = std::make_unique<SelectTool>(document_, selection_);
   move_tool->set_move_mode(true);
   wire_status(move_tool.get());
-  move_tool->set_link_break_confirm(link_break_confirm);
   tool_manager_.register_tool(ToolId::Move, std::move(move_tool));
-  // The gizmo rides the Move tool but owns its own drag, so it needs the same
-  // gate handed to it directly.
-  viewport_->set_link_break_confirm(link_break_confirm);
   connect(actions_->tool_move, &QAction::triggered, this, [this] {
     tool_manager_.set_active(ToolId::Move);
   });

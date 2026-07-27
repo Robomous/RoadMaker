@@ -439,14 +439,6 @@ void SelectTool::begin_move_drag(Qt::KeyboardModifiers modifiers) {
     return;
   }
 
-  // A link leaving the moved set breaks — confirm BEFORE begin_preview (a modal
-  // opened mid-drag would swallow the mouse-release).
-  if (transform_breaks_links(network, roads, TransformKind::Translate) && confirm_link_break_ &&
-      !confirm_link_break_()) {
-    press_.reset();
-    return;
-  }
-
   if (!pressed_selected) {
     selection_.select({.road = pressed, .lane = LaneId{}}, SelectMode::Replace);
   }

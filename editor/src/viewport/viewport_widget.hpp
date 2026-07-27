@@ -191,13 +191,6 @@ public slots:
 public:
   [[nodiscard]] QString hint() const { return hint_text_; }
 
-  /// Confirmation gate for a gizmo transform that would sever a road link.
-  /// MainWindow passes the SAME callable it gives the Select and Move tools, so
-  /// the dialog's "don't ask again this session" covers all three (#401).
-  void set_link_break_confirm(std::function<bool()> confirm) {
-    gizmo_drag_.set_link_break_confirm(std::move(confirm));
-  }
-
   /// Camera preset for scripted captures: "top" (plan view, north up),
   /// "ortho" (plan view in orthographic projection), or "orbit" (the default
   /// 3/4 view). Unknown names keep the current view.
