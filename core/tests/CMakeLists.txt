@@ -75,6 +75,7 @@ add_executable(roadmaker_core_tests
   test_translate_road.cpp
   test_rotate_road.cpp
   test_insert_node.cpp
+  test_link_follow.cpp
   test_merge_roads.cpp
   test_edit_snap.cpp
   test_remesh_budget.cpp

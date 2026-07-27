@@ -16,10 +16,12 @@
 
 #pragma once
 
+#include "roadmaker/edit/follow.hpp"
 #include "roadmaker/error.hpp"
 #include "roadmaker/export.hpp"
 #include "roadmaker/road/id.hpp"
 
+#include <span>
 #include <string_view>
 #include <vector>
 
@@ -107,6 +109,15 @@ public:
 
   /// Valid after a successful apply() or revert().
   [[nodiscard]] virtual DirtySet dirty() const = 0;
+
+  /// The joints this command disturbed and what became of each (cascade-s1,
+  /// #461). Valid after a successful apply(); a reverted command keeps them,
+  /// since they describe what applying it does and a redo does it again.
+  ///
+  /// Default empty, because most commands cannot outlive a joint. The move
+  /// gestures can, and a link they had to sever must be reported rather than
+  /// left for the user to discover on save — see edit::FollowRecord.
+  [[nodiscard]] virtual std::span<const FollowRecord> follow_records() const { return {}; }
 
   /// Releases the reserved arena slots this command still holds because it
   /// created objects and is being DROPPED rather than reverted-then-reapplied:

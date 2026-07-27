@@ -112,16 +112,66 @@ functions; never re-derive the ternary.
 A joint is made once and then survives, or fails to survive, every subsequent
 edit. This is the current, deliberate policy per operation.
 
+<!-- rm-contract: edits -->
+
 | Operation | Link policy |
 |---|---|
 | `close_gap` | Coincidence is **3D**. Ends within `coincident_gap_m` in plan but disagreeing in z or grade are **refused**, not welded — a pure link generates nothing to reconcile them, and a vertical-only mismatch cannot be bridged by a connector either (the clothoid fit has no planar distance to work with). |
 | Chain creation (`create_linked_road`, `assembly::create_road_with_interactions`) | The new road inherits the contact's z and grade and eases the inherited slope back to level over `edit::kGradeEaseLength` — see below. |
 | `extend_road` | Refuses an end that is already linked, so it only ever continues. Pins both z and grade at the contact and extends at constant grade. |
-| `translate_roads` | Clears links that leave the moved set; refuses outright if any road is a junction arm. |
-| `rotate_road` | Clears **every** road-level link unconditionally. |
-| `move_waypoint`, `insert_waypoint`, `delete_waypoint` | **Leave links untouched, and therefore stale.** A junction at the moved end is marked dirty and regenerates; a plain road-to-road link is not. The `roads.link_ends_coincide` rule below makes the resulting state visible; making the neighbour *follow* is the move-with-cascade epic [#406](https://github.com/Robomous/RoadMaker/issues/406). |
-| `set_elevation_profile`, `set_node_elevation`, the Z gizmo | Write exactly what the user asked for. A welded boundary that diverges is **reported, never pinned** — the Profile panel names it live and the validator reports it on save. Pinning would fight the user and pre-empt #406 with a half-cascade. |
+| `translate_roads` | **Neighbours follow** — see below. Links between roads moving together are untouched by the shift; a link leaving the moved set drags its neighbour's contacting end along. Still refuses outright if any *moved* road is a junction arm. |
+| `rotate_road` | **Neighbours follow.** Every road-level link swings its neighbour's contacting end round onto the rotated pose. |
+| `move_waypoint`, `insert_waypoint`, `delete_waypoint`, `insert_node_at` | **Neighbours follow.** A junction at the moved end is marked dirty and regenerates, and a plain road-to-road link is re-fit. Note that a re-fit changes the road's *length*, so an interior waypoint edit can move a joint at either end. |
+| `set_elevation_profile`, `set_node_elevation`, the Z gizmo | Write exactly what the user asked for. A welded boundary that diverges is **reported, never pinned** — the Profile panel names it live and the validator reports it on save. This is deliberately NOT a follow: a profile edit is a statement about one road's height, and pinning it would fight the user. |
 | `merge_roads` | Refuses unless the seam is already continuous in position, heading, lanes **and elevation**. |
+
+### Neighbour follow on move
+
+Every gesture above that moves a road end passes through one funnel. After the
+edit lands, each joint it **disturbed** is measured with `verify_link_weld`, and
+each breaching joint is either followed or severed:
+
+- **Follow.** The neighbour's contacting end is re-fit onto the moved pose: its
+  endpoint waypoint moves there, its reference-line heading is locked to
+  `edit::joint_road_heading`, and its elevation boundary node takes the moved
+  end's z and its sign-folded grade. The neighbour is **re-fit, not relocated** —
+  it is never translated bodily.
+- **Sever.** When the re-fit cannot be made — it would loop, collapse the road,
+  or push a lane section past the road's own end — the link is cleared on
+  **both** sides instead of being forced. A sever is never silent: every one is
+  reported as an `edit::FollowRecord` with a reason, readable from the command
+  through `Command::follow_records()`.
+
+Two boundaries are as load-bearing as the rule itself:
+
+**Depth is one hop, and that bound is a theorem, not a policy.** A pure link
+asserts position, heading, elevation and grade — never curvature. The follower's
+*far* end is held fixed in all four: its endpoint waypoint is never moved, its
+heading is pinned into the fit whenever it carries a link of its own, and its
+elevation boundary node is carried through verbatim. So the joint beyond the
+follower cannot move, and there is nothing left for a second hop to fix.
+
+**A joint that was already breaching before the gesture is left exactly as it
+was.** A move restores what it disturbed. It does not repair a joint it did not
+break — that is the validator's report to make — and, far more importantly, it
+must not *destroy* one: a foreign file may legitimately declare a link between
+ends that never met, and severing it because the user nudged a road nearby would
+turn an ordinary edit into silent data loss.
+
+What follow deliberately does **not** re-base: a re-fit changes the follower's
+length, and its lane sections, objects, signals, superelevation and `laneOffset`
+stay indexed against the old stations. That is exactly what `move_waypoint` has
+always done to the road being dragged — the follow *is* a waypoint move on the
+neighbour's contacting node — so it introduces no new semantics. Only elevation
+is handled explicitly, because a drifting boundary node would breach this very
+contract.
+
+Joints where either side is a junction **connecting** road are skipped entirely:
+they weld on the linked lane's inner boundary, so they belong to
+`verify_junction_welds` and junction regeneration. A followed *arm* does mark
+its junction dirty. Arms as the **moved** road, derived layers and props are
+sprints s2–s4 of the move-with-cascade epic
+([#406](https://github.com/Robomous/RoadMaker/issues/406)).
 
 ### Chain creation and grade easing
 
@@ -168,10 +218,12 @@ be derivative noise.
 
 ## Out of scope
 
-- **Neighbour-follow on move** — the move-with-cascade epic
-  [#406](https://github.com/Robomous/RoadMaker/issues/406), which this contract
-  is the stated prerequisite of. This document defines the policy; #406
-  implements the following.
+- **Cascade beyond road-level links** — junction arms as the moved road,
+  derived layers (ground surfaces, bridge spans) and props are sprints s2–s4 of
+  the move-with-cascade epic
+  [#406](https://github.com/Robomous/RoadMaker/issues/406). Road-level
+  neighbour-follow itself has landed and is specified
+  [above](#neighbour-follow-on-move).
 - **Terrain skirt behaviour** — the skirt faithfully amplifies joint steps into
   cliffs (`core/src/mesh/terrain_mesh.cpp`). Fixing the cause is this
   contract's job; the skirt needs no change.
@@ -187,8 +239,12 @@ fails CI, not review, when it drifts from the code:
 - `edit::kGradeEaseLength` appears in the [chain creation](#chain-creation-and-grade-easing) section with its exact value;
 - every `robomous.ai:rm:` UID in the [validator rules](#validator-rules) table
   exists in `core/include/roadmaker/xodr/rules.hpp`, and both connection rules
-  are cited here.
+  are cited here;
+- every kernel operation that can outlive a joint has a row in the
+  [edit-policy table](#what-each-later-edit-must-preserve) — searched **within
+  that table**, not across the document, so a row cannot be satisfied by a
+  mention somewhere else entirely.
 
 The behaviour itself is covered by `core/tests/test_connection.cpp`,
-`core/tests/test_xodr_writer.cpp`, `editor/tests/test_profile_panel.cpp` and
-`python/tests/test_edit.py`.
+`core/tests/test_link_follow.cpp`, `core/tests/test_xodr_writer.cpp`,
+`editor/tests/test_profile_panel.cpp` and `python/tests/test_edit.py`.

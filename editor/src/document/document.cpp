@@ -262,6 +262,24 @@ void Document::push_applied_with_regeneration(std::unique_ptr<edit::Command> com
   last_dirty_ = dirty; // the primary edit's dirty set (before regenerations)
   spdlog::info("command: {} {}", command->name(), describe_dirty(dirty));
 
+  // A move takes its linked neighbours with it (cascade-s1, #461); when one
+  // could not follow, the kernel cut the link and said why. Report it here,
+  // AFTER the fact: severing is rare and not knowable at the grab, so the old
+  // pre-flight "this will break links" confirmation asked about something that
+  // now almost never happens. Read before `command` is moved into the stack.
+  for (const edit::FollowRecord& record : command->follow_records()) {
+    if (record.outcome != edit::FollowOutcome::Severed) {
+      continue;
+    }
+    const Road* neighbour = network_.road(record.neighbour.road);
+    spdlog::warn("link severed: {}", record.reason);
+    emit links_severed(tr("%1 could not follow — %2")
+                           .arg(neighbour != nullptr
+                                    ? tr("Road %1").arg(QString::fromStdString(neighbour->odr_id))
+                                    : tr("the neighbour"),
+                                QString::fromStdString(record.reason)));
+  }
+
   // Editing an incoming road (geometry, elevation, or its lanes) regenerates
   // every junction it touches (02 §6): re-run the generator from each
   // junction's recorded arms, replacing the connecting-road geometry — and,

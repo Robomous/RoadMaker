@@ -17,9 +17,11 @@
 // Kernel tests for edit::translate_roads / translate_road (M3a topology UX).
 // The move shifts plan-view x/y and authoring waypoints only; headings,
 // lengths, s, lanes, elevation and marks are untouched, undo is byte-identical,
-// links leaving the moved set break on both sides, and junction roads refuse.
+// a link leaving the moved set takes its neighbour with it (cascade-s1), and
+// junction roads refuse.
 
 #include "roadmaker/assets/prop_library.hpp"
+#include "roadmaker/edit/connection.hpp"
 #include "roadmaker/edit/operations.hpp"
 #include "roadmaker/mesh/mesh_builder.hpp"
 #include "roadmaker/road/authoring.hpp"
@@ -185,21 +187,35 @@ TEST(TranslateRoad, LinkBetweenTwoMovedRoadsSurvives) {
   EXPECT_EQ(std::get<RoadId>(network.road(b)->predecessor->target), a);
 }
 
-TEST(TranslateRoad, LinkLeavingTheSetBreaksOnBothSides) {
+// cascade-s1 (#461) replaced "a link leaving the moved set breaks" with "its
+// neighbour follows". The joint has to be REAL for that claim to mean anything,
+// so this fixture welds two coincident roads rather than merely declaring a
+// link between two roads 100 m apart. The full matrix lives in
+// test_link_follow.cpp; this is the policy statement at translate's own door.
+TEST(TranslateRoad, LinkLeavingTheSetIsFollowedNotBroken) {
   RoadNetwork network;
-  const RoadId a = author_line(network, "1");
-  const RoadId b = author_line(network, "2", 100.0);
-  network.road(a)->successor = RoadLink{.target = b, .contact = ContactPoint::Start};
-  network.road(b)->predecessor = RoadLink{.target = a, .contact = ContactPoint::End};
+  const RoadId a = author(network, {{0.0, 0.0}, {100.0, 0.0}}, "1");
+  const RoadId b = author(network, {{100.0, 0.0}, {200.0, 0.0}}, "2");
+  ASSERT_TRUE(roadmaker::edit::close_gap(network,
+                                         roadmaker::RoadEnd{a, ContactPoint::End},
+                                         roadmaker::RoadEnd{b, ContactPoint::Start})
+                  ->apply(network)
+                  .has_value());
 
-  // Move only A: the A→B / B→A links no longer meet and are cleared on both.
+  // Move only A: B's start is refit onto A's new end instead of being cut loose.
   auto command = roadmaker::edit::translate_road(network, a, 5.0, 5.0);
   expect_command_round_trip(network, *command);
 
   ASSERT_TRUE(command->apply(network).has_value());
-  EXPECT_FALSE(network.road(a)->successor.has_value());
-  EXPECT_FALSE(network.road(b)->predecessor.has_value());
-  // The unmoved neighbor is listed dirty so its (now link-free) state re-meshes.
+  ASSERT_TRUE(network.road(a)->successor.has_value());
+  ASSERT_TRUE(network.road(b)->predecessor.has_value());
+  const auto weld =
+      roadmaker::edit::verify_link_weld(network, roadmaker::RoadEnd{a, ContactPoint::End});
+  ASSERT_TRUE(weld.has_value()) << weld.error().message;
+  EXPECT_FALSE(weld->breaches);
+  EXPECT_TRUE(command->follow_records().empty() || command->follow_records().front().outcome ==
+                                                       roadmaker::edit::FollowOutcome::Followed);
+  // The neighbour is listed dirty so its re-fit geometry re-meshes.
   const auto& dirty_roads = command->dirty().roads;
   EXPECT_NE(std::ranges::find(dirty_roads, b), dirty_roads.end());
 }

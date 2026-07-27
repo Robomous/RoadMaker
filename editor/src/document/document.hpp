@@ -209,6 +209,13 @@ signals:
   /// `reason` as a warning toast instead of the old silent log line (finding 2).
   void regeneration_skipped(const QString& reason);
 
+  /// A move could not take a linked neighbour with it, so the link was cut
+  /// (cascade-s1, #461). Rare — the kernel re-fits the neighbour whenever it
+  /// can — and precisely because it is rare it cannot be predicted at the grab,
+  /// which is why this is reported AFTER the edit rather than confirmed before
+  /// it. MainWindow surfaces `reason` as a warning toast.
+  void links_severed(const QString& reason);
+
   /// Written to disk successfully; file_path() points at the file and the
   /// undo stack is clean again.
   void saved();

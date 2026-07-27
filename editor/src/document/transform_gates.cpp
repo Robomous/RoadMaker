@@ -27,16 +27,6 @@
 
 namespace roadmaker::editor {
 
-namespace {
-
-/// The road id an end links to, or nullptr when the end is unlinked or points
-/// at a junction rather than a road.
-const RoadId* linked_road(const std::optional<RoadLink>& link) {
-  return link.has_value() ? std::get_if<RoadId>(&link->target) : nullptr;
-}
-
-} // namespace
-
 std::optional<QString> junction_transform_refusal(const RoadNetwork& network,
                                                   std::span<const RoadId> roads,
                                                   TransformKind kind) {
@@ -61,24 +51,6 @@ std::optional<QString> junction_transform_refusal(const RoadNetwork& network,
                      .arg(road_name, junction_name);
   }
   return std::nullopt;
-}
-
-bool transform_breaks_links(const RoadNetwork& network,
-                            std::span<const RoadId> roads,
-                            TransformKind kind) {
-  const auto in_set = [roads](RoadId id) { return std::ranges::find(roads, id) != roads.end(); };
-  const auto breaks = [&](const std::optional<RoadLink>& link) {
-    const RoadId* target = linked_road(link);
-    if (target == nullptr) {
-      return false;
-    }
-    // Rotate severs every road link; Translate only those leaving the set.
-    return kind == TransformKind::Rotate || !in_set(*target);
-  };
-  return std::ranges::any_of(roads, [&](RoadId road_id) {
-    const Road* road = network.road(road_id);
-    return road != nullptr && (breaks(road->predecessor) || breaks(road->successor));
-  });
 }
 
 } // namespace roadmaker::editor

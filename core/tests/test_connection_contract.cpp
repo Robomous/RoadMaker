@@ -27,6 +27,7 @@
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <array>
 #include <cmath>
 #include <cstddef>
@@ -35,6 +36,7 @@
 #include <sstream>
 #include <string>
 #include <string_view>
+#include <vector>
 
 namespace roadmaker {
 namespace {
@@ -78,6 +80,41 @@ std::string rendered(double value) {
     }
   }
   return {};
+}
+
+/// Every kernel operation that can outlive a joint. A factory that can move,
+/// re-link or unlink a road end MUST be listed here and given a row in the
+/// contract's edit-policy table — an operation with an unstated link policy is
+/// exactly how the five move gestures came to disagree with each other (#461).
+constexpr std::string_view kJointOutlivingOps[] = {
+    "close_gap",
+    "create_linked_road",
+    "extend_road",
+    "translate_roads",
+    "rotate_road",
+    "move_waypoint",
+    "insert_waypoint",
+    "delete_waypoint",
+    "insert_node_at",
+    "set_elevation_profile",
+    "set_node_elevation",
+    "merge_roads",
+};
+
+/// The document text between a marker comment and the next heading of any level.
+///
+/// Searching a SECTION, not the whole document, is the point: a global find is
+/// satisfied by a mention anywhere, which is how a swapped tolerance row passed
+/// the first version of the test above (#403) and how `contains("0.8")` passed
+/// on 0.800000011920929 (#325). Same class of bug, third appearance.
+std::string_view section_after(const std::string& doc, std::string_view marker) {
+  const std::size_t start = doc.find(marker);
+  if (start == std::string::npos) {
+    return {};
+  }
+  const std::size_t body = start + marker.size();
+  const std::size_t end = doc.find("\n#", body);
+  return std::string_view(doc).substr(body, (end == std::string::npos ? doc.size() : end) - body);
 }
 
 } // namespace
@@ -158,6 +195,41 @@ TEST(ConnectionContract, GuaranteesTableNamesEveryJoinKind) {
   for (const std::string_view kind : {"Pure link", "Connector", "Junction contact", "Merge seam"}) {
     EXPECT_NE(doc.find(std::string(kind)), std::string::npos)
         << kind << " has no row in the guarantees table";
+  }
+}
+
+TEST(ConnectionContract, EveryJointOutlivingOperationHasALinkPolicy) {
+  const std::string doc = committed_contract();
+  ASSERT_NE(doc.find("<!-- rm-contract: edits -->"), std::string::npos)
+      << "the edit-policy table lost its marker comment";
+  const std::string_view table = section_after(doc, "<!-- rm-contract: edits -->");
+  ASSERT_FALSE(table.empty());
+
+  // The FIRST cell of every table row — the operation column. Prose in the
+  // section below the table, and the policy text in the second column, are both
+  // deliberately out of reach: naming an operation is not stating its policy.
+  std::vector<std::string_view> operation_cells;
+  for (std::size_t at = 0; at < table.size();) {
+    const std::size_t line_end = table.find('\n', at);
+    const std::string_view line = table.substr(at, line_end - at);
+    at = line_end == std::string_view::npos ? table.size() : line_end + 1;
+    if (line.empty() || line.front() != '|') {
+      continue;
+    }
+    const std::size_t cell_end = line.find('|', 1);
+    if (cell_end != std::string_view::npos) {
+      operation_cells.push_back(line.substr(1, cell_end - 1));
+    }
+  }
+  ASSERT_GT(operation_cells.size(), 2U) << "the edit-policy table has no rows";
+
+  for (const std::string_view op : kJointOutlivingOps) {
+    const std::string span = "`" + std::string(op) + "`";
+    const bool listed = std::ranges::any_of(operation_cells, [&span](std::string_view cell) {
+      return cell.find(span) != std::string_view::npos;
+    });
+    EXPECT_TRUE(listed)
+        << op << " can outlive a joint but has no row in the contract's edit-policy table";
   }
 }
 

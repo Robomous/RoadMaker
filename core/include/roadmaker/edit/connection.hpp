@@ -26,6 +26,7 @@
 #include <array>
 #include <cstddef>
 #include <memory>
+#include <numbers>
 #include <optional>
 #include <span>
 #include <vector>
@@ -94,6 +95,19 @@ struct ContactState {
 
 [[nodiscard]] constexpr double grade_sign_out(ContactPoint contact) {
   return contact == ContactPoint::Start ? 1.0 : -1.0;
+}
+
+/// THE HEADING SIGN TRAP, the plan-view sibling of grade_sign_into, named once
+/// for the same reason. `into_hdg` and `out_hdg` are TRAVEL tangents through the
+/// joint, but a road's reference line has its own +s heading, and the two agree
+/// only at one of the two contacts. Given the tangent travelling INTO a joint,
+/// this is the reference-line heading an end must carry to be continuous with
+/// it: at a Start contact +s leaves the joint, so it matches; at an End contact
+/// +s arrives at the joint, so it is the reverse. Getting this backwards flips a
+/// followed neighbour end-for-end, which is exactly what a stale link looks like
+/// (cascade-s1, #461). See docs/domain/connection_contract.md.
+[[nodiscard]] constexpr double joint_road_heading(double into_hdg, ContactPoint contact) {
+  return contact == ContactPoint::Start ? into_hdg : into_hdg + std::numbers::pi;
 }
 
 /// A driving lane at an arm's contact end, with the lateral offset of its INNER

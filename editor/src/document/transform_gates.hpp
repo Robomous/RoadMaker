@@ -16,17 +16,22 @@
 
 #pragma once
 
-// The two gates every road transform passes before it may start (#401).
+// The gate every road transform passes before it may start (#401).
 //
-// The kernel refuses to transform a junction road, and severs road links
-// without asking — both by design, and both things the user must be told about
-// BEFORE the edit rather than after. Two surfaces need that: SelectTool's
-// move-drag and the transform gizmo. Keeping the wording and the predicates
-// here is what stops the two from drifting apart, which is exactly how the
-// gizmo ended up silent while Select was not.
+// The kernel refuses to transform a junction road — by design, and something
+// the user must be told about BEFORE the edit rather than after. Two surfaces
+// need that: SelectTool's move-drag and the transform gizmo. Keeping the
+// wording here is what stops the two from drifting apart, which is exactly how
+// the gizmo ended up silent while Select was not.
 //
-// No Document, no tool, no widget: a network and a road set in, a message or a
-// bool out — so both callers and their headless tests can use it.
+// The second gate this header used to carry — "would this transform sever a
+// link?" — is gone with cascade-s1 (#461): a move now takes its linked
+// neighbours with it, so there is no longer a break to warn about, and the rare
+// sever that IS unavoidable cannot be predicted at the grab. Document reports
+// those after the fact instead (Document::links_severed).
+//
+// No Document, no tool, no widget: a network and a road set in, a message out —
+// so both callers and their headless tests can use it.
 
 #include "roadmaker/road/id.hpp"
 
@@ -40,9 +45,8 @@ class RoadNetwork;
 
 namespace roadmaker::editor {
 
-/// Which kernel operation the gate is standing in front of. It selects BOTH the
-/// wording and the link-break predicate — the two are genuinely different, see
-/// transform_breaks_links.
+/// Which kernel operation the gate is standing in front of. It selects the
+/// wording, so the editor never phrases a refusal differently from the kernel.
 enum class TransformKind { Translate, Rotate };
 
 /// Why the transform can't happen, or nullopt when it can.
@@ -57,20 +61,5 @@ enum class TransformKind { Translate, Rotate };
 [[nodiscard]] std::optional<QString> junction_transform_refusal(const RoadNetwork& network,
                                                                 std::span<const RoadId> roads,
                                                                 TransformKind kind);
-
-/// Whether the transform would sever a road-level link — i.e. whether the user
-/// has to be asked first.
-///
-/// The two kinds do NOT agree, so `kind` is load-bearing:
-///   - Translate breaks a link only when it LEAVES the moved set; roads moving
-///     together keep the links between them (edit::translate_roads' links_out).
-///   - Rotate breaks EVERY road-level link the road has, unconditionally — one
-///     road turning about a pivot no longer meets anything (edit::rotate_road's
-///     is_road_link).
-/// Links targeting a junction are ignored: junction roads never get this far,
-/// junction_transform_refusal turns them away first.
-[[nodiscard]] bool transform_breaks_links(const RoadNetwork& network,
-                                          std::span<const RoadId> roads,
-                                          TransformKind kind);
 
 } // namespace roadmaker::editor

@@ -299,7 +299,8 @@ public:
   Values after; // precomputed; when `creator` is set it is re-read post-run
   Values erased;
   Creator creator;
-  std::optional<Error> invalid; // factory-time validation failure
+  std::optional<Error> invalid;     // factory-time validation failure
+  std::vector<FollowRecord> follow; // joints this command disturbed (#461)
 
   Expected<void> apply(RoadNetwork& network) override {
     if (invalid.has_value()) {
@@ -352,6 +353,11 @@ public:
 
   DirtySet dirty() const override { return dirty_; }
 
+  /// For factories that only learn what they touched while building it.
+  void set_dirty(DirtySet dirty) { dirty_ = std::move(dirty); }
+
+  std::span<const FollowRecord> follow_records() const override { return follow; }
+
   void discard(RoadNetwork& network) override {
     // Only `created_` reserves slots after a revert: `erased` values were
     // restored (live again) and `before` values overwrote live objects — both
@@ -403,6 +409,7 @@ public:
               : Expected<void>(
                     make_error(ErrorCode::InvalidArgument, "composite stage yielded no command"));
       if (!applied.has_value()) {
+        records_.clear();
         // Unwind the applied prefix — the whole composite is atomic.
         for (std::size_t k = i; k-- > 0;) {
           (void)children_[k]->revert(network);
@@ -415,6 +422,16 @@ public:
         }
         return applied;
       }
+    }
+    // The union of what the children reported, in stage order — a follow stage
+    // is a child like any other, so the composite speaks for it (#461).
+    records_.clear();
+    for (const auto& child : children_) {
+      if (child == nullptr) {
+        continue;
+      }
+      const std::span<const FollowRecord> child_records = child->follow_records();
+      records_.insert(records_.end(), child_records.begin(), child_records.end());
     }
     return {};
   }
@@ -470,11 +487,14 @@ public:
     return dirty;
   }
 
+  std::span<const FollowRecord> follow_records() const override { return records_; }
+
 private:
   std::string name_;
   DirtySet base_dirty_;
   std::vector<Builder> builders_;
   std::vector<std::unique_ptr<Command>> children_;
+  std::vector<FollowRecord> records_;
 };
 
 // ---- shared lookups and geometry helpers -------------------------------------
@@ -862,6 +882,446 @@ Expected<void> check_fit_bounded(const ReferenceLine& line, std::span<const Wayp
   return {};
 }
 
+// ---- linked-neighbour follow on move (cascade-s1, #461) ----------------------
+//
+// ONE POLICY, ONE FUNNEL. Every gesture that can move a road end wraps itself in
+// wrap_with_follow, so a gesture added later cannot forget the rule: after the
+// edit lands, each joint it disturbed either has its neighbour REFIT to keep up,
+// or is SEVERED AND REPORTED. No move may leave a silently stale link.
+//
+// Depth is ONE HOP, and that bound is a theorem rather than a policy: the
+// follower's far end is held fixed in every dimension a pure link asserts — its
+// endpoint waypoint is never moved (position), its heading is pinned into the
+// fit (heading), and its elevation boundary node is carried through verbatim
+// (z and grade). Curvature is not asserted at a plain link, so nothing is left
+// to drift and the joint beyond the follower cannot move.
+//
+// See docs/domain/connection_contract.md §neighbour follow on move.
+
+/// The road end a link names, or nullopt when the link is absent or points at a
+/// junction rather than a road.
+std::optional<RoadEnd> linked_end(const std::optional<RoadLink>& link) {
+  if (!link.has_value()) {
+    return std::nullopt;
+  }
+  const RoadId* road = std::get_if<RoadId>(&link->target);
+  if (road == nullptr) {
+    return std::nullopt;
+  }
+  return RoadEnd{.road = *road, .contact = link->contact};
+}
+
+/// The link slot a contact owns: predecessor at a Start, successor at an End.
+std::optional<RoadLink>& link_slot(Road& road, ContactPoint contact) {
+  return contact == ContactPoint::Start ? road.predecessor : road.successor;
+}
+
+/// The follower's own reference-line heading at one of its ends.
+double end_heading(const Road& road, ContactPoint contact) {
+  return road.plan_view.evaluate(contact == ContactPoint::Start ? 0.0 : road.plan_view.length())
+      .hdg;
+}
+
+/// One end of a follower being pulled by a moved road end, expressed entirely in
+/// the FOLLOWER's own frame: where that end must sit, which way its reference
+/// line must point there, and the z/grade its elevation boundary node must take.
+struct FollowPull {
+  ContactPoint contact = ContactPoint::Start;
+  RoadEnd moved; ///< the end doing the pulling, for the report
+  double x = 0.0;
+  double y = 0.0;
+  double heading = 0.0;
+  double z = 0.0;
+  double grade = 0.0; ///< dz/ds along the FOLLOWER's +s, already sign-folded
+};
+
+/// A follow re-fit may not blow the follower up — the runaway-loop guard of the
+/// authoring re-fit (#93), but measured against the road's OWN current length as
+/// well as its waypoint span. A foreign road may legitimately be far longer than
+/// its polyline (spirals, tight arcs), and severing every neighbour's link over
+/// geometry the user never touched would be a regression; growing a road
+/// fourfold to chase a joint is the thing actually worth refusing.
+Expected<void> check_follow_bounded(const ReferenceLine& line,
+                                    std::span<const Waypoint> waypoints,
+                                    double old_length) {
+  double polyline = 0.0;
+  for (std::size_t i = 1; i < waypoints.size(); ++i) {
+    polyline +=
+        std::hypot(waypoints[i].x - waypoints[i - 1].x, waypoints[i].y - waypoints[i - 1].y);
+  }
+  const double bound = kMaxFitLoopFactor * std::max({old_length, polyline, tol::kLength});
+  if (line.length() > bound) {
+    return make_error(
+        ErrorCode::InvalidArgument,
+        fmt::format("the re-fit loops ({:.0f} m for a {:.0f} m road)", line.length(), old_length));
+  }
+  return {};
+}
+
+/// Re-fit `follower` so every pulled end meets its joint, or say why it cannot.
+///
+/// The pulled end's waypoint moves and its heading is locked; an end that is NOT
+/// pulled keeps its waypoint untouched and — when it carries a link of its own —
+/// keeps its heading locked too, which is what bounds the cascade at one hop.
+Expected<Road> refit_follower(const RoadNetwork& network,
+                              const Road& follower,
+                              std::span<const FollowPull> pulls) {
+  std::vector<Waypoint> waypoints = effective_waypoints(follower);
+  if (waypoints.size() < 2) {
+    return make_error(ErrorCode::InvalidArgument, "the road has no waypoints to re-fit");
+  }
+  const auto index_of = [&waypoints](ContactPoint contact) {
+    return contact == ContactPoint::Start ? std::size_t{0} : waypoints.size() - 1;
+  };
+  const auto pulled_at = [&pulls](ContactPoint contact) {
+    return std::ranges::find_if(pulls, [contact](const FollowPull& pull) {
+             return pull.contact == contact;
+           }) != pulls.end();
+  };
+
+  // A road that carries no authoring waypoints is foreign geometry: re-fit it
+  // through ALL its derived headings, exactly as move_waypoint does, so every
+  // untouched segment reproduces. That also locks its far end for free. An
+  // authored road keeps its estimated interior flow and locks only its ends.
+  const bool derived = !follower.authoring_waypoints.has_value();
+  std::vector<double> headings;
+  EndpointHeadings locked;
+  if (derived) {
+    headings = derived_headings(follower);
+    if (headings.size() != waypoints.size()) {
+      return make_error(ErrorCode::InvalidArgument, "the road's derived headings do not line up");
+    }
+  }
+  for (const ContactPoint contact : {ContactPoint::Start, ContactPoint::End}) {
+    const std::size_t index = index_of(contact);
+    std::optional<double>& slot = contact == ContactPoint::Start ? locked.start : locked.end;
+    if (pulled_at(contact)) {
+      continue; // filled from the pull below
+    }
+    // Not pulled: hold this end's heading only when a joint depends on it. A
+    // free end stays free so an ordinary follow does not stiffen the road.
+    const std::optional<RoadLink>& link =
+        contact == ContactPoint::Start ? follower.predecessor : follower.successor;
+    if (link.has_value()) {
+      const double heading = end_heading(follower, contact);
+      if (derived) {
+        headings[index] = heading;
+      } else {
+        slot = heading;
+      }
+    }
+  }
+  for (const FollowPull& pull : pulls) {
+    const std::size_t index = index_of(pull.contact);
+    waypoints[index] = Waypoint{.x = pull.x, .y = pull.y};
+    if (derived) {
+      headings[index] = pull.heading;
+    } else {
+      (pull.contact == ContactPoint::Start ? locked.start : locked.end) = pull.heading;
+    }
+  }
+
+  auto line =
+      derived ? fit_clothoid_path(waypoints, headings) : fit_clothoid_path(waypoints, locked);
+  if (!line.has_value()) {
+    return tl::unexpected<Error>(line.error());
+  }
+  const double old_length = follower.plan_view.length();
+  if (auto bounded = check_follow_bounded(*line, waypoints, old_length); !bounded.has_value()) {
+    return tl::unexpected<Error>(bounded.error());
+  }
+  const double new_length = line->length();
+  if (new_length <= tol::kLength) {
+    return make_error(ErrorCode::InvalidArgument, "the re-fit collapses the road to zero length");
+  }
+  for (const LaneSectionId section_id : follower.sections) {
+    if (network.lane_section(section_id)->s0 >= new_length - tol::kLength) {
+      return make_error(ErrorCode::InvalidArgument,
+                        "the re-fit would move a lane section past the road end");
+    }
+  }
+
+  Road after = follower;
+  after.plan_view = std::move(*line);
+  after.length = after.plan_view.length();
+  after.authoring_waypoints = waypoints;
+
+  // Elevation: re-base the profile onto the new length, then pin the pulled
+  // boundary node(s). The UNPULLED boundary keeps its z and grade verbatim —
+  // that, plus its untouched waypoint and locked heading, is what makes the
+  // joint beyond the follower provably immovable.
+  std::vector<ElevationPoint> points = elevation_profile_points(follower);
+  std::vector<ElevationPoint> rebased;
+  rebased.reserve(points.size() + 1);
+  rebased.push_back(
+      ElevationPoint{.s = 0.0, .z = points.front().z, .grade = points.front().grade.value_or(0.0)});
+  for (std::size_t i = 1; i + 1 < points.size(); ++i) {
+    if (points[i].s > tol::kLength && points[i].s < new_length - tol::kLength) {
+      rebased.push_back(points[i]);
+    }
+  }
+  rebased.push_back(ElevationPoint{
+      .s = new_length, .z = points.back().z, .grade = points.back().grade.value_or(0.0)});
+  for (const FollowPull& pull : pulls) {
+    ElevationPoint& node = pull.contact == ContactPoint::Start ? rebased.front() : rebased.back();
+    node.z = pull.z;
+    node.grade = pull.grade;
+  }
+
+  std::vector<double> s_values;
+  std::vector<double> z_values;
+  std::vector<double> grades;
+  s_values.reserve(rebased.size());
+  z_values.reserve(rebased.size());
+  grades.reserve(rebased.size());
+  for (const ElevationPoint& point : rebased) {
+    s_values.push_back(point.s);
+    z_values.push_back(point.z);
+    grades.push_back(point.grade.value_or(0.0));
+  }
+  // A flat profile is written as no profile at all, so a flat network that
+  // follows a move still round-trips byte-identically (see set_elevation_profile).
+  const bool all_zero = std::ranges::all_of(rebased, [](const ElevationPoint& point) {
+    return std::abs(point.z) < 1e-12 && std::abs(point.grade.value_or(0.0)) < 1e-12;
+  });
+  after.elevation =
+      all_zero ? std::vector<Poly3>{} : fit_elevation_profile(s_values, z_values, grades);
+  return after;
+}
+
+/// Both ends of every joint of `edited` that ALREADY breaches, read before the
+/// edit runs.
+///
+/// A move restores the joints it disturbs. It does not repair a joint that was
+/// broken before it — that is the validator's report to make — and, far more
+/// importantly, it must not DESTROY one either: severing a link the user's
+/// gesture never touched would turn "nudge a road" into silent data loss on
+/// every imported network with a loose link in it.
+std::vector<RoadEnd> already_broken_ends(const RoadNetwork& network,
+                                         std::span<const RoadId> edited) {
+  std::vector<RoadEnd> broken;
+  for (const RoadId road_id : edited) {
+    const Road* road = network.road(road_id);
+    if (road == nullptr) {
+      continue;
+    }
+    for (const ContactPoint contact : {ContactPoint::Start, ContactPoint::End}) {
+      const RoadEnd end{.road = road_id, .contact = contact};
+      const std::optional<RoadEnd> neighbour =
+          linked_end(contact == ContactPoint::Start ? road->predecessor : road->successor);
+      if (!neighbour.has_value()) {
+        continue;
+      }
+      const auto weld = verify_link_weld(network, end);
+      if (weld.has_value() && weld->breaches) {
+        // Both ends, so the stage skips the joint whichever side it reaches it
+        // from.
+        broken.push_back(end);
+        broken.push_back(*neighbour);
+      }
+    }
+  }
+  return broken;
+}
+
+/// The follow stage: built lazily against the network with the move ALREADY
+/// applied, which is the only state in which a joint's new pose is knowable.
+///
+/// It never creates arena objects — a preview drag rebuilds this command every
+/// frame, and a stage that created roads would reserve slots per frame for the
+/// rest of the session (see move_waypoint_following_junctions).
+std::unique_ptr<Command> follow_stage(const RoadNetwork& network,
+                                      std::span<const RoadId> edited,
+                                      std::span<const RoadEnd> already_broken) {
+  auto command = std::make_unique<GenericCommand>("Follow Links", DirtySet{});
+
+  // Roads this stage rewrites, in first-touch order so the command is
+  // deterministic (undo compares serialized bytes).
+  std::vector<RoadId> touched;
+  std::vector<Road> values;
+  const auto mutable_road = [&](RoadId id) -> Road* {
+    const auto at = std::ranges::find(touched, id);
+    if (at != touched.end()) {
+      return &values[static_cast<std::size_t>(at - touched.begin())];
+    }
+    const Road* road = network.road(id);
+    if (road == nullptr) {
+      return nullptr;
+    }
+    touched.push_back(id);
+    values.push_back(*road);
+    command->before.roads.emplace_back(id, *road);
+    return &values.back();
+  };
+
+  const auto in_edited = [edited](RoadId id) {
+    return std::ranges::find(edited, id) != edited.end();
+  };
+
+  std::vector<std::pair<RoadId, std::vector<FollowPull>>> plan;
+  std::vector<std::pair<RoadEnd, RoadEnd>> handled;
+  const auto already_handled = [&handled](const RoadEnd& a, const RoadEnd& b) {
+    return std::ranges::any_of(handled, [&](const std::pair<RoadEnd, RoadEnd>& joint) {
+      return (joint.first == a && joint.second == b) || (joint.first == b && joint.second == a);
+    });
+  };
+
+  for (const RoadId road_id : edited) {
+    const Road* road = network.road(road_id);
+    if (road == nullptr) {
+      continue;
+    }
+    for (const ContactPoint contact : {ContactPoint::Start, ContactPoint::End}) {
+      const RoadEnd moved{.road = road_id, .contact = contact};
+      const std::optional<RoadEnd> neighbour =
+          linked_end(contact == ContactPoint::Start ? road->predecessor : road->successor);
+      if (!neighbour.has_value() || already_handled(moved, *neighbour)) {
+        continue;
+      }
+      if (std::ranges::find(already_broken, moved) != already_broken.end()) {
+        continue; // not this gesture's doing, and not this gesture's to destroy
+      }
+      // A junction's connecting roads link road-to-road but weld on the linked
+      // lane's INNER BOUNDARY, so their joints are verify_junction_welds' and
+      // junction regeneration's business, not this stage's (cascade-s2).
+      const Road* other = network.road(neighbour->road);
+      if (other == nullptr || road->junction.is_valid() || other->junction.is_valid()) {
+        continue;
+      }
+      // The oracle #403 built: only a joint that actually came apart is touched,
+      // so a rigid move of a whole linked set rewrites nothing.
+      const auto weld = verify_link_weld(network, moved);
+      if (!weld.has_value() || !weld->breaches) {
+        continue;
+      }
+      handled.emplace_back(moved, *neighbour);
+
+      if (in_edited(neighbour->road)) {
+        command->follow.push_back(
+            FollowRecord{.moved = moved,
+                         .neighbour = *neighbour,
+                         .outcome = FollowOutcome::Severed,
+                         .reason = "both roads were moved, so neither end can follow the other"});
+        continue;
+      }
+      const auto contact_here = contact_state(network, moved);
+      if (!contact_here.has_value()) {
+        command->follow.push_back(FollowRecord{.moved = moved,
+                                               .neighbour = *neighbour,
+                                               .outcome = FollowOutcome::Severed,
+                                               .reason = contact_here.error().message});
+        continue;
+      }
+      // The grade sign trap: continuity is a SUM in the joint's frame, so the
+      // follower's own dz/ds is the moved end's folded through both contacts.
+      const FollowPull pull{
+          .contact = neighbour->contact,
+          .moved = moved,
+          .x = contact_here->x,
+          .y = contact_here->y,
+          .heading = joint_road_heading(contact_here->into_hdg, neighbour->contact),
+          .z = contact_here->z,
+          .grade = -grade_sign_into(moved.contact) * grade_sign_into(neighbour->contact) *
+                   contact_here->grade,
+      };
+      const auto at = std::ranges::find_if(
+          plan, [&](const auto& entry) { return entry.first == neighbour->road; });
+      if (at == plan.end()) {
+        plan.emplace_back(neighbour->road, std::vector<FollowPull>{pull});
+      } else {
+        at->second.push_back(pull);
+      }
+    }
+  }
+
+  for (const auto& [follower_id, pulls] : plan) {
+    const Road* follower = network.road(follower_id);
+    if (follower == nullptr) {
+      continue;
+    }
+    auto refit = refit_follower(network, *follower, pulls);
+    if (refit.has_value()) {
+      Road* target = mutable_road(follower_id);
+      if (target != nullptr) {
+        *target = std::move(*refit);
+        for (const FollowPull& pull : pulls) {
+          command->follow.push_back(
+              FollowRecord{.moved = pull.moved,
+                           .neighbour = RoadEnd{.road = follower_id, .contact = pull.contact},
+                           .outcome = FollowOutcome::Followed});
+        }
+      }
+      continue;
+    }
+    // Cannot follow: sever every joint that pulled at it, and say why.
+    for (const FollowPull& pull : pulls) {
+      const RoadEnd neighbour{.road = follower_id, .contact = pull.contact};
+      command->follow.push_back(FollowRecord{.moved = pull.moved,
+                                             .neighbour = neighbour,
+                                             .outcome = FollowOutcome::Severed,
+                                             .reason = refit.error().message});
+    }
+  }
+
+  // Apply the severs. A sever clears BOTH sides so no half-link survives, and a
+  // neighbour that never linked back is left alone.
+  for (const FollowRecord& record : command->follow) {
+    if (record.outcome != FollowOutcome::Severed) {
+      continue;
+    }
+    if (Road* moved = mutable_road(record.moved.road); moved != nullptr) {
+      link_slot(*moved, record.moved.contact).reset();
+    }
+    if (Road* neighbour = mutable_road(record.neighbour.road); neighbour != nullptr) {
+      std::optional<RoadLink>& slot = link_slot(*neighbour, record.neighbour.contact);
+      if (linked_end(slot) == record.moved) {
+        slot.reset();
+      }
+    }
+  }
+
+  DirtySet dirty;
+  for (std::size_t i = 0; i < touched.size(); ++i) {
+    dirty.roads.push_back(touched[i]);
+    // A followed neighbour may itself be a junction arm: its pose moved, so the
+    // junction must regenerate. refit_command fills this channel the same way.
+    for (const JunctionId junction : junctions_touching(network, touched[i])) {
+      if (std::ranges::find(dirty.junctions, junction) == dirty.junctions.end()) {
+        dirty.junctions.push_back(junction);
+      }
+    }
+    command->after.roads.emplace_back(touched[i], std::move(values[i]));
+  }
+  command->set_dirty(std::move(dirty));
+  return command;
+}
+
+/// Wraps a move so the joints it disturbs are followed or severed-and-reported.
+/// `edited` names the roads the base command moves. Only ever called on a base
+/// that passed its own validation — a refused factory returns before this.
+std::unique_ptr<Command> wrap_with_follow(const RoadNetwork& network,
+                                          std::unique_ptr<Command> base,
+                                          std::vector<RoadId> edited) {
+  if (base == nullptr) {
+    return base;
+  }
+  std::string name(base->name());
+  // Read the already-broken joints HERE, while the network is still in its
+  // pre-edit state — the stage itself only ever sees the network after.
+  std::vector<RoadEnd> already_broken = already_broken_ends(network, edited);
+  // std::function must be copyable, so the built base travels in a shared slot;
+  // CompositeCommand calls each builder exactly once.
+  auto slot = std::make_shared<std::unique_ptr<Command>>(std::move(base));
+  std::vector<CompositeCommand::Builder> builders;
+  builders.reserve(2);
+  builders.push_back([slot](RoadNetwork&) { return std::move(*slot); });
+  builders.push_back([edited = std::move(edited), broken = std::move(already_broken)](
+                         RoadNetwork& net) { return follow_stage(net, edited, broken); });
+  // Same undo-menu text as the base: whether a neighbour had to follow is not
+  // something the user should read in the Edit menu.
+  return std::make_unique<CompositeCommand>(std::move(name), DirtySet{}, std::move(builders));
+}
+
 std::unique_ptr<Command> refit_command(const RoadNetwork& network,
                                        RoadId road_id,
                                        std::string command_name,
@@ -901,7 +1361,10 @@ std::unique_ptr<Command> refit_command(const RoadNetwork& network,
       DirtySet{.roads = {road_id}, .junctions = junctions_touching(network, road_id)});
   command->before.roads.emplace_back(road_id, *road);
   command->after.roads.emplace_back(road_id, std::move(after));
-  return command;
+  // A re-fit moves this road's ends, so its neighbours follow (#461). Wrapping
+  // HERE covers move_waypoint, insert_waypoint, delete_waypoint and
+  // insert_node_at at once — the funnel every node edit already passes through.
+  return wrap_with_follow(network, std::move(command), {road_id});
 }
 
 // ---- junction connecting-road generator (docs/design/m2/02 §6) ----------------
@@ -1367,49 +1830,12 @@ std::unique_ptr<Command> translate_roads(const RoadNetwork& network,
     }
   }
 
-  const auto in_set = [&moved](RoadId id) { return std::ranges::find(moved, id) != moved.end(); };
-  // A road-level link is broken when it leaves the moved set — the two ends no
-  // longer meet. Links between two roads moving together survive (both shift by
-  // the same delta). Lane-level links are left as delete_road leaves them.
-  const auto links_out = [&](const std::optional<RoadLink>& link) {
-    if (!link.has_value()) {
-      return false;
-    }
-    const auto* target = std::get_if<RoadId>(&link->target);
-    return target != nullptr && !in_set(*target);
-  };
-  const auto links_in = [&](const std::optional<RoadLink>& link) {
-    if (!link.has_value()) {
-      return false;
-    }
-    const auto* target = std::get_if<RoadId>(&link->target);
-    return target != nullptr && in_set(*target);
-  };
-
-  // Unmoved roads whose links point INTO the set: their back-links break too,
-  // cleared in the SAME command so break+move is one undo step.
-  std::vector<std::pair<RoadId, Road>> far_before;
-  std::vector<std::pair<RoadId, Road>> far_after;
-  network.for_each_road([&](RoadId id, const Road& road) {
-    if (in_set(id) || (!links_in(road.predecessor) && !links_in(road.successor))) {
-      return;
-    }
-    Road after = road;
-    if (links_in(after.predecessor)) {
-      after.predecessor.reset();
-    }
-    if (links_in(after.successor)) {
-      after.successor.reset();
-    }
-    far_before.emplace_back(id, road);
-    far_after.emplace_back(id, std::move(after));
-  });
-
+  // Links are NOT cleared here. A link between two roads moving together is
+  // untouched by the shift and a link leaving the set is the follow stage's
+  // business — it refits the neighbour to keep up, or severs and reports
+  // (#461). Lane-level links are left as delete_road leaves them.
   DirtySet dirty;
   dirty.roads = moved;
-  for (const auto& [id, road] : far_before) {
-    dirty.roads.push_back(id);
-  }
 
   auto command = std::make_unique<GenericCommand>(std::string(kName), std::move(dirty));
   for (const RoadId id : moved) {
@@ -1434,21 +1860,10 @@ std::unique_ptr<Command> translate_roads(const RoadNetwork& network,
       }
     }
 
-    if (links_out(after.predecessor)) {
-      after.predecessor.reset();
-    }
-    if (links_out(after.successor)) {
-      after.successor.reset();
-    }
-
     command->before.roads.emplace_back(id, original);
     command->after.roads.emplace_back(id, std::move(after));
   }
-  for (std::size_t i = 0; i < far_before.size(); ++i) {
-    command->before.roads.push_back(std::move(far_before[i]));
-    command->after.roads.push_back(std::move(far_after[i]));
-  }
-  return command;
+  return wrap_with_follow(network, std::move(command), std::move(moved));
 }
 
 std::unique_ptr<Command>
@@ -1489,42 +1904,12 @@ std::unique_ptr<Command> rotate_road(
     return pivot_y + (sin_a * (x - pivot_x)) + (cos_a * (y - pivot_y));
   };
 
-  // A single road rotating alone breaks every road-level link it has (the ends
-  // no longer meet). links_to(road_id) finds neighbours pointing INTO it so
-  // their back-links clear in the same command (break + rotate = one undo step).
-  const auto links_to_road = [&](const std::optional<RoadLink>& link) {
-    if (!link.has_value()) {
-      return false;
-    }
-    const auto* target = std::get_if<RoadId>(&link->target);
-    return target != nullptr && *target == road_id;
-  };
-  const auto is_road_link = [](const std::optional<RoadLink>& link) {
-    return link.has_value() && std::get_if<RoadId>(&link->target) != nullptr;
-  };
-
-  std::vector<std::pair<RoadId, Road>> far_before;
-  std::vector<std::pair<RoadId, Road>> far_after;
-  network.for_each_road([&](RoadId id, const Road& road) {
-    if (id == road_id || (!links_to_road(road.predecessor) && !links_to_road(road.successor))) {
-      return;
-    }
-    Road after = road;
-    if (links_to_road(after.predecessor)) {
-      after.predecessor.reset();
-    }
-    if (links_to_road(after.successor)) {
-      after.successor.reset();
-    }
-    far_before.emplace_back(id, road);
-    far_after.emplace_back(id, std::move(after));
-  });
-
+  // Every road-level link this road has now points somewhere it no longer
+  // meets — a road turning about a pivot takes all of its own ends with it. The
+  // links are NOT cleared here: the follow stage refits each neighbour's
+  // contacting end onto the rotated pose, or severs and reports (#461).
   DirtySet dirty;
   dirty.roads.push_back(road_id);
-  for (const auto& [id, road] : far_before) {
-    dirty.roads.push_back(id);
-  }
 
   auto command = std::make_unique<GenericCommand>(std::string(kName), std::move(dirty));
 
@@ -1553,20 +1938,9 @@ std::unique_ptr<Command> rotate_road(
     }
   }
 
-  if (is_road_link(after.predecessor)) {
-    after.predecessor.reset();
-  }
-  if (is_road_link(after.successor)) {
-    after.successor.reset();
-  }
-
   command->before.roads.emplace_back(road_id, original);
   command->after.roads.emplace_back(road_id, std::move(after));
-  for (std::size_t i = 0; i < far_before.size(); ++i) {
-    command->before.roads.push_back(std::move(far_before[i]));
-    command->after.roads.push_back(std::move(far_after[i]));
-  }
-  return command;
+  return wrap_with_follow(network, std::move(command), {road_id});
 }
 
 std::unique_ptr<Command> split_road(const RoadNetwork& network, RoadId road_id, double split_s) {

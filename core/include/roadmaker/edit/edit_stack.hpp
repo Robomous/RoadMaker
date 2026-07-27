@@ -22,6 +22,7 @@
 
 #include <cstddef>
 #include <memory>
+#include <span>
 #include <vector>
 
 namespace roadmaker::edit {
@@ -58,6 +59,18 @@ public:
 
   /// Recorded commands (applied + redoable).
   [[nodiscard]] std::size_t size() const { return commands_.size(); }
+
+  /// What the most recently applied command did to the joints it disturbed
+  /// (cascade-s1, #461), or empty when nothing is applied.
+  ///
+  /// push() takes ownership of the command, so this is the only way a headless
+  /// caller can learn that a move had to sever a link — and learning it is the
+  /// point: no move may leave that unsaid. The editor reads the same records
+  /// straight off the command, before handing it to QUndoStack.
+  [[nodiscard]] std::span<const FollowRecord> last_follow_records() const {
+    return cursor_ == 0 ? std::span<const FollowRecord>{}
+                        : commands_[cursor_ - 1]->follow_records();
+  }
 
   RM_API void clear();
 

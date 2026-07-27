@@ -2377,10 +2377,36 @@ NB_MODULE(_roadmaker, m) {
       .def_ro("topology", &roadmaker::edit::DirtySet::topology)
       .def_ro("junctions_are_current", &roadmaker::edit::DirtySet::junctions_are_current);
 
+  nb::enum_<roadmaker::edit::FollowOutcome>(edit, "FollowOutcome")
+      .value("FOLLOWED", roadmaker::edit::FollowOutcome::Followed)
+      .value("SEVERED", roadmaker::edit::FollowOutcome::Severed);
+
+  nb::class_<roadmaker::edit::FollowRecord>(edit, "FollowRecord")
+      .def_ro("moved", &roadmaker::edit::FollowRecord::moved)
+      .def_ro("neighbour", &roadmaker::edit::FollowRecord::neighbour)
+      .def_ro("outcome", &roadmaker::edit::FollowRecord::outcome)
+      .def_ro("reason", &roadmaker::edit::FollowRecord::reason)
+      .def("__repr__", [](const roadmaker::edit::FollowRecord& record) {
+        return std::string("FollowRecord(") +
+               (record.outcome == roadmaker::edit::FollowOutcome::Severed ? "SEVERED"
+                                                                          : "FOLLOWED") +
+               (record.reason.empty() ? "" : ", '" + record.reason + "'") + ")";
+      });
+
   nb::class_<roadmaker::edit::Command>(edit, "Command")
       .def_prop_ro(
           "name",
           [](const roadmaker::edit::Command& command) { return std::string(command.name()); })
+      .def_prop_ro(
+          "follow_records",
+          [](const roadmaker::edit::Command& command) {
+            const std::span<const roadmaker::edit::FollowRecord> records = command.follow_records();
+            return std::vector<roadmaker::edit::FollowRecord>(records.begin(), records.end());
+          },
+          "The joints this command disturbed and what became of each, valid "
+          "after a successful apply. A move takes its linked neighbours with "
+          "it; when one could not follow, the link was cut and the record says "
+          "why. Empty for commands that cannot outlive a joint.")
       .def("__repr__", [](const roadmaker::edit::Command& command) {
         return "Command('" + std::string(command.name()) + "')";
       });
@@ -2416,7 +2442,17 @@ NB_MODULE(_roadmaker, m) {
       .def("clear", &roadmaker::edit::EditStack::clear)
       .def_prop_rw("depth_limit",
                    &roadmaker::edit::EditStack::depth_limit,
-                   &roadmaker::edit::EditStack::set_depth_limit);
+                   &roadmaker::edit::EditStack::set_depth_limit)
+      .def_prop_ro(
+          "last_follow_records",
+          [](const roadmaker::edit::EditStack& stack) {
+            const std::span<const roadmaker::edit::FollowRecord> records =
+                stack.last_follow_records();
+            return std::vector<roadmaker::edit::FollowRecord>(records.begin(), records.end());
+          },
+          "What the most recently pushed command did to the joints it "
+          "disturbed. push() takes ownership of the command, so this is how a "
+          "headless caller learns that a move had to sever a link.");
 
   edit.def(
       "move_waypoint",
@@ -2430,7 +2466,10 @@ NB_MODULE(_roadmaker, m) {
       "network"_a,
       "road"_a,
       "index"_a,
-      "to"_a);
+      "to"_a,
+      "Moves one authoring waypoint and re-fits the road through it. The re-fit "
+      "changes the road's length, so a joint at EITHER end can move; a linked "
+      "neighbour is re-fit to keep up (see command.follow_records).");
   edit.def(
       "insert_waypoint",
       [](const roadmaker::RoadNetwork& network,
@@ -2740,8 +2779,9 @@ NB_MODULE(_roadmaker, m) {
            "road"_a,
            "dx"_a,
            "dy"_a,
-           "Moves a whole road by (dx, dy) [m] in plan view; breaks links leaving "
-           "the road and refuses junction roads.");
+           "Moves a whole road by (dx, dy) [m] in plan view. A linked neighbour "
+           "follows: its contacting end is re-fit onto the new pose. Refuses "
+           "junction roads.");
   edit.def(
       "translate_roads",
       [](const roadmaker::RoadNetwork& network,
@@ -2752,8 +2792,10 @@ NB_MODULE(_roadmaker, m) {
       "roads"_a,
       "dx"_a,
       "dy"_a,
-      "Moves N roads together by (dx, dy) [m] as ONE command; links between the "
-      "moved roads survive, links leaving the set break on both sides.");
+      "Moves N roads together by (dx, dy) [m] as ONE command. Links between the "
+      "moved roads ride along untouched; a link leaving the set drags its "
+      "neighbour's contacting end with it, or — when the re-fit is impossible — "
+      "is severed and named in command.follow_records.");
   edit.def("rotate_road",
            &roadmaker::edit::rotate_road,
            "network"_a,
@@ -2762,8 +2804,9 @@ NB_MODULE(_roadmaker, m) {
            "pivot_x"_a,
            "pivot_y"_a,
            "Rotates a whole road about the world pivot (pivot_x, pivot_y) by angle "
-           "[rad] CCW; rigid (elevation and shape coefficients unchanged), breaks "
-           "links to non-rotating roads and refuses junction roads.");
+           "[rad] CCW; rigid (elevation and shape coefficients unchanged). Every "
+           "road-level link swings its neighbour's contacting end round too. "
+           "Refuses junction roads.");
   edit.def("insert_node_at",
            &roadmaker::edit::insert_node_at,
            "network"_a,

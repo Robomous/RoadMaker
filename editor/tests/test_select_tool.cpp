@@ -20,6 +20,7 @@
 // and preview geometry — the M2 tool test seam
 // (docs/design/m2/01_editing_framework.md §4).
 
+#include "roadmaker/edit/connection.hpp"
 #include "roadmaker/edit/operations.hpp"
 #include "roadmaker/edit/snap.hpp"
 #include "roadmaker/road/object.hpp"
@@ -768,10 +769,15 @@ TEST(SelectTool, JunctionRoadRefusesMoveWithAToast) {
   EXPECT_TRUE(toasts.back().contains("can't be moved")) << toasts.back().toStdString();
 }
 
-TEST(SelectTool, LinkBreakConfirmGatesTheMove) {
+// cascade-s1 (#461): the move no longer asks permission to break links, because
+// it no longer breaks them — the neighbour follows. The gate this test used to
+// exercise is gone; what replaces it is the guarantee that the drag lands and
+// the joint survives it.
+TEST(SelectTool, MovingALinkedRoadTakesItsNeighbourWithIt) {
   Document document;
   SelectionModel selection{document};
-  // A road split into two halves is genuinely road-road linked (head↔tail).
+  // A road split into two halves is genuinely road-road linked (head↔tail), and
+  // genuinely coincident at the split — a joint with something to preserve.
   ASSERT_TRUE(document.push_command(
       roadmaker::edit::create_road({Waypoint{.x = 0.0, .y = 0.0}, Waypoint{.x = 100.0, .y = 0.0}},
                                    roadmaker::LaneProfile::two_lane_default(),
@@ -784,20 +790,19 @@ TEST(SelectTool, LinkBreakConfirmGatesTheMove) {
   SelectTool tool(document, selection);
   const PickHit hit = body_hit(document, head);
 
-  // Refusing the confirm leaves the network untouched.
-  tool.set_link_break_confirm([] { return false; });
-  ASSERT_TRUE(tool.mouse_press(at(25.0, 0.0, Qt::LeftButton, Qt::NoModifier, hit)));
-  ASSERT_TRUE(tool.mouse_move(at(25.0, 20.0, Qt::LeftButton, Qt::NoModifier, hit)));
-  EXPECT_FALSE(tool.moving());
-  EXPECT_EQ(xodr(document), linked);
-
-  // Accepting it moves the head and clears the head↔tail link on both sides.
-  tool.set_link_break_confirm([] { return true; });
+  // No dialog, no gate: the drag starts and completes.
   ASSERT_TRUE(tool.mouse_press(at(25.0, 0.0, Qt::LeftButton, Qt::NoModifier, hit)));
   ASSERT_TRUE(tool.mouse_move(at(25.0, 20.0, Qt::LeftButton, Qt::NoModifier, hit)));
   ASSERT_TRUE(tool.moving());
   ASSERT_TRUE(tool.mouse_release(at(25.0, 20.0, Qt::NoButton, Qt::NoModifier, hit)));
-  EXPECT_FALSE(document.network().road(head)->successor.has_value());
+
+  ASSERT_TRUE(document.network().road(head)->successor.has_value())
+      << "the tail should have followed, not been cut loose";
+  const auto weld = roadmaker::edit::verify_link_weld(
+      document.network(), roadmaker::RoadEnd{head, roadmaker::ContactPoint::End});
+  ASSERT_TRUE(weld.has_value()) << weld.error().message;
+  EXPECT_FALSE(weld->breaches);
+  EXPECT_NE(xodr(document), linked);
 }
 
 // --- double-click bend insert + Edit Nodes hand-off ----------------------------

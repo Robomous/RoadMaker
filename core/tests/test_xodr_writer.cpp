@@ -331,15 +331,21 @@ TEST(XodrWriter, LinkedEndsWithAGradeBreakCiteTheContinuityRule) {
       << matched.front().message;
 }
 
-TEST(XodrWriter, AStaleLinkAfterMovingAWaypointCitesTheCoincidenceRule) {
-  // move_waypoint deliberately leaves links alone (the cascade epic #406 owns
-  // making neighbours follow). Until then the contract at least makes the
-  // resulting stale link VISIBLE instead of silently wrong.
+TEST(XodrWriter, AnEndDeclaredLinkedToOneItNeverMetCitesTheCoincidenceRule) {
+  // Since cascade-s1 (#461) no EDIT can produce this state — a move takes its
+  // neighbour with it, or severs and reports. A read file still can: OpenDRIVE
+  // constrains only how a link is DECLARED, so a foreign document may name a
+  // successor whose end is nowhere near. That is what this rule is now for, and
+  // the fixture states it by declaring the link by hand.
   RoadNetwork network;
-  const auto [a, b] = welded_pair(network);
-  (void)b;
-  auto move = roadmaker::edit::move_waypoint(network, a, 1, Waypoint{.x = 60.0, .y = 0.0});
-  ASSERT_TRUE(move->apply(network).has_value());
+  const RoadId a = author_default(network, "1");
+  const std::array<Waypoint, 2> elsewhere{Waypoint{.x = 60.0, .y = 0.0},
+                                          Waypoint{.x = 160.0, .y = 0.0}};
+  const auto b =
+      roadmaker::author_clothoid_road(network, elsewhere, LaneProfile::two_lane_default(), "", "2");
+  ASSERT_TRUE(b.has_value());
+  network.road(a)->successor = roadmaker::RoadLink{.target = *b, .contact = ContactPoint::Start};
+  network.road(*b)->predecessor = roadmaker::RoadLink{.target = a, .contact = ContactPoint::End};
 
   const auto matched =
       findings_with_rule(roadmaker::validate_network(network), roadmaker::rules::kLinkEndsCoincide);
@@ -352,6 +358,21 @@ TEST(XodrWriter, AStaleLinkAfterMovingAWaypointCitesTheCoincidenceRule) {
   EXPECT_TRUE(findings_with_rule(roadmaker::validate_network(network),
                                  roadmaker::rules::kLinkElevationContinuity)
                   .empty());
+}
+
+TEST(XodrWriter, MovingAWaypointNoLongerLeavesAStaleLink) {
+  // The inverse of the rule above, and the reason it needed rewriting: the
+  // neighbour follows, so the joint the move disturbed still describes the
+  // geometry and the validator has nothing to say (cascade-s1, #461).
+  RoadNetwork network;
+  const auto [a, b] = welded_pair(network);
+  (void)b;
+  auto move = roadmaker::edit::move_waypoint(network, a, 1, Waypoint{.x = 60.0, .y = 0.0});
+  ASSERT_TRUE(move->apply(network).has_value());
+
+  const auto findings = roadmaker::validate_network(network);
+  EXPECT_TRUE(findings_with_rule(findings, roadmaker::rules::kLinkEndsCoincide).empty());
+  EXPECT_TRUE(findings_with_rule(findings, roadmaker::rules::kLinkElevationContinuity).empty());
 }
 
 TEST(XodrWriter, JunctionConnectingRoadsAreNotReportedAsBrokenLinks) {

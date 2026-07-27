@@ -122,10 +122,6 @@ GizmoDragStart GizmoDragSession::begin(const GizmoTarget& target,
       refusal_ = *std::move(refusal);
       return GizmoDragStart::Refused;
     }
-    if (transform_breaks_links(document_.network(), roads, kind) && confirm_link_break_ &&
-        !confirm_link_break_()) {
-      return GizmoDragStart::Declined;
-    }
   }
   double base_angle = 0.0;
   if (target.object.is_valid()) {

@@ -836,3 +836,64 @@ def test_a_chained_road_inherits_the_contact_grade_and_eases_to_level():
     assert nodes[0].grade == pytest.approx(0.06)
     assert nodes[-1].grade == pytest.approx(0.0)
     assert not rm.edit.verify_link_weld(net, rm.RoadEnd(a, rm.ContactPoint.END)).breaches
+
+
+# --- cascade-s1 (#461), linked-neighbour follow on move ----------------------
+
+
+def test_a_moved_road_takes_its_linked_neighbour_with_it(welded):
+    net, stack, a, b, a_end, b_start = welded
+    before = rm.write_xodr(net)
+    b_far_before = net.road(b).plan_view.evaluate(net.road(b).length)
+
+    # push() takes ownership of the command, so the records are read back off
+    # the stack — the headless mirror of what Document does in the editor.
+    stack.push(net, rm.edit.translate_road(net, a, 0.0, 15.0))
+
+    # B was not in the moved set, yet the joint still satisfies the contract.
+    assert net.road(a).successor is not None
+    assert net.road(b).predecessor is not None
+    assert not rm.edit.verify_link_weld(net, a_end).breaches
+    assert not [
+        r for r in stack.last_follow_records if r.outcome == rm.edit.FollowOutcome.SEVERED
+    ]
+    # Refit, not relocate: B's FAR end never moved, which is what bounds the
+    # cascade at one hop.
+    b_far_after = net.road(b).plan_view.evaluate(net.road(b).length)
+    assert b_far_after.x == pytest.approx(b_far_before.x)
+    assert b_far_after.y == pytest.approx(b_far_before.y)
+
+    stack.undo(net)
+    assert rm.write_xodr(net) == before  # the neighbour restores too
+
+
+def test_a_move_leaves_no_stale_link_finding(welded):
+    net, stack, a, _b, _a_end, _b_start = welded
+    stack.push(net, rm.edit.move_waypoint(net, a, 1, (130.0, 25.0)))
+    stale = [
+        f
+        for f in rm.validate_network(net)
+        if f.rule_id
+        in (
+            "robomous.ai:rm:1.0.0:roads.link_ends_coincide",
+            "robomous.ai:rm:1.0.0:roads.link_elevation_continuity",
+        )
+    ]
+    assert stale == [], [f.message for f in stale]
+
+
+def test_an_impossible_refit_severs_and_says_why(welded):
+    net, stack, a, b, _a_end, _b_start = welded
+    # A lane section 90 m along B: any re-fit leaving B shorter is refused.
+    stack.push(net, rm.edit.split_lane_section(net, b, 90.0))
+
+    stack.push(net, rm.edit.translate_road(net, a, 95.0, 0.0))
+
+    cut = [
+        r for r in stack.last_follow_records if r.outcome == rm.edit.FollowOutcome.SEVERED
+    ]
+    assert len(cut) == 1
+    assert cut[0].reason, "a sever with no reason is a silent sever"
+    # Cleared on BOTH sides — a half-link is worse than no link.
+    assert net.road(a).successor is None
+    assert net.road(b).predecessor is None

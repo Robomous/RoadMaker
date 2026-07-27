@@ -22,6 +22,7 @@
 // No ViewportWidget here — that is the point of the extraction. Runs under
 // QT_QPA_PLATFORM=offscreen like every other editor test.
 
+#include "roadmaker/edit/connection.hpp"
 #include "roadmaker/edit/operations.hpp"
 #include "roadmaker/mesh/mesh.hpp"
 #include "roadmaker/road/defaults.hpp"
@@ -653,33 +654,11 @@ TEST(GizmoDrag, TheZArmStillRaisesAJunctionArm) {
   EXPECT_EQ(scene.document.undo_stack()->count(), base + 1);
 }
 
-// Declining the confirmation must leave EVERYTHING alone — no preview, no undo
-// entry, and no refusal text either (the user made the choice; they don't need
-// to be told about it).
-TEST(GizmoDrag, DecliningTheLinkBreakConfirmLeavesTheDocumentByteIdentical) {
-  LinkedScene scene;
-  const std::string before = xodr(scene.document);
-  const int base = scene.document.undo_stack()->count();
-  const auto target = gizmo_target(scene.document.network(), {.road = scene.head});
-  ASSERT_TRUE(target.has_value());
-
-  int asked = 0;
-  GizmoDragSession session(scene.document);
-  session.set_link_break_confirm([&asked] {
-    ++asked;
-    return false;
-  });
-
-  EXPECT_EQ(session.begin(*target, GizmoHandle::PlaneXY, {target->pivot[0], target->pivot[1]}),
-            GizmoDragStart::Declined);
-  EXPECT_EQ(asked, 1);
-  EXPECT_FALSE(session.active());
-  EXPECT_TRUE(session.refusal().isEmpty());
-  EXPECT_EQ(xodr(scene.document), before);
-  EXPECT_EQ(scene.document.undo_stack()->count(), base);
-}
-
-TEST(GizmoDrag, AcceptingTheLinkBreakConfirmMovesTheRoadAndSeversTheLink) {
+// cascade-s1 (#461) removed the pre-flight "this will break links" confirmation
+// #401 had just wired here: a gizmo move now takes its linked neighbours with
+// it, so there is nothing to warn about, and the rare sever that IS unavoidable
+// cannot be known at the grab. Document reports those afterwards instead.
+TEST(GizmoDrag, DraggingALinkedRoadTakesItsNeighbourWithIt) {
   LinkedScene scene;
   const std::string before = xodr(scene.document);
   const int base = scene.document.undo_stack()->count();
@@ -687,7 +666,7 @@ TEST(GizmoDrag, AcceptingTheLinkBreakConfirmMovesTheRoadAndSeversTheLink) {
   ASSERT_TRUE(target.has_value());
 
   GizmoDragSession session(scene.document);
-  session.set_link_break_confirm([] { return true; });
+  // Armed straight away: no dialog, no Declined.
   ASSERT_EQ(session.begin(*target, GizmoHandle::PlaneXY, {target->pivot[0], target->pivot[1]}),
             GizmoDragStart::Armed);
   ASSERT_TRUE(
@@ -695,64 +674,34 @@ TEST(GizmoDrag, AcceptingTheLinkBreakConfirmMovesTheRoadAndSeversTheLink) {
           .has_value());
   EXPECT_TRUE(session.commit());
 
-  EXPECT_FALSE(scene.document.network().road(scene.head)->successor.has_value());
-  // Break + move is ONE undo step, and it reverts exactly.
+  ASSERT_TRUE(scene.document.network().road(scene.head)->successor.has_value())
+      << "the link should have followed, not broken";
+  const auto weld = edit::verify_link_weld(
+      scene.document.network(), roadmaker::RoadEnd{scene.head, roadmaker::ContactPoint::End});
+  ASSERT_TRUE(weld.has_value()) << weld.error().message;
+  EXPECT_FALSE(weld->breaches);
+  // Move + follow is ONE undo step, and it reverts exactly.
   ASSERT_EQ(scene.document.undo_stack()->count(), base + 1);
   scene.document.undo_stack()->undo();
   EXPECT_EQ(xodr(scene.document), before);
 }
 
-// Rotation severs links too, so the ring has to ask as well — the gate is not
-// translate-only. (It does NOT pin the predicate difference between the two
-// kinds: rotate_road clears every road-level link while translate_roads clears
-// only those leaving the moved set, and the two disagree solely on a road linked
-// to ITSELF, which the command layer offers no way to build.)
-TEST(GizmoDrag, TheYawRingAsksBeforeSeveringToo) {
+TEST(GizmoDrag, TheYawRingTakesTheNeighbourWithItToo) {
   LinkedScene scene;
   const std::string before = xodr(scene.document);
   const auto target = gizmo_target(scene.document.network(), {.road = scene.head});
   ASSERT_TRUE(target.has_value());
 
   GizmoDragSession session(scene.document);
-  session.set_link_break_confirm([] { return false; });
-  EXPECT_EQ(session.begin(*target, GizmoHandle::YawRing, Scene::on_ring(target->pivot, 0.0)),
-            GizmoDragStart::Declined);
+  ring_drag(session, *target, 10.0 * std::numbers::pi / 180.0);
+
+  ASSERT_TRUE(scene.document.network().road(scene.head)->successor.has_value());
+  const auto weld = edit::verify_link_weld(
+      scene.document.network(), roadmaker::RoadEnd{scene.head, roadmaker::ContactPoint::End});
+  ASSERT_TRUE(weld.has_value()) << weld.error().message;
+  EXPECT_FALSE(weld->breaches);
+  scene.document.undo_stack()->undo();
   EXPECT_EQ(xodr(scene.document), before);
-
-  session.set_link_break_confirm([] { return true; });
-  ring_drag(session, *target, 20.0 * std::numbers::pi / 180.0);
-  EXPECT_FALSE(scene.document.network().road(scene.head)->successor.has_value());
-}
-
-// The over-prompting guard: a road with nothing to sever must not raise a dialog
-// asking permission to sever nothing.
-TEST(GizmoDrag, AnUnlinkedRoadIsNeverAskedAbout) {
-  Scene scene;
-  const auto target = gizmo_target(scene.document.network(), {.road = scene.road});
-  ASSERT_TRUE(target.has_value());
-
-  bool asked = false;
-  GizmoDragSession session(scene.document);
-  session.set_link_break_confirm([&asked] {
-    asked = true;
-    return false;
-  });
-
-  EXPECT_EQ(session.begin(*target, GizmoHandle::PlaneXY, {target->pivot[0], target->pivot[1]}),
-            GizmoDragStart::Armed);
-  EXPECT_FALSE(asked);
-}
-
-// The documented unset contract, shared with SelectTool: no hook ⇒ links break
-// without asking. A headless caller must not be blocked by a gate it never wired.
-TEST(GizmoDrag, WithNoConfirmHookLinksBreakWithoutAsking) {
-  LinkedScene scene;
-  const auto target = gizmo_target(scene.document.network(), {.road = scene.head});
-  ASSERT_TRUE(target.has_value());
-
-  GizmoDragSession session(scene.document);
-  EXPECT_EQ(session.begin(*target, GizmoHandle::PlaneXY, {target->pivot[0], target->pivot[1]}),
-            GizmoDragStart::Armed);
 }
 
 // A prop dragged clear of its road yields no command that frame — deliberately,

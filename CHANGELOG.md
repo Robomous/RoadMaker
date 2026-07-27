@@ -19,6 +19,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 Current version on `main`: **0.0.1**.
 
 ### Added
+- **Moving a road takes the roads connected to it along**
+  ([#461](https://github.com/Robomous/RoadMaker/issues/461)): until now, nudging
+  one road of a connected chain quietly wrecked the junction between them. Which
+  way it wrecked it depended on which gesture you happened to use — dragging the
+  road cut the connection, rotating it cut *every* connection it had, and
+  dragging one of its shape nodes left the connection in place, pointing at a
+  road end that had walked away. None of the three told you anything.
+  Now all of them do the same thing: the neighbouring road's end is reshaped to
+  stay joined, matching in position, direction, height **and** slope. Where that
+  genuinely cannot be done — the neighbour would have to fold back on itself, or
+  shrink past one of its own lane sections — the connection is cut as before, but
+  the editor now says which one and why. **No move leaves a connection that has
+  silently come apart.** The effect stops at the immediate neighbour, by
+  construction: its far end is pinned, so nothing further down the chain shifts
+  underneath you. A connection that was *already* broken when you started is left
+  exactly as it was — a move repairs nothing it did not break, and destroys
+  nothing it did not touch. The confirmation dialog that used to ask permission
+  to break links is gone with the breaking.
 - **Road connections now state what they guarantee, and keep it**
   ([#403](https://github.com/Robomous/RoadMaker/issues/403)): joining two roads
   used to promise nothing in writing, and in elevation it promised nothing at
