@@ -124,6 +124,13 @@ struct Road {
   /// XML fragments in document order. M3a does not model them; the writer
   /// re-emits them inside <signals> so round-trip loses nothing.
   std::vector<std::string> signal_extras;
+
+  /// Road-level <userData> elements RoadMaker does not model (foreign codes,
+  /// and rm: codes from a newer RoadMaker), preserved as verbatim XML
+  /// fragments in document order (§7.2 of 1.8.1 and 1.9.0 alike: userData may
+  /// appear at any element). The writer re-emits them after the modeled road
+  /// content — fmt-s2, #326.
+  std::vector<std::string> preserved_user_data;
 };
 
 } // namespace roadmaker

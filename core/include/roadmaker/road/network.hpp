@@ -310,6 +310,24 @@ public:
   /// edit layer (edit::set_terrain_field and friends) so the change is undoable.
   RM_API void set_terrain(HeightField field);
 
+  // --- preserved root userData (fmt-s2, #326) --------------------------------
+
+  /// Root-level <OpenDRIVE> <userData> elements RoadMaker does not model
+  /// (foreign codes, and rm: codes from a newer RoadMaker), preserved as
+  /// verbatim XML fragments in document order (§7.2 of 1.8.1 and 1.9.0 alike:
+  /// userData may appear at any element). NOT an arena entity — document-scoped
+  /// pass-through, like `terrain_`. The writer re-emits them after its own root
+  /// userData blocks; empty on every network authored in RoadMaker.
+  [[nodiscard]] const std::vector<std::string>& preserved_user_data() const {
+    return preserved_user_data_;
+  }
+
+  /// Replaces the preserved root fragments wholesale. Only the parser writes
+  /// this; edits never touch it, so the fragments ride every save untouched.
+  void set_preserved_user_data(std::vector<std::string> fragments) {
+    preserved_user_data_ = std::move(fragments);
+  }
+
 private:
   Arena<Road, RoadId> roads_;
   Arena<LaneSection, LaneSectionId> sections_;
@@ -320,6 +338,7 @@ private:
   Arena<Controller, ControllerId> controllers_;
   Arena<Surface, SurfaceId> surfaces_;
   HeightField terrain_;
+  std::vector<std::string> preserved_user_data_;
 };
 
 /// Plan-view bounding box of the whole network as {lo_x, lo_y, hi_x, hi_y},

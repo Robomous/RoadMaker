@@ -19,7 +19,12 @@ through the standard's own extension mechanism and is ignored by other readers.
 Layer 2 never touches it at all.
 
 The registry of `rm:` codes and their payload grammars is in ADR-0008; each
-owning sprint defines its own. `fmt-s2` (#326) adds the conformance tests.
+owning sprint defines its own. `core/tests/test_rm_registry.cpp` (`fmt-s2`,
+#326) keeps that registry honest: every code must have a writer, a parser, a
+fuzz-corpus sample, a round-trip test, and a row in the ADR's registry block.
+Foreign `<userData>` — and `rm:` codes from a newer RoadMaker — are preserved
+verbatim at every scope (road, junction, and the document root included) and
+re-emitted byte-identically; nothing is silently dropped.
 
 ## Layer 2 — the container
 

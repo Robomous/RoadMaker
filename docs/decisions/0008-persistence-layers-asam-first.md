@@ -46,21 +46,37 @@ gracefully in other tools (they ignore `userData`). Policy:
 - One `rm:` code per concern; payloads are versioned-by-shape — unknown
   fields warn, never fail.
 - Every code appears in the registry below and ships with parser, writer,
-  fuzz-corpus sample, and round-trip test (enforced by `fmt-s2`).
+  fuzz-corpus sample, and round-trip test (enforced since `fmt-s2` #326 by
+  `core/tests/test_rm_registry.cpp`, which fails when the code list in
+  `core/include/roadmaker/xodr/rm_codes.hpp`, this registry block, the
+  writer, the reader, the fuzz corpus, or the round-trip tests fall out of
+  step).
 - Foreign userData (any non-`rm:` code) is preserved verbatim on every
-  element. The current drops on `<junction>` and at the root are defects,
-  fixed by `fmt-s2`.
+  element. The historical drops on `<road>`, `<junction>` and at the root
+  were fixed by `fmt-s2` (#326): preserve-and-warn, byte-verbatim re-emit.
 - Unknown `rm:` codes (from a newer RoadMaker) are preserved verbatim with
-  a structured warning, never dropped.
+  a structured warning, never dropped (implemented by `fmt-s2` #326 at
+  every preserved tier).
 - Signal-phase *timing* is Layer 1 (`rm:phases`): §14.6 places signal
   cycles outside OpenDRIVE ("specified … in OpenSCENARIO"); phase data
   additionally exports to OpenSCENARIO 1.x traffic-signal actions in P8.
 
-**Registry** — existing: `rm:waypoints`, `rm:crosswalk`, `rm:markingCurve`,
-`rm:stencil`, `rm:aux_boundary`, `rm:arms`, `rm:corners`, `rm:junction`,
-`rm:surface`, `rm:<material-id>`, `rm:stopline`, `rm:spans`, `rm:floor`,
-`rm:maneuver`, `rm:signal`, `rm:signalmount`, `rm:phases`.
-Each owning sprint defines its payload against this policy.
+**Registry** — every `rm:` userData code the writer emits, by scope
+(amended by `fmt-s2` #326: `rm:terrain` and `rm:material.bridge_deck` were
+emitted but unlisted; the block below is now generated and CI-gated):
+
+<!-- rm-registry:begin — mirrors core/include/roadmaker/xodr/rm_codes.hpp; regenerate via core/tests/test_rm_registry.cpp -->
+- road: `rm:waypoints`, `rm:aux_boundary`
+- object: `rm:crosswalk`, `rm:markingCurve`, `rm:stencil`, `rm:stopline`, `rm:material.bridge_deck`
+- junction: `rm:arms`, `rm:corners`, `rm:floor`, `rm:maneuver`, `rm:signal`, `rm:signalmount`, `rm:phases`, `rm:junction`, `rm:spans`
+- root: `rm:surface`, `rm:terrain`
+<!-- rm-registry:end -->
+
+The `rm:<material-id>` namespace (`rm:asphalt`, `rm:paint_white`, …) is
+NOT a userData code: those are material ids carried in attribute values
+(lane `<material @surface>`, `<roadMark @material>`, `rm:junction` `mat=`
+fields, `<userData code="rm:surface" material=…>`), so they live outside
+this table. Each owning sprint defines its payload against this policy.
 
 `rm:signal` (p4-s7, shipped) records WHICH auto-signalization template produced
 a junction's signals, so the tool can show the current template and re-apply

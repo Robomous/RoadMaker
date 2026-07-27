@@ -20,6 +20,7 @@
 #include "roadmaker/geometry/reference_line.hpp"
 #include "roadmaker/road/defaults.hpp"
 #include "roadmaker/tol.hpp"
+#include "roadmaker/xodr/rm_codes.hpp"
 #include "roadmaker/xodr/rules.hpp"
 #include "roadmaker/xodr/terrain_sidecar.hpp"
 
@@ -153,6 +154,7 @@ public:
     resolve_stoplines();
     parse_surfaces(root);
     parse_terrain_reference(root);
+    parse_root_user_data(root);
     warn_unsupported_root_children(root);
 
     return std::move(result_);
@@ -204,6 +206,40 @@ private:
            location,
            fmt::format("element <{}> is not supported yet and was ignored", element));
     }
+  }
+
+  /// Warns iff `code` is `rm:`-prefixed but not in the ADR-0008 registry —
+  /// i.e. written by a newer RoadMaker. Called wherever a <userData> lands in
+  /// a preserved tier, so the fragment survives verbatim AND the user learns
+  /// this build cannot interpret it (fmt-s2, #326). Foreign (non-rm:) codes at
+  /// those catch-all sites stay silent: not understanding another vendor's
+  /// data is by design, not a limitation worth a diagnostic per element.
+  void warn_if_unknown_rm(const std::string& code, const std::string& location) {
+    if (std::string_view(code).starts_with("rm:") && !is_registered_rm_code(code)) {
+      diag(Severity::Warning,
+           location,
+           fmt::format("rm: userData code '{}' is not known to this RoadMaker version "
+                       "(newer file?) and was preserved verbatim",
+                       code));
+    }
+  }
+
+  /// Preserve-and-warn for a <userData> element at a scope whose parser
+  /// enumerates its known codes (<road>, <junction>, <OpenDRIVE> root — §7.2
+  /// of 1.8.1 and 1.9.0 alike allows userData at any element). Every code
+  /// warns here, unlike the catch-all tiers, because these scopes historically
+  /// DROPPED the element (fmt-s2, #326) and the changed behaviour should be
+  /// visible. Unknown rm: codes get the newer-RoadMaker wording; everything
+  /// else — foreign codes, and registered rm: codes met at the wrong scope —
+  /// the generic one.
+  void warn_preserved_user_data(const std::string& code, const std::string& location) {
+    if (std::string_view(code).starts_with("rm:") && !is_registered_rm_code(code)) {
+      warn_if_unknown_rm(code, location);
+      return;
+    }
+    diag(Severity::Warning,
+         location,
+         fmt::format("userData code '{}' is not understood and was preserved verbatim", code));
   }
 
   /// Attribute as double; absent or malformed values fall back to
@@ -345,17 +381,17 @@ private:
   }
 
   /// RoadMaker's own <userData> extensions (OpenDRIVE 1.9.0 §7.2). Unknown
-  /// codes are reported, never silently dropped; a malformed rm:waypoints
-  /// value is diagnosed and ignored (the road still loads, Edit Nodes then
-  /// derives waypoints from geometry as for any foreign road).
+  /// codes are preserved verbatim with a warning, never dropped (fmt-s2,
+  /// #326); a malformed rm:waypoints value is diagnosed and ignored (the road
+  /// still loads, Edit Nodes then derives waypoints from geometry as for any
+  /// foreign road).
   void
   parse_road_user_data(const pugi::xml_node& road_node, Road& road, const std::string& location) {
     for (const pugi::xml_node node : road_node.children("userData")) {
       const std::string code = node.attribute("code").value();
       if (code != "rm:waypoints") {
-        diag(Severity::Warning,
-             location,
-             fmt::format("userData code '{}' is not understood and was ignored", code));
+        road.preserved_user_data.push_back(node_to_string(node));
+        warn_preserved_user_data(code, location);
         continue;
       }
       std::vector<Waypoint> waypoints;
@@ -683,6 +719,9 @@ private:
       const std::string_view name = child.name();
       if (name != "link" && name != "width" && name != "border" && name != "roadMark" &&
           name != "material") {
+        if (name == "userData") {
+          warn_if_unknown_rm(child.attribute("code").value(), location);
+        }
         lane.preserved.children.push_back(node_to_string(child));
       }
     }
@@ -855,6 +894,9 @@ private:
         bridge.deck_material = child.attribute("value").value();
         continue;
       }
+      if (std::string_view(child.name()) == "userData") {
+        warn_if_unknown_rm(child.attribute("code").value(), location);
+      }
       bridge.extras.children.push_back(node_to_string(child));
     }
     network().road(road_id)->bridges.push_back(std::move(bridge));
@@ -1014,6 +1056,9 @@ private:
         continue;
       }
       if (name != "outline" && name != "outlines" && name != "repeat" && name != "markings") {
+        if (name == "userData") {
+          warn_if_unknown_rm(child.attribute("code").value(), location);
+        }
         object.preserved.children.push_back(node_to_string(child));
       }
     }
@@ -1221,6 +1266,9 @@ private:
       }
       for (const pugi::xml_node child : marking_node.children()) {
         if (std::string_view(child.name()) != "cornerReference") {
+          if (std::string_view(child.name()) == "userData") {
+            warn_if_unknown_rm(child.attribute("code").value(), location);
+          }
           marking.preserved.children.push_back(node_to_string(child));
         }
       }
@@ -1540,6 +1588,9 @@ private:
       }
     }
     for (const pugi::xml_node child : node.children()) {
+      if (std::string_view(child.name()) == "userData") {
+        warn_if_unknown_rm(child.attribute("code").value(), location);
+      }
       signal.preserved.children.push_back(node_to_string(child));
     }
 
@@ -1588,6 +1639,9 @@ private:
     }
     for (const pugi::xml_node child : node.children()) {
       if (std::string_view(child.name()) != "control") {
+        if (std::string_view(child.name()) == "userData") {
+          warn_if_unknown_rm(child.attribute("code").value(), location);
+        }
         controller.preserved.children.push_back(node_to_string(child));
         continue;
       }
@@ -1647,6 +1701,9 @@ private:
         }
       }
       for (const pugi::xml_node child : node.children()) {
+        if (std::string_view(child.name()) == "userData") {
+          warn_if_unknown_rm(child.attribute("code").value(), location);
+        }
         entry.preserved.children.push_back(node_to_string(child));
       }
       junction.junction_controllers.push_back(std::move(entry));
@@ -2353,9 +2410,9 @@ private:
   /// The generator's arm list (roadmaker::edit) round-trips through
   /// <userData code="rm:arms"> ("roadOdrId:start|end;…"); roads parse before
   /// junctions, so arm road ids resolve here. Corner overrides ride the
-  /// sibling <userData code="rm:corners">. Unknown codes are reported and
-  /// ignored; a malformed value drops the arms (the junction still loads but
-  /// cannot regenerate until recreated).
+  /// sibling <userData code="rm:corners">. Unknown codes are preserved
+  /// verbatim with a warning (fmt-s2, #326); a malformed value drops the arms
+  /// (the junction still loads but cannot regenerate until recreated).
   void parse_junction_user_data(const pugi::xml_node& junction_node,
                                 Junction& junction,
                                 const std::string& location) {
@@ -2512,9 +2569,10 @@ private:
         continue;
       }
       if (code != "rm:arms") {
-        diag(Severity::Warning,
-             location,
-             fmt::format("userData code '{}' is not understood and was ignored", code));
+        // fmt-s2 (#326): historically warn-and-drop; now the fragment survives
+        // verbatim (Junction::preserved_user_data) like every other tier.
+        junction.preserved_user_data.push_back(node_to_string(node));
+        warn_preserved_user_data(code, location);
         continue;
       }
       std::vector<RoadEnd> arms;
@@ -2706,6 +2764,25 @@ private:
     }
   }
 
+  /// Root-level <userData> RoadMaker does not model (fmt-s2, #326). §7.2 (of
+  /// 1.8.1 and 1.9.0 alike) allows userData at any element, and this scope
+  /// historically lost them with NO diagnostic at all — parse_surfaces and
+  /// parse_terrain_reference each skip non-matching codes, and the root
+  /// unsupported-children warning exempts <userData> as "handled". Everything
+  /// the two root scanners do not claim is preserved verbatim with a warning.
+  void parse_root_user_data(const pugi::xml_node& root) {
+    std::vector<std::string> preserved;
+    for (const pugi::xml_node node : root.children("userData")) {
+      const std::string code = node.attribute("code").value();
+      if (code == "rm:surface" || code == "rm:terrain") {
+        continue; // claimed by parse_surfaces / parse_terrain_reference
+      }
+      preserved.push_back(node_to_string(node));
+      warn_preserved_user_data(code, "OpenDRIVE");
+    }
+    network().set_preserved_user_data(std::move(preserved));
+  }
+
   // --- pass 2: reference resolution ---------------------------------------
 
   struct PendingLink {
@@ -2802,8 +2879,9 @@ private:
     for (const pugi::xml_node child : root.children()) {
       const std::string_view name = child.name();
       // Root <userData> carries RoadMaker extensions (rm:surface, rm:terrain);
-      // they are parsed by parse_surfaces/parse_terrain_reference, not
-      // unsupported.
+      // they are parsed by parse_surfaces/parse_terrain_reference, and every
+      // other code is preserved verbatim by parse_root_user_data (fmt-s2,
+      // #326) — none of it is unsupported.
       if (name != "header" && name != "road" && name != "junction" && name != "controller" &&
           name != "userData") {
         warn_unsupported(std::string(name), "OpenDRIVE");

@@ -274,12 +274,18 @@ TEST(XodrReader, UserDataWaypointsParseAndBadOnesAreDiagnosed) {
   ASSERT_TRUE(good.authoring_waypoints.has_value());
   EXPECT_EQ(*good.authoring_waypoints,
             (std::vector<roadmaker::Waypoint>{{.x = 0.0, .y = 0.0}, {.x = 10.5, .y = -2.25}}));
-  // Unknown codes are reported, never silently dropped.
+  // Unknown codes are preserved verbatim AND reported (fmt-s2, #326 — this
+  // scope used to warn-and-drop).
   EXPECT_TRUE(has_warning_containing(result->diagnostics, "vendor:mystery"));
+  ASSERT_EQ(good.preserved_user_data.size(), 1U);
+  EXPECT_NE(good.preserved_user_data.front().find("vendor:mystery"), std::string::npos);
 
-  // Malformed values are diagnosed and ignored; the road still loads.
+  // Malformed values of the KNOWN code are diagnosed and ignored, not
+  // preserved (re-emitting garbage the parser refused helps nobody); the road
+  // still loads.
   const roadmaker::Road& bad = *network.road(network.find_road("2"));
   EXPECT_FALSE(bad.authoring_waypoints.has_value());
+  EXPECT_TRUE(bad.preserved_user_data.empty());
   EXPECT_TRUE(has_warning_containing(result->diagnostics, "rm:waypoints"));
 }
 
