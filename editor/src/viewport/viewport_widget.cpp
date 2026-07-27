@@ -95,6 +95,9 @@ ViewportWidget::ViewportWidget(Document& document,
   });
 
   connect(&document_, &Document::loaded, this, [this] { frame_on_rebuild_ = true; });
+  // Fires after loaded() (Document emits it last), so a camera restored from
+  // the scene sidecar overrules the auto-framing loaded() just armed.
+  connect(&document_, &Document::scene_state_loaded, this, &ViewportWidget::restore_view);
   connect(&document_, &Document::mesh_changed, this, [this](const std::vector<RoadId>& roads) {
     if (roads.empty()) { // everything changed — full rebuild
       scene_dirty_ = true;
@@ -1743,6 +1746,31 @@ void ViewportWidget::set_textured_rendering(bool textured) {
   }
   textured_rendering_ = textured;
   apply_render_mode();
+  update();
+}
+
+SceneViewState ViewportWidget::view_state() const {
+  return SceneViewState{
+      .target = camera_.target(),
+      .yaw = camera_.yaw(),
+      .pitch = camera_.pitch(),
+      .distance = camera_.distance(),
+      .projection = camera_.projection(),
+  };
+}
+
+void ViewportWidget::restore_view() {
+  const auto& view = document_.scene_state().view;
+  if (!view) {
+    // No stored camera (a plain .xodr, or a sidecar that degraded): leave
+    // frame_on_rebuild_ armed so the scene still frames itself on load.
+    return;
+  }
+  camera_.set_pose(view->target, view->yaw, view->pitch, view->distance);
+  camera_.set_projection(view->projection);
+  // Disarm the post-load framing set by Document::loaded — rebuild_scene()
+  // runs on the NEXT paint, and would otherwise re-frame over the restore.
+  frame_on_rebuild_ = false;
   update();
 }
 

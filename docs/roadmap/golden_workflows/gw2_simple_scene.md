@@ -217,6 +217,15 @@ the same change. `Road Plan tool` in step 2 was corrected to its real name,
     export; diagnostics are visible.
 23. [ ] Save, close, and reopen the scene. **Expected:** everything above
     round-trips.
+24. [ ] Before closing in step 23, orbit somewhere distinctive and toggle
+    **View ▸ Textured Rendering**; after reopening, close the scene again and
+    reopen the PROJECT (welcome tile or **File ▸ Open Project…**).
+    **Expected:** the project reopens on that same scene, at the camera and
+    render mode you left — the Layer-2 container of
+    [ADR-0008](../../decisions/0008-persistence-layers-asam-first.md) (fmt-s1,
+    [#325](https://github.com/Robomous/RoadMaker/issues/325)). Then delete the
+    scene's `.rmscene.json` and reopen it: the scene is intact and simply
+    frames itself as before — Layer 2 is comfort, never content.
 
 ## Pass criteria
 
@@ -224,6 +233,8 @@ the same change. `Road Plan tool` in step 2 was corrected to its real name,
   holds.
 - Zero crashes; undo/redo works after each authoring step.
 - The exported `.xodr` validates with zero errors and loads in esmini.
+- The saved `.xodr` is byte-identical whether or not its `.rmscene.json`
+  companion exists: no editor state may leak into the ASAM layer.
 
 ## Results
 

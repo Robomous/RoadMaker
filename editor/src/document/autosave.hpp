@@ -37,10 +37,15 @@ namespace roadmaker::editor {
 
 class Document;
 
-/// One session's recovery pair on disk (<session>.xodr + <session>.json).
+/// One session's recovery set on disk: <session>.xodr, the <session>.json
+/// status record, and (fmt-s1, #325) the <session>.rmscene.json scene state,
+/// so a recovered document reopens at the camera the crash interrupted.
 struct RecoverySet {
   std::filesystem::path xodr;
   std::filesystem::path sidecar;
+  /// The Layer-2 scene sidecar beside the recovery copy. Always named, but
+  /// only present on disk when the crashed session got as far as writing it.
+  std::filesystem::path scene_state;
   QString session;
   QString original_path; ///< empty when the crashed document was never saved
   bool dirty = false;
@@ -89,6 +94,10 @@ public:
 
   [[nodiscard]] std::filesystem::path xodr_path() const;
   [[nodiscard]] std::filesystem::path sidecar_path() const;
+  /// The scene-state sidecar beside the recovery copy — exactly what
+  /// scene_sidecar::path_for(xodr_path()) resolves to, so Document::load()
+  /// picks it up on its own when the recovery copy is opened.
+  [[nodiscard]] std::filesystem::path scene_state_path() const;
 
   /// Recovery sets left behind by other sessions (i.e. crashes), newest
   /// first. Sidecars without a readable recovery .xodr are skipped.

@@ -32,6 +32,7 @@
 #include <utility>
 
 #include "document/document.hpp"
+#include "document/scene_sidecar.hpp"
 
 namespace roadmaker::editor {
 namespace {
@@ -152,6 +153,15 @@ Expected<void> AutosaveManager::autosave_now() {
     return make_error(
         ErrorCode::IoFailure, "cannot write recovery sidecar", sidecar_path().string());
   }
+  // The scene's Layer-2 state beside the recovery copy (fmt-s1, #325), through
+  // the same current_scene_state() a real save uses so a recovered document
+  // never comes back at a different camera than Save would have recorded. Not
+  // fatal: losing the view is not losing the work.
+  if (const auto state = scene_sidecar::save(scene_state_path(), document_.current_scene_state());
+      !state) {
+    spdlog::warn(
+        "recovery scene state not written: {} ({})", state.error().message, state.error().context);
+  }
   last_autosave_ms_ = now;
   commands_since_autosave_ = 0;
   return {};
@@ -161,6 +171,7 @@ void AutosaveManager::clear_recovery() {
   std::error_code ec;
   std::filesystem::remove(xodr_path(), ec);
   std::filesystem::remove(sidecar_path(), ec);
+  std::filesystem::remove(scene_state_path(), ec);
   commands_since_autosave_ = 0;
 }
 
@@ -172,6 +183,12 @@ std::filesystem::path AutosaveManager::sidecar_path() const {
   return member_path(dir_, session_, ".json");
 }
 
+std::filesystem::path AutosaveManager::scene_state_path() const {
+  // Derived from the recovery copy, not spelled out here, so it stays whatever
+  // Document::load() will look for beside it.
+  return scene_sidecar::path_for(xodr_path());
+}
+
 std::vector<RecoverySet>
 AutosaveManager::pending_recoveries(const std::filesystem::path& recovery_dir,
                                     const QString& current_session) {
@@ -179,6 +196,13 @@ AutosaveManager::pending_recoveries(const std::filesystem::path& recovery_dir,
   std::error_code ec;
   for (const auto& entry : std::filesystem::directory_iterator(recovery_dir, ec)) {
     if (entry.path().extension() != ".json") {
+      continue;
+    }
+    // <session>.rmscene.json is a scene sidecar, not a status record (#325).
+    // Its stem ends in ".rmscene", so it would otherwise be scanned as a
+    // session of that name — today only the missing-.xodr check below saves us,
+    // and that is an accident, not a rule.
+    if (entry.path().stem().extension() == ".rmscene") {
       continue;
     }
     const QString session = QString::fromStdString(entry.path().stem().string());
@@ -197,6 +221,7 @@ AutosaveManager::pending_recoveries(const std::filesystem::path& recovery_dir,
     RecoverySet set{
         .xodr = member_path(recovery_dir, session, ".xodr"),
         .sidecar = entry.path(),
+        .scene_state = scene_sidecar::path_for(member_path(recovery_dir, session, ".xodr")),
         .session = session,
         .original_path = object.value(QStringLiteral("originalPath")).toString(),
         .dirty = object.value(QStringLiteral("dirty")).toBool(false),
@@ -222,6 +247,7 @@ void AutosaveManager::discard(const RecoverySet& set) {
   std::error_code ec;
   std::filesystem::remove(set.xodr, ec);
   std::filesystem::remove(set.sidecar, ec);
+  std::filesystem::remove(set.scene_state, ec);
 }
 
 std::filesystem::path AutosaveManager::default_recovery_dir() {

@@ -25,6 +25,8 @@
 #include <QCoreApplication>
 #include <QDir>
 #include <QFile>
+#include <QJsonDocument>
+#include <QJsonObject>
 #include <QSettings>
 #include <QTemporaryDir>
 
@@ -42,6 +44,16 @@ void write_file(const QString& path, const QByteArray& bytes) {
 
 std::filesystem::path fs_path(const QString& path) {
   return std::filesystem::path(path.toStdString());
+}
+
+QByteArray manifest_bytes(const QTemporaryDir& dir) {
+  QFile file(QDir(dir.path()).filePath(QStringLiteral("project.json")));
+  EXPECT_TRUE(file.open(QIODevice::ReadOnly));
+  return file.readAll();
+}
+
+QJsonObject read_manifest(const QTemporaryDir& dir) {
+  return QJsonDocument::fromJson(manifest_bytes(dir)).object();
 }
 
 TEST(Project, CreateWritesManifestAndOpens) {
@@ -93,10 +105,114 @@ TEST(Project, NewerVersionAndUnknownKeysParseBestEffort) {
   QTemporaryDir dir;
   write_file(QDir(dir.path()).filePath(QStringLiteral("project.json")),
              R"({"project_version": 99, "name": "From The Future", "wormhole": true})");
-  const auto project = Project::open(fs_path(dir.path()));
+  auto project = Project::open(fs_path(dir.path()));
   ASSERT_TRUE(project.has_value()); // forward-compat: a warning, not an error
   EXPECT_EQ(project->version(), 99);
   EXPECT_EQ(project->name(), QStringLiteral("From The Future"));
+
+  // Parsing best-effort is only half of forward compatibility (v2, #325): a
+  // rewrite by THIS build must not destroy what it could not understand, and
+  // must not downgrade the manifest to a schema its author never wrote.
+  ASSERT_TRUE(project->save().has_value());
+  const auto reopened = Project::open(fs_path(dir.path()));
+  ASSERT_TRUE(reopened.has_value());
+  EXPECT_EQ(reopened->version(), 99);
+  EXPECT_EQ(reopened->name(), QStringLiteral("From The Future"));
+  EXPECT_TRUE(read_manifest(dir).value(QStringLiteral("wormhole")).toBool());
+}
+
+TEST(Project, SaveBumpsAV1ManifestToV2) {
+  QTemporaryDir dir;
+  write_file(QDir(dir.path()).filePath(QStringLiteral("project.json")),
+             R"({"project_version": 1, "name": "Legacy"})");
+  auto project = Project::open(fs_path(dir.path()));
+  ASSERT_TRUE(project.has_value());
+  EXPECT_EQ(project->version(), 1); // opened as authored
+
+  ASSERT_TRUE(project->save().has_value());
+  EXPECT_EQ(read_manifest(dir).value(QStringLiteral("project_version")).toInt(),
+            Project::kSupportedVersion);
+}
+
+TEST(Project, SaveTwiceIsByteIdentical) {
+  QTemporaryDir dir;
+  auto project = Project::create(fs_path(dir.path()), QStringLiteral("Stable"));
+  ASSERT_TRUE(project.has_value());
+  project->set_last_scene(fs_path(dir.path()) / "main.xodr");
+
+  ASSERT_TRUE(project->save().has_value());
+  const QByteArray first = manifest_bytes(dir);
+  ASSERT_TRUE(project->save().has_value());
+  // The merge base has to be updated by save() itself, or the second write
+  // could differ from the first and churn the file on every open.
+  EXPECT_EQ(manifest_bytes(dir), first);
+}
+
+TEST(Project, SaveDoesNotMaterializeTheFallbackName) {
+  QTemporaryDir dir;
+  const std::filesystem::path project_dir = fs_path(dir.path()) / "riverside";
+  ASSERT_TRUE(QDir(dir.path()).mkpath(QStringLiteral("riverside")));
+  const QString manifest = QString::fromStdString((project_dir / "project.json").string());
+  write_file(manifest, R"({"project_version": 1})");
+
+  auto project = Project::open(project_dir);
+  ASSERT_TRUE(project.has_value());
+  EXPECT_EQ(project->name(), QStringLiteral("riverside")); // inferred, not stored
+  ASSERT_TRUE(project->save().has_value());
+
+  // Writing the INFERRED name back would turn a deliberate one-key manifest
+  // into a gratuitous diff, and would freeze the name against a later rename
+  // of the folder.
+  QFile file(manifest);
+  ASSERT_TRUE(file.open(QIODevice::ReadOnly));
+  const QJsonObject root = QJsonDocument::fromJson(file.readAll()).object();
+  EXPECT_FALSE(root.contains(QStringLiteral("name")));
+}
+
+TEST(Project, LastSceneIsProjectRelativeAndRoundTrips) {
+  QTemporaryDir dir;
+  auto project = Project::create(fs_path(dir.path()), QStringLiteral("Recent"));
+  ASSERT_TRUE(project.has_value());
+  const std::filesystem::path scene = project->dir() / "downtown.xodr";
+  write_file(QString::fromStdString(scene.string()), "<OpenDRIVE/>");
+
+  project->set_last_scene(scene);
+  EXPECT_EQ(project->last_scene(), QStringLiteral("downtown.xodr")); // relative, portable
+  ASSERT_TRUE(project->save().has_value());
+
+  const auto reopened = Project::open(fs_path(dir.path()));
+  ASSERT_TRUE(reopened.has_value());
+  EXPECT_EQ(reopened->last_scene(), QStringLiteral("downtown.xodr"));
+  ASSERT_TRUE(reopened->last_scene_path().has_value());
+  EXPECT_EQ(*reopened->last_scene_path(), scene);
+}
+
+TEST(Project, ASceneOutsideTheProjectClearsLastScene) {
+  QTemporaryDir dir;
+  QTemporaryDir elsewhere;
+  auto project = Project::create(fs_path(dir.path()), QStringLiteral("Bounded"));
+  ASSERT_TRUE(project.has_value());
+  const std::filesystem::path inside = project->dir() / "inside.xodr";
+  write_file(QString::fromStdString(inside.string()), "<OpenDRIVE/>");
+  project->set_last_scene(inside);
+  ASSERT_FALSE(project->last_scene().isEmpty());
+
+  // A Save As outside the project must not store a "../" escape: a project
+  // points only at its own scenes, and the manifest has to stay portable.
+  project->set_last_scene(fs_path(elsewhere.path()) / "stranger.xodr");
+  EXPECT_TRUE(project->last_scene().isEmpty());
+  ASSERT_TRUE(project->save().has_value());
+  EXPECT_FALSE(read_manifest(dir).contains(QStringLiteral("last_scene")));
+}
+
+TEST(Project, LastScenePathIsNulloptWhenTheSceneIsGone) {
+  QTemporaryDir dir;
+  write_file(QDir(dir.path()).filePath(QStringLiteral("project.json")),
+             R"({"project_version": 2, "name": "Stale", "last_scene": "deleted.xodr"})");
+  const auto project = Project::open(fs_path(dir.path()));
+  ASSERT_TRUE(project.has_value());
+  EXPECT_EQ(project->last_scene(), QStringLiteral("deleted.xodr")); // kept as stored…
+  EXPECT_EQ(project->last_scene_path(), std::nullopt);              // …but unresolvable
 }
 
 TEST(Project, MissingNameFallsBackToTheDirectoryName) {
@@ -143,6 +259,9 @@ TEST(Project, AssetsDirIsUnconditionalAndNeverCreated) {
   EXPECT_EQ(QDir(dir.path()).entryList(QDir::NoDotAndDotDot | QDir::AllEntries),
             QStringList({QStringLiteral("project.json")}));
   EXPECT_EQ(project->library_manifest_path(), std::nullopt);
+  // …and a fresh manifest carries no last_scene: the key is omitted at its
+  // default (v2, #325), so a new project stays a clean two-key file.
+  EXPECT_FALSE(read_manifest(dir).contains(QStringLiteral("last_scene")));
 }
 
 TEST(Project, LibraryManifestPathIsOptional) {

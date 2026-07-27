@@ -224,6 +224,16 @@ private:
   /// where it lives (local only — nothing is uploaded), offers to open the
   /// folder, and acknowledges every pending report so each is shown once.
   void check_crash_reports();
+  /// Applies the freshly-loaded scene's Layer-2 state (fmt-s1, #325) that the
+  /// viewport does not own itself: the per-scene render mode. The sidecar wins
+  /// for this scene; with no stored mode the application default (QSettings)
+  /// stands. Never writes back — a per-scene override is not a preference.
+  void apply_scene_state();
+  /// Records `scene` as the active project's `last_scene` and rewrites
+  /// project.json. Call AFTER associate_project_for(): a Save As into another
+  /// folder adopts a different project there, and stamping first would write
+  /// the scene onto the project just left. Failure is logged, never fatal.
+  void remember_last_scene(const std::filesystem::path& scene);
   void update_recent_files_menu();
   void update_window_title();
   void update_status_entities();
@@ -290,6 +300,10 @@ private:
   /// any toolbar may have tool-dependent width (issue #332).
   QAction* options_caption_action_ = nullptr;
   QAction* template_action_ = nullptr;
+  /// View ▸ Textured Rendering. Held because a scene's sidecar may override the
+  /// application default (fmt-s1, #325), and the menu has to agree with what
+  /// the viewport is actually doing.
+  QAction* textured_action_ = nullptr;
   /// Terrain Brush options (p5-s4, #234): mode/radius/strength live in the same
   /// options row, shown only while the brush is active. Fixed-width controls so
   /// switching to them never shifts the toolbar above (issue #332).

@@ -35,15 +35,21 @@
 #include <QStatusBar>
 #include <QStringList>
 #include <QTabBar>
+#include <QTemporaryDir>
 #include <QToolBar>
 #include <QWidget>
 #include <algorithm>
+#include <filesystem>
+#include <fstream>
 #include <memory>
 
 #include "app/elided_label.hpp"
 #include "app/main_window.hpp"
 #include "app/settings.hpp"
 #include "app/shortcut_registry.hpp"
+#include "app/welcome_widget.hpp"
+#include "document/project.hpp"
+#include "document/scene_sidecar.hpp"
 #include "viewport/viewport_widget.hpp"
 
 namespace roadmaker::editor {
@@ -292,6 +298,113 @@ TEST_F(ViewportHintsToggleTest, ChoicePersistsAcrossWindows) {
 
   MainWindow reopened(nullptr, /*restore_saved_layout=*/false);
   EXPECT_FALSE(reopened.viewport()->hints_enabled());
+}
+
+// fmt-s1 (#325): the app-level half of Layer 2 — the per-scene render mode and
+// project.json's last_scene. The window is constructed, never shown (see the
+// file header); the viewport's GL never initializes offscreen, which is why
+// the camera assertions go through frame_pending() rather than a rendered
+// frame.
+class SceneStateWindowTest : public ::testing::Test {
+protected:
+  void SetUp() override {
+    // The same QSettings isolation the other window suites use: this case
+    // reads and asserts the application render-mode default, and must never
+    // see (or write) the developer's real store (#399).
+    QCoreApplication::setOrganizationName(QStringLiteral("RobomousTests"));
+    const auto* info = ::testing::UnitTest::GetInstance()->current_test_info();
+    QCoreApplication::setApplicationName(QStringLiteral("RoadMakerSceneStateTest_") +
+                                         QString::fromUtf8(info->name()));
+    QSettings().clear();
+    dir_ = std::make_unique<QTemporaryDir>();
+    ASSERT_TRUE(dir_->isValid());
+    window_ = std::make_unique<MainWindow>(nullptr, /*restore_saved_layout=*/false);
+  }
+
+  void TearDown() override {
+    window_.reset();
+    dir_.reset();
+    QSettings().clear();
+    QCoreApplication::setOrganizationName(QStringLiteral("RobomousTests"));
+    QCoreApplication::setApplicationName(QStringLiteral("RoadMakerEditorTests"));
+  }
+
+  [[nodiscard]] std::filesystem::path root() const {
+    return std::filesystem::path(dir_->path().toStdString());
+  }
+
+  /// A copy of the sample scene inside `root()`, optionally with a sidecar.
+  std::filesystem::path make_scene(const char* name, const char* sidecar_json) {
+    const std::filesystem::path scene = root() / name;
+    std::filesystem::copy_file(std::filesystem::path(RM_SAMPLES_DIR) / "t_junction.xodr", scene);
+    if (sidecar_json != nullptr) {
+      std::ofstream out(scene_sidecar::path_for(scene));
+      out << sidecar_json;
+    }
+    return scene;
+  }
+
+  std::unique_ptr<QTemporaryDir> dir_;
+  std::unique_ptr<MainWindow> window_;
+};
+
+TEST_F(SceneStateWindowTest, AStoredViewSuppressesTheAutoFraming) {
+  // No sidecar: the scene frames itself, as it always has.
+  window_->load_file(make_scene("bare.xodr", nullptr));
+  EXPECT_TRUE(window_->viewport()->frame_pending());
+
+  // With one: the restored camera wins, or reopening a scene would silently
+  // snap back to the whole-network framing on the next paint.
+  window_->load_file(make_scene("posed.xodr", R"({
+    "scene_version": 1,
+    "view": {"target": [10, 20, 1], "yaw": 0.3, "pitch": 0.6, "distance": 55,
+             "projection": "orthographic"}
+  })"));
+  EXPECT_FALSE(window_->viewport()->frame_pending());
+  const SceneViewState restored = window_->viewport()->view_state();
+  EXPECT_EQ(restored.distance, 55.0F);
+  EXPECT_EQ(restored.projection, ProjectionMode::Orthographic);
+}
+
+TEST_F(SceneStateWindowTest, TheStoredRenderModeWinsForThatSceneAndIsNotAPreference) {
+  const bool app_default = Settings().textured_rendering();
+  window_->load_file(make_scene("scene.xodr",
+                                app_default ? R"({"scene_version": 1, "textured": false})"
+                                            : R"({"scene_version": 1, "textured": true})"));
+  EXPECT_EQ(window_->viewport()->textured_rendering(), !app_default);
+  // A per-scene override is not a preference: the application default must be
+  // exactly where it was, or opening someone else's scene would silently
+  // re-set the user's own default.
+  EXPECT_EQ(Settings().textured_rendering(), app_default);
+
+  // A scene with no stored mode falls back to that untouched default.
+  window_->load_file(make_scene("plain.xodr", nullptr));
+  EXPECT_EQ(window_->viewport()->textured_rendering(), app_default);
+}
+
+TEST_F(SceneStateWindowTest, SavingAndOpeningAProjectRemembersItsLastScene) {
+  auto project = Project::create(root(), QStringLiteral("Downtown"));
+  ASSERT_TRUE(project.has_value());
+  const std::filesystem::path scene = make_scene("main.xodr", nullptr);
+  window_->load_file(scene);
+
+  const auto stamped = Project::open(root());
+  ASSERT_TRUE(stamped.has_value());
+  EXPECT_EQ(stamped->last_scene(), QStringLiteral("main.xodr"));
+
+  // Reopening the project through the real welcome-tile path reopens that
+  // scene — the half of the round trip that makes "you are where you left
+  // off" true for a project, not just for a file.
+  MainWindow reopened(nullptr, /*restore_saved_layout=*/false);
+  auto* welcome = reopened.findChild<WelcomeWidget*>();
+  ASSERT_NE(welcome, nullptr);
+  EXPECT_FALSE(reopened.windowTitle().contains(QStringLiteral("main.xodr")));
+  emit welcome->project_requested(dir_->path());
+  // The title carries the open scene and the project — the observable that
+  // says both halves happened (adopt the project, reopen its last scene).
+  EXPECT_TRUE(reopened.windowTitle().contains(QStringLiteral("main.xodr")))
+      << reopened.windowTitle().toStdString();
+  EXPECT_TRUE(reopened.windowTitle().contains(QStringLiteral("Downtown")));
 }
 
 TEST(ElidedLabelTest, ElidesAndRestoresWithWidth) {

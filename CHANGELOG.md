@@ -19,6 +19,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 Current version on `main`: **0.0.1**.
 
 ### Added
+- **A scene reopens where you left it**
+  ([#325](https://github.com/Robomous/RoadMaker/issues/325)): the first half of
+  [ADR-0008](docs/decisions/0008-persistence-layers-asam-first.md)'s persistence
+  layering — the native project/scene container. Saving a scene now also writes
+  a small `<scene>.rmscene.json` beside it, holding the camera you were looking
+  from and the scene's render mode; reopening the scene puts you back there
+  instead of re-framing the whole network. `project.json` gains a `last_scene`,
+  so reopening a *project* — from **File ▸ Open Project…** or its welcome tile —
+  reopens the scene you were working on, at that camera. Until now every one of
+  those was lost the moment a document closed, or stranded per-machine in
+  application settings where a second scene would overwrite it.
+  The point of a separate file is what does **not** happen: the `.xodr` stays
+  pure ASAM OpenDRIVE, byte-for-byte identical with or without its companion, so
+  nothing RoadMaker-specific reaches a tool that imports it. In the other
+  direction a sidecar is never required — a scene authored elsewhere opens and
+  edits exactly as before, and a stale, deleted or hand-broken companion costs
+  you the view and nothing else. Both files are readable JSON, safe to commit
+  next to the scene, and forward-compatible in a way v1 was not: a setting
+  written by a newer RoadMaker survives an older one saving over it. Crash
+  recovery carries the view along too, so a recovered document comes back at the
+  camera the crash interrupted. Snapping settings are named by the issue but
+  deliberately not persisted yet — the tools have the plumbing and no UI, so
+  there is nothing to remember; the schema reserves the key
+  ([#450](https://github.com/Robomous/RoadMaker/issues/450)). Selection and
+  active tool are not persisted at all. The format is documented in
+  [Persistence layers](docs/architecture/persistence.md); round-trip hardening
+  of the `rm:` layer inside the `.xodr` is
+  [#326](https://github.com/Robomous/RoadMaker/issues/326).
+
 - **The Library browses the project's asset folder, live**
   ([#321](https://github.com/Robomous/RoadMaker/issues/321)): with a project
   open, the lower half of the Library dock is a file explorer over

@@ -17,18 +17,24 @@
 #pragma once
 
 // A project is a directory (p6-s1, #235): a `project.json` manifest
-// (`{"project_version": 1, "name": "..."}`) beside its scenes as ordinary
-// top-level `*.xodr` files, with an optional `assets/library/manifest.json`
-// overlaying the built-in Library catalogue while the project is open. No new
-// scene format, no registry, no database — scenes are discovered by glob and
-// stay openable standalone outside any project. Headless (QtCore JSON only, no
-// widget), unit-testable offscreen. The schema is versioned and
+// (`{"project_version": 2, "name": "...", "last_scene": "main.xodr"}`) beside its scenes as
+// ordinary top-level `*.xodr` files, with an optional `assets/library/manifest.json` overlaying the
+// built-in Library catalogue while the project is open. No new scene format, no registry, no
+// database — scenes are discovered by glob and stay openable standalone outside any project.
+// Headless (QtCore JSON only, no widget), unit-testable offscreen. The schema is versioned and
 // forward-compatible like LibraryManifest: a newer project_version parses the
-// fields this build knows (a warning, not an error) and unknown keys are
-// ignored, so a future manifest never bricks an older editor.
+// fields this build knows (a warning, not an error) and unknown keys survive a
+// rewrite verbatim, so a future manifest never bricks — nor is damaged by — an
+// older editor.
+//
+// v2 (fmt-s1, #325) is the project half of ADR-0008's Layer-2 container: it
+// adds `last_scene` and the atomic save() that writes it. Everything the scene
+// itself carries lives in `<scene>.rmscene.json` (document/scene_sidecar.hpp),
+// never here.
 
 #include "roadmaker/error.hpp"
 
+#include <QJsonObject>
 #include <QString>
 #include <QStringList>
 #include <filesystem>
@@ -40,7 +46,7 @@ class Project {
 public:
   /// The manifest schema this build understands; higher versions parse
   /// best-effort with a warning.
-  static constexpr int kSupportedVersion = 1;
+  static constexpr int kSupportedVersion = 2;
 
   /// The manifest file marking a directory as a project.
   static constexpr const char* kManifestName = "project.json";
@@ -56,6 +62,17 @@ public:
   /// `project_version`. A missing/empty `name` falls back to the directory
   /// name so every project has something to show in the UI.
   [[nodiscard]] static Expected<Project> open(const std::filesystem::path& dir);
+
+  /// Rewrites project.json atomically, MERGING over the manifest as parsed —
+  /// every key this build does not model survives (unlike v1, which rebuilt the
+  /// file from two fields and would have dropped them).
+  ///
+  /// Non-const because it bumps version_ to kSupportedVersion on the first v2
+  /// write; a manifest from a NEWER build keeps its own version rather than
+  /// being downgraded. A name that was only inferred from the directory is not
+  /// materialized — writing it would turn a clean two-key manifest into a
+  /// gratuitous diff.
+  [[nodiscard]] Expected<void> save();
 
   [[nodiscard]] const QString& name() const { return name_; }
 
@@ -73,6 +90,21 @@ public:
   /// unconditionally, whether or not it exists on disk: the browser watches for
   /// it to appear. NOTHING in RoadMaker creates it; a project only grows one
   /// once the user, or an asset commit, puts something there.
+  /// The scene the project was last working on, as stored: a project-relative
+  /// file name with `/` separators, or empty. See last_scene_path() to use it.
+  [[nodiscard]] const QString& last_scene() const { return last_scene_; }
+
+  /// Records `scene` as the last scene. A path outside the project (a Save As
+  /// elsewhere) CLEARS the field rather than storing a `../` escape: the
+  /// manifest must stay portable, and a project may only point at its own
+  /// scenes. Takes effect on disk at the next save().
+  void set_last_scene(const std::filesystem::path& scene);
+
+  /// The absolute last-scene path, or nullopt when none is stored or the file
+  /// is gone (renamed, deleted, or never committed alongside the manifest).
+  /// Existence-checked here so reopening a project can simply skip it.
+  [[nodiscard]] std::optional<std::filesystem::path> last_scene_path() const;
+
   [[nodiscard]] std::filesystem::path assets_dir() const;
 
   /// `<dir>/assets/library/manifest.json` when that file exists — the
@@ -90,6 +122,13 @@ private:
   QString name_;
   std::filesystem::path dir_;
   int version_ = kSupportedVersion;
+  QString last_scene_;
+  /// True when name_ was inferred from the directory rather than read from the
+  /// manifest — save() then leaves the key absent instead of baking it in.
+  bool name_is_fallback_ = false;
+  /// The manifest as parsed, the merge base for save(). Empty for a Project
+  /// that never came off disk.
+  QJsonObject raw_;
 };
 
 } // namespace roadmaker::editor

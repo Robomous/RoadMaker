@@ -118,6 +118,21 @@ public slots:
 
   [[nodiscard]] bool textured_rendering() const { return textured_rendering_; }
 
+  /// The camera pose as Layer-2 scene state (fmt-s1, #325) — what MainWindow's
+  /// provider stamps onto the sidecar a save writes. The camera itself stays
+  /// private: the app reads and restores it only through this pair.
+  [[nodiscard]] SceneViewState view_state() const;
+
+  /// Applies the stored camera from document.scene_state(), if any, and
+  /// suppresses the post-load auto-framing. Connected to
+  /// Document::scene_state_loaded(); an absent view leaves the framing alone.
+  void restore_view();
+
+  /// Whether the next rebuild would auto-frame the scene. Test seam: under the
+  /// offscreen platform paintGL()/rebuild_scene() never run, so this is the
+  /// only way to observe that a restored camera actually won.
+  [[nodiscard]] bool frame_pending() const { return frame_on_rebuild_; }
+
   /// Active-tool hint drawn in the viewport corner (mirrors the status bar —
   /// the user's eyes are on the viewport during a tool interaction, issue
   /// #103 discoverability). Empty text clears it.

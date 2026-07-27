@@ -90,6 +90,9 @@ Expected<void> Document::load(const std::filesystem::path& path) {
   diagnostics_ = std::move(result->diagnostics);
   file_path_ = QString::fromStdString(path.string());
   mesh_ = build_network_mesh(network_);
+  // Layer 2 (fmt-s1, #325): comfort state, read AFTER the network is in place
+  // and never able to fail the load — the .xodr alone is the scene.
+  read_scene_sidecar(path);
 
   spdlog::info("loaded {} ({} roads, {} diagnostics)",
                path.string(),
@@ -99,7 +102,41 @@ Expected<void> Document::load(const std::filesystem::path& path) {
   emit loaded();
   emit mesh_changed({});
   emit diagnostics_changed();
+  // Last: loaded() arms the viewport's auto-framing, and a restored camera
+  // has to overrule it.
+  emit scene_state_loaded();
   return {};
+}
+
+void Document::read_scene_sidecar(const std::filesystem::path& scene) {
+  scene_state_ = SceneState{};
+  scene_state_from_disk_ = false;
+  const auto sidecar_path = scene_sidecar::path_for(scene);
+  auto state = scene_sidecar::load(sidecar_path);
+  if (!state) {
+    if (state.error().code != ErrorCode::FileNotFound) {
+      // Malformed, not missing: worth saying, and self-healed by the next save.
+      spdlog::warn("scene sidecar ignored: {} ({})", state.error().message, state.error().context);
+    } else {
+      // Every pure .xodr lands here — the supported case, not a problem.
+      spdlog::debug("no scene sidecar beside {}", scene.string());
+    }
+    return;
+  }
+  scene_state_ = std::move(*state);
+  scene_state_from_disk_ = true;
+}
+
+void Document::set_scene_state_provider(std::function<void(SceneState&)> provider) {
+  scene_state_provider_ = std::move(provider);
+}
+
+SceneState Document::current_scene_state() const {
+  SceneState state = scene_state_;
+  if (scene_state_provider_) {
+    scene_state_provider_(state);
+  }
+  return state;
 }
 
 void Document::reset() {
@@ -109,11 +146,17 @@ void Document::reset() {
   network_ = RoadNetwork{};
   diagnostics_.clear();
   file_path_.clear();
+  scene_state_ = SceneState{};
+  scene_state_from_disk_ = false;
   mesh_ = build_network_mesh(network_);
 
   emit loaded();
   emit mesh_changed({});
   emit diagnostics_changed();
+  // Emitted here too (unlike the recovery path): File → New must fall back to
+  // the APPLICATION default render mode, not inherit the per-scene override of
+  // whatever was open before.
+  emit scene_state_loaded();
 }
 
 Expected<void> Document::save(const std::filesystem::path& path) {
@@ -135,6 +178,19 @@ Expected<void> Document::save(const std::filesystem::path& path) {
   }
 
   file_path_ = QString::fromStdString(path.string());
+  // Layer 2 beside Layer 0/1 (fmt-s1, #325): a separate file, so the .xodr
+  // stays byte-for-byte the pure ASAM export. Written before saved() fires, so
+  // every listener (autosave sweep, welcome thumbnail) sees a complete pair.
+  // A failure here costs the camera, never the scene — it must not fail a save.
+  scene_state_ = current_scene_state();
+  if (const auto written_state = scene_sidecar::save(scene_sidecar::path_for(path), scene_state_);
+      written_state) {
+    scene_state_from_disk_ = true;
+  } else {
+    spdlog::error("scene sidecar not written: {} ({})",
+                  written_state.error().message,
+                  written_state.error().context);
+  }
   undo_stack_.setClean();
   spdlog::info("saved {} ({} roads, {} diagnostics)",
                path.string(),
@@ -147,6 +203,17 @@ Expected<void> Document::save(const std::filesystem::path& path) {
 }
 
 void Document::mark_recovered(const QString& original_path) {
+  // The recovery copy's own sidecar (autosaved beside it) wins — it is the
+  // newest state there is. When it is missing, fall back to the ORIGINAL
+  // scene's sidecar rather than keeping the empty default: file_path_ is about
+  // to point at the user's real file, and the next Save would otherwise
+  // overwrite their camera AND every retained forward-compat key with nothing.
+  if (!scene_state_from_disk_ && !original_path.isEmpty()) {
+    read_scene_sidecar(std::filesystem::path(original_path.toStdString()));
+  }
+  // No scene_state_loaded() here: the recovered document is already framed, and
+  // re-posing the camera under a recovery prompt would be jarring. The state is
+  // seated for the next save, which is what was at risk.
   file_path_ = original_path;
   // resetClean (not a moved index) — the loaded recovery stack IS empty,
   // but the content differs from whatever sits at original_path.
