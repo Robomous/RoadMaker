@@ -328,10 +328,20 @@ v0.1.0 may be published only when **all** of the following hold:
    and including #406), **and every issue belonging to the
    [2026-07 realism batch](updates/2026-07-realism-batch.md) (tracking
    issue [#411](https://github.com/Robomous/RoadMaker/issues/411) and all
-   issues it lists)**, is closed via merged PRs. Concretely: **an open
-   issue numbered ≤ #406, or listed by #411, blocks the release unless the
-   maintainer explicitly re-scopes it** — the gate is checkable from the
-   issue tracker alone (maintainer decisions, 2026-07-23 and 2026-07-24).
+   issues it lists)**, **and every follow-up split out of any issue the
+   gate already covers** — an issue whose body or filing comment names the
+   gated issue it was split from, applied transitively, so a follow-up of
+   a follow-up is covered too — is closed via merged PRs. Concretely:
+   **an open issue blocks the release if it is numbered ≤ #406, listed by
+   #411, labeled with a cross-pillar workstream (`help`, `fmt`,
+   `docs-site`, `cascade`), or filed as a follow-up of an issue that
+   blocks the release — unless the maintainer explicitly re-scopes it.**
+   The gate stays checkable from the issue tracker alone; the price is a
+   filing rule: a follow-up must name its parent issue when filed
+   (maintainer decisions, 2026-07-23, 2026-07-24, and 2026-07-27 — the
+   2026-07-27 amendment closed the gap where follow-ups of gated work,
+   e.g. #434/#435 from #399 and #440 from #360, escaped the cutoff by
+   issue number).
 3. The maintainer has executed **every golden workflow (GW-1 … GW-6) by
    hand** on macOS, Linux, and Windows, and recorded a pass in each
    workflow's results table (date, OS, commit).
