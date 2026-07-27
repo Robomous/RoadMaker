@@ -568,6 +568,60 @@ std::vector<DiagCase> make_cases() {
                      EXPECT_TRUE(result.network.terrain().sidecar.empty());
                    }});
 
+  // --- foreign / unknown-rm: userData: preserve-and-warn (fmt-s2, #326) -----
+  // Road and junction scope used to warn-and-DROP; the root scope dropped with
+  // no diagnostic at all. All three now keep the fragment verbatim.
+
+  cases.push_back({.label = "foreign userData on a road is preserved",
+                   .xml = doc(road2(R"(    <userData code="vendor:mystery" value="1"/>)")),
+                   .severity = Severity::Warning,
+                   .rule = "",
+                   .needle = "userData code 'vendor:mystery' is not understood and was "
+                             "preserved verbatim",
+                   .verify = +[](const XodrParseResult& result) {
+                     const auto& road = *result.network.road(result.network.find_road("2"));
+                     ASSERT_EQ(road.preserved_user_data.size(), 1U);
+                     EXPECT_NE(road.preserved_user_data.front().find("vendor:mystery"),
+                               std::string::npos);
+                   }});
+
+  cases.push_back({.label = "foreign userData on a junction is preserved",
+                   .xml = doc(R"(
+  <junction id="9"><userData code="vendor:mystery" value="1"/></junction>)"),
+                   .severity = Severity::Warning,
+                   .rule = "",
+                   .needle = "userData code 'vendor:mystery' is not understood and was "
+                             "preserved verbatim",
+                   .verify = +[](const XodrParseResult& result) {
+                     ASSERT_EQ(junction9(result).preserved_user_data.size(), 1U);
+                     EXPECT_NE(junction9(result).preserved_user_data.front().find("vendor:mystery"),
+                               std::string::npos);
+                   }});
+
+  cases.push_back({.label = "foreign userData at the root is preserved",
+                   .xml = doc(R"(
+  <userData code="vendor:mystery" value="1"/>)"),
+                   .severity = Severity::Warning,
+                   .rule = "",
+                   .needle = "userData code 'vendor:mystery' is not understood and was "
+                             "preserved verbatim",
+                   .verify = +[](const XodrParseResult& result) {
+                     ASSERT_EQ(result.network.preserved_user_data().size(), 1U);
+                     EXPECT_NE(result.network.preserved_user_data().front().find("vendor:mystery"),
+                               std::string::npos);
+                   }});
+
+  cases.push_back({.label = "unknown rm: code at the root is preserved",
+                   .xml = doc(R"(
+  <userData code="rm:from_the_future" value="1"/>)"),
+                   .severity = Severity::Warning,
+                   .rule = "",
+                   .needle = "rm: userData code 'rm:from_the_future' is not known to this "
+                             "RoadMaker version",
+                   .verify = +[](const XodrParseResult& result) {
+                     ASSERT_EQ(result.network.preserved_user_data().size(), 1U);
+                   }});
+
   return cases;
 }
 

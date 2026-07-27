@@ -7,7 +7,9 @@ add_executable(roadmaker_core_tests
   test_profile_fit.cpp
   test_authoring.cpp
   test_defaults_registry.cpp
+  test_rm_registry.cpp
   test_raw_xml.cpp
+  test_user_data_preservation.cpp
   test_xodr_reader.cpp
   test_xodr_diagnostics.cpp
   test_xodr_writer.cpp
@@ -95,6 +97,11 @@ target_compile_definitions(roadmaker_core_tests PRIVATE
   RM_SAMPLES_DIR="${CMAKE_SOURCE_DIR}/assets/samples"
   RM_FIXTURES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/fixtures/junctions"
   RM_FUZZ_CORPUS_DIR="${CMAKE_CURRENT_SOURCE_DIR}/fuzz/corpus"
+  # test_rm_registry.cpp scans the committed reader/writer sources and the
+  # sibling tests for rm: code coverage (fmt-s2, #326) — the same
+  # read-the-repo-off-disk move as RM_DOCS_DIR above.
+  RM_CORE_SRC_DIR="${CMAKE_SOURCE_DIR}/core/src"
+  RM_CORE_TESTS_DIR="${CMAKE_CURRENT_SOURCE_DIR}"
 )
 
 if(RM_BUILD_SHARED)

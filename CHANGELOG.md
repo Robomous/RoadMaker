@@ -19,6 +19,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 Current version on `main`: **0.0.1**.
 
 ### Added
+- **Nothing in a foreign `.xodr` is lost on a round trip any more**
+  ([#326](https://github.com/Robomous/RoadMaker/issues/326)): the second half of
+  [ADR-0008](docs/decisions/0008-persistence-layers-asam-first.md)'s persistence
+  layering — Layer-1 round-trip hardening. Another tool's `<userData>` blocks
+  used to survive a RoadMaker save only on some elements: a road-level or
+  junction-level block was dropped with a warning, and a block at the document
+  root was dropped with no diagnostic at all. All three scopes now keep the
+  element verbatim and re-emit it on save, with a structured warning naming the
+  code, so opening and re-saving someone else's file no longer strips their
+  annotations. The same applies forward in time: a `<userData code="rm:…">`
+  written by a **newer** RoadMaker than the one opening the file is preserved
+  untouched and reported, never discarded. The registry of RoadMaker's own
+  `rm:` codes in ADR-0008 is now generated and CI-gated
+  (`core/tests/test_rm_registry.cpp`): every code must ship with a writer, a
+  parser, a fuzz-corpus sample, a round-trip test and a registry row, and the
+  table gained two codes that were emitted but never listed (`rm:terrain`,
+  `rm:material.bridge_deck`).
 - **A scene reopens where you left it**
   ([#325](https://github.com/Robomous/RoadMaker/issues/325)): the first half of
   [ADR-0008](docs/decisions/0008-persistence-layers-asam-first.md)'s persistence

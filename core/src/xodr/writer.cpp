@@ -1280,6 +1280,13 @@ void write_road(pugi::xml_node root,
     user_data.append_attribute("code").set_value("rm:waypoints");
     user_data.append_attribute("value").set_value(value.c_str());
   }
+
+  // Road-level <userData> RoadMaker does not model, back verbatim (fmt-s2,
+  // #326). After the modeled content — the re-canonicalization limitation
+  // shared by every preserved tier.
+  for (const std::string& fragment : road.preserved_user_data) {
+    append_fragment(road_node, fragment);
+  }
 }
 
 /// Emits the OpenDRIVE ≥1.8 junction surface elements: the <planView>
@@ -1932,6 +1939,13 @@ void write_junction(pugi::xml_node root,
     user_data.append_attribute("code").set_value("rm:spans");
     user_data.append_attribute("value").set_value(value.c_str());
   }
+
+  // Junction-level <userData> RoadMaker does not model, back verbatim
+  // (fmt-s2, #326). After the junction's own rm: blocks, whose relative order
+  // is load-bearing and pinned by the persistence tests.
+  for (const std::string& fragment : junction.preserved_user_data) {
+    append_fragment(junction_node, fragment);
+  }
 }
 
 } // namespace
@@ -2568,6 +2582,13 @@ Expected<std::string> write_xodr(const RoadNetwork& network,
     pugi::xml_node user_data = root.append_child("userData");
     user_data.append_attribute("code").set_value("rm:terrain");
     user_data.append_attribute("value").set_value(reference.c_str());
+  }
+
+  // Root-level <userData> RoadMaker does not model, back verbatim (fmt-s2,
+  // #326) — this scope used to lose them with no diagnostic at all. Emitted
+  // last, after rm:surface/rm:terrain, in preserved document order.
+  for (const std::string& fragment : network.preserved_user_data()) {
+    append_fragment(root, fragment);
   }
 
   std::ostringstream out;
