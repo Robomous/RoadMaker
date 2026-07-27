@@ -16,10 +16,14 @@
 
 A move shifts a road's plan-view geometry and authoring waypoints by (dx, dy);
 headings, lengths, lanes, elevation and marks are untouched, so undo is
-byte-identical. Moving several roads together is ONE command: links *between*
-the moved roads survive, while a link leaving the moved set breaks on both
-sides. Roads that participate in a junction have generated poses and refuse to
-move.
+byte-identical. Moving several roads together is ONE command.
+
+A linked neighbour FOLLOWS: its contacting end is re-fit onto the moved pose so
+the joint still satisfies the connection contract (position, heading, elevation
+and grade). When the re-fit is impossible the link is cut instead, and the
+command names the joint in `follow_records` — a move never leaves a link that
+no longer describes the geometry. Roads that participate in a junction have
+generated poses and refuse to move.
 
 Run:  python move_road.py out.xodr
 """
@@ -49,12 +53,27 @@ def main() -> int:
     road_a = network.find_road("1")
     road_b = network.find_road("2")
 
+    # Weld them, so the chain is a real joint rather than two adjacent roads.
+    a_end = rm.RoadEnd(road_a, rm.ContactPoint.END)
+    b_start = rm.RoadEnd(road_b, rm.ContactPoint.START)
+    stack.push(network, rm.edit.close_gap(network, a_end, b_start))
+
     # Move road A alone by (0, 20). Its start shifts to (0, 20); the road stays
     # the same length and shape — only translated.
     before = network.road(road_a).plan_view.evaluate(0.0)
     stack.push(network, rm.edit.translate_road(network, road_a, 0.0, 20.0))
     after = network.road(road_a).plan_view.evaluate(0.0)
     print(f"A start: ({before.x:.1f}, {before.y:.1f}) -> ({after.x:.1f}, {after.y:.1f})")
+
+    # B was NOT moved, yet the joint survived: its start was re-fit onto A's new
+    # end. verify_link_weld measures what the joint actually delivers.
+    weld = rm.edit.verify_link_weld(network, a_end)
+    print(f"joint after the move: {weld}")
+    assert not weld.breaches, "the neighbour should have followed"
+    # push() takes ownership of the command, so its report is read off the stack.
+    assert not [
+        r for r in stack.last_follow_records if r.outcome == rm.edit.FollowOutcome.SEVERED
+    ]
 
     # Undo is byte-identical; redo re-applies.
     stack.undo(network)
