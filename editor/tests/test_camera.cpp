@@ -568,6 +568,47 @@ TEST(OrbitCamera, TopDownIsNearVerticalAndKeepsAWellFormedBasis) {
   }
 }
 
+// fmt-s1 (#325) persists the pose and restores it with set_pose(). That is only
+// lossless because set_pose's clamps are the identity on any pose a live camera
+// can be in — these two pin exactly that, since a clamp that bit would make
+// reopening a scene drift the view a little further every time.
+TEST(OrbitCamera, SetPoseRoundTripsALiveCameraExactly) {
+  OrbitCamera camera;
+  camera.orbit(0.7F, -0.3F);
+  camera.zoom(2.5F);
+  camera.move_target(12.5F, -3.25F, 1.5F);
+  camera.set_projection(ProjectionMode::Orthographic);
+
+  const auto target = camera.target();
+  const float yaw = camera.yaw();
+  const float pitch = camera.pitch();
+  const float distance = camera.distance();
+
+  OrbitCamera restored;
+  restored.set_pose(target, yaw, pitch, distance);
+  restored.set_projection(camera.projection());
+  EXPECT_EQ(restored.target(), target);
+  EXPECT_EQ(restored.yaw(), yaw);
+  EXPECT_EQ(restored.pitch(), pitch);
+  EXPECT_EQ(restored.distance(), distance);
+  EXPECT_EQ(restored.projection(), camera.projection());
+}
+
+TEST(OrbitCamera, TopDownPitchSurvivesARestore) {
+  // kTopDownPitch sits ONE ulp below set_view's clamp bound (π/2 − 0.01). It
+  // survives today with no margin at all, so a changed π literal or a compiler
+  // flag that alters the constant folding would silently make the Top preset
+  // drift on every save → reopen. Pin it.
+  OrbitCamera camera;
+  camera.set_view(0.0F, OrbitCamera::kTopDownPitch); // what look_from(Top) does
+  const float pitch = camera.pitch();
+  EXPECT_EQ(pitch, OrbitCamera::kTopDownPitch) << "the clamp now bites the Top preset";
+
+  OrbitCamera restored;
+  restored.set_pose(camera.target(), camera.yaw(), pitch, camera.distance());
+  EXPECT_EQ(restored.pitch(), pitch) << "the top-down preset no longer round-trips";
+}
+
 TEST(OrbitCamera, PitchStaysAboveGround) {
   OrbitCamera camera;
   camera.orbit(0.0F, -10.0F); // way below the clamp

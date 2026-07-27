@@ -34,6 +34,8 @@
 #include <memory>
 #include <vector>
 
+#include "document/scene_sidecar.hpp"
+
 namespace roadmaker::editor {
 
 class Document : public QObject {
@@ -63,6 +65,26 @@ public:
 
   /// Dirty means the undo stack has moved since the last load/save/new.
   [[nodiscard]] bool is_dirty() const { return !undo_stack_.isClean(); }
+
+  /// The scene's Layer-2 state (fmt-s1, #325) as it stands after the last
+  /// load/reset — the camera and render mode a reopened scene restores.
+  /// Read by ViewportWidget/MainWindow on scene_state_loaded().
+  [[nodiscard]] const SceneState& scene_state() const { return scene_state_; }
+
+  /// Installs the live-state provider. `Document` is QtCore-only and cannot
+  /// read the viewport, so the app hands it a callback that stamps the CURRENT
+  /// camera and render mode onto a state.
+  ///
+  /// It takes the state BY REFERENCE, seeded with scene_state(), so a provider
+  /// overwrites only the fields it owns: a by-value provider returning a fresh
+  /// SceneState would arrive with an empty `raw` and silently destroy every
+  /// forward-compat key the sidecar was carrying, on the first save.
+  void set_scene_state_provider(std::function<void(SceneState&)> provider);
+
+  /// The state a save would write: scene_state() with the provider (if any)
+  /// run over it. Both Document::save and AutosaveManager go through this, so
+  /// a recovery copy never records a different camera than a real save would.
+  [[nodiscard]] SceneState current_scene_state() const;
 
   /// Re-points a just-loaded recovery copy at the document it recovers
   /// (M3a #53): file_path() becomes the crashed session's original path
@@ -191,6 +213,13 @@ signals:
   /// undo stack is clean again.
   void saved();
 
+  /// The scene's Layer-2 state is ready to apply (fmt-s1, #325). Emitted LAST
+  /// by load() and reset(), after loaded()/mesh_changed(), because the viewport
+  /// arms its post-load auto-framing on loaded() and a restored camera has to
+  /// win over it. An absent scene_state().view means "no stored camera" — the
+  /// auto-framing then stands, which is what a plain .xodr wants.
+  void scene_state_loaded();
+
 private:
   // The undo-stack bridge mutates the network on redo/undo; it is part of
   // Document's own mutation machinery, not an outside caller.
@@ -210,10 +239,21 @@ private:
                                       bool already_meshed,
                                       bool already_regenerated = false);
 
+  /// Best-effort read of the sidecar beside `scene`. Never fails a caller: a
+  /// missing file (every plain .xodr) is silent, anything else warns, and both
+  /// leave a default-constructed state behind.
+  void read_scene_sidecar(const std::filesystem::path& scene);
+
   RoadNetwork network_;
   NetworkMesh mesh_;
   std::vector<Diagnostic> diagnostics_;
   QString file_path_;
+  SceneState scene_state_;
+  /// Whether scene_state_ came off disk (rather than being the empty default).
+  /// mark_recovered() needs it: a recovery copy with no sidecar must not let
+  /// the next save overwrite the ORIGINAL scene's sidecar with defaults.
+  bool scene_state_from_disk_ = false;
+  std::function<void(SceneState&)> scene_state_provider_;
   QUndoStack undo_stack_;
   edit::DirtySet last_dirty_;
   std::unique_ptr<edit::Command> preview_command_;

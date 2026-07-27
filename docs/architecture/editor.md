@@ -8,7 +8,7 @@ Source layout under `editor/src/`:
 
 | Directory | Contents |
 |---|---|
-| `document/` | `Document`, `SelectionModel`, `SceneTreeModel`, `DiagnosticsModel`, `EditorCommand` — all editor state and logic, testable headless |
+| `document/` | `Document`, `SelectionModel`, `SceneTreeModel`, `DiagnosticsModel`, `EditorCommand`, `Project`, `ProjectFilesModel`, `LibraryManifest`, `SceneSidecar`, `AutosaveManager` — all editor state and logic, testable headless |
 | `panels/` | Scene tree, properties, diagnostics dock widgets — thin |
 | `viewport/` | `ViewportWidget` (QOpenGLWidget), camera, CPU picking |
 | `render/` | `Renderer` interface, `GLRenderer`, GL function loading, scene builder |
@@ -25,7 +25,9 @@ translate — **no kernel calls from widget event handlers except through
 - **`Document`** is the editor's model root: it owns the `RoadNetwork`, its
   tessellation (`NetworkMesh`), the parser diagnostics, and the
   `QUndoStack`. It is the **only mutator of the network**. It is
-  QtCore-only, so it tests offscreen without a GUI.
+  QtCore-only, so it tests offscreen without a GUI — including its two
+  persistence paths, `load()`/`save()`, which pair the `.xodr` with its
+  Layer-2 sidecar (see [persistence](persistence.md)).
 - **`SelectionModel`** is the single source of truth for the current
   selection. Every selection flow — scene tree, viewport picking,
   diagnostics navigation — goes through it; widgets never notify each other

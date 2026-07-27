@@ -80,6 +80,7 @@ add_library(roadmaker_editor_lib STATIC
   src/document/project_files_model.cpp
   src/document/elevation_utils.cpp
   src/document/editor_command.cpp
+  src/document/scene_sidecar.cpp
   src/document/scene_tree_model.cpp
   src/document/selection_model.cpp
   src/document/units.cpp

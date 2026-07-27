@@ -22,7 +22,7 @@ graph TD
 them needs from the other belongs in the kernel.
 
 Deep dives: [kernel](kernel.md) · [editor](editor.md) ·
-[Python bindings](python-bindings.md).
+[Python bindings](python-bindings.md) · [persistence](persistence.md).
 
 ## The rules
 

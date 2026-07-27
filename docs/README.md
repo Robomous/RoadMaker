@@ -54,7 +54,9 @@ OpenDRIVE scene in the editor: [Create Road](user-guide/create-road.md),
 3. [Editor](architecture/editor.md) — Document/SelectionModel, undo,
    renderer.
 4. [Python bindings](architecture/python-bindings.md) — the nanobind layer.
-5. Domain background: [OpenDRIVE conventions](domain/opendrive.md) ·
+5. [Persistence layers](architecture/persistence.md) — what lives in the
+   `.xodr`, what lives beside it, and why.
+6. Domain background: [OpenDRIVE conventions](domain/opendrive.md) ·
    [Geometry & meshing](domain/geometry.md) ·
    [Realism defaults](domain/realism_defaults.md) ·
    [ASAM references](domain/references.md)

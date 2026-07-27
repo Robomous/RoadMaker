@@ -19,16 +19,13 @@
 #include <array>
 #include <optional>
 
+#include "render/projection_mode.hpp"
 #include "render/renderer.hpp"
 
 namespace roadmaker::editor {
 
-/// How the camera projects (GW-1 step 11). Both modes share the orbit state —
-/// see matrices() for why the O/P toggle cannot jump.
-enum class ProjectionMode {
-  Perspective,
-  Orthographic,
-};
+// ProjectionMode lives in render/projection_mode.hpp: the scene sidecar
+// persists it (fmt-s1, #325) and document/ may not include viewport/.
 
 /// A cardinal viewing direction (GW-1 steps 12-13). Named for where the camera
 /// LOOKS FROM: North means standing north of the pivot, looking south.

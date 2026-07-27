@@ -24,6 +24,7 @@
 #include <QJsonObject>
 #include <QJsonParseError>
 #include <QSaveFile>
+#include <algorithm>
 #include <system_error>
 
 namespace roadmaker::editor {
@@ -111,8 +112,69 @@ Expected<Project> Project::open(const std::filesystem::path& dir) {
   project.name_ = root.value(QStringLiteral("name")).toString();
   if (project.name_.trimmed().isEmpty()) {
     project.name_ = QFileInfo(qpath(project.dir_)).fileName();
+    project.name_is_fallback_ = true;
   }
+  project.last_scene_ = root.value(QStringLiteral("last_scene")).toString();
+  // The whole manifest, kept as save()'s merge base — this is what makes a
+  // rewrite by this build non-lossy for keys it does not model (v2, #325).
+  project.raw_ = root;
   return project;
+}
+
+Expected<void> Project::save() {
+  QJsonObject root = raw_;
+  // Never downgrade: a manifest from a newer build keeps announcing itself,
+  // while a v1 manifest becomes v2 the moment a v2 key could be written.
+  version_ = std::max(version_, kSupportedVersion);
+  root.insert(QStringLiteral("project_version"), version_);
+  if (!name_is_fallback_) {
+    root.insert(QStringLiteral("name"), name_);
+  }
+  if (last_scene_.isEmpty()) {
+    root.remove(QStringLiteral("last_scene"));
+  } else {
+    root.insert(QStringLiteral("last_scene"), last_scene_);
+  }
+
+  const std::filesystem::path manifest = manifest_path(dir_);
+  // QSaveFile, like create(): a half-written manifest must never mark a
+  // directory as a broken project.
+  QSaveFile file(qpath(manifest));
+  if (!file.open(QIODevice::WriteOnly)) {
+    return make_error(ErrorCode::IoFailure, "cannot write project.json", manifest.string());
+  }
+  file.write(QJsonDocument(root).toJson(QJsonDocument::Indented));
+  if (!file.commit()) {
+    return make_error(ErrorCode::IoFailure, "cannot write project.json", manifest.string());
+  }
+  // Keep the merge base in step so a second save() is byte-identical.
+  raw_ = root;
+  return {};
+}
+
+void Project::set_last_scene(const std::filesystem::path& scene) {
+  const QString relative = QDir(qpath(dir_)).relativeFilePath(qpath(scene));
+  // QDir happily answers "../elsewhere/x.xodr" for a scene outside the
+  // project. A project may only point at its own scenes, and the manifest has
+  // to stay portable — so an escape clears the field instead of storing it.
+  if (relative.isEmpty() || relative.startsWith(QStringLiteral("..")) ||
+      QDir::isAbsolutePath(relative)) {
+    last_scene_.clear();
+    return;
+  }
+  last_scene_ = relative;
+}
+
+std::optional<std::filesystem::path> Project::last_scene_path() const {
+  if (last_scene_.isEmpty()) {
+    return std::nullopt;
+  }
+  const std::filesystem::path candidate = dir_ / last_scene_.toStdString();
+  std::error_code ec;
+  if (!std::filesystem::is_regular_file(candidate, ec)) {
+    return std::nullopt; // renamed, deleted, or never there — simply skip it
+  }
+  return candidate;
 }
 
 QStringList Project::scenes() const {

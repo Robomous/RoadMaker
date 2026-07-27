@@ -148,6 +148,19 @@ MainWindow::MainWindow(QWidget* parent, bool restore_saved_layout)
   connect(
       &document_, &Document::loaded, this, [this] { central_stack_->setCurrentWidget(viewport_); });
 
+  // Layer 2 (fmt-s1, #325). Document is QtCore-only and cannot read the
+  // viewport, so it calls back for the live state a save should record. By
+  // reference, seeded with what was loaded: the provider overwrites only the
+  // two fields it owns and leaves any forward-compat key the sidecar carries
+  // untouched.
+  document_.set_scene_state_provider([this](SceneState& state) {
+    state.view = viewport_->view_state();
+    state.textured = viewport_->textured_rendering();
+  });
+  // The viewport restores the camera itself; the render mode is the app's to
+  // apply, because the View menu has to agree with it.
+  connect(&document_, &Document::scene_state_loaded, this, &MainWindow::apply_scene_state);
+
   build_docks();
   build_menus();
   build_toolbar();
@@ -985,10 +998,13 @@ void MainWindow::build_menus() {
   view_menu->addAction(editor2d_dock_->toggleViewAction());
   view_menu->addSeparator();
   auto* textured_action = new QAction(tr("&Textured Rendering"), this);
+  textured_action_ = textured_action;
   textured_action->setCheckable(true);
   textured_action->setChecked(settings_.textured_rendering());
   textured_action->setToolTip(tr("Daytime textured lighting vs the flat Sober look"));
   connect(textured_action, &QAction::toggled, this, [this](bool textured) {
+    // Toggling sets BOTH the app default and this scene's mode: the next save
+    // records it in the scene sidecar (fmt-s1, #325) via the state provider.
     settings_.set_textured_rendering(textured);
     viewport_->set_textured_rendering(textured);
   });
@@ -1308,6 +1324,34 @@ void MainWindow::load_file(const std::filesystem::path& path) {
   settings_.add_recent_file(document_.file_path());
   update_recent_files_menu();
   associate_project_for(path);
+  remember_last_scene(path); // after the association — it may have changed
+}
+
+void MainWindow::apply_scene_state() {
+  // The scene's stored mode wins for this scene; with none stored (a plain
+  // .xodr, or File → New) the application default stands. Deliberately never
+  // written back to QSettings: a per-scene override is not a preference.
+  const auto& textured = document_.scene_state().textured;
+  const bool effective = textured.value_or(settings_.textured_rendering());
+  viewport_->set_textured_rendering(effective);
+  if (textured_action_ != nullptr) {
+    // Without the block the menu toggle would fire and push this scene's mode
+    // back into Settings as the new application default.
+    const QSignalBlocker blocker(textured_action_);
+    textured_action_->setChecked(effective);
+  }
+}
+
+void MainWindow::remember_last_scene(const std::filesystem::path& scene) {
+  if (!project_.has_value()) {
+    return;
+  }
+  project_->set_last_scene(scene);
+  if (const auto saved = project_->save(); !saved) {
+    // A project that cannot record its last scene still works — say so and
+    // carry on rather than interrupting a successful save or load.
+    spdlog::warn("project.json not updated: {} ({})", saved.error().message, saved.error().context);
+  }
 }
 
 void MainWindow::associate_project_for(const std::filesystem::path& scene_path) {
@@ -1369,7 +1413,15 @@ void MainWindow::open_project_dir(const QString& dir) {
                                           QString::fromStdString(project.error().context)));
     return;
   }
+  const auto last_scene = project->last_scene_path();
   adopt_project(std::move(*project));
+  // Reopening a project puts you back on the scene you left (fmt-s1, #325),
+  // whose sidecar then restores the camera. A last_scene that no longer
+  // resolves is simply absent — the project still opens, on the welcome view.
+  // confirm_discard() first: this is a document swap like any other.
+  if (last_scene.has_value() && confirm_discard()) {
+    load_file(*last_scene);
+  }
 }
 
 void MainWindow::adopt_project(Project project) {
@@ -1971,6 +2023,7 @@ bool MainWindow::save_to(const std::filesystem::path& path) {
   settings_.add_recent_file(document_.file_path());
   update_recent_files_menu();
   associate_project_for(path); // Save As into a project folder joins it
+  remember_last_scene(path);   // ...so this stamps the project just JOINED
   save_welcome_thumbnail();
   viewport_->show_toast(tr("Saved %1").arg(document_.file_path()), ToastSeverity::Success);
   return true;

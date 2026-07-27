@@ -31,6 +31,7 @@
 
 #include "document/autosave.hpp"
 #include "document/document.hpp"
+#include "document/scene_sidecar.hpp"
 
 namespace roadmaker::editor {
 namespace {
@@ -223,6 +224,81 @@ TEST(Autosave, CrashRecoveryRoundTrip) {
   ASSERT_TRUE(document.save(original).has_value());
   EXPECT_FALSE(document.is_dirty());
   AutosaveManager::discard(set);
+  EXPECT_TRUE(
+      AutosaveManager::pending_recoveries(dir_path(dir), QStringLiteral("session-b")).empty());
+}
+
+// fmt-s1 (#325): the recovery set grew a third member, the scene sidecar, so a
+// recovered document comes back at the camera the crash interrupted.
+TEST(Autosave, WritesTheSceneStateBesideTheRecoveryCopy) {
+  QTemporaryDir dir;
+  ASSERT_TRUE(dir.isValid());
+  Document document;
+  qint64 now = 0;
+  AutosaveManager autosave(
+      document, dir_path(dir), QStringLiteral("s-state"), [&now] { return now; });
+  document.set_scene_state_provider([](SceneState& state) {
+    state.view = SceneViewState{.target = {1.0F, 2.0F, 3.0F},
+                                .yaw = 0.25F,
+                                .pitch = 0.5F,
+                                .distance = 42.0F,
+                                .projection = ProjectionMode::Orthographic};
+  });
+  ASSERT_TRUE(document.push_command(make_road(0.0, "First")).has_value());
+  ASSERT_TRUE(autosave.autosave_now().has_value());
+
+  // Named so that simply loading the recovery copy finds it — Document does
+  // the reading, AutosaveManager only has to put it in the right place.
+  EXPECT_EQ(autosave.scene_state_path(), scene_sidecar::path_for(autosave.xodr_path()));
+  const auto state = scene_sidecar::load(autosave.scene_state_path());
+  ASSERT_TRUE(state.has_value()) << state.error().message;
+  ASSERT_TRUE(state->view.has_value());
+  EXPECT_EQ(state->view->distance, 42.0F);
+
+  Document recovered;
+  ASSERT_TRUE(recovered.load(autosave.xodr_path()).has_value());
+  ASSERT_TRUE(recovered.scene_state().view.has_value());
+  EXPECT_EQ(recovered.scene_state().view->projection, ProjectionMode::Orthographic);
+}
+
+TEST(Autosave, ClearRecoveryAndDiscardSweepTheSceneState) {
+  QTemporaryDir dir;
+  ASSERT_TRUE(dir.isValid());
+  Document document;
+  qint64 now = 0;
+  AutosaveManager autosave(
+      document, dir_path(dir), QStringLiteral("s-sweep"), [&now] { return now; });
+  ASSERT_TRUE(document.push_command(make_road(0.0, "First")).has_value());
+  ASSERT_TRUE(autosave.autosave_now().has_value());
+  ASSERT_TRUE(std::filesystem::exists(autosave.scene_state_path()));
+
+  autosave.clear_recovery();
+  EXPECT_FALSE(std::filesystem::exists(autosave.scene_state_path()))
+      << "a stale scene state would outlive the document it describes";
+
+  ASSERT_TRUE(document.push_command(make_road(40.0, "Second")).has_value());
+  ASSERT_TRUE(autosave.autosave_now().has_value());
+  const auto sets = AutosaveManager::pending_recoveries(dir_path(dir), QStringLiteral("other"));
+  ASSERT_EQ(sets.size(), 1U);
+  EXPECT_EQ(sets.front().scene_state, autosave.scene_state_path());
+  AutosaveManager::discard(sets.front());
+  EXPECT_FALSE(std::filesystem::exists(autosave.scene_state_path()));
+}
+
+TEST(Autosave, ASceneStateSidecarIsNotOfferedAsARecoverySet) {
+  QTemporaryDir dir;
+  ASSERT_TRUE(dir.isValid());
+  // The scan globs *.json, and a scene sidecar IS a .json in the same folder.
+  // The decoy .xodr matters: without it the existence check at the end of the
+  // scan hides the bug, and this test would pass even with the skip removed.
+  {
+    std::ofstream out(dir_path(dir) / "s-decoy.rmscene.json");
+    out << R"({"scene_version": 1, "textured": true})";
+  }
+  {
+    std::ofstream out(dir_path(dir) / "s-decoy.rmscene.xodr");
+    out << "<OpenDRIVE/>";
+  }
   EXPECT_TRUE(
       AutosaveManager::pending_recoveries(dir_path(dir), QStringLiteral("session-b")).empty());
 }
