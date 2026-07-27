@@ -19,6 +19,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 Current version on `main`: **0.0.1**.
 
 ### Added
+- **Road connections now state what they guarantee, and keep it**
+  ([#403](https://github.com/Robomous/RoadMaker/issues/403)): joining two roads
+  used to promise nothing in writing, and in elevation it promised nothing at
+  all. Two ends 5 cm apart on the map but 5 metres apart in height linked
+  silently into a cliff, which the ground then faithfully reproduced as a wall.
+  The new [road connection contract](docs/domain/connection_contract.md) states
+  what a link, a connector, a junction contact and a merge seam each guarantee —
+  in plan **and** in elevation — and what every later edit must preserve. It is
+  a governing spec doc: `core/tests/test_connection_contract.cpp` fails CI if
+  the document and the code disagree. Concretely: two ends that meet on the map
+  but not in height are now **refused** with a reason instead of welded; a road
+  drawn on from a climbing road **inherits that climb** and eases back to level
+  over 20 m instead of starting flat at a step; the Profile panel says so, live,
+  when an elevation edit pulls a welded end away from its neighbour; and the
+  Diagnostics dock reports links whose ends have drifted apart or stepped in
+  height. Nothing is silently corrected — the editor reports, and you decide.
 - **Nothing in a foreign `.xodr` is lost on a round trip any more**
   ([#326](https://github.com/Robomous/RoadMaker/issues/326)): the second half of
   [ADR-0008](docs/decisions/0008-persistence-layers-asam-first.md)'s persistence

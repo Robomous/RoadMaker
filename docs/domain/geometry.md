@@ -41,6 +41,18 @@ never leak into public headers.
 | `tol::kCurvatureEpsilon` | 1e-12 1/m | below this, a record is a straight line |
 | `tol::kRoundTripPosition` | 1e-4 m | round-trip test equality (position) |
 | `tol::kRoundTripHeading` | 1e-6 rad | round-trip test equality (heading) |
+| `tol::kWeldPosition` | 1e-3 m | two joined road ends are in the same place |
+| `tol::kWeldHeading` | 1e-3 rad | two joined road ends point the same way |
+| `tol::kWeldCurvature` | 5e-3 1/m | informational; only a G2 weld reaches it |
+| `tol::kWeldElevation` | 1e-3 m | two joined road ends are at the same height |
+| `tol::kWeldGrade` | 1e-3 | two joined road ends rise at the same rate |
+
+The rules above govern continuity **within** one road. Continuity **between**
+two roads — what a link, a connector, a junction contact and a merge seam each
+guarantee, and what every later edit must preserve — is the
+[road connection contract](connection_contract.md), which owns the `kWeld*`
+family above. Note that the junction elevation invariant below is the special
+case the contract generalises to every kind of join.
 
 All geometry is computed in `double`; conversion to `float` happens only at
 render/export boundaries.
