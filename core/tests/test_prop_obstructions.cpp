@@ -122,9 +122,14 @@ TEST(PropObstructions, ALongPropStraddlingARoadIsReportedThoughNoVertexLiesInsid
 
   // 12 m x 0.4 m, laid across the crossed road's 6.6 m driving band: it spans
   // y in [-6, +6] while the band is |y| <= 3.3, so every corner is outside it.
-  // The band's own vertices sit at the road ends, 50 m away in x, so none of
-  // them is inside a box 0.4 m wide.
-  const ObjectId prop = box_prop(network, anchor, 50.0, -20.0, 12.0, 0.4, kPi / 2.0);
+  //
+  // s = 52.5 is load-bearing, not arbitrary. The band is sampled every 5 m, so
+  // a prop centred on a station has a band VERTEX inside it and the vertex
+  // clause finds it without the edge pass ever running — which is exactly how
+  // the first draft of this test passed with the edge pass disabled. Half a
+  // station along, the nearest vertices are 2.5 m away in x from a box 0.4 m
+  // wide, and only edge-vs-edge is left.
+  const ObjectId prop = box_prop(network, anchor, 52.5, -20.0, 12.0, 0.4, kPi / 2.0);
 
   const std::vector<PropObstruction> found = find_prop_obstructions(network);
   ASSERT_EQ(found.size(), 1U) << "a prop lying across a carriageway must be flagged";
@@ -187,22 +192,32 @@ TEST(PropObstructions, APropOnAnApproachArmIsNotFlaggedAgainstTheJunctionItServe
 /// for lane 0 too puts the band edge one lane out — onto the sidewalk — on
 /// every road with a centre lane, which is every road this editor authors.
 TEST(PropObstructions, DrivingBandExcludesTheSidewalkOnARoadWithACentreLane) {
-  RoadNetwork network;
-  const RoadId anchor = straight_road(network, {-50, 30}, {50, 30}, "anchor");
-  straight_road(network, {-50, 0}, {50, 0}, "street", LaneProfile::local_road());
-
   const double lane = defaults::driving_lane_width(defaults::RoadClass::Local);
   // Centred on the sidewalk band, which starts where the driving lane ends.
   const double sidewalk_centre = lane + (defaults::kSidewalkWidth * 0.5);
-  const ObjectId prop = round_prop(network, anchor, 50.0, -(30.0 - sidewalk_centre), 0.4);
-  EXPECT_TRUE(find_prop_obstructions(network).empty())
-      << "a prop standing on a neighbouring road's sidewalk is where props belong";
 
-  // One lane inboard, onto the carriageway.
-  network.object(prop)->t = -(30.0 - (lane * 0.5));
-  const std::vector<PropObstruction> found = find_prop_obstructions(network);
-  ASSERT_EQ(found.size(), 1U);
-  EXPECT_EQ(found[0].kind, ObstructionKind::RoadSurface);
+  // BOTH sides, because the desync is one-sided. Advancing the edge cursor for
+  // lane 0 too shifts every span after the centre lane outward by one, so the
+  // band swallows the sidewalk on ONE side only — and a test that happens to
+  // stand its prop on the other side passes with the bug in place. This one
+  // did, until the sabotage run said so.
+  for (const double side : {1.0, -1.0}) {
+    SCOPED_TRACE(side > 0.0 ? "left sidewalk" : "right sidewalk");
+    RoadNetwork network;
+    const RoadId anchor = straight_road(network, {-50, 30}, {50, 30}, "anchor");
+    straight_road(network, {-50, 0}, {50, 0}, "street", LaneProfile::local_road());
+
+    const ObjectId prop =
+        round_prop(network, anchor, 50.0, (side * sidewalk_centre) - 30.0, 0.4);
+    EXPECT_TRUE(find_prop_obstructions(network).empty())
+        << "a prop standing on a neighbouring road's sidewalk is where props belong";
+
+    // One lane inboard, onto the carriageway.
+    network.object(prop)->t = (side * lane * 0.5) - 30.0;
+    const std::vector<PropObstruction> found = find_prop_obstructions(network);
+    ASSERT_EQ(found.size(), 1U);
+    EXPECT_EQ(found[0].kind, ObstructionKind::RoadSurface);
+  }
 }
 
 /// Paint is skipped wholesale: §13.1 says an <outline> supersedes the bounding
@@ -661,3 +676,4 @@ TEST(PropObstructions, TheNarrowedOverloadSeesBothDirectionsOfAMove) {
 
 } // namespace
 } // namespace roadmaker
+
