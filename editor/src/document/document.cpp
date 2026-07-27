@@ -292,8 +292,22 @@ void Document::push_applied_with_regeneration(std::unique_ptr<edit::Command> com
   // would fight the structure they just wrote. That used to key off
   // `topology`, which cannot express "a lane appeared AND the junction needs
   // regenerating" — the case Lane Add and Lane Carve are made of.
+  //
+  // Every MOVE gesture now says the same thing (cascade-s2, #462): translate,
+  // rotate and the four waypoint edits regenerate inside the command, through
+  // one funnel, so this loop no longer sees them. What is left here is the
+  // edits that change a road's CROSS-SECTION — lane add/remove/carve/form,
+  // road style, elevation — which are not previewed and have no funnel of
+  // their own.
   std::vector<std::unique_ptr<edit::Command>> regenerations;
-  bool announced = false;
+  // A command that regenerated its own junctions still owes the recovery copy
+  // that this loop's checkpoint provides — it just cannot be taken beforehand,
+  // because the regeneration landed atomically with the edit. Taking it here is
+  // the same guarantee at a different instant (see the signal's declaration).
+  bool announced = dirty.junctions_are_current && !dirty.junctions.empty();
+  if (announced) {
+    emit regeneration_checkpoint();
+  }
   for (const JunctionId junction_id : dirty.junctions) {
     if (dirty.junctions_are_current || already_regenerated) {
       break;
@@ -310,7 +324,7 @@ void Document::push_applied_with_regeneration(std::unique_ptr<edit::Command> com
     if (!announced) {
       // The network holds the primary edit but no regeneration yet — the
       // exact state a recovery copy should capture (#53 gap-fill).
-      emit about_to_regenerate();
+      emit regeneration_checkpoint();
       announced = true;
     }
     auto regen = edit::regenerate_junction(network_, junction_id);

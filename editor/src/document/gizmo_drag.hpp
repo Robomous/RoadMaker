@@ -50,16 +50,32 @@ namespace roadmaker::editor {
 
 class Document;
 
-/// The single transformable entity under the gizmo — exactly one of road,
-/// object or signal — with its world pivot.
+/// The transformable entity under the gizmo — exactly one of road, object or
+/// signal — with its world pivot.
 struct GizmoTarget {
   RoadId road;
   ObjectId object;
   SignalId signal;
   std::array<double, 3> pivot{};
+
+  /// Every road a ROAD transform carries, `road` first. Usually just `road`;
+  /// more when the gizmo sits on one road of a multi-road selection, which is
+  /// what makes a rigid whole-junction rotation expressible at all — rotating a
+  /// junction means rotating every one of its arms in one gesture (cascade-s2,
+  /// #462). Empty for a leaf entity, which moves within its own road.
+  std::vector<RoadId> roads;
 };
 
 /// The gizmo target for `entry`, or nullopt when the entry transforms nothing.
+///
+/// `selected_roads` is the whole road selection; when it contains the entry's
+/// road, the target carries all of them, so the transform applies to the
+/// selection rather than to the one road the gizmo happens to be drawn on.
+[[nodiscard]] std::optional<GizmoTarget> gizmo_target(const RoadNetwork& network,
+                                                      const SelectionEntry& entry,
+                                                      std::span<const RoadId> selected_roads);
+
+/// Single-entity overload: the target carries only the entry's own road.
 ///
 /// ORDER IS LOAD-BEARING: a leaf entity wins over the road it carries as a
 /// back-reference. A prop pick and a signal pick both set `.road` to the owning
@@ -135,15 +151,24 @@ public:
   [[nodiscard]] GizmoDragStart
   begin(const GizmoTarget& target, GizmoHandle handle, std::array<double, 2> press_world);
 
-  /// One drag frame: previews the edit this handle implies. A kernel refusal is
-  /// RETURNED rather than swallowed, for the caller to surface. A frame that
-  /// yields no command at all (a prop dragged clear of its road) is NOT an
-  /// error — the session keeps its last good frame and reports success, so an
-  /// error out of here always means a real refusal worth showing.
+  /// One drag frame: previews the edit this handle implies.
   ///
-  /// After begin() gained the press-time gates (#401) there is no reachable
-  /// gesture that fails here: this is a backstop, not the primary channel.
+  /// Two kinds of unproductive frame are ABSORBED here rather than returned, so
+  /// that neither becomes a toast per mouse-move:
+  ///   - a frame that yields no command at all (a prop dragged clear of its
+  ///     road);
+  ///   - a frame the kernel REFUSES. Since cascade-s2 (#462) that is a routine
+  ///     part of a supported gesture — drag a junction arm far enough and the
+  ///     junction can no longer be regenerated from it — and update_preview has
+  ///     already restored the last good frame, so the drag simply stops
+  ///     following. The reason is stashed for take_refusal() and shown ONCE.
+  ///
+  /// An error still comes back for anything else, as the caller's backstop.
   [[nodiscard]] Expected<void> update(const GizmoDragInput& input);
+
+  /// The pending refusal, taken and cleared — so a mid-drag refusal is shown
+  /// once and not on every frame that repeats it (the #401 failure mode).
+  [[nodiscard]] std::optional<QString> take_refusal();
 
   /// Commits as ONE undo entry, returning whether anything was actually
   /// pushed. A press-and-release that never moved previewed nothing, so it
@@ -179,8 +204,12 @@ private:
 
   Document& document_;
   std::optional<Drag> drag_;
-  /// Outside Drag: a refusal is precisely the case where no drag exists.
+  /// Outside Drag: a press-time refusal is precisely the case where no drag
+  /// exists.
   QString refusal_;
+  /// The mid-drag refusal already handed to the caller, so the same reason
+  /// repeating on every frame is not re-stashed. Cleared by begin().
+  QString reported_refusal_;
 };
 
 } // namespace roadmaker::editor

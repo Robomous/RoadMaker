@@ -496,13 +496,19 @@ void SelectTool::update_move_drag(const Waypoint& cursor) {
     }
   }
 
+  // InPlaceOnly: this runs once per drag frame, so it uses the same turn-set
+  // policy a node drag's preview does. A frame that would add or drop a junction
+  // turn is refused and the last good preview stands, rather than creating and
+  // erasing connecting roads sixty times a second (cascade-s2, #462).
   const std::vector<RoadId> roads = move_->roads;
+  constexpr edit::TurnSetPolicy kPreviewPolicy = edit::TurnSetPolicy::InPlaceOnly;
   const Expected<void> moved =
       document_.preview_active()
           ? document_.update_preview([&roads, dx, dy](const RoadNetwork& base) {
-              return edit::translate_roads(base, roads, dx, dy);
+              return edit::translate_roads(base, roads, dx, dy, kPreviewPolicy);
             })
-          : document_.begin_preview(edit::translate_roads(document_.network(), roads, dx, dy));
+          : document_.begin_preview(
+                edit::translate_roads(document_.network(), roads, dx, dy, kPreviewPolicy));
   static_cast<void>(moved);
   move_->current = Waypoint{.x = move_->press.x + dx, .y = move_->press.y + dy};
 }

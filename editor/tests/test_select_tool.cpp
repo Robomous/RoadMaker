@@ -733,17 +733,23 @@ PickHit body_hit(const Document& document, RoadId road) {
 
 } // namespace
 
-TEST(SelectTool, JunctionRoadRefusesMoveWithAToast) {
+// cascade-s2 (#462): a junction's generated CONNECTING road still refuses, but
+// the arms around it move freely and take the junction with them. Both halves
+// matter — the refusal used to cover the arms too, which is what made a junction
+// immovable through every gesture but a node drag.
+TEST(SelectTool, ConnectingRoadRefusesMoveWithAToastButAnArmMoves) {
   Document document;
   SelectionModel selection{document};
-  // Two roads meeting at (50,0) joined by a common junction; the approach road
-  // "A" then touches the junction and can't be moved as a free body.
+  // Two roads stopping SHORT of (50,0) and joined by a common junction. The gap
+  // is load-bearing: ends that coincide exactly leave the generator no room, so
+  // every turn is dropped as looping and the junction has no connecting roads at
+  // all — which is precisely the kind of road this test needs to grab.
   ASSERT_TRUE(document.push_command(
-      roadmaker::edit::create_road({Waypoint{.x = 0.0, .y = 0.0}, Waypoint{.x = 50.0, .y = 0.0}},
+      roadmaker::edit::create_road({Waypoint{.x = 0.0, .y = 0.0}, Waypoint{.x = 44.0, .y = 0.0}},
                                    roadmaker::LaneProfile::two_lane_default(),
                                    "A")));
   ASSERT_TRUE(document.push_command(
-      roadmaker::edit::create_road({Waypoint{.x = 50.0, .y = 0.0}, Waypoint{.x = 50.0, .y = 50.0}},
+      roadmaker::edit::create_road({Waypoint{.x = 56.0, .y = 0.0}, Waypoint{.x = 56.0, .y = 50.0}},
                                    roadmaker::LaneProfile::two_lane_default(),
                                    "B")));
   const RoadId a = find_road(document, "A");
@@ -759,14 +765,34 @@ TEST(SelectTool, JunctionRoadRefusesMoveWithAToast) {
   QObject::connect(&tool, &SelectTool::status_message, [&toasts](const QString& text) {
     toasts.push_back(text);
   });
-  const PickHit hit = body_hit(document, a);
-  ASSERT_TRUE(tool.mouse_press(at(25.0, 0.0, Qt::LeftButton, Qt::NoModifier, hit)));
-  ASSERT_TRUE(tool.mouse_move(at(25.0, 20.0, Qt::LeftButton, Qt::NoModifier, hit)));
+  // A connecting road: refused, with a toast, and nothing touched.
+  RoadId connecting;
+  document.network().for_each_road([&](RoadId id, const roadmaker::Road& r) {
+    if (!connecting.is_valid() && r.junction.is_valid()) {
+      connecting = id;
+    }
+  });
+  ASSERT_TRUE(connecting.is_valid());
+  const PickHit connecting_hit = body_hit(document, connecting);
+  const auto pose = document.network().road(connecting)->plan_view.evaluate(0.0);
+  ASSERT_TRUE(tool.mouse_press(at(pose.x, pose.y, Qt::LeftButton, Qt::NoModifier, connecting_hit)));
+  ASSERT_TRUE(
+      tool.mouse_move(at(pose.x, pose.y + 20.0, Qt::LeftButton, Qt::NoModifier, connecting_hit)));
 
   EXPECT_FALSE(tool.moving());
   EXPECT_EQ(xodr(document), before); // untouched
   ASSERT_FALSE(toasts.empty());
   EXPECT_TRUE(toasts.back().contains("can't be moved")) << toasts.back().toStdString();
+  static_cast<void>(tool.mouse_release(
+      at(pose.x, pose.y + 20.0, Qt::LeftButton, Qt::NoModifier, connecting_hit)));
+
+  // The ARM beside it: moves, and the junction follows.
+  const PickHit hit = body_hit(document, a);
+  ASSERT_TRUE(tool.mouse_press(at(25.0, 0.0, Qt::LeftButton, Qt::NoModifier, hit)));
+  ASSERT_TRUE(tool.mouse_move(at(25.0, 3.0, Qt::LeftButton, Qt::NoModifier, hit)));
+  EXPECT_TRUE(tool.moving()) << "a junction arm is not a generated road — it moves";
+  static_cast<void>(tool.mouse_release(at(25.0, 3.0, Qt::LeftButton, Qt::NoModifier, hit)));
+  EXPECT_NE(xodr(document), before);
 }
 
 // cascade-s1 (#461): the move no longer asks permission to break links, because

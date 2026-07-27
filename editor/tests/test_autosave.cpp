@@ -383,8 +383,13 @@ TEST(Autosave, JunctionRegenerationTriggersAPreRegenerationCopy) {
                                        .session = autosave.session()});
   ASSERT_FALSE(std::filesystem::exists(autosave.xodr_path()));
 
-  // Dragging the junction's incoming-road node regenerates the junction —
-  // the pre-regeneration copy must exist WITHOUT any timer tick.
+  // Dragging the junction's incoming-road node regenerates the junction — the
+  // recovery copy must exist WITHOUT any timer tick.
+  //
+  // Since cascade-s2 (#462) that regeneration happens inside the move command
+  // rather than in Document's loop, so the checkpoint lands just after it
+  // instead of just before. The GUARANTEE this test defends is unchanged and is
+  // the one that matters: a junction-regenerating edit leaves a recovery copy.
   ASSERT_TRUE(document
                   .push_command(roadmaker::edit::move_waypoint(
                       document.network(), west, 0, roadmaker::Waypoint{-42.0, 3.0}))

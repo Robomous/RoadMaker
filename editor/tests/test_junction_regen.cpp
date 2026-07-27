@@ -137,21 +137,24 @@ TEST(JunctionRegen, ConnectingRoadsFollowTheArmMidDragNotOnlyOnRelease) {
   QSignalSpy skipped(&scene.document, &Document::regeneration_skipped);
   const Waypoint swung{.x = -40.0, .y = 14.0};
 
-  // The old behaviour, for contrast: a plain move previews the arm and leaves
-  // the connectors where they were, so mid-drag the joint is visibly broken.
+  // A plain move_waypoint follows too, since cascade-s2 (#462) put junction
+  // regeneration in the funnel every move gesture shares. This assertion used to
+  // read the other way — "the drag-time weld breaches without live follow" — and
+  // flipping it is the point: there is no longer a move that leaves the joint
+  // broken for move_waypoint_following_junctions to be contrasted against. What
+  // that factory still adds is the PREVIEW turn-set policy, which is what the
+  // rest of this test exercises.
   ASSERT_TRUE(scene.document
                   .begin_preview(roadmaker::edit::move_waypoint(
                       scene.document.network(), scene.west, 0, swung))
                   .has_value());
-  const auto stale =
+  const auto plain =
       roadmaker::edit::verify_junction_welds(scene.document.network(), scene.junction);
-  ASSERT_TRUE(stale.has_value());
-  EXPECT_TRUE(stale->breaches) << "the drag-time weld should breach without live follow — "
-                                  "if it does not, this test proves nothing";
-  const double stale_heading_gap = stale->max_heading_gap;
+  ASSERT_TRUE(plain.has_value());
+  EXPECT_FALSE(plain->breaches) << "every move gesture follows, not just the preview factory";
   scene.document.cancel_preview();
 
-  // The new behaviour: one preview frame, no commit anywhere below this line.
+  // Mid-drag: one preview frame, no commit anywhere below this line.
   ASSERT_TRUE(scene.document
                   .begin_preview(roadmaker::edit::move_waypoint_following_junctions(
                       scene.document.network(), scene.west, 0, swung))
@@ -162,7 +165,7 @@ TEST(JunctionRegen, ConnectingRoadsFollowTheArmMidDragNotOnlyOnRelease) {
   ASSERT_TRUE(followed.has_value());
   EXPECT_FALSE(followed->breaches);
   EXPECT_LE(followed->max_position_gap, roadmaker::tol::kWeldPosition);
-  EXPECT_LT(followed->max_heading_gap, stale_heading_gap);
+  EXPECT_LE(followed->max_heading_gap, roadmaker::tol::kWeldHeading);
   EXPECT_EQ(skipped.count(), 0);
   EXPECT_TRUE(scene.document.preview_active()); // still mid-drag
 

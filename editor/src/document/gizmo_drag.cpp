@@ -52,7 +52,9 @@ double degrees(double radians) {
 
 } // namespace
 
-std::optional<GizmoTarget> gizmo_target(const RoadNetwork& network, const SelectionEntry& entry) {
+std::optional<GizmoTarget> gizmo_target(const RoadNetwork& network,
+                                        const SelectionEntry& entry,
+                                        std::span<const RoadId> selected_roads) {
   // Leaf entities first — see the header: both carry their owning road, so the
   // road test must come last or a sign resolves to the road under it.
   if (entry.object.is_valid()) {
@@ -85,9 +87,26 @@ std::optional<GizmoTarget> gizmo_target(const RoadNetwork& network, const Select
       return std::nullopt;
     }
     const PathPoint pose = road->plan_view.evaluate(road->plan_view.length() / 2.0);
-    return GizmoTarget{.road = entry.road, .pivot = {pose.x, pose.y, 0.0}};
+    // The gizmo stays where it is — on this road, at its midpoint — but it
+    // carries the whole road selection when this road is part of one. The pivot
+    // is deliberately NOT re-centred on the selection: the user grabbed a ring
+    // drawn here, and moving it under the press would be its own surprise.
+    std::vector<RoadId> roads{entry.road};
+    if (std::ranges::find(selected_roads, entry.road) != selected_roads.end()) {
+      for (const RoadId id : selected_roads) {
+        if (id != entry.road) {
+          roads.push_back(id);
+        }
+      }
+    }
+    return GizmoTarget{
+        .road = entry.road, .pivot = {pose.x, pose.y, 0.0}, .roads = std::move(roads)};
   }
   return std::nullopt;
+}
+
+std::optional<GizmoTarget> gizmo_target(const RoadNetwork& network, const SelectionEntry& entry) {
+  return gizmo_target(network, entry, {});
 }
 
 GizmoDragSession::GizmoDragSession(Document& document) : document_(document) {}
@@ -96,6 +115,7 @@ GizmoDragStart GizmoDragSession::begin(const GizmoTarget& target,
                                        GizmoHandle handle,
                                        std::array<double, 2> press_world) {
   refusal_.clear();
+  reported_refusal_.clear();
   if (handle == GizmoHandle::None) {
     return GizmoDragStart::Ignored;
   }
@@ -105,20 +125,21 @@ GizmoDragStart GizmoDragSession::begin(const GizmoTarget& target,
   if (handle == GizmoHandle::AxisZ && !target.road.is_valid()) {
     return GizmoDragStart::Ignored;
   }
-  // The two gates a ROAD transform passes, in SelectTool's order: refuse what
-  // the kernel would refuse, then ask before severing. A leaf entity moves
-  // within its road and severs nothing, so neither applies to it.
+  // The one gate a ROAD transform passes: refuse what the kernel would refuse
+  // at the grab. A leaf entity moves within its road, so it does not apply.
   //
   // AxisZ is deliberately ungated: edit::set_elevation_profile ACCEPTS a
   // junction arm (it dirties the junction so it regenerates), and raising an
-  // arm is a supported gesture — gating it here would be a regression.
+  // arm is a supported gesture — gating it here would be a regression. Since
+  // cascade-s2 (#462) the same is true of the plane and ring handles for an
+  // ARM; only a connecting road is still refused, which is all the gate now
+  // looks for.
   if (target.road.is_valid() && !target.object.is_valid() && !target.signal.is_valid() &&
       handle != GizmoHandle::AxisZ) {
-    const std::array<RoadId, 1> roads{target.road};
     const TransformKind kind =
         handle == GizmoHandle::YawRing ? TransformKind::Rotate : TransformKind::Translate;
     if (std::optional<QString> refusal =
-            junction_transform_refusal(document_.network(), roads, kind)) {
+            junction_transform_refusal(document_.network(), target.roads, kind)) {
       refusal_ = *std::move(refusal);
       return GizmoDragStart::Refused;
     }
@@ -186,15 +207,22 @@ Expected<void> GizmoDragSession::update(const GizmoDragInput& input) {
       drag.summary = QObject::tr("Rotated sign to %1°").arg(degrees(h_offset), 0, 'f', 0);
     } else {
       // A road is rotated BY a delta about a pivot, so the delta is what snaps.
-      const RoadId road = drag.target.road;
+      // The whole road selection turns, which is what makes a rigid
+      // whole-junction rotation reachable: select every arm, grab the ring.
+      const std::vector<RoadId> roads = drag.target.roads;
       const double angle = snap_to_increment(raw, increment);
-      factory = [road, pivot_xy, angle](const RoadNetwork& base) {
-        return edit::rotate_road(base, road, angle, pivot_xy[0], pivot_xy[1]);
+      factory = [roads, pivot_xy, angle](const RoadNetwork& base) {
+        return edit::rotate_roads(
+            base, roads, angle, pivot_xy[0], pivot_xy[1], edit::TurnSetPolicy::InPlaceOnly);
       };
-      const Road* r = document_.network().road(road);
-      drag.summary = QObject::tr("Rotated road %1 by %2°")
-                         .arg(r != nullptr ? QString::fromStdString(r->odr_id) : QString())
-                         .arg(degrees(angle), 0, 'f', 0);
+      const Road* r = document_.network().road(drag.target.road);
+      drag.summary = roads.size() > 1
+                         ? QObject::tr("Rotated %1 roads by %2°")
+                               .arg(roads.size())
+                               .arg(degrees(angle), 0, 'f', 0)
+                         : QObject::tr("Rotated road %1 by %2°")
+                               .arg(r != nullptr ? QString::fromStdString(r->odr_id) : QString())
+                               .arg(degrees(angle), 0, 'f', 0);
     }
   } else if (drag.handle == GizmoHandle::AxisZ) {
     const RoadId road = drag.target.road;
@@ -260,13 +288,14 @@ Expected<void> GizmoDragSession::update(const GizmoDragInput& input) {
       };
       drag.summary = QObject::tr("Moved sign");
     } else {
-      const RoadId road = drag.target.road;
+      const std::vector<RoadId> roads = drag.target.roads;
       const double dx = delta[0];
       const double dy = delta[1];
-      factory = [road, dx, dy](const RoadNetwork& base) {
-        return edit::translate_roads(base, std::array<RoadId, 1>{road}, dx, dy);
+      factory = [roads, dx, dy](const RoadNetwork& base) {
+        return edit::translate_roads(base, roads, dx, dy, edit::TurnSetPolicy::InPlaceOnly);
       };
-      drag.summary = QObject::tr("Moved road");
+      drag.summary = roads.size() > 1 ? QObject::tr("Moved %1 roads").arg(roads.size())
+                                      : QObject::tr("Moved road");
     }
   }
 
@@ -276,12 +305,35 @@ Expected<void> GizmoDragSession::update(const GizmoDragInput& input) {
   // null has to be absorbed HERE — otherwise every such frame hands the caller
   // an internal error to surface, and dragging a prop off its road becomes a
   // wall of toasts (#401).
+  // A refused frame is not a broken editor: dragging a junction arm out of its
+  // junction's reach is a supported gesture that the kernel declines, and the
+  // preview simply stops following. Stash the reason for ONE toast — returning
+  // it would put a toast on every mouse-move, which is #401's own bug. This
+  // applies to the FIRST frame as much as the rest: a drag can be refused before
+  // any preview exists.
+  const auto absorb = [this](const Expected<void>& result) -> Expected<void> {
+    if (result.has_value()) {
+      return result;
+    }
+    const QString reason =
+        QObject::tr("Cannot transform: %1").arg(QString::fromStdString(result.error().message));
+    // Once per REASON, not once per frame: a drag held past the refusal point
+    // repeats the same message sixty times a second, and re-stashing it after
+    // each take() would put every one of them on screen. A genuinely different
+    // refusal later in the same drag still gets said.
+    if (reason != reported_refusal_) {
+      refusal_ = reason;
+      reported_refusal_ = reason;
+    }
+    return {};
+  };
+
   if (!document_.preview_active()) {
     std::unique_ptr<edit::Command> command = factory(document_.network());
     if (command == nullptr) {
       return {};
     }
-    return document_.begin_preview(std::move(command));
+    return absorb(document_.begin_preview(std::move(command)));
   }
   bool produced = false;
   const Expected<void> result =
@@ -292,7 +344,14 @@ Expected<void> GizmoDragSession::update(const GizmoDragInput& input) {
       });
   // update_preview has already restored the last good preview, so a frame that
   // produced nothing leaves the session exactly where it was.
-  return produced ? result : Expected<void>{};
+  return produced ? absorb(result) : Expected<void>{};
+}
+
+std::optional<QString> GizmoDragSession::take_refusal() {
+  if (refusal_.isEmpty()) {
+    return std::nullopt;
+  }
+  return std::exchange(refusal_, QString());
 }
 
 bool GizmoDragSession::commit() {

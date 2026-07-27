@@ -198,10 +198,19 @@ signals:
 
   void diagnostics_changed();
 
-  /// Fired once per push right before junction regeneration applies (the
-  /// hairiest lifetime zone dogfooding found) — AutosaveManager writes a
-  /// recovery copy of the pre-regeneration state on it (#53 gap-fill).
-  void about_to_regenerate();
+  /// Fired once per push that regenerates a junction — the hairiest lifetime
+  /// zone dogfooding found — so AutosaveManager can write a recovery copy
+  /// without waiting for a timer tick (#53 gap-fill).
+  ///
+  /// The GUARANTEE is "an edit that regenerated a junction has a recovery copy",
+  /// not a particular instant. The instant differs by edit, which is why this is
+  /// no longer called `about_to_regenerate` (cascade-s2, #462):
+  ///   - a cross-section edit (lane add/carve/form, road style) regenerates in
+  ///     the loop below, and this fires BEFORE that regeneration applies;
+  ///   - a MOVE regenerates inside its own atomic command, so by the time the
+  ///     push is seen there is no "before" left to capture — this fires just
+  ///     after, on a state that is whole either way.
+  void regeneration_checkpoint();
 
   /// A touched junction could not regenerate in place (its turn set changed —
   /// a lane added/removed/retyped on an arm): the edit still lands, but the

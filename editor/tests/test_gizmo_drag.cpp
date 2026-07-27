@@ -147,6 +147,18 @@ struct JunctionScene {
     }
   }
 
+  /// Any one of the junction's generated connecting roads — the only kind of
+  /// road a transform still refuses (cascade-s2, #462).
+  [[nodiscard]] RoadId a_connecting_road() const {
+    RoadId found;
+    document.network().for_each_road([&](RoadId id, const Road& r) {
+      if (!found.is_valid() && r.junction.is_valid()) {
+        found = id;
+      }
+    });
+    return found;
+  }
+
 private:
   RoadId arm(double x0, double y0, double x1, double y1, const char* id) {
     if (!document.push_command(
@@ -593,15 +605,15 @@ TEST(GizmoDrag, ACancelledDragLeavesTheDocumentByteIdentical) {
 
 // --- #401: the gizmo says why it refuses, and asks before it severs ----------
 
-// A road that participates in a junction has a GENERATED pose, and the kernel
-// refuses to transform it. Before #401 the gizmo armed anyway, failed on every
-// frame, and told the user nothing. Now the grab itself is turned away, with the
-// reason — and nothing at all is touched.
-TEST(GizmoDrag, AJunctionRoadIsRefusedAtTheGrabWithTheKernelsReason) {
+// A junction's CONNECTING road has a GENERATED pose, and the kernel refuses to
+// transform it. Before #401 the gizmo armed anyway, failed on every frame, and
+// told the user nothing. Now the grab itself is turned away, with the reason —
+// and nothing at all is touched.
+TEST(GizmoDrag, AConnectingRoadIsRefusedAtTheGrabWithTheKernelsReason) {
   JunctionScene scene;
   const std::string before = xodr(scene.document);
   const int base = scene.document.undo_stack()->count();
-  const auto target = gizmo_target(scene.document.network(), {.road = scene.west});
+  const auto target = gizmo_target(scene.document.network(), {.road = scene.a_connecting_road()});
   ASSERT_TRUE(target.has_value());
 
   GizmoDragSession session(scene.document);
@@ -609,7 +621,6 @@ TEST(GizmoDrag, AJunctionRoadIsRefusedAtTheGrabWithTheKernelsReason) {
             GizmoDragStart::Refused);
   // The sentence has to name BOTH ends of the problem, or it is not actionable.
   EXPECT_TRUE(session.refusal().contains("can't be moved")) << session.refusal().toStdString();
-  EXPECT_TRUE(session.refusal().contains("Road 1")) << session.refusal().toStdString();
   EXPECT_TRUE(session.refusal().contains("Junction")) << session.refusal().toStdString();
 
   EXPECT_FALSE(session.active());
@@ -619,15 +630,86 @@ TEST(GizmoDrag, AJunctionRoadIsRefusedAtTheGrabWithTheKernelsReason) {
 
 // The ring is refused too, in the kernel's OWN words for rotation — proving the
 // transform kind reaches the wording rather than every refusal reading "moved".
-TEST(GizmoDrag, TheYawRingRefusesAJunctionRoadToo) {
+TEST(GizmoDrag, TheYawRingRefusesAConnectingRoadToo) {
   JunctionScene scene;
-  const auto target = gizmo_target(scene.document.network(), {.road = scene.west});
+  const auto target = gizmo_target(scene.document.network(), {.road = scene.a_connecting_road()});
   ASSERT_TRUE(target.has_value());
 
   GizmoDragSession session(scene.document);
   EXPECT_EQ(session.begin(*target, GizmoHandle::YawRing, Scene::on_ring(target->pivot, 0.0)),
             GizmoDragStart::Refused);
   EXPECT_TRUE(session.refusal().contains("can't be rotated")) << session.refusal().toStdString();
+}
+
+// cascade-s2 (#462): an ARM is no longer refused. It moves, and the junction
+// regenerates from its new pose — the capability the blanket refusal was
+// standing in front of. This is the gate's other half: narrow it too far and
+// junction editing breaks, leave it too wide and the feature is unreachable.
+TEST(GizmoDrag, AJunctionArmIsMovedNotRefused) {
+  JunctionScene scene;
+  const std::string before = xodr(scene.document);
+  const auto target = gizmo_target(scene.document.network(), {.road = scene.west});
+  ASSERT_TRUE(target.has_value());
+
+  GizmoDragSession session(scene.document);
+  ASSERT_EQ(session.begin(*target, GizmoHandle::PlaneXY, {target->pivot[0], target->pivot[1]}),
+            GizmoDragStart::Armed);
+  ASSERT_TRUE(session.refusal().isEmpty()) << session.refusal().toStdString();
+  ASSERT_TRUE(
+      session.update(GizmoDragInput{.cursor_world = {target->pivot[0], target->pivot[1] + 2.0}})
+          .has_value());
+  EXPECT_TRUE(session.commit());
+  EXPECT_NE(xodr(scene.document), before);
+}
+
+// The ring carries the WHOLE road selection, which is what makes a rigid
+// whole-junction rotation expressible at all: select every arm, grab the ring,
+// and the junction turns as one body with its connecting roads.
+TEST(GizmoDrag, TheYawRingRotatesTheWholeRoadSelection) {
+  JunctionScene scene;
+  const std::array<RoadId, 4> selection{scene.west, scene.east, scene.south, scene.north};
+  const auto target = gizmo_target(scene.document.network(), {.road = scene.west}, selection);
+  ASSERT_TRUE(target.has_value());
+  EXPECT_EQ(target->roads.size(), 4U) << "the gizmo must carry the selection, not just its road";
+
+  const double east_x_before = scene.document.network().road(scene.east)->plan_view.evaluate(0.0).x;
+
+  GizmoDragSession session(scene.document);
+  ASSERT_EQ(session.begin(*target, GizmoHandle::YawRing, Scene::on_ring(target->pivot, 0.0)),
+            GizmoDragStart::Armed);
+  ASSERT_TRUE(session.update(GizmoDragInput{.cursor_world = Scene::on_ring(target->pivot, 0.4)})
+                  .has_value());
+  EXPECT_TRUE(session.commit());
+
+  // A road the gizmo was NOT drawn on turned too.
+  EXPECT_NE(scene.document.network().road(scene.east)->plan_view.evaluate(0.0).x, east_x_before);
+}
+
+// A mid-drag refusal — an arm dragged so far its junction can no longer be
+// regenerated from it — must be reported ONCE, not on every mouse-move. Toasting
+// per frame is precisely the bug #401 was filed for, and this gesture is now a
+// routine way to reach a kernel refusal mid-drag.
+TEST(GizmoDrag, AMidDragRefusalIsReportedOnceNotPerFrame) {
+  JunctionScene scene;
+  const auto target = gizmo_target(scene.document.network(), {.road = scene.west});
+  ASSERT_TRUE(target.has_value());
+
+  GizmoDragSession session(scene.document);
+  ASSERT_EQ(session.begin(*target, GizmoHandle::PlaneXY, {target->pivot[0], target->pivot[1]}),
+            GizmoDragStart::Armed);
+
+  // Six frames dragging the arm far out of the junction's reach.
+  int reported = 0;
+  for (int frame = 0; frame < 6; ++frame) {
+    const auto result = session.update(
+        GizmoDragInput{.cursor_world = {target->pivot[0], target->pivot[1] - 400.0}});
+    EXPECT_TRUE(result.has_value()) << "a refused frame must be absorbed, not returned";
+    if (session.take_refusal()) {
+      ++reported;
+    }
+  }
+  EXPECT_EQ(reported, 1) << "the refusal must be shown once for the whole drag";
+  session.cancel();
 }
 
 // The anti-over-gating guard. edit::set_elevation_profile ACCEPTS a junction arm
