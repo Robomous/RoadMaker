@@ -119,8 +119,8 @@ edit. This is the current, deliberate policy per operation.
 | `close_gap` | Coincidence is **3D**. Ends within `coincident_gap_m` in plan but disagreeing in z or grade are **refused**, not welded — a pure link generates nothing to reconcile them, and a vertical-only mismatch cannot be bridged by a connector either (the clothoid fit has no planar distance to work with). |
 | Chain creation (`create_linked_road`, `assembly::create_road_with_interactions`) | The new road inherits the contact's z and grade and eases the inherited slope back to level over `edit::kGradeEaseLength` — see below. |
 | `extend_road` | Refuses an end that is already linked, so it only ever continues. Pins both z and grade at the contact and extends at constant grade. |
-| `translate_roads` | **Neighbours follow** — see below. Links between roads moving together are untouched by the shift; a link leaving the moved set drags its neighbour's contacting end along. Still refuses outright if any *moved* road is a junction arm. |
-| `rotate_road` | **Neighbours follow.** Every road-level link swings its neighbour's contacting end round onto the rotated pose. |
+| `translate_roads` | **Neighbours follow** — see below. Links between roads moving together are untouched by the shift; a link leaving the moved set drags its neighbour's contacting end along. **Junctions follow too** — see [junction regeneration](#junction-regeneration-on-move). |
+| `rotate_roads` | **Neighbours follow.** Every road-level link swings its neighbour's contacting end round onto the rotated pose. Same junction policy as `translate_roads` — which is why it takes a road SET: rotating a junction rigidly means rotating every one of its arms in one gesture. |
 | `move_waypoint`, `insert_waypoint`, `delete_waypoint`, `insert_node_at` | **Neighbours follow.** A junction at the moved end is marked dirty and regenerates, and a plain road-to-road link is re-fit. Note that a re-fit changes the road's *length*, so an interior waypoint edit can move a joint at either end. |
 | `set_elevation_profile`, `set_node_elevation`, the Z gizmo | Write exactly what the user asked for. A welded boundary that diverges is **reported, never pinned** — the Profile panel names it live and the validator reports it on save. This is deliberately NOT a follow: a profile edit is a statement about one road's height, and pinning it would fight the user. |
 | `merge_roads` | Refuses unless the seam is already continuous in position, heading, lanes **and elevation**. |
@@ -168,10 +168,47 @@ contract.
 
 Joints where either side is a junction **connecting** road are skipped entirely:
 they weld on the linked lane's inner boundary, so they belong to
-`verify_junction_welds` and junction regeneration. A followed *arm* does mark
-its junction dirty. Arms as the **moved** road, derived layers and props are
-sprints s2–s4 of the move-with-cascade epic
+`verify_junction_welds` and junction regeneration — the next section. Derived
+layers and props are sprints s3–s4 of the move-with-cascade epic
 ([#406](https://github.com/Robomous/RoadMaker/issues/406)).
+
+### Junction regeneration on move
+
+*Sprint record: [#462](https://github.com/Robomous/RoadMaker/issues/462)
+(`cascade-s2`).*
+
+The same funnel carries a third stage. After the follow stage settles, every
+junction the gesture disturbed is classified **once**, so no gesture can hold its
+own opinion about what a moved arm means — which is exactly how they came to
+disagree: a node drag followed live while `translate_roads` and `rotate_road`
+refused any road touching a junction, arm or not.
+
+| Case | Behaviour |
+|---|---|
+| The moved road is a junction's **connecting** road | **Refused.** Its pose is generated from the arm poses, so the next regeneration would overwrite whatever it was dragged to. Move the arms instead. |
+| The junction is **carried whole** — every one of its arms is in the moved set | **No regeneration.** The transform is a rigid body motion, so the junction's connecting roads (and its maneuvers' world-space control points) ride along and the output is the input transformed. Nothing hand-authored is replanned. |
+| Some arms move | **Regenerated** from the new arm poses, exactly as a node drag has always done. The turn set is unchanged, so [#263](https://github.com/Robomous/RoadMaker/issues/263)'s keyed matching keeps every connecting road's identity. |
+| The junction is **foreign** (no recorded arms) | **Left alone.** There is nothing to regenerate from, and a move must not fail because someone else's file is in the scene. |
+| The junction is **locked** ([#319](https://github.com/Robomous/RoadMaker/issues/319)) | **Left alone.** The user asked the hand-tuned result to survive edits to the arms, and this stage is one of the automatic loops that lock binds. |
+| Regeneration cannot be planned | **The whole gesture is refused**, the network is untouched, and the message names the junction. |
+
+That last row is the sprint's decision and it is deliberate. The alternative —
+dissolving the junction back to free ends — always succeeds, but it destroys
+authored maneuvers, corners and stop lines to satisfy a gesture the user may not
+have meant. Refusing loses nothing: the user can still delete the junction
+explicitly, and a rigid move of the whole assembly is never refused. Leaving the
+junction **stale** was the third option and is the state this sprint exists to
+remove.
+
+The regeneration's **turn-set policy** is `AllowChange` for a committed edit, and
+`InPlaceOnly` for the editor's per-frame preview — the same trade a node drag has
+always made. Mid-drag, a frame that would add or drop a turn is rejected and the
+last good preview stands, so the drag simply stops following rather than
+churning connecting roads at frame rate.
+
+`edit::verify_junction_welds` is the oracle, and [#403](https://github.com/Robomous/RoadMaker/issues/403)
+gave it the elevation and grade dimensions it lacked, so a junction that
+regenerates into a vertical step now fails the check rather than passing it.
 
 ### Chain creation and grade easing
 
@@ -218,12 +255,15 @@ be derivative noise.
 
 ## Out of scope
 
-- **Cascade beyond road-level links** — junction arms as the moved road,
-  derived layers (ground surfaces, bridge spans) and props are sprints s2–s4 of
-  the move-with-cascade epic
+- **Cascade beyond roads and junctions** — derived layers (ground surfaces,
+  bridge spans) and props are sprints s3–s4 of the move-with-cascade epic
   [#406](https://github.com/Robomous/RoadMaker/issues/406). Road-level
-  neighbour-follow itself has landed and is specified
+  neighbour-follow and junction regeneration have landed and are specified
   [above](#neighbour-follow-on-move).
+- **Junction quality under curved approaches** —
+  [#356](https://github.com/Robomous/RoadMaker/issues/356), a separate open bug.
+  A regenerated junction is exactly as good as a freshly generated one; making
+  that better is not this contract's business.
 - **Terrain skirt behaviour** — the skirt faithfully amplifies joint steps into
   cliffs (`core/src/mesh/terrain_mesh.cpp`). Fixing the cause is this
   contract's job; the skirt needs no change.
@@ -246,5 +286,6 @@ fails CI, not review, when it drifts from the code:
   mention somewhere else entirely.
 
 The behaviour itself is covered by `core/tests/test_connection.cpp`,
-`core/tests/test_link_follow.cpp`, `core/tests/test_xodr_writer.cpp`,
-`editor/tests/test_profile_panel.cpp` and `python/tests/test_edit.py`.
+`core/tests/test_link_follow.cpp`, `core/tests/test_junction_cascade.cpp`,
+`core/tests/test_xodr_writer.cpp`, `editor/tests/test_profile_panel.cpp` and
+`python/tests/test_edit.py`.

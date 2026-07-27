@@ -45,22 +45,32 @@ appears at the entity's pivot, always on top at a constant on-screen size:
   snap the amount they are turned *by* instead, since a curved road has no one
   heading to measure against.
 - <kbd>Esc</kbd> cancels a drag in progress, leaving the network untouched.
-- Moving or rotating a road that is **linked** to a road staying put breaks that
-  connection, so the gizmo asks first — the same *"Break road links?"* prompt the
-  Select and Move tools use, including its **Don't ask again this session**
-  switch, which then covers all three. The gizmo asks the moment you **grab** the
-  handle, before the road moves at all, so that answering the dialog can never
-  eat the release of a drag already in flight.
+- Moving or rotating a road that is **linked** to a road staying put no longer
+  breaks that connection: the neighbouring road's end is reshaped to stay joined.
+  Nothing asks first, because there is nothing to ask about. On the rare
+  occasion the neighbour genuinely cannot follow, the connection is cut and the
+  editor says which one and why, after the fact.
 
 ### Per-entity behavior
 
 - **Roads** — X/Y translate the whole road; the yaw ring rotates it about the
-  selection pivot; the Z arrow applies a uniform elevation offset. A road that
-  participates in a junction can't be moved or rotated (its pose is generated) —
-  grabbing an arrow, the pad or the ring is refused on the spot, with a toast
-  naming the road and the junction; move the junction's free end nodes instead.
-  The **Z arrow is the exception**: raising or lowering a junction arm is allowed,
-  and the junction regenerates around the new height.
+  selection pivot; the Z arrow applies a uniform elevation offset. With several
+  roads selected, the pad and the ring move **all of them** together, about the
+  pivot where the gizmo is drawn.
+- **Junction arms** — move and rotate freely, and the junction rebuilds itself
+  around their new positions, exactly as dragging a shape node has always done.
+  Select **every** arm and the junction travels as one rigid piece instead: its
+  turns are carried across untouched rather than recalculated, so hand-shaped
+  paths, corner radii and stop lines survive the move exactly as they were.
+  If a move would put an arm so far out that the junction can no longer be
+  rebuilt, the whole gesture is refused and nothing moves — the editor names the
+  junction, and the drag simply stops following rather than leaving a wrecked
+  junction behind.
+- **Junction connecting roads** — the short generated roads *inside* a junction
+  can't be moved or rotated: their shape is computed from the arms, so the next
+  rebuild would discard anything you dragged them to. Grabbing an arrow, the pad
+  or the ring is refused on the spot, with a toast naming the road and the
+  junction. Move the arms instead.
 - **Props** — X/Y translate (re-projected onto the owning road) and the yaw ring
   rotates the instance. No Z arrow yet. On a **prop span**, the ring turns every
   instance in the series by the same angle relative to the road — the heading is
