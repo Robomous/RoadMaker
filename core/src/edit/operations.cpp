@@ -39,8 +39,6 @@
 #include "roadmaker/tol.hpp"
 #include "roadmaker/xodr/rules.hpp"
 
-#include "../mesh/object_placement.hpp"
-
 #include <fmt/format.h>
 
 #include <algorithm>
@@ -60,6 +58,7 @@
 #include <variant>
 
 #include "../mesh/junction_stoplines_detail.hpp"
+#include "../mesh/object_placement.hpp"
 
 namespace roadmaker::edit {
 
@@ -336,9 +335,9 @@ public:
   Values after; // precomputed; when `creator` is set it is re-read post-run
   Values erased;
   Creator creator;
-  std::optional<Error> invalid;       // factory-time validation failure
-  std::vector<FollowRecord> follow;   // joints this command disturbed (#461)
-  std::vector<DerivedRecord> derived; // derived layers this command moved (#463)
+  std::optional<Error> invalid;                // factory-time validation failure
+  std::vector<FollowRecord> follow;            // joints this command disturbed (#461)
+  std::vector<DerivedRecord> derived;          // derived layers this command moved (#463)
   std::vector<ObstructionRecord> obstructions; // props this move blocked (#464)
 
   Expected<void> apply(RoadNetwork& network) override {
@@ -491,8 +490,8 @@ public:
       const std::span<const DerivedRecord> child_derived = child->derived_records();
       derived_.insert(derived_.end(), child_derived.begin(), child_derived.end());
       const std::span<const ObstructionRecord> child_obstructions = child->obstruction_records();
-      obstructions_.insert(obstructions_.end(), child_obstructions.begin(),
-                           child_obstructions.end());
+      obstructions_.insert(
+          obstructions_.end(), child_obstructions.begin(), child_obstructions.end());
     }
     return {};
   }
@@ -567,9 +566,7 @@ public:
 
   std::span<const DerivedRecord> derived_records() const override { return derived_; }
 
-  std::span<const ObstructionRecord> obstruction_records() const override {
-    return obstructions_;
-  }
+  std::span<const ObstructionRecord> obstruction_records() const override { return obstructions_; }
 
 private:
   std::string name_;
@@ -1618,9 +1615,8 @@ std::unique_ptr<Command> derived_stage(const RoadNetwork& network,
 /// would report a prop that was already in a lane as newly obstructed on every
 /// one-centimetre nudge.
 bool same_subject(const PropObstruction& a, const PropObstruction& b) {
-  return a.object == b.object && a.instance == b.instance && a.kind == b.kind &&
-         a.road == b.road && a.junction == b.junction && a.other == b.other &&
-         a.other_instance == b.other_instance;
+  return a.object == b.object && a.instance == b.instance && a.kind == b.kind && a.road == b.road &&
+         a.junction == b.junction && a.other == b.other && a.other_instance == b.other_instance;
 }
 
 /// Stage [4] of the move funnel: the props this gesture drove into something
@@ -1737,10 +1733,9 @@ std::unique_ptr<Command> wrap_with_cascade(const RoadNetwork& network,
   // regenerations and the derived recompute all applied — a prop is obstructing
   // whatever is actually there when the gesture is finished, not what was there
   // mid-way through it.
-  builders.push_back([edited = std::move(edited), before = std::move(obstructed_before),
-                      moved_set](RoadNetwork& net) {
-    return obstruction_stage(net, moved_set(edited), before);
-  });
+  builders.push_back(
+      [edited = std::move(edited), before = std::move(obstructed_before), moved_set](
+          RoadNetwork& net) { return obstruction_stage(net, moved_set(edited), before); });
   // Same undo-menu text as the base: whether a neighbour had to follow, a
   // junction had to regenerate, or a ground surface had to re-derive, is not
   // something the user should read in the Edit menu.
@@ -8543,9 +8538,8 @@ bool has_series_repeat(const Object& object) {
 
 } // namespace
 
-std::unique_ptr<Command> reanchor_object(const RoadNetwork& network,
-                                         ObjectId object,
-                                         RoadId road_id) {
+std::unique_ptr<Command>
+reanchor_object(const RoadNetwork& network, ObjectId object, RoadId road_id) {
   static constexpr std::string_view kName = "Re-anchor Prop";
   const auto fail = [&](std::string message) {
     return invalid_command(
@@ -8620,8 +8614,7 @@ std::unique_ptr<Command> relocate_obstructed_props(const RoadNetwork& network) {
       candidates.push_back(found.object);
     }
   }
-  std::ranges::sort(candidates,
-                    [](ObjectId a, ObjectId b) { return a.index < b.index; });
+  std::ranges::sort(candidates, [](ObjectId a, ObjectId b) { return a.index < b.index; });
 
   // Each relocation is decided against the state the earlier ones produced, so
   // the sweep cannot move one prop into another's new place.
@@ -8663,8 +8656,10 @@ std::unique_ptr<Command> relocate_obstructed_props(const RoadNetwork& network) {
       const std::array<std::pair<double, double>, 3> ladder{
           std::pair{std::min(original.s + (k * kStep), length), original.t},
           std::pair{std::max(original.s - (k * kStep), 0.0), original.t},
-          std::pair{original.s, original.t * std::max(0.0, 1.0 - (static_cast<double>(k) /
-                                                                 static_cast<double>(steps)))}};
+          std::pair{
+              original.s,
+              original.t *
+                  std::max(0.0, 1.0 - (static_cast<double>(k) / static_cast<double>(steps)))}};
       for (const auto& [s, t] : ladder) {
         Object* live = probe.object(id);
         live->s = s;

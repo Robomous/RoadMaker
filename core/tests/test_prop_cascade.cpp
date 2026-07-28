@@ -30,8 +30,6 @@
 #include "roadmaker/xodr/rules.hpp"
 #include "roadmaker/xodr/writer.hpp"
 
-#include "support/network_compare.hpp"
-
 #include <gtest/gtest.h>
 
 #include <array>
@@ -40,6 +38,8 @@
 #include <numbers>
 #include <string>
 #include <vector>
+
+#include "support/network_compare.hpp"
 
 namespace roadmaker {
 namespace {
@@ -182,8 +182,9 @@ TEST(PropCascade, NoGestureLeavesAPropObstructionUnreported) {
   };
 
   const std::array<Gesture, 6> gestures{
-      Gesture{"translate",
-              [](RoadNetwork& net, RoadId road) { return edit::translate_road(net, road, 0, -10); }},
+      Gesture{
+          "translate",
+          [](RoadNetwork& net, RoadId road) { return edit::translate_road(net, road, 0, -10); }},
       Gesture{"rotate",
               [](RoadNetwork& net, RoadId road) {
                 return edit::rotate_road(net, road, kPi, 0.0, 5.0);
@@ -269,8 +270,8 @@ TEST(PropCascade, TheEditStackExposesTheRecordsToHeadlessCallers) {
   const Scene scene = two_roads_and_a_tree(network);
 
   edit::EditStack stack;
-  ASSERT_TRUE(stack.push(network, edit::translate_road(network, scene.anchor, 0.0, -20.0))
-                  .has_value());
+  ASSERT_TRUE(
+      stack.push(network, edit::translate_road(network, scene.anchor, 0.0, -20.0)).has_value());
   ASSERT_EQ(stack.last_obstruction_records().size(), 1U)
       << "push() owns the command, so this is the only way Python can read them";
 

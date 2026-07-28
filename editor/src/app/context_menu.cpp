@@ -63,10 +63,10 @@ nearest_other_road(const ContextMenuDeps& deps, ObjectId object, RoadId owner) {
     // everything, and the menu item simply greys out when nothing is in reach.
     options.radius = 60.0;
     options.exclude_road = owner;
-    const std::optional<edit::SideSnap> snap = edit::snap_to_road_side(
-        deps.document.network(),
-        Waypoint{.x = instance.position[0], .y = instance.position[1]},
-        options);
+    const std::optional<edit::SideSnap> snap =
+        edit::snap_to_road_side(deps.document.network(),
+                                Waypoint{.x = instance.position[0], .y = instance.position[1]},
+                                options);
     if (snap.has_value()) {
       return snap->road;
     }
@@ -622,16 +622,15 @@ std::vector<MenuItem> build_context_menu(const MenuContext& context, ContextMenu
     // Obstructed Props — moves the prop instead; this one moves the ownership.
     const std::optional<RoadId> target =
         source != nullptr ? nearest_other_road(deps, object, source->road) : std::nullopt;
-    items.push_back(
-        MenuItem{.text = QObject::tr("Re-anchor to nearest road"),
-                 .enabled = target.has_value(),
-                 .invoke = [deps, object, target] {
-                   if (!target.has_value()) {
-                     return;
-                   }
-                   (void)deps.document.push_command(
-                       edit::reanchor_object(deps.document.network(), object, *target));
-                 }});
+    items.push_back(MenuItem{.text = QObject::tr("Re-anchor to nearest road"),
+                             .enabled = target.has_value(),
+                             .invoke = [deps, object, target] {
+                               if (!target.has_value()) {
+                                 return;
+                               }
+                               (void)deps.document.push_command(
+                                   edit::reanchor_object(deps.document.network(), object, *target));
+                             }});
     items.push_back(separator());
     items.push_back(MenuItem{.text = QObject::tr("Delete object"), .invoke = [deps, object] {
                                (void)deps.document.push_command(

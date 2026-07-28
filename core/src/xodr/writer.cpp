@@ -2517,8 +2517,8 @@ std::vector<Diagnostic> validate_network(const RoadNetwork& network, const Write
   // volume, which is most files.
   if (options.prop_obstruction_clearance > 0.0) {
     for (const PropObstruction& found : find_prop_obstructions(
-             network, PropObstructionOptions{.vertical_clearance =
-                                                 options.prop_obstruction_clearance})) {
+             network,
+             PropObstructionOptions{.vertical_clearance = options.prop_obstruction_clearance})) {
       const Object* object = network.object(found.object);
       if (object == nullptr) {
         continue;
@@ -2546,18 +2546,18 @@ std::vector<Diagnostic> validate_network(const RoadNetwork& network, const Write
       // the same xpath-ish way the rest of this function names a lane. Adding a
       // field would ripple through every parser diagnostic and deserves its own
       // change with its own round-trip test.
-      findings.push_back(Diagnostic{
-          .severity = Severity::Warning,
-          .location = fmt::format("road id={}/objects/object id={}",
-                                  owner != nullptr ? owner->odr_id : "?",
-                                  object->odr_id),
-          .message = fmt::format("object {} obstructs {} at ({:.1f}, {:.1f})",
-                                 object->odr_id,
-                                 blocked,
-                                 found.at[0],
-                                 found.at[1]),
-          .rule_id = std::string(rules::kPropObstruction),
-          .road = object->road});
+      findings.push_back(
+          Diagnostic{.severity = Severity::Warning,
+                     .location = fmt::format("road id={}/objects/object id={}",
+                                             owner != nullptr ? owner->odr_id : "?",
+                                             object->odr_id),
+                     .message = fmt::format("object {} obstructs {} at ({:.1f}, {:.1f})",
+                                            object->odr_id,
+                                            blocked,
+                                            found.at[0],
+                                            found.at[1]),
+                     .rule_id = std::string(rules::kPropObstruction),
+                     .road = object->road});
     }
   }
   return findings;

@@ -27,8 +27,6 @@
 // road's frame every time (see mesh_builder.hpp's remesh_object_instances).
 // This header is that derivation, and the only copy of it.
 
-#include "mesh_detail.hpp"
-
 #include "roadmaker/road/object.hpp"
 #include "roadmaker/road/repeat_expansion.hpp"
 #include "roadmaker/road/road.hpp"
@@ -39,6 +37,8 @@
 #include <cmath>
 #include <cstddef>
 #include <vector>
+
+#include "mesh_detail.hpp"
 
 namespace roadmaker::object_placement {
 

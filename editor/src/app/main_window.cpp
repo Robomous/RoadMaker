@@ -762,9 +762,8 @@ MainWindow::MainWindow(QWidget* parent, bool restore_saved_layout)
   connect(actions_->props_relocate_obstructed, &QAction::triggered, this, [this] {
     const auto relocated =
         document_.push_command(edit::relocate_obstructed_props(document_.network()));
-    viewport_->show_toast(relocated.has_value()
-                              ? tr("Moved the obstructed props somewhere clear")
-                              : tr("No prop needed moving"),
+    viewport_->show_toast(relocated.has_value() ? tr("Moved the obstructed props somewhere clear")
+                                                : tr("No prop needed moving"),
                           relocated.has_value() ? ToastSeverity::Success : ToastSeverity::Info);
   });
   // Passive detection hint: when a crossing appears that no bridge covers, nudge

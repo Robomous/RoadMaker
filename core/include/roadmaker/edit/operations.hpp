@@ -1313,8 +1313,7 @@ reanchor_object(const RoadNetwork& network, ObjectId object, RoadId road);
 /// Refused (invalid_command) when nothing is obstructed or nothing can be
 /// helped, so the caller can say so instead of pushing an empty undo entry —
 /// the same contract as `remove_orphaned_bridges`.
-[[nodiscard]] RM_API std::unique_ptr<Command>
-relocate_obstructed_props(const RoadNetwork& network);
+[[nodiscard]] RM_API std::unique_ptr<Command> relocate_obstructed_props(const RoadNetwork& network);
 
 /// Removes an object; undo restores it exactly (same ObjectId). Fails for a
 /// stale object id.

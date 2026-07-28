@@ -16,7 +16,6 @@
 
 #include "roadmaker/road/grade_separation.hpp"
 
-#include "junction_adjacency.hpp"
 #include "roadmaker/edit/connection.hpp"
 #include "roadmaker/geometry/poly3.hpp"
 #include "roadmaker/geometry/reference_line.hpp"
@@ -29,6 +28,8 @@
 #include <cstddef>
 #include <optional>
 #include <vector>
+
+#include "junction_adjacency.hpp"
 
 namespace roadmaker {
 

@@ -118,9 +118,8 @@ TEST(PropObstructionDocument, TheOfferedRelocationIsOneUndoEntryAndUndoIsByteIde
 
   const std::string before = xodr(document);
   const int entries = document.undo_stack()->count();
-  ASSERT_TRUE(
-      document.push_command(roadmaker::edit::relocate_obstructed_props(document.network()))
-          .has_value());
+  ASSERT_TRUE(document.push_command(roadmaker::edit::relocate_obstructed_props(document.network()))
+                  .has_value());
 
   EXPECT_EQ(document.undo_stack()->count(), entries + 1) << "exactly one entry, however many props";
   EXPECT_TRUE(roadmaker::find_prop_obstructions(document.network()).empty());
@@ -136,9 +135,8 @@ TEST(PropObstructionDocument, RelocatingWithNothingObstructedIsARefusalNotAnEmpt
   plant(document, anchor, 50.0, -20.0);
 
   const int entries = document.undo_stack()->count();
-  EXPECT_FALSE(
-      document.push_command(roadmaker::edit::relocate_obstructed_props(document.network()))
-          .has_value());
+  EXPECT_FALSE(document.push_command(roadmaker::edit::relocate_obstructed_props(document.network()))
+                   .has_value());
   EXPECT_EQ(document.undo_stack()->count(), entries) << "a refusal leaves the stack alone";
 }
 

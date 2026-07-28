@@ -20,17 +20,14 @@
 // most of the file: a median tree, a kerbside streetlight, a corner pole at a
 // signalised junction and a zebra crossing are all correct scenes.
 
-#include "roadmaker/mesh/prop_obstructions.hpp"
-
 #include "roadmaker/assets/prop_library.hpp"
 #include "roadmaker/edit/operations.hpp"
 #include "roadmaker/mesh/mesh_builder.hpp"
+#include "roadmaker/mesh/prop_obstructions.hpp"
 #include "roadmaker/road/authoring.hpp"
 #include "roadmaker/road/network.hpp"
 #include "roadmaker/road/object.hpp"
 #include "roadmaker/road/road.hpp"
-
-#include "support/network_compare.hpp"
 
 #include <gtest/gtest.h>
 
@@ -39,6 +36,8 @@
 #include <numbers>
 #include <string>
 #include <vector>
+
+#include "support/network_compare.hpp"
 
 namespace roadmaker {
 namespace {
@@ -207,8 +206,7 @@ TEST(PropObstructions, DrivingBandExcludesTheSidewalkOnARoadWithACentreLane) {
     const RoadId anchor = straight_road(network, {-50, 30}, {50, 30}, "anchor");
     straight_road(network, {-50, 0}, {50, 0}, "street", LaneProfile::local_road());
 
-    const ObjectId prop =
-        round_prop(network, anchor, 50.0, (side * sidewalk_centre) - 30.0, 0.4);
+    const ObjectId prop = round_prop(network, anchor, 50.0, (side * sidewalk_centre) - 30.0, 0.4);
     EXPECT_TRUE(find_prop_obstructions(network).empty())
         << "a prop standing on a neighbouring road's sidewalk is where props belong";
 
@@ -559,8 +557,7 @@ TEST(PropObstructions, APropOnADeckAboveARoadIsNotObstructingIt) {
 /// breaks: it is the coordinate DELTAS that truncate.
 TEST(PropObstructions, PropInsideARoadBandIsReportedAtUtmScale) {
   RoadNetwork network;
-  const RoadId anchor =
-      straight_road(network, {500000, 4500020}, {500100, 4500020}, "anchor");
+  const RoadId anchor = straight_road(network, {500000, 4500020}, {500100, 4500020}, "anchor");
   straight_road(network, {500000, 4500000}, {500100, 4500000}, "crossed");
 
   round_prop(network, anchor, 50.0, -20.0, 0.3); // 0.3 m radius, dead centre
@@ -640,9 +637,7 @@ TEST(PropObstructions, APropAtLargeTIsFlaggedWhenItsAnchorRoadIsRotated) {
   // Half a turn carries the prop from (0, 65) to (0, 15), straight onto the
   // crossed road, while the anchor road (a line through the pivot) maps onto
   // itself and never goes near it. Nothing about the prop's own data changed.
-  ASSERT_TRUE(edit::rotate_road(network, anchor, kPi, 0.0, 40.0)
-                  ->apply(network)
-                  .has_value());
+  ASSERT_TRUE(edit::rotate_road(network, anchor, kPi, 0.0, 40.0)->apply(network).has_value());
 
   const std::vector<PropObstruction> found = find_prop_obstructions(network);
   ASSERT_EQ(found.size(), 1U) << "#338: the rotation arc drove the prop into another road";
@@ -676,4 +671,3 @@ TEST(PropObstructions, TheNarrowedOverloadSeesBothDirectionsOfAMove) {
 
 } // namespace
 } // namespace roadmaker
-

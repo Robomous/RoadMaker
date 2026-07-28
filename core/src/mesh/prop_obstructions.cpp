@@ -22,10 +22,6 @@
 #include "roadmaker/road/road.hpp"
 #include "roadmaker/tol.hpp"
 
-#include "../road/junction_adjacency.hpp"
-#include "mesh_detail.hpp"
-#include "object_placement.hpp"
-
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -33,6 +29,10 @@
 #include <limits>
 #include <optional>
 #include <vector>
+
+#include "../road/junction_adjacency.hpp"
+#include "mesh_detail.hpp"
+#include "object_placement.hpp"
 
 namespace roadmaker {
 
@@ -54,11 +54,14 @@ struct Aabb {
     hi_x = std::max(hi_x, x);
     hi_y = std::max(hi_y, y);
   }
+
   [[nodiscard]] bool valid() const { return lo_x <= hi_x && lo_y <= hi_y; }
+
   [[nodiscard]] bool overlaps(const Aabb& other) const {
     return valid() && other.valid() && lo_x <= other.hi_x && other.lo_x <= hi_x &&
            lo_y <= other.hi_y && other.lo_y <= hi_y;
   }
+
   void grow(double by) {
     lo_x -= by;
     lo_y -= by;
@@ -197,10 +200,11 @@ std::optional<Volume> volume_of(const Object& object,
     // by PropObstructions.ARectangularPropIsCentredOnItsOrigin.
     const Point along{out.cos_h * out.half_l, out.sin_h * out.half_l};
     const Point across{-out.sin_h * out.half_w, out.cos_h * out.half_w};
-    out.corners = {Point{out.center[0] - along[0] - across[0], out.center[1] - along[1] - across[1]},
-                   Point{out.center[0] + along[0] - across[0], out.center[1] + along[1] - across[1]},
-                   Point{out.center[0] + along[0] + across[0], out.center[1] + along[1] + across[1]},
-                   Point{out.center[0] - along[0] + across[0], out.center[1] - along[1] + across[1]}};
+    out.corners = {
+        Point{out.center[0] - along[0] - across[0], out.center[1] - along[1] - across[1]},
+        Point{out.center[0] + along[0] - across[0], out.center[1] + along[1] - across[1]},
+        Point{out.center[0] + along[0] + across[0], out.center[1] + along[1] + across[1]},
+        Point{out.center[0] - along[0] + across[0], out.center[1] - along[1] + across[1]}};
     for (const Point& corner : out.corners) {
       out.bounds.add(corner[0], corner[1]);
     }
@@ -356,8 +360,7 @@ Band build_driving_band(const RoadNetwork& network,
     if (section == nullptr) {
       continue;
     }
-    const std::vector<double> boundaries =
-        lane_boundary_offsets(network, road, *section, station);
+    const std::vector<double> boundaries = lane_boundary_offsets(network, road, *section, station);
     if (boundaries.size() < 2) {
       continue;
     }
@@ -561,9 +564,9 @@ std::vector<PropObstruction> find_impl(const RoadNetwork& network,
     // A floor moves when any of its arms does — the whole junction is
     // regenerated around them (cascade-s2).
     const bool arm_moved =
-        narrowed && std::any_of(junction.arms.begin(), junction.arms.end(), [&](const RoadEnd& arm) {
-          return contains(touching, arm.road);
-        });
+        narrowed && std::any_of(junction.arms.begin(),
+                                junction.arms.end(),
+                                [&](const RoadEnd& arm) { return contains(touching, arm.road); });
     std::vector<Band> floor;
     bool built = false;
     for (const PropEntry& prop : props) {
@@ -648,10 +651,19 @@ std::vector<PropObstruction> find_impl(const RoadNetwork& network,
   // Traversal order must never leak into the result: a caller diffing two runs
   // (the cascade stage does exactly that) would see phantom changes.
   std::sort(out.begin(), out.end(), [](const PropObstruction& a, const PropObstruction& b) {
-    return std::tie(a.object.index, a.instance, a.kind, a.road.index, a.junction.index,
-                    a.other.index, a.other_instance) <
-           std::tie(b.object.index, b.instance, b.kind, b.road.index, b.junction.index,
-                    b.other.index, b.other_instance);
+    return std::tie(a.object.index,
+                    a.instance,
+                    a.kind,
+                    a.road.index,
+                    a.junction.index,
+                    a.other.index,
+                    a.other_instance) < std::tie(b.object.index,
+                                                 b.instance,
+                                                 b.kind,
+                                                 b.road.index,
+                                                 b.junction.index,
+                                                 b.other.index,
+                                                 b.other_instance);
   });
   return out;
 }

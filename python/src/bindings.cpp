@@ -1302,8 +1302,7 @@ NB_MODULE(_roadmaker, m) {
 
   m.def(
       "find_prop_obstructions",
-      [](const roadmaker::RoadNetwork& network,
-         const roadmaker::PropObstructionOptions& options) {
+      [](const roadmaker::RoadNetwork& network, const roadmaker::PropObstructionOptions& options) {
         return roadmaker::find_prop_obstructions(network, options);
       },
       "network"_a,
