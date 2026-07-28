@@ -88,9 +88,12 @@ inline constexpr std::size_t kMeshChannelCount = 8;
 
 /// Why a channel, or part of one, does not reach the file.
 enum class OmissionReason {
-  None,              ///< fully exported
-  ChannelEmpty,      ///< nothing in the mesh to export
-  ChannelNotWalked,  ///< the exporter never visits it (surfaces/terrain — #390)
+  None,         ///< fully exported
+  ChannelEmpty, ///< nothing in the mesh to export
+  /// The exporter never visits the channel. No channel is in this state today
+  /// — the ground channels were the last, until #390 — but the vocabulary
+  /// stays: it is how a channel that ships unexported announces itself.
+  ChannelNotWalked,
   FormatUnsupported, ///< the format cannot carry it (USD sign-face textures — #364)
   ModelNotFound,     ///< an instance names a prop/signal model that does not resolve
 };

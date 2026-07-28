@@ -60,16 +60,27 @@ def test_props_are_shared_in_gltf_and_baked_in_usd():
     assert usd.total_triangles > gltf.total_triangles
 
 
-def test_ground_is_reported_as_not_written(t_junction):
+def test_ground_is_exported_and_counted(t_junction):
+    """The height field reaches the file, and the manifest counts it (#390)."""
     rm.edit.EditStack().push(t_junction, rm.edit.create_terrain_field(t_junction))
     mesh = rm.build_network_mesh(t_junction)
+
+    pristine, _ = rm.load_xodr(SAMPLES / "t_junction.xodr")
+    without_ground = rm.preview_mesh_export(
+        rm.build_network_mesh(pristine), rm.MeshExportFormat.GLTF
+    )
     preview = rm.preview_mesh_export(mesh, rm.MeshExportFormat.GLTF)
 
     terrain = preview.channels[int(rm.MeshChannel.TERRAIN.value)]
     assert terrain.elements > 0, "no terrain in the fixture — the test is vacuous"
-    assert terrain.exported_elements == 0
-    assert terrain.reason == rm.OmissionReason.CHANNEL_NOT_WALKED
-    assert "#390" in terrain.detail
+    assert terrain.exported_elements == terrain.elements
+    assert terrain.reason == rm.OmissionReason.NONE
+    assert terrain.triangles > 0
+    assert terrain.detail == ""
+
+    # And it lands in the totals, not just in its own row.
+    assert preview.total_triangles == without_ground.total_triangles + terrain.triangles
+    assert preview.mesh_count == without_ground.mesh_count + 1
 
 
 # The empty-mesh refusal and the refused-WRITE finding list are pinned in C++

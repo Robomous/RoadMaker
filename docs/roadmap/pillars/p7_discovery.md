@@ -149,6 +149,13 @@ scene. p7-s1 should report the omission by name rather than hide it — but
 **#390 should be sequenced before the GW-2 hand-run**, or the gate records a
 pass on a preview that is truthfully reporting a defect.
 
+> **Resolved 2026-07-28 (#390).** Both exporters now write `mesh.surfaces` and
+> `mesh.terrain`, and the empty-mesh guard became one shared predicate over
+> every channel, so a terrain-only or props-only scene exports. GW-2 step 21
+> and its pass criteria were amended in the same PR, and **the GW-2 hand-run is
+> no longer blocked by this finding.** The remaining declared omission is the
+> USD sign face (#364).
+
 ## 6. The two exporters disagree about props
 
 Not a defect — a design difference that a preview must respect. glTF builds one

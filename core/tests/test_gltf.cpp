@@ -16,16 +16,24 @@
 
 #include "roadmaker/assets/prop_library.hpp"
 #include "roadmaker/assets/sign_catalog.hpp"
+#include "roadmaker/edit/operations.hpp"
 #include "roadmaker/io/gltf_exporter.hpp"
 #include "roadmaker/mesh/mesh_builder.hpp"
 #include "roadmaker/road/authoring.hpp"
 #include "roadmaker/road/network.hpp"
 #include "roadmaker/road/object.hpp"
+#include "roadmaker/road/surface.hpp"
+#include "roadmaker/road/surface_derivation.hpp"
 #include "roadmaker/xodr/reader.hpp"
 
+// The exporter's own material vocabulary — core/tests has core/src on its
+// include path, so the ground assertions below name the definitions rather
+// than a copy of them.
 #include <gtest/gtest.h>
 
 #include <vector>
+
+#include "io/mesh_export_common.hpp"
 
 // Reader-side of tinygltf for validation (implementation is compiled in
 // gltf_exporter.cpp).
@@ -66,6 +74,85 @@ tinygltf::Model export_and_reload(const char* sample_name, const char* out_name)
     throw std::runtime_error("tinygltf reload failed: " + err + " / " + warn);
   }
   return model;
+}
+
+/// Writes `mesh` and reads it straight back — for the fixtures that are built
+/// in code rather than loaded from a sample.
+tinygltf::Model write_and_reload(const roadmaker::NetworkMesh& mesh, const char* out_name) {
+  const auto path = temp_glb(out_name);
+  const auto exported = roadmaker::export_glb(mesh, path);
+  if (!exported) {
+    throw std::runtime_error("export_glb failed: " + exported.error().message);
+  }
+  tinygltf::Model model;
+  tinygltf::TinyGLTF loader;
+  std::string err;
+  std::string warn;
+  const bool loaded = loader.LoadBinaryFromFile(&model, &err, &warn, path.string());
+  std::remove(path.string().c_str());
+  if (!loaded) {
+    throw std::runtime_error("tinygltf reload failed: " + err + " / " + warn);
+  }
+  return model;
+}
+
+/// A ~20 m square of four welded straights, which encloses one derivable
+/// ground surface, plus a flat height field authored through the command layer.
+/// Built in code because not one committed sample carries `rm:surface` or
+/// `rm:terrain` — which is exactly how the missing ground (#390) stayed
+/// invisible for two pillars.
+roadmaker::RoadNetwork ground_network() {
+  roadmaker::RoadNetwork network;
+  const auto segment = [&network](double x0, double y0, double x1, double y1, const char* id) {
+    const std::vector<roadmaker::Waypoint> waypoints{roadmaker::Waypoint{.x = x0, .y = y0},
+                                                     roadmaker::Waypoint{.x = x1, .y = y1}};
+    auto road = roadmaker::author_clothoid_road(
+        network, waypoints, roadmaker::LaneProfile::two_lane_default(), "", id);
+    EXPECT_TRUE(road.has_value());
+  };
+  segment(0.0, 0.0, 20.0, 0.0, "a");
+  segment(20.0, 0.0, 20.0, 20.0, "b");
+  segment(20.0, 20.0, 0.0, 20.0, "c");
+  segment(0.0, 20.0, 0.0, 0.0, "d");
+  roadmaker::derive_surfaces(network);
+  EXPECT_GT(network.surface_count(), 0U) << "fixture derived no surface";
+
+  auto create = roadmaker::edit::create_terrain_field(network);
+  EXPECT_TRUE(create->apply(network).has_value());
+  return network;
+}
+
+/// Material name → triangles, as the FILE stores it.
+std::map<std::string, std::size_t> triangles_by_material(const tinygltf::Model& model) {
+  std::map<std::string, std::size_t> totals;
+  for (const tinygltf::Mesh& mesh : model.meshes) {
+    for (const tinygltf::Primitive& primitive : mesh.primitives) {
+      if (primitive.material < 0 || primitive.indices < 0) {
+        continue;
+      }
+      const std::string& name = model.materials[static_cast<std::size_t>(primitive.material)].name;
+      totals[name] += model.accessors[static_cast<std::size_t>(primitive.indices)].count / 3;
+    }
+  }
+  return totals;
+}
+
+const tinygltf::Material* material_named(const tinygltf::Model& model, const std::string& name) {
+  for (const tinygltf::Material& material : model.materials) {
+    if (material.name == name) {
+      return &material;
+    }
+  }
+  return nullptr;
+}
+
+bool has_mesh_named(const tinygltf::Model& model, const std::string& name) {
+  for (const tinygltf::Mesh& mesh : model.meshes) {
+    if (mesh.name == name) {
+      return true;
+    }
+  }
+  return false;
 }
 
 } // namespace
@@ -148,6 +235,112 @@ TEST(Gltf, ExportingAnEmptyMeshFailsCleanly) {
   const auto result = roadmaker::export_glb(empty, temp_glb("rm_empty.glb"));
   ASSERT_FALSE(result.has_value());
   EXPECT_EQ(result.error().code, roadmaker::ErrorCode::InvalidArgument);
+}
+
+// ------------------------------------------------- ground channels (#390)
+
+TEST(Gltf, GroundSurfacesAndTerrainAreWritten) {
+  const roadmaker::RoadNetwork network = ground_network();
+  const roadmaker::NetworkMesh mesh = roadmaker::build_network_mesh(network);
+  ASSERT_FALSE(mesh.surfaces.empty()) << "fixture has no surface — the test is vacuous";
+  ASSERT_FALSE(mesh.terrain.indices.empty()) << "fixture has no terrain — the test is vacuous";
+
+  const tinygltf::Model model = write_and_reload(mesh, "rm_ground.glb");
+
+  // One node and one mesh per surface, plus one for the field. Named, so the
+  // file is legible: the submeshes themselves are all called "surface".
+  EXPECT_TRUE(has_mesh_named(model, "surface_0"));
+  EXPECT_TRUE(has_mesh_named(model, "terrain"));
+
+  const auto totals = triangles_by_material(model);
+  const std::string grass = roadmaker::io_common::ground_material_name("");
+  ASSERT_TRUE(totals.contains(grass)) << "no grass material in the file";
+  ASSERT_TRUE(totals.contains(roadmaker::io_common::kTerrainMaterialName));
+  EXPECT_GT(totals.at(grass), 0U);
+  EXPECT_GT(totals.at(roadmaker::io_common::kTerrainMaterialName), 0U);
+
+  // The colours are the ones the viewport draws, not a second palette.
+  const tinygltf::Material* material = material_named(model, grass);
+  ASSERT_NE(material, nullptr);
+  const auto& base = material->pbrMetallicRoughness.baseColorFactor;
+  ASSERT_EQ(base.size(), 4U);
+  EXPECT_NEAR(base[0], roadmaker::io_common::kGrassColor[0], 1e-9);
+  EXPECT_NEAR(base[1], roadmaker::io_common::kGrassColor[1], 1e-9);
+  EXPECT_NEAR(base[2], roadmaker::io_common::kGrassColor[2], 1e-9);
+}
+
+TEST(Gltf, ASurfaceMaterialReachesTheFileAndSurvivesAChange) {
+  // The material a ground surface wears lives on the ARENA record, which the
+  // exporter never sees — it travels on the mesh (SubMesh::surface). This is
+  // the test that fails if that stamp is dropped, or if a material edit stops
+  // re-meshing the surface and the export goes stale behind the viewport.
+  roadmaker::RoadNetwork network = ground_network();
+  roadmaker::SurfaceId id;
+  network.for_each_surface([&id](roadmaker::SurfaceId candidate, const roadmaker::Surface&) {
+    if (!id.is_valid()) {
+      id = candidate;
+    }
+  });
+  ASSERT_TRUE(id.is_valid());
+
+  const roadmaker::NetworkMesh grassy = roadmaker::build_network_mesh(network);
+  const auto before = triangles_by_material(write_and_reload(grassy, "rm_ground_grass.glb"));
+  EXPECT_TRUE(before.contains(roadmaker::io_common::ground_material_name("")));
+  EXPECT_FALSE(before.contains(roadmaker::io_common::ground_material_name("asphalt")));
+
+  auto paint = roadmaker::edit::set_surface_material(network, id, "asphalt");
+  ASSERT_TRUE(paint != nullptr);
+  ASSERT_TRUE(paint->apply(network).has_value());
+
+  roadmaker::NetworkMesh painted = grassy;
+  const std::vector<roadmaker::SurfaceId> dirty{id};
+  roadmaker::remesh_surfaces(network, painted, dirty);
+
+  const tinygltf::Model model = write_and_reload(painted, "rm_ground_paved.glb");
+  const auto after = triangles_by_material(model);
+  const std::string paved = roadmaker::io_common::ground_material_name("asphalt");
+  ASSERT_TRUE(after.contains(paved)) << "the surface's material never reached the file";
+  EXPECT_FALSE(after.contains(roadmaker::io_common::ground_material_name("")))
+      << "the only surface is paved now, so no grass may remain";
+
+  // Paved ground is written in the neutral pavement grey, not the grass green.
+  const tinygltf::Material* material = material_named(model, paved);
+  ASSERT_NE(material, nullptr);
+  EXPECT_NEAR(material->pbrMetallicRoughness.baseColorFactor[0],
+              roadmaker::io_common::kPavedGroundColor[0],
+              1e-9);
+}
+
+TEST(Gltf, TwoUnpaintedSurfacesShareOneMaterial) {
+  // Ground materials are cached by NAME. Without that, every surface would
+  // create its own identical `ground_grass` entry.
+  const roadmaker::RoadNetwork network = ground_network();
+  roadmaker::NetworkMesh mesh = roadmaker::build_network_mesh(network);
+  ASSERT_EQ(mesh.surfaces.size(), 1U);
+  mesh.surfaces.push_back(mesh.surfaces.front()); // a second, identical ground
+
+  const tinygltf::Model model = write_and_reload(mesh, "rm_ground_twice.glb");
+  const std::string grass = roadmaker::io_common::ground_material_name("");
+  std::size_t entries = 0;
+  for (const tinygltf::Material& material : model.materials) {
+    entries += material.name == grass ? 1U : 0U;
+  }
+  EXPECT_EQ(entries, 1U);
+  EXPECT_TRUE(has_mesh_named(model, "surface_1"));
+}
+
+TEST(Gltf, ASceneOfNothingButGroundStillExports) {
+  // The empty-mesh guard used to test only roads and junction floors, so real
+  // geometry was refused (#390).
+  const roadmaker::RoadNetwork network = ground_network();
+  roadmaker::NetworkMesh mesh = roadmaker::build_network_mesh(network);
+  mesh.roads.clear();
+  mesh.junction_floors.clear();
+  ASSERT_FALSE(mesh.terrain.indices.empty());
+
+  const tinygltf::Model model = write_and_reload(mesh, "rm_ground_only.glb");
+  EXPECT_TRUE(has_mesh_named(model, "terrain"));
+  EXPECT_TRUE(has_mesh_named(model, "surface_0"));
 }
 
 TEST(Gltf, TreePropExportsASharedMeshAndInstanceNode) {

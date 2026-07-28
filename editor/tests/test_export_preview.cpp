@@ -258,9 +258,10 @@ TEST(ExportPreviewWindow, LengthsReRenderWhenTheUnitSystemFlips) {
   units::set_active(restore);
 }
 
-TEST(ExportPreviewWindow, AGroundlessExportIsReportedRatherThanHidden) {
+TEST(ExportPreviewWindow, TheGroundIsReportedAsExportedAndCounted) {
   Scene scene;
-  // Give the scene a height field, which no exporter writes (#390).
+  // Give the scene a height field. Until #390 the panel's job here was to
+  // REPORT that no exporter wrote it; now the job is to count it.
   ASSERT_TRUE(scene.document.push_command(edit::create_terrain_field(scene.document.network()))
                   .has_value());
 
@@ -270,8 +271,15 @@ TEST(ExportPreviewWindow, AGroundlessExportIsReportedRatherThanHidden) {
   const auto& terrain =
       window.state().gltf.channels[static_cast<std::size_t>(MeshChannel::Terrain)];
   ASSERT_GT(terrain.elements, 0U) << "no terrain in the scene — the test is vacuous";
-  EXPECT_EQ(terrain.reason, OmissionReason::ChannelNotWalked);
-  EXPECT_TRUE(window.scene_summary()->text().contains(QStringLiteral("#390")));
+  EXPECT_EQ(terrain.reason, OmissionReason::None);
+  EXPECT_EQ(terrain.exported_elements, terrain.elements);
+  EXPECT_GT(terrain.triangles, 0U);
+
+  // The panel's warning list is where the omission used to be announced. The
+  // ground no longer belongs there, and the summary counts it instead.
+  const QString summary = window.scene_summary()->text();
+  EXPECT_FALSE(summary.contains(QStringLiteral("#390")));
+  EXPECT_FALSE(summary.contains(QStringLiteral("terrain channel")));
 }
 
 } // namespace roadmaker::editor

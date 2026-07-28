@@ -23,8 +23,9 @@ single message and drops every other finding.
 
 `preview_mesh_export` cannot run its exporter (they only write to a path), so
 it re-states their policy — and reports what they leave behind as carefully as
-what they write. Today that includes the ground: neither exporter emits
-`mesh.surfaces` or `mesh.terrain` at all (#390).
+what they write. The ground channels used to be the headline example of that;
+since #390 both exporters write `mesh.surfaces` and `mesh.terrain`, and the
+remaining omission is a sign's text face in OpenUSD (#364).
 """
 
 import pathlib
@@ -75,7 +76,8 @@ def main():
     show_scene(mesh, rm.MeshExportFormat.GLTF, "glTF (.glb)")
     show_scene(mesh, rm.MeshExportFormat.USD, "OpenUSD (.usda)")
 
-    # Give the scene ground, and watch it be reported as NOT exported.
+    # Give the scene ground, and watch the totals grow by exactly its share.
+    before = rm.preview_mesh_export(mesh, rm.MeshExportFormat.GLTF)
     rm.edit.EditStack().push(network, rm.edit.create_terrain_field(network))
     grounded = rm.build_network_mesh(network)
     print("\n=== after adding a height field ===")
@@ -83,7 +85,11 @@ def main():
     terrain = preview.channels[int(rm.MeshChannel.TERRAIN.value)]
     print(f"terrain in the scene: {terrain.elements} field(s)")
     print(f"terrain in the file:  {terrain.exported_elements}")
-    print(f"  -> {terrain.detail}")
+    print(f"  {terrain.triangles} triangles over {terrain.vertices} vertices")
+    print(
+        f"  scene total {before.total_triangles} -> {preview.total_triangles} "
+        f"triangles (#390)"
+    )
 
     # And the OpenDRIVE side.
     xodr = rm.preview_xodr_export(network, "t_junction")

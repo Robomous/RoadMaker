@@ -24,6 +24,7 @@
 // tree). It pulls in no third-party format library.
 #pragma once
 
+#include "roadmaker/mesh/mesh.hpp"
 #include "roadmaker/road/lane.hpp"
 
 #include <array>
@@ -72,11 +73,29 @@ namespace roadmaker::io_common {
 
 inline constexpr std::array<double, 4> kMarkingColor{0.92, 0.92, 0.87, 1.0};
 
+/// The two ground colours, lifted from what the viewport already draws
+/// (editor/src/render/scene_builder.cpp): grass green for a surface with no
+/// material and for the terrain field, neutral mid-grey the moment a surface
+/// stores one. Same decision, same numbers — an exported ground reads like the
+/// ground the user was looking at.
+inline constexpr std::array<double, 4> kGrassColor{0.28, 0.42, 0.20, 1.0};
+inline constexpr std::array<double, 4> kPavedGroundColor{0.34, 0.34, 0.35, 1.0};
+
 // Roughness per material class (PBR metallic-roughness / UsdPreviewSurface).
 inline constexpr double kLaneRoughness = 0.95;
 inline constexpr double kMarkingRoughness = 0.6;
 
 inline constexpr const char* kMarkingMaterialName = "lane_marking";
+
+/// The scene height field's own material (#390) — named apart from the ground
+/// surfaces so a consumer can hide or replace the terrain without touching the
+/// authored ones, even though both are drawn the same grass green.
+inline constexpr const char* kTerrainMaterialName = "ground_terrain";
+
+/// The message BOTH exporters return when there is nothing to write, and the
+/// one the export manifest previews. One definition so a preview cannot
+/// promise a refusal the exporter words differently.
+inline constexpr const char* kNothingToExportMessage = "nothing to export: empty network mesh";
 
 // Junction floors carry the driving-lane material since the tee visual
 // rework (follow-up to issue #103) — the legacy "junction_floor" material
@@ -120,6 +139,36 @@ inline constexpr const char* kMarkingMaterialName = "lane_marking";
 
 [[nodiscard]] inline std::string lane_material_name(LaneType type) {
   return "lane_" + std::to_string(static_cast<int>(type));
+}
+
+/// Material name for a ground surface carrying material `code` (#390):
+/// `ground_grass` when it carries none, `ground_<code>` otherwise. Sanitised
+/// for BOTH formats, so a code like "rm:asphalt_worn" spells the same
+/// `ground_rm_asphalt_worn` in .glb and .usda — unlike prop materials, ground
+/// has no reason to differ per format.
+[[nodiscard]] inline std::string ground_material_name(const std::string& code) {
+  return sanitize_usd_identifier("ground_" + (code.empty() ? std::string("grass") : code),
+                                 "ground");
+}
+
+/// The base colour a ground surface is written with: grass unless it stores a
+/// material, in which case a neutral pavement grey (the exporters carry no
+/// texture library, so an asphalt surface is written as flat pavement and the
+/// material NAME is what a consumer maps to its own).
+[[nodiscard]] inline std::array<double, 4> ground_material_color(const std::string& code) {
+  return code.empty() ? kGrassColor : kPavedGroundColor;
+}
+
+/// Whether a mesh holds anything at all to write. THE definition of "nothing
+/// to export", shared by both exporters and by the export manifest that
+/// previews their verdict — a scene of nothing but terrain, ground, bridges or
+/// props is real geometry and exports (#390). Every NetworkMesh channel is
+/// named here: adding a channel without adding it below is what made a
+/// terrain-only scene unexportable in the first place.
+[[nodiscard]] inline bool has_exportable_geometry(const NetworkMesh& mesh) {
+  return !mesh.roads.empty() || !mesh.junction_floors.empty() || !mesh.surfaces.empty() ||
+         !mesh.terrain.indices.empty() || !mesh.bridges.empty() || !mesh.objects.empty() ||
+         !mesh.signal_instances.empty();
 }
 
 } // namespace roadmaker::io_common

@@ -594,12 +594,17 @@ jobs:
           -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
       - name: Build
         run: cmake --build build
-      - name: Golden gtests (writes /tmp/rm_usd_golden.usda)
+      - name: Golden gtests (write /tmp/rm_usd_golden.usda + rm_usd_ground_golden.usda)
         run: ctest --test-dir build --output-on-failure -R '^Usd\.'
       # usd-core ships the pxr Python modules but not the usdchecker CLI, so we
       # drive its compliance engine (UsdUtils.ComplianceChecker) directly.
+      # Two goldens: the sample-based one (roads + a junction floor) and the
+      # ground-carrying one (#390), since no committed sample has a surface or
+      # a height field and the ground prims would otherwise never be checked.
       - name: Validate exported .usda against the OpenUSD reference checker
-        run: python scripts/usd_compliance_check.py /tmp/rm_usd_golden.usda
+        run: |
+          python scripts/usd_compliance_check.py /tmp/rm_usd_golden.usda
+          python scripts/usd_compliance_check.py /tmp/rm_usd_ground_golden.usda
 
   esmini-roundtrip:
     name: esmini round-trip smoke

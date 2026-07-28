@@ -214,11 +214,13 @@ the same change. `Road Plan tool` in step 2 was corrected to its real name,
     manifest of the 3D export (elements, triangles, materials, extents) with
     nothing written to disk; switching **Format** between glTF and OpenUSD
     changes the triangle count, because glTF shares one mesh per prop model
-    while USD bakes every instance. **Note:** the ground channels are reported
-    as *Not written* — no exporter emits `mesh.surfaces` or `mesh.terrain`
-    ([#390](https://github.com/Robomous/RoadMaker/issues/390)), so a truthful
-    preview of a scene with terrain is ground-less until that lands. This step
-    passes when the omission is *reported*, not when it is absent.
+    while USD bakes every instance. The **surfaces** and **terrain** rows both
+    read *Exported*, with non-zero triangles and a `ground_…` material each —
+    the ground from steps 5–7 goes into the file
+    ([#390](https://github.com/Robomous/RoadMaker/issues/390)); the two ground
+    rows carry the same triangle counts in both formats, since neither shares
+    nor bakes the ground. The only *Not supported* row is the sign faces in
+    OpenUSD ([#364](https://github.com/Robomous/RoadMaker/issues/364)).
 22. [ ] Open **File ▸ OpenDRIVE Export Preview…**. **Expected:** the `.xodr`
     exactly as it would be written, its structural counts (roads, reference
     length, junctions, lane sections, lanes, objects, signals), the `rm:`
@@ -243,6 +245,10 @@ the same change. `Road Plan tool` in step 2 was corrected to its real name,
   holds.
 - Zero crashes; undo/redo works after each authoring step.
 - The exported `.xodr` validates with zero errors and loads in esmini.
+- The ground reaches the 3D export: in step 21 the **surfaces** and **terrain**
+  rows read *Exported* with non-zero triangles, in BOTH formats. A ground row
+  that reads *Not written* is a regression of
+  [#390](https://github.com/Robomous/RoadMaker/issues/390) and fails the run.
 - The saved `.xodr` is byte-identical whether or not its `.rmscene.json`
   companion exists: no editor state may leak into the ASAM layer.
 

@@ -219,7 +219,14 @@ SubMesh build_surface_mesh(const RoadNetwork& network,
   //    until the P5 height field (#232) gives the ground its own elevation.
   assign_boundary_elevation_and_solve(mesh, flat_floor, ring.mean_z, border, centerline);
 
-  return emit(mesh, "surface");
+  SubMesh out = emit(mesh, "surface");
+  // The ground material travels WITH the mesh (#390). The glTF/USD exporters
+  // see only a NetworkMesh — they cannot reach the arena for Surface::material
+  // — so the code is stamped here, exactly as a lane patch carries its own
+  // covering <material>. set_surface_material dirties the `surfaces` channel,
+  // so remesh_surfaces re-stamps this and the export can never go stale.
+  out.surface = surface.material;
+  return out;
 }
 
 } // namespace roadmaker
