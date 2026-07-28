@@ -45,20 +45,25 @@ USD-enabled build would produce.
 
 The preview names these rather than hiding them:
 
-- **Ground surfaces and terrain are written by neither exporter.** A scene with
-  a height field or an enclosed ground surface exports without it
-  ([#390](https://github.com/Robomous/RoadMaker/issues/390)).
 - **OpenUSD cannot carry sign-face text.** Sign bodies export normally; the
   rasterised legend does not
   ([#364](https://github.com/Robomous/RoadMaker/issues/364)). glTF embeds it.
 - **A placement naming a model this build does not ship is skipped silently by
   the exporter.** The preview counts them.
 
+Ground surfaces and the terrain field used to be on this list: for two pillars
+neither exporter wrote them, so a scene with a height field exported without its
+ground. Both now write both channels
+([#390](https://github.com/Robomous/RoadMaker/issues/390)) — a surface takes a
+`ground_<material>` material (plain grass when it carries none) and the field
+takes `ground_terrain`, in the same colours the viewport draws them.
+
 ### "Nothing would be exported"
 
-Both exporters refuse a scene with no roads and no junction floors — even one
-that holds terrain, ground surfaces, bridges or props. The preview shows that
-verdict up front instead of letting you meet it at a save dialog.
+The exporters refuse only a scene whose every channel is empty. Terrain, ground
+surfaces, bridges or props on their own are real geometry and export fine. The
+preview shows that verdict up front instead of letting you meet it at a save
+dialog.
 
 ## OpenDRIVE Export Preview
 
@@ -98,10 +103,10 @@ block anything.
 
 | Rule UID | Fires when |
 |---|---|
-| `robomous.ai:rm:1.0.0:export.channel_not_written` | A channel holds geometry that the chosen exporter does not walk at all — today the ground channels (#390). |
+| `robomous.ai:rm:1.0.0:export.channel_not_written` | A channel holds geometry that the chosen exporter does not walk at all. No channel is in this state today — the ground channels were the last (#390) — but the rule stays, so a channel that ever ships unexported announces itself. |
 | `robomous.ai:rm:1.0.0:export.format_unsupported` | The format cannot carry something the scene holds — today OpenUSD and sign-face textures (#364). |
 | `robomous.ai:rm:1.0.0:export.model_unresolved` | A placement names a prop or signal model this build does not ship; the exporter skips it silently. |
-| `robomous.ai:rm:1.0.0:export.nothing_to_export` | The exporters would refuse the scene outright — no roads and no junction floors, whatever else it holds. |
+| `robomous.ai:rm:1.0.0:export.nothing_to_export` | The exporters would refuse the scene outright, because every channel is empty. |
 
 ## From Python
 

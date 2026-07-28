@@ -345,8 +345,8 @@ TEST(ExportPreview, ChannelTableAgreesWithWhatEachExporterWalks) {
   const Row rows[] = {
       {MeshChannel::Roads, "mesh.roads", true, true},
       {MeshChannel::JunctionFloors, "mesh.junction_floors", true, true},
-      {MeshChannel::Surfaces, "mesh.surfaces", false, false},
-      {MeshChannel::Terrain, "mesh.terrain", false, false},
+      {MeshChannel::Surfaces, "mesh.surfaces", true, true},
+      {MeshChannel::Terrain, "mesh.terrain", true, true},
       {MeshChannel::Bridges, "mesh.bridges", true, true},
       {MeshChannel::Objects, "mesh.objects", true, true},
       {MeshChannel::SignalInstances, "mesh.signal_instances", true, true},
@@ -364,15 +364,25 @@ TEST(ExportPreview, ChannelTableAgreesWithWhatEachExporterWalks) {
   }
 }
 
+// The refusal used to be three copies of one condition — two exporters and the
+// manifest — held together by a scan for the literal text. Since #390 it is ONE
+// function that all three call, which is strictly stronger: a shared definition
+// cannot drift from itself. What the scan still buys is that an exporter cannot
+// quietly go back to rolling its own guard, which is how a terrain-only scene
+// came to be refused in the first place.
 TEST(ExportPreview, PreviewedRefusalConditionMatchesBothExporters) {
   const std::filesystem::path src(RM_CORE_SRC_DIR);
-  const std::string guard = "mesh.roads.empty() && mesh.junction_floors.empty()";
+  const std::string guard = "has_exportable_geometry(mesh)";
   for (const char* file : {"gltf_exporter.cpp", "usd_exporter.cpp"}) {
     const std::string source = strip_comments(read_file(src / "io" / file));
     EXPECT_NE(source.find(guard), std::string::npos)
-        << file << " no longer carries the guard the manifest previews (" << guard
-        << "). Update preview_mesh_export's would_export alongside it.";
+        << file << " no longer calls the shared guard the manifest previews (" << guard
+        << "). Both exporters and preview_mesh_export must use the one definition in "
+           "mesh_export_common.hpp.";
   }
+  // And the manifest previews it by CALLING it, not by restating it.
+  const std::string preview = strip_comments(read_file(src / "io" / "export_preview.cpp"));
+  EXPECT_NE(preview.find(guard), std::string::npos);
 }
 
 // ---------------------------------------------------------------- tier 3
@@ -416,12 +426,12 @@ TEST(ExportPreview, EveryNetworkMeshChannelIsAccountedFor) {
 
 // ---------------------------------------------------------------- tier 4
 
-TEST(ExportPreview, TerrainOnlySceneIsPreviewedAsNothingToExport) {
-  // Terrain and ground, and no carriageway: real geometry, which both
-  // exporters nevertheless refuse because their guard tests only roads and
-  // junction floors. (create_terrain_field sizes the grid from the network's
-  // extent, so the roads have to exist to author the field — they are dropped
-  // from the MESH afterwards, which is exactly the shape the guard sees.)
+TEST(ExportPreview, TerrainOnlySceneExportsInsteadOfBeingRefused) {
+  // Terrain and ground, and no carriageway: real geometry, which both exporters
+  // used to refuse because their guard tested only roads and junction floors
+  // (#390). (create_terrain_field sizes the grid from the network's extent, so
+  // the roads have to exist to author the field — they are dropped from the
+  // MESH afterwards, which is exactly the shape the guard sees.)
   const NetworkMesh authored = build_network_mesh(full_channel_network());
   ASSERT_FALSE(authored.terrain.indices.empty());
 
@@ -433,10 +443,25 @@ TEST(ExportPreview, TerrainOnlySceneIsPreviewedAsNothingToExport) {
   ASSERT_FALSE(mesh.terrain.indices.empty()) << "fixture has no terrain — the test is vacuous";
 
   const ScenePreview preview = preview_mesh_export(mesh, MeshExportFormat::Gltf);
+  EXPECT_TRUE(preview.would_export);
+  EXPECT_FALSE(preview.refusal.has_value());
+  EXPECT_GT(preview.total_triangles, 0U);
+
+  // Previewed verdict == real verdict: the file is actually written.
+  const auto path = std::filesystem::temp_directory_path() / "rm_preview_terrain_only.glb";
+  const auto real = export_glb(mesh, path);
+  ASSERT_TRUE(real.has_value()) << (real ? std::string{} : real.error().message);
+  EXPECT_TRUE(std::filesystem::exists(path));
+  std::remove(path.string().c_str());
+}
+
+TEST(ExportPreview, AnEntirelyEmptyMeshIsStillRefusedIdentically) {
+  // The guard did not go away, it got honest: nothing in ANY channel.
+  const NetworkMesh mesh;
+  const ScenePreview preview = preview_mesh_export(mesh, MeshExportFormat::Gltf);
   EXPECT_FALSE(preview.would_export);
   ASSERT_TRUE(preview.refusal.has_value());
 
-  // Previewed verdict == real verdict, message included.
   const auto path = std::filesystem::temp_directory_path() / "rm_preview_refusal.glb";
   const auto real = export_glb(mesh, path);
   std::remove(path.string().c_str());
@@ -447,7 +472,7 @@ TEST(ExportPreview, TerrainOnlySceneIsPreviewedAsNothingToExport) {
 
 // ------------------------------------------------- omissions and policy
 
-TEST(ExportPreview, GroundChannelsAreReportedOmittedForBothFormats) {
+TEST(ExportPreview, GroundChannelsAreExportedForBothFormats) {
   const NetworkMesh mesh = build_network_mesh(full_channel_network());
   ASSERT_FALSE(mesh.surfaces.empty()) << "fixture has no surfaces — the test is vacuous";
   ASSERT_FALSE(mesh.terrain.indices.empty()) << "fixture has no terrain — the test is vacuous";
@@ -459,25 +484,46 @@ TEST(ExportPreview, GroundChannelsAreReportedOmittedForBothFormats) {
     for (const MeshChannel ground : {MeshChannel::Surfaces, MeshChannel::Terrain}) {
       const MeshChannelPreview& row = channel(preview, ground);
       EXPECT_GT(row.elements, 0U);
-      EXPECT_EQ(row.exported_elements, 0U);
-      EXPECT_EQ(row.reason, OmissionReason::ChannelNotWalked);
-      EXPECT_EQ(row.triangles, 0U) << "an omitted channel contributes nothing to the file";
-      // A documentation assertion, deliberately paired with the enum above:
-      // the enum is the behaviour, this is only the citation.
-      EXPECT_NE(row.detail.find("#390"), std::string::npos);
+      EXPECT_EQ(row.exported_elements, row.elements);
+      EXPECT_EQ(row.reason, OmissionReason::None);
+      EXPECT_GT(row.triangles, 0U);
+      EXPECT_GT(row.vertices, 0U);
+      EXPECT_TRUE(row.detail.empty()) << "an exported channel has nothing to explain";
     }
   }
+
+  // Neither format shares nor bakes the ground — one mesh per surface plus one
+  // for the field, either way — so unlike props the two agree exactly.
+  const ScenePreview gltf = preview_mesh_export(mesh, MeshExportFormat::Gltf);
+  const ScenePreview usd = preview_mesh_export(mesh, MeshExportFormat::Usd);
+  EXPECT_EQ(channel(gltf, MeshChannel::Surfaces).triangles,
+            channel(usd, MeshChannel::Surfaces).triangles);
+  EXPECT_EQ(channel(gltf, MeshChannel::Terrain).triangles,
+            channel(usd, MeshChannel::Terrain).triangles);
 }
 
-TEST(ExportPreview, OmittedGroundIsExcludedFromTheTotals) {
+TEST(ExportPreview, GroundIsIncludedInTheTotalsAndReconcilesWithTheFile) {
   const NetworkMesh mesh = build_network_mesh(full_channel_network());
   const ScenePreview preview = preview_mesh_export(mesh, MeshExportFormat::Gltf);
   const tinygltf::Model model = export_and_reload(mesh, "rm_preview_ground.glb");
 
-  // The whole point: a scene WITH ground still reconciles, because neither the
-  // file nor the manifest carries it.
+  // Non-vacuity first: without this the reconciliation below would hold just as
+  // well on the pre-#390 code, where neither side carried any ground at all.
+  const std::size_t ground_triangles = channel(preview, MeshChannel::Surfaces).triangles +
+                                       channel(preview, MeshChannel::Terrain).triangles;
+  ASSERT_GT(ground_triangles, 0U) << "no ground in the manifest — the test is vacuous";
+
+  // THE gate: what the manifest promises is what the file stores, ground and
+  // all. One mesh per surface and one for the terrain, counted on both sides.
   EXPECT_EQ(preview.total_triangles, file_triangles(model));
   EXPECT_EQ(preview.mesh_count, model.meshes.size());
+  EXPECT_EQ(triangles_by_material(preview), triangles_by_material(model));
+
+  // And the ground materials are the exporters' own spelling, not a second
+  // palette invented for the report.
+  const auto materials = triangles_by_material(model);
+  EXPECT_TRUE(materials.contains(io_common::ground_material_name("")));
+  EXPECT_TRUE(materials.contains(io_common::kTerrainMaterialName));
 }
 
 TEST(ExportPreview, SignFacesExportToGltfAndNotToUsd) {

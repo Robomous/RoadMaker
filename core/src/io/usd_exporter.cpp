@@ -176,9 +176,9 @@ tz::Prim make_mesh(const std::string& name,
 } // namespace
 
 Expected<void> export_usda(const NetworkMesh& mesh, const std::filesystem::path& path) {
-  if (mesh.roads.empty() && mesh.junction_floors.empty()) {
+  if (!io_common::has_exportable_geometry(mesh)) {
     return make_error(
-        ErrorCode::InvalidArgument, "nothing to export: empty network mesh", path.string());
+        ErrorCode::InvalidArgument, io_common::kNothingToExportMessage, path.string());
   }
 
   // Deduplicated materials, keyed by prim name (deterministic std::map order in
@@ -262,6 +262,43 @@ Expected<void> export_usda(const NetworkMesh& mesh, const std::filesystem::path&
                           /*rename=*/true,
                           &err);
     }
+  }
+
+  // Enclosed-area ground surfaces (#215) — written since #390. Each carries its
+  // own material code (SubMesh::surface, stamped by surface_fill.cpp): a paved
+  // courtyard binds ground_<code> in neutral pavement, an unpainted block binds
+  // ground_grass.
+  for (std::size_t si = 0; si < mesh.surfaces.size(); ++si) {
+    const SubMesh& ground = mesh.surfaces[si].mesh;
+    const std::string material = io_common::ground_material_name(ground.surface);
+    const auto color = io_common::ground_material_color(ground.surface);
+    materials.emplace(material,
+                      MaterialDef{{color[0], color[1], color[2]}, io_common::kLaneRoughness});
+    worldPrim.add_child(make_mesh("surface_" + std::to_string(si),
+                                  ground.positions,
+                                  ground.normals,
+                                  ground.indices,
+                                  material),
+                        /*rename=*/true,
+                        &err);
+  }
+
+  // The scene height field (p5-s2, #232): one prim, since there is one field per
+  // network. Absent entirely from a scene that carries no terrain.
+  if (!mesh.terrain.indices.empty()) {
+    const std::string terrain_material = io_common::kTerrainMaterialName;
+    materials.emplace(
+        terrain_material,
+        MaterialDef{
+            {io_common::kGrassColor[0], io_common::kGrassColor[1], io_common::kGrassColor[2]},
+            io_common::kLaneRoughness});
+    worldPrim.add_child(make_mesh("terrain",
+                                  mesh.terrain.positions,
+                                  mesh.terrain.normals,
+                                  mesh.terrain.indices,
+                                  terrain_material),
+                        /*rename=*/true,
+                        &err);
   }
 
   // Generated bridge solids (p5-s3, #233): one prim per <bridge> span. The deck

@@ -22,7 +22,8 @@ lays a flat zero field over the network bounds — visually a no-op, since a fla
 field samples 0 everywhere, exactly like no field. What it buys is a real
 surface the roads shape: raise a road's elevation profile and the ground within
 a skirt band of it follows, while ground far away stays at the field. The field
-persists to an ESRI ASCII `.asc` sidecar referenced from the `.xodr`.
+persists to an ESRI ASCII `.asc` sidecar referenced from the `.xodr`, and the
+ground it produces is written into the 3D export alongside the roads (#390).
 
 Run:  python terrain_field.py [out.xodr]
 """
@@ -87,6 +88,22 @@ def main() -> None:
     assert reloaded.terrain.rows == net.terrain.rows
     print(f"reloaded the scene; its {reloaded.terrain.cols}x{reloaded.terrain.rows} "
           f"height field round-tripped, sidecar='{reloaded.terrain.sidecar}'")
+
+    # And into the 3D export (#390): the ground the roads shaped is written to
+    # the .glb, not left behind in the editor. The manifest says so before a
+    # byte is written, and the file confirms it after.
+    reloaded_mesh = rm.build_network_mesh(reloaded)
+    preview = rm.preview_mesh_export(reloaded_mesh, rm.MeshExportFormat.GLTF)
+    terrain_row = preview.channels[int(rm.MeshChannel.TERRAIN.value)]
+    assert terrain_row.exported_elements == terrain_row.elements, "the ground is not exported"
+    assert terrain_row.reason == rm.OmissionReason.NONE
+    assert terrain_row.triangles > 0
+
+    glb = out.with_suffix(".glb")
+    rm.export_glb(reloaded_mesh, str(glb))
+    print(f"exported {glb.name}: {preview.total_triangles} triangles, of which "
+          f"{terrain_row.triangles} are the terrain "
+          f"({glb.stat().st_size} bytes on disk)")
 
 
 if __name__ == "__main__":

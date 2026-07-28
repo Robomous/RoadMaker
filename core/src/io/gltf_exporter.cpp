@@ -77,6 +77,20 @@ public:
         scene.nodes.push_back(add_submesh_node(detail, material_for(detail.material)));
       }
     }
+    // Enclosed-area ground surfaces (#215) — written since #390. Each carries
+    // its own material code (SubMesh::surface, stamped by surface_fill.cpp), so
+    // a paved courtyard exports as pavement and an unpainted block as grass.
+    for (std::size_t i = 0; i < mesh.surfaces.size(); ++i) {
+      const SubMesh& ground = mesh.surfaces[i].mesh;
+      scene.nodes.push_back(add_submesh_node(
+          ground, ground_material(ground.surface), "surface_" + std::to_string(i)));
+    }
+    // The scene height field (p5-s2, #232), one node — there is one field per
+    // network. Empty unless the scene carries terrain, in which case nothing at
+    // all is written for it.
+    if (!mesh.terrain.indices.empty()) {
+      scene.nodes.push_back(add_submesh_node(mesh.terrain, terrain_material(), "terrain"));
+    }
     // Generated bridge solids (p5-s3, #233): the deck/piers/abutments/guardrails
     // for each <bridge> span, one node each. Faceted with planar UVs — the deck
     // material carrier lives on the record; the mesh renders from its lane type.
@@ -234,6 +248,28 @@ private:
     return marking_material_;
   }
 
+  /// A material looked up by NAME, created once. Ground surfaces need this:
+  /// two unpainted blocks are both `ground_grass` and must share one entry, or
+  /// the file would carry a material per surface.
+  int named_material(const std::string& name, const std::array<double, 4>& color) {
+    const auto found = named_materials_.find(name);
+    if (found != named_materials_.end()) {
+      return found->second;
+    }
+    const int index = add_material(name, color, io_common::kLaneRoughness);
+    named_materials_.emplace(name, index);
+    return index;
+  }
+
+  int ground_material(const std::string& code) {
+    return named_material(io_common::ground_material_name(code),
+                          io_common::ground_material_color(code));
+  }
+
+  int terrain_material() {
+    return named_material(io_common::kTerrainMaterialName, io_common::kGrassColor);
+  }
+
   int add_material(const std::string& name, const std::array<double, 4>& color, double roughness) {
     tinygltf::Material material;
     material.name = name;
@@ -286,14 +322,18 @@ private:
     return primitive;
   }
 
-  int add_submesh_node(const SubMesh& sub, int material) {
+  /// `name` overrides the submesh's own name, which is a class label on the
+  /// channels that emit many identical ones (every ground surface is named
+  /// "surface"): the file gets surface_0, surface_1, … instead.
+  int add_submesh_node(const SubMesh& sub, int material, const std::string& name = {}) {
+    const std::string& label = name.empty() ? sub.name : name;
     tinygltf::Mesh gltf_mesh;
-    gltf_mesh.name = sub.name;
+    gltf_mesh.name = label;
     gltf_mesh.primitives.push_back(make_primitive(sub, material));
     model_.meshes.push_back(std::move(gltf_mesh));
 
     tinygltf::Node node;
-    node.name = sub.name;
+    node.name = label;
     node.mesh = static_cast<int>(model_.meshes.size() - 1);
     model_.nodes.push_back(std::move(node));
     return static_cast<int>(model_.nodes.size() - 1);
@@ -460,6 +500,7 @@ private:
 
   tinygltf::Model model_;
   std::map<LaneType, int> lane_materials_;
+  std::map<std::string, int> named_materials_;
   std::map<std::string, int> prop_meshes_;
   std::map<std::string, int> face_meshes_;
   int marking_material_ = -1;
@@ -469,9 +510,9 @@ private:
 } // namespace
 
 Expected<void> export_glb(const NetworkMesh& mesh, const std::filesystem::path& path) {
-  if (mesh.roads.empty() && mesh.junction_floors.empty()) {
+  if (!io_common::has_exportable_geometry(mesh)) {
     return make_error(
-        ErrorCode::InvalidArgument, "nothing to export: empty network mesh", path.string());
+        ErrorCode::InvalidArgument, io_common::kNothingToExportMessage, path.string());
   }
   return GlbWriter{}.write(mesh, path);
 }

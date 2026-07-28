@@ -50,8 +50,11 @@ constexpr const char* kRuleNothingToExport = "robomous.ai:rm:1.0.0:export.nothin
 /// table and the exporters agree — in BOTH directions, for BOTH formats,
 /// without building USD.
 ///
-/// When #390 lands (surfaces + terrain exported), the two `false`s below are
-/// the edit, and the gate fails until they are made.
+/// Every row is `true` for both formats except the USD sign faces (#364), the
+/// one thing a format genuinely cannot carry. A new channel that ships
+/// unexported adds a `false` here and gets a *Not written* row for free —
+/// which is the whole point: the decision is recorded rather than made by
+/// omission, as the ground channels were for two pillars (#390).
 struct ChannelPolicy {
   MeshChannel channel;
   std::string_view label;
@@ -63,9 +66,8 @@ struct ChannelPolicy {
 constexpr std::array<ChannelPolicy, kMeshChannelCount> kChannelPolicy{{
     {MeshChannel::Roads, "roads", "roads", true, true},
     {MeshChannel::JunctionFloors, "junction_floors", "junction_floors", true, true},
-    // #390 — no exporter writes the ground channels.
-    {MeshChannel::Surfaces, "surfaces", "surfaces", false, false},
-    {MeshChannel::Terrain, "terrain", "terrain", false, false},
+    {MeshChannel::Surfaces, "surfaces", "surfaces", true, true},
+    {MeshChannel::Terrain, "terrain", "terrain", true, true},
     {MeshChannel::Bridges, "bridges", "bridges", true, true},
     {MeshChannel::Objects, "objects", "objects", true, true},
     {MeshChannel::SignalInstances, "signal_instances", "signal_instances", true, true},
@@ -121,6 +123,25 @@ public:
     add(std::string(io_common::kMarkingMaterialName),
         io_common::kMarkingColor,
         io_common::kMarkingRoughness,
+        triangles,
+        false);
+  }
+
+  /// A ground surface, named and coloured from its stored material code — the
+  /// exporters' own definition, so an unpainted surface and a paved one land in
+  /// the same two entries here as in the file.
+  void add_ground(const std::string& code, std::size_t triangles) {
+    add(io_common::ground_material_name(code),
+        io_common::ground_material_color(code),
+        io_common::kLaneRoughness,
+        triangles,
+        false);
+  }
+
+  void add_terrain(std::size_t triangles) {
+    add(std::string(io_common::kTerrainMaterialName),
+        io_common::kGrassColor,
+        io_common::kLaneRoughness,
         triangles,
         false);
   }
@@ -227,21 +248,70 @@ void grow_instance(ExportBounds& bounds,
   return 0; // unreachable — the switch above is exhaustive and default-free
 }
 
-/// Geometry a channel would contribute if the format DID walk it. Used only
-/// for the omitted channels, so the report can say how much ground is being
-/// left behind rather than merely that some is.
+/// Geometry a channel would contribute if the format DID walk it, so a report
+/// can say how much is being left behind rather than merely that some is.
+///
+/// NO channel is unwalked today — #390 was the last one, and this is reached
+/// only if a future channel ships unexported. It is written for every channel
+/// anyway, because the previous version knew only about the two ground
+/// channels and would have under-reported the next one by silently returning
+/// zero. `ChannelTableAgreesWithWhatEachExporterWalks` is the live guard that
+/// forces the decision to be made here rather than by omission.
 [[nodiscard]] std::pair<std::size_t, std::size_t> unwalked_geometry(const NetworkMesh& mesh,
                                                                     MeshChannel channel) {
   std::size_t vertices = 0;
   std::size_t triangles = 0;
-  if (channel == MeshChannel::Surfaces) {
-    for (const SurfaceMesh& surface : mesh.surfaces) {
-      vertices += vertices_of(surface.mesh.positions);
-      triangles += triangles_of(surface.mesh.indices);
+  const auto add_sub = [&](const SubMesh& sub) {
+    vertices += vertices_of(sub.positions);
+    triangles += triangles_of(sub.indices);
+  };
+  switch (channel) {
+  case MeshChannel::Roads:
+    for (const RoadMesh& road : mesh.roads) {
+      vertices += vertices_of(road.positions);
+      for (const RoadMesh::LanePatch& patch : road.lanes) {
+        triangles += triangles_of(patch.indices);
+      }
+      for (const SubMesh& marking : road.markings) {
+        add_sub(marking);
+      }
     }
-  } else if (channel == MeshChannel::Terrain) {
-    vertices = vertices_of(mesh.terrain.positions);
-    triangles = triangles_of(mesh.terrain.indices);
+    break;
+  case MeshChannel::JunctionFloors:
+    for (const JunctionFloor& floor : mesh.junction_floors) {
+      add_sub(floor.mesh);
+      for (const SubMesh& detail : floor.details) {
+        add_sub(detail);
+      }
+    }
+    break;
+  case MeshChannel::Surfaces:
+    for (const SurfaceMesh& surface : mesh.surfaces) {
+      add_sub(surface.mesh);
+    }
+    break;
+  case MeshChannel::Terrain:
+    add_sub(mesh.terrain);
+    break;
+  case MeshChannel::Bridges:
+    for (const BridgeMesh& span : mesh.bridges) {
+      add_sub(span.mesh);
+    }
+    break;
+  case MeshChannel::Objects:
+  case MeshChannel::SignalInstances:
+    // Instanced channels store a shared model, not per-record geometry; the
+    // count depends on the format's sharing rule, which an unwalked channel by
+    // definition does not have. Reported as records only.
+    break;
+  case MeshChannel::SignalFaces:
+    for (const SignalInstance& signal : mesh.signal_instances) {
+      if (signal.face.has_value()) {
+        vertices += vertices_of(signal.face->positions);
+        triangles += triangles_of(signal.face->indices);
+      }
+    }
+    break;
   }
   return {vertices, triangles};
 }
@@ -335,6 +405,38 @@ ScenePreview preview_mesh_export(const NetworkMesh& mesh, MeshExportFormat forma
       }
     }
     floors.exported_elements = floors.elements;
+  }
+
+  // ------------------------------------------------------ ground surfaces
+  //
+  // One mesh and one node per surface in BOTH formats — neither shares nor
+  // bakes the ground, so the two formats agree here for once.
+  {
+    MeshChannelPreview& surfaces = row(MeshChannel::Surfaces);
+    for (const SurfaceMesh& ground : mesh.surfaces) {
+      surfaces.vertices += vertices_of(ground.mesh.positions);
+      const std::size_t tris = triangles_of(ground.mesh.indices);
+      surfaces.triangles += tris;
+      materials.add_ground(ground.mesh.surface, tris);
+      grow(preview.bounds, ground.mesh.positions);
+      preview.mesh_count += 1;
+      preview.node_count += 1;
+    }
+    surfaces.exported_elements = surfaces.elements;
+  }
+
+  // -------------------------------------------------------------- terrain
+  {
+    MeshChannelPreview& terrain = row(MeshChannel::Terrain);
+    if (!mesh.terrain.indices.empty()) {
+      terrain.vertices = vertices_of(mesh.terrain.positions);
+      terrain.triangles = triangles_of(mesh.terrain.indices);
+      materials.add_terrain(terrain.triangles);
+      grow(preview.bounds, mesh.terrain.positions);
+      preview.mesh_count += 1;
+      preview.node_count += 1;
+    }
+    terrain.exported_elements = terrain.elements;
   }
 
   // -------------------------------------------------------------- bridges
@@ -485,10 +587,10 @@ ScenePreview preview_mesh_export(const NetworkMesh& mesh, MeshExportFormat forma
                                            .lane = {}});
       } else {
         entry.reason = OmissionReason::ChannelNotWalked;
-        entry.detail =
-            "No exporter writes the ground channels yet (#390): " + std::to_string(triangles) +
-            " triangles over " + std::to_string(vertices) +
-            " vertices stay in the scene and out of the file.";
+        entry.detail = "This exporter does not write the " + std::string(entry.label) +
+                       " channel: " + std::to_string(triangles) + " triangles over " +
+                       std::to_string(vertices) +
+                       " vertices stay in the scene and out of the file.";
         preview.notes.push_back(Diagnostic{.severity = Severity::Warning,
                                            .location = std::string(entry.label),
                                            .message = entry.detail,
@@ -518,20 +620,21 @@ ScenePreview preview_mesh_export(const NetworkMesh& mesh, MeshExportFormat forma
   preview.channels = std::move(rows);
   preview.materials = materials.take();
 
-  // The empty-mesh guard, previewed rather than hit at a file dialog. Both
-  // exporters carry the identical condition and the identical message; the
-  // source-scan gate proves this copy still matches theirs.
-  preview.would_export = !(mesh.roads.empty() && mesh.junction_floors.empty());
+  // The empty-mesh guard, previewed rather than hit at a file dialog. This is
+  // not a copy of the exporters' condition — it is THE condition, the one
+  // function both of them call, so a preview cannot promise a verdict the
+  // exporter then contradicts. The source-scan gate proves they still call it.
+  preview.would_export = io_common::has_exportable_geometry(mesh);
   if (!preview.would_export) {
     preview.refusal = Error{.code = ErrorCode::InvalidArgument,
-                            .message = "nothing to export: empty network mesh",
+                            .message = io_common::kNothingToExportMessage,
                             .context = {}};
     preview.notes.push_back(
         Diagnostic{.severity = Severity::Error,
                    .location = "network mesh",
-                   .message = "The exporters refuse a scene with no roads and no junction "
-                              "floors, even when it carries terrain, ground surfaces, bridges "
-                              "or props.",
+                   .message = "The exporters refuse a scene whose every channel is empty — no "
+                              "roads, junction floors, ground surfaces, terrain, bridges, props "
+                              "or signals.",
                    .rule_id = kRuleNothingToExport,
                    .road = {},
                    .lane = {}});

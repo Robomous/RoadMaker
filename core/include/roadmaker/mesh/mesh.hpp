@@ -57,6 +57,10 @@ struct SubMesh {
   /// viewport/exporter tint the marking from the material library. Empty when
   /// the marking carries no material (the renderer then uses its paint colour).
   /// Parallel to RoadMesh::LanePatch::surface.
+  ///
+  /// A ground surface's mesh carries its Surface::material here for the same
+  /// reason (#390): the mesh exporters never see the arena, so the code has to
+  /// travel with the geometry. Empty = the default grass.
   std::string surface;
 
   std::string name;

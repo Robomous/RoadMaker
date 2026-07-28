@@ -19,6 +19,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 Current version on `main`: **0.0.1**.
 
 ### Added
+- **Your exported scene has ground under it**
+  ([#390](https://github.com/Robomous/RoadMaker/issues/390)): glTF and OpenUSD
+  exports carried roads and junction floors over nothing. The ground surfaces
+  that fill the blocks between roads had never been written since they shipped,
+  and neither had the terrain height field — so a road raised into a hill
+  exported without the hill, and a courtyard exported as a hole. Both are in the
+  file now. A surface is written with the material you painted it (grass when
+  you painted none), the field is written as its own `ground_terrain` material,
+  and the colours are the ones the viewport shows you.
+  A second refusal went with it: both exporters used to reject any scene with no
+  roads and no junction floors, so a scene of pure terrain — or of nothing but
+  bridges or props — was turned away as *"nothing to export"* though it plainly
+  had geometry. They now refuse only a scene that is empty in every channel.
 - **See what an export will contain before you write it**
   ([#241](https://github.com/Robomous/RoadMaker/issues/241)): two new tools under
   **File** — *Scene Export Preview…* and *OpenDRIVE Export Preview…* — answer
@@ -29,15 +42,16 @@ Current version on `main`: **0.0.1**.
   is honest rather than a bug — glTF stores one copy of a tree and places it two
   hundred times, OpenUSD stores two hundred trees.
   What it says about *omissions* took as much care as what it says about
-  content. Neither exporter writes ground surfaces or terrain, so a scene with a
-  height field exports without any ground at all — that has been true since
-  terrain shipped and nothing anywhere said so. Now it is a row reading *Not
-  written*, citing [#390](https://github.com/Robomous/RoadMaker/issues/390).
-  The same for sign-face text OpenUSD cannot carry
-  ([#364](https://github.com/Robomous/RoadMaker/issues/364)), for a prop naming a
-  model this build does not ship, and for the refusal both exporters give a
-  scene of pure terrain — *"nothing to export"* — which you now meet in the
-  preview instead of at a save dialog.
+  content. Its first find was that neither exporter wrote ground surfaces or
+  terrain, so a scene with a height field exported without any ground at all —
+  true since terrain shipped, and nothing anywhere said so. The preview gave it
+  a row reading *Not written*, and that row is what got it fixed
+  ([#390](https://github.com/Robomous/RoadMaker/issues/390), below). The same
+  treatment covers sign-face text OpenUSD cannot carry
+  ([#364](https://github.com/Robomous/RoadMaker/issues/364)), a prop naming a
+  model this build does not ship, and the refusal an exporter gives an empty
+  scene — *"nothing to export"* — which you now meet in the preview instead of
+  at a save dialog.
   The OpenDRIVE preview shows the file exactly as it would be written, with its
   structural counts and the RoadMaker extension records it carries, all read
   back out of the writer's own bytes. **And it fixes something quieter:** the
