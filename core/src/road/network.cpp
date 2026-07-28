@@ -448,4 +448,8 @@ void RoadNetwork::set_terrain(HeightField field) {
   terrain_ = std::move(field);
 }
 
+void RoadNetwork::set_georeference(GeoReference geo) {
+  georeference_ = std::move(geo);
+}
+
 } // namespace roadmaker

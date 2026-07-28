@@ -7836,6 +7836,38 @@ private:
   HeightField before_;
 };
 
+/// The world georeference (p7-s5, #324), captured whole before and after.
+///
+/// `dirty()` is EMPTY, and deliberately so: a georeference says how the scene's
+/// coordinates relate to the earth, not where anything is. No vertex moves, no
+/// mesh channel changes, nothing needs re-deriving — the only thing that
+/// changes is the bytes the writer emits. A command that names channels it does
+/// not affect would make every save re-mesh the world for nothing.
+class SetGeoReferenceCommand : public Command {
+public:
+  SetGeoReferenceCommand(std::string_view name, GeoReference after, GeoReference before)
+      : name_(name), after_(std::move(after)), before_(std::move(before)) {}
+
+  Expected<void> apply(RoadNetwork& network) override {
+    network.set_georeference(after_);
+    return {};
+  }
+
+  Expected<void> revert(RoadNetwork& network) override {
+    network.set_georeference(before_);
+    return {};
+  }
+
+  std::string_view name() const override { return name_; }
+
+  DirtySet dirty() const override { return DirtySet{}; }
+
+private:
+  std::string_view name_;
+  GeoReference after_;
+  GeoReference before_;
+};
+
 /// A terrain brush stroke (p5-s4, #234). Unlike SetTerrainFieldCommand it does
 /// NOT snapshot the whole grid — a sculpt session pushes many strokes and each
 /// touches only a small disc, so this captures just the post rectangle that
@@ -8021,6 +8053,31 @@ std::unique_ptr<Command> remove_terrain_field(const RoadNetwork& network) {
                                  .message = "there is no terrain field to remove"});
   }
   return std::make_unique<SetTerrainFieldCommand>(kName, HeightField{}, network.terrain());
+}
+
+std::unique_ptr<Command> set_georeference(const RoadNetwork& network, GeoReference geo) {
+  static constexpr std::string_view kName = "Set World Georeference";
+  const auto fail = [&](std::string message) {
+    return invalid_command(
+        std::string(kName),
+        Error{.code = ErrorCode::InvalidArgument, .message = std::move(message)});
+  };
+  // A projection string is opaque to this build by design (see
+  // road/georeference.hpp), so there is nothing to validate about its CONTENT.
+  // What can be checked is that it is not whitespace pretending to be a CRS,
+  // which would write an empty <geoReference> the reader then warns about.
+  if (!geo.projection.empty() && geo.projection.find_first_not_of(" \t\r\n") == std::string::npos) {
+    return fail("the projection string is blank; clear the georeference instead");
+  }
+  if (geo.offset.has_value() &&
+      (!std::isfinite(geo.offset->x) || !std::isfinite(geo.offset->y) ||
+       !std::isfinite(geo.offset->z) || !std::isfinite(geo.offset->hdg))) {
+    return fail("the georeference offset must be finite");
+  }
+  if (geo == network.georeference()) {
+    return fail("the georeference is unchanged");
+  }
+  return std::make_unique<SetGeoReferenceCommand>(kName, std::move(geo), network.georeference());
 }
 
 Expected<std::unique_ptr<Command>> stamp_terrain(const RoadNetwork& network,

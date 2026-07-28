@@ -33,6 +33,9 @@ namespace {
 constexpr auto kVersionKey = "scene_version";
 constexpr auto kViewKey = "view";
 constexpr auto kTexturedKey = "textured";
+constexpr auto kWorkspaceKey = "workspace";
+constexpr auto kExtentsKey = "extents";
+constexpr auto kCrsKey = "crs";
 constexpr auto kTargetKey = "target";
 constexpr auto kYawKey = "yaw";
 constexpr auto kPitchKey = "pitch";
@@ -70,6 +73,24 @@ constexpr auto kOrthographic = "orthographic";
     }
   }
   return QString::number(widened, 'g', 9).toDouble();
+}
+
+/// The double twin of to_json_float, for values that are double all the way
+/// down (p7-s5, #324): the workspace box is metres in the kernel frame, and a
+/// scene sitting at UTM coordinates would lose a decimetre through a float.
+///
+/// Same rule, same reason, wider guaranteed width — 17 significant digits
+/// (DBL_DECIMAL_DIG) is where the loop is bound to terminate. Kept as a
+/// separate function rather than a template because the two differ in exactly
+/// that bound, and a template would hide the one number that matters.
+[[nodiscard]] double to_json_double(double value) {
+  for (int digits = 1; digits < 17; ++digits) {
+    const double candidate = QString::number(value, 'g', digits).toDouble();
+    if (candidate == value) {
+      return candidate;
+    }
+  }
+  return QString::number(value, 'g', 17).toDouble();
 }
 
 /// A finite JSON number, or nullopt. Qt writes NaN/±Inf as `null` (RFC 4627),
@@ -148,6 +169,63 @@ constexpr auto kOrthographic = "orthographic";
   return view;
 }
 
+/// Parses the `workspace` block (p7-s5, #324). Same all-or-nothing house rule
+/// as `view`: `extents` must be four finite numbers, and `crs` must be a string
+/// if present — absent means "framed in an unprojected scene", which is a
+/// frame, not a missing field.
+[[nodiscard]] std::optional<SceneWorkspaceState> parse_workspace(const QJsonValue& value) {
+  if (value.isUndefined()) {
+    return std::nullopt; // absent is normal
+  }
+  if (!value.isObject()) {
+    spdlog::warn("scene sidecar: 'workspace' is not an object — ignoring it");
+    return std::nullopt;
+  }
+  const QJsonObject object = value.toObject();
+
+  const QJsonValue extents_value = object.value(QLatin1String(kExtentsKey));
+  if (!extents_value.isArray() || extents_value.toArray().size() != 4) {
+    spdlog::warn("scene sidecar: 'workspace.extents' is not an array of 4 numbers — "
+                 "ignoring the workspace");
+    return std::nullopt;
+  }
+  SceneWorkspaceState workspace;
+  const QJsonArray extents = extents_value.toArray();
+  for (int index = 0; index < 4; ++index) {
+    const QJsonValue component = extents.at(index);
+    if (!component.isDouble() || !std::isfinite(component.toDouble())) {
+      spdlog::warn("scene sidecar: 'workspace.extents' holds a non-finite value — "
+                   "ignoring the workspace");
+      return std::nullopt;
+    }
+    workspace.extents[static_cast<std::size_t>(index)] = component.toDouble();
+  }
+  if (workspace.extents[0] > workspace.extents[2] || workspace.extents[1] > workspace.extents[3]) {
+    spdlog::warn("scene sidecar: 'workspace.extents' is inverted — ignoring the workspace");
+    return std::nullopt;
+  }
+
+  const QJsonValue crs = object.value(QLatin1String(kCrsKey));
+  if (crs.isString()) {
+    workspace.crs = crs.toString().toStdString();
+  } else if (!crs.isUndefined() && !crs.isNull()) {
+    spdlog::warn("scene sidecar: 'workspace.crs' is not a string — ignoring the workspace");
+    return std::nullopt;
+  }
+  return workspace;
+}
+
+/// The `workspace` block to write, merged over whatever was parsed.
+[[nodiscard]] QJsonObject workspace_object(const SceneWorkspaceState& workspace, QJsonObject base) {
+  QJsonArray extents;
+  for (const double component : workspace.extents) {
+    extents.push_back(to_json_double(component));
+  }
+  base.insert(QLatin1String(kExtentsKey), extents);
+  base.insert(QLatin1String(kCrsKey), QString::fromStdString(workspace.crs));
+  return base;
+}
+
 /// The `view` block to write, merged over whatever was parsed so a field this
 /// build does not model (a future `view.roll`) survives the rewrite.
 [[nodiscard]] QJsonObject view_object(const SceneViewState& view, QJsonObject base) {
@@ -206,6 +284,7 @@ Expected<SceneState> parse(const QByteArray& json) {
   } else if (!textured.isUndefined()) {
     spdlog::warn("scene sidecar: 'textured' is not a boolean — falling back to the app default");
   }
+  state.workspace = parse_workspace(root.value(QLatin1String(kWorkspaceKey)));
   // The WHOLE root, not the leftovers: to_json() merges the owned keys over it,
   // which is both simpler than tracking which keys were unknown and provably
   // byte-stable (QJsonObject iterates key-sorted, so insertion order cannot
@@ -247,6 +326,13 @@ QByteArray to_json(const SceneState& state) {
     root.insert(QLatin1String(kTexturedKey), *state.textured);
   } else {
     root.remove(QLatin1String(kTexturedKey));
+  }
+  if (state.workspace) {
+    root.insert(
+        QLatin1String(kWorkspaceKey),
+        workspace_object(*state.workspace, root.value(QLatin1String(kWorkspaceKey)).toObject()));
+  } else {
+    root.remove(QLatin1String(kWorkspaceKey));
   }
   return QJsonDocument(root).toJson(QJsonDocument::Indented);
 }

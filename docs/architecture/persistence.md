@@ -67,7 +67,11 @@ One per scene, beside its `.xodr`, named from the scene's **stem** (`town.xodr`
     "distance": 80,
     "projection": "perspective"
   },
-  "textured": true
+  "textured": true,
+  "workspace": {
+    "extents": [-10, -20, 250, 60],
+    "crs": "+proj=tmerc +lat_0=37.7749 +lon_0=-122.4194 +k=1 +x_0=0 +y_0=0 +datum=WGS84 +units=m +no_defs"
+  }
 }
 ```
 
@@ -77,11 +81,28 @@ One per scene, beside its `.xodr`, named from the scene's **stem** (`town.xodr`
 - `textured` is the per-scene render mode. It overrides the application default
   for this scene only and is never written back to `QSettings`: a per-scene
   override is not a preference.
+- `workspace` is the scene's working area (p7-s5, #324): `extents` is
+  `[west, south, east, north]` in metres in the kernel frame — the same
+  convention as `network_plan_bounds` and the `<header>` bounding box — and
+  `crs` is the scene's projection string **as it was when the box was framed**.
+  It carries its own double-width number formatter rather than the camera's
+  float one, because a scene sitting at UTM coordinates would lose a decimetre
+  through a float.
+  - **Why `crs` is stored:** a box of coordinates only means something in a
+    stated frame. If the `.xodr`'s `<geoReference>` has changed since — someone
+    re-georeferenced the scene, or a sidecar outlived the file beside it — these
+    numbers describe somewhere else, so the block is **discarded on load with a
+    `robomous.ai:rm:1.0.0:header.georeference_mismatch` warning** rather than
+    framing the user on a place that no longer exists. An empty `crs` is a
+    frame like any other (an unprojected scene), not an unknown one.
+  - It is **not** undoable. Framing is not an edit, and losing it costs a view
+    rather than a road — the same reasoning that keeps the camera pose off the
+    undo stack.
 - Reserved and round-tripped untouched when present: `snap` (snapping settings —
   the tools have the plumbing but no UI yet) and `session`. ADR-0008 also lists
-  prop-set definitions, material-overlay references and workspace extents as
-  future Layer-2 residents; they land in their owning sprints without a schema
-  break, because of the retention rule below.
+  prop-set definitions and material-overlay references as future Layer-2
+  residents; they land in their owning sprints without a schema break, because
+  of the retention rule below.
 
 ## The rules that make it safe
 

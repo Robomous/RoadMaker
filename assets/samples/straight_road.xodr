@@ -2,7 +2,13 @@
 <!-- RoadMaker sample: straight two-way road with shoulders and a sidewalk.
      Hand-authored for the RoadMaker project (MIT license). -->
 <OpenDRIVE>
-  <header revMajor="1" revMinor="7" name="straight_road" vendor="Robomous"/>
+  <header revMajor="1" revMinor="7" name="straight_road" vendor="Robomous">
+    <!-- Georeferenced at the Robomous office (p7-s5, #324). A Transverse
+         Mercator centred on the scene's own origin, which OpenDRIVE 8.5
+         recommends: the local coordinates ARE the projected coordinates, so
+         nothing needs transforming. -->
+    <geoReference><![CDATA[+proj=tmerc +lat_0=37.7749 +lon_0=-122.4194 +k=1 +x_0=0 +y_0=0 +datum=WGS84 +units=m]]></geoReference>
+  </header>
   <road name="Main Street" length="100.0" id="1" junction="-1">
     <planView>
       <geometry s="0.0" x="0.0" y="0.0" hdg="0.0" length="100.0">

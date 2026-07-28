@@ -44,6 +44,7 @@
 #include <array>
 #include <filesystem>
 #include <optional>
+#include <string>
 
 #include "render/projection_mode.hpp"
 
@@ -57,6 +58,26 @@ struct SceneViewState {
   float pitch = 0.0F;
   float distance = 0.0F;
   ProjectionMode projection = ProjectionMode::Perspective;
+};
+
+/// The workspace: the working area of the scene, as a plan-view box in the
+/// kernel frame (p7-s5, #324).
+///
+/// Layer 2 by ADR-0008, which names "workspace extents and georeference
+/// framing" as residents of the native container. It is framing, not content —
+/// losing it costs a view, never a road.
+///
+/// `crs` is the scene's projection string AS IT WAS when the box was framed.
+/// It is stored because the box is only meaningful in one frame: if the
+/// `.xodr`'s `<geoReference>` has since changed, these coordinates describe
+/// somewhere else, and the honest thing is to drop them rather than frame the
+/// user's workspace on a place that no longer exists. Empty when the scene had
+/// no georeference, which is a frame like any other.
+struct SceneWorkspaceState {
+  /// {west, south, east, north}, metres in the kernel frame — the same
+  /// convention as network_plan_bounds and the `<header>` bounding box.
+  std::array<double, 4> extents{};
+  std::string crs;
 };
 
 /// One scene's Layer-2 state. Every modeled field is optional so that ABSENT
@@ -73,6 +94,9 @@ struct SceneState {
   /// Per-scene render mode: true = daytime Textured, false = flat Sober.
   /// Overrides the application default for this scene only.
   std::optional<bool> textured;
+
+  /// The workspace box and the frame it was framed in (p7-s5, #324).
+  std::optional<SceneWorkspaceState> workspace;
 
   /// The WHOLE parsed root object, kept as the merge base for to_json() — this
   /// is what makes unknown keys (a `snap` or `session` block from a future

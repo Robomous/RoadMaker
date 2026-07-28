@@ -372,6 +372,10 @@ Actions::Actions(QUndoStack& undo_stack, QObject* parent) : QObject(parent) {
   frame_cursor->setIconText(tr("Frame Cursor"));
   frame_cursor->setToolTip(tr("Move the pivot to the point under the cursor, keeping the "
                               "zoom (V)"));
+  center_world_origin = new QAction(tr("Centre on World &Origin"), this);
+  center_world_origin->setShortcuts(shortcuts::sequences(shortcuts::Id::CenterWorldOrigin));
+  center_world_origin->setToolTip(
+      tr("Move the pivot to the scene's origin — the point a georeference places on the earth"));
 
   // Projection (GW-1 step 11). Exclusive: the view is one or the other.
   projection_group = new QActionGroup(this);
@@ -429,6 +433,10 @@ Actions::Actions(QUndoStack& undo_stack, QObject* parent) : QObject(parent) {
   terrain_create->setToolTip(
       tr("Create a flat terrain height field over the scene — the ground becomes a real "
          "surface the roads shape"));
+  world_georeference = new QAction(tr("&World Georeference…"), this);
+  world_georeference->setShortcuts(shortcuts::sequences(shortcuts::Id::WorldGeoreference));
+  world_georeference->setToolTip(
+      tr("Set where the scene sits on the earth, and the working area it is framed against"));
   terrain_remove = new QAction(tr("Remove Terrain Field"), this);
   terrain_remove->setToolTip(tr("Remove the terrain height field, returning to the flat ground"));
 
@@ -555,6 +563,8 @@ QAction* Actions::action(shortcuts::Id id) const {
     return terrain_create;
   case Id::TerrainRemove:
     return terrain_remove;
+  case Id::WorldGeoreference:
+    return world_georeference;
   case Id::AddFromLibrary:
     return add_from_library;
   case Id::ResetCamera:
@@ -563,6 +573,8 @@ QAction* Actions::action(shortcuts::Id id) const {
     return frame_selection;
   case Id::FrameCursor:
     return frame_cursor;
+  case Id::CenterWorldOrigin:
+    return center_world_origin;
   case Id::ViewPerspective:
     return view_perspective;
   case Id::ViewOrthographic:

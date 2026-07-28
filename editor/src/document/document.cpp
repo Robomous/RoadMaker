@@ -23,6 +23,7 @@
 #include "roadmaker/mesh/mesh_builder.hpp"
 #include "roadmaker/road/surface_derivation.hpp"
 #include "roadmaker/xodr/reader.hpp"
+#include "roadmaker/xodr/rules.hpp"
 #include "roadmaker/xodr/writer.hpp"
 
 #include <spdlog/spdlog.h>
@@ -132,6 +133,35 @@ void Document::read_scene_sidecar(const std::filesystem::path& scene) {
   }
   scene_state_ = std::move(*state);
   scene_state_from_disk_ = true;
+  drop_stale_workspace();
+}
+
+void Document::drop_stale_workspace() {
+  if (!scene_state_.workspace) {
+    return;
+  }
+  // The workspace box is a set of coordinates, and coordinates only mean
+  // something in a stated frame (p7-s5, #324). If the .xodr's <geoReference>
+  // has changed since the box was framed — someone re-georeferenced the scene,
+  // or replaced the file under a sidecar that outlived it — the numbers now
+  // describe somewhere else. ADR-0008's rule for a stale sidecar is that it
+  // degrades to defaults and never lies about scene content, so the block goes
+  // rather than framing the user's workspace on a place that no longer exists.
+  const std::string& current = network_.georeference().projection;
+  if (scene_state_.workspace->crs == current) {
+    return;
+  }
+  spdlog::warn("scene sidecar: the workspace was framed in a different georeference "
+               "('{}', the scene now has '{}') — dropping it",
+               scene_state_.workspace->crs,
+               current);
+  diagnostics_.push_back(Diagnostic{.severity = Severity::Warning,
+                                    .location = "header",
+                                    .message =
+                                        "the saved workspace extents were framed in a different "
+                                        "georeference and were discarded",
+                                    .rule_id = std::string(rules::kGeoReferenceMismatch)});
+  scene_state_.workspace.reset();
 }
 
 void Document::set_scene_state_provider(std::function<void(SceneState&)> provider) {

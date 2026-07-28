@@ -19,6 +19,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 Current version on `main`: **0.0.1**.
 
 ### Added
+- **Your scene can say where on the earth it is**
+  ([#324](https://github.com/Robomous/RoadMaker/issues/324)): a RoadMaker scene
+  used to be metres from an origin that meant nothing in particular, and a
+  georeferenced file you opened lost its projection string on the way in —
+  silently, with nothing in the diagnostics to tell you. **Edit ▸ World
+  Georeference…** now sets where the scene sits: type a latitude and longitude,
+  or paste a CRS of your own, and it travels in the `.xodr` itself as the
+  standard `<header><geoReference>` every other tool reads. The header also
+  gains the dataset offset and the bounding box the standard defines for it,
+  and anything else your file's header was carrying — a licence, another
+  vendor's data — now survives the round trip instead of disappearing.
+  - The world origin comes back **exactly** as you typed it. RoadMaker writes
+    the projection the standard itself recommends for this — a Transverse
+    Mercator centred on your scene's origin — so your coordinates and the
+    projected ones are the same numbers and nothing is ever transformed.
+  - A CRS RoadMaker did not author is carried through untouched and reported as
+    such, rather than guessed at. Reading foreign projections needs the PROJ
+    library, which arrives with GIS import.
+  - **View ▸ Centre on World Origin** swings the view to the scene origin
+    without changing your zoom, and **Fit workspace to selection** records the
+    working area beside the scene. A workspace framed under one georeference is
+    discarded, with a warning, if the scene is later re-georeferenced — the
+    numbers would be describing somewhere else.
+  - The OpenDRIVE export preview names the world origin before you write
+    anything.
 - **Your exported scene has ground under it**
   ([#390](https://github.com/Robomous/RoadMaker/issues/390)): glTF and OpenUSD
   exports carried roads and junction floors over nothing. The ground surfaces

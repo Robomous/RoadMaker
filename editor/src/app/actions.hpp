@@ -119,6 +119,10 @@ public:
   QAction* frame_cursor = nullptr;
   QAction* add_from_library = nullptr;
 
+  /// View ▸ Centre on World Origin (p7-s5, #324). A pivot move, not a dolly —
+  /// the same semantics as frame_cursor, so the zoom the user set survives.
+  QAction* center_world_origin = nullptr;
+
   /// Projection: exclusive and checkable, Perspective checked at startup.
   QActionGroup* projection_group = nullptr;
   QAction* view_perspective = nullptr;
@@ -142,6 +146,10 @@ public:
   // height field currently exists.
   QAction* terrain_create = nullptr;
   QAction* terrain_remove = nullptr;
+
+  /// Edit ▸ World Georeference… (p7-s5, #324). Opens the tool window that
+  /// authors <header><geoReference>/<offset> and the workspace box.
+  QAction* world_georeference = nullptr;
 
   // DEM import (p5-s4, #234): Edit ▸ Terrain ▸ Import DEM — reads an ESRI ASCII
   // grid (.asc) and installs it as the scene field. Menu-only (no registry id).

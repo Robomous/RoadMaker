@@ -273,3 +273,81 @@ def test_validate_network_cites_version_specific_rules_only_for_their_target():
     matched = [f for f in findings if f.rule_id == not_only_two]
     assert len(matched) == 1
     assert matched[0].severity == rm.Severity.WARNING
+
+
+def test_tmerc_projection_round_trips_the_world_origin_exactly():
+    # The origin the UI shows is read back out of the projection string, so a
+    # lossy format would show a different place than the file records.
+    for lat, lon in [(0.0, 0.0), (37.7749, -122.4194), (-33.8688, 151.2093)]:
+        proj = rm.tmerc_projection(lat, lon)
+        assert rm.tmerc_origin(proj) == [lat, lon]
+
+
+def test_tmerc_origin_declines_a_projection_this_build_cannot_read():
+    # RoadMaker carries foreign CRS definitions verbatim without interpreting
+    # them (PROJ arrives with p7-s2), so declining is the honest answer. A UTM
+    # zone has a 500 km false easting — reporting its lat_0 as the scene origin
+    # would be wrong by exactly that much.
+    assert rm.tmerc_origin("+proj=utm +zone=32 +ellps=GRS80 +units=m") is None
+    assert rm.tmerc_origin('PROJCS["WGS 84 / UTM zone 32N"]') is None
+
+
+def test_tmerc_projection_rejects_an_angle_off_the_globe():
+    with pytest.raises(RuntimeError):
+        rm.tmerc_projection(91.0, 0.0)
+    with pytest.raises(RuntimeError):
+        rm.tmerc_projection(0.0, -180.5)
+
+
+def test_geo_offset_transforms_are_exact_inverses():
+    offset = rm.GeoOffset()
+    offset.x, offset.y, offset.z, offset.hdg = 1234.5, -987.25, 3.5, 0.7853981633974483
+    world = rm.geo_to_world(offset, 10.0, -20.0, 5.0)
+    back = rm.geo_to_local(offset, world[0], world[1], world[2])
+    assert back[0] == pytest.approx(10.0)
+    assert back[1] == pytest.approx(-20.0)
+    assert back[2] == pytest.approx(5.0)
+
+
+def test_set_georeference_is_undoable_and_survives_a_round_trip(tmp_path):
+    net = rm.RoadNetwork()
+    rm.author_clothoid_road(
+        net, [(0.0, 0.0), (100.0, 0.0)], rm.LaneProfile.two_lane_default(), "", "1")
+    assert net.georeference.empty
+
+    geo = rm.GeoReference()
+    geo.projection = rm.tmerc_projection(48.858844, 2.294351)
+    offset = rm.GeoOffset()
+    offset.x, offset.y = 1000.0, -2000.0
+    geo.offset = offset
+
+    stack = rm.edit.EditStack()
+    stack.push(net, rm.edit.set_georeference(net, geo))
+    assert not net.georeference.empty
+
+    path = tmp_path / "geo.xodr"
+    rm.save_xodr(net, str(path))
+    text = path.read_text()
+    # §8.5 requires the projection string be marked as CDATA.
+    assert "<geoReference><![CDATA[" in text
+    assert '<offset x="1000" y="-2000"' in text
+
+    reloaded, _ = rm.load_xodr(str(path))
+    assert rm.tmerc_origin(reloaded.georeference.projection) == [48.858844, 2.294351]
+    assert reloaded.georeference.offset.x == 1000.0
+
+    # Undo restores the absent georeference, which is what makes the header go
+    # back to exactly what it was.
+    stack.undo(net)
+    assert net.georeference.empty
+
+
+def test_an_identity_offset_is_not_written():
+    net = rm.RoadNetwork()
+    rm.author_clothoid_road(
+        net, [(0.0, 0.0), (100.0, 0.0)], rm.LaneProfile.two_lane_default(), "", "1")
+    geo = rm.GeoReference()
+    geo.projection = "+proj=tmerc +lat_0=0 +lon_0=0"
+    geo.offset = rm.GeoOffset()
+    net.set_georeference(geo)
+    assert "<offset" not in rm.write_xodr(net)

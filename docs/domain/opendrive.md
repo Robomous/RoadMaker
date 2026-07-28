@@ -15,6 +15,51 @@ whole codebase follows. The clothoid math and meshing rules are in
   **positive to the LEFT** of the travel direction. Height `h` follows the
   elevation profile.
 
+## Georeferencing (§8.5)
+
+A scene's place on the earth travels in `<header>`, as pure Layer-0 data:
+
+- **`<geoReference>`** carries a PROJ string, written as CDATA because it may
+  contain characters that would break an XML attribute. It is the **only**
+  CDATA node RoadMaker emits. At most one is allowed
+  (`asam.net:xodr:1.9.0:header.proj.max_one_proj` — named in 1.9.0's catalog
+  only, but the 0..1 multiplicity is identical in 1.8.1, so RoadMaker cites the
+  1.9.0 UID at every revision); a second is reported and ignored, first wins.
+- **`<offset>`** is a whole-dataset affine — `x`, `y`, `z`, `hdg`, **all four
+  required** — applied to the local coordinates *before* any datum conversion.
+  A partial element is reported and dropped, never completed with zeros. An
+  identity offset is not written: absence and all-zero mean the same thing, and
+  absence is the smaller file. `validate_network` raises
+  `asam.net:xodr:1.7.0:header.offset.centered_coords` when a network sits far
+  from the origin with no offset to bring it back.
+- **`north`/`south`/`east`/`west`** (§6.4.1 Table 8) are **derived** from the
+  network being written, never carried over from the input — a bounding box
+  read from a file becomes a lie the moment anything moves.
+- Everything else in `<header>` — `<license>` (§6.4.2), `<dataQuality>`,
+  `<include>`, foreign `<userData>`, unknown attributes — is **preserved
+  verbatim** and re-emitted after the modeled children, matching the `t_header`
+  sequence.
+
+**No PROJ dependency.** Converting between two geodetic datums needs the PROJ
+library, which arrives with GIS import (p7-s2). Until then RoadMaker authors
+the construction §8.5 itself recommends — "alternatively define a custom
+projection using Transverse Mercator" — centred on the scene's own origin with
+unit scale and no false easting or northing, so the local OpenDRIVE coordinates
+*are* the projected coordinates and nothing is ever transformed. A projection
+RoadMaker did not author is carried verbatim and reported as opaque:
+`tmerc_origin()` answers only for that family, because guessing at a UTM zone's
+origin would be wrong by its 500 km false easting.
+
+**The generated string carries no `+no_defs`**, even though §8.5's own example
+does: esmini v3.5.0 rejects it outright (*"Unsupported geo reference attr:
++no_defs"*), and the flag is a PROJ.4-era instruction not to read `proj_def.dat`
+— a file removed in PROJ 6, so no PROJ this project targets does anything with
+it. A default RoadMaker *generates* must not carry a token a shipping consumer
+refuses. Caught by the [esmini smoke gate](../contributing/ci.md).
+
+Workspace extents and UI framing are **Layer 2**, not here — see
+[persistence](../architecture/persistence.md#scenermscenejson-v1).
+
 ## Lane ids
 
 - Lane **0** is the center lane on the reference line — it has **no width**.

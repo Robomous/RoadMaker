@@ -28,9 +28,14 @@
 
 namespace roadmaker {
 
-/// OpenDRIVE versions the writer can target. The header carries only
-/// revMajor/revMinor (1.8.1 §6.4.1, 1.9.0 §6.4.1), so both spec patch
-/// levels serialize as revMajor="1" with revMinor 8 or 9.
+/// OpenDRIVE versions the writer can target. The header carries no patch digit
+/// (1.8.1 §6.4.1, 1.9.0 §6.4.1), so both spec patch levels serialize as
+/// revMajor="1" with revMinor 8 or 9.
+///
+/// The version does NOT gate the georeference: `<geoReference>`/`<offset>`
+/// (§8.5) and the north/south/east/west bounding box (§6.4.1 Table 8) are
+/// spelled identically in both revisions, so p7-s5 (#324) needed no conditional
+/// here.
 enum class XodrVersion {
   v1_8_1,
   v1_9_0,

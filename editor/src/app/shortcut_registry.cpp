@@ -332,6 +332,11 @@ constexpr std::array kTable{
     Entry{.id = Id::TerrainRemove,
           .category = "Edit",
           .description = "Remove the terrain height field"},
+    // Menu-only for the same reason as the terrain pair: a scene is
+    // georeferenced once, not repeatedly (p7-s5, #324).
+    Entry{.id = Id::WorldGeoreference,
+          .category = "Edit",
+          .description = "Set where the scene sits on the earth, and its workspace extents"},
 
     // Toolbar-only view commands.
     Entry{.id = Id::AddFromLibrary,
@@ -354,6 +359,9 @@ constexpr std::array kTable{
           .category = "View",
           .description = "Frame on the point under the cursor (keeps the zoom)",
           .primary = Qt::Key_V},
+    Entry{.id = Id::CenterWorldOrigin,
+          .category = "View",
+          .description = "Centre the view on the world origin (keeps the zoom)"},
     Entry{.id = Id::ViewportHints,
           .category = "View",
           .description = "Show or hide the active tool's hint in the viewport corner",

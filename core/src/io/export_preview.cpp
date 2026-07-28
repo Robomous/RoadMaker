@@ -728,6 +728,27 @@ XodrPreview preview_xodr_export(const RoadNetwork& network,
     return preview;
   }
 
+  // The <header> (p7-s5, #324), read out of the emitted bytes for the same
+  // reason as everything else here: a read-out derived from the RoadNetwork
+  // would be a second implementation of the writer's emission conditions —
+  // including "an identity offset is not written", which the network alone
+  // cannot tell you.
+  const pugi::xml_node header = document.child("OpenDRIVE").child("header");
+  preview.header.geo_reference = header.child("geoReference").child_value();
+  if (const pugi::xml_node offset = header.child("offset")) {
+    preview.header.offset = GeoOffset{.x = offset.attribute("x").as_double(),
+                                      .y = offset.attribute("y").as_double(),
+                                      .z = offset.attribute("z").as_double(),
+                                      .hdg = offset.attribute("hdg").as_double()};
+  }
+  if (header.attribute("west") && header.attribute("south") && header.attribute("east") &&
+      header.attribute("north")) {
+    preview.header.bounds = std::array<double, 4>{header.attribute("west").as_double(),
+                                                  header.attribute("south").as_double(),
+                                                  header.attribute("east").as_double(),
+                                                  header.attribute("north").as_double()};
+  }
+
   XmlTally tally;
   tally.walk(document);
 

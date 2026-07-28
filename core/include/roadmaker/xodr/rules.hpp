@@ -41,6 +41,32 @@ inline constexpr std::string_view kIdUniqueInLaneSection =
 inline constexpr std::string_view kOnlyRefDefinedIds =
     "asam.net:xodr:1.4.0:ids.only_ref_defined_ids";
 
+/// "There shall be no more than one definition of the projection. If the
+/// definition is missing, a local Cartesian coordinate system is assumed."
+///
+/// VERSION DIFFERENCE, handled deliberately: the named rule exists only in
+/// 1.9.0's catalog (1.9.0 16_annexes.md:1109, cited from 08_coordinate_systems.md:298);
+/// 1.8.1's Annex E does not list it. The CONSTRAINT is identical in both, because
+/// both give `<geoReference>` multiplicity 0..1 in the same words
+/// (1.8.1 08_coordinate_systems.md:255, 1.9.0 :255), so a second element is a
+/// defect when reading a 1.8 file too. Per the UID convention at the top of this
+/// file the version component names where a rule first appeared, so the
+/// 1.9.0 stamp is the correct citation at every document revision — no
+/// version conditional at the call site.
+inline constexpr std::string_view kHeaderMaxOneProj =
+    "asam.net:xodr:1.9.0:header.proj.max_one_proj";
+
+/// "The <offset> element should be such that the x and y coordinates of ASAM
+/// OpenDRIVE are approximately centered around (0;0). If the x and y coordinates
+/// are too large, applications using float coordinates internally might not be
+/// able to process them accurately enough due to the limited precision of
+/// IEEE 754 double precision floating point numbers."
+///
+/// A `should` rule, so it is advisory and never blocks a write. Present in both
+/// revisions (1.8.1 16_annexes.md:1013, 1.9.0 16_annexes.md:1099).
+inline constexpr std::string_view kHeaderOffsetCenteredCoords =
+    "asam.net:xodr:1.7.0:header.offset.centered_coords";
+
 /// "Each road shall have a road reference line."
 inline constexpr std::string_view kReflineExists =
     "asam.net:xodr:1.4.0:road.geometry.refline_exists";
@@ -268,5 +294,16 @@ inline constexpr std::string_view kLinkElevationContinuity =
 /// extension; the version is RoadMaker's.
 inline constexpr std::string_view kPropObstruction =
     "robomous.ai:rm:1.0.0:objects.prop_obstruction";
+
+/// RoadMaker-authored rule (NOT ASAM): "Layer-2 scene state framed in one
+/// georeference shall not be reused under another." ASAM has nothing to say
+/// here — the `.rmscene.json` sidecar is outside the standard entirely — but
+/// the failure is real: workspace extents recorded against one projection are
+/// meaningless under a different one, and silently keeping them would frame the
+/// user's workspace on coordinates that no longer mean what they meant. The
+/// sidecar degrades to defaults and says so, per ADR-0008's rule that a stale
+/// sidecar never blocks opening and never lies about scene content.
+inline constexpr std::string_view kGeoReferenceMismatch =
+    "robomous.ai:rm:1.0.0:header.georeference_mismatch";
 
 } // namespace roadmaker::rules

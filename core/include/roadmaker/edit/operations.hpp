@@ -1168,6 +1168,27 @@ create_terrain_field(const RoadNetwork& network,
 /// plane. `DirtySet{.terrain = true}`. Rejects when there is no field.
 [[nodiscard]] RM_API std::unique_ptr<Command> remove_terrain_field(const RoadNetwork& network);
 
+// --- world georeference (p7-s5, #324) ---------------------------------------
+
+/// Replaces the scene's world georeference — `<header><geoReference>` and
+/// `<header><offset>`, §8.5 — wholesale. Clearing it is `set_georeference(
+/// network, {})`; there is no separate remove, because an empty georeference is
+/// a meaningful value ("this scene is a plain local Cartesian frame") rather
+/// than the absence of one.
+///
+/// **`DirtySet{}` — EMPTY, on purpose.** A georeference states how the scene's
+/// coordinates relate to the earth; it does not move anything. No vertex, mesh
+/// channel or derived layer depends on it, so naming a channel here would make
+/// every georeference edit re-mesh the world for no reason.
+///
+/// Rejects a blank-but-not-empty projection string (which would write a
+/// `<geoReference>` the reader then warns about), a non-finite offset, and a
+/// no-op. The projection string's CONTENT is not validated: this build carries
+/// foreign CRS definitions verbatim without interpreting them, so it is in no
+/// position to judge them (roadmaker/road/georeference.hpp explains why).
+[[nodiscard]] RM_API std::unique_ptr<Command> set_georeference(const RoadNetwork& network,
+                                                               GeoReference geo);
+
 /// Sculpts the scene height field: replays a brush stroke (`stamps`, in order)
 /// onto a COPY of the network's field, then builds ONE command that captures
 /// only the post rectangle the stroke changed — before and after, by value —

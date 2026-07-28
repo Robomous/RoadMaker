@@ -42,6 +42,7 @@
 #include "roadmaker/road/authoring.hpp"
 #include "roadmaker/road/bridge.hpp"
 #include "roadmaker/road/controller.hpp"
+#include "roadmaker/road/georeference.hpp"
 #include "roadmaker/road/grade_separation.hpp"
 #include "roadmaker/road/network.hpp"
 #include "roadmaker/road/repeat_expansion.hpp"
@@ -1126,6 +1127,95 @@ NB_MODULE(_roadmaker, m) {
                ", rows=" + std::to_string(field.rows) + ")";
       });
 
+  // --- world georeference (p7-s5, #324) --------------------------------------
+
+  nb::class_<roadmaker::GeoOffset>(m, "GeoOffset")
+      .def(nb::init<>())
+      .def_rw("x", &roadmaker::GeoOffset::x, "Inertial x offset [m].")
+      .def_rw("y", &roadmaker::GeoOffset::y, "Inertial y offset [m].")
+      .def_rw("z", &roadmaker::GeoOffset::z, "Inertial z offset [m].")
+      .def_rw("hdg", &roadmaker::GeoOffset::hdg, "Heading offset about the resulting z axis [rad].")
+      .def_prop_ro("identity",
+                   &roadmaker::GeoOffset::identity,
+                   "True when applying this offset changes nothing.")
+      .def("__eq__",
+           [](const roadmaker::GeoOffset& a, nb::object b) {
+             return nb::isinstance<roadmaker::GeoOffset>(b) &&
+                    a == nb::cast<roadmaker::GeoOffset>(b);
+           })
+      .def("__repr__", [](const roadmaker::GeoOffset& offset) {
+        return "GeoOffset(x=" + std::to_string(offset.x) + ", y=" + std::to_string(offset.y) +
+               ", z=" + std::to_string(offset.z) + ", hdg=" + std::to_string(offset.hdg) + ")";
+      });
+
+  nb::class_<roadmaker::GeoReference>(m, "GeoReference")
+      .def(nb::init<>())
+      .def_rw("projection",
+              &roadmaker::GeoReference::projection,
+              "The PROJ string, verbatim. Empty means the scene is a plain local "
+              "Cartesian frame, which is what OpenDRIVE §8.5 says a reader must assume "
+              "when the definition is missing.")
+      .def_rw("offset",
+              &roadmaker::GeoReference::offset,
+              "The <header><offset> affine, or None when the dataset is not shifted.")
+      .def_prop_ro("empty",
+                   &roadmaker::GeoReference::empty,
+                   "True when this scene has no georeference at all.")
+      .def("__eq__",
+           [](const roadmaker::GeoReference& a, nb::object b) {
+             return nb::isinstance<roadmaker::GeoReference>(b) &&
+                    a == nb::cast<roadmaker::GeoReference>(b);
+           })
+      .def("__repr__", [](const roadmaker::GeoReference& geo) {
+        return "GeoReference(projection='" + geo.projection +
+               "', offset=" + (geo.offset.has_value() ? "set" : "None") + ")";
+      });
+
+  m.def(
+      "geo_to_world",
+      [](const roadmaker::GeoOffset& offset, double x, double y, double z) {
+        return roadmaker::geo_to_world(offset, x, y, z);
+      },
+      "offset"_a,
+      "x"_a,
+      "y"_a,
+      "z"_a,
+      "OpenDRIVE §8.5's affine: local OpenDRIVE coordinates to world coordinates. "
+      "Applied BEFORE any datum conversion.");
+  m.def(
+      "geo_to_local",
+      [](const roadmaker::GeoOffset& offset, double x, double y, double z) {
+        return roadmaker::geo_to_local(offset, x, y, z);
+      },
+      "offset"_a,
+      "x"_a,
+      "y"_a,
+      "z"_a,
+      "The exact inverse of geo_to_world.");
+  m.def(
+      "tmerc_projection",
+      [](double latitude_deg, double longitude_deg) {
+        auto proj = roadmaker::tmerc_projection(latitude_deg, longitude_deg);
+        if (!proj) {
+          throw std::runtime_error(proj.error().message);
+        }
+        return *proj;
+      },
+      "latitude_deg"_a,
+      "longitude_deg"_a,
+      "The Transverse Mercator projection string §8.5 recommends for a scene whose "
+      "local origin sits at (latitude, longitude). Unit scale and no false easting "
+      "or northing, so local and projected coordinates are the same numbers and no "
+      "transform is ever needed. Raises on an angle off the globe.");
+  m.def(
+      "tmerc_origin",
+      [](std::string_view projection) { return roadmaker::tmerc_origin(projection); },
+      "projection"_a,
+      "The (latitude, longitude) a projection string places the scene origin at, or "
+      "None when this build cannot read it. Answers only for the family "
+      "tmerc_projection emits — RoadMaker carries every other CRS verbatim without "
+      "interpreting it, and guessing would be worse than declining.");
+
   m.def(
       "sample_height",
       [](const roadmaker::HeightField& field, double x, double y) {
@@ -1601,6 +1691,16 @@ NB_MODULE(_roadmaker, m) {
            "field"_a,
            "Replace the height field. Outside tests, prefer the undoable "
            "edit.set_terrain_field / create_terrain_field / remove_terrain_field.")
+      .def_prop_ro("georeference",
+                   &roadmaker::RoadNetwork::georeference,
+                   nb::rv_policy::reference_internal,
+                   "The world georeference (empty when the scene is a plain local "
+                   "Cartesian frame).")
+      .def("set_georeference",
+           &roadmaker::RoadNetwork::set_georeference,
+           "geo"_a,
+           "Replace the world georeference. Outside tests, prefer the undoable "
+           "edit.set_georeference.")
       .def("__repr__", [](const roadmaker::RoadNetwork& network) {
         return "RoadNetwork(roads=" + std::to_string(network.road_count()) +
                ", junctions=" + std::to_string(network.junction_count()) + ")";
@@ -4154,6 +4254,18 @@ NB_MODULE(_roadmaker, m) {
       "network"_a,
       "Removes the scene height field. Rejects when there is none.");
   edit.def(
+      "set_georeference",
+      [](const roadmaker::RoadNetwork& network, roadmaker::GeoReference geo) {
+        return roadmaker::edit::set_georeference(network, std::move(geo));
+      },
+      "network"_a,
+      "geo"_a,
+      "Replaces the scene's world georeference — <header><geoReference> and "
+      "<header><offset>, §8.5 — wholesale (p7-s5). Clearing it is passing an empty "
+      "GeoReference. Dirties nothing: a georeference says how the scene's "
+      "coordinates relate to the earth, not where anything is. Rejects a blank "
+      "projection string, a non-finite offset, and a no-op.");
+  edit.def(
       "stamp_terrain",
       [](const roadmaker::RoadNetwork& network, const std::vector<roadmaker::BrushStamp>& stamps) {
         auto built = roadmaker::edit::stamp_terrain(network, stamps);
@@ -4676,8 +4788,23 @@ NB_MODULE(_roadmaker, m) {
       .def_ro("scope", &roadmaker::XodrRecordPreview::scope)
       .def_ro("count", &roadmaker::XodrRecordPreview::count);
 
+  nb::class_<roadmaker::XodrHeaderPreview>(m, "XodrHeaderPreview")
+      .def_ro("geo_reference",
+              &roadmaker::XodrHeaderPreview::geo_reference,
+              "<geoReference>'s content; empty when the scene carries no projection.")
+      .def_ro("offset",
+              &roadmaker::XodrHeaderPreview::offset,
+              "<offset>'s four attributes, or None when the element is not written.")
+      .def_ro("bounds",
+              &roadmaker::XodrHeaderPreview::bounds,
+              "The §6.4.1 Table 8 bounding box as (west, south, east, north) in the "
+              "kernel frame, or None on a scene with no plan-view geometry.");
+
   nb::class_<roadmaker::XodrPreview>(m, "XodrPreview")
       .def_ro("target_version", &roadmaker::XodrPreview::target_version)
+      .def_ro("header",
+              &roadmaker::XodrPreview::header,
+              "The <header> the writer would produce (p7-s5).")
       .def_ro("would_write", &roadmaker::XodrPreview::would_write)
       .def_prop_ro("refusal",
                    [](const roadmaker::XodrPreview& self) -> std::optional<std::string> {

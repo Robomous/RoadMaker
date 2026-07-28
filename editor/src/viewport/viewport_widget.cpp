@@ -1846,6 +1846,14 @@ void ViewportWidget::frame_cursor() {
   }
 }
 
+void ViewportWidget::center_world_origin() {
+  // The OpenDRIVE inertial origin, which <header><geoReference> and <offset>
+  // together place on the earth. Ground level rather than z=0 would need the
+  // terrain, and the origin is a coordinate, not a place on the ground.
+  camera_.look_at({0.0F, 0.0F, 0.0F});
+  update();
+}
+
 void ViewportWidget::set_projection(ProjectionMode mode) {
   if (camera_.projection() == mode) {
     return;

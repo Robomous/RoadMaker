@@ -16,6 +16,8 @@
 
 #include "panels/export_preview_window.hpp"
 
+#include "roadmaker/road/georeference.hpp"
+
 #include <QComboBox>
 #include <QFontDatabase>
 #include <QHBoxLayout>
@@ -261,6 +263,35 @@ void ExportPreviewWindow::render_xodr() {
                              format_count(preview.byte_count));
   summary += tr("\n%1 checker finding(s) — see the Diagnostics panel.")
                  .arg(format_count(preview.diagnostics.size()));
+  // The <header> read-out (p7-s5, #324). Georeferencing is the difference
+  // between a scene that sits somewhere and one that sits nowhere, so a preview
+  // that stays silent about it would let a scene ship unplaced without saying
+  // so — the same class of omission #390 records for the ground channels.
+  if (preview.header.geo_reference.empty()) {
+    summary += tr("\nNo georeference — the file describes a local Cartesian frame.");
+  } else if (const auto origin = tmerc_origin(preview.header.geo_reference)) {
+    summary += tr("\nWorld origin: %1, %2 (Transverse Mercator).")
+                   .arg((*origin)[0], 0, 'f', 6)
+                   .arg((*origin)[1], 0, 'f', 6);
+  } else {
+    // A CRS this build carries but does not interpret. Saying so is the honest
+    // report; naming an origin we cannot compute would be a guess.
+    summary += tr("\nProjection (carried verbatim): %1")
+                   .arg(QString::fromStdString(preview.header.geo_reference));
+  }
+  if (preview.header.offset.has_value()) {
+    summary += tr("\nDataset offset: x %1, y %2, z %3, heading %4 rad.")
+                   .arg(units::format_length(preview.header.offset->x),
+                        units::format_length(preview.header.offset->y),
+                        units::format_length(preview.header.offset->z))
+                   .arg(preview.header.offset->hdg, 0, 'f', 4);
+  }
+  if (preview.header.bounds.has_value()) {
+    const std::array<double, 4>& box = *preview.header.bounds;
+    summary +=
+        tr("\nExtent: %1 east-west by %2 north-south.")
+            .arg(units::format_length(box[2] - box[0]), units::format_length(box[3] - box[1]));
+  }
   if (!preview.terrain_sidecar.empty()) {
     summary += tr("\nA terrain sidecar would be written beside it: %1")
                    .arg(QString::fromStdString(preview.terrain_sidecar));
