@@ -28,6 +28,7 @@
 #include "roadmaker/mesh/junction_signals.hpp"
 #include "roadmaker/mesh/junction_stoplines.hpp"
 #include "roadmaker/mesh/junction_surface_spans.hpp"
+#include "roadmaker/mesh/prop_obstructions.hpp"
 #include "roadmaker/mesh/surface_boundary.hpp"
 #include "roadmaker/road/authoring.hpp"
 #include "roadmaker/road/defaults.hpp"
@@ -57,6 +58,7 @@
 #include <variant>
 
 #include "../mesh/junction_stoplines_detail.hpp"
+#include "../mesh/object_placement.hpp"
 
 namespace roadmaker::edit {
 
@@ -333,9 +335,10 @@ public:
   Values after; // precomputed; when `creator` is set it is re-read post-run
   Values erased;
   Creator creator;
-  std::optional<Error> invalid;       // factory-time validation failure
-  std::vector<FollowRecord> follow;   // joints this command disturbed (#461)
-  std::vector<DerivedRecord> derived; // derived layers this command moved (#463)
+  std::optional<Error> invalid;                // factory-time validation failure
+  std::vector<FollowRecord> follow;            // joints this command disturbed (#461)
+  std::vector<DerivedRecord> derived;          // derived layers this command moved (#463)
+  std::vector<ObstructionRecord> obstructions; // props this move blocked (#464)
 
   Expected<void> apply(RoadNetwork& network) override {
     if (invalid.has_value()) {
@@ -403,6 +406,8 @@ public:
 
   std::span<const DerivedRecord> derived_records() const override { return derived; }
 
+  std::span<const ObstructionRecord> obstruction_records() const override { return obstructions; }
+
   void discard(RoadNetwork& network) override {
     // Only `created_` reserves slots after a revert: `erased` values were
     // restored (live again) and `before` values overwrote live objects — both
@@ -456,6 +461,7 @@ public:
       if (!applied.has_value()) {
         records_.clear();
         derived_.clear();
+        obstructions_.clear();
         // Unwind the applied prefix — the whole composite is atomic.
         for (std::size_t k = i; k-- > 0;) {
           (void)children_[k]->revert(network);
@@ -474,6 +480,7 @@ public:
     // same holds for the derived-layer stage (#463).
     records_.clear();
     derived_.clear();
+    obstructions_.clear();
     for (const auto& child : children_) {
       if (child == nullptr) {
         continue;
@@ -482,6 +489,9 @@ public:
       records_.insert(records_.end(), child_records.begin(), child_records.end());
       const std::span<const DerivedRecord> child_derived = child->derived_records();
       derived_.insert(derived_.end(), child_derived.begin(), child_derived.end());
+      const std::span<const ObstructionRecord> child_obstructions = child->obstruction_records();
+      obstructions_.insert(
+          obstructions_.end(), child_obstructions.begin(), child_obstructions.end());
     }
     return {};
   }
@@ -556,6 +566,8 @@ public:
 
   std::span<const DerivedRecord> derived_records() const override { return derived_; }
 
+  std::span<const ObstructionRecord> obstruction_records() const override { return obstructions_; }
+
 private:
   std::string name_;
   DirtySet base_dirty_;
@@ -563,6 +575,7 @@ private:
   std::vector<std::unique_ptr<Command>> children_;
   std::vector<FollowRecord> records_;
   std::vector<DerivedRecord> derived_;
+  std::vector<ObstructionRecord> obstructions_;
 };
 
 // ---- shared lookups and geometry helpers -------------------------------------
@@ -1596,6 +1609,67 @@ std::unique_ptr<Command> derived_stage(const RoadNetwork& network,
   return command;
 }
 
+/// Two obstructions are about the same THING when they name the same prop
+/// instance and the same victim. Deliberately not `operator==`: the witness
+/// point `at` moves whenever either shape does, so comparing whole records
+/// would report a prop that was already in a lane as newly obstructed on every
+/// one-centimetre nudge.
+bool same_subject(const PropObstruction& a, const PropObstruction& b) {
+  return a.object == b.object && a.instance == b.instance && a.kind == b.kind && a.road == b.road &&
+         a.junction == b.junction && a.other == b.other && a.other_instance == b.other_instance;
+}
+
+/// Stage [4] of the move funnel: the props this gesture drove into something
+/// (cascade-s4, #464). PURE REPORTING — it mutates nothing and its DirtySet is
+/// empty. Props follow their anchor road's frame (#400), which is correct and
+/// is exactly what can carry one into another road.
+///
+/// `before` is the obstruction set read at wrap time, BEFORE the gesture. Only
+/// what is new is reported: a scene that already had a tree in a lane must not
+/// complain about it every time a road elsewhere is nudged, which is the same
+/// stance cascade-s1 takes towards an already-broken joint.
+std::unique_ptr<Command> obstruction_stage(const RoadNetwork& network,
+                                           std::span<const RoadId> moved,
+                                           const std::vector<PropObstruction>& before) {
+  auto command = std::make_unique<GenericCommand>("Report Prop Obstructions", DirtySet{});
+  // Narrowed: anything the narrowing drops involves neither a moved road nor a
+  // moved prop, so it cannot be something this gesture caused.
+  for (const PropObstruction& found : find_prop_obstructions(network, moved)) {
+    if (std::ranges::any_of(before,
+                            [&](const PropObstruction& was) { return same_subject(was, found); })) {
+      continue; // it was already like that; not this gesture's doing
+    }
+    const Object* object = network.object(found.object);
+    if (object == nullptr) {
+      continue;
+    }
+    std::string detail;
+    switch (found.kind) {
+    case ObstructionKind::RoadSurface: {
+      const Road* road = network.road(found.road);
+      detail = fmt::format("it now stands in road {}'s carriageway",
+                           road != nullptr ? road->odr_id : std::string("?"));
+      break;
+    }
+    case ObstructionKind::JunctionFloor: {
+      const Junction* junction = network.junction(found.junction);
+      detail = fmt::format("it now stands in junction {}",
+                           junction != nullptr ? junction->odr_id : std::string("?"));
+      break;
+    }
+    case ObstructionKind::Prop: {
+      const Object* other = network.object(found.other);
+      detail = fmt::format("it now overlaps prop {}",
+                           other != nullptr ? other->odr_id : std::string("?"));
+      break;
+    }
+    }
+    command->obstructions.push_back(ObstructionRecord{
+        .obstruction = found, .object_odr_id = object->odr_id, .detail = std::move(detail)});
+  }
+  return command;
+}
+
 /// Wraps a move so the joints it disturbs are followed or severed-and-reported,
 /// the junctions it disturbs regenerate, and the layers derived from both are
 /// recomputed. `edited` names the roads the base command moves; `carried` names
@@ -1617,6 +1691,13 @@ std::unique_ptr<Command> wrap_with_cascade(const RoadNetwork& network,
   // Same reason, one layer out: which crossing a bridge span was built for is
   // only knowable before the roads move (cascade-s3, #463).
   std::vector<BridgeAnchor> anchors = bridge_anchors(network);
+  // And once more, for the props: the stage reports only what is NEW, so it
+  // needs the set as it stood before. Whole-network deliberately — a narrowed
+  // pre-read would miss the joints the follow stage refits, and every one of
+  // those would then look newly obstructed. The query early-outs before
+  // building a single band when no prop declares a bounding volume, which is
+  // the common case and what keeps this off the per-frame drag path.
+  std::vector<PropObstruction> obstructed_before = find_prop_obstructions(network);
   // std::function must be copyable, so the built base travels in a shared slot;
   // CompositeCommand calls each builder exactly once.
   auto slot = std::make_shared<std::unique_ptr<Command>>(std::move(base));
@@ -1637,7 +1718,7 @@ std::unique_ptr<Command> wrap_with_cascade(const RoadNetwork& network,
     return moved;
   };
   std::vector<CompositeCommand::Builder> builders;
-  builders.reserve(4);
+  builders.reserve(5);
   builders.push_back([slot](RoadNetwork&) { return std::move(*slot); });
   builders.push_back([edited, broken = std::move(already_broken), refit](RoadNetwork& net) {
     return follow_stage(net, edited, broken, refit);
@@ -1645,10 +1726,16 @@ std::unique_ptr<Command> wrap_with_cascade(const RoadNetwork& network,
   builders.push_back([edited, carried = std::move(carried), moved_set, policy](RoadNetwork& net) {
     return junction_stage(net, moved_set(edited), carried, policy);
   });
+  builders.push_back([edited, anchors = std::move(anchors), moved_set](RoadNetwork& net) {
+    return derived_stage(net, moved_set(edited), anchors);
+  });
+  // Last, so it sees the network with the move, the follows, the junction
+  // regenerations and the derived recompute all applied — a prop is obstructing
+  // whatever is actually there when the gesture is finished, not what was there
+  // mid-way through it.
   builders.push_back(
-      [edited = std::move(edited), anchors = std::move(anchors), moved_set](RoadNetwork& net) {
-        return derived_stage(net, moved_set(edited), anchors);
-      });
+      [edited = std::move(edited), before = std::move(obstructed_before), moved_set](
+          RoadNetwork& net) { return obstruction_stage(net, moved_set(edited), before); });
   // Same undo-menu text as the base: whether a neighbour had to follow, a
   // junction had to regenerate, or a ground surface had to re-derive, is not
   // something the user should read in the Edit menu.
@@ -8392,6 +8479,216 @@ std::unique_ptr<Command> move_object(
       std::make_unique<GenericCommand>(std::string(kName), DirtySet{.objects = {current->road}});
   command->before.objects.emplace_back(object, *current);
   command->after.objects.emplace_back(object, std::move(moved));
+  return command;
+}
+
+namespace {
+
+/// Station on `road` nearest a world point, and the signed lateral offset of
+/// that point from the reference line there. Coarse sample then local refine —
+/// the same shape as snap_to_road_side, which cannot be reused because it
+/// searches for the nearest ROAD and deliberately skips connecting roads and
+/// the station margins near each end.
+struct RoadProjection {
+  double s = 0.0;
+  double t = 0.0;
+  double distance = 0.0; ///< |t|, i.e. distance to the reference line
+};
+
+RoadProjection project_onto_road(const Road& road, double x, double y) {
+  const double length = road.plan_view.length();
+  RoadProjection best{.s = 0.0, .t = 0.0, .distance = std::numeric_limits<double>::max()};
+  const auto consider = [&](double s) {
+    const double clamped = std::clamp(s, 0.0, length);
+    const PathPoint pose = road.plan_view.evaluate(clamped);
+    const double dx = x - pose.x;
+    const double dy = y - pose.y;
+    const double along = (dx * std::cos(pose.hdg)) + (dy * std::sin(pose.hdg));
+    // Inverse of mesh_detail::lateral_point's plan-view part: it places a point
+    // at {x - t*sin_h, y + t*cos_h}, so t = dy*cos_h - dx*sin_h.
+    const double lateral = (dy * std::cos(pose.hdg)) - (dx * std::sin(pose.hdg));
+    const double distance = std::hypot(along, lateral);
+    if (distance < best.distance) {
+      best = RoadProjection{.s = clamped, .t = lateral, .distance = distance};
+    }
+  };
+  for (const double s : sample_stations(road.plan_view)) {
+    consider(s);
+  }
+  // Refine around the winner: the coarse set is chord-tolerance spaced, so the
+  // true foot of the perpendicular can sit well inside one interval.
+  double step = std::max(length / 32.0, 1.0);
+  for (int pass = 0; pass < 24 && step > 1e-4; ++pass) {
+    const double centre = best.s;
+    consider(centre - step);
+    consider(centre + step);
+    step *= 0.5;
+  }
+  best.distance = std::abs(best.t);
+  return best;
+}
+
+/// True when the object's placements come from a `<repeat>` series, in which
+/// case its own @s/@t place nothing and relocating it moves nothing visible.
+bool has_series_repeat(const Object& object) {
+  return std::any_of(object.repeats.begin(), object.repeats.end(), [](const ObjectRepeat& repeat) {
+    return repeat.distance > 0.0;
+  });
+}
+
+} // namespace
+
+std::unique_ptr<Command>
+reanchor_object(const RoadNetwork& network, ObjectId object, RoadId road_id) {
+  static constexpr std::string_view kName = "Re-anchor Prop";
+  const auto fail = [&](std::string message) {
+    return invalid_command(
+        std::string(kName),
+        Error{.code = ErrorCode::InvalidArgument, .message = std::move(message)});
+  };
+
+  const Object* current = network.object(object);
+  if (current == nullptr) {
+    return invalid_command(std::string(kName), stale_object_error());
+  }
+  const Road* target = network.road(road_id);
+  if (target == nullptr) {
+    return fail("re-anchor target road is stale or unknown");
+  }
+  if (target->plan_view.empty()) {
+    return fail("re-anchor target road has no geometry");
+  }
+  if (current->road == road_id) {
+    return fail("the prop is already anchored to that road");
+  }
+  const Road* owner = network.road(current->road);
+  if (owner == nullptr) {
+    return fail("object has a stale road back-reference");
+  }
+
+  // The world pose the prop has RIGHT NOW, from the one derivation the mesher
+  // uses — so a re-anchor is invisible in the viewport, which is the point.
+  const std::vector<object_placement::PlacedInstance> placed =
+      object_placement::placed_instances(*owner, *current);
+  if (placed.empty()) {
+    return fail("the prop places no instance to re-anchor");
+  }
+  const object_placement::PlacedInstance& base = placed.front();
+
+  const RoadProjection projection = project_onto_road(*target, base.position[0], base.position[1]);
+  const PathPoint pose = target->plan_view.evaluate(projection.s);
+
+  Object moved = *current;
+  moved.road = road_id;
+  moved.s = projection.s;
+  moved.t = projection.t;
+  // hdg is road-relative on both sides, so what carries across is the WORLD
+  // heading: re-express it against the new road's tangent.
+  moved.hdg = std::remainder(base.heading - pose.hdg, 2.0 * std::numbers::pi);
+  // z_offset is relative to the reference-line elevation, which the new road
+  // does not share. Keep the prop at the same world height.
+  moved.z_offset = base.position[2] - eval_profile(target->elevation, projection.s);
+
+  auto command = std::make_unique<GenericCommand>(
+      std::string(kName), DirtySet{.objects = {current->road, road_id}, .topology = false});
+  command->before.objects.emplace_back(object, *current);
+  command->after.objects.emplace_back(object, std::move(moved));
+  return command;
+}
+
+std::unique_ptr<Command> relocate_obstructed_props(const RoadNetwork& network) {
+  static constexpr std::string_view kName = "Relocate Obstructed Props";
+
+  const std::vector<PropObstruction> obstructions = find_prop_obstructions(network);
+  if (obstructions.empty()) {
+    return invalid_command(
+        std::string(kName),
+        Error{.code = ErrorCode::InvalidArgument, .message = "no prop is obstructing anything"});
+  }
+
+  // Deduplicated in arena order, so the sweep is deterministic and so two
+  // obstructions of the same prop are one relocation.
+  std::vector<ObjectId> candidates;
+  for (const PropObstruction& found : obstructions) {
+    if (std::ranges::find(candidates, found.object) == candidates.end()) {
+      candidates.push_back(found.object);
+    }
+  }
+  std::ranges::sort(candidates, [](ObjectId a, ObjectId b) { return a.index < b.index; });
+
+  // Each relocation is decided against the state the earlier ones produced, so
+  // the sweep cannot move one prop into another's new place.
+  RoadNetwork probe = network;
+
+  auto command = std::make_unique<GenericCommand>(std::string(kName), DirtySet{});
+  DirtySet dirty;
+
+  for (const ObjectId id : candidates) {
+    const Object* current = probe.object(id);
+    if (current == nullptr || has_series_repeat(*current)) {
+      continue; // a series carries its own stations; @s places nothing
+    }
+    const Road* owner = probe.road(current->road);
+    if (owner == nullptr || owner->plan_view.empty()) {
+      continue;
+    }
+    const Object original = *current;
+    const double length = owner->plan_view.length();
+    const std::array<RoadId, 1> anchor{original.road};
+
+    const auto is_clear = [&] {
+      for (const PropObstruction& found : find_prop_obstructions(probe, anchor)) {
+        if (found.object == id) {
+          return false;
+        }
+      }
+      return true;
+    };
+
+    // The ladder: slide along the road first, both ways, then draw the prop
+    // back toward its own reference line. Sliding alone cannot help a prop
+    // hanging over a PARALLEL road, which is the commonest way a move creates
+    // one — hence the second family.
+    constexpr double kStep = 2.0;
+    const int steps = static_cast<int>(std::min(length / kStep, 200.0)) + 1;
+    bool relocated = false;
+    for (int k = 1; k <= steps && !relocated; ++k) {
+      const std::array<std::pair<double, double>, 3> ladder{
+          std::pair{std::min(original.s + (k * kStep), length), original.t},
+          std::pair{std::max(original.s - (k * kStep), 0.0), original.t},
+          std::pair{
+              original.s,
+              original.t *
+                  std::max(0.0, 1.0 - (static_cast<double>(k) / static_cast<double>(steps)))}};
+      for (const auto& [s, t] : ladder) {
+        Object* live = probe.object(id);
+        live->s = s;
+        live->t = t;
+        if (is_clear()) {
+          relocated = true;
+          break;
+        }
+      }
+    }
+
+    Object* live = probe.object(id);
+    if (!relocated) {
+      *live = original; // left EXACTLY as authored
+      continue;
+    }
+    dirty.objects.push_back(original.road);
+    command->before.objects.emplace_back(id, original);
+    command->after.objects.emplace_back(id, *live);
+  }
+
+  if (command->after.objects.empty()) {
+    return invalid_command(std::string(kName),
+                           Error{.code = ErrorCode::InvalidArgument,
+                                 .message = "no obstructed prop has anywhere clear to go"});
+  }
+  std::ranges::sort(dirty.objects, [](RoadId a, RoadId b) { return a.index < b.index; });
+  dirty.objects.erase(std::unique(dirty.objects.begin(), dirty.objects.end()), dirty.objects.end());
+  command->set_dirty(std::move(dirty));
   return command;
 }
 

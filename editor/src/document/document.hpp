@@ -233,6 +233,16 @@ signals:
   /// went wrong there. MainWindow surfaces `reason` as a warning toast.
   void derived_layer_stale(const QString& reason);
 
+  /// A move drove a prop into a road, a junction floor or another prop
+  /// (cascade-s4, #464). Props follow their anchor road's frame, which is
+  /// correct and is exactly what can carry one somewhere it does not belong —
+  /// most sharply when the road is ROTATED and a prop at large |t| sweeps a
+  /// wide arc (#338). Only obstructions this gesture CREATED are reported; one
+  /// that was already there is not this move's doing. Nothing is corrected:
+  /// Edit > Props > Relocate Obstructed Props is the offered fix, and the user
+  /// has to ask for it. MainWindow surfaces `reason` as a warning toast.
+  void props_obstructed(const QString& reason);
+
   /// Written to disk successfully; file_path() points at the file and the
   /// undo stack is clean again.
   void saved();

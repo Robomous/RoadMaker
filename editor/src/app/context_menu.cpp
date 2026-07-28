@@ -19,6 +19,7 @@
 #include "roadmaker/edit/connection.hpp"
 #include "roadmaker/edit/markings.hpp"
 #include "roadmaker/edit/operations.hpp"
+#include "roadmaker/edit/snap.hpp"
 #include "roadmaker/mesh/junction_maneuvers.hpp"
 #include "roadmaker/mesh/junction_signals.hpp"
 #include "roadmaker/mesh/junction_stoplines.hpp"
@@ -45,6 +46,32 @@ namespace {
 
 void select_road(const ContextMenuDeps& deps, RoadId road) {
   deps.selection.select({.road = road, .lane = LaneId{}}, SelectMode::Replace);
+}
+
+/// The road nearest a prop's DRAWN position, other than the one that owns it —
+/// the re-anchor target (cascade-s4, #464). Read from the mesh rather than
+/// recomputed: the mesh already applied the reference line, the elevation and
+/// the @zOffset, so this is exactly where the user sees the prop.
+std::optional<RoadId>
+nearest_other_road(const ContextMenuDeps& deps, ObjectId object, RoadId owner) {
+  for (const ObjectInstance& instance : deps.document.mesh().objects) {
+    if (instance.object != object) {
+      continue;
+    }
+    edit::SnapOptions options;
+    // Generous: a prop carried off by a road move can end up well clear of
+    // everything, and the menu item simply greys out when nothing is in reach.
+    options.radius = 60.0;
+    options.exclude_road = owner;
+    const std::optional<edit::SideSnap> snap =
+        edit::snap_to_road_side(deps.document.network(),
+                                Waypoint{.x = instance.position[0], .y = instance.position[1]},
+                                options);
+    if (snap.has_value()) {
+      return snap->road;
+    }
+  }
+  return std::nullopt;
 }
 
 void select_object(const ContextMenuDeps& deps, RoadId road, ObjectId object) {
@@ -589,6 +616,21 @@ std::vector<MenuItem> build_context_menu(const MenuContext& context, ContextMenu
           (void)deps.document.push_command(
               edit::add_object(deps.document.network(), src->road, std::move(copy)));
         }});
+    // Re-anchor: keep the prop exactly where it is in the world and hand it to
+    // the road it now sits beside, so THAT road's future moves carry it. The
+    // alternative offered by the obstruction report — Edit > Props > Relocate
+    // Obstructed Props — moves the prop instead; this one moves the ownership.
+    const std::optional<RoadId> target =
+        source != nullptr ? nearest_other_road(deps, object, source->road) : std::nullopt;
+    items.push_back(MenuItem{.text = QObject::tr("Re-anchor to nearest road"),
+                             .enabled = target.has_value(),
+                             .invoke = [deps, object, target] {
+                               if (!target.has_value()) {
+                                 return;
+                               }
+                               (void)deps.document.push_command(
+                                   edit::reanchor_object(deps.document.network(), object, *target));
+                             }});
     items.push_back(separator());
     items.push_back(MenuItem{.text = QObject::tr("Delete object"), .invoke = [deps, object] {
                                (void)deps.document.push_command(

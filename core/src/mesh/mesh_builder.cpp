@@ -42,6 +42,7 @@
 #include "fill_backend.hpp"
 #include "junction_surface.hpp"
 #include "mesh_detail.hpp"
+#include "object_placement.hpp"
 #include "surface_fill.hpp"
 #include "terrain_mesh.hpp"
 
@@ -656,78 +657,19 @@ void build_object_instances(const RoadNetwork& network,
     // renders at the size the object declares.
     const double scale = props::instance_scale(object, prop_model);
 
-    // §13.4: a <repeat> with @distance > 0 places a SERIES of instances and
-    // "the <repeat> element takes precedence" over the object's own s/t/hdg, so
-    // the base single instance is suppressed once any such repeat is present. A
-    // continuous repeat (@distance == 0) expands to no discrete instance
-    // (expand_repeat returns empty), and an object with only continuous — or no
-    // — repeats falls through to the single-instance path below.
-    const bool has_series_repeat =
-        std::any_of(object.repeats.begin(), object.repeats.end(), [](const ObjectRepeat& repeat) {
-          return repeat.distance > 0.0;
-        });
-    if (has_series_repeat) {
-      const double road_length = road.plan_view.length();
-      for (const ObjectRepeat& repeat : object.repeats) {
-        // §13.4: detachFromReferenceLine draws the section "in a straight line
-        // from its start to its end position" — the chord between the section's
-        // start/end anchors — instead of following the reference-line curvature.
-        std::array<double, 3> chord_start{};
-        std::array<double, 3> chord_end{};
-        double chord_heading = 0.0;
-        if (repeat.detach_from_reference_line) {
-          const StationFrame start_frame = make_frame(road, repeat.s);
-          const StationFrame end_frame = make_frame(road, repeat.s + repeat.length);
-          chord_start = lateral_point(start_frame, repeat.t_start);
-          chord_start[2] += repeat.z_offset_start;
-          chord_end = lateral_point(end_frame, repeat.t_end);
-          chord_end[2] += repeat.z_offset_end;
-          chord_heading =
-              std::atan2(chord_end[1] - chord_start[1], chord_end[0] - chord_start[0]) + object.hdg;
-        }
-
-        for (const RepeatInstance& inst : expand_repeat(repeat)) {
-          // Repeat s is absolute along the road; skip origins past the road end
-          // (the section may legally overshoot, but no instance origin should
-          // fall off the reference line).
-          if (inst.s > road_length + tol::kLength) {
-            continue;
-          }
-          std::array<double, 3> position{};
-          double heading = 0.0;
-          if (repeat.detach_from_reference_line) {
-            const double ratio = repeat.length > 0.0 ? (inst.s - repeat.s) / repeat.length : 0.0;
-            for (std::size_t axis = 0; axis < 3; ++axis) {
-              position[axis] = chord_start[axis] + (chord_end[axis] - chord_start[axis]) * ratio;
-            }
-            heading = chord_heading;
-          } else {
-            const StationFrame frame = make_frame(road, inst.s);
-            position = lateral_point(frame, inst.t);
-            position[2] += inst.z_offset;
-            heading = std::atan2(frame.sin_h, frame.cos_h) + object.hdg;
-          }
-          out.push_back(ObjectInstance{.object = object_id,
-                                       .road = road_id,
-                                       .model_id = object.name,
-                                       .position = position,
-                                       .heading = heading,
-                                       .scale = scale});
-        }
-      }
-      continue;
+    // Which instances exist and where they land is object_placement's single
+    // answer, shared with the obstruction query (#464) so the flag and the
+    // picture can never disagree. Repeat-series precedence, the chord of a
+    // detached section, and the past-the-end skip all live there.
+    for (const object_placement::PlacedInstance& placed :
+         object_placement::placed_instances(road, object)) {
+      out.push_back(ObjectInstance{.object = object_id,
+                                   .road = road_id,
+                                   .model_id = object.name,
+                                   .position = placed.position,
+                                   .heading = placed.heading,
+                                   .scale = scale});
     }
-
-    const StationFrame frame = make_frame(road, object.s);
-    std::array<double, 3> position = lateral_point(frame, object.t);
-    position[2] += object.z_offset;
-    const double heading = std::atan2(frame.sin_h, frame.cos_h) + object.hdg;
-    out.push_back(ObjectInstance{.object = object_id,
-                                 .road = road_id,
-                                 .model_id = object.name,
-                                 .position = position,
-                                 .heading = heading,
-                                 .scale = scale});
   }
 }
 

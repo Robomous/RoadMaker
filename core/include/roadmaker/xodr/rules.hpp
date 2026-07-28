@@ -258,4 +258,15 @@ inline constexpr std::string_view kLinkEndsCoincide =
 inline constexpr std::string_view kLinkElevationContinuity =
     "robomous.ai:rm:1.0.0:roads.link_elevation_continuity";
 
+/// RoadMaker-authored rule (NOT ASAM): "A prop's bounding volume shall not
+/// obstruct another road's driving surface, a junction floor, or another prop."
+/// ASAM says an object should be "properly placed on a road" (§13.1, Figure 112)
+/// but states no checkable rule about one object blocking a DIFFERENT road, and
+/// nothing in the catalog covers object-vs-object at all. A file is still valid
+/// OpenDRIVE with a tree in a lane, which is exactly why this is a Warning that
+/// never blocks a save. Vendor namespace per the maintainer-approved convention
+/// extension; the version is RoadMaker's.
+inline constexpr std::string_view kPropObstruction =
+    "robomous.ai:rm:1.0.0:objects.prop_obstruction";
+
 } // namespace roadmaker::rules

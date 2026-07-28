@@ -18,6 +18,7 @@
 
 #include "roadmaker/error.hpp"
 #include "roadmaker/export.hpp"
+#include "roadmaker/mesh/prop_obstructions.hpp"
 #include "roadmaker/road/network.hpp"
 #include "roadmaker/xodr/diagnostic.hpp"
 
@@ -45,6 +46,16 @@ struct WriterOptions {
   /// this anywhere (hardening sprint workstream C — advisory, no ASAM rule
   /// id; 0.12 = 12 %). Non-positive disables the check.
   double max_grade_warning = 0.12;
+
+  /// validate_network warns when a prop's DECLARED bounding volume obstructs
+  /// another road's driving band, a junction floor, or another prop
+  /// (cascade-s4, #464) — this is the vertical slack [m] of that check.
+  /// Non-positive disables it entirely.
+  ///
+  /// Gated the way `max_grade_warning` is, and for the same reason: the sweep
+  /// is a whole-network geometry query, so a caller that only wants a
+  /// well-formedness check can turn it off.
+  double prop_obstruction_clearance = kPropVerticalClearance;
 };
 
 /// Checker-rule validation against the target version's catalog.

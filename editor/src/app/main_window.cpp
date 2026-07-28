@@ -245,6 +245,9 @@ MainWindow::MainWindow(QWidget* parent, bool restore_saved_layout)
   connect(&document_, &Document::derived_layer_stale, this, [this](const QString& reason) {
     viewport_->show_toast(reason, ToastSeverity::Warning);
   });
+  connect(&document_, &Document::props_obstructed, this, [this](const QString& reason) {
+    viewport_->show_toast(reason, ToastSeverity::Warning);
+  });
 
   // Autosave tick — the debounce and the recover-vs-clean decision live in
   // AutosaveManager (fake-clock testable, §3); this timer is the thin
@@ -752,6 +755,17 @@ MainWindow::MainWindow(QWidget* parent, bool restore_saved_layout)
                               : tr("Every bridge span still carries a crossing"),
                           removed.has_value() ? ToastSeverity::Success : ToastSeverity::Info);
   });
+  // The counterpart to the cascade's obstruction report (#464). Invoking this IS
+  // the consent — a move reports and never corrects — which is also why there is
+  // no confirmation dialog: cascade-s1 removed the last pre-flight modal because
+  // one opened mid-drag swallows the mouse-release.
+  connect(actions_->props_relocate_obstructed, &QAction::triggered, this, [this] {
+    const auto relocated =
+        document_.push_command(edit::relocate_obstructed_props(document_.network()));
+    viewport_->show_toast(relocated.has_value() ? tr("Moved the obstructed props somewhere clear")
+                                                : tr("No prop needed moving"),
+                          relocated.has_value() ? ToastSeverity::Success : ToastSeverity::Info);
+  });
   // Passive detection hint: when a crossing appears that no bridge covers, nudge
   // the user toward the menu ONCE (the actionable one-click toast is a follow-up).
   // Reset when there are none, so a later crossing hints again.
@@ -986,6 +1000,8 @@ void MainWindow::build_menus() {
   QMenu* bridge_menu = edit_menu->addMenu(tr("&Bridge"));
   bridge_menu->addAction(actions_->bridge_generate);
   bridge_menu->addAction(actions_->bridge_remove_orphans);
+  QMenu* props_menu = edit_menu->addMenu(tr("&Props"));
+  props_menu->addAction(actions_->props_relocate_obstructed);
 
   QMenu* view_menu = menuBar()->addMenu(tr("&View"));
   view_menu->addAction(scene_dock_->toggleViewAction());

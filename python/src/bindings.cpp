@@ -1253,6 +1253,80 @@ NB_MODULE(_roadmaker, m) {
       "definition of 'is this stretch already carried' — author_bridge guards with "
       "it and the cascade's orphan test reads it (cascade-s3).");
 
+  // Prop obstruction (cascade-s4, #464).
+  nb::enum_<roadmaker::ObstructionKind>(m, "ObstructionKind")
+      .value("ROAD_SURFACE", roadmaker::ObstructionKind::RoadSurface)
+      .value("JUNCTION_FLOOR", roadmaker::ObstructionKind::JunctionFloor)
+      .value("PROP", roadmaker::ObstructionKind::Prop);
+
+  nb::class_<roadmaker::PropObstruction>(m, "PropObstruction")
+      .def_ro("object", &roadmaker::PropObstruction::object, "The flagged prop.")
+      .def_ro("instance",
+              &roadmaker::PropObstruction::instance,
+              "Index into the prop's placements; 0 for a single one.")
+      .def_ro("kind", &roadmaker::PropObstruction::kind, "What it ran into.")
+      .def_ro("road", &roadmaker::PropObstruction::road, "ROAD_SURFACE: the road blocked.")
+      .def_ro("junction",
+              &roadmaker::PropObstruction::junction,
+              "JUNCTION_FLOOR: the junction blocked.")
+      .def_ro("other", &roadmaker::PropObstruction::other, "PROP: the other prop.")
+      .def_ro("other_instance", &roadmaker::PropObstruction::other_instance)
+      .def_ro("at",
+              &roadmaker::PropObstruction::at,
+              "World (x, y) [m] of a point proven to lie in BOTH shapes.")
+      .def("__eq__",
+           [](const roadmaker::PropObstruction& self, const roadmaker::PropObstruction& other) {
+             return self == other;
+           })
+      .def("__repr__", [](const roadmaker::PropObstruction& found) {
+        const char* kind = "ROAD_SURFACE";
+        switch (found.kind) {
+        case roadmaker::ObstructionKind::RoadSurface:
+          kind = "ROAD_SURFACE";
+          break;
+        case roadmaker::ObstructionKind::JunctionFloor:
+          kind = "JUNCTION_FLOOR";
+          break;
+        case roadmaker::ObstructionKind::Prop:
+          kind = "PROP";
+          break;
+        }
+        return std::string("PropObstruction(") + kind + ")";
+      });
+
+  nb::class_<roadmaker::PropObstructionOptions>(m, "PropObstructionOptions")
+      .def(nb::init<>())
+      .def_rw("vertical_clearance",
+              &roadmaker::PropObstructionOptions::vertical_clearance,
+              "Vertical slack [m] on the 2.5D gate; <= 0 makes the query pure plan-view.");
+
+  m.def(
+      "find_prop_obstructions",
+      [](const roadmaker::RoadNetwork& network, const roadmaker::PropObstructionOptions& options) {
+        return roadmaker::find_prop_obstructions(network, options);
+      },
+      "network"_a,
+      "options"_a = roadmaker::PropObstructionOptions{},
+      "Every prop whose DECLARED bounding volume obstructs another road's driving "
+      "band, a junction floor, or another prop (cascade-s4). A prop is never "
+      "flagged against its OWN anchor road, nor against a road a junction "
+      "connects to it: a median tree and a corner streetlight are placements, "
+      "not defects. A prop with no usable bounding volume is not checked and no "
+      "dimension is ever invented for it.");
+
+  m.def(
+      "find_prop_obstructions_touching",
+      [](const roadmaker::RoadNetwork& network,
+         const std::vector<roadmaker::RoadId>& touching,
+         const roadmaker::PropObstructionOptions& options) {
+        return roadmaker::find_prop_obstructions(network, touching, options);
+      },
+      "network"_a,
+      "touching"_a,
+      "options"_a = roadmaker::PropObstructionOptions{},
+      "The same query narrowed to a move: reported when the prop's anchor road, "
+      "the obstructed road, or the other prop's anchor road is in `touching`.");
+
   nb::class_<roadmaker::Signal>(m, "Signal")
       .def(nb::init<>())
       .def_ro("road", &roadmaker::Signal::road, "Owning road (back-reference).")
@@ -2475,6 +2549,17 @@ NB_MODULE(_roadmaker, m) {
                (record.detail.empty() ? "" : ", '" + record.detail + "'") + ")";
       });
 
+  nb::class_<roadmaker::edit::ObstructionRecord>(edit, "ObstructionRecord")
+      .def_ro("obstruction",
+              &roadmaker::edit::ObstructionRecord::obstruction,
+              "What the prop ran into, and where.")
+      .def_ro("object_odr_id", &roadmaker::edit::ObstructionRecord::object_odr_id)
+      .def_ro("detail", &roadmaker::edit::ObstructionRecord::detail)
+      .def("__repr__", [](const roadmaker::edit::ObstructionRecord& record) {
+        return std::string("ObstructionRecord('") + record.object_odr_id + "', '" + record.detail +
+               "')";
+      });
+
   nb::class_<roadmaker::edit::Command>(edit, "Command")
       .def_prop_ro(
           "name",
@@ -2489,6 +2574,17 @@ NB_MODULE(_roadmaker, m) {
           "after a successful apply. A move takes its linked neighbours with "
           "it; when one could not follow, the link was cut and the record says "
           "why. Empty for commands that cannot outlive a joint.")
+      .def_prop_ro(
+          "obstruction_records",
+          [](const roadmaker::edit::Command& command) {
+            const std::span<const roadmaker::edit::ObstructionRecord> records =
+                command.obstruction_records();
+            return std::vector<roadmaker::edit::ObstructionRecord>(records.begin(), records.end());
+          },
+          "The props this command drove into a road, a junction floor or each "
+          "other (cascade-s4). Only obstructions this gesture CREATED appear: "
+          "one that was already there is not the move's doing. Nothing is "
+          "corrected — edit.relocate_obstructed_props is the offered fix.")
       .def_prop_ro(
           "derived_records",
           [](const roadmaker::edit::Command& command) {
@@ -2555,7 +2651,16 @@ NB_MODULE(_roadmaker, m) {
             return std::vector<roadmaker::edit::DerivedRecord>(records.begin(), records.end());
           },
           "What the most recently pushed command did to the layers derived "
-          "from the roads. Same reason this exists as last_follow_records.");
+          "from the roads. Same reason this exists as last_follow_records.")
+      .def_prop_ro(
+          "last_obstruction_records",
+          [](const roadmaker::edit::EditStack& stack) {
+            const std::span<const roadmaker::edit::ObstructionRecord> records =
+                stack.last_obstruction_records();
+            return std::vector<roadmaker::edit::ObstructionRecord>(records.begin(), records.end());
+          },
+          "The props the most recently pushed command drove into something "
+          "(cascade-s4). Same reason this exists as last_follow_records.");
 
   edit.def(
       "move_waypoint",
@@ -4088,6 +4193,33 @@ NB_MODULE(_roadmaker, m) {
       "one undoable command (cascade-s3). A move reports an orphaned span rather "
       "than deleting it; this is the explicit counterpart. Rejects when there are "
       "no orphans.");
+  edit.def(
+      "relocate_obstructed_props",
+      [](const roadmaker::RoadNetwork& network) {
+        return roadmaker::edit::relocate_obstructed_props(network);
+      },
+      "network"_a,
+      "Moves every obstructed prop to the nearest place on its own anchor road "
+      "where its footprint is clear, as one undoable command (cascade-s4). A "
+      "move reports an obstruction rather than correcting it; this is the "
+      "explicit counterpart. A prop with nowhere clear to go, or one whose "
+      "instances come from a <repeat> series, is left exactly as authored. "
+      "Rejects when nothing is obstructed or nothing can be helped.");
+  edit.def(
+      "reanchor_object",
+      [](const roadmaker::RoadNetwork& network,
+         roadmaker::ObjectId object,
+         roadmaker::RoadId road) {
+        return roadmaker::edit::reanchor_object(network, object, road);
+      },
+      "network"_a,
+      "object"_a,
+      "road"_a,
+      "Re-expresses an object in another road's frame, preserving its WORLD pose "
+      "and its ObjectId (cascade-s4). The prop does not move; what changes is "
+      "which road carries it, and therefore whose future moves it follows. "
+      "Rejects a stale id, a road with no geometry, and a road that already owns "
+      "the object.");
   edit.def(
       "remove_bridge",
       [](const roadmaker::RoadNetwork& network, roadmaker::RoadId road, std::size_t index) {

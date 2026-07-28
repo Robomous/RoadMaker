@@ -252,6 +252,60 @@ Before this sprint the detection hint asked that question while `author_bridge`
 asked a different one — exact `(s, length)` equality — so re-running Generate
 after a move stacked a **second** deck beside the stale one instead of noticing.
 
+### Prop obstruction on move
+
+*Sprint record: [#464](https://github.com/Robomous/RoadMaker/issues/464)
+(`cascade-s4`).*
+
+The funnel's fifth and final stage, and the only one that changes nothing at
+all. A placed prop stores no world pose — its transform is derived from its
+anchor road's frame every time it is meshed — so a prop goes wherever its road
+goes. That is correct, and it is exactly what can drive one into another road.
+The sharpest case is a **rotation**: a prop at large `|t|` sweeps a circle about
+the pivot with radius `|prop − pivot|`, so half a turn can carry it much further
+than the road itself moves. [#338](https://github.com/Robomous/RoadMaker/issues/338)
+accepted that risk and deferred the mitigation here by name.
+
+| Case | Behaviour |
+|---|---|
+| A move drives a prop into another road's **driving band**, a **junction floor**, or **another prop** | **Reported, never corrected.** An `edit::ObstructionRecord` names the prop, what it hit, and a witness point inside both shapes. The move is not undone and the prop is not touched. |
+| A prop that was **already** obstructing before the gesture | **Left alone and unmentioned.** The funnel reads the obstruction set at wrap time and reports only the difference, so a nudge near an imported network does not complain about a state the user did not create — the stance `already_broken_ends` takes one layer down. |
+| A prop against its **own anchor road** | **Never reported.** A prop is placed in that road's frame; sitting on, beside or inside it is the placement. This is what makes a median tree, a bollard and a kerbside streetlight legal, and it is why there is no separate "prop inside its own lanes" rule. |
+| A prop against a road a **junction connects** to its anchor, or a floor its anchor is an **arm of** | **Never reported.** Connecting roads fan across the whole intersection; without this every corner streetlight is a false positive. |
+| A prop standing on a neighbouring road's **verge, shoulder or sidewalk** | **Never reported.** Only the driving band is tested — the full cross section is where props belong. |
+| Two instances of the **same** object overlapping | **Never reported.** A `<repeat>` series tighter than its own diameter is a hedge, authored that way. |
+| An object carrying an `<outline>`, or RoadMaker crosswalk / marking-curve / stencil data, or typed `Crosswalk` | **Not checked at all.** §13.1 says an outline supersedes the bounding volume, and every such object in this product is paint, coplanar with the road. Testing their boxes would flag every zebra crossing on every save. |
+| A prop with **no usable bounding volume** — no `@radius > 0`, and not both `@length > 0` and `@width > 0` | **Not obstruction-checked, and no dimension is ever invented for it.** An absent `@height` is not a skip: the vertical span collapses to a slab at the base and the prop is still checked in plan view. |
+
+The test is 2.5D — a plan-view overlap gated by a vertical-span overlap — because
+pure plan view flags every prop beside an overpass, and grade separation is a
+first-class part of this product. An 8 m tree at ground level under a deck 6 m up
+**is** flagged; the same tree standing on that deck is not. What it deliberately
+does not model: bridge **solids** (deck thickness and piers), the terrain height
+field, `<signal>` posts, and pitch/roll tilt — the footprint is the untilted plan
+projection, which is what the renderer draws.
+
+Two fixes are offered, and **neither is ever applied without being asked for**:
+
+- `edit::relocate_obstructed_props` moves each obstructed prop to the nearest
+  place on its own anchor road where its footprint is clear, as one undoable
+  command. It searches along the road both ways and then draws the prop back
+  toward the reference line — sliding alone cannot help a prop hanging over a
+  *parallel* road. A prop with nowhere clear, or one whose instances come from a
+  `<repeat>` series, is left exactly as authored, and the command is **refused**
+  when there is nothing to do rather than pushing an empty undo entry.
+  `Edit ▸ Props ▸ Relocate Obstructed Props` is the editor's exit.
+- `edit::reanchor_object` hands the prop to another road while preserving its
+  world pose **and its `ObjectId`** — the first command that changes
+  `Object::road` at all. Note the honest limit: re-anchoring a prop into the road
+  it is standing in *silences* the report rather than clearing it, because a prop
+  is never flagged against its own anchor road. It is a placement-correctness
+  fix; relocation is the obstruction fix.
+
+Invoking the menu item **is** the consent. There is no confirmation dialog by
+design: `cascade-s1` removed the last pre-flight one because a modal opened
+mid-drag swallows the mouse-release, and nothing here moves a prop unbidden.
+
 ### Chain creation and grade easing
 
 A road chained off an existing end starts at that end's z with that end's grade
@@ -277,9 +331,9 @@ any elevated end would simply land unlinked with no error anywhere.
 
 ## Validator rules
 
-Both are RoadMaker-authored (`robomous.ai:rm:`), because ASAM has no equivalent
-— see [Why this document exists](#why-this-document-exists). Findings are
-`Warning`: they never block a save.
+All three are RoadMaker-authored (`robomous.ai:rm:`), because ASAM has no
+equivalent — see [Why this document exists](#why-this-document-exists). Findings
+are `Warning`: they never block a save.
 
 <!-- rm-contract: rules -->
 
@@ -287,6 +341,7 @@ Both are RoadMaker-authored (`robomous.ai:rm:`), because ASAM has no equivalent
 |---|---|
 | `robomous.ai:rm:1.0.0:roads.link_ends_coincide` | Two linked ends are further apart than `tol::kWeldPosition` — the link no longer describes the geometry. |
 | `robomous.ai:rm:1.0.0:roads.link_elevation_continuity` | Two linked ends step in z beyond `tol::kWeldElevation` or break grade beyond `tol::kWeldGrade`. |
+| `robomous.ai:rm:1.0.0:objects.prop_obstruction` | A prop's declared bounding volume obstructs another road's driving band, a junction floor, or another prop. Gated by `WriterOptions::prop_obstruction_clearance`; the prop is named in the finding's location, since `Diagnostic` carries no object id. |
 
 Each joint is reachable from both of its ends and is reported **once**, from
 the end whose `(road id, contact)` sorts first — unless the neighbour does not
@@ -297,11 +352,11 @@ be derivative noise.
 
 ## Out of scope
 
-- **Prop obstruction** — a prop driven into another road by the move that
-  carried it is sprint s4 of the move-with-cascade epic
-  [#406](https://github.com/Robomous/RoadMaker/issues/406). Road-level
-  neighbour-follow, junction regeneration and derived-layer recompute have all
-  landed and are specified [above](#neighbour-follow-on-move).
+- **Prop vs terrain, bridge solids and signals** — the obstruction stage tests a
+  prop against road surfaces, junction floors and other props only. The height
+  field is P5's, a bridge deck's thickness and piers are not modelled, and
+  `<signal>` posts live in a separate arena. Every other part of prop
+  obstruction is now specified [above](#prop-obstruction-on-move).
 - **Junction quality under curved approaches** —
   [#356](https://github.com/Robomous/RoadMaker/issues/356), a separate open bug.
   A regenerated junction is exactly as good as a freshly generated one; making

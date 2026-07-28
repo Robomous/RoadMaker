@@ -42,6 +42,7 @@ add_library(roadmaker_core ${_rm_core_type}
   src/mesh/junction_sidewalk_bands.cpp
   src/mesh/junction_surface.cpp
   src/mesh/junction_surface_spans.cpp
+  src/mesh/prop_obstructions.cpp
   src/mesh/surface_boundary.cpp
   src/mesh/surface_fill.cpp
   src/mesh/terrain_mesh.cpp

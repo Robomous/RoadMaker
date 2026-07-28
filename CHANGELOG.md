@@ -19,6 +19,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 Current version on `main`: **0.0.1**.
 
 ### Added
+- **A move tells you when it put a prop in the way**
+  ([#464](https://github.com/Robomous/RoadMaker/issues/464)): props ride the road
+  that owns them, so moving a road takes its trees, poles and barriers with it —
+  and can stand one in someone else's carriageway. Rotating is the worst of it: a
+  prop well out to one side sweeps a wide *arc* when its road turns, and half a
+  turn can carry it several times further than the road moves. Nothing in
+  RoadMaker noticed. Now a move that does it says so by name — *"Prop 12 is in
+  the way — it now stands in road 3's carriageway"* — and a scene saved with an
+  obstructed prop reports it again when you reopen it, so it cannot be lost track
+  of.
+  Nothing is changed for you. Two fixes are offered and both have to be asked
+  for: **Edit ▸ Props ▸ Relocate Obstructed Props** shifts every flagged prop to
+  the nearest clear spot on its own road in one undoable step, and a prop's
+  right-click menu gained **Re-anchor to nearest road**, which leaves the prop
+  exactly where it is on screen and hands it to the road it now sits beside.
+  What is *not* flagged took as much care as what is: a prop is never reported
+  against its own road, so median trees, bollards and kerbside streetlights are
+  left alone; nor against roads joined through a junction, so corner poles at an
+  intersection stay quiet; only the driving lanes are tested, so a prop on a
+  neighbour's verge is fine; crosswalks and painted markings are never treated as
+  obstacles; and a prop that declares no size is not checked at all, because
+  RoadMaker will not invent dimensions it was not given. Closes out the rotation
+  risk knowingly accepted in
+  [#338](https://github.com/Robomous/RoadMaker/issues/338), and completes the
+  move-with-cascade workstream
+  ([#406](https://github.com/Robomous/RoadMaker/issues/406)).
 - **The ground and the bridges move with the roads too**
   ([#463](https://github.com/Robomous/RoadMaker/issues/463)): a road move now
   reaches the things RoadMaker works out *from* the roads, which it never did.
