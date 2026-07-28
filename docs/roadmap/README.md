@@ -120,7 +120,13 @@ a categorized toolbar.
   [road connection contract](../domain/connection_contract.md)
   ([#403](https://github.com/Robomous/RoadMaker/issues/403), **landed** — the
   contract states the link policy each cascade sprint then implements) — is
-  the fourth. Unlike the first three it spans four pillars (P2/P4/P5/P6) with no
+  the fourth, and is now **complete**: all four sprints
+  ([#461](https://github.com/Robomous/RoadMaker/issues/461) neighbour follow,
+  [#462](https://github.com/Robomous/RoadMaker/issues/462) junction
+  regeneration, [#463](https://github.com/Robomous/RoadMaker/issues/463)
+  derived-layer recompute,
+  [#464](https://github.com/Robomous/RoadMaker/issues/464) prop obstruction)
+  have merged, and every one of them is specified in the contract. Unlike the first three it spans four pillars (P2/P4/P5/P6) with no
   single owner, so it carries the `cascade` label **without** a pillar
   milestone; the [release gate](#release-gate) names the workstream
   explicitly, which is what makes label-only tracking sufficient.

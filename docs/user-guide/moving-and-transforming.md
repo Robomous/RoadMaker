@@ -90,9 +90,54 @@ appears at the entity's pivot, always on top at a constant on-screen size:
 
 Pitch/roll rings and prop elevation are planned follow-ups.
 
+## When a move puts a prop in the way
+
+Props ride the road that owns them. A tree placed beside a road keeps its
+position *relative to that road*, so moving the road takes the tree with it —
+which is what you want, and which is also how a tree can end up standing in
+someone else's carriageway.
+
+Rotating is where this bites hardest. A prop sitting well out to one side sweeps
+a wide **arc** when its road turns, because it swings around the pivot rather
+than sliding along with the road. Half a turn can carry a prop several times
+further than the road itself moves.
+
+When a move does that, the editor says so:
+
+> **Prop 12 is in the way — it now stands in road 3's carriageway**
+
+Nothing is changed for you. The prop stays exactly where the move put it, the
+move stays done, and undo puts everything back. Reopening the scene later will
+report it again, so it is not something you can lose track of by saving.
+
+You have three ways out:
+
+- **Undo** the move.
+- **Edit ▸ Props ▸ Relocate Obstructed Props** — shifts every flagged prop to the
+  nearest clear spot on its own road, as a single undoable step. A prop with
+  nowhere clear to go is left alone rather than dumped somewhere arbitrary, and
+  if nothing needs moving the editor tells you that instead of adding a pointless
+  undo entry.
+- **Right-click the prop ▸ Re-anchor to nearest road** — keeps the prop exactly
+  where it is on screen and hands it to the road it now sits beside, so *that*
+  road's future moves carry it. Useful when the prop is where you want it and
+  simply belongs to the wrong road. Note that re-anchoring a prop to the road it
+  is standing *in* just stops the warning: a prop is never reported against its
+  own road. Use Relocate if you actually want it out of the lane.
+
+What is **not** flagged matters as much as what is. A prop is never reported
+against its own road, so median trees, bollards and kerbside streetlights are
+left in peace; nor against roads joined to it through a junction, so corner
+poles at an intersection stay quiet; and only the **driving lanes** are tested,
+so a prop on a neighbouring verge or sidewalk is fine. Crosswalks and painted
+markings are never treated as obstacles. A prop that declares no size at all is
+not checked — the editor will not invent dimensions for it.
+
+
 ## See also
 
 - [Bend points](bend-points.md) and [Edit nodes](edit-nodes.md) — reshaping a
   road's geometry rather than moving it whole.
 - [Elevation](elevation.md) — editing a road's vertical profile node by node.
 - [Context menus](context-menus.md) — the right-click actions per entity.
+- [Props and signals](objects-signals.md) — placing and sizing the props a move can carry.
