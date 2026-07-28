@@ -287,6 +287,17 @@ private:
     SignalId signal;
   };
 
+  /// One uploaded reference layer (p7-s2, #242). A raster carries a texture; a
+  /// vector layer's `texture` stays invalid and its mesh is Lines.
+  struct UploadedReferenceLayer {
+    RenderMeshHandle mesh;
+    TextureHandle texture;
+  };
+
+  /// Rebuilds the uploaded reference-layer geometry and textures from the
+  /// document's list (p7-s2, #242). MUST be called with the GL context current.
+  void rebuild_reference_layers();
+
   /// Get-or-create the ClampToEdge texture for a text sign's face, keyed on
   /// (model_id, text): rasterises with roadmaker::signs::render_face and uploads
   /// it. MUST be called with the GL context current (paintGL / rebuild_scene).
@@ -486,6 +497,7 @@ private:
 
   /// Editable text-sign faces — one uploaded textured quad per placed text sign.
   std::vector<UploadedSignFace> sign_faces_;
+  std::vector<UploadedReferenceLayer> reference_layers_;
 
   /// Cache of uploaded sign-face textures keyed on "model_id\x1ftext", swept of
   /// unreferenced handles on each rebuild. `mutable` so sign_face_texture (a

@@ -20,6 +20,7 @@
 // RenderMeshData plus the entity ids needed for selection/picking. No GL,
 // no Qt — unit-testable headless.
 
+#include "roadmaker/gis/layer.hpp"
 #include "roadmaker/mesh/mesh.hpp"
 
 #include <array>
@@ -147,6 +148,39 @@ struct SceneSignFace {
   std::string text;    ///< texture cache key (with model_id)
   RenderMeshData data; ///< world-space quad; uvs in [0,1]
 };
+
+/// Geometry for the imported reference layers drawn UNDER the network
+/// (p7-s2, #242).
+///
+/// These are free functions rather than another `Scene` producer because a
+/// reference layer is Layer-2 editor state, not network mesh: it has no
+/// RoadId/LaneId to carry, it changes on import rather than on edit, and the
+/// viewport re-uploads it on its own schedule. Keeping them out of `Scene` also
+/// keeps `build_scene` a pure function of the kernel mesh.
+///
+/// NOTHING here needs a new `Renderer` virtual. A raster underlay is a textured
+/// unlit quad and a vector layer is a Lines mesh — both already expressible
+/// with `upload(TextureData)`, `Material{base_color, unlit}` and
+/// `PrimitiveKind::Lines`.
+
+/// The world-space quad for a placed raster, spanning `extent`
+/// ({min_x, min_y, max_x, max_y}) at height `z`. UVs run 0..1 across the quad,
+/// so the material must use `uv_scale = 1` and `TextureWrap::ClampToEdge` —
+/// the default Repeat would wrap the image's own edge back over itself.
+[[nodiscard]] RenderMeshData underlay_quad(const std::array<double, 4>& extent, float z);
+
+/// Line runs for a vector reference layer at height `z`. Polygons are closed
+/// back to their first vertex; points become a small cross, because a single
+/// GL point is invisible at most zooms and an imported point layer that draws
+/// nothing reads as a failed import.
+[[nodiscard]] RenderMeshData
+underlay_lines(const gis::GisVectorLayer& layer, float z, const std::array<float, 4>& color);
+
+/// Draw height for reference layers: just above the procedural ground so an
+/// underlay hides the grass where it covers, and below the network so roads
+/// occlude it. `index` steps successive layers 1 mm apart in list order, which
+/// is what makes their stacking deterministic rather than z-fighting.
+[[nodiscard]] float underlay_z(const SceneBounds& bounds, std::size_t index);
 
 struct Scene {
   std::vector<SceneItem> items;

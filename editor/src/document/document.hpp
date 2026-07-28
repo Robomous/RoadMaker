@@ -34,6 +34,7 @@
 #include <memory>
 #include <vector>
 
+#include "document/reference_layers.hpp"
 #include "document/scene_sidecar.hpp"
 
 namespace roadmaker::editor {
@@ -92,6 +93,31 @@ public:
   /// the same class of state as the camera pose, and moving the camera has
   /// never made a scene need saving either. It rides the next save.
   void set_scene_state(SceneState state) { scene_state_ = std::move(state); }
+
+  /// Imported GIS reference layers (p7-s2, #242).
+  ///
+  /// Layer-2 state by ADR-0008: it never enters the `.xodr`, and adding or
+  /// removing a layer is deliberately NOT undoable — the same ruling the
+  /// workspace box already carries. See reference_layers.hpp.
+  [[nodiscard]] const ReferenceLayers& reference_layers() const { return reference_layers_; }
+
+  [[nodiscard]] ReferenceLayers& reference_layers() { return reference_layers_; }
+
+  /// The directory reference-layer paths resolve against: the open scene's
+  /// folder, or the current directory for an unsaved scene.
+  [[nodiscard]] std::filesystem::path scene_directory() const;
+
+  /// Imports `source` as a reference layer and emits reference_layers_changed()
+  /// on success. Diagnostics from the read are published; a failure is returned
+  /// so the caller can show it, because a refusal naming the CRS is the point.
+  Expected<void> add_reference_layer(const std::filesystem::path& source);
+  void remove_reference_layer(std::size_t index);
+  void set_reference_layer_visible(std::size_t index, bool visible);
+
+  /// Re-derives every layer against the current georeference. Called when the
+  /// world georeference changes, so imagery follows the frame rather than
+  /// staying where the previous one put it.
+  void refit_reference_layers();
 
   /// Installs the live-state provider. `Document` is QtCore-only and cannot
   /// read the viewport, so the app hands it a callback that stamps the CURRENT
@@ -276,6 +302,10 @@ signals:
   /// auto-framing then stands, which is what a plain .xodr wants.
   void scene_state_loaded();
 
+  /// The reference-layer list or a layer's visibility changed (p7-s2, #242).
+  /// The viewport rebuilds its underlay geometry and textures from this.
+  void reference_layers_changed();
+
 private:
   // The undo-stack bridge mutates the network on redo/undo; it is part of
   // Document's own mutation machinery, not an outside caller.
@@ -306,6 +336,12 @@ private:
   /// in place — it needs both.
   void drop_stale_workspace();
 
+  /// Rebuilds the live reference layers from the just-read sidecar, re-reading
+  /// every source file against the network's CURRENT georeference. Called from
+  /// read_scene_sidecar for the same reason drop_stale_workspace is — it needs
+  /// both the sidecar and the network to be in place.
+  void restore_reference_layers();
+
   RoadNetwork network_;
   NetworkMesh mesh_;
   std::vector<Diagnostic> diagnostics_;
@@ -316,6 +352,7 @@ private:
   /// the next save overwrite the ORIGINAL scene's sidecar with defaults.
   bool scene_state_from_disk_ = false;
   std::function<void(SceneState&)> scene_state_provider_;
+  ReferenceLayers reference_layers_;
   QUndoStack undo_stack_;
   edit::DirtySet last_dirty_;
   std::unique_ptr<edit::Command> preview_command_;

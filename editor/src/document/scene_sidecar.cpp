@@ -34,6 +34,13 @@ constexpr auto kVersionKey = "scene_version";
 constexpr auto kViewKey = "view";
 constexpr auto kTexturedKey = "textured";
 constexpr auto kWorkspaceKey = "workspace";
+constexpr auto kReferenceLayersKey = "reference_layers";
+constexpr auto kPathKey = "path";
+constexpr auto kKindKey = "kind";
+constexpr auto kVisibleKey = "visible";
+constexpr auto kFramedCrsKey = "framed_crs";
+constexpr auto kVectorKind = "vector";
+constexpr auto kRasterKind = "raster";
 constexpr auto kExtentsKey = "extents";
 constexpr auto kCrsKey = "crs";
 constexpr auto kTargetKey = "target";
@@ -215,6 +222,80 @@ constexpr auto kOrthographic = "orthographic";
   return workspace;
 }
 
+/// Parses the `reference_layers` array (p7-s2, #242).
+///
+/// Per-entry rather than all-or-nothing, unlike `view` and `workspace`: those
+/// are one indivisible thing each, while this is a list, and dropping five good
+/// layers because a sixth is malformed helps nobody. An entry with no usable
+/// `path` is the only thing skipped, because that is the one field nothing can
+/// be recomputed without.
+[[nodiscard]] std::optional<std::vector<SceneReferenceLayer>>
+parse_reference_layers(const QJsonValue& value) {
+  if (value.isUndefined() || value.isNull()) {
+    return std::nullopt;
+  }
+  if (!value.isArray()) {
+    spdlog::warn("scene sidecar: 'reference_layers' is not an array — ignoring it");
+    return std::nullopt;
+  }
+
+  std::vector<SceneReferenceLayer> layers;
+  const QJsonArray array = value.toArray();
+  for (const QJsonValue& entry : array) {
+    if (!entry.isObject()) {
+      spdlog::warn("scene sidecar: a 'reference_layers' entry is not an object — skipping it");
+      continue;
+    }
+    const QJsonObject object = entry.toObject();
+    const QJsonValue path = object.value(QLatin1String(kPathKey));
+    if (!path.isString() || path.toString().isEmpty()) {
+      spdlog::warn("scene sidecar: a 'reference_layers' entry has no 'path' — skipping it");
+      continue;
+    }
+
+    SceneReferenceLayer layer;
+    layer.path = path.toString().toStdString();
+
+    const QJsonValue kind = object.value(QLatin1String(kKindKey));
+    if (kind.isString()) {
+      layer.vector = kind.toString() == QLatin1String(kVectorKind);
+      if (!layer.vector && kind.toString() != QLatin1String(kRasterKind)) {
+        spdlog::warn("scene sidecar: reference layer '{}' has an unknown kind '{}' — reading it "
+                     "as a raster",
+                     layer.path,
+                     kind.toString().toStdString());
+      }
+    }
+
+    const QJsonValue visible = object.value(QLatin1String(kVisibleKey));
+    if (visible.isBool()) {
+      layer.visible = visible.toBool();
+    }
+
+    const QJsonValue framed = object.value(QLatin1String(kFramedCrsKey));
+    if (framed.isString()) {
+      layer.framed_crs = framed.toString().toStdString();
+    }
+
+    layers.push_back(std::move(layer));
+  }
+  return layers;
+}
+
+/// The `reference_layers` array to write.
+[[nodiscard]] QJsonArray reference_layers_array(const std::vector<SceneReferenceLayer>& layers) {
+  QJsonArray array;
+  for (const SceneReferenceLayer& layer : layers) {
+    QJsonObject object;
+    object.insert(QLatin1String(kPathKey), QString::fromStdString(layer.path));
+    object.insert(QLatin1String(kKindKey), QLatin1String(layer.vector ? kVectorKind : kRasterKind));
+    object.insert(QLatin1String(kVisibleKey), layer.visible);
+    object.insert(QLatin1String(kFramedCrsKey), QString::fromStdString(layer.framed_crs));
+    array.push_back(object);
+  }
+  return array;
+}
+
 /// The `workspace` block to write, merged over whatever was parsed.
 [[nodiscard]] QJsonObject workspace_object(const SceneWorkspaceState& workspace, QJsonObject base) {
   QJsonArray extents;
@@ -285,6 +366,7 @@ Expected<SceneState> parse(const QByteArray& json) {
     spdlog::warn("scene sidecar: 'textured' is not a boolean — falling back to the app default");
   }
   state.workspace = parse_workspace(root.value(QLatin1String(kWorkspaceKey)));
+  state.reference_layers = parse_reference_layers(root.value(QLatin1String(kReferenceLayersKey)));
   // The WHOLE root, not the leftovers: to_json() merges the owned keys over it,
   // which is both simpler than tracking which keys were unknown and provably
   // byte-stable (QJsonObject iterates key-sorted, so insertion order cannot
@@ -333,6 +415,12 @@ QByteArray to_json(const SceneState& state) {
         workspace_object(*state.workspace, root.value(QLatin1String(kWorkspaceKey)).toObject()));
   } else {
     root.remove(QLatin1String(kWorkspaceKey));
+  }
+  if (state.reference_layers) {
+    root.insert(QLatin1String(kReferenceLayersKey),
+                reference_layers_array(*state.reference_layers));
+  } else {
+    root.remove(QLatin1String(kReferenceLayersKey));
   }
   return QJsonDocument(root).toJson(QJsonDocument::Indented);
 }

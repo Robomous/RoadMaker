@@ -273,6 +273,40 @@ the same change. `Road Plan tool` in step 2 was corrected to its real name,
     it was framed in the previous frame. Undo twice to get back to step 25's
     state.
 
+### Importing GIS data
+
+28. [ ] With the world origin from step 25 still applied, open **File ▸ Import ▸
+    GIS Raster…** and pick a GeoTIFF, or a PNG with a world file beside it,
+    covering roughly the same area (p7-s2,
+    [#242](https://github.com/Robomous/RoadMaker/issues/242)). **Expected:** the
+    imagery appears UNDER the network, hiding the procedural grass where it
+    covers, with the roads drawn over it. The Diagnostics panel names the
+    coordinate system it read, and says whether the image was **placed** (its
+    own pixels) or **resampled** (reprojected).
+29. [ ] **File ▸ Import ▸ GIS Vector…** a shapefile or GeoJSON of the same area.
+    **Expected:** its lines land on top of the imagery, in a colour no authored
+    geometry uses. A shapefile with no `.prj` beside it warns that it did not
+    state a coordinate system.
+30. [ ] Save, close and reopen the scene. **Expected:** both layers come back in
+    the same place. Then move one of the source files away and reopen again: the
+    layer is still listed but does not draw, with a warning — a reference you
+    added is never silently forgotten because a drive was not mounted.
+31. [ ] Re-open **Edit ▸ World Georeference…** and change the latitude and
+    longitude. **Expected:** the imported layers RE-PLACE themselves in the new
+    frame rather than staying where the old one put them or vanishing — unlike
+    the workspace box in step 27, a reference layer has a source file to
+    re-derive from.
+32. [ ] Try **File ▸ Import ▸ GIS Vector…** on a file in an unsupported
+    coordinate system (a national grid, or anything on a datum other than
+    WGS 84). **Expected:** it is refused with a message that NAMES the
+    coordinate system it read and points at the issue tracking the limitation —
+    not a generic failure.
+33. [ ] **Edit ▸ Terrain ▸ Import Elevation Raster…** with a single-band
+    elevation GeoTIFF. **Expected:** it becomes the scene's terrain — the ground
+    deforms and the roads conform to it — in exactly ONE undo entry, and Undo
+    puts the previous terrain back. Importing an ordinary colour image here is
+    refused, saying it needs a single-band raster.
+
 ## Pass criteria
 
 - All steps complete in order in a single session; every expected result
@@ -292,6 +326,17 @@ the same change. `Road Plan tool` in step 2 was corrected to its real name,
 - The workspace box in step 27 is discarded, not silently kept: a box framed in
   one georeference must never be reused under another
   ([#324](https://github.com/Robomous/RoadMaker/issues/324)).
+- An imported layer is never silently mis-placed. In step 28 the Diagnostics
+  panel must say **placed** or **resampled** — a reprojected image is no longer
+  pixel-for-pixel its source file, and a run where that goes unreported fails
+  ([#242](https://github.com/Robomous/RoadMaker/issues/242)).
+- Step 32's refusal NAMES the coordinate system. "Unsupported" on its own is a
+  regression: the whole point of computing a bounded family is being able to say
+  precisely what fell outside it.
+- Steps 30 and 31 distinguish the two Layer-2 rules that look alike: a reference
+  layer is RE-DERIVED when the frame changes (it has a source), while the
+  workspace box is DISCARDED (it has none). A build that drops reference layers
+  on a georeference change fails the run.
 
 ## Results
 

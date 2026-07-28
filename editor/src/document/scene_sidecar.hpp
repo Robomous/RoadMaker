@@ -80,6 +80,30 @@ struct SceneWorkspaceState {
   std::string crs;
 };
 
+/// One imported reference layer, as persisted (p7-s2, #242).
+///
+/// Only what cannot be recomputed. The reprojected geometry and the placed
+/// raster are deliberately NOT stored: they are derived from the source file
+/// and the scene's georeference, and a cached copy of a derivation is a copy
+/// that can disagree with both of its inputs.
+struct SceneReferenceLayer {
+  /// Relative to the scene's directory, '/' separators. Never absolute — the
+  /// same contract every external reference in this repository keeps, so a
+  /// project survives being copied or committed.
+  std::string path;
+
+  /// "vector" or "raster" on disk; the reader maps anything else to raster and
+  /// warns, rather than dropping a layer over a spelling.
+  bool vector = false;
+
+  bool visible = true;
+
+  /// The scene's projection string when this layer was placed. Unlike the
+  /// workspace box, a stale value here does not discard anything — the source
+  /// file is still the truth, so the placement is simply re-derived.
+  std::string framed_crs;
+};
+
 /// One scene's Layer-2 state. Every modeled field is optional so that ABSENT
 /// is distinguishable from "present and equal to the default": a scene with no
 /// stored render mode must fall back to the application default, not to
@@ -97,6 +121,15 @@ struct SceneState {
 
   /// The workspace box and the frame it was framed in (p7-s5, #324).
   std::optional<SceneWorkspaceState> workspace;
+
+  /// Imported GIS reference layers (p7-s2, #242). Layer 2 by ADR-0008, which
+  /// names "import metadata" as a resident of the native container — imagery
+  /// and vectors are authoring reference and have no business in the `.xodr`.
+  ///
+  /// Absent and empty are distinguished as everywhere else here, but they mean
+  /// the same thing to a reader; the optional exists so a sidecar that never
+  /// had the block does not grow an empty array on rewrite.
+  std::optional<std::vector<SceneReferenceLayer>> reference_layers;
 
   /// The WHOLE parsed root object, kept as the merge base for to_json() — this
   /// is what makes unknown keys (a `snap` or `session` block from a future

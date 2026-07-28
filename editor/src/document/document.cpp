@@ -134,6 +134,82 @@ void Document::read_scene_sidecar(const std::filesystem::path& scene) {
   scene_state_ = std::move(*state);
   scene_state_from_disk_ = true;
   drop_stale_workspace();
+  restore_reference_layers();
+}
+
+void Document::restore_reference_layers() {
+  reference_layers_.clear();
+  if (!scene_state_.reference_layers || scene_state_.reference_layers->empty()) {
+    return;
+  }
+  std::vector<ReferenceLayer> persisted;
+  persisted.reserve(scene_state_.reference_layers->size());
+  for (const SceneReferenceLayer& stored : *scene_state_.reference_layers) {
+    ReferenceLayer layer;
+    layer.path = stored.path;
+    layer.kind = stored.vector ? ReferenceLayerKind::Vector : ReferenceLayerKind::Raster;
+    layer.visible = stored.visible;
+    layer.framed_crs = stored.framed_crs;
+    persisted.push_back(std::move(layer));
+  }
+  // Unlike the workspace box, a stale frame is NOT a reason to discard: a
+  // reference layer has a source file to re-derive from, so `reload` re-places
+  // it in the current frame and says it did. The workspace has no such source,
+  // which is why that one is dropped instead.
+  std::vector<Diagnostic> produced =
+      reference_layers_.reload(std::move(persisted), scene_directory(), network_.georeference());
+  for (Diagnostic& d : produced) {
+    diagnostics_.push_back(std::move(d));
+  }
+}
+
+std::filesystem::path Document::scene_directory() const {
+  if (file_path_.isEmpty()) {
+    return std::filesystem::current_path();
+  }
+  return std::filesystem::path(file_path_.toStdString()).parent_path();
+}
+
+Expected<void> Document::add_reference_layer(const std::filesystem::path& source) {
+  Expected<std::vector<Diagnostic>> added =
+      reference_layers_.add(source, scene_directory(), network_.georeference());
+  if (!added.has_value()) {
+    return make_error(added.error().code, added.error().message, added.error().context);
+  }
+  for (Diagnostic& d : *added) {
+    diagnostics_.push_back(std::move(d));
+  }
+  // NOT an undoable command, and deliberately NOT a reason to mark the
+  // document dirty either — dirtiness here is `!undo_stack_.isClean()`, and a
+  // reference layer never touches the undo stack. That is the same ruling the
+  // workspace box carries a few lines below: Layer 2 is framing, never content
+  // (ADR-0008), so it rides along with the next save rather than demanding one.
+  emit diagnostics_changed();
+  emit reference_layers_changed();
+  return {};
+}
+
+void Document::remove_reference_layer(std::size_t index) {
+  reference_layers_.remove(index);
+  emit reference_layers_changed();
+}
+
+void Document::set_reference_layer_visible(std::size_t index, bool visible) {
+  reference_layers_.set_visible(index, visible);
+  emit reference_layers_changed();
+}
+
+void Document::refit_reference_layers() {
+  if (reference_layers_.empty()) {
+    return;
+  }
+  std::vector<Diagnostic> produced =
+      reference_layers_.refit(scene_directory(), network_.georeference());
+  for (Diagnostic& d : produced) {
+    diagnostics_.push_back(std::move(d));
+  }
+  emit diagnostics_changed();
+  emit reference_layers_changed();
 }
 
 void Document::drop_stale_workspace() {
@@ -172,6 +248,24 @@ SceneState Document::current_scene_state() const {
   SceneState state = scene_state_;
   if (scene_state_provider_) {
     scene_state_provider_(state);
+  }
+  // Reference layers have no external provider — the Document owns them — so
+  // they are written from the live list rather than from `scene_state_`, which
+  // would otherwise still hold whatever was on disk when the scene opened.
+  if (reference_layers_.empty()) {
+    state.reference_layers.reset();
+  } else {
+    std::vector<SceneReferenceLayer> stored;
+    stored.reserve(reference_layers_.size());
+    for (const ReferenceLayer& layer : reference_layers_.layers()) {
+      stored.push_back(SceneReferenceLayer{
+          .path = layer.path,
+          .vector = layer.kind == ReferenceLayerKind::Vector,
+          .visible = layer.visible,
+          .framed_crs = layer.framed_crs,
+      });
+    }
+    state.reference_layers = std::move(stored);
   }
   return state;
 }

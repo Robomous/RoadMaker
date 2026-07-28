@@ -477,4 +477,94 @@ Scene build_object_scene(const NetworkMesh& mesh, std::span<const RoadId> roads)
   return scene;
 }
 
+// --- Imported reference layers (p7-s2, #242) -------------------------------
+
+RenderMeshData underlay_quad(const std::array<double, 4>& extent, float z) {
+  RenderMeshData data;
+  data.kind = PrimitiveKind::Triangles;
+  // Counter-clockwise seen from +Z, so the quad faces up under the default
+  // winding — a back-facing underlay is invisible and reads as a failed import.
+  const auto x0 = static_cast<float>(extent[0]);
+  const auto y0 = static_cast<float>(extent[1]);
+  const auto x1 = static_cast<float>(extent[2]);
+  const auto y1 = static_cast<float>(extent[3]);
+  data.positions = {x0, y0, z, x1, y0, z, x1, y1, z, x0, y1, z};
+  data.normals = {0.0F, 0.0F, 1.0F, 0.0F, 0.0F, 1.0F, 0.0F, 0.0F, 1.0F, 0.0F, 0.0F, 1.0F};
+  // Row 0 of the image is its NORTH edge, which is max-y here — so v runs 1 at
+  // the bottom to 0 at the top. Getting this the other way up flips every
+  // imported orthophoto, which looks plausible until you compare it to a road.
+  data.uvs = {0.0F, 1.0F, 1.0F, 1.0F, 1.0F, 0.0F, 0.0F, 0.0F};
+  data.indices = {0, 1, 2, 0, 2, 3};
+  data.color = {1.0F, 1.0F, 1.0F, 1.0F};
+  return data;
+}
+
+RenderMeshData
+underlay_lines(const gis::GisVectorLayer& layer, float z, const std::array<float, 4>& color) {
+  RenderMeshData data;
+  data.kind = PrimitiveKind::Lines;
+  data.color = color;
+
+  const auto push = [&data, z](const std::array<double, 2>& v) {
+    data.positions.push_back(static_cast<float>(v[0]));
+    data.positions.push_back(static_cast<float>(v[1]));
+    data.positions.push_back(z);
+    return static_cast<std::uint32_t>((data.positions.size() / 3) - 1);
+  };
+
+  for (const gis::GisFeature& feature : layer.features) {
+    if (feature.geometry == gis::GisFeature::Geometry::Point) {
+      // A GL point of width 1 is invisible at most zooms, and a point layer
+      // that draws nothing reads as an import that silently failed. A small
+      // fixed-size cross is legible and unambiguous.
+      constexpr float kArm = 1.0F;
+      for (const std::array<double, 2>& v : feature.vertices) {
+        const auto x = static_cast<float>(v[0]);
+        const auto y = static_cast<float>(v[1]);
+        const auto base = static_cast<std::uint32_t>(data.positions.size() / 3);
+        data.positions.insert(data.positions.end(),
+                              {x - kArm, y, z, x + kArm, y, z, x, y - kArm, z, x, y + kArm, z});
+        data.indices.insert(data.indices.end(), {base, base + 1, base + 2, base + 3});
+      }
+      continue;
+    }
+
+    const bool closed = feature.geometry == gis::GisFeature::Geometry::Polygon;
+    for (std::size_t ring = 0; ring < feature.ring_starts.size(); ++ring) {
+      const std::size_t begin = feature.ring_starts[ring];
+      const std::size_t end = ring + 1 < feature.ring_starts.size() ? feature.ring_starts[ring + 1]
+                                                                    : feature.vertices.size();
+      if (end <= begin + 1) {
+        continue;
+      }
+      std::uint32_t first = 0;
+      std::uint32_t previous = 0;
+      for (std::size_t i = begin; i < end; ++i) {
+        const std::uint32_t index = push(feature.vertices[i]);
+        if (i == begin) {
+          first = index;
+        } else {
+          data.indices.push_back(previous);
+          data.indices.push_back(index);
+        }
+        previous = index;
+      }
+      // Shapefile rings usually repeat their first point and GeoJSON's always
+      // do, so only close a ring that has not closed itself — otherwise every
+      // polygon gets a zero-length segment.
+      if (closed && feature.vertices[begin] != feature.vertices[end - 1]) {
+        data.indices.push_back(previous);
+        data.indices.push_back(first);
+      }
+    }
+  }
+  return data;
+}
+
+float underlay_z(const SceneBounds& bounds, std::size_t index) {
+  // Just above the procedural ground so an underlay hides the grass it covers,
+  // and 1 mm per layer so a stack is ordered rather than z-fighting.
+  return ground_base_z(bounds) + 0.005F + (static_cast<float>(index) * 0.001F);
+}
+
 } // namespace roadmaker::editor

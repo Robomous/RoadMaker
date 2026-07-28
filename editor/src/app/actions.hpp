@@ -155,6 +155,15 @@ public:
   // grid (.asc) and installs it as the scene field. Menu-only (no registry id).
   QAction* terrain_import = nullptr;
 
+  // GIS import (p7-s2, #242). File ▸ Import gets the two REFERENCE imports —
+  // Layer-2 backdrop that never enters the .xodr — while the elevation raster
+  // joins Edit ▸ Terrain, because it becomes real scene content through the
+  // same command a .asc DEM does. The menu split follows what the data
+  // BECOMES, not what format it arrived in.
+  QAction* import_gis_vector = nullptr;
+  QAction* import_gis_raster = nullptr;
+  QAction* terrain_import_raster = nullptr;
+
   // Bridges (p5-s3, #233): the Road Construction tool's automatic bridge
   // assignment — a menu action (no registry id, so no shortcut) that detects
   // grade-separated crossings and builds a bridge over each. The interactive
