@@ -55,6 +55,12 @@ public:
   /// Only constructed when the kernel is built with RM_BUILD_USD=ON; stays
   /// nullptr otherwise so MainWindow can skip wiring it.
   QAction* export_usd = nullptr;
+
+  /// Export previews (p7-s1, #241) — GW-2 steps 21 and 22. Enabled always,
+  /// unlike the export actions: previewing "nothing to export" on an empty
+  /// scene is precisely the value.
+  QAction* export_preview_scene = nullptr;
+  QAction* export_preview_xodr = nullptr;
   QAction* quit = nullptr;
 
   QAction* undo = nullptr;

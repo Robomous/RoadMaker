@@ -98,6 +98,16 @@ constexpr std::array kTable{
           .description = "Export the network as binary glTF (.glb)",
           .toolbar_group = "File",
           .toolbar_order = 40},
+    // Menu-only, unbound (p7-s1, #241): no .primary and no .documented, so
+    // markdown() skips both rows and the committed shortcuts page is
+    // unchanged. Registered anyway so Actions::action() covers them and the
+    // toolbar-registry coverage test sees them.
+    Entry{.id = Id::ExportPreviewScene,
+          .category = "File",
+          .description = "Preview what a 3D scene export would contain"},
+    Entry{.id = Id::ExportPreviewXodr,
+          .category = "File",
+          .description = "Preview the OpenDRIVE that would be written"},
     Entry{.id = Id::Quit,
           .category = "File",
           .description = "Quit",

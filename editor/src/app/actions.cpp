@@ -53,6 +53,14 @@ Actions::Actions(QUndoStack& undo_stack, QObject* parent) : QObject(parent) {
   export_usd->setEnabled(false); // enabled once a file is loaded
 #endif
 
+  export_preview_scene = new QAction(tr("Scene Export &Preview…"), this);
+  export_preview_scene->setShortcuts(shortcuts::sequences(shortcuts::Id::ExportPreviewScene));
+  export_preview_scene->setToolTip(tr("Preview what a 3D scene export would contain"));
+
+  export_preview_xodr = new QAction(tr("&OpenDRIVE Export Preview…"), this);
+  export_preview_xodr->setShortcuts(shortcuts::sequences(shortcuts::Id::ExportPreviewXodr));
+  export_preview_xodr->setToolTip(tr("Preview the OpenDRIVE that would be written"));
+
   quit = new QAction(tr("&Quit"), this);
   quit->setShortcuts(shortcuts::sequences(shortcuts::Id::Quit));
   quit->setMenuRole(QAction::QuitRole);
@@ -471,6 +479,10 @@ QAction* Actions::action(shortcuts::Id id) const {
     return save_as;
   case Id::ExportGlb:
     return export_glb;
+  case Id::ExportPreviewScene:
+    return export_preview_scene;
+  case Id::ExportPreviewXodr:
+    return export_preview_xodr;
   case Id::Quit:
     return quit;
   case Id::Undo:

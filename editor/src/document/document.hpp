@@ -63,6 +63,16 @@ public:
   /// the undo stack clean, and emits saved().
   [[nodiscard]] Expected<void> save(const std::filesystem::path& path);
 
+  /// Re-runs the OpenDRIVE checker over the CURRENT network and republishes
+  /// the findings, emitting diagnostics_changed(). Same semantics as save()'s
+  /// validation pass, without writing anything.
+  ///
+  /// Before p7-s1 (#241) validate_network ran in exactly one place — save() —
+  /// so between a load and the next save the diagnostics list described the
+  /// file that was opened rather than the network being authored. Never
+  /// mutates the network; safe to call from a read-only consumer.
+  void refresh_diagnostics();
+
   /// Dirty means the undo stack has moved since the last load/save/new.
   [[nodiscard]] bool is_dirty() const { return !undo_stack_.isClean(); }
 

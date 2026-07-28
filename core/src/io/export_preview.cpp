@@ -393,7 +393,10 @@ ScenePreview preview_mesh_export(const NetworkMesh& mesh, MeshExportFormat forma
       // exporters — so it is counted once even when the geometry is baked N
       // times.
       if (first_time) {
-        materials.add(model_id + ":" + part.name,
+        // Per-format naming, from the exporters' own shared definition — USD
+        // prim identifiers cannot carry the ':' glTF uses.
+        materials.add(gltf ? io_common::gltf_prop_material_name(model_id, part.name)
+                           : io_common::usd_prop_material_name(model_id, part.name),
                       {static_cast<double>(part.color[0]),
                        static_cast<double>(part.color[1]),
                        static_cast<double>(part.color[2]),

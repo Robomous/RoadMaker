@@ -58,6 +58,8 @@ enum class Id {
   Save,
   SaveAs,
   ExportGlb,
+  ExportPreviewScene,
+  ExportPreviewXodr,
   Quit,
   // Edit
   Undo,

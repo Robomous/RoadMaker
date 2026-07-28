@@ -166,9 +166,18 @@ void Document::reset() {
   emit scene_state_loaded();
 }
 
+void Document::refresh_diagnostics() {
+  // Checker findings replace the document diagnostics — the user sees what a
+  // consumer would (§8). Until p7-s1 (#241) this ran ONLY inside save(), so
+  // between a load and the next save the panel showed the READER's findings
+  // about the file you opened, never the validator's about the network you
+  // were building. Nothing here mutates the network.
+  diagnostics_ = roadmaker::validate_network(network_);
+  emit diagnostics_changed();
+}
+
 Expected<void> Document::save(const std::filesystem::path& path) {
-  // Checker findings replace the document diagnostics — the user sees what
-  // a consumer would (§8) — but never block the save.
+  // Never blocks the save — only a network the writer cannot serialize fails.
   diagnostics_ = roadmaker::validate_network(network_);
 
   const std::string name = path.stem().string();

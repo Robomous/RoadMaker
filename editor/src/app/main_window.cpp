@@ -172,6 +172,12 @@ MainWindow::MainWindow(QWidget* parent, bool restore_saved_layout)
   connect(actions_->save, &QAction::triggered, this, [this] { save_file(); });
   connect(actions_->save_as, &QAction::triggered, this, [this] { save_file_as(); });
   connect(actions_->export_glb, &QAction::triggered, this, &MainWindow::export_file_dialog);
+  connect(actions_->export_preview_scene, &QAction::triggered, this, [this] {
+    show_export_preview(ExportPreviewWindow::Page::Scene);
+  });
+  connect(actions_->export_preview_xodr, &QAction::triggered, this, [this] {
+    show_export_preview(ExportPreviewWindow::Page::OpenDrive);
+  });
 #ifdef RM_HAVE_USD
   connect(actions_->export_usd, &QAction::triggered, this, &MainWindow::export_usd_dialog);
 #endif
@@ -973,6 +979,8 @@ void MainWindow::build_menus() {
 #ifdef RM_HAVE_USD
   file_menu->addAction(actions_->export_usd);
 #endif
+  file_menu->addAction(actions_->export_preview_scene);
+  file_menu->addAction(actions_->export_preview_xodr);
   file_menu->addSeparator();
   auto* autosave_action = new QAction(tr("Enable &Autosave"), this);
   autosave_action->setCheckable(true);
@@ -2230,6 +2238,13 @@ void MainWindow::show_help(const QString& slug) {
   help_viewer_->show();
   help_viewer_->raise();
   help_viewer_->activateWindow();
+}
+
+void MainWindow::show_export_preview(ExportPreviewWindow::Page page) {
+  if (export_preview_.isNull()) {
+    export_preview_ = new ExportPreviewWindow(document_, this);
+  }
+  export_preview_->show_page(page);
 }
 
 QString MainWindow::help_context_dock() const {
