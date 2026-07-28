@@ -17,7 +17,7 @@ They share one window with a page each, so you can move between them.
 
 The table has a row for every channel of the scene, and it deliberately shows
 the empty and the omitted ones too — a channel that quietly vanishes from a
-report is how missing ground went unnoticed for two release cycles.
+report is how missing ground went unnoticed from the day it shipped.
 
 | Column | Meaning |
 |---|---|
@@ -88,6 +88,20 @@ A file the writer refuses is a special case worth knowing about: the refusal
 itself is a single message about the first defect it hit, so the summary tells
 you how many findings there are in total and sends you to the Diagnostics panel
 for the rest.
+
+## The advisories, by rule
+
+Each thing the preview reports about an export carries a citable rule id, in
+the RoadMaker vendor namespace — ASAM has no equivalent, since these describe
+*this tool's* exporters rather than the standard. They are advisory and never
+block anything.
+
+| Rule UID | Fires when |
+|---|---|
+| `robomous.ai:rm:1.0.0:export.channel_not_written` | A channel holds geometry that the chosen exporter does not walk at all — today the ground channels (#390). |
+| `robomous.ai:rm:1.0.0:export.format_unsupported` | The format cannot carry something the scene holds — today OpenUSD and sign-face textures (#364). |
+| `robomous.ai:rm:1.0.0:export.model_unresolved` | A placement names a prop or signal model this build does not ship; the exporter skips it silently. |
+| `robomous.ai:rm:1.0.0:export.nothing_to_export` | The exporters would refuse the scene outright — no roads and no junction floors, whatever else it holds. |
 
 ## From Python
 
