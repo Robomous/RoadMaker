@@ -120,8 +120,22 @@ Persistence is an ESRI ASCII `.asc` sidecar referenced from a Layer-1
 unchanged in substance; only the false premise about pre-existing code is
 corrected.
 
+## Amendment (2026-07-28, p7-s2 / #242): the raster path is not GDAL
+
+Option B was accepted partly *because* GDAL "arrives for import reasons
+regardless", making a raster DEM path nearly free once it landed. That premise
+is now retired: [ADR-0010](./0010-gis-ingest-bounded-crs.md) rules that GIS
+ingest takes libtiff and a bounded, closed-form CRS family instead of GDAL and
+PROJ, on build-cost, runtime-data and licensing grounds. The **decision is
+unaffected** — terrain is a real height field, and an elevation raster imports
+into it in P7 exactly as this ADR envisaged — but the enabling dependency named
+in the reasoning above never enters the tree, so the "M3b already pays the GDAL
+licensing pass" argument should not be reused to justify anything else.
+
 ## References
 
+- [ADR-0010](./0010-gis-ingest-bounded-crs.md) — GIS ingest on a bounded CRS
+  family; retires this record's GDAL premise
 - [Gap analysis — known exclusions](../roadmap/archive/2026-07-pre-reset/gap_analysis.md#known-exclusions)
 - [M3b seed](../roadmap/archive/2026-07-pre-reset/seeds/m3b.md) (GDAL/PDAL/PROJ import stack)
 - [GS-2 "Imported district"](../roadmap/archive/2026-07-pre-reset/golden_scenes/gs2_imported_district.md)

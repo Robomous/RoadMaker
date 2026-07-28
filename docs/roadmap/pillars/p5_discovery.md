@@ -194,6 +194,13 @@ drop can ship as an immediate chore commit.
   in P7 *(recommended — keeps P5 dependency-free and the acceptance
   testable)*; (b) defer DEM ingest to P7 and ship p5-s4 as
   brushes-only.
+  - **Resolved (a), and discharged 2026-07-28.** P5 shipped the `.asc`
+    reader, and P7 delivers the raster half in #242 — an elevation GeoTIFF
+    now imports into the same `HeightField` through the same
+    `edit::set_terrain_field`. The vehicle is not GDAL:
+    [ADR-0010](../../decisions/0010-gis-ingest-bounded-crs.md) takes libtiff
+    and a bounded CRS family instead, so this option's *outcome* landed while
+    its named dependency never entered the tree.
 - **D2 — height-field persistence until fmt-s1.** (a) Sidecar file next
   to the `.xodr`, referenced from Layer-1 `rm:terrain` userData,
   migrating into the Layer-2 container when #325 lands *(recommended)*;
