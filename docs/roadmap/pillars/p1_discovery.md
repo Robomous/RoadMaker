@@ -28,6 +28,10 @@ means for the sprint cut. Written 2026-07-15, before p1-s1 landed. Roadmap:
 > road at the grab, with the reason, and asks before severing a link, through
 > the same confirmation the Select and Move tools use. The pillar stays open on
 > #404, #405 and #412.
+>
+> **Status (2026-07-28):** correction — #412 had already merged on 2026-07-24
+> (PR #422); the line above overstated the open set. The pillar stays open on
+> **#404 and #405** only (both release-blocking; each amends GW-1 with its PR).
 
 ## Why this document exists
 

@@ -9,9 +9,10 @@ assets authored in the Library Browser and consumed by the marking tools.*
 > Attributes-pane editor, default-vs-override propagation, and OpenDRIVE
 > round-trip land here (steps 1–4, 7, 9–10). The *placing* tools — the
 > Crosswalk & Stop Line tool (steps 5, 8) and the Marking Curve tool (step 6) —
-> are p3-s3/p3-s4; until then, instances come from the existing junction
-> "Add crosswalks to all arms" generator, which authors them linked to the
-> default crosswalk asset.
+> **have since shipped**: p3-s3 (#222, PR #302) and p3-s4 (#223, PR #303),
+> both merged 2026-07-18/19, so every step below is executable as written.
+> *(Corrected 2026-07-28 — this note previously said "until then, instances
+> come from the junction generator", which was stale.)*
 
 ## Purpose
 
