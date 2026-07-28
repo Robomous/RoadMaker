@@ -362,7 +362,16 @@ Expected<HeightField> raster_to_height_field(const GisRaster& raster,
   // with unequal x/y spacing, and that is what this guards.
   const double spacing_x = std::hypot(t[0], t[1]);
   const double spacing_y = std::hypot(t[2], t[3]);
-  const bool rotated = std::abs(t[1]) > 1e-9 || std::abs(t[2]) > 1e-9;
+
+  // RELATIVE tolerances, not absolute ones. Even an affine placement derives
+  // this transform by mapping three points through the CRS hub, and at a UTM
+  // northing of ~5.8e6 m a double carries about 6e-10 of round-trip residue —
+  // which lands right on top of an absolute 1e-9 epsilon. macOS's libm happened
+  // to fall under it and Linux's did not, so an absolute test passed locally and
+  // failed in CI. A rotation is only meaningful as a FRACTION of the pixel size:
+  // 1e-6 of a 10 m pixel is 10 µm of skew, orders of magnitude below any
+  // rotation a real file expresses and orders above the noise.
+  const bool rotated = std::abs(t[1]) > 1e-6 * spacing_x || std::abs(t[2]) > 1e-6 * spacing_y;
   const bool anisotropic = std::abs(spacing_x - spacing_y) > 1e-6 * std::max(spacing_x, spacing_y);
   if (rotated || anisotropic) {
     return make_error(

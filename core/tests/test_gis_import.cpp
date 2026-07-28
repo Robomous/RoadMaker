@@ -397,6 +397,39 @@ TEST(GisReproject, ElevationRasterBecomesAHeightFieldWithRowsFlipped) {
   EXPECT_GT(sample_height(*field, field->origin_x + 5.0, field->origin_y + 5.0), 0.0);
 }
 
+TEST(GisReproject, HeightFieldToleratesTheResidueOfAnAffineRoundTrip) {
+  // Even an affine placement derives its transform by mapping points through
+  // the CRS hub, and at a UTM northing of ~5.8e6 m a double carries roughly
+  // 6e-10 of round-trip residue in the off-diagonal terms. An ABSOLUTE epsilon
+  // on that quantity is unsound: this test passed on macOS and failed on Linux
+  // because the two libm implementations land either side of 1e-9.
+  //
+  // So: import the same DEM through several scene frames that are all affine to
+  // its own, and require every one of them to be accepted as unrotated. What
+  // must NOT happen is the answer depending on which machine ran it.
+  const Expected<GisRasterParseResult> read = load_gis_raster(fixture("utm31_dem.tif"));
+  ASSERT_TRUE(read.has_value()) << read.error().message;
+
+  for (const char* projection : {
+           "+proj=tmerc +lat_0=0 +lon_0=3 +k=0.9996 +x_0=500000 +y_0=0 +datum=WGS84",
+           "+proj=tmerc +lat_0=0 +lon_0=3 +k=1 +x_0=0 +y_0=0 +datum=WGS84",
+           "+proj=utm +zone=31 +datum=WGS84 +units=m",
+       }) {
+    GeoReference geo;
+    geo.projection = projection;
+    const Expected<CrsTransform> transform =
+        crs_transform(parse_crs(read->raster.crs), scene_crs(geo));
+    ASSERT_TRUE(transform.has_value()) << projection;
+    ASSERT_TRUE(transform->affine()) << projection;
+
+    std::vector<Diagnostic> diagnostics;
+    const Expected<HeightField> field =
+        raster_to_height_field(read->raster, *transform, diagnostics);
+    EXPECT_TRUE(field.has_value())
+        << projection << ": " << (field.has_value() ? "" : field.error().message);
+  }
+}
+
 TEST(GisReproject, ImageryIsRefusedAsTerrainWithAnActionableMessage) {
   const Expected<GisRasterParseResult> read = load_gis_raster(fixture("utm31_image.tif"));
   ASSERT_TRUE(read.has_value());
