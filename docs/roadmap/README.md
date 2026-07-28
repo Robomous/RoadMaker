@@ -182,6 +182,7 @@ Written once per pillar, before its first sprint lands:
 - [P4 — Junctions & Signals](pillars/p4_discovery.md)
 - [P5 — Terrain & Structures](pillars/p5_discovery.md)
 - [P6 — Assets, Props & Materials](pillars/p6_discovery.md)
+- [P7 — Import & Export](pillars/p7_discovery.md)
 
 ### Roadmap updates
 
