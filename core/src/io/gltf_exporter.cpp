@@ -319,7 +319,7 @@ private:
       primitive.attributes["POSITION"] = add_vec3_accessor(to_gltf_frame(part.positions), true);
       primitive.attributes["NORMAL"] = add_vec3_accessor(to_gltf_frame(part.normals), false);
       primitive.indices = add_index_accessor(part.indices);
-      primitive.material = add_material(model_id + ":" + part.name,
+      primitive.material = add_material(io_common::gltf_prop_material_name(model_id, part.name),
                                         {part.color[0], part.color[1], part.color[2], 1.0},
                                         io_common::kLaneRoughness);
       gltf_mesh.primitives.push_back(std::move(primitive));

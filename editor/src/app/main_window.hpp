@@ -50,6 +50,8 @@
 class QComboBox;
 class QDoubleSpinBox;
 
+#include "panels/export_preview_window.hpp"
+
 namespace roadmaker::editor {
 
 namespace help {
@@ -211,6 +213,10 @@ private:
 #endif
   void show_about_dialog();
   /// Opens (creating on first use) the in-app user guide, on the given slug.
+  /// Opens the export-preview tool window on `page`, building it lazily the
+  /// way show_help() builds the user guide.
+  void show_export_preview(ExportPreviewWindow::Page page);
+
   void show_help(const QString& slug = QStringLiteral("index"));
   /// The objectName of the QDockWidget that owns the keyboard focus, or an
   /// empty string when focus is not inside a dock. F1 feeds this to
@@ -343,6 +349,8 @@ private:
   bool tour_checked_ = false; // first-run tour prompt fires at most once
   /// In-app user-guide window; created lazily on first Help ▸ User Guide / F1.
   QPointer<help::HelpViewer> help_viewer_;
+  /// Export previews (p7-s1, #241); created lazily, same pattern as above.
+  QPointer<ExportPreviewWindow> export_preview_;
   /// Only interactive launches auto-run the tour — screenshot/capture windows
   /// (restore_saved_layout=false) must never pop it over a render.
   bool allow_first_run_tour_ = false;

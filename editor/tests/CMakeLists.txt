@@ -59,6 +59,7 @@ add_executable(roadmaker_editor_tests
   test_delete_tool.cpp
   test_diagnostics_model.cpp
   test_document.cpp
+  test_export_preview.cpp
   test_terrain_document.cpp
   test_bridge_document.cpp
   test_prop_obstruction_document.cpp

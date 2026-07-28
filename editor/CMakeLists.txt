@@ -66,6 +66,8 @@ add_library(roadmaker_editor_lib STATIC
   src/document/stencil_placement.cpp
   src/document/crosswalk_placement.cpp
   src/document/diagnostics_model.cpp
+  src/document/export_preview_state.cpp
+  src/document/export_preview_models.cpp
   src/document/document.cpp
   src/document/gizmo_drag.cpp
   src/document/library_drop.cpp
@@ -90,6 +92,7 @@ add_library(roadmaker_editor_lib STATIC
   src/help/help_registry.cpp
   src/help/help_viewer.cpp
   src/panels/diagnostics_panel.cpp
+  src/panels/export_preview_window.cpp
   src/panels/editor2d_host.cpp
   src/panels/library_panel.cpp
   src/panels/project_files_panel.cpp

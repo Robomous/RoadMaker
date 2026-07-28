@@ -20,7 +20,7 @@ Drives the kernel command layer (roadmaker.edit.EditStack — the same command
 layer the editor's undo/redo uses) through the automatable slice of
 docs/roadmap/golden_workflows/gw2_simple_scene.md, asserting each step's
 observable outcome. Interactive-only aspects (mouse UX, panel rendering, the
-prop techniques, and the export-preview tools) and external tools (esmini) are
+prop techniques) and external tools (esmini) are
 out of scope here and recorded as such in the gate document; this replay is the
 pre-flight evidence, not a substitute for the maintainer's by-hand gate run.
 
@@ -542,6 +542,89 @@ def step12_carve(network, stack, carve_road: rm.RoadId) -> str:
             f"-> w(terminus)={w_term:.2f} m")
 
 
+def step21_scene_export_preview() -> str:
+    """Step 21 — the 3D export manifest, without writing a file.
+
+    Asserts the two properties the tool exists for: it describes the file
+    per channel, and it REPORTS what the exporters leave behind rather than
+    omitting it silently. The ground rows are the point — until #390 lands
+    they must read "not walked", and once it lands this step starts failing,
+    which is the correct signal to update it.
+    """
+    # Builds its own scene, like steps 5-9: the running network carries no
+    # height field, and without terrain the ground assertions below would be
+    # vacuously true — which is the whole thing this step is here to catch.
+    net = rm.RoadNetwork()
+    corners = [(0.0, 0.0), (40.0, 0.0), (40.0, 40.0), (0.0, 40.0)]
+    for i in range(4):
+        rm.author_clothoid_road(
+            net, [corners[i], corners[(i + 1) % 4]],
+            rm.LaneProfile.two_lane_rural(), "", f"ring{i}")
+    rm.derive_surfaces(net)
+    rm.edit.EditStack().push(net, rm.edit.create_terrain_field(net))
+
+    mesh = rm.build_network_mesh(net)
+    gltf = rm.preview_mesh_export(mesh, rm.MeshExportFormat.GLTF)
+    usd = rm.preview_mesh_export(mesh, rm.MeshExportFormat.USD)
+
+    if len(gltf.channels) == 0:
+        raise AssertionError("scene preview reported no channels")
+    if gltf.total_triangles == 0:
+        raise AssertionError("scene preview reported an empty export")
+    if not gltf.materials:
+        raise AssertionError("scene preview reported no materials")
+
+    terrain = gltf.channels[int(rm.MeshChannel.TERRAIN.value)]
+    if terrain.elements == 0:
+        raise AssertionError("the replay network has no terrain — step 21 would be vacuous")
+    if terrain.reason != rm.OmissionReason.CHANNEL_NOT_WALKED:
+        raise AssertionError(
+            f"terrain omission not reported (#390 may have landed): {terrain.reason}"
+        )
+    if terrain.exported_elements != 0:
+        raise AssertionError("terrain claims to export but no exporter walks it")
+
+    surfaces = gltf.channels[int(rm.MeshChannel.SURFACES.value)]
+    if surfaces.elements == 0:
+        raise AssertionError("the fixture derived no ground surface — step 21 would be vacuous")
+    if surfaces.reason != rm.OmissionReason.CHANNEL_NOT_WALKED:
+        raise AssertionError(f"surface omission not reported: {surfaces.reason}")
+
+    return (
+        f"glTF {gltf.total_triangles} tris / {len(gltf.materials)} materials, "
+        f"USD {usd.total_triangles} tris; ground reported unwritten "
+        f"({terrain.elements} field(s), 0 in file)"
+    )
+
+
+def step22_xodr_export_preview(network) -> str:
+    """Step 22 — the OpenDRIVE as it will be written, plus its diagnostics.
+
+    The counts must come from the emitted bytes, the rm: records must all be
+    registered extensions, and NO Layer-2 scene state may appear (ADR-0008).
+    """
+    preview = rm.preview_xodr_export(network, "gw2")
+    if not preview.would_write:
+        raise AssertionError(f"preview refuses to write: {preview.refusal}")
+    if preview.xml != rm.write_xodr(network, "gw2"):
+        raise AssertionError("preview xml differs from write_xodr output")
+    if preview.road_count == 0 or preview.lane_count == 0:
+        raise AssertionError("preview reported an empty document")
+    if "rmscene" in preview.xml:
+        raise AssertionError("Layer-2 scene state leaked into the OpenDRIVE layer")
+
+    errors = [d for d in preview.diagnostics if d.severity == rm.Severity.ERROR]
+    if errors:
+        raise AssertionError(f"{len(errors)} checker error(s) in the previewed document")
+
+    records = ", ".join(f"{r.code}x{r.count}" for r in preview.rm_records) or "none"
+    return (
+        f"{preview.road_count} roads / {preview.junction_count} junctions / "
+        f"{preview.lane_count} lanes, {preview.byte_count} bytes, "
+        f"{len(preview.diagnostics)} finding(s); rm: {records}"
+    )
+
+
 def step23_persist(network, out_dir) -> tuple[str, list]:
     """Step 23 — save/reload byte-identical + validate with zero errors."""
     xodr_path = out_dir / "gw2_network.xodr"
@@ -733,6 +816,10 @@ def main() -> int:
         undo_ok = False
         undo_evidence = f"{type(exc).__name__}: {exc}"
     official.append(("cross-cutting. undo x10 / redo x10 identical", undo_ok, undo_evidence))
+
+    # Steps 21-22 read the finished network; they mutate nothing.
+    run_official("21. Scene Export Preview", step21_scene_export_preview)
+    run_official("22. OpenDRIVE Export Preview", lambda: step22_xodr_export_preview(network))
 
     # Step 23 slice runs last, on the fully-redone network.
     findings: list = []

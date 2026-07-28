@@ -57,20 +57,7 @@ namespace tz = tinyusdz;
 /// Empty input falls back to `fallback`. add_child() still guarantees sibling
 /// uniqueness on top of this.
 std::string sanitize_identifier(std::string_view in, std::string_view fallback) {
-  std::string out;
-  out.reserve(in.size());
-  for (const char c : in) {
-    const bool ok =
-        (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '_';
-    out.push_back(ok ? c : '_');
-  }
-  if (out.empty()) {
-    out = std::string(fallback);
-  }
-  if (out.front() >= '0' && out.front() <= '9') {
-    out.insert(out.begin(), '_');
-  }
-  return out;
+  return io_common::sanitize_usd_identifier(in, fallback);
 }
 
 /// One material to author under /Looks: diffuse color (RGB) + roughness.
@@ -330,8 +317,7 @@ Expected<void> export_usda(const NetworkMesh& mesh, const std::filesystem::path&
         world_nrm[i + 1] = (sin_h * nx) + (cos_h * ny);
         world_nrm[i + 2] = part.normals[i + 2];
       }
-      const std::string material =
-          sanitize_identifier("propmat_" + model_id + "_" + part.name, "propmat");
+      const std::string material = io_common::usd_prop_material_name(model_id, part.name);
       materials.emplace(
           material,
           MaterialDef{{part.color[0], part.color[1], part.color[2]}, io_common::kLaneRoughness});

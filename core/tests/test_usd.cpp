@@ -23,6 +23,7 @@
 // the temp directory.
 
 #include "roadmaker/assets/prop_library.hpp"
+#include "roadmaker/io/export_preview.hpp"
 #include "roadmaker/io/usd_exporter.hpp"
 #include "roadmaker/mesh/mesh_builder.hpp"
 #include "roadmaker/road/authoring.hpp"
@@ -209,4 +210,97 @@ TEST(Usd, ScaledPropBakesLargerVertices) {
   // The road surface contributes points too, so compare the two stages against
   // each other rather than against an absolute model height.
   EXPECT_NEAR(doubled_top, unit_top * 2.0, 1e-6);
+}
+
+// --------------------------------------------------------------------------
+// Export-manifest reconciliation (p7-s1, #241).
+//
+// The USD half of preview_mesh_export re-states this exporter's policy, so it
+// must be checked against emitted USDA the way the glTF half is checked against
+// a reloaded .glb. These live HERE, in the `Usd` suite, because the usd-export
+// CI job runs `ctest -R '^Usd\.'` — a gate in any other suite would never run
+// against a real USD build.
+//
+// Coverage posture, stated rather than implied: the USD manifest's POLICY (which
+// channels, which materials, which omissions) is gated everywhere by the
+// source-scan and totality tests in test_export_preview.cpp, which need no USD
+// build at all. Only the numeric fidelity below is gated exclusively here.
+
+namespace {
+
+std::size_t occurrences(const std::string& haystack, const std::string& needle) {
+  std::size_t count = 0;
+  for (std::size_t at = haystack.find(needle); at != std::string::npos;
+       at = haystack.find(needle, at + needle.size())) {
+    ++count;
+  }
+  return count;
+}
+
+roadmaker::NetworkMesh mesh_of(const char* sample_name) {
+  auto parsed = roadmaker::load_xodr(std::filesystem::path(RM_SAMPLES_DIR) / sample_name);
+  if (!parsed) {
+    throw std::runtime_error("failed to load sample");
+  }
+  return roadmaker::build_network_mesh(parsed->network);
+}
+
+} // namespace
+
+TEST(Usd, ManifestReconcilesWithTheWrittenStage) {
+  for (const char* sample : {"t_junction.xodr", "props_scale.xodr"}) {
+    SCOPED_TRACE(sample);
+    const roadmaker::NetworkMesh mesh = mesh_of(sample);
+    const roadmaker::ScenePreview preview =
+        roadmaker::preview_mesh_export(mesh, roadmaker::MeshExportFormat::Usd);
+
+    const auto path = std::filesystem::temp_directory_path() / "rm_usd_manifest.usda";
+    ASSERT_TRUE(roadmaker::export_usda(mesh, path).has_value());
+    const std::string usda = slurp(path);
+    std::remove(path.string().c_str());
+
+    EXPECT_EQ(preview.mesh_count, occurrences(usda, "def Mesh "));
+    EXPECT_EQ(preview.materials.size(), occurrences(usda, "def Material "));
+
+    // Every manifest material must actually be a prim in the stage.
+    for (const roadmaker::MaterialPreview& material : preview.materials) {
+      EXPECT_NE(usda.find("def Material \"" + material.name + "\""), std::string::npos)
+          << material.name << " is in the manifest but not in the stage";
+    }
+  }
+}
+
+TEST(Usd, PropsAreBakedPerInstanceAsTheManifestClaims) {
+  const roadmaker::NetworkMesh mesh = mesh_of("tree_avenue.xodr");
+  ASSERT_GT(mesh.objects.size(), 1U) << "sample has too few props — the test is vacuous";
+
+  const roadmaker::ScenePreview usd =
+      roadmaker::preview_mesh_export(mesh, roadmaker::MeshExportFormat::Usd);
+  const roadmaker::ScenePreview gltf =
+      roadmaker::preview_mesh_export(mesh, roadmaker::MeshExportFormat::Gltf);
+
+  // The asymmetry the manifest exists to report: USD stores every instance's
+  // geometry, glTF stores one copy and instances it with nodes.
+  EXPECT_GT(usd.total_triangles, gltf.total_triangles);
+}
+
+TEST(Usd, SignFaceTexturesAreAbsentAndTheManifestSaysSo) {
+  const roadmaker::NetworkMesh mesh = mesh_of("sign_pack.xodr");
+  const roadmaker::ScenePreview preview =
+      roadmaker::preview_mesh_export(mesh, roadmaker::MeshExportFormat::Usd);
+  const auto& faces =
+      preview.channels[static_cast<std::size_t>(roadmaker::MeshChannel::SignalFaces)];
+  ASSERT_GT(faces.elements, 0U) << "sample carries no sign faces — the test is vacuous";
+  EXPECT_EQ(faces.exported_elements, 0U);
+  EXPECT_EQ(faces.reason, roadmaker::OmissionReason::FormatUnsupported);
+  EXPECT_EQ(preview.image_count, 0U);
+
+  const auto path = std::filesystem::temp_directory_path() / "rm_usd_faces.usda";
+  ASSERT_TRUE(roadmaker::export_usda(mesh, path).has_value());
+  const std::string usda = slurp(path);
+  std::remove(path.string().c_str());
+
+  // The negative the manifest promises: no face prim, no texture, anywhere.
+  EXPECT_EQ(usda.find(":face"), std::string::npos);
+  EXPECT_EQ(usda.find("inputs:file"), std::string::npos);
 }

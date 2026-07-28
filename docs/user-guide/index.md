@@ -76,6 +76,7 @@ not undoable.
 | [Textured rendering](textured-rendering.md) | Switch the viewport between the Sober working look and the daytime textured look |
 | [Viewport hints](viewport-hints.md) | Show or hide the active tool's hint card in the viewport corner |
 | [Save & export](save-export.md) | Write OpenDRIVE and export meshes (glTF, USD) |
+| [Export previews](export-preview.md) | See what an export will contain — and what it will leave behind — before writing it |
 
 ## Tutorials
 
