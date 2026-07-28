@@ -1,0 +1,128 @@
+# GIS import
+
+*What RoadMaker reads from GIS data, which coordinate reference systems it
+computes with, and — just as importantly — what it declines and why.*
+
+The reasoning behind every boundary on this page is
+[ADR-0010](../decisions/0010-gis-ingest-bounded-crs.md). The short version:
+RoadMaker computes a **bounded family** of projections in closed form and
+**refuses everything else by name**. There is no GDAL and no PROJ.
+
+## Coordinate reference systems
+
+| Supported | Spellings recognised |
+|---|---|
+| WGS 84 geographic (lon/lat degrees) | `EPSG:4326`, `+proj=longlat`, a WKT `GEOGCS` on WGS 1984 |
+| UTM, north and south zones | `EPSG:326xx` / `EPSG:327xx`, `+proj=utm +zone=…`, ESRI WKT |
+| Transverse Mercator | `+proj=tmerc …`, WKT `PROJECTION["Transverse_Mercator"]` |
+| Web Mercator | `EPSG:3857` (also `900913`, `102100`), `+proj=merc` on the WGS 84 sphere |
+
+Transverse Mercator is evaluated with the **Krüger series** to sixth order in
+the third flattening, which holds sub-millimetre accuracy across a zone's range
+of validity. UTM is a Transverse Mercator with fixed parameters, so both go
+through the same arithmetic. Everything routes through geographic lon/lat as a
+hub, so each projection has exactly one forward and one inverse.
+
+**WGS 84 and GRS 80 are treated as the same ellipsoid.** They differ by about
+0.1 mm in the semi-minor axis, four orders of magnitude below anything this
+editor authors. This is an *ellipsoid* equivalence, not a *datum* one — a CRS on
+a different datum (NAD 83, OSGB 36, a national grid) is **not** supported,
+because reconciling those needs a shift this build does not perform.
+
+**No datum shift is ever performed or claimed.** Anything outside the table is
+carried verbatim, reported as opaque, and refused at the point a transform would
+be needed — naming the CRS it read and citing
+[#485](https://github.com/Robomous/RoadMaker/issues/485), the issue that would
+lift the limitation.
+
+Linear units must be metres. A CRS in feet is refused, not converted: silently
+reading US survey feet as metres is precisely the class of error this design
+exists to prevent.
+
+## Formats
+
+| Kind | Read | Refused |
+|---|---|---|
+| Vector | GeoJSON (`.geojson`, `.json`), ESRI Shapefile (`.shp`) | GeoPackage, KML, DXF ([#486](https://github.com/Robomous/RoadMaker/issues/486)) |
+| Raster | GeoTIFF (`.tif`, `.tiff`) — uncompressed, PackBits, LZW | Deflate, JPEG-in-TIFF ([#484](https://github.com/Robomous/RoadMaker/issues/484)), JP2, ECW, MrSID |
+| Raster | PNG/JPEG with a world file (`.pgw`/`.jgw`/`.wld`) and `.prj` | an image with no georeferencing at all |
+
+- **GeoJSON** is WGS 84 longitude/latitude by RFC 7946, so it has no CRS to
+  state and none to get wrong. A file carrying the pre-RFC `crs` member is read
+  as WGS 84 anyway, with a warning.
+- **Shapefile** takes its CRS from the sibling `.prj`, its labels from the
+  `.dbf`, and needs neither. A missing `.prj` is a warning, and the coordinates
+  are then treated as already being in the scene's frame.
+- **GeoTIFF** positioning comes from `ModelPixelScale` + `ModelTiepoint`, or
+  from `ModelTransformation`. Its CRS comes from the GeoKey directory, parsed
+  in RoadMaker's own code — `libgeotiff` is skipped because its EPSG resolution
+  is exactly the part that wants PROJ back.
+- A **single-band** raster that is 16/32-bit or floating point is read as
+  **elevation**; anything else is imagery. An 8-bit single band is a greyscale
+  picture, not a DEM quantised to 256 heights.
+
+Readers never drop input silently. A skipped feature, an unreadable record, a
+coerced value, or an ignored tag each produce a `Diagnostic`, exactly as the
+OpenDRIVE parser does.
+
+## Placed or resampled — a distinction you can see
+
+When the source and scene projections differ only by scale and false origin —
+two Transverse Mercators on the **same central meridian** — the mapping is
+affine, and a raster is **placed**: its pixels are untouched.
+
+When the mapping curves (different central meridians, or geographic into
+projected), the raster is **resampled** bilinearly onto an axis-aligned grid of
+**square** pixels, and that is reported as a diagnostic. Silence there would let
+a resampled image pass for the source file.
+
+The square-pixel guarantee is load-bearing rather than cosmetic: the scene
+height field is a uniform square grid, so an elevation raster resampled to
+merely *near*-square pixels would be refused one call later.
+
+## Where imported data lives
+
+Imported vectors and imagery are **authoring reference** — a backdrop to trace
+over. Per [ADR-0008](../decisions/0008-persistence-layers-asam-first.md) that is
+Layer-2 state: it lives in the scene container and **never enters the `.xodr`**.
+Adding or removing a reference layer is therefore not an undoable command.
+
+The one exception is **elevation**, which becomes the scene's `HeightField`
+through the same `edit::set_terrain_field` command a `.asc` DEM import uses —
+so it is real scene content, undoable, and persisted like any other terrain.
+
+## From Python
+
+```python
+import roadmaker as rm
+
+network = rm.RoadNetwork()
+geo = rm.GeoReference()
+geo.projection = rm.tmerc_projection(52.3702, 4.8952)
+network.set_georeference(geo)
+
+layer, diagnostics = rm.gis.load_vector("roads.shp")
+transform = rm.gis.crs_transform(rm.gis.parse_crs(layer.crs),
+                                 rm.gis.scene_crs(network.georeference))
+layer = rm.gis.reproject_vector(layer, transform)
+```
+
+A full worked example, including the elevation and refusal paths, is
+[`python/examples/gis_import.py`](../../python/examples/gis_import.py).
+
+## Test fixtures
+
+The committed fixtures in `core/tests/data/gis/` are generated by
+[`scripts/gen_gis_fixtures.py`](../../scripts/gen_gis_fixtures.py) using the
+Python standard library alone. They are committed, rather than built inside the
+tests, because a format reader checked only against bytes the same test just
+constructed agrees with itself about everything — including its mistakes.
+
+## See also
+
+- [ADR-0010](../decisions/0010-gis-ingest-bounded-crs.md) — the decision and its
+  reversal cost
+- [Geo-referencing a scene](./opendrive.md) — OpenDRIVE §8.5 and the world frame
+  imports land in
+- [Dependencies and licensing](../standards/dependencies.md) — libtiff's
+  near-list approval and its attribution obligation

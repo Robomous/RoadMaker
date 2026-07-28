@@ -1,0 +1,70 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "properties": {
+        "name": "centre line"
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            4.85,
+            52.4
+          ],
+          [
+            4.8515,
+            52.4008
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "name": "block"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              4.852,
+              52.4
+            ],
+            [
+              4.853,
+              52.4
+            ],
+            [
+              4.853,
+              52.4006
+            ],
+            [
+              4.852,
+              52.4006
+            ],
+            [
+              4.852,
+              52.4
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "name": "marker"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          4.8505,
+          52.4003
+        ]
+      }
+    }
+  ]
+}

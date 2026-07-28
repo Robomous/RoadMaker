@@ -54,6 +54,16 @@ add_library(roadmaker_core ${_rm_core_type}
   src/assets/sign_symbols.gen.cpp
   src/assets/sign_face.cpp
   src/assets/sign_font.gen.cpp
+  # GIS ingest (p7-s2, #242). Unconditional: ADR-0010 chose a bounded CRS
+  # family computed in closed form plus libtiff precisely so this needs no
+  # OFF-by-default gate, no runtime data, and no second CI configuration.
+  src/gis/crs.cpp
+  src/gis/gis_common.cpp
+  src/gis/geojson.cpp
+  src/gis/shapefile.cpp
+  src/gis/geotiff.cpp
+  src/gis/world_file.cpp
+  src/gis/reproject.cpp
   src/io/gltf_exporter.cpp
   # Export manifests (p7-s1, #241). Unconditional, NOT inside the RM_BUILD_USD
   # block below: the USD manifest describes the exporter's POLICY, which is
@@ -124,6 +134,8 @@ target_link_libraries(roadmaker_core
     tinygltf::tinygltf
     stb::stb
     nanosvg::nanosvg
+    nlohmann::json
+    TIFF::tiff
 )
 
 # Single source of truth for the version string returned by rm::version().

@@ -123,6 +123,61 @@ FetchContent_Declare(nanosvg
 )
 
 # ---------------------------------------------------------------------------
+# libtiff 4.7.2 (BSD-style "libtiff" licence; maintainer-approved per-case,
+# ADR-0010 — the SPDX id `libtiff` is not literally on the allowed list, and
+# the LZW code carries an ADDITIONAL UC Berkeley acknowledgement obligation
+# discharged in THIRD_PARTY_LICENSES.md). GeoTIFF pixel decoding for the GIS
+# importer (roadmaker::gis).
+#
+# Pinned to the OSGeo release tarball, NOT a forge-generated archive: GitLab
+# and GitHub build those on demand and their bytes have historically changed
+# across server versions, which would break URL_HASH for everyone on a later
+# clean build. This one is a published, immutable artifact.
+#
+# Every codec that would need a dependency we do not have is OFF — that is why
+# ADR-0010 lists Deflate and JPEG-in-TIFF as refused-by-name (#484) rather than
+# quietly failing at read time. The internal-only codecs we actually use (LZW,
+# PackBits) stay on; the rest are off per the policy's "minimum options" rule.
+FetchContent_Declare(tiff
+  URL https://download.osgeo.org/libtiff/tiff-4.7.2.tar.gz
+  URL_HASH SHA256=672bd7d10aee4606171afb864f3570b83340f6a33e2c186dc0512f7145ffdf6a
+)
+set(tiff-tools OFF CACHE BOOL "" FORCE)
+set(tiff-tests OFF CACHE BOOL "" FORCE)
+set(tiff-contrib OFF CACHE BOOL "" FORCE)
+set(tiff-docs OFF CACHE BOOL "" FORCE)
+set(tiff-deprecated OFF CACHE BOOL "" FORCE)
+set(tiff-install OFF CACHE BOOL "" FORCE)
+set(tiff-cxx OFF CACHE BOOL "" FORCE)      # we use the C API only
+set(tiff-opengl OFF CACHE BOOL "" FORCE)   # tiffgt viewer; would drag in GL
+set(sphinx OFF CACHE BOOL "" FORCE)
+# APPLE defaults this ON, which would build libtiff as a macOS Framework and
+# make the static link we want impossible. Platform-conditional by upstream,
+# so it must be forced unconditionally here.
+set(tiff-framework OFF CACHE BOOL "" FORCE)
+set(ld-version-script OFF CACHE BOOL "" FORCE)
+# Codecs requiring an external library (#484 tracks zlib + libjpeg).
+set(zlib OFF CACHE BOOL "" FORCE)
+set(libdeflate OFF CACHE BOOL "" FORCE)
+set(pixarlog OFF CACHE BOOL "" FORCE)      # requires zlib
+set(jpeg OFF CACHE BOOL "" FORCE)
+set(old-jpeg OFF CACHE BOOL "" FORCE)
+set(jpeg12 OFF CACHE BOOL "" FORCE)
+set(lzma OFF CACHE BOOL "" FORCE)
+set(zstd OFF CACHE BOOL "" FORCE)
+set(webp OFF CACHE BOOL "" FORCE)
+set(jbig OFF CACHE BOOL "" FORCE)
+set(lerc OFF CACHE BOOL "" FORCE)
+# Internal codecs: keep only what a GeoTIFF we accept can be compressed with.
+set(lzw ON CACHE BOOL "" FORCE)
+set(packbits ON CACHE BOOL "" FORCE)
+set(ccitt OFF CACHE BOOL "" FORCE)         # bilevel fax; not imagery or DEM
+set(thunder OFF CACHE BOOL "" FORCE)
+set(next OFF CACHE BOOL "" FORCE)
+set(logluv OFF CACHE BOOL "" FORCE)
+set(mdi OFF CACHE BOOL "" FORCE)
+
+# ---------------------------------------------------------------------------
 # Clothoids 2.1.0 (BSD-2) + its submodules, pinned at the exact commits the
 # 2.1.0 tag references (GitHub release tarballs do not include submodules).
 # We compile all four source drops into a single static library below
@@ -232,6 +287,22 @@ endif()
 FetchContent_MakeAvailable(
   fmt spdlog eigen pugixml clipper2 cdt manifold tinygltf stb nanosvg
   clothoids utilslite quartic gencon tlexpected fastfloat)
+# libtiff defaults BUILD_SHARED_LIBS ON; force the static build so the kernel
+# stays a single artifact with nothing to deploy beside it (same save/force/
+# restore dance md4c needs below, for the same reason).
+set(_rm_saved_build_shared "${BUILD_SHARED_LIBS}")
+set(BUILD_SHARED_LIBS OFF)
+FetchContent_MakeAvailable(tiff)
+set(BUILD_SHARED_LIBS "${_rm_saved_build_shared}")
+# Upstream already provides the TIFF::tiff alias. What it does NOT attach is a
+# usable INTERFACE include path for an in-tree build: tiffio.h lives in the
+# source tree while the generated tif_config.h/tiffconf.h land in the BUILD
+# tree, so both are needed. BUILD_INTERFACE keeps these absolute paths out of
+# any exported target (roadmaker installs a CMake package when
+# RM_BUILD_SHARED=ON, and install(EXPORT) rejects bare build-tree paths).
+target_include_directories(tiff SYSTEM INTERFACE
+  $<BUILD_INTERFACE:${tiff_SOURCE_DIR}/libtiff>
+  $<BUILD_INTERFACE:${tiff_BINARY_DIR}/libtiff>)
 if(RM_BUILD_TESTS)
   FetchContent_MakeAvailable(googletest)
 endif()
@@ -315,10 +386,19 @@ target_compile_definitions(rm_tinygltf INTERFACE
   TINYGLTF_NO_EXTERNAL_IMAGE
 )
 
-# stb (header-only; STB_TRUETYPE_IMPLEMENTATION lives in core/src/assets)
+# stb (header-only; STB_TRUETYPE_IMPLEMENTATION lives in core/src/assets,
+# STB_IMAGE_IMPLEMENTATION in core/src/gis — one TU each, never both here)
 add_library(rm_stb INTERFACE)
 add_library(stb::stb ALIAS rm_stb)
 target_include_directories(rm_stb SYSTEM INTERFACE ${stb_SOURCE_DIR})
+
+# nlohmann/json — NOT a new download. It is the copy tinygltf already vendors
+# (declared in tinygltf's THIRD_PARTY_LICENSES.md row), exposed under its own
+# target so the GeoJSON reader can say what it depends on. Consumers include
+# <json.hpp>, tinygltf's own spelling of it.
+add_library(rm_json INTERFACE)
+add_library(nlohmann::json ALIAS rm_json)
+target_include_directories(rm_json SYSTEM INTERFACE ${tinygltf_SOURCE_DIR})
 
 # nanosvg (header-only; NANOSVG*_IMPLEMENTATION lives in core/src/assets)
 add_library(rm_nanosvg INTERFACE)
