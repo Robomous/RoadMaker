@@ -111,7 +111,21 @@ set(FMT_DOC OFF)
     would not cover it.
 - Approved per-case exceptions are recorded in `THIRD_PARTY_LICENSES.md`
   and/or an ADR — e.g., tinyusdz's vendored ISC/Unlicense components are
-  covered by [ADR 0005](../decisions/0005-tinyusdz-usda.md).
+  covered by [ADR 0005](../decisions/0005-tinyusdz-usda.md), and libtiff's
+  BSD-style `libtiff` license by
+  [ADR 0010](../decisions/0010-gis-ingest-bounded-crs.md).
+- **Near-list licenses** — a license that is permissive in substance but is not
+  literally one of the names above is not automatically fine and not
+  automatically out. It needs the maintainer's explicit approval, recorded in an
+  ADR *and* in `THIRD_PARTY_LICENSES.md`, quoting what the upstream `LICENSE`
+  file actually says. Two things must be read rather than skimmed: whether any
+  **component** of the library carries different terms from the whole (libtiff's
+  LZW code adds a UC Berkeley acknowledgement clause the rest of the library does
+  not have), and whether the terms impose an **active obligation** on us —
+  attribution in documentation, a notice in distributed materials — as opposed
+  to merely disclaiming warranty. Active obligations are discharged by name in
+  `THIRD_PARTY_LICENSES.md`, and that entry is then load-bearing: deleting it is
+  a license violation, not a tidy-up.
 
 Asset (icon/texture/model) licensing has its own, stricter page:
 [assets](./assets.md).

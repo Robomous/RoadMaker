@@ -722,8 +722,13 @@ World/geodetic settings as the foundation of GIS support (executes
 - Imports (p7-s2/s3/s4) **reproject into the world frame**; exports record
   the georeference via `<header><geoReference>` (+ `<offset>`) per
   OpenDRIVE 1.9.0 §8.5 — read AND write (neither exists today).
-- PROJ enters as the reprojection dependency here (permissive license;
-  pinned tag + URL_HASH + THIRD_PARTY_LICENSES row in the same commit).
+- ~~PROJ enters as the reprojection dependency here (permissive license;
+  pinned tag + URL_HASH + THIRD_PARTY_LICENSES row in the same commit).~~
+  **Retired 2026-07-28 by
+  [ADR-0010](../../decisions/0010-gis-ingest-bounded-crs.md):** p7-s5 shipped
+  the world frame with no dependency at all, and p7-s2 reprojects a bounded CRS
+  family in closed form. PROJ never enters; anything outside the family is
+  refused by name.
 - Settings persist per ADR-0008: `<geoReference>` is Layer 0; workspace
   extents/UI framing are Layer 2.
 

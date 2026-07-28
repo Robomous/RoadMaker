@@ -57,6 +57,15 @@ choices are the four class styles; a pending hand-run sees the new cross
 sections. The headless replay below is unaffected — it pins the collector
 (`two_lane_default`) profile explicitly.
 
+**Amendment (p7-s2, 2026-07-28).** Step 27 promised that *"PROJ arrives with
+p7-s2"*. It does not:
+[ADR-0010](../../decisions/0010-gis-ingest-bounded-crs.md) rules that GIS
+ingest computes a bounded family of projections in closed form and refuses
+everything else by name, so a CRS outside that family stays opaque
+permanently rather than until the next sprint. The step's *observable*
+expectation is unchanged — a custom CRS is still carried verbatim and never
+reinterpreted — only the promise about the future was removed.
+
 **Closeout self-check (P2 sprint 9, 2026-07-17).** A headless replay,
 `scripts/gw2_replay.py`, now drives the automatable slice through the kernel
 command layer and asserts each outcome: step 2 (Create Road, default two-lane
@@ -257,8 +266,9 @@ the same change. `Road Plan tool` in step 2 was corrected to its real name,
 27. [ ] Re-open the georeference window, switch to **Custom CRS**, paste
     `+proj=utm +zone=31 +ellps=GRS80 +units=m +no_defs`, and **Apply**.
     **Expected:** the window reports it as a projection carried verbatim rather
-    than naming a world origin — this build exports a foreign CRS untouched and
-    does not interpret it (PROJ arrives with p7-s2). Reopening the scene now
+    than naming a world origin — the scene's own frame is only ever the
+    Transverse Mercator on the origin that step 25 writes, and a foreign CRS is
+    exported untouched and never reinterpreted. Reopening the scene now
     discards the workspace box with a warning in the Diagnostics panel, because
     it was framed in the previous frame. Undo twice to get back to step 25's
     state.
