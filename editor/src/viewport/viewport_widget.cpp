@@ -98,6 +98,15 @@ ViewportWidget::ViewportWidget(Document& document,
   // Fires after loaded() (Document emits it last), so a camera restored from
   // the scene sidecar overrules the auto-framing loaded() just armed.
   connect(&document_, &Document::scene_state_loaded, this, &ViewportWidget::restore_view);
+  connect(&document_, &Document::reference_layers_changed, this, [this] {
+    // makeCurrent: uploads need the GL context, and this arrives from a menu
+    // action rather than from paintGL.
+    if (renderer_ != nullptr) {
+      makeCurrent();
+      rebuild_reference_layers();
+      doneCurrent();
+    }
+  });
   connect(&document_, &Document::mesh_changed, this, [this](const std::vector<RoadId>& roads) {
     if (roads.empty()) { // everything changed — full rebuild
       scene_dirty_ = true;
@@ -288,6 +297,10 @@ void ViewportWidget::rebuild_scene() {
   }
   frame_on_rebuild_ = false;
   scene_dirty_ = false;
+  // AFTER scene_bounds_ is settled: underlay_z is measured from the ground
+  // plane, which moves with the network floor. Rebuilding these before the
+  // bounds would leave every layer at the previous scene's height.
+  rebuild_reference_layers();
 }
 
 void ViewportWidget::apply_pending_road_updates() {
@@ -475,6 +488,59 @@ HighlightState ViewportWidget::phase_highlight(RoadId road, HighlightState base)
   return base;
 }
 
+void ViewportWidget::rebuild_reference_layers() {
+  if (renderer_ == nullptr) {
+    return;
+  }
+  for (const UploadedReferenceLayer& layer : reference_layers_) {
+    renderer_->remove(layer.mesh);
+    if (layer.texture.valid()) {
+      renderer_->remove(layer.texture);
+    }
+  }
+  reference_layers_.clear();
+
+  const ReferenceLayers& layers = document_.reference_layers();
+  for (std::size_t index = 0; index < layers.size(); ++index) {
+    const ReferenceLayer& layer = layers.at(index);
+    if (!layer.drawable()) {
+      continue;
+    }
+    const float z = underlay_z(scene_bounds_, index);
+
+    if (layer.kind == ReferenceLayerKind::Vector) {
+      if (layer.vector.features.empty()) {
+        continue;
+      }
+      // A distinct, unmistakably synthetic colour: a reference layer must never
+      // be mistaken for authored geometry.
+      const RenderMeshData data = underlay_lines(layer.vector, z, {0.20F, 0.80F, 0.95F, 1.0F});
+      if (data.indices.empty()) {
+        continue;
+      }
+      reference_layers_.push_back(
+          UploadedReferenceLayer{.mesh = renderer_->upload(data), .texture = {}});
+      continue;
+    }
+
+    const roadmaker::gis::GisRaster& raster = layer.raster.raster;
+    if (raster.rgba.empty()) {
+      continue;
+    }
+    TextureData texture;
+    texture.width = raster.width;
+    texture.height = raster.height;
+    texture.rgba = raster.rgba;
+    // ClampToEdge, not the default Repeat: an underlay's own edge must not wrap
+    // back over itself across the quad.
+    texture.wrap = TextureWrap::ClampToEdge;
+    reference_layers_.push_back(
+        UploadedReferenceLayer{.mesh = renderer_->upload(underlay_quad(layer.raster.extent, z)),
+                               .texture = renderer_->upload(texture)});
+  }
+  update();
+}
+
 void ViewportWidget::paintGL() {
   if (scene_dirty_) {
     rebuild_scene();
@@ -499,7 +565,19 @@ void ViewportWidget::paintGL() {
 
   std::vector<DrawItem> draw_items;
   draw_items.reserve(items_.size() + prop_part_count + instance_count + sign_faces_.size() +
-                     preview_handles_.size());
+                     preview_handles_.size() + reference_layers_.size());
+
+  // Reference layers first: they sit just above the procedural ground and below
+  // the network, and are UNLIT because an orthophoto already contains its own
+  // lighting — shading it again would make the imagery disagree with itself.
+  for (const UploadedReferenceLayer& layer : reference_layers_) {
+    Material material;
+    material.base_color = layer.texture; // invalid for a vector layer → flat colour
+    material.uv_scale = 1.0F;            // UVs are already [0,1] across the quad
+    material.unlit = true;
+    draw_items.push_back(DrawItem{.mesh = layer.mesh, .material = material});
+  }
+
   for (const UploadedItem& item : items_) {
     draw_items.push_back(DrawItem{.mesh = item.handle,
                                   .state = item_state(item),

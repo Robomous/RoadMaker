@@ -445,6 +445,18 @@ Actions::Actions(QUndoStack& undo_stack, QObject* parent) : QObject(parent) {
       tr("Import an ESRI ASCII grid (.asc) digital elevation model as the scene's terrain "
          "height field"));
 
+  import_gis_vector = new QAction(tr("GIS &Vector…"), this);
+  import_gis_vector->setToolTip(
+      tr("Import a GeoJSON or ESRI Shapefile as a reference layer drawn under the network"));
+
+  import_gis_raster = new QAction(tr("GIS &Raster…"), this);
+  import_gis_raster->setToolTip(
+      tr("Import a GeoTIFF, or a world-filed PNG/JPEG, as imagery drawn under the network"));
+
+  terrain_import_raster = new QAction(tr("Import &Elevation Raster…"), this);
+  terrain_import_raster->setToolTip(
+      tr("Import a single-band elevation GeoTIFF as the scene's terrain height field"));
+
   bridge_generate = new QAction(tr("&Generate Bridge Structures"), this);
   bridge_generate->setToolTip(
       tr("Detect roads that cross without a junction and build a bridge deck, piers and "

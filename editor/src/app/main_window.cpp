@@ -17,6 +17,9 @@
 #include "app/main_window.hpp"
 
 #include "roadmaker/edit/operations.hpp"
+#include "roadmaker/gis/crs.hpp"
+#include "roadmaker/gis/layer.hpp"
+#include "roadmaker/gis/reproject.hpp"
 #include "roadmaker/mesh/junction_stoplines.hpp"
 #include "roadmaker/road/bridge.hpp"
 #include "roadmaker/road/grade_separation.hpp"
@@ -692,6 +695,87 @@ MainWindow::MainWindow(QWidget* parent, bool restore_saved_layout)
           ToastSeverity::Warning);
     }
   });
+  // GIS reference import (p7-s2, #242). The gesture is deliberately the same
+  // shape as the DEM import below — a plain QFileDialog, one kernel call, and
+  // the diagnostics into the dock. No new QDialog subclass: this editor has
+  // none, and an import does not need one.
+  const auto import_reference = [this](bool vector) {
+    const QString caption = vector ? tr("Import GIS Vector") : tr("Import GIS Raster");
+    const QString filter = vector ? tr("GIS vector (*.geojson *.json *.shp)")
+                                  : tr("GIS raster (*.tif *.tiff *.png *.jpg *.jpeg)");
+    const QString path = QFileDialog::getOpenFileName(this, caption, QString(), filter);
+    if (path.isEmpty()) {
+      return;
+    }
+    const Expected<void> added =
+        document_.add_reference_layer(std::filesystem::path(path.toStdString()));
+    if (!added.has_value()) {
+      // A refusal that NAMES the coordinate system is the whole point of the
+      // bounded family, so it goes in front of the user rather than only into
+      // the log.
+      viewport_->show_toast(
+          tr("Cannot import: %1").arg(QString::fromStdString(added.error().message)),
+          ToastSeverity::Warning);
+      return;
+    }
+    viewport_->show_toast(tr("Imported %1").arg(QFileInfo(path).fileName()), ToastSeverity::Info);
+  };
+  connect(actions_->import_gis_vector, &QAction::triggered, this, [import_reference] {
+    import_reference(true);
+  });
+  connect(actions_->import_gis_raster, &QAction::triggered, this, [import_reference] {
+    import_reference(false);
+  });
+
+  // An elevation raster is NOT a reference layer: it becomes the scene's
+  // terrain through the same command the .asc path uses, so it is one undo
+  // entry and inherits every p5-s2 invariant.
+  connect(actions_->terrain_import_raster, &QAction::triggered, this, [this] {
+    const QString path = QFileDialog::getOpenFileName(
+        this, tr("Import Elevation Raster"), QString(), tr("Elevation raster (*.tif *.tiff)"));
+    if (path.isEmpty()) {
+      return;
+    }
+    Expected<roadmaker::gis::GisRasterParseResult> read =
+        roadmaker::gis::load_gis_raster(std::filesystem::path(path.toStdString()));
+    if (!read.has_value()) {
+      viewport_->show_toast(
+          tr("Cannot import elevation: %1").arg(QString::fromStdString(read.error().message)),
+          ToastSeverity::Warning);
+      return;
+    }
+    const Expected<roadmaker::gis::CrsTransform> transform = roadmaker::gis::crs_transform(
+        roadmaker::gis::parse_crs(read->raster.crs),
+        roadmaker::gis::scene_crs(document_.network().georeference()));
+    if (!transform.has_value()) {
+      viewport_->show_toast(
+          tr("Cannot import elevation: %1").arg(QString::fromStdString(transform.error().message)),
+          ToastSeverity::Warning);
+      return;
+    }
+    std::vector<Diagnostic> diagnostics = read->diagnostics;
+    Expected<roadmaker::HeightField> field =
+        roadmaker::gis::raster_to_height_field(read->raster, *transform, diagnostics);
+    if (!field.has_value()) {
+      viewport_->show_toast(
+          tr("Cannot import elevation: %1").arg(QString::fromStdString(field.error().message)),
+          ToastSeverity::Warning);
+      return;
+    }
+    if (!document_.push_command(edit::set_terrain_field(document_.network(), std::move(*field)))) {
+      viewport_->show_toast(tr("Cannot import elevation: the terrain could not be replaced"),
+                            ToastSeverity::Warning);
+      return;
+    }
+    if (!diagnostics.empty()) {
+      viewport_->show_toast(
+          tr("Imported elevation raster with %n note(s)", "", static_cast<int>(diagnostics.size())),
+          ToastSeverity::Warning);
+    } else {
+      viewport_->show_toast(tr("Imported elevation raster"), ToastSeverity::Info);
+    }
+  });
+
   // DEM import (p5-s4, #234): read an ESRI ASCII grid and install it as the
   // scene field, as-is in the kernel frame (decision D1). The reader already
   // exists (p5-s2's sidecar); a malformed/unsafe grid warns and imports nothing.
@@ -989,6 +1073,13 @@ void MainWindow::build_menus() {
   file_menu->addAction(actions_->export_preview_scene);
   file_menu->addAction(actions_->export_preview_xodr);
   file_menu->addSeparator();
+  // GIS import (p7-s2, #242). The two REFERENCE imports live here; the
+  // elevation raster lives under Edit ▸ Terrain, because it becomes scene
+  // content rather than a backdrop. The split follows what the data becomes.
+  QMenu* import_menu = file_menu->addMenu(tr("&Import"));
+  import_menu->addAction(actions_->import_gis_vector);
+  import_menu->addAction(actions_->import_gis_raster);
+  file_menu->addSeparator();
   auto* autosave_action = new QAction(tr("Enable &Autosave"), this);
   autosave_action->setCheckable(true);
   autosave_action->setChecked(settings_.autosave_enabled());
@@ -1012,6 +1103,7 @@ void MainWindow::build_menus() {
   terrain_menu->addAction(actions_->terrain_remove);
   terrain_menu->addSeparator();
   terrain_menu->addAction(actions_->terrain_import);
+  terrain_menu->addAction(actions_->terrain_import_raster);
   QMenu* bridge_menu = edit_menu->addMenu(tr("&Bridge"));
   bridge_menu->addAction(actions_->bridge_generate);
   bridge_menu->addAction(actions_->bridge_remove_orphans);

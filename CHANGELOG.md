@@ -19,6 +19,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 Current version on `main`: **0.0.1**.
 
 ### Added
+- **Trace over the real world: GIS imagery and vectors under your network**
+  ([#242](https://github.com/Robomous/RoadMaker/issues/242)): authoring a real
+  place meant working from memory and a screenshot in another window. Now
+  **File ▸ Import ▸ GIS Raster…** puts an orthophoto under the network and
+  **GIS Vector…** lays a shapefile or GeoJSON over it, both reprojected into
+  the world frame your scene already carries, so roads you draw land where the
+  ground says they should. Read GeoTIFF, ESRI Shapefile, GeoJSON, and PNG/JPEG
+  with a world file.
+  - **It tells you when the picture is no longer the picture.** If your data
+    and your scene use the same projection, the pixels are placed untouched. If
+    they do not, the image is reprojected — and the Diagnostics panel says so,
+    because a resampled orthophoto quietly passing for the source file is the
+    kind of thing you only notice much later.
+  - **An elevation GeoTIFF becomes your terrain.** **Edit ▸ Terrain ▸ Import
+    Elevation Raster…** turns a single-band height raster into the scene's
+    ground in one undoable step, alongside the ESRI ASCII grids that already
+    worked.
+  - **Anything it cannot place, it refuses by name.** RoadMaker computes WGS 84
+    geographic, UTM, Transverse Mercator and Web Mercator exactly; hand it a
+    national grid and it says which coordinate system it read and why it
+    stopped, rather than putting your imagery somewhere plausible and wrong.
+    That boundary is a deliberate choice
+    ([ADR-0010](docs/decisions/0010-gis-ingest-bounded-crs.md)) — it is what
+    keeps the kernel free of a geodetic database and its 9 MB of runtime data.
+  - Imported layers live beside your scene, never inside the `.xodr`: a file
+    you export is exactly as portable as it was before you imported anything.
 - **Your scene can say where on the earth it is**
   ([#324](https://github.com/Robomous/RoadMaker/issues/324)): a RoadMaker scene
   used to be metres from an origin that meant nothing in particular, and a
