@@ -54,6 +54,10 @@ add_library(roadmaker_core ${_rm_core_type}
   src/assets/sign_face.cpp
   src/assets/sign_font.gen.cpp
   src/io/gltf_exporter.cpp
+  # Export manifests (p7-s1, #241). Unconditional, NOT inside the RM_BUILD_USD
+  # block below: the USD manifest describes the exporter's POLICY, which is
+  # computable — and correct — in a build that cannot write .usda.
+  src/io/export_preview.cpp
 )
 add_library(roadmaker::core ALIAS roadmaker_core)
 

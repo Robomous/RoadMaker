@@ -40,6 +40,7 @@ add_executable(roadmaker_core_tests
   test_stencils.cpp
   test_t_junction_quality.cpp
   test_gltf.cpp
+  test_export_preview.cpp
   test_round_trip.cpp
   test_corner_persistence.cpp
   test_stopline_persistence.cpp
