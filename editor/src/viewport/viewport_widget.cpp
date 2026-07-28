@@ -514,12 +514,14 @@ void ViewportWidget::rebuild_reference_layers() {
       }
       // A distinct, unmistakably synthetic colour: a reference layer must never
       // be mistaken for authored geometry.
-      const RenderMeshData data = underlay_lines(layer.vector, z, {0.20F, 0.80F, 0.95F, 1.0F});
-      if (data.indices.empty()) {
+      // NOT named `data`: QWidget has a `data` member, and GCC's -Werror=shadow
+      // rejects the shadowing while clang does not — a Linux-only build break.
+      const RenderMeshData lines = underlay_lines(layer.vector, z, {0.20F, 0.80F, 0.95F, 1.0F});
+      if (lines.indices.empty()) {
         continue;
       }
       reference_layers_.push_back(
-          UploadedReferenceLayer{.mesh = renderer_->upload(data), .texture = {}});
+          UploadedReferenceLayer{.mesh = renderer_->upload(lines), .texture = {}});
       continue;
     }
 
