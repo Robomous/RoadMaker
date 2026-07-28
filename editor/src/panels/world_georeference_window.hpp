@@ -32,7 +32,6 @@
 //     sidecar, and is not undoable because losing it costs a view, not a road.
 
 #include <QWidget>
-
 #include <array>
 #include <optional>
 

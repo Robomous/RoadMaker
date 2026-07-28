@@ -150,7 +150,6 @@ geo_to_local(const GeoOffset& offset, double x, double y, double z);
 ///
 /// Whitespace-insensitive and parameter-order-insensitive, so a string that
 /// went through another tool's formatter still reads.
-[[nodiscard]] RM_API std::optional<std::array<double, 2>>
-tmerc_origin(std::string_view projection);
+[[nodiscard]] RM_API std::optional<std::array<double, 2>> tmerc_origin(std::string_view projection);
 
 } // namespace roadmaker

@@ -23,15 +23,22 @@
 // tests keep that distinction visible: the georeference is Layer 0 and goes
 // through the undo stack, the workspace is Layer 2 and does not.
 
+#include "roadmaker/edit/operations.hpp"
+#include "roadmaker/road/authoring.hpp"
+#include "roadmaker/road/georeference.hpp"
+#include "roadmaker/road/road.hpp"
+#include "roadmaker/xodr/rules.hpp"
+#include "roadmaker/xodr/writer.hpp"
+
 #include <gtest/gtest.h>
 
 #include <QDoubleSpinBox>
+#include <QFile>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QPlainTextEdit>
 #include <QRadioButton>
-#include <QFile>
 #include <QTemporaryDir>
 
 #include "app/shortcut_registry.hpp"
@@ -39,13 +46,6 @@
 #include "document/scene_sidecar.hpp"
 #include "document/selection_model.hpp"
 #include "panels/world_georeference_window.hpp"
-
-#include "roadmaker/edit/operations.hpp"
-#include "roadmaker/road/authoring.hpp"
-#include "roadmaker/road/road.hpp"
-#include "roadmaker/road/georeference.hpp"
-#include "roadmaker/xodr/rules.hpp"
-#include "roadmaker/xodr/writer.hpp"
 
 namespace roadmaker::editor {
 namespace {
@@ -160,8 +160,9 @@ TEST(WorkspaceMismatch, AWorkspaceFramedInAnotherGeoreferenceIsDiscarded) {
   seed(document);
   const auto proj = tmerc_projection(48.858844, 2.294351);
   ASSERT_TRUE(proj.has_value());
-  ASSERT_TRUE(document.push_command(edit::set_georeference(document.network(),
-                                                           GeoReference{.projection = *proj}))
+  ASSERT_TRUE(document
+                  .push_command(
+                      edit::set_georeference(document.network(), GeoReference{.projection = *proj}))
                   .has_value());
   const std::filesystem::path scene = fs_path(dir.filePath("geo.xodr"));
   ASSERT_TRUE(document.save(scene).has_value());
@@ -187,8 +188,9 @@ TEST(WorkspaceMismatch, AWorkspaceFramedInTheSameGeoreferenceIsKept) {
   seed(document);
   const auto proj = tmerc_projection(48.858844, 2.294351);
   ASSERT_TRUE(proj.has_value());
-  ASSERT_TRUE(document.push_command(edit::set_georeference(document.network(),
-                                                           GeoReference{.projection = *proj}))
+  ASSERT_TRUE(document
+                  .push_command(
+                      edit::set_georeference(document.network(), GeoReference{.projection = *proj}))
                   .has_value());
   const std::filesystem::path scene = fs_path(dir.filePath("geo.xodr"));
   ASSERT_TRUE(document.save(scene).has_value());
@@ -269,8 +271,9 @@ TEST(WorldGeoreferenceWindow, ReopeningShowsAnAuthoredOriginAsAnOrigin) {
   seed(document);
   const auto proj = tmerc_projection(-33.8688, 151.2093);
   ASSERT_TRUE(proj.has_value());
-  ASSERT_TRUE(document.push_command(edit::set_georeference(document.network(),
-                                                           GeoReference{.projection = *proj}))
+  ASSERT_TRUE(document
+                  .push_command(
+                      edit::set_georeference(document.network(), GeoReference{.projection = *proj}))
                   .has_value());
 
   WorldGeoreferenceWindow window(document, selection);
@@ -322,8 +325,9 @@ TEST(WorldGeoreferenceWindow, FittingTheWorkspaceRecordsTheFrameItWasFramedIn) {
   seed(document);
   const auto proj = tmerc_projection(1.0, 2.0);
   ASSERT_TRUE(proj.has_value());
-  ASSERT_TRUE(document.push_command(edit::set_georeference(document.network(),
-                                                           GeoReference{.projection = *proj}))
+  ASSERT_TRUE(document
+                  .push_command(
+                      edit::set_georeference(document.network(), GeoReference{.projection = *proj}))
                   .has_value());
 
   WorldGeoreferenceWindow window(document, selection);
@@ -349,8 +353,7 @@ TEST(WorldGeoreferenceWindow, ClearingRemovesTheGeoreferenceFromTheFile) {
   ASSERT_TRUE(window.apply());
   ASSERT_FALSE(document.network().georeference().empty());
 
-  ASSERT_TRUE(document
-                  .push_command(edit::set_georeference(document.network(), GeoReference{}))
+  ASSERT_TRUE(document.push_command(edit::set_georeference(document.network(), GeoReference{}))
                   .has_value());
   const auto xml = write_xodr(document.network(), "geo");
   ASSERT_TRUE(xml.has_value());

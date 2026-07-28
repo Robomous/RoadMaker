@@ -16,6 +16,8 @@
 
 #include "panels/export_preview_window.hpp"
 
+#include "roadmaker/road/georeference.hpp"
+
 #include <QComboBox>
 #include <QFontDatabase>
 #include <QHBoxLayout>
@@ -29,7 +31,6 @@
 
 #include "document/document.hpp"
 #include "document/units.hpp"
-#include "roadmaker/road/georeference.hpp"
 
 namespace roadmaker::editor {
 namespace {
@@ -287,9 +288,9 @@ void ExportPreviewWindow::render_xodr() {
   }
   if (preview.header.bounds.has_value()) {
     const std::array<double, 4>& box = *preview.header.bounds;
-    summary += tr("\nExtent: %1 east-west by %2 north-south.")
-                   .arg(units::format_length(box[2] - box[0]),
-                        units::format_length(box[3] - box[1]));
+    summary +=
+        tr("\nExtent: %1 east-west by %2 north-south.")
+            .arg(units::format_length(box[2] - box[0]), units::format_length(box[3] - box[1]));
   }
   if (!preview.terrain_sidecar.empty()) {
     summary += tr("\nA terrain sidecar would be written beside it: %1")

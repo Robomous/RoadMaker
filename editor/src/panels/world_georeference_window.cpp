@@ -16,6 +16,9 @@
 
 #include "panels/world_georeference_window.hpp"
 
+#include "roadmaker/edit/operations.hpp"
+#include "roadmaker/road/georeference.hpp"
+
 #include <QDoubleSpinBox>
 #include <QFontDatabase>
 #include <QFormLayout>
@@ -31,9 +34,6 @@
 #include "document/selection_model.hpp"
 #include "document/units.hpp"
 #include "viewport/framing.hpp"
-
-#include "roadmaker/edit/operations.hpp"
-#include "roadmaker/road/georeference.hpp"
 
 namespace roadmaker::editor {
 
@@ -289,16 +289,15 @@ void WorldGeoreferenceWindow::fit_workspace_to_selection() {
   // Layer 2, so this is NOT a command: the workspace is framing, and losing it
   // costs a view rather than a road. Putting it on the undo stack would also
   // interleave view changes with edits in the one history the user relies on.
-  SceneBounds bounds = selection_.empty()
-                           ? SceneBounds{}
-                           : selection_bounds(document_.mesh(), selection_.entries());
+  SceneBounds bounds =
+      selection_.empty() ? SceneBounds{} : selection_bounds(document_.mesh(), selection_.entries());
   if (!bounds.valid()) {
     // Nothing selected, or a selection the mesh cannot resolve: frame the
     // whole network, which is the same fallback frame_selection() uses.
     if (const auto plan = network_plan_bounds(document_.network())) {
       SceneState state = document_.scene_state();
-      state.workspace = SceneWorkspaceState{
-          .extents = *plan, .crs = document_.network().georeference().projection};
+      state.workspace = SceneWorkspaceState{.extents = *plan,
+                                            .crs = document_.network().georeference().projection};
       document_.set_scene_state(std::move(state));
       render_workspace();
     }
@@ -306,15 +305,14 @@ void WorldGeoreferenceWindow::fit_workspace_to_selection() {
   }
 
   SceneState state = document_.scene_state();
-  state.workspace = SceneWorkspaceState{
-      .extents = {static_cast<double>(bounds.lo[0]),
-                  static_cast<double>(bounds.lo[1]),
-                  static_cast<double>(bounds.hi[0]),
-                  static_cast<double>(bounds.hi[1])},
-      // The frame the box is being recorded in. Without it a later
-      // re-georeferencing would leave these numbers describing somewhere else,
-      // silently.
-      .crs = document_.network().georeference().projection};
+  state.workspace = SceneWorkspaceState{.extents = {static_cast<double>(bounds.lo[0]),
+                                                    static_cast<double>(bounds.lo[1]),
+                                                    static_cast<double>(bounds.hi[0]),
+                                                    static_cast<double>(bounds.hi[1])},
+                                        // The frame the box is being recorded in. Without it a
+                                        // later re-georeferencing would leave these numbers
+                                        // describing somewhere else, silently.
+                                        .crs = document_.network().georeference().projection};
   document_.set_scene_state(std::move(state));
   render_workspace();
 }

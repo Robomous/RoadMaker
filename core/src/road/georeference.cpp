@@ -16,8 +16,9 @@
 
 #include "roadmaker/road/georeference.hpp"
 
-#include <fast_float/fast_float.h>
 #include <fmt/format.h>
+
+#include <fast_float/fast_float.h>
 
 #include <cmath>
 #include <system_error>
@@ -145,10 +146,10 @@ Expected<std::string> tmerc_projection(double latitude_deg, double longitude_deg
                       "georeference");
   }
   if (longitude_deg < -180.0 || longitude_deg > 180.0) {
-    return make_error(ErrorCode::InvalidArgument,
-                      fmt::format("world origin longitude {} is outside [-180, 180]",
-                                  longitude_deg),
-                      "georeference");
+    return make_error(
+        ErrorCode::InvalidArgument,
+        fmt::format("world origin longitude {} is outside [-180, 180]", longitude_deg),
+        "georeference");
   }
   // Parameter order is fixed so the same origin always produces byte-identical
   // output — the writer's determinism guarantee reaches into this string.

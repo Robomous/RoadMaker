@@ -36,6 +36,7 @@
 #include <gtest/gtest.h>
 
 #include <cmath>
+#include <filesystem>
 #include <string>
 #include <string_view>
 
@@ -188,7 +189,8 @@ TEST(TmercProjection, RejectsAnglesOffTheGlobe) {
   EXPECT_FALSE(roadmaker::tmerc_projection(-90.001, 0.0).has_value());
   EXPECT_FALSE(roadmaker::tmerc_projection(0.0, 180.001).has_value());
   EXPECT_FALSE(roadmaker::tmerc_projection(std::nan(""), 0.0).has_value());
-  EXPECT_FALSE(roadmaker::tmerc_projection(0.0, std::numeric_limits<double>::infinity()).has_value());
+  EXPECT_FALSE(
+      roadmaker::tmerc_projection(0.0, std::numeric_limits<double>::infinity()).has_value());
 }
 
 TEST(TmercOrigin, DeclinesEveryProjectionItCannotResolve) {
@@ -296,8 +298,8 @@ TEST(Header, UnmodeledChildrenAndAttributesSurvive) {
 TEST(Header, TheWriterOwnedAttributesAreNotPreserved) {
   // Carrying an input's bounding box forward would turn it into a lie the
   // moment anything moved, so those four are read and discarded.
-  const auto parsed = parse(document_with_header(
-      R"(north="1" south="2" east="3" west="4" vendor="SomeoneElse")", ""));
+  const auto parsed = parse(
+      document_with_header(R"(north="1" south="2" east="3" west="4" vendor="SomeoneElse")", ""));
   for (const auto& [name, value] : parsed.network.preserved_header().attributes) {
     EXPECT_NE(name, "north");
     EXPECT_NE(name, "south");
@@ -453,6 +455,48 @@ TEST(GeoReferenceValidation, ANetworkNearTheOriginIsNotAdvised) {
   EXPECT_FALSE(has_rule(findings, roadmaker::rules::kHeaderOffsetCenteredCoords));
 }
 
+// --- the committed fixtures -------------------------------------------------
+//
+// These exist because of the trap named at the top of this file: before this
+// sprint no committed .xodr carried a <geoReference> at all, so nothing in the
+// repository would have noticed the element being dropped. These tests are
+// what make the fixtures load-bearing rather than decorative.
+
+TEST(CommittedFixtures, ASampleSceneIsGeoreferenced) {
+  const auto parsed =
+      roadmaker::load_xodr(std::filesystem::path(RM_SAMPLES_DIR) / "straight_road.xodr");
+  ASSERT_TRUE(parsed.has_value());
+  const auto origin = roadmaker::tmerc_origin(parsed->network.georeference().projection);
+  ASSERT_TRUE(origin.has_value()) << parsed->network.georeference().projection;
+  EXPECT_DOUBLE_EQ((*origin)[0], 37.7749);
+  EXPECT_DOUBLE_EQ((*origin)[1], -122.4194);
+}
+
+TEST(CommittedFixtures, TheCorpusExercisesEveryHeaderPath) {
+  const std::filesystem::path corpus(RM_FUZZ_CORPUS_DIR);
+
+  const auto two = roadmaker::load_xodr(corpus / "bad_header_two_georeference.xodr");
+  ASSERT_TRUE(two.has_value());
+  EXPECT_TRUE(has_rule(two->diagnostics, roadmaker::rules::kHeaderMaxOneProj));
+  EXPECT_NE(two->network.georeference().projection.find("tmerc"), std::string::npos);
+
+  const auto partial = roadmaker::load_xodr(corpus / "bad_header_offset_partial.xodr");
+  ASSERT_TRUE(partial.has_value());
+  EXPECT_FALSE(partial->network.georeference().offset.has_value());
+  EXPECT_TRUE(mentions(partial->diagnostics, "all four"));
+
+  const auto foreign = roadmaker::load_xodr(corpus / "header_foreign_children.xodr");
+  ASSERT_TRUE(foreign.has_value());
+  EXPECT_FALSE(foreign->network.preserved_header().empty());
+  ASSERT_TRUE(foreign->network.georeference().offset.has_value());
+  // A UTM zone is exactly the case this build carries but declines to resolve.
+  EXPECT_FALSE(roadmaker::tmerc_origin(foreign->network.georeference().projection).has_value());
+  const auto written = roadmaker::write_xodr(foreign->network, "header_foreign_children");
+  ASSERT_TRUE(written.has_value());
+  EXPECT_NE(written->find("<license"), std::string::npos);
+  EXPECT_NE(written->find("acme:survey"), std::string::npos);
+}
+
 // --- the export preview's header read-out -----------------------------------
 
 TEST(XodrPreviewHeader, ReportsTheGeoreferenceTheFileWouldCarry) {
@@ -504,10 +548,10 @@ TEST(SetGeoReferenceCommand, ApplyThenRevertLeavesTheFileByteIdentical) {
   const auto before = roadmaker::write_xodr(parsed.network, "geo-test");
   ASSERT_TRUE(before.has_value());
 
-  auto command = roadmaker::edit::set_georeference(
-      parsed.network,
-      GeoReference{.projection = "+proj=tmerc +lat_0=1 +lon_0=2",
-                   .offset = GeoOffset{.x = 10.0, .y = 20.0}});
+  auto command =
+      roadmaker::edit::set_georeference(parsed.network,
+                                        GeoReference{.projection = "+proj=tmerc +lat_0=1 +lon_0=2",
+                                                     .offset = GeoOffset{.x = 10.0, .y = 20.0}});
   ASSERT_NE(command, nullptr);
 
   ASSERT_TRUE(command->apply(parsed.network).has_value());

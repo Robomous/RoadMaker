@@ -8066,13 +8066,12 @@ std::unique_ptr<Command> set_georeference(const RoadNetwork& network, GeoReferen
   // road/georeference.hpp), so there is nothing to validate about its CONTENT.
   // What can be checked is that it is not whitespace pretending to be a CRS,
   // which would write an empty <geoReference> the reader then warns about.
-  if (!geo.projection.empty() &&
-      geo.projection.find_first_not_of(" \t\r\n") == std::string::npos) {
+  if (!geo.projection.empty() && geo.projection.find_first_not_of(" \t\r\n") == std::string::npos) {
     return fail("the projection string is blank; clear the georeference instead");
   }
-  if (geo.offset.has_value() && (!std::isfinite(geo.offset->x) || !std::isfinite(geo.offset->y) ||
-                                 !std::isfinite(geo.offset->z) ||
-                                 !std::isfinite(geo.offset->hdg))) {
+  if (geo.offset.has_value() &&
+      (!std::isfinite(geo.offset->x) || !std::isfinite(geo.offset->y) ||
+       !std::isfinite(geo.offset->z) || !std::isfinite(geo.offset->hdg))) {
     return fail("the georeference offset must be finite");
   }
   if (geo == network.georeference()) {

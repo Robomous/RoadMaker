@@ -155,12 +155,12 @@ void Document::drop_stale_workspace() {
                "('{}', the scene now has '{}') — dropping it",
                scene_state_.workspace->crs,
                current);
-  diagnostics_.push_back(
-      Diagnostic{.severity = Severity::Warning,
-                 .location = "header",
-                 .message = "the saved workspace extents were framed in a different "
-                            "georeference and were discarded",
-                 .rule_id = std::string(rules::kGeoReferenceMismatch)});
+  diagnostics_.push_back(Diagnostic{.severity = Severity::Warning,
+                                    .location = "header",
+                                    .message =
+                                        "the saved workspace extents were framed in a different "
+                                        "georeference and were discarded",
+                                    .rule_id = std::string(rules::kGeoReferenceMismatch)});
   scene_state_.workspace.reset();
 }
 

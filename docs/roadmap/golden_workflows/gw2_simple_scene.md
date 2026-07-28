@@ -226,7 +226,8 @@ the same change. `Road Plan tool` in step 2 was corrected to its real name,
     length, junctions, lane sections, lanes, objects, signals), the `rm:`
     extension records it carries — and no Layer-2 scene state among them — and
     the checker's findings, which are published to the Diagnostics panel
-    **without saving**.
+    **without saving**. Before georeferencing (step 25) the header
+    line reads *No georeference — the file describes a local Cartesian frame.*
 23. [ ] Save, close, and reopen the scene. **Expected:** everything above
     round-trips.
 24. [ ] Before closing in step 23, orbit somewhere distinctive and toggle
@@ -238,6 +239,29 @@ the same change. `Road Plan tool` in step 2 was corrected to its real name,
     [#325](https://github.com/Robomous/RoadMaker/issues/325)). Then delete the
     scene's `.rmscene.json` and reopen it: the scene is intact and simply
     frames itself as before — Layer 2 is comfort, never content.
+
+### Georeferencing
+
+25. [ ] Open **Edit ▸ World Georeference…**, leave **World origin** selected,
+    enter a latitude and longitude, and press **Apply** (p7-s5,
+    [#324](https://github.com/Robomous/RoadMaker/issues/324)). **Expected:**
+    ONE undo entry for the whole form. Re-open **File ▸ OpenDRIVE Export
+    Preview…**: it now names that world origin, and the XML shows a
+    `<geoReference><![CDATA[+proj=tmerc …]]></geoReference>` inside `<header>`,
+    which also carries derived `west`/`south`/`east`/`north` attributes.
+26. [ ] Press **Fit workspace to selection** (with a road selected), then save,
+    close and reopen the scene. **Expected:** the workspace read-out comes back
+    unchanged, and the latitude and longitude are the ones you typed — not
+    rounded. Press **View ▸ Centre on World Origin**: the pivot moves to the
+    scene origin and the zoom is unchanged.
+27. [ ] Re-open the georeference window, switch to **Custom CRS**, paste
+    `+proj=utm +zone=31 +ellps=GRS80 +units=m +no_defs`, and **Apply**.
+    **Expected:** the window reports it as a projection carried verbatim rather
+    than naming a world origin — this build exports a foreign CRS untouched and
+    does not interpret it (PROJ arrives with p7-s2). Reopening the scene now
+    discards the workspace box with a warning in the Diagnostics panel, because
+    it was framed in the previous frame. Undo twice to get back to step 25's
+    state.
 
 ## Pass criteria
 
@@ -251,6 +275,13 @@ the same change. `Road Plan tool` in step 2 was corrected to its real name,
   [#390](https://github.com/Robomous/RoadMaker/issues/390) and fails the run.
 - The saved `.xodr` is byte-identical whether or not its `.rmscene.json`
   companion exists: no editor state may leak into the ASAM layer.
+- The world origin survives the file EXACTLY: the latitude and longitude shown
+  after step 26's reopen are the digits typed in step 25, not a rounding of
+  them. A drifted origin means the projection string is being written lossily
+  and fails the run.
+- The workspace box in step 27 is discarded, not silently kept: a box framed in
+  one georeference must never be reused under another
+  ([#324](https://github.com/Robomous/RoadMaker/issues/324)).
 
 ## Results
 
