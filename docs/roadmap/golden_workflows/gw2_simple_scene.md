@@ -210,11 +210,21 @@ the same change. `Road Plan tool` in step 2 was corrected to its real name,
 
 ### Export previews
 
-21. [ ] Open the Scene Export Preview tool. **Expected:** a preview of
-    the exported 3D scene (meshes/materials), without writing files.
-22. [ ] Open the OpenDRIVE Export Preview tool. **Expected:** a preview
-    of the OpenDRIVE data (reference lines, lanes, junctions) as it will
-    export; diagnostics are visible.
+21. [ ] Open **File ▸ Scene Export Preview…**. **Expected:** a per-channel
+    manifest of the 3D export (elements, triangles, materials, extents) with
+    nothing written to disk; switching **Format** between glTF and OpenUSD
+    changes the triangle count, because glTF shares one mesh per prop model
+    while USD bakes every instance. **Note:** the ground channels are reported
+    as *Not written* — no exporter emits `mesh.surfaces` or `mesh.terrain`
+    ([#390](https://github.com/Robomous/RoadMaker/issues/390)), so a truthful
+    preview of a scene with terrain is ground-less until that lands. This step
+    passes when the omission is *reported*, not when it is absent.
+22. [ ] Open **File ▸ OpenDRIVE Export Preview…**. **Expected:** the `.xodr`
+    exactly as it would be written, its structural counts (roads, reference
+    length, junctions, lane sections, lanes, objects, signals), the `rm:`
+    extension records it carries — and no Layer-2 scene state among them — and
+    the checker's findings, which are published to the Diagnostics panel
+    **without saving**.
 23. [ ] Save, close, and reopen the scene. **Expected:** everything above
     round-trips.
 24. [ ] Before closing in step 23, orbit somewhere distinctive and toggle

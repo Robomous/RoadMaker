@@ -27,6 +27,7 @@
 #include "roadmaker/edit/snap.hpp"
 #include "roadmaker/error.hpp"
 #include "roadmaker/geometry/profile_fit.hpp"
+#include "roadmaker/io/export_preview.hpp"
 #include "roadmaker/io/gltf_exporter.hpp"
 #include "roadmaker/io/usd_exporter.hpp"
 #include "roadmaker/mesh/junction_corners.hpp"
@@ -4594,6 +4595,147 @@ NB_MODULE(_roadmaker, m) {
       "options"_a = roadmaker::MeshOptions{},
       "Rebuilds the terrain channel of `mesh` from the network's height field "
       "(p5-s2). Clears it when there is no field.");
+
+  // ---- Export previews (p7-s1, #241) -------------------------------------
+  // What an export WOULD contain, without writing anything.
+
+  nb::enum_<roadmaker::RmCodeScope>(m, "RmCodeScope")
+      .value("ROAD", roadmaker::RmCodeScope::Road)
+      .value("OBJECT", roadmaker::RmCodeScope::Object)
+      .value("JUNCTION", roadmaker::RmCodeScope::Junction)
+      .value("ROOT", roadmaker::RmCodeScope::Root);
+
+  nb::enum_<roadmaker::MeshExportFormat>(m, "MeshExportFormat")
+      .value("GLTF", roadmaker::MeshExportFormat::Gltf)
+      .value("USD", roadmaker::MeshExportFormat::Usd);
+
+  nb::enum_<roadmaker::MeshChannel>(m, "MeshChannel")
+      .value("ROADS", roadmaker::MeshChannel::Roads)
+      .value("JUNCTION_FLOORS", roadmaker::MeshChannel::JunctionFloors)
+      .value("SURFACES", roadmaker::MeshChannel::Surfaces)
+      .value("TERRAIN", roadmaker::MeshChannel::Terrain)
+      .value("BRIDGES", roadmaker::MeshChannel::Bridges)
+      .value("OBJECTS", roadmaker::MeshChannel::Objects)
+      .value("SIGNAL_INSTANCES", roadmaker::MeshChannel::SignalInstances)
+      .value("SIGNAL_FACES", roadmaker::MeshChannel::SignalFaces);
+
+  nb::enum_<roadmaker::OmissionReason>(m, "OmissionReason")
+      .value("NONE", roadmaker::OmissionReason::None)
+      .value("CHANNEL_EMPTY", roadmaker::OmissionReason::ChannelEmpty)
+      .value("CHANNEL_NOT_WALKED", roadmaker::OmissionReason::ChannelNotWalked)
+      .value("FORMAT_UNSUPPORTED", roadmaker::OmissionReason::FormatUnsupported)
+      .value("MODEL_NOT_FOUND", roadmaker::OmissionReason::ModelNotFound);
+
+  nb::class_<roadmaker::MeshChannelPreview>(m, "MeshChannelPreview")
+      .def_ro("channel", &roadmaker::MeshChannelPreview::channel)
+      .def_prop_ro(
+          "label",
+          [](const roadmaker::MeshChannelPreview& self) { return std::string(self.label); })
+      .def_ro("elements", &roadmaker::MeshChannelPreview::elements)
+      .def_ro("exported_elements", &roadmaker::MeshChannelPreview::exported_elements)
+      .def_ro("vertices", &roadmaker::MeshChannelPreview::vertices)
+      .def_ro("triangles", &roadmaker::MeshChannelPreview::triangles)
+      .def_ro("reason", &roadmaker::MeshChannelPreview::reason)
+      .def_ro("detail", &roadmaker::MeshChannelPreview::detail);
+
+  nb::class_<roadmaker::MaterialPreview>(m, "MaterialPreview")
+      .def_ro("name", &roadmaker::MaterialPreview::name)
+      .def_ro("color", &roadmaker::MaterialPreview::color)
+      .def_ro("roughness", &roadmaker::MaterialPreview::roughness)
+      .def_ro("triangles", &roadmaker::MaterialPreview::triangles)
+      .def_ro("textured", &roadmaker::MaterialPreview::textured);
+
+  nb::class_<roadmaker::ExportBounds>(m, "ExportBounds")
+      .def_ro("min", &roadmaker::ExportBounds::min)
+      .def_ro("max", &roadmaker::ExportBounds::max)
+      .def_ro("valid", &roadmaker::ExportBounds::valid);
+
+  nb::class_<roadmaker::ScenePreview>(m, "ScenePreview")
+      .def_ro("format", &roadmaker::ScenePreview::format)
+      .def_ro("available", &roadmaker::ScenePreview::available)
+      .def_ro("would_export", &roadmaker::ScenePreview::would_export)
+      .def_prop_ro("refusal",
+                   [](const roadmaker::ScenePreview& self) -> std::optional<std::string> {
+                     if (!self.refusal.has_value()) {
+                       return std::nullopt;
+                     }
+                     return self.refusal->message;
+                   })
+      .def_ro("channels", &roadmaker::ScenePreview::channels)
+      .def_ro("materials", &roadmaker::ScenePreview::materials)
+      .def_ro("total_vertices", &roadmaker::ScenePreview::total_vertices)
+      .def_ro("total_triangles", &roadmaker::ScenePreview::total_triangles)
+      .def_ro("mesh_count", &roadmaker::ScenePreview::mesh_count)
+      .def_ro("node_count", &roadmaker::ScenePreview::node_count)
+      .def_ro("image_count", &roadmaker::ScenePreview::image_count)
+      .def_ro("bounds", &roadmaker::ScenePreview::bounds)
+      .def_ro("notes", &roadmaker::ScenePreview::notes);
+
+  nb::class_<roadmaker::XodrRecordPreview>(m, "XodrRecordPreview")
+      .def_ro("code", &roadmaker::XodrRecordPreview::code)
+      .def_ro("scope", &roadmaker::XodrRecordPreview::scope)
+      .def_ro("count", &roadmaker::XodrRecordPreview::count);
+
+  nb::class_<roadmaker::XodrPreview>(m, "XodrPreview")
+      .def_ro("target_version", &roadmaker::XodrPreview::target_version)
+      .def_ro("would_write", &roadmaker::XodrPreview::would_write)
+      .def_prop_ro("refusal",
+                   [](const roadmaker::XodrPreview& self) -> std::optional<std::string> {
+                     if (!self.refusal.has_value()) {
+                       return std::nullopt;
+                     }
+                     return self.refusal->message;
+                   })
+      .def_ro("xml", &roadmaker::XodrPreview::xml)
+      .def_ro("byte_count", &roadmaker::XodrPreview::byte_count)
+      .def_ro("road_count", &roadmaker::XodrPreview::road_count)
+      .def_ro("junction_count", &roadmaker::XodrPreview::junction_count)
+      .def_ro("lane_section_count", &roadmaker::XodrPreview::lane_section_count)
+      .def_ro("lane_count", &roadmaker::XodrPreview::lane_count)
+      .def_ro("geometry_record_count", &roadmaker::XodrPreview::geometry_record_count)
+      .def_ro("object_count", &roadmaker::XodrPreview::object_count)
+      .def_ro("signal_count", &roadmaker::XodrPreview::signal_count)
+      .def_ro("controller_count", &roadmaker::XodrPreview::controller_count)
+      .def_ro("total_reference_length", &roadmaker::XodrPreview::total_reference_length)
+      .def_ro("rm_records", &roadmaker::XodrPreview::rm_records)
+      .def_ro("foreign_user_data_codes", &roadmaker::XodrPreview::foreign_user_data_codes)
+      .def_ro("terrain_sidecar", &roadmaker::XodrPreview::terrain_sidecar)
+      .def_ro("diagnostics", &roadmaker::XodrPreview::diagnostics);
+
+  // Bound UNCONDITIONALLY, including for USD — unlike export_usda below. The
+  // manifest depends on the exporter's policy, not on tinyusdz, so a USD-off
+  // wheel can still report what a USD build would write.
+  m.def("preview_mesh_export",
+        &roadmaker::preview_mesh_export,
+        "mesh"_a,
+        "format"_a,
+        "What export_glb / export_usda would write for `mesh`, without writing "
+        "anything. Reports omitted channels (ground surfaces and terrain are "
+        "written by neither exporter) and previews the empty-mesh refusal.");
+
+  m.def("mesh_export_available",
+        &roadmaker::mesh_export_available,
+        "format"_a,
+        "Whether THIS build can write `format` (False for USD without "
+        "RM_BUILD_USD). The preview is computed either way.");
+
+  // Takes target_version rather than a WriterOptions, matching write_xodr /
+  // save_xodr / validate_network above — WriterOptions is not a bound type.
+  m.def("preview_xodr_export",
+        [](const roadmaker::RoadNetwork& network,
+           std::string_view document_name,
+           roadmaker::XodrVersion target_version) {
+          return roadmaker::preview_xodr_export(
+              network, document_name, {.target_version = target_version});
+        },
+        "network"_a,
+        "document_name"_a = "roadmaker",
+        "target_version"_a = roadmaker::XodrVersion::v1_8_1,
+        "What save_xodr would write, without writing it: the exact bytes, the "
+        "structural counts read back out of them, the rm: extension records, "
+        "the terrain sidecar that would be written alongside, and the FULL "
+        "validate_network sweep (which write_xodr's own refusal collapses to a "
+        "single message).");
 
   m.def(
       "export_glb",

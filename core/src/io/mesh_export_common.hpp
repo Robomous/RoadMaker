@@ -109,12 +109,12 @@ inline constexpr const char* kMarkingMaterialName = "lane_marking";
 /// The material name each format gives one part of a prop model. glTF uses
 /// "<model>:<part>"; USD cannot (':' is not a legal prim identifier).
 [[nodiscard]] inline std::string gltf_prop_material_name(const std::string& model_id,
-                                                          const std::string& part) {
+                                                         const std::string& part) {
   return model_id + ":" + part;
 }
 
 [[nodiscard]] inline std::string usd_prop_material_name(const std::string& model_id,
-                                                         const std::string& part) {
+                                                        const std::string& part) {
   return sanitize_usd_identifier("propmat_" + model_id + "_" + part, "propmat");
 }
 

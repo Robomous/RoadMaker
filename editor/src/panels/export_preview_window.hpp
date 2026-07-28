@@ -71,21 +71,34 @@ public:
 
   // --- test seams -------------------------------------------------------
   [[nodiscard]] QTabWidget* tabs() { return tabs_; }
+
   [[nodiscard]] QTableView* channel_view() { return channel_view_; }
+
   [[nodiscard]] QTableView* material_view() { return material_view_; }
+
   [[nodiscard]] QTableView* record_view() { return record_view_; }
+
   [[nodiscard]] QPlainTextEdit* xml_view() { return xml_view_; }
+
   [[nodiscard]] QLabel* scene_summary() { return scene_summary_; }
+
   [[nodiscard]] QLabel* xodr_summary() { return xodr_summary_; }
+
   [[nodiscard]] QLabel* availability_note() { return availability_note_; }
+
   [[nodiscard]] QLabel* stale_note() { return stale_note_; }
+
   [[nodiscard]] const ExportPreviewState& state() const { return state_; }
+
   [[nodiscard]] ExportChannelModel& channel_model() { return channel_model_; }
+
   [[nodiscard]] ExportMaterialModel& material_model() { return material_model_; }
+
   [[nodiscard]] XodrRecordModel& record_model() { return record_model_; }
 
   /// The mesh format the Scene page is currently describing.
   [[nodiscard]] MeshExportFormat scene_format() const { return scene_format_; }
+
   void set_scene_format(MeshExportFormat format);
 
 private:

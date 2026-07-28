@@ -19,6 +19,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 Current version on `main`: **0.0.1**.
 
 ### Added
+- **See what an export will contain before you write it**
+  ([#241](https://github.com/Robomous/RoadMaker/issues/241)): two new tools under
+  **File** — *Scene Export Preview…* and *OpenDRIVE Export Preview…* — answer
+  "what actually comes out of this?" without writing a byte. The scene preview
+  lists every channel of your scene with what the file would carry: roads,
+  junction floors, bridges, props, signs, the materials each would be given, and
+  the extents. Switching between glTF and OpenUSD changes the numbers, and that
+  is honest rather than a bug — glTF stores one copy of a tree and places it two
+  hundred times, OpenUSD stores two hundred trees.
+  What it says about *omissions* took as much care as what it says about
+  content. Neither exporter writes ground surfaces or terrain, so a scene with a
+  height field exports without any ground at all — that has been true since
+  terrain shipped and nothing anywhere said so. Now it is a row reading *Not
+  written*, citing [#390](https://github.com/Robomous/RoadMaker/issues/390).
+  The same for sign-face text OpenUSD cannot carry
+  ([#364](https://github.com/Robomous/RoadMaker/issues/364)), for a prop naming a
+  model this build does not ship, and for the refusal both exporters give a
+  scene of pure terrain — *"nothing to export"* — which you now meet in the
+  preview instead of at a save dialog.
+  The OpenDRIVE preview shows the file exactly as it would be written, with its
+  structural counts and the RoadMaker extension records it carries, all read
+  back out of the writer's own bytes. **And it fixes something quieter:** the
+  OpenDRIVE checker used to run only when you saved, so between opening a file
+  and saving it the Diagnostics panel described the file you had opened rather
+  than the network you were building. Opening the preview now runs it over the
+  scene as it stands, and the panel says what a consumer would say.
+  Both previews are kernel API, so a headless pipeline can ask the same
+  questions — `rm.preview_mesh_export` and `rm.preview_xodr_export`, with
+  `python/examples/export_preview.py` as a runnable tour.
 - **A move tells you when it put a prop in the way**
   ([#464](https://github.com/Robomous/RoadMaker/issues/464)): props ride the road
   that owns them, so moving a road takes its trees, poles and barriers with it —

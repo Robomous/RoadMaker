@@ -197,7 +197,7 @@ struct ScenePreview {
 /// RM_BUILD_USD — consult `ScenePreview::available` for whether this build can
 /// write the result.
 [[nodiscard]] RM_API ScenePreview preview_mesh_export(const NetworkMesh& mesh,
-                                                       MeshExportFormat format);
+                                                      MeshExportFormat format);
 
 /// Whether THIS kernel build can write `format`.
 ///
@@ -277,7 +277,7 @@ struct XodrPreview {
 /// Layers 0 and 1 only (ADR-0008). The Layer-2 `.rmscene.json` companion is
 /// editor state and never appears here.
 [[nodiscard]] RM_API XodrPreview preview_xodr_export(const RoadNetwork& network,
-                                                      std::string_view document_name = "roadmaker",
-                                                      const WriterOptions& options = {});
+                                                     std::string_view document_name = "roadmaker",
+                                                     const WriterOptions& options = {});
 
 } // namespace roadmaker

@@ -18,8 +18,6 @@
 
 #include "roadmaker/assets/prop_library.hpp"
 
-#include "mesh_export_common.hpp"
-
 #include <pugixml.hpp>
 
 #include <algorithm>
@@ -29,6 +27,8 @@
 #include <set>
 #include <string>
 #include <utility>
+
+#include "mesh_export_common.hpp"
 
 namespace roadmaker {
 namespace {
@@ -453,8 +453,8 @@ ScenePreview preview_mesh_export(const NetworkMesh& mesh, MeshExportFormat forma
         // The quad is model-space; the node places it at the instance pose, so
         // it extends the written bounds once per PLACEMENT even though the
         // mesh is shared per (model, text).
-        grow_instance(preview.bounds, instance.face->positions, instance.position,
-                      instance.heading, 1.0);
+        grow_instance(
+            preview.bounds, instance.face->positions, instance.position, instance.heading, 1.0);
         if (face_keys.emplace(instance.model_id, instance.face->text).second) {
           preview.mesh_count += 1;
           preview.image_count += 1;
@@ -496,9 +496,10 @@ ScenePreview preview_mesh_export(const NetworkMesh& mesh, MeshExportFormat forma
                                            .lane = {}});
       } else {
         entry.reason = OmissionReason::ChannelNotWalked;
-        entry.detail = "No exporter writes the ground channels yet (#390): " +
-                       std::to_string(triangles) + " triangles over " +
-                       std::to_string(vertices) + " vertices stay in the scene and out of the file.";
+        entry.detail =
+            "No exporter writes the ground channels yet (#390): " + std::to_string(triangles) +
+            " triangles over " + std::to_string(vertices) +
+            " vertices stay in the scene and out of the file.";
         preview.notes.push_back(Diagnostic{.severity = Severity::Warning,
                                            .location = std::string(entry.label),
                                            .message = entry.detail,

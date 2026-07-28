@@ -16,15 +16,11 @@
 
 // The export-preview tools (p7-s1, #241) — GW-2 steps 21 and 22.
 
-#include "document/document.hpp"
-#include "document/export_preview_models.hpp"
-#include "document/export_preview_state.hpp"
-#include "document/units.hpp"
-#include "panels/export_preview_window.hpp"
-
 #include "roadmaker/edit/operations.hpp"
 #include "roadmaker/road/authoring.hpp"
 #include "roadmaker/xodr/writer.hpp"
+
+#include <gtest/gtest.h>
 
 #include <QAbstractItemModelTester>
 #include <QLabel>
@@ -32,10 +28,13 @@
 #include <QSignalSpy>
 #include <QTabWidget>
 #include <QTableView>
-
-#include <gtest/gtest.h>
-
 #include <filesystem>
+
+#include "document/document.hpp"
+#include "document/export_preview_models.hpp"
+#include "document/export_preview_state.hpp"
+#include "document/units.hpp"
+#include "panels/export_preview_window.hpp"
 
 namespace roadmaker::editor {
 namespace {
@@ -168,8 +167,7 @@ TEST(ExportPreviewState, RefreshingDiagnosticsPublishesTheValidatorsViewWithoutS
   EXPECT_FALSE(scene.document.is_dirty());
   EXPECT_EQ(xodr_of(scene.document), before);
   // The published list is the validator's, not the reader's.
-  EXPECT_EQ(scene.document.diagnostics().size(),
-            validate_network(scene.document.network()).size());
+  EXPECT_EQ(scene.document.diagnostics().size(), validate_network(scene.document.network()).size());
 }
 
 // ------------------------------------------------------------- the window

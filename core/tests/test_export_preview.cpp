@@ -49,15 +49,9 @@
 #include "roadmaker/xodr/reader.hpp"
 #include "roadmaker/xodr/writer.hpp"
 
-// The exporters' own material vocabulary. core/tests has core/src on its
-// include path (core/tests/CMakeLists.txt) — the same move test_fill_predicates
-// makes for fill_backend.hpp — so the gate can assert against the definitions
-// themselves, not against a copy of them.
-#include "io/mesh_export_common.hpp"
+#include <tiny_gltf.h>
 
 #include <gtest/gtest.h>
-
-#include <tiny_gltf.h>
 
 #include <algorithm>
 #include <cstdio>
@@ -68,6 +62,12 @@
 #include <sstream>
 #include <string>
 #include <vector>
+
+// The exporters' own material vocabulary. core/tests has core/src on its
+// include path (core/tests/CMakeLists.txt) — the same move test_fill_predicates
+// makes for fill_backend.hpp — so the gate can assert against the definitions
+// themselves, not against a copy of them.
+#include "io/mesh_export_common.hpp"
 
 namespace roadmaker {
 namespace {
@@ -117,8 +117,7 @@ NetworkMesh mesh_of_sample(const char* sample) {
 tinygltf::Model export_and_reload(const NetworkMesh& mesh, const char* out_name) {
   const auto path = std::filesystem::temp_directory_path() / out_name;
   const auto exported = export_glb(mesh, path);
-  EXPECT_TRUE(exported.has_value())
-      << (exported ? std::string{} : exported.error().message);
+  EXPECT_TRUE(exported.has_value()) << (exported ? std::string{} : exported.error().message);
 
   tinygltf::Model model;
   tinygltf::TinyGLTF loader;
@@ -126,10 +125,16 @@ tinygltf::Model export_and_reload(const NetworkMesh& mesh, const char* out_name)
   // without stb_image, so it must not try to decode the embedded face PNGs.
   // The image ENTRIES still land in model.images, which is all the manifest
   // claims a count of. (Same move as test_gltf.cpp's export_text_signs.)
-  loader.SetImageLoader(
-      [](tinygltf::Image*, const int, std::string*, std::string*, int, int, const unsigned char*,
-         int, void*) { return true; },
-      nullptr);
+  loader.SetImageLoader([](tinygltf::Image*,
+                           const int,
+                           std::string*,
+                           std::string*,
+                           int,
+                           int,
+                           const unsigned char*,
+                           int,
+                           void*) { return true; },
+                        nullptr);
   std::string err;
   std::string warn;
   const bool loaded = loader.LoadBinaryFromFile(&model, &err, &warn, path.string());
@@ -188,11 +193,10 @@ const MeshChannelPreview& channel(const ScenePreview& preview, MeshChannel which
   return preview.channels[static_cast<std::size_t>(which)];
 }
 
-RoadId segment(RoadNetwork& network, const char* odr_id, double x0, double y0, double x1,
-               double y1) {
+RoadId
+segment(RoadNetwork& network, const char* odr_id, double x0, double y0, double x1, double y1) {
   const std::vector<Waypoint> waypoints{Waypoint{.x = x0, .y = y0}, Waypoint{.x = x1, .y = y1}};
-  auto road =
-      author_clothoid_road(network, waypoints, LaneProfile::two_lane_default(), "", odr_id);
+  auto road = author_clothoid_road(network, waypoints, LaneProfile::two_lane_default(), "", odr_id);
   EXPECT_TRUE(road.has_value());
   return road.value_or(RoadId{});
 }
@@ -268,8 +272,7 @@ TEST(ExportPreview, ManifestReconcilesWithTheWrittenGlb) {
       }
       EXPECT_NEAR(material.roughness, found->pbrMetallicRoughness.roughnessFactor, 1e-9)
           << material.name;
-      EXPECT_EQ(material.textured,
-                found->pbrMetallicRoughness.baseColorTexture.index >= 0)
+      EXPECT_EQ(material.textured, found->pbrMetallicRoughness.baseColorTexture.index >= 0)
           << material.name;
     }
   }
@@ -335,6 +338,7 @@ TEST(ExportPreview, ChannelTableAgreesWithWhatEachExporterWalks) {
     bool gltf;
     bool usd;
   };
+
   // Mirrors kChannelPolicy in export_preview.cpp. SignalFaces has no member of
   // its own — it rides on signal_instances — so it is checked by tier 1 and by
   // the USD negative test, not here.
@@ -386,9 +390,8 @@ TEST(ExportPreview, EveryNetworkMeshChannelIsAccountedFor) {
 
   // The structural half: count NetworkMesh's members and require a channel for
   // each. SignalFaces is the one channel with no member of its own.
-  const std::string header =
-      read_file(std::filesystem::path(RM_CORE_SRC_DIR).parent_path() / "include" / "roadmaker" /
-                "mesh" / "mesh.hpp");
+  const std::string header = read_file(std::filesystem::path(RM_CORE_SRC_DIR).parent_path() /
+                                       "include" / "roadmaker" / "mesh" / "mesh.hpp");
   const std::size_t begin = header.find("struct NetworkMesh {");
   ASSERT_NE(begin, std::string::npos);
   const std::size_t end = header.find("\n};", begin);
@@ -613,10 +616,9 @@ TEST(ExportPreview, RefusedWriteStillCarriesTheWholeFindingList) {
   // the assertion that fails.
   EXPECT_FALSE(preview.diagnostics.empty())
       << "a refused export must still explain itself with the full finding list";
-  const bool cites_a_rule =
-      std::any_of(preview.diagnostics.begin(),
-                  preview.diagnostics.end(),
-                  [](const Diagnostic& d) { return !d.rule_id.empty(); });
+  const bool cites_a_rule = std::any_of(preview.diagnostics.begin(),
+                                        preview.diagnostics.end(),
+                                        [](const Diagnostic& d) { return !d.rule_id.empty(); });
   EXPECT_TRUE(cites_a_rule) << "at least one finding should cite a normative rule";
 }
 

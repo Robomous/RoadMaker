@@ -141,8 +141,7 @@ QVariant ExportChannelModel::data(const QModelIndex& index, int role) const {
   }
 }
 
-QVariant
-ExportChannelModel::headerData(int section, Qt::Orientation orientation, int role) const {
+QVariant ExportChannelModel::headerData(int section, Qt::Orientation orientation, int role) const {
   if (role != Qt::DisplayRole || orientation != Qt::Horizontal) {
     return {};
   }
@@ -191,8 +190,8 @@ QVariant ExportMaterialModel::data(const QModelIndex& index, int role) const {
   const MaterialPreview& material = preview_->materials[static_cast<std::size_t>(index.row())];
 
   if (role == Qt::DecorationRole && index.column() == kColor) {
-    return QColor::fromRgbF(material.color[0], material.color[1], material.color[2],
-                            material.color[3]);
+    return QColor::fromRgbF(
+        material.color[0], material.color[1], material.color[2], material.color[3]);
   }
   if (role != Qt::DisplayRole) {
     return {};
@@ -211,8 +210,7 @@ QVariant ExportMaterialModel::data(const QModelIndex& index, int role) const {
   }
 }
 
-QVariant
-ExportMaterialModel::headerData(int section, Qt::Orientation orientation, int role) const {
+QVariant ExportMaterialModel::headerData(int section, Qt::Orientation orientation, int role) const {
   if (role != Qt::DisplayRole || orientation != Qt::Horizontal) {
     return {};
   }

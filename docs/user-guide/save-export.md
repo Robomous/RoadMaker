@@ -15,6 +15,15 @@ Saving is a fixed point: opening a file and saving it again is byte-stable, and
 anything RoadMaker does not model (foreign attributes and elements) is
 preserved verbatim rather than dropped.
 
+## Before you write anything
+
+**File → Scene Export Preview…** and **File → OpenDRIVE Export Preview…** show
+what each export would contain — per channel, with materials, and with the
+things the exporters leave behind named rather than hidden. The OpenDRIVE
+preview also runs the checker over the network as it stands, so you do not have
+to save to find out what a consumer would say. See
+[Export previews](export-preview.md).
+
 ## Export meshes
 
 From the Python package you can export the tessellated network:

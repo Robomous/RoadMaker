@@ -25,10 +25,10 @@
 // grouping — is decided here, so no formatted string ever crosses out of the
 // editor into core.
 
+#include "roadmaker/io/export_preview.hpp"
+
 #include <QAbstractTableModel>
 #include <QString>
-
-#include "roadmaker/io/export_preview.hpp"
 
 namespace roadmaker::editor {
 

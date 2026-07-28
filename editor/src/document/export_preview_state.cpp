@@ -16,9 +16,9 @@
 
 #include "document/export_preview_state.hpp"
 
-#include "document/document.hpp"
-
 #include <QFileInfo>
+
+#include "document/document.hpp"
 
 namespace roadmaker::editor {
 

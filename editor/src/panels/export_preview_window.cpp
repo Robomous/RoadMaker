@@ -16,9 +16,6 @@
 
 #include "panels/export_preview_window.hpp"
 
-#include "document/document.hpp"
-#include "document/units.hpp"
-
 #include <QComboBox>
 #include <QFontDatabase>
 #include <QHBoxLayout>
@@ -29,6 +26,9 @@
 #include <QTabWidget>
 #include <QTableView>
 #include <QVBoxLayout>
+
+#include "document/document.hpp"
+#include "document/units.hpp"
 
 namespace roadmaker::editor {
 namespace {
@@ -186,8 +186,7 @@ void ExportPreviewWindow::render() {
 }
 
 void ExportPreviewWindow::render_scene() {
-  const ScenePreview& preview =
-      scene_format_ == MeshExportFormat::Usd ? state_.usd : state_.gltf;
+  const ScenePreview& preview = scene_format_ == MeshExportFormat::Usd ? state_.usd : state_.gltf;
   channel_model_.set_preview(&preview);
   material_model_.set_preview(&preview);
   channel_view_->resizeColumnsToContents();
@@ -203,10 +202,10 @@ void ExportPreviewWindow::render_scene() {
 
   QString summary;
   if (!preview.would_export) {
-    summary = tr("Nothing would be exported: %1")
-                  .arg(preview.refusal.has_value()
-                           ? QString::fromStdString(preview.refusal->message)
-                           : tr("the mesh is empty"));
+    summary =
+        tr("Nothing would be exported: %1")
+            .arg(preview.refusal.has_value() ? QString::fromStdString(preview.refusal->message)
+                                             : tr("the mesh is empty"));
   } else {
     summary = tr("%1 triangles over %2 vertices, in %3 meshes and %4 nodes.")
                   .arg(format_count(preview.total_triangles),
@@ -237,10 +236,10 @@ void ExportPreviewWindow::render_xodr() {
   record_view_->resizeColumnsToContents();
 
   if (!preview.would_write) {
-    QString text = tr("The file would not be written: %1")
-                       .arg(preview.refusal.has_value()
-                                ? QString::fromStdString(preview.refusal->message)
-                                : tr("unknown error"));
+    QString text =
+        tr("The file would not be written: %1")
+            .arg(preview.refusal.has_value() ? QString::fromStdString(preview.refusal->message)
+                                             : tr("unknown error"));
     // The whole point of running the advisory sweep first: the refusal is one
     // message, the findings are all of them.
     text += tr("\n%1 checker finding(s) — see the Diagnostics panel.")
