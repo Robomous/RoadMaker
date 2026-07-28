@@ -81,6 +81,18 @@ public:
   /// Read by ViewportWidget/MainWindow on scene_state_loaded().
   [[nodiscard]] const SceneState& scene_state() const { return scene_state_; }
 
+  /// Replaces the Layer-2 state held between saves (p7-s5, #324).
+  ///
+  /// For the fields NO provider owns — today the workspace box. The camera and
+  /// render mode arrive at save time through the provider instead, because
+  /// they live in the viewport; the workspace has no such home, so it is held
+  /// here and written by the next save.
+  ///
+  /// Deliberately does NOT mark the document dirty. The workspace is framing,
+  /// the same class of state as the camera pose, and moving the camera has
+  /// never made a scene need saving either. It rides the next save.
+  void set_scene_state(SceneState state) { scene_state_ = std::move(state); }
+
   /// Installs the live-state provider. `Document` is QtCore-only and cannot
   /// read the viewport, so the app hands it a callback that stamps the CURRENT
   /// camera and render mode onto a state.
@@ -287,6 +299,12 @@ private:
   /// missing file (every plain .xodr) is silent, anything else warns, and both
   /// leave a default-constructed state behind.
   void read_scene_sidecar(const std::filesystem::path& scene);
+
+  /// Discards a loaded workspace box that was framed under a different
+  /// `<geoReference>` than the scene now carries (p7-s5, #324), with a
+  /// structured warning. Called after the sidecar is read and the network is
+  /// in place — it needs both.
+  void drop_stale_workspace();
 
   RoadNetwork network_;
   NetworkMesh mesh_;

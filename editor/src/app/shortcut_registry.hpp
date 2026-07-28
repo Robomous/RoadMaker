@@ -98,11 +98,13 @@ enum class Id {
   MergeRoads,
   TerrainCreate,
   TerrainRemove,
+  WorldGeoreference,
   // View
   AddFromLibrary,
   ResetCamera,
   FrameSelection,
   FrameCursor,
+  CenterWorldOrigin,
   ViewPerspective,
   ViewOrthographic,
   ViewNorth,

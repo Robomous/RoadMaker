@@ -93,6 +93,7 @@ add_library(roadmaker_editor_lib STATIC
   src/help/help_viewer.cpp
   src/panels/diagnostics_panel.cpp
   src/panels/export_preview_window.cpp
+  src/panels/world_georeference_window.cpp
   src/panels/editor2d_host.cpp
   src/panels/library_panel.cpp
   src/panels/project_files_panel.cpp

@@ -104,6 +104,12 @@ public slots:
   /// or over nothing at all, leaves the camera alone.
   void frame_cursor();
 
+  /// Moves the pivot to the scene's origin — the point a georeference places
+  /// on the earth (p7-s5, #324). A PIVOT move like frame_cursor: the viewing
+  /// angle and the zoom survive, so this answers "where is (0,0)" without
+  /// throwing away the framing the user set.
+  void center_world_origin();
+
   /// Switches the projection; a no-op when already in `mode`. The pivot-plane
   /// scale is shared between modes, so the content does not jump (GW-1 step 11).
   void set_projection(roadmaker::editor::ProjectionMode mode);

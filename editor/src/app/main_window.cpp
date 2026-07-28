@@ -186,6 +186,13 @@ MainWindow::MainWindow(QWidget* parent, bool restore_saved_layout)
   connect(
       actions_->frame_selection, &QAction::triggered, viewport_, &ViewportWidget::frame_selection);
   connect(actions_->frame_cursor, &QAction::triggered, viewport_, &ViewportWidget::frame_cursor);
+  connect(actions_->center_world_origin,
+          &QAction::triggered,
+          viewport_,
+          &ViewportWidget::center_world_origin);
+  connect(actions_->world_georeference, &QAction::triggered, this, [this] {
+    show_world_georeference();
+  });
   connect(actions_->view_perspective, &QAction::triggered, viewport_, [this] {
     viewport_->set_projection(ProjectionMode::Perspective);
   });
@@ -1010,6 +1017,8 @@ void MainWindow::build_menus() {
   bridge_menu->addAction(actions_->bridge_remove_orphans);
   QMenu* props_menu = edit_menu->addMenu(tr("&Props"));
   props_menu->addAction(actions_->props_relocate_obstructed);
+  edit_menu->addSeparator();
+  edit_menu->addAction(actions_->world_georeference);
 
   QMenu* view_menu = menuBar()->addMenu(tr("&View"));
   view_menu->addAction(scene_dock_->toggleViewAction());
@@ -1067,6 +1076,7 @@ void MainWindow::build_menus() {
   view_menu->addAction(actions_->reset_camera);
   view_menu->addAction(actions_->frame_selection);
   view_menu->addAction(actions_->frame_cursor);
+  view_menu->addAction(actions_->center_world_origin);
   view_menu->addSeparator();
   // Every camera capability gets a visible, labelled entry point; the keys are
   // accelerators, not the only way in (product-parity discoverability rule).
@@ -2238,6 +2248,16 @@ void MainWindow::show_help(const QString& slug) {
   help_viewer_->show();
   help_viewer_->raise();
   help_viewer_->activateWindow();
+}
+
+void MainWindow::show_world_georeference() {
+  if (world_georeference_.isNull()) {
+    world_georeference_ = new WorldGeoreferenceWindow(document_, selection_, this);
+  }
+  world_georeference_->refresh();
+  world_georeference_->show();
+  world_georeference_->raise();
+  world_georeference_->activateWindow();
 }
 
 void MainWindow::show_export_preview(ExportPreviewWindow::Page page) {

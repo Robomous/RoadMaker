@@ -51,6 +51,7 @@ class QComboBox;
 class QDoubleSpinBox;
 
 #include "panels/export_preview_window.hpp"
+#include "panels/world_georeference_window.hpp"
 
 namespace roadmaker::editor {
 
@@ -217,6 +218,11 @@ private:
   /// way show_help() builds the user guide.
   void show_export_preview(ExportPreviewWindow::Page page);
 
+  /// Brings up the World Georeference tool, building it lazily (p7-s5, #324).
+  /// Same QPointer-held tool-window shape as the export preview and the help
+  /// viewer — the window deletes itself on close and the pointer goes null.
+  void show_world_georeference();
+
   void show_help(const QString& slug = QStringLiteral("index"));
   /// The objectName of the QDockWidget that owns the keyboard focus, or an
   /// empty string when focus is not inside a dock. F1 feeds this to
@@ -351,6 +357,7 @@ private:
   QPointer<help::HelpViewer> help_viewer_;
   /// Export previews (p7-s1, #241); created lazily, same pattern as above.
   QPointer<ExportPreviewWindow> export_preview_;
+  QPointer<WorldGeoreferenceWindow> world_georeference_;
   /// Only interactive launches auto-run the tour — screenshot/capture windows
   /// (restore_saved_layout=false) must never pop it over a render.
   bool allow_first_run_tour_ = false;
