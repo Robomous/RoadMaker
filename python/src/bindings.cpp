@@ -4721,21 +4721,22 @@ NB_MODULE(_roadmaker, m) {
 
   // Takes target_version rather than a WriterOptions, matching write_xodr /
   // save_xodr / validate_network above — WriterOptions is not a bound type.
-  m.def("preview_xodr_export",
-        [](const roadmaker::RoadNetwork& network,
-           std::string_view document_name,
-           roadmaker::XodrVersion target_version) {
-          return roadmaker::preview_xodr_export(
-              network, document_name, {.target_version = target_version});
-        },
-        "network"_a,
-        "document_name"_a = "roadmaker",
-        "target_version"_a = roadmaker::XodrVersion::v1_8_1,
-        "What save_xodr would write, without writing it: the exact bytes, the "
-        "structural counts read back out of them, the rm: extension records, "
-        "the terrain sidecar that would be written alongside, and the FULL "
-        "validate_network sweep (which write_xodr's own refusal collapses to a "
-        "single message).");
+  m.def(
+      "preview_xodr_export",
+      [](const roadmaker::RoadNetwork& network,
+         std::string_view document_name,
+         roadmaker::XodrVersion target_version) {
+        return roadmaker::preview_xodr_export(
+            network, document_name, {.target_version = target_version});
+      },
+      "network"_a,
+      "document_name"_a = "roadmaker",
+      "target_version"_a = roadmaker::XodrVersion::v1_8_1,
+      "What save_xodr would write, without writing it: the exact bytes, the "
+      "structural counts read back out of them, the rm: extension records, "
+      "the terrain sidecar that would be written alongside, and the FULL "
+      "validate_network sweep (which write_xodr's own refusal collapses to a "
+      "single message).");
 
   m.def(
       "export_glb",

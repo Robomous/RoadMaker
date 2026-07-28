@@ -360,19 +360,17 @@ ScenePreview preview_mesh_export(const NetworkMesh& mesh, MeshExportFormat forma
   // against whichever channel the exporter reaches first — objects — exactly
   // as the file stores it once. That keeps Σ(channels) == totals.
   std::set<std::string> gltf_models_seen;
-  std::size_t unresolved_objects = 0;
-  std::size_t unresolved_signals = 0;
 
   const auto account_instance = [&](MeshChannelPreview& channel_row,
                                     const std::string& model_id,
                                     const std::array<double, 3>& position,
                                     double heading,
-                                    double scale,
-                                    std::size_t& unresolved) {
+                                    double scale) {
     const props::PropModel* model = props::model(model_id);
     if (model == nullptr) {
       // Both exporters silently skip an instance whose model does not resolve.
-      ++unresolved;
+      // Nothing is counted for it; the shortfall against `elements` is what the
+      // ModelNotFound row below is derived from.
       return;
     }
     ++channel_row.exported_elements;
@@ -412,24 +410,15 @@ ScenePreview preview_mesh_export(const NetworkMesh& mesh, MeshExportFormat forma
   {
     MeshChannelPreview& objects = row(MeshChannel::Objects);
     for (const ObjectInstance& instance : mesh.objects) {
-      account_instance(objects,
-                       instance.model_id,
-                       instance.position,
-                       instance.heading,
-                       instance.scale,
-                       unresolved_objects);
+      account_instance(
+          objects, instance.model_id, instance.position, instance.heading, instance.scale);
     }
   }
   {
     MeshChannelPreview& signals_row = row(MeshChannel::SignalInstances);
     for (const SignalInstance& instance : mesh.signal_instances) {
       // Signals are not resizable (#335).
-      account_instance(signals_row,
-                       instance.model_id,
-                       instance.position,
-                       instance.heading,
-                       1.0,
-                       unresolved_signals);
+      account_instance(signals_row, instance.model_id, instance.position, instance.heading, 1.0);
     }
   }
 
@@ -522,9 +511,6 @@ ScenePreview preview_mesh_export(const NetworkMesh& mesh, MeshExportFormat forma
                                          .lane = {}});
     }
   }
-  (void)unresolved_objects;
-  (void)unresolved_signals;
-
   for (const MeshChannelPreview& entry : rows) {
     preview.total_vertices += entry.vertices;
     preview.total_triangles += entry.triangles;

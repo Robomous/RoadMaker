@@ -190,8 +190,13 @@ QVariant ExportMaterialModel::data(const QModelIndex& index, int role) const {
   const MaterialPreview& material = preview_->materials[static_cast<std::size_t>(index.row())];
 
   if (role == Qt::DecorationRole && index.column() == kColor) {
-    return QColor::fromRgbF(
-        material.color[0], material.color[1], material.color[2], material.color[3]);
+    // QColor::fromRgbF takes floats; the manifest carries doubles. The narrowing
+    // is explicit because -Wimplicit-float-conversion is an error under CI's
+    // -Werror (the dev preset does not set it, so this only shows up there).
+    return QColor::fromRgbF(static_cast<float>(material.color[0]),
+                            static_cast<float>(material.color[1]),
+                            static_cast<float>(material.color[2]),
+                            static_cast<float>(material.color[3]));
   }
   if (role != Qt::DisplayRole) {
     return {};
