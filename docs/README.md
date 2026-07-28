@@ -59,6 +59,7 @@ OpenDRIVE scene in the editor: [Create Road](user-guide/create-road.md),
 6. Domain background: [OpenDRIVE conventions](domain/opendrive.md) ·
    [Geometry & meshing](domain/geometry.md) ·
    [Realism defaults](domain/realism_defaults.md) ·
+   [GIS import](domain/gis.md) ·
    [ASAM references](domain/references.md)
 
 ## Where is the project going?

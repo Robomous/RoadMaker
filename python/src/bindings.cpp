@@ -27,6 +27,9 @@
 #include "roadmaker/edit/snap.hpp"
 #include "roadmaker/error.hpp"
 #include "roadmaker/geometry/profile_fit.hpp"
+#include "roadmaker/gis/crs.hpp"
+#include "roadmaker/gis/layer.hpp"
+#include "roadmaker/gis/reproject.hpp"
 #include "roadmaker/io/export_preview.hpp"
 #include "roadmaker/io/gltf_exporter.hpp"
 #include "roadmaker/io/usd_exporter.hpp"
@@ -1215,6 +1218,206 @@ NB_MODULE(_roadmaker, m) {
       "None when this build cannot read it. Answers only for the family "
       "tmerc_projection emits — RoadMaker carries every other CRS verbatim without "
       "interpreting it, and guessing would be worse than declining.");
+
+  // --- GIS import (p7-s2, #242) ------------------------------------------
+  //
+  // A submodule because these are a coherent subsystem with their own
+  // vocabulary, and because `rm.gis.parse_crs` reads better than a dozen more
+  // free functions on the root module.
+  {
+    auto gis =
+        m.def_submodule("gis",
+                        "Importing GIS vector and raster data as authoring reference.\n\n"
+                        "RoadMaker computes a BOUNDED family of coordinate reference systems in "
+                        "closed form — WGS 84 geographic, UTM, Transverse Mercator, Web Mercator — "
+                        "and refuses everything else by name (ADR-0010). There is no PROJ "
+                        "dependency, so there is no arbitrary datum transform; see issue #485.");
+
+    nb::enum_<roadmaker::gis::CrsKind>(gis, "CrsKind")
+        .value("Geographic", roadmaker::gis::CrsKind::Geographic)
+        .value("TransverseMercator", roadmaker::gis::CrsKind::TransverseMercator)
+        .value("WebMercator", roadmaker::gis::CrsKind::WebMercator)
+        .value("Opaque",
+               roadmaker::gis::CrsKind::Opaque,
+               "Carried verbatim but not computed with. Not a parse failure — an "
+               "honest reading of a CRS outside the supported family.");
+
+    nb::class_<roadmaker::gis::Crs>(gis, "Crs")
+        .def(nb::init<>())
+        .def_rw("kind", &roadmaker::gis::Crs::kind)
+        .def_rw("lat_0", &roadmaker::gis::Crs::lat_0, "Latitude of origin, degrees.")
+        .def_rw("lon_0", &roadmaker::gis::Crs::lon_0, "Central meridian, degrees.")
+        .def_rw("k_0", &roadmaker::gis::Crs::k_0, "Scale factor on the central meridian.")
+        .def_rw("x_0", &roadmaker::gis::Crs::x_0, "False easting, metres.")
+        .def_rw("y_0", &roadmaker::gis::Crs::y_0, "False northing, metres.")
+        .def_rw("text", &roadmaker::gis::Crs::text, "The verbatim input, always.")
+        .def_prop_ro("opaque", &roadmaker::gis::Crs::opaque)
+        .def("__repr__", [](const roadmaker::gis::Crs& crs) {
+          return "Crs(" + roadmaker::gis::describe_crs(crs) + ")";
+        });
+
+    nb::class_<roadmaker::gis::CrsTransform>(gis, "CrsTransform")
+        .def(
+            "apply",
+            [](const roadmaker::gis::CrsTransform& self, double x, double y) {
+              return self.apply(x, y);
+            },
+            "x"_a,
+            "y"_a,
+            "Source coordinates to scene-frame metres.")
+        .def(
+            "invert",
+            [](const roadmaker::gis::CrsTransform& self, double x, double y) {
+              return self.invert(x, y);
+            },
+            "x"_a,
+            "y"_a)
+        .def_prop_ro("affine",
+                     &roadmaker::gis::CrsTransform::affine,
+                     "True when the mapping is a pure translation/rotation/scale. This "
+                     "is the difference between PLACING a raster and RESAMPLING it, so "
+                     "a caller that ignores it silently degrades imagery.");
+
+    nb::enum_<roadmaker::gis::GisFeature::Geometry>(gis, "Geometry")
+        .value("Point", roadmaker::gis::GisFeature::Geometry::Point)
+        .value("Line", roadmaker::gis::GisFeature::Geometry::Line)
+        .value("Polygon", roadmaker::gis::GisFeature::Geometry::Polygon);
+
+    nb::class_<roadmaker::gis::GisFeature>(gis, "GisFeature")
+        .def_ro("geometry", &roadmaker::gis::GisFeature::geometry)
+        .def_ro("vertices", &roadmaker::gis::GisFeature::vertices)
+        .def_ro("ring_starts", &roadmaker::gis::GisFeature::ring_starts)
+        .def_ro("name", &roadmaker::gis::GisFeature::name);
+
+    nb::class_<roadmaker::gis::GisVectorLayer>(gis, "GisVectorLayer")
+        .def_ro("crs", &roadmaker::gis::GisVectorLayer::crs)
+        .def_ro("features", &roadmaker::gis::GisVectorLayer::features)
+        .def_ro("bounds", &roadmaker::gis::GisVectorLayer::bounds)
+        .def_prop_ro("empty", &roadmaker::gis::GisVectorLayer::empty);
+
+    nb::class_<roadmaker::gis::GisRaster>(gis, "GisRaster")
+        .def_ro("width", &roadmaker::gis::GisRaster::width)
+        .def_ro("height", &roadmaker::gis::GisRaster::height)
+        .def_ro("rgba", &roadmaker::gis::GisRaster::rgba, "RGBA8, top row first. Imagery only.")
+        .def_ro("band", &roadmaker::gis::GisRaster::band, "Single-band samples. Elevation only.")
+        .def_ro("elevation",
+                &roadmaker::gis::GisRaster::elevation,
+                "True for a single-band height raster, False for imagery.")
+        .def_ro("nodata", &roadmaker::gis::GisRaster::nodata)
+        .def_ro("transform",
+                &roadmaker::gis::GisRaster::transform,
+                "Pixel-to-CRS affine in world-file order {A, D, B, E, C, F}.")
+        .def_ro("crs", &roadmaker::gis::GisRaster::crs);
+
+    nb::enum_<roadmaker::gis::RasterPlacement>(gis, "RasterPlacement")
+        .value("Placed",
+               roadmaker::gis::RasterPlacement::Placed,
+               "The transform was affine; the pixels are the source file's.")
+        .value("Resampled",
+               roadmaker::gis::RasterPlacement::Resampled,
+               "The transform curved; the pixels were bilinearly resampled and are "
+               "no longer pixel-for-pixel the source.");
+
+    nb::class_<roadmaker::gis::PlacedRaster>(gis, "PlacedRaster")
+        .def_ro("raster", &roadmaker::gis::PlacedRaster::raster)
+        .def_ro("placement", &roadmaker::gis::PlacedRaster::placement)
+        .def_ro("extent",
+                &roadmaker::gis::PlacedRaster::extent,
+                "Axis-aligned scene extent {min_x, min_y, max_x, max_y}.");
+
+    gis.def(
+        "parse_crs",
+        [](std::string_view text) { return roadmaker::gis::parse_crs(text); },
+        "text"_a,
+        "Parses a PROJ string, an 'EPSG:xxxxx' code, or ESRI WKT. Never raises: an "
+        "unsupported description becomes CrsKind.Opaque carrying its own text.");
+    gis.def(
+        "scene_crs",
+        [](const roadmaker::GeoReference& geo) { return roadmaker::gis::scene_crs(geo); },
+        "georeference"_a,
+        "The CRS a scene's coordinates are in. A scene with no georeference is "
+        "Opaque with empty text — a local Cartesian frame, per §8.5.");
+    gis.def(
+        "describe_crs",
+        [](const roadmaker::gis::Crs& crs) { return roadmaker::gis::describe_crs(crs); },
+        "crs"_a,
+        "A short human-readable name, e.g. 'UTM zone 31N'.");
+    gis.def(
+        "crs_transform",
+        [](const roadmaker::gis::Crs& from, const roadmaker::gis::Crs& to) {
+          auto transform = roadmaker::gis::crs_transform(from, to);
+          if (!transform) {
+            throw std::runtime_error(transform.error().message);
+          }
+          return *transform;
+        },
+        "from_crs"_a,
+        "to_crs"_a,
+        "Builds the transform, or raises naming the CRS it cannot compute with.");
+    gis.def(
+        "load_vector",
+        [](const std::filesystem::path& path) {
+          auto result = roadmaker::gis::load_gis_vector(path);
+          if (!result) {
+            throw std::runtime_error(result.error().message);
+          }
+          return std::pair{std::move(result->layer), std::move(result->diagnostics)};
+        },
+        "path"_a,
+        "Reads GeoJSON or an ESRI Shapefile, returning (layer, diagnostics). "
+        "Nothing is ever dropped silently — a skipped feature is a diagnostic.");
+    gis.def(
+        "load_raster",
+        [](const std::filesystem::path& path) {
+          auto result = roadmaker::gis::load_gis_raster(path);
+          if (!result) {
+            throw std::runtime_error(result.error().message);
+          }
+          return std::pair{std::move(result->raster), std::move(result->diagnostics)};
+        },
+        "path"_a,
+        "Reads a GeoTIFF, or a PNG/JPEG positioned by a world file, returning "
+        "(raster, diagnostics).");
+    gis.def(
+        "reproject_vector",
+        [](roadmaker::gis::GisVectorLayer layer, const roadmaker::gis::CrsTransform& transform) {
+          roadmaker::gis::reproject_vector(layer, transform);
+          return layer;
+        },
+        "layer"_a,
+        "transform"_a,
+        "Returns the layer with every vertex moved into the target frame.");
+    gis.def(
+        "reproject_raster",
+        [](const roadmaker::gis::GisRaster& raster, const roadmaker::gis::CrsTransform& transform) {
+          std::vector<roadmaker::Diagnostic> diagnostics;
+          auto placed = roadmaker::gis::reproject_raster(raster, transform, diagnostics);
+          if (!placed) {
+            throw std::runtime_error(placed.error().message);
+          }
+          return std::pair{std::move(*placed), std::move(diagnostics)};
+        },
+        "raster"_a,
+        "transform"_a,
+        "Places or resamples a raster into the target frame, returning "
+        "(placed, diagnostics). Check `placed.placement` — a resample is reported "
+        "because a resampled image must not pass for the source file.");
+    gis.def(
+        "raster_to_height_field",
+        [](const roadmaker::gis::GisRaster& raster, const roadmaker::gis::CrsTransform& transform) {
+          std::vector<roadmaker::Diagnostic> diagnostics;
+          auto field = roadmaker::gis::raster_to_height_field(raster, transform, diagnostics);
+          if (!field) {
+            throw std::runtime_error(field.error().message);
+          }
+          return std::pair{std::move(*field), std::move(diagnostics)};
+        },
+        "raster"_a,
+        "transform"_a,
+        "Converts an elevation raster into a scene HeightField, returning "
+        "(field, diagnostics). Install it with edit.set_terrain_field, exactly as "
+        "a .asc DEM import does.");
+  }
 
   m.def(
       "sample_height",

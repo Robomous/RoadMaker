@@ -123,6 +123,8 @@ from ._roadmaker import (  # noqa: F401
     edit,
     expand_repeat,
     export_glb,
+    # GIS import (p7-s2, #242) — a bounded CRS family, no PROJ (ADR-0010).
+    gis,
     # Export previews (p7-s1, #241) — what an export WOULD contain.
     MeshExportFormat,
     MeshChannel,
