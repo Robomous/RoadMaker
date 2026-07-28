@@ -1951,8 +1951,52 @@ void write_junction(pugi::xml_node root,
 
 } // namespace
 
+namespace {
+
+/// Distance from the origin, in metres, past which a dataset is far enough out
+/// that §8.5's centred-coordinates rule is worth raising.
+///
+/// The rule itself gives no threshold — it says the coordinates "should be
+/// approximately centered around (0;0)" and explains why in terms of floating
+/// point precision. 100 km is the scale at which a consumer storing positions
+/// as `float` starts losing centimetres, which is the failure the rule
+/// describes; below that the advice costs more attention than it saves.
+constexpr double kFarFromOriginWarning = 100000.0;
+
+/// §8.5's advisory: a dataset whose coordinates sit far from the origin should
+/// carry an `<offset>` that brings them back, or a consumer using float
+/// coordinates internally loses precision. A `should` rule, so this never
+/// blocks a write — it is one Warning on the document, not per road.
+void check_georeference(const RoadNetwork& network, std::vector<Diagnostic>& findings) {
+  if (network.georeference().offset.has_value()) {
+    return; // the author has stated an offset; taking their word for it is the point of the element
+  }
+  const std::optional<std::array<double, 4>> bounds = network_plan_bounds(network);
+  if (!bounds.has_value()) {
+    return;
+  }
+  const double far = std::max({std::abs((*bounds)[0]),
+                               std::abs((*bounds)[1]),
+                               std::abs((*bounds)[2]),
+                               std::abs((*bounds)[3])});
+  if (far <= kFarFromOriginWarning) {
+    return;
+  }
+  findings.push_back(Diagnostic{
+      .severity = Severity::Warning,
+      .location = "header",
+      .message = fmt::format("the network reaches {:.0f} m from the origin and the header carries "
+                             "no <offset>; consumers holding positions as float lose precision "
+                             "at this distance",
+                             far),
+      .rule_id = std::string(rules::kHeaderOffsetCenteredCoords)});
+}
+
+} // namespace
+
 std::vector<Diagnostic> validate_network(const RoadNetwork& network, const WriterOptions& options) {
   std::vector<Diagnostic> findings;
+  check_georeference(network, findings);
   network.for_each_road([&](RoadId road_id, const Road& road) {
     check_road_structure(network, road_id, road, findings);
     // "Only defined IDs may be referenced." A predecessor/successor whose
@@ -2563,6 +2607,61 @@ std::vector<Diagnostic> validate_network(const RoadNetwork& network, const Write
   return findings;
 }
 
+namespace {
+
+/// The `<header>` bounding box (§6.4.1 Table 8) and georeference (§8.5), plus
+/// everything of the input's header this writer does not model.
+///
+/// ORDER IS THE SCHEMA. `t_header` sequences its children `<geoReference>`,
+/// `<offset>`, `<license>`, then the g_additionalData group (`<include>`,
+/// `<userData>`, `<dataQuality>`), so the two modeled elements go first and the
+/// preserved fragments follow. Attributes are appended before any child so the
+/// output stays canonical and idempotent.
+void write_header_georeference(pugi::xml_node header, const RoadNetwork& network) {
+  // north/south/east/west are DERIVED, never carried over from the input: they
+  // describe the dataset being written, so a stale box from a file we merely
+  // opened would become wrong the moment anything moved. Omitted entirely when
+  // the network has no plan-view geometry — Table 8 marks all four optional,
+  // and an empty scene has no extent to state.
+  if (const std::optional<std::array<double, 4>> bounds = network_plan_bounds(network)) {
+    set_num(header, "west", (*bounds)[0]);
+    set_num(header, "south", (*bounds)[1]);
+    set_num(header, "east", (*bounds)[2]);
+    set_num(header, "north", (*bounds)[3]);
+  }
+
+  // Unmodeled attributes of the input's <header> (date, version, foreign ones)
+  // ride through unchanged (fmt-f1, #453).
+  for (const auto& [name, value] : network.preserved_header().attributes) {
+    header.append_attribute(name.c_str()).set_value(value.c_str());
+  }
+
+  const GeoReference& geo = network.georeference();
+  if (!geo.projection.empty()) {
+    // §8.5: the projection string "shall be marked as CDATA, because it may
+    // contain characters that interfere with the XML syntax of an element's
+    // attribute". This is the only CDATA node RoadMaker writes anywhere.
+    pugi::xml_node node = header.append_child("geoReference");
+    node.append_child(pugi::node_cdata).set_value(geo.projection.c_str());
+  }
+  // An all-zero offset is the identity, and §8.5 makes the element optional, so
+  // writing one would add a line that changes nothing. Absence and zero mean
+  // the same thing to a reader; absence is the smaller file.
+  if (geo.offset.has_value() && !geo.offset->identity()) {
+    pugi::xml_node node = header.append_child("offset");
+    set_num(node, "x", geo.offset->x);
+    set_num(node, "y", geo.offset->y);
+    set_num(node, "z", geo.offset->z);
+    set_num(node, "hdg", geo.offset->hdg);
+  }
+
+  for (const std::string& fragment : network.preserved_header().children) {
+    append_fragment(header, fragment);
+  }
+}
+
+} // namespace
+
 Expected<std::string> write_xodr(const RoadNetwork& network,
                                  std::string_view document_name,
                                  const WriterOptions& options) {
@@ -2584,6 +2683,7 @@ Expected<std::string> write_xodr(const RoadNetwork& network,
       .set_value(options.target_version == XodrVersion::v1_9_0 ? 9 : 8);
   header.append_attribute("name").set_value(std::string(document_name).c_str());
   header.append_attribute("vendor").set_value("RoadMaker");
+  write_header_georeference(header, network);
 
   // Stop lines are materialized, not stored: solve every junction's once, up
   // front, so the per-road emission below can stay a lookup (and so the ids

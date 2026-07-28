@@ -113,6 +113,22 @@ std::optional<unsigned> to_sequence(std::string_view text) {
   return value;
 }
 
+/// `text` without leading or trailing ASCII whitespace.
+///
+/// A CDATA projection string is almost always written on its own indented line
+/// (§8.5's own example is), so the raw child value arrives wrapped in the
+/// document's whitespace. That whitespace is layout, not part of the PROJ
+/// string, and keeping it would make two spellings of the same projection
+/// compare unequal.
+std::string_view trimmed(std::string_view text) {
+  constexpr std::string_view kSpace = " \t\r\n";
+  const std::size_t first = text.find_first_not_of(kSpace);
+  if (first == std::string_view::npos) {
+    return {};
+  }
+  return text.substr(first, text.find_last_not_of(kSpace) - first + 1);
+}
+
 /// Serializes a node as a self-contained XML fragment (no indentation), for
 /// the verbatim-preservation tier (roadmaker/xodr/raw_xml.hpp).
 std::string node_to_string(const pugi::xml_node& node) {
@@ -288,6 +304,27 @@ private:
 
   // --- header --------------------------------------------------------------
 
+  /// Attributes of `<header>` (§6.4.1 Table 8) the WRITER owns and re-derives,
+  /// so reading them would be pointless and preserving them would be wrong.
+  ///
+  /// `name`/`vendor` are re-synthesized per document. The `north`/`south`/
+  /// `east`/`west` bounding box describes the network being written and is
+  /// recomputed from it (network_plan_bounds): carrying an input's box forward
+  /// would turn it into a lie on the first edit. Everything else — `date`,
+  /// `version`, anything foreign — is preserved verbatim below.
+  static bool header_attribute_is_owned(std::string_view name) {
+    return name == "revMajor" || name == "revMinor" || name == "name" || name == "vendor" ||
+           name == "north" || name == "south" || name == "east" || name == "west";
+  }
+
+  /// `<header>` (§6.4.1) and the georeference it carries (§8.5).
+  ///
+  /// This is the one header-child dispatch p7-s5 (#324) and fmt-f1 (#453)
+  /// share: `<geoReference>` and `<offset>` are MODELED, and everything else
+  /// the header holds — `<license>` (§6.4.2), `<dataQuality>`, `<include>`,
+  /// foreign `<userData>`, and every unmodeled attribute — is PRESERVED
+  /// verbatim rather than dropped. Before this, a georeferenced foreign file
+  /// lost its projection string silently, with no diagnostic anywhere.
   void parse_header(const pugi::xml_node& header) {
     if (!header) {
       diag(Severity::Warning, "header", "missing <header>");
@@ -302,6 +339,89 @@ private:
            fmt::format(
                "OpenDRIVE revision {}.{} is outside the tested 1.4-1.9 range", major, minor));
     }
+
+    GeoReference geo;
+    RawXml preserved;
+
+    for (const pugi::xml_attribute attr : header.attributes()) {
+      if (!header_attribute_is_owned(attr.name())) {
+        preserved.attributes.emplace_back(attr.name(), attr.value());
+      }
+    }
+
+    bool saw_geo_reference = false;
+    for (const pugi::xml_node child : header.children()) {
+      const std::string_view name = child.name();
+
+      if (name == "geoReference") {
+        if (saw_geo_reference) {
+          // §8.5: "There shall be no more than one definition of the
+          // projection." The first wins — picking a later one would make the
+          // projection depend on document order, which is exactly the ambiguity
+          // the rule exists to forbid.
+          diag(Severity::Warning,
+               "header/geoReference",
+               "more than one <geoReference>; the first definition was used and the rest ignored",
+               rules::kHeaderMaxOneProj);
+          continue;
+        }
+        saw_geo_reference = true;
+        // child_value() yields the first PCDATA **or CDATA** child, so this
+        // reads a projection string written either way. §8.5 says the string
+        // "shall be marked as CDATA", but a file that omits the wrapper is
+        // still one we can read, and refusing it would lose data for nothing.
+        geo.projection = std::string(trimmed(child.child_value()));
+        if (geo.projection.empty()) {
+          diag(Severity::Warning,
+               "header/geoReference",
+               "<geoReference> is empty; the scene keeps a local Cartesian frame");
+        }
+        continue;
+      }
+
+      if (name == "offset") {
+        parse_header_offset(child, geo);
+        continue;
+      }
+
+      // Everything else rides through untouched. userData warns per §7.2's
+      // preserved-tier policy (fmt-s2, #326); other elements get the
+      // once-per-name unsupported warning, so a header full of <license> says
+      // so exactly once.
+      if (name == "userData") {
+        warn_preserved_user_data(child.attribute("code").value(), "header");
+      } else {
+        warn_unsupported(std::string(name), "header");
+      }
+      preserved.children.push_back(node_to_string(child));
+    }
+
+    result_.network.set_georeference(std::move(geo));
+    result_.network.set_preserved_header(std::move(preserved));
+  }
+
+  /// `<header><offset>` (§8.5 Table 17). All four attributes are `required`, so
+  /// this is all-or-nothing: a partial element is reported and dropped rather
+  /// than silently completed with zeros, because a zero the author did not
+  /// write is a claim about where the dataset sits.
+  void parse_header_offset(const pugi::xml_node& node, GeoReference& geo) {
+    if (geo.offset.has_value()) {
+      diag(Severity::Warning,
+           "header/offset",
+           "more than one <offset>; the first was used and the rest ignored");
+      return;
+    }
+    const std::optional<double> x = attr_optional_double(node, "x", "header/offset");
+    const std::optional<double> y = attr_optional_double(node, "y", "header/offset");
+    const std::optional<double> z = attr_optional_double(node, "z", "header/offset");
+    const std::optional<double> hdg = attr_optional_double(node, "hdg", "header/offset");
+    if (!x.has_value() || !y.has_value() || !z.has_value() || !hdg.has_value()) {
+      diag(Severity::Warning,
+           "header/offset",
+           "<offset> needs all four of x, y, z and hdg (§8.5 Table 17); the element was ignored");
+      return;
+    }
+    geo.offset = GeoOffset{.x = *x, .y = *y, .z = *z, .hdg = *hdg};
   }
 
   // --- roads ---------------------------------------------------------------
