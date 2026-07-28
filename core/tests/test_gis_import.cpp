@@ -385,7 +385,13 @@ TEST(GisReproject, ElevationRasterBecomesAHeightFieldWithRowsFlipped) {
 
   EXPECT_EQ(field->cols, 8U);
   EXPECT_EQ(field->rows, 6U);
-  EXPECT_DOUBLE_EQ(field->spacing, 10.0);
+  // NOT EXPECT_DOUBLE_EQ. Spacing is derived by mapping points through the CRS
+  // hub, and at a UTM northing of ~5.8e6 m a double carries a few parts in
+  // 1e-11 of round-trip residue — enough that an exact comparison passes on one
+  // platform's libm and fails on another's, which is exactly what it did.
+  // Anything derived through a projection needs a tolerance, and a micrometre
+  // is four orders below what a 10 m post could mean.
+  EXPECT_NEAR(field->spacing, 10.0, 1e-6);
 
   // A HeightField's rows run LOW y first; a raster's run high y first. The
   // fixture is 10 + 2x + 5y with y increasing DOWN the image, so the field's
