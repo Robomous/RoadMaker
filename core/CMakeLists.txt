@@ -15,6 +15,7 @@ add_library(roadmaker_core ${_rm_core_type}
   src/road/network.cpp
   src/road/authoring.cpp
   src/road/defaults.cpp
+  src/road/georeference.cpp
   src/road/repeat_expansion.cpp
   src/road/road_style.cpp
   src/road/signal_facing.cpp

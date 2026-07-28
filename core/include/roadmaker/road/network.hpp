@@ -19,6 +19,7 @@
 #include "roadmaker/export.hpp"
 #include "roadmaker/road/arena.hpp"
 #include "roadmaker/road/controller.hpp"
+#include "roadmaker/road/georeference.hpp"
 #include "roadmaker/road/id.hpp"
 #include "roadmaker/road/junction.hpp"
 #include "roadmaker/road/lane.hpp"
@@ -28,6 +29,7 @@
 #include "roadmaker/road/signal.hpp"
 #include "roadmaker/road/surface.hpp"
 #include "roadmaker/road/terrain.hpp"
+#include "roadmaker/xodr/raw_xml.hpp"
 
 #include <array>
 #include <optional>
@@ -310,6 +312,40 @@ public:
   /// edit layer (edit::set_terrain_field and friends) so the change is undoable.
   RM_API void set_terrain(HeightField field);
 
+  // --- world georeference (p7-s5, #324) --------------------------------------
+
+  /// The ONE world georeference — `<header><geoReference>` + `<header><offset>`
+  /// (§8.5). NOT an arena entity: exactly one per network, and it is document
+  /// metadata rather than a road-network object, like `terrain_`.
+  ///
+  /// Default-constructed = EMPTY = "this scene is a plain local Cartesian
+  /// frame", which is what every RoadMaker file has meant until now and what
+  /// §8.5 says a reader must assume when the definition is missing. An empty
+  /// value writes nothing, so untouched scenes stay byte-identical.
+  [[nodiscard]] const GeoReference& georeference() const { return georeference_; }
+
+  /// Replaces the georeference wholesale. Callers outside tests go through the
+  /// edit layer (edit::set_georeference) so the change is undoable.
+  RM_API void set_georeference(GeoReference geo);
+
+  // --- preserved <header> passthrough (p7-s5, #324 / fmt-f1 #453) ------------
+
+  /// The parts of `<header>` RoadMaker does not model: unknown attributes
+  /// (`date`, `version`, anything foreign) and unmodeled child elements
+  /// (`<license>` §6.4.2, `<dataQuality>`, `<include>`, foreign `<userData>`),
+  /// captured verbatim in document order so a georeferenced foreign file does
+  /// not lose the rest of its header on the way through.
+  ///
+  /// Excludes what the writer OWNS and re-derives: `revMajor`/`revMinor`,
+  /// `name`, `vendor`, and the `north`/`south`/`east`/`west` bounding box —
+  /// that box describes the network being written, so preserving a stale one
+  /// from the input would turn it into a lie on the first edit.
+  [[nodiscard]] const RawXml& preserved_header() const { return preserved_header_; }
+
+  /// Replaces the preserved header fragments wholesale. Only the parser writes
+  /// this; edits never touch it, so the fragments ride every save untouched.
+  void set_preserved_header(RawXml raw) { preserved_header_ = std::move(raw); }
+
   // --- preserved root userData (fmt-s2, #326) --------------------------------
 
   /// Root-level <OpenDRIVE> <userData> elements RoadMaker does not model
@@ -338,6 +374,8 @@ private:
   Arena<Controller, ControllerId> controllers_;
   Arena<Surface, SurfaceId> surfaces_;
   HeightField terrain_;
+  GeoReference georeference_;
+  RawXml preserved_header_;
   std::vector<std::string> preserved_user_data_;
 };
 
