@@ -50,6 +50,13 @@ RoadMaker did not author is carried verbatim and reported as opaque:
 `tmerc_origin()` answers only for that family, because guessing at a UTM zone's
 origin would be wrong by its 500 km false easting.
 
+**The generated string carries no `+no_defs`**, even though §8.5's own example
+does: esmini v3.5.0 rejects it outright (*"Unsupported geo reference attr:
++no_defs"*), and the flag is a PROJ.4-era instruction not to read `proj_def.dat`
+— a file removed in PROJ 6, so no PROJ this project targets does anything with
+it. A default RoadMaker *generates* must not carry a token a shipping consumer
+refuses. Caught by the [esmini smoke gate](../contributing/ci.md).
+
 Workspace extents and UI framing are **Layer 2**, not here — see
 [persistence](../architecture/persistence.md#scenermscenejson-v1).
 

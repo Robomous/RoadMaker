@@ -167,6 +167,29 @@ TEST(TmercProjection, PlacesTheProjectionOriginAtTheSceneOrigin) {
   EXPECT_NE(proj->find("+y_0=0"), std::string::npos);
 }
 
+TEST(TmercProjection, CarriesNoTokenAKnownConsumerRefuses) {
+  // REGRESSION. The first version of this generator ended with `+no_defs`,
+  // copying §8.5's own example, and esmini v3.5.0 rejected every scene that
+  // used it: "Unsupported geo reference attr: +no_defs". The CI esmini gate
+  // caught it on the committed sample.
+  //
+  // `+no_defs` is a PROJ.4-era flag asking PROJ not to consult `proj_def.dat`,
+  // a file removed in PROJ 6 — so dropping it costs nothing and buys back a
+  // major consumer. A default this project GENERATES must not carry a token a
+  // shipping tool refuses, whatever the spec's illustration does.
+  const auto proj = roadmaker::tmerc_projection(1.0, 2.0);
+  ASSERT_TRUE(proj.has_value());
+  EXPECT_EQ(proj->find("+no_defs"), std::string::npos) << *proj;
+
+  // The committed samples are what the esmini job actually loads, so they are
+  // held to the same bar — the assertion above alone would not have caught the
+  // hand-written string in the sample.
+  const auto parsed =
+      roadmaker::load_xodr(std::filesystem::path(RM_SAMPLES_DIR) / "straight_road.xodr");
+  ASSERT_TRUE(parsed.has_value());
+  EXPECT_EQ(parsed->network.georeference().projection.find("+no_defs"), std::string::npos);
+}
+
 TEST(TmercProjection, TheOriginSurvivesTheStringExactly) {
   // Not "close to": bit-for-bit. The UI reads the origin back out of this
   // string, so a lossy format would show the user a different place than the

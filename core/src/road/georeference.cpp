@@ -153,8 +153,16 @@ Expected<std::string> tmerc_projection(double latitude_deg, double longitude_deg
   }
   // Parameter order is fixed so the same origin always produces byte-identical
   // output — the writer's determinism guarantee reaches into this string.
-  return fmt::format("+proj=tmerc +lat_0={} +lon_0={} +k=1 +x_0=0 +y_0=0 +datum=WGS84 "
-                     "+units=m +no_defs",
+  //
+  // NO `+no_defs`, deliberately, even though §8.5's own example carries it.
+  // esmini v3.5.0 REFUSES it outright — "Unsupported geo reference attr:
+  // +no_defs" — and a string RoadMaker generates by default that a major
+  // consumer rejects is a bad default, whatever the example does. Nothing is
+  // lost: `+no_defs` is a PROJ.4-era flag telling PROJ not to consult the
+  // `proj_def.dat` defaults file, and that file was removed in PROJ 6, so
+  // every PROJ this project could target accepts it and ignores it. Found by
+  // the esmini smoke gate, which is precisely what it is for.
+  return fmt::format("+proj=tmerc +lat_0={} +lon_0={} +k=1 +x_0=0 +y_0=0 +datum=WGS84 +units=m",
                      shortest(latitude_deg),
                      shortest(longitude_deg));
 }
