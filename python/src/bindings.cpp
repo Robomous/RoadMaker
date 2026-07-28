@@ -4788,8 +4788,23 @@ NB_MODULE(_roadmaker, m) {
       .def_ro("scope", &roadmaker::XodrRecordPreview::scope)
       .def_ro("count", &roadmaker::XodrRecordPreview::count);
 
+  nb::class_<roadmaker::XodrHeaderPreview>(m, "XodrHeaderPreview")
+      .def_ro("geo_reference",
+              &roadmaker::XodrHeaderPreview::geo_reference,
+              "<geoReference>'s content; empty when the scene carries no projection.")
+      .def_ro("offset",
+              &roadmaker::XodrHeaderPreview::offset,
+              "<offset>'s four attributes, or None when the element is not written.")
+      .def_ro("bounds",
+              &roadmaker::XodrHeaderPreview::bounds,
+              "The §6.4.1 Table 8 bounding box as (west, south, east, north) in the "
+              "kernel frame, or None on a scene with no plan-view geometry.");
+
   nb::class_<roadmaker::XodrPreview>(m, "XodrPreview")
       .def_ro("target_version", &roadmaker::XodrPreview::target_version)
+      .def_ro("header",
+              &roadmaker::XodrPreview::header,
+              "The <header> the writer would produce (p7-s5).")
       .def_ro("would_write", &roadmaker::XodrPreview::would_write)
       .def_prop_ro("refusal",
                    [](const roadmaker::XodrPreview& self) -> std::optional<std::string> {

@@ -219,6 +219,31 @@ struct XodrRecordPreview {
   std::size_t count = 0;
 };
 
+/// The `<header>` as it would be written (p7-s5, #324).
+///
+/// Read out of the emitted bytes like every other field on XodrPreview, never
+/// from the RoadNetwork — the whole point of this preview is that it cannot
+/// disagree with the file.
+struct XodrHeaderPreview {
+  /// `<geoReference>`'s content, empty when the scene carries no projection.
+  /// The CDATA wrapper is not part of the value.
+  std::string geo_reference;
+
+  /// `<offset>`'s four attributes, absent when the element is not written
+  /// (which includes the case where the offset is the identity).
+  std::optional<GeoOffset> offset;
+
+  /// The §6.4.1 Table 8 bounding box the writer derives from the network, as
+  /// `{west, south, east, north}`. Absent on a scene with no plan-view
+  /// geometry, which states no extent.
+  ///
+  /// Deliberately NOT an `ExportBounds`: that type is documented as the export
+  /// frame (right-handed Y-up, the frame the mesh files are written in), and
+  /// these four numbers are OpenDRIVE inertial coordinates in the kernel frame.
+  /// Reusing it would put two different frames behind one type name.
+  std::optional<std::array<double, 4>> bounds;
+};
+
 /// What save_xodr would write, without writing it.
 ///
 /// Every Layer-0 and Layer-1 number below is counted out of `xml` — the bytes
@@ -243,6 +268,11 @@ struct XodrPreview {
   std::size_t byte_count = 0;
 
   // --- Layer 0 (pure ASAM), counted out of `xml` -------------------------
+
+  /// The `<header>` the writer produced (p7-s5, #324) — the georeference, the
+  /// offset, and the derived bounding box.
+  XodrHeaderPreview header;
+
   std::size_t road_count = 0;
   std::size_t junction_count = 0;
   std::size_t lane_section_count = 0;

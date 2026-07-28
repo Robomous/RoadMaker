@@ -133,6 +133,7 @@ from ._roadmaker import (  # noqa: F401
     ScenePreview,
     RmCodeScope,
     XodrRecordPreview,
+    XodrHeaderPreview,
     XodrPreview,
     preview_mesh_export,
     mesh_export_available,

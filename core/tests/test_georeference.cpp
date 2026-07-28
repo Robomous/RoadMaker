@@ -26,6 +26,7 @@
 // corpus seeds so the fuzzer sees the element at all.
 
 #include "roadmaker/edit/operations.hpp"
+#include "roadmaker/io/export_preview.hpp"
 #include "roadmaker/road/georeference.hpp"
 #include "roadmaker/road/network.hpp"
 #include "roadmaker/xodr/reader.hpp"
@@ -450,6 +451,47 @@ TEST(GeoReferenceValidation, ANetworkNearTheOriginIsNotAdvised) {
   const auto parsed = parse(document_with_header("", ""));
   const auto findings = roadmaker::validate_network(parsed.network);
   EXPECT_FALSE(has_rule(findings, roadmaker::rules::kHeaderOffsetCenteredCoords));
+}
+
+// --- the export preview's header read-out -----------------------------------
+
+TEST(XodrPreviewHeader, ReportsTheGeoreferenceTheFileWouldCarry) {
+  auto parsed = parse(document_with_header("", ""));
+  parsed.network.set_georeference(
+      GeoReference{.projection = "+proj=tmerc +lat_0=1 +lon_0=2",
+                   .offset = GeoOffset{.x = 10.0, .y = 20.0, .z = 1.0, .hdg = 0.25}});
+
+  const roadmaker::XodrPreview preview = roadmaker::preview_xodr_export(parsed.network, "geo-test");
+  ASSERT_TRUE(preview.would_write);
+  EXPECT_EQ(preview.header.geo_reference, "+proj=tmerc +lat_0=1 +lon_0=2");
+  ASSERT_TRUE(preview.header.offset.has_value());
+  EXPECT_DOUBLE_EQ(preview.header.offset->x, 10.0);
+  EXPECT_DOUBLE_EQ(preview.header.offset->hdg, 0.25);
+  ASSERT_TRUE(preview.header.bounds.has_value());
+  EXPECT_GT((*preview.header.bounds)[2], 100.0); // east, past the 100 m road
+}
+
+TEST(XodrPreviewHeader, ReportsAbsenceRatherThanADefault) {
+  // The preview has to distinguish "no projection" from "some projection we
+  // failed to read" — an empty string is the honest report of the first.
+  const auto parsed = parse(document_with_header("", ""));
+  const roadmaker::XodrPreview preview = roadmaker::preview_xodr_export(parsed.network, "geo-test");
+  EXPECT_TRUE(preview.header.geo_reference.empty());
+  EXPECT_FALSE(preview.header.offset.has_value());
+}
+
+TEST(XodrPreviewHeader, AgreesWithTheBytesEvenWhenTheModelWouldNot) {
+  // The reason this is read out of `xml` rather than off the RoadNetwork: the
+  // network HAS an offset here, and the file will not carry one, because an
+  // identity offset is not written. A model-derived read-out would report an
+  // offset that is not in the file.
+  auto parsed = parse(document_with_header("", ""));
+  parsed.network.set_georeference(GeoReference{.projection = "+proj=tmerc", .offset = GeoOffset{}});
+  ASSERT_TRUE(parsed.network.georeference().offset.has_value());
+
+  const roadmaker::XodrPreview preview = roadmaker::preview_xodr_export(parsed.network, "geo-test");
+  EXPECT_FALSE(preview.header.offset.has_value());
+  EXPECT_EQ(preview.xml.find("<offset"), std::string::npos);
 }
 
 // --- the edit command -------------------------------------------------------
