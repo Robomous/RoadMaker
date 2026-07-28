@@ -25,6 +25,7 @@
 // here so every claim has something to bite on, and the sprint also adds
 // corpus seeds so the fuzzer sees the element at all.
 
+#include "roadmaker/edit/operations.hpp"
 #include "roadmaker/road/georeference.hpp"
 #include "roadmaker/road/network.hpp"
 #include "roadmaker/xodr/reader.hpp"
@@ -449,4 +450,80 @@ TEST(GeoReferenceValidation, ANetworkNearTheOriginIsNotAdvised) {
   const auto parsed = parse(document_with_header("", ""));
   const auto findings = roadmaker::validate_network(parsed.network);
   EXPECT_FALSE(has_rule(findings, roadmaker::rules::kHeaderOffsetCenteredCoords));
+}
+
+// --- the edit command -------------------------------------------------------
+
+TEST(SetGeoReferenceCommand, ApplyThenRevertLeavesTheFileByteIdentical) {
+  // The command-layer invariant (docs/design/m2/01): apply→revert must leave
+  // write_xodr byte-identical. For this datum that means setting a
+  // georeference and undoing it re-emits the header exactly as it was.
+  auto parsed = parse(document_with_header("", ""));
+  const auto before = roadmaker::write_xodr(parsed.network, "geo-test");
+  ASSERT_TRUE(before.has_value());
+
+  auto command = roadmaker::edit::set_georeference(
+      parsed.network,
+      GeoReference{.projection = "+proj=tmerc +lat_0=1 +lon_0=2",
+                   .offset = GeoOffset{.x = 10.0, .y = 20.0}});
+  ASSERT_NE(command, nullptr);
+
+  ASSERT_TRUE(command->apply(parsed.network).has_value());
+  const auto during = roadmaker::write_xodr(parsed.network, "geo-test");
+  ASSERT_TRUE(during.has_value());
+  // Non-vacuity: if the command did nothing, the byte-identity below would
+  // hold for the wrong reason.
+  EXPECT_NE(*during, *before);
+
+  ASSERT_TRUE(command->revert(parsed.network).has_value());
+  const auto after = roadmaker::write_xodr(parsed.network, "geo-test");
+  ASSERT_TRUE(after.has_value());
+  EXPECT_EQ(*after, *before);
+}
+
+TEST(SetGeoReferenceCommand, ClearingIsSettingTheEmptyValue) {
+  auto parsed = parse(document_with_header(
+      "", "    <geoReference><![CDATA[+proj=tmerc +lat_0=1]]></geoReference>\n"));
+  ASSERT_FALSE(parsed.network.georeference().empty());
+
+  auto command = roadmaker::edit::set_georeference(parsed.network, GeoReference{});
+  ASSERT_NE(command, nullptr);
+  ASSERT_TRUE(command->apply(parsed.network).has_value());
+  EXPECT_TRUE(parsed.network.georeference().empty());
+
+  const auto xml = roadmaker::write_xodr(parsed.network, "geo-test");
+  ASSERT_TRUE(xml.has_value());
+  EXPECT_EQ(xml->find("<geoReference"), std::string::npos);
+}
+
+TEST(SetGeoReferenceCommand, ChangesNoMeshChannel) {
+  // The empty DirtySet is a claim, so it gets an assertion. A georeference
+  // states how coordinates relate to the earth; it moves nothing.
+  const auto parsed = parse(document_with_header("", ""));
+  auto command =
+      roadmaker::edit::set_georeference(parsed.network, GeoReference{.projection = "+proj=tmerc"});
+  ASSERT_NE(command, nullptr);
+  const roadmaker::edit::DirtySet dirty = command->dirty();
+  EXPECT_TRUE(dirty.roads.empty());
+  EXPECT_TRUE(dirty.junctions.empty());
+  EXPECT_TRUE(dirty.objects.empty());
+  EXPECT_TRUE(dirty.surfaces.empty());
+  EXPECT_FALSE(dirty.terrain);
+  EXPECT_FALSE(dirty.topology);
+}
+
+TEST(SetGeoReferenceCommand, RejectsBadInputWithoutMutating) {
+  auto parsed = parse(document_with_header("", ""));
+  const GeoReference original = parsed.network.georeference();
+
+  const auto rejects = [&](GeoReference geo) {
+    auto command = roadmaker::edit::set_georeference(parsed.network, std::move(geo));
+    ASSERT_NE(command, nullptr);
+    EXPECT_FALSE(command->apply(parsed.network).has_value());
+    EXPECT_EQ(parsed.network.georeference(), original);
+  };
+  rejects(GeoReference{.projection = "   \t\n  "});
+  rejects(GeoReference{.offset = GeoOffset{.x = std::nan("")}});
+  rejects(GeoReference{.offset = GeoOffset{.hdg = std::numeric_limits<double>::infinity()}});
+  rejects(GeoReference{}); // a no-op is not an edit
 }
