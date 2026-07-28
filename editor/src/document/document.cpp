@@ -310,6 +310,18 @@ void Document::push_applied_with_regeneration(std::unique_ptr<edit::Command> com
     }
   }
 
+  // And the props those roads carried (cascade-s4, #464). Every record here is
+  // something to surface — unlike the derived layer, there is no "it worked"
+  // outcome, because the stage only ever reports obstructions it did not have
+  // before. The fix is a menu action, deliberately: a modal opened mid-drag
+  // swallows the mouse-release, which is why cascade-s1 removed the last one.
+  for (const edit::ObstructionRecord& record : command->obstruction_records()) {
+    spdlog::warn("prop obstruction: object {} — {}", record.object_odr_id, record.detail);
+    emit props_obstructed(tr("Prop %1 is in the way — %2")
+                              .arg(QString::fromStdString(record.object_odr_id),
+                                   QString::fromStdString(record.detail)));
+  }
+
   // Editing an incoming road (geometry, elevation, or its lanes) regenerates
   // every junction it touches (02 §6): re-run the generator from each
   // junction's recorded arms, replacing the connecting-road geometry — and,

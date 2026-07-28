@@ -153,6 +153,12 @@ public:
   /// not selectable and there is no span control yet.
   QAction* bridge_remove_orphans = nullptr;
 
+  /// Moves every obstructed prop to the nearest clear place on its own anchor
+  /// road (cascade-s4, #464). Invoking it IS the consent: a move reports an
+  /// obstruction and never corrects it, so this menu item is the whole of the
+  /// offered fix. No registry id — menu-only, like the bridge pair above.
+  QAction* props_relocate_obstructed = nullptr;
+
   QAction* reset_layout = nullptr;
 
   /// Opens the in-app user guide (Help menu, F1).

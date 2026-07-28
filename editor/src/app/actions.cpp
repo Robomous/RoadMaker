@@ -439,6 +439,11 @@ Actions::Actions(QUndoStack& undo_stack, QObject* parent) : QObject(parent) {
       tr("Delete every bridge whose crossing has gone — the roads no longer cross, or a "
          "junction now connects them"));
 
+  props_relocate_obstructed = new QAction(tr("&Relocate Obstructed Props"), this);
+  props_relocate_obstructed->setToolTip(
+      tr("Move every prop that a road move drove into a road, a junction or another prop to "
+         "the nearest clear place on its own road"));
+
   reset_layout = new QAction(tr("Reset &Layout"), this);
 
   help_contents = new QAction(tr("&User Guide"), this);
