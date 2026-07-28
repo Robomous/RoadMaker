@@ -28,6 +28,14 @@ means for the sprint cut. Written 2026-07-15, before p2-s1 landed. Roadmap:
 > governing spec doc — both batch-2 items are now closed. The `cascade` epic
 > [#406](https://github.com/Robomous/RoadMaker/issues/406) is no longer gated:
 > the contract states the per-operation link policy its sprints implement.
+>
+> **Status (2026-07-28):** for the record — #413 (`p2-s11`) merged 2026-07-24
+> (PR #423); the second reopen closed with it, which no note above recorded.
+> The cascade epic #406 has since run to completion and **closed** (sprints
+> #461–#464). Remaining P2 work is tracked on epic
+> [#251](https://github.com/Robomous/RoadMaker/issues/251) (follow-ups incl.
+> the 2026-07 review findings #454/#455/#460/#476/#477/#478) plus the GW-2
+> hand-run.
 
 ## Why this document exists
 

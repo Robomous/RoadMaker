@@ -15,6 +15,14 @@ materials) merged and as part of the
 > sidewalk band segmentation — jagged seams + zero-band collapse; lands
 > **before** [#356](https://github.com/Robomous/RoadMaker/issues/356)).
 > GW-3/GW-4 hand-run status is unaffected until the item lands.
+>
+> **Status (2026-07-28):** #402 merged 2026-07-25 (PR #441) — the floor is cut
+> *along* the sidewalk seam. #356's deferral has since **lifted**: it
+> reproduces headlessly (test-only PR #445; the missing ingredient was the
+> sidewalk profile), so the curved-edge-aware solver work is startable. The
+> pillar stays open on #356 and
+> [#440](https://github.com/Robomous/RoadMaker/issues/440) (untextured
+> junction floors, homed to P4 2026-07-27) plus the GW-3/GW-4 hand-runs.
 
 ## Why this document exists
 
