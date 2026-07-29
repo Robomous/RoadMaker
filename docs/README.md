@@ -60,6 +60,7 @@ OpenDRIVE scene in the editor: [Create Road](user-guide/create-road.md),
    [Geometry & meshing](domain/geometry.md) ·
    [Realism defaults](domain/realism_defaults.md) ·
    [GIS import](domain/gis.md) ·
+   [OSM mapping](domain/osm_mapping.md) ·
    [ASAM references](domain/references.md)
 
 ## Where is the project going?
