@@ -25,9 +25,18 @@
 #elif defined(__APPLE__)
 #include <mach/mach.h>
 #elif defined(_WIN32)
+// WIN32_LEAN_AND_MEAN and NOMINMAX keep <windows.h> from dragging in the RPC
+// headers and the min/max macros. It still defines `small` as `char` (from
+// rpcndr.h's IDL support), which turned `const double small = ...` in the
+// bench into "'double' followed by 'char' is illegal" — so that one is undef'd
+// by name rather than hoped away, because any translation unit that includes
+// this header inherits it.
 // clang-format off
+#define WIN32_LEAN_AND_MEAN
+#define NOMINMAX
 #include <windows.h>
 #include <psapi.h>
+#undef small
 // clang-format on
 #endif
 

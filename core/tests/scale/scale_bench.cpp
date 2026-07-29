@@ -368,13 +368,13 @@ TEST(Scale, TheCostDoesNotGrowQuadraticallyWithTheDistrict) {
     });
   };
 
-  const double small = measure(15);
-  const double large = measure(30);
-  const double ratio = small > 0.0 ? large / small : 0.0;
+  const double at_15 = measure(15);
+  const double at_30 = measure(30);
+  const double ratio = at_15 > 0.0 ? at_30 / at_15 : 0.0;
   std::printf("[ Scale ] parse+plan 15 blocks %.1f ms, 30 blocks %.1f ms, ratio %.2f "
               "(linear-ish ~4, quadratic ~16)\n",
-              small,
-              large,
+              at_15,
+              at_30,
               ratio);
   record("growth_ratio", ratio);
   EXPECT_LT(ratio, 8.0) << "cost is growing faster than the road count";
