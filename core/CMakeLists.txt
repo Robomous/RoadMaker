@@ -64,6 +64,13 @@ add_library(roadmaker_core ${_rm_core_type}
   src/gis/geotiff.cpp
   src/gis/world_file.cpp
   src/gis/reproject.cpp
+  # Lidar ingest (p7-s3, #243), unconditional for the same reason: ADR-0011
+  # keeps the reader in-house and takes only laz-perf, so there is no
+  # OFF-by-default gate and no runtime data here either.
+  src/lidar/las.cpp
+  src/lidar/laz.cpp
+  src/lidar/point_cloud.cpp
+  src/lidar/ground.cpp
   src/io/gltf_exporter.cpp
   # Export manifests (p7-s1, #241). Unconditional, NOT inside the RM_BUILD_USD
   # block below: the USD manifest describes the exporter's POLICY, which is
@@ -136,6 +143,7 @@ target_link_libraries(roadmaker_core
     nanosvg::nanosvg
     nlohmann::json
     TIFF::tiff
+    lazperf::lazperf
 )
 
 # Single source of truth for the version string returned by rm::version().

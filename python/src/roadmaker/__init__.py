@@ -125,6 +125,8 @@ from ._roadmaker import (  # noqa: F401
     export_glb,
     # GIS import (p7-s2, #242) — a bounded CRS family, no PROJ (ADR-0010).
     gis,
+    # Lidar import (p7-s3, #243) — LAS/LAZ read in-house, no PDAL (ADR-0011).
+    lidar,
     # Export previews (p7-s1, #241) — what an export WOULD contain.
     MeshExportFormat,
     MeshChannel,

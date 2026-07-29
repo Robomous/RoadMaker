@@ -33,6 +33,7 @@
 #include "roadmaker/io/export_preview.hpp"
 #include "roadmaker/io/gltf_exporter.hpp"
 #include "roadmaker/io/usd_exporter.hpp"
+#include "roadmaker/lidar/point_cloud.hpp"
 #include "roadmaker/mesh/junction_corners.hpp"
 #include "roadmaker/mesh/junction_maneuvers.hpp"
 #include "roadmaker/mesh/junction_phases.hpp"
@@ -1417,6 +1418,124 @@ NB_MODULE(_roadmaker, m) {
         "Converts an elevation raster into a scene HeightField, returning "
         "(field, diagnostics). Install it with edit.set_terrain_field, exactly as "
         "a .asc DEM import does.");
+  }
+
+  // --- Lidar import (p7-s3, #243) ----------------------------------------
+  //
+  // Its own submodule beside `gis` for the same reason gis has one, and
+  // separate from it because a point cloud is a third data shape with its own
+  // budget — though it reprojects through gis.CrsTransform unchanged.
+  {
+    auto lidar = m.def_submodule(
+        "lidar",
+        "Importing ASPRS LAS and LAZ point clouds as authoring reference and as "
+        "ground-fitting input.\n\n"
+        "LAS is read by RoadMaker itself rather than through PDAL, because PDAL "
+        "hard-requires PROJ and GDAL — the dependency ADR-0010 declined (ADR-0011). "
+        "The CRS a tile states goes through the same bounded family gis uses, so a "
+        "point cloud and an orthophoto of the same place land on top of each other.");
+
+    nb::class_<roadmaker::lidar::PointCloud>(lidar, "PointCloud")
+        .def(nb::init<>())
+        .def_ro("crs",
+                &roadmaker::lidar::PointCloud::crs,
+                "The source's own CRS description, verbatim. Empty means the file "
+                "stated none, which is read as 'already in the scene's frame'.")
+        .def_ro("source_count",
+                &roadmaker::lidar::PointCloud::source_count,
+                "Points the FILE declared, before decimation.")
+        .def_ro("stride",
+                &roadmaker::lidar::PointCloud::stride,
+                "1 means every point was kept; n means every nth.")
+        .def_prop_ro(
+            "bounds",
+            [](const roadmaker::lidar::PointCloud& cloud) { return cloud.bounds; },
+            "{min_x, min_y, min_z, max_x, max_y, max_z}, absolute, in "
+            "whatever frame the cloud is currently in.")
+        .def_prop_ro(
+            "classification",
+            [](const roadmaker::lidar::PointCloud& cloud) { return cloud.classification; },
+            "ASPRS classification per point; empty when the file states none.")
+        .def("__len__", &roadmaker::lidar::PointCloud::size)
+        .def(
+            "point",
+            [](const roadmaker::lidar::PointCloud& cloud, std::size_t index) {
+              if (index >= cloud.size()) {
+                throw std::out_of_range("point index out of range");
+              }
+              return cloud.point(index);
+            },
+            "index"_a,
+            "Point `index` in ABSOLUTE coordinates. Storage is floats relative to a "
+            "double origin — at a UTM northing a float's quantum is half a metre, so "
+            "absolute floats would terrace the cloud.");
+
+    nb::class_<roadmaker::lidar::LidarReadOptions>(lidar, "ReadOptions")
+        .def(nb::init<>())
+        .def_rw("max_points",
+                &roadmaker::lidar::LidarReadOptions::max_points,
+                "Upper bound on the points kept. Decimation is decided from the "
+                "header before any point is read, and is deterministic.");
+
+    nb::class_<roadmaker::lidar::GroundFitOptions>(lidar, "GroundFitOptions")
+        .def(nb::init<>())
+        .def_rw("spacing", &roadmaker::lidar::GroundFitOptions::spacing, "Post spacing, metres.")
+        .def_rw("use_classification",
+                &roadmaker::lidar::GroundFitOptions::use_classification,
+                "Prefer returns the file classified as bare ground (ASPRS class 2) "
+                "when it classified any. The fallback is the lowest return per cell, "
+                "which is robust but reads low under a bridge or a canopy.");
+
+    lidar.attr("MAX_CLOUD_POINTS") = roadmaker::lidar::kMaxCloudPoints;
+    lidar.attr("GROUND_CLASS") = roadmaker::lidar::kGroundClass;
+
+    lidar.def(
+        "load",
+        [](const std::filesystem::path& path, const roadmaker::lidar::LidarReadOptions& options) {
+          auto result = roadmaker::lidar::load_point_cloud(path, options);
+          if (!result) {
+            throw std::runtime_error(result.error().message);
+          }
+          return std::pair{std::move(result->cloud), std::move(result->diagnostics)};
+        },
+        "path"_a,
+        "options"_a = roadmaker::lidar::LidarReadOptions{},
+        "Reads a .las or .laz tile in its own frame, returning (cloud, diagnostics). "
+        "Check `cloud.stride` — a decimated cloud looks like a sparse survey unless "
+        "you know it was thinned.");
+    lidar.def(
+        "reproject",
+        [](roadmaker::lidar::PointCloud cloud, const roadmaker::gis::CrsTransform& transform) {
+          roadmaker::lidar::reproject_point_cloud(cloud, transform);
+          return cloud;
+        },
+        "cloud"_a,
+        "transform"_a,
+        "Returns the cloud with every point moved into the target frame. Z is "
+        "untouched: the supported family shares one ellipsoid and none of it is a "
+        "vertical datum, so moving heights would be a datum shift.");
+    lidar.def(
+        "to_height_field",
+        [](const roadmaker::lidar::PointCloud& cloud,
+           const roadmaker::lidar::GroundFitOptions& options) {
+          std::vector<roadmaker::Diagnostic> diagnostics;
+          auto field = roadmaker::lidar::point_cloud_to_height_field(cloud, options, diagnostics);
+          if (!field) {
+            throw std::runtime_error(field.error().message);
+          }
+          return std::pair{std::move(*field), std::move(diagnostics)};
+        },
+        "cloud"_a,
+        "options"_a = roadmaker::lidar::GroundFitOptions{},
+        "Fits ground into a scene HeightField, returning (field, diagnostics). "
+        "Install it with edit.set_terrain_field, exactly as a .asc DEM import does. "
+        "Cells no return landed in are interpolated from their neighbours, never "
+        "written as zero — zero is a claim about the ground, not a missing value.");
+    lidar.def("is_point_cloud",
+              &roadmaker::lidar::is_point_cloud_extension,
+              "path"_a,
+              "True for the extensions `load` accepts, so a file filter and the "
+              "reader cannot disagree about what is openable.");
   }
 
   m.def(

@@ -41,6 +41,7 @@
 #include <cstdint>
 #include <cstring>
 #include <limits>
+#include <span>
 #include <string>
 #include <vector>
 
@@ -57,18 +58,14 @@ constexpr std::uint32_t kTagModelTiepoint = 33922;
 constexpr std::uint32_t kTagModelTransformation = 34264;
 constexpr std::uint32_t kTagGeoKeyDirectory = 34735;
 constexpr std::uint32_t kTagGdalNoData = 42113;
+
 // GeoDoubleParams (34736) and GeoAsciiParams (34737) hold the values of keys
 // whose `tiff_tag_location` points at them. No key in the supported family
 // does — EPSG codes are plain shorts stored inline — so they are named here and
 // deliberately not read.
 
-// GeoKey ids we act on.
-constexpr std::uint16_t kKeyProjectedCSType = 3072;
-constexpr std::uint16_t kKeyGeographicType = 2048;
-constexpr std::uint16_t kKeyModelType = 1024;
-
-constexpr std::uint16_t kModelTypeProjected = 1;
-constexpr std::uint16_t kModelTypeGeographic = 2;
+// The GeoKey ids themselves live in gis_common.cpp beside the directory reader,
+// because LAS carries the same directory in a VLR with no TIFF involved.
 
 /// RAII for the libtiff handle. libtiff is a C library and every early return
 /// below would otherwise leak it — the sanitizer job would catch that, but only
@@ -146,61 +143,12 @@ crs_from_geokeys(TIFF* tif, std::vector<Diagnostic>& diagnostics, std::string_vi
     return {};
   }
 
-  const std::uint16_t key_count = keys[3];
-  std::uint16_t model_type = 0;
-  std::uint16_t projected = 0;
-  std::uint16_t geographic = 0;
-
-  for (std::uint16_t i = 0; i < key_count; ++i) {
-    const std::size_t at = 4 + (static_cast<std::size_t>(i) * 4);
-    if (at + 3 >= static_cast<std::size_t>(count)) {
-      break;
-    }
-    const std::uint16_t id = keys[at];
-    const std::uint16_t location = keys[at + 1];
-    const std::uint16_t value = keys[at + 3];
-    if (location != 0) {
-      continue; // a value living in the double/ascii params; none we support do
-    }
-    switch (id) {
-    case kKeyModelType:
-      model_type = value;
-      break;
-    case kKeyProjectedCSType:
-      projected = value;
-      break;
-    case kKeyGeographicType:
-      geographic = value;
-      break;
-    default:
-      break;
-    }
-  }
-
-  // 32767 is GeoTIFF's "user-defined": the CRS is spelled out in the other geo
-  // tags rather than named by a code. Supporting that means reading a
-  // projection definition from ProjCoordTransGeoKey and friends — real work
-  // with no demand behind it, so it is Opaque and says so.
-  constexpr std::uint16_t kUserDefined = 32767;
-
-  if (model_type == kModelTypeProjected || projected != 0) {
-    if (projected == 0 || projected == kUserDefined) {
-      diagnostics.push_back(Diagnostic{
-          .severity = Severity::Warning,
-          .location = std::string(source_name),
-          .message = "the file declares a user-defined projected coordinate system rather than "
-                     "naming an EPSG code, which this build cannot resolve"});
-      return "user-defined projected CRS";
-    }
-    return fmt::format("EPSG:{}", projected);
-  }
-  if (model_type == kModelTypeGeographic || geographic != 0) {
-    if (geographic == 0 || geographic == kUserDefined) {
-      return "user-defined geographic CRS";
-    }
-    return fmt::format("EPSG:{}", geographic);
-  }
-  return {};
+  // The directory itself is read by `crs_from_geokey_directory`, which LAS
+  // shares (p7-s3, #243). All this function owns is getting the array out of
+  // libtiff, which is the part that is TIFF-specific — and the part that has a
+  // scar on it.
+  return crs_from_geokey_directory(
+      std::span<const std::uint16_t>(keys, count), diagnostics, source_name);
 }
 
 /// Pixel→CRS affine from the geo tags, in world-file order.
