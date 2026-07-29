@@ -40,6 +40,10 @@
 #include <QPlainTextEdit>
 #include <QRadioButton>
 #include <QTemporaryDir>
+// Explicit rather than transitive: libc++ hands these over for free on macOS and
+// Linux clang does not, which is how a green local build shipped a broken one.
+#include <algorithm>
+#include <filesystem>
 
 #include "app/shortcut_registry.hpp"
 #include "document/document.hpp"
