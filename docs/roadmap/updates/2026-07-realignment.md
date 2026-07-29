@@ -741,8 +741,13 @@ World/geodetic settings as the foundation of GIS support (executes
   the projected frame.
 
 ## Out of scope
-Actual GIS layer import (p7-s2), lidar (p7-s3), OSM (p7-s4); datum
-transformations beyond what PROJ provides out of the box.
+Actual GIS layer import (p7-s2), lidar (p7-s3), OSM (p7-s4); ~~datum
+transformations beyond what PROJ provides out of the box.~~ **Amended
+2026-07-28 by [ADR-0010](../../decisions/0010-gis-ingest-bounded-crs.md) and
+[ADR-0011](../../decisions/0011-lidar-ingest-in-house-las.md):** PROJ never
+enters, so the boundary is the bounded CRS family rather than PROJ's
+capabilities — datum transformations outside that family are refused by name in
+every P7 importer, GIS and lidar alike.
 
 ## Supersedes
 (none)

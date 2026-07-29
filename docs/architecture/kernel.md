@@ -13,7 +13,8 @@ Public headers live under `core/include/roadmaker/`, implementation under
 | `geometry/` | `reference_line.hpp`, `poly3.hpp` | Plan-view primitives, evaluation, adaptive sampling |
 | `xodr/` | `reader.hpp`, `writer.hpp`, `diagnostic.hpp`, `rules.hpp` | OpenDRIVE parsing, validation, serialization |
 | `mesh/` | `mesh.hpp`, `mesh_builder.hpp` | Tessellation of the network into render/export meshes |
-| `io/` | `gltf_exporter.hpp` | Exporters (glTF today; USD planned) |
+| `gis/` | `crs.hpp`, `layer.hpp`, `reproject.hpp` | Geospatial ingest: a bounded, closed-form CRS family ([ADR-0010](../decisions/0010-gis-ingest-bounded-crs.md)); GeoJSON, ESRI Shapefile, GeoTIFF and world-filed imagery; reprojection into the scene's world frame |
+| `io/` | `gltf_exporter.hpp`, `usd_exporter.hpp`, `export_preview.hpp` | Exporters (glTF and USD) and the export-preview manifests |
 | `edit/` | `command.hpp`, `edit_stack.hpp`, `operations.hpp` | Undoable edit commands |
 | (root) | `error.hpp`, `tol.hpp`, `version.hpp` | `Expected`/`Error`, named tolerances |
 
@@ -134,10 +135,13 @@ it had been edited or freshly loaded.
   glTF 2.0. This is the **single place** in the codebase where the kernel's
   Z-up frame is converted to glTF's Y-up: `(x, y, z) → (x, z, −y)`, units
   stay meters, winding stays CCW.
-- **OpenUSD** — planned behind the `RM_BUILD_USD` CMake option (currently a
-  stub; the exporter lands in Milestone 2 per
+- **OpenUSD** — `export_usda(mesh, path)` (`io/usd_exporter.hpp`), built behind
+  the `RM_BUILD_USD` CMake option, per
   [the USD export design](../design/m2/04_usd_export.md) and
-  [decision 0005](../decisions/0005-tinyusdz-usda.md): tinyusdz, USDA only).
+  [decision 0005](../decisions/0005-tinyusdz-usda.md): tinyusdz, USDA only.
+- **Export previews** — `preview_mesh_export` / `preview_xodr_export`
+  (`io/export_preview.hpp`) report what a write *would* contain without writing
+  anything.
 
 ## Edit command layer
 
