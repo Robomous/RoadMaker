@@ -473,6 +473,7 @@ private:
            rules::kRoadLengthSumGeometries);
     }
 
+    parse_road_types(road_node, road, location);
     parse_elevation(road_node.child("elevationProfile"), road, location);
     parse_lateral_profile(road_node.child("lateralProfile"), road, location);
     parse_lanes(road_node.child("lanes"), road_id, location);
@@ -605,6 +606,117 @@ private:
       }
       ++index;
     }
+  }
+
+  /// `<type>` records and their optional `<speed>` child (§10.4, §10.4.1).
+  ///
+  /// Until #454 this element was **whitelisted in the unknown-child sweep and
+  /// then parsed by nothing**, so a foreign file's road types and legal speed
+  /// limits vanished on every load→save with the diagnostic deliberately
+  /// suppressed. That made it the one silent drop hidden on purpose rather
+  /// than missed, and it is why this function exists.
+  void parse_road_types(const pugi::xml_node& road_node, Road& road, const std::string& location) {
+    std::size_t index = 0;
+    for (const pugi::xml_node node : road_node.children("type")) {
+      const std::string where = fmt::format("{}/type[{}]", location, index);
+      ++index;
+
+      RoadTypeRecord record;
+      record.s = attr_double(node, "s", where, 0.0);
+      record.type = node.attribute("type").value();
+      if (!node.attribute("type")) {
+        diag(Severity::Warning, where, "road type without required 'type' attribute");
+      } else if (!is_known_road_type(record.type)) {
+        // Kept verbatim regardless — flattening an unrecognised spelling to
+        // "unknown" would lose the only information the attribute carried.
+        diag(Severity::Warning,
+             where,
+             fmt::format("road type '{}' is not an e_roadType literal; preserved verbatim",
+                         record.type));
+      }
+      record.country = node.attribute("country").value();
+      if (node.attribute("country") && record.country.size() != 2) {
+        diag(
+            Severity::Warning,
+            where,
+            fmt::format("road type country '{}' is not an ISO 3166-1 alpha-2 code", record.country),
+            rules::kRoadTypeAlpha2Country);
+      }
+
+      static constexpr std::string_view kModeledAttrs[] = {"s", "type", "country"};
+      for (const pugi::xml_attribute attr : node.attributes()) {
+        const std::string_view name = attr.name();
+        if (std::ranges::find(kModeledAttrs, name) == std::end(kModeledAttrs)) {
+          record.extras.attributes.emplace_back(std::string(name), attr.value());
+        }
+      }
+
+      for (const pugi::xml_node child : node.children()) {
+        if (std::string_view(child.name()) == "speed" && !record.speed) {
+          record.speed = parse_road_speed(child, where);
+          continue;
+        }
+        if (std::string_view(child.name()) == "userData") {
+          warn_if_unknown_rm(child.attribute("code").value(), where);
+        }
+        record.extras.children.push_back(node_to_string(child));
+      }
+
+      road.types.push_back(std::move(record));
+    }
+
+    // asam.net:xodr:1.4.0:road.type.elem_asc_order — reported, never silently
+    // reordered: the records' ORDER is not what makes them meaningful, @s is,
+    // and re-sorting a foreign file would change bytes we were asked to keep.
+    if (!std::ranges::is_sorted(road.types, {}, &RoadTypeRecord::s)) {
+      diag(Severity::Warning,
+           location,
+           "road <type> records are not in ascending 's' order",
+           rules::kRoadTypeAscOrder);
+    }
+  }
+
+  /// The `<speed>` child of `<type>` (§10.4.1).
+  ///
+  /// @max is `t_maxSpeed` — a number **or** the literals "no limit" /
+  /// "undefined". The verbatim spelling is what round-trips; the number is
+  /// derived from it. Parsing @max into a double and writing the double back
+  /// would turn `max="no limit"` into `max="0"` on the first save.
+  RoadSpeed parse_road_speed(const pugi::xml_node& node, const std::string& location) {
+    RoadSpeed speed;
+    speed.max_str = node.attribute("max").value();
+    if (!node.attribute("max")) {
+      diag(Severity::Warning, location, "road type speed without required 'max' attribute");
+    } else {
+      speed.max = to_double(speed.max_str);
+      if (!speed.max && speed.max_str != kMaxSpeedNoLimit && speed.max_str != kMaxSpeedUndefined) {
+        diag(Severity::Warning,
+             location,
+             fmt::format("speed 'max' is neither a number nor a t_maxSpeed literal ('{}'); "
+                         "preserved verbatim",
+                         speed.max_str));
+      }
+    }
+
+    speed.unit = node.attribute("unit").value();
+    if (node.attribute("unit") && !is_known_speed_unit(speed.unit)) {
+      diag(Severity::Warning,
+           location,
+           fmt::format("speed unit '{}' is not an e_unitSpeed literal; preserved verbatim",
+                       speed.unit));
+    }
+
+    static constexpr std::string_view kModeledAttrs[] = {"max", "unit"};
+    for (const pugi::xml_attribute attr : node.attributes()) {
+      const std::string_view name = attr.name();
+      if (std::ranges::find(kModeledAttrs, name) == std::end(kModeledAttrs)) {
+        speed.extras.attributes.emplace_back(std::string(name), attr.value());
+      }
+    }
+    for (const pugi::xml_node child : node.children()) {
+      speed.extras.children.push_back(node_to_string(child));
+    }
+    return speed;
   }
 
   void parse_elevation(const pugi::xml_node& profile, Road& road, const std::string& location) {

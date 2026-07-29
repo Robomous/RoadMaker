@@ -20,6 +20,7 @@
 #include "roadmaker/geometry/reference_line.hpp"
 #include "roadmaker/road/bridge.hpp"
 #include "roadmaker/road/id.hpp"
+#include "roadmaker/road/road_type.hpp"
 
 #include <optional>
 #include <string>
@@ -78,6 +79,21 @@ struct Road {
 
   /// Set iff this is a connecting road inside a junction.
   JunctionId junction;
+
+  /// `<type>` records — the road's main purpose over an s-range and the speed
+  /// limit that goes with it (§10.4), ascending by `s`
+  /// (`asam.net:xodr:1.4.0:road.type.elem_asc_order`). Empty on a road that
+  /// declares no type, which is legal (multiplicity 0..*).
+  ///
+  /// Modeled rather than merely preserved because OpenDRIVE `<type>` is the
+  /// standard's own carrier for the concept `roadmaker::defaults::RoadClass`
+  /// already has, and `<speed>` is the only place a legal speed limit can
+  /// live at road scope. Before #454 the reader **whitelisted `type` in its
+  /// unknown-child sweep and then parsed nothing**, so a foreign file's road
+  /// types and speed limits vanished on every load→save with the diagnostic
+  /// deliberately suppressed — the one silent drop that was hidden on purpose
+  /// rather than missed.
+  std::vector<RoadTypeRecord> types;
 
   /// Lane sections sorted ascending by s0. Maintained by
   /// RoadNetwork::add_lane_section — do not reorder by hand.

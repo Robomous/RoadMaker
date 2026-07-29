@@ -24,6 +24,7 @@ add_library(roadmaker_core ${_rm_core_type}
   src/road/terrain_brush.cpp
   src/road/grade_separation.cpp
   src/road/bridge.cpp
+  src/road/road_type.cpp
   src/edit/edit_stack.cpp
   src/edit/connection.cpp
   src/edit/markings.cpp

@@ -198,6 +198,19 @@ inline constexpr double kHouseFootprintWidth = 8.0;
 /// ("freeway" | "arterial" | "collector" | "local").
 [[nodiscard]] RM_API const char* road_class_name(RoadClass road_class);
 
+/// Spec §1.7 — the `e_roadType` literal that names this class in OpenDRIVE
+/// `<type>` (§10.4): "motorway" | "townArterial" | "townCollector" |
+/// "townLocal". Always one of the 13 the standard defines, so
+/// `is_known_road_type()` holds for every return value.
+///
+/// **There is deliberately no companion default SPEED.** A speed limit is a
+/// fact about a particular road, not about its class, and `<speed>` is
+/// optional (multiplicity 0..1) precisely so a file can decline to claim one.
+/// An importer that invented 35 mph for every collector whose source recorded
+/// no limit would be guessing where the honest answer is silence — the same
+/// rule ADR-0010 states for coordinate systems.
+[[nodiscard]] RM_API const char* road_type_name(RoadClass road_class);
+
 /// Renders the spec doc's §1.2 table (marker comment + markdown table)
 /// exactly as committed in docs/domain/realism_defaults.md.
 [[nodiscard]] RM_API std::string cross_section_markdown();
@@ -219,6 +232,9 @@ inline constexpr double kHouseFootprintWidth = 8.0;
 
 /// Renders the spec doc's auto-orientation table, same contract.
 [[nodiscard]] RM_API std::string orientation_markdown();
+
+/// Renders the spec doc's §1.7 road-type table, same contract.
+[[nodiscard]] RM_API std::string road_type_markdown();
 
 } // namespace defaults
 } // namespace roadmaker

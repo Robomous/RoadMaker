@@ -1,0 +1,100 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Corpus seed for road <type>/<speed> (§10.4, #454). Every path the reader
+     has a branch for is here, because a test suite that only ever sees a
+     well-formed numeric speed proves nothing about the two string literals
+     t_maxSpeed also permits — and writing those back through a double is a
+     silent corruption, not a crash. -->
+<OpenDRIVE>
+  <header revMajor="1" revMinor="7" name="road_type_speed" vendor="Robomous"/>
+  <!-- max="no limit": the German autobahn form. A double parse writes 0. -->
+  <road name="Autobahn" length="100.0" id="1" junction="-1">
+    <type s="0.0" type="motorway" country="DE">
+      <speed max="no limit"/>
+    </type>
+    <planView>
+      <geometry s="0.0" x="0.0" y="0.0" hdg="0.0" length="100.0">
+        <line/>
+      </geometry>
+    </planView>
+    <lanes>
+      <laneSection s="0.0">
+        <center><lane id="0" type="driving" level="false"/></center>
+        <right>
+          <lane id="-1" type="driving" level="false">
+            <width sOffset="0.0" a="3.6" b="0.0" c="0.0" d="0.0"/>
+          </lane>
+        </right>
+      </laneSection>
+    </lanes>
+  </road>
+  <!-- max="undefined": the other literal. Plus records OUT OF ASCENDING s
+       (elem_asc_order), which is reported and never silently reordered. -->
+  <road name="Mixed" length="200.0" id="2" junction="-1">
+    <type s="100.0" type="townLocal">
+      <speed max="undefined"/>
+    </type>
+    <type s="0.0" type="townCollector">
+      <speed max="35" unit="mph"/>
+    </type>
+    <planView>
+      <geometry s="0.0" x="0.0" y="200.0" hdg="0.0" length="200.0">
+        <line/>
+      </geometry>
+    </planView>
+    <lanes>
+      <laneSection s="0.0">
+        <center><lane id="0" type="driving" level="false"/></center>
+        <right>
+          <lane id="-1" type="driving" level="false">
+            <width sOffset="0.0" a="3.3" b="0.0" c="0.0" d="0.0"/>
+          </lane>
+        </right>
+      </laneSection>
+    </lanes>
+  </road>
+  <!-- Everything a foreign file can carry that this build does not model:
+       a type spelling outside e_roadType, an ALPHA-3 country code, an
+       unmodeled attribute on both <type> and <speed>, an unmodeled child,
+       and a speed whose max is neither a number nor a literal. All are
+       preserved verbatim and diagnosed; none is repaired. -->
+  <road name="Foreign" length="50.0" id="3" junction="-1">
+    <type s="0.0" type="autobahnPlus" country="DEU" acme:grade="steep">
+      <speed max="schnell" unit="furlongs/fortnight" acme:source="survey"/>
+      <acme:note>unmodeled child</acme:note>
+    </type>
+    <planView>
+      <geometry s="0.0" x="0.0" y="400.0" hdg="0.0" length="50.0">
+        <line/>
+      </geometry>
+    </planView>
+    <lanes>
+      <laneSection s="0.0">
+        <center><lane id="0" type="driving" level="false"/></center>
+        <right>
+          <lane id="-1" type="driving" level="false">
+            <width sOffset="0.0" a="3.0" b="0.0" c="0.0" d="0.0"/>
+          </lane>
+        </right>
+      </laneSection>
+    </lanes>
+  </road>
+  <!-- A road that declares NO type at all: multiplicity is 0..*, so an empty
+       types list must round-trip as an absent element, not an empty one. -->
+  <road name="Untyped" length="50.0" id="4" junction="-1">
+    <planView>
+      <geometry s="0.0" x="0.0" y="600.0" hdg="0.0" length="50.0">
+        <line/>
+      </geometry>
+    </planView>
+    <lanes>
+      <laneSection s="0.0">
+        <center><lane id="0" type="driving" level="false"/></center>
+        <right>
+          <lane id="-1" type="driving" level="false">
+            <width sOffset="0.0" a="3.0" b="0.0" c="0.0" d="0.0"/>
+          </lane>
+        </right>
+      </laneSection>
+    </lanes>
+  </road>
+</OpenDRIVE>
