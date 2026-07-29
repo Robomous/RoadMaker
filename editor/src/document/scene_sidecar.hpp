@@ -48,6 +48,11 @@
 
 #include "render/projection_mode.hpp"
 
+// For ReferenceLayerKind. The persisted kind and the runtime kind are the SAME
+// enum deliberately: a third spelling added to one and not the other is exactly
+// how a layer comes back as the wrong thing after a save.
+#include "document/reference_layers.hpp"
+
 namespace roadmaker::editor {
 
 /// The camera pose a scene reopens at, in the kernel frame (right-handed,
@@ -92,9 +97,12 @@ struct SceneReferenceLayer {
   /// project survives being copied or committed.
   std::string path;
 
-  /// "vector" or "raster" on disk; the reader maps anything else to raster and
-  /// warns, rather than dropping a layer over a spelling.
-  bool vector = false;
+  /// "vector", "raster" or "point_cloud" on disk; the reader maps anything else
+  /// to raster and warns, rather than dropping a layer over a spelling.
+  ///
+  /// This was a `bool vector` until p7-s3 (#243) added a third kind. Sidecars
+  /// written before then carry only the first two spellings and load unchanged.
+  ReferenceLayerKind kind = ReferenceLayerKind::Raster;
 
   bool visible = true;
 

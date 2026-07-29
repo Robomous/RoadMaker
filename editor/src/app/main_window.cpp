@@ -727,6 +727,80 @@ MainWindow::MainWindow(QWidget* parent, bool restore_saved_layout)
     import_reference(false);
   });
 
+  // A point cloud is a reference layer like the other two — it goes through the
+  // same add_reference_layer, and the kind is decided by the reader's own
+  // extension predicate rather than by which menu entry was clicked.
+  connect(actions_->import_point_cloud, &QAction::triggered, this, [this] {
+    const QString path = QFileDialog::getOpenFileName(
+        this, tr("Import Point Cloud"), QString(), tr("Point cloud (*.las *.laz)"));
+    if (path.isEmpty()) {
+      return;
+    }
+    const Expected<void> added =
+        document_.add_reference_layer(std::filesystem::path(path.toStdString()));
+    if (!added.has_value()) {
+      viewport_->show_toast(
+          tr("Cannot import: %1").arg(QString::fromStdString(added.error().message)),
+          ToastSeverity::Warning);
+      return;
+    }
+    viewport_->show_toast(tr("Imported %1").arg(QFileInfo(path).fileName()), ToastSeverity::Info);
+  });
+
+  // Seeding terrain from a tile is the lidar twin of Import Elevation Raster,
+  // and deliberately reads the file it is given rather than reaching into an
+  // already-imported layer: predictable beats clever, and it is the same shape
+  // the raster path already has.
+  connect(actions_->terrain_seed_point_cloud, &QAction::triggered, this, [this] {
+    const QString path = QFileDialog::getOpenFileName(
+        this, tr("Seed Terrain from Point Cloud"), QString(), tr("Point cloud (*.las *.laz)"));
+    if (path.isEmpty()) {
+      return;
+    }
+    Expected<roadmaker::lidar::PointCloudParseResult> read =
+        roadmaker::lidar::load_point_cloud(std::filesystem::path(path.toStdString()));
+    if (!read.has_value()) {
+      viewport_->show_toast(
+          tr("Cannot seed terrain: %1").arg(QString::fromStdString(read.error().message)),
+          ToastSeverity::Warning);
+      return;
+    }
+    if (!read->cloud.crs.empty()) {
+      const Expected<roadmaker::gis::CrsTransform> transform = roadmaker::gis::crs_transform(
+          roadmaker::gis::parse_crs(read->cloud.crs),
+          roadmaker::gis::scene_crs(document_.network().georeference()));
+      if (!transform.has_value()) {
+        viewport_->show_toast(
+            tr("Cannot seed terrain: %1").arg(QString::fromStdString(transform.error().message)),
+            ToastSeverity::Warning);
+        return;
+      }
+      roadmaker::lidar::reproject_point_cloud(read->cloud, *transform);
+    }
+    std::vector<Diagnostic> diagnostics = read->diagnostics;
+    Expected<roadmaker::HeightField> field = roadmaker::lidar::point_cloud_to_height_field(
+        read->cloud, roadmaker::lidar::GroundFitOptions{}, diagnostics);
+    if (!field.has_value()) {
+      viewport_->show_toast(
+          tr("Cannot seed terrain: %1").arg(QString::fromStdString(field.error().message)),
+          ToastSeverity::Warning);
+      return;
+    }
+    if (!document_.push_command(edit::set_terrain_field(document_.network(), std::move(*field)))) {
+      viewport_->show_toast(tr("Cannot seed terrain: the terrain could not be replaced"),
+                            ToastSeverity::Warning);
+      return;
+    }
+    if (!diagnostics.empty()) {
+      viewport_->show_toast(tr("Seeded terrain from point cloud with %n note(s)",
+                               "",
+                               static_cast<int>(diagnostics.size())),
+                            ToastSeverity::Warning);
+    } else {
+      viewport_->show_toast(tr("Seeded terrain from point cloud"), ToastSeverity::Info);
+    }
+  });
+
   // An elevation raster is NOT a reference layer: it becomes the scene's
   // terrain through the same command the .asc path uses, so it is one undo
   // entry and inherits every p5-s2 invariant.
@@ -1079,6 +1153,7 @@ void MainWindow::build_menus() {
   QMenu* import_menu = file_menu->addMenu(tr("&Import"));
   import_menu->addAction(actions_->import_gis_vector);
   import_menu->addAction(actions_->import_gis_raster);
+  import_menu->addAction(actions_->import_point_cloud);
   file_menu->addSeparator();
   auto* autosave_action = new QAction(tr("Enable &Autosave"), this);
   autosave_action->setCheckable(true);
@@ -1104,6 +1179,7 @@ void MainWindow::build_menus() {
   terrain_menu->addSeparator();
   terrain_menu->addAction(actions_->terrain_import);
   terrain_menu->addAction(actions_->terrain_import_raster);
+  terrain_menu->addAction(actions_->terrain_seed_point_cloud);
   QMenu* bridge_menu = edit_menu->addMenu(tr("&Bridge"));
   bridge_menu->addAction(actions_->bridge_generate);
   bridge_menu->addAction(actions_->bridge_remove_orphans);

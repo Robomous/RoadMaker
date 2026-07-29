@@ -40,6 +40,10 @@
 #include <QPlainTextEdit>
 #include <QRadioButton>
 #include <QTemporaryDir>
+// Explicit rather than transitive: libc++ hands these over for free on macOS and
+// Linux clang does not, which is how a green local build shipped a broken one.
+#include <algorithm>
+#include <filesystem>
 
 #include "app/shortcut_registry.hpp"
 #include "document/document.hpp"
@@ -248,6 +252,55 @@ TEST(WorldGeoreferenceWindow, AnOriginBecomesATransverseMercatorAndCommitsOnce) 
   ASSERT_TRUE(origin.has_value());
   EXPECT_EQ((*origin)[0], 48.858844);
   EXPECT_EQ((*origin)[1], 2.294351);
+}
+
+TEST(WorldGeoreferenceWindow, ApplyingANewFrameReDerivesTheImportedLayers) {
+  // ★ THE WIRING TEST FOR A PATH THAT SHIPPED DEAD.
+  //
+  // `Document::refit_reference_layers()` was added by #242 and called from
+  // NOWHERE. Reopening a scene re-derived its layers, but changing the
+  // georeference LIVE left them where the old frame had put them — over the
+  // wrong ground, with no warning. GW-2 step 31 asks a hand-runner to check
+  // exactly this, and its pass criterion already says a build that mishandles
+  // it fails the run, so the gap was written down before it was closed.
+  QTemporaryDir dir;
+  ASSERT_TRUE(dir.isValid());
+
+  Document document;
+  SelectionModel selection(document);
+  seed(document);
+  const auto amsterdam = tmerc_projection(52.3702, 4.8952);
+  ASSERT_TRUE(amsterdam.has_value());
+  ASSERT_TRUE(document
+                  .push_command(edit::set_georeference(document.network(),
+                                                       GeoReference{.projection = *amsterdam}))
+                  .has_value());
+  const std::filesystem::path scene = fs_path(dir.filePath("geo.xodr"));
+  ASSERT_TRUE(document.save(scene).has_value());
+
+  // The layer's path is stored relative to the scene, so the tile has to sit
+  // beside it rather than back in the fixtures tree.
+  const std::filesystem::path tile = scene.parent_path() / "tile.laz";
+  std::filesystem::copy_file(std::filesystem::path(RM_LIDAR_FIXTURES_DIR) / "amsterdam_tile.laz",
+                             tile);
+  ASSERT_TRUE(document.add_reference_layer(tile).has_value());
+  ASSERT_EQ(document.reference_layers().size(), 1U);
+  const double before = document.reference_layers().at(0).cloud.bounds[0];
+
+  WorldGeoreferenceWindow window(document, selection);
+  window.origin_mode()->setChecked(true);
+  window.latitude()->setValue(48.858844); // Paris
+  window.longitude()->setValue(2.294351);
+  ASSERT_TRUE(window.apply());
+
+  ASSERT_EQ(document.reference_layers().size(), 1U)
+      << "a re-framed layer must survive the change, not be dropped";
+  EXPECT_TRUE(document.reference_layers().at(0).loaded);
+  EXPECT_NE(document.reference_layers().at(0).cloud.bounds[0], before)
+      << "the frame moved a few hundred kilometres and the layer did not follow it — "
+         "refit_reference_layers() is not wired to Apply";
+  EXPECT_EQ(document.reference_layers().at(0).framed_crs,
+            document.network().georeference().projection);
 }
 
 TEST(WorldGeoreferenceWindow, ACustomCrsIsStoredVerbatim) {

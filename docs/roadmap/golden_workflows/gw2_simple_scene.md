@@ -307,6 +307,30 @@ the same change. `Road Plan tool` in step 2 was corrected to its real name,
     puts the previous terrain back. Importing an ordinary colour image here is
     refused, saying it needs a single-band raster.
 
+### Importing lidar
+
+34. [ ] **File ▸ Import ▸ Point Cloud…** with an ASPRS `.las` or `.laz` tile
+    covering the same area as step 28's imagery (p7-s3,
+    [#243](https://github.com/Robomous/RoadMaker/issues/243)). **Expected:** the
+    cloud draws ON TOP OF the imagery, in the same place — both went through the
+    same coordinate transform, so a cloud that lands somewhere else means one of
+    them was mis-projected. It is coloured by height rather than flat, and
+    unlike the imagery it is NOT flattened onto the ground: orbit the camera and
+    the building returns stand above the street ones.
+35. [ ] Read the layer's status line and the Diagnostics panel. **Expected:**
+    they name the coordinate system the tile declared AND, if the tile was too
+    large for the read budget, the decimation ratio ("1 in 12 points").
+36. [ ] **Edit ▸ Terrain ▸ Seed from Point Cloud…** with the same tile.
+    **Expected:** the ground deforms to the tile's own surface and the roads
+    conform to it, in exactly ONE undo entry; Undo puts the previous terrain
+    back. A diagnostic names WHICH estimator ran — the returns the tile
+    classified as bare ground, or the lowest return where it classified none.
+37. [ ] Try **File ▸ Import ▸ Point Cloud…** on a tile in an unsupported
+    coordinate system. **Expected:** refused with the coordinate system NAMED,
+    in the same words the GIS importers use for the same CRS — the refusal is
+    shared code, and three importers disagreeing about one file would be worse
+    than any of them refusing it.
+
 ## Pass criteria
 
 - All steps complete in order in a single session; every expected result
@@ -337,6 +361,18 @@ the same change. `Road Plan tool` in step 2 was corrected to its real name,
   layer is RE-DERIVED when the frame changes (it has a source), while the
   workspace box is DISCARDED (it has none). A build that drops reference layers
   on a georeference change fails the run.
+- In step 34 the cloud and the imagery must LAND ON EACH OTHER. They are read by
+  different parsers but share one `CrsTransform`, so a visible offset between
+  them is a projection bug in one of the two, not a data difference — and it is
+  the cheapest place in the whole workflow to notice one
+  ([#243](https://github.com/Robomous/RoadMaker/issues/243)).
+- The cloud in step 34 must have VISIBLE RELIEF when the camera orbits. A tile
+  drawn flat at one height has been treated as a backdrop, which throws away the
+  only thing it was imported for.
+- Step 36's diagnostic must NAME the estimator. "Classified as bare ground" and
+  "lowest return" disagree under a bridge or a canopy, and a user reading the
+  terrain has to know which answer they are looking at; an unlabelled fit fails
+  the run.
 
 ## Results
 

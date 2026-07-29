@@ -41,6 +41,7 @@ constexpr auto kVisibleKey = "visible";
 constexpr auto kFramedCrsKey = "framed_crs";
 constexpr auto kVectorKind = "vector";
 constexpr auto kRasterKind = "raster";
+constexpr auto kPointCloudKind = "point_cloud";
 constexpr auto kExtentsKey = "extents";
 constexpr auto kCrsKey = "crs";
 constexpr auto kTargetKey = "target";
@@ -258,12 +259,19 @@ parse_reference_layers(const QJsonValue& value) {
 
     const QJsonValue kind = object.value(QLatin1String(kKindKey));
     if (kind.isString()) {
-      layer.vector = kind.toString() == QLatin1String(kVectorKind);
-      if (!layer.vector && kind.toString() != QLatin1String(kRasterKind)) {
-        spdlog::warn("scene sidecar: reference layer '{}' has an unknown kind '{}' — reading it "
-                     "as a raster",
-                     layer.path,
-                     kind.toString().toStdString());
+      const QString spelling = kind.toString();
+      if (spelling == QLatin1String(kVectorKind)) {
+        layer.kind = ReferenceLayerKind::Vector;
+      } else if (spelling == QLatin1String(kPointCloudKind)) {
+        layer.kind = ReferenceLayerKind::PointCloud;
+      } else {
+        layer.kind = ReferenceLayerKind::Raster;
+        if (spelling != QLatin1String(kRasterKind)) {
+          spdlog::warn("scene sidecar: reference layer '{}' has an unknown kind '{}' — reading it "
+                       "as a raster",
+                       layer.path,
+                       spelling.toStdString());
+        }
       }
     }
 
@@ -288,7 +296,20 @@ parse_reference_layers(const QJsonValue& value) {
   for (const SceneReferenceLayer& layer : layers) {
     QJsonObject object;
     object.insert(QLatin1String(kPathKey), QString::fromStdString(layer.path));
-    object.insert(QLatin1String(kKindKey), QLatin1String(layer.vector ? kVectorKind : kRasterKind));
+    // A switch, so a fourth kind cannot be silently written as "raster".
+    const char* spelling = kRasterKind;
+    switch (layer.kind) {
+    case ReferenceLayerKind::Vector:
+      spelling = kVectorKind;
+      break;
+    case ReferenceLayerKind::Raster:
+      spelling = kRasterKind;
+      break;
+    case ReferenceLayerKind::PointCloud:
+      spelling = kPointCloudKind;
+      break;
+    }
+    object.insert(QLatin1String(kKindKey), QLatin1String(spelling));
     object.insert(QLatin1String(kVisibleKey), layer.visible);
     object.insert(QLatin1String(kFramedCrsKey), QString::fromStdString(layer.framed_crs));
     array.push_back(object);

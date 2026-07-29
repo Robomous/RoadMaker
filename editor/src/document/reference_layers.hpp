@@ -42,6 +42,7 @@
 
 #include "roadmaker/gis/layer.hpp"
 #include "roadmaker/gis/reproject.hpp"
+#include "roadmaker/lidar/point_cloud.hpp"
 #include "roadmaker/road/georeference.hpp"
 #include "roadmaker/xodr/diagnostic.hpp"
 
@@ -56,6 +57,7 @@ namespace roadmaker::editor {
 enum class ReferenceLayerKind {
   Vector,
   Raster,
+  PointCloud,
 };
 
 /// One imported reference layer.
@@ -88,6 +90,12 @@ struct ReferenceLayer {
 
   gis::GisVectorLayer vector;
   gis::PlacedRaster raster;
+
+  /// Reprojected into the scene's frame, and — like the other two — re-derived
+  /// from the source file rather than persisted. A tile is tens of megabytes;
+  /// writing it into the sidecar would make saving a scene cost more than
+  /// re-reading the file it came from.
+  lidar::PointCloud cloud;
 
   /// False when the file was missing or unreadable. Such a layer is KEPT in
   /// the list rather than dropped: silently losing a reference the user added

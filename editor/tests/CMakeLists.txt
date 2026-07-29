@@ -129,6 +129,7 @@ target_compile_definitions(roadmaker_editor_tests
   PRIVATE RM_SAMPLES_DIR="${CMAKE_SOURCE_DIR}/assets/samples"
           RM_ASSETS_DIR="${CMAKE_SOURCE_DIR}/assets"
           RM_GIS_FIXTURES_DIR="${CMAKE_SOURCE_DIR}/core/tests/data/gis"
+          RM_LIDAR_FIXTURES_DIR="${CMAKE_SOURCE_DIR}/core/tests/data/lidar"
           # The shortcut-map gate reads the committed page and compares it to
           # what the registry renders (test_shortcut_registry.cpp).
           RM_DOCS_DIR="${CMAKE_SOURCE_DIR}/docs"

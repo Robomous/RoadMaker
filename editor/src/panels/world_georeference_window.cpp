@@ -281,6 +281,18 @@ bool WorldGeoreferenceWindow::apply() {
 
   const bool applied =
       document_.push_command(edit::set_georeference(document_.network(), geo)).has_value();
+  if (applied) {
+    // ★ THE FRAME MOVED, SO THE IMPORTED DATA HAS TO MOVE WITH IT.
+    //
+    // `Document::refit_reference_layers()` shipped with #242 and was called from
+    // NOWHERE: reopening a scene re-derived its layers, but changing the
+    // georeference live left them wherever the old frame had put them. GW-2
+    // step 31 asks a hand-runner to check exactly this, and its pass criterion
+    // says a build that mishandles it fails the run — so the gap was already
+    // written down before it was wired up. #243 adds a third layer kind, which
+    // would otherwise have inherited the same dead path.
+    document_.refit_reference_layers();
+  }
   refresh();
   return applied;
 }

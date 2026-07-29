@@ -19,6 +19,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 Current version on `main`: **0.0.1**.
 
 ### Added
+- **Build on a lidar survey: import LAS and LAZ tiles, and fit ground out of
+  them** ([#243](https://github.com/Robomous/RoadMaker/issues/243)): an
+  orthophoto tells you where things are, but not how high. **File ▸ Import ▸
+  Point Cloud…** now reads an ASPRS `.las` or `.laz` tile into the same world
+  frame your imagery and vectors already use, so a survey of a street lands on
+  the picture of it. The cloud is coloured by height and drawn with real
+  relief — a kerb, a bank and a bridge deck read as different heights rather
+  than as one flat sheet.
+  - **Turn a survey into terrain in one step.** **Edit ▸ Terrain ▸ Seed from
+    Point Cloud…** fits the ground out of the tile and makes it the scene's
+    height field, in a single undoable edit, exactly as importing a DEM does.
+    It prefers the returns the file itself classified as bare ground and falls
+    back to the lowest return per post when the file classified none — and it
+    always says which of the two it used, because the answers differ under a
+    bridge.
+  - **A tile too large to hold is read anyway.** The decimation ratio is
+    decided from the file's header before a point is read, is deterministic
+    rather than a random sample, and is always reported: a cloud quietly
+    reduced to a twelfth of itself would otherwise look like a sparse survey
+    rather than a budgeted read.
+  - **No PDAL, and still no PROJ or GDAL.** RoadMaker reads LAS itself
+    ([ADR-0011](docs/decisions/0011-lidar-ingest-in-house-las.md)); the one new
+    dependency is `laz-perf`, which decompresses `.laz` and does nothing else.
+    A tile in a coordinate system outside the supported family is refused with
+    that system named, in the same words the GIS importers already use.
+- **Imported layers now follow the world origin when you change it.** Editing
+  the world georeference re-derives every imported layer from its source file
+  in the new frame. Previously that only happened when a scene was reopened, so
+  a live change left imagery and vectors sitting over the wrong ground.
 - **Trace over the real world: GIS imagery and vectors under your network**
   ([#242](https://github.com/Robomous/RoadMaker/issues/242)): authoring a real
   place meant working from memory and a screenshot in another window. Now

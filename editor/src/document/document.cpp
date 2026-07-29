@@ -147,7 +147,7 @@ void Document::restore_reference_layers() {
   for (const SceneReferenceLayer& stored : *scene_state_.reference_layers) {
     ReferenceLayer layer;
     layer.path = stored.path;
-    layer.kind = stored.vector ? ReferenceLayerKind::Vector : ReferenceLayerKind::Raster;
+    layer.kind = stored.kind;
     layer.visible = stored.visible;
     layer.framed_crs = stored.framed_crs;
     persisted.push_back(std::move(layer));
@@ -260,7 +260,7 @@ SceneState Document::current_scene_state() const {
     for (const ReferenceLayer& layer : reference_layers_.layers()) {
       stored.push_back(SceneReferenceLayer{
           .path = layer.path,
-          .vector = layer.kind == ReferenceLayerKind::Vector,
+          .kind = layer.kind,
           .visible = layer.visible,
           .framed_crs = layer.framed_crs,
       });

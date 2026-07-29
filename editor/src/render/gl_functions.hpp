@@ -49,6 +49,10 @@ inline constexpr GLenum kLess = 0x0201;
 inline constexpr GLenum kTriangles = 0x0004;
 inline constexpr GLenum kTriangleStrip = 0x0005;
 inline constexpr GLenum kLines = 0x0001;
+inline constexpr GLenum kPoints = 0x0000;
+/// Lets the vertex shader write gl_PointSize. Core-profile GL ignores the
+/// shader's value unless this is enabled, so points would all render one pixel.
+inline constexpr GLenum kProgramPointSize = 0x8642;
 inline constexpr GLenum kBlend = 0x0BE2;
 inline constexpr GLenum kSrcAlpha = 0x0302;
 inline constexpr GLenum kOneMinusSrcAlpha = 0x0303;
