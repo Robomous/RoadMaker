@@ -21,6 +21,7 @@
 #include "roadmaker/gis/layer.hpp"
 #include "roadmaker/gis/reproject.hpp"
 #include "roadmaker/mesh/junction_stoplines.hpp"
+#include "roadmaker/osm/import.hpp"
 #include "roadmaker/road/bridge.hpp"
 #include "roadmaker/road/grade_separation.hpp"
 #include "roadmaker/road/road.hpp"
@@ -747,6 +748,72 @@ MainWindow::MainWindow(QWidget* parent, bool restore_saved_layout)
     viewport_->show_toast(tr("Imported %1").arg(QFileInfo(path).fileName()), ToastSeverity::Info);
   });
 
+  // An OSM extract is NOT a reference layer: it becomes real network content,
+  // so it goes through the command layer and lands as ONE undoable edit.
+  //
+  // The importer never sets the scene's georeference itself. Silently
+  // georeferencing a scene gives it a projection the user never chose, so the
+  // refusal is gis::crs_transform's own — verbatim, and the same words the GIS
+  // and lidar importers use — and the toast points at the window that fixes it
+  // rather than leaving the user to find it.
+  connect(actions_->import_osm, &QAction::triggered, this, [this] {
+    const QString path = QFileDialog::getOpenFileName(
+        this, tr("Import OSM Road Network"), QString(), tr("OpenStreetMap XML (*.osm *.xml)"));
+    if (path.isEmpty()) {
+      return;
+    }
+
+    Expected<roadmaker::osm::OsmImport> import = roadmaker::osm::prepare_osm_import(
+        document_.network(), std::filesystem::path(path.toStdString()));
+    if (!import.has_value()) {
+      viewport_->show_toast(
+          tr("Cannot import: %1").arg(QString::fromStdString(import.error().message)),
+          ToastSeverity::Warning);
+      return;
+    }
+    if (import->plan.empty()) {
+      viewport_->show_toast(tr("Nothing to import: the extract contains no road ways this build "
+                               "recognises"),
+                            ToastSeverity::Warning);
+      document_.report_diagnostics(import->diagnostics);
+      return;
+    }
+
+    const std::size_t roads = import->plan.roads.size();
+    const std::size_t dropped = import->plan.dropped_ways;
+    const double area = import->plan.area_km2();
+    if (!document_.push_command(std::move(import->command))) {
+      viewport_->show_toast(tr("Cannot import: the network could not be built"),
+                            ToastSeverity::Warning);
+      return;
+    }
+
+    // Plan-time and apply-time diagnostics are one list to the user: which
+    // stage noticed a compromise is our business, not theirs.
+    std::vector<Diagnostic> diagnostics = import->diagnostics;
+    if (import->apply_diagnostics != nullptr) {
+      diagnostics.insert(
+          diagnostics.end(), import->apply_diagnostics->begin(), import->apply_diagnostics->end());
+    }
+    document_.report_diagnostics(diagnostics);
+
+    // The summary names what was COMPROMISED, not just what succeeded — a
+    // count of roads alone would let a district that dropped a third of its
+    // ways read as a clean import.
+    if (diagnostics.empty()) {
+      viewport_->show_toast(tr("Imported %n road(s)", "", static_cast<int>(roads)) +
+                                tr(" over %1 km²").arg(area, 0, 'f', 1),
+                            ToastSeverity::Info);
+    } else {
+      viewport_->show_toast(tr("Imported %n road(s)", "", static_cast<int>(roads)) +
+                                tr(" over %1 km² — %2 way(s) dropped, %3 note(s) in Diagnostics")
+                                    .arg(area, 0, 'f', 1)
+                                    .arg(dropped)
+                                    .arg(diagnostics.size()),
+                            ToastSeverity::Warning);
+    }
+  });
+
   // Seeding terrain from a tile is the lidar twin of Import Elevation Raster,
   // and deliberately reads the file it is given rather than reaching into an
   // already-imported layer: predictable beats clever, and it is the same shape
@@ -1154,6 +1221,8 @@ void MainWindow::build_menus() {
   import_menu->addAction(actions_->import_gis_vector);
   import_menu->addAction(actions_->import_gis_raster);
   import_menu->addAction(actions_->import_point_cloud);
+  import_menu->addSeparator();
+  import_menu->addAction(actions_->import_osm);
   file_menu->addSeparator();
   auto* autosave_action = new QAction(tr("Enable &Autosave"), this);
   autosave_action->setCheckable(true);

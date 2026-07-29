@@ -131,6 +131,8 @@ from ._roadmaker import (  # noqa: F401
     gis,
     # Lidar import (p7-s3, #243) — LAS/LAZ read in-house, no PDAL (ADR-0011).
     lidar,
+    # OSM import (p7-s4, #244) — .osm XML read in-house, no new dep (ADR-0012).
+    osm,
     # Export previews (p7-s1, #241) — what an export WOULD contain.
     MeshExportFormat,
     MeshChannel,

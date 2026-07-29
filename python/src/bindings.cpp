@@ -43,6 +43,9 @@
 #include "roadmaker/mesh/junction_surface_spans.hpp"
 #include "roadmaker/mesh/mesh_builder.hpp"
 #include "roadmaker/mesh/surface_boundary.hpp"
+#include "roadmaker/osm/graph.hpp"
+#include "roadmaker/osm/import.hpp"
+#include "roadmaker/osm/network_plan.hpp"
 #include "roadmaker/road/authoring.hpp"
 #include "roadmaker/road/bridge.hpp"
 #include "roadmaker/road/controller.hpp"
@@ -1583,6 +1586,150 @@ NB_MODULE(_roadmaker, m) {
               "path"_a,
               "True for the extensions `load` accepts, so a file filter and the "
               "reader cannot disagree about what is openable.");
+  }
+
+  // --- OSM import (p7-s4, #244) ------------------------------------------
+  //
+  // Three phases, exposed as three calls, because that is the shape the design
+  // has: `load` is a pure parse, `plan` is a pure conversion whose diagnostics
+  // are available BEFORE anything mutates, and `import_plan` is the one
+  // undoable command. A caller that only wants to know what an extract WOULD
+  // do never has to build a network at all.
+  {
+    auto osm =
+        m.def_submodule("osm",
+                        "Importing OpenStreetMap extracts as editable road networks.\n\n"
+                        "The `.osm` XML interchange format is read by RoadMaker itself with the "
+                        "pugixml the .xodr reader already uses, so it costs no new dependency. "
+                        "`.osm.pbf` is refused by name: every real one deflates its blobs and "
+                        "zlib is not a dependency (ADR-0012, #494) — the Protocol Buffers half "
+                        "was never the obstacle.");
+
+    nb::class_<roadmaker::osm::OsmWay>(osm, "Way")
+        .def_ro("id", &roadmaker::osm::OsmWay::id)
+        .def("tag", &roadmaker::osm::OsmWay::tag, "key"_a, "The tag's value, or '' when absent.")
+        .def("has_tag", &roadmaker::osm::OsmWay::has_tag, "key"_a)
+        .def_prop_ro("closed", &roadmaker::osm::OsmWay::closed)
+        .def("__repr__", [](const roadmaker::osm::OsmWay& way) {
+          return "Way(id=" + std::to_string(way.id) + ")";
+        });
+
+    nb::class_<roadmaker::osm::OsmGraph>(osm, "Graph")
+        .def_ro("ways", &roadmaker::osm::OsmGraph::ways)
+        .def_ro("bounds", &roadmaker::osm::OsmGraph::bounds, "{min_lon, min_lat, max_lon, max_lat}")
+        .def_ro("crs", &roadmaker::osm::OsmGraph::crs, "Always 'EPSG:4326'.")
+        .def_ro("source_way_count",
+                &roadmaker::osm::OsmGraph::source_way_count,
+                "What the FILE held, before filtering — so 'we imported 40 of 300 "
+                "ways' is answerable.")
+        .def_ro("relation_count", &roadmaker::osm::OsmGraph::relation_count)
+        .def_ro("turn_restriction_count", &roadmaker::osm::OsmGraph::turn_restriction_count);
+
+    nb::class_<roadmaker::osm::FitCompromise>(osm, "FitCompromise")
+        .def_ro("source_nodes", &roadmaker::osm::FitCompromise::source_nodes)
+        .def_ro("kept_nodes", &roadmaker::osm::FitCompromise::kept_nodes)
+        .def_ro("merged_nodes", &roadmaker::osm::FitCompromise::merged_nodes)
+        .def_ro("max_deviation_m",
+                &roadmaker::osm::FitCompromise::max_deviation_m,
+                "The ACTUAL greatest distance from a dropped vertex to the retained "
+                "line — never the tolerance that was requested.")
+        .def_ro("tolerance_used_m", &roadmaker::osm::FitCompromise::tolerance_used_m)
+        .def_ro("split_at_hairpin", &roadmaker::osm::FitCompromise::split_at_hairpin)
+        .def_prop_ro("lossless", &roadmaker::osm::FitCompromise::lossless);
+
+    nb::class_<roadmaker::osm::PlannedRoad>(osm, "PlannedRoad")
+        .def_ro("way", &roadmaker::osm::PlannedRoad::way)
+        .def_ro("segment", &roadmaker::osm::PlannedRoad::segment)
+        .def_ro("odr_id",
+                &roadmaker::osm::PlannedRoad::odr_id,
+                "'osm.<way>.<segment>' — provenance, and the re-import idempotency key.")
+        .def_ro("name", &roadmaker::osm::PlannedRoad::name)
+        .def_ro("waypoints", &roadmaker::osm::PlannedRoad::waypoints)
+        .def_ro("layer", &roadmaker::osm::PlannedRoad::layer)
+        .def_ro("bridge", &roadmaker::osm::PlannedRoad::bridge)
+        .def_ro("tunnel", &roadmaker::osm::PlannedRoad::tunnel)
+        .def_ro("compromise", &roadmaker::osm::PlannedRoad::compromise);
+
+    nb::class_<roadmaker::osm::NetworkPlan>(osm, "NetworkPlan")
+        .def_ro("roads", &roadmaker::osm::NetworkPlan::roads)
+        .def_ro("dropped_ways", &roadmaker::osm::NetworkPlan::dropped_ways)
+        .def_ro("skipped_existing",
+                &roadmaker::osm::NetworkPlan::skipped_existing,
+                "Roads the network already carried: a re-import is a no-op that "
+                "says how much it skipped.")
+        .def_prop_ro("area_km2", &roadmaker::osm::NetworkPlan::area_km2)
+        .def_prop_ro("empty", &roadmaker::osm::NetworkPlan::empty);
+
+    nb::class_<roadmaker::osm::OsmBuildOptions>(osm, "BuildOptions")
+        .def(nb::init<>())
+        .def_rw("simplify_tolerance_m", &roadmaker::osm::OsmBuildOptions::simplify_tolerance_m)
+        .def_rw("min_waypoint_spacing_m", &roadmaker::osm::OsmBuildOptions::min_waypoint_spacing_m)
+        .def_rw("max_waypoints_per_road", &roadmaker::osm::OsmBuildOptions::max_waypoints_per_road)
+        .def_rw("max_roads", &roadmaker::osm::OsmBuildOptions::max_roads)
+        .def_rw("max_junction_arms", &roadmaker::osm::OsmBuildOptions::max_junction_arms)
+        .def_rw("include_service_roads",
+                &roadmaker::osm::OsmBuildOptions::include_service_roads,
+                "Off by default: at district scale, parking aisles outnumber the "
+                "road network.");
+
+    osm.def(
+        "load",
+        [](const std::filesystem::path& path) {
+          auto result = unwrap(roadmaker::osm::load_osm(path));
+          return std::make_pair(std::move(result.graph), std::move(result.diagnostics));
+        },
+        "path"_a,
+        "Reads a .osm XML extract. Returns (graph, diagnostics).");
+
+    osm.def(
+        "parse",
+        [](std::string_view xml, std::string_view source_name) {
+          auto result = unwrap(roadmaker::osm::parse_osm(xml, source_name));
+          return std::make_pair(std::move(result.graph), std::move(result.diagnostics));
+        },
+        "xml"_a,
+        "source_name"_a = "osm",
+        "The same parse over an in-memory document.");
+
+    osm.def(
+        "plan",
+        [](const roadmaker::osm::OsmGraph& graph,
+           const roadmaker::RoadNetwork& network,
+           const roadmaker::osm::OsmBuildOptions& options) {
+          const auto transform = unwrap(
+              roadmaker::gis::crs_transform(roadmaker::gis::parse_crs(graph.crs),
+                                            roadmaker::gis::scene_crs(network.georeference())));
+          std::vector<std::string> existing;
+          network.for_each_road([&existing](roadmaker::RoadId, const roadmaker::Road& road) {
+            existing.push_back(road.odr_id);
+          });
+          auto result = unwrap(roadmaker::osm::plan_network(graph, transform, options, existing));
+          return std::make_pair(std::move(result.plan), std::move(result.diagnostics));
+        },
+        "graph"_a,
+        "network"_a,
+        "options"_a = roadmaker::osm::OsmBuildOptions{},
+        "Converts a graph into a plan of roads and joints, in the scene's frame. "
+        "PURE: touches no network, so the compromises are readable BEFORE "
+        "anything changes. Raises when the scene has no georeference — this "
+        "importer never sets one, because that would give a scene a projection "
+        "the user did not choose.");
+
+    osm.def(
+        "import_plan",
+        [](const roadmaker::RoadNetwork& network, const roadmaker::osm::NetworkPlan& plan) {
+          return roadmaker::osm::import_plan(network, plan);
+        },
+        "network"_a,
+        "plan"_a,
+        "The whole plan as ONE undoable command. Push it with EditStack.push.");
+
+    osm.def("is_osm",
+            &roadmaker::osm::is_osm_extension,
+            "path"_a,
+            "True for the extensions `load` accepts. False for .osm.pbf, which is "
+            "refused — a filter that offers a file the reader declines is worse "
+            "than one that does not list it.");
   }
 
   m.def(
