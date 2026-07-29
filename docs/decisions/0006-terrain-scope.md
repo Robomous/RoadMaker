@@ -132,10 +132,22 @@ into it in P7 exactly as this ADR envisaged — but the enabling dependency name
 in the reasoning above never enters the tree, so the "M3b already pays the GDAL
 licensing pass" argument should not be reused to justify anything else.
 
+## Amendment (2026-07-28, p7-s3 / #243): nor is the lidar path PDAL
+
+The same premise appears once more in this record's references, as the
+"GDAL/PDAL/PROJ import stack". [ADR-0011](./0011-lidar-ingest-in-house-las.md)
+retires the PDAL half for the same reason ADR-0010 retired the other two: PDAL
+hard-requires PROJ, so taking it would smuggle in exactly the dependency that
+was declined. Point clouds reach this record's height field through
+`edit::set_terrain_field`, the same door an elevation raster and a `.asc` DEM
+already use — the ingest source changes, the terrain decision does not.
+
 ## References
 
 - [ADR-0010](./0010-gis-ingest-bounded-crs.md) — GIS ingest on a bounded CRS
   family; retires this record's GDAL premise
+- [ADR-0011](./0011-lidar-ingest-in-house-las.md) — lidar ingest without PDAL;
+  retires the remaining third of the same premise
 - [Gap analysis — known exclusions](../roadmap/archive/2026-07-pre-reset/gap_analysis.md#known-exclusions)
 - [M3b seed](../roadmap/archive/2026-07-pre-reset/seeds/m3b.md) (GDAL/PDAL/PROJ import stack)
 - [GS-2 "Imported district"](../roadmap/archive/2026-07-pre-reset/golden_scenes/gs2_imported_district.md)
