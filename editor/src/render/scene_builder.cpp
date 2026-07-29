@@ -499,6 +499,69 @@ RenderMeshData underlay_quad(const std::array<double, 4>& extent, float z) {
   return data;
 }
 
+RenderMeshData cloud_points(const lidar::PointCloud& cloud, float z_min, float z_max) {
+  RenderMeshData data;
+  data.kind = PrimitiveKind::Points;
+  data.color = {1.0F, 1.0F, 1.0F, 1.0F};
+  if (cloud.empty()) {
+    return data;
+  }
+
+  // ★ POSITIONS ARE COPIED VERBATIM, IN THE CLOUD'S OWN FRAME. The translation
+  // to world travels as the draw's single InstanceData model matrix. Adding
+  // cloud.origin here instead would put a UTM-magnitude value back into a
+  // float and undo the whole point of the offset representation.
+  data.positions = cloud.xyz;
+
+  // The renderer's upload() returns a null handle for a mesh with no indices,
+  // so points need a trivial 0..N-1 buffer. Four bytes a point, and the reason
+  // kMaxCloudPoints is a RENDER budget rather than a parse one.
+  const std::size_t count = cloud.size();
+  data.indices.resize(count);
+  for (std::size_t i = 0; i < count; ++i) {
+    data.indices[i] = static_cast<std::uint32_t>(i);
+  }
+
+  // uv.x is the height ramp coordinate; uv.y is unused but the vertex format is
+  // interleaved and fixed, so it is written rather than omitted.
+  const float span = z_max - z_min;
+  // A cloud of one elevation (a flat car park, or a single scan line) has no
+  // range to normalise over. Mid-ramp is the honest answer; dividing would be
+  // a division by zero rendered as a NaN-coloured cloud.
+  const bool has_range = span > 1e-6F;
+  data.uvs.resize(count * 2);
+  for (std::size_t i = 0; i < count; ++i) {
+    const float z = cloud.xyz[(i * 3) + 2] + static_cast<float>(cloud.origin[2]);
+    const float t = has_range ? (z - z_min) / span : 0.5F;
+    data.uvs[i * 2] = std::clamp(t, 0.0F, 1.0F);
+    data.uvs[(i * 2) + 1] = 0.5F;
+  }
+
+  // Normals are unused: Material::unlit is set by the caller and the fragment
+  // shader's u_lit is 0 for anything that is not Triangles. Leaving them empty
+  // saves 12 bytes a point over writing a placeholder.
+  return data;
+}
+
+TextureData cloud_ramp_texture() {
+  // Low ground cool, high ground warm — the convention every DEM viewer uses,
+  // so a cloud reads the same way as the terrain it will become.
+  TextureData texture;
+  texture.width = 256;
+  texture.height = 1;
+  texture.wrap = TextureWrap::ClampToEdge;
+  texture.rgba.resize(static_cast<std::size_t>(texture.width) * 4);
+  for (int i = 0; i < texture.width; ++i) {
+    const float t = static_cast<float>(i) / static_cast<float>(texture.width - 1);
+    const auto at = static_cast<std::size_t>(i) * 4;
+    texture.rgba[at] = static_cast<std::uint8_t>(std::lround(40.0F + (215.0F * t)));
+    texture.rgba[at + 1] = static_cast<std::uint8_t>(std::lround(90.0F + (110.0F * t)));
+    texture.rgba[at + 2] = static_cast<std::uint8_t>(std::lround(190.0F - (140.0F * t)));
+    texture.rgba[at + 3] = 255;
+  }
+  return texture;
+}
+
 RenderMeshData
 underlay_lines(const gis::GisVectorLayer& layer, float z, const std::array<float, 4>& color) {
   RenderMeshData data;

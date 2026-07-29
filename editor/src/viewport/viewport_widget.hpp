@@ -292,6 +292,11 @@ private:
   struct UploadedReferenceLayer {
     RenderMeshHandle mesh;
     TextureHandle texture;
+    /// Exactly one instance, and only for a point cloud: its model matrix
+    /// carries `PointCloud::origin`, so the cloud's vertices can stay small
+    /// floats relative to their own frame all the way to the GPU. Empty for
+    /// vector and raster layers, which are already in world coordinates.
+    std::vector<InstanceData> instances;
   };
 
   /// Rebuilds the uploaded reference-layer geometry and textures from the

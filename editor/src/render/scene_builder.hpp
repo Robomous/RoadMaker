@@ -21,6 +21,7 @@
 // no Qt — unit-testable headless.
 
 #include "roadmaker/gis/layer.hpp"
+#include "roadmaker/lidar/point_cloud.hpp"
 #include "roadmaker/mesh/mesh.hpp"
 
 #include <array>
@@ -175,6 +176,25 @@ struct SceneSignFace {
 /// nothing reads as a failed import.
 [[nodiscard]] RenderMeshData
 underlay_lines(const gis::GisVectorLayer& layer, float z, const std::array<float, 4>& color);
+
+/// One vertex per point of a lidar cloud, in the cloud's OWN frame — positions
+/// are `cloud.xyz` verbatim, and the draw carries `cloud.origin` as a single
+/// `InstanceData` model matrix. That is what keeps the offset representation
+/// intact all the way to the GPU: baking the origin in here would put UTM-scale
+/// values back into floats and terrace the cloud (p7-s3, #243).
+///
+/// Unlike a flat underlay, a cloud has real Z and is NOT flattened onto
+/// `underlay_z` — it draws depth-sorted with the scene, because a point cloud of
+/// a street is a description of its heights.
+///
+/// `uv.x` carries each point's height normalised over [`z_min`, `z_max`], so a
+/// 256×1 ramp texture sampled through the existing `Material::base_color` path
+/// colours the cloud by elevation with NO change to the interleaved vertex
+/// format.
+[[nodiscard]] RenderMeshData cloud_points(const lidar::PointCloud& cloud, float z_min, float z_max);
+
+/// The 256×1 RGBA elevation ramp `cloud_points` expects, low to high.
+[[nodiscard]] TextureData cloud_ramp_texture();
 
 /// Draw height for reference layers: just above the procedural ground so an
 /// underlay hides the grass where it covers, and below the network so roads

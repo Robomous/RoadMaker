@@ -453,9 +453,17 @@ Actions::Actions(QUndoStack& undo_stack, QObject* parent) : QObject(parent) {
   import_gis_raster->setToolTip(
       tr("Import a GeoTIFF, or a world-filed PNG/JPEG, as imagery drawn under the network"));
 
+  import_point_cloud = new QAction(tr("&Point Cloud…"), this);
+  import_point_cloud->setToolTip(
+      tr("Import an ASPRS LAS or LAZ lidar tile as a reference layer drawn with the network"));
+
   terrain_import_raster = new QAction(tr("Import &Elevation Raster…"), this);
   terrain_import_raster->setToolTip(
       tr("Import a single-band elevation GeoTIFF as the scene's terrain height field"));
+
+  terrain_seed_point_cloud = new QAction(tr("&Seed from Point Cloud…"), this);
+  terrain_seed_point_cloud->setToolTip(
+      tr("Fit the ground out of an ASPRS LAS or LAZ lidar tile and make it the scene's terrain"));
 
   bridge_generate = new QAction(tr("&Generate Bridge Structures"), this);
   bridge_generate->setToolTip(

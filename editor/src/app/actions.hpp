@@ -162,7 +162,9 @@ public:
   // BECOMES, not what format it arrived in.
   QAction* import_gis_vector = nullptr;
   QAction* import_gis_raster = nullptr;
+  QAction* import_point_cloud = nullptr;
   QAction* terrain_import_raster = nullptr;
+  QAction* terrain_seed_point_cloud = nullptr;
 
   // Bridges (p5-s3, #233): the Road Construction tool's automatic bridge
   // assignment — a menu action (no registry id, so no shortcut) that detects

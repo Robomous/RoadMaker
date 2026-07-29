@@ -104,6 +104,10 @@ struct InstanceData {
 enum class PrimitiveKind {
   Triangles,
   Lines,
+  /// One vertex per point, sized in the vertex shader. Added for lidar clouds
+  /// (p7-s3, #243) — the first primitive here that is neither a surface nor an
+  /// outline.
+  Points,
 };
 
 /// CPU-side mesh data ready for upload. Kernel frame (Z-up, meters),

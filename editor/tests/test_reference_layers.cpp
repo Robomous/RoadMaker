@@ -27,6 +27,8 @@
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <algorithm>
+#include <cmath>
 #include <filesystem>
 #include <fstream>
 #include <string>
@@ -42,6 +44,10 @@ namespace {
 
 std::filesystem::path fixture(const std::string& name) {
   return std::filesystem::path(RM_GIS_FIXTURES_DIR) / name;
+}
+
+std::filesystem::path lidar_fixture(const std::string& name) {
+  return std::filesystem::path(RM_LIDAR_FIXTURES_DIR) / name;
 }
 
 GeoReference amsterdam() {
@@ -152,30 +158,221 @@ TEST(ReferenceLayers, HiddenLayersAreNotDrawableAndDoNotContributeBounds) {
   EXPECT_FALSE(layers.bounds().has_value());
 }
 
+// --- Point clouds (p7-s3, #243) --------------------------------------------
+
+TEST(ReferenceLayers, ImportingALidarTilePlacesItAndReportsWhatItRead) {
+  ReferenceLayers layers;
+  const Expected<std::vector<Diagnostic>> added =
+      layers.add(lidar_fixture("amsterdam_tile.laz"), lidar_fixture("").parent_path(), amsterdam());
+  ASSERT_TRUE(added.has_value()) << added.error().message;
+  ASSERT_EQ(layers.size(), 1U);
+
+  const ReferenceLayer& layer = layers.at(0);
+  EXPECT_EQ(layer.kind, ReferenceLayerKind::PointCloud)
+      << "the reader's own extension predicate decides the kind, not the menu entry";
+  EXPECT_TRUE(layer.loaded);
+  EXPECT_FALSE(layer.cloud.empty());
+  // Placed in the SCENE's frame: the tile is UTM, the scene is a tmerc on
+  // Amsterdam, so a cloud still carrying UTM eastings was never reprojected.
+  EXPECT_LT(std::abs(layer.cloud.bounds[0]), 100000.0)
+      << "the cloud is still at UTM magnitude, so it was not moved into the scene frame";
+  // The status line is what the user reads, and it must name the CRS.
+  EXPECT_NE(layer.status.find("UTM"), std::string::npos) << layer.status;
+}
+
+TEST(ReferenceLayers, ALidarTileInAnUnsupportedCrsIsRefusedByName) {
+  // The refusal is gis::crs_transform's, uncopied, so a point cloud, a raster
+  // and a vector all say the same thing about the same CRS.
+  ReferenceLayers layers;
+  const Expected<std::vector<Diagnostic>> added = layers.add(
+      lidar_fixture("unsupported_crs.las"), lidar_fixture("").parent_path(), amsterdam());
+  ASSERT_FALSE(added.has_value());
+  EXPECT_NE(added.error().message.find("485"), std::string::npos) << added.error().message;
+  EXPECT_EQ(layers.size(), 0U);
+}
+
+TEST(ReferenceLayers, AChangedGeoreferenceReDerivesACloudToo) {
+  // The third kind must inherit the re-derive rule, not just the two that
+  // shipped with #242.
+  ReferenceLayers layers;
+  ASSERT_TRUE(
+      layers.add(lidar_fixture("amsterdam_tile.laz"), lidar_fixture("").parent_path(), amsterdam())
+          .has_value());
+  const double before = layers.at(0).cloud.bounds[0];
+
+  GeoReference moved;
+  moved.projection = *tmerc_projection(48.8566, 2.3522); // Paris
+  (void)layers.refit(lidar_fixture("").parent_path(), moved);
+
+  ASSERT_EQ(layers.size(), 1U);
+  EXPECT_TRUE(layers.at(0).loaded) << "a re-framed cloud must survive, not vanish";
+  EXPECT_FALSE(layers.at(0).cloud.empty());
+  EXPECT_NE(layers.at(0).cloud.bounds[0], before) << "and it must actually move";
+  EXPECT_EQ(layers.at(0).framed_crs, moved.projection);
+}
+
+TEST(ReferenceLayers, ACloudContributesItsPlanViewBoundsForFraming) {
+  ReferenceLayers layers;
+  ASSERT_TRUE(
+      layers.add(lidar_fixture("amsterdam_tile.laz"), lidar_fixture("").parent_path(), amsterdam())
+          .has_value());
+  const auto box = layers.bounds();
+  ASSERT_TRUE(box.has_value()) << "a cloud must be framable, or Frame Selection ignores it";
+  // Plan view: x/y of the 3D bounds, never z.
+  EXPECT_DOUBLE_EQ((*box)[0], layers.at(0).cloud.bounds[0]);
+  EXPECT_DOUBLE_EQ((*box)[1], layers.at(0).cloud.bounds[1]);
+  EXPECT_DOUBLE_EQ((*box)[2], layers.at(0).cloud.bounds[3]);
+  EXPECT_DOUBLE_EQ((*box)[3], layers.at(0).cloud.bounds[4]);
+}
+
+TEST(SceneBuilderCloud, PointsAreNotDrawnAsLines) {
+  // ★ THE GATE FOR gl_renderer's PRIMITIVE SWITCH. That was a two-way ternary
+  // (`kind == Triangles ? kTriangles : kLines`), so a third PrimitiveKind drew
+  // as LINE SEGMENTS BETWEEN CONSECUTIVE POINTS — silently, with no warning and
+  // no error, just a cloud rendered as garbage.
+  //
+  // This test cannot reach GL headlessly, so it pins the input to that switch:
+  // the mesh must actually claim to be Points. A build where cloud_points()
+  // returned Lines would draw identically to the bug.
+  ReferenceLayers layers;
+  ASSERT_TRUE(
+      layers.add(lidar_fixture("amsterdam_tile.laz"), lidar_fixture("").parent_path(), amsterdam())
+          .has_value());
+  const lidar::PointCloud& cloud = layers.at(0).cloud;
+
+  const RenderMeshData mesh =
+      cloud_points(cloud, static_cast<float>(cloud.bounds[2]), static_cast<float>(cloud.bounds[5]));
+  EXPECT_EQ(mesh.kind, PrimitiveKind::Points);
+  EXPECT_EQ(mesh.positions.size(), cloud.size() * 3);
+  // upload() returns a null handle for an index-less mesh, so a cloud without
+  // one index per point would not draw at all.
+  EXPECT_EQ(mesh.indices.size(), cloud.size());
+  EXPECT_EQ(mesh.uvs.size(), cloud.size() * 2);
+}
+
+TEST(SceneBuilderCloud, PositionsStayInTheCloudsOwnFrame) {
+  // ★ The offset representation has to survive all the way to the GPU. Baking
+  // cloud.origin into the vertices here would put a scene-scale value back into
+  // a float — the same defect the kernel's own precision test guards, one layer
+  // further out. The translation travels as the draw's InstanceData instead.
+  ReferenceLayers layers;
+  ASSERT_TRUE(
+      layers.add(lidar_fixture("amsterdam_tile.laz"), lidar_fixture("").parent_path(), amsterdam())
+          .has_value());
+  const lidar::PointCloud& cloud = layers.at(0).cloud;
+
+  const RenderMeshData mesh =
+      cloud_points(cloud, static_cast<float>(cloud.bounds[2]), static_cast<float>(cloud.bounds[5]));
+  ASSERT_FALSE(mesh.positions.empty());
+  for (std::size_t i = 0; i < mesh.positions.size(); ++i) {
+    EXPECT_FLOAT_EQ(mesh.positions[i], cloud.xyz[i]) << "at " << i;
+  }
+}
+
+TEST(SceneBuilderCloud, TheHeightRampSpansTheCloudAndClampsOutsideIt) {
+  ReferenceLayers layers;
+  ASSERT_TRUE(
+      layers.add(lidar_fixture("amsterdam_tile.laz"), lidar_fixture("").parent_path(), amsterdam())
+          .has_value());
+  const lidar::PointCloud& cloud = layers.at(0).cloud;
+
+  const RenderMeshData mesh =
+      cloud_points(cloud, static_cast<float>(cloud.bounds[2]), static_cast<float>(cloud.bounds[5]));
+  float low = 1.0F;
+  float high = 0.0F;
+  for (std::size_t i = 0; i < mesh.uvs.size(); i += 2) {
+    EXPECT_GE(mesh.uvs[i], 0.0F);
+    EXPECT_LE(mesh.uvs[i], 1.0F);
+    low = std::min(low, mesh.uvs[i]);
+    high = std::max(high, mesh.uvs[i]);
+  }
+  EXPECT_NEAR(low, 0.0F, 1e-3F) << "the lowest point must sit at the bottom of the ramp";
+  EXPECT_NEAR(high, 1.0F, 1e-3F) << "and the highest at the top";
+}
+
+TEST(SceneBuilderCloud, AFlatCloudDoesNotDivideByItsOwnZeroRange) {
+  // A car park, or a single scan line. Normalising over a zero span would emit
+  // NaN uvs and sample the ramp at an undefined texel.
+  lidar::PointCloud flat;
+  flat.origin = {0.0, 0.0, 0.0};
+  flat.xyz = {0.0F, 0.0F, 5.0F, 1.0F, 0.0F, 5.0F, 0.0F, 1.0F, 5.0F};
+  flat.bounds = {0.0, 0.0, 5.0, 1.0, 1.0, 5.0};
+
+  const RenderMeshData mesh = cloud_points(flat, 5.0F, 5.0F);
+  ASSERT_EQ(mesh.uvs.size(), 6U);
+  for (std::size_t i = 0; i < mesh.uvs.size(); i += 2) {
+    EXPECT_TRUE(std::isfinite(mesh.uvs[i]));
+    EXPECT_FLOAT_EQ(mesh.uvs[i], 0.5F);
+  }
+}
+
+TEST(SceneBuilderCloud, TheRampIsAOneRowClampedTexture) {
+  const TextureData ramp = cloud_ramp_texture();
+  EXPECT_EQ(ramp.width, 256);
+  EXPECT_EQ(ramp.height, 1);
+  // Repeat would wrap the ramp's own ends back over each other at the extremes.
+  EXPECT_EQ(ramp.wrap, TextureWrap::ClampToEdge);
+  ASSERT_EQ(ramp.rgba.size(), 256U * 4U);
+  // Actually a ramp, not a flat fill: the ends must differ.
+  EXPECT_NE(ramp.rgba[0], ramp.rgba[255U * 4U]);
+}
+
 // --- Sidecar round-trip ----------------------------------------------------
 
 TEST(ReferenceLayerSidecar, RoundTripsThroughTheSceneContainer) {
   SceneState state;
+  // All THREE kinds, because the persisted `kind` stopped being a bool in
+  // p7-s3 (#243) and a two-of-three round trip would not notice a third
+  // spelling collapsing onto one of the others.
   state.reference_layers = std::vector<SceneReferenceLayer>{
       SceneReferenceLayer{.path = "imagery/ortho.tif",
-                          .vector = false,
+                          .kind = ReferenceLayerKind::Raster,
                           .visible = true,
                           .framed_crs = "+proj=tmerc +lat_0=52 +lon_0=5"},
-      SceneReferenceLayer{.path = "roads.shp", .vector = true, .visible = false, .framed_crs = ""},
+      SceneReferenceLayer{.path = "roads.shp",
+                          .kind = ReferenceLayerKind::Vector,
+                          .visible = false,
+                          .framed_crs = ""},
+      SceneReferenceLayer{.path = "survey/tile.laz",
+                          .kind = ReferenceLayerKind::PointCloud,
+                          .visible = true,
+                          .framed_crs = "+proj=utm +zone=31"},
   };
 
   const Expected<SceneState> parsed = scene_sidecar::parse(scene_sidecar::to_json(state));
   ASSERT_TRUE(parsed.has_value()) << parsed.error().message;
   ASSERT_TRUE(parsed->reference_layers.has_value());
-  ASSERT_EQ(parsed->reference_layers->size(), 2U);
+  ASSERT_EQ(parsed->reference_layers->size(), 3U);
 
   EXPECT_EQ((*parsed->reference_layers)[0].path, "imagery/ortho.tif");
-  EXPECT_FALSE((*parsed->reference_layers)[0].vector);
+  EXPECT_EQ((*parsed->reference_layers)[0].kind, ReferenceLayerKind::Raster);
   EXPECT_TRUE((*parsed->reference_layers)[0].visible);
   EXPECT_EQ((*parsed->reference_layers)[0].framed_crs, "+proj=tmerc +lat_0=52 +lon_0=5");
   EXPECT_EQ((*parsed->reference_layers)[1].path, "roads.shp");
-  EXPECT_TRUE((*parsed->reference_layers)[1].vector);
+  EXPECT_EQ((*parsed->reference_layers)[1].kind, ReferenceLayerKind::Vector);
   EXPECT_FALSE((*parsed->reference_layers)[1].visible);
+  EXPECT_EQ((*parsed->reference_layers)[2].path, "survey/tile.laz");
+  EXPECT_EQ((*parsed->reference_layers)[2].kind, ReferenceLayerKind::PointCloud);
+  EXPECT_EQ((*parsed->reference_layers)[2].framed_crs, "+proj=utm +zone=31");
+}
+
+TEST(ReferenceLayerSidecar, ASidecarWrittenBeforeThereWasAThirdKindStillLoads) {
+  // The on-disk spellings "vector" and "raster" predate #243, and a scene saved
+  // by an older build must keep opening. The new spelling has to be a NEW word
+  // rather than a redefinition of either.
+  const QByteArray json = R"({
+    "scene_version": 1,
+    "reference_layers": [
+      {"path": "old.tif", "kind": "raster", "visible": true},
+      {"path": "old.shp", "kind": "vector", "visible": true}
+    ]
+  })";
+  const Expected<SceneState> parsed = scene_sidecar::parse(json);
+  ASSERT_TRUE(parsed.has_value()) << parsed.error().message;
+  ASSERT_TRUE(parsed->reference_layers.has_value());
+  ASSERT_EQ(parsed->reference_layers->size(), 2U);
+  EXPECT_EQ((*parsed->reference_layers)[0].kind, ReferenceLayerKind::Raster);
+  EXPECT_EQ((*parsed->reference_layers)[1].kind, ReferenceLayerKind::Vector);
 }
 
 TEST(ReferenceLayerSidecar, AMalformedEntryIsSkippedAndTheRestSurvive) {
@@ -199,13 +396,16 @@ TEST(ReferenceLayerSidecar, AMalformedEntryIsSkippedAndTheRestSurvive) {
 }
 
 TEST(ReferenceLayerSidecar, AnUnknownKindReadsAsRasterRatherThanBeingDropped) {
+  // "lidar" was the placeholder here until #243 made point clouds real. It is
+  // deliberately NOT the spelling that shipped ("point_cloud"), so this test
+  // still means what its name says.
   const QByteArray json =
-      R"({"scene_version": 1, "reference_layers": [{"path": "x.tif", "kind": "lidar"}]})";
+      R"({"scene_version": 1, "reference_layers": [{"path": "x.tif", "kind": "hologram"}]})";
   const Expected<SceneState> parsed = scene_sidecar::parse(json);
   ASSERT_TRUE(parsed.has_value());
   ASSERT_TRUE(parsed->reference_layers.has_value());
   ASSERT_EQ(parsed->reference_layers->size(), 1U);
-  EXPECT_FALSE((*parsed->reference_layers)[0].vector);
+  EXPECT_EQ((*parsed->reference_layers)[0].kind, ReferenceLayerKind::Raster);
 }
 
 TEST(ReferenceLayerSidecar, NoLayersWritesNoBlockAtAll) {

@@ -38,6 +38,7 @@ void load_one(ReferenceLayer& layer,
   layer.loaded = false;
   layer.vector = {};
   layer.raster = {};
+  layer.cloud = {};
 
   const std::filesystem::path source = scene_dir / std::filesystem::path(layer.path);
   const gis::Crs scene = gis::scene_crs(scene_georeference);
@@ -76,6 +77,45 @@ void load_one(ReferenceLayer& layer,
                                layer.source_crs.empty() ? "no stated CRS" : gis::describe_crs(from),
                                layer.vector.features.size(),
                                layer.vector.features.size() == 1 ? "" : "s");
+    return;
+  }
+
+  if (layer.kind == ReferenceLayerKind::PointCloud) {
+    Expected<lidar::PointCloudParseResult> read = lidar::load_point_cloud(source);
+    if (!read.has_value()) {
+      fail(read.error().message);
+      return;
+    }
+    layer.source_crs = read->cloud.crs;
+    for (Diagnostic& d : read->diagnostics) {
+      diagnostics.push_back(std::move(d));
+    }
+    const gis::Crs from = gis::parse_crs(layer.source_crs);
+    // Same rule the vector path uses: a tile that states no CRS is taken as
+    // already being in the scene's frame, and the reader has already said so.
+    if (!layer.source_crs.empty()) {
+      const Expected<gis::CrsTransform> transform = gis::crs_transform(from, scene);
+      if (!transform.has_value()) {
+        fail(transform.error().message);
+        return;
+      }
+      lidar::reproject_point_cloud(read->cloud, *transform);
+    }
+    layer.cloud = std::move(read->cloud);
+    layer.loaded = true;
+    // The decimation ratio belongs in the status line, not only in a
+    // diagnostic that scrolls away: a cloud reduced to a twelfth of itself
+    // looks like a sparse survey rather than a budgeted read.
+    layer.status =
+        layer.cloud.stride > 1
+            ? fmt::format("{} · 1 in {} points · {} of {}",
+                          layer.source_crs.empty() ? "no stated CRS" : gis::describe_crs(from),
+                          layer.cloud.stride,
+                          layer.cloud.size(),
+                          layer.cloud.source_count)
+            : fmt::format("{} · {} points",
+                          layer.source_crs.empty() ? "no stated CRS" : gis::describe_crs(from),
+                          layer.cloud.size());
     return;
   }
 
@@ -153,8 +193,11 @@ Expected<std::vector<Diagnostic>> ReferenceLayers::add(const std::filesystem::pa
                                                        const GeoReference& scene_georeference) {
   ReferenceLayer layer;
   layer.path = relative_reference(source, scene_dir);
-  layer.kind =
-      gis::is_vector_extension(source) ? ReferenceLayerKind::Vector : ReferenceLayerKind::Raster;
+  // Each reader owns the question "is this mine?", so a file dialog's filter and
+  // the loader that runs afterwards cannot disagree about what is openable.
+  layer.kind = gis::is_vector_extension(source)          ? ReferenceLayerKind::Vector
+               : lidar::is_point_cloud_extension(source) ? ReferenceLayerKind::PointCloud
+                                                         : ReferenceLayerKind::Raster;
   layer.framed_crs = scene_georeference.projection;
 
   std::vector<Diagnostic> diagnostics;
@@ -228,10 +271,30 @@ std::optional<std::array<double, 4>> ReferenceLayers::bounds() const {
     if (!layer.drawable()) {
       continue;
     }
-    const std::array<double, 4> box =
-        layer.kind == ReferenceLayerKind::Vector ? layer.vector.bounds : layer.raster.extent;
-    if (layer.kind == ReferenceLayerKind::Vector && layer.vector.features.empty()) {
-      continue;
+    // A switch rather than a ternary chain: a fourth kind added later must not
+    // be able to silently inherit the raster's extent, which is what the
+    // two-way form this replaced would have done.
+    std::array<double, 4> box{};
+    switch (layer.kind) {
+    case ReferenceLayerKind::Vector:
+      if (layer.vector.features.empty()) {
+        continue;
+      }
+      box = layer.vector.bounds;
+      break;
+    case ReferenceLayerKind::Raster:
+      box = layer.raster.extent;
+      break;
+    case ReferenceLayerKind::PointCloud:
+      if (layer.cloud.empty()) {
+        continue;
+      }
+      // The cloud's bounds are 3D and framing is a plan-view question.
+      box = {layer.cloud.bounds[0],
+             layer.cloud.bounds[1],
+             layer.cloud.bounds[3],
+             layer.cloud.bounds[4]};
+      break;
     }
     min_x = std::min(min_x, box[0]);
     min_y = std::min(min_y, box[1]);

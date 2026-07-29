@@ -55,6 +55,9 @@ void main() {
   v_normal = mat3(model) * in_normal;
   v_uv = in_uv;
   gl_Position = u_projection * u_view * world;
+  // Unconditional, and ignored by every primitive that is not GL_POINTS, so no
+  // uniform and no second program are needed for the lidar cloud path.
+  gl_PointSize = 2.0;
 }
 )";
 
@@ -356,6 +359,10 @@ bool GLRenderer::init() {
   if (program_ == 0 || sky_program_ == 0 || grid_program_ == 0 || ground_program_ == 0) {
     return false;
   }
+  // Without this, a core-profile context ignores the vertex shader's
+  // gl_PointSize and every point renders one pixel wide — a lidar cloud would
+  // be technically drawn and practically invisible.
+  gl::Enable(gl::kProgramPointSize);
   u_view_ = gl::GetUniformLocation(program_, "u_view");
   u_projection_ = gl::GetUniformLocation(program_, "u_projection");
   u_model_ = gl::GetUniformLocation(program_, "u_model");
@@ -751,8 +758,22 @@ void GLRenderer::render(const std::vector<DrawItem>& items,
     gl::Uniform1f(u_lit_, lit ? 1.0F : 0.0F);
     gl::BindVertexArray(mesh.vao);
 
-    const gl::GLenum primitive =
-        mesh.kind == PrimitiveKind::Triangles ? gl::kTriangles : gl::kLines;
+    // ★ A SWITCH, NOT A TERNARY. This was `kind == Triangles ? kTriangles :
+    // kLines` — two-way, so adding a third PrimitiveKind drew it as LINES
+    // SILENTLY: no warning, no error, just a cloud rendered as garbage segments
+    // between consecutive points. `PointsAreNotDrawnAsLines` pins it.
+    gl::GLenum primitive = gl::kTriangles;
+    switch (mesh.kind) {
+    case PrimitiveKind::Triangles:
+      primitive = gl::kTriangles;
+      break;
+    case PrimitiveKind::Lines:
+      primitive = gl::kLines;
+      break;
+    case PrimitiveKind::Points:
+      primitive = gl::kPoints;
+      break;
+    }
     if (item.instances.empty()) {
       // Non-instanced: the u_model path, bit-identical to before instancing.
       gl::Uniform1i(u_use_instancing_, 0);

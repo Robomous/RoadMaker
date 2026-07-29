@@ -525,6 +525,32 @@ void ViewportWidget::rebuild_reference_layers() {
       continue;
     }
 
+    if (layer.kind == ReferenceLayerKind::PointCloud) {
+      if (layer.cloud.empty()) {
+        continue;
+      }
+      // A cloud is NOT flattened onto `z` the way the other two are: it has real
+      // heights, and drawing a lidar tile as a flat sheet would throw away the
+      // only thing it is being imported for.
+      const RenderMeshData points = cloud_points(layer.cloud,
+                                                 static_cast<float>(layer.cloud.bounds[2]),
+                                                 static_cast<float>(layer.cloud.bounds[5]));
+      if (points.indices.empty()) {
+        continue;
+      }
+      // Column-major mat4, translation in the last column — the same layout the
+      // prop batches use.
+      InstanceData instance;
+      instance.model[12] = static_cast<float>(layer.cloud.origin[0]);
+      instance.model[13] = static_cast<float>(layer.cloud.origin[1]);
+      instance.model[14] = static_cast<float>(layer.cloud.origin[2]);
+      reference_layers_.push_back(
+          UploadedReferenceLayer{.mesh = renderer_->upload(points),
+                                 .texture = renderer_->upload(cloud_ramp_texture()),
+                                 .instances = {instance}});
+      continue;
+    }
+
     const roadmaker::gis::GisRaster& raster = layer.raster.raster;
     if (raster.rgba.empty()) {
       continue;
@@ -577,7 +603,12 @@ void ViewportWidget::paintGL() {
     material.base_color = layer.texture; // invalid for a vector layer → flat colour
     material.uv_scale = 1.0F;            // UVs are already [0,1] across the quad
     material.unlit = true;
-    draw_items.push_back(DrawItem{.mesh = layer.mesh, .material = material});
+    // `instances` is non-empty only for a point cloud, and the span points into
+    // reference_layers_, which outlives this call and is not resized here — the
+    // same lifetime rule the prop batches keep.
+    draw_items.push_back(DrawItem{.mesh = layer.mesh,
+                                  .material = material,
+                                  .instances = std::span<const InstanceData>(layer.instances)});
   }
 
   for (const UploadedItem& item : items_) {
