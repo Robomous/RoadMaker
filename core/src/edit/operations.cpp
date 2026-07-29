@@ -2242,7 +2242,8 @@ std::unique_ptr<Command> insert_node_at(const RoadNetwork& network, RoadId road_
 std::unique_ptr<Command> create_road(std::vector<Waypoint> waypoints,
                                      LaneProfile profile,
                                      std::string name,
-                                     EndpointHeadings locked) {
+                                     EndpointHeadings locked,
+                                     std::string odr_id) {
   static constexpr std::string_view kName = "Create Road";
   // Pre-validate the fit so obviously-bad input fails at factory time; the
   // authoring call re-validates against the live network on apply.
@@ -2257,9 +2258,10 @@ std::unique_ptr<Command> create_road(std::vector<Waypoint> waypoints,
   command->creator = [waypoints = std::move(waypoints),
                       profile = std::move(profile),
                       name = std::move(name),
+                      odr_id = std::move(odr_id),
                       locked](RoadNetwork& target, Values& created) -> Expected<void> {
     // author_clothoid_road validates everything before its first mutation.
-    auto road_id = author_clothoid_road(target, waypoints, profile, name, {}, locked);
+    auto road_id = author_clothoid_road(target, waypoints, profile, name, odr_id, locked);
     if (!road_id.has_value()) {
       return tl::unexpected<Error>(road_id.error());
     }
@@ -10044,6 +10046,14 @@ std::unique_ptr<Command> rename_road(const RoadNetwork& network, RoadId road_id,
   command->before.roads.emplace_back(road_id, *road);
   command->after.roads.emplace_back(road_id, std::move(after));
   return command;
+}
+
+/// The public face of CompositeCommand (p7-s4, #244). The class stays private
+/// to this TU; only the factory crosses the header boundary.
+std::unique_ptr<Command>
+composite(std::string name, DirtySet base_dirty, std::vector<CommandBuilder> builders) {
+  return std::make_unique<CompositeCommand>(
+      std::move(name), std::move(base_dirty), std::move(builders));
 }
 
 } // namespace roadmaker::edit

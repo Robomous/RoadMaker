@@ -72,6 +72,8 @@ add_library(roadmaker_core ${_rm_core_type}
   # gate, no runtime data and no second CI configuration.
   src/osm/tags.cpp
   src/osm/osm_xml.cpp
+  src/osm/plan.cpp
+  src/osm/import.cpp
   # Lidar ingest (p7-s3, #243), unconditional for the same reason: ADR-0011
   # keeps the reader in-house and takes only laz-perf, so there is no
   # OFF-by-default gate and no runtime data here either.

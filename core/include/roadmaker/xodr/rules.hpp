@@ -316,6 +316,37 @@ inline constexpr std::string_view kPropObstruction =
 /// user's workspace on coordinates that no longer mean what they meant. The
 /// sidecar degrades to defaults and says so, per ADR-0008's rule that a stale
 /// sidecar never blocks opening and never lies about scene content.
+/// OSM import (p7-s4, #244). None of these has an ASAM equivalent, because
+/// they are facts about a CONVERSION and OpenDRIVE does not describe where its
+/// data came from. Governing document: docs/domain/osm_mapping.md §5.
+
+/// A way's polyline was simplified, or coincident nodes were merged, to reach
+/// an authorable reference line. The diagnostic quotes the MEASURED node
+/// counts and deviation, never the requested tolerance.
+inline constexpr std::string_view kOsmFitApproximated = "robomous.ai:rm:1.0.0:osm.fit_approximated";
+
+/// A way, tag or relation was read and not imported. Always names the element
+/// and the verbatim value, so an unmapped-but-real classification is visible
+/// rather than merely absent.
+inline constexpr std::string_view kOsmElementDropped = "robomous.ai:rm:1.0.0:osm.element_dropped";
+
+/// Road ends met at a shared node and were NOT joined — a layer discontinuity
+/// (an overpass), an arm count past the generator's budget, or a refusal from
+/// check_linkable.
+inline constexpr std::string_view kOsmTopologyUnlinked =
+    "robomous.ai:rm:1.0.0:osm.topology_unlinked";
+
+/// A junction turn the generator could not fit. Reported individually: a
+/// district import that dropped forty turns in silence looks identical to one
+/// that dropped none.
+inline constexpr std::string_view kOsmTurnDropped = "robomous.ai:rm:1.0.0:osm.turn_dropped";
+
+/// A bridge or tunnel imported without vertical separation. OSM carries no
+/// elevation, so there is no height to author from; the correctness half —
+/// refusing to weld across the layer discontinuity — is what this build does
+/// instead (#496).
+inline constexpr std::string_view kOsmAtGrade = "robomous.ai:rm:1.0.0:osm.at_grade";
+
 inline constexpr std::string_view kGeoReferenceMismatch =
     "robomous.ai:rm:1.0.0:header.georeference_mismatch";
 

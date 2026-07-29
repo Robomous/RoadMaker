@@ -29,6 +29,7 @@
 #include "roadmaker/road/terrain_brush.hpp"
 
 #include <cstddef>
+#include <functional>
 #include <memory>
 #include <optional>
 #include <span>
@@ -151,13 +152,42 @@ insert_node_at(const RoadNetwork& network, RoadId road, double s);
 // --- topology ---------------------------------------------------------------
 
 /// Authors a new clothoid road (auto-assigned OpenDRIVE id; an empty name
+/// A command built from ordered stages, applied in order and reverted in
+/// reverse — the mechanism behind every assembly factory, exposed so a
+/// subsystem outside `edit/` can be ONE undo unit without duplicating it
+/// (p7-s4: an OSM district import is thousands of roads and junctions and must
+/// be a single entry on the stack, or `EditStack`'s depth limit alone would
+/// make the earliest roads un-undoable).
+///
+/// Stages after the first are built LAZILY during the first apply, so a stage
+/// can see the ids its predecessors created — which is how a joint stage
+/// learns the arena ids of roads that did not exist when the command was
+/// built.
+///
+/// Atomic: a stage that fails unwinds the already-applied prefix, so a failed
+/// apply leaves the network untouched. A caller that needs a *tolerant*
+/// stage — one bad item out of thousands must not discard the rest — wraps its
+/// own stage rather than weakening this contract for everyone.
+using CommandBuilder = std::function<std::unique_ptr<Command>(RoadNetwork&)>;
+
+[[nodiscard]] RM_API std::unique_ptr<Command>
+composite(std::string name, DirtySet base_dirty, std::vector<CommandBuilder> builders);
+
 /// auto-names it "Road <odr id>"). `locked` end headings pin the fit for
 /// tangent-snap chaining (02_editing_tools.md §2). Undo frees the id; redo
 /// resurrects the identical road under the same ids.
+///
+/// `odr_id` names the road in the file. Empty (the default) auto-assigns, which
+/// is what interactive authoring wants. A BULK importer passes its own: it
+/// already knows the id each road must carry, and being able to look a road up
+/// by that id afterwards is what lets it resolve topology without depending on
+/// arena iteration order — which is NOT allocation order once slots have been
+/// freed and reused.
 [[nodiscard]] RM_API std::unique_ptr<Command> create_road(std::vector<Waypoint> waypoints,
                                                           LaneProfile profile,
                                                           std::string name,
-                                                          EndpointHeadings locked = {});
+                                                          EndpointHeadings locked = {},
+                                                          std::string odr_id = {});
 
 /// Authors a new clothoid road AND welds its start to the free road end
 /// `link_start` in one undoable command — the Create Road tangent-continuation
