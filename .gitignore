@@ -62,3 +62,6 @@ diag/
 # gw1_replay.py / gw2_replay.py generated artifacts
 gw1_replay_out/
 gw2_replay_out/
+
+# The scale bench writes its measurements beside the binary it runs from.
+scale-metrics.json

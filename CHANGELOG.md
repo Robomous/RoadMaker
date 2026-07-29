@@ -19,6 +19,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 Current version on `main`: **0.0.1**.
 
 ### Added
+- **Build a district out of OpenStreetMap** ([#244](https://github.com/Robomous/RoadMaker/issues/244)):
+  an `.osm` extract becomes a real, editable road network — ways classified
+  onto the four road classes, joined on OSM's own shared-node topology, in a
+  **single undoable import**. Every road keeps its provenance in its OpenDRIVE
+  id (`osm.<way>.<segment>`), so re-importing the same extract is a no-op that
+  says how much it skipped rather than a second copy of the district.
+  - **Nothing is dropped silently — and nothing clean is warned about either.**
+    Every way, tag and relation that does not become road geometry is named by
+    id with the reason; every simplified polyline reports the **measured**
+    node counts and the **actual** deviation in metres rather than the
+    tolerance it was asked for; every junction turn the generator could not fit
+    is listed individually. A way imported without compromise produces no
+    diagnostic at all, because warning about everything says as little as
+    warning about nothing.
+  - **An overpass is not welded to the road beneath it.** OSM's `layer` tag
+    partitions the topology before road ends are counted, so two ways crossing
+    at a shared node on different layers stay separate. Welding them would have
+    been invisible in plan view and wrong in every 3D consumer downstream.
+  - **Road `<type>` and `<speed>` are modelled**
+    ([#454](https://github.com/Robomous/RoadMaker/issues/454)): a foreign
+    file's road types and legal speed limits used to vanish on every
+    load→save, with the diagnostic deliberately suppressed. They now round-trip
+    — including the two forms that are not numbers, `no limit` and `undefined`,
+    which a numeric field would have rewritten as `0` on the first save.
+  - **Scale targets are measured in CI**
+    ([#54](https://github.com/Robomous/RoadMaker/issues/54), superseded): a new
+    `scale targets` job imports a generated district and reports parse, build,
+    load, node-drag and peak-memory numbers as an artifact. It found that the
+    build step is super-linear in road count
+    ([#502](https://github.com/Robomous/RoadMaker/issues/502)), which is
+    reported honestly rather than hidden behind a smaller district.
+  - `.osm.pbf` is **refused by name**, and the reason is zlib rather than
+    Protocol Buffers
+    ([ADR-0012](docs/decisions/0012-osm-ingest-xml-in-house.md),
+    [#494](https://github.com/Robomous/RoadMaker/issues/494)). Convert with
+    `osmium cat -o district.osm district.osm.pbf`, or query Overpass, which
+    returns `.osm` XML directly.
 - **Build on a lidar survey: import LAS and LAZ tiles, and fit ground out of
   them** ([#243](https://github.com/Robomous/RoadMaker/issues/243)): an
   orthophoto tells you where things are, but not how high. **File ▸ Import ▸

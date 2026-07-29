@@ -216,6 +216,25 @@ per permitted (incoming lane, outgoing lane) pair: arms grow the result
 quadratically, and a twelve-arm OSM node is a generated-road explosion rather
 than an intersection anyone modelled deliberately.
 
+### Arms are pulled back from a junction
+
+**OSM states a crossing by sharing a node**, so every arm of an intersection
+runs to exactly the same point. A connecting road between two arms that meet at
+a point has zero length and nowhere to curve — so before authoring, each arm of
+a **junction** joint is trimmed back **12 m** from the node, leaving the
+generator room to build.
+
+This is not a refinement; without it the import produces no junctions at all.
+Measured on a 7×7 lattice: 25 junctions planned, **zero built**, every turn
+reporting *"clothoid fit failed"* — and the result still looked plausible in the
+road count, because the authored roads were all there. With the setback the
+same lattice builds 45 junctions and drops no turns.
+
+A **link** joint (degree 2) is *not* trimmed: its two ends must stay coincident
+or `check_linkable` refuses and the roads never join at all. A segment too short
+to give the metres up is left alone and reported, because a road that vanished
+is worse than a joint that reports its dropped turns.
+
 **`layer` partitions the graph before degree is counted.** Two ways sharing a
 node at different `layer` values are an overpass and the road beneath it — they
 are **not joined**, and a Warning names both ways and both layers. Without this

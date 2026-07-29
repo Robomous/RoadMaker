@@ -551,6 +551,74 @@ jobs:
       - name: Run 30 s smoke
         run: ./build/core/tests/fuzz/roadmaker_fuzz_xodr core/tests/fuzz/corpus -max_total_time=30 -print_final_stats=1
 
+  scale-bench:
+    name: scale targets (1k roads / 50 km²)
+    needs: [changes, build-test-linux]
+    if: needs.changes.outputs.code == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    # The measurement half of p7-s4 (#244), discharging #54's scale gate.
+    #
+    # A DEDICATED JOB, and the bench is a separate executable that ctest never
+    # runs: `ctest -j 4` starts some 1 800 processes on a four-core runner, and
+    # a timing test inside that set measures the scheduler rather than the
+    # code. Here it runs serially, alone, on the x1-cost runner.
+    #
+    # RAISING A CEILING IS A PRODUCT DECISION — see the policy in
+    # core/tests/scale/scale_bench.cpp. A PR that raises one must move the
+    # dev-machine target in the same diff and name it in CHANGELOG.md.
+    steps:
+      - uses: actions/checkout@v4
+      - uses: lukka/get-cmake@latest
+      - uses: hendrikmuhs/ccache-action@v1.2
+        with:
+          # Own key. Sharing one with another job makes the two race to save
+          # the same entry (see the note on the visual-artifacts job).
+          key: scale-bench
+          max-size: 500M
+      - name: Configure
+        run: >
+          cmake -B build -G Ninja
+          -DCMAKE_BUILD_TYPE=Release
+          -DRM_BUILD_TESTS=ON -DRM_BUILD_EDITOR=OFF
+          -DCMAKE_C_COMPILER_LAUNCHER=ccache
+          -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
+      - name: Build the bench
+        run: cmake --build build --target roadmaker_scale_bench
+      - name: Measure
+        # --blocks=15 rather than the full 50 km² default. The build
+        # step is super-linear (#502) — 19 s at this size and MINUTES at the
+        # full one — and a gate that risks its own timeout is not a gate. The
+        # full-size numbers are measured by hand until #502 brings the cost
+        # down; the bench prints both the default district's size and the one
+        # this run actually used, so a metrics file can never imply a size it
+        # did not exercise.
+        run: ./build/core/tests/roadmaker_scale_bench --blocks=15
+      - name: Check the metrics file is real
+        # A bench that quietly did not run is otherwise indistinguishable from
+        # a green one, so the keys are asserted BEFORE the upload.
+        run: |
+          test -f scale-metrics.json
+          python3 - <<'EOF'
+          import json, sys
+          data = json.load(open("scale-metrics.json"))
+          required = [
+              "parse_and_plan_ms", "network_build_ms", "xodr_load_ms",
+              "node_drag_ms", "peak_rss_mb", "growth_ratio",
+          ]
+          missing = [k for k in required if k not in data]
+          if missing:
+              sys.exit(f"scale-metrics.json is missing {missing}")
+          print(json.dumps(data, indent=2))
+          EOF
+      - uses: actions/upload-artifact@v4
+        with:
+          name: scale-metrics
+          path: scale-metrics.json
+          # error, not warn: a GL-less runner legitimately skips a screenshot,
+          # but a bench that produced no metrics is a broken gate.
+          if-no-files-found: error
+
   usd-export:
     name: USD export (usdchecker)
     needs: [changes, build-test-linux]

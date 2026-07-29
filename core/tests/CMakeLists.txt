@@ -16,6 +16,9 @@ add_executable(roadmaker_core_tests
   test_simplify.cpp
   test_osm_mapping.cpp
   test_osm_reader.cpp
+  test_osm_import.cpp
+  test_osm_scale.cpp
+  scale/synthetic_district.cpp
   test_xodr_reader.cpp
   test_xodr_diagnostics.cpp
   test_xodr_writer.cpp
@@ -100,7 +103,12 @@ add_executable(roadmaker_core_tests
 # (#442), which lives in the internal, non-installed core/src/mesh/fill_backend.hpp
 # — the defect is invisible through the public mesh API. The header is entirely
 # `inline`, so including it from a test TU is ODR-safe.
-target_include_directories(roadmaker_core_tests PRIVATE ${CMAKE_SOURCE_DIR}/core/src)
+target_include_directories(roadmaker_core_tests PRIVATE
+  ${CMAKE_SOURCE_DIR}/core/src
+  # test_osm_scale.cpp shares the bench's district generator, so the scale
+  # path is compiled and exercised on every platform rather than only where
+  # the bench runs.
+  ${CMAKE_CURRENT_SOURCE_DIR})
 
 # The USD exporter and its golden tests only exist when RM_BUILD_USD=ON. The
 # test reads back the emitted USDA text, so it needs no tinyusdz link.
@@ -186,3 +194,26 @@ endif()
 # LazDecodesIdenticallyToLas would then agree with both of them.
 add_executable(rm_make_laz_fixture EXCLUDE_FROM_ALL tools/make_laz_fixture.cpp)
 target_link_libraries(rm_make_laz_fixture PRIVATE lazperf::lazperf)
+
+# ---------------------------------------------------------------------------
+# The scale harness (p7-s4, #244) — the measurement half, discharging #54.
+#
+# A SEPARATE EXECUTABLE, deliberately NOT registered with
+# gtest_discover_tests: `ctest -j 4` runs some 1 800 processes on a four-core
+# runner, and a timing test inside that set measures the scheduler rather than
+# the code. Its own CI job runs it serially, alone, on ubuntu-latest.
+#
+# core/tests/test_osm_scale.cpp — which IS in the normal suite above — builds
+# the same district at reduced size and asserts CORRECTNESS only, so the scale
+# path compiles and is exercised on all three platforms every PR while only
+# the numbers are Linux-gated.
+add_executable(roadmaker_scale_bench
+  scale/scale_bench.cpp
+  scale/synthetic_district.cpp)
+target_link_libraries(roadmaker_scale_bench PRIVATE
+  roadmaker::core
+  GTest::gtest
+  fmt::fmt)
+target_include_directories(roadmaker_scale_bench PRIVATE
+  ${CMAKE_CURRENT_SOURCE_DIR}/scale
+  ${CMAKE_SOURCE_DIR}/core/src)
