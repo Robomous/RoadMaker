@@ -331,12 +331,64 @@ the same change. `Road Plan tool` in step 2 was corrected to its real name,
     shared code, and three importers disagreeing about one file would be worse
     than any of them refusing it.
 
+### Importing OSM
+
+38. [ ] **File ▸ Import ▸ OSM Road Network…** with an `.osm` extract of a small
+    district covering the same area as step 28's imagery (p7-s4,
+    [#244](https://github.com/Robomous/RoadMaker/issues/244)). **Expected:** the
+    roads land ON the imagery, in the right places — the extract, the
+    orthophoto and the lidar tile all went through the same transform, so a
+    district that lands elsewhere means one of the four importers disagrees
+    about where this place is.
+39. [ ] Look at the Diagnostics panel. **Expected:** every way that did not
+    become a road is named **by its OSM id** with the reason
+    (`highway=footway is not a road classification this build imports`), and
+    every simplified road quotes the **measured** node counts and the **actual**
+    deviation in metres. An aggregate count with no ids fails this step: the
+    point is that a user can look the element up in their own file.
+40. [ ] Count the roads that produced NO diagnostic. **Expected:** most of a
+    real district imports without compromise, and those roads are **silent**. A
+    panel with one row per imported road fails this step just as surely as an
+    empty one would — warning about everything says exactly as much as warning
+    about nothing.
+41. [ ] Zoom to a crossing and orbit. **Expected:** the intersections are real
+    junctions with connecting roads, not merely roads that touch. Then find a
+    place where the extract has a bridge (`layer=1`) over another road.
+    **Expected:** they are **NOT joined** — no junction, no link — and the
+    Diagnostics panel says so, naming both layers. A junction there would look
+    fine from directly above and be wrong in every 3D consumer downstream.
+42. [ ] Press **Undo once**. **Expected:** the entire district disappears in a
+    single step, and the scene is exactly what it was before the import. Redo
+    brings all of it back.
+43. [ ] Import the same extract a second time. **Expected:** nothing is
+    duplicated, and the summary says how many roads it skipped because they
+    were already present.
+44. [ ] Try **File ▸ Import ▸ OSM Road Network…** on a scene with **no world
+    origin** (a fresh, ungeoreferenced scene). **Expected:** refused, naming
+    the coordinate system, **in the same words the GIS and lidar importers
+    use** — and the scene is still ungeoreferenced afterwards. An importer that
+    helpfully picked an origin would have given the scene a projection the user
+    never chose.
+45. [ ] Try it on a `.osm.pbf`. **Expected:** refused with a message that names
+    **zlib** as the reason and offers the `osmium` conversion. A message
+    blaming Protocol Buffers is wrong and fails this step — it would send the
+    next reader down the wrong path.
+
 ## Pass criteria
 
 - All steps complete in order in a single session; every expected result
   holds.
 - Zero crashes; undo/redo works after each authoring step.
 - The exported `.xodr` validates with zero errors and loads in esmini.
+- **An OSM import is one undo entry.** Step 42 must restore the pre-import
+  scene in a single Undo — a district that takes hundreds of presses to remove
+  is not one edit however many roads it made.
+- **Every dropped element is named by id.** Step 39 fails on an aggregate
+  count alone, and step 40 fails if a road imported without compromise
+  produced a diagnostic anyway.
+- **An overpass is not welded to the road beneath it** (step 41).
+- **The no-origin refusal names the coordinate system**, in the same words the
+  GIS and lidar importers use (step 44).
 - The ground reaches the 3D export: in step 21 the **surfaces** and **terrain**
   rows read *Exported* with non-zero triangles, in BOTH formats. A ground row
   that reads *Not written* is a regression of

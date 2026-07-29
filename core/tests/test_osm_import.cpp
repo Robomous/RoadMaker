@@ -136,12 +136,28 @@ TEST(OsmPlan, ALosslessWayProducesNoDiagnosticAtAll) {
   // THE INVERSE, and the one people forget. "Nothing is dropped silently" is
   // half a contract: a build that warns about every way is indistinguishable
   // from one that warns about none, and only this direction catches it.
+  //
+  // THREE collinear nodes, not two, and that is the whole strength of this
+  // test. A two-node way cannot be simplified at all, so it passes on any
+  // definition of "lossless" — including the one this originally had, which
+  // compared NODE COUNTS and therefore called every straight way with a
+  // redundant midpoint compromised. Running python/examples/osm_import.py is
+  // what surfaced it: every road in the fixture district reported itself
+  // compromised at a deviation of 0.000 m.
+  //
+  // The middle node here is exactly on the line between the other two, so the
+  // simplifier drops it and the road's SHAPE is unchanged. That is lossless,
+  // whatever the vertex count says.
   const RoadNetwork network = amsterdam_network();
   constexpr std::string_view kStraight = R"(<?xml version="1.0"?>
 <osm version="0.6">
   <node id="1" lat="52.3700" lon="4.8900"/>
+  <node id="3" lat="52.3700" lon="4.8915"/>
   <node id="2" lat="52.3700" lon="4.8930"/>
-  <way id="10"><nd ref="1"/><nd ref="2"/><tag k="highway" v="residential"/></way>
+  <way id="10">
+    <nd ref="1"/><nd ref="3"/><nd ref="2"/>
+    <tag k="highway" v="residential"/>
+  </way>
 </osm>)";
   const auto parsed = roadmaker::osm::parse_osm(kStraight, "straight.osm");
   ASSERT_TRUE(parsed.has_value());
@@ -150,9 +166,18 @@ TEST(OsmPlan, ALosslessWayProducesNoDiagnosticAtAll) {
   ASSERT_TRUE(planned.has_value());
   ASSERT_EQ(planned->plan.roads.size(), 1U);
 
+  // The midpoint really was dropped...
+  EXPECT_EQ(planned->plan.roads[0].compromise.source_nodes, 3U);
+  EXPECT_EQ(planned->plan.roads[0].compromise.kept_nodes, 2U);
+  // ...and the shape did not meaningfully move. NOT zero: a constant-latitude
+  // way is a curve once projected, so its own midpoint sits about a millimetre
+  // off the chord. That is why the threshold is road-scale rather than
+  // geometric — see kLosslessDeviationM.
+  EXPECT_GT(planned->plan.roads[0].compromise.max_deviation_m, 0.0);
+  EXPECT_LE(planned->plan.roads[0].compromise.max_deviation_m, roadmaker::osm::kLosslessDeviationM);
   EXPECT_TRUE(planned->plan.roads[0].compromise.lossless());
   EXPECT_FALSE(has_rule(planned->diagnostics, roadmaker::rules::kOsmFitApproximated))
-      << "a two-node straight way was warned about";
+      << "a straight way whose shape did not change was warned about";
 }
 
 TEST(OsmPlan, ACompromisedRoadIsNamedWithItsMEASUREDNumbers) {

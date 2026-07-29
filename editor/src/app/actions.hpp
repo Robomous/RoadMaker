@@ -166,6 +166,12 @@ public:
   QAction* terrain_import_raster = nullptr;
   QAction* terrain_seed_point_cloud = nullptr;
 
+  // OSM import (p7-s4, #244). NOT a reference layer: an OSM extract becomes
+  // real network content, so it goes through the command layer and lands as
+  // ONE undoable edit — the same side of the menu split the terrain imports
+  // are on, for the same reason.
+  QAction* import_osm = nullptr;
+
   // Bridges (p5-s3, #233): the Road Construction tool's automatic bridge
   // assignment — a menu action (no registry id, so no shortcut) that detects
   // grade-separated crossings and builds a bridge over each. The interactive

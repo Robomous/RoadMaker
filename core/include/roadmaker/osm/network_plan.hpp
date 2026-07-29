@@ -79,6 +79,25 @@ inline constexpr double kHairpinTurnRad = 2.618; // 150°
 /// the pulled-back ends back into one junction.
 inline constexpr double kJunctionArmSetbackM = 12.0;
 
+/// Below this deviation, a simplification is not a compromise anyone could act
+/// on, and reporting it would bury the ways that really were bent.
+///
+/// **Not a geometric epsilon, and not a tolerance loosened to accommodate
+/// noise** — the two things this project has been bitten by. It is a
+/// road-scale answer to a road-scale question, resting on two facts:
+///
+///   * A way traced along a constant latitude is a CURVE in any projected
+///     frame, not a line. Three such nodes 100 m apart deviate about a
+///     MILLIMETRE from their own chord after projection, so a micron-scale
+///     epsilon calls perfectly clean data compromised.
+///   * OSM geometry is accurate to 1–3 m. A centimetre is two to three orders
+///     of magnitude below the source's own error, so nothing under it tells a
+///     user anything they could act on.
+///
+/// The fixture that exercises the reporting path deviates 0.4999 m — fifty
+/// times this — so the compromise gate still bites hard.
+inline constexpr double kLosslessDeviationM = 0.01;
+
 /// A segment shorter than this is left untrimmed rather than trimmed to
 /// nothing — better a coincident joint that reports its dropped turns than a
 /// road that vanished.
@@ -126,8 +145,18 @@ struct FitCompromise {
 
   bool split_at_hairpin = false;
 
+  /// Whether the road's SHAPE survived, which is not the same as whether its
+  /// vertex count did.
+  ///
+  /// A straight way traced with a redundant midpoint simplifies from three
+  /// nodes to two with a deviation of exactly zero: nothing about the road
+  /// changed, and warning about it would bury the ways that really were bent.
+  /// Found by running python/examples/osm_import.py, where EVERY road in the
+  /// fixture district reported itself compromised — the earlier definition
+  /// compared node counts, and the test guarding it used a two-node way that
+  /// could not be simplified at all.
   [[nodiscard]] bool lossless() const {
-    return kept_nodes == source_nodes && merged_nodes == 0 && !split_at_hairpin;
+    return merged_nodes == 0 && !split_at_hairpin && max_deviation_m <= kLosslessDeviationM;
   }
 };
 

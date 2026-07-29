@@ -170,6 +170,16 @@ std::filesystem::path Document::scene_directory() const {
   return std::filesystem::path(file_path_.toStdString()).parent_path();
 }
 
+void Document::report_diagnostics(std::vector<Diagnostic> findings) {
+  if (findings.empty()) {
+    return;
+  }
+  diagnostics_.insert(diagnostics_.end(),
+                      std::make_move_iterator(findings.begin()),
+                      std::make_move_iterator(findings.end()));
+  emit diagnostics_changed();
+}
+
 Expected<void> Document::add_reference_layer(const std::filesystem::path& source) {
   Expected<std::vector<Diagnostic>> added =
       reference_layers_.add(source, scene_directory(), network_.georeference());

@@ -465,6 +465,11 @@ Actions::Actions(QUndoStack& undo_stack, QObject* parent) : QObject(parent) {
   terrain_seed_point_cloud->setToolTip(
       tr("Fit the ground out of an ASPRS LAS or LAZ lidar tile and make it the scene's terrain"));
 
+  import_osm = new QAction(tr("&OSM Road Network…"), this);
+  import_osm->setToolTip(
+      tr("Import an OpenStreetMap .osm extract as an editable road network, in one undoable "
+         "edit"));
+
   bridge_generate = new QAction(tr("&Generate Bridge Structures"), this);
   bridge_generate->setToolTip(
       tr("Detect roads that cross without a junction and build a bridge deck, piers and "

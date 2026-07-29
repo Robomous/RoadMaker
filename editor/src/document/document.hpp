@@ -74,6 +74,15 @@ public:
   /// mutates the network; safe to call from a read-only consumer.
   void refresh_diagnostics();
 
+  /// Appends findings from a one-off operation to the Diagnostics dock
+  /// (p7-s4, #244).
+  ///
+  /// An OSM import produces its compromises during the import itself, not from
+  /// re-validating the network afterwards: "way 28374501 was simplified from
+  /// 214 nodes to 61" is a fact about a CONVERSION, and `validate_network` —
+  /// which only ever sees the result — could not reconstruct it.
+  void report_diagnostics(std::vector<Diagnostic> findings);
+
   /// Dirty means the undo stack has moved since the last load/save/new.
   [[nodiscard]] bool is_dirty() const { return !undo_stack_.isClean(); }
 
