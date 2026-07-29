@@ -99,14 +99,26 @@ TEST(Simplify, ALargerToleranceNeverRetainsMore) {
 }
 
 TEST(Simplify, DeviationIsMeasuredToTheSEGMENTNotTheInfiniteLine) {
-  // A switchback: the middle vertex sits far along the retained chord's
-  // direction but the chord itself is short. Measured against the infinite
-  // line the distance is small and the vertex would be dropped, flattening a
-  // hairpin into a spike. Real road data is full of these.
-  const std::vector<Point2> hairpin{{0.0, 0.0}, {50.0, 1.0}, {0.0, 2.0}};
-  const auto kept = simplify_polyline(hairpin, 5.0);
+  // A SPUR: the interior vertex projects far BEYOND the chord's end, which is
+  // the only geometry that distinguishes the two formulations.
+  //
+  // This test was vacuous when first written. Its "hairpin" — (0,0), (50,1),
+  // (0,2) — has a vertical chord onto which the apex projects at t = 0.5, i.e.
+  // INSIDE the segment, so clamping changes nothing and removing the clamp
+  // left it passing. The sabotage run is what found that; the shape below is
+  // the repair.
+  //
+  // Chord (0,0)→(10,0); apex at (100,1) projects to t = 10, far outside.
+  //   segment distance ≈ 90.006  → retained at a 5 m tolerance
+  //   infinite-line distance = 1 → DROPPED, flattening the spur away
+  const std::vector<Point2> spur{{0.0, 0.0}, {100.0, 1.0}, {10.0, 0.0}};
+
+  EXPECT_NEAR(polyline_deviation(spur, std::vector<std::size_t>{0, 2}), 90.0056, 1e-3)
+      << "the deviation itself must be the distance to the segment";
+
+  const auto kept = simplify_polyline(spur, 5.0);
   EXPECT_EQ(kept, (std::vector<std::size_t>{0, 1, 2}))
-      << "the apex of a switchback must survive a tolerance far below its extent";
+      << "a vertex 90 m off the chord must survive a 5 m tolerance";
 }
 
 TEST(Simplify, ANonPositiveToleranceRetainsEverything) {
