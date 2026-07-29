@@ -160,6 +160,13 @@ way. They are committed, rather than built inside the tests, because a format
 reader checked only against bytes the same test just constructed agrees with
 itself about everything — including its mistakes.
 
+One of them, `precision_probe.las`, exists only to make a claim falsifiable. The
+main tile sits on a 5 m lattice, and at its own northing a float's quantum is
+exactly 0.5 m — so every one of its coordinates is exactly representable even in
+an absolute float, and a reader that threw the double origin away would still
+round-trip it perfectly. The probe carries centimetre offsets instead, which no
+float at that magnitude can hold.
+
 The one exception is `amsterdam_tile.laz`, which needs the codec: it is written
 once by `core/tests/tools/make_laz_fixture.cpp` and committed, and
 `LazDecodesIdenticallyToLas` compares it against the uncompressed tile point for

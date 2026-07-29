@@ -149,6 +149,31 @@ def tile_points() -> list[tuple[float, float, float, int]]:
     return points
 
 
+# The offsets, in metres, that precision_probe.las carries past its lattice.
+# Every one is well under the 0.5 m a float can resolve at this northing, and
+# none is a multiple of it, so an absolute-float reader loses them entirely.
+PROBE_OFFSETS = (0.01, 0.07, 0.13, 0.21, 0.34, 0.43, 0.57, 0.89)
+
+
+def precision_probe_points() -> list[tuple[float, float, float, int]]:
+    """Points whose detail only survives a double origin.
+
+    This fixture exists because the main tile cannot prove the precision claim:
+    its 5 m lattice is exactly representable in an absolute float at UTM
+    magnitude (the quantum there is exactly 0.5 m), so a reader that threw the
+    double origin away would still round-trip it perfectly.
+    """
+    return [
+        (
+            TILE_EAST + offset,
+            TILE_NORTH + offset,
+            GROUND_Z + offset,
+            CLASS_GROUND,
+        )
+        for offset in PROBE_OFFSETS
+    ]
+
+
 # --- LAS writing ------------------------------------------------------------
 
 
@@ -346,6 +371,22 @@ def main() -> None:
         version_minor=2,
         point_format=1,
         vlrs=b"",
+    )
+
+    # A tile whose detail is FINER THAN A FLOAT'S QUANTUM AT ITS OWN MAGNITUDE.
+    #
+    # The main tile cannot prove the precision claim, and it took a sabotage run
+    # to notice: its coordinates sit on a 5 m lattice, and at a northing of
+    # 5.8e6 a float's quantum is exactly 0.5 m -- so every one of those lattice
+    # values is exactly representable even in an absolute float, and a reader
+    # that dropped the double origin would still pass. These points are offset
+    # by centimetres instead, which no float at this magnitude can hold.
+    write_las(
+        OUT / "precision_probe.las",
+        precision_probe_points(),
+        version_minor=2,
+        point_format=1,
+        vlrs=geokey_vlr(32631),
     )
 
     print("done. amsterdam_tile.laz is built separately -- see this file's docstring.")

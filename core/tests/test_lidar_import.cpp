@@ -86,7 +86,8 @@ TEST(LidarCommittedFixtures, EveryFixtureIsPresent) {
                            "amsterdam_tile_extra.las",
                            "amsterdam_tile.laz",
                            "unsupported_crs.las",
-                           "no_crs.las"}) {
+                           "no_crs.las",
+                           "precision_probe.las"}) {
     EXPECT_TRUE(std::filesystem::exists(fixture(name))) << name;
   }
 }
@@ -370,6 +371,44 @@ TEST(LidarImport, PointsStayFaithfulThroughTheFloatOffsetRepresentation) {
   }
   EXPECT_TRUE(saw_a_big_northing) << "the fixture must actually sit at UTM magnitude, or this "
                                      "test proves nothing";
+  // ...and it still does not prove the offset representation. See the test
+  // below, and the note on why this one cannot.
+}
+
+TEST(LidarImport, DetailFinerThanAFloatsQuantumSurvivesTheRead) {
+  // ★ THE TEST THAT ACTUALLY PINS THE OFFSET REPRESENTATION, and it exists
+  // because a sabotage run found that nothing did.
+  //
+  // Forcing the cloud origin to zero — storing absolute coordinates in the
+  // floats — left every other test in this file green. The reason is arithmetic
+  // rather than luck: at a northing of 5 803 000 a float's quantum is EXACTLY
+  // 0.5 m, and the main tile's coordinates are all multiples of 5, so they are
+  // exactly representable even in an absolute float.
+  //
+  // precision_probe.las carries centimetre offsets instead. Those are the
+  // detail a real survey is made of, they are finer than the quantum, and no
+  // absolute float at this magnitude can hold them.
+  const auto result = load_point_cloud(fixture("precision_probe.las"));
+  ASSERT_TRUE(result.has_value()) << result.error().message;
+  ASSERT_EQ(result->cloud.size(), 8U);
+
+  // The magnitude lives in the double origin...
+  EXPECT_GT(result->cloud.origin[1], 5.0e6)
+      << "the origin must carry the tile's magnitude, or the floats are absolute";
+  // ...and the floats carry only detail, so they stay small.
+  for (const float value : result->cloud.xyz) {
+    EXPECT_LT(std::abs(value), 1000.0F) << "a stored offset the size of a UTM northing means the "
+                                           "cloud is not relative to its own origin";
+  }
+
+  // And the detail itself survives, to a millimetre — three orders of magnitude
+  // below the quantum an absolute float would have imposed.
+  constexpr std::array<double, 8> kOffsets{0.01, 0.07, 0.13, 0.21, 0.34, 0.43, 0.57, 0.89};
+  for (std::size_t i = 0; i < kOffsets.size(); ++i) {
+    const std::array<double, 3> world = result->cloud.point(i);
+    EXPECT_NEAR(world[0] - 628000.0, kOffsets[i], 1e-3) << "point " << i;
+    EXPECT_NEAR(world[1] - 5803000.0, kOffsets[i], 1e-3) << "point " << i;
+  }
 }
 
 // --- Refusals ---------------------------------------------------------------

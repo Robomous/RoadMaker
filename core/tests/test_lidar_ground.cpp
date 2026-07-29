@@ -130,6 +130,61 @@ TEST(LidarGround, FitsTheFixtureTilesOwnSlopedPlane) {
   EXPECT_GT(high_y, low_corner);
 }
 
+TEST(LidarGround, TheClassifiedFitReadsTheMeanOfItsPost_NotTheLowestReturn) {
+  // ★ THE GATE THAT PINS MEAN-VS-MIN ON THE CLASSIFIED PATH, and it exists
+  // because a sabotage run found that nothing did.
+  //
+  // Swapping the classified path back to the lowest return left every other
+  // test in this file green: the error it introduces is about half a cell of
+  // grade, which is exactly the slack those tests have to allow for a binning
+  // fit. So none of them can see the difference, and this one has to be exact
+  // rather than tolerant.
+  //
+  // It can be, because the fixture's geometry makes both estimators COMPUTABLE.
+  // The tile is a 5 m lattice on a plane; posts are 10 m apart; a return
+  // exactly half a cell from two posts is a tie, and nearest-post rounding
+  // breaks every tie the same way (away from zero, i.e. uphill). So each
+  // interior post collects precisely the 2×2 block of lattice points at
+  // relative offsets {-5, 0} × {-5, 0}, and:
+  //
+  //   the MEAN of that block sits at relative (-2.5, -2.5)  ->  -0.175 m
+  //   the MINIMUM of it sits at relative     (-5.0, -5.0)   ->  -0.350 m
+  //
+  // Both are constants, and they are a factor of two apart. Asserting the first
+  // to a millimetre therefore rejects the second outright — and, unlike a
+  // one-sided "is it biased low" check, it also documents that the residual
+  // offset is the TIE RULE's, not the estimator's.
+  const auto tile = load_point_cloud(fixture("amsterdam_tile.las"));
+  ASSERT_TRUE(tile.has_value()) << (tile ? "" : tile.error().message);
+
+  std::vector<Diagnostic> diagnostics;
+  GroundFitOptions options;
+  options.spacing = 10.0;
+  const auto field = point_cloud_to_height_field(tile->cloud, options, diagnostics);
+  ASSERT_TRUE(field.has_value()) << (field ? "" : field.error().message);
+
+  const double mean_offset = expected_ground(-2.5, -2.5) - expected_ground(0.0, 0.0);
+  const double min_offset = expected_ground(-5.0, -5.0) - expected_ground(0.0, 0.0);
+  ASSERT_LT(std::abs(mean_offset - min_offset), 1.0)
+      << "the two estimators must differ, or this test proves nothing";
+  ASSERT_GT(std::abs(mean_offset - min_offset), 0.1)
+      << "the two estimators must differ by more than the assertion tolerance";
+
+  std::size_t counted = 0;
+  for (std::size_t row = 1; row + 1 < field->rows; ++row) {
+    for (std::size_t col = 1; col + 1 < field->cols; ++col) {
+      const double dx = static_cast<double>(col) * options.spacing;
+      const double dy = static_cast<double>(row) * options.spacing;
+      EXPECT_NEAR(
+          field->heights[(row * field->cols) + col], expected_ground(dx, dy) + mean_offset, 1e-3)
+          << "post (" << col << "," << row << ") — a value near "
+          << expected_ground(dx, dy) + min_offset << " would mean the lowest return, not the mean";
+      ++counted;
+    }
+  }
+  ASSERT_GT(counted, 0U) << "no interior posts — this test would be vacuous";
+}
+
 TEST(LidarGround, TheBuildingIsExcludedWhenTheTileClassifiesGround) {
   // ★ THE CASE THE TWO ESTIMATORS DISAGREE ON. The fixture stands an 8 m
   // building on the ground plane. A classification-driven fit ignores it; a
