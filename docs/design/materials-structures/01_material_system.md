@@ -50,7 +50,7 @@ texture path.
         "roughness": "assets/textures/asphalt/asphalt_new_rough_512.jpg"
       },
       "uv_scale": 0.25,
-      "params": { "roughness": 0.72, "normal_strength": 1.0, "tint": [1, 1, 1, 1] }
+      "params": { "roughness": 0.72, "normal_strength": 1.0, "tint": [1, 1, 1, 1], "friction": 0.9 }
     }
   ]
 }
@@ -64,6 +64,29 @@ texture path.
   This is what keeps old scenes rendering unchanged.
 - **`params` are scalar fallbacks and modifiers**, applied whether or not the
   corresponding map exists.
+
+**Amendment (2026-07-29, `p6-s8` / [#322](https://github.com/Robomous/RoadMaker/issues/322)).**
+Two fields the shipped schema carries that this example did not anticipate, both
+because import made them load-bearing:
+
+- **`params.friction`** — the nominal friction the editor authors into the lane's
+  `<material>` record. It has existed on `MaterialDef` since WS-1 shipped the
+  compiled-in catalog (`editor/src/render/material_catalog.hpp:48`) and is what
+  the Library drop writes into `LaneMaterial::friction`; §3's table below already
+  assumes a `friction` attribute reaches the `.xodr`, so the definition has to
+  carry one. It is a `params` entry rather than a top-level field because it is
+  exactly what the others are: a scalar the definition supplies and the assignment
+  may override. Absent → 0.9.
+- **`source` and `license`** (per entry, both optional strings) — the original
+  absolute path an imported material was copied from, and the user's licence
+  attestation. Required by #322's acceptance; provenance only, never read to load
+  the asset. Absent on every compiled-in material, since a bundled definition's
+  licence is ledgered in `ASSETS_LICENSES.md` instead.
+
+`p6-s8` is also where this section stops being deferred: the block described here
+is now parsed and written, and a project's `materials[]` entries extend the
+compiled-in catalog behind the single `find_material` lookup. See
+[ADR-0013](../../decisions/0013-asset-import-gltf-and-images.md).
 
 **Schema versioning.** `manifest_version` goes 1 → 2. The existing loader
 (`library_manifest.cpp`) already parses an unknown version best-effort with a
