@@ -37,6 +37,7 @@
 //       core/tests/data/lidar/amsterdam_tile.las \
 //       core/tests/data/lidar/amsterdam_tile.laz
 
+#include <cstddef>
 #include <cstdint>
 #include <cstdio>
 #include <cstring>

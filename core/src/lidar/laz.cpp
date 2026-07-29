@@ -29,10 +29,15 @@
 
 #include <fmt/format.h>
 
+// <algorithm> is for std::any_of and std::min below. It arrives transitively on
+// macOS through libc++, so a clean local build is NOT evidence it is present —
+// Linux clang caught this one.
+#include <algorithm>
 #include <cstddef>
 #include <exception>
 #include <lazperf/readers.hpp>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include "lidar_common.hpp"
