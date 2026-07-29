@@ -23,8 +23,10 @@
 #include "roadmaker/gis/layer.hpp"
 #include "roadmaker/xodr/diagnostic.hpp"
 
+#include <cstdint>
 #include <filesystem>
 #include <optional>
+#include <span>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -65,6 +67,23 @@ enforce_texel_budget(std::size_t width, std::size_t height, std::string_view sou
 /// none. Never fails: a missing `.prj` is a legitimate state that the caller
 /// turns into a warning with format-specific wording.
 [[nodiscard]] std::string read_sibling_prj(const std::filesystem::path& path);
+
+/// The CRS a GeoTIFF GeoKey directory describes, as a string `parse_crs`
+/// understands, or empty when it names none.
+///
+/// `keys` is the flat uint16 array itself: a 4-value header (version, revision,
+/// minor, key count) then 4 values per key (id, tiff_tag_location, count,
+/// value_or_offset). When tiff_tag_location is 0, `value_or_offset` IS the
+/// value — the only case a supported CRS ever takes, since EPSG codes are plain
+/// shorts.
+///
+/// Takes the array rather than a `TIFF*` because a GeoTIFF is not the only
+/// place this directory appears: LAS carries the identical structure in its
+/// `LASF_Projection` record 34735 (p7-s3, #243). One reader, so a GeoTIFF and a
+/// lidar tile describing the same CRS can never disagree about it.
+[[nodiscard]] std::string crs_from_geokey_directory(std::span<const std::uint16_t> keys,
+                                                    std::vector<Diagnostic>& diagnostics,
+                                                    std::string_view source_name);
 
 // --- Format entry points, one per source file -----------------------------
 

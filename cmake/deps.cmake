@@ -123,6 +123,41 @@ FetchContent_Declare(nanosvg
 )
 
 # ---------------------------------------------------------------------------
+# laz-perf 3.4.0 (Apache-2.0) — the LAZ arithmetic decoder for the lidar
+# importer (roadmaker::lidar). ADR-0011: PDAL was the roadmap's named vehicle
+# and is not taken, because its cmake reads `find_package(PROJ 9.0 REQUIRED)`
+# and `find_package(GDAL CONFIG REQUIRED)` — the dependency ADR-0010 declined.
+# laz-perf is the opposite proposition: its own root CMakeLists calls
+# find_package ZERO times. LAS itself is read by RoadMaker; this decodes the
+# compressed point stream and nothing else.
+#
+# BUILT FROM SOURCE, NOT VIA ITS OWN CMakeLists, which is why SOURCE_SUBDIR
+# disables it (the same idiom the twelve declarations above use). Upstream's
+# cpp/CMakeLists.txt would give us three things we do not want and cannot switch
+# off: a SHARED `lazperf` target declared explicitly rather than through
+# BUILD_SHARED_LIBS, so forcing static does not suppress it; UNGUARDED
+# `add_subdirectory(benchmarks)` and `add_subdirectory(tools)`, which build
+# executables nothing here runs; and UNGUARDED `install(FILES ...)` rules that
+# would put lazperf headers into RoadMaker's own install tree. Its
+# `WITH_TESTS` default is worse than any of them — the ON path runs
+# `file(DOWNLOAD ...)` of a sample tile AT CONFIGURE TIME, so a build that must
+# be reproducible offline would reach the network to configure.
+#
+# The library is a flat source list, so compiling it directly is both smaller
+# than fighting those defaults and exactly as reproducible.
+#
+# No release ASSET is published upstream (checked 2026-07-28: the 3.4.0 release
+# carries none), so this is a forge-generated tag archive — the shape libtiff
+# below deliberately avoids. Accepted here because there is no alternative
+# artifact, and it is the same footing as the stb and nanosvg pins above. If a
+# clean build ever fails its URL_HASH, that is why.
+FetchContent_Declare(lazperf
+  URL https://github.com/hobuinc/laz-perf/archive/refs/tags/3.4.0.tar.gz
+  URL_HASH SHA256=ddc1219cac345aee53a33b52dde6b28892e85708b848ab6831dc0c9aa795534d
+  SOURCE_SUBDIR cmake-disabled
+)
+
+# ---------------------------------------------------------------------------
 # libtiff 4.7.2 (BSD-style "libtiff" licence; maintainer-approved per-case,
 # ADR-0010 — the SPDX id `libtiff` is not literally on the allowed list, and
 # the LZW code carries an ADDITIONAL UC Berkeley acknowledgement obligation
@@ -286,7 +321,7 @@ endif()
 # ---------------------------------------------------------------------------
 FetchContent_MakeAvailable(
   fmt spdlog eigen pugixml clipper2 cdt manifold tinygltf stb nanosvg
-  clothoids utilslite quartic gencon tlexpected fastfloat)
+  clothoids utilslite quartic gencon tlexpected fastfloat lazperf)
 # libtiff defaults BUILD_SHARED_LIBS ON; force the static build so the kernel
 # stays a single artifact with nothing to deploy beside it (same save/force/
 # restore dance md4c needs below, for the same reason).
@@ -399,6 +434,32 @@ target_include_directories(rm_stb SYSTEM INTERFACE ${stb_SOURCE_DIR})
 add_library(rm_json INTERFACE)
 add_library(nlohmann::json ALIAS rm_json)
 target_include_directories(rm_json SYSTEM INTERFACE ${tinygltf_SOURCE_DIR})
+
+# laz-perf — compiled here rather than by its own CMakeLists (see the pin above
+# for the three unguarded things that build would add). The library is a flat
+# source list, so this is the whole of it.
+#
+# ★ LAZPERF_VENDORED IS UPSTREAM'S OWN MACRO FOR EXACTLY THIS CASE, and it is
+# not optional. Without it `LAZPERF_EXPORT` expands to __declspec(dllexport) on
+# Windows — inside a STATIC library, which is wrong and which MSVC diagnoses —
+# and to __attribute__((visibility("default"))) elsewhere, publishing symbols
+# from a dependency the kernel does not re-export. With it, the macro is empty.
+file(GLOB _rm_lazperf_sources
+  ${lazperf_SOURCE_DIR}/cpp/lazperf/*.cpp
+  ${lazperf_SOURCE_DIR}/cpp/lazperf/detail/*.cpp)
+add_library(rm_lazperf STATIC ${_rm_lazperf_sources})
+add_library(lazperf::lazperf ALIAS rm_lazperf)
+target_compile_definitions(rm_lazperf PUBLIC LAZPERF_VENDORED)
+# SYSTEM so the dependency's own warnings never fail our -Werror build, and
+# BUILD_INTERFACE so the absolute path stays out of any exported target
+# (roadmaker installs a CMake package when RM_BUILD_SHARED=ON, and
+# install(EXPORT) rejects bare build-tree paths).
+target_include_directories(rm_lazperf SYSTEM PUBLIC
+  $<BUILD_INTERFACE:${lazperf_SOURCE_DIR}/cpp>)
+set_target_properties(rm_lazperf PROPERTIES
+  POSITION_INDEPENDENT_CODE ON  # RM_BUILD_SHARED links it into a shared kernel
+  CXX_STANDARD 17
+  CXX_STANDARD_REQUIRED ON)
 
 # nanosvg (header-only; NANOSVG*_IMPLEMENTATION lives in core/src/assets)
 add_library(rm_nanosvg INTERFACE)
