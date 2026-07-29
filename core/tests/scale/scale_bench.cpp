@@ -128,8 +128,9 @@ roadmaker::RoadNetwork georeferenced() {
 
 /// The district, generated once and shared. Building it is not on any
 /// measured path.
-const roadmaker::scale::DistrictSpec& measured_spec() {
-  static const roadmaker::scale::DistrictSpec value = roadmaker::scale::spec_from_environment();
+/// Set once by main() from `--blocks=N`, then read everywhere.
+roadmaker::scale::DistrictSpec& measured_spec() {
+  static roadmaker::scale::DistrictSpec value;
   return value;
 }
 
@@ -179,7 +180,7 @@ TEST(Scale, TheDefaultDistrictIsTheSizeBothInheritedTargetsName) {
   record("district_segments", static_cast<double>(spec.segment_count()));
   // ...and separately, what this RUN measured, so a metrics file can never
   // imply a size it did not exercise.
-  std::printf("[ Scale ] THIS RUN: %.1f km², %zu segments (RM_SCALE_BLOCKS=%d)\n",
+  std::printf("[ Scale ] THIS RUN: %.1f km², %zu segments (--blocks=%d)\n",
               measured_spec().area_km2(),
               measured_spec().segment_count(),
               measured_spec().blocks);
@@ -381,6 +382,7 @@ TEST(Scale, TheCostDoesNotGrowQuadraticallyWithTheDistrict) {
 
 int main(int argc, char** argv) {
   ::testing::InitGoogleTest(&argc, argv);
+  measured_spec() = roadmaker::scale::spec_from_args(argc, argv);
   const int status = RUN_ALL_TESTS();
 
   // Always written, pass or fail: a red run's numbers are the interesting

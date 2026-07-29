@@ -18,7 +18,7 @@
 
 #include <fmt/format.h>
 
-#include <cstdlib>
+#include <charconv>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -46,11 +46,18 @@ const char* highway_for(int index, const DistrictSpec& spec) {
 
 } // namespace
 
-DistrictSpec spec_from_environment() {
+DistrictSpec spec_from_args(int argc, char** argv) {
   DistrictSpec spec;
-  if (const char* blocks = std::getenv("RM_SCALE_BLOCKS"); blocks != nullptr) {
-    const int parsed = std::atoi(blocks);
-    if (parsed >= 3) {
+  constexpr std::string_view kFlag = "--blocks=";
+  for (int i = 1; i < argc; ++i) {
+    const std::string_view arg = argv[i];
+    if (!arg.starts_with(kFlag)) {
+      continue;
+    }
+    const std::string_view value = arg.substr(kFlag.size());
+    int parsed = 0;
+    const auto [stop, error] = std::from_chars(value.data(), value.data() + value.size(), parsed);
+    if (error == std::errc{} && stop == value.data() + value.size() && parsed >= 3) {
       spec.blocks = parsed;
     }
   }

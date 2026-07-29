@@ -73,18 +73,22 @@ struct DistrictSpec {
   }
 };
 
-/// The spec the bench actually runs, honouring `RM_SCALE_BLOCKS`.
+/// The spec the bench runs, from a `--blocks=N` argument.
 ///
 /// **Why this is configurable at all, stated rather than buried.** The full
 /// 50 km² district is the size #54 named and the size `DistrictSpec`'s default
 /// carries — but the BUILD step at that size is super-linear (#502) and takes
 /// minutes, and a CI gate that risks its own timeout is not a gate. So the job
-/// runs a smaller district by default and the full-size numbers are measured
-/// by hand until #502 brings the cost down.
+/// runs a smaller district and the full-size numbers are measured by hand
+/// until #502 brings the cost down.
 ///
 /// The alternative was to shrink the district permanently and report a
 /// flattering number, which would have dodged the only question #54 asked.
-[[nodiscard]] DistrictSpec spec_from_environment();
+///
+/// A command-line flag rather than an environment variable: MSVC treats
+/// `getenv`'s deprecation as an error under this project's warnings-as-errors,
+/// and the knob is more visible in the CI step's own command line anyway.
+[[nodiscard]] DistrictSpec spec_from_args(int argc, char** argv);
 
 /// Renders the district as `.osm` XML.
 ///
