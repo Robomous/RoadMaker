@@ -15,6 +15,7 @@ Public headers live under `core/include/roadmaker/`, implementation under
 | `mesh/` | `mesh.hpp`, `mesh_builder.hpp` | Tessellation of the network into render/export meshes |
 | `gis/` | `crs.hpp`, `layer.hpp`, `reproject.hpp` | Geospatial ingest: a bounded, closed-form CRS family ([ADR-0010](../decisions/0010-gis-ingest-bounded-crs.md)); GeoJSON, ESRI Shapefile, GeoTIFF and world-filed imagery; reprojection into the scene's world frame |
 | `lidar/` | `point_cloud.hpp` | Point-cloud ingest: ASPRS LAS/LAZ read in-house ([ADR-0011](../decisions/0011-lidar-ingest-in-house-las.md)), decimated for display and ground-fitted into a `HeightField`. Reprojects through `gis::CrsTransform` |
+| `osm/` | `graph.hpp`, `tags.hpp` | OpenStreetMap ingest: the `.osm` XML interchange format read with the already-linked pugixml ([ADR-0012](../decisions/0012-osm-ingest-xml-in-house.md) — `.osm.pbf` is refused because it needs zlib), and the `highway=*` → road-class mapping governed by [osm_mapping.md](../domain/osm_mapping.md). Reprojects through `gis::CrsTransform` |
 | `io/` | `gltf_exporter.hpp`, `usd_exporter.hpp`, `export_preview.hpp` | Exporters (glTF and USD) and the export-preview manifests |
 | `edit/` | `command.hpp`, `edit_stack.hpp`, `operations.hpp` | Undoable edit commands |
 | (root) | `error.hpp`, `tol.hpp`, `version.hpp` | `Expected`/`Error`, named tolerances |

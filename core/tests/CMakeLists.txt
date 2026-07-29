@@ -13,6 +13,9 @@ add_executable(roadmaker_core_tests
   test_user_data_preservation.cpp
   test_georeference.cpp
   test_road_type.cpp
+  test_simplify.cpp
+  test_osm_mapping.cpp
+  test_osm_reader.cpp
   test_xodr_reader.cpp
   test_xodr_diagnostics.cpp
   test_xodr_writer.cpp
@@ -119,6 +122,7 @@ target_compile_definitions(roadmaker_core_tests PRIVATE
   # scripts/gen_lidar_fixtures.py — except amsterdam_tile.laz, which needs
   # the codec and comes from the rm_make_laz_fixture tool below.
   RM_LIDAR_FIXTURES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/data/lidar"
+  RM_OSM_FIXTURES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/data/osm"
   # test_rm_registry.cpp scans the committed reader/writer sources and the
   # sibling tests for rm: code coverage (fmt-s2, #326) — the same
   # read-the-repo-off-disk move as RM_DOCS_DIR above.

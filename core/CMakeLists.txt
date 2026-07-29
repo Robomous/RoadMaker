@@ -10,6 +10,7 @@ endif()
 add_library(roadmaker_core ${_rm_core_type}
   src/version.cpp
   src/geometry/reference_line.cpp
+  src/geometry/simplify.cpp
   src/geometry/profile_fit.cpp
   src/geometry/road_intersection.cpp
   src/road/network.cpp
@@ -65,6 +66,12 @@ add_library(roadmaker_core ${_rm_core_type}
   src/gis/geotiff.cpp
   src/gis/world_file.cpp
   src/gis/reproject.cpp
+  # OSM ingest (p7-s4, #244). Unconditional for the third time and the same
+  # reason: ADR-0012 reads the .osm XML interchange format with the pugixml
+  # this project already links, so there is no new dependency, no OFF-by-default
+  # gate, no runtime data and no second CI configuration.
+  src/osm/tags.cpp
+  src/osm/osm_xml.cpp
   # Lidar ingest (p7-s3, #243), unconditional for the same reason: ADR-0011
   # keeps the reader in-house and takes only laz-perf, so there is no
   # OFF-by-default gate and no runtime data here either.
