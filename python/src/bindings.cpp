@@ -541,10 +541,57 @@ NB_MODULE(_roadmaker, m) {
               "<bridge> spans over this road (§13.12). Empty on a road with no "
               "bridge. Exposed so a caller can see where a span sits after a "
               "move re-anchored it (cascade-s3).")
+      .def_ro("types",
+              &roadmaker::Road::types,
+              "<type> records: the road's purpose over an s-range and the speed "
+              "limit that goes with it (§10.4). Empty on a road that declares no "
+              "type, which is legal.")
       .def("__repr__", [](const roadmaker::Road& road) {
         return "Road(odr_id='" + road.odr_id + "', name='" + road.name +
                "', length=" + std::to_string(road.length) + ")";
       });
+
+  // <type>/<speed> (§10.4, §10.4.1) — #454. Read-only for now: authoring goes
+  // through the importers, and stamping a type from the road class is tracked
+  // on #454 itself.
+  nb::class_<roadmaker::RoadSpeed>(m, "RoadSpeed")
+      .def_ro("max_str",
+              &roadmaker::RoadSpeed::max_str,
+              "@max EXACTLY as written, and the only form that round-trips. "
+              "t_maxSpeed is a union of a number and the literals 'no limit' "
+              "and 'undefined', so the string is the authority.")
+      .def_ro("max",
+              &roadmaker::RoadSpeed::max,
+              "The numeric value of max_str, or None when @max is one of the two "
+              "string literals (or is neither). Derived — never the source.")
+      .def_ro("unit",
+              &roadmaker::RoadSpeed::unit,
+              "e_unitSpeed: 'km/h', 'm/s' or 'mph'. Empty when absent.")
+      .def("__repr__", [](const roadmaker::RoadSpeed& speed) {
+        return "RoadSpeed(max='" + speed.max_str + "', unit='" + speed.unit + "')";
+      });
+
+  nb::class_<roadmaker::RoadTypeRecord>(m, "RoadTypeRecord")
+      .def_ro("s", &roadmaker::RoadTypeRecord::s, "Start station [m]; valid until the next record.")
+      .def_ro("type",
+              &roadmaker::RoadTypeRecord::type,
+              "e_roadType, kept verbatim so a spelling outside the standard's "
+              "thirteen survives instead of being flattened to 'unknown'.")
+      .def_ro("country", &roadmaker::RoadTypeRecord::country, "ISO 3166-1 alpha-2, or empty.")
+      .def_ro("speed", &roadmaker::RoadTypeRecord::speed, "The <speed> child, or None.")
+      .def("__repr__", [](const roadmaker::RoadTypeRecord& record) {
+        return "RoadTypeRecord(s=" + std::to_string(record.s) + ", type='" + record.type + "')";
+      });
+
+  m.def("is_known_road_type",
+        &roadmaker::is_known_road_type,
+        "type"_a,
+        "Whether the spelling is one of e_roadType's thirteen literals (§16 A.6.2). "
+        "The list is identical in OpenDRIVE 1.8.1 and 1.9.0.");
+  m.def("is_known_speed_unit",
+        &roadmaker::is_known_speed_unit,
+        "unit"_a,
+        "Whether the spelling is one of e_unitSpeed's three literals (§16 A.1.5).");
 
   // A <bridge> span (p5-s3, #233). Read-only: authoring goes through the
   // author_bridge / set_bridge_span / remove_bridge commands.

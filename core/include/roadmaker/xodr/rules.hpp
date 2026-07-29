@@ -147,6 +147,19 @@ inline constexpr std::string_view kJunctionElevGridPerpendicular =
 /// "The type of an object shall be given by the @type attribute." (§13.1.)
 inline constexpr std::string_view kObjectTypeAttr = "asam.net:xodr:1.7.0:road.object.type_attr";
 
+/// "<type> elements shall be defined in ascending order according to the
+/// s-coordinate." (§10.4.) Reported, never silently repaired — @s is what
+/// makes a record meaningful, so re-sorting a foreign file would change bytes
+/// we were asked to preserve without changing what the file means.
+inline constexpr std::string_view kRoadTypeAscOrder =
+    "asam.net:xodr:1.4.0:road.type.elem_asc_order";
+
+/// "There shall only be ALPHA-2 country codes in use, no ALPHA-3 country
+/// codes, because only ALPHA-2 country codes support state identifiers."
+/// (§10.4, on `<type>`'s optional @country.)
+inline constexpr std::string_view kRoadTypeAlpha2Country =
+    "asam.net:xodr:1.7.0:road.type.only_alpha_2_country_codes";
+
 /// "Bridges are valid for a road's complete cross section unless a lane
 /// validity record with further restrictions is provided as child element."
 /// A `<bridge>` must declare its @type; a narrowing `<laneValidity>` is

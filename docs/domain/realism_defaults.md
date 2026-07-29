@@ -165,6 +165,36 @@ limits.
 | Mid-rise | **3.7 m per floor** + 1.0 m parapet | residential floors 3.0 m |
 | Building footprint sanity | a house is not smaller than 2 car lengths per side (≈ 10.0 × 8.0 m typical) | — |
 
+## 1.7 Road type (per road class)
+
+([#454](https://github.com/Robomous/RoadMaker/issues/454)) OpenDRIVE
+`<type>` (§10.4) is the standard's own carrier for the concept §1.2's
+road classes describe, so the two are bound here rather than in each
+consumer. The `e_roadType` enumeration is **identical in 1.8.1 and
+1.9.0** — 13 literals, same order — so nothing about this table is
+revision-conditional.
+
+<!-- rm-defaults: road-type -->
+| Road class | OpenDRIVE `@type` |
+|---|---|
+| freeway | `motorway` |
+| arterial | `townArterial` |
+| collector | `townCollector` |
+| local | `townLocal` |
+
+**There is deliberately no per-class default speed.** A speed limit is a
+fact about a particular road, not about its class, and `<speed>` is
+optional (multiplicity 0..1) precisely so a file can decline to claim
+one. Inventing 35 mph for every collector whose source recorded no limit
+would be guessing where the honest answer is silence — the rule
+[ADR-0010](../decisions/0010-gis-ingest-bounded-crs.md) states for
+coordinate systems, applied to speeds. A road's `<speed>` is written only
+when something actually knows it: an imported `maxspeed`, or a user.
+
+`@max` is `t_maxSpeed`, a **union of a number and the two string literals
+`no limit` and `undefined`** — which is why the data model keeps the
+verbatim spelling and derives the number from it, never the reverse.
+
 ## Auto-orientation of signs & signals
 
 ([#416](https://github.com/Robomous/RoadMaker/issues/416)) The default

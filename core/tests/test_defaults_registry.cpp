@@ -136,6 +136,20 @@ TEST(DefaultsRegistry, RenderersEmitTheirMarkers) {
   EXPECT_EQ(defaults::trees_buildings_markdown().rfind("<!-- rm-defaults: trees-buildings -->", 0),
             0U);
   EXPECT_EQ(defaults::orientation_markdown().rfind("<!-- rm-defaults: orientation -->", 0), 0U);
+  EXPECT_EQ(defaults::road_type_markdown().rfind("<!-- rm-defaults: road-type -->", 0), 0U);
+}
+
+// §1.7 binds each road class to the OpenDRIVE <type> literal that names it
+// (#454). The gate matters more than it looks: a typo here writes an
+// out-of-enum @type into every road the mapping touches, and @type is a plain
+// string all the way to the file, so nothing else would catch it.
+TEST(DefaultsRegistry, DocRoadTypeTableMatchesRegistry) {
+  const std::string generated = defaults::road_type_markdown();
+  EXPECT_TRUE(committed_spec_doc().find(generated) != std::string::npos)
+      << "docs/domain/realism_defaults.md \u00a71.7 is out of date with the defaults "
+         "registry.\nRegenerate the marked table from "
+         "defaults::road_type_markdown():\n\n"
+      << generated;
 }
 
 // The four create-road templates are table consumers: every width they author

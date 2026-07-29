@@ -12,6 +12,7 @@ add_executable(roadmaker_core_tests
   test_raw_xml.cpp
   test_user_data_preservation.cpp
   test_georeference.cpp
+  test_road_type.cpp
   test_xodr_reader.cpp
   test_xodr_diagnostics.cpp
   test_xodr_writer.cpp

@@ -100,6 +100,23 @@ const char* road_class_name(RoadClass road_class) {
   return "arterial";
 }
 
+const char* road_type_name(RoadClass road_class) {
+  // The four e_roadType literals (§16 A.6.2) that name these classes. The
+  // "town*" family is the standard's own vocabulary for urban hierarchy, so
+  // three of the four map exactly; a freeway is a motorway.
+  switch (road_class) {
+  case RoadClass::Freeway:
+    return "motorway";
+  case RoadClass::Arterial:
+    return "townArterial";
+  case RoadClass::Collector:
+    return "townCollector";
+  case RoadClass::Local:
+    return "townLocal";
+  }
+  return "townArterial";
+}
+
 std::string cross_section_markdown() {
   std::string out = "<!-- rm-defaults: cross-section -->\n"
                     "| Element | Default | Imperial display | Range | Basis |\n"
@@ -318,6 +335,17 @@ std::string orientation_markdown() {
   row("Sign/signal toe-out from perpendicular",
       fmt::format("**{} ({} rad)**", deg(kSignToeOut), rad(kSignToeOut)));
   row("Prop rotation-ring snap increment", fmt::format("**{}**", deg(kPropRotationSnap)));
+  return out;
+}
+
+std::string road_type_markdown() {
+  std::string out = "<!-- rm-defaults: road-type -->\n"
+                    "| Road class | OpenDRIVE `@type` |\n"
+                    "|---|---|\n";
+  for (const RoadClass road_class :
+       {RoadClass::Freeway, RoadClass::Arterial, RoadClass::Collector, RoadClass::Local}) {
+    out += fmt::format("| {} | `{}` |\n", road_class_name(road_class), road_type_name(road_class));
+  }
   return out;
 }
 

@@ -1183,6 +1183,38 @@ void write_road(pugi::xml_node root,
     }
   }
 
+  // <type> sits between <link> and <planView> in t_road's sequence (§10.4).
+  // @max is written from the VERBATIM string, never from the parsed number:
+  // t_maxSpeed's "no limit" and "undefined" have no numeric form, and routing
+  // them through a double would silently rewrite an autobahn as max="0".
+  for (const RoadTypeRecord& type : road.types) {
+    pugi::xml_node type_node = road_node.append_child("type");
+    set_num(type_node, "s", type.s);
+    type_node.append_attribute("type").set_value(type.type.c_str());
+    if (!type.country.empty()) {
+      type_node.append_attribute("country").set_value(type.country.c_str());
+    }
+    for (const auto& [name, value] : type.extras.attributes) {
+      type_node.append_attribute(name.c_str()).set_value(value.c_str());
+    }
+    if (type.speed) {
+      pugi::xml_node speed_node = type_node.append_child("speed");
+      speed_node.append_attribute("max").set_value(type.speed->max_str.c_str());
+      if (!type.speed->unit.empty()) {
+        speed_node.append_attribute("unit").set_value(type.speed->unit.c_str());
+      }
+      for (const auto& [name, value] : type.speed->extras.attributes) {
+        speed_node.append_attribute(name.c_str()).set_value(value.c_str());
+      }
+      for (const std::string& fragment : type.speed->extras.children) {
+        append_fragment(speed_node, fragment);
+      }
+    }
+    for (const std::string& fragment : type.extras.children) {
+      append_fragment(type_node, fragment);
+    }
+  }
+
   pugi::xml_node plan_view = road_node.append_child("planView");
   for (const GeometryRecord& record : road.plan_view.records()) {
     pugi::xml_node geometry = plan_view.append_child("geometry");
