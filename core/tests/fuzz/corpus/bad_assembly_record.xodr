@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- MALFORMED seed (hand-derived from objects_assembly.xodr): every way an
+     rm:assembly record can be unreadable — a missing @inst, no @part at all, a
+     @part beyond props::kMaxAssemblyParts, a non-numeric offset, and an unknown
+     extra attribute. Each of the first four must warn and drop the RECORD while
+     leaving the <object> live (Layer 0 survives); the fifth must warn and keep
+     the record. Never a crash, never a silently vanishing prop. Apache-2.0. -->
+<OpenDRIVE>
+  <header revMajor="1" revMinor="8" name="bad_assembly_record" vendor="RoadMaker" />
+  <road length="80" id="1" junction="-1">
+    <planView>
+      <geometry s="0" x="0" y="0" hdg="0" length="80">
+        <line />
+      </geometry>
+    </planView>
+    <lanes>
+      <laneSection s="0">
+        <center>
+          <lane id="0" type="none" level="false">
+            <roadMark sOffset="0" type="broken" width="0.1" />
+          </lane>
+        </center>
+        <right>
+          <lane id="-1" type="driving" level="false">
+            <width sOffset="0" a="3.6" b="0" c="0" d="0" />
+            <roadMark sOffset="0" type="solid" width="0.1" />
+          </lane>
+        </right>
+      </laneSection>
+    </lanes>
+    <objects>
+      <object type="pole" name="pole_signal" id="1" s="10" t="-6" zOffset="0" orientation="none" radius="0.14" height="6.47">
+        <userData code="rm:assembly" asset="signal_mast" part="0" />
+      </object>
+      <object type="pole" name="pole_signal" id="2" s="20" t="-6" zOffset="0" orientation="none" radius="0.14" height="6.47">
+        <userData code="rm:assembly" asset="signal_mast" inst="2" />
+      </object>
+      <object type="pole" name="pole_signal" id="3" s="30" t="-6" zOffset="0" orientation="none" radius="0.14" height="6.47">
+        <userData code="rm:assembly" asset="signal_mast" inst="3" part="9001" />
+      </object>
+      <object type="pole" name="signal_head" id="4" s="40" t="-4.2" zOffset="5.2" orientation="none" radius="0.2" height="1.07">
+        <userData code="rm:assembly" asset="signal_mast" inst="4" part="1" dv="sideways" />
+      </object>
+      <object type="pole" name="signal_head" id="5" s="50" t="-4.2" zOffset="5.2" orientation="none" radius="0.2" height="1.07">
+        <userData code="rm:assembly" asset="signal_mast" inst="5" part="1" dv="1.8" futureField="9" />
+      </object>
+      <object type="pole" name="pole_signal" id="6" s="60" t="-6" zOffset="0" orientation="none" radius="0.14" height="6.47">
+        <userData code="rm:assembly" asset="signal_mast" inst="6" part="-1" />
+      </object>
+    </objects>
+  </road>
+</OpenDRIVE>

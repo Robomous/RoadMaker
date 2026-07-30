@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- VALID seed: a mast-arm signal assembly (p6-s9, #323) as four ordinary
+     <object>s bound together by their rm:assembly userData. Part 0 is the anchor
+     and carries no offsets at all, which is the omitted-at-default rule; the arm
+     carries dz + a quarter turn of dyaw; the two heads carry dv + dz. A foreign
+     reader sees four valid props and loses only the grouping. Apache-2.0. -->
+<OpenDRIVE>
+  <header revMajor="1" revMinor="8" name="objects_assembly" vendor="RoadMaker" />
+  <road length="80" id="1" junction="-1">
+    <planView>
+      <geometry s="0" x="0" y="0" hdg="0" length="80">
+        <line />
+      </geometry>
+    </planView>
+    <lanes>
+      <laneSection s="0">
+        <left>
+          <lane id="1" type="driving" level="false">
+            <width sOffset="0" a="3.6" b="0" c="0" d="0" />
+            <roadMark sOffset="0" type="solid" width="0.1" />
+          </lane>
+        </left>
+        <center>
+          <lane id="0" type="none" level="false">
+            <roadMark sOffset="0" type="broken" width="0.1" />
+          </lane>
+        </center>
+        <right>
+          <lane id="-1" type="driving" level="false">
+            <width sOffset="0" a="3.6" b="0" c="0" d="0" />
+            <roadMark sOffset="0" type="solid" width="0.1" />
+          </lane>
+        </right>
+      </laneSection>
+    </lanes>
+    <objects>
+      <object type="pole" name="pole_signal" id="1" s="40" t="-6" zOffset="0" orientation="none" radius="0.14" height="6.47">
+        <userData code="rm:assembly" asset="signal_mast" inst="1" part="0" />
+      </object>
+      <object type="pole" name="mast_arm" id="2" s="40" t="-6" zOffset="6.27" hdg="1.5707963267948966" orientation="none" radius="7.3" height="0.2">
+        <userData code="rm:assembly" asset="signal_mast" inst="1" part="1" dz="6.27" dyaw="1.5707963267948966" />
+      </object>
+      <object type="pole" name="signal_head" id="3" s="40" t="-4.2" zOffset="5.2" orientation="none" radius="0.2" height="1.07">
+        <userData code="rm:assembly" asset="signal_mast" inst="1" part="2" dv="1.8" dz="5.2" />
+      </object>
+      <object type="pole" name="signal_head" id="4" s="40" t="-0.6" zOffset="5.2" orientation="none" radius="0.2" height="1.07">
+        <userData code="rm:assembly" asset="signal_mast" inst="1" part="3" dv="5.4" dz="5.2" />
+      </object>
+    </objects>
+  </road>
+</OpenDRIVE>

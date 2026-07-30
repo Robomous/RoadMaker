@@ -72,7 +72,7 @@ struct PropObstructionOptions {
 ///
 /// WHAT COUNTS AS AN OBSTRUCTION. A prop's bounding volume overlapping, in plan
 /// view and in height, another road's DRIVING band, a junction floor, or
-/// another prop. The five exclusions are not incidental — without them the
+/// another prop. The six exclusions are not incidental — without them the
 /// query flags ordinary, correct scenes:
 ///
 ///  R1. Never against its OWN anchor road. A prop is placed in that road's
@@ -91,6 +91,11 @@ struct PropObstructionOptions {
 ///  R5. Never two instances of the SAME object: a repeat series tighter than
 ///      its own diameter is a hedge, authored that way on purpose. Across
 ///      objects a pair is reported once.
+///  R6. Never two parts of the SAME composite-assembly instance (p6-s9, #323).
+///      Interpenetration is the whole point of an assembly: a mast arm bolts
+///      INTO its pole and a signal head hangs THROUGH the arm. Keyed on
+///      `AssemblyData::instance`, so two separate signal masts standing too
+///      close still report — it is one placement that is exempt, not the asset.
 ///
 /// FOOTPRINT. Declared dimensions only, per instance: @radius (a circle) wins
 /// over @length x @width (a rectangle along the instance's world heading, §13.1
