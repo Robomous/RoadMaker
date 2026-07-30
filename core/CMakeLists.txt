@@ -52,6 +52,10 @@ add_library(roadmaker_core ${_rm_core_type}
   src/mesh/manifold_bridge.cpp
   src/mesh/bridge_solids.cpp
   src/assets/prop_meshes.gen.cpp
+  # The public props::ids()/model() live in prop_registry.cpp, which layers a
+  # project's imported models over the generated built-in table (p6-s8, #322).
+  src/assets/prop_registry.cpp
+  src/assets/prop_import.cpp
   src/assets/sign_catalog.cpp
   src/assets/sign_symbols.gen.cpp
   src/assets/sign_face.cpp

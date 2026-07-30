@@ -409,7 +409,9 @@ add_library(rm_cdt INTERFACE)
 add_library(CDT::CDT ALIAS rm_cdt)
 target_include_directories(rm_cdt SYSTEM INTERFACE ${cdt_SOURCE_DIR}/CDT/include)
 
-# tinygltf (header-only; TINYGLTF_IMPLEMENTATION lives in core/src/io)
+# tinygltf (header-only; TINYGLTF_IMPLEMENTATION lives in core/src/io — and ONLY
+# there: core/src/assets/prop_import.cpp reads glTF through the same copy,
+# including the header without the macro)
 add_library(rm_tinygltf INTERFACE)
 add_library(tinygltf::tinygltf ALIAS rm_tinygltf)
 target_include_directories(rm_tinygltf SYSTEM INTERFACE ${tinygltf_SOURCE_DIR})
@@ -422,7 +424,11 @@ target_compile_definitions(rm_tinygltf INTERFACE
 )
 
 # stb (header-only; STB_TRUETYPE_IMPLEMENTATION lives in core/src/assets,
-# STB_IMAGE_IMPLEMENTATION in core/src/gis — one TU each, never both here)
+# STB_IMAGE_IMPLEMENTATION in core/src/gis — one TU each, never both here.
+# core/src/assets/prop_import.cpp is a SECOND consumer of stb_image: it includes
+# the header WITHOUT the implementation macro and links against the copy in
+# core/src/gis/world_file.cpp, mirroring that TU's STBI_NO_* set so the two agree
+# about which symbols exist.)
 add_library(rm_stb INTERFACE)
 add_library(stb::stb ALIAS rm_stb)
 target_include_directories(rm_stb SYSTEM INTERFACE ${stb_SOURCE_DIR})
