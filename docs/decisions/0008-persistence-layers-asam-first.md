@@ -234,6 +234,11 @@ export-only concrete-scenario subset** at v0.1.0 (`p8-s6`) with no parser
 dependency; OSC2 import is deferred and gated on a future dependency
 review per the [dependency policy](../standards/dependencies.md).
 
+Refined by
+[ADR-0014](./0014-scenario-model-kernel-side-osc-1x.md) (`p8-s1`,
+[#245](https://github.com/Robomous/RoadMaker/issues/245)) — see the
+amendment at the end of this record.
+
 ## Consequences
 
 - Every sprint states in its issue which layer each new datum uses; no
@@ -246,3 +251,38 @@ review per the [dependency policy](../standards/dependencies.md).
   and registry conformance tests are CI gates.
 - Cost: sidecar schema maintenance and one more file next to each scene —
   accepted as the price of keeping `.xodr` pure.
+
+## Amendment (2026-07-30, `p8-s1` / #245)
+
+The *OpenSCENARIO* section above was written before any scenario code
+existed, and left four things open that the first P8 sprint had to
+settle. [ADR-0014](./0014-scenario-model-kernel-side-osc-1x.md) settles
+them, and that section is read with it:
+
+- **"One internal scenario model" means one *kernel-side* model.** It
+  lives under `core/include/roadmaker/osc/` in namespace
+  `roadmaker::osc` and is mutated only through `edit::Command`
+  factories, because the Python module links `roadmaker::core` alone
+  (`python/CMakeLists.txt:36`) and a model in `editor/src/document/`
+  could never be replayed headlessly.
+- **"1.x" now names a revision.** The writer is revision-targetable and
+  **defaults to 1.2**, the shape `WriterOptions::target_version` already
+  uses for OpenDRIVE, because validation means "esmini accepts the file"
+  and CI pins that binary.
+- **"Export first" is also an import.** #245's acceptance is
+  read/write/validate, so the never-drop contract this ADR states for
+  OpenDRIVE governs `.xosc` identically — a preserved tier plus
+  structured diagnostics, with `fmt-s2`'s re-canonicalization caveat.
+- **"Validation-friendly" is now defined.** There is no XSD in CI and
+  esmini's parser is the validator (ruling on #257); ADR-0014 adds
+  `asam.net:xosc:` checker-rule ids cited through `Diagnostic::rule_id`,
+  additive to that ruling rather than a substitute.
+
+`rm:phases`' promise above — that phase timing exports to OpenSCENARIO
+traffic-signal actions in P8 — is discharged, but not one-for-one:
+RoadMaker's cycle is per junction and OSC's `TrafficSignalController` is
+per `<controller>`, so one timeline decomposes into N phase lists.
+
+A `.xosc` is a **second Layer-0 file**, not a Layer-2 sidecar: top-level
+in the project directory beside its `.xodr`, stem-matched, and
+standalone-openable in any tool. The three-layer contract is unchanged.
