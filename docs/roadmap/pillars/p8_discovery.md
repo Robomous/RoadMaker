@@ -2,8 +2,10 @@
 
 *What the code actually looks like against the P8 scope, and the sprint cut
 that follows. Written 2026-07-29, before any P8 sprint starts. Roadmap:
-[Road to Parity](../README.md) · Acceptance: GW-6, which does not exist yet
-(§7) · Persistence layering:
+[Road to Parity](../README.md) · Acceptance:
+[GW-6](../golden_workflows/gw6_scenarios.md), which §7 recommended drafting at
+this planning step and which the maintainer approved on 2026-07-30 ·
+Persistence layering:
 [ADR-0008](../../decisions/0008-persistence-layers-asam-first.md).*
 
 ## Why this document exists
@@ -175,6 +177,18 @@ entirely untracked**, and `.gitignore:49-56` says why in its own words: the
 an excluded parent directory. `git ls-files .claude/references/` returns
 empty. So CI has neither the schema nor the prose, and a schema-validation
 step cannot simply be added.
+
+> **Amendment, 2026-07-30.** The untracked-texts half of this finding has been
+> acted on, and it splits by standard. **OpenDRIVE is now committed** under
+> `third_party/asam/` — its specification replaces ASAM's regular terms with an
+> unrestricted grant, so it can live in the repository, and the inert
+> `.gitignore` whitelist described above is gone.
+> **OpenSCENARIO remains untracked and must stay that way**: it carries no
+> comparable grant. So this section's conclusion is unchanged where it matters —
+> CI still has neither the OSC schema nor the OSC prose, which is why the
+> maintainer ruled for **esmini as the de-facto validator** (option (b)) on
+> [#257](https://github.com/Robomous/RoadMaker/issues/257). See
+> `third_party/asam/README.md` for the quoted terms.
 
 **Three substitutes, and a recommendation:**
 
@@ -368,7 +382,7 @@ a document and unblocks three gate issues from the fifth sprint.
 | esmini licence boundary | `docs/standards/dependencies.md:104-112` |
 | XSD check (never fetched) | `scripts/fetch_asam_specs.py:432-444` |
 | References untracked; whitelist inert | `.gitignore:49-56` |
-| OSC 1.4.0 spec chapters | `.claude/references/asam/openscenario-xml-1.4.0/` (07 storyboard, 06 §6.8/6.9 routes+trajectories, 06 §6.11 signals, 12 Annex A actions / Annex C checker rules) |
+| OSC 1.4.0 spec chapters | `third_party/asam/openscenario-xml-1.4.0/` (fetched on demand — not committed) (07 storyboard, 06 §6.8/6.9 routes+trajectories, 06 §6.11 signals, 12 Annex A actions / Annex C checker rules) |
 | Golden-workflow doc convention | `docs/roadmap/golden_workflows/README.md:31-46` |
 | GW-6 unlinked row | `docs/roadmap/golden_workflows/README.md:29` |
 | GW-6 hand-runs blocked by #249 | `docs/roadmap/_migration/00-inventory.md:110,144,186` |

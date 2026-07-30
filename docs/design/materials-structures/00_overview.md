@@ -157,7 +157,7 @@ Ordered kernel → assets → render → editor, per the standing product-parity
 
 ## Standards references — mandatory usage
 
-Read before implementing, from the local copies in `.claude/references/asam/`
+Read before implementing, from the copies committed under `third_party/asam/`
 (never from memory), citing rule ids as `asam.net:xodr:<ver>:<rule>`:
 
 - **Lane material** — OpenDRIVE 1.9.0 §11.8.2 (`t_road_lanes_laneSection_lr_lane_material`).

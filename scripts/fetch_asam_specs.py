@@ -19,19 +19,28 @@
 Downloads the ASAM OpenDRIVE and ASAM OpenSCENARIO XML specification HTML
 from publications.pages.asam.net, converts it to Markdown (one file per
 top-level chapter), and writes navigable INDEX.md files into
-.claude/references/asam/.
+third_party/asam/.
 
 Usage:
-    python scripts/fetch_asam_specs.py --std all
-    python scripts/fetch_asam_specs.py --std opendrive --out .claude/references/asam
+    python scripts/fetch_asam_specs.py --std opendrive
+    python scripts/fetch_asam_specs.py --std all --out third_party/asam
 
 Requirements (disposable venv — NOT project dependencies):
     python3.11+  with  requests, beautifulsoup4, markdownify
 
-Policy: the fetched spec bodies are gitignored (OpenSCENARIO redistribution
-is not clearly permitted); only this script and the INDEX files are meant
-to be shared. Outputs are build artifacts — fix this script, never
-hand-edit the generated .md files.
+Policy (third_party/asam/README.md has the quoted terms):
+
+  * OpenDRIVE is COMMITTED. Its specification replaces ASAM's regular
+    licence terms with an unrestricted grant — "a basic, non-exclusive and
+    unlimited license to use the standard ASAM OpenDRIVE" — so the text can
+    live in the repository, where every clone and worktree gets it.
+  * OpenSCENARIO is NOT, and must not be. It carries no comparable grant,
+    so it is gitignored and fetched on demand. Do not commit it.
+
+Outputs are build artifacts — fix this script, never hand-edit the
+generated .md files. Every file keeps a header naming its source URL,
+version and fetch date, because the conversion is lossy and the published
+HTML is what is normative.
 """
 
 from __future__ import annotations
@@ -578,7 +587,7 @@ def write_master_index(out_root: Path) -> None:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--std", choices=["opendrive", "openscenario", "all"], default="all")
-    parser.add_argument("--out", type=Path, default=Path(".claude/references/asam"))
+    parser.add_argument("--out", type=Path, default=Path("third_party/asam"))
     args = parser.parse_args()
 
     specs: list[dict] = []

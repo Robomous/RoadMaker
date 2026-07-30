@@ -26,7 +26,7 @@ tool names and ASAM OpenDRIVE / OpenSCENARIO vocabulary only.
 | [GW-3](gw3_corner_materials.md) | Corner reshaping & materials | Corner control vertices/extents, per-corner and junction materials by drag | P4, P6 |
 | [GW-4](gw4_signals.md) | Traffic signals | Auto-signalize templates, linked signal props, Signal Phase Editor | P4 |
 | [GW-5](gw5_crosswalk_assets.md) | Parametric crosswalk assets | Library-authored crosswalk assets, parameters, instance overrides | P3, P6 |
-| GW-6 | Scenarios (drafted during P8 planning) | Scenario authoring end-to-end | P8 |
+| [GW-6](gw6_scenarios.md) | Scenarios end-to-end | Actor placement, lane-anchored routes, storyboard/conditions, esmini preview, OSC 1.x + 2.x export | P8 |
 
 ## Document format
 

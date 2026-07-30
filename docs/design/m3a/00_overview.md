@@ -200,8 +200,8 @@ agents can safely work 2b or 3 in parallel with the kernel line.
 
 ## Standards references — mandatory usage
 
-All standards behavior in these docs cites the local ASAM texts under
-`.claude/references/asam/` (OpenDRIVE 1.9.0 primary, 1.8.1 for deltas). Rule IDs
+All standards behavior in these docs cites the ASAM texts committed under
+`third_party/asam/` (OpenDRIVE 1.9.0 primary, 1.8.1 for deltas). Rule IDs
 appear inline as `asam.net:xodr:<ver>:<rule>` and are emitted via the
 `Diagnostic::rule_id` field. Primary chapters for M3a (contributors read the
 local ASAM texts per the standing rule; see
