@@ -375,8 +375,19 @@ NB_MODULE(_roadmaker, m) {
           "color"_a = roadmaker::RoadMarkColor::Standard)
       .def_rw("s_offset", &roadmaker::RoadMark::s_offset)
       .def_rw("type", &roadmaker::RoadMark::type)
+      .def_ro("type_str",
+              &roadmaker::RoadMark::type_str,
+              "@type exactly as spelled in the source file; empty for an authored mark "
+              "(#476). curb / grass / botts dots / edge / custom (§11.9 Table 48) all read "
+              "back as RoadMarkType.OTHER while this keeps the spelling the writer "
+              "re-emits. Read-only: it belongs to `type`.")
       .def_rw("width", &roadmaker::RoadMark::width)
       .def_rw("color", &roadmaker::RoadMark::color)
+      .def_ro("color_str",
+              &roadmaker::RoadMark::color_str,
+              "@color exactly as spelled; empty when absent or authored (#476). Also "
+              "distinguishes an EXPLICIT color=\"standard\" from an absent attribute, "
+              "which the enum alone cannot.")
       .def_rw("material",
               &roadmaker::RoadMark::material,
               "@material code (§11.9); None writes nothing (spec default "
@@ -480,10 +491,26 @@ NB_MODULE(_roadmaker, m) {
   nb::class_<roadmaker::Lane>(m, "Lane")
       .def_ro("odr_id", &roadmaker::Lane::odr_id)
       .def_rw("type", &roadmaker::Lane::type)
+      .def_ro("type_str",
+              &roadmaker::Lane::type_str,
+              "@type exactly as spelled in the source file; empty for an authored lane "
+              "(#476). RoadMaker models 11 of e_laneType's values, so an onRamp/offRamp/"
+              "entry/exit/connectingRamp/slipLane lane reads back as LaneType.OTHER while "
+              "this keeps the spelling the writer re-emits. Read-only: it belongs to "
+              "`type`, and rm.edit.set_lane_type clears it.")
       .def_rw("direction",
               &roadmaker::Lane::direction,
               "Travel direction (e_lane_direction, §11). Standard writes nothing; "
               "edit via rm.edit.set_lane_direction.")
+      .def_ro("direction_str",
+              &roadmaker::Lane::direction_str,
+              "@direction exactly as spelled; empty when absent or authored (#476). "
+              "Read-only; rm.edit.set_lane_direction clears it.")
+      .def_rw("level",
+              &roadmaker::Lane::level,
+              "@level (§11.8.1) as read — the lane is not affected by superelevation or "
+              "crossfall. Carried verbatim rather than modeled; None = absent in the "
+              "source, and an authored lane writes false.")
       .def_ro("widths", &roadmaker::Lane::widths)
       .def_rw("road_marks",
               &roadmaker::Lane::road_marks,

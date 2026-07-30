@@ -807,6 +807,34 @@ Current version on `main`: **0.0.1**.
   about silently never matched.
 
 ### Fixed
+- **Opening and saving someone else's file no longer rewrites what its lanes and
+  markings mean** ([#476](https://github.com/Robomous/RoadMaker/issues/476)). The
+  kernel models a subset of OpenDRIVE's `e_laneType`, `e_roadMarkType` and
+  `e_roadMarkColor`; everything outside those subsets parsed to `Other`, and the
+  writer had no faithful name for `Other`. A **load→save cycle silently changed
+  the road**:
+  - an `onRamp`, `offRamp`, `entry`, `exit`, `connectingRamp` or `slipLane` lane
+    came back as `type="none"` — §11.8.1's "no actual content". A drivable ramp
+    re-exported as *not a road*.
+  - a `curb`, `grass`, `botts dots`, `edge` or `custom` road mark came back as
+    `type="solid"`, painting a kerb as a lane line; any unmodeled colour came
+    back as `standard`.
+  - `level="true"` was flattened to `"false"`, and an unrecognised `@direction`
+    was **deleted outright** — and an absent `@direction` means "standard", so
+    the deletion asserted a direction the file never claimed.
+  - `walking` came back as `sidewalk` — the spelling §11.8.1 explicitly
+    **deprecates** — because both parse to the same enum value.
+
+  This was the one place the kernel rewrote foreign data into *different
+  semantics* rather than dropping or preserving it, which is worse than a drop:
+  the output makes an affirmative wrong claim, and nothing warns at write time.
+  Lanes and road marks now carry the source spelling beside the enum — the shape
+  `Object::type_str` has used since M3a — and the writer re-emits it. Authored
+  content is unaffected: it carries no spelling and still derives from the enum,
+  so every existing fixture stays byte-identical. The reader's warnings are
+  unchanged; the contract was always diagnose-**and**-keep, not keep-quietly.
+  Changing a lane's type or direction clears the stale spelling, so the fix
+  cannot become a corruption of its own.
 - **A fresh project could never author its first asset of any kind**
   ([#322](https://github.com/Robomous/RoadMaker/issues/322)). Every asset-commit
   path — crosswalk assets, prop sets, per-asset prop defaults — asked `Project`

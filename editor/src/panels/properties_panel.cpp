@@ -1414,11 +1414,19 @@ PropertiesPanel::PropertiesPanel(Document& document,
         document_.network(), selection_.primary().road, name_edit_->text().toStdString()));
   });
   connect(type_combo_, &QComboBox::activated, this, [this](int index) {
-    if (primary_lane() != nullptr) {
-      push(edit::set_lane_type(document_.network(),
-                               selection_.primary().lane,
-                               static_cast<LaneType>(type_combo_->itemData(index).toInt())));
+    const Lane* lane = primary_lane();
+    const auto type = static_cast<LaneType>(type_combo_->itemData(index).toInt());
+    // No-op guard, matching the direction combo below. `activated` fires even
+    // when the user re-picks the value already shown, and rebuild_choice_combo
+    // appends the current value when it is outside kTypeChoices — so on a lane
+    // read as e.g. `onRamp` (LaneType::Other) re-picking the entry it is already
+    // on would push a command that clears the source spelling and re-exports the
+    // lane as `none` (#476). Same reason the text/spin editors skip unchanged
+    // values: a gesture that changes nothing must not reach the kernel.
+    if (lane == nullptr || lane->type == type) {
+      return;
     }
+    push(edit::set_lane_type(document_.network(), selection_.primary().lane, type));
   });
   connect(direction_combo_, &QComboBox::activated, this, [this](int index) {
     const Lane* lane = primary_lane();

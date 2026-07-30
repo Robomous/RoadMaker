@@ -153,6 +153,26 @@ TEST(LaneProfilePanel, TypeComboPushesSetLaneType) {
   EXPECT_EQ(scene.document.network().lane(scene.lane(-1))->type, LaneType::Sidewalk);
 }
 
+TEST(LaneProfilePanel, RePickingTheTypeAlreadyShownPushesNothing) {
+  // ★ `activated` fires even when the user re-picks the entry the combo is
+  // already on, and rebuild_choice_combo APPENDS the current value when it is
+  // outside kTypeChoices — so on a lane read from a file as `onRamp`
+  // (LaneType::Other) this gesture would push set_lane_type(Other), clearing the
+  // source spelling and re-exporting the lane as `none` (#476). The direction
+  // combo has always had this guard; the type combo did not.
+  Scene scene;
+  scene.select_lane(-1);
+  auto* combo = scene.editor<QComboBox>("lane_type_combo");
+  ASSERT_TRUE(combo->isEnabled());
+  const int current = combo->currentIndex();
+  ASSERT_GE(current, 0);
+
+  emit combo->activated(current);
+
+  EXPECT_EQ(scene.document.undo_stack()->count(), scene.base_count)
+      << "re-picking the shown value must not reach the kernel";
+}
+
 TEST(LaneProfilePanel, MarkComboAndWidthSpinPushSetRoadMark) {
   Scene scene;
   scene.select_lane(-1);
