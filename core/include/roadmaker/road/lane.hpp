@@ -107,12 +107,25 @@ struct RoadMark {
 
   RoadMarkType type = RoadMarkType::None;
 
+  /// @type exactly as spelled; empty for an authored mark (#476). RoadMaker
+  /// models 7 of e_roadMarkType's values, so `curb`, `grass`, `botts dots`,
+  /// `edge` and `custom` (§11.9, Table 48) all parse to `Other` — which used to
+  /// be written back as `"solid"`, painting a kerb as a lane line. Stored for
+  /// every mark, for the same reason as `Lane::type_str`.
+  std::string type_str;
+
   /// Painted width [m]; the registry's normal-line width when absent (the
   /// OpenDRIVE @width attribute is optional with no normative default).
   double width = defaults::kLineWidth;
 
   /// e_roadMarkColor (§11.9). Written explicitly only when not Standard.
   RoadMarkColor color = RoadMarkColor::Standard;
+
+  /// @color exactly as spelled; empty when the attribute was absent or the mark
+  /// was authored (#476). An unmodeled colour used to be rewritten to
+  /// `"standard"`. Holding the spelling also keeps an EXPLICIT `color="standard"`
+  /// explicit, which the enum alone cannot distinguish from an absent attribute.
+  std::string color_str;
 
   /// @material (§11.9, Table 47): "Identifiers to be defined by the user, use
   /// standard as default value." Held as an optional so the byte-stable
@@ -173,9 +186,47 @@ struct Lane {
 
   LaneType type = LaneType::None;
 
+  /// @type exactly as spelled in the file; empty for an authored lane, which
+  /// lets the writer derive the spelling from `type` (#476).
+  ///
+  /// ★ WITHOUT THIS THE WRITER MAKES AN AFFIRMATIVE WRONG CLAIM, which is worse
+  /// than dropping the value. RoadMaker models 11 of e_laneType's values, so a
+  /// perfectly ordinary `onRamp` / `offRamp` / `entry` / `exit` /
+  /// `connectingRamp` / `slipLane` lane parses to `Other` — and `Other` used to
+  /// be written back as `"none"`, i.e. a drivable ramp re-exported as *not
+  /// usable*. The spelling is stored for EVERY lane, not only the unmodeled
+  /// ones, because two modeled spellings also used to change on save:
+  /// §11.8.1 deprecates `sidewalk` in favour of `walking` (1.8.1 §11 note under
+  /// the e_laneType list, identical in 1.9.0), and both parse to
+  /// `LaneType::Sidewalk` — so a conformant `walking` came back as the
+  /// deprecated `sidewalk`.
+  ///
+  /// ★ EVERY COMMAND THAT CHANGES `type` MUST CLEAR THIS, or the file keeps the
+  /// spelling of a type the lane no longer has. `edit::set_lane_type` does.
+  std::string type_str;
+
   /// Travel direction (e_lane_direction, §11). Defaults to Standard, which
   /// emits nothing on write; only Reversed/Both are serialized.
   LaneDirection direction = LaneDirection::Standard;
+
+  /// @direction exactly as spelled; empty when the attribute was absent or the
+  /// lane was authored (#476).
+  ///
+  /// Same contract as `type_str`, and the old behaviour here was a *deletion*
+  /// rather than a rewrite: an unknown spelling parsed to Standard, and the
+  /// writer omits @direction for Standard — so the attribute vanished, and its
+  /// absence means "standard" per §11, which is the same wrong claim by another
+  /// route. Cleared by `edit::set_lane_direction`.
+  std::string direction_str;
+
+  /// @level (§11.8.1) as read: "lane keeps the same level as the reference
+  /// line", i.e. it is not affected by superelevation or crossfall. Unmodeled
+  /// otherwise — RoadMaker's mesher does not implement level lanes — but the
+  /// value is carried so it is re-emitted verbatim instead of being flattened
+  /// (the writer used to hardcode `"false"`, silently discarding a `"true"`).
+  /// nullopt = absent in the source; an authored lane writes the `"false"` the
+  /// existing fixtures expect.
+  std::optional<bool> level;
 
   /// Width polynomials. Poly3::s is the sOffset LOCAL to the owning lane
   /// section's start (per OpenDRIVE), sorted ascending. Empty for lane 0.

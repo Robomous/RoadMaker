@@ -6796,6 +6796,11 @@ std::unique_ptr<Command> set_lane_type(const RoadNetwork& network, LaneId lane_i
   }
   Lane after = context->lane;
   after.type = type;
+  // ★ The source spelling must go with the old type (#476). Keeping it would
+  // re-export the file's original `@type` for a lane that no longer has it —
+  // turning a fidelity fix into a fresh corruption. Cleared, so the writer falls
+  // back to the enum's name, which is now the truth about this lane.
+  after.type_str.clear();
   // Retyping to or from Driving changes what driving_lanes_at reports, so a
   // turn appears, disappears, or moves to a different lane — name the
   // junctions so regeneration rebuilds the turn set.
@@ -6822,6 +6827,7 @@ set_lane_direction(const RoadNetwork& network, LaneId lane_id, LaneDirection dir
   }
   Lane after = context->lane;
   after.direction = direction;
+  after.direction_str.clear(); // the spelling belongs to the old value (#476)
   // Only the owning road is dirty: the connection engine does not read
   // @direction (unlike set_lane_type, which can add/remove a turn), so no
   // junctions need naming for regeneration.

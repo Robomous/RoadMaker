@@ -390,12 +390,23 @@ void write_link_element(pugi::xml_node link,
 void write_lane(pugi::xml_node side, const Lane& lane) {
   pugi::xml_node lane_node = side.append_child("lane");
   lane_node.append_attribute("id").set_value(lane.odr_id);
-  lane_node.append_attribute("type").set_value(lane_type_name(lane.type));
-  lane_node.append_attribute("level").set_value("false");
+  // The file's own spelling wins over the enum's name (#476). An authored lane
+  // leaves `type_str` empty and derives from `type`, so nothing RoadMaker writes
+  // changes shape; a lane READ from a file re-exports the spelling it arrived
+  // with, including e_laneType values this build does not model.
+  lane_node.append_attribute("type").set_value(lane.type_str.empty() ? lane_type_name(lane.type)
+                                                                     : lane.type_str.c_str());
+  // @level (§11.8.1): echo what was read. Authored lanes write "false", which is
+  // what every existing fixture expects.
+  lane_node.append_attribute("level").set_value(lane.level.value_or(false) ? "true" : "false");
   // @direction (e_lane_direction, §11) is written explicitly only when not
   // Standard: the default keeps every existing fixture byte-identical (§11
   // says an absent @direction means the reference-line-derived standard).
-  if (lane.direction != LaneDirection::Standard) {
+  // A spelling read from the file is re-emitted verbatim even when it parsed to
+  // Standard — otherwise an unknown one is DELETED rather than merely rewritten.
+  if (!lane.direction_str.empty()) {
+    lane_node.append_attribute("direction").set_value(lane.direction_str.c_str());
+  } else if (lane.direction != LaneDirection::Standard) {
     lane_node.append_attribute("direction").set_value(lane_direction_name(lane.direction));
   }
   if (lane.predecessor || lane.successor) {
@@ -418,10 +429,16 @@ void write_lane(pugi::xml_node side, const Lane& lane) {
   for (const RoadMark& mark : lane.road_marks) {
     pugi::xml_node mark_node = lane_node.append_child("roadMark");
     set_num(mark_node, "sOffset", mark.s_offset);
-    mark_node.append_attribute("type").set_value(road_mark_name(mark.type));
+    // The file's own spelling wins (#476) — see Lane::type_str.
+    mark_node.append_attribute("type").set_value(mark.type_str.empty() ? road_mark_name(mark.type)
+                                                                       : mark.type_str.c_str());
     // @color is written explicitly only when not Standard (§11.9): the M2
-    // single-line form (Standard, no <line>) stays byte-identical.
-    if (mark.color != RoadMarkColor::Standard) {
+    // single-line form (Standard, no <line>) stays byte-identical. A spelling
+    // read from the file is re-emitted verbatim, which also keeps an explicit
+    // color="standard" explicit.
+    if (!mark.color_str.empty()) {
+      mark_node.append_attribute("color").set_value(mark.color_str.c_str());
+    } else if (mark.color != RoadMarkColor::Standard) {
       mark_node.append_attribute("color").set_value(road_mark_color_name(mark.color));
     }
     set_num(mark_node, "width", mark.width);
@@ -435,7 +452,8 @@ void write_lane(pugi::xml_node side, const Lane& lane) {
     // width (Table 49 requires both, and @width supersedes @roadMark/width).
     if (!mark.lines.empty()) {
       pugi::xml_node type_node = mark_node.append_child("type");
-      type_node.append_attribute("name").set_value(road_mark_name(mark.type));
+      type_node.append_attribute("name").set_value(mark.type_str.empty() ? road_mark_name(mark.type)
+                                                                         : mark.type_str.c_str());
       set_num(type_node, "width", mark.width);
       for (const RoadMarkLine& line : mark.lines) {
         pugi::xml_node line_node = type_node.append_child("line");

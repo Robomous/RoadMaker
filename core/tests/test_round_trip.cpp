@@ -19,14 +19,22 @@
 
 #include "roadmaker/edit/operations.hpp"
 #include "roadmaker/road/authoring.hpp"
+#include "roadmaker/xodr/diagnostic.hpp"
 #include "roadmaker/xodr/reader.hpp"
 #include "roadmaker/xodr/writer.hpp"
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <array>
 #include <filesystem>
+#include <fstream>
+#include <iterator>
+#include <ranges>
+#include <sstream>
 #include <string>
+#include <string_view>
+#include <vector>
 
 #include "support/network_compare.hpp"
 
@@ -272,6 +280,137 @@ TEST(RoundTrip, LaneDirectionSurvivesWriteParseWrite) {
   const auto again = roadmaker::write_xodr(reparsed->network, "dir");
   ASSERT_TRUE(again.has_value());
   EXPECT_EQ(*xml, *again);
+}
+
+// --- foreign enum spellings (#476) ------------------------------------------
+//
+// The one place the kernel used to REWRITE foreign data into different
+// semantics rather than dropping or preserving it. A rewrite is worse than a
+// drop: the output makes an affirmative wrong claim, and nothing warns.
+
+namespace {
+
+/// Every `<lane>` / `<roadMark>` line of an .xodr, trimmed — the granularity the
+/// defect lives at, and small enough that a failure names the offending line
+/// instead of dumping the file.
+std::vector<std::string> lane_lines(const std::string& xml) {
+  std::vector<std::string> out;
+  std::istringstream stream(xml);
+  std::string line;
+  while (std::getline(stream, line)) {
+    const std::size_t first = line.find_first_not_of(" \t");
+    if (first == std::string::npos) {
+      continue;
+    }
+    const std::string trimmed = line.substr(first);
+    if (trimmed.starts_with("<lane ") || trimmed.starts_with("<roadMark ")) {
+      out.push_back(trimmed);
+    }
+  }
+  return out;
+}
+
+} // namespace
+
+TEST(RoundTrip, ForeignEnumSpellingsSurviveWriteUnchanged) {
+  const std::filesystem::path sample =
+      std::filesystem::path(RM_FUZZ_CORPUS_DIR) / "foreign_enum_spellings.xodr";
+  auto loaded = roadmaker::load_xodr(sample);
+  ASSERT_TRUE(loaded.has_value()) << (loaded ? "" : loaded.error().message);
+
+  std::ifstream file(sample);
+  ASSERT_TRUE(file.is_open());
+  const std::string source((std::istreambuf_iterator<char>(file)),
+                           std::istreambuf_iterator<char>());
+
+  const auto written = roadmaker::write_xodr(loaded->network, "foreign_enum_spellings");
+  ASSERT_TRUE(written.has_value());
+
+  // ★ Line-for-line, not "the enum survived". The enum CANNOT survive — nothing
+  // in LaneType spells `onRamp` — so a test asserting on the parsed model would
+  // pass on the broken writer. The claim is about the BYTES the writer emits.
+  const std::vector<std::string> before = lane_lines(source);
+  const std::vector<std::string> after = lane_lines(*written);
+  ASSERT_EQ(before.size(), after.size());
+  ASSERT_GE(before.size(), 6U) << "the sample must still carry every case";
+  for (std::size_t i = 0; i < before.size(); ++i) {
+    EXPECT_EQ(before[i], after[i]) << "line " << i << " changed on write";
+  }
+
+  // Non-vacuity: the sample really does contain spellings this build does not
+  // model, so the comparison above is not trivially satisfied by a file whose
+  // every value happens to be in the enums.
+  EXPECT_NE(written->find("type=\"onRamp\""), std::string::npos);
+  EXPECT_NE(written->find("type=\"slipLane\""), std::string::npos);
+  EXPECT_NE(written->find("type=\"curb\""), std::string::npos);
+  EXPECT_NE(written->find("color=\"fuchsia\""), std::string::npos);
+  EXPECT_NE(written->find("level=\"true\""), std::string::npos);
+  EXPECT_NE(written->find("direction=\"backward\""), std::string::npos);
+  // §11.8.1 deprecates `sidewalk` in favour of `walking`, and both parse to
+  // LaneType::Sidewalk — so this one is a MODELED value that still changed
+  // spelling on save, which is why the fix stores the spelling for every lane
+  // rather than only for the unmodeled ones.
+  EXPECT_NE(written->find("type=\"walking\""), std::string::npos);
+  EXPECT_EQ(written->find("type=\"sidewalk\""), std::string::npos);
+}
+
+TEST(RoundTrip, ForeignEnumSpellingsStillWarn) {
+  // Preserving the spelling must not silence the parser: the user still has to
+  // learn that this build renders a `curb` mark as a generic line, and the
+  // never-drop contract is diagnose-AND-keep, not keep-quietly.
+  const auto loaded = roadmaker::load_xodr(std::filesystem::path(RM_FUZZ_CORPUS_DIR) /
+                                           "foreign_enum_spellings.xodr");
+  ASSERT_TRUE(loaded.has_value());
+
+  const auto mentions = [&](std::string_view needle) {
+    return std::ranges::any_of(loaded->diagnostics, [&](const roadmaker::Diagnostic& d) {
+      return d.severity == roadmaker::Severity::Warning &&
+             d.message.find(needle) != std::string::npos;
+    });
+  };
+  EXPECT_TRUE(mentions("onRamp"));
+  EXPECT_TRUE(mentions("slipLane"));
+  EXPECT_TRUE(mentions("curb"));
+  EXPECT_TRUE(mentions("botts dots"));
+  EXPECT_TRUE(mentions("fuchsia"));
+  EXPECT_TRUE(mentions("backward"));
+  EXPECT_EQ(roadmaker::count_errors(loaded->diagnostics), 0U) << "warnings, never errors";
+}
+
+TEST(RoundTrip, RetypingALaneDropsTheSpellingItNoLongerHas) {
+  // ★ The trap this fix introduces if the setters are not updated. Keeping the
+  // source spelling on a lane whose type the user CHANGED would re-export
+  // `onRamp` for a lane that is now `driving` — trading one corruption for a
+  // worse one, because this time RoadMaker itself authored the lie.
+  auto loaded = roadmaker::load_xodr(std::filesystem::path(RM_FUZZ_CORPUS_DIR) /
+                                     "foreign_enum_spellings.xodr");
+  ASSERT_TRUE(loaded.has_value());
+  RoadNetwork& network = loaded->network;
+
+  const roadmaker::Road& road = *network.road(network.find_road("1"));
+  const roadmaker::LaneSection& section = *network.lane_section(road.sections.front());
+  roadmaker::LaneId ramp;
+  for (const roadmaker::LaneId lane_id : section.lanes) {
+    if (network.lane(lane_id)->odr_id == 1) {
+      ramp = lane_id;
+    }
+  }
+  ASSERT_TRUE(ramp.is_valid());
+  ASSERT_EQ(network.lane(ramp)->type_str, "onRamp");
+
+  auto retype = roadmaker::edit::set_lane_type(network, ramp, roadmaker::LaneType::Driving);
+  ASSERT_TRUE(retype->apply(network).has_value());
+  EXPECT_TRUE(network.lane(ramp)->type_str.empty());
+
+  const auto written = roadmaker::write_xodr(network, "retyped");
+  ASSERT_TRUE(written.has_value());
+  EXPECT_EQ(written->find("type=\"onRamp\""), std::string::npos)
+      << "the retyped lane kept the spelling of the type it no longer has";
+  EXPECT_NE(written->find("type=\"driving\""), std::string::npos);
+
+  // Undo restores the spelling with the type — the command captured both.
+  ASSERT_TRUE(retype->revert(network).has_value());
+  EXPECT_EQ(network.lane(ramp)->type_str, "onRamp");
 }
 
 TEST(RoundTrip, ForeignRoadsLoadWithoutAuthoringWaypoints) {

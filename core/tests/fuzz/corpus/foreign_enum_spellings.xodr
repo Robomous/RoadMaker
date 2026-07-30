@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- VALID seed: enum spellings RoadMaker's kernel does NOT model, plus two it
+     models under a different spelling (#476). Every one of these used to be
+     REWRITTEN on save rather than dropped, which is worse — the output made an
+     affirmative wrong claim about the road.
+
+       @type="onRamp" / "slipLane"  (§11.8.1 e_laneType — we model 11 values)
+                                     -> used to be written back as "none",
+                                        i.e. a drivable ramp re-exported as
+                                        "no actual content"
+       @type="walking"               -> used to come back as "sidewalk", the
+                                        spelling §11.8.1 explicitly DEPRECATES
+       @level="true"                 -> used to be flattened to "false"
+       @direction="backward"         -> used to be DELETED, and an absent
+                                        @direction means "standard" (§11)
+       roadMark @type="curb"/"botts dots" -> used to come back as "solid"
+       roadMark @color="fuchsia"     -> used to come back as "standard"
+       roadMark @color="standard"    -> used to be dropped (explicit vs absent)
+
+     The reader still warns on each unmodeled value; what changed is that the
+     writer re-emits the spelling it read. Apache-2.0. -->
+<OpenDRIVE>
+  <header revMajor="1" revMinor="8" name="foreign_enum_spellings" vendor="RoadMaker" />
+  <road name="ramp" length="100" id="1" junction="-1">
+    <planView>
+      <geometry s="0" x="0" y="0" hdg="0" length="100">
+        <line />
+      </geometry>
+    </planView>
+    <lanes>
+      <laneSection s="0">
+        <left>
+          <lane id="2" type="walking" level="false">
+            <width sOffset="0" a="2" b="0" c="0" d="0" />
+          </lane>
+          <lane id="1" type="onRamp" level="true" direction="backward">
+            <width sOffset="0" a="3.5" b="0" c="0" d="0" />
+          </lane>
+        </left>
+        <center>
+          <lane id="0" type="none" level="false">
+            <roadMark sOffset="0" type="curb" color="fuchsia" width="0.15" />
+          </lane>
+        </center>
+        <right>
+          <lane id="-1" type="slipLane" level="false">
+            <width sOffset="0" a="3.5" b="0" c="0" d="0" />
+            <roadMark sOffset="0" type="botts dots" color="standard" width="0.12" />
+          </lane>
+        </right>
+      </laneSection>
+    </lanes>
+  </road>
+</OpenDRIVE>

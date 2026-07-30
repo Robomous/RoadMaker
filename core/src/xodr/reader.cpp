@@ -820,10 +820,27 @@ private:
     }
     Lane& lane = *network().lane(lane_id);
     current_lane_ = lane_id;
+    // The file's exact @type spelling, kept for EVERY lane rather than only the
+    // unmodeled ones (#476). `Other` had no faithful name to write back, and two
+    // MODELED spellings also changed on save: §11.8.1 deprecates `sidewalk` in
+    // favour of `walking` and both parse to Sidewalk, so a conformant file came
+    // back carrying the deprecated spelling. Same shape as `Object::type_str`.
+    lane.type_str = type_name;
+
+    // @level (§11.8.1) — carried verbatim so a level lane stays level. Not
+    // modeled beyond that: the mesher does not implement it. The writer used to
+    // hardcode "false", which silently flattened a `level="true"` lane.
+    if (const pugi::xml_attribute level_attr = lane_node.attribute("level")) {
+      lane.level = level_attr.as_bool();
+    }
 
     // @direction (e_lane_direction, §11). Absent -> Standard; unknown spelling
     // -> Standard + a Warning, mirroring the unknown-lane-type pattern above.
+    // The spelling is kept either way: for an unknown one the writer would
+    // otherwise DELETE the attribute (it omits @direction for Standard), and an
+    // absent @direction means "standard" — the same wrong claim by another route.
     const std::string direction_name = lane_node.attribute("direction").value();
+    lane.direction_str = direction_name;
     if (const auto direction = lane_direction_from_string(direction_name)) {
       lane.direction = *direction;
     } else {
@@ -852,8 +869,14 @@ private:
       RoadMark mark{
           .s_offset = attr_double(mark_node, "sOffset", location, 0.0, false),
           .type = road_mark_type_from_string(mark_node.attribute("type").value()),
+          // Exact spellings, for every mark (#476): `Other` had no faithful name
+          // to write back, and holding @color's spelling additionally keeps an
+          // EXPLICIT color="standard" explicit — the enum alone cannot tell that
+          // from an absent attribute, so the writer would have dropped it.
+          .type_str = mark_node.attribute("type").value(),
           .width = attr_double(mark_node, "width", location, defaults::kLineWidth, false),
           .color = road_mark_color_from_string(mark_node.attribute("color").value()),
+          .color_str = mark_node.attribute("color").value(),
       };
       // @material (§11.9, Table 47) — kept verbatim whenever present (incl. an
       // explicit "standard") so a foreign file round-trips; RoadMaker writes
