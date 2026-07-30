@@ -171,6 +171,12 @@ public:
   // ONE undoable edit — the same side of the menu split the terrain imports
   // are on, for the same reason.
   QAction* import_osm = nullptr;
+  /// File ▸ Import ▸ Asset… — a user's own image becomes a project material
+  /// (p6-s8, #322). A THIRD category beside the two the comment above describes:
+  /// an imported asset is neither a reference layer nor scene content, it is
+  /// LIBRARY content, so it lives in File ▸ Import next to them rather than under
+  /// Edit ▸ Terrain. The menu split still follows what the data becomes.
+  QAction* import_asset = nullptr;
 
   // Bridges (p5-s3, #233): the Road Construction tool's automatic bridge
   // assignment — a menu action (no registry id, so no shortcut) that detects

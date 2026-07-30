@@ -17,15 +17,22 @@
 #include "panels/library_panel.hpp"
 
 #include <QComboBox>
+#include <QDragEnterEvent>
+#include <QDragMoveEvent>
+#include <QDropEvent>
 #include <QItemSelectionModel>
 #include <QLineEdit>
 #include <QListView>
 #include <QMenu>
+#include <QMimeData>
 #include <QSplitter>
 #include <QStringList>
+#include <QUrl>
 #include <QVBoxLayout>
+#include <filesystem>
 
 #include "app/icons.hpp"
+#include "document/asset_import.hpp"
 #include "panels/project_files_panel.hpp"
 
 namespace roadmaker::editor {
@@ -153,6 +160,10 @@ LibraryPanel::LibraryPanel(LibraryListModel& model, QWidget* parent)
   view_->setContextMenuPolicy(Qt::CustomContextMenu);
   connect(view_, &QListView::customContextMenuRequested, this, &LibraryPanel::show_context_menu);
 
+  // OS-file drop (p6-s8, #322). On the PANEL rather than the grid so a drop
+  // anywhere in the dock lands, including on the file explorer half.
+  setAcceptDrops(true);
+
   // A project overlay is adopted AFTER the panel is built, and it can introduce
   // categories the built-in catalogue has never heard of. Without this the
   // combo kept whatever it was born with and those items were unreachable by
@@ -257,7 +268,61 @@ void LibraryPanel::show_context_menu(const QPoint& pos) {
   connect(new_crosswalk, &QAction::triggered, this, &LibraryPanel::new_crosswalk_asset_requested);
   QAction* new_prop_set = menu.addAction(tr("New prop set…"));
   connect(new_prop_set, &QAction::triggered, this, &LibraryPanel::new_prop_set_requested);
+  menu.addSeparator();
+  QAction* import_asset = menu.addAction(tr("Import asset…"));
+  // Empty path: no file in hand, so MainWindow opens a file dialog. Same handler
+  // either way, so the menu and the drop cannot diverge.
+  connect(import_asset, &QAction::triggered, this, [this]() {
+    emit asset_import_requested(QString());
+  });
   menu.exec(view_->viewport()->mapToGlobal(pos));
+}
+
+QStringList LibraryPanel::importable_paths(const QMimeData* mime) {
+  QStringList paths;
+  if (mime == nullptr || !mime->hasUrls()) {
+    return paths;
+  }
+  for (const QUrl& url : mime->urls()) {
+    if (!url.isLocalFile()) {
+      continue;
+    }
+    const QString local = url.toLocalFile();
+    // The SAME predicate the importer uses, so a file that hovers as acceptable
+    // cannot then be refused — and one that would be refused shows the no-drop
+    // cursor instead of accepting and toasting.
+    if (asset_import_kind(std::filesystem::path(local.toStdString())).has_value()) {
+      paths.push_back(local);
+    }
+  }
+  return paths;
+}
+
+void LibraryPanel::dragEnterEvent(QDragEnterEvent* event) {
+  if (importable_paths(event->mimeData()).isEmpty()) {
+    return; // ignored: Qt shows the refusal cursor
+  }
+  event->acceptProposedAction();
+}
+
+void LibraryPanel::dragMoveEvent(QDragMoveEvent* event) {
+  if (importable_paths(event->mimeData()).isEmpty()) {
+    return;
+  }
+  event->acceptProposedAction();
+}
+
+void LibraryPanel::dropEvent(QDropEvent* event) {
+  const QStringList paths = importable_paths(event->mimeData());
+  if (paths.isEmpty()) {
+    return;
+  }
+  event->acceptProposedAction();
+  // One request per file: a multi-file drop imports each in turn, each with its
+  // own dialog, rather than silently taking only the first.
+  for (const QString& path : paths) {
+    emit asset_import_requested(path);
+  }
 }
 
 void LibraryPanel::select_asset(const QString& key) {

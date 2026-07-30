@@ -108,6 +108,23 @@ has no world point to snap to, so it is dropped onto the **Materials** slot in
 the Attributes pane of a selected surface (dropping one on the viewport hints
 you there). See [attributes](attributes.md#ground-surface-material).
 
+## Importing your own assets
+
+The lower half of the dock browses your project's `assets` folder. To turn one of
+those files — or any file on disk — into a Library asset, either:
+
+- choose **File ▸ Import ▸ Asset (image)…**,
+- right-click in the catalogue and choose **Import asset…**, or
+- **drag the file onto the Library dock** from your OS file manager.
+
+All three open the same dialog, which asks for a name, a category, and a licence
+note. The file is copied into the project, so the asset survives you moving the
+original. See [materials](materials.md#importing-your-own-texture) for what an
+imported image becomes.
+
+Dropping a file RoadMaker does not import shows the no-drop cursor, so you find
+out before you let go rather than after.
+
 ## See also
 
 - [Objects & signals](objects-signals.md) — the full object/signal model props

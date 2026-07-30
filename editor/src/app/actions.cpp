@@ -469,6 +469,8 @@ Actions::Actions(QUndoStack& undo_stack, QObject* parent) : QObject(parent) {
   import_osm->setToolTip(
       tr("Import an OpenStreetMap .osm extract as an editable road network, in one undoable "
          "edit"));
+  import_asset = new QAction(tr("&Asset (image)…"), this);
+  import_asset->setToolTip(tr("Import an image into this project as a material asset"));
 
   bridge_generate = new QAction(tr("&Generate Bridge Structures"), this);
   bridge_generate->setToolTip(

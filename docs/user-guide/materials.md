@@ -58,6 +58,31 @@ than worn. In **Sober** mode, materials are ignored and every surface draws its
 flat colour. A lane with no material assigned looks exactly as it did before —
 its lane-type colour or the default asphalt texture.
 
+## Importing your own texture
+
+With a project open, **File ▸ Import ▸ Asset (image)…** turns any PNG or JPEG
+into a material in that project's library — or drop the file straight onto the
+Library dock. RoadMaker asks for a name, a category, and a **licence note**,
+because an imported file's licence is something only you can state.
+
+The image is **copied into the project** (`assets/textures/`), so the asset keeps
+working after you move or delete the original; the original's path is recorded
+alongside your licence note as provenance. Importing a name that is already taken
+adds a numeric suffix rather than overwriting the existing asset, and says so.
+
+An imported material behaves exactly like a bundled one: drag it onto a lane, a
+ground surface or a junction carriageway, and it renders and exports the same way.
+Two things are worth knowing:
+
+- **One image is one albedo.** Normal and roughness maps are not imported, so an
+  imported material uses the scalar defaults for both — it reads like a plain
+  painted surface rather than a guess at relief it has no data for.
+- **The definition is project-scoped, the assignment is not.** The `.xodr` stores
+  only the id (`rm:<name>`), never a texture path, so a scene opened without its
+  project keeps its `<material>` records and falls back to flat colour. That is
+  what stops two projects sharing a scene from disagreeing about what an id looks
+  like.
+
 ## See also
 
 - [Library](library.md) — the catalogue you drag materials from

@@ -31,6 +31,7 @@
 #include <QJsonObject>
 #include <QMetaType>
 #include <QString>
+#include <array>
 #include <filesystem>
 #include <vector>
 
@@ -125,13 +126,74 @@ struct LibraryItem {
   /// for a programmatically built item, which to_json() then serializes from
   /// the modeled fields above.
   QJsonObject create_raw;
+
+  /// True for a row this build INVENTED from a `materials[]` entry rather than
+  /// reading from `items[]` (p6-s8, #322). Such a row is a view onto the
+  /// material definition, so to_json() must not write it back — otherwise every
+  /// save would duplicate the definition into `items[]` and the two copies would
+  /// drift. Never parsed, never serialized.
+  bool synthesized = false;
+};
+
+/// One entry of the manifest's `materials[]` block — a PBR-lite material
+/// definition (schema: docs/design/materials-structures/01_material_system.md §2,
+/// shipped by p6-s8, #322).
+///
+/// Definitions are PROJECT ASSETS, not scene data: a `.xodr` stores only the
+/// `id`, never a texture path, so two projects sharing a scene cannot disagree
+/// about what `rm:asphalt_new` looks like.
+struct LibraryMaterial {
+  /// The contract. What a `.xodr` stores in `<material surface>` and what the
+  /// renderer looks up, namespaced `rm:` so it is recognisable as ours in a
+  /// foreign file. Stored verbatim as written; the catalog's lookup strips the
+  /// prefix, so `rm:x`, `x` and `material.x` all resolve.
+  QString id;
+  QString label;
+  QString category;
+  QString thumbnail; ///< manifest-relative image path
+
+  /// `maps{}` — project-relative paths, any of which may be empty. Missing
+  /// normal/roughness fall back to the scalar params; a missing albedo falls
+  /// back to the mesh's flat colour, which is what keeps old scenes unchanged.
+  QString albedo;
+  QString normal;
+  QString roughness;
+
+  double uv_scale = 0.25; ///< texels per metre
+
+  /// `params{}` — scalar fallbacks and modifiers, applied whether or not the
+  /// corresponding map exists.
+  double param_roughness = 0.8;
+  double normal_strength = 1.0;
+  std::array<double, 4> tint{1.0, 1.0, 1.0, 1.0};
+  /// Nominal friction, authored into the lane's `<material>` record. A
+  /// RoadMaker addition to the design doc's `params` list, because §3 of that
+  /// doc already assumes a friction reaches the `.xodr` (amended with #322).
+  double friction = 0.9;
+
+  /// Provenance for an imported material (#322's acceptance): the absolute path
+  /// it was copied FROM, and the user's licence attestation. Never read to load
+  /// the asset — the copy inside the project is what is used. Empty on a
+  /// compiled-in material, whose licence is ledgered in ASSETS_LICENSES.md.
+  QString source;
+  QString license;
+
+  /// The verbatim entry, so forward-compat fields this build does not model
+  /// round-trip untouched — the same contract LibraryItem::create_raw carries.
+  QJsonObject raw;
 };
 
 class LibraryManifest {
 public:
   /// The manifest schema this build understands; higher versions parse
   /// best-effort with a warning.
-  static constexpr int kSupportedVersion = 1;
+  ///
+  /// v1 -> v2 (p6-s8, #322): the `materials[]` block the material design doc
+  /// committed. A v1 manifest still parses in a v2 build — no `materials[]`
+  /// simply means no project materials — and a v2 manifest in a v1 build shows
+  /// its items and ignores the block, which is the forward compatibility that
+  /// was already designed in and must not regress.
+  static constexpr int kSupportedVersion = 2;
 
   /// Parses manifest bytes (testable without a file). Errors: malformed JSON,
   /// a missing/invalid `manifest_version`, or a missing `items` array.
@@ -143,6 +205,18 @@ public:
   [[nodiscard]] int version() const { return version_; }
 
   [[nodiscard]] const std::vector<LibraryItem>& items() const { return items_; }
+
+  /// The project's material definitions (`materials[]`, p6-s8 #322). Empty for a
+  /// v1 manifest, and for a v2 one that defines none.
+  [[nodiscard]] const std::vector<LibraryMaterial>& materials() const { return materials_; }
+
+  /// Adds or replaces a material definition, matched on `id`. Also refreshes the
+  /// synthesized catalogue row that presents it in the Library.
+  void upsert_material(LibraryMaterial material);
+
+  /// Removes the definition with `id` (and its synthesized row). False when
+  /// there was none.
+  bool remove_material(const QString& id);
 
   /// Serializes the manifest back to JSON bytes. A parsed item re-emits its
   /// verbatim `create` block (create_raw), so unknown kinds and forward-compat
@@ -161,8 +235,13 @@ public:
   bool remove(const QString& key);
 
 private:
+  /// Rebuilds the synthesized `items_` rows that present `materials_` in the
+  /// Library, so a material definition needs no hand-written `items[]` entry.
+  void resync_material_rows();
+
   int version_ = kSupportedVersion;
   std::vector<LibraryItem> items_;
+  std::vector<LibraryMaterial> materials_;
 };
 
 } // namespace roadmaker::editor

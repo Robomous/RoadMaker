@@ -27,6 +27,7 @@
 #include <QJsonParseError>
 #include <QSaveFile>
 #include <algorithm>
+#include <optional>
 
 namespace roadmaker::editor {
 
@@ -110,6 +111,13 @@ QJsonObject create_object(const LibraryItem& item) {
     }
     create[QStringLiteral("entries")] = entries;
   }
+  if (item.kind == LibraryItem::Kind::Material) {
+    // Was missing entirely before p6-s8: a programmatically built material item
+    // with no create_raw serialized an EMPTY create block, so it round-tripped
+    // as an unusable row.
+    create[QStringLiteral("kind")] = QStringLiteral("material");
+    create[QStringLiteral("material")] = item.material;
+  }
   if (item.kind == LibraryItem::Kind::Tree) {
     create[QStringLiteral("kind")] = QStringLiteral("tree");
     create[QStringLiteral("model")] = item.model;
@@ -120,6 +128,127 @@ QJsonObject create_object(const LibraryItem& item) {
     }
   }
   return create;
+}
+
+/// Reads one `materials[]` entry (p6-s8, #322). The schema is
+/// docs/design/materials-structures/01_material_system.md §2; anything this build
+/// does not model survives in `raw`.
+std::optional<LibraryMaterial> parse_material(const QJsonObject& object) {
+  LibraryMaterial material;
+  material.id = object.value(QStringLiteral("id")).toString();
+  if (material.id.isEmpty()) {
+    spdlog::warn("library manifest: skipping a material without an id");
+    return std::nullopt;
+  }
+  material.label = object.value(QStringLiteral("label")).toString(material.id);
+  material.category = object.value(QStringLiteral("category")).toString();
+  material.thumbnail = object.value(QStringLiteral("thumbnail")).toString();
+
+  const QJsonObject maps = object.value(QStringLiteral("maps")).toObject();
+  material.albedo = maps.value(QStringLiteral("albedo")).toString();
+  material.normal = maps.value(QStringLiteral("normal")).toString();
+  material.roughness = maps.value(QStringLiteral("roughness")).toString();
+
+  const QJsonValue uv_scale = object.value(QStringLiteral("uv_scale"));
+  if (uv_scale.isDouble() && uv_scale.toDouble() > 0.0) {
+    material.uv_scale = uv_scale.toDouble();
+  } else if (!uv_scale.isUndefined()) {
+    // A non-positive uv_scale would divide the texture by zero metres. Coerce and
+    // say so rather than rendering a solid smear.
+    spdlog::warn("library manifest: material {} has a non-positive uv_scale; using {}",
+                 material.id.toStdString(),
+                 material.uv_scale);
+  }
+
+  const QJsonObject params = object.value(QStringLiteral("params")).toObject();
+  if (params.value(QStringLiteral("roughness")).isDouble()) {
+    material.param_roughness = params.value(QStringLiteral("roughness")).toDouble();
+  }
+  if (params.value(QStringLiteral("normal_strength")).isDouble()) {
+    material.normal_strength = params.value(QStringLiteral("normal_strength")).toDouble();
+  }
+  if (params.value(QStringLiteral("friction")).isDouble()) {
+    material.friction = params.value(QStringLiteral("friction")).toDouble();
+  }
+  const QJsonArray tint = params.value(QStringLiteral("tint")).toArray();
+  if (tint.size() == 4) {
+    for (int channel = 0; channel < 4; ++channel) {
+      material.tint[static_cast<std::size_t>(channel)] = tint.at(channel).toDouble(1.0);
+    }
+  } else if (!tint.isEmpty()) {
+    spdlog::warn("library manifest: material {} has a tint that is not 4 channels; ignoring it",
+                 material.id.toStdString());
+  }
+
+  material.source = object.value(QStringLiteral("source")).toString();
+  material.license = object.value(QStringLiteral("license")).toString();
+  material.raw = object;
+  return material;
+}
+
+QJsonObject material_object(const LibraryMaterial& material) {
+  // Start from the verbatim entry so forward-compat fields round-trip, then
+  // overwrite what this build models — the same contract create_raw carries.
+  QJsonObject object = material.raw;
+  object[QStringLiteral("id")] = material.id;
+  object[QStringLiteral("label")] = material.label;
+  if (!material.category.isEmpty()) {
+    object[QStringLiteral("category")] = material.category;
+  }
+  if (!material.thumbnail.isEmpty()) {
+    object[QStringLiteral("thumbnail")] = material.thumbnail;
+  }
+  QJsonObject maps;
+  if (!material.albedo.isEmpty()) {
+    maps[QStringLiteral("albedo")] = material.albedo;
+  }
+  if (!material.normal.isEmpty()) {
+    maps[QStringLiteral("normal")] = material.normal;
+  }
+  if (!material.roughness.isEmpty()) {
+    maps[QStringLiteral("roughness")] = material.roughness;
+  }
+  if (maps.isEmpty()) {
+    object.remove(QStringLiteral("maps"));
+  } else {
+    object[QStringLiteral("maps")] = maps;
+  }
+  object[QStringLiteral("uv_scale")] = material.uv_scale;
+  QJsonObject params;
+  params[QStringLiteral("roughness")] = material.param_roughness;
+  params[QStringLiteral("normal_strength")] = material.normal_strength;
+  params[QStringLiteral("friction")] = material.friction;
+  QJsonArray tint;
+  for (const double channel : material.tint) {
+    tint.push_back(channel);
+  }
+  params[QStringLiteral("tint")] = tint;
+  object[QStringLiteral("params")] = params;
+  if (material.source.isEmpty()) {
+    object.remove(QStringLiteral("source"));
+  } else {
+    object[QStringLiteral("source")] = material.source;
+  }
+  if (material.license.isEmpty()) {
+    object.remove(QStringLiteral("license"));
+  } else {
+    object[QStringLiteral("license")] = material.license;
+  }
+  return object;
+}
+
+/// The catalogue key a material definition is presented under. Matches the
+/// spelling the five bundled materials already use, so a project material and a
+/// bundled one are indistinguishable to the panel and the drop handler.
+QString material_item_key(const QString& id) {
+  QString bare = id;
+  if (bare.startsWith(QStringLiteral("rm:"))) {
+    bare.remove(0, 3);
+  }
+  if (bare.startsWith(QStringLiteral("material."))) {
+    return bare;
+  }
+  return QStringLiteral("material.") + bare;
 }
 
 } // namespace
@@ -218,12 +347,55 @@ Expected<LibraryManifest> LibraryManifest::parse(const QByteArray& json) {
     item.create_raw = create;
     manifest.items_.push_back(std::move(item));
   }
+
+  // materials[] (v2, p6-s8 #322). Absent in a v1 manifest, which is exactly what
+  // "a v1 manifest parses fine, it just has no project materials" means.
+  for (const QJsonValue& entry : root.value(QStringLiteral("materials")).toArray()) {
+    if (std::optional<LibraryMaterial> material = parse_material(entry.toObject())) {
+      manifest.materials_.push_back(std::move(*material));
+    }
+  }
+  manifest.resync_material_rows();
   return manifest;
+}
+
+void LibraryManifest::resync_material_rows() {
+  // Drop the rows this build invented last time, then re-invent them. Rows the
+  // manifest actually declared in items[] are left alone.
+  items_.erase(std::remove_if(items_.begin(),
+                              items_.end(),
+                              [](const LibraryItem& item) { return item.synthesized; }),
+               items_.end());
+  for (const LibraryMaterial& material : materials_) {
+    const QString key = material_item_key(material.id);
+    // An explicit items[] row wins: a manifest that spells the row out gets what
+    // it asked for, and nothing is presented twice.
+    const bool declared = std::any_of(
+        items_.begin(), items_.end(), [&key](const LibraryItem& i) { return i.key == key; });
+    if (declared) {
+      continue;
+    }
+    LibraryItem row;
+    row.key = key;
+    row.label = material.label;
+    row.category = material.category.isEmpty() ? QStringLiteral("Materials") : material.category;
+    row.thumbnail = material.thumbnail;
+    row.kind = LibraryItem::Kind::Material;
+    row.material = material.id;
+    row.synthesized = true;
+    items_.push_back(std::move(row));
+  }
 }
 
 QByteArray LibraryManifest::to_json() const {
   QJsonArray items;
   for (const LibraryItem& item : items_) {
+    // A synthesized row is a VIEW onto a materials[] entry, not a record of its
+    // own. Writing it back would duplicate the definition into items[] and let
+    // the two copies drift.
+    if (item.synthesized) {
+      continue;
+    }
     QJsonObject object;
     object[QStringLiteral("key")] = item.key;
     if (!item.label.isEmpty()) {
@@ -241,6 +413,15 @@ QByteArray LibraryManifest::to_json() const {
   QJsonObject root;
   root[QStringLiteral("manifest_version")] = version_;
   root[QStringLiteral("items")] = items;
+  if (!materials_.empty()) {
+    // Omitted entirely when there are none, so a project that defines no
+    // materials writes the same bytes a v1 build would have.
+    QJsonArray materials;
+    for (const LibraryMaterial& material : materials_) {
+      materials.push_back(material_object(material));
+    }
+    root[QStringLiteral("materials")] = materials;
+  }
   return QJsonDocument(root).toJson(QJsonDocument::Indented);
 }
 
@@ -267,6 +448,29 @@ void LibraryManifest::upsert(LibraryItem item) {
     }
   }
   items_.push_back(std::move(item));
+}
+
+void LibraryManifest::upsert_material(LibraryMaterial material) {
+  for (LibraryMaterial& existing : materials_) {
+    if (existing.id == material.id) {
+      existing = std::move(material);
+      resync_material_rows();
+      return;
+    }
+  }
+  materials_.push_back(std::move(material));
+  resync_material_rows();
+}
+
+bool LibraryManifest::remove_material(const QString& id) {
+  const auto it = std::find_if(
+      materials_.begin(), materials_.end(), [&id](const LibraryMaterial& m) { return m.id == id; });
+  if (it == materials_.end()) {
+    return false;
+  }
+  materials_.erase(it);
+  resync_material_rows();
+  return true;
 }
 
 bool LibraryManifest::remove(const QString& key) {

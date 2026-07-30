@@ -73,6 +73,8 @@ add_library(roadmaker_editor_lib STATIC
   src/document/library_drop.cpp
   src/document/library_list_model.cpp
   src/document/library_manifest.cpp
+
+  src/document/asset_import.cpp
   src/document/marking_curve_placement.cpp
   src/document/marking_item.cpp
   src/document/prop_placement.cpp
@@ -97,6 +99,8 @@ add_library(roadmaker_editor_lib STATIC
   src/panels/world_georeference_window.cpp
   src/panels/editor2d_host.cpp
   src/panels/library_panel.cpp
+
+  src/panels/asset_import_dialog.cpp
   src/panels/project_files_panel.cpp
   src/panels/phase_panel.cpp
   src/panels/profile_panel.cpp

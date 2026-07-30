@@ -35,6 +35,11 @@ class QLineEdit;
 class QListView;
 class QSplitter;
 
+class QDragEnterEvent;
+class QDragMoveEvent;
+class QDropEvent;
+class QMimeData;
+
 namespace roadmaker::editor {
 
 class ProjectFilesPanel;
@@ -123,7 +128,28 @@ signals:
   /// project-overlay prop-set asset and opens its editor.
   void new_prop_set_requested();
 
+  /// A file was dropped onto the panel from the OS, or "Import asset…" was
+  /// chosen (p6-s8, #322). MainWindow owns the dialog and the commit; the panel
+  /// only reports what was dropped. Empty means the menu entry was used with no
+  /// file in hand, so MainWindow should open a file dialog instead.
+  void asset_import_requested(const QString& path);
+
+protected:
+  /// The panel accepts local files the importer recognises. It is the FIRST drop
+  /// target in the product that takes anything other than an internal MIME type
+  /// or a `.xodr` — p6-s7 shipped the file explorer read-only and said turning a
+  /// file into an asset was this sprint's job.
+  void dragEnterEvent(QDragEnterEvent* event) override;
+  void dragMoveEvent(QDragMoveEvent* event) override;
+  void dropEvent(QDropEvent* event) override;
+
 private:
+  /// The importable local files in a drop payload, in the order they appear.
+  /// Empty when the payload holds none, which is what the accept checks test —
+  /// so hovering an unsupported file shows a refusal cursor rather than accepting
+  /// and then toasting.
+  [[nodiscard]] static QStringList importable_paths(const QMimeData* mime);
+
   /// Emits asset_selected when `index` (proxy space) is a parametric asset.
   void handle_current_changed(const QModelIndex& index);
   void show_context_menu(const QPoint& pos);

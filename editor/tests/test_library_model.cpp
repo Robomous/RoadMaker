@@ -22,6 +22,9 @@
 #include <QByteArray>
 #include <QFile>
 #include <QIcon>
+#include <QJsonArray>
+#include <QJsonDocument>
+#include <QJsonObject>
 #include <QTemporaryDir>
 #include <algorithm>
 #include <filesystem>
@@ -722,6 +725,207 @@ TEST(LibraryListModel, MissingThumbnailYieldsNullDecoration) {
   ASSERT_TRUE(overlay.has_value());
   model.set_overlay(*overlay, QStringLiteral("/nonexistent"));
   EXPECT_FALSE(model.data(model.index(0, 0), Qt::DecorationRole).isValid());
+}
+
+// --------------------------------------------------------------------------- //
+// Manifest v2: the materials[] block (p6-s8, #322)
+// --------------------------------------------------------------------------- //
+
+TEST(LibraryManifestV2, AV1ManifestStillParsesAndSimplyHasNoMaterials) {
+  // The compatibility half of the schema bump. Every shipped manifest is v1 today.
+  const auto manifest = LibraryManifest::parse(json(R"({
+    "manifest_version": 1,
+    "items": [
+      {"key": "road.local", "label": "Local", "create": {"kind": "road_template",
+       "profile": "local"}}
+    ]
+  })"));
+  ASSERT_TRUE(manifest.has_value()) << manifest.error().message;
+  EXPECT_EQ(manifest->version(), 1);
+  EXPECT_TRUE(manifest->materials().empty());
+  EXPECT_EQ(manifest->items().size(), 1U);
+}
+
+TEST(LibraryManifestV2, ReadsTheCommittedSchema) {
+  // Field-for-field the example in
+  // docs/design/materials-structures/01_material_system.md §2, plus the two
+  // fields #322 amended it with.
+  //
+  // A CUSTOM RAW-STRING DELIMITER, because the doc's own label is "Asphalt (new)"
+  // and the `)"` inside it terminates a plain R"( ... )" early.
+  const auto manifest = LibraryManifest::parse(json(R"JSON({
+    "manifest_version": 2,
+    "items": [],
+    "materials": [
+      {
+        "id": "rm:asphalt_new",
+        "label": "Asphalt (new)",
+        "category": "Materials",
+        "thumbnail": "assets/library/thumbnails/mat_asphalt_new.png",
+        "maps": {
+          "albedo": "assets/textures/asphalt/diff.jpg",
+          "normal": "assets/textures/asphalt/nor.jpg",
+          "roughness": "assets/textures/asphalt/rough.jpg"
+        },
+        "uv_scale": 0.5,
+        "params": {"roughness": 0.72, "normal_strength": 0.9,
+                   "tint": [1, 0.9, 0.8, 1], "friction": 0.83},
+        "source": "/Users/me/Downloads/asphalt.jpg",
+        "license": "CC0"
+      }
+    ]
+  })JSON"));
+  ASSERT_TRUE(manifest.has_value()) << manifest.error().message;
+  ASSERT_EQ(manifest->materials().size(), 1U);
+  const LibraryMaterial& material = manifest->materials().front();
+  EXPECT_EQ(material.id, QStringLiteral("rm:asphalt_new"));
+  EXPECT_EQ(material.label, QStringLiteral("Asphalt (new)"));
+  EXPECT_EQ(material.albedo, QStringLiteral("assets/textures/asphalt/diff.jpg"));
+  EXPECT_EQ(material.normal, QStringLiteral("assets/textures/asphalt/nor.jpg"));
+  EXPECT_EQ(material.roughness, QStringLiteral("assets/textures/asphalt/rough.jpg"));
+  EXPECT_DOUBLE_EQ(material.uv_scale, 0.5);
+  EXPECT_DOUBLE_EQ(material.param_roughness, 0.72);
+  EXPECT_DOUBLE_EQ(material.normal_strength, 0.9);
+  EXPECT_DOUBLE_EQ(material.friction, 0.83);
+  EXPECT_DOUBLE_EQ(material.tint[1], 0.9);
+  EXPECT_EQ(material.license, QStringLiteral("CC0"));
+}
+
+TEST(LibraryManifestV2, AMaterialPresentsItselfWithoutAHandWrittenItemsRow) {
+  const auto manifest = LibraryManifest::parse(json(R"({
+    "manifest_version": 2,
+    "items": [],
+    "materials": [{"id": "rm:red_brick", "label": "Red Brick"}]
+  })"));
+  ASSERT_TRUE(manifest.has_value()) << manifest.error().message;
+  ASSERT_EQ(manifest->items().size(), 1U);
+  const LibraryItem& row = manifest->items().front();
+  EXPECT_EQ(row.key, QStringLiteral("material.red_brick"));
+  EXPECT_EQ(row.kind, LibraryItem::Kind::Material);
+  EXPECT_EQ(row.label, QStringLiteral("Red Brick"));
+  EXPECT_EQ(row.category, QStringLiteral("Materials"));
+  EXPECT_EQ(row.material, QStringLiteral("rm:red_brick"));
+  EXPECT_TRUE(row.synthesized);
+}
+
+TEST(LibraryManifestV2, AnExplicitItemsRowWinsAndNothingIsListedTwice) {
+  const auto manifest = LibraryManifest::parse(json(R"({
+    "manifest_version": 2,
+    "items": [
+      {"key": "material.red_brick", "label": "Bricks, hand-written",
+       "category": "My materials", "create": {"kind": "material", "material": "rm:red_brick"}}
+    ],
+    "materials": [{"id": "rm:red_brick", "label": "Red Brick"}]
+  })"));
+  ASSERT_TRUE(manifest.has_value()) << manifest.error().message;
+  ASSERT_EQ(manifest->items().size(), 1U) << "the material was presented twice";
+  EXPECT_EQ(manifest->items().front().label, QStringLiteral("Bricks, hand-written"));
+  EXPECT_FALSE(manifest->items().front().synthesized);
+}
+
+TEST(LibraryManifestV2, SynthesizedRowsAreNotWrittenBack) {
+  // ★ Otherwise every save would copy the definition into items[] as well, and
+  // the two records would drift apart on the next edit.
+  const auto manifest = LibraryManifest::parse(json(R"({
+    "manifest_version": 2,
+    "items": [],
+    "materials": [{"id": "rm:red_brick", "label": "Red Brick"}]
+  })"));
+  ASSERT_TRUE(manifest.has_value()) << manifest.error().message;
+  ASSERT_EQ(manifest->items().size(), 1U);
+
+  const auto reparsed = LibraryManifest::parse(manifest->to_json());
+  ASSERT_TRUE(reparsed.has_value()) << reparsed.error().message;
+  EXPECT_EQ(reparsed->materials().size(), 1U);
+  // Still exactly one row — the synthesized one, re-invented rather than stored.
+  ASSERT_EQ(reparsed->items().size(), 1U);
+  EXPECT_TRUE(reparsed->items().front().synthesized);
+
+  const QJsonObject root = QJsonDocument::fromJson(manifest->to_json()).object();
+  EXPECT_TRUE(root.value(QStringLiteral("items")).toArray().isEmpty())
+      << "the synthesized row leaked into items[]";
+  EXPECT_EQ(root.value(QStringLiteral("materials")).toArray().size(), 1);
+}
+
+TEST(LibraryManifestV2, ForwardCompatFieldsSurviveARoundTrip) {
+  const auto manifest = LibraryManifest::parse(json(R"({
+    "manifest_version": 2,
+    "items": [],
+    "materials": [{"id": "rm:x", "label": "X", "future_field": {"nested": 7}}]
+  })"));
+  ASSERT_TRUE(manifest.has_value()) << manifest.error().message;
+  const QJsonObject root = QJsonDocument::fromJson(manifest->to_json()).object();
+  const QJsonObject written = root.value(QStringLiteral("materials")).toArray().at(0).toObject();
+  ASSERT_TRUE(written.contains(QStringLiteral("future_field")));
+  EXPECT_EQ(written.value(QStringLiteral("future_field"))
+                .toObject()
+                .value(QStringLiteral("nested"))
+                .toInt(),
+            7);
+}
+
+TEST(LibraryManifestV2, AMaterialWithoutAnIdIsSkippedRatherThanAccepted) {
+  const auto manifest = LibraryManifest::parse(json(R"({
+    "manifest_version": 2,
+    "items": [],
+    "materials": [{"label": "Nameless"}, {"id": "rm:ok", "label": "Fine"}]
+  })"));
+  ASSERT_TRUE(manifest.has_value()) << manifest.error().message;
+  ASSERT_EQ(manifest->materials().size(), 1U);
+  EXPECT_EQ(manifest->materials().front().id, QStringLiteral("rm:ok"));
+}
+
+TEST(LibraryManifestV2, UpsertMaterialReplacesByIdAndKeepsOneRow) {
+  LibraryManifest manifest;
+  LibraryMaterial material;
+  material.id = QStringLiteral("rm:brick");
+  material.label = QStringLiteral("Brick");
+  manifest.upsert_material(material);
+  ASSERT_EQ(manifest.materials().size(), 1U);
+  ASSERT_EQ(manifest.items().size(), 1U);
+
+  material.label = QStringLiteral("Brick, edited");
+  manifest.upsert_material(material);
+  ASSERT_EQ(manifest.materials().size(), 1U);
+  ASSERT_EQ(manifest.items().size(), 1U);
+  EXPECT_EQ(manifest.materials().front().label, QStringLiteral("Brick, edited"));
+  // The presented row follows the definition rather than going stale.
+  EXPECT_EQ(manifest.items().front().label, QStringLiteral("Brick, edited"));
+
+  EXPECT_TRUE(manifest.remove_material(QStringLiteral("rm:brick")));
+  EXPECT_TRUE(manifest.materials().empty());
+  EXPECT_TRUE(manifest.items().empty()) << "the synthesized row outlived its definition";
+  EXPECT_FALSE(manifest.remove_material(QStringLiteral("rm:brick")));
+}
+
+TEST(LibraryManifestV2, AProgrammaticMaterialItemSerializesItsCreateBlock) {
+  // Was broken before p6-s8: to_json had no Kind::Material branch, so an item
+  // built in code with no create_raw wrote an EMPTY create block and came back
+  // as an unusable row.
+  LibraryManifest manifest;
+  LibraryItem item;
+  item.key = QStringLiteral("material.custom");
+  item.label = QStringLiteral("Custom");
+  item.kind = LibraryItem::Kind::Material;
+  item.material = QStringLiteral("rm:custom");
+  manifest.upsert(item);
+
+  const auto reparsed = LibraryManifest::parse(manifest.to_json());
+  ASSERT_TRUE(reparsed.has_value()) << reparsed.error().message;
+  ASSERT_EQ(reparsed->items().size(), 1U);
+  EXPECT_EQ(reparsed->items().front().kind, LibraryItem::Kind::Material);
+  EXPECT_EQ(reparsed->items().front().material, QStringLiteral("rm:custom"));
+}
+
+TEST(LibraryManifestV2, AProjectWithNoMaterialsWritesNoMaterialsBlock) {
+  // So a v1-shaped project keeps writing v1-shaped bytes.
+  LibraryManifest manifest;
+  LibraryItem item;
+  item.key = QStringLiteral("crosswalk.custom1");
+  item.kind = LibraryItem::Kind::Crosswalk;
+  manifest.upsert(item);
+  const QJsonObject root = QJsonDocument::fromJson(manifest.to_json()).object();
+  EXPECT_FALSE(root.contains(QStringLiteral("materials")));
 }
 
 } // namespace
