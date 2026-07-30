@@ -389,8 +389,8 @@ INSTANTIATE_TEST_SUITE_P(Files,
                              MalformedCase{"no_geometry.gltf", "no triangle geometry"},
                              // Zero height would make per-instance sizing divide by it.
                              MalformedCase{"zero_height.glb", "no measurable size"}),
-                         [](const testing::TestParamInfo<MalformedCase>& info) {
-                           std::string name = info.param.file;
+                         [](const testing::TestParamInfo<MalformedCase>& param_info) {
+                           std::string name = param_info.param.file;
                            std::replace(name.begin(), name.end(), '.', '_');
                            return name;
                          });
@@ -486,16 +486,16 @@ TEST(PropImportRoundTrip, ABundledModelSurvivesExportAndReimport) {
   // because the exporter writes floats.
   const auto anchored = [](const std::vector<PropPart>& parts) {
     const Bounds b = bounds_of(parts);
-    std::vector<std::array<double, 3>> out;
+    std::vector<std::array<double, 3>> anchored_positions;
     for (const PropPart& part : parts) {
       for (std::size_t i = 0; i + 2 < part.positions.size(); i += 3) {
-        out.push_back({part.positions[i] - b.lo[0],
-                       part.positions[i + 1] - b.lo[1],
-                       part.positions[i + 2] - b.lo[2]});
+        anchored_positions.push_back({part.positions[i] - b.lo[0],
+                                      part.positions[i + 1] - b.lo[1],
+                                      part.positions[i + 2] - b.lo[2]});
       }
     }
-    std::sort(out.begin(), out.end());
-    return out;
+    std::sort(anchored_positions.begin(), anchored_positions.end());
+    return anchored_positions;
   };
   const std::vector<std::array<double, 3>> before = anchored(original->parts);
   const std::vector<std::array<double, 3>> after = anchored(reimported->model.parts);
