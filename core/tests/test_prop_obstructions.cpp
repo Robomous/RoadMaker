@@ -274,6 +274,48 @@ TEST(PropObstructions, AHedgeDoesNotObstructItself) {
   EXPECT_TRUE(find_prop_obstructions(network).empty());
 }
 
+/// R6 (p6-s9, #323). Parts of ONE composite assembly interpenetrate by design —
+/// a mast arm bolts into its pole — so they never flag each other. The exemption
+/// is keyed on the placement, not on the asset: the second half of this test
+/// stands a SECOND instance of the same parts in the same place and requires the
+/// report back. Without that half the test would pass on a rule that simply
+/// exempted every prop carrying an `rm:assembly` record.
+TEST(PropObstructions, PartsOfOneAssemblyDoNotObstructEachOther) {
+  const auto part = [](RoadNetwork& network,
+                       RoadId road,
+                       double t,
+                       const char* odr_id,
+                       const char* instance,
+                       int index) {
+    Object object;
+    object.road = road;
+    object.odr_id = odr_id;
+    object.name = "signal_head";
+    object.type = ObjectType::Pole;
+    object.s = 10.0;
+    object.t = t; // clear of the driving band; the parts share a place
+    object.radius = 1.0;
+    object.height = 1.2;
+    object.assembly = AssemblyData{.asset = "signal_mast", .instance = instance, .part = index};
+    return network.add_object(road, std::move(object));
+  };
+
+  RoadNetwork network;
+  const RoadId road = straight_road(network, {-50, 0}, {50, 0}, "own");
+  part(network, road, 8.0, "a0", "1", 0);
+  part(network, road, 8.2, "a1", "1", 1);
+  EXPECT_TRUE(find_prop_obstructions(network).empty());
+
+  // A different placement of the same asset, overlapping the first: two masts
+  // welded into one another IS a mistake, and the query must still say so.
+  part(network, road, 8.1, "b0", "2", 0);
+  const std::vector<PropObstruction> found = find_prop_obstructions(network);
+  ASSERT_EQ(found.size(), 2U); // the intruder against each of the first two
+  for (const PropObstruction& obstruction : found) {
+    EXPECT_EQ(obstruction.kind, ObstructionKind::Prop);
+  }
+}
+
 // -----------------------------------------------------------------------------
 // The footprint model
 // -----------------------------------------------------------------------------

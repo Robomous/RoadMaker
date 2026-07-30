@@ -196,6 +196,35 @@ struct StencilData {
   friend bool operator==(const StencilData&, const StencilData&) = default;
 };
 
+/// RoadMaker's record that this object is one PART of a composite prop assembly
+/// (p6-s9, #323), carried in `<userData code="rm:assembly">`. Layer 1 with no
+/// Layer-0 counterpart: OpenDRIVE has no object grouping at all — §13.10's
+/// `<objectReference>` is cross-road identity for ONE object spanning several
+/// roads and carries no relative transform, and §13.3's `<skeleton>` describes
+/// shape volumes rather than asset instances — so a foreign reader gets N valid,
+/// individually-placed props and loses only the fact that they belong together.
+///
+/// ★ WHY THE POSE IS DUPLICATED ONTO EVERY PART instead of being re-read from
+/// `props::assembly(asset)`. The record has to be self-sufficient. A scene opened
+/// WITHOUT its project has no overlay catalogue to consult (that is exactly the
+/// gap #508 tracks), and re-deriving from the catalogue would let an edit to an
+/// asset definition silently drag every already-placed instance with it. So the
+/// record is authoritative for the INSTANCE, the catalogue for the ASSET, and
+/// `asset` is provenance — the same relationship `CrosswalkData::asset` has.
+/// Because each part carries its own offset, the assembly's anchor pose is
+/// recoverable from ANY surviving part.
+///
+/// `du`/`dv`/`dz`/`dyaw` are the part's pose in the assembly's local frame; see
+/// `props::AssemblyPart` for what that frame is.
+struct AssemblyData {
+  std::string asset;    ///< the `props::assembly()` id this instance came from
+  std::string instance; ///< groups the parts of ONE placement; unique per file
+  int part = 0;         ///< 0-based index within the assembly (< kMaxAssemblyParts)
+  double du = 0.0, dv = 0.0, dz = 0.0, dyaw = 0.0;
+
+  friend bool operator==(const AssemblyData&, const AssemblyData&) = default;
+};
+
 /// <object> (§13.1, Table 85). Placement is in road s/t/zOffset, resolved to
 /// world through the owning road's reference line + elevation; objects never
 /// move or re-orient (§13.1). Owned by RoadNetwork's object arena; `road` is
@@ -255,6 +284,12 @@ struct Object {
   /// RoadMaker point-stencil authoring data (§7.2 userData "rm:stencil").
   /// Present on stencils placed by the Marking Point tool; absent otherwise.
   std::optional<StencilData> stencil;
+
+  /// RoadMaker composite-assembly membership (§7.2 userData "rm:assembly").
+  /// Present on every part of a placed assembly; absent on a standalone prop.
+  /// Mutually exclusive with the three records above — a crosswalk, a marking
+  /// curve and a stencil are all painted geometry, none of which is a prop part.
+  std::optional<AssemblyData> assembly;
 
   /// Unknown attributes and unmodeled children (<skeleton>, <material>,
   /// <parkingSpace>, <borders>, <userData>, ...) — preserved verbatim per the

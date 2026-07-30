@@ -28,6 +28,7 @@
 #include <cstddef>
 #include <limits>
 #include <optional>
+#include <string>
 #include <vector>
 
 #include "../road/junction_adjacency.hpp"
@@ -427,6 +428,10 @@ struct PropEntry {
   std::size_t instance = 0;
   Volume volume;
   road_detail::TouchedJunctions anchor_junctions{};
+  /// `AssemblyData::instance` when this prop is one part of a composite
+  /// assembly, empty otherwise — the R6 key. Copied rather than looked up per
+  /// pair: the pair loop is quadratic in the prop count, the gather is linear.
+  std::string assembly;
 };
 
 struct RoadEntry {
@@ -461,7 +466,9 @@ std::vector<PropEntry> gather_props(const RoadNetwork& network) {
                               .anchor = object.road,
                               .instance = placed.index,
                               .volume = *volume,
-                              .anchor_junctions = {}});
+                              .anchor_junctions = {},
+                              .assembly = object.assembly.has_value() ? object.assembly->instance
+                                                                      : std::string{}});
     }
   });
   return out;
@@ -623,6 +630,9 @@ std::vector<PropObstruction> find_impl(const RoadNetwork& network,
       const PropEntry& b = props[j];
       if (a.id == b.id) {
         continue; // R5: a repeat series tighter than its own diameter is a hedge
+      }
+      if (!a.assembly.empty() && a.assembly == b.assembly) {
+        continue; // R6: one assembly's parts interpenetrate by design
       }
       if (narrowed && !contains(touching, a.anchor) && !contains(touching, b.anchor)) {
         continue;

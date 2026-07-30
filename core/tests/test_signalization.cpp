@@ -39,6 +39,7 @@
 // here to stop the templates from quietly hard-coding four arms: the axis
 // clustering must give it one two-arm axis and one single-arm axis.
 
+#include "roadmaker/assets/prop_assembly.hpp"
 #include "roadmaker/assets/sign_catalog.hpp"
 #include "roadmaker/edit/operations.hpp"
 #include "roadmaker/mesh/junction_maneuvers.hpp"
@@ -58,6 +59,7 @@
 #include <cmath>
 #include <cstddef>
 #include <memory>
+#include <set>
 #include <stdexcept>
 #include <string>
 #include <variant>
@@ -668,6 +670,64 @@ TEST(Signalize, MountPropsArePlacedPairedAndErased) {
   apply_command(fixture.network, cleared);
   EXPECT_EQ(signal_count(fixture.network), 0U);
   EXPECT_EQ(fixture.network.object_count(), 0U);
+}
+
+// The p4-s7 ↔ p6-s9 handoff, finally exercised. `SignalMount::object_odr_ids` was
+// written as a LIST from the day it shipped, with a comment naming #323 as the
+// reason; this is that reason arriving. A mount id that names an ASSEMBLY places
+// every part and records every part.
+TEST(Signalize, AnAssemblyMountPlacesEveryPartAndRecordsThemAll) {
+  CrossFixture fixture;
+  const roadmaker::props::PropAssembly* mast = roadmaker::props::assembly("signal_mast");
+  ASSERT_NE(mast, nullptr);
+  const std::size_t parts = mast->parts.size();
+  ASSERT_GT(parts, 1U) << "a one-part assembly would not tell a list from a scalar";
+
+  auto command =
+      signalize_junction(fixture.network,
+                         fixture.junction,
+                         {.tmpl = SignalizeTemplate::TwoPhase, .mount_model = "signal_mast"});
+  apply_command(fixture.network, command);
+
+  EXPECT_EQ(signal_count(fixture.network), 4U);
+  EXPECT_EQ(fixture.network.object_count(), 4U * parts);
+  const Junction& junction = *fixture.network.junction(fixture.junction);
+  EXPECT_EQ(junction.signalization.mount_model, "signal_mast")
+      << "the rm:signal mount= token is the same shape for a model and an assembly";
+  ASSERT_EQ(junction.signal_mounts.size(), 4U);
+  for (const roadmaker::SignalMount& mount : junction.signal_mounts) {
+    // ★ EVERY part, not just the first. Recording one and placing four would leave
+    // three props that nothing owns — invisible until a clear left them behind.
+    ASSERT_EQ(mount.object_odr_ids.size(), parts);
+    for (const std::string& object_odr_id : mount.object_odr_ids) {
+      bool found = false;
+      fixture.network.for_each_object([&](ObjectId, const roadmaker::Object& object) {
+        found = found || object.odr_id == object_odr_id;
+      });
+      EXPECT_TRUE(found) << "mount names a dead object: " << object_odr_id;
+    }
+  }
+
+  // Each head's parts form one assembly instance, so they move and delete as a
+  // unit like any other placement.
+  std::set<std::string> instances;
+  fixture.network.for_each_object([&](ObjectId, const roadmaker::Object& object) {
+    ASSERT_TRUE(object.assembly.has_value()) << object.odr_id;
+    instances.insert(object.assembly->instance);
+  });
+  EXPECT_EQ(instances.size(), 4U) << "one instance per head, not one for the junction";
+
+  auto cleared = clear_signalization(fixture.network, fixture.junction);
+  apply_command(fixture.network, cleared);
+  EXPECT_EQ(signal_count(fixture.network), 0U);
+  EXPECT_EQ(fixture.network.object_count(), 0U) << "clearing must take every part";
+}
+
+TEST(Signalize, AnUnknownMountIsRefusedAsNeitherModelNorAssembly) {
+  CrossFixture fixture;
+  expect_command_rejected(
+      fixture.network,
+      signalize_junction(fixture.network, fixture.junction, {.mount_model = "not_a_thing"}));
 }
 
 // --- the oracle --------------------------------------------------------------

@@ -402,6 +402,20 @@ network_plan_bounds(const RoadNetwork& network);
 /// small at GS-1 scale (docs/design/m3a/01 §2.1).
 [[nodiscard]] RM_API std::vector<ObjectId> objects_of(const RoadNetwork& network, RoadId road);
 
+/// Every object belonging to the same composite-assembly INSTANCE as `object` —
+/// including `object` itself — sorted by `AssemblyData::part` (p6-s9, #323).
+///
+/// ★ SORTED, NOT IN ARENA ORDER, and that is load-bearing. Arena order is not
+/// creation order once a slot has been freed and reused, so an assembly placed
+/// after some props were deleted would otherwise hand its parts back shuffled —
+/// and the part order is what `SignalMount::object_odr_ids` and the pose
+/// recomputation in `edit::move_assembly` both index by.
+///
+/// Empty when `object` is stale or carries no assembly record, which is how a
+/// caller distinguishes "not part of an assembly" from "a one-part assembly".
+[[nodiscard]] RM_API std::vector<ObjectId> assembly_parts(const RoadNetwork& network,
+                                                          ObjectId object);
+
 /// Signals the road owns, in arena order. Linear scan — signal counts stay
 /// small at GS-1 scale (docs/design/m3a/01 §2.1).
 [[nodiscard]] RM_API std::vector<SignalId> signals_of(const RoadNetwork& network, RoadId road);

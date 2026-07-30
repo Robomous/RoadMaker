@@ -16,6 +16,7 @@
 
 #include "roadmaker/xodr/reader.hpp"
 
+#include "roadmaker/assets/prop_assembly.hpp"
 #include "roadmaker/edit/connection.hpp"
 #include "roadmaker/geometry/reference_line.hpp"
 #include "roadmaker/road/defaults.hpp"
@@ -1261,6 +1262,13 @@ private:
         }
         continue;
       }
+      if (name == "userData" &&
+          std::string_view(child.attribute("code").value()) == "rm:assembly") {
+        if (auto data = parse_assembly_data(child, fmt::format("{}/userData", location))) {
+          object.assembly = std::move(*data);
+        }
+        continue;
+      }
       if (name == "userData" && std::string_view(child.attribute("code").value()) == "rm:stencil") {
         StencilData stencil;
         stencil.asset = child.attribute("asset").value();
@@ -1308,6 +1316,84 @@ private:
     }
 
     network().add_object(road_id, std::move(object));
+  }
+
+  /// <userData code="rm:assembly"> on an <object> (§7.2): which composite prop
+  /// assembly this object is a part of, and where in it (p6-s9, #323).
+  ///
+  /// `asset`, `inst` and `part` are ALL mandatory: they are the record. Without
+  /// `inst` there is nothing to group by, without `part` no order to recompute
+  /// poses in, and without `asset` no provenance — and a partial record is worse
+  /// than none, because it would present as a one-part assembly. The four offsets
+  /// are optional and absent at zero.
+  ///
+  /// `part` is bounded by props::kMaxAssemblyParts, the same bound the writer
+  /// clamps to, so a corrupt or hostile file cannot claim a part index the product
+  /// can never produce.
+  ///
+  /// A malformed value drops the RECORD and keeps the object live: Layer 0 is a
+  /// perfectly good prop, and the worst a bad record should cost is the grouping.
+  std::optional<AssemblyData> parse_assembly_data(const pugi::xml_node& node,
+                                                  const std::string& location) {
+    AssemblyData data;
+    data.asset = node.attribute("asset").value();
+    data.instance = node.attribute("inst").value();
+    if (data.asset.empty() || data.instance.empty()) {
+      diag(Severity::Warning, location, "rm:assembly userData with missing asset or inst ignored");
+      return std::nullopt;
+    }
+
+    const pugi::xml_attribute part = node.attribute("part");
+    if (!part) {
+      diag(Severity::Warning, location, "rm:assembly userData with no part index ignored");
+      return std::nullopt;
+    }
+    const int part_index = part.as_int(-1);
+    if (part_index < 0 || static_cast<std::size_t>(part_index) >= props::kMaxAssemblyParts) {
+      diag(Severity::Warning,
+           location,
+           fmt::format("rm:assembly userData with out-of-range part '{}' ignored", part.value()));
+      return std::nullopt;
+    }
+    data.part = part_index;
+
+    bool ok = true;
+    const auto offset = [&](const char* name) {
+      const pugi::xml_attribute attr = node.attribute(name);
+      if (!attr) {
+        return 0.0;
+      }
+      const auto value = to_double(attr.value());
+      if (!value.has_value() || !std::isfinite(*value)) {
+        diag(
+            Severity::Warning,
+            location,
+            fmt::format("rm:assembly userData with malformed {} '{}' ignored", name, attr.value()));
+        ok = false;
+        return 0.0;
+      }
+      return *value;
+    };
+    data.du = offset("du");
+    data.dv = offset("dv");
+    data.dz = offset("dz");
+    data.dyaw = offset("dyaw");
+    if (!ok) {
+      return std::nullopt;
+    }
+
+    // An attribute we do not model is reported but does not cost the record — a
+    // newer RoadMaker's extra field must not silently ungroup the assembly.
+    static constexpr std::array<std::string_view, 8> kKnown{
+        "code", "asset", "inst", "part", "du", "dv", "dz", "dyaw"};
+    for (const pugi::xml_attribute attr : node.attributes()) {
+      if (std::ranges::find(kKnown, std::string_view(attr.name())) == kKnown.end()) {
+        diag(Severity::Warning,
+             location,
+             fmt::format("unknown rm:assembly attribute '{}' ignored", attr.name()));
+      }
+    }
+    return data;
   }
 
   /// <userData code="rm:stopline"> on an <object> (§7.2): the parametric record

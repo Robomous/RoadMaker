@@ -67,7 +67,7 @@ emitted but unlisted; the block below is now generated and CI-gated):
 
 <!-- rm-registry:begin — mirrors core/include/roadmaker/xodr/rm_codes.hpp; regenerate via core/tests/test_rm_registry.cpp -->
 - road: `rm:waypoints`, `rm:aux_boundary`
-- object: `rm:crosswalk`, `rm:markingCurve`, `rm:stencil`, `rm:stopline`, `rm:material.bridge_deck`
+- object: `rm:crosswalk`, `rm:markingCurve`, `rm:assembly`, `rm:stencil`, `rm:stopline`, `rm:material.bridge_deck`
 - junction: `rm:arms`, `rm:corners`, `rm:floor`, `rm:maneuver`, `rm:signal`, `rm:signalmount`, `rm:phases`, `rm:junction`, `rm:spans`
 - root: `rm:surface`, `rm:terrain`
 <!-- rm-registry:end -->
@@ -84,9 +84,12 @@ coherently. Layer 1 on top of a full Layer 0: the `<signal>` (§14.1) and
 `<controller>`/`<control>` (§14.6) elements ARE the export and a foreign reader
 loses only the authoring provenance. Junction scope, one entry, fields `:`-joined:
 `template=protected_left|two_phase|all_way_stop|two_way_stop[:mount=<modelId>]`.
-`mount` names the prop model placed with each signal and is omitted when there
-is none; the whole element is omitted when no template was applied, so an
-unsignalized junction re-exports byte-identically. Degradation: a missing,
+`mount` names the prop model — or, since `p6-s9` (#323), the composite
+**assembly** — placed with each signal, and is omitted when there is none. The
+token's shape is identical either way, because `signalize_junction` resolves it
+against `props::model()` first and `props::assembly()` second. The whole element
+is omitted when no template was applied, so an unsignalized junction re-exports
+byte-identically. Degradation: a missing,
 repeated or unrecognized template — or a repeated/unencodable mount — drops the
 whole value with one warning (all-or-nothing, like `rm:maneuver`), while an
 unknown FIELD key warns and is skipped (forward-compat, like `rm:junction`).
@@ -161,6 +164,31 @@ one already belongs to the P2 ground surfaces (a root-level element) and its
 bytes must stay stable. Degradation follows the policy above: a malformed
 ENTRY drops the whole value (all-or-nothing, like `rm:corners`) while an
 unknown FIELD key warns and is skipped (forward-compat, like `rm:junction`).
+
+`rm:assembly` (p6-s9, shipped) records that an `<object>` is one PART of a
+composite prop assembly — a mast-arm traffic signal is a pole, an arm and two
+heads — and where in that assembly it sits. Layer 1 with NO Layer-0 counterpart:
+OpenDRIVE has no object grouping at all. §13.10's `<objectReference>` is
+cross-road *identity* for one physical object spanning several roads (Table 102
+gives it `@id`, `@s`, `@t`, `@zOffset`, `@validLength`, `@orientation` and nothing
+relative), and §13.3's `<skeleton>`/`<polyline>` describes an object's own shape
+volumes rather than a set of asset instances — so there is nothing for a foreign
+reader to lose beyond the grouping itself: it gets N valid, individually-placed
+props. Object scope, attribute form: `asset` (the `props::assembly()` id),
+`inst` (the token shared by one placement's parts) and `part` (0-based) are all
+REQUIRED — they are the record, and a partial one would present as a one-part
+assembly — plus `du`/`dv`/`dz`/`dyaw`, the part's pose in the assembly's local
+frame, each omitted at its default of zero. So the anchor part writes three
+attributes, and an assembly that is placed and never re-posed re-exports
+byte-identically. `part` is bounded by `props::kMaxAssemblyParts` on BOTH sides
+(the writer drops a record it cannot express rather than emitting a value the
+reader would refuse). The pose is duplicated onto every part rather than re-read
+from the catalogue on purpose: a scene opened without its project has no overlay
+catalogue (#508), and re-deriving would let an edit to an asset definition drag
+every placed instance with it — so the record is authoritative for the INSTANCE
+and the catalogue for the ASSET. Degradation follows the policy above: a malformed
+or missing required field drops the record but keeps the object live (Layer 0
+survives), and an unknown attribute warns without costing the record.
 
 `rm:stopline` (p4-s3, shipped) is the worked example of a **materialized**
 record: the Layer-0 carrier is not something the user placed but an

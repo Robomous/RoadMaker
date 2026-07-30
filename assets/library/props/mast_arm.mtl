@@ -1,0 +1,3 @@
+# Materials for mast_arm (linear RGB).
+newmtl arm
+Kd 0.3200 0.3400 0.3600

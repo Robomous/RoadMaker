@@ -16,6 +16,7 @@
 
 #include "roadmaker/xodr/writer.hpp"
 
+#include "roadmaker/assets/prop_assembly.hpp"
 #include "roadmaker/edit/connection.hpp"
 #include "roadmaker/geometry/reference_line.hpp"
 #include "roadmaker/mesh/junction_phases.hpp"
@@ -641,6 +642,45 @@ void write_stencil_data(pugi::xml_node object_node, const StencilData& stencil) 
   }
 }
 
+/// <userData code="rm:assembly"> (§7.2): records that this object is one part of a
+/// composite prop assembly, and where in that assembly it sits (p6-s9, #323).
+///
+/// `asset`, `inst` and `part` are always written — they ARE the record: without
+/// all three the group cannot be reassembled, which is why the reader refuses a
+/// value missing any of them. The four offsets are omitted at their default of
+/// zero, so the anchor part of an assembly (all four zero) writes three
+/// attributes, and an assembly that is only ever placed and never re-posed
+/// re-exports byte-identically.
+///
+/// `part` is bounded by props::kMaxAssemblyParts on the WRITE side too: never
+/// emit a value the reader would reject. A part index at or beyond the bound
+/// cannot arise from `edit::place_assembly` (which refuses to build one), so
+/// reaching the clamp means a caller hand-built the record — the record is
+/// dropped rather than written out of range.
+void write_assembly_data(pugi::xml_node object_node, const AssemblyData& assembly) {
+  if (assembly.asset.empty() || assembly.instance.empty() || assembly.part < 0 ||
+      static_cast<std::size_t>(assembly.part) >= props::kMaxAssemblyParts) {
+    return;
+  }
+  pugi::xml_node node = object_node.append_child("userData");
+  node.append_attribute("code").set_value("rm:assembly");
+  node.append_attribute("asset").set_value(assembly.asset.c_str());
+  node.append_attribute("inst").set_value(assembly.instance.c_str());
+  node.append_attribute("part").set_value(assembly.part);
+  if (assembly.du != 0.0) {
+    set_num(node, "du", assembly.du);
+  }
+  if (assembly.dv != 0.0) {
+    set_num(node, "dv", assembly.dv);
+  }
+  if (assembly.dz != 0.0) {
+    set_num(node, "dz", assembly.dz);
+  }
+  if (assembly.dyaw != 0.0) {
+    set_num(node, "dyaw", assembly.dyaw);
+  }
+}
+
 void write_object(pugi::xml_node objects_node, const Object& object, const WriterOptions& options) {
   // 1.8.1 §13.8 places <markings> only under <object>; 1.9.0 §13.2.4 also
   // allows them inside <outline>. Demote outline markings to object level when
@@ -788,6 +828,12 @@ void write_object(pugi::xml_node objects_node, const Object& object, const Write
   // placed arrow to its Library asset for per-instance overrides.
   if (object.stencil.has_value()) {
     write_stencil_data(node, *object.stencil);
+  }
+  // RoadMaker composite-assembly membership (§7.2 userData "rm:assembly"): the
+  // <object> above is a complete, valid prop on its own — this is only what says
+  // it belongs with its siblings.
+  if (object.assembly.has_value()) {
+    write_assembly_data(node, *object.assembly);
   }
   for (const std::string& fragment : object.preserved.children) {
     append_fragment(node, fragment);

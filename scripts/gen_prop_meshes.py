@@ -685,8 +685,85 @@ def streetlight_double() -> dict:
 
 STREETLIGHTS = [streetlight_single(), streetlight_double()]
 
+
+# --------------------------------------------------------------------------- #
+# Mast-arm signal PARTS (p6-s9, #323). Unlike every other model in this file,
+# these three are not meant to be placed on their own — they are the parts the
+# bundled `signal_mast` ASSEMBLY pins together (core/src/assets/
+# prop_assembly_registry.cpp), and the Library does not offer them individually.
+#
+# WHY THE ARM IS AUTHORED ALREADY-HORIZONTAL. mesh::ObjectInstance carries a
+# position, a heading about +Z and one uniform scale — no pitch, no roll — so a
+# part cannot be laid down at placement time. It has to arrive lying down. The
+# arm therefore reaches out +x at z ≈ 0 (local heading 0) and the assembly gives
+# it a quarter-turn of yaw to send it across the road, exactly the way the
+# streetlight arm above reaches +x.
+#
+# ALL THREE HEIGHTS COME FROM §1.5, and test_defaults_registry.cpp is the join
+# (this script is stdlib-only and cannot include defaults.hpp):
+#   housing 1.07 m tall, 0.30 m lenses      → kSignalHousingHeight / kSignalLensDiameter
+#   housing bottom 5.2 m over the roadway   → kSignalClearance
+#   arm underside = 5.2 + 1.07 = 6.27 m, so the heads hang flush under it
+#   arm reach = 2 lane widths (2 × 3.6 m)   → kArterialLaneWidth, one head per lane
+# --------------------------------------------------------------------------- #
+
+SIGNAL_HOUSING_HEIGHT = 1.07   # §1.5 3-section head, 42 in
+SIGNAL_LENS_DIAMETER = 0.30    # §1.5 12 in lens
+SIGNAL_CLEARANCE = 5.2         # §1.5 default mast-arm clearance, housing bottom
+MAST_ARM_REACH = 7.2           # 2 × the §1.2 arterial lane width
+MAST_ARM_DEPTH = 0.20          # visual
+MAST_POLE_DIAMETER = 0.28      # visual; stouter than the §1.4 sign post
+
+
+def pole_signal() -> dict:
+    """The upright of a mast-arm signal. It tops out flush with the arm, so its
+    height is the arm's underside plus the arm depth."""
+    top = SIGNAL_CLEARANCE + SIGNAL_HOUSING_HEIGHT + MAST_ARM_DEPTH
+    return {
+        "id": "pole_signal", "label": "Signal pole", "type": "Pole",
+        "height": top, "radius": MAST_POLE_DIAMETER / 2.0,
+        "parts": [("pole", POLE_GREY, cylinder(MAST_POLE_DIAMETER / 2.0, 0.0, top))],
+    }
+
+
+def mast_arm() -> dict:
+    """The horizontal arm, lying down along +x from the pole. Authored flat: it
+    spans z in [0, MAST_ARM_DEPTH] so the base-on-origin invariant holds, and
+    the assembly lifts it to the arm underside."""
+    arm = box(MAST_ARM_REACH / 2.0, 0.0, MAST_ARM_DEPTH / 2.0,
+              MAST_ARM_REACH, 0.16, MAST_ARM_DEPTH)
+    return {
+        "id": "mast_arm", "label": "Signal mast arm", "type": "Pole",
+        "height": MAST_ARM_DEPTH, "radius": MAST_ARM_REACH + 0.10,
+        "parts": [("arm", POLE_GREY, arm)],
+    }
+
+
+def signal_head() -> dict:
+    """A 3-section head on its own — housing plus three lenses on the +x face,
+    no pole. Sits with its housing bottom at z=0; the assembly lifts it to the
+    §1.5 clearance."""
+    lens = SIGNAL_LENS_DIAMETER
+    pitch = lens + 0.06  # lens-to-lens spacing inside the housing
+    mid = SIGNAL_HOUSING_HEIGHT / 2.0
+    housing = box(0.0, 0.0, mid, 0.22, lens + 0.10, SIGNAL_HOUSING_HEIGHT)
+    lens_r = box(0.12, 0.0, mid + pitch, 0.05, lens, lens)
+    lens_a = box(0.12, 0.0, mid, 0.05, lens, lens)
+    lens_g = box(0.12, 0.0, mid - pitch, 0.05, lens, lens)
+    return {
+        "id": "signal_head", "label": "Signal head", "type": "Pole",
+        "height": SIGNAL_HOUSING_HEIGHT, "radius": (lens + 0.10) / 2.0,
+        "parts": [("housing", HOUSING_BLACK, housing),
+                  ("lamp_red", LAMP_RED, lens_r),
+                  ("lamp_amber", LAMP_AMBER, lens_a),
+                  ("lamp_green", LAMP_GREEN, lens_g)],
+    }
+
+
+ASSEMBLY_PARTS = [pole_signal(), mast_arm(), signal_head()]
+
 # Everything the kernel embeds and the library/exporters resolve by id.
-MODELS = TREES + SIGNALS + BUILDINGS + STREETLIGHTS
+MODELS = TREES + SIGNALS + BUILDINGS + STREETLIGHTS + ASSEMBLY_PARTS
 
 
 # --------------------------------------------------------------------------- #

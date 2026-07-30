@@ -16,6 +16,7 @@
 
 #include "roadmaker/edit/operations.hpp"
 
+#include "roadmaker/assets/prop_assembly.hpp"
 #include "roadmaker/assets/prop_library.hpp"
 #include "roadmaker/assets/sign_catalog.hpp"
 #include "roadmaker/edit/assembly.hpp"
@@ -8528,6 +8529,18 @@ std::unique_ptr<Command> move_object(
   if (s < -tol::kLength || s > owner->plan_view.length() + tol::kLength) {
     return invalid_command(std::string(kName), object_s_error());
   }
+  // An assembly part has a pose DERIVED from its assembly's anchor, recorded in
+  // its own rm:assembly offsets. Moving it alone would leave the record claiming
+  // an offset the object no longer sits at — so the answer is a refusal, not a
+  // silent divergence: move the assembly (`move_assembly`) or break the part out
+  // of it first (`detach_assembly_part`). This is the same posture
+  // `update_objects` takes about changing an owning road.
+  if (current->assembly.has_value()) {
+    return invalid_command(
+        std::string(kName),
+        Error{.code = ErrorCode::InvalidArgument,
+              .message = "object is an assembly part: move the assembly or detach the part"});
+  }
   Object moved = *current;
   moved.s = s;
   moved.t = t;
@@ -8542,6 +8555,74 @@ std::unique_ptr<Command> move_object(
 }
 
 namespace {
+
+// ---- assembly geometry, shared by placement and signalization ---------------
+//
+// Declared here rather than beside the assembly commands at the bottom of the
+// file because `signalize_junction` also materialises assembly parts (for a mount
+// that names an assembly) and sits between the two.
+
+/// An assembly's anchor pose in road coordinates.
+struct AssemblyAnchor {
+  double s = 0.0;
+  double t = 0.0;
+  double z = 0.0;
+  double hdg = 0.0;
+};
+
+/// The road-frame pose of one part, given the assembly's anchor pose. THE one
+/// place the local→road transform lives, so placement, the move recomputation,
+/// signalization and the tests cannot drift apart.
+///
+/// The local frame is the road frame at the anchor rotated by the anchor's
+/// heading, so `du` runs along s and `dv` across t. §13.1's `@hdg` is already
+/// relative to the road direction, which is what makes this a plain 2-D rotation
+/// rather than anything needing the reference line.
+AssemblyAnchor
+assembly_part_pose(const AssemblyAnchor& anchor, double du, double dv, double dz, double dyaw) {
+  const double cos_h = std::cos(anchor.hdg);
+  const double sin_h = std::sin(anchor.hdg);
+  return AssemblyAnchor{.s = anchor.s + (du * cos_h) - (dv * sin_h),
+                        .t = anchor.t + (du * sin_h) + (dv * cos_h),
+                        .z = anchor.z + dz,
+                        .hdg = anchor.hdg + dyaw};
+}
+
+bool station_on_road(const Road& road, double s) {
+  return s >= -tol::kLength && s <= road.plan_view.length() + tol::kLength;
+}
+
+/// One assembly part as a placeable Object. `odr_id` and `instance` come from the
+/// caller's minters so a batch never collides with itself.
+Object make_assembly_part(RoadId road,
+                          const std::string& asset,
+                          const std::string& instance,
+                          std::size_t index,
+                          const props::AssemblyPart& spec,
+                          const props::PropModel& model,
+                          const AssemblyAnchor& pose,
+                          double scale,
+                          std::string odr_id) {
+  Object part;
+  part.road = road;
+  part.odr_id = std::move(odr_id);
+  part.name = spec.model;
+  part.type = model.type;
+  part.s = pose.s;
+  part.t = pose.t;
+  part.z_offset = pose.z;
+  part.hdg = pose.hdg;
+  part.radius = model.radius * scale;
+  part.height = model.height * scale;
+  part.assembly = AssemblyData{.asset = asset,
+                               .instance = instance,
+                               .part = static_cast<int>(index),
+                               .du = spec.du,
+                               .dv = spec.dv,
+                               .dz = spec.dz,
+                               .dyaw = spec.dyaw};
+  return part;
+}
 
 /// Station on `road` nearest a world point, and the signed lateral offset of
 /// that point from the reference line there. Coarse sample then local refine —
@@ -9231,6 +9312,18 @@ std::set<std::string> live_object_odr_ids(const RoadNetwork& network) {
   return out;
 }
 
+/// Live `rm:assembly` instance tokens, so a new placement cannot reuse one and
+/// silently join an existing group.
+std::set<std::string> live_assembly_instances(const RoadNetwork& network) {
+  std::set<std::string> out;
+  network.for_each_object([&](ObjectId, const Object& object) {
+    if (object.assembly.has_value()) {
+      out.insert(object.assembly->instance);
+    }
+  });
+  return out;
+}
+
 std::set<std::string> live_controller_odr_ids(const RoadNetwork& network) {
   std::set<std::string> out;
   network.for_each_controller(
@@ -9360,13 +9453,16 @@ AuthoredSignalization authored_signalization(const RoadNetwork& network, Junctio
   return out;
 }
 
-/// One head to place, with its optional mount prop already sized from the
-/// model. Values only — never an arena pointer.
+/// One head to place, with its mount props already sized from the model. Values
+/// only — never an arena pointer.
+///
+/// `mounts` is a LIST because a mount may be a composite ASSEMBLY (p6-s9, #323)
+/// rather than a single prop — the `SignalMount` record was already a list of
+/// object ids for exactly this, so nothing downstream had to change.
 struct PlannedHead {
   RoadId road;
   Signal signal;
-  bool has_mount = false;
-  Object mount;
+  std::vector<Object> mounts;
 };
 
 } // namespace
@@ -9408,7 +9504,13 @@ std::unique_ptr<Command> signalize_junction(const RoadNetwork& network,
     return fail("the junction already carries this signalization; clear it first");
   }
 
+  // The mount id names EITHER a single prop model or a composite assembly — the
+  // #323 extension point this option was written for. A model is tried first, so
+  // no existing scene's mount changes meaning; an assembly is expanded into its
+  // parts, and the SignalMount record's object-id list (a list from day one for
+  // this reason) carries all of them.
   const props::PropModel* mount_model = nullptr;
+  const props::PropAssembly* mount_assembly = nullptr;
   if (!options.mount_model.empty()) {
     if (!validate_material_token(options.mount_model)) {
       // The rm:signalmount grammar cannot encode anything outside the record
@@ -9418,7 +9520,29 @@ std::unique_ptr<Command> signalize_junction(const RoadNetwork& network,
     }
     mount_model = props::model(options.mount_model);
     if (mount_model == nullptr) {
-      return fail("unknown prop model id: " + options.mount_model);
+      mount_assembly = props::assembly(options.mount_model);
+    }
+    if (mount_model == nullptr && mount_assembly == nullptr) {
+      return fail("unknown prop model or assembly id: " + options.mount_model);
+    }
+    if (mount_assembly != nullptr) {
+      if (mount_assembly->parts.empty()) {
+        return fail("mount assembly '" + options.mount_model + "' has no parts");
+      }
+      // Bounded HERE, at author time, so a mount that cannot be recorded whole is
+      // refused instead of silently truncated on write (see the note where the
+      // SignalMount is built).
+      if (mount_assembly->parts.size() > kMaxSignalMountParts) {
+        return fail(fmt::format("mount assembly '{}' has more than {} parts",
+                                options.mount_model,
+                                kMaxSignalMountParts));
+      }
+      for (const props::AssemblyPart& spec : mount_assembly->parts) {
+        if (props::model(spec.model) == nullptr) {
+          return fail(fmt::format(
+              "mount assembly '{}' names unknown model '{}'", options.mount_model, spec.model));
+        }
+      }
     }
   }
 
@@ -9470,6 +9594,7 @@ std::unique_ptr<Command> signalize_junction(const RoadNetwork& network,
   const SignalCode code = signalize_template_code(options.tmpl);
   OdrIdMinter signal_ids(live_signal_odr_ids(network));
   OdrIdMinter object_ids(live_object_odr_ids(network));
+  OdrIdMinter mount_instance_ids(live_assembly_instances(network));
   OdrIdMinter controller_ids(live_controller_odr_ids(network));
 
   std::vector<PlannedHead> heads;
@@ -9517,15 +9642,38 @@ std::unique_ptr<Command> signalize_junction(const RoadNetwork& network,
     // (Table 122: "name of the signal, may be chosen freely").
     head.signal.name = arrow ? "protected_left" : "";
     if (mount_model != nullptr) {
-      head.has_mount = true;
-      head.mount.road = approach.arm.road;
-      head.mount.odr_id = object_ids.next();
-      head.mount.name = options.mount_model;
-      head.mount.type = mount_model->type;
-      head.mount.radius = mount_model->radius;
-      head.mount.height = mount_model->height;
-      head.mount.s = head.signal.s;
-      head.mount.t = head.signal.t;
+      Object mount;
+      mount.road = approach.arm.road;
+      mount.odr_id = object_ids.next();
+      mount.name = options.mount_model;
+      mount.type = mount_model->type;
+      mount.radius = mount_model->radius;
+      mount.height = mount_model->height;
+      mount.s = head.signal.s;
+      mount.t = head.signal.t;
+      head.mounts.push_back(std::move(mount));
+    } else if (mount_assembly != nullptr) {
+      // An assembly is anchored where a single prop would be, but unlike a lone
+      // prop it is AIMED: its parts have offsets, so an arm that ignored the
+      // head's facing would reach along the road instead of across it. The
+      // signal's own hOffset (§14.1, set by #416's auto-facing) is that facing.
+      const AssemblyAnchor anchor{
+          .s = head.signal.s, .t = head.signal.t, .z = 0.0, .hdg = head.signal.h_offset};
+      const std::string instance = mount_instance_ids.next();
+      for (std::size_t index = 0; index < mount_assembly->parts.size(); ++index) {
+        const props::AssemblyPart& spec = mount_assembly->parts[index];
+        const AssemblyAnchor pose =
+            assembly_part_pose(anchor, spec.du, spec.dv, spec.dz, spec.dyaw);
+        head.mounts.push_back(make_assembly_part(approach.arm.road,
+                                                 mount_assembly->id,
+                                                 instance,
+                                                 index,
+                                                 spec,
+                                                 *props::model(spec.model),
+                                                 pose,
+                                                 spec.scale,
+                                                 object_ids.next()));
+      }
     }
     std::string odr_id = head.signal.odr_id;
     heads.push_back(std::move(head));
@@ -9598,15 +9746,21 @@ std::unique_ptr<Command> signalize_junction(const RoadNetwork& network,
   }
   after.signal_mounts.clear();
   for (const PlannedHead& head : heads) {
-    if (!head.has_mount) {
+    if (head.mounts.empty()) {
       continue;
     }
-    SignalMount mount{.signal_odr_id = head.signal.odr_id, .object_odr_ids = {head.mount.odr_id}};
+    SignalMount mount{.signal_odr_id = head.signal.odr_id, .object_odr_ids = {}};
+    mount.object_odr_ids.reserve(head.mounts.size());
+    for (const Object& part : head.mounts) {
+      mount.object_odr_ids.push_back(part.odr_id);
+    }
     // Bounded at AUTHOR time, not just at write time: the writer truncates a
     // long part list rather than emitting a value its own reader would drop
     // whole, and a record that survives in memory but not on disk would break
-    // save→reload→save byte stability. One prop per signal today; #323's
-    // assemblies are the reason this is a list at all.
+    // save→reload→save byte stability. One prop per signal for a model mount,
+    // one per assembly part for an assembly mount (#323) — which is why this was
+    // a list from the day it shipped. The assembly branch above already refuses a
+    // definition longer than the bound, so this clamp stays a backstop.
     if (mount.object_odr_ids.size() > kMaxSignalMountParts) {
       mount.object_odr_ids.resize(kMaxSignalMountParts);
     }
@@ -9649,14 +9803,13 @@ std::unique_ptr<Command> signalize_junction(const RoadNetwork& network,
         return make_error(ErrorCode::InvalidArgument, "failed to add signal");
       }
       created.signals.emplace_back(signal, head.signal);
-      if (!head.has_mount) {
-        continue;
+      for (const Object& mount : head.mounts) {
+        const ObjectId object = net.add_object(mount.road, mount);
+        if (!object.is_valid()) {
+          return make_error(ErrorCode::InvalidArgument, "failed to add mount prop");
+        }
+        created.objects.emplace_back(object, mount);
       }
-      const ObjectId object = net.add_object(head.road, head.mount);
-      if (!object.is_valid()) {
-        return make_error(ErrorCode::InvalidArgument, "failed to add mount prop");
-      }
-      created.objects.emplace_back(object, head.mount);
     }
     for (const Controller& controller : controllers) {
       const ControllerId id = net.add_controller(controller);
@@ -10045,6 +10198,220 @@ std::unique_ptr<Command> rename_road(const RoadNetwork& network, RoadId road_id,
   auto command = std::make_unique<GenericCommand>(std::string(kName), DirtySet{.roads = {road_id}});
   command->before.roads.emplace_back(road_id, *road);
   command->after.roads.emplace_back(road_id, std::move(after));
+  return command;
+}
+
+// ---- prop assemblies (composite props, p6-s9 #323) -------------------------
+
+namespace {
+
+Error not_assembly_part_error() {
+  return Error{.code = ErrorCode::InvalidArgument, .message = "object is not an assembly part"};
+}
+
+/// The anchor pose an existing part implies — the inverse of `assembly_part_pose`.
+/// Any surviving part recovers it, which is what lets `move_assembly` work from
+/// whichever part the user happened to grab.
+AssemblyAnchor anchor_of(const Object& part) {
+  const AssemblyData& record = *part.assembly;
+  const double anchor_hdg = part.hdg - record.dyaw;
+  const double cos_h = std::cos(anchor_hdg);
+  const double sin_h = std::sin(anchor_hdg);
+  return AssemblyAnchor{.s = part.s - (record.du * cos_h) + (record.dv * sin_h),
+                        .t = part.t - (record.du * sin_h) - (record.dv * cos_h),
+                        .z = part.z_offset - record.dz,
+                        .hdg = anchor_hdg};
+}
+
+} // namespace
+
+std::unique_ptr<Command> place_assembly(const RoadNetwork& network,
+                                        RoadId road,
+                                        double s,
+                                        double t,
+                                        double hdg,
+                                        std::string_view assembly_id,
+                                        double scale) {
+  static constexpr std::string_view kName = "Place Assembly";
+  const auto fail = [](std::string message) {
+    return invalid_command(
+        std::string(kName),
+        Error{.code = ErrorCode::InvalidArgument, .message = std::move(message)});
+  };
+
+  const Road* owner = network.road(road);
+  if (owner == nullptr) {
+    return fail("stale road id");
+  }
+  if (!std::isfinite(scale) || scale <= 0.0) {
+    return fail("assembly scale must be finite and positive");
+  }
+  const props::PropAssembly* definition = props::assembly(assembly_id);
+  if (definition == nullptr) {
+    return fail(fmt::format("unknown assembly id: {}", assembly_id));
+  }
+  if (definition->parts.empty()) {
+    return fail(fmt::format("assembly '{}' has no parts", assembly_id));
+  }
+  if (definition->parts.size() > props::kMaxAssemblyParts) {
+    return fail(
+        fmt::format("assembly '{}' has more than {} parts", assembly_id, props::kMaxAssemblyParts));
+  }
+
+  const AssemblyAnchor anchor{.s = s, .t = t, .z = 0.0, .hdg = hdg};
+  OdrIdMinter object_ids(live_object_odr_ids(network));
+  OdrIdMinter instance_ids(live_assembly_instances(network));
+  const std::string instance = instance_ids.next();
+
+  std::vector<Object> parts;
+  parts.reserve(definition->parts.size());
+  for (std::size_t index = 0; index < definition->parts.size(); ++index) {
+    const props::AssemblyPart& spec = definition->parts[index];
+    const props::PropModel* model = props::model(spec.model);
+    if (model == nullptr) {
+      return fail(fmt::format(
+          "assembly '{}' part {} names unknown model '{}'", assembly_id, index, spec.model));
+    }
+    if (!std::isfinite(spec.scale) || spec.scale <= 0.0) {
+      return fail(
+          fmt::format("assembly '{}' part {} has a non-positive scale", assembly_id, index));
+    }
+    const AssemblyAnchor pose = assembly_part_pose(anchor, spec.du, spec.dv, spec.dz, spec.dyaw);
+    if (!station_on_road(*owner, pose.s)) {
+      return fail(
+          fmt::format("assembly '{}' part {} would fall outside the road", assembly_id, index));
+    }
+    parts.push_back(make_assembly_part(road,
+                                       definition->id,
+                                       instance,
+                                       index,
+                                       spec,
+                                       *model,
+                                       pose,
+                                       scale * spec.scale,
+                                       object_ids.next()));
+  }
+
+  auto command = std::make_unique<GenericCommand>(std::string(kName), DirtySet{.objects = {road}});
+  command->creator = [road, parts](RoadNetwork& net, Values& created) -> Expected<void> {
+    for (const Object& part : parts) {
+      const ObjectId id = net.add_object(road, part);
+      if (!id.is_valid()) {
+        return make_error(ErrorCode::InvalidArgument, "failed to add assembly part (stale road)");
+      }
+      created.objects.emplace_back(id, part);
+    }
+    return {};
+  };
+  return command;
+}
+
+std::unique_ptr<Command> move_assembly(
+    const RoadNetwork& network, ObjectId part, double s, double t, std::optional<double> hdg) {
+  static constexpr std::string_view kName = "Move Assembly";
+  const Object* seed = network.object(part);
+  if (seed == nullptr) {
+    return invalid_command(std::string(kName), stale_object_error());
+  }
+  if (!seed->assembly.has_value()) {
+    return invalid_command(std::string(kName), not_assembly_part_error());
+  }
+  const Road* owner = network.road(seed->road);
+  if (owner == nullptr) {
+    return invalid_command(std::string(kName),
+                           Error{.code = ErrorCode::InvalidArgument,
+                                 .message = "object has a stale road back-reference"});
+  }
+
+  const AssemblyAnchor anchor{.s = s, .t = t, .z = 0.0, .hdg = hdg.value_or(anchor_of(*seed).hdg)};
+
+  const std::vector<ObjectId> members = assembly_parts(network, part);
+  std::vector<std::pair<ObjectId, Object>> moved;
+  moved.reserve(members.size());
+  for (const ObjectId id : members) {
+    const Object* current = network.object(id);
+    if (current == nullptr || !current->assembly.has_value()) {
+      continue;
+    }
+    const AssemblyData& record = *current->assembly;
+    const AssemblyAnchor pose =
+        assembly_part_pose(anchor, record.du, record.dv, record.dz, record.dyaw);
+    // A part on another road cannot be re-stationed against THIS road's length, and
+    // update_objects refuses to change an owning road anyway — so a group that has
+    // somehow spread across roads is refused rather than half-moved.
+    const Road* part_road = network.road(current->road);
+    if (part_road == nullptr || !station_on_road(*part_road, pose.s)) {
+      return invalid_command(std::string(kName), object_s_error());
+    }
+    Object after = *current;
+    after.s = pose.s;
+    after.t = pose.t;
+    after.z_offset = pose.z;
+    after.hdg = pose.hdg;
+    moved.emplace_back(id, std::move(after));
+  }
+  if (moved.empty()) {
+    return invalid_command(std::string(kName), not_assembly_part_error());
+  }
+
+  DirtySet dirty;
+  for (const auto& [id, after] : moved) {
+    if (std::ranges::find(dirty.objects, after.road) == dirty.objects.end()) {
+      dirty.objects.push_back(after.road);
+    }
+  }
+  auto command = std::make_unique<GenericCommand>(std::string(kName), std::move(dirty));
+  for (auto& [id, after] : moved) {
+    command->before.objects.emplace_back(id, *network.object(id));
+    command->after.objects.emplace_back(id, std::move(after));
+  }
+  return command;
+}
+
+std::unique_ptr<Command> delete_assembly(const RoadNetwork& network, ObjectId part) {
+  static constexpr std::string_view kName = "Delete Assembly";
+  const Object* seed = network.object(part);
+  if (seed == nullptr) {
+    return invalid_command(std::string(kName), stale_object_error());
+  }
+  if (!seed->assembly.has_value()) {
+    return invalid_command(std::string(kName), not_assembly_part_error());
+  }
+
+  std::vector<std::pair<ObjectId, Object>> doomed;
+  DirtySet dirty;
+  for (const ObjectId id : assembly_parts(network, part)) {
+    const Object* value = network.object(id);
+    if (value == nullptr) {
+      continue;
+    }
+    if (std::ranges::find(dirty.objects, value->road) == dirty.objects.end()) {
+      dirty.objects.push_back(value->road);
+    }
+    doomed.emplace_back(id, *value);
+  }
+  auto command = std::make_unique<GenericCommand>(std::string(kName), std::move(dirty));
+  for (auto& [id, value] : doomed) {
+    command->erased.objects.emplace_back(id, std::move(value));
+  }
+  return command;
+}
+
+std::unique_ptr<Command> detach_assembly_part(const RoadNetwork& network, ObjectId part) {
+  static constexpr std::string_view kName = "Detach Assembly Part";
+  const Object* current = network.object(part);
+  if (current == nullptr) {
+    return invalid_command(std::string(kName), stale_object_error());
+  }
+  if (!current->assembly.has_value()) {
+    return invalid_command(std::string(kName), not_assembly_part_error());
+  }
+  Object after = *current;
+  after.assembly.reset();
+  auto command =
+      std::make_unique<GenericCommand>(std::string(kName), DirtySet{.objects = {current->road}});
+  command->before.objects.emplace_back(part, *current);
+  command->after.objects.emplace_back(part, std::move(after));
   return command;
 }
 

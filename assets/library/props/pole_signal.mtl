@@ -1,0 +1,3 @@
+# Materials for pole_signal (linear RGB).
+newmtl pole
+Kd 0.3200 0.3400 0.3600

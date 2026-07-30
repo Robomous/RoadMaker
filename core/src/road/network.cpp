@@ -324,6 +324,36 @@ std::vector<ObjectId> objects_of(const RoadNetwork& network, RoadId road_id) {
   return owned;
 }
 
+std::vector<ObjectId> assembly_parts(const RoadNetwork& network, ObjectId object_id) {
+  const Object* seed = network.object(object_id);
+  if (seed == nullptr || !seed->assembly.has_value()) {
+    return {};
+  }
+  const std::string& instance = seed->assembly->instance;
+
+  std::vector<std::pair<int, ObjectId>> found;
+  network.for_each_object([&](ObjectId id, const Object& object) {
+    if (object.assembly.has_value() && object.assembly->instance == instance) {
+      found.emplace_back(object.assembly->part, id);
+    }
+  });
+  // Sort by part index, then by arena index, so a file that duplicates a part
+  // index still yields a deterministic order instead of a compare-unstable one.
+  std::ranges::sort(found, [](const auto& lhs, const auto& rhs) {
+    if (lhs.first != rhs.first) {
+      return lhs.first < rhs.first;
+    }
+    return lhs.second.index < rhs.second.index;
+  });
+
+  std::vector<ObjectId> parts;
+  parts.reserve(found.size());
+  for (const auto& [part, id] : found) {
+    parts.push_back(id);
+  }
+  return parts;
+}
+
 std::vector<SignalId> signals_of(const RoadNetwork& network, RoadId road_id) {
   std::vector<SignalId> owned;
   network.for_each_signal([&](SignalId id, const Signal& signal) {

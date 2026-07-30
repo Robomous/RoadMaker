@@ -1562,11 +1562,23 @@ enum class SignalizeTemplate {
 struct SignalizeOptions {
   SignalizeTemplate tmpl = SignalizeTemplate::FourWayProtectedLeft;
 
-  /// Optional prop model id (assets/prop_library.hpp) placed as an `<object>`
-  /// alongside each authored signal and recorded in the junction's
-  /// `signal_mounts`; empty places nothing. This is the #323 extension point —
-  /// an assembly id slots straight in and needs no schema change, because the
-  /// mount record already holds a LIST of object ids per signal.
+  /// Optional prop model id (`props::model`, assets/prop_library.hpp) OR composite
+  /// assembly id (`props::assembly`, assets/prop_assembly.hpp) placed as
+  /// `<object>`s alongside each authored signal and recorded in the junction's
+  /// `signal_mounts`; empty places nothing.
+  ///
+  /// A MODEL is tried first, so no existing scene's mount changes meaning. An
+  /// ASSEMBLY expands into one object per part, all of them recorded in that
+  /// signal's mount — which cost no schema change, because the record has held a
+  /// LIST of object ids per signal since p4-s7 precisely for this (p6-s9, #323).
+  /// The two differ in one visible way: a lone prop is dropped beside the head
+  /// with no orientation, while an assembly is aimed along the signal's own
+  /// `h_offset`, because its parts have offsets that would otherwise reach along
+  /// the road instead of across it.
+  ///
+  /// Refused for an assembly with no parts, more parts than `kMaxSignalMountParts`
+  /// (bounded at author time so nothing survives in memory that the writer would
+  /// truncate), or a part naming a model that does not resolve.
   std::string mount_model;
 
   /// Lateral clearance [m] between the outboard edge of the approach's stop
@@ -1692,6 +1704,73 @@ set_object_model(const RoadNetwork& network, ObjectId object, std::string model_
 update_objects(const RoadNetwork& network,
                std::vector<std::pair<ObjectId, Object>> updates,
                std::string name = {});
+
+// --- prop assemblies (composite props) --------------------------------------
+//
+// An assembly is a handful of prop models pinned together by fixed relative
+// transforms (`props::PropAssembly`), placed as one unit, moved as one unit and
+// deleted as one unit. Each part is an ordinary OpenDRIVE `<object>`; what binds
+// them is the `rm:assembly` record each carries (`Object::assembly`).
+//
+// EVERY OPERATION HERE IS ONE COMMAND, not a composite of per-part commands. That
+// is not a style choice: a composite's stages revert in reverse but each stage is
+// its own undo-visible mutation, and an assembly is meaningless half-placed.
+
+/// Places every part of `assembly_id` on `road`, anchored at road-relative
+/// (`s`, `t`) with heading offset `hdg`, as ONE undoable command.
+///
+/// Each part's own station is derived from the anchor and the part's authored
+/// offset (see `props::AssemblyPart` for the frame), and every part carries the
+/// `rm:assembly` record that groups it with its siblings. `scale` multiplies each
+/// part's own scale, so the whole unit can be spawned larger or smaller.
+///
+/// ★ ODR IDS ARE MINTED ACROSS THE WHOLE BATCH from one taken-set. Minting them
+/// one at a time against the live network would hand every part the SAME id,
+/// because none of them exists yet — the bug `distribute_props_along_curve`
+/// already had to solve.
+///
+/// Refuses (invalid_command): a stale road, an unknown `assembly_id`, an assembly
+/// with no parts or more than `props::kMaxAssemblyParts`, a part naming a model
+/// that does not resolve, a non-finite or non-positive `scale`, and any part whose
+/// derived `s` falls outside `[0, road length]` — the assembly is placed whole or
+/// not at all, never clipped.
+[[nodiscard]] RM_API std::unique_ptr<Command> place_assembly(const RoadNetwork& network,
+                                                             RoadId road,
+                                                             double s,
+                                                             double t,
+                                                             double hdg,
+                                                             std::string_view assembly_id,
+                                                             double scale = 1.0);
+
+/// Re-anchors the whole assembly `part` belongs to: every part's (s, t, zOffset,
+/// hdg) is recomputed from the new anchor pose, so the unit moves rigidly. `hdg`
+/// left as nullopt keeps the current anchor heading.
+///
+/// Undo is byte-identical from the value snapshot. Refuses (invalid_command) a
+/// stale id, an object that is not an assembly part, an object whose road
+/// back-reference is stale, and a move that would take ANY part off the road.
+[[nodiscard]] RM_API std::unique_ptr<Command>
+move_assembly(const RoadNetwork& network,
+              ObjectId part,
+              double s,
+              double t,
+              std::optional<double> hdg = std::nullopt);
+
+/// Deletes every part of the assembly `part` belongs to, as ONE command. Undo
+/// restores all of them under their original ObjectIds (restore-in-place).
+/// Refuses (invalid_command) a stale id or an object that is not an assembly part.
+[[nodiscard]] RM_API std::unique_ptr<Command> delete_assembly(const RoadNetwork& network,
+                                                              ObjectId part);
+
+/// Breaks ONE part out of its assembly: clears its `rm:assembly` record, leaving
+/// the object exactly where it stands and its siblings still grouped.
+///
+/// This is the escape hatch that makes `move_object`'s refusal of an assembly part
+/// tolerable — and it is the same "a derived thing becomes authored the moment you
+/// edit it individually" move p5-s1 made for surfaces. Refuses (invalid_command) a
+/// stale id or an object that is not an assembly part.
+[[nodiscard]] RM_API std::unique_ptr<Command> detach_assembly_part(const RoadNetwork& network,
+                                                                   ObjectId part);
 
 // --- document ---------------------------------------------------------------
 

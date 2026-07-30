@@ -19,6 +19,7 @@
 // Expected, __repr__ everywhere. No C++ exception ever crosses this
 // boundary unhandled — rm::Error is translated to Python exceptions.
 
+#include "roadmaker/assets/prop_assembly.hpp"
 #include "roadmaker/assets/prop_import.hpp"
 #include "roadmaker/assets/prop_library.hpp"
 #include "roadmaker/edit/assembly.hpp"
@@ -1061,6 +1062,27 @@ NB_MODULE(_roadmaker, m) {
                a == nb::cast<roadmaker::StencilData>(b);
       });
 
+  nb::class_<roadmaker::AssemblyData>(m, "AssemblyData")
+      .def(nb::init<>())
+      .def_rw("asset",
+              &roadmaker::AssemblyData::asset,
+              "The props.assembly id this instance was materialized from. Provenance: "
+              "the record is authoritative for the INSTANCE, the catalogue for the ASSET.")
+      .def_rw("instance",
+              &roadmaker::AssemblyData::instance,
+              "Groups the parts of ONE placement; unique per file.")
+      .def_rw("part",
+              &roadmaker::AssemblyData::part,
+              "0-based index within the assembly (< props.MAX_ASSEMBLY_PARTS).")
+      .def_rw("du", &roadmaker::AssemblyData::du, "Offset along s [m] in the local frame.")
+      .def_rw("dv", &roadmaker::AssemblyData::dv, "Offset across t [m].")
+      .def_rw("dz", &roadmaker::AssemblyData::dz, "Offset above the anchor's zOffset [m].")
+      .def_rw("dyaw", &roadmaker::AssemblyData::dyaw, "Yaw about +Z [rad].")
+      .def("__eq__", [](const roadmaker::AssemblyData& a, nb::object b) {
+        return nb::isinstance<roadmaker::AssemblyData>(b) &&
+               a == nb::cast<roadmaker::AssemblyData>(b);
+      });
+
   nb::class_<roadmaker::Object>(m, "Object")
       .def(nb::init<>())
       .def(nb::init<const roadmaker::Object&>(),
@@ -1105,6 +1127,11 @@ NB_MODULE(_roadmaker, m) {
       .def_rw("stencil",
               &roadmaker::Object::stencil,
               "Point-stencil authoring data (rm:stencil userData); None if absent.")
+      .def_rw("assembly",
+              &roadmaker::Object::assembly,
+              "Composite-assembly membership (rm:assembly userData); None on a standalone "
+              "prop. Present means this object is one PART of a unit that places, moves "
+              "and deletes together — edit.move_object refuses it for that reason.")
       .def_ro("preserved", &roadmaker::Object::preserved)
       .def("__repr__", [](const roadmaker::Object& object) {
         return "Object(odr_id='" + object.odr_id + "', s=" + std::to_string(object.s) +
@@ -1713,6 +1740,73 @@ NB_MODULE(_roadmaker, m) {
               "path"_a,
               "True for the extensions `import_model` accepts, so a file filter and "
               "the reader cannot disagree about what is openable.");
+
+    // --- Composite assemblies (p6-s9, #323) --------------------------------
+    //
+    // Bound inside `props` rather than as a submodule of its own, because an
+    // assembly IS a prop asset: same catalogue shape, same project overlay, same
+    // resolve-by-id contract. Note the name: `rm.edit.assembly` is the unrelated
+    // T/X road-junction builder and predates this.
+    nb::class_<roadmaker::props::AssemblyPart>(props, "AssemblyPart")
+        .def(nb::init<>())
+        .def_rw("model", &roadmaker::props::AssemblyPart::model, "A prop model id.")
+        .def_rw("du",
+                &roadmaker::props::AssemblyPart::du,
+                "Offset along the road's s axis [m], in the assembly's local frame.")
+        .def_rw("dv", &roadmaker::props::AssemblyPart::dv, "Offset across the road's t axis [m].")
+        .def_rw("dz", &roadmaker::props::AssemblyPart::dz, "Offset above the anchor's zOffset [m].")
+        .def_rw("dyaw",
+                &roadmaker::props::AssemblyPart::dyaw,
+                "Yaw about +Z [rad], added to the anchor's heading. There is deliberately no "
+                "pitch or roll: mesh.ObjectInstance carries neither, so a part that must lie "
+                "down (a mast arm) ships as already-horizontal geometry.")
+        .def_rw("scale",
+                &roadmaker::props::AssemblyPart::scale,
+                "Uniform multiplier on this part's model dimensions.");
+
+    nb::class_<roadmaker::props::PropAssembly>(props, "PropAssembly")
+        .def(nb::init<>())
+        .def_rw("id", &roadmaker::props::PropAssembly::id)
+        .def_rw("label", &roadmaker::props::PropAssembly::label)
+        .def_rw("parts",
+                &roadmaker::props::PropAssembly::parts,
+                "Parts in placement order, which is also the order their <object>s are "
+                "minted and the order a SignalMount records them.");
+
+    props.attr("MAX_ASSEMBLY_PARTS") = roadmaker::props::kMaxAssemblyParts;
+
+    props.def(
+        "assembly_ids",
+        [] { return roadmaker::props::assembly_ids(); },
+        "Every available assembly id: the bundled ones, then the open project's.");
+    props.def(
+        "assembly",
+        [](std::string_view id) -> std::optional<roadmaker::props::PropAssembly> {
+          const roadmaker::props::PropAssembly* found = roadmaker::props::assembly(id);
+          if (found == nullptr) {
+            return std::nullopt;
+          }
+          // By value, for the same reason `model` is: a project assembly's pointer
+          // dies with the overlay.
+          return *found;
+        },
+        "id"_a,
+        "The assembly for `id`, or None. A project's own definitions are consulted "
+        "first, so a project may shadow a bundled id.");
+    props.def("is_project_assembly",
+              &roadmaker::props::is_project_assembly,
+              "id"_a,
+              "True when `id` resolves to a project definition rather than a bundled one.");
+    props.def(
+        "register_project_assemblies",
+        [](std::vector<roadmaker::props::PropAssembly> assemblies) {
+          roadmaker::props::register_project_assemblies(std::move(assemblies));
+        },
+        "assemblies"_a,
+        "Installs the open project's assembly definitions, REPLACING any previous set.");
+    props.def("clear_project_assemblies",
+              &roadmaker::props::clear_project_assemblies,
+              "Drops the project overlay, restoring the bundled catalogue exactly.");
   }
 
   // --- OSM import (p7-s4, #244) ------------------------------------------
@@ -2190,6 +2284,16 @@ NB_MODULE(_roadmaker, m) {
           },
           "road"_a,
           "ObjectIds the road owns, in creation order.")
+      .def(
+          "assembly_parts",
+          [](const roadmaker::RoadNetwork& network, roadmaker::ObjectId object) {
+            return roadmaker::assembly_parts(network, object);
+          },
+          "object"_a,
+          "Every object belonging to the same composite-assembly instance as "
+          "`object`, including itself, SORTED BY PART (p6-s9, #323) — not in arena "
+          "order, which is not part order once a file has listed the parts "
+          "shuffled. Empty for a plain prop or a stale id.")
       .def("signal",
            nb::overload_cast<roadmaker::SignalId>(&roadmaker::RoadNetwork::signal),
            "id"_a,
@@ -5034,6 +5138,57 @@ NB_MODULE(_roadmaker, m) {
            "t"_a,
            "hdg"_a = std::optional<double>{},
            "Re-locates an object to road-relative (s, t); hdg (rad) optional.");
+  // --- Composite prop assemblies (p6-s9, #323) ----------------------------
+  //
+  // Each is ONE command, not a composite of per-part commands: an assembly is
+  // meaningless half-placed, and a composite's stages are individually
+  // undo-visible.
+  edit.def(
+      "place_assembly",
+      [](const roadmaker::RoadNetwork& network,
+         roadmaker::RoadId road,
+         double s,
+         double t,
+         double hdg,
+         std::string_view assembly_id,
+         double scale) {
+        return roadmaker::edit::place_assembly(network, road, s, t, hdg, assembly_id, scale);
+      },
+      "network"_a,
+      "road"_a,
+      "s"_a,
+      "t"_a,
+      "hdg"_a,
+      "assembly_id"_a,
+      "scale"_a = 1.0,
+      "Places every part of `assembly_id` (props.assembly) on `road`, anchored at "
+      "road-relative (s, t) with heading offset `hdg`, as ONE undoable command. "
+      "Part odr ids are minted across the whole batch from one taken-set. Refused "
+      "for an unknown assembly, a stale road, a non-positive scale, a part naming "
+      "an unknown model, or any part landing off the road — whole or not at all.");
+  edit.def("move_assembly",
+           &roadmaker::edit::move_assembly,
+           "network"_a,
+           "part"_a,
+           "s"_a,
+           "t"_a,
+           "hdg"_a = std::optional<double>{},
+           "Re-anchors the whole assembly `part` belongs to: every part's pose is "
+           "recomputed from the new anchor, so the unit moves rigidly. `hdg` left "
+           "as None keeps the current anchor heading.");
+  edit.def("delete_assembly",
+           &roadmaker::edit::delete_assembly,
+           "network"_a,
+           "part"_a,
+           "Deletes every part of the assembly `part` belongs to, as ONE command. "
+           "Undo restores all of them under their original ids.");
+  edit.def("detach_assembly_part",
+           &roadmaker::edit::detach_assembly_part,
+           "network"_a,
+           "part"_a,
+           "Breaks ONE part out of its assembly, leaving it where it stands and its "
+           "siblings still grouped. This is what makes move_object's refusal of an "
+           "assembly part tolerable.");
   edit.def(
       "set_object_model",
       [](const roadmaker::RoadNetwork& network, roadmaker::ObjectId object, std::string model_id) {

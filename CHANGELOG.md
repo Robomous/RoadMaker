@@ -19,6 +19,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 Current version on `main`: **0.0.1**.
 
 ### Added
+- **Composite prop assemblies** ([#323](https://github.com/Robomous/RoadMaker/issues/323),
+  kernel half): several prop models pinned together by fixed relative transforms
+  place as one unit, move as one unit and delete as one unit. The bundled
+  `signal_mast` — a pole, a horizontal mast arm and two signal heads, at the
+  [§1.5 clearances](docs/domain/realism_defaults.md) — is the demo, and a project
+  can define its own the same way it registers imported models.
+  - **Each part stays an ordinary OpenDRIVE `<object>`.** There is no normative
+    grouping to borrow: §13.10's `<objectReference>` is cross-road *identity*
+    with no relative transform, and §13.3's `<skeleton>` describes shape volumes
+    rather than asset instances. So the carrier is N sibling objects plus an
+    object-scope `rm:assembly` userData record, and a foreign reader gets N
+    valid, individually-placed props and loses only the grouping.
+  - **Each operation is ONE command**, not a composite of per-part commands: an
+    assembly is meaningless half-placed, and a composite's stages are
+    individually undo-visible. `place_assembly` mints its parts' odr ids across
+    the whole batch from one taken-set, and refuses whole — an unknown asset, a
+    part naming a model that does not resolve, or any part landing off the road
+    takes the placement down rather than clipping it.
+  - **The record is authoritative for the instance, the catalogue for the
+    asset.** Every part carries its own pose rather than re-reading the
+    definition, so a scene opened without its project still knows its own
+    geometry ([#508](https://github.com/Robomous/RoadMaker/issues/508)) and
+    editing an asset definition cannot silently drag already-placed instances
+    with it.
+  - `move_object` now refuses an assembly part — the pose is derived from the
+    anchor — and `detach_assembly_part` is the explicit escape hatch, the same
+    "a derived thing becomes authored the moment you edit it individually" move
+    ground surfaces made in p5-s1.
+  - **A signalized junction can mount an assembly**, not just a lone prop:
+    `SignalizeOptions::mount_model` resolves a model first and an assembly
+    second, which cost no schema change because the mount record has held a
+    *list* of object ids per signal since p4-s7 precisely for this.
+  - **The obstruction checker gained rule R6**: one assembly's own parts never
+    flag each other, because a mast arm bolting into its pole is the assembly
+    working. It is keyed on the placement, not the asset, so two masts welded
+    into one another are still reported.
 - **Bring your own props in from glTF** ([#322](https://github.com/Robomous/RoadMaker/issues/322),
   prop half): a `.glb` or `.gltf` imported into a project becomes a prop asset the
   four prop tools, Prop Sets and the instanced render path all accept — and

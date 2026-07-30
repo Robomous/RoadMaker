@@ -48,13 +48,14 @@ struct RmCode {
 /// attributes (lane <material @surface>, <roadMark @material>, rm:junction
 /// `mat=` fields, <userData code="rm:surface" material=...>), not userData
 /// codes — they never appear as a `code` attribute.
-inline constexpr std::array<RmCode, 18> kRmCodes{{
+inline constexpr std::array<RmCode, 19> kRmCodes{{
     // <road>
     {"rm:waypoints", RmCodeScope::Road},
     {"rm:aux_boundary", RmCodeScope::Road},
     // <object> / <bridge>
     {"rm:crosswalk", RmCodeScope::Object},
     {"rm:markingCurve", RmCodeScope::Object},
+    {"rm:assembly", RmCodeScope::Object},
     {"rm:stencil", RmCodeScope::Object},
     {"rm:stopline", RmCodeScope::Object},
     {"rm:material.bridge_deck", RmCodeScope::Object},
