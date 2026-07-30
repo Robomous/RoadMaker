@@ -398,6 +398,12 @@
       "label": "City buildings",
       "category": "Prop sets",
       "create": { "kind": "prop_set", "entries": [ { "model": "building_low", "portion": 3 }, { "model": "building_mid", "portion": 2 }, { "model": "building_tower", "portion": 1 } ] }
+    },
+    {
+      "key": "prop_assembly.signal_mast",
+      "label": "Traffic signal, mast arm",
+      "category": "Prop assemblies",
+      "create": { "kind": "prop_assembly", "prop_assembly": "signal_mast" }
     }
   ]
 }

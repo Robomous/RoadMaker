@@ -60,6 +60,12 @@ namespace {
   if (key.startsWith(QStringLiteral("assembly."))) {
     return QStringLiteral("junction-connect");
   }
+  if (key.startsWith(QStringLiteral("prop_assembly."))) {
+    // A composite prop assembly reuses the signal glyph: the only bundled one is
+    // a mast-arm signal, and a per-assembly thumbnail is the same Library-polish
+    // follow-up prop sets are waiting on.
+    return QStringLiteral("signal");
+  }
   if (key.startsWith(QStringLiteral("prop_set."))) {
     // Prop sets reuse the vegetation glyph (Icons::get falls back to it — no
     // per-set thumbnail this sprint).

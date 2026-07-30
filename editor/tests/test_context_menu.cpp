@@ -377,6 +377,94 @@ TEST(ContextMenu, DuplicateObjectAddsASecondPropWithAFreshId) {
   EXPECT_NE(ids[0], ids[1]);
 }
 
+// --- composite prop assemblies (p6-s9, #323) --------------------------------
+
+namespace {
+
+/// Places the bundled mast-arm assembly on the fixture road and returns its
+/// parts. The fixture road bends, which is deliberate: the parts are placed in
+/// road s/t, so a curve is where a wrong frame would show.
+std::vector<roadmaker::ObjectId> place_assembly(Fixture& fx) {
+  if (!fx.document.push_command(roadmaker::edit::place_assembly(
+          fx.document.network(), fx.road, 50.0, -6.0, 0.0, "signal_mast"))) {
+    throw std::runtime_error("place_assembly refused");
+  }
+  std::vector<roadmaker::ObjectId> parts;
+  fx.document.network().for_each_object(
+      [&](roadmaker::ObjectId id, const roadmaker::Object&) { parts.push_back(id); });
+  return parts;
+}
+
+} // namespace
+
+TEST(ContextMenu, AnAssemblyPartOffersDetachAndDeletesTheWholeUnit) {
+  Fixture fx;
+  const std::vector<roadmaker::ObjectId> parts = place_assembly(fx);
+  ASSERT_GE(parts.size(), 2U);
+  MenuContext context;
+  context.pick = PickHit{.road = fx.road, .object = parts[1]};
+
+  const std::vector<MenuItem> items = build_context_menu(context, fx.deps);
+  // The label says "assembly", because a menu that says "object" and removes
+  // four is a surprise — and "Delete object" must NOT be offered as well.
+  EXPECT_EQ(fx.find(items, "Delete object"), nullptr);
+  const MenuItem* del = fx.find(items, "Delete assembly");
+  ASSERT_NE(del, nullptr);
+  ASSERT_NE(fx.find(items, "Detach from assembly"), nullptr);
+
+  del->invoke();
+  EXPECT_EQ(fx.document.network().object_count(), 0U) << "one part left the rest standing";
+  fx.document.undo_stack()->undo();
+  EXPECT_EQ(fx.document.network().object_count(), parts.size());
+}
+
+TEST(ContextMenu, DetachBreaksOnePartOutAndLeavesItsSiblingsGrouped) {
+  Fixture fx;
+  const std::vector<roadmaker::ObjectId> parts = place_assembly(fx);
+  ASSERT_GE(parts.size(), 3U);
+  MenuContext context;
+  context.pick = PickHit{.road = fx.road, .object = parts[2]};
+
+  // Bound to a NAMED local: build_context_menu returns by value, so a pointer
+  // into the temporary dies at the end of the full expression.
+  const std::vector<MenuItem> items = build_context_menu(context, fx.deps);
+  const MenuItem* detach = fx.find(items, "Detach from assembly");
+  ASSERT_NE(detach, nullptr);
+  detach->invoke();
+
+  EXPECT_FALSE(fx.document.network().object(parts[2])->assembly.has_value());
+  EXPECT_EQ(fx.document.network().object_count(), parts.size()) << "detach must not delete";
+  EXPECT_EQ(roadmaker::assembly_parts(fx.document.network(), parts[0]).size(), parts.size() - 1);
+
+  // A detached part is an ordinary prop: its menu is the plain one again.
+  const std::vector<MenuItem> after = build_context_menu(context, fx.deps);
+  EXPECT_NE(fx.find(after, "Delete object"), nullptr);
+  EXPECT_EQ(fx.find(after, "Detach from assembly"), nullptr);
+}
+
+TEST(ContextMenu, DuplicatingAnAssemblyPartYieldsAStandalonePropNotASecondPart) {
+  Fixture fx;
+  const std::vector<roadmaker::ObjectId> parts = place_assembly(fx);
+  MenuContext context;
+  context.pick = PickHit{.road = fx.road, .object = parts[1]};
+
+  const std::vector<MenuItem> items = build_context_menu(context, fx.deps);
+  const MenuItem* dup = fx.find(items, "Duplicate");
+  ASSERT_NE(dup, nullptr);
+  dup->invoke();
+
+  ASSERT_EQ(fx.document.network().object_count(), parts.size() + 1);
+  // ★ Copying the record verbatim would give the copy the SAME instance token
+  // AND the same part index — a five-part assembly with a duplicate part 1,
+  // which `assembly_parts` would happily hand to move_assembly.
+  EXPECT_EQ(roadmaker::assembly_parts(fx.document.network(), parts[0]).size(), parts.size());
+  std::size_t standalone = 0;
+  fx.document.network().for_each_object([&](roadmaker::ObjectId, const roadmaker::Object& o) {
+    standalone += o.assembly.has_value() ? 0U : 1U;
+  });
+  EXPECT_EQ(standalone, 1U);
+}
+
 TEST(ContextMenu, InsertBendInvokeAddsANode) {
   Fixture fx;
   MenuContext context;

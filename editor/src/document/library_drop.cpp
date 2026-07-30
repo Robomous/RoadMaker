@@ -16,6 +16,7 @@
 
 #include "document/library_drop.hpp"
 
+#include "roadmaker/assets/prop_assembly.hpp"
 #include "roadmaker/assets/prop_library.hpp"
 #include "roadmaker/edit/assembly.hpp"
 #include "roadmaker/edit/operations.hpp"
@@ -289,6 +290,43 @@ LibraryDropAction resolve_library_drop(const LibraryItem& item,
       }
       action.toast = QStringLiteral("Placed %1 — Ctrl+Z to undo").arg(item.label);
     }
+    return action;
+  }
+  case LibraryItem::Kind::PropAssembly: {
+    // ★ RESOLVED HERE, not at parse time. A row can name a project assembly that
+    // only exists once the project's overlay is registered, or one a newer
+    // manifest ships and this build does not — so the row parses either way and
+    // the DROP is what refuses, with the asset named.
+    if (props::assembly(item.prop_assembly.toStdString()) == nullptr) {
+      action.toast = QStringLiteral("%1 isn't in this project's library").arg(item.label);
+      return action; // kind stays None, preview invalid at cursor — caller hints
+    }
+    // A composite prop is road-relative for the same reason a single one is —
+    // OpenDRIVE has no world-placed object — so it snaps to the nearest road and
+    // the whole unit is anchored there.
+    const auto placement = nearest_road_station(network, world_x, world_y, kTreeSnapThreshold);
+    if (!placement.has_value()) {
+      action.toast = QStringLiteral("Drop %1 onto or beside a road").arg(item.label);
+      return action;
+    }
+    // ONE command for the whole assembly, however many parts. It still refuses
+    // whole at apply — a part landing past the road end takes the placement down
+    // rather than clipping it — and MainWindow surfaces that as a failed push,
+    // so nothing is ever half-placed.
+    action.command = edit::place_assembly(network,
+                                          placement->road,
+                                          placement->s,
+                                          placement->t,
+                                          0.0,
+                                          item.prop_assembly.toStdString());
+    action.kind = LibraryDropKind::PropAssembly;
+    // Ghost at the ANCHOR station — the same (road, s, t) → world projection the
+    // parts are placed against, so ghost==commit for the unit as a whole.
+    if (const Road* road = network.road(placement->road)) {
+      const auto p = station_to_world(road->plan_view, placement->s, placement->t);
+      action.preview = {p[0], p[1], true};
+    }
+    action.toast = QStringLiteral("Placed %1 — Ctrl+Z to undo").arg(item.label);
     return action;
   }
   case LibraryItem::Kind::Signal: {

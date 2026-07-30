@@ -38,6 +38,7 @@
 
 #include "app/actions.hpp"
 #include "document/document.hpp"
+#include "document/prop_placement.hpp"
 #include "document/selection_model.hpp"
 
 namespace roadmaker::editor {
@@ -78,17 +79,9 @@ void select_object(const ContextMenuDeps& deps, RoadId road, ObjectId object) {
   deps.selection.select({.road = road, .lane = LaneId{}, .object = object}, SelectMode::Replace);
 }
 
-/// Lowest positive integer odr id not already used by an object — keeps a
-/// duplicated prop id_unique_in_class-valid.
-std::string next_object_odr_id(const RoadNetwork& network) {
-  std::set<std::string> taken;
-  network.for_each_object([&](ObjectId, const Object& object) { taken.insert(object.odr_id); });
-  int candidate = 1;
-  while (taken.contains(std::to_string(candidate))) {
-    ++candidate;
-  }
-  return std::to_string(candidate);
-}
+// `next_object_odr_id` was a second copy of document/prop_placement.hpp's, which
+// this TU now includes for the assembly funnels — so the copy is gone and Duplicate
+// mints its id through the same helper the prop tools and the Library drop use.
 
 MenuItem separator() {
   return MenuItem{.separator = true};
@@ -611,6 +604,13 @@ std::vector<MenuItem> build_context_menu(const MenuContext& context, ContextMenu
           }
           Object copy = *src;
           copy.odr_id = next_object_odr_id(deps.document.network());
+          // ★ The copy is a STANDALONE prop (p6-s9, #323). Carrying the
+          // `rm:assembly` record over would hand it the SAME instance token and
+          // the SAME part index as the original — two objects claiming to be
+          // part 2 of one mast, which `assembly_parts` would hand back as a
+          // five-part assembly with a duplicate. Duplicating the whole unit is a
+          // different operation; this one duplicates one prop.
+          copy.assembly.reset();
           const double length = road_ptr->plan_view.length();
           copy.s = src->s + 5.0 <= length ? src->s + 5.0 : std::max(0.0, src->s - 5.0);
           (void)deps.document.push_command(
@@ -631,11 +631,27 @@ std::vector<MenuItem> build_context_menu(const MenuContext& context, ContextMenu
                                (void)deps.document.push_command(
                                    edit::reanchor_object(deps.document.network(), object, *target));
                              }});
+    // Composite assemblies (p6-s9, #323). A part's pose is derived from the
+    // assembly's anchor, so dragging one alone is refused — detaching is the
+    // explicit way out, and without an entry here the refusal is a dead end.
+    const bool in_assembly = source != nullptr && source->assembly.has_value();
+    if (in_assembly) {
+      items.push_back(separator());
+      items.push_back(
+          MenuItem{.text = QObject::tr("Detach from assembly"), .invoke = [deps, object] {
+                     (void)deps.document.push_command(
+                         edit::detach_assembly_part(deps.document.network(), object));
+                   }});
+    }
     items.push_back(separator());
-    items.push_back(MenuItem{.text = QObject::tr("Delete object"), .invoke = [deps, object] {
-                               (void)deps.document.push_command(
-                                   edit::delete_object(deps.document.network(), object));
-                             }});
+    // Delete takes the whole unit for an assembly part: removing one signal head
+    // must not leave its pole and arm standing. The label says so, because a
+    // menu that says "object" and removes four is a surprise.
+    items.push_back(MenuItem{
+        .text = in_assembly ? QObject::tr("Delete assembly") : QObject::tr("Delete object"),
+        .invoke = [deps, object] {
+          (void)deps.document.push_command(delete_object_command(deps.document.network(), object));
+        }});
     return items;
   }
 

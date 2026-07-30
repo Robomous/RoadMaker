@@ -21,13 +21,16 @@
 
 #include "roadmaker/assets/prop_library.hpp"
 #include "roadmaker/edit/operations.hpp"
+#include "roadmaker/road/authoring.hpp"
 #include "roadmaker/road/network.hpp"
 #include "roadmaker/road/object.hpp"
 
 #include <gtest/gtest.h>
 
 #include <array>
+#include <cmath>
 #include <cstdint>
+#include <memory>
 #include <random>
 #include <set>
 #include <stdexcept>
@@ -83,6 +86,109 @@ LibraryItem mixed_set_item() {
   item.prop_entries.push_back({.model = "tree_pine", .portion = 3.0});
   item.prop_entries.push_back({.model = "shrub", .portion = 1.0});
   return item;
+}
+
+// --- the assembly funnels (p6-s9, #323) --------------------------------------
+//
+// `move_object_command` and `delete_object_command` are what let every editor
+// path — the select drag, the Prop Point drag, both gizmo drags, the properties
+// spin boxes and Delete — treat a composite prop as one unit without each of
+// them learning what an assembly is.
+
+/// A longer road, so an assembly's parts all fit with room to drag.
+RoadNetwork assembly_road() {
+  RoadNetwork network;
+  const std::vector<Waypoint> waypoints{Waypoint{.x = 0.0, .y = 0.0},
+                                        Waypoint{.x = 200.0, .y = 0.0}};
+  auto road = roadmaker::author_clothoid_road(network, waypoints, LaneProfile::urban_sidewalk());
+  if (!road.has_value()) {
+    throw std::runtime_error("assembly_road: " + road.error().message);
+  }
+  auto place = edit::place_assembly(network, *road, 60.0, -6.0, 0.0, "signal_mast");
+  if (!place->apply(network).has_value()) {
+    throw std::runtime_error("assembly_road: place_assembly refused");
+  }
+  return network;
+}
+
+/// The objects on the network, in arena order.
+std::vector<ObjectId> all_objects(const RoadNetwork& network) {
+  std::vector<ObjectId> out;
+  network.for_each_object([&](ObjectId id, const Object&) { out.push_back(id); });
+  return out;
+}
+
+TEST(PropPlacement, MovingOnePartDragsTheWholeAssemblyWithIt) {
+  RoadNetwork network = assembly_road();
+  const std::vector<ObjectId> parts = all_objects(network);
+  ASSERT_GE(parts.size(), 3U);
+  // A part offset from the anchor, so "the grabbed part lands at the cursor" is
+  // a real claim rather than one the anchor satisfies for free.
+  const ObjectId grabbed = parts[2];
+  const double before_t = network.object(grabbed)->t;
+  ASSERT_GT(std::abs(before_t - network.object(parts.front())->t), 1.0);
+
+  auto command = move_object_command(network, grabbed, 120.0, before_t);
+  ASSERT_NE(command, nullptr);
+  ASSERT_TRUE(command->apply(network).has_value());
+
+  // Ghost == commit for the part under the cursor…
+  EXPECT_NEAR(network.object(grabbed)->s, 120.0, 1e-9);
+  // …and every sibling came along. A funnel that fell through to
+  // edit::move_object would have REFUSED instead, so this also proves the route.
+  for (const ObjectId id : parts) {
+    EXPECT_NEAR(network.object(id)->s, 120.0, 1e-9) << "part left behind";
+  }
+}
+
+TEST(PropPlacement, MovingAStandalonePropStillGoesThroughMoveObject) {
+  RoadNetwork network = assembly_road();
+  const RoadId road = network.object(all_objects(network).front())->road;
+  Object tree;
+  tree.odr_id = "plain";
+  tree.name = "tree_pine";
+  tree.type = ObjectType::Tree;
+  tree.s = 20.0;
+  tree.t = 8.0;
+  const ObjectId plain = network.add_object(road, tree);
+  const std::size_t before = network.object_count();
+
+  auto command = move_object_command(network, plain, 30.0, 8.0);
+  ASSERT_TRUE(command->apply(network).has_value());
+  EXPECT_NEAR(network.object(plain)->s, 30.0, 1e-9);
+  // Nothing else moved, and nothing was grouped into it.
+  EXPECT_EQ(network.object_count(), before);
+  EXPECT_FALSE(network.object(plain)->assembly.has_value());
+}
+
+TEST(PropPlacement, DeletingOnePartDeletesTheWholeAssembly) {
+  RoadNetwork network = assembly_road();
+  const std::vector<ObjectId> parts = all_objects(network);
+  ASSERT_GE(parts.size(), 2U);
+
+  auto command = delete_object_command(network, parts[1]);
+  ASSERT_TRUE(command->apply(network).has_value());
+  EXPECT_EQ(network.object_count(), 0U) << "a lone pole and arm must not be left standing";
+
+  ASSERT_TRUE(command->revert(network).has_value());
+  EXPECT_EQ(network.object_count(), parts.size());
+}
+
+TEST(PropPlacement, DeletingAStandalonePropLeavesTheAssemblyAlone) {
+  RoadNetwork network = assembly_road();
+  const std::size_t assembly_size = network.object_count();
+  const RoadId road = network.object(all_objects(network).front())->road;
+  Object tree;
+  tree.odr_id = "plain";
+  tree.name = "tree_pine";
+  tree.type = ObjectType::Tree;
+  tree.s = 20.0;
+  tree.t = 8.0;
+  const ObjectId plain = network.add_object(road, tree);
+
+  auto command = delete_object_command(network, plain);
+  ASSERT_TRUE(command->apply(network).has_value());
+  EXPECT_EQ(network.object_count(), assembly_size);
 }
 
 TEST(PropPlacement, PropSetIsPropAsset) {

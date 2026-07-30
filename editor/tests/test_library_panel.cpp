@@ -44,10 +44,10 @@ TEST(LibraryPanel, ShowsEveryCatalogueItem) {
   LibraryPanel panel(populated_model());
   ASSERT_NE(panel.view()->model(), nullptr);
   EXPECT_EQ(panel.view()->model()->rowCount(),
-            58); // 4 templates + 4 styles + T/X + 10 props (5 trees/shrub + 2 streetlights + 3
+            59); // 4 templates + 4 styles + T/X + 10 props (5 trees/shrub + 2 streetlights + 3
                  // buildings) + 15 signals (the whole shipped sign catalogue, #414)
                  // + 9 markings + 5 materials + 1 crosswalk + 6 stencils +
-                 // 2 prop sets
+                 // 2 prop sets + 1 prop assembly
   // The grid gives every item an icon (the proxy prefers the bundled thumbnail).
   const QModelIndex first = panel.view()->model()->index(0, 0);
   EXPECT_FALSE(panel.view()->model()->data(first, Qt::DecorationRole).isNull());
@@ -71,12 +71,14 @@ TEST(LibraryPanel, SearchFiltersByLabel) {
                  // the "sTREEt name (D3-1)" sign (substring match)
 
   search->setText(QStringLiteral("Traffic"));
-  EXPECT_EQ(panel.view()->model()->rowCount(), 1); // the traffic light; the sign
-                                                   // pack labels its entries by
-                                                   // MUTCD designation (#414)
+  EXPECT_EQ(panel.view()->model()->rowCount(), 2); // the traffic light and the
+                                                   // mast-arm signal assembly;
+                                                   // the sign pack labels its
+                                                   // entries by MUTCD
+                                                   // designation (#414)
 
   search->clear();
-  EXPECT_EQ(panel.view()->model()->rowCount(), 58);
+  EXPECT_EQ(panel.view()->model()->rowCount(), 59);
 }
 
 TEST(LibraryPanel, CategoryComboFiltersGrid) {
@@ -101,7 +103,7 @@ TEST(LibraryPanel, CategoryComboFiltersGrid) {
   }
 
   combo->setCurrentIndex(0); // back to All
-  EXPECT_EQ(panel.view()->model()->rowCount(), 58);
+  EXPECT_EQ(panel.view()->model()->rowCount(), 59);
 }
 
 TEST(LibraryPanel, CategoryFilterCombinesWithSearch) {
@@ -168,7 +170,7 @@ TEST(LibraryPanel, FocusCategoryClearsAFilterThatWouldHideIt) {
   panel.focus_category(QStringLiteral("Props"));
 
   EXPECT_TRUE(search->text().isEmpty());
-  EXPECT_EQ(panel.view()->model()->rowCount(), 58);
+  EXPECT_EQ(panel.view()->model()->rowCount(), 59);
   ASSERT_TRUE(panel.view()->currentIndex().isValid());
   EXPECT_EQ(panel.view()
                 ->model()

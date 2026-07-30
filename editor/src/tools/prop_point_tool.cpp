@@ -30,6 +30,7 @@
 #include <utility>
 
 #include "document/document.hpp"
+#include "document/prop_placement.hpp"
 #include "document/selection_model.hpp"
 #include "viewport/picking.hpp"
 
@@ -272,9 +273,9 @@ void PropPointTool::update_drag(double world_x, double world_y) {
   const Expected<void> moved =
       document_.preview_active()
           ? document_.update_preview([object, s, t](const RoadNetwork& base) {
-              return edit::move_object(base, object, s, t);
+              return move_object_command(base, object, s, t);
             })
-          : document_.begin_preview(edit::move_object(document_.network(), object, s, t));
+          : document_.begin_preview(move_object_command(document_.network(), object, s, t));
   static_cast<void>(moved);
 }
 

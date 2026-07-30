@@ -179,6 +179,32 @@ def test_moving_the_assembly_carries_every_part_rigidly():
     assert [(network.object(oid).s, network.object(oid).t) for oid in parts] == before
 
 
+def test_move_assembly_by_part_places_the_grabbed_part_not_the_anchor():
+    """The drag-shaped entry point. `move_assembly` re-anchors; this one puts the
+    part you grabbed where you asked. The two only agree for the anchor part,
+    which is why this grabs one that is offset from it."""
+    network = rm.RoadNetwork()
+    road = _road(network)
+    stack = rm.edit.EditStack()
+    stack.push(network, rm.edit.place_assembly(network, road, 60.0, -6.0, 0.0, "signal_mast"))
+    parts = network.assembly_parts(network.objects_of(road)[0])
+    grabbed = parts[2]
+    before_t = network.object(grabbed).t
+    assert abs(before_t - network.object(parts[0]).t) > 1.0
+
+    stack.push(network, rm.edit.move_assembly_by_part(network, grabbed, 140.0, before_t))
+    assert network.object(grabbed).s == pytest.approx(140.0)
+    assert network.object(grabbed).t == pytest.approx(before_t)
+    # The unit came along, still rigid.
+    assert all(network.object(oid).s == pytest.approx(140.0) for oid in parts)
+
+    # The two entry points genuinely differ — otherwise this whole function is
+    # a second name for move_assembly.
+    stack.undo(network)
+    stack.push(network, rm.edit.move_assembly(network, grabbed, 140.0, before_t))
+    assert network.object(grabbed).t != pytest.approx(before_t)
+
+
 def test_deleting_through_one_part_removes_the_whole_unit_in_one_step():
     network = rm.RoadNetwork()
     road = _road(network)

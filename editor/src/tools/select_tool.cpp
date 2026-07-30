@@ -26,6 +26,7 @@
 #include <vector>
 
 #include "document/document.hpp"
+#include "document/prop_placement.hpp"
 #include "document/selection_model.hpp"
 #include "document/transform_gates.hpp"
 #include "viewport/picking.hpp"
@@ -345,7 +346,7 @@ bool SelectTool::delete_selection() {
   }
   for (const ObjectId object_id : doomed_objects) {
     if (document_.network().object(object_id) != nullptr) {
-      (void)document_.push_command(edit::delete_object(document_.network(), object_id));
+      (void)document_.push_command(delete_object_command(document_.network(), object_id));
     }
   }
   for (const SignalId signal_id : doomed_signals) {
@@ -570,9 +571,9 @@ void SelectTool::update_object_move(const Waypoint& cursor) {
   const Expected<void> moved =
       document_.preview_active()
           ? document_.update_preview([object, s, t](const RoadNetwork& base) {
-              return edit::move_object(base, object, s, t);
+              return move_object_command(base, object, s, t);
             })
-          : document_.begin_preview(edit::move_object(document_.network(), object, s, t));
+          : document_.begin_preview(move_object_command(document_.network(), object, s, t));
   static_cast<void>(moved);
 }
 

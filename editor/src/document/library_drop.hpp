@@ -53,7 +53,8 @@ enum class LibraryDropKind {
   Material,
   Crosswalk,
   Stencil,
-  PropSet, ///< a scatter set — arms Prop Curve with the set current (#367)
+  PropSet,      ///< a scatter set — arms Prop Curve with the set current (#367)
+  PropAssembly, ///< a composite prop placed as one unit (p6-s9, #323)
 };
 
 /// Where a resolved drop lands in the world (x, y) and whether it is valid

@@ -55,6 +55,18 @@ Current version on `main`: **0.0.1**.
     flag each other, because a mast arm bolting into its pole is the assembly
     working. It is keyed on the placement, not the asset, so two masts welded
     into one another are still reported.
+  - **In the editor**, *Prop assemblies ▸ Traffic signal, mast arm* drags out of
+    the Library onto the nearest road. Dragging any part re-anchors the whole
+    unit, deleting any part deletes the unit, and **Detach from assembly** in the
+    object's context menu is the way to break one part out — every editor path
+    that repositions or deletes an object (the select drag, the Prop Point drag,
+    both gizmo drags, the properties spin boxes and Delete) funnels through one
+    pair of helpers, so none of them can be the one that forgets.
+  - **The composite prop takes its own manifest kind, `prop_assembly`**, in its
+    own **Prop assemblies** category. `assembly` was already the parametric T/X
+    *road junction* template and stays that way — reusing it would have collided
+    with a shipped, documented feature. No `manifest_version` bump: an
+    unrecognised create kind already round-trips verbatim.
 - **Bring your own props in from glTF** ([#322](https://github.com/Robomous/RoadMaker/issues/322),
   prop half): a `.glb` or `.gltf` imported into a project becomes a prop asset the
   four prop tools, Prop Sets and the instanced render path all accept — and

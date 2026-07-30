@@ -14,6 +14,7 @@
  * limitations under the License.
  */
 
+#include "roadmaker/assets/prop_assembly.hpp"
 #include "roadmaker/assets/prop_library.hpp"
 #include "roadmaker/assets/sign_catalog.hpp"
 #include "roadmaker/edit/assembly.hpp"
@@ -100,6 +101,15 @@ LibraryItem prop_set() {
   item.label = QStringLiteral("Test set");
   item.kind = LibraryItem::Kind::PropSet;
   item.prop_entries.push_back({QStringLiteral("tree_pine"), 1.0});
+  return item;
+}
+
+LibraryItem prop_assembly(const char* id) {
+  LibraryItem item;
+  item.key = QStringLiteral("prop_assembly.signal_mast");
+  item.label = QStringLiteral("Traffic signal, mast arm");
+  item.kind = LibraryItem::Kind::PropAssembly;
+  item.prop_assembly = QString::fromLatin1(id);
   return item;
 }
 
@@ -197,6 +207,49 @@ TEST(LibraryDrop, EmptyPropSetIsRejectedWithoutArming) {
   const LibraryDropAction action = resolve_library_drop(empty, network, 0.0, 0.0);
   EXPECT_EQ(action.kind, LibraryDropKind::None);
   EXPECT_FALSE(action.toast.isEmpty()); // a hint, not silence
+}
+
+TEST(LibraryDrop, PropAssemblyDropPlacesEveryPartAsOneCommand) {
+  RoadNetwork network = with_straight_road();
+  const std::size_t parts = props::assembly("signal_mast")->parts.size();
+  ASSERT_GT(parts, 1U) << "a one-part assembly would not tell one command from many";
+
+  const LibraryDropAction action =
+      resolve_library_drop(prop_assembly("signal_mast"), network, 50.0, 6.0);
+  ASSERT_EQ(action.kind, LibraryDropKind::PropAssembly);
+  ASSERT_NE(action.command, nullptr);
+  EXPECT_TRUE(action.preview.valid);
+  EXPECT_FALSE(action.toast.isEmpty());
+
+  // ONE command, however many parts — and undo takes the whole unit back, which
+  // is the property the whole "not a macro" decision exists to give the user.
+  ASSERT_TRUE(action.command->apply(network).has_value());
+  EXPECT_EQ(network.object_count(), parts);
+  ASSERT_TRUE(action.command->revert(network).has_value());
+  EXPECT_EQ(network.object_count(), 0U);
+}
+
+TEST(LibraryDrop, PropAssemblyDroppedInOpenSpaceIsRejectedWithAHint) {
+  RoadNetwork network = with_straight_road();
+  // Far off any road: OpenDRIVE has no world-placed object, so there is nothing
+  // to anchor to. The user gets a hint rather than a silent no-op.
+  const LibraryDropAction action =
+      resolve_library_drop(prop_assembly("signal_mast"), network, 50.0, 400.0);
+  EXPECT_EQ(action.kind, LibraryDropKind::None);
+  EXPECT_EQ(action.command, nullptr);
+  EXPECT_FALSE(action.toast.isEmpty());
+}
+
+TEST(LibraryDrop, APropAssemblyRowNamingAnUnknownIdIsRejectedNotCrashed) {
+  RoadNetwork network = with_straight_road();
+  // A newer manifest can name an assembly this build does not ship. The row
+  // still parses (its kind is known); the DROP is what refuses.
+  const LibraryDropAction action =
+      resolve_library_drop(prop_assembly("no_such_assembly"), network, 50.0, 6.0);
+  EXPECT_EQ(action.kind, LibraryDropKind::None);
+  EXPECT_EQ(action.command, nullptr);
+  EXPECT_FALSE(action.toast.isEmpty());
+  EXPECT_EQ(network.object_count(), 0U);
 }
 
 TEST(LibraryDrop, UnknownItemYieldsNoAction) {

@@ -25,7 +25,8 @@ text sign the Sign tool, and a prop set the Prop Curve tool. See
 |---|---|---|
 | **Road templates** | Freeway, Arterial, Collector, Local street | a road with that road class's lane template |
 | **Road styles** | Freeway, Arterial, Collector, Local street | re-styles the road you drop it on |
-| **Assemblies** | T-intersection, X-intersection | a pre-built junction |
+| **Assemblies** | T-intersection, X-intersection | a pre-built **junction** (road geometry, not a prop) |
+| **Prop assemblies** | Traffic signal, mast arm | several props placed as **one unit** — see [composite props](#composite-props-place-as-one-unit) below |
 | **Buildings** | Low block, Mid-rise, Tower | an OpenDRIVE `<object>` (typed `building`) on the nearest road |
 | **Props** | Pine / Oak / Birch / Poplar tree, Shrub, Streetlight (single / double), City block set | an OpenDRIVE `<object>` on the nearest road — trees are typed `tree`, streetlights `pole`; the set scatters a mix of buildings |
 | **Signals** | Traffic light plus the US sign pack (Stop, Yield, Speed limit, Do not enter, One way, turn restrictions, Keep right, warning diamonds, School, Street name) | an OpenDRIVE `<signal>` on the nearest road — the light is a dynamic control, the signs are static and carry their MUTCD designation as `@type` with `country="US"` (see the [realism defaults](../domain/realism_defaults.md#14-signs-mutcd-conventional-road-sizes)) |
@@ -49,6 +50,33 @@ light, or a sign, RoadMaker snaps it to the **nearest road** within a short
 threshold and records its position along that road. Drop one with no road
 nearby and the editor places nothing and shows a hint to drop it closer to a
 road — so it never ends up floating with no reference line.
+
+## Composite props: place as one unit
+
+A **prop assembly** is several prop models pinned together by fixed relative
+offsets. The bundled *Traffic signal, mast arm* is a pole, a horizontal arm and
+two signal heads; it drops onto the nearest road exactly like a single prop, but
+every part arrives together.
+
+- **One drop, one Undo.** However many parts an assembly has, placing it is a
+  single command — one **Undo** takes the whole thing back.
+- **It moves as one.** Dragging any part re-anchors the whole assembly, so the
+  pole, the arm and the heads keep their formation.
+- **It deletes as one.** Deleting any part deletes the unit.
+- **To move one part on its own, detach it first.** There is no way to drag a
+  part out of formation — every drag moves the whole unit. Right-click the part
+  and choose **Detach from assembly**: it becomes an ordinary standalone prop,
+  exactly where it stood, and its siblings stay grouped.
+- **It places whole or not at all.** If any part would land past the end of the
+  road, the whole drop is refused rather than placed with pieces missing — move
+  the cursor further from the road end and try again.
+
+Each part is saved as an ordinary OpenDRIVE `<object>`, so a file RoadMaker
+writes opens in any other tool as a set of individually-placed props; only the
+grouping is RoadMaker-specific.
+
+> **Not the same as "Assemblies".** That category builds road **junctions**
+> (T and X intersections), which are geometry rather than props.
 
 Placed props and signals are selectable and deletable like any other entity
 (click to select; **Delete**; right-click for **Delete / Frame / Duplicate**),

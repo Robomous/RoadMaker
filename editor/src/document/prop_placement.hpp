@@ -25,6 +25,7 @@
 // curve tool) distributes props at a fixed spacing along a fitted clothoid,
 // projecting each onto the anchor road and minting a UNIQUE odr id per instance.
 
+#include "roadmaker/edit/command.hpp"
 #include "roadmaker/error.hpp"
 #include "roadmaker/road/id.hpp"
 #include "roadmaker/road/object.hpp"
@@ -32,6 +33,7 @@
 
 #include <array>
 #include <cstdint>
+#include <memory>
 #include <optional>
 #include <random>
 #include <span>
@@ -64,6 +66,31 @@ nearest_road_station(const RoadNetwork& network, double x, double y, double max_
 /// class). For a single placement; a batch bake mints across a growing taken-set
 /// instead (see distribute_props_along_curve) so N props never collide.
 [[nodiscard]] std::string next_object_odr_id(const RoadNetwork& network);
+
+/// THE move command for an object the user is repositioning: `edit::move_object`
+/// for a standalone prop, `edit::move_assembly_by_part` when the object is one
+/// part of a composite assembly (p6-s9, #323).
+///
+/// ★ EVERY editor path that repositions an object goes through here — the select
+/// drag, the Prop Point drag, both gizmo drags and the properties-panel spin
+/// boxes. `edit::move_object` REFUSES an assembly part outright, so a site that
+/// calls it directly does not misplace the part, it simply stops working the
+/// moment a user drags a signal mast; and a site that reached for
+/// `edit::move_assembly` directly would move the anchor to the cursor rather than
+/// the grabbed part. One funnel is what keeps all five honest.
+[[nodiscard]] std::unique_ptr<edit::Command>
+move_object_command(const RoadNetwork& network,
+                    ObjectId object,
+                    double s,
+                    double t,
+                    std::optional<double> hdg = std::nullopt);
+
+/// THE delete command for an object: `edit::delete_object` for a standalone prop,
+/// `edit::delete_assembly` when it is one part of a composite assembly — an
+/// assembly deletes as one unit, so removing a signal head must not leave its
+/// pole and arm standing (p6-s9, #323).
+[[nodiscard]] std::unique_ptr<edit::Command> delete_object_command(const RoadNetwork& network,
+                                                                   ObjectId object);
 
 /// A prop library item is placeable when it is a bundled tree/shrub model
 /// (Kind::Tree), or a Kind::PropSet with at least one entry whose every model
