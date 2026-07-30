@@ -19,6 +19,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 Current version on `main`: **0.0.1**.
 
 ### Added
+- **Bring your own 3D models in as props** ([#322](https://github.com/Robomous/RoadMaker/issues/322),
+  kernel half): a `.glb` or `.gltf` file becomes a prop model the mesh builder,
+  both exporters and every prop tool accept, with **no new dependency** — the
+  tinygltf already in the tree reads it ([ADR-0013](docs/decisions/0013-asset-import-gltf-and-images.md)).
+  Node transforms are flattened, the frame is rotated from glTF's Y-up to the
+  kernel's Z-up, and the model is reseated so its base sits at z = 0 with its
+  horizontal centre at the origin — the contract every placement path relies on.
+  - **A textured model imports flat, and says so.** A prop mesh carries one
+    colour per part and no UVs, so a `baseColorTexture` is decoded, averaged
+    **in linear space**, multiplied into `baseColorFactor`, and reported with the
+    primitive it came from and the issue that will carry real textures
+    ([#507](https://github.com/Robomous/RoadMaker/issues/507)). The cheaper
+    answer — read the factor, ignore the image — would import a brown chair as a
+    white one and report nothing, because a real-world GLB usually leaves the
+    factor white.
+  - **A project's models extend the catalogue without any caller learning about
+    it.** `props::model()` keeps its exact signature and consults the open
+    project's imports ahead of the bundled ones, so the instanced render batches,
+    the mesh builder, prop placement and both exporters are untouched. Opening a
+    project replaces that overlay wholesale; closing one restores the bundled
+    catalogue exactly.
+  - **Malformed input is refused with the reason, never a crash.** Truncated
+    containers, lying chunk lengths, indices past the vertex array, non-finite
+    coordinates, cyclic node graphs and node chains deeper than the stack each
+    produce a stated refusal, and the reason a file was emptied travels with the
+    failure rather than being discarded with the diagnostics. An image `uri` in a
+    `.gltf` is resolved **only** inside that file's own directory — absolute
+    paths, URL schemes and `..` escapes are refused by name, a check that is ours
+    to make because tinygltf is built never to follow those references itself.
+  - Stated budgets on triangles, vertices, parts and image texels, in the
+    `gis::kMaxRasterTexels` idiom: a refusal naming its limit is honest where an
+    out-of-memory crash reads as a defect in the user's file.
 - **Build a district out of OpenStreetMap** ([#244](https://github.com/Robomous/RoadMaker/issues/244)):
   an `.osm` extract becomes a real, editable road network — ways classified
   onto the four road classes, joined on OSM's own shared-node topology, in a
