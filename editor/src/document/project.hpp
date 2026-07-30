@@ -85,11 +85,6 @@ public:
   /// every call so it reflects the directory as it is now.
   [[nodiscard]] QStringList scenes() const;
 
-  /// The project's asset root, `<dir>/assets` — the folder the Library's file
-  /// explorer browses (p6-s7) and the parent of the Library overlay. Returned
-  /// unconditionally, whether or not it exists on disk: the browser watches for
-  /// it to appear. NOTHING in RoadMaker creates it; a project only grows one
-  /// once the user, or an asset commit, puts something there.
   /// The scene the project was last working on, as stored: a project-relative
   /// file name with `/` separators, or empty. See last_scene_path() to use it.
   [[nodiscard]] const QString& last_scene() const { return last_scene_; }
@@ -105,11 +100,30 @@ public:
   /// Existence-checked here so reopening a project can simply skip it.
   [[nodiscard]] std::optional<std::filesystem::path> last_scene_path() const;
 
+  /// The project's asset root, `<dir>/assets` — the folder the Library's file
+  /// explorer browses (p6-s7) and the parent of the Library overlay. Returned
+  /// unconditionally, whether or not it exists on disk: the browser watches for
+  /// it to appear.
   [[nodiscard]] std::filesystem::path assets_dir() const;
 
   /// `<dir>/assets/library/manifest.json` when that file exists — the
   /// per-project Library overlay (same schema as the built-in qrc manifest).
+  /// READ side: nullopt means the project has no overlay yet.
   [[nodiscard]] std::optional<std::filesystem::path> library_manifest_path() const;
+
+  /// The same path, for WRITING: creates `<dir>/assets/library/` if needed and
+  /// returns the path whether or not the file exists yet.
+  ///
+  /// ★ WITHOUT THIS, A FRESH PROJECT COULD NEVER AUTHOR ITS FIRST ASSET OF ANY
+  /// KIND. Every asset commit in MainWindow — crosswalks, prop sets, prop
+  /// defaults, and now imports — reads `library_manifest_path()` and silently
+  /// bails when it is nullopt, which it always is until something has already
+  /// written the file. Nothing ever did (p6-s8, #322).
+  ///
+  /// Fails only when the directory cannot be created (a read-only project, a
+  /// name collision with a regular file) — cases the caller must report rather
+  /// than swallow, which is what the old nullopt hid.
+  [[nodiscard]] Expected<std::filesystem::path> library_manifest_path_for_write() const;
 
   /// The project directory containing `scene_path`, or nullopt. Deliberately
   /// checks ONLY the scene's immediate parent directory for a project.json

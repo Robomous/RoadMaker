@@ -69,6 +69,7 @@
 #include "app/shortcut_registry.hpp"
 #include "app/tour_controller.hpp"
 #include "app/tour_overlay.hpp"
+#include "document/asset_import.hpp"
 #include "document/crosswalk_item.hpp"
 #include "document/library_drop.hpp"
 #include "document/library_manifest.hpp"
@@ -77,6 +78,7 @@
 #include "document/units.hpp"
 #include "help/help_registry.hpp"
 #include "help/help_viewer.hpp"
+#include "panels/asset_import_dialog.hpp"
 #include "panels/diagnostics_panel.hpp"
 #include "panels/editor2d_host.hpp"
 #include "panels/library_panel.hpp"
@@ -756,6 +758,7 @@ MainWindow::MainWindow(QWidget* parent, bool restore_saved_layout)
   // refusal is gis::crs_transform's own — verbatim, and the same words the GIS
   // and lidar importers use — and the toast points at the window that fixes it
   // rather than leaving the user to find it.
+  connect(actions_->import_asset, &QAction::triggered, this, &MainWindow::import_asset);
   connect(actions_->import_osm, &QAction::triggered, this, [this] {
     const QString path = QFileDialog::getOpenFileName(
         this, tr("Import OSM Road Network"), QString(), tr("OpenStreetMap XML (*.osm *.xml)"));
@@ -1127,6 +1130,15 @@ void MainWindow::build_docks() {
           &LibraryPanel::new_prop_set_requested,
           this,
           &MainWindow::create_prop_set_asset);
+  // The Library panel's OS-file drop and its "Import asset…" entry share one
+  // handler: an empty path means "no file in hand, open a dialog" (p6-s8, #322).
+  connect(library_panel_, &LibraryPanel::asset_import_requested, this, [this](const QString& path) {
+    if (path.isEmpty()) {
+      import_asset();
+    } else {
+      import_asset_from(std::filesystem::path(path.toStdString()));
+    }
+  });
   connect(properties_panel_,
           &PropertiesPanel::prop_set_asset_committed,
           this,
@@ -1221,6 +1233,11 @@ void MainWindow::build_menus() {
   import_menu->addAction(actions_->import_gis_vector);
   import_menu->addAction(actions_->import_gis_raster);
   import_menu->addAction(actions_->import_point_cloud);
+  import_menu->addSeparator();
+  // Separated because the three above are geospatial REFERENCE imports and this
+  // one produces a library asset — different kinds of thing arriving by the same
+  // gesture.
+  import_menu->addAction(actions_->import_asset);
   import_menu->addSeparator();
   import_menu->addAction(actions_->import_osm);
   file_menu->addSeparator();
@@ -1719,6 +1736,7 @@ void MainWindow::apply_project_overlay() {
       project_.has_value() ? project_->library_manifest_path() : std::nullopt;
   if (!manifest_path.has_value()) {
     library_model_.clear_overlay();
+    MaterialCatalog::clear_project_materials();
     return;
   }
   auto manifest = LibraryManifest::load(*manifest_path);
@@ -1728,12 +1746,143 @@ void MainWindow::apply_project_overlay() {
                  manifest.error().message,
                  manifest.error().context);
     library_model_.clear_overlay();
+    MaterialCatalog::clear_project_materials();
     return;
   }
+  // The manifest's materials[] definitions become the renderer's project
+  // material overlay (p6-s8, #322). Texture paths are stored project-relative
+  // for portability and absolutised here, because that is the only place that
+  // knows the project directory — ViewportWidget::texture_for QImage-decodes an
+  // absolute filesystem path exactly as it does a qrc alias, which is why the
+  // renderer needed no change for import at all.
+  install_project_materials(*manifest);
+
   // Overlay thumbnails are project-relative — resolve them against the project
   // directory (p6-s2) so a project's own PNGs load from disk.
   library_model_.set_overlay(std::move(*manifest),
                              QString::fromStdString(project_->dir().string()));
+}
+
+void MainWindow::import_asset() {
+  if (!project_.has_value()) {
+    viewport_->show_toast(tr("Open or create a project to import assets"), ToastSeverity::Info);
+    return;
+  }
+  // The filter comes from the same list the accept predicate consults, so the
+  // dialog cannot offer a file the importer would then refuse.
+  const QString picked =
+      QFileDialog::getOpenFileName(this, tr("Import Asset"), QString(), asset_import_filter());
+  if (picked.isEmpty()) {
+    return;
+  }
+  import_asset_from(std::filesystem::path(picked.toStdString()));
+}
+
+void MainWindow::import_asset_from(const std::filesystem::path& source) {
+  if (!project_.has_value()) {
+    viewport_->show_toast(tr("Open or create a project to import assets"), ToastSeverity::Info);
+    return;
+  }
+  const std::optional<AssetImportKind> kind = asset_import_kind(source);
+  if (!kind.has_value()) {
+    // Named rather than generic: the user dropped something specific.
+    viewport_->show_toast(tr("Cannot import %1 — RoadMaker imports images as materials")
+                              .arg(QString::fromStdString(source.filename().string())),
+                          ToastSeverity::Warning);
+    return;
+  }
+
+  // Seed the category combo from what the merged library already uses, so an
+  // import joins an existing group instead of inventing a near-duplicate.
+  QStringList categories;
+  for (int row = 0; row < library_model_.rowCount(); ++row) {
+    const LibraryItem* item = library_model_.item(row);
+    if (item != nullptr && !item->category.isEmpty() && !categories.contains(item->category)) {
+      categories.push_back(item->category);
+    }
+  }
+  categories.sort();
+
+  AssetImportDialog dialog(source, categories, this);
+  if (dialog.exec() != QDialog::Accepted) {
+    return;
+  }
+
+  auto imported = import_material_asset(project_->dir(), dialog.request());
+  if (!imported.has_value()) {
+    viewport_->show_toast(
+        tr("Cannot import: %1").arg(QString::fromStdString(imported.error().message)),
+        ToastSeverity::Warning);
+    return;
+  }
+
+  const auto path = project_->library_manifest_path_for_write();
+  if (!path.has_value()) {
+    viewport_->show_toast(tr("Cannot write to the project's library: %1")
+                              .arg(QString::fromStdString(path.error().message)),
+                          ToastSeverity::Warning);
+    return;
+  }
+  LibraryManifest manifest = load_or_create_overlay_manifest();
+  manifest.upsert_material(imported->first);
+  if (const auto saved = manifest.save(*path); !saved.has_value()) {
+    viewport_->show_toast(tr("Cannot save the project library: %1")
+                              .arg(QString::fromStdString(saved.error().message)),
+                          ToastSeverity::Warning);
+    return;
+  }
+  // No scene rebuild: a brand-new material is not referenced by any geometry yet,
+  // so nothing on screen changes until the user drops it onto a lane.
+  apply_project_overlay();
+
+  const AssetImportResult& result = imported->second;
+  if (result.renamed) {
+    // The user asked for a name that was taken. Saying which name it actually got
+    // matters more than the import succeeding quietly.
+    viewport_->show_toast(tr("Imported as \"%1\" — that name was already taken").arg(result.slug),
+                          ToastSeverity::Info);
+  } else {
+    viewport_->show_toast(tr("Imported %1").arg(imported->first.label), ToastSeverity::Info);
+  }
+}
+
+void MainWindow::install_project_materials(const LibraryManifest& manifest) {
+  if (!project_.has_value()) {
+    MaterialCatalog::clear_project_materials();
+    return;
+  }
+  const std::filesystem::path root = project_->dir();
+  const auto absolute = [&root](const QString& relative) -> std::string {
+    if (relative.isEmpty()) {
+      return {};
+    }
+    const std::filesystem::path path(relative.toStdString());
+    return path.is_absolute() ? path.string() : (root / path).string();
+  };
+  std::vector<MaterialDef> definitions;
+  definitions.reserve(manifest.materials().size());
+  for (const LibraryMaterial& material : manifest.materials()) {
+    // The catalog keys on the BARE name; the manifest stores `rm:<name>`.
+    QString name = material.id;
+    if (name.startsWith(QStringLiteral("rm:"))) {
+      name.remove(0, 3);
+    }
+    MaterialDef def;
+    def.name = name.toStdString();
+    def.albedo = absolute(material.albedo);
+    def.normal = absolute(material.normal);
+    def.roughness = absolute(material.roughness);
+    def.uv_scale = static_cast<float>(material.uv_scale);
+    def.tint = {static_cast<float>(material.tint[0]),
+                static_cast<float>(material.tint[1]),
+                static_cast<float>(material.tint[2]),
+                static_cast<float>(material.tint[3])};
+    def.roughness_value = static_cast<float>(material.param_roughness);
+    def.normal_strength = static_cast<float>(material.normal_strength);
+    def.friction = material.friction;
+    definitions.push_back(std::move(def));
+  }
+  MaterialCatalog::set_project_materials(std::move(definitions));
 }
 
 edit::CrosswalkParams MainWindow::resolve_default_crosswalk_params() const {
@@ -1904,8 +2053,11 @@ void MainWindow::create_crosswalk_asset() {
     viewport_->show_toast(tr("Open or create a project to author assets"), ToastSeverity::Info);
     return;
   }
-  const auto path = project_->library_manifest_path();
+  const auto path = project_->library_manifest_path_for_write();
   if (!path.has_value()) {
+    viewport_->show_toast(tr("Cannot write to the project's library: %1")
+                              .arg(QString::fromStdString(path.error().message)),
+                          ToastSeverity::Warning);
     return;
   }
   LibraryManifest manifest = load_or_create_overlay_manifest();
@@ -1939,8 +2091,11 @@ void MainWindow::commit_crosswalk_asset(const LibraryItem& item) {
   if (!project_.has_value()) {
     return;
   }
-  const auto path = project_->library_manifest_path();
+  const auto path = project_->library_manifest_path_for_write();
   if (!path.has_value()) {
+    viewport_->show_toast(tr("Cannot write to the project's library: %1")
+                              .arg(QString::fromStdString(path.error().message)),
+                          ToastSeverity::Warning);
     return;
   }
   LibraryManifest manifest = load_or_create_overlay_manifest();
@@ -1965,8 +2120,11 @@ void MainWindow::create_prop_set_asset() {
     viewport_->show_toast(tr("Open or create a project to author assets"), ToastSeverity::Info);
     return;
   }
-  const auto path = project_->library_manifest_path();
+  const auto path = project_->library_manifest_path_for_write();
   if (!path.has_value()) {
+    viewport_->show_toast(tr("Cannot write to the project's library: %1")
+                              .arg(QString::fromStdString(path.error().message)),
+                          ToastSeverity::Warning);
     return;
   }
   LibraryManifest manifest = load_or_create_overlay_manifest();
@@ -2003,8 +2161,11 @@ void MainWindow::commit_prop_set_asset(const LibraryItem& item) {
   if (!project_.has_value()) {
     return;
   }
-  const auto path = project_->library_manifest_path();
+  const auto path = project_->library_manifest_path_for_write();
   if (!path.has_value()) {
+    viewport_->show_toast(tr("Cannot write to the project's library: %1")
+                              .arg(QString::fromStdString(path.error().message)),
+                          ToastSeverity::Warning);
     return;
   }
   LibraryManifest manifest = load_or_create_overlay_manifest();
@@ -2023,8 +2184,11 @@ void MainWindow::commit_prop_asset(const LibraryItem& item) {
   if (!project_.has_value()) {
     return;
   }
-  const auto path = project_->library_manifest_path();
+  const auto path = project_->library_manifest_path_for_write();
   if (!path.has_value()) {
+    viewport_->show_toast(tr("Cannot write to the project's library: %1")
+                              .arg(QString::fromStdString(path.error().message)),
+                          ToastSeverity::Warning);
     return;
   }
   LibraryManifest manifest = load_or_create_overlay_manifest();

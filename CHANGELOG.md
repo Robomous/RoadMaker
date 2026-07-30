@@ -19,6 +19,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 Current version on `main`: **0.0.1**.
 
 ### Added
+- **Bring your own textures in as materials** ([#322](https://github.com/Robomous/RoadMaker/issues/322),
+  material half): with a project open, **File ▸ Import ▸ Asset (image)…** — or a
+  drag from the OS file manager onto the Library dock — turns any PNG or JPEG into
+  a material you can drop onto a lane, a ground surface or a junction
+  carriageway, exactly like a bundled one. The image is **copied into the
+  project**, so the asset keeps working after the original is moved or deleted,
+  and the original path is recorded alongside the user's licence note as
+  provenance.
+  - **The manifest's `materials[]` block stops being deferred.** The schema
+    [committed in the material design doc](docs/design/materials-structures/01_material_system.md)
+    ships as `manifest_version: 2`, and a project's definitions extend the
+    compiled-in catalog behind the single `find_material` lookup — so the
+    renderer needed **no change at all**, because its texture paths were already
+    plain strings and it already decoded whatever it was handed. A v1 manifest
+    still parses; a project that defines no materials still writes v1-shaped
+    bytes.
+  - **The `.xodr` stores only the id**, never a texture path (ASAM §11.8.2), so a
+    scene opened without its project keeps its `<material>` records and falls
+    back to flat colour rather than carrying a broken reference. Two projects
+    sharing a scene cannot disagree about what an id looks like.
+  - **Importing a name that is taken does not overwrite the existing asset** — it
+    is suffixed, and the toast says so. A failed import removes its own partial
+    copy rather than leaving a file in the project with nothing pointing at it.
+  - The one import in RoadMaker with a dialog, because a licence attestation is
+    the one thing that cannot be derived from the file
+    ([ADR-0013](docs/decisions/0013-asset-import-gltf-and-images.md)).
 - **Bring your own 3D models in as props** ([#322](https://github.com/Robomous/RoadMaker/issues/322),
   kernel half): a `.glb` or `.gltf` file becomes a prop model the mesh builder,
   both exporters and every prop tool accept, with **no new dependency** — the
@@ -715,6 +741,14 @@ Current version on `main`: **0.0.1**.
   about silently never matched.
 
 ### Fixed
+- **A fresh project could never author its first asset of any kind**
+  ([#322](https://github.com/Robomous/RoadMaker/issues/322)). Every asset-commit
+  path — crosswalk assets, prop sets, per-asset prop defaults — asked `Project`
+  for its library-overlay path, which reported *nothing* until that file already
+  existed, and then returned silently. Nothing ever created it, so in a project
+  that had never been handed an overlay by hand, "New crosswalk asset…" and "New
+  prop set…" did nothing at all and said nothing. The path is now creatable, and a
+  genuine write failure is reported instead of swallowed.
 - **The transform gizmo says why it won't move a road, and asks before it cuts
   one loose** ([#401](https://github.com/Robomous/RoadMaker/issues/401)): a road
   that belongs to a junction has a pose the junction generates, so the kernel

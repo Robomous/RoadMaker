@@ -105,6 +105,7 @@ add_executable(roadmaker_editor_tests
   test_split_tool.cpp
   test_scene_builder.cpp
   test_material_catalog.cpp
+  test_asset_import.cpp
   test_scrub_label.cpp
   test_slot_widget.cpp
   test_reference_layers.cpp

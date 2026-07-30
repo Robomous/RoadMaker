@@ -51,6 +51,35 @@ by dragging from the Library Browser onto Attributes-pane slots.
     in order; the final state matches the initial scene; save/reload
     round-trips the materials.
 
+### Importing your own material (p6-s8, #322)
+
+12. [ ] With a project open, choose **File ▸ Import ▸ Asset (image)…** and pick
+    a PNG or JPEG. **Expected:** the Import Asset dialog opens with the name
+    pre-filled from the filename; **Import** stays disabled until the
+    right-to-use box is ticked.
+13. [ ] Fill in a licence note, tick the box, and import. **Expected:** a toast
+    names the asset; a new row appears in the Library's **Materials** category
+    with the image itself as its thumbnail.
+14. [ ] Drag that row onto a lane. **Expected:** the lane re-textures in
+    [textured mode](../../user-guide/textured-rendering.md) exactly as a bundled
+    material does — the imported image is sampled, not a flat colour.
+15. [ ] Save the scene and inspect the `.xodr`. **Expected:** the lane carries
+    `<material surface="rm:<slug>" …>` (Layer 0, ASAM §11.8.2) and **no texture
+    path** — the definition lives in the project's library manifest, so two
+    projects sharing a scene cannot disagree about what the id looks like.
+16. [ ] Import a second image using the **same name**. **Expected:** it is
+    accepted under a suffixed slug, the toast says the name was taken, and the
+    first asset is untouched.
+17. [ ] Drop an image onto the Library dock from the OS file manager.
+    **Expected:** the same dialog opens. Dropping an unsupported file shows the
+    no-drop cursor rather than being accepted and then refused.
+18. [ ] Close the project and reopen it. **Expected:** the imported material is
+    still in the Library, still renders on the lane, and its licence note is
+    still recorded in `assets/library/manifest.json`.
+19. [ ] Open the same `.xodr` **without** its project. **Expected:** the lane's
+    `<material>` record survives the round trip; the surface falls back to its
+    flat colour because the definition is project-scoped.
+
 ## Pass criteria
 
 - Every step's expected result holds; zero crashes.

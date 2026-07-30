@@ -144,6 +144,18 @@ private:
   /// Library model as an overlay; clears the overlay when the project has
   /// none (or none parses).
   void apply_project_overlay();
+  /// Turns the project overlay's materials[] definitions into the renderer's
+  /// project material overlay, absolutising their project-relative texture
+  /// paths (p6-s8, #322).
+  void install_project_materials(const LibraryManifest& manifest);
+
+  /// File ▸ Import ▸ Asset… — pick a file, collect a name and a licence
+  /// attestation, and commit it into the project's library overlay.
+  void import_asset();
+
+  /// The shared tail of every asset import, so the file-dialog path and the
+  /// drag-and-drop path cannot diverge in what they accept or how they report.
+  void import_asset_from(const std::filesystem::path& source);
   /// Loads the active project's overlay manifest, or a fresh one when none
   /// exists yet — the base for a crosswalk-asset create/edit write (p3-s2).
   [[nodiscard]] LibraryManifest load_or_create_overlay_manifest() const;

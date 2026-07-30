@@ -16,6 +16,9 @@
 
 #include "render/material_catalog.hpp"
 
+#include <algorithm>
+#include <utility>
+
 namespace roadmaker::editor {
 
 MaterialCatalog::MaterialCatalog() {
@@ -76,19 +79,98 @@ MaterialCatalog::MaterialCatalog() {
   });
 }
 
-const MaterialDef* MaterialCatalog::find_material(std::string_view code) const {
-  // Accept rm:<name> / <name> / material.<name>.
+namespace {
+
+/// The project overlay, and a generation counter so every MaterialCatalog
+/// instance can tell when its merged view went stale. See the header for why
+/// this is process-wide rather than owned.
+struct ProjectMaterials {
+  std::vector<MaterialDef> definitions;
+  std::uint64_t generation = 1; ///< never 0, so a fresh instance's cache is stale
+};
+
+ProjectMaterials& project_materials() {
+  static ProjectMaterials state;
+  return state;
+}
+
+/// Strips the three accepted spellings down to a bare catalog name, so
+/// `rm:asphalt`, `asphalt` and `material.asphalt` all resolve to the same
+/// definition — including for an imported material, whose manifest id is
+/// `rm:<name>`.
+std::string_view bare_name(std::string_view code) {
   if (code.rfind("rm:", 0) == 0) {
     code.remove_prefix(3);
-  } else if (code.rfind("material.", 0) == 0) {
+  }
+  if (code.rfind("material.", 0) == 0) {
     code.remove_prefix(std::string_view("material.").size());
   }
+  return code;
+}
+
+} // namespace
+
+void MaterialCatalog::set_project_materials(std::vector<MaterialDef> materials) {
+  ProjectMaterials& state = project_materials();
+  state.definitions = std::move(materials);
+  ++state.generation;
+}
+
+void MaterialCatalog::clear_project_materials() {
+  ProjectMaterials& state = project_materials();
+  state.definitions.clear();
+  ++state.generation;
+}
+
+bool MaterialCatalog::is_project_material(std::string_view code) {
+  const std::string_view name = bare_name(code);
+  const ProjectMaterials& state = project_materials();
+  return std::any_of(state.definitions.begin(),
+                     state.definitions.end(),
+                     [name](const MaterialDef& def) { return def.name == name; });
+}
+
+const MaterialDef* MaterialCatalog::find_material(std::string_view code) const {
+  const std::string_view name = bare_name(code);
+  // The project's definitions are consulted FIRST, so a project may shadow a
+  // bundled material — the same precedence props::model() gives imported models.
+  const ProjectMaterials& state = project_materials();
+  for (const MaterialDef& def : state.definitions) {
+    if (def.name == name) {
+      return &def;
+    }
+  }
   for (const MaterialDef& def : materials_) {
-    if (def.name == code) {
+    if (def.name == name) {
       return &def;
     }
   }
   return nullptr;
+}
+
+const std::vector<MaterialDef>& MaterialCatalog::materials() const {
+  const ProjectMaterials& state = project_materials();
+  if (state.definitions.empty()) {
+    // Nothing to merge: hand back the built-in list itself, so the common case
+    // pays nothing for the overlay existing. This is also what makes
+    // "clearing restores the built-in catalog exactly" hold by construction
+    // rather than by remembering to clear a cache.
+    return materials_;
+  }
+  if (merged_generation_ != state.generation) {
+    merged_ = state.definitions;
+    for (const MaterialDef& def : materials_) {
+      const bool shadowed =
+          std::any_of(state.definitions.begin(),
+                      state.definitions.end(),
+                      [&def](const MaterialDef& over) { return over.name == def.name; });
+      if (!shadowed) {
+        merged_.push_back(def);
+      }
+    }
+    merged_generation_ = state.generation;
+  }
+  return merged_;
 }
 
 } // namespace roadmaker::editor

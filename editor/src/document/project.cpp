@@ -205,6 +205,20 @@ std::optional<std::filesystem::path> Project::library_manifest_path() const {
   return std::nullopt;
 }
 
+Expected<std::filesystem::path> Project::library_manifest_path_for_write() const {
+  const std::filesystem::path dir = assets_dir() / "library";
+  std::error_code ec;
+  std::filesystem::create_directories(dir, ec);
+  // create_directories reports false-with-no-error when the directory already
+  // existed, so the existence check is the real test rather than the return.
+  if (!std::filesystem::is_directory(dir, ec)) {
+    return make_error(ErrorCode::IoFailure,
+                      "could not create the project's library folder: " + ec.message(),
+                      dir.string());
+  }
+  return dir / "manifest.json";
+}
+
 std::optional<std::filesystem::path>
 Project::find_project_for(const std::filesystem::path& scene_path) {
   const std::filesystem::path parent = scene_path.parent_path();
