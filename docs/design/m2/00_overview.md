@@ -80,7 +80,7 @@ sanitizer run before merging geometry/parsing changes.
 
 ## Standards references
 
-All standards behavior in these docs cites the local ASAM texts under
-`.claude/references/asam/` (OpenDRIVE 1.9.0 primary, 1.8.1 for deltas). Rule IDs
+All standards behavior in these docs cites the ASAM texts committed under
+`third_party/asam/` (OpenDRIVE 1.9.0 primary, 1.8.1 for deltas). Rule IDs
 appear inline as `asam.net:xodr:<ver>:<rule>`. Validator diagnostics must carry
 these IDs via the `Diagnostic::rule_id` field added in PR #2.

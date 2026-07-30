@@ -34,3 +34,19 @@ BSL-1.0, Unlicense/CC0. License files verified in each upstream archive.
 | Qt | 6.8.3 | LGPL-3.0-only | https://www.qt.io | Editor UI toolkit (editor builds only). Dynamically linked, NEVER static; never vendored or modified; provisioned by `scripts/setup_qt.py`, not FetchContent. Bundles ship Qt's LGPLv3 text and keep Qt as replaceable shared libraries (satisfies the LGPL relink provision). Sole sanctioned LGPL dependency — any other LGPL candidate needs maintainer approval. |
 | {fmt} | 12.2.0 | MIT | https://github.com/fmtlib/fmt | Formatting (kernel-wide, no iostream) |
 | spdlog | 1.17.0 | MIT | https://github.com/gabime/spdlog | Logging (built against external fmt) |
+
+## Bundled documentation (not dependencies)
+
+Third-party copyrighted material that lives in the repository but is **not**
+linked, compiled, or shipped in any artifact. Listed here because this file is
+where a licence audit looks.
+
+| What | Version | Rights | Where | Notes |
+|---|---|---|---|---|
+| ASAM OpenDRIVE specification | 1.8.1, 1.9.0 | © ASAM e.V. — *"The licensor grants everyone a basic, non-exclusive and unlimited license to use the standard ASAM OpenDRIVE."* ASAM OpenDRIVE® is a registered trademark of ASAM e.V. | `third_party/asam/opendrive-*/` | The published HTML converted to Markdown for offline reading — **non-normative**; figures omitted. The specification replaces ASAM's regular licence terms (§ 2(1) of https://www.asam.net/license/) with the unrestricted grant quoted here, which is why it can be committed at all. **Not covered by this repository's Apache-2.0 licence.** Terms, attribution and removal contact: [`third_party/asam/README.md`](third_party/asam/README.md) |
+
+**ASAM OpenSCENARIO XML is deliberately absent.** It carries no comparable
+grant and falls under ASAM's regular terms, under which recipients acquire no
+onward redistribution rights — so committing it would hand it to readers who
+have no licence to receive it. It is gitignored and fetched on demand by
+`scripts/fetch_asam_specs.py`. Do not commit it.

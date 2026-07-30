@@ -16,24 +16,50 @@ The reader currently accepts OpenDRIVE 1.6/1.7 files and the writer emits
 1.7 for maximum consumer compatibility — see the
 [reader and writer stance](opendrive.md#reader-and-writer-stance).
 
-## Obtaining the spec texts
+## Where the spec texts live
 
-ASAM's license does not permit redistributing the standards, so the texts
-are **never committed to this repository**. A fetch script downloads the
-publicly available specification pages and converts them into local,
-searchable text:
+**OpenDRIVE is in the repository, at
+[`third_party/asam/`](../../third_party/asam/README.md).** Nothing to fetch: a
+fresh clone and every `git worktree` already has 1.8.1 and 1.9.0. Start every
+spec question at that directory's `INDEX.md` (chapter map + topic → file
+lookup).
+
+It is committed because the OpenDRIVE specification replaces ASAM's regular
+licence terms with an unrestricted grant — *"a basic, non-exclusive and
+unlimited license to use the standard ASAM OpenDRIVE"*. The full terms,
+attribution, and trademark notice are in
+[`third_party/asam/README.md`](../../third_party/asam/README.md); the documents
+remain the copyrighted property of ASAM e.V. and are **not** covered by this
+project's Apache-2.0 licence.
+
+**OpenSCENARIO XML is not, and must not be committed.** It carries no
+comparable grant, so it is gitignored and fetched on demand:
 
 ```sh
-python scripts/fetch_asam_specs.py --std all --out references/asam
+python scripts/fetch_asam_specs.py --std openscenario --out third_party/asam
 ```
 
-- `--std` selects `opendrive`, `openscenario`, or `all`.
-- `--out` is where the texts land — pick any local, **gitignored** directory.
+It lands beside the OpenDRIVE folders and stays out of git. (This is the same
+licensing wall that keeps an OpenSCENARIO `.xsd` out of CI, which is why
+exported `.xosc` is validated by handing it to esmini instead.)
 
-The script writes one folder per spec version (`opendrive-1.9.0/`,
-`opendrive-1.8.1/`, `openscenario-xml-1.4.0/`), each containing the chapters
-as Markdown plus an `INDEX.md` with a chapter map and a topic → file lookup
-table. Start every spec question at the `INDEX.md`.
+### These copies are non-normative
+
+They are the published HTML converted to Markdown — headings and tables do not
+always survive faithfully, and **figures are omitted entirely**. Use them to
+search and navigate; for anything you will rely on or cite, open the source URL
+recorded in the file's header. Where they disagree, ASAM's publication is
+correct.
+
+### Refreshing
+
+```sh
+python scripts/fetch_asam_specs.py --std opendrive --out third_party/asam
+```
+
+Outputs are build artifacts: fix the script, never hand-edit a generated file.
+Review a refresh diff like any other — a specification erratum can invalidate a
+validator rule.
 
 ## The working rule
 

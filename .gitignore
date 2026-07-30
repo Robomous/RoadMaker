@@ -46,14 +46,15 @@ CLAUDE.md
 # Graphipy
 graphify-out/
 
-# ASAM spec reference texts — regenerate via scripts/fetch_asam_specs.py
-# NOTE: the `.claude/` rule above already excludes everything below it, and
-# git cannot re-include files under an excluded parent directory — so the
-# INDEX whitelist here is inert unless the maintainer relaxes `.claude/`
-# (e.g. to `.claude/*` + explicit re-includes). Kept for documented intent.
-.claude/references/asam/**
-!.claude/references/asam/INDEX.md
-!.claude/references/asam/*/INDEX.md
+# ASAM spec references now live in third_party/asam/ and are TRACKED, so a
+# fresh clone or worktree has them (they used to sit under the gitignored
+# `.claude/`, where a grep returned nothing rather than an error).
+#
+# OpenDRIVE is committed: it carries its own unrestricted licence grant.
+# OpenSCENARIO is NOT, and must not be — it has no comparable grant, so
+# publishing it would hand it to readers with no licence to receive it.
+# Rationale and the quoted terms: third_party/asam/README.md.
+third_party/asam/openscenario-*/
 
 # Diagnostic evidence (renders, glb dumps) belongs in issues/PRs, never in
 # the repo (docs/contributing/pull-requests.md).
