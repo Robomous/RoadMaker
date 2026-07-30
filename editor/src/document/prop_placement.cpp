@@ -17,6 +17,7 @@
 #include "document/prop_placement.hpp"
 
 #include "roadmaker/assets/prop_library.hpp"
+#include "roadmaker/edit/operations.hpp"
 #include "roadmaker/geometry/reference_line.hpp"
 #include "roadmaker/road/authoring.hpp"
 #include "roadmaker/road/network.hpp"
@@ -26,6 +27,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <memory>
 #include <random>
 #include <set>
 #include <string>
@@ -74,6 +76,32 @@ std::string next_object_odr_id(const RoadNetwork& network) {
   std::set<std::string> taken;
   network.for_each_object([&](ObjectId, const Object& object) { taken.insert(object.odr_id); });
   return mint_object_odr_id(taken);
+}
+
+namespace {
+
+/// True when `object` is one part of a composite prop assembly — the single
+/// question the two funnels below turn on.
+bool is_assembly_part(const RoadNetwork& network, ObjectId object) {
+  const Object* value = network.object(object);
+  return value != nullptr && value->assembly.has_value();
+}
+
+} // namespace
+
+std::unique_ptr<edit::Command> move_object_command(
+    const RoadNetwork& network, ObjectId object, double s, double t, std::optional<double> hdg) {
+  if (is_assembly_part(network, object)) {
+    return edit::move_assembly_by_part(network, object, s, t, hdg);
+  }
+  return edit::move_object(network, object, s, t, hdg);
+}
+
+std::unique_ptr<edit::Command> delete_object_command(const RoadNetwork& network, ObjectId object) {
+  if (is_assembly_part(network, object)) {
+    return edit::delete_assembly(network, object);
+  }
+  return edit::delete_object(network, object);
 }
 
 bool is_prop_asset(const LibraryItem& item) {

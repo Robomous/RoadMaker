@@ -30,6 +30,7 @@
 #include <vector>
 
 #include "document/document.hpp"
+#include "document/prop_placement.hpp"
 #include "document/signal_placement.hpp" // kSignalSnapThreshold
 #include "document/transform_gates.hpp"
 #include "document/units.hpp"
@@ -188,7 +189,7 @@ Expected<void> GizmoDragSession::update(const GizmoDragInput& input) {
         if (o == nullptr) {
           return {};
         }
-        return edit::move_object(base, object, o->s, o->t, hdg);
+        return move_object_command(base, object, o->s, o->t, hdg);
       };
       drag.summary = QObject::tr("Rotated prop to %1°").arg(degrees(hdg), 0, 'f', 0);
     } else if (drag.target.signal.is_valid()) {
@@ -266,7 +267,7 @@ Expected<void> GizmoDragSession::update(const GizmoDragInput& input) {
         if (!station.has_value()) {
           return {};
         }
-        return edit::move_object(base, object, station->s, station->t);
+        return move_object_command(base, object, station->s, station->t);
       };
       drag.summary = QObject::tr("Moved prop");
     } else if (drag.target.signal.is_valid()) {

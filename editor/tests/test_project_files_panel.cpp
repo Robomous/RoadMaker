@@ -177,7 +177,7 @@ TEST(LibraryPanel, KeepsTheCatalogueGridAndGainsTheFilesPane) {
 
   // The catalogue half is untouched: same grid, same search box, same combo.
   ASSERT_NE(panel.view()->model(), nullptr);
-  EXPECT_EQ(panel.view()->model()->rowCount(), 58);
+  EXPECT_EQ(panel.view()->model()->rowCount(), 59);
   EXPECT_NE(panel.findChild<QLineEdit*>(QStringLiteral("library_search")), nullptr);
   EXPECT_NE(panel.category_combo(), nullptr);
 

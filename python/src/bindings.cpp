@@ -5176,6 +5176,17 @@ NB_MODULE(_roadmaker, m) {
            "Re-anchors the whole assembly `part` belongs to: every part's pose is "
            "recomputed from the new anchor, so the unit moves rigidly. `hdg` left "
            "as None keeps the current anchor heading.");
+  edit.def("move_assembly_by_part",
+           &roadmaker::edit::move_assembly_by_part,
+           "network"_a,
+           "part"_a,
+           "part_s"_a,
+           "part_t"_a,
+           "part_hdg"_a = std::optional<double>{},
+           "The same rigid move expressed as 'put THIS PART here' rather than 'put the "
+           "anchor here' — what a drag knows. NOT interchangeable with move_assembly: a "
+           "signal head sits off its pole, so handing its station to move_assembly would "
+           "drop the ANCHOR there and leave the grabbed part metres away.");
   edit.def("delete_assembly",
            &roadmaker::edit::delete_assembly,
            "network"_a,

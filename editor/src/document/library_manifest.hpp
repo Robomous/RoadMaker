@@ -45,6 +45,11 @@ struct LibraryItem {
   enum class Kind {
     RoadTemplate,
     RoadStyle,
+    /// ★ A ROAD JUNCTION, not a prop. `create.kind == "assembly"` has meant the
+    /// parametric T/X intersection template since it shipped
+    /// (edit::assembly::t_intersection), and the user guide defines Assemblies
+    /// that way. A composite PROP assembly is `PropAssembly` below — the two
+    /// are unrelated and must never be merged.
     Assembly,
     /// The create-intent tag for EVERY point prop — trees, shrubs, streetlights
     /// and buildings alike (create.kind == "tree" in the manifest). The actual
@@ -57,6 +62,13 @@ struct LibraryItem {
     Crosswalk,
     Stencil,
     PropSet,
+    /// A COMPOSITE PROP — several prop models pinned together by fixed relative
+    /// transforms, placed as one unit (p6-s9, #323). `create.kind ==
+    /// "prop_assembly"`, `create.prop_assembly` names a `props::assembly()` id.
+    /// Distinct from `Assembly` above (road junctions) and from `PropSet`
+    /// (a weighted RANDOM scatter — one model drawn per instance, where an
+    /// assembly places every part, every time, at its authored offset).
+    PropAssembly,
     Unknown
   };
 
@@ -80,9 +92,15 @@ struct LibraryItem {
   Kind kind = Kind::Unknown;
   QString profile;  ///< RoadTemplate: "freeway" | "arterial" | "collector" | "local"
   QString style;    ///< RoadStyle: "freeway" | "arterial" | "collector" | "local"
-  QString assembly; ///< Assembly: "t" | "x"
+  QString assembly; ///< Assembly: "t" | "x" — a road junction shape, not a prop
   QString model;    ///< Tree: a bundled prop model id (e.g. "tree_pine")
   QString signal;   ///< Signal: "light" (traffic light) | "sign" (static sign)
+  /// PropAssembly: a `props::assembly()` id (e.g. "signal_mast"). Resolved at
+  /// DROP time rather than at parse time, unlike a PropSet's entries: a project
+  /// assembly only exists once its overlay is registered, so a row parsed before
+  /// the project opened must not be discarded for naming an id that is about to
+  /// exist.
+  QString prop_assembly;
 
   /// Uniform spawn multiplier applied to a prop's bundled model dims at
   /// placement (make_prop_object scales BOTH height and radius). 1.0 = the

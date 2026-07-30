@@ -1756,6 +1756,24 @@ move_assembly(const RoadNetwork& network,
               double t,
               std::optional<double> hdg = std::nullopt);
 
+/// The same rigid move, expressed as "put THIS PART here" instead of "put the
+/// anchor here" — which is what a drag knows (p6-s9, #323).
+///
+/// ★ THE TWO ARE NOT INTERCHANGEABLE. A signal head sits 1.8 m off its pole, so
+/// handing its cursor station to `move_assembly` would drop the ANCHOR at the
+/// cursor and leave the grabbed part 1.8 m away — ghost != commit. Every editor
+/// path that drags or types a part's own (s, t, hdg) must come through here.
+///
+/// Refuses exactly what `move_assembly` refuses, and for the same reasons; the
+/// conversion is `anchor_of`, the inverse of the one part-pose transform, so the
+/// two directions cannot drift apart.
+[[nodiscard]] RM_API std::unique_ptr<Command>
+move_assembly_by_part(const RoadNetwork& network,
+                      ObjectId part,
+                      double part_s,
+                      double part_t,
+                      std::optional<double> part_hdg = std::nullopt);
+
 /// Deletes every part of the assembly `part` belongs to, as ONE command. Undo
 /// restores all of them under their original ObjectIds (restore-in-place).
 /// Refuses (invalid_command) a stale id or an object that is not an assembly part.

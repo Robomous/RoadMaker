@@ -561,6 +561,68 @@ TEST(MoveAssembly, KeepsTheCurrentHeadingWhenNoneIsGiven) {
   EXPECT_DOUBLE_EQ(network.object(parts.front())->hdg, anchor_hdg_before);
 }
 
+// The drag-shaped entry point. `move_assembly` re-anchors; `move_assembly_by_part`
+// puts the GRABBED PART where it is asked to go. Every editor drag needs the
+// second, and the difference is invisible only for the anchor part — which is
+// exactly why this test grabs one that is offset from it.
+TEST(MoveAssembly, ByPartPutsTheGRABBEDPartWhereItIsAskedNotTheAnchor) {
+  RoadNetwork network;
+  const RoadId road = author_street(network);
+  auto place = edit::place_assembly(network, road, 40.0, -6.0, 0.0, "signal_mast");
+  ASSERT_TRUE(place->apply(network).has_value());
+
+  const std::vector<ObjectId> parts = only_assembly(network);
+  ASSERT_GE(parts.size(), 3U);
+  // Pick a part that is genuinely offset from the anchor, or the two entry
+  // points agree by accident and the test proves nothing.
+  const ObjectId grabbed = parts[2];
+  const Object& before_grabbed = *network.object(grabbed);
+  ASSERT_GT(std::abs(before_grabbed.t - network.object(parts.front())->t), 1.0)
+      << "the grabbed part must not sit on the anchor";
+
+  std::vector<std::pair<double, double>> relative;
+  for (const ObjectId id : parts) {
+    relative.emplace_back(network.object(id)->s - before_grabbed.s,
+                          network.object(id)->t - before_grabbed.t);
+  }
+
+  auto move = edit::move_assembly_by_part(network, grabbed, 90.0, -2.0);
+  ASSERT_TRUE(move->apply(network).has_value());
+
+  // The grabbed part lands EXACTLY where it was asked to.
+  EXPECT_NEAR(network.object(grabbed)->s, 90.0, 1e-9);
+  EXPECT_NEAR(network.object(grabbed)->t, -2.0, 1e-9);
+  // …and the unit came with it, still rigid.
+  for (std::size_t i = 0; i < parts.size(); ++i) {
+    EXPECT_NEAR(network.object(parts[i])->s - 90.0, relative[i].first, 1e-9) << i;
+    EXPECT_NEAR(network.object(parts[i])->t - (-2.0), relative[i].second, 1e-9) << i;
+  }
+
+  // And the two entry points really do disagree: handing the same station to
+  // `move_assembly` puts the ANCHOR there instead.
+  ASSERT_TRUE(move->revert(network).has_value());
+  auto anchored = edit::move_assembly(network, grabbed, 90.0, -2.0);
+  ASSERT_TRUE(anchored->apply(network).has_value());
+  EXPECT_GT(std::abs(network.object(grabbed)->t - (-2.0)), 1.0)
+      << "if these two agreed, move_assembly_by_part would be redundant";
+}
+
+TEST(MoveAssembly, ByPartRefusesAPlainPropAndAStaleId) {
+  RoadNetwork network;
+  const RoadId road = author_street(network);
+  Object tree;
+  tree.odr_id = "plain";
+  tree.name = "tree_pine";
+  tree.type = ObjectType::Tree;
+  tree.s = 10.0;
+  tree.t = 4.0;
+  const ObjectId plain = network.add_object(road, tree);
+
+  EXPECT_FALSE(
+      edit::move_assembly_by_part(network, ObjectId{}, 10.0, 0.0)->apply(network).has_value());
+  EXPECT_FALSE(edit::move_assembly_by_part(network, plain, 10.0, 0.0)->apply(network).has_value());
+}
+
 TEST(MoveAssembly, RefusesAPlainPropAStaleIdAndAMoveOffTheRoad) {
   RoadNetwork network;
   const RoadId road = author_street(network);

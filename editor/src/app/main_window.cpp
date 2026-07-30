@@ -2327,6 +2327,9 @@ void MainWindow::on_library_drop(const QString& key, double world_x, double worl
   case LibraryDropKind::RoadStyle:
   case LibraryDropKind::Assembly:
   case LibraryDropKind::Tree:
+  // A composite prop is ONE command for however many parts, so it joins the
+  // plain push here rather than needing a macro (p6-s9, #323).
+  case LibraryDropKind::PropAssembly:
   case LibraryDropKind::Signal:
   case LibraryDropKind::Marking:
   case LibraryDropKind::Material:

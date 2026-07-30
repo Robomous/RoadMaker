@@ -10368,6 +10368,33 @@ std::unique_ptr<Command> move_assembly(
   return command;
 }
 
+std::unique_ptr<Command> move_assembly_by_part(const RoadNetwork& network,
+                                               ObjectId part,
+                                               double part_s,
+                                               double part_t,
+                                               std::optional<double> part_hdg) {
+  static constexpr std::string_view kName = "Move Assembly";
+  const Object* seed = network.object(part);
+  if (seed == nullptr) {
+    return invalid_command(std::string(kName), stale_object_error());
+  }
+  if (!seed->assembly.has_value()) {
+    return invalid_command(std::string(kName), not_assembly_part_error());
+  }
+
+  // Where the GRABBED part is asked to go, expressed as the anchor pose
+  // `move_assembly` wants. `anchor_of` is the inverse of `assembly_part_pose`, so
+  // this is the transform's one implementation used backwards — not a second copy.
+  Object target = *seed;
+  target.s = part_s;
+  target.t = part_t;
+  if (part_hdg.has_value()) {
+    target.hdg = *part_hdg;
+  }
+  const AssemblyAnchor anchor = anchor_of(target);
+  return move_assembly(network, part, anchor.s, anchor.t, anchor.hdg);
+}
+
 std::unique_ptr<Command> delete_assembly(const RoadNetwork& network, ObjectId part) {
   static constexpr std::string_view kName = "Delete Assembly";
   const Object* seed = network.object(part);

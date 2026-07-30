@@ -64,6 +64,13 @@ LibraryItem::Kind parse_kind(const QString& kind) {
   if (kind == QStringLiteral("prop_set")) {
     return LibraryItem::Kind::PropSet;
   }
+  // ★ NOT "assembly" — that kind is the T/X road-junction template and has been
+  // since it shipped. A composite prop takes its own kind, which costs nothing
+  // because an unrecognised kind already parses to Unknown and round-trips
+  // verbatim through create_raw (p6-s9, #323).
+  if (kind == QStringLiteral("prop_assembly")) {
+    return LibraryItem::Kind::PropAssembly;
+  }
   return LibraryItem::Kind::Unknown;
 }
 
@@ -117,6 +124,10 @@ QJsonObject create_object(const LibraryItem& item) {
     // as an unusable row.
     create[QStringLiteral("kind")] = QStringLiteral("material");
     create[QStringLiteral("material")] = item.material;
+  }
+  if (item.kind == LibraryItem::Kind::PropAssembly) {
+    create[QStringLiteral("kind")] = QStringLiteral("prop_assembly");
+    create[QStringLiteral("prop_assembly")] = item.prop_assembly;
   }
   if (item.kind == LibraryItem::Kind::Tree) {
     create[QStringLiteral("kind")] = QStringLiteral("tree");
@@ -302,6 +313,7 @@ Expected<LibraryManifest> LibraryManifest::parse(const QByteArray& json) {
     item.profile = create.value(QStringLiteral("profile")).toString();
     item.style = create.value(QStringLiteral("style")).toString();
     item.assembly = create.value(QStringLiteral("assembly")).toString();
+    item.prop_assembly = create.value(QStringLiteral("prop_assembly")).toString();
     item.model = create.value(QStringLiteral("model")).toString();
     item.default_scale = create.value(QStringLiteral("default_scale")).toDouble(1.0);
     if (!(item.default_scale > 0.0)) {

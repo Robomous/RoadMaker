@@ -46,6 +46,7 @@
 #include "document/library_list_model.hpp"
 #include "document/library_manifest.hpp"
 #include "document/marking_item.hpp"
+#include "document/prop_placement.hpp"
 #include "document/units.hpp"
 #include "render/material_catalog.hpp"
 #include "tools/corner_tool.hpp"
@@ -1130,7 +1131,7 @@ PropertiesPanel::PropertiesPanel(Document& document,
   // siblings from their spin boxes — the selection cannot change mid-gesture.
   const auto object_pose = [this](double s, double t, double hdg) {
     return [this, s, t, hdg](const RoadNetwork& network) {
-      return edit::move_object(network, selection_.primary().object, s, t, hdg);
+      return move_object_command(network, selection_.primary().object, s, t, hdg);
     };
   };
   ScrubLabel* object_s_scrub = install_scrub(
@@ -1956,11 +1957,11 @@ void PropertiesPanel::push_object_pose() {
       !differs_from_display(*object_hdg_spin_, object->hdg)) {
     return;
   }
-  push(edit::move_object(document_.network(),
-                         selection_.primary().object,
-                         object_s_spin_->value(),
-                         object_t_spin_->value(),
-                         object_hdg_spin_->value()));
+  push(move_object_command(document_.network(),
+                           selection_.primary().object,
+                           object_s_spin_->value(),
+                           object_t_spin_->value(),
+                           object_hdg_spin_->value()));
 }
 
 std::optional<double>
