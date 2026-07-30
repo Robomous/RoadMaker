@@ -133,6 +133,9 @@ from ._roadmaker import (  # noqa: F401
     lidar,
     # OSM import (p7-s4, #244) — .osm XML read in-house, no new dep (ADR-0012).
     osm,
+    # Prop assets + glTF import (p6-s8, #322) — the bundled catalogue, a project
+    # overlay over it, and reading your own .glb/.gltf (ADR-0013).
+    props,
     # Export previews (p7-s1, #241) — what an export WOULD contain.
     MeshExportFormat,
     MeshChannel,

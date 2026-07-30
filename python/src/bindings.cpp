@@ -19,6 +19,8 @@
 // Expected, __repr__ everywhere. No C++ exception ever crosses this
 // boundary unhandled — rm::Error is translated to Python exceptions.
 
+#include "roadmaker/assets/prop_import.hpp"
+#include "roadmaker/assets/prop_library.hpp"
 #include "roadmaker/edit/assembly.hpp"
 #include "roadmaker/edit/connection.hpp"
 #include "roadmaker/edit/edit_stack.hpp"
@@ -77,6 +79,7 @@
 #include <array>
 #include <filesystem>
 #include <functional>
+#include <optional>
 #include <stdexcept>
 #include <string>
 #include <utility>
@@ -1586,6 +1589,130 @@ NB_MODULE(_roadmaker, m) {
               "path"_a,
               "True for the extensions `load` accepts, so a file filter and the "
               "reader cannot disagree about what is openable.");
+  }
+
+  // --- Prop assets and glTF import (p6-s8, #322) --------------------------
+  //
+  // The catalogue lookup and the importer are bound together because they are
+  // one story: `import_model` produces a PropModel, `register_project_models`
+  // makes it resolvable, and from then on `model()` answers for it exactly as it
+  // does for a bundled prop. Nothing downstream — the mesh builder, the
+  // exporters — learns that a second source of models exists (ADR-0013).
+  {
+    auto props =
+        m.def_submodule("props",
+                        "Prop models: the bundled catalogue, and importing your own from glTF.\n\n"
+                        "glTF and GLB are read with the in-tree tinygltf, which costs no new "
+                        "dependency; OBJ, USD and FBX are refused by name (ADR-0013). A textured "
+                        "model imports FLAT: PropPart carries one colour and no UVs, so a "
+                        "baseColorTexture is decoded, averaged and warned about (#507).");
+
+    nb::class_<roadmaker::props::PropPart>(props, "PropPart")
+        .def_ro("positions",
+                &roadmaker::props::PropPart::positions,
+                "xyz triplets, model space: Z-up, metres, origin at the base centre.")
+        .def_ro("normals", &roadmaker::props::PropPart::normals, "xyz triplets, unit length.")
+        .def_ro("indices",
+                &roadmaker::props::PropPart::indices,
+                "Triangle indices, CCW viewed from outside.")
+        .def_prop_ro(
+            "color",
+            [](const roadmaker::props::PropPart& part) { return part.color; },
+            "Flat LINEAR RGB in [0, 1]. There is no texture and no UV set — see "
+            "#507 for the issue that changes that.")
+        .def_ro("name",
+                &roadmaker::props::PropPart::name,
+                "Part name, which becomes the exported glTF/USD material name.");
+
+    nb::class_<roadmaker::props::PropModel>(props, "PropModel")
+        .def_ro("id", &roadmaker::props::PropModel::id, "Stable catalogue id.")
+        .def_ro("parts", &roadmaker::props::PropModel::parts)
+        .def_ro("height",
+                &roadmaker::props::PropModel::height,
+                "Bounding height, metres — maps to OpenDRIVE @height, and is what "
+                "per-instance sizing divides by.")
+        .def_ro("radius",
+                &roadmaker::props::PropModel::radius,
+                "Crown radius, metres — maps to OpenDRIVE @radius.")
+        .def_ro("type",
+                &roadmaker::props::PropModel::type,
+                "The OpenDRIVE object class a placed instance carries.");
+
+    nb::class_<roadmaker::props::PropImportOptions>(props, "ImportOptions")
+        .def(nb::init<>())
+        .def_rw("max_triangles", &roadmaker::props::PropImportOptions::max_triangles)
+        .def_rw("max_vertices", &roadmaker::props::PropImportOptions::max_vertices)
+        .def_rw("max_parts", &roadmaker::props::PropImportOptions::max_parts)
+        .def_rw("type",
+                &roadmaker::props::PropImportOptions::type,
+                "OpenDRIVE class for placed instances. ObjectType.NONE would make "
+                "the model unmeshable, because the mesh builder filters on it.");
+
+    props.attr("MAX_TRIANGLES") = roadmaker::props::kMaxPropTriangles;
+    props.attr("MAX_VERTICES") = roadmaker::props::kMaxPropVertices;
+    props.attr("MAX_PARTS") = roadmaker::props::kMaxPropParts;
+    props.attr("MAX_IMAGE_TEXELS") = roadmaker::props::kMaxPropImageTexels;
+
+    props.def(
+        "ids",
+        []() { return roadmaker::props::ids(); },
+        "Every available model id: the bundled ones, then the open project's "
+        "imported ones.");
+    props.def(
+        "model",
+        [](std::string_view id) -> std::optional<roadmaker::props::PropModel> {
+          const roadmaker::props::PropModel* found = roadmaker::props::model(id);
+          if (found == nullptr) {
+            return std::nullopt;
+          }
+          // Returned BY VALUE, not as a pointer: the C++ contract says a project
+          // model's pointer dies when the overlay is replaced, and handing Python
+          // a reference with that lifetime would be a use-after-free waiting for
+          // the next project switch.
+          return *found;
+        },
+        "id"_a,
+        "The model for `id`, or None. A project's imported models are consulted "
+        "first, so a project may shadow a bundled id.");
+    props.def("is_project_model",
+              &roadmaker::props::is_project_model,
+              "id"_a,
+              "True when `id` resolves to an imported model rather than a bundled "
+              "one — the two need different messages when an asset goes missing.");
+    props.def(
+        "import_model",
+        [](const std::filesystem::path& path,
+           std::string id,
+           const roadmaker::props::PropImportOptions& options) {
+          auto result = roadmaker::props::import_prop_model(path, std::move(id), options);
+          if (!result) {
+            throw std::runtime_error(result.error().message);
+          }
+          return std::pair{std::move(result->model), std::move(result->diagnostics)};
+        },
+        "path"_a,
+        "id"_a,
+        "options"_a = roadmaker::props::PropImportOptions{},
+        "Reads a .glb or .gltf into a prop model, returning (model, diagnostics). "
+        "The geometry is rotated from glTF's Y-up to the kernel's Z-up and reseated "
+        "on its own base. Read the diagnostics: a flattened texture is reported "
+        "there, not raised.");
+    props.def(
+        "register_project_models",
+        [](std::vector<roadmaker::props::PropModel> models) {
+          roadmaker::props::register_project_models(std::move(models));
+        },
+        "models"_a,
+        "Installs the open project's models, REPLACING any previous set, so a "
+        "project switch can never leave the previous project's assets resolvable.");
+    props.def("clear_project_models",
+              &roadmaker::props::clear_project_models,
+              "Drops the project overlay, restoring the bundled catalogue exactly.");
+    props.def("is_prop_model",
+              &roadmaker::props::is_prop_model_extension,
+              "path"_a,
+              "True for the extensions `import_model` accepts, so a file filter and "
+              "the reader cannot disagree about what is openable.");
   }
 
   // --- OSM import (p7-s4, #244) ------------------------------------------
