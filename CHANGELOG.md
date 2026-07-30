@@ -19,6 +19,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 Current version on `main`: **0.0.1**.
 
 ### Added
+- **Bring your own props in from glTF** ([#322](https://github.com/Robomous/RoadMaker/issues/322),
+  prop half): a `.glb` or `.gltf` imported into a project becomes a prop asset the
+  four prop tools, Prop Sets and the instanced render path all accept — and
+  **nothing downstream of the importer changed** to make that true. The mesh
+  builder, the renderer's batching, prop placement and both exporters key on the
+  model id and re-resolve through `props::model()`, which now consults the open
+  project's models ahead of the bundled ones.
+  - **The model is read before it is copied**, so a file that cannot become a prop
+    never leaves bytes inside the project — and the user hears about the budgets,
+    the frame conversion and any flattened texture before anything is committed.
+  - **A project that has lost a model file still opens.** The asset that will not
+    draw is named in the Diagnostics panel and skipped, rather than taking the
+    whole library down. The reader's warnings are re-reported on every project
+    open, not only at import, so someone reopening a project still learns why
+    their imported chair is flat.
+  - Imported props show a themed glyph rather than a preview: rendering a
+    thumbnail is out of scope here
+    ([#509](https://github.com/Robomous/RoadMaker/issues/509)).
 - **Bring your own textures in as materials** ([#322](https://github.com/Robomous/RoadMaker/issues/322),
   material half): with a project open, **File ▸ Import ▸ Asset (image)…** — or a
   drag from the OS file manager onto the Library dock — turns any PNG or JPEG into

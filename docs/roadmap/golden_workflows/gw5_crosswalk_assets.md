@@ -67,6 +67,37 @@ asset's defaults unless individually overridden.
     exported as a plain `<object type="roadMark" subtype="signalLines">`
     that a third-party viewer draws without any RoadMaker knowledge.
 
+### Importing your own prop (p6-s8, #322)
+
+11. [ ] With a project open, choose **File ▸ Import ▸ Asset (image)…** and pick a
+    `.glb` or `.gltf`. **Expected:** the same Import Asset dialog as a texture;
+    the file filter offers models as well as images.
+12. [ ] Import it. **Expected:** a toast names the asset; a new row appears in the
+    Library's **Props** category with a themed glyph rather than a preview
+    (render-to-thumbnail is out of scope — [#509](https://github.com/Robomous/RoadMaker/issues/509)).
+    If the model was textured, the Diagnostics panel says its texture was
+    flattened to an average colour and cites
+    [#507](https://github.com/Robomous/RoadMaker/issues/507).
+13. [ ] Select the row and place instances with **Prop Point**. **Expected:** it
+    places, picks, frames and shows in the Attributes pane exactly as a bundled
+    prop does — it is not a special case anywhere in the tool.
+14. [ ] Add it to a **Prop Set** alongside a bundled model and scatter with
+    **Prop Curve**. **Expected:** the weighted draw includes it.
+15. [ ] Set a per-instance **Height** in the Attributes pane. **Expected:** the
+    instance rescales by declared-height ÷ authored-height, the same rule a
+    bundled prop obeys ([#335](https://github.com/Robomous/RoadMaker/issues/335)).
+16. [ ] Export to glTF and USD. **Expected:** every instance is drawn, and each
+    part carries a flat material named after its glTF material.
+17. [ ] Close the project and reopen it. **Expected:** the prop is still in the
+    Library, still placed in the scene, and still draws.
+18. [ ] Delete the model file from `assets/props/` and reopen the project.
+    **Expected:** the project still opens; the Diagnostics panel names the asset
+    that will not draw. **Not** a crash and not a refused library.
+19. [ ] Open the same scene **without** its project. **Expected:** the
+    `<object>` records round-trip untouched, but the props do not draw — and
+    today RoadMaker says nothing about it, which is the gap
+    [#508](https://github.com/Robomous/RoadMaker/issues/508) tracks.
+
 ## Pass criteria
 
 - Every step's expected result holds; zero crashes.

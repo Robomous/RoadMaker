@@ -119,8 +119,16 @@ those files — or any file on disk — into a Library asset, either:
 
 All three open the same dialog, which asks for a name, a category, and a licence
 note. The file is copied into the project, so the asset survives you moving the
-original. See [materials](materials.md#importing-your-own-texture) for what an
-imported image becomes.
+original.
+
+- An **image** (PNG or JPEG) becomes a material — see
+  [materials](materials.md#importing-your-own-texture).
+- A **model** (`.glb` or `.gltf`) becomes a prop, usable with all four prop tools
+  and in Prop Sets. Its texture is flattened to a single colour per part, because
+  prop meshes carry no UVs; the Diagnostics panel says so when it happens. OBJ,
+  USD and FBX are not read.
+
+An imported prop shows a themed glyph rather than a preview image.
 
 Dropping a file RoadMaker does not import shows the no-drop cursor, so you find
 out before you let go rather than after.

@@ -106,6 +106,7 @@ add_executable(roadmaker_editor_tests
   test_scene_builder.cpp
   test_material_catalog.cpp
   test_asset_import.cpp
+  test_prop_asset_import.cpp
   test_scrub_label.cpp
   test_slot_widget.cpp
   test_reference_layers.cpp
@@ -133,6 +134,7 @@ target_compile_definitions(roadmaker_editor_tests
           RM_GIS_FIXTURES_DIR="${CMAKE_SOURCE_DIR}/core/tests/data/gis"
           RM_LIDAR_FIXTURES_DIR="${CMAKE_SOURCE_DIR}/core/tests/data/lidar"
           RM_OSM_FIXTURES_DIR="${CMAKE_SOURCE_DIR}/core/tests/data/osm"
+          RM_GLTF_FIXTURES_DIR="${CMAKE_SOURCE_DIR}/core/tests/data/gltf"
           # The shortcut-map gate reads the committed page and compares it to
           # what the registry renders (test_shortcut_registry.cpp).
           RM_DOCS_DIR="${CMAKE_SOURCE_DIR}/docs"
