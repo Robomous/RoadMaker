@@ -40,6 +40,16 @@ namespace roadmaker::io_common {
   return {static_cast<float>(x), static_cast<float>(z), static_cast<float>(-y)};
 }
 
+/// The inverse of `to_export_frame`: export frame (Y-up) -> kernel frame (Z-up),
+/// (x, y, z) -> (x, -z, y). Kept HERE, beside the forward map, so the boundary
+/// rotation has exactly one definition read in both directions — the glTF
+/// importer (p6-s8, #322) is the only reader, and its round-trip test exports a
+/// prop through `to_export_frame` and imports it back through this, so the two
+/// are pinned against each other rather than against arithmetic done twice.
+[[nodiscard]] inline std::array<double, 3> from_export_frame(double x, double y, double z) {
+  return {x, -z, y};
+}
+
 /// Base colors per material class (linear RGBA). Shared so glTF baseColorFactor
 /// and USD UsdPreviewSurface diffuseColor never drift apart.
 [[nodiscard]] inline std::array<double, 4> lane_material_color(LaneType type) {
