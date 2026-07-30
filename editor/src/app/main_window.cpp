@@ -16,6 +16,7 @@
 
 #include "app/main_window.hpp"
 
+#include "roadmaker/assets/prop_library.hpp"
 #include "roadmaker/edit/operations.hpp"
 #include "roadmaker/gis/crs.hpp"
 #include "roadmaker/gis/layer.hpp"
@@ -1737,6 +1738,7 @@ void MainWindow::apply_project_overlay() {
   if (!manifest_path.has_value()) {
     library_model_.clear_overlay();
     MaterialCatalog::clear_project_materials();
+    props::clear_project_models();
     return;
   }
   auto manifest = LibraryManifest::load(*manifest_path);
@@ -1747,6 +1749,7 @@ void MainWindow::apply_project_overlay() {
                  manifest.error().context);
     library_model_.clear_overlay();
     MaterialCatalog::clear_project_materials();
+    props::clear_project_models();
     return;
   }
   // The manifest's materials[] definitions become the renderer's project
@@ -1756,6 +1759,11 @@ void MainWindow::apply_project_overlay() {
   // absolute filesystem path exactly as it does a qrc alias, which is why the
   // renderer needed no change for import at all.
   install_project_materials(*manifest);
+
+  // A project's imported prop models must be resolvable BEFORE any mesh build,
+  // because props::model() is what the mesh builder, the renderer's instanced
+  // batching and both exporters all key on (p6-s8, #322).
+  document_.report_diagnostics(register_project_prop_models(project_->dir(), *manifest));
 
   // Overlay thumbnails are project-relative — resolve them against the project
   // directory (p6-s2) so a project's own PNGs load from disk.
@@ -1808,12 +1816,37 @@ void MainWindow::import_asset_from(const std::filesystem::path& source) {
     return;
   }
 
-  auto imported = import_material_asset(project_->dir(), dialog.request());
-  if (!imported.has_value()) {
-    viewport_->show_toast(
-        tr("Cannot import: %1").arg(QString::fromStdString(imported.error().message)),
-        ToastSeverity::Warning);
-    return;
+  const AssetImportRequest request = dialog.request();
+  LibraryManifest manifest = load_or_create_overlay_manifest();
+  AssetImportResult outcome;
+  QString label;
+
+  if (*kind == AssetImportKind::Prop) {
+    auto imported = import_prop_asset(project_->dir(), request);
+    if (!imported.has_value()) {
+      viewport_->show_toast(
+          tr("Cannot import: %1").arg(QString::fromStdString(imported.error().message)),
+          ToastSeverity::Warning);
+      return;
+    }
+    auto& [item, result, diagnostics] = *imported;
+    // The reader's diagnostics reach the panel rather than a toast: a flattened
+    // texture is a paragraph, not a one-liner, and the user may want to reread it.
+    document_.report_diagnostics(diagnostics);
+    label = item.label;
+    outcome = result;
+    manifest.upsert(std::move(item));
+  } else {
+    auto imported = import_material_asset(project_->dir(), request);
+    if (!imported.has_value()) {
+      viewport_->show_toast(
+          tr("Cannot import: %1").arg(QString::fromStdString(imported.error().message)),
+          ToastSeverity::Warning);
+      return;
+    }
+    label = imported->first.label;
+    outcome = imported->second;
+    manifest.upsert_material(std::move(imported->first));
   }
 
   const auto path = project_->library_manifest_path_for_write();
@@ -1823,8 +1856,6 @@ void MainWindow::import_asset_from(const std::filesystem::path& source) {
                           ToastSeverity::Warning);
     return;
   }
-  LibraryManifest manifest = load_or_create_overlay_manifest();
-  manifest.upsert_material(imported->first);
   if (const auto saved = manifest.save(*path); !saved.has_value()) {
     viewport_->show_toast(tr("Cannot save the project library: %1")
                               .arg(QString::fromStdString(saved.error().message)),
@@ -1835,20 +1866,20 @@ void MainWindow::import_asset_from(const std::filesystem::path& source) {
   // so nothing on screen changes until the user drops it onto a lane.
   apply_project_overlay();
 
-  const AssetImportResult& result = imported->second;
-  if (result.renamed) {
+  if (outcome.renamed) {
     // The user asked for a name that was taken. Saying which name it actually got
     // matters more than the import succeeding quietly.
-    viewport_->show_toast(tr("Imported as \"%1\" — that name was already taken").arg(result.slug),
+    viewport_->show_toast(tr("Imported as \"%1\" — that name was already taken").arg(outcome.slug),
                           ToastSeverity::Info);
   } else {
-    viewport_->show_toast(tr("Imported %1").arg(imported->first.label), ToastSeverity::Info);
+    viewport_->show_toast(tr("Imported %1").arg(label), ToastSeverity::Info);
   }
 }
 
 void MainWindow::install_project_materials(const LibraryManifest& manifest) {
   if (!project_.has_value()) {
     MaterialCatalog::clear_project_materials();
+    props::clear_project_models();
     return;
   }
   const std::filesystem::path root = project_->dir();

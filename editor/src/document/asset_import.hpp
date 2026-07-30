@@ -25,18 +25,21 @@
 // name, category and licence attestation and hands them here.
 //
 // AN IMPORT COPIES, per ADR-0013. The source file is copied into
-// `<project>/assets/textures/` (models will land in `assets/props/`), and the
-// manifest entry records the original absolute path as provenance. Referencing it
+// `<project>/assets/textures/` or `<project>/assets/props/`, and the manifest
+// entry records the original absolute path as provenance. Referencing it
 // where the user keeps it would fail "the asset survives close and reopen" the
 // first time they tidy their Downloads folder.
 
 #include "roadmaker/error.hpp"
+#include "roadmaker/xodr/diagnostic.hpp"
 
 #include <QString>
 #include <cstdint>
 #include <filesystem>
 #include <optional>
+#include <tuple>
 #include <utility>
+#include <vector>
 
 #include "document/library_manifest.hpp"
 
@@ -47,6 +50,7 @@ namespace roadmaker::editor {
 /// this answers only "can it be imported, and as what".
 enum class AssetImportKind : std::uint8_t {
   Material, ///< a Qt-decodable image -> a PBR-lite material definition
+  Prop,     ///< a .glb / .gltf -> a prop model (props::import_prop_model)
 };
 
 /// What the user chose in the dialog, plus what the caller derived.
@@ -94,5 +98,30 @@ struct AssetImportResult {
 /// wise be stuck on a cached miss for the rest of the session.
 [[nodiscard]] Expected<std::pair<LibraryMaterial, AssetImportResult>>
 import_material_asset(const std::filesystem::path& project_dir, const AssetImportRequest& request);
+
+/// Imports a glTF/GLB as a project prop: copies it into `<project>/assets/props/`,
+/// reads it with `props::import_prop_model` to prove it is usable, and returns the
+/// catalogue item to upsert plus the reader's diagnostics for the caller to report.
+///
+/// The item's `model` field is the slug, which becomes the OpenDRIVE
+/// `<object @name>` of every placed instance — the only link between an object and
+/// its model. The same no-overwrite rule as materials applies, and for a stronger
+/// reason here: overwriting a slug already placed in a scene would silently swap
+/// the geometry under it.
+///
+/// NO THUMBNAIL is written. #322 puts render-to-thumbnail out of scope and the
+/// Library already falls back to a themed glyph for an item without one (#509).
+[[nodiscard]] Expected<std::tuple<LibraryItem, AssetImportResult, std::vector<Diagnostic>>>
+import_prop_asset(const std::filesystem::path& project_dir, const AssetImportRequest& request);
+
+/// Reads back every project-backed prop model a manifest declares and hands them
+/// to `props::register_project_models`, so an imported prop resolves for the mesh
+/// builder, the renderer and both exporters exactly as a bundled one does.
+///
+/// A model file that has gone missing is reported and SKIPPED — the project still
+/// opens. Returns the diagnostics for the caller to route to the panel.
+[[nodiscard]] std::vector<Diagnostic>
+register_project_prop_models(const std::filesystem::path& project_dir,
+                             const LibraryManifest& manifest);
 
 } // namespace roadmaker::editor

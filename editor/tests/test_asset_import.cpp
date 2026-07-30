@@ -60,12 +60,14 @@ AssetImportRequest request_for(const QString& source, const QString& label) {
 
 } // namespace
 
-TEST(AssetImportKindTest, OnlyDecodableImagesAreAccepted) {
+TEST(AssetImportKindTest, ImagesAreMaterialsAndModelsAreProps) {
   EXPECT_EQ(asset_import_kind("brick.png"), AssetImportKind::Material);
   EXPECT_EQ(asset_import_kind("brick.JPG"), AssetImportKind::Material);
   EXPECT_EQ(asset_import_kind("brick.jpeg"), AssetImportKind::Material);
-  // Not images. .glb is a model, which imports as a prop rather than a material.
-  EXPECT_FALSE(asset_import_kind("chair.glb").has_value());
+  // A model imports as a prop, not a material (the prop half of p6-s8).
+  EXPECT_EQ(asset_import_kind("chair.glb"), AssetImportKind::Prop);
+  EXPECT_EQ(asset_import_kind("chair.gltf"), AssetImportKind::Prop);
+  // Neither, and refused by name per ADR-0013's closed list.
   EXPECT_FALSE(asset_import_kind("scene.xodr").has_value());
   EXPECT_FALSE(asset_import_kind("notes.txt").has_value());
   EXPECT_FALSE(asset_import_kind("noextension").has_value());
@@ -76,6 +78,8 @@ TEST(AssetImportKindTest, TheDialogFilterAndThePredicateCannotDisagree) {
   const QString filter = asset_import_filter();
   EXPECT_TRUE(filter.contains(QStringLiteral("*.png")));
   EXPECT_TRUE(filter.contains(QStringLiteral("*.jpg")));
+  EXPECT_TRUE(filter.contains(QStringLiteral("*.glb")));
+  EXPECT_TRUE(filter.contains(QStringLiteral("*.gltf")));
 }
 
 TEST(AssetSlug, DerivesAFilesystemSafeName) {
@@ -176,6 +180,25 @@ TEST(AssetImport, AnUnsupportedFileIsRefusedByName) {
 
   const auto imported =
       import_material_asset(fs_path(project.path()), request_for(path, QStringLiteral("Notes")));
+  ASSERT_FALSE(imported.has_value());
+  EXPECT_EQ(imported.error().code, ErrorCode::InvalidArgument);
+}
+
+TEST(AssetImport, TheMaterialImporterRefusesAModelEvenThoughItIsImportable) {
+  // A .glb is importable — as a PROP. Handing it to the material importer has to
+  // be refused rather than treated as an undecodable image.
+  QTemporaryDir project;
+  QTemporaryDir downloads;
+  ASSERT_TRUE(project.isValid());
+  ASSERT_TRUE(downloads.isValid());
+  const QString path = QDir(downloads.path()).filePath(QStringLiteral("chair.glb"));
+  QFile file(path);
+  ASSERT_TRUE(file.open(QIODevice::WriteOnly));
+  file.write("glTF");
+  file.close();
+
+  const auto imported =
+      import_material_asset(fs_path(project.path()), request_for(path, QStringLiteral("Chair")));
   ASSERT_FALSE(imported.has_value());
   EXPECT_EQ(imported.error().code, ErrorCode::InvalidArgument);
 }
