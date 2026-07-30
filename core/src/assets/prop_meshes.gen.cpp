@@ -847,7 +847,13 @@ const std::array<const PropModel*, 26> k_models = {
 
 } // namespace
 
-const std::vector<std::string>& ids() {
+// The BUILT-IN half of the catalogue. The public ids()/model()
+// live in src/assets/prop_registry.cpp, which layers a project's
+// imported models over these (p6-s8, #322) — so this generated
+// file stays pure data and knows nothing about projects.
+namespace detail {
+
+const std::vector<std::string>& builtin_ids() {
     static const std::vector<std::string> k_ids = {
         "tree_pine",
         "tree_oak",
@@ -879,7 +885,7 @@ const std::vector<std::string>& ids() {
     return k_ids;
 }
 
-const PropModel* model(std::string_view id) {
+const PropModel* builtin_model(std::string_view id) {
     for (const PropModel* m : k_models) {
         if (m->id == id) {
             return m;
@@ -887,6 +893,8 @@ const PropModel* model(std::string_view id) {
     }
     return nullptr;
 }
+
+} // namespace detail
 
 } // namespace roadmaker::props
 

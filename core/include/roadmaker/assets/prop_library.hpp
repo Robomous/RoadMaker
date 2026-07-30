@@ -100,13 +100,47 @@ struct PropModel {
   std::optional<FacePlate> face_plate;
 };
 
-/// Stable ids of every bundled prop model (e.g. "tree_pine"), in catalogue
-/// order.
+/// Stable ids of every available prop model, in catalogue order: the bundled
+/// models first, then whatever the open project has imported (p6-s8, #322).
 RM_API const std::vector<std::string>& ids();
 
-/// The model for `id`, or nullptr if unknown. The returned pointer is valid for
-/// the program lifetime (models are static data).
+/// The model for `id`, or nullptr if unknown. A project's imported models are
+/// consulted BEFORE the bundled ones, so a project may shadow a bundled id.
+///
+/// ★ POINTER LIFETIME, NARROWED BY p6-s8 (#322). A bundled model's pointer is
+/// still valid for the program lifetime. A PROJECT model's pointer is valid only
+/// until the project overlay is replaced or cleared — so nothing may cache one
+/// across a project switch. Nothing does: the mesh builder, the scene builder,
+/// prop placement and both exporters all re-resolve per build, and the editor
+/// rebuilds mesh and scene when the project changes. ADR-0013 records why the
+/// overlay is process-wide state behind this unchanged signature rather than a
+/// registry threaded through every caller.
 RM_API const PropModel* model(std::string_view id);
+
+/// Installs the open project's imported models, REPLACING any previous set.
+///
+/// Call on project open (and on any change to the project's asset library);
+/// pair with `clear_project_models()` on project close. Registration is
+/// main-thread work that happens before any mesh or scene build, which is what
+/// makes the unsynchronised lookup in `model()` safe.
+RM_API void register_project_models(std::vector<PropModel> models);
+
+/// Drops the project overlay, restoring the bundled catalogue exactly. Every
+/// pointer previously returned for a project model is invalidated here.
+RM_API void clear_project_models();
+
+/// True when `id` resolves to a project model rather than a bundled one. Exists
+/// so a caller can tell a missing asset from a missing build-in — the two need
+/// different messages.
+[[nodiscard]] RM_API bool is_project_model(std::string_view id);
+
+/// The built-in catalogue, without any project overlay. PRIVATE to the
+/// implementation: `src/assets/prop_meshes.gen.cpp` defines these and
+/// `src/assets/prop_registry.cpp` layers the project's models over them.
+namespace detail {
+RM_API const std::vector<std::string>& builtin_ids();
+RM_API const PropModel* builtin_model(std::string_view id);
+} // namespace detail
 
 /// Uniform render scale for a placed prop: the object's declared OpenDRIVE
 /// @height divided by the model's authored height. This is what makes a

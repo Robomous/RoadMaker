@@ -24,6 +24,8 @@
 
 #include <set>
 #include <string>
+#include <utility>
+#include <vector>
 
 namespace roadmaker::props {
 namespace {
@@ -146,6 +148,174 @@ TEST(PropLibrary, SignsCarryFacePlatesAndPlainPropsDoNot) {
     EXPECT_EQ(m->face_plate.has_value(), is_sign)
         << id << (is_sign ? " must carry a face plate" : " should not carry a face plate");
   }
+}
+
+// --------------------------------------------------------------------------- //
+// The project overlay (p6-s8, #322 · ADR-0013)
+// --------------------------------------------------------------------------- //
+
+// ADR-0013 chose process-wide overlay state so `props::model()` keeps its exact
+// signature and not one of its callers changes. The cost of that choice is hidden
+// state, and these tests are how it is paid down: they are the whole reason it is
+// safe to say "a project switch replaces the overlay wholesale".
+
+/// Restores the built-in catalogue after every test, so an overlay left behind by
+/// one case cannot alter another — the process-wide state's one real hazard.
+class PropOverlay : public testing::Test {
+protected:
+  void TearDown() override { clear_project_models(); }
+
+  static PropModel make_model(std::string id, double height = 3.0) {
+    PropModel model;
+    model.id = std::move(id);
+    model.height = height;
+    model.radius = 1.0;
+    model.type = ObjectType::Tree;
+    PropPart part;
+    part.positions = {0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, height};
+    part.normals = {0.0, 0.0, 1.0, 0.0, 0.0, 1.0, 0.0, 0.0, 1.0};
+    part.indices = {0, 1, 2};
+    part.color = {0.5F, 0.5F, 0.5F};
+    part.name = "body";
+    model.parts.push_back(std::move(part));
+    return model;
+  }
+};
+
+TEST_F(PropOverlay, WithNoProjectTheCatalogueIsExactlyTheBuiltInOne) {
+  EXPECT_EQ(ids(), detail::builtin_ids());
+  EXPECT_FALSE(is_project_model("tree_pine"));
+}
+
+TEST_F(PropOverlay, AnImportedModelResolvesAndJoinsTheCatalogue) {
+  const std::size_t builtin_count = detail::builtin_ids().size();
+  std::vector<PropModel> models;
+  models.push_back(make_model("imported_chair"));
+  register_project_models(std::move(models));
+
+  const PropModel* found = model("imported_chair");
+  ASSERT_NE(found, nullptr);
+  EXPECT_EQ(found->id, "imported_chair");
+  EXPECT_TRUE(is_project_model("imported_chair"));
+  EXPECT_EQ(ids().size(), builtin_count + 1);
+  // The bundled models are still there and still first.
+  EXPECT_NE(model("tree_pine"), nullptr);
+  EXPECT_EQ(ids().front(), detail::builtin_ids().front());
+}
+
+TEST_F(PropOverlay, ClearingRestoresTheBuiltInCatalogueExactly) {
+  const std::vector<std::string> before = ids();
+  std::vector<PropModel> models;
+  models.push_back(make_model("imported_chair"));
+  register_project_models(std::move(models));
+  ASSERT_NE(model("imported_chair"), nullptr);
+
+  clear_project_models();
+
+  // This is the invariant a project switch depends on. If it ever fails, one
+  // project's assets stay resolvable inside another.
+  EXPECT_EQ(ids(), before);
+  EXPECT_EQ(model("imported_chair"), nullptr);
+  EXPECT_FALSE(is_project_model("imported_chair"));
+}
+
+TEST_F(PropOverlay, RegisteringReplacesWholesaleRatherThanAccumulating) {
+  std::vector<PropModel> first;
+  first.push_back(make_model("project_a_asset"));
+  register_project_models(std::move(first));
+  ASSERT_NE(model("project_a_asset"), nullptr);
+
+  std::vector<PropModel> second;
+  second.push_back(make_model("project_b_asset"));
+  register_project_models(std::move(second));
+
+  // Opening project B must not leave project A's assets resolvable.
+  EXPECT_EQ(model("project_a_asset"), nullptr);
+  EXPECT_NE(model("project_b_asset"), nullptr);
+  EXPECT_EQ(ids().size(), detail::builtin_ids().size() + 1);
+}
+
+TEST_F(PropOverlay, AProjectModelShadowsABundledIdAndIsListedOnce) {
+  std::vector<PropModel> models;
+  models.push_back(make_model("tree_pine", 42.0));
+  register_project_models(std::move(models));
+
+  const PropModel* found = model("tree_pine");
+  ASSERT_NE(found, nullptr);
+  // The project's copy wins — that is what "consulted BEFORE the bundled ones"
+  // means, and it is what lets a project override a bundled asset.
+  EXPECT_DOUBLE_EQ(found->height, 42.0);
+  // But the id is not listed twice, or a Library category would show a duplicate.
+  EXPECT_EQ(ids().size(), detail::builtin_ids().size());
+  const std::set<std::string> unique(ids().begin(), ids().end());
+  EXPECT_EQ(unique.size(), ids().size());
+}
+
+TEST_F(PropOverlay, EveryInvariantOfTheBuiltInCatalogueHoldsWithAnOverlayLoaded) {
+  std::vector<PropModel> models;
+  models.push_back(make_model("imported_chair"));
+  models.push_back(make_model("imported_bench", 1.5));
+  register_project_models(std::move(models));
+
+  // The same four checks the built-in catalogue makes above, now over the merged
+  // list — an overlay must not be able to introduce a model that resolves to
+  // nothing or carries a degenerate size.
+  const auto& all = ids();
+  const std::set<std::string> unique(all.begin(), all.end());
+  EXPECT_EQ(unique.size(), all.size());
+  for (const std::string& id : all) {
+    const PropModel* found = model(id);
+    ASSERT_NE(found, nullptr) << id;
+    EXPECT_EQ(found->id, id);
+    EXPECT_GT(found->height, 0.0) << id;
+    EXPECT_GT(found->radius, 0.0) << id;
+    EXPECT_FALSE(found->parts.empty()) << id;
+    for (const PropPart& part : found->parts) {
+      EXPECT_EQ(part.positions.size() % 3, 0U) << id;
+      EXPECT_EQ(part.normals.size(), part.positions.size()) << id;
+      EXPECT_EQ(part.indices.size() % 3, 0U) << id;
+      EXPECT_FALSE(part.name.empty()) << id;
+    }
+  }
+}
+
+TEST_F(PropOverlay, PointersStayValidWhileTheOverlayIsRegistered) {
+  // The narrowed lifetime prop_library.hpp documents: a project model's pointer
+  // is valid until the overlay is replaced or cleared. Models are held behind
+  // unique_ptr precisely so growing the container cannot move one.
+  std::vector<PropModel> models;
+  for (int i = 0; i < 64; ++i) {
+    models.push_back(make_model("asset_" + std::to_string(i)));
+  }
+  register_project_models(std::move(models));
+  const PropModel* first = model("asset_0");
+  const PropModel* last = model("asset_63");
+  ASSERT_NE(first, nullptr);
+  ASSERT_NE(last, nullptr);
+  // Re-resolving must hand back the same objects, not copies.
+  EXPECT_EQ(model("asset_0"), first);
+  EXPECT_EQ(model("asset_63"), last);
+  EXPECT_EQ(first->id, "asset_0");
+  EXPECT_EQ(last->id, "asset_63");
+}
+
+TEST_F(PropOverlay, InstanceScaleWorksForAnImportedModel) {
+  // props::instance_scale divides by the model height, which is why a zero-height
+  // import is refused. An imported model has to work with per-instance sizing
+  // exactly as a bundled one does (#335).
+  std::vector<PropModel> models;
+  models.push_back(make_model("imported_chair", 2.0));
+  register_project_models(std::move(models));
+  const PropModel* found = model("imported_chair");
+  ASSERT_NE(found, nullptr);
+
+  Object object;
+  object.name = "imported_chair";
+  object.height = 6.0;
+  EXPECT_DOUBLE_EQ(instance_scale(object, found), 3.0);
+  // No declared height means model size, per the documented rule.
+  object.height.reset();
+  EXPECT_DOUBLE_EQ(instance_scale(object, found), 1.0);
 }
 
 } // namespace
