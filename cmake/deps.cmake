@@ -88,9 +88,31 @@ set(MANIFOLD_DOWNLOADS OFF)
 # ---------------------------------------------------------------------------
 # tinygltf 3.0.0 (MIT; bundles nlohmann/json (MIT) and stb (MIT/public
 # domain)) — header-only; implementation macro defined in core/src/io.
+#
+# ★ THE ONE DEPENDENCY FETCHED BY GIT RATHER THAN BY URL + URL_HASH, and the
+# departure is deliberate.
+#
+# On 2026-07-31 every fresh configure started failing with a URL_HASH mismatch:
+#   expected 806b0f1ba8007837fcd531e23872286f8a8870ee23275e1eb5304cdb48e4cb30
+#   actual   456b89f51ec64e0e982bc5e3ab57e945092b3005a8e726b271d202850619c643
+# The tag had NOT moved — v3.0.0 still points at cfcadfa8, dated 2026-03-23,
+# the same commit it was released from. GitHub simply RE-ROLLED the
+# auto-generated source archive: `/archive/refs/tags/*.tar.gz` is built on
+# demand and is explicitly not guaranteed byte-stable, so its SHA-256 can change
+# under a fixed tag with no upstream change at all.
+#
+# A URL_HASH over a generated archive therefore pins the WRAPPER, not the
+# content, and breaks on a schedule nobody controls. GIT_TAG at a full commit
+# SHA pins the TREE — a strictly stronger integrity guarantee than the hash it
+# replaces, and immune to re-rolls. Hence the exception to this file's
+# URL + URL_HASH convention; do not "restore consistency" by reverting it.
+#
+# Use the full 40-character SHA, never the tag name: a tag is a movable ref and
+# would reintroduce exactly the mutability this is here to remove.
 FetchContent_Declare(tinygltf
-  URL https://github.com/syoyo/tinygltf/archive/refs/tags/v3.0.0.tar.gz
-  URL_HASH SHA256=806b0f1ba8007837fcd531e23872286f8a8870ee23275e1eb5304cdb48e4cb30
+  GIT_REPOSITORY https://github.com/syoyo/tinygltf.git
+  GIT_TAG cfcadfa8d14eb489d97b6324838ae100410edcc7 # v3.0.0
+  GIT_SHALLOW FALSE # a shallow clone cannot resolve an arbitrary commit SHA
   SOURCE_SUBDIR cmake-disabled
 )
 
