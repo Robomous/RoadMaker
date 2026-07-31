@@ -486,3 +486,207 @@ def test_removing_an_actor_takes_its_init_private_with_it(
 
     stack.undo(scenario)
     assert len(scenario.storyboard.init.actions.privates) == 1
+
+
+# --- p8-s2 (#246): actors on lanes -------------------------------------------
+
+
+def networked_scenario() -> tuple[rm.osc.Scenario, rm.osc.edit.ScenarioStack]:
+    """A scenario with a <LogicFile>, which every lane position requires.
+
+    Without it, ``asam.net:xosc:1.0.0:scenario_logic.invalid_elements_if_no_road_network``
+    fires: a <LanePosition> naming a road network the document never links is a
+    roadId nothing can resolve, and write_xosc refuses the whole file.
+    """
+    scenario = rm.osc.Scenario()
+    stack = rm.osc.edit.ScenarioStack()
+    stack.push(scenario, rm.osc.edit.set_logic_file(scenario, "town.xodr"))
+    return scenario, stack
+
+
+def lane(road: str = "1", lane_id: str = "-1", s: float = 10.0) -> rm.osc.LanePosition:
+    position = rm.osc.LanePosition()
+    position.road_id = road
+    position.lane_id = lane_id
+    position.s = s
+    return position
+
+
+def test_the_catalog_covers_every_kind_and_the_car_is_the_reference_vehicle() -> None:
+    catalog = rm.osc.actor_catalog()
+    assert {a.key for a in catalog} == {
+        "car",
+        "truck",
+        "bus",
+        "motorbike",
+        "bicycle",
+        "pedestrian",
+    }
+    car = rm.osc.actor_archetype(rm.osc.ActorKind.Car)
+    # docs/domain/realism_defaults.md §1.1, the AASHTO P design vehicle every
+    # other default in that document is measured against.
+    assert (car.width, car.length, car.height) == pytest.approx((2.13, 5.79, 1.45))
+
+
+def test_make_actor_is_writable_without_further_assembly() -> None:
+    # <Performance> and <Axles> are required children of <Vehicle> in every
+    # revision. The point of make_actor is that a caller never has to know that.
+    for archetype in rm.osc.actor_catalog():
+        scenario = rm.osc.Scenario()
+        scenario.entities.scenario_objects = [
+            rm.osc.make_actor(archetype.kind, f"{archetype.key}1")
+        ]
+        rm.osc.write_xosc(scenario)  # must not raise
+
+
+def test_placing_an_actor_on_a_lane_is_one_undo_entry() -> None:
+    scenario, stack = networked_scenario()
+    before = rm.osc.write_xosc(scenario)
+
+    stack.push(
+        scenario,
+        rm.osc.edit.place_scenario_object(
+            scenario, rm.osc.make_actor(rm.osc.ActorKind.Car, "Car1"), lane(s=42.5)
+        ),
+    )
+    assert len(scenario.entities.scenario_objects) == 1
+    assert len(scenario.storyboard.init.actions.privates) == 1
+    assert '<LanePosition roadId="1" laneId="-1" s="42.5"' in rm.osc.write_xosc(scenario)
+
+    # ONE undo, not two — placing an actor is one gesture.
+    stack.undo(scenario)
+    assert rm.osc.write_xosc(scenario) == before
+
+
+def test_a_lane_position_round_trips_through_a_file(tmp_path) -> None:
+    scenario, stack = networked_scenario()
+    stack.push(
+        scenario,
+        rm.osc.edit.place_scenario_object(
+            scenario, rm.osc.make_actor(rm.osc.ActorKind.Car, "Car1"), lane(s=42.5)
+        ),
+    )
+    path = tmp_path / "actors.xosc"
+    rm.osc.save_xosc(scenario, path)
+
+    parsed = rm.osc.parse_xosc(path.read_text())
+    position = parsed.scenario.storyboard.init.actions.privates[0].actions[0].teleport.position
+    assert isinstance(position, rm.osc.LanePosition)
+    # The ids are STRINGS all the way through — never parsed to an int and
+    # re-rendered, which is how a leading zero or a temporary-layer id would
+    # quietly change on a round trip.
+    assert position.road_id == "1"
+    assert position.lane_id == "-1"
+    assert position.s == pytest.approx(42.5)
+    assert rm.osc.write_xosc(parsed.scenario) == rm.osc.write_xosc(scenario)
+
+
+def test_an_initial_speed_is_a_second_private_action() -> None:
+    # <PrivateAction> is a per-element CHOICE, so a file holds one action per
+    # arm. Sharing one element would produce a document no parser accepts.
+    scenario, stack = networked_scenario()
+    stack.push(
+        scenario,
+        rm.osc.edit.place_scenario_object(
+            scenario, rm.osc.make_actor(rm.osc.ActorKind.Car, "Car1"), lane()
+        ),
+    )
+    stack.push(scenario, rm.osc.edit.set_entity_init_speed(scenario, "Car1", 13.89))
+
+    actions = scenario.storyboard.init.actions.privates[0].actions
+    assert len(actions) == 2
+    assert actions[0].teleport is not None
+    assert actions[0].longitudinal is None
+    assert actions[1].longitudinal is not None
+    assert '<AbsoluteTargetSpeed value="13.89" />' in rm.osc.write_xosc(scenario)
+
+
+def test_renaming_an_actor_rewrites_its_entity_ref() -> None:
+    # Renaming the entity alone leaves a dangling entityRef, which write_xosc
+    # refuses — so the rename would make the document unsavable.
+    scenario, stack = networked_scenario()
+    stack.push(
+        scenario,
+        rm.osc.edit.place_scenario_object(
+            scenario, rm.osc.make_actor(rm.osc.ActorKind.Car, "Car1"), lane()
+        ),
+    )
+    stack.push(scenario, rm.osc.edit.rename_scenario_object(scenario, "Car1", "Hero"))
+
+    assert scenario.entities.scenario_objects[0].name == "Hero"
+    assert scenario.storyboard.init.actions.privates[0].entity_ref == "Hero"
+    rm.osc.write_xosc(scenario)  # must not raise
+
+
+def test_a_lane_position_with_no_logic_file_is_refused() -> None:
+    scenario = rm.osc.Scenario()  # deliberately WITHOUT set_logic_file
+    stack = rm.osc.edit.ScenarioStack()
+    stack.push(
+        scenario,
+        rm.osc.edit.place_scenario_object(
+            scenario, rm.osc.make_actor(rm.osc.ActorKind.Car, "Car1"), lane()
+        ),
+    )
+    with pytest.raises(ValueError):
+        rm.osc.write_xosc(scenario)
+
+
+@pytest.mark.parametrize(
+    ("position", "reason"),
+    [
+        (lane(road=""), "no road"),
+        (lane(lane_id=""), "no lane"),
+        (lane(s=-1.0), "negative s"),
+    ],
+)
+def test_an_unresolvable_lane_position_is_refused_at_placement(
+    position: rm.osc.LanePosition, reason: str
+) -> None:
+    # validate_scenario would catch these too, but only at SAVE time — an hour
+    # after the placement that caused them.
+    scenario, stack = networked_scenario()
+    scenario.entities.scenario_objects = [rm.osc.make_actor(rm.osc.ActorKind.Car, "Car1")]
+    with pytest.raises(ValueError):
+        stack.push(scenario, rm.osc.edit.set_entity_init_pose(scenario, "Car1", position))
+
+
+def test_a_negative_speed_is_refused_and_not_clamped() -> None:
+    scenario, stack = networked_scenario()
+    scenario.entities.scenario_objects = [rm.osc.make_actor(rm.osc.ActorKind.Car, "Car1")]
+    with pytest.raises(ValueError):
+        stack.push(scenario, rm.osc.edit.set_entity_init_speed(scenario, "Car1", -5.0))
+    assert not scenario.storyboard.init.actions.privates
+
+
+def test_retyping_a_position_reports_the_preserved_tier_it_drops() -> None:
+    # A <WorldPosition>'s foreign attributes name a DIFFERENT element and cannot
+    # ride onto a <LanePosition>. Dropping them is correct; dropping them in
+    # silence is what ADR-0014 §6 forbids.
+    #
+    # The preserved tier is built by PARSING rather than by assignment: RawXml
+    # is deliberately read-only from Python (it is a preservation carrier, not
+    # something a caller authors), and parsing is the only way one is ever
+    # populated in practice anyway.
+    document = """<?xml version="1.0" encoding="UTF-8"?>
+<OpenSCENARIO>
+  <FileHeader revMajor="1" revMinor="2" date="2026-01-01T00:00:00"
+              description="d" author="a"/>
+  <CatalogLocations/>
+  <RoadNetwork><LogicFile filepath="town.xodr"/></RoadNetwork>
+  <Entities><ScenarioObject name="Ego"><MiscObject name="c" mass="5"
+    miscObjectCategory="obstacle"/></ScenarioObject></Entities>
+  <Storyboard><Init><Actions><Private entityRef="Ego"><PrivateAction>
+    <TeleportAction><Position>
+      <WorldPosition x="1" y="2" z="0" vendorFlag="1"/>
+    </Position></TeleportAction></PrivateAction></Private></Actions></Init>
+    <StopTrigger/></Storyboard>
+</OpenSCENARIO>
+"""
+    scenario = rm.osc.parse_xosc(document).scenario
+    assert "vendorFlag" in rm.osc.write_xosc(scenario)
+
+    stack = rm.osc.edit.ScenarioStack()
+    stack.push(scenario, rm.osc.edit.set_entity_init_pose(scenario, "Ego", lane()))
+    assert stack.last_findings, "a preserved tier was dropped and nothing said so"
+    assert "WorldPosition" in stack.last_findings[0].message
+    assert "vendorFlag" not in rm.osc.write_xosc(scenario)

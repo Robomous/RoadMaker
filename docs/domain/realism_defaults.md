@@ -195,6 +195,43 @@ when something actually knows it: an imported `maxspeed`, or a user.
 `no limit` and `undefined`** — which is why the data model keeps the
 verbatim spelling and derives the number from it, never the reverse.
 
+## 1.8 Scenario actors
+
+([#246](https://github.com/Robomous/RoadMaker/issues/246)) The archetypes a
+scenario actor can be placed from, in toolbar order. Unlike every other table
+here these are **OpenSCENARIO** entities, not OpenDRIVE content — they reach
+`<Entities><ScenarioObject>` in the `.xosc`, never the `.xodr` — so the table is
+rendered by `osc::actor_catalog_markdown()` rather than by
+`roadmaker::defaults`: `defaults` must not depend on `osc`, since every
+dependency in this tree runs `osc` → `road` and never back.
+
+Vehicle dimensions are the **AASHTO design vehicles** — P (passenger car), SU-30
+(single-unit truck), BUS-40 (city transit bus) and B (bicycle) — which is the
+same source §1.1 anchors every other default to. The **Car row is §1.1's
+reference vehicle exactly**, and a test pins it there: it is the proportional
+anchor lane widths and clearances are measured against, so an actor that
+disagreed with it would make all of them read wrong.
+
+<!-- rm-defaults: actors -->
+| Actor | Category | Width | Length | Height | Mass |
+|---|---|---|---|---|---|
+| Car | `car` | 2.13 m | 5.79 m | 1.45 m | 1500 kg |
+| Truck | `truck` | 2.44 m | 9.14 m | 4.11 m | 12000 kg |
+| Bus | `bus` | 2.59 m | 12.19 m | 3.20 m | 15000 kg |
+| Motorbike | `motorbike` | 0.80 m | 2.20 m | 1.50 m | 250 kg |
+| Bicycle | `bicycle` | 0.60 m | 1.80 m | 1.70 m | 100 kg |
+| Pedestrian | `pedestrian` | 0.60 m | 0.40 m | 1.75 m | 80 kg |
+
+The truck's 4.11 m height is §1.1's legal maximum (13 ft 6 in), deliberately:
+the tallest legal vehicle is what every overhead clearance in this document is
+sized to clear, so the placeable truck is the one that tests those clearances.
+
+`<Performance>` and `<Axles>` are **not** tabulated. They are required children
+of `<Vehicle>` in every OpenSCENARIO revision and they follow from the
+dimensions above (wheelbase, wheel diameter, top speed); the values live in
+`core/src/osc/catalog.cpp` beside the row they belong to, and a test asserts
+every archetype builds a `<ScenarioObject>` that `write_xosc` accepts as-is.
+
 ## Auto-orientation of signs & signals
 
 ([#416](https://github.com/Robomous/RoadMaker/issues/416)) The default

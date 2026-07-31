@@ -517,6 +517,15 @@ jobs:
         run: |
           python python/examples/load_and_export.py assets/samples/t_junction.xodr t_junction.glb
           python python/examples/author_road.py authored.xodr authored.glb
+      # The scenario examples ASSERT their own invariants (undo/redo fixed
+      # point, refusals, byte-identical round trip) and need no fixture file, so
+      # running them here costs a second and is the difference between a
+      # worked example and a stale one. An unrun example in this repository was
+      # once wrong four ways (p6-s9); both of these were previously unrun.
+      - name: Run the scenario examples (they assert their own invariants)
+        run: |
+          python python/examples/scenario_signals.py
+          python python/examples/scenario_actors.py
       - uses: actions/upload-artifact@v4
         with:
           name: sample-glb
@@ -735,6 +744,20 @@ jobs:
       # byte-identical log (measured 2026-07-30; see scripts/esmini_smoke.py).
       # So this step gates document structure and entity/network references,
       # and says nothing at all about the traffic-signal half.
+      #
+      # From p8-s2 (#246) the fixture carries a <LanePosition> and a
+      # <SpeedAction>, and the lane position makes this step MEASURABLY
+      # stronger than the paragraph above — measured 2026-07-31 against the
+      # same pinned v3.5.0, each mutation applied to the tracked fixture:
+      #
+      #   roadId="3"  -> "999"   [error] Failed to find road 999            exit 1
+      #   laneId="-1" -> "-99"   [error] Lane id -99 does not exist on road 3  exit 1
+      #   s="16"      -> "9999"  [error] Invalid s value ... truncating to 80  exit 1
+      #
+      # So a lane anchor IS resolved against the referenced .xodr, which is
+      # exactly the class of error the traffic-signal half is blind to. The
+      # initial speed is not checked: value="500" (1800 km/h) loads silently
+      # and exits 0, so <SpeedAction> rides here as structure only.
       - name: Smoke-load the tracked .xosc scenario
         run: python3 scripts/esmini_smoke.py --esmini .esmini/esmini/bin/esmini --xosc tests/esmini/signalized.xosc
       - name: Broken scenario must fail (guards the .xosc path itself)

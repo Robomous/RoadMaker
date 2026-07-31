@@ -46,15 +46,15 @@
   </RoadNetwork>
   <Entities>
     <ScenarioObject name="Ego">
-      <Vehicle name="car" vehicleCategory="car">
+      <Vehicle name="Car" vehicleCategory="car" mass="1500">
         <BoundingBox>
-          <Center x="1.4" y="0" z="0.75" />
-          <Dimensions width="2" length="5" height="1.5" />
+          <Center x="1.9" y="0" z="0.725" />
+          <Dimensions width="2.13" length="5.79" height="1.45" />
         </BoundingBox>
-        <Performance maxSpeed="70" maxAcceleration="5" maxDeceleration="10" />
+        <Performance maxSpeed="69.4" maxAcceleration="5" maxDeceleration="10" />
         <Axles>
-          <FrontAxle maxSteering="0.5" wheelDiameter="0.6" trackWidth="1.8" positionX="2.98" positionZ="0.3" />
-          <RearAxle maxSteering="0" wheelDiameter="0.6" trackWidth="1.8" positionX="0" positionZ="0.3" />
+          <FrontAxle maxSteering="0.5" wheelDiameter="0.65" trackWidth="2.13" positionX="2.9" positionZ="0.325" />
+          <RearAxle maxSteering="0" wheelDiameter="0.65" trackWidth="2.13" positionX="0" positionZ="0.325" />
         </Axles>
         <Properties />
       </Vehicle>
@@ -67,9 +67,19 @@
           <PrivateAction>
             <TeleportAction>
               <Position>
-                <WorldPosition x="-40" y="-1.75" z="0" h="0" />
+                <LanePosition roadId="3" laneId="-1" s="16" offset="0" />
               </Position>
             </TeleportAction>
+          </PrivateAction>
+          <PrivateAction>
+            <LongitudinalAction>
+              <SpeedAction>
+                <SpeedActionDynamics dynamicsShape="step" value="0" dynamicsDimension="time" />
+                <SpeedActionTarget>
+                  <AbsoluteTargetSpeed value="13.89" />
+                </SpeedActionTarget>
+              </SpeedAction>
+            </LongitudinalAction>
           </PrivateAction>
         </Private>
       </Actions>

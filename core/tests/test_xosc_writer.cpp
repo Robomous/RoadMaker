@@ -56,6 +56,13 @@ namespace osc = roadmaker::osc;
 /// exists for the same reason: asserting inside a parent's slice is what
 /// proves NESTING. A flat `find(...) != npos` checklist would pass on a writer
 /// that emitted `<Performance>` as a sibling of `<Vehicle>`.
+/// ★ THE RETURNED VIEW BORROWS `doc`, so `doc` MUST OUTLIVE IT. The rvalue
+/// overload below is deleted to make that a compile error rather than a
+/// use-after-free: `element_slice(written(scenario), ...)` slices a temporary
+/// that dies at the end of the full expression, and the view left behind reads
+/// freed memory. That exact mistake reached this file in p8-s2 (#246) and the
+/// plain test run passed 3027/3027 with it live — only the sanitizer build
+/// caught it. Bind the document to a named `std::string` first.
 std::string_view
 element_slice(const std::string& doc, std::string_view open, std::string_view close) {
   const std::size_t start = doc.find(open);
@@ -68,6 +75,8 @@ element_slice(const std::string& doc, std::string_view open, std::string_view cl
   }
   return std::string_view(doc).substr(start, (end + close.size()) - start);
 }
+
+std::string_view element_slice(std::string&&, std::string_view, std::string_view) = delete;
 
 std::size_t offset_of(const std::string& doc, std::string_view marker) {
   return doc.find(marker);
@@ -109,13 +118,13 @@ osc::Scenario minimal_scenario() {
   scenario.entities.scenario_objects.push_back(ego);
 
   osc::PrivateAction teleport;
-  teleport.teleport = osc::TeleportAction{.position = {.x = 0.0,
-                                                       .y = 0.0,
-                                                       .z = 0.5,
-                                                       .h = 0.0,
-                                                       .p = std::nullopt,
-                                                       .r = std::nullopt,
-                                                       .preserved = {}},
+  teleport.teleport = osc::TeleportAction{.position = osc::WorldPosition{.x = 0.0,
+                                                                         .y = 0.0,
+                                                                         .z = 0.5,
+                                                                         .h = 0.0,
+                                                                         .p = std::nullopt,
+                                                                         .r = std::nullopt,
+                                                                         .preserved = {}},
                                           .preserved = {}};
 
   osc::Private ego_init;
@@ -204,7 +213,9 @@ TEST(XoscWriter, NegativeZeroIsNormalisedToZero) {
   // OpenDRIVE helper, so no existing test covers it: delete that one line and
   // the whole xodr suite still passes while a -0 reaches every .xosc.
   osc::Scenario scenario = minimal_scenario();
-  scenario.storyboard.init.actions.privates[0].actions[0].teleport->position.x = -0.0;
+  std::get<osc::WorldPosition>(
+      scenario.storyboard.init.actions.privates[0].actions[0].teleport->position)
+      .x = -0.0;
 
   const std::string text = written(scenario);
   const std::string_view world = element_slice(text, "<WorldPosition", "/>");
@@ -473,6 +484,158 @@ TEST(XoscWriter, SaveDoesNotWriteAFileForARefusedScenario) {
   EXPECT_FALSE(std::filesystem::exists(path));
 }
 
+// --- p8-s2 (#246): positions and initial speed --------------------------------
+
+TEST(XoscWriter, ALanePositionIsEmittedInsideItsPositionWrapper) {
+  osc::Scenario scenario = minimal_scenario();
+  scenario.storyboard.init.actions.privates[0].actions[0].teleport->position =
+      osc::LanePosition{.road_id = "7", .lane_id = "-2", .s = 42.5, .offset = 0.25};
+
+  const std::string text = written(scenario);
+  // Asserting inside the <Position> slice is what proves NESTING — a flat
+  // find() would pass on a writer that emitted the lane position as a sibling.
+  const std::string_view position = element_slice(text, "<Position>", "</Position>");
+  ASSERT_FALSE(position.empty()) << text;
+  EXPECT_TRUE(contains(position, R"(<LanePosition roadId="7" laneId="-2" s="42.5" offset="0.25")"))
+      << position;
+  EXPECT_FALSE(contains(text, "<WorldPosition")) << text;
+}
+
+TEST(XoscWriter, ARoadPositionIsEmittedInsideItsPositionWrapper) {
+  osc::Scenario scenario = minimal_scenario();
+  scenario.storyboard.init.actions.privates[0].actions[0].teleport->position =
+      osc::RoadPosition{.road_id = "3", .s = 40.0, .t = -1.75};
+
+  // ★ The document is bound to a NAMED string first, deliberately.
+  // `element_slice` returns a string_view INTO its argument, so slicing the
+  // temporary `written()` returns leaves the view dangling the instant the full
+  // expression ends. ASan caught exactly that here; the plain ctest run passed
+  // 3027/3027 with the use-after-free live in it.
+  const std::string text = written(scenario);
+  const std::string_view position = element_slice(text, "<Position>", "</Position>");
+  ASSERT_FALSE(position.empty());
+  EXPECT_TRUE(contains(position, R"(<RoadPosition roadId="3" s="40" t="-1.75")")) << position;
+}
+
+TEST(XoscWriter, AnAbsentOrientationIsNotInvented) {
+  // "Missing Orientation is interpreted as the relative reference context with
+  // Heading=Pitch=Roll=0" — so writing one that the model does not carry adds
+  // content the document never had, and breaks idempotency for every file that
+  // omitted it.
+  osc::Scenario scenario = minimal_scenario();
+  scenario.storyboard.init.actions.privates[0].actions[0].teleport->position =
+      osc::LanePosition{.road_id = "7", .lane_id = "-1", .s = 5.0, .offset = 0.0};
+
+  EXPECT_FALSE(contains(written(scenario), "<Orientation"));
+}
+
+TEST(XoscWriter, EachSetArmOfAPrivateActionGetsItsOwnElement) {
+  // ★ <PrivateAction> is a per-element CHOICE. Emitting a teleport and a
+  // longitudinal action inside ONE <PrivateAction> produces a document no
+  // parser accepts, however plausible the model that asked for it looks.
+  osc::Scenario scenario = minimal_scenario();
+  osc::PrivateAction& action = scenario.storyboard.init.actions.privates[0].actions[0];
+  osc::SpeedAction speed;
+  speed.absolute_target = osc::AbsoluteTargetSpeed{.value = 13.89, .preserved = {}};
+  osc::LongitudinalAction longitudinal;
+  longitudinal.speed = std::move(speed);
+  action.longitudinal = std::move(longitudinal);
+
+  const std::string text = written(scenario);
+  std::size_t count = 0;
+  for (std::size_t at = text.find("<PrivateAction>"); at != std::string::npos;
+       at = text.find("<PrivateAction>", at + 1)) {
+    ++count;
+  }
+  EXPECT_EQ(count, 2U) << "the two arms shared one <PrivateAction> element:\n" << text;
+
+  const std::string_view first = element_slice(text, "<PrivateAction>", "</PrivateAction>");
+  EXPECT_TRUE(contains(first, "<TeleportAction>")) << first;
+  EXPECT_FALSE(contains(first, "<LongitudinalAction>"))
+      << "a longitudinal action rode inside the teleport's element";
+}
+
+TEST(XoscWriter, ASpeedActionCarriesBothItsRequiredChildren) {
+  // <SpeedActionDynamics> and <SpeedActionTarget> are both 1..1. A writer that
+  // emitted only the target produces a file that looks right and does not
+  // validate.
+  osc::Scenario scenario = minimal_scenario();
+  osc::SpeedAction speed;
+  speed.absolute_target = osc::AbsoluteTargetSpeed{.value = 13.89, .preserved = {}};
+  osc::LongitudinalAction longitudinal;
+  longitudinal.speed = std::move(speed);
+  scenario.storyboard.init.actions.privates[0].actions[0].longitudinal = std::move(longitudinal);
+
+  const std::string text = written(scenario);
+  const std::string_view speed_slice = element_slice(text, "<SpeedAction>", "</SpeedAction>");
+  ASSERT_FALSE(speed_slice.empty()) << text;
+  EXPECT_TRUE(contains(speed_slice, R"(<SpeedActionDynamics dynamicsShape="step" value="0")"))
+      << speed_slice;
+  EXPECT_TRUE(contains(speed_slice, "<SpeedActionTarget>")) << speed_slice;
+  EXPECT_TRUE(contains(speed_slice, R"(<AbsoluteTargetSpeed value="13.89")")) << speed_slice;
+}
+
+TEST(XoscWriter, ALanePositionWithNoRoadNetworkIsRefused) {
+  // asam.net:xosc:1.0.0:scenario_logic.invalid_elements_if_no_road_network — a
+  // "shall not", and one of the few reference rules checkable in full, because
+  // both ends are inside one document.
+  osc::Scenario scenario = minimal_scenario();
+  scenario.road_network.logic_file.reset();
+  scenario.storyboard.init.actions.privates[0].actions[0].teleport->position =
+      osc::LanePosition{.road_id = "7", .lane_id = "-1", .s = 5.0, .offset = 0.0};
+
+  EXPECT_FALSE(osc::write_xosc(scenario).has_value())
+      << "an actor was placed on a road network the document never links";
+  EXPECT_FALSE(findings_with_rule(osc::validate_scenario(scenario),
+                                  osc::rules::kInvalidElementsIfNoRoadNetwork)
+                   .empty());
+}
+
+TEST(XoscWriter, AWorldPositionWithNoRoadNetworkIsFine) {
+  // The counterpart. The rule names specific elements; a <WorldPosition> is not
+  // one of them, and refusing it would reject a legal scenario.
+  osc::Scenario scenario = minimal_scenario();
+  scenario.road_network.logic_file.reset();
+
+  EXPECT_TRUE(osc::write_xosc(scenario).has_value());
+  EXPECT_TRUE(findings_with_rule(osc::validate_scenario(scenario),
+                                 osc::rules::kInvalidElementsIfNoRoadNetwork)
+                  .empty());
+}
+
+TEST(XoscWriter, ALanePositionWithNoIdsIsRefused) {
+  osc::Scenario scenario = minimal_scenario();
+  scenario.storyboard.init.actions.privates[0].actions[0].teleport->position =
+      osc::LanePosition{.road_id = {}, .lane_id = {}, .s = 5.0, .offset = 0.0};
+
+  EXPECT_FALSE(osc::write_xosc(scenario).has_value());
+  EXPECT_EQ(
+      findings_with_rule(osc::validate_scenario(scenario), osc::rules::kRoadLaneExists).size(), 2U)
+      << "the empty roadId and the empty laneId were not both reported";
+}
+
+TEST(XoscWriter, ANegativeStationIsRefused) {
+  osc::Scenario scenario = minimal_scenario();
+  scenario.storyboard.init.actions.privates[0].actions[0].teleport->position =
+      osc::LanePosition{.road_id = "7", .lane_id = "-1", .s = -0.5, .offset = 0.0};
+
+  EXPECT_FALSE(osc::write_xosc(scenario).has_value());
+  EXPECT_FALSE(
+      findings_with_rule(osc::validate_scenario(scenario), osc::rules::kRoadLaneOffsetInBounds)
+          .empty());
+}
+
+TEST(XoscWriter, ANegativeTargetSpeedIsRefused) {
+  osc::Scenario scenario = minimal_scenario();
+  osc::SpeedAction speed;
+  speed.absolute_target = osc::AbsoluteTargetSpeed{.value = -30.0, .preserved = {}};
+  osc::LongitudinalAction longitudinal;
+  longitudinal.speed = std::move(speed);
+  scenario.storyboard.init.actions.privates[0].actions[0].longitudinal = std::move(longitudinal);
+
+  EXPECT_FALSE(osc::write_xosc(scenario).has_value());
+}
+
 // --- the rule catalogue ------------------------------------------------------
 
 namespace {
@@ -496,6 +659,10 @@ constexpr NamedRule kRules[] = {
     {"kRoadNetworkAvailability", osc::rules::kRoadNetworkAvailability},
     {"kFileEnding", osc::rules::kFileEnding},
     {"kValidSchema", osc::rules::kValidSchema},
+    // p8-s2 (#246).
+    {"kInvalidElementsIfNoRoadNetwork", osc::rules::kInvalidElementsIfNoRoadNetwork},
+    {"kRoadLaneExists", osc::rules::kRoadLaneExists},
+    {"kRoadLaneOffsetInBounds", osc::rules::kRoadLaneOffsetInBounds},
 };
 
 std::vector<std::string_view> split(std::string_view text, char separator) {
@@ -608,6 +775,14 @@ TEST(XoscRules, EveryRuleConstantIsCitedBySomeFinding) {
   osc::Scenario negative_delay = minimal_scenario();
   negative_delay.storyboard.stop_trigger.condition_groups[0].conditions[0].delay = -1.0;
   provoking.push_back(negative_delay);
+
+  // p8-s2 (#246): a lane position with no road network, no ids and a negative
+  // station provokes all three of the new rules at once.
+  osc::Scenario stranded_lane = minimal_scenario();
+  stranded_lane.road_network.logic_file.reset();
+  stranded_lane.storyboard.init.actions.privates[0].actions[0].teleport->position =
+      osc::LanePosition{.road_id = {}, .lane_id = {}, .s = -1.0, .offset = 0.0};
+  provoking.push_back(stranded_lane);
 
   for (const osc::Scenario& scenario : provoking) {
     sweep(osc::validate_scenario(scenario));

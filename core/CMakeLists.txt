@@ -39,6 +39,7 @@ add_library(roadmaker_core ${_rm_core_type}
   # the fourth consecutive record for which cmake/deps.cmake does not change:
   # ADR-0014 takes the pugixml that already serves the OpenDRIVE writer, so
   # there is no new dependency, no OFF-by-default gate and no runtime data.
+  src/osc/catalog.cpp
   src/osc/reader.cpp
   src/osc/writer.cpp
   # PR-D: building a scenario FROM a network, and mutating one undoably.

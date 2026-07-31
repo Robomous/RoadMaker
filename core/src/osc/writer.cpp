@@ -45,6 +45,7 @@
 #include <sstream>
 #include <string>
 #include <string_view>
+#include <type_traits>
 #include <utility>
 #include <variant>
 #include <vector>
@@ -351,6 +352,153 @@ void write_entities(pugi::xml_node root, const Entities& entities) {
 
 // --- storyboard -------------------------------------------------------------
 
+/// `<Orientation>` — omitted entirely when unset, since "missing Orientation
+/// property is interpreted as the relative reference context with
+/// Heading=Pitch=Roll=0" (§7.6), which is exactly what an actor placed on a
+/// lane centre means.
+void write_orientation(pugi::xml_node parent, const std::optional<Orientation>& orientation) {
+  if (!orientation.has_value()) {
+    return;
+  }
+  pugi::xml_node node = parent.append_child("Orientation");
+  set_optional_num(node, "h", orientation->h);
+  set_optional_num(node, "p", orientation->p);
+  set_optional_num(node, "r", orientation->r);
+  set_optional_text(node, "type", orientation->type);
+  write_preserved_attributes(node, orientation->preserved);
+  write_preserved_children(node, orientation->preserved);
+}
+
+/// The `<Position>` choice — one `std::visit`, so adding a fourth alternative
+/// to `osc::Position` is a compile error here rather than a silent omission.
+///
+/// `@offset` on `<LanePosition>` is emitted unconditionally even at its 0
+/// default, unlike `@t` on `<RoadPosition>` which is required anyway: the value
+/// is what a reader round-trips, and omitting a modeled double because it
+/// happens to equal its default is how a write→read→write stops being
+/// idempotent for anyone who set it explicitly to 0.
+void write_position(pugi::xml_node parent, const Position& position) {
+  pugi::xml_node node = parent.append_child("Position");
+  std::visit(
+      [&node](const auto& pose) {
+        using T = std::decay_t<decltype(pose)>;
+        if constexpr (std::is_same_v<T, WorldPosition>) {
+          pugi::xml_node world = node.append_child("WorldPosition");
+          set_num(world, "x", pose.x);
+          set_num(world, "y", pose.y);
+          set_num(world, "z", pose.z);
+          set_optional_num(world, "h", pose.h);
+          set_optional_num(world, "p", pose.p);
+          set_optional_num(world, "r", pose.r);
+          write_preserved_attributes(world, pose.preserved);
+          write_preserved_children(world, pose.preserved);
+        } else if constexpr (std::is_same_v<T, RoadPosition>) {
+          pugi::xml_node road = node.append_child("RoadPosition");
+          road.append_attribute("roadId").set_value(pose.road_id.c_str());
+          set_num(road, "s", pose.s);
+          set_num(road, "t", pose.t);
+          write_preserved_attributes(road, pose.preserved);
+          write_orientation(road, pose.orientation);
+          write_preserved_children(road, pose.preserved);
+        } else {
+          pugi::xml_node lane = node.append_child("LanePosition");
+          lane.append_attribute("roadId").set_value(pose.road_id.c_str());
+          lane.append_attribute("laneId").set_value(pose.lane_id.c_str());
+          set_num(lane, "s", pose.s);
+          set_num(lane, "offset", pose.offset);
+          write_preserved_attributes(lane, pose.preserved);
+          write_orientation(lane, pose.orientation);
+          write_preserved_children(lane, pose.preserved);
+        }
+      },
+      position);
+}
+
+void write_teleport(pugi::xml_node action_node, const TeleportAction& teleport) {
+  pugi::xml_node node = action_node.append_child("TeleportAction");
+  write_preserved_attributes(node, teleport.preserved);
+  write_position(node, teleport.position);
+  write_preserved_children(node, teleport.preserved);
+}
+
+void write_longitudinal(pugi::xml_node action_node, const LongitudinalAction& longitudinal) {
+  pugi::xml_node node = action_node.append_child("LongitudinalAction");
+  write_preserved_attributes(node, longitudinal.preserved);
+
+  if (longitudinal.speed.has_value()) {
+    const SpeedAction& speed = *longitudinal.speed;
+    pugi::xml_node speed_node = node.append_child("SpeedAction");
+    write_preserved_attributes(speed_node, speed.preserved);
+
+    pugi::xml_node dynamics = speed_node.append_child("SpeedActionDynamics");
+    dynamics.append_attribute("dynamicsShape").set_value(speed.dynamics.dynamics_shape.c_str());
+    set_num(dynamics, "value", speed.dynamics.value);
+    dynamics.append_attribute("dynamicsDimension")
+        .set_value(speed.dynamics.dynamics_dimension.c_str());
+    set_optional_text(dynamics, "followingMode", speed.dynamics.following_mode);
+    write_preserved_attributes(dynamics, speed.dynamics.preserved);
+    write_preserved_children(dynamics, speed.dynamics.preserved);
+
+    // <SpeedActionTarget> is flattened into SpeedAction, so its own preserved
+    // tier is written here rather than on the action — a <RelativeTargetSpeed>
+    // has to be re-emitted INSIDE the target, not beside it.
+    pugi::xml_node target = speed_node.append_child("SpeedActionTarget");
+    write_preserved_attributes(target, speed.target_preserved);
+    if (speed.absolute_target.has_value()) {
+      pugi::xml_node absolute = target.append_child("AbsoluteTargetSpeed");
+      set_num(absolute, "value", speed.absolute_target->value);
+      write_preserved_attributes(absolute, speed.absolute_target->preserved);
+      write_preserved_children(absolute, speed.absolute_target->preserved);
+    }
+    write_preserved_children(target, speed.target_preserved);
+
+    write_preserved_children(speed_node, speed.preserved);
+  }
+
+  write_preserved_children(node, longitudinal.preserved);
+}
+
+/// One `PrivateAction` — ONE `<PrivateAction>` ELEMENT PER SET ARM.
+///
+/// The schema's choice is per-element, so an action carrying both a teleport
+/// and a longitudinal action becomes two elements rather than one invalid one.
+/// `preserved` rides the first, so nothing is duplicated. An action with
+/// NEITHER arm is still emitted: that is how a whole preserved action (a
+/// `<RelativeLanePosition>` teleport the reader would not model) survives.
+void write_private_action(pugi::xml_node private_node, const PrivateAction& action) {
+  bool preserved_written = false;
+  const auto open = [&](pugi::xml_node& node) {
+    node = private_node.append_child("PrivateAction");
+    if (!preserved_written) {
+      write_preserved_attributes(node, action.preserved);
+    }
+  };
+  const auto close = [&](pugi::xml_node node) {
+    if (!preserved_written) {
+      write_preserved_children(node, action.preserved);
+      preserved_written = true;
+    }
+  };
+
+  if (action.teleport.has_value()) {
+    pugi::xml_node node;
+    open(node);
+    write_teleport(node, *action.teleport);
+    close(node);
+  }
+  if (action.longitudinal.has_value()) {
+    pugi::xml_node node;
+    open(node);
+    write_longitudinal(node, *action.longitudinal);
+    close(node);
+  }
+  if (!preserved_written) {
+    pugi::xml_node node;
+    open(node);
+    close(node);
+  }
+}
+
 void write_trigger(pugi::xml_node parent, const char* element, const Trigger& trigger) {
   pugi::xml_node node = parent.append_child(element);
   write_preserved_attributes(node, trigger.preserved);
@@ -399,29 +547,7 @@ void write_storyboard(pugi::xml_node root, const Storyboard& storyboard) {
     write_preserved_attributes(private_node, entry.preserved);
 
     for (const PrivateAction& action : entry.actions) {
-      pugi::xml_node action_node = private_node.append_child("PrivateAction");
-      write_preserved_attributes(action_node, action.preserved);
-
-      if (action.teleport.has_value()) {
-        pugi::xml_node teleport = action_node.append_child("TeleportAction");
-        write_preserved_attributes(teleport, action.teleport->preserved);
-
-        pugi::xml_node position = teleport.append_child("Position");
-        pugi::xml_node world = position.append_child("WorldPosition");
-        const WorldPosition& pose = action.teleport->position;
-        set_num(world, "x", pose.x);
-        set_num(world, "y", pose.y);
-        set_num(world, "z", pose.z);
-        set_optional_num(world, "h", pose.h);
-        set_optional_num(world, "p", pose.p);
-        set_optional_num(world, "r", pose.r);
-        write_preserved_attributes(world, pose.preserved);
-        write_preserved_children(world, pose.preserved);
-
-        write_preserved_children(teleport, action.teleport->preserved);
-      }
-
-      write_preserved_children(action_node, action.preserved);
+      write_private_action(private_node, action);
     }
 
     write_preserved_children(private_node, entry.preserved);
@@ -574,16 +700,99 @@ void check_triggers(std::vector<Diagnostic>& findings,
   }
 }
 
+/// One road- or lane-relative position inside an init action.
+///
+/// `has_logic_file` is threaded in rather than looked up per call because the
+/// no-road-network rule is a property of the WHOLE document, not of the
+/// position: a `<LanePosition>` is perfectly legal, right up until the scenario
+/// turns out to link no `.xodr` for its `roadId` to be resolved against.
+void check_road_relative_position(std::vector<Diagnostic>& findings,
+                                  const Position& position,
+                                  bool has_logic_file,
+                                  const std::string& location) {
+  const std::string* road_id = nullptr;
+  const std::string* lane_id = nullptr;
+  double station = 0.0;
+  const char* element = nullptr;
+
+  if (const auto* road = std::get_if<RoadPosition>(&position)) {
+    road_id = &road->road_id;
+    station = road->s;
+    element = "RoadPosition";
+  } else if (const auto* lane = std::get_if<LanePosition>(&position)) {
+    road_id = &lane->road_id;
+    lane_id = &lane->lane_id;
+    station = lane->s;
+    element = "LanePosition";
+  } else {
+    return; // A <WorldPosition> refers to no road and none of this applies.
+  }
+
+  const std::string element_location = fmt::format("{}/{}", location, element);
+
+  if (!has_logic_file) {
+    findings.push_back(
+        error(element_location,
+              fmt::format("<{}> names a road network, but the scenario links no <LogicFile> "
+                          "for its roadId to be resolved against",
+                          element),
+              rules::kInvalidElementsIfNoRoadNetwork));
+  }
+  if (road_id->empty()) {
+    findings.push_back(error(
+        element_location, fmt::format("<{}> names no road", element), rules::kRoadLaneExists));
+  }
+  if (lane_id != nullptr && lane_id->empty()) {
+    findings.push_back(
+        error(element_location, "<LanePosition> names no lane", rules::kRoadLaneExists));
+  }
+  if (station < 0.0) {
+    findings.push_back(
+        error(element_location,
+              fmt::format("s-coordinate {} is negative, which is outside the boundaries of any "
+                          "road it could resolve to",
+                          num(station)),
+              rules::kRoadLaneOffsetInBounds));
+  }
+}
+
 void check_storyboard(std::vector<Diagnostic>& findings, const Scenario& scenario) {
   std::set<std::string> entity_names;
   for (const ScenarioObject& object : scenario.entities.scenario_objects) {
     entity_names.insert(object.name);
   }
 
+  const bool has_logic_file = scenario.road_network.logic_file.has_value();
   const auto& privates = scenario.storyboard.init.actions.privates;
   for (std::size_t index = 0; index < privates.size(); ++index) {
     const std::string location = fmt::format("Storyboard/Init/Actions/Private[{}]", index);
     const std::string& entity_ref = privates[index].entity_ref;
+
+    for (std::size_t action_index = 0; action_index < privates[index].actions.size();
+         ++action_index) {
+      const PrivateAction& action = privates[index].actions[action_index];
+      const std::string action_location =
+          fmt::format("{}/PrivateAction[{}]", location, action_index);
+      if (action.teleport.has_value()) {
+        check_road_relative_position(findings,
+                                     action.teleport->position,
+                                     has_logic_file,
+                                     action_location + "/TeleportAction/Position");
+      }
+      // A negative target speed is not a rule violation the catalogue names —
+      // it is a RoadMaker-side refusal, because a scenario that starts an actor
+      // reversing at -30 m/s is a data-entry slip and never an intention worth
+      // silently exporting.
+      if (action.longitudinal.has_value() && action.longitudinal->speed.has_value() &&
+          action.longitudinal->speed->absolute_target.has_value() &&
+          action.longitudinal->speed->absolute_target->value < 0.0) {
+        findings.push_back(
+            error(action_location + "/LongitudinalAction/SpeedAction/SpeedActionTarget/"
+                                    "AbsoluteTargetSpeed",
+                  fmt::format("target speed {} is negative",
+                              num(action.longitudinal->speed->absolute_target->value))));
+      }
+    }
 
     if (entity_ref.empty()) {
       findings.push_back(error(location, "init action names no entity"));

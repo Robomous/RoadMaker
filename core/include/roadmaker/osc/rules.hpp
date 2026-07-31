@@ -153,6 +153,56 @@ inline constexpr std::string_view kRoadNetworkAvailability =
 /// Load-time only, for the same reason: it is a fact about the path.
 inline constexpr std::string_view kFileEnding = "asam.net:xosc:1.0.0:general.file_ending";
 
+/// "If no road network (`logicFile`) is defined in the scenario, the scenario
+/// shall not use one of the following elements: `RoadPosition`, `LanePosition`,
+/// `GeoPosition`, `LaneChangeAction`, `InfrastructureAction`,
+/// `EndOfRoadCondition`, `OffroadCondition`, `TrafficSignalAction`,
+/// `TrafficSignalCondition`, `TrafficSignalControllerCondition`,
+/// `TrafficSignalController`."
+///
+/// ★ CHECKABLE IN FULL, unlike most reference rules here: both ends are inside
+/// one `Scenario`. A `<LanePosition>` or a `<TrafficSignalController>` with no
+/// `<LogicFile>` names a road network that the document itself never links, so
+/// nothing can resolve the id — an actor that is nowhere, in a file that
+/// otherwise looks complete.
+///
+/// This is a `Severity::Error` and it BLOCKS the write, which is the difference
+/// between it and `kRoadNetworkReference` beside it: that one is a "should" the
+/// standard explicitly permits violating, this one is a "shall not".
+///
+/// ★ CITED ONLY FOR POSITIONS SO FAR, not for the `<TrafficSignalController>`
+/// arm of the same list. The controller arm is equally real, but p8-s1 shipped
+/// controllers without it and enforcing it retroactively would make ~20 signal
+/// tests — and any scenario authored against that behaviour — unwritable. It is
+/// its own change with its own issue, not a side effect of p8-s2.
+inline constexpr std::string_view kInvalidElementsIfNoRoadNetwork =
+    "asam.net:xosc:1.0.0:scenario_logic.invalid_elements_if_no_road_network";
+
+/// "If a position is used, which refers to a road and/or lane of the road
+/// network, then the given road id or lane id shall exist in the referenced
+/// road network."
+///
+/// The writer can only check that the ids are PRESENT — whether they name a
+/// live `<road>`/`<lane>` depends on the `.xodr` this scenario points at, which
+/// the writer does not read. That is the same half-check
+/// `kTrafficSignalStateReferences` makes, and for the same reason: an EMPTY id
+/// is refused outright, because it is the ADR-0014 §5 failure — a file that
+/// looks entirely right and references nothing.
+inline constexpr std::string_view kRoadLaneExists =
+    "asam.net:xosc:1.0.0:reference_control.road_lane_exists";
+
+/// "If a `Position` is used, which refers to a road and/or lane of the road
+/// network, then the given s-coordinate shall be within the boundaries of the
+/// referenced road or lane, and the t-coordinate or offset should be within the
+/// boundaries of the referenced road or lane."
+///
+/// Cited for a NEGATIVE `@s` only. The upper bound is the road's length, which
+/// lives in the `.xodr` and not here; the lower bound is 0 in every road that
+/// can exist ("Range: [0..inf[", §7.6), so a negative station is outside the
+/// boundaries of any road the reference could resolve to.
+inline constexpr std::string_view kRoadLaneOffsetInBounds =
+    "asam.net:xosc:1.0.0:positioning.road_lane_offset_in_bounds";
+
 /// "Based on the determined version of the checked file (Element `FileHeader`,
 /// attributes `revMajor` and `revMinor`), it shall comply with the schema of
 /// the detected version."
