@@ -299,3 +299,190 @@ def test_a_negative_condition_delay_is_refused_with_its_rule(
     assert rm.osc.RULE_CONDITION_DELAY_NON_NEGATIVE in cited
     with pytest.raises(ValueError):
         rm.osc.write_xosc(scenario)
+
+
+# --- the decomposition and the command layer (PR-D) -------------------------
+
+
+@pytest.fixture
+def signalized() -> tuple[rm.RoadNetwork, rm.JunctionId]:
+    """A four-arm crossing with a two-phase signal group — two controllers."""
+    network = rm.RoadNetwork()
+    stack = rm.edit.EditStack()
+    params = rm.edit.assembly.IntersectionParams()
+    params.gap_m = 24.0
+    params.arm_length_m = 80.0
+    stack.push(
+        network,
+        rm.edit.assembly.x_intersection(network, rm.edit.assembly.Pose(0.0, 0.0, 0.0), params),
+    )
+    junction = network.junction_ids[0]
+    options = rm.edit.SignalizeOptions()
+    options.tmpl = rm.edit.SignalizeTemplate.TWO_PHASE
+    stack.push(network, rm.edit.signalize_junction(network, junction, options))
+    return network, junction
+
+
+def test_state_token_is_total_and_distinct() -> None:
+    tokens = {
+        rm.osc.state_token(state)
+        for state in (
+            rm.SignalState.RED,
+            rm.SignalState.YELLOW,
+            rm.SignalState.GREEN,
+            rm.SignalState.OFF,
+        )
+    }
+    assert len(tokens) == 4
+    assert "" not in tokens
+
+
+def test_decompose_yields_one_controller_per_opendrive_controller(
+    signalized: tuple[rm.RoadNetwork, rm.JunctionId],
+) -> None:
+    network, junction = signalized
+    out = rm.osc.decompose_junction_signals(network, junction)
+
+    live = {network.controller(cid).odr_id for cid in network.controller_ids}
+    assert {c.name for c in out.controllers} == live
+    # Sorted by @id at the point of construction: arena order is not creation
+    # order, so an unsorted decomposition would write a different file after any
+    # erase.
+    assert [c.name for c in out.controllers] == sorted(c.name for c in out.controllers)
+
+
+def test_every_signal_has_a_state_in_every_phase(
+    signalized: tuple[rm.RoadNetwork, rm.JunctionId],
+) -> None:
+    # The Red-by-omission guard, per phase. A whole-controller count passes on
+    # the defect because the omitted reds show up in the phases that are green.
+    network, junction = signalized
+    out = rm.osc.decompose_junction_signals(network, junction)
+    heads = {
+        network.controller(cid).odr_id: {c.signal_odr_id for c in network.controller(cid).controls}
+        for cid in network.controller_ids
+    }
+    assert out.controllers
+    for controller in out.controllers:
+        assert controller.phases
+        for phase in controller.phases:
+            assert {s.traffic_signal_id for s in phase.signal_states} == heads[controller.name]
+
+
+def test_traffic_signal_ids_are_odr_ids_never_handles(
+    signalized: tuple[rm.RoadNetwork, rm.JunctionId],
+) -> None:
+    network, junction = signalized
+    live = {network.signal(sid).odr_id for sid in network.signal_ids}
+    out = rm.osc.decompose_junction_signals(network, junction)
+    for controller in out.controllers:
+        for phase in controller.phases:
+            for state in phase.signal_states:
+                assert state.traffic_signal_id in live
+
+
+def test_decomposing_a_junction_with_no_cycle_reports_rather_than_returning_silence() -> None:
+    network = rm.RoadNetwork()
+    out = rm.osc.decompose_junction_signals(network, rm.JunctionId())
+    assert not out.controllers
+    assert out.findings
+
+
+def test_scenario_stack_undo_redo_is_byte_identical(
+    signalized: tuple[rm.RoadNetwork, rm.JunctionId],
+) -> None:
+    network, junction = signalized
+    scenario = rm.osc.Scenario()
+    stack = rm.osc.edit.ScenarioStack()
+
+    stack.push(scenario, rm.osc.edit.set_logic_file(scenario, "crossing.xodr"))
+    stack.push(scenario, rm.osc.edit.sync_traffic_signals(scenario, network, junction))
+    car = rm.osc.Vehicle()
+    car.name = "car"
+    ego = rm.osc.ScenarioObject()
+    ego.name = "Ego"
+    ego.entity_object = car
+    stack.push(scenario, rm.osc.edit.add_scenario_object(scenario, ego))
+    position = rm.osc.WorldPosition()
+    position.x = -40.0
+    stack.push(scenario, rm.osc.edit.set_entity_init_position(scenario, "Ego", position))
+
+    full = rm.osc.write_xosc(scenario)
+    empty = rm.osc.write_xosc(rm.osc.Scenario())
+    assert full != empty
+
+    for _ in range(10):
+        while stack.can_undo:
+            stack.undo(scenario)
+        assert rm.osc.write_xosc(scenario) == empty
+        while stack.can_redo:
+            stack.redo(scenario)
+        assert rm.osc.write_xosc(scenario) == full
+
+
+def test_a_refused_factory_returns_a_command_not_none(
+    scenario: rm.osc.Scenario,
+) -> None:
+    # Never None: the caller pushes it and reads the refusal as an exception,
+    # exactly as with a command that failed for any other reason.
+    duplicate = rm.osc.edit.add_scenario_object(scenario, scenario.entities.scenario_objects[0])
+    assert duplicate is not None
+    assert duplicate.name
+
+    stack = rm.osc.edit.ScenarioStack()
+    before = rm.osc.write_xosc(scenario)
+    with pytest.raises(ValueError):
+        stack.push(scenario, duplicate)
+    assert stack.size == 0
+    assert rm.osc.write_xosc(scenario) == before
+
+
+def test_syncing_a_second_junction_keeps_the_first_controllers(
+    signalized: tuple[rm.RoadNetwork, rm.JunctionId],
+) -> None:
+    network, junction = signalized
+    scenario = rm.osc.Scenario()
+    foreign = rm.osc.TrafficSignalController()
+    foreign.name = "zzz_elsewhere"
+    road_network = scenario.road_network
+    road_network.traffic_signal_controllers = [foreign]
+    scenario.road_network = road_network
+
+    stack = rm.osc.edit.ScenarioStack()
+    stack.push(scenario, rm.osc.edit.sync_traffic_signals(scenario, network, junction))
+    names = {c.name for c in scenario.road_network.traffic_signal_controllers}
+    assert "zzz_elsewhere" in names
+    assert len(names) > 1
+
+
+def test_sync_refuses_a_junction_with_no_cycle() -> None:
+    network = rm.RoadNetwork()
+    scenario = rm.osc.Scenario()
+    stack = rm.osc.edit.ScenarioStack()
+    with pytest.raises(ValueError):
+        stack.push(scenario, rm.osc.edit.sync_traffic_signals(scenario, network, rm.JunctionId()))
+
+
+def test_removing_an_actor_takes_its_init_private_with_it(
+    signalized: tuple[rm.RoadNetwork, rm.JunctionId],
+) -> None:
+    # Left behind, the <Private> is a dangling entityRef and write_xosc refuses
+    # the whole document — a removal that reported success would make the
+    # scenario unsavable.
+    scenario = rm.osc.Scenario()
+    stack = rm.osc.edit.ScenarioStack()
+    car = rm.osc.Vehicle()
+    car.name = "car"
+    ego = rm.osc.ScenarioObject()
+    ego.name = "Ego"
+    ego.entity_object = car
+    stack.push(scenario, rm.osc.edit.add_scenario_object(scenario, ego))
+    stack.push(scenario, rm.osc.edit.set_entity_init_position(scenario, "Ego", rm.osc.WorldPosition()))
+    assert scenario.storyboard.init.actions.privates
+
+    stack.push(scenario, rm.osc.edit.remove_scenario_object(scenario, "Ego"))
+    assert not scenario.storyboard.init.actions.privates
+    rm.osc.write_xosc(scenario)  # must not raise
+
+    stack.undo(scenario)
+    assert len(scenario.storyboard.init.actions.privates) == 1

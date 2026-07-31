@@ -41,6 +41,10 @@ add_library(roadmaker_core ${_rm_core_type}
   # there is no new dependency, no OFF-by-default gate and no runtime data.
   src/osc/reader.cpp
   src/osc/writer.cpp
+  # PR-D: building a scenario FROM a network, and mutating one undoably.
+  # decompose.cpp is the only osc/ unit that reaches into road/ and mesh/.
+  src/osc/decompose.cpp
+  src/osc/edit.cpp
   src/mesh/mesh_builder.cpp
   src/mesh/junction_corner_detail.cpp
   src/mesh/junction_corners.cpp

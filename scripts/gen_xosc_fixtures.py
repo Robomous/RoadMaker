@@ -28,18 +28,22 @@ single `<controller>` element, so nothing here could reference one — and the
 traffic-signal half is exactly what needs a simulator's opinion:
 `TrafficSignalController/@name` carries the OpenDRIVE controller `@id`, and
 `TrafficSignalState/@state`'s spelling is an ENGINE-DIRECTED choice the
-specification explicitly leaves open (§10.10). Both are unproven until esmini
-loads the file.
+specification explicitly leaves open (§10.10).
 
-THE DECOMPOSITION HERE IS DELIBERATELY A SCRIPT, NOT KERNEL CODE. Turning one
-junction timeline into one `TrafficSignalController` per OpenDRIVE `<controller>`
-is p8-s1 PR-D's `edit::` factory; doing it once here to produce a fixture is not
-the same commitment. When PR-D lands, this script re-points at that factory and
-the fixture must not change — which is itself a test of the factory.
+★ EVERY MUTATION HERE NOW GOES THROUGH THE KERNEL, AND THAT IS THE POINT (PR-D).
+This script used to hand-assemble the junction-timeline decomposition in Python.
+It no longer contains any: the decomposition is
+`rm.osc.edit.sync_traffic_signals` over `rm.osc.decompose_junction_signals`, and
+every edit below is an undoable command pushed onto a `ScenarioStack` — exactly
+as a GW-6 replay drives them. So the tracked output stopped being merely a
+fixture: `XoscFixture.TheTrackedScenarioIsExactlyWhatTheWriterEmitsToday`
+(core/tests/test_xosc_reader.cpp) pins these bytes, so regenerating them is a
+deliberate act with a red test in front of it, and those bytes are now a test of
+the kernel factories that produced them.
 
-The tracked output is pinned by XoscFixture.TheTrackedScenarioIsExactlyWhatThe
-WriterEmitsToday (core/tests/test_xosc_reader.cpp), so regenerating is a
-deliberate act with a red test in front of it, never a silent drift.
+The SignalState -> @state table moved to the kernel too (`rm.osc.state_token`,
+core/src/osc/decompose.cpp), where its "measured, and validated by nothing"
+provenance is recorded in full.
 
 Run:  python scripts/gen_xosc_fixtures.py [--out tests/esmini]
 """
@@ -50,32 +54,6 @@ import argparse
 from pathlib import Path
 
 import roadmaker as rm
-
-# The SignalState -> @state spelling, and the one genuinely open choice here.
-#
-# ★ MEASURED, 2026-07-30, AND THE MEASUREMENT IS NOT WHAT WAS EXPECTED: esmini
-# v3.5.0 does not validate this token AT ALL. Running the fixture with
-# state="wibble", with a trafficSignalId naming no <signal>, with a
-# trafficSignalControllerRef naming no controller, and with a nonexistent phase
-# name each produced a byte-identical log and exit 0 — including when a
-# TrafficSignalControllerAction in a story genuinely executed against the
-# controller (the log shows "ev complete after 1 execution", so the probe was
-# not merely failing to run).
-#
-# So the engine CI pins has NO OPINION, and the choice cannot be settled by
-# asking it. It rests instead on RoadMaker's own semantics — SignalState is a
-# colour enum and these are its colours, which is also what esmini's own example
-# scenarios use. The specification leaves the token open (§10.10: a whole-box
-# signal may carry a composite "on;off;off", a per-bulb one "on"/"off"), so
-# there is no normative answer to look up either. The table stays one dictionary
-# wide precisely so reversing the choice costs one edit, and it is recorded as
-# UNVALIDATED rather than proven.
-STATE_TOKEN = {
-    rm.SignalState.RED: "red",
-    rm.SignalState.YELLOW: "yellow",
-    rm.SignalState.GREEN: "green",
-    rm.SignalState.OFF: "off",
-}
 
 # The teleport target: on an approach arm, well clear of the junction box, so
 # the ego is on a real lane rather than in the middle of the intersection.
@@ -104,73 +82,26 @@ def build_network() -> tuple[rm.RoadNetwork, rm.JunctionId]:
     return network, junction
 
 
-def signals_by_controller(network: rm.RoadNetwork) -> dict[str, list[str]]:
-    """OpenDRIVE controller @id -> the signal @ids its <control> children name."""
-    return {
-        network.controller(cid).odr_id: [
-            control.signal_odr_id for control in network.controller(cid).controls
-        ]
-        for cid in network.controller_ids
-    }
-
-
-def decompose(network: rm.RoadNetwork, junction: rm.JunctionId) -> list:
-    """One junction timeline -> one TrafficSignalController per OpenDRIVE <controller>.
-
-    Read the PLAN, never Junction.phases: RoadMaker stores phase states sparsely
-    and Red by omission, and junction_phases() is what Red-fills them into the
-    dense list OpenSCENARIO requires. A phase stored as "no state" would
-    otherwise export as a signal that is never red.
-    """
-    plan = rm.junction_phases(network, junction)
-    assert plan.phases, "the junction has no cycle to export — signalize it first"
-
-    controls = signals_by_controller(network)
-    # Sorted by @id at the point of construction, which is the ordering contract
-    # osc/scenario.hpp states for RoadNetworkRef: for_each_controller walks arena
-    # SLOTS, and a freed slot is reused, so arena order is not creation order.
-    controllers = []
-    for controller_odr_id in sorted(controls):
-        owned = set(controls[controller_odr_id])
-        out = rm.osc.TrafficSignalController()
-        out.name = controller_odr_id  # the OpenDRIVE @id, per §10.10
-
-        phases = []
-        for info in plan.phases:
-            phase = rm.osc.Phase()
-            phase.name = info.name
-            phase.duration = info.duration
-            states = []
-            for entry in info.signal_states:
-                signal = network.signal(entry.signal)
-                if signal.odr_id not in owned:
-                    continue
-                state = rm.osc.TrafficSignalState()
-                state.traffic_signal_id = signal.odr_id
-                state.state = STATE_TOKEN[entry.state]
-                states.append(state)
-            # Assign whole lists: def_rw on a vector hands back a COPY, so
-            # phase.signal_states.append(...) is silently lost.
-            phase.signal_states = sorted(states, key=lambda s: s.traffic_signal_id)
-            phases.append(phase)
-        out.phases = phases
-        controllers.append(out)
-    return controllers
-
-
-def build_scenario(network: rm.RoadNetwork, junction: rm.JunctionId, xodr_name: str) -> rm.osc.Scenario:
+def build_scenario(
+    network: rm.RoadNetwork, junction: rm.JunctionId, xodr_name: str
+) -> rm.osc.Scenario:
+    """Authors the scenario the way the editor will: one command at a time."""
     scenario = rm.osc.Scenario()
+    stack = rm.osc.edit.ScenarioStack()
 
     header = scenario.header
     header.description = "RoadMaker signalized-junction fixture"
     scenario.header = header
 
-    logic = rm.osc.FileRef()
-    logic.filepath = xodr_name  # relative: esmini resolves it against the .xosc
-    road_network = scenario.road_network
-    road_network.logic_file = logic
-    road_network.traffic_signal_controllers = decompose(network, junction)
-    scenario.road_network = road_network
+    # The .xodr link. Relative: esmini resolves it against the .xosc.
+    stack.push(scenario, rm.osc.edit.set_logic_file(scenario, xodr_name))
+
+    # The traffic-signal half — one TrafficSignalController per OpenDRIVE
+    # <controller>, read off the Red-filled plan (ADR-0014 §8). This one call
+    # replaces every line of decomposition this script used to carry.
+    stack.push(scenario, rm.osc.edit.sync_traffic_signals(scenario, network, junction))
+    for finding in stack.last_findings:
+        print(f"  note: {finding.location}: {finding.message}")
 
     car = rm.osc.Vehicle()
     car.name = "car"
@@ -182,28 +113,16 @@ def build_scenario(network: rm.RoadNetwork, junction: rm.JunctionId, xodr_name: 
     ego = rm.osc.ScenarioObject()
     ego.name = "Ego"
     ego.entity_object = car
-    entities = scenario.entities
-    entities.scenario_objects = [ego]
-    scenario.entities = entities
+    stack.push(scenario, rm.osc.edit.add_scenario_object(scenario, ego))
 
-    teleport = rm.osc.TeleportAction()
     position = rm.osc.WorldPosition()
     position.x, position.y, position.z = EGO_START
     position.h = 0.0
-    teleport.position = position
-    action = rm.osc.PrivateAction()
-    action.teleport = teleport
-    ego_init = rm.osc.Private()
-    ego_init.entity_ref = "Ego"
-    ego_init.actions = [action]
+    stack.push(scenario, rm.osc.edit.set_entity_init_position(scenario, "Ego", position))
 
-    storyboard = scenario.storyboard
-    init = storyboard.init
-    actions = init.actions
-    actions.privates = [ego_init]
-    init.actions = actions
-    storyboard.init = init
-
+    # The stop trigger stays hand-assembled: the storyboard model is p8-s4's,
+    # and inventing a factory for it here would be scope this sprint did not
+    # take. Assigned wholesale — `def_rw` on a vector hands back a COPY.
     end = rm.osc.Condition()
     end.name = "end"
     timing = rm.osc.SimulationTimeCondition()
@@ -212,10 +131,24 @@ def build_scenario(network: rm.RoadNetwork, junction: rm.JunctionId, xodr_name: 
     end.simulation_time = timing
     group = rm.osc.ConditionGroup()
     group.conditions = [end]
+    storyboard = scenario.storyboard
     stop = storyboard.stop_trigger
     stop.condition_groups = [group]
     storyboard.stop_trigger = stop
     scenario.storyboard = storyboard
+
+    # ★ The undo/redo fixed point, asserted on the way past. If the commands
+    # above do not round-trip, the fixture rests on a broken stack and every
+    # claim GW-6 makes about headless replay is worth nothing. Note this runs
+    # BEFORE the hand-assembled stop trigger would be affected: the stack knows
+    # nothing about it, so undoing to the bottom leaves it in place.
+    full = rm.osc.write_xosc(scenario)
+    for _ in range(10):
+        while stack.can_undo:
+            stack.undo(scenario)
+        while stack.can_redo:
+            stack.redo(scenario)
+    assert rm.osc.write_xosc(scenario) == full, "undo x10 / redo x10 changed the document"
 
     findings = rm.osc.validate_scenario(scenario)
     assert not findings, [f.message for f in findings]
