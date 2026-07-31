@@ -34,10 +34,20 @@
 // so the file is a real test rather than a compile-only artifact, and so the
 // macro is demonstrably in effect rather than merely assumed.
 
+// clang-format off
+// INCLUDE ORDER IS THE TEST. <QObject> must be seen BEFORE scenario.hpp, or
+// `#define signals public` is not yet in effect when the struct is parsed and
+// this whole file silently stops gating anything.
+//
+// `IncludeBlocks: Regroup` in .clang-format sorts <QObject> down below the
+// roadmaker/ block, which is exactly that vacuity — verified: CI's formatter
+// reordered it, and with the reordering in place the `signals` sabotage
+// COMPILES CLEANLY. Hence the guard; do not remove it.
 #include <QObject>
 
 #include "roadmaker/osc/scenario.hpp"
 #include "roadmaker/osc/writer.hpp"
+// clang-format on
 
 #include <gtest/gtest.h>
 
