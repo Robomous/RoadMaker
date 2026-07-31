@@ -22,7 +22,11 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <optional>
 #include <string_view>
+#include <variant>
+
+#include "document/actor_placement.hpp"
 
 namespace roadmaker::editor {
 
@@ -628,6 +632,169 @@ float underlay_z(const SceneBounds& bounds, std::size_t index) {
   // Just above the procedural ground so an underlay hides the grass it covers,
   // and 1 mm per layer so a stack is ordered rather than z-fighting.
   return ground_base_z(bounds) + 0.005F + (static_cast<float>(index) * 0.001F);
+}
+
+// --- scenario actors (p8-s2, #246) ------------------------------------------
+
+InstanceData actor_transform(const std::array<double, 3>& position,
+                             double heading,
+                             const osc::BoundingBox& box) {
+  // Column-major mat4 mapping the unit cube onto the actor's OWN frame, which
+  // is OpenSCENARIO's and the kernel's alike: +x longitudinal (forward), +y
+  // lateral (left), +z up.
+  //
+  //   col0 = length * forward   forward = ( cos h, sin h, 0)
+  //   col1 = width  * left      left    = (-sin h, cos h, 0)
+  //   col2 = height * up
+  //   col3 = position + the centre offset ROTATED into the same frame
+  //
+  // ★ TWO THINGS HERE ARE EASY TO GET WRONG AND BOTH RENDER CONVINCINGLY.
+  //
+  // First, LENGTH GOES ON THE FORWARD AXIS. Putting width there yields a car
+  // 2.13 m long and 5.79 m wide — a box of exactly the right volume, sitting
+  // across its lane instead of along it. A test that only checks the three
+  // scale factors are present passes on that; it takes a test that knows which
+  // axis is which to catch it.
+  //
+  // Second, THE CENTRE OFFSET IS ROTATED. An entity's reference point is the
+  // centre of its rear axle, so `center_x` pushes the body FORWARD along the
+  // actor's own heading. Adding it to the world x unrotated pushes every actor
+  // east instead — indistinguishable from correct for an actor that happens to
+  // face +x, and wrong for every other one.
+  const auto c = static_cast<float>(std::cos(heading));
+  const auto s = static_cast<float>(std::sin(heading));
+  const auto l = static_cast<float>(box.length);
+  const auto w = static_cast<float>(box.width);
+  const auto h = static_cast<float>(box.height);
+
+  const double ox = (box.center_x * std::cos(heading)) - (box.center_y * std::sin(heading));
+  const double oy = (box.center_x * std::sin(heading)) + (box.center_y * std::cos(heading));
+
+  const auto px = static_cast<float>(position[0] + ox);
+  const auto py = static_cast<float>(position[1] + oy);
+  const auto pz = static_cast<float>(position[2] + box.center_z);
+
+  return InstanceData{{l * c,
+                       l * s,
+                       0.0F,
+                       0.0F, //
+                       -w * s,
+                       w * c,
+                       0.0F,
+                       0.0F, //
+                       0.0F,
+                       0.0F,
+                       h,
+                       0.0F, //
+                       px,
+                       py,
+                       pz,
+                       1.0F}};
+}
+
+RenderMeshData actor_box_mesh() {
+  // A unit cube on [-0.5, 0.5]^3, with FLAT per-face normals — so the six faces
+  // shade distinctly and the box reads as a solid rather than as a smooth blob.
+  // Each face gets its own four vertices for that reason; sharing eight corner
+  // vertices would average the normals and lose every edge.
+  RenderMeshData mesh;
+  mesh.color = {0.85F, 0.45F, 0.15F, 1.0F}; // a warm accent, distinct from props
+  mesh.kind = PrimitiveKind::Triangles;
+
+  struct Face {
+    std::array<float, 3> normal;
+    std::array<std::array<float, 3>, 4> corners;
+  };
+
+  constexpr float k = 0.5F;
+  const std::array<Face, 6> faces{{
+      {{0, 0, 1}, {{{-k, -k, k}, {k, -k, k}, {k, k, k}, {-k, k, k}}}},      // top
+      {{0, 0, -1}, {{{-k, k, -k}, {k, k, -k}, {k, -k, -k}, {-k, -k, -k}}}}, // bottom
+      {{0, 1, 0}, {{{-k, k, -k}, {-k, k, k}, {k, k, k}, {k, k, -k}}}},      // front (+y)
+      {{0, -1, 0}, {{{k, -k, -k}, {k, -k, k}, {-k, -k, k}, {-k, -k, -k}}}}, // back
+      {{1, 0, 0}, {{{k, k, -k}, {k, k, k}, {k, -k, k}, {k, -k, -k}}}},      // right (+x)
+      {{-1, 0, 0}, {{{-k, -k, -k}, {-k, -k, k}, {-k, k, k}, {-k, k, -k}}}}, // left
+  }};
+
+  for (const Face& face : faces) {
+    const auto base = static_cast<std::uint32_t>(mesh.positions.size() / 3);
+    for (const std::array<float, 3>& corner : face.corners) {
+      mesh.positions.insert(mesh.positions.end(), corner.begin(), corner.end());
+      mesh.normals.insert(mesh.normals.end(), face.normal.begin(), face.normal.end());
+    }
+    for (const std::uint32_t offset : {0U, 1U, 2U, 0U, 2U, 3U}) {
+      mesh.indices.push_back(base + offset);
+    }
+  }
+  return mesh;
+}
+
+void append_scenario_actors(const osc::Scenario& scenario,
+                            const RoadNetwork& network,
+                            Scene& scene) {
+  // One batch for every actor: they all instance the same unit cube, and the
+  // per-instance transform carries the dimensions. Created lazily so a scene
+  // with no actors uploads nothing at all.
+  ScenePropBatch* batch = nullptr;
+
+  for (const osc::Private& entry : scenario.storyboard.init.actions.privates) {
+    // The entity this <Private> places, and its box. An entityRef naming no
+    // entity is refused by the writer, so it cannot reach a saved file — but it
+    // CAN exist mid-edit, and drawing a box for it would be inventing content.
+    const osc::BoundingBox* box = nullptr;
+    for (const osc::ScenarioObject& object : scenario.entities.scenario_objects) {
+      if (object.name != entry.entity_ref) {
+        continue;
+      }
+      if (const auto* vehicle = std::get_if<osc::Vehicle>(&object.entity_object)) {
+        box = &vehicle->bounding_box;
+      } else if (const auto* pedestrian = std::get_if<osc::Pedestrian>(&object.entity_object)) {
+        box = &pedestrian->bounding_box;
+      }
+      break;
+    }
+    if (box == nullptr) {
+      continue; // a catalog reference or a MiscObject — nothing to size a box from
+    }
+
+    for (const osc::PrivateAction& action : entry.actions) {
+      if (!action.teleport.has_value()) {
+        continue;
+      }
+      const auto* lane = std::get_if<osc::LanePosition>(&action.teleport->position);
+      if (lane == nullptr) {
+        continue; // a world/road position is not drawn yet — p8-s3's
+      }
+      const std::optional<ActorPose> pose = actor_world_pose(network, *lane);
+      if (!pose.has_value()) {
+        // The road this actor names is gone. SKIPPED, not drawn at the origin:
+        // "it is not there" is honest, "it is silently somewhere wrong" is not.
+        continue;
+      }
+
+      if (batch == nullptr) {
+        scene.prop_batches.push_back(ScenePropBatch{
+            .model_id = "rm:actor_box", .parts = {actor_box_mesh()}, .instances = {}});
+        batch = &scene.prop_batches.back();
+      }
+      batch->instances.push_back(
+          ScenePropInstance{.road = {},
+                            .object = {},
+                            .signal = {},
+                            .actor = entry.entity_ref,
+                            .transform = actor_transform(pose->position, pose->heading, *box)});
+      // Half the longest dimension is enough padding for any heading.
+      const auto reach = static_cast<float>(std::max({box->width, box->length, box->height}) / 2.0);
+      for (int axis = 0; axis < 3; ++axis) {
+        const auto v = static_cast<float>(pose->position[static_cast<std::size_t>(axis)]);
+        scene.bounds.lo[static_cast<std::size_t>(axis)] =
+            std::min(scene.bounds.lo[static_cast<std::size_t>(axis)], v - reach);
+        scene.bounds.hi[static_cast<std::size_t>(axis)] =
+            std::max(scene.bounds.hi[static_cast<std::size_t>(axis)], v + reach);
+      }
+      break; // one box per entity, from its first lane-positioned teleport
+    }
+  }
 }
 
 } // namespace roadmaker::editor

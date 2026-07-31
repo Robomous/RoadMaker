@@ -31,6 +31,7 @@ endif()
 add_executable(roadmaker_editor_tests
   qt_gtest_main.cpp
   test_actor_placement.cpp
+  test_actor_rendering.cpp
   test_actor_tool.cpp
   test_autosave.cpp
   test_camera.cpp
