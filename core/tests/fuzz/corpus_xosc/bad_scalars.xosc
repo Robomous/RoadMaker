@@ -1,0 +1,8 @@
+<OpenSCENARIO><FileHeader revMajor="99999" revMinor="-1"/><RoadNetwork><LogicFile filepath="t.xodr"/>
+<TrafficSignals><TrafficSignalController name="a::b" delay="nan">
+<Phase name="p" duration="-1e400"><TrafficSignalState trafficSignalId="" state=""/></Phase>
+<Phase name="p" duration="$param" semantics="flashing"/></TrafficSignalController></TrafficSignals></RoadNetwork>
+<Entities><ScenarioObject name=""><Vehicle name="v" vehicleCategory="car" mass="soon">
+<BoundingBox><Center x="inf" y="0" z="0" vendorHint="x"/><Dimensions width="" length="0" height="0"/></BoundingBox></Vehicle></ScenarioObject></Entities>
+<Storyboard><Init><Actions><Private entityRef="nobody"><PrivateAction><TeleportAction><Position><WorldPosition x="0x10" y="0" z="0"/></Position></TeleportAction></PrivateAction></Private></Actions></Init>
+<StopTrigger><ConditionGroup><Condition name="c" delay="-5"><ByValueCondition><SimulationTimeCondition value="" rule=""/></ByValueCondition></Condition></ConditionGroup></StopTrigger></Storyboard></OpenSCENARIO>

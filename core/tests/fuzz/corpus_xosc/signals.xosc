@@ -1,0 +1,6 @@
+<OpenSCENARIO><FileHeader revMajor="1" revMinor="4"/><RoadNetwork><LogicFile filepath="t.xodr"/>
+<TrafficSignals><TrafficSignalController name="1" delay="2" reference="2">
+<Phase name="go" duration="20" semantics="go"><TrafficSignalState trafficSignalId="7" state="on;off;off"/></Phase>
+<Phase name="" duration="0"><TrafficSignalGroupState state="on;off"/></Phase>
+</TrafficSignalController><TrafficSignalController name="2"/></TrafficSignals></RoadNetwork>
+<Entities/><Storyboard><Init><Actions/></Init><Story name="s"><Act name="a"/></Story><StopTrigger/></Storyboard></OpenSCENARIO>

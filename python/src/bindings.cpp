@@ -46,6 +46,7 @@
 #include "roadmaker/mesh/junction_surface_spans.hpp"
 #include "roadmaker/mesh/mesh_builder.hpp"
 #include "roadmaker/mesh/surface_boundary.hpp"
+#include "roadmaker/osc/reader.hpp"
 #include "roadmaker/osc/rules.hpp"
 #include "roadmaker/osc/writer.hpp"
 #include "roadmaker/osm/graph.hpp"
@@ -2587,11 +2588,37 @@ NB_MODULE(_roadmaker, m) {
                 &roadmaker::osc::FileHeader::date,
                 "ISO 8601. Defaults to a FIXED value, never a clock — write_xosc "
                 "is deterministic.")
-        .def_rw("description", &roadmaker::osc::FileHeader::description);
+        .def_rw("description", &roadmaker::osc::FileHeader::description)
+        .def_rw("preserved",
+                &roadmaker::osc::FileHeader::preserved,
+                "Unmodeled attributes and child elements, verbatim and in document "
+                "order. Populated by parse_xosc; re-emitted after the modeled "
+                "content, so nothing a foreign file carried is ever dropped.");
+
+    // Bound in p8-s1 PR-C rather than PR-B: nothing could produce a parameter
+    // declaration until a reader could read one, and Scenario's vector of them
+    // was unusable from Python without the element type.
+    nb::class_<roadmaker::osc::ParameterDeclaration>(osc, "ParameterDeclaration")
+        .def(nb::init<>())
+        .def_rw("name", &roadmaker::osc::ParameterDeclaration::name)
+        .def_rw("parameter_type",
+                &roadmaker::osc::ParameterDeclaration::parameter_type,
+                "@parameterType, e.g. 'double' or 'string'.")
+        .def_rw("value", &roadmaker::osc::ParameterDeclaration::value)
+        .def_rw("preserved",
+                &roadmaker::osc::ParameterDeclaration::preserved,
+                "Unmodeled attributes and child elements, verbatim and in document "
+                "order. Populated by parse_xosc; re-emitted after the modeled "
+                "content, so nothing a foreign file carried is ever dropped.");
 
     nb::class_<roadmaker::osc::FileRef>(osc, "FileRef")
         .def(nb::init<>())
-        .def_rw("filepath", &roadmaker::osc::FileRef::filepath);
+        .def_rw("filepath", &roadmaker::osc::FileRef::filepath)
+        .def_rw("preserved",
+                &roadmaker::osc::FileRef::preserved,
+                "Unmodeled attributes and child elements, verbatim and in document "
+                "order. Populated by parse_xosc; re-emitted after the modeled "
+                "content, so nothing a foreign file carried is ever dropped.");
 
     nb::class_<roadmaker::osc::TrafficSignalState>(osc, "TrafficSignalState")
         .def(nb::init<>())
@@ -2601,7 +2628,12 @@ NB_MODULE(_roadmaker, m) {
         .def_rw("state",
                 &roadmaker::osc::TrafficSignalState::state,
                 "A FREE string the simulation engine interprets — 'red', or a "
-                "composite 'on;off;off' for a signal modelled as a whole box.");
+                "composite 'on;off;off' for a signal modelled as a whole box.")
+        .def_rw("preserved",
+                &roadmaker::osc::TrafficSignalState::preserved,
+                "Unmodeled attributes and child elements, verbatim and in document "
+                "order. Populated by parse_xosc; re-emitted after the modeled "
+                "content, so nothing a foreign file carried is ever dropped.");
 
     nb::class_<roadmaker::osc::Phase>(osc, "Phase")
         .def(nb::init<>())
@@ -2613,7 +2645,12 @@ NB_MODULE(_roadmaker, m) {
                 &roadmaker::osc::Phase::duration,
                 "Seconds. Zero is legal; negative is refused.")
         .def_rw("semantics", &roadmaker::osc::Phase::semantics, "Emitted only when targeting 1.4.")
-        .def_rw("signal_states", &roadmaker::osc::Phase::signal_states);
+        .def_rw("signal_states", &roadmaker::osc::Phase::signal_states)
+        .def_rw("preserved",
+                &roadmaker::osc::Phase::preserved,
+                "Unmodeled attributes and child elements, verbatim and in document "
+                "order. Populated by parse_xosc; re-emitted after the modeled "
+                "content, so nothing a foreign file carried is ever dropped.");
 
     nb::class_<roadmaker::osc::TrafficSignalController>(osc, "TrafficSignalController")
         .def(nb::init<>())
@@ -2624,14 +2661,24 @@ NB_MODULE(_roadmaker, m) {
                 "references them by that id.")
         .def_rw("delay", &roadmaker::osc::TrafficSignalController::delay)
         .def_rw("reference", &roadmaker::osc::TrafficSignalController::reference)
-        .def_rw("phases", &roadmaker::osc::TrafficSignalController::phases);
+        .def_rw("phases", &roadmaker::osc::TrafficSignalController::phases)
+        .def_rw("preserved",
+                &roadmaker::osc::TrafficSignalController::preserved,
+                "Unmodeled attributes and child elements, verbatim and in document "
+                "order. Populated by parse_xosc; re-emitted after the modeled "
+                "content, so nothing a foreign file carried is ever dropped.");
 
     nb::class_<roadmaker::osc::RoadNetworkRef>(osc, "RoadNetworkRef")
         .def(nb::init<>())
         .def_rw("logic_file", &roadmaker::osc::RoadNetworkRef::logic_file)
         .def_rw("scene_graph_file", &roadmaker::osc::RoadNetworkRef::scene_graph_file)
         .def_rw("traffic_signal_controllers",
-                &roadmaker::osc::RoadNetworkRef::traffic_signal_controllers);
+                &roadmaker::osc::RoadNetworkRef::traffic_signal_controllers)
+        .def_rw("preserved",
+                &roadmaker::osc::RoadNetworkRef::preserved,
+                "Unmodeled attributes and child elements, verbatim and in document "
+                "order. Populated by parse_xosc; re-emitted after the modeled "
+                "content, so nothing a foreign file carried is ever dropped.");
 
     nb::class_<roadmaker::osc::BoundingBox>(osc, "BoundingBox")
         .def(nb::init<>())
@@ -2640,13 +2687,23 @@ NB_MODULE(_roadmaker, m) {
         .def_rw("center_z", &roadmaker::osc::BoundingBox::center_z)
         .def_rw("width", &roadmaker::osc::BoundingBox::width)
         .def_rw("length", &roadmaker::osc::BoundingBox::length)
-        .def_rw("height", &roadmaker::osc::BoundingBox::height);
+        .def_rw("height", &roadmaker::osc::BoundingBox::height)
+        .def_rw("preserved",
+                &roadmaker::osc::BoundingBox::preserved,
+                "Unmodeled attributes and child elements, verbatim and in document "
+                "order. Populated by parse_xosc; re-emitted after the modeled "
+                "content, so nothing a foreign file carried is ever dropped.");
 
     nb::class_<roadmaker::osc::Performance>(osc, "Performance")
         .def(nb::init<>())
         .def_rw("max_speed", &roadmaker::osc::Performance::max_speed)
         .def_rw("max_acceleration", &roadmaker::osc::Performance::max_acceleration)
-        .def_rw("max_deceleration", &roadmaker::osc::Performance::max_deceleration);
+        .def_rw("max_deceleration", &roadmaker::osc::Performance::max_deceleration)
+        .def_rw("preserved",
+                &roadmaker::osc::Performance::preserved,
+                "Unmodeled attributes and child elements, verbatim and in document "
+                "order. Populated by parse_xosc; re-emitted after the modeled "
+                "content, so nothing a foreign file carried is ever dropped.");
 
     nb::class_<roadmaker::osc::Axle>(osc, "Axle")
         .def(nb::init<>())
@@ -2654,18 +2711,33 @@ NB_MODULE(_roadmaker, m) {
         .def_rw("wheel_diameter", &roadmaker::osc::Axle::wheel_diameter)
         .def_rw("track_width", &roadmaker::osc::Axle::track_width)
         .def_rw("position_x", &roadmaker::osc::Axle::position_x)
-        .def_rw("position_z", &roadmaker::osc::Axle::position_z);
+        .def_rw("position_z", &roadmaker::osc::Axle::position_z)
+        .def_rw("preserved",
+                &roadmaker::osc::Axle::preserved,
+                "Unmodeled attributes and child elements, verbatim and in document "
+                "order. Populated by parse_xosc; re-emitted after the modeled "
+                "content, so nothing a foreign file carried is ever dropped.");
 
     nb::class_<roadmaker::osc::Axles>(osc, "Axles")
         .def(nb::init<>())
         .def_rw("front", &roadmaker::osc::Axles::front)
         .def_rw("rear", &roadmaker::osc::Axles::rear)
-        .def_rw("additional", &roadmaker::osc::Axles::additional);
+        .def_rw("additional", &roadmaker::osc::Axles::additional)
+        .def_rw("preserved",
+                &roadmaker::osc::Axles::preserved,
+                "Unmodeled attributes and child elements, verbatim and in document "
+                "order. Populated by parse_xosc; re-emitted after the modeled "
+                "content, so nothing a foreign file carried is ever dropped.");
 
     nb::class_<roadmaker::osc::Property>(osc, "Property")
         .def(nb::init<>())
         .def_rw("name", &roadmaker::osc::Property::name)
-        .def_rw("value", &roadmaker::osc::Property::value);
+        .def_rw("value", &roadmaker::osc::Property::value)
+        .def_rw("preserved",
+                &roadmaker::osc::Property::preserved,
+                "Unmodeled attributes and child elements, verbatim and in document "
+                "order. Populated by parse_xosc; re-emitted after the modeled "
+                "content, so nothing a foreign file carried is ever dropped.");
 
     nb::class_<roadmaker::osc::Vehicle>(osc, "Vehicle")
         .def(nb::init<>())
@@ -2676,7 +2748,18 @@ NB_MODULE(_roadmaker, m) {
         .def_rw("bounding_box", &roadmaker::osc::Vehicle::bounding_box)
         .def_rw("performance", &roadmaker::osc::Vehicle::performance)
         .def_rw("axles", &roadmaker::osc::Vehicle::axles)
-        .def_rw("properties", &roadmaker::osc::Vehicle::properties);
+        .def_rw("properties", &roadmaker::osc::Vehicle::properties)
+        .def_rw("properties_preserved",
+                &roadmaker::osc::Vehicle::properties_preserved,
+                "The <Properties> WRAPPER's preserved tier, separate from "
+                "`preserved` because the two nest differently: a <File> read "
+                "from inside <Properties> must be written back inside it, not "
+                "beside it.")
+        .def_rw("preserved",
+                &roadmaker::osc::Vehicle::preserved,
+                "Unmodeled attributes and child elements, verbatim and in document "
+                "order. Populated by parse_xosc; re-emitted after the modeled "
+                "content, so nothing a foreign file carried is ever dropped.");
 
     nb::class_<roadmaker::osc::Pedestrian>(osc, "Pedestrian")
         .def(nb::init<>())
@@ -2685,7 +2768,15 @@ NB_MODULE(_roadmaker, m) {
         .def_rw("mass", &roadmaker::osc::Pedestrian::mass)
         .def_rw("model3d", &roadmaker::osc::Pedestrian::model3d)
         .def_rw("bounding_box", &roadmaker::osc::Pedestrian::bounding_box)
-        .def_rw("properties", &roadmaker::osc::Pedestrian::properties);
+        .def_rw("properties", &roadmaker::osc::Pedestrian::properties)
+        .def_rw("properties_preserved",
+                &roadmaker::osc::Pedestrian::properties_preserved,
+                "The <Properties> wrapper's preserved tier; see Vehicle.")
+        .def_rw("preserved",
+                &roadmaker::osc::Pedestrian::preserved,
+                "Unmodeled attributes and child elements, verbatim and in document "
+                "order. Populated by parse_xosc; re-emitted after the modeled "
+                "content, so nothing a foreign file carried is ever dropped.");
 
     nb::class_<roadmaker::osc::ScenarioObject>(osc, "ScenarioObject")
         .def(nb::init<>())
@@ -2696,11 +2787,21 @@ NB_MODULE(_roadmaker, m) {
                 &roadmaker::osc::ScenarioObject::entity_object,
                 "A Vehicle, a Pedestrian, or None when the entity rode in whole "
                 "on the preserved tier (a MiscObject or CatalogReference this "
-                "version does not model).");
+                "version does not model).")
+        .def_rw("preserved",
+                &roadmaker::osc::ScenarioObject::preserved,
+                "Unmodeled attributes and child elements, verbatim and in document "
+                "order. Populated by parse_xosc; re-emitted after the modeled "
+                "content, so nothing a foreign file carried is ever dropped.");
 
     nb::class_<roadmaker::osc::Entities>(osc, "Entities")
         .def(nb::init<>())
-        .def_rw("scenario_objects", &roadmaker::osc::Entities::scenario_objects);
+        .def_rw("scenario_objects", &roadmaker::osc::Entities::scenario_objects)
+        .def_rw("preserved",
+                &roadmaker::osc::Entities::preserved,
+                "Unmodeled attributes and child elements, verbatim and in document "
+                "order. Populated by parse_xosc; re-emitted after the modeled "
+                "content, so nothing a foreign file carried is ever dropped.");
 
     nb::class_<roadmaker::osc::WorldPosition>(osc, "WorldPosition")
         .def(nb::init<>())
@@ -2709,48 +2810,98 @@ NB_MODULE(_roadmaker, m) {
         .def_rw("z", &roadmaker::osc::WorldPosition::z)
         .def_rw("h", &roadmaker::osc::WorldPosition::h)
         .def_rw("p", &roadmaker::osc::WorldPosition::p)
-        .def_rw("r", &roadmaker::osc::WorldPosition::r);
+        .def_rw("r", &roadmaker::osc::WorldPosition::r)
+        .def_rw("preserved",
+                &roadmaker::osc::WorldPosition::preserved,
+                "Unmodeled attributes and child elements, verbatim and in document "
+                "order. Populated by parse_xosc; re-emitted after the modeled "
+                "content, so nothing a foreign file carried is ever dropped.");
 
     nb::class_<roadmaker::osc::TeleportAction>(osc, "TeleportAction")
         .def(nb::init<>())
-        .def_rw("position", &roadmaker::osc::TeleportAction::position);
+        .def_rw("position", &roadmaker::osc::TeleportAction::position)
+        .def_rw("preserved",
+                &roadmaker::osc::TeleportAction::preserved,
+                "Unmodeled attributes and child elements, verbatim and in document "
+                "order. Populated by parse_xosc; re-emitted after the modeled "
+                "content, so nothing a foreign file carried is ever dropped.");
 
     nb::class_<roadmaker::osc::PrivateAction>(osc, "PrivateAction")
         .def(nb::init<>())
-        .def_rw("teleport", &roadmaker::osc::PrivateAction::teleport);
+        .def_rw("teleport", &roadmaker::osc::PrivateAction::teleport)
+        .def_rw("preserved",
+                &roadmaker::osc::PrivateAction::preserved,
+                "Unmodeled attributes and child elements, verbatim and in document "
+                "order. Populated by parse_xosc; re-emitted after the modeled "
+                "content, so nothing a foreign file carried is ever dropped.");
 
     nb::class_<roadmaker::osc::Private>(osc, "Private")
         .def(nb::init<>())
         .def_rw("entity_ref", &roadmaker::osc::Private::entity_ref)
-        .def_rw("actions", &roadmaker::osc::Private::actions);
+        .def_rw("actions", &roadmaker::osc::Private::actions)
+        .def_rw("preserved",
+                &roadmaker::osc::Private::preserved,
+                "Unmodeled attributes and child elements, verbatim and in document "
+                "order. Populated by parse_xosc; re-emitted after the modeled "
+                "content, so nothing a foreign file carried is ever dropped.");
 
     nb::class_<roadmaker::osc::InitActions>(osc, "InitActions")
         .def(nb::init<>())
-        .def_rw("privates", &roadmaker::osc::InitActions::privates);
+        .def_rw("privates", &roadmaker::osc::InitActions::privates)
+        .def_rw("preserved",
+                &roadmaker::osc::InitActions::preserved,
+                "Unmodeled attributes and child elements, verbatim and in document "
+                "order. Populated by parse_xosc; re-emitted after the modeled "
+                "content, so nothing a foreign file carried is ever dropped.");
 
     nb::class_<roadmaker::osc::Init>(osc, "Init")
         .def(nb::init<>())
-        .def_rw("actions", &roadmaker::osc::Init::actions);
+        .def_rw("actions", &roadmaker::osc::Init::actions)
+        .def_rw("preserved",
+                &roadmaker::osc::Init::preserved,
+                "Unmodeled attributes and child elements, verbatim and in document "
+                "order. Populated by parse_xosc; re-emitted after the modeled "
+                "content, so nothing a foreign file carried is ever dropped.");
 
     nb::class_<roadmaker::osc::SimulationTimeCondition>(osc, "SimulationTimeCondition")
         .def(nb::init<>())
         .def_rw("value", &roadmaker::osc::SimulationTimeCondition::value)
-        .def_rw("rule", &roadmaker::osc::SimulationTimeCondition::rule);
+        .def_rw("rule", &roadmaker::osc::SimulationTimeCondition::rule)
+        .def_rw("preserved",
+                &roadmaker::osc::SimulationTimeCondition::preserved,
+                "Unmodeled attributes and child elements, verbatim and in document "
+                "order. Populated by parse_xosc; re-emitted after the modeled "
+                "content, so nothing a foreign file carried is ever dropped.");
 
     nb::class_<roadmaker::osc::Condition>(osc, "Condition")
         .def(nb::init<>())
         .def_rw("name", &roadmaker::osc::Condition::name)
         .def_rw("delay", &roadmaker::osc::Condition::delay)
         .def_rw("condition_edge", &roadmaker::osc::Condition::condition_edge)
-        .def_rw("simulation_time", &roadmaker::osc::Condition::simulation_time);
+        .def_rw("simulation_time", &roadmaker::osc::Condition::simulation_time)
+        .def_rw("preserved",
+                &roadmaker::osc::Condition::preserved,
+                "Unmodeled attributes and child elements, verbatim and in document "
+                "order. Populated by parse_xosc; re-emitted after the modeled "
+                "content, so nothing a foreign file carried is ever dropped.");
 
     nb::class_<roadmaker::osc::ConditionGroup>(osc, "ConditionGroup")
         .def(nb::init<>())
-        .def_rw("conditions", &roadmaker::osc::ConditionGroup::conditions);
+        .def_rw("conditions", &roadmaker::osc::ConditionGroup::conditions)
+        .def_rw("preserved",
+                &roadmaker::osc::ConditionGroup::preserved,
+                "Unmodeled attributes and child elements, verbatim and in document "
+                "order. Populated by parse_xosc; re-emitted after the modeled "
+                "content, so nothing a foreign file carried is ever dropped.");
 
     nb::class_<roadmaker::osc::Trigger>(osc, "Trigger")
         .def(nb::init<>())
-        .def_rw("condition_groups", &roadmaker::osc::Trigger::condition_groups);
+        .def_rw("condition_groups", &roadmaker::osc::Trigger::condition_groups)
+        .def_rw("preserved",
+                &roadmaker::osc::Trigger::preserved,
+                "Unmodeled attributes and child elements, verbatim and in document "
+                "order. Populated by parse_xosc; re-emitted after the modeled "
+                "content, so nothing a foreign file carried is ever dropped.");
 
     nb::class_<roadmaker::osc::Storyboard>(osc, "Storyboard")
         .def(nb::init<>())
@@ -2758,14 +2909,30 @@ NB_MODULE(_roadmaker, m) {
         .def_rw("preserved_stories",
                 &roadmaker::osc::Storyboard::preserved_stories,
                 "<Story> fragments carried verbatim until p8-s4 models them.")
-        .def_rw("stop_trigger", &roadmaker::osc::Storyboard::stop_trigger);
+        .def_rw("stop_trigger", &roadmaker::osc::Storyboard::stop_trigger)
+        .def_rw("preserved",
+                &roadmaker::osc::Storyboard::preserved,
+                "Unmodeled attributes and child elements, verbatim and in document "
+                "order. Populated by parse_xosc; re-emitted after the modeled "
+                "content, so nothing a foreign file carried is ever dropped.");
 
     nb::class_<roadmaker::osc::Scenario>(osc, "Scenario")
         .def(nb::init<>())
         .def_rw("header", &roadmaker::osc::Scenario::header)
+        .def_rw("parameter_declarations", &roadmaker::osc::Scenario::parameter_declarations)
+        .def_rw("catalog_locations",
+                &roadmaker::osc::Scenario::catalog_locations,
+                "<CatalogLocations> is required and always emitted; nothing inside "
+                "it is modeled until catalogs exist as a feature, so it is "
+                "preserved-only.")
         .def_rw("road_network", &roadmaker::osc::Scenario::road_network)
         .def_rw("entities", &roadmaker::osc::Scenario::entities)
-        .def_rw("storyboard", &roadmaker::osc::Scenario::storyboard);
+        .def_rw("storyboard", &roadmaker::osc::Scenario::storyboard)
+        .def_rw("preserved",
+                &roadmaker::osc::Scenario::preserved,
+                "Unmodeled attributes and child elements, verbatim and in document "
+                "order. Populated by parse_xosc; re-emitted after the modeled "
+                "content, so nothing a foreign file carried is ever dropped.");
 
     osc.def(
         "write_xosc",
@@ -2801,6 +2968,41 @@ NB_MODULE(_roadmaker, m) {
         "asam.net:xosc: rule UIDs; an empty rule_id marks a RoadMaker-side "
         "structural limitation with no normative rule behind it.");
 
+    nb::class_<roadmaker::osc::XoscParseResult>(osc, "XoscParseResult")
+        .def_ro("scenario", &roadmaker::osc::XoscParseResult::scenario)
+        .def_ro("diagnostics", &roadmaker::osc::XoscParseResult::diagnostics)
+        .def_ro("rev_major",
+                &roadmaker::osc::XoscParseResult::rev_major,
+                "FileHeader/@revMajor as parsed, 0 if absent. Recorded here and "
+                "NOT on the model: the writer re-derives it from the target "
+                "revision, so a preserved copy would be emitted twice.")
+        .def_ro("rev_minor", &roadmaker::osc::XoscParseResult::rev_minor)
+        .def("__repr__", [](const roadmaker::osc::XoscParseResult& result) {
+          return "XoscParseResult(rev=" + std::to_string(result.rev_major) + "." +
+                 std::to_string(result.rev_minor) +
+                 ", diagnostics=" + std::to_string(result.diagnostics.size()) + ")";
+        });
+
+    osc.def(
+        "parse_xosc",
+        [](std::string_view text, std::string_view source_name) {
+          return unwrap(roadmaker::osc::parse_xosc(text, source_name));
+        },
+        "xml_text"_a,
+        "source_name"_a = std::string_view("<memory>"),
+        "Parses OpenSCENARIO XML from a string. Raises only on a structural "
+        "problem — malformed XML, a missing <OpenSCENARIO> root, or a catalog "
+        "document. Everything else is a diagnostic, and every unmodeled element "
+        "survives verbatim on the preserved tier.");
+
+    osc.def(
+        "load_xosc",
+        [](const std::filesystem::path& path) { return unwrap(roadmaker::osc::load_xosc(path)); },
+        "path"_a,
+        "parse_xosc from a file, plus the two findings only a PATH supports: "
+        "the '.xosc' file ending, and whether a <LogicFile>/<SceneGraphFile> "
+        "resolves next to the scenario. Both are advisories.");
+
     osc.attr("RULE_UNIQUE_ELEMENT_NAMES") = roadmaker::osc::rules::kUniqueElementNames;
     osc.attr("RULE_NO_DOUBLE_COLON_PREFIX") = roadmaker::osc::rules::kNoDoubleColonPrefix;
     osc.attr("RULE_PHASE_DURATION_NON_NEGATIVE") = roadmaker::osc::rules::kPhaseDurationNonNegative;
@@ -2808,6 +3010,12 @@ NB_MODULE(_roadmaker, m) {
         roadmaker::osc::rules::kTrafficSignalStateReferences;
     osc.attr("RULE_TRAFFIC_SIGNAL_CONTROLLER_REFERENCES") =
         roadmaker::osc::rules::kTrafficSignalControllerReferences;
+    osc.attr("RULE_CONDITION_DELAY_NON_NEGATIVE") =
+        roadmaker::osc::rules::kConditionDelayNonNegative;
+    osc.attr("RULE_ROAD_NETWORK_REFERENCE") = roadmaker::osc::rules::kRoadNetworkReference;
+    osc.attr("RULE_ROAD_NETWORK_AVAILABILITY") = roadmaker::osc::rules::kRoadNetworkAvailability;
+    osc.attr("RULE_FILE_ENDING") = roadmaker::osc::rules::kFileEnding;
+    osc.attr("RULE_VALID_SCHEMA") = roadmaker::osc::rules::kValidSchema;
   }
 
   m.def("derive_surfaces",

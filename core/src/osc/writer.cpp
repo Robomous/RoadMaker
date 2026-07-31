@@ -262,8 +262,15 @@ void write_axle(pugi::xml_node parent, const char* element, const Axle& axle) {
 
 /// `<Properties>` — emitted even when empty; see the always-present skeleton
 /// note on `osc::Scenario`.
-void write_properties(pugi::xml_node parent, const std::vector<Property>& properties) {
+///
+/// `wrapper` is the `<Properties>` element's OWN preserved tier, which is why
+/// it is a separate parameter from the entity's: a `<File>` read from inside
+/// `<Properties>` has to be re-emitted inside it, not beside it.
+void write_properties(pugi::xml_node parent,
+                      const std::vector<Property>& properties,
+                      const RawXml& wrapper) {
   pugi::xml_node node = parent.append_child("Properties");
+  write_preserved_attributes(node, wrapper);
   for (const Property& property : properties) {
     pugi::xml_node property_node = node.append_child("Property");
     property_node.append_attribute("name").set_value(property.name.c_str());
@@ -271,6 +278,7 @@ void write_properties(pugi::xml_node parent, const std::vector<Property>& proper
     write_preserved_attributes(property_node, property.preserved);
     write_preserved_children(property_node, property.preserved);
   }
+  write_preserved_children(node, wrapper);
 }
 
 void write_vehicle(pugi::xml_node parent, const Vehicle& vehicle) {
@@ -299,7 +307,7 @@ void write_vehicle(pugi::xml_node parent, const Vehicle& vehicle) {
   }
   write_preserved_children(axles, vehicle.axles.preserved);
 
-  write_properties(node, vehicle.properties);
+  write_properties(node, vehicle.properties, vehicle.properties_preserved);
   write_preserved_children(node, vehicle.preserved);
 }
 
@@ -312,7 +320,7 @@ void write_pedestrian(pugi::xml_node parent, const Pedestrian& pedestrian) {
   write_preserved_attributes(node, pedestrian.preserved);
 
   write_bounding_box(node, pedestrian.bounding_box);
-  write_properties(node, pedestrian.properties);
+  write_properties(node, pedestrian.properties, pedestrian.properties_preserved);
   write_preserved_children(node, pedestrian.preserved);
 }
 
@@ -538,6 +546,34 @@ void check_traffic_signals(std::vector<Diagnostic>& findings, const RoadNetworkR
   }
 }
 
+/// Conditions inside one trigger.
+///
+/// The delay check is the gap PR-B left: `osc/scenario.hpp` cited
+/// `condition_delay_not_negative` on `Condition::delay` from the first commit,
+/// and nothing enforced it — invisible while every `Condition` in the tree was
+/// built by test code, reachable the moment a reader could take one from a
+/// file.
+void check_triggers(std::vector<Diagnostic>& findings,
+                    const Trigger& trigger,
+                    const std::string& location) {
+  for (std::size_t group_index = 0; group_index < trigger.condition_groups.size(); ++group_index) {
+    const ConditionGroup& group = trigger.condition_groups[group_index];
+    for (std::size_t index = 0; index < group.conditions.size(); ++index) {
+      const Condition& condition = group.conditions[index];
+      const std::string condition_location =
+          fmt::format("{}/ConditionGroup[{}]/Condition[{}]", location, group_index, index);
+
+      if (condition.delay < 0.0) {
+        findings.push_back(
+            error(condition_location,
+                  fmt::format("condition delay {} is negative", num(condition.delay)),
+                  rules::kConditionDelayNonNegative));
+      }
+      check_no_double_colon(findings, condition.name, condition_location);
+    }
+  }
+}
+
 void check_storyboard(std::vector<Diagnostic>& findings, const Scenario& scenario) {
   std::set<std::string> entity_names;
   for (const ScenarioObject& object : scenario.entities.scenario_objects) {
@@ -552,6 +588,10 @@ void check_storyboard(std::vector<Diagnostic>& findings, const Scenario& scenari
     if (entity_ref.empty()) {
       findings.push_back(error(location, "init action names no entity"));
     } else if (entity_names.count(entity_ref) == 0) {
+      // No rule id on purpose. `general.references_to_scenario_object` looks
+      // like the fit and is not: it constrains the referenced object's TYPE to
+      // Vehicle or Pedestrian, which says nothing about a reference that
+      // resolves to no object at all. See roadmaker/osc/rules.hpp.
       findings.push_back(
           error(location,
                 fmt::format("init action references entity '{}', which this scenario does not "
@@ -559,6 +599,8 @@ void check_storyboard(std::vector<Diagnostic>& findings, const Scenario& scenari
                             entity_ref)));
     }
   }
+
+  check_triggers(findings, scenario.storyboard.stop_trigger, "Storyboard/StopTrigger");
 }
 
 /// Walks every preserved fragment in the document and reports any that is not
@@ -588,8 +630,18 @@ void check_preserved_fragments(std::vector<Diagnostic>& findings, const Scenario
   check(scenario.storyboard.init.actions.preserved, "Storyboard/Init/Actions");
 
   for (std::size_t index = 0; index < scenario.entities.scenario_objects.size(); ++index) {
-    check(scenario.entities.scenario_objects[index].preserved,
-          fmt::format("Entities/ScenarioObject[{}]", index));
+    const ScenarioObject& object = scenario.entities.scenario_objects[index];
+    const std::string location = fmt::format("Entities/ScenarioObject[{}]", index);
+    check(object.preserved, location);
+    // The <Properties> wrapper tier is a second fragment store on the entity,
+    // so it needs its own walk or a corrupt <File> read from a foreign catalog
+    // would be dropped by re-emission in exactly the silence this function
+    // exists to prevent.
+    if (const auto* vehicle = std::get_if<Vehicle>(&object.entity_object)) {
+      check(vehicle->properties_preserved, location + "/Vehicle/Properties");
+    } else if (const auto* pedestrian = std::get_if<Pedestrian>(&object.entity_object)) {
+      check(pedestrian->properties_preserved, location + "/Pedestrian/Properties");
+    }
   }
   for (std::size_t index = 0; index < scenario.road_network.traffic_signal_controllers.size();
        ++index) {

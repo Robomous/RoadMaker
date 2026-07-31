@@ -12,7 +12,7 @@ Public headers live under `core/include/roadmaker/`, implementation under
 | `road/` | `network.hpp`, `road.hpp`, `lane_section.hpp`, `lane.hpp`, `junction.hpp`, `id.hpp`, `arena.hpp`, `authoring.hpp` | Road-network data model + clothoid authoring API |
 | `geometry/` | `reference_line.hpp`, `poly3.hpp` | Plan-view primitives, evaluation, adaptive sampling |
 | `xodr/` | `reader.hpp`, `writer.hpp`, `diagnostic.hpp`, `rules.hpp` | OpenDRIVE parsing, validation, serialization |
-| `osc/` | `scenario.hpp`, `writer.hpp`, `rules.hpp` | The ASAM OpenSCENARIO scenario model and its serializer ([ADR-0014](../decisions/0014-scenario-model-kernel-side-osc-1x.md)): a second Layer-0 format, kernel-side so a scenario is replayable headlessly. Models the FILE, not the network — it includes nothing from `road/`, and every cross-reference is an OpenDRIVE `odr_id` string |
+| `osc/` | `scenario.hpp`, `reader.hpp`, `writer.hpp`, `rules.hpp` | The ASAM OpenSCENARIO scenario model, its parser and its serializer ([ADR-0014](../decisions/0014-scenario-model-kernel-side-osc-1x.md)): a second Layer-0 format, kernel-side so a scenario is replayable headlessly. Models the FILE, not the network — it includes nothing from `road/`, and every cross-reference is an OpenDRIVE `odr_id` string |
 | `mesh/` | `mesh.hpp`, `mesh_builder.hpp` | Tessellation of the network into render/export meshes |
 | `gis/` | `crs.hpp`, `layer.hpp`, `reproject.hpp` | Geospatial ingest: a bounded, closed-form CRS family ([ADR-0010](../decisions/0010-gis-ingest-bounded-crs.md)); GeoJSON, ESRI Shapefile, GeoTIFF and world-filed imagery; reprojection into the scene's world frame |
 | `lidar/` | `point_cloud.hpp` | Point-cloud ingest: ASPRS LAS/LAZ read in-house ([ADR-0011](../decisions/0011-lidar-ingest-in-house-las.md)), decimated for display and ground-fitted into a `HeightField`. Reprojects through `gis::CrsTransform` |
@@ -123,11 +123,39 @@ Four properties carry over deliberately from the OpenDRIVE writer:
   namespace separate from `roadmaker::rules` so that no call site is ambiguous
   about which standard a rule belongs to.
 
+`osc::parse_xosc(text)` / `osc::load_xosc(path)` read one back, mirroring the
+OpenDRIVE reader: a parse fails outright only on malformed XML, a missing
+`<OpenSCENARIO>` root or a catalog document, and everything else is a
+`Diagnostic` plus a preserved fragment. `load_xosc` adds the two findings only
+a path can support — the `.xosc` file ending, and whether a `<LogicFile>`
+resolves next to the scenario.
+
+**What the round trip guarantees, exactly.** Not "byte-stable for any input":
+the writer emits a canonical attribute order and the always-present skeleton, so
+a foreign file re-canonicalizes the first time it is written. What holds is
+idempotence from the written form —
+
+```
+write_xosc(S) == write_xosc(parse_xosc(write_xosc(S)).scenario)
+```
+
+— byte for byte at every revision, which is the property the golden-workflow
+replays fingerprint state with.
+
 The model deliberately includes nothing from `road/`: it describes the file,
 not the network. Building a scenario from a live `RoadNetwork` — in particular
 decomposing one junction's phase timeline into one `TrafficSignalController`
 per OpenDRIVE `<controller>`, named by that controller's `@id` — belongs to the
 edit-command layer, not here.
+
+**The esmini gate is narrower than "esmini validates the file".** Measured
+against the pinned v3.5.0: it rejects a truncated document, a duplicated
+element, an unresolvable `<LogicFile>` and a dangling `entityRef`, but accepts a
+dangling `trafficSignalId`, a garbage `@state`, a dangling controller reference
+and a nonexistent phase name **in silence**. For the traffic-signal half the
+`asam.net:xosc:` rule ids are therefore not additive to esmini — they are the
+only check that exists, and the `SignalState` → `@state` spelling is an
+engine-directed choice no tool currently validates.
 
 ## Meshing
 

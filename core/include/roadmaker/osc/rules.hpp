@@ -34,12 +34,24 @@
 /// writer to revision 1.2 (ADR-0014 §3) forfeits no rule this file could
 /// otherwise cite: the conservative default costs nothing.
 ///
-/// WHAT IS AND IS NOT HERE. p8-s1 declares only rules this writer actually
-/// enforces. `general.file_ending`, `reference_control.road_network_reference`
-/// and the other `should` advisories are not blocking findings, and
-/// `xml.valid_schema` is not writer-checkable at all; declaring them now would
-/// leave dead constants, and a rule id nothing cites is decoration. The reader
-/// and the full validator (p8-s1 PR-C) extend this list as they gain checks.
+/// WHAT IS AND IS NOT HERE. This file declares only rules something actually
+/// cites — a rule id nothing cites is decoration. PR-B declared the five the
+/// writer enforces; PR-C adds the five the READER makes checkable, three of
+/// which fire from `load_xosc` rather than `validate_scenario` because they
+/// need a path and a `Scenario` has none.
+///
+/// TWO RULES ARE DELIBERATELY ABSENT, and each would be wrong to cite:
+///   - `asam.net:xosc:1.1.0:general.references_to_scenario_object` constrains
+///     an `entityRef` target to be a `Vehicle` or a `Pedestrian`. A
+///     `ScenarioObject` whose entity object is `std::monostate` may be a
+///     `CatalogReference` that resolves to a vehicle, so citing this against
+///     one would report legal input as a violation. The dangling-`entityRef`
+///     finding therefore stays rule-less.
+///   - `asam.net:xosc:1.0.0:data_type.time_format` says date-times use ISO 8601
+///     "Basic Notation", while the schema type it constrains is
+///     `xsd:dateTime`, which admits only the EXTENDED form. The schema wins
+///     (`osc/scenario.hpp:81-85`); citing the rule would reject the very date
+///     this writer emits.
 ///
 /// Descriptions are quoted VERBATIM from ASAM OpenSCENARIO XML 1.4.0 Annex C.
 /// The specification is not tracked in this repository (no redistribution
@@ -103,5 +115,55 @@ inline constexpr std::string_view kTrafficSignalStateReferences =
 /// checkable in full here, since both ends are in the same document.
 inline constexpr std::string_view kTrafficSignalControllerReferences =
     "asam.net:xosc:1.0.0:reference_control.traffic_signal_controller_references";
+
+/// "The condition delay shall be non negative."
+///
+/// Cited for a negative `Condition/@delay`. `osc/scenario.hpp` named this rule
+/// from the first commit, but nothing checked it until the reader made a
+/// foreign delay reachable — a rule quoted in a comment and enforced nowhere is
+/// the same decoration as an uncited constant, just harder to notice.
+inline constexpr std::string_view kConditionDelayNonNegative =
+    "asam.net:xosc:1.0.0:data_type.condition_delay_not_negative";
+
+/// "ASAM OpenSCENARIO allows a road network to be linked. This is optional,
+/// because the scenario is also valid without a defined road network. In most
+/// cases, however, an unspecified road network will be a mistake that the user
+/// would like to see highlighted. Therefore, in the `RoadNetwork` element a
+/// `LogicFile` reference should be present."
+///
+/// ★ "SHOULD", and the rule's own text says a scenario without a road network
+/// is VALID — so this is a `Severity::Warning` and never blocks a write. It is
+/// also why an absent `<RoadNetwork>` is not reported against
+/// `kValidSchema`: the standard explicitly permits the state.
+inline constexpr std::string_view kRoadNetworkReference =
+    "asam.net:xosc:1.0.0:reference_control.road_network_reference";
+
+/// "If a `LogicFile` or `SceneGraphFile` element is defined, the `filepath`
+/// attribute should point to a resolvable file."
+///
+/// LOAD-TIME ONLY. Resolution is relative to the scenario document's own
+/// directory, which is how a simulator resolves it — so `load_xosc` can check
+/// it and `parse_xosc` (a buffer, with no directory) and `validate_scenario`
+/// (a `Scenario`, which stores no path) cannot.
+inline constexpr std::string_view kRoadNetworkAvailability =
+    "asam.net:xosc:1.0.0:reference_control.road_network_availability";
+
+/// "Scenario descriptions should have the file extension `.xosc`."
+///
+/// Load-time only, for the same reason: it is a fact about the path.
+inline constexpr std::string_view kFileEnding = "asam.net:xosc:1.0.0:general.file_ending";
+
+/// "Based on the determined version of the checked file (Element `FileHeader`,
+/// attributes `revMajor` and `revMinor`), it shall comply with the schema of
+/// the detected version."
+///
+/// Cited by the READER, and only for the fragment of the schema a reader can
+/// honestly check without one: a required element that is absent
+/// (`<FileHeader>`, `<CatalogLocations>`, `<Entities>`, `<Storyboard>`,
+/// `<Storyboard><Init>`). There is no XSD in this tree and CI cannot carry one
+/// (the maintainer ruling on #257), so full schema validation is esmini's
+/// answer, not this constant's — the two are additive, and neither replaces
+/// the other.
+inline constexpr std::string_view kValidSchema = "asam.net:xosc:1.0.0:xml.valid_schema";
 
 } // namespace roadmaker::osc::rules

@@ -23,6 +23,11 @@
 // is satisfied by a mention anywhere — the scar that let a swapped tolerance
 // row pass in #403 and `contains("0.8")` pass on 0.800000011920929 in #325.
 
+// The reader is included for the rule-catalogue gate at the bottom of this
+// file only: three of the declared UIDs are cited by parse_xosc/load_xosc and
+// by nothing else, so a gate that swept only the writer would report them as
+// uncited. Nothing else here reads a document.
+#include "roadmaker/osc/reader.hpp"
 #include "roadmaker/osc/rules.hpp"
 #include "roadmaker/osc/writer.hpp"
 
@@ -486,6 +491,11 @@ constexpr NamedRule kRules[] = {
     {"kPhaseDurationNonNegative", osc::rules::kPhaseDurationNonNegative},
     {"kTrafficSignalStateReferences", osc::rules::kTrafficSignalStateReferences},
     {"kTrafficSignalControllerReferences", osc::rules::kTrafficSignalControllerReferences},
+    {"kConditionDelayNonNegative", osc::rules::kConditionDelayNonNegative},
+    {"kRoadNetworkReference", osc::rules::kRoadNetworkReference},
+    {"kRoadNetworkAvailability", osc::rules::kRoadNetworkAvailability},
+    {"kFileEnding", osc::rules::kFileEnding},
+    {"kValidSchema", osc::rules::kValidSchema},
 };
 
 std::vector<std::string_view> split(std::string_view text, char separator) {
@@ -534,6 +544,45 @@ TEST(XoscRules, EveryRuleConstantIsCitedBySomeFinding) {
   // The gate that stops rules.hpp becoming a wall of declared-and-never-used
   // constants. Without it, "validation cites normative rule ids" — this
   // sprint's acceptance — is entirely unmeasured.
+  //
+  // ★ IT SWEEPS ALL THREE CITING ENTRY POINTS, which is why a writer test file
+  // includes the reader. Five of the constants are cited by validate_scenario,
+  // three only by parse_xosc/load_xosc (a scenario in memory knows neither its
+  // file name nor its directory). A gate that swept only the validator would
+  // report the reader-side rules as uncited and push someone to delete them.
+  std::set<std::string> cited;
+  const auto sweep = [&cited](const std::vector<Diagnostic>& findings) {
+    for (const Diagnostic& finding : findings) {
+      if (!finding.rule_id.empty()) {
+        cited.insert(finding.rule_id);
+      }
+    }
+  };
+
+  // Reader-side: a document missing a required element, missing a LogicFile,
+  // loaded from a path with the wrong extension and naming an absent network.
+  const auto reader_result = osc::parse_xosc(
+      R"(<OpenSCENARIO><FileHeader revMajor="1" revMinor="2"/><RoadNetwork/></OpenSCENARIO>)",
+      "<rules>");
+  ASSERT_TRUE(reader_result.has_value());
+  sweep(reader_result->diagnostics);
+
+  const std::filesystem::path directory =
+      std::filesystem::temp_directory_path() / "xosc_rule_catalogue";
+  std::filesystem::remove_all(directory);
+  std::filesystem::create_directories(directory);
+  const std::filesystem::path scenario_path = directory / "scenario.xml"; // not .xosc
+  {
+    std::ofstream out(scenario_path, std::ios::binary);
+    out << R"(<OpenSCENARIO><FileHeader revMajor="1" revMinor="2"/><CatalogLocations/>)"
+           R"(<RoadNetwork><LogicFile filepath="absent.xodr"/></RoadNetwork>)"
+           R"(<Entities/><Storyboard><Init/></Storyboard></OpenSCENARIO>)";
+  }
+  const auto loaded = osc::load_xosc(scenario_path);
+  ASSERT_TRUE(loaded.has_value());
+  sweep(loaded->diagnostics);
+  std::filesystem::remove_all(directory);
+
   std::vector<osc::Scenario> provoking;
 
   osc::Scenario duplicate_names = minimal_scenario();
@@ -556,13 +605,12 @@ TEST(XoscRules, EveryRuleConstantIsCitedBySomeFinding) {
   bad_signals.road_network.traffic_signal_controllers.push_back(controller);
   provoking.push_back(bad_signals);
 
-  std::set<std::string> cited;
+  osc::Scenario negative_delay = minimal_scenario();
+  negative_delay.storyboard.stop_trigger.condition_groups[0].conditions[0].delay = -1.0;
+  provoking.push_back(negative_delay);
+
   for (const osc::Scenario& scenario : provoking) {
-    for (const Diagnostic& finding : osc::validate_scenario(scenario)) {
-      if (!finding.rule_id.empty()) {
-        cited.insert(finding.rule_id);
-      }
-    }
+    sweep(osc::validate_scenario(scenario));
   }
 
   for (const NamedRule& rule : kRules) {
