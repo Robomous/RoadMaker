@@ -40,9 +40,11 @@
 // this whole file silently stops gating anything.
 //
 // `IncludeBlocks: Regroup` in .clang-format sorts <QObject> down below the
-// roadmaker/ block, which is exactly that vacuity — verified: CI's formatter
-// reordered it, and with the reordering in place the `signals` sabotage
-// COMPILES CLEANLY. Hence the guard; do not remove it.
+// roadmaker/ block, and CI's formatter did exactly that on this file's first
+// push. Measured both ways with the member renamed to `signals`: in THIS order
+// the compiler reports `scenario.hpp:195: expected member name or ';' after
+// declaration specifiers`, and in the reordered one the header parses with no
+// error at all. Hence the guard; do not remove it.
 #include <QObject>
 
 #include "roadmaker/osc/scenario.hpp"
