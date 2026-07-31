@@ -191,30 +191,38 @@ TEST(ToolbarRegistry, LayoutMatchesTheIssue) {
             (std::vector{Id::ToolSignal, Id::SignalPhaseEditor, Id::ToolSign}));
 
   // Terrain stopped being reserved-empty when p5-s1 (#231) landed the Surface
-  // tool in it; Scenario is still waiting on P8.
+  // tool in it; Scenario stopped when p8-s2 (#246) landed the Actor tool.
   EXPECT_EQ(ids_of(shortcuts::toolbar_layout(ToolbarTab::kTerrain), "Terrain & Structures"),
             (std::vector{Id::ToolSurface, Id::ToolTerrainBrush}));
-
-  const std::vector<ToolbarGroupLayout> scenario = shortcuts::toolbar_layout(ToolbarTab::kScenario);
-  ASSERT_EQ(scenario.size(), 1u);
-  EXPECT_TRUE(scenario.front().ids.empty()) << "a reserved tab must render nothing yet";
+  EXPECT_EQ(ids_of(shortcuts::toolbar_layout(ToolbarTab::kScenario), "Scenario"),
+            (std::vector{Id::ToolActorPlace}));
 }
 
-// The tabs actually shown skip the core strip AND any empty reserved tab —
-// Terrain/Scenario appear only once their pillar (P5/P8) lands its first tool.
+// The tabs actually shown skip the core strip AND any empty reserved tab.
+// Terrain and Scenario each appeared once their pillar landed its first tool
+// (P5 / P8), so NO reserved-empty tab remains — which is why this test now
+// asserts the mechanism on the group layout rather than on a survivor.
 TEST(ToolbarRegistry, ShownTabsSkipCoreAndEmptyReserved) {
   std::vector<QString> titles;
   for (const shortcuts::ToolbarTabInfo& info : shortcuts::toolbar_tabs()) {
     titles.push_back(QString::fromUtf8(info.title));
     EXPECT_NE(info.tab, ToolbarTab::kCore);
-    EXPECT_NE(info.tab, ToolbarTab::kScenario) << "reserved-empty tab must stay hidden";
+    // Every shown tab must actually hold something — that IS the rule the
+    // reserved-empty case was an instance of, and it keeps gating after the
+    // last reserved tab fills.
+    bool populated = false;
+    for (const ToolbarGroupLayout& group : shortcuts::toolbar_layout(info.tab)) {
+      populated = populated || !group.ids.empty();
+    }
+    EXPECT_TRUE(populated) << info.title << " is shown but renders nothing";
   }
   EXPECT_EQ(titles,
             (std::vector<QString>{QStringLiteral("Roads & Lanes"),
                                   QStringLiteral("Markings"),
                                   QStringLiteral("Props"),
                                   QStringLiteral("Terrain & Structures"),
-                                  QStringLiteral("Signals & Signs")}));
+                                  QStringLiteral("Signals & Signs"),
+                                  QStringLiteral("Scenario")}));
 }
 
 // The persistent strip is what the user must never lose behind a tab. Pin the

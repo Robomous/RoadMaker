@@ -285,6 +285,18 @@ Actions::Actions(QUndoStack& undo_stack, QObject* parent) : QObject(parent) {
          "smooth; set radius, strength and mode in the options row (⇧B)"));
   tool_group->addAction(tool_terrain_brush);
 
+  // p8-s2 (#246). Toolbar-only: setShortcuts([]) is a harmless no-op for a row
+  // the registry gives no key, which keeps "everything binds from the registry"
+  // true for every Id.
+  tool_actor_place = new QAction(tr("&Actor"), this);
+  tool_actor_place->setCheckable(true);
+  tool_actor_place->setShortcuts(shortcuts::sequences(shortcuts::Id::ToolActorPlace));
+  tool_actor_place->setIconText(tr("Actor"));
+  tool_actor_place->setToolTip(
+      tr("Actor — click a driving lane to place a scenario actor; drag a placed actor to "
+         "move it. Actors anchor to the lane, so they follow the road when it moves"));
+  tool_group->addAction(tool_actor_place);
+
   tool_maneuver = new QAction(tr("&Maneuver"), this);
   tool_maneuver->setCheckable(true);
   tool_maneuver->setShortcuts(shortcuts::sequences(shortcuts::Id::ToolManeuver));
@@ -578,6 +590,8 @@ QAction* Actions::action(shortcuts::Id id) const {
     return tool_sign;
   case Id::ToolSurface:
     return tool_surface;
+  case Id::ToolActorPlace:
+    return tool_actor_place;
   case Id::ToolTerrainBrush:
     return tool_terrain_brush;
   case Id::LaneWidthEditor:

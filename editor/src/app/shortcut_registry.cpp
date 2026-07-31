@@ -317,6 +317,16 @@ constexpr std::array kTable{
           .note = "⇧T is the Prop Curve tool, so the brush takes ⇧B",
           .toolbar_group = "Terrain & Structures",
           .toolbar_order = 20},
+    // Toolbar-only on purpose (p8-s2, #246): every single letter is taken, and
+    // the ones that are free (D, R, Y, Z) all read as something else — D as
+    // Delete, Z/Y as undo/redo. A tool is discoverable from the toolbar; a
+    // shortcut that collides with a reflex is worse than none, so the key is
+    // left for the maintainer to assign deliberately.
+    Entry{.id = Id::ToolActorPlace,
+          .category = "Tools",
+          .description = "Actor tool (place a scenario actor on a lane)",
+          .toolbar_group = "Scenario",
+          .toolbar_order = 10},
     // Toolbar-only: enabled only for a mergeable two-road selection.
     Entry{.id = Id::MergeRoads,
           .category = "Tools",
