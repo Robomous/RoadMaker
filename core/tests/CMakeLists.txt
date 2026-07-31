@@ -99,6 +99,8 @@ add_executable(roadmaker_core_tests
   test_lidar_import.cpp
   test_lidar_ground.cpp
   test_prop_import.cpp
+  test_xosc_writer.cpp
+  test_xosc_signals.cpp
 )
 
 # test_fill_predicates.cpp pins the surface-fill point-in-polygon predicate

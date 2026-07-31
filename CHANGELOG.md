@@ -19,6 +19,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 Current version on `main`: **0.0.1**.
 
 ### Added
+- **An OpenSCENARIO scenario model and writer**
+  ([#245](https://github.com/Robomous/RoadMaker/issues/245), kernel half): the
+  kernel can hold a `.xosc` document — file header, road-network reference,
+  entities, storyboard and traffic-signal controllers — and serialize it with
+  `osc::write_xosc` / `osc::save_xosc`, reachable from Python as `rm.osc`. A
+  `.xosc` is a **second Layer-0 file**, stem-matched beside its `.xodr`
+  ([ADR-0014](docs/decisions/0014-scenario-model-kernel-side-osc-1x.md)).
+  - **The writer targets a revision and defaults to 1.2**, mirroring the
+    OpenDRIVE writer's `target_version`, because validation means "esmini
+    accepts the file" and CI pins that binary. The conservative default costs
+    nothing: every checker-rule id in the 1.4.0 catalogue first appeared at
+    1.2.0 or earlier, so it forfeits no rule the validator could cite. The only
+    content 1.4 adds is `Phase/@semantics`.
+  - **A traffic-signal controller is named by its OpenDRIVE `@id`**, not by a
+    readable label — the specification builds signal groups from the
+    `<controller>` element and references them by that id. `@state` is modeled
+    as a free string, because a signal modeled as a whole box carries a
+    composite value such as `on;off;off` that no colour enum could round-trip.
+  - **Findings cite normative rule ids** (`asam.net:xosc:…`) through the same
+    `Diagnostic` the OpenDRIVE validator uses, and unmodeled elements ride the
+    same verbatim preserved tier. A preserved fragment that is not well-formed
+    XML is refused rather than dropped — a deliberate strengthening of the
+    OpenDRIVE writer, which ignores that parse status.
 - **Composite prop assemblies** ([#323](https://github.com/Robomous/RoadMaker/issues/323),
   kernel half): several prop models pinned together by fixed relative transforms
   place as one unit, move as one unit and delete as one unit. The bundled

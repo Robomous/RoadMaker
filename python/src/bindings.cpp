@@ -46,6 +46,8 @@
 #include "roadmaker/mesh/junction_surface_spans.hpp"
 #include "roadmaker/mesh/mesh_builder.hpp"
 #include "roadmaker/mesh/surface_boundary.hpp"
+#include "roadmaker/osc/rules.hpp"
+#include "roadmaker/osc/writer.hpp"
 #include "roadmaker/osm/graph.hpp"
 #include "roadmaker/osm/import.hpp"
 #include "roadmaker/osm/network_plan.hpp"
@@ -2542,6 +2544,271 @@ NB_MODULE(_roadmaker, m) {
       "a list of Diagnostic citing normative rule UIDs; rules present in only "
       "one version's catalog are cited only for that target. Findings never "
       "block write_xodr/save_xodr.");
+
+  // --- OpenSCENARIO scenarios (p8-s1, #245) --------------------------------
+  //
+  // A submodule for the same reason `rm.gis` is one: a coherent subsystem with
+  // its own vocabulary, and one whose type names deliberately collide with the
+  // road model's (`rm.osc.RoadNetworkRef` beside `rm.RoadNetwork`).
+  //
+  // NOTE ON LIST MEMBERS: nanobind's `def_rw` on a std::vector returns a COPY,
+  // so `scenario.entities.scenario_objects.append(x)` mutates a temporary and
+  // is silently lost. Build a Python list and assign it back wholesale —
+  // `entities.scenario_objects = [ego, npc]` — which is what
+  // python/examples/scenario_write.py does throughout.
+  {
+    auto osc =
+        m.def_submodule("osc",
+                        "The ASAM OpenSCENARIO XML scenario model and writer (ADR-0014).\n\n"
+                        "A .xosc is a SECOND Layer-0 file: it sits beside its .xodr at the top "
+                        "level of the project, stem-matched, and stays standalone-openable. The "
+                        "writer is revision-targetable and defaults to 1.2, because validation "
+                        "means 'esmini accepts the file' and CI pins that binary; 1.4 is opt-in "
+                        "and adds only Phase.semantics.\n\n"
+                        "Every cross-reference is an OpenDRIVE odr_id STRING — never a runtime "
+                        "arena handle, which is not valid across a load.");
+
+    nb::enum_<roadmaker::osc::OscVersion>(osc, "OscVersion")
+        .value("V1_2", roadmaker::osc::OscVersion::v1_2)
+        .value("V1_4", roadmaker::osc::OscVersion::v1_4);
+
+    nb::enum_<roadmaker::osc::PhaseSemantics>(osc, "PhaseSemantics")
+        .value("AttentionGo", roadmaker::osc::PhaseSemantics::AttentionGo)
+        .value("AttentionStop", roadmaker::osc::PhaseSemantics::AttentionStop)
+        .value("Caution", roadmaker::osc::PhaseSemantics::Caution)
+        .value("Fallback", roadmaker::osc::PhaseSemantics::Fallback)
+        .value("Go", roadmaker::osc::PhaseSemantics::Go)
+        .value("Stop", roadmaker::osc::PhaseSemantics::Stop);
+
+    nb::class_<roadmaker::osc::FileHeader>(osc, "FileHeader")
+        .def(nb::init<>())
+        .def_rw("author", &roadmaker::osc::FileHeader::author)
+        .def_rw("date",
+                &roadmaker::osc::FileHeader::date,
+                "ISO 8601. Defaults to a FIXED value, never a clock — write_xosc "
+                "is deterministic.")
+        .def_rw("description", &roadmaker::osc::FileHeader::description);
+
+    nb::class_<roadmaker::osc::FileRef>(osc, "FileRef")
+        .def(nb::init<>())
+        .def_rw("filepath", &roadmaker::osc::FileRef::filepath);
+
+    nb::class_<roadmaker::osc::TrafficSignalState>(osc, "TrafficSignalState")
+        .def(nb::init<>())
+        .def_rw("traffic_signal_id",
+                &roadmaker::osc::TrafficSignalState::traffic_signal_id,
+                "The OpenDRIVE <signal @id> string. An empty one is refused.")
+        .def_rw("state",
+                &roadmaker::osc::TrafficSignalState::state,
+                "A FREE string the simulation engine interprets — 'red', or a "
+                "composite 'on;off;off' for a signal modelled as a whole box.");
+
+    nb::class_<roadmaker::osc::Phase>(osc, "Phase")
+        .def(nb::init<>())
+        .def_rw("name",
+                &roadmaker::osc::Phase::name,
+                "May be empty: the writer synthesizes a name and de-duplicates it "
+                "per controller, without rewriting the model.")
+        .def_rw("duration",
+                &roadmaker::osc::Phase::duration,
+                "Seconds. Zero is legal; negative is refused.")
+        .def_rw("semantics", &roadmaker::osc::Phase::semantics, "Emitted only when targeting 1.4.")
+        .def_rw("signal_states", &roadmaker::osc::Phase::signal_states);
+
+    nb::class_<roadmaker::osc::TrafficSignalController>(osc, "TrafficSignalController")
+        .def(nb::init<>())
+        .def_rw("name",
+                &roadmaker::osc::TrafficSignalController::name,
+                "THE OPENDRIVE CONTROLLER @id, not a readable label — the "
+                "specification builds signal groups from <controller> and "
+                "references them by that id.")
+        .def_rw("delay", &roadmaker::osc::TrafficSignalController::delay)
+        .def_rw("reference", &roadmaker::osc::TrafficSignalController::reference)
+        .def_rw("phases", &roadmaker::osc::TrafficSignalController::phases);
+
+    nb::class_<roadmaker::osc::RoadNetworkRef>(osc, "RoadNetworkRef")
+        .def(nb::init<>())
+        .def_rw("logic_file", &roadmaker::osc::RoadNetworkRef::logic_file)
+        .def_rw("scene_graph_file", &roadmaker::osc::RoadNetworkRef::scene_graph_file)
+        .def_rw("traffic_signal_controllers",
+                &roadmaker::osc::RoadNetworkRef::traffic_signal_controllers);
+
+    nb::class_<roadmaker::osc::BoundingBox>(osc, "BoundingBox")
+        .def(nb::init<>())
+        .def_rw("center_x", &roadmaker::osc::BoundingBox::center_x)
+        .def_rw("center_y", &roadmaker::osc::BoundingBox::center_y)
+        .def_rw("center_z", &roadmaker::osc::BoundingBox::center_z)
+        .def_rw("width", &roadmaker::osc::BoundingBox::width)
+        .def_rw("length", &roadmaker::osc::BoundingBox::length)
+        .def_rw("height", &roadmaker::osc::BoundingBox::height);
+
+    nb::class_<roadmaker::osc::Performance>(osc, "Performance")
+        .def(nb::init<>())
+        .def_rw("max_speed", &roadmaker::osc::Performance::max_speed)
+        .def_rw("max_acceleration", &roadmaker::osc::Performance::max_acceleration)
+        .def_rw("max_deceleration", &roadmaker::osc::Performance::max_deceleration);
+
+    nb::class_<roadmaker::osc::Axle>(osc, "Axle")
+        .def(nb::init<>())
+        .def_rw("max_steering", &roadmaker::osc::Axle::max_steering)
+        .def_rw("wheel_diameter", &roadmaker::osc::Axle::wheel_diameter)
+        .def_rw("track_width", &roadmaker::osc::Axle::track_width)
+        .def_rw("position_x", &roadmaker::osc::Axle::position_x)
+        .def_rw("position_z", &roadmaker::osc::Axle::position_z);
+
+    nb::class_<roadmaker::osc::Axles>(osc, "Axles")
+        .def(nb::init<>())
+        .def_rw("front", &roadmaker::osc::Axles::front)
+        .def_rw("rear", &roadmaker::osc::Axles::rear)
+        .def_rw("additional", &roadmaker::osc::Axles::additional);
+
+    nb::class_<roadmaker::osc::Property>(osc, "Property")
+        .def(nb::init<>())
+        .def_rw("name", &roadmaker::osc::Property::name)
+        .def_rw("value", &roadmaker::osc::Property::value);
+
+    nb::class_<roadmaker::osc::Vehicle>(osc, "Vehicle")
+        .def(nb::init<>())
+        .def_rw("name", &roadmaker::osc::Vehicle::name)
+        .def_rw("category", &roadmaker::osc::Vehicle::category)
+        .def_rw("mass", &roadmaker::osc::Vehicle::mass)
+        .def_rw("model3d", &roadmaker::osc::Vehicle::model3d)
+        .def_rw("bounding_box", &roadmaker::osc::Vehicle::bounding_box)
+        .def_rw("performance", &roadmaker::osc::Vehicle::performance)
+        .def_rw("axles", &roadmaker::osc::Vehicle::axles)
+        .def_rw("properties", &roadmaker::osc::Vehicle::properties);
+
+    nb::class_<roadmaker::osc::Pedestrian>(osc, "Pedestrian")
+        .def(nb::init<>())
+        .def_rw("name", &roadmaker::osc::Pedestrian::name)
+        .def_rw("category", &roadmaker::osc::Pedestrian::category)
+        .def_rw("mass", &roadmaker::osc::Pedestrian::mass)
+        .def_rw("model3d", &roadmaker::osc::Pedestrian::model3d)
+        .def_rw("bounding_box", &roadmaker::osc::Pedestrian::bounding_box)
+        .def_rw("properties", &roadmaker::osc::Pedestrian::properties);
+
+    nb::class_<roadmaker::osc::ScenarioObject>(osc, "ScenarioObject")
+        .def(nb::init<>())
+        .def_rw("name",
+                &roadmaker::osc::ScenarioObject::name,
+                "Required and unique — every entity_ref resolves through it.")
+        .def_rw("entity_object",
+                &roadmaker::osc::ScenarioObject::entity_object,
+                "A Vehicle, a Pedestrian, or None when the entity rode in whole "
+                "on the preserved tier (a MiscObject or CatalogReference this "
+                "version does not model).");
+
+    nb::class_<roadmaker::osc::Entities>(osc, "Entities")
+        .def(nb::init<>())
+        .def_rw("scenario_objects", &roadmaker::osc::Entities::scenario_objects);
+
+    nb::class_<roadmaker::osc::WorldPosition>(osc, "WorldPosition")
+        .def(nb::init<>())
+        .def_rw("x", &roadmaker::osc::WorldPosition::x)
+        .def_rw("y", &roadmaker::osc::WorldPosition::y)
+        .def_rw("z", &roadmaker::osc::WorldPosition::z)
+        .def_rw("h", &roadmaker::osc::WorldPosition::h)
+        .def_rw("p", &roadmaker::osc::WorldPosition::p)
+        .def_rw("r", &roadmaker::osc::WorldPosition::r);
+
+    nb::class_<roadmaker::osc::TeleportAction>(osc, "TeleportAction")
+        .def(nb::init<>())
+        .def_rw("position", &roadmaker::osc::TeleportAction::position);
+
+    nb::class_<roadmaker::osc::PrivateAction>(osc, "PrivateAction")
+        .def(nb::init<>())
+        .def_rw("teleport", &roadmaker::osc::PrivateAction::teleport);
+
+    nb::class_<roadmaker::osc::Private>(osc, "Private")
+        .def(nb::init<>())
+        .def_rw("entity_ref", &roadmaker::osc::Private::entity_ref)
+        .def_rw("actions", &roadmaker::osc::Private::actions);
+
+    nb::class_<roadmaker::osc::InitActions>(osc, "InitActions")
+        .def(nb::init<>())
+        .def_rw("privates", &roadmaker::osc::InitActions::privates);
+
+    nb::class_<roadmaker::osc::Init>(osc, "Init")
+        .def(nb::init<>())
+        .def_rw("actions", &roadmaker::osc::Init::actions);
+
+    nb::class_<roadmaker::osc::SimulationTimeCondition>(osc, "SimulationTimeCondition")
+        .def(nb::init<>())
+        .def_rw("value", &roadmaker::osc::SimulationTimeCondition::value)
+        .def_rw("rule", &roadmaker::osc::SimulationTimeCondition::rule);
+
+    nb::class_<roadmaker::osc::Condition>(osc, "Condition")
+        .def(nb::init<>())
+        .def_rw("name", &roadmaker::osc::Condition::name)
+        .def_rw("delay", &roadmaker::osc::Condition::delay)
+        .def_rw("condition_edge", &roadmaker::osc::Condition::condition_edge)
+        .def_rw("simulation_time", &roadmaker::osc::Condition::simulation_time);
+
+    nb::class_<roadmaker::osc::ConditionGroup>(osc, "ConditionGroup")
+        .def(nb::init<>())
+        .def_rw("conditions", &roadmaker::osc::ConditionGroup::conditions);
+
+    nb::class_<roadmaker::osc::Trigger>(osc, "Trigger")
+        .def(nb::init<>())
+        .def_rw("condition_groups", &roadmaker::osc::Trigger::condition_groups);
+
+    nb::class_<roadmaker::osc::Storyboard>(osc, "Storyboard")
+        .def(nb::init<>())
+        .def_rw("init", &roadmaker::osc::Storyboard::init)
+        .def_rw("preserved_stories",
+                &roadmaker::osc::Storyboard::preserved_stories,
+                "<Story> fragments carried verbatim until p8-s4 models them.")
+        .def_rw("stop_trigger", &roadmaker::osc::Storyboard::stop_trigger);
+
+    nb::class_<roadmaker::osc::Scenario>(osc, "Scenario")
+        .def(nb::init<>())
+        .def_rw("header", &roadmaker::osc::Scenario::header)
+        .def_rw("road_network", &roadmaker::osc::Scenario::road_network)
+        .def_rw("entities", &roadmaker::osc::Scenario::entities)
+        .def_rw("storyboard", &roadmaker::osc::Scenario::storyboard);
+
+    osc.def(
+        "write_xosc",
+        [](const roadmaker::osc::Scenario& scenario, roadmaker::osc::OscVersion target_version) {
+          return unwrap(roadmaker::osc::write_xosc(scenario, {.target_version = target_version}));
+        },
+        "scenario"_a,
+        "target_version"_a = roadmaker::osc::OscVersion::v1_2,
+        "Serializes the scenario as OpenSCENARIO XML. Deterministic: two calls "
+        "on one Scenario return byte-identical strings. Raises ValueError for a "
+        "scenario that cannot be serialized validly.");
+
+    osc.def(
+        "save_xosc",
+        [](const roadmaker::osc::Scenario& scenario,
+           const std::filesystem::path& path,
+           roadmaker::osc::OscVersion target_version) {
+          unwrap(roadmaker::osc::save_xosc(scenario, path, {.target_version = target_version}));
+        },
+        "scenario"_a,
+        "path"_a,
+        "target_version"_a = roadmaker::osc::OscVersion::v1_2,
+        "write_xosc + save to disk. Writes nothing when the scenario is refused.");
+
+    osc.def(
+        "validate_scenario",
+        [](const roadmaker::osc::Scenario& scenario, roadmaker::osc::OscVersion target_version) {
+          return roadmaker::osc::validate_scenario(scenario, {.target_version = target_version});
+        },
+        "scenario"_a,
+        "target_version"_a = roadmaker::osc::OscVersion::v1_2,
+        "Checker-rule validation. Returns a list of Diagnostic citing "
+        "asam.net:xosc: rule UIDs; an empty rule_id marks a RoadMaker-side "
+        "structural limitation with no normative rule behind it.");
+
+    osc.attr("RULE_UNIQUE_ELEMENT_NAMES") = roadmaker::osc::rules::kUniqueElementNames;
+    osc.attr("RULE_NO_DOUBLE_COLON_PREFIX") = roadmaker::osc::rules::kNoDoubleColonPrefix;
+    osc.attr("RULE_PHASE_DURATION_NON_NEGATIVE") = roadmaker::osc::rules::kPhaseDurationNonNegative;
+    osc.attr("RULE_TRAFFIC_SIGNAL_STATE_REFERENCES") =
+        roadmaker::osc::rules::kTrafficSignalStateReferences;
+    osc.attr("RULE_TRAFFIC_SIGNAL_CONTROLLER_REFERENCES") =
+        roadmaker::osc::rules::kTrafficSignalControllerReferences;
+  }
 
   m.def("derive_surfaces",
         &roadmaker::derive_surfaces,
