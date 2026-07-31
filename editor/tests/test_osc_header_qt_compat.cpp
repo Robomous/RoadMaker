@@ -33,6 +33,11 @@
 // The assertions are incidental — a compiling TU is the whole test. They exist
 // so the file is a real test rather than a compile-only artifact, and so the
 // macro is demonstrably in effect rather than merely assumed.
+//
+// PR-D adds osc/decompose.hpp and osc/edit.hpp to the same gate. They are the
+// two headers p8-s2's Scenario mode will actually include from a widget, and
+// decompose.hpp additionally drags in road/junction.hpp and the plan structure
+// — so it is the header most likely to reach for a member named `signals`.
 
 // clang-format off
 // INCLUDE ORDER IS THE TEST. <QObject> must be seen BEFORE scenario.hpp, or
@@ -47,6 +52,8 @@
 // error at all. Hence the guard; do not remove it.
 #include <QObject>
 
+#include "roadmaker/osc/decompose.hpp"
+#include "roadmaker/osc/edit.hpp"
 #include "roadmaker/osc/scenario.hpp"
 #include "roadmaker/osc/writer.hpp"
 // clang-format on

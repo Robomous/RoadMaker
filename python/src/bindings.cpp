@@ -46,6 +46,8 @@
 #include "roadmaker/mesh/junction_surface_spans.hpp"
 #include "roadmaker/mesh/mesh_builder.hpp"
 #include "roadmaker/mesh/surface_boundary.hpp"
+#include "roadmaker/osc/decompose.hpp"
+#include "roadmaker/osc/edit.hpp"
 #include "roadmaker/osc/reader.hpp"
 #include "roadmaker/osc/rules.hpp"
 #include "roadmaker/osc/writer.hpp"
@@ -3016,6 +3018,143 @@ NB_MODULE(_roadmaker, m) {
     osc.attr("RULE_ROAD_NETWORK_AVAILABILITY") = roadmaker::osc::rules::kRoadNetworkAvailability;
     osc.attr("RULE_FILE_ENDING") = roadmaker::osc::rules::kFileEnding;
     osc.attr("RULE_VALID_SCHEMA") = roadmaker::osc::rules::kValidSchema;
+
+    // --- building a scenario FROM a network, and editing one (PR-D) --------
+
+    nb::class_<roadmaker::osc::JunctionSignalDecomposition>(osc, "JunctionSignalDecomposition")
+        .def_ro("controllers",
+                &roadmaker::osc::JunctionSignalDecomposition::controllers,
+                "One TrafficSignalController per member <controller>, sorted by "
+                "@name (the OpenDRIVE @id). Empty only when the junction has no "
+                "cycle, which always comes with a finding saying so.")
+        .def_ro("findings",
+                &roadmaker::osc::JunctionSignalDecomposition::findings,
+                "What the decomposition had to cope with. None is an Error: a "
+                "decomposition that cannot proceed returns nothing instead.");
+
+    osc.def("state_token",
+            &roadmaker::osc::state_token,
+            "state"_a,
+            "The SignalState -> TrafficSignalState.state spelling. ENGINE-DIRECTED "
+            "and validated by NOTHING: esmini v3.5.0 accepts any token in silence "
+            "(measured, p8-s1 PR-C), and the specification leaves it open. One "
+            "function wide so reversing the choice costs one edit.");
+
+    osc.def("decompose_junction_signals",
+            &roadmaker::osc::decompose_junction_signals,
+            "network"_a,
+            "junction"_a,
+            "One junction's signal timeline as OpenSCENARIO controllers "
+            "(ADR-0014 §8). Reads the Red-filled JunctionPhasePlan, never the "
+            "sparse Junction.phases, and resolves every signal handle to its "
+            "OpenDRIVE @id — a runtime handle in the file would reference "
+            "nothing.");
+
+    // rm.osc.edit — the .xosc twin of rm.edit, and a SECOND stack type on
+    // purpose: a Scenario is not arena content, so it cannot ride
+    // edit::Command, whose apply() takes a RoadNetwork& (ADR-0014 §1, as
+    // amended).
+    auto osc_edit =
+        osc.def_submodule("edit",
+                          "Undoable scenario mutation. Mirrors rm.edit in shape and in "
+                          "contract: apply then undo leaves write_xosc() byte-identical, a "
+                          "refused command changes nothing, and a factory given bad input "
+                          "returns a REFUSING command rather than None.");
+
+    nb::class_<roadmaker::osc::edit::Command>(osc_edit, "Command")
+        .def_prop_ro("name",
+                     [](const roadmaker::osc::edit::Command& command) {
+                       return std::string(command.name());
+                     })
+        .def_prop_ro(
+            "findings",
+            [](const roadmaker::osc::edit::Command& command) {
+              const std::span<const roadmaker::Diagnostic> found = command.findings();
+              return std::vector<roadmaker::Diagnostic>(found.begin(), found.end());
+            },
+            "What this command had to cope with, valid after a successful apply.");
+
+    nb::class_<roadmaker::osc::edit::ScenarioStack>(osc_edit, "ScenarioStack")
+        .def(nb::init<>())
+        .def(
+            "push",
+            [](roadmaker::osc::edit::ScenarioStack& stack,
+               roadmaker::osc::Scenario& scenario,
+               std::unique_ptr<roadmaker::osc::edit::Command> command) {
+              unwrap(stack.push(scenario, std::move(command)));
+            },
+            "scenario"_a,
+            "command"_a,
+            "Applies the command and records it. Raises ValueError when the apply "
+            "fails (the scenario is left unchanged).")
+        .def(
+            "undo",
+            [](roadmaker::osc::edit::ScenarioStack& stack, roadmaker::osc::Scenario& scenario) {
+              unwrap(stack.undo(scenario));
+            },
+            "scenario"_a)
+        .def(
+            "redo",
+            [](roadmaker::osc::edit::ScenarioStack& stack, roadmaker::osc::Scenario& scenario) {
+              unwrap(stack.redo(scenario));
+            },
+            "scenario"_a)
+        .def_prop_ro("can_undo", &roadmaker::osc::edit::ScenarioStack::can_undo)
+        .def_prop_ro("can_redo", &roadmaker::osc::edit::ScenarioStack::can_redo)
+        .def_prop_ro("size", &roadmaker::osc::edit::ScenarioStack::size)
+        .def("clear", &roadmaker::osc::edit::ScenarioStack::clear)
+        .def_prop_rw("depth_limit",
+                     &roadmaker::osc::edit::ScenarioStack::depth_limit,
+                     &roadmaker::osc::edit::ScenarioStack::set_depth_limit)
+        .def_prop_ro(
+            "last_findings",
+            [](const roadmaker::osc::edit::ScenarioStack& stack) {
+              const std::span<const roadmaker::Diagnostic> found = stack.last_findings();
+              return std::vector<roadmaker::Diagnostic>(found.begin(), found.end());
+            },
+            "What the most recently pushed command had to cope with. push() "
+            "takes ownership of the command, so this is the only way to read "
+            "them.");
+
+    osc_edit.def("sync_traffic_signals",
+                 &roadmaker::osc::edit::sync_traffic_signals,
+                 "scenario"_a,
+                 "network"_a,
+                 "junction"_a,
+                 "Writes the junction's signal timeline in as one "
+                 "TrafficSignalController per member <controller>. MERGES by @name "
+                 "rather than replacing, so syncing a second junction does not "
+                 "delete the first's. Refuses a junction with no cycle.");
+
+    osc_edit.def("set_logic_file",
+                 &roadmaker::osc::edit::set_logic_file,
+                 "scenario"_a,
+                 "filepath"_a,
+                 "Sets <RoadNetwork><LogicFile @filepath> — the .xodr this scenario "
+                 "plays on. Relative paths resolve against the .xosc's own "
+                 "directory, which is how a simulator resolves them.");
+
+    osc_edit.def("add_scenario_object",
+                 &roadmaker::osc::edit::add_scenario_object,
+                 "scenario"_a,
+                 "object"_a,
+                 "Appends an actor. Refuses an empty or duplicate @name — it is the "
+                 "key every entityRef resolves through.");
+
+    osc_edit.def("remove_scenario_object",
+                 &roadmaker::osc::edit::remove_scenario_object,
+                 "scenario"_a,
+                 "name"_a,
+                 "Removes an actor AND every <Private> that referenced it; leaving "
+                 "one behind would make the document unwritable.");
+
+    osc_edit.def("set_entity_init_position",
+                 &roadmaker::osc::edit::set_entity_init_position,
+                 "scenario"_a,
+                 "entity_name"_a,
+                 "position"_a,
+                 "Places an actor via its <Init> <TeleportAction>, creating the "
+                 "<Private> and the action if it has none.");
   }
 
   m.def("derive_surfaces",

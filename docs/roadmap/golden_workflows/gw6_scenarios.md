@@ -92,6 +92,10 @@ of every export step above it.
     Red-filled dense list, not RoadMaker's sparse Red-by-omission storage —
     a phase the editor shows as "no state" would export as a signal that is
     never red.
+    *Kernel support landed in `p8-s1`*: `osc::decompose_junction_signals` and
+    `osc::edit::sync_traffic_signals` (`rm.osc.edit.*`) produce exactly that
+    list, so this step's UI has one source to bind to and the Red-fill is not
+    re-implemented in a widget.
 
 ### Round trip and export (p8-s1, p8-s5, p8-s6)
 

@@ -261,8 +261,10 @@ them, and that section is read with it:
 
 - **"One internal scenario model" means one *kernel-side* model.** It
   lives under `core/include/roadmaker/osc/` in namespace
-  `roadmaker::osc` and is mutated only through `edit::Command`
-  factories, because the Python module links `roadmaker::core` alone
+  `roadmaker::osc` and is mutated only through kernel command factories
+  (`osc::edit`, per ADR-0014's own 2026-07-31 amendment — this line
+  originally said `edit::Command`), because the Python module links
+  `roadmaker::core` alone
   (`python/CMakeLists.txt:36`) and a model in `editor/src/document/`
   could never be replayed headlessly.
 - **"1.x" now names a revision.** The writer is revision-targetable and

@@ -278,7 +278,16 @@ public:
     signals_.for_each(fn);
   }
 
-  /// fn(ControllerId, Controller&) over live controllers, in creation order.
+  /// fn(ControllerId, Controller&) over live controllers, in ARENA SLOT order.
+  ///
+  /// NOT creation order, which this comment used to claim: `Arena::for_each`
+  /// walks slots ascending and a freed slot is REUSED, so after any erase a
+  /// newly created controller comes back at the old position. The same
+  /// correction was made for roads in p7-s4 (#244), where the assumption had
+  /// paired two roads with each other's geometry. A consumer that needs a
+  /// stable order must sort — `osc::decompose_junction_signals` sorts by
+  /// `odr_id` for exactly this reason, or two networks holding the same signals
+  /// would write two different `.xosc` files.
   template <class Fn>
   void for_each_controller(Fn fn) {
     controllers_.for_each(fn);

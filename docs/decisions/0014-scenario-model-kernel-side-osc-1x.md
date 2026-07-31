@@ -277,6 +277,44 @@ in the same change as this record rather than left to contradict it. And the P8
 discovery report's finding that the validate half is "blocked pending a maintainer
 ruling" is discharged twice over: by the esmini ruling, and by §7's rule ids.
 
+## Amendment (2026-07-31, `p8-s1` PR-D / #245)
+
+**§1 names the wrong namespace, and the correction is a namespace only.** It
+says scenario mutations are "`edit::Command` factories in the existing
+`roadmaker::edit` namespace". That sentence was written before the model
+existed and is not implementable as stated: `edit::Command::apply` takes a
+`RoadNetwork&` (`core/include/roadmaker/edit/command.hpp:122`), and a
+`Scenario` is not arena content — §9 of this same record makes it a **second
+Layer-0 document in its own file**. There is no network for a scenario command
+to apply against.
+
+So the layer is `roadmaker::osc::edit` (`core/include/roadmaker/osc/edit.hpp`):
+an `osc::edit::Command` with `apply`/`revert` over `Scenario&`, and an
+`osc::edit::ScenarioStack` mirroring `edit::EditStack`, reachable from Python
+as `rm.osc.edit.*`.
+
+**What §1 was actually deciding is unchanged and is met in full**: the model is
+kernel-side, its mutations are stack-driven, and a GW-6 replay can therefore
+drive them headlessly through a module that links `roadmaker::core` alone. The
+namespace was the incidental half of that sentence; the retrofit cost §1 argues
+from attaches to the kernel-side ruling, not to the spelling.
+
+Two consequences worth stating rather than leaving to be discovered:
+
+- **`edit/` does not include `osc/`.** Putting scenario commands in
+  `roadmaker::edit` would have made the road-editing layer depend on the
+  scenario model, reversing the direction everything else runs in — `osc` reads
+  `road`, never the other way. Only `osc/decompose.hpp` crosses, and only
+  inward.
+- **`osc::edit::Command` has no `DirtySet` and no `discard()`.** Nothing is
+  meshed from a scenario and there are no reserved arena slots to release. It
+  gains `findings()` instead, for the reason `edit::Command` grew
+  `follow_records()`: a mutation that had to cope with something must not leave
+  that unsaid.
+
+ADR-0008's amendment repeats §1's original wording and is corrected in the same
+change.
+
 ## References
 
 - [#245](https://github.com/Robomous/RoadMaker/issues/245) — `p8-s1`, the

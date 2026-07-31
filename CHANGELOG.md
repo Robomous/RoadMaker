@@ -71,6 +71,31 @@ Current version on `main`: **0.0.1**.
     controller reference and a nonexistent phase name in silence. For the
     traffic-signal half the rule ids are the only check there is, and the
     `@state` spelling remains an engine-directed choice no tool validates.
+  - **A scenario can now be built FROM a road network, and edited undoably.**
+    `osc::decompose_junction_signals` turns one junction's signal timeline into
+    one `TrafficSignalController` per OpenDRIVE `<controller>` — reading the
+    **Red-filled** phase plan, never RoadMaker's sparse Red-by-omission storage,
+    so a signal the editor shows as red is red in the file rather than absent.
+    Every signal handle is resolved to its `odr_id` first: a runtime arena
+    handle in the file would produce a document that looks entirely right and
+    references nothing.
+  - **`rm.osc.edit` is the scenario command layer** — `ScenarioStack` plus
+    `sync_traffic_signals`, `set_logic_file`, `add_scenario_object`,
+    `remove_scenario_object` and `set_entity_init_position`. It mirrors
+    `rm.edit` in contract: apply then undo leaves `write_xosc()` byte-identical,
+    a refused command changes nothing, and a factory given bad input returns a
+    **refusing command rather than `None`**. Removing an actor takes its `<Init>`
+    `<Private>` with it — left behind it is a dangling `entityRef`, which the
+    writer refuses, so the removal would have made the document unsavable.
+    Syncing **merges by `@name`** rather than replacing the list, so a scenario
+    that references two junctions does not lose the first when the second syncs.
+    A scenario is not arena content, so this is a second command layer rather
+    than an entry in `rm.edit` ([ADR-0014](docs/decisions/0014-scenario-model-kernel-side-osc-1x.md),
+    2026-07-31 amendment).
+  - **The tracked esmini fixture is now generated entirely through those
+    factories**, and its bytes did not change — which makes the existing
+    byte-for-byte fixture gate a test of the decomposition and the command layer
+    rather than of a Python script that happened to agree with them.
 - **The esmini CI pin is honoured by a bump**
   ([#506](https://github.com/Robomous/RoadMaker/issues/506)): the cache key
   repeated the version as a literal instead of deriving it from
