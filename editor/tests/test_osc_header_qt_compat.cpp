@@ -38,6 +38,13 @@
 // two headers p8-s2's Scenario mode will actually include from a widget, and
 // decompose.hpp additionally drags in road/junction.hpp and the plan structure
 // — so it is the header most likely to reach for a member named `signals`.
+//
+// p8-s2 (#246) adds osc/catalog.hpp, and the day the comment above called
+// "close" arrived: the Actor tool, the Attributes pane and the scene tree all
+// include these headers from real widget translation units. `foreach`,
+// `forever`, `emit` and `slots` are Qt macros on the same footing — none is
+// used today, and an archetype field named `slots` is exactly the plausible
+// mistake this file exists to fail loudly on.
 
 // clang-format off
 // INCLUDE ORDER IS THE TEST. <QObject> must be seen BEFORE scenario.hpp, or
@@ -52,6 +59,7 @@
 // error at all. Hence the guard; do not remove it.
 #include <QObject>
 
+#include "roadmaker/osc/catalog.hpp"
 #include "roadmaker/osc/decompose.hpp"
 #include "roadmaker/osc/edit.hpp"
 #include "roadmaker/osc/scenario.hpp"
@@ -96,6 +104,24 @@ TEST(OscHeaderQtCompat, TheModelIsUsableFromATranslationUnitThatHasSeenQt) {
   const auto text = write_xosc(scenario);
   ASSERT_TRUE(text.has_value()) << (text ? "" : text.error().message);
   EXPECT_NE(text->find(R"(<TrafficSignalController name="17")"), std::string::npos) << *text;
+}
+
+TEST(OscHeaderQtCompat, TheActorCatalogueIsUsableFromATranslationUnitThatHasSeenQt) {
+  // p8-s2 (#246). The Actor tool and the Attributes pane are widget TUs that
+  // include catalog.hpp, so `ActorArchetype`'s field names are held to the same
+  // rule as `Phase`'s: none of them may be `signals`, `slots`, `emit`,
+  // `foreach` or `forever`.
+  Scenario scenario;
+  scenario.road_network.logic_file = FileRef{.filepath = "town.xodr", .preserved = {}};
+  scenario.entities.scenario_objects.push_back(make_actor(ActorKind::Car, "Car1"));
+
+  const ActorArchetype& car = actor_archetype(ActorKind::Car);
+  EXPECT_GT(car.width, 0.0);
+  EXPECT_FALSE(actor_catalog().empty());
+
+  const auto text = write_xosc(scenario);
+  ASSERT_TRUE(text.has_value()) << (text ? "" : text.error().message);
+  EXPECT_NE(text->find(R"(<ScenarioObject name="Car1")"), std::string::npos) << *text;
 }
 
 } // namespace

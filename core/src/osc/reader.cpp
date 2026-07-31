@@ -829,52 +829,235 @@ private:
     return out;
   }
 
-  /// One `<PrivateAction>` — a ten-way choice (§7.5) of which this version
-  /// models exactly one arm, and only when its position is a world position.
+  /// `<Orientation>` — §7.6. Every angle is optional and stays optional: an
+  /// omitted `h` and an explicit `h="0"` mean the same thing to a simulator but
+  /// NOT to the byte-identity contract.
+  Orientation parse_orientation(const pugi::xml_node& node, const std::string& location) {
+    Orientation out;
+    out.h = attr_optional_double(node, "h", location);
+    out.p = attr_optional_double(node, "p", location);
+    out.r = attr_optional_double(node, "r", location);
+    // "relative" is the specification's own default for a missing element, and
+    // it is what this struct is constructed with — so an absent @type keeps it
+    // rather than blanking the field.
+    if (const pugi::xml_attribute type = node.attribute("type")) {
+      out.type = type.value();
+    }
+    capture_attributes(node, out.preserved, {"h", "p", "r", "type"}, location);
+    for (const pugi::xml_node child : node.children()) {
+      preserve_child(child, out.preserved, location);
+    }
+    return out;
+  }
+
+  /// The `<Orientation>` child shared by `<RoadPosition>` and `<LanePosition>`,
+  /// with every OTHER child preserved on the position itself.
+  void parse_position_children(const pugi::xml_node& node,
+                               std::optional<Orientation>& orientation,
+                               RawXml& preserved,
+                               const std::string& location) {
+    for (const pugi::xml_node child : node.children()) {
+      if (std::string_view(child.name()) == "Orientation") {
+        orientation = parse_orientation(child, location + "/Orientation");
+      } else {
+        preserve_child(child, preserved, location);
+      }
+    }
+  }
+
+  RoadPosition parse_road_position(const pugi::xml_node& node, const std::string& location) {
+    RoadPosition out;
+    out.road_id = attr_text(node, "roadId");
+    out.s = attr_double(node, "s", location);
+    out.t = attr_double(node, "t", location);
+    capture_attributes(node, out.preserved, {"roadId", "s", "t"}, location);
+    parse_position_children(node, out.orientation, out.preserved, location);
+    return out;
+  }
+
+  /// `<LanePosition>` — §7.6.
   ///
-  /// ★ A <TeleportAction> whose <Position> is a <LanePosition> (or any of the
-  /// other nine position types) is preserved WHOLE, with `teleport` left unset.
-  /// Modeling the teleport and defaulting the position would silently move the
-  /// entity to the origin — a file that parses, writes and simulates, with the
-  /// actor in the wrong place. `TeleportAction::position` is not optional
-  /// precisely so this decision has to be made here.
+  /// `@offset` is optional in the schema ("Missing value is interpreted as 0")
+  /// and REQUIRED in the output, because the model holds a plain double. That
+  /// asymmetry is deliberate and it is the one place a `<LanePosition>` round
+  /// trip is not byte-identical: a file that omitted `@offset` gains
+  /// `offset="0"` on rewrite. It is a semantic no-op by the specification's own
+  /// wording, and the alternative — an optional offset — would push the
+  /// distinction into every consumer for no gain, since the lane centre is the
+  /// only offset RoadMaker authors.
+  ///
+  /// `@layer` is not modeled (1.4.0-only, and this writer defaults to 1.2), so
+  /// it lands in `preserved.attributes` and is re-emitted exactly.
+  LanePosition parse_lane_position(const pugi::xml_node& node, const std::string& location) {
+    LanePosition out;
+    out.road_id = attr_text(node, "roadId");
+    out.lane_id = attr_text(node, "laneId");
+    out.s = attr_double(node, "s", location);
+    out.offset = attr_double(node, "offset", location, 0.0, false);
+    capture_attributes(node, out.preserved, {"roadId", "laneId", "s", "offset"}, location);
+    parse_position_children(node, out.orientation, out.preserved, location);
+    return out;
+  }
+
+  /// The `<Position>` choice, or nullopt when it holds one of the eight types
+  /// this version does not model.
+  std::optional<Position> parse_position(const pugi::xml_node& position_node,
+                                         const std::string& location) {
+    if (const pugi::xml_node node = position_node.child("WorldPosition")) {
+      return Position{parse_world_position(node, location + "/WorldPosition")};
+    }
+    if (const pugi::xml_node node = position_node.child("LanePosition")) {
+      return Position{parse_lane_position(node, location + "/LanePosition")};
+    }
+    if (const pugi::xml_node node = position_node.child("RoadPosition")) {
+      return Position{parse_road_position(node, location + "/RoadPosition")};
+    }
+    return std::nullopt;
+  }
+
+  /// `<AbsoluteTargetSpeed>` / `<TransitionDynamics>` / `<SpeedAction>` — §7.5.
+  ///
+  /// Returns nullopt when `<LongitudinalAction>` holds an arm this version does
+  /// not model (`<LongitudinalDistanceAction>`, `<SpeedProfileAction>`), so the
+  /// caller preserves the whole action rather than writing back a
+  /// `<SpeedAction>` the file never had.
+  std::optional<SpeedAction> parse_speed_action(const pugi::xml_node& node,
+                                                const std::string& location) {
+    SpeedAction out;
+    capture_attributes(node, out.preserved, {}, location);
+
+    bool saw_dynamics = false;
+    bool saw_target = false;
+    for (const pugi::xml_node child : node.children()) {
+      const std::string_view name = child.name();
+      if (name == "SpeedActionDynamics") {
+        saw_dynamics = true;
+        const std::string dynamics_location = location + "/SpeedActionDynamics";
+        out.dynamics.dynamics_shape = attr_text(child, "dynamicsShape");
+        out.dynamics.dynamics_dimension = attr_text(child, "dynamicsDimension");
+        out.dynamics.value = attr_double(child, "value", dynamics_location);
+        out.dynamics.following_mode = attr_text(child, "followingMode");
+        capture_attributes(child,
+                           out.dynamics.preserved,
+                           {"dynamicsShape", "dynamicsDimension", "value", "followingMode"},
+                           dynamics_location);
+        for (const pugi::xml_node grandchild : child.children()) {
+          preserve_child(grandchild, out.dynamics.preserved, dynamics_location);
+        }
+      } else if (name == "SpeedActionTarget") {
+        saw_target = true;
+        const std::string target_location = location + "/SpeedActionTarget";
+        capture_attributes(child, out.target_preserved, {}, target_location);
+        for (const pugi::xml_node grandchild : child.children()) {
+          if (std::string_view(grandchild.name()) != "AbsoluteTargetSpeed") {
+            // A <RelativeTargetSpeed> rides the TARGET's tier, not the action's,
+            // so it is re-emitted inside <SpeedActionTarget> and not beside it.
+            preserve_child(grandchild, out.target_preserved, target_location);
+            continue;
+          }
+          AbsoluteTargetSpeed absolute;
+          absolute.value = attr_double(grandchild, "value", target_location);
+          capture_attributes(grandchild, absolute.preserved, {"value"}, target_location);
+          for (const pugi::xml_node leaf : grandchild.children()) {
+            preserve_child(leaf, absolute.preserved, target_location);
+          }
+          out.absolute_target = std::move(absolute);
+        }
+      } else {
+        preserve_child(child, out.preserved, location);
+      }
+    }
+
+    // Both children are required (1..1). A <SpeedAction> missing either is
+    // schema-invalid input, and modeling it would let the writer emit the
+    // defaults in place of content the file did not have — the same silent
+    // substitution the teleport branch below refuses.
+    if (!saw_dynamics || !saw_target) {
+      return std::nullopt;
+    }
+    return out;
+  }
+
+  /// One `<PrivateAction>` — a ten-way choice (§7.5) of which this version
+  /// models two arms: `<TeleportAction>` and `<LongitudinalAction>`.
+  ///
+  /// ★ A <TeleportAction> whose <Position> is one of the EIGHT unmodeled types
+  /// (a <RelativeLanePosition>, a <TrajectoryPosition>, …) is preserved WHOLE,
+  /// with `teleport` left unset. Modeling the teleport and defaulting the
+  /// position would silently move the entity to the origin — a file that parses,
+  /// writes and simulates, with the actor in the wrong place.
+  /// `TeleportAction::position` is a variant with no empty state precisely so
+  /// this decision has to be made here. p8-s2 narrowed the branch from nine
+  /// types to eight and did not weaken it.
   PrivateAction parse_private_action(const pugi::xml_node& node, const std::string& location) {
     PrivateAction out;
     capture_attributes(node, out.preserved, {}, location);
 
     for (const pugi::xml_node child : node.children()) {
-      const bool is_teleport = std::string_view(child.name()) == "TeleportAction";
-      const pugi::xml_node world =
-          is_teleport ? child.child("Position").child("WorldPosition") : pugi::xml_node{};
-      if (!world) {
-        if (is_teleport) {
+      const std::string_view child_name = child.name();
+
+      if (child_name == "TeleportAction") {
+        const std::string teleport_location = location + "/TeleportAction";
+        std::optional<Position> position =
+            parse_position(child.child("Position"), teleport_location);
+        if (!position.has_value()) {
           // Worth its own wording: "<TeleportAction> is not modeled" would be
           // wrong and would send a reader looking in the wrong place. The
-          // ACTION is modeled; its position is one of ten types and only the
-          // world position is.
-          const pugi::xml_node position = child.child("Position").first_child();
+          // ACTION is modeled; its position is one of eleven types and only
+          // three are.
+          const pugi::xml_node position_node = child.child("Position").first_child();
           diag(Severity::Warning,
                location,
-               fmt::format("<TeleportAction> uses <{}>, and only <WorldPosition> is modeled; "
-                           "the whole action was preserved verbatim rather than moved to the "
-                           "origin",
-                           position ? position.name() : "Position"));
+               fmt::format("<TeleportAction> uses <{}>, and only <WorldPosition>, <RoadPosition> "
+                           "and <LanePosition> are modeled; the whole action was preserved "
+                           "verbatim rather than moved to the origin",
+                           position_node ? position_node.name() : "Position"));
           out.preserved.children.push_back(node_to_string(child));
           continue;
         }
-        preserve_child(child, out.preserved, location);
+
+        TeleportAction teleport;
+        teleport.position = std::move(*position);
+        capture_attributes(child, teleport.preserved, {}, location);
+        for (const pugi::xml_node grandchild : child.children()) {
+          if (std::string_view(grandchild.name()) != "Position") {
+            preserve_child(grandchild, teleport.preserved, teleport_location);
+          }
+        }
+        out.teleport = std::move(teleport);
         continue;
       }
 
-      TeleportAction teleport;
-      teleport.position = parse_world_position(world, location + "/TeleportAction/WorldPosition");
-      capture_attributes(child, teleport.preserved, {}, location);
-      for (const pugi::xml_node grandchild : child.children()) {
-        if (std::string_view(grandchild.name()) != "Position") {
-          preserve_child(grandchild, teleport.preserved, location + "/TeleportAction");
+      if (child_name == "LongitudinalAction") {
+        const std::string longitudinal_location = location + "/LongitudinalAction";
+        const pugi::xml_node speed_node = child.child("SpeedAction");
+        std::optional<SpeedAction> speed =
+            speed_node ? parse_speed_action(speed_node, longitudinal_location + "/SpeedAction")
+                       : std::nullopt;
+        if (!speed.has_value()) {
+          const pugi::xml_node arm = child.first_child();
+          diag(Severity::Warning,
+               location,
+               fmt::format("<LongitudinalAction> uses <{}>, and only a well-formed <SpeedAction> "
+                           "is modeled; the whole action was preserved verbatim",
+                           arm ? arm.name() : "LongitudinalAction"));
+          out.preserved.children.push_back(node_to_string(child));
+          continue;
         }
+
+        LongitudinalAction longitudinal;
+        longitudinal.speed = std::move(speed);
+        capture_attributes(child, longitudinal.preserved, {}, location);
+        for (const pugi::xml_node grandchild : child.children()) {
+          if (std::string_view(grandchild.name()) != "SpeedAction") {
+            preserve_child(grandchild, longitudinal.preserved, longitudinal_location);
+          }
+        }
+        out.longitudinal = std::move(longitudinal);
+        continue;
       }
-      out.teleport = std::move(teleport);
+
+      preserve_child(child, out.preserved, location);
     }
     return out;
   }

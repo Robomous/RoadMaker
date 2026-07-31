@@ -96,6 +96,60 @@ Current version on `main`: **0.0.1**.
     factories**, and its bytes did not change — which makes the existing
     byte-for-byte fixture gate a test of the decomposition and the command layer
     rather than of a Python script that happened to agree with them.
+- **Actors, anchored to lanes**
+  ([#246](https://github.com/Robomous/RoadMaker/issues/246), kernel half): the
+  scenario model can place an entity **on a lane** rather than at a point in
+  space, give it an initial speed, and build it from a catalogue of ready
+  archetypes.
+  - **`<LanePosition>` and `<RoadPosition>` are modeled**, and
+    `TeleportAction::position` became a variant over the three. This is the
+    difference between an actor that follows its road through later edits and
+    one that stays behind in world space when the road moves — the property
+    p8-s3's lane-anchored routes are defined by, and the one
+    [GW-6](docs/roadmap/golden_workflows/gw6_scenarios.md) step 7 exists to
+    catch. Road and lane cross the file boundary as OpenDRIVE `@id` **strings**,
+    never arena handles, so a leading zero or a temporary-layer id survives a
+    round trip unchanged. An absent `<Orientation>` angle stays absent rather
+    than being written out as its interpreted `0`.
+  - **An initial speed** (`<LongitudinalAction><SpeedAction>`) lands in its
+    **own** `<PrivateAction>` beside the teleport, because the element is a
+    per-element choice and sharing one would produce a document no parser
+    accepts. A `<RelativeTargetSpeed>` this version does not model is preserved
+    inside its `<SpeedActionTarget>`, and setting an absolute speed over one is
+    **refused** rather than silently deleting it — the union is 1..1, so the
+    alternatives were an invalid file or a silent drop.
+  - **An actor catalogue** (`osc::actor_catalog`, `osc::make_actor`, reachable
+    as `rm.osc.*`): car, truck, bus, motorbike, bicycle and pedestrian, each
+    building a `<ScenarioObject>` complete with the `<Performance>` and
+    `<Axles>` that are required children of `<Vehicle>` in every revision. The
+    dimensions are the AASHTO design vehicles, tabulated in
+    [§1.8](docs/domain/realism_defaults.md) and **rendered from the code**, so a
+    value edited in one place and not the other fails CI. The car is §1.1's
+    reference vehicle exactly — the anchor every lane width and clearance in
+    that document is measured against.
+  - **Five new commands**: `place_scenario_object` (add *and* place, as **one**
+    undo entry, because placing an actor is one gesture), `set_entity_init_pose`,
+    `set_entity_init_speed`, `rename_scenario_object` and
+    `set_scenario_object_bounding_box`. A rename rewrites every `entityRef` that
+    resolved through the old name — leaving one behind would produce a dangling
+    reference the writer refuses, making the document unsavable by an edit that
+    reported success.
+  - **A lane position that names nothing is refused at placement, not at save.**
+    An empty `roadId`/`laneId` or a negative `s` cites
+    `reference_control.road_lane_exists` and
+    `positioning.road_lane_offset_in_bounds`; a road-relative position in a
+    scenario that links **no `<LogicFile>`** cites
+    `scenario_logic.invalid_elements_if_no_road_network` and blocks the write —
+    one of the few reference rules checkable in full, since both ends are inside
+    one document. Retyping a position **reports** the preserved tier it drops
+    rather than dropping it silently: a `<WorldPosition>`'s foreign attributes
+    name a different element and cannot ride onto a `<LanePosition>`.
+  - **The esmini gate got measurably stronger.** The tracked fixture now places
+    its ego with a `<LanePosition>` and gives it a speed, and — unlike the
+    traffic-signal half, which esmini accepts wrong in silence — a lane anchor
+    **is** resolved against the referenced `.xodr`: measured against the pinned
+    v3.5.0, a dangling `roadId`, a dangling `laneId` and an `s` past the road
+    end each fail the load. The speed is not checked; 500 m/s loads cleanly.
 - **The esmini CI pin is honoured by a bump**
   ([#506](https://github.com/Robomous/RoadMaker/issues/506)): the cache key
   repeated the version as a literal instead of deriving it from

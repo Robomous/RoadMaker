@@ -57,7 +57,24 @@ import roadmaker as rm
 
 # The teleport target: on an approach arm, well clear of the junction box, so
 # the ego is on a real lane rather than in the middle of the intersection.
-EGO_START = (-40.0, -1.75, 0.0)
+#
+# ★ A LANE POSITION, NOT A WORLD ONE (p8-s2, #246). The ego now names the road
+# and the lane by their OpenDRIVE `@id` STRINGS, which is what the editor's
+# Actor tool authors and what makes an actor follow its road through later
+# edits. It also puts a <LanePosition> in front of esmini, which is the only way
+# to learn whether a shipping simulator accepts the one RoadMaker writes —
+# the whole reason this fixture is generated rather than hand-authored.
+#
+# Road "3" is the west arm (reference line running from x=-24 out to x=-104), so
+# s=16 is 40 m from the junction centre, matching the world position this
+# replaced. Lane "-1" is the first driving lane right of the reference line.
+EGO_ROAD_ODR_ID = "3"
+EGO_LANE_ODR_ID = "-1"
+EGO_START_S = 16.0
+
+# 50 km/h in m/s. Speeds are m/s everywhere in the model; km/h and mph are a
+# display concern that never reaches the file.
+EGO_START_SPEED = 13.89
 
 
 def build_network() -> tuple[rm.RoadNetwork, rm.JunctionId]:
@@ -103,22 +120,23 @@ def build_scenario(
     for finding in stack.last_findings:
         print(f"  note: {finding.location}: {finding.message}")
 
-    car = rm.osc.Vehicle()
-    car.name = "car"
-    box = rm.osc.BoundingBox()
-    box.center_x, box.center_z = 1.4, 0.75
-    box.width, box.length, box.height = 2.0, 5.0, 1.5
-    car.bounding_box = box
+    # The ego, from the kernel's actor catalogue — <Performance> and <Axles>
+    # included, which are required children of <Vehicle> in every revision and
+    # which this script used to assemble by hand and half-omit.
+    position = rm.osc.LanePosition()
+    position.road_id = EGO_ROAD_ODR_ID
+    position.lane_id = EGO_LANE_ODR_ID
+    position.s = EGO_START_S
+    position.offset = 0.0  # the lane centre
 
-    ego = rm.osc.ScenarioObject()
-    ego.name = "Ego"
-    ego.entity_object = car
-    stack.push(scenario, rm.osc.edit.add_scenario_object(scenario, ego))
-
-    position = rm.osc.WorldPosition()
-    position.x, position.y, position.z = EGO_START
-    position.h = 0.0
-    stack.push(scenario, rm.osc.edit.set_entity_init_position(scenario, "Ego", position))
+    # ONE command: placing an actor is one gesture, and it is one undo entry.
+    stack.push(
+        scenario,
+        rm.osc.edit.place_scenario_object(
+            scenario, rm.osc.make_actor(rm.osc.ActorKind.Car, "Ego"), position
+        ),
+    )
+    stack.push(scenario, rm.osc.edit.set_entity_init_speed(scenario, "Ego", EGO_START_SPEED))
 
     # The stop trigger stays hand-assembled: the storyboard model is p8-s4's,
     # and inventing a factory for it here would be scope this sprint did not

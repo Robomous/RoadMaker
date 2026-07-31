@@ -374,17 +374,194 @@ struct WorldPosition {
   RawXml preserved;
 };
 
-/// `<TeleportAction>` — the only `<PrivateAction>` p8-s1 models, because it is
-/// the one the initial placement of an actor needs. Everything else rides
-/// `PrivateAction::preserved.children` until p8-s2/p8-s4.
-struct TeleportAction {
-  WorldPosition position;
+/// `<Orientation>` — §7.6, the optional child of every road/lane-relative
+/// position.
+///
+/// "Missing h value is interpreted as 0", and likewise `p` and `r` — so each is
+/// `std::optional` rather than a defaulted double: absent and explicitly-zero
+/// mean the same thing to a simulator but NOT to the byte-identity contract,
+/// and writing `h="0"` into a file that omitted it would break a round trip.
+///
+/// `@type` is `relative` by default per the specification's own wording
+/// ("Missing Orientation property is interpreted as the relative reference
+/// context"), and is a free string for the round-trip reason that governs every
+/// other spelling in this file.
+struct Orientation {
+  std::optional<double> h;
+  std::optional<double> p;
+  std::optional<double> r;
+  std::string type = "relative";
   RawXml preserved;
 };
 
-/// `<PrivateAction>` — §7.5.
+/// `<RoadPosition>` — §7.6: a station `s` along a road's reference line and a
+/// lateral `t` off it.
+///
+/// `road_id` IS THE OPENDRIVE `<road @id>` STRING, never a `RoadId` — the
+/// ADR-0014 §5 rule this whole file is built on. "The ID of the target road
+/// taken from the respective road network definition file."
+struct RoadPosition {
+  std::string road_id;
+
+  /// `@s` — "taken along the road's reference line from the start point of the
+  /// target road. Unit: [m]. Range: [0..inf[."
+  double s = 0.0;
+
+  /// `@t` — "taken on the axis orthogonal to the reference line of the road."
+  double t = 0.0;
+
+  std::optional<Orientation> orientation;
+  RawXml preserved;
+};
+
+/// `<LanePosition>` — §7.6, and the position RoadMaker AUTHORS when an actor is
+/// placed (p8-s2, issue #246).
+///
+/// WHY THIS AND NOT `<WorldPosition>`. A world position is a snapshot of where a
+/// road happened to be when the actor was dropped: move the road afterwards and
+/// the actor stays behind, floating. A lane position names the lane, so the
+/// actor follows its road through every later edit — which is the same property
+/// p8-s3's lane-anchored routes are defined by, and GW-6 step 7 is the step that
+/// distinguishes the two.
+///
+/// `lane_id` is a STRING for the same reason `road_id` is, and additionally
+/// because the specification types it `string` rather than `int`: "If a
+/// temporary lane layer is present (e.g. in roadworks sections), this shall be
+/// interpreted as the ID on the temporary lane layer."
+///
+/// `@layer` (LaneLayerType) is NOT modeled: it was created in 1.4.0 and this
+/// writer defaults to 1.2 (ADR-0014 §3), so modeling it would add a second
+/// version conditional to the writer for an attribute nothing here authors. A
+/// foreign `@layer` rides `preserved.attributes` and round-trips exactly.
+struct LanePosition {
+  std::string road_id;
+
+  /// `@laneId` — "The ID of the target lane belonging to the target road."
+  /// Negative = right of the reference line, positive = left, "0" = the centre
+  /// lane, which carries no traffic; refusing lane 0 is the PLACEMENT layer's
+  /// job, not the model's, since a foreign file may legally hold one.
+  std::string lane_id;
+
+  double s = 0.0;
+
+  /// `@offset` — "the lateral offset to the center line of the target lane".
+  /// "Missing value is interpreted as 0", and 0 is the lane centre, which is
+  /// where an actor belongs — hence a plain double rather than an optional.
+  double offset = 0.0;
+
+  std::optional<Orientation> orientation;
+  RawXml preserved;
+};
+
+/// The `<Position>` choice this version models — §7.6's group is an XOR of
+/// eleven position types, of which three are here.
+///
+/// A VARIANT, not three optionals, for exactly the reason
+/// `ScenarioObject::entity_object` is one: two optionals make "both" and
+/// "neither" representable and force the writer to refuse states the model
+/// should never have allowed.
+///
+/// ★ `WorldPosition` IS DELIBERATELY ALTERNATIVE 0. A default-constructed
+/// `TeleportAction` therefore still holds a world position at the origin, which
+/// is what every p8-s1 caller and test already means by one. Reordering these
+/// would change the meaning of `TeleportAction{}` silently.
+///
+/// The other eight (`RelativeWorldPosition`, `RelativeObjectPosition`,
+/// `RelativeRoadPosition`, `RelativeLanePosition`, `GeoPosition`,
+/// `TrajectoryPosition`, `RoutePosition`, `ClothoidPosition`…) keep riding
+/// `PrivateAction::preserved.children` as a whole preserved action — see
+/// `parse_private_action`, which explains why preserving the ACTION rather than
+/// defaulting the position is the only safe reading.
+using Position = std::variant<WorldPosition, RoadPosition, LanePosition>;
+
+/// `<TeleportAction>` — the `<PrivateAction>` that places an entity, and the
+/// one an actor's initial placement needs (p8-s1 modeled it; p8-s2 gave it the
+/// road-relative positions).
+struct TeleportAction {
+  Position position;
+  RawXml preserved;
+};
+
+/// `<AbsoluteTargetSpeed>` — §7.5, "Absolute speed defined as a target for a
+/// SpeedAction". Unit: [m/s], the kernel frame's unit; the editor's mph/km-h
+/// display is a units-layer concern and never reaches this field.
+struct AbsoluteTargetSpeed {
+  double value = 0.0;
+  RawXml preserved;
+};
+
+/// `<TransitionDynamics>` — §7.5, a REQUIRED child of `<SpeedAction>`
+/// (cardinality 1..1), which is why it is modeled here rather than deferred:
+/// a `<SpeedAction>` without it does not validate, so an initial speed could
+/// not be authored at all.
+///
+/// The defaults spell "jump to the target speed immediately", which is what an
+/// INITIAL speed means. Per the specification, "Step is an immediate
+/// transition... In this case value for time or distance must be 0" — so
+/// `value = 0` is not a placeholder, it is required by the shape above it.
+///
+/// `dynamics_dimension` and `dynamics_shape` are free strings rather than
+/// enums, the same call `TrafficSignalState::state` and `Vehicle::category`
+/// already make: an unmodeled spelling must round-trip, and a modeled enum plus
+/// a preserved attribute would emit the attribute twice.
+struct TransitionDynamics {
+  std::string dynamics_shape = "step";
+  std::string dynamics_dimension = "time";
+  double value = 0.0;
+
+  /// `@followingMode` — 0..1, "Default value if omitted: position". Optional so
+  /// an omitted one stays omitted.
+  std::string following_mode;
+
+  RawXml preserved;
+};
+
+/// `<SpeedAction>` — §7.5, inside `<LongitudinalAction>`.
+///
+/// `<SpeedActionTarget>` is FLATTENED into this struct, unlike `<Center>` and
+/// `<Dimensions>`: it is a pure container whose only modeled arm is
+/// `<AbsoluteTargetSpeed>`. Its own preserved tier is kept separately
+/// (`target_preserved`) for the `Vehicle::properties_preserved` reason — a
+/// `<RelativeTargetSpeed>` read from a foreign file must be re-emitted INSIDE
+/// `<SpeedActionTarget>`, not beside it.
+struct SpeedAction {
+  TransitionDynamics dynamics;
+
+  /// Unset when the target was a `<RelativeTargetSpeed>` this version does not
+  /// model — it then rides `target_preserved` whole, and the writer emits no
+  /// `<AbsoluteTargetSpeed>`.
+  std::optional<AbsoluteTargetSpeed> absolute_target;
+
+  RawXml target_preserved;
+  RawXml preserved;
+};
+
+/// `<LongitudinalAction>` — §7.5, a union whose only modeled arm is
+/// `<SpeedAction>`.
+struct LongitudinalAction {
+  std::optional<SpeedAction> speed;
+  RawXml preserved;
+};
+
+/// `<PrivateAction>` — §7.5, a ten-way choice of which this version models two
+/// arms: the teleport that places an entity and the longitudinal action that
+/// gives it an initial speed.
+///
+/// ★ ONE ELEMENT PER SET ARM. The schema's choice is per-`<PrivateAction>`, so
+/// the writer emits one `<PrivateAction>` per arm that is set: teleport-only and
+/// longitudinal-only each produce one element, and an action carrying BOTH
+/// produces two (teleport first, matching the order an actor is placed then
+/// given a speed). `preserved` rides the FIRST element emitted, so a preserved
+/// fragment is never duplicated.
+///
+/// The reader never produces a both-arms action — each `<PrivateAction>` in a
+/// file holds exactly one child — so the round trip is one element in, one
+/// element out, byte for byte. `set_entity_init_speed` likewise APPENDS a
+/// second `PrivateAction` rather than setting `longitudinal` on the teleport's,
+/// which keeps the model the reader would have produced from the same file.
 struct PrivateAction {
   std::optional<TeleportAction> teleport;
+  std::optional<LongitudinalAction> longitudinal;
   RawXml preserved;
 };
 

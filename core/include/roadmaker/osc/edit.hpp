@@ -221,4 +221,72 @@ sync_traffic_signals(const Scenario& scenario, const RoadNetwork& network, Junct
                                                                        std::string_view entity_name,
                                                                        WorldPosition position);
 
+/// The general form of the above: places `entity_name` at any modeled
+/// `Position` — world, road-relative or lane-relative (p8-s2, issue #246).
+///
+/// `set_entity_init_position` is the world-position overload kept for source
+/// compatibility and for callers that genuinely mean a world pose; it forwards
+/// here. Everything the editor authors goes through this one, with a
+/// `LanePosition`.
+///
+/// ★ RETYPING A POSITION DROPS THE OLD ELEMENT'S PRESERVED TIER, and reports it
+/// through `findings()`. A `<WorldPosition>`'s foreign attributes name a
+/// different element and cannot be carried onto a `<LanePosition>`; re-emitting
+/// them there would invent content the file never had.
+///
+/// Refuses a road-relative position that names no road, a lane position that
+/// names no lane, or a negative `s` — the placement-time half of what
+/// `validate_scenario` would otherwise only report at save time.
+[[nodiscard]] RM_API std::unique_ptr<Command>
+set_entity_init_pose(const Scenario& scenario, std::string_view entity_name, Position position);
+
+/// Adds a `<ScenarioObject>` AND places it, as ONE undoable command (p8-s2,
+/// issue #246) — what the Actor tool pushes for a single click.
+///
+/// Not `add_scenario_object` followed by `set_entity_init_pose`: placing an
+/// actor is one gesture and must be one undo entry, and it must be one KERNEL
+/// command rather than a `QUndoCommand` with two children, because GW-6's
+/// evidence is a headless Python replay and two calls do not replay as one.
+///
+/// Refuses an empty or duplicate `@name` and an invalid position, exactly as
+/// its two halves would.
+[[nodiscard]] RM_API std::unique_ptr<Command>
+place_scenario_object(const Scenario& scenario, ScenarioObject object, Position position);
+
+/// Sets `entity_name`'s initial speed [m/s] via its `<Init>`
+/// `<LongitudinalAction><SpeedAction><AbsoluteTargetSpeed>`, creating the
+/// entity's `<Private>` and the action if it has none.
+///
+/// APPENDS A SECOND `<PrivateAction>` beside any teleport rather than sharing
+/// one: `<PrivateAction>` is a per-element choice, so this builds the model the
+/// reader would have produced from the same file.
+///
+/// Refuses a negative speed (never clamps it — a clamp hides the slip), and
+/// refuses an entity whose speed comes from a `<RelativeTargetSpeed>` this
+/// version does not model, because `<SpeedActionTarget>` is a 1..1 union and
+/// the alternatives are to emit an invalid file or to silently drop preserved
+/// content.
+[[nodiscard]] RM_API std::unique_ptr<Command>
+set_entity_init_speed(const Scenario& scenario, std::string_view entity_name, double speed);
+
+/// Renames a `<ScenarioObject>` AND every `entityRef` that resolved through it.
+///
+/// ★ THE REFERENCES ARE THE POINT. `@name` is the key `<Private>` resolves
+/// through, so renaming the entity alone leaves a dangling `entityRef` that
+/// `write_xosc` refuses — a rename that appeared to succeed would make the
+/// document unsavable. Refuses an empty or already-taken new name, and a name
+/// no entity carries.
+[[nodiscard]] RM_API std::unique_ptr<Command>
+rename_scenario_object(const Scenario& scenario, std::string_view from, std::string to);
+
+/// Replaces `entity_name`'s `<BoundingBox>`, carrying over the element's own
+/// preserved tier (which belongs to the element, not to the numbers).
+///
+/// Refuses a non-positive dimension, and an entity that is neither a
+/// `<Vehicle>` nor a `<Pedestrian>` — a `std::monostate` entity object is a
+/// catalog reference or a `MiscObject` riding the preserved tier, and it has no
+/// bounding box this version can reach.
+[[nodiscard]] RM_API std::unique_ptr<Command> set_scenario_object_bounding_box(
+    const Scenario& scenario, std::string_view entity_name, BoundingBox box);
+
 } // namespace roadmaker::osc::edit

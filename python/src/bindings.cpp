@@ -46,6 +46,7 @@
 #include "roadmaker/mesh/junction_surface_spans.hpp"
 #include "roadmaker/mesh/mesh_builder.hpp"
 #include "roadmaker/mesh/surface_boundary.hpp"
+#include "roadmaker/osc/catalog.hpp"
 #include "roadmaker/osc/decompose.hpp"
 #include "roadmaker/osc/edit.hpp"
 #include "roadmaker/osc/reader.hpp"
@@ -86,6 +87,7 @@
 #include <filesystem>
 #include <functional>
 #include <optional>
+#include <span>
 #include <stdexcept>
 #include <string>
 #include <utility>
@@ -2819,11 +2821,133 @@ NB_MODULE(_roadmaker, m) {
                 "order. Populated by parse_xosc; re-emitted after the modeled "
                 "content, so nothing a foreign file carried is ever dropped.");
 
+    nb::class_<roadmaker::osc::Orientation>(osc, "Orientation")
+        .def(nb::init<>())
+        .def_rw("h",
+                &roadmaker::osc::Orientation::h,
+                "Heading [rad]. None means ABSENT, which is not the same as 0.0: "
+                "writing the interpretation rather than the content is how a round "
+                "trip stops being byte-identical for a file that omitted the angle.")
+        .def_rw("p", &roadmaker::osc::Orientation::p, "Pitch [rad]; None means absent.")
+        .def_rw("r", &roadmaker::osc::Orientation::r, "Roll [rad]; None means absent.")
+        .def_rw("type",
+                &roadmaker::osc::Orientation::type,
+                "'relative' (the default, and the specification's own reading of an "
+                "absent <Orientation>) or 'absolute'.")
+        .def_rw("preserved",
+                &roadmaker::osc::Orientation::preserved,
+                "Unmodeled attributes and child elements, verbatim and in document "
+                "order. Populated by parse_xosc; re-emitted after the modeled "
+                "content, so nothing a foreign file carried is ever dropped.");
+
+    nb::class_<roadmaker::osc::RoadPosition>(osc, "RoadPosition")
+        .def(nb::init<>())
+        .def_rw("road_id",
+                &roadmaker::osc::RoadPosition::road_id,
+                "The OpenDRIVE <road @id> STRING — never a RoadId. A generational "
+                "arena handle is runtime-only and never valid across a load, so the "
+                "odr_id is the only thing that may cross the file boundary.")
+        .def_rw("s", &roadmaker::osc::RoadPosition::s, "Station along the reference line [m].")
+        .def_rw(
+            "t", &roadmaker::osc::RoadPosition::t, "Lateral offset from the reference line [m].")
+        .def_rw("orientation", &roadmaker::osc::RoadPosition::orientation)
+        .def_rw("preserved",
+                &roadmaker::osc::RoadPosition::preserved,
+                "Unmodeled attributes and child elements, verbatim and in document "
+                "order. Populated by parse_xosc; re-emitted after the modeled "
+                "content, so nothing a foreign file carried is ever dropped.");
+
+    nb::class_<roadmaker::osc::LanePosition>(osc, "LanePosition")
+        .def(nb::init<>())
+        .def_rw("road_id",
+                &roadmaker::osc::LanePosition::road_id,
+                "The OpenDRIVE <road @id> STRING; see RoadPosition.road_id.")
+        .def_rw("lane_id",
+                &roadmaker::osc::LanePosition::lane_id,
+                "The OpenDRIVE <lane @id> STRING. Negative = right of the reference "
+                "line, positive = left, '0' = the centre lane, which carries no "
+                "traffic — refusing lane 0 is the placement layer's job, since a "
+                "foreign file may legally hold one.")
+        .def_rw("s", &roadmaker::osc::LanePosition::s, "Station along the reference line [m].")
+        .def_rw("offset",
+                &roadmaker::osc::LanePosition::offset,
+                "Lateral offset from the LANE's centre line [m]. 0 is the lane centre, "
+                "which is where an actor belongs.")
+        .def_rw("orientation", &roadmaker::osc::LanePosition::orientation)
+        .def_rw("preserved",
+                &roadmaker::osc::LanePosition::preserved,
+                "Unmodeled attributes and child elements, verbatim and in document "
+                "order. Populated by parse_xosc; re-emitted after the modeled "
+                "content, so nothing a foreign file carried is ever dropped.");
+
     nb::class_<roadmaker::osc::TeleportAction>(osc, "TeleportAction")
         .def(nb::init<>())
-        .def_rw("position", &roadmaker::osc::TeleportAction::position)
+        .def_rw("position",
+                &roadmaker::osc::TeleportAction::position,
+                "A WorldPosition, RoadPosition or LanePosition — the <Position> "
+                "choice this version models. Assigning any of the three replaces it; "
+                "there is no empty state, which is deliberate: a teleport whose "
+                "position defaulted would move the actor to the origin.")
         .def_rw("preserved",
                 &roadmaker::osc::TeleportAction::preserved,
+                "Unmodeled attributes and child elements, verbatim and in document "
+                "order. Populated by parse_xosc; re-emitted after the modeled "
+                "content, so nothing a foreign file carried is ever dropped.");
+
+    nb::class_<roadmaker::osc::AbsoluteTargetSpeed>(osc, "AbsoluteTargetSpeed")
+        .def(nb::init<>())
+        .def_rw("value", &roadmaker::osc::AbsoluteTargetSpeed::value, "Target speed [m/s].")
+        .def_rw("preserved",
+                &roadmaker::osc::AbsoluteTargetSpeed::preserved,
+                "Unmodeled attributes and child elements, verbatim and in document "
+                "order. Populated by parse_xosc; re-emitted after the modeled "
+                "content, so nothing a foreign file carried is ever dropped.");
+
+    nb::class_<roadmaker::osc::TransitionDynamics>(osc, "TransitionDynamics")
+        .def(nb::init<>())
+        .def_rw("dynamics_shape",
+                &roadmaker::osc::TransitionDynamics::dynamics_shape,
+                "'step' (the default — an immediate transition, which is what an "
+                "INITIAL speed means), 'linear', 'cubic' or 'sinusoidal'.")
+        .def_rw("dynamics_dimension",
+                &roadmaker::osc::TransitionDynamics::dynamics_dimension,
+                "'rate', 'time' or 'distance'.")
+        .def_rw("value",
+                &roadmaker::osc::TransitionDynamics::value,
+                "The rate/time/distance to acquire the target. Must be 0 when the "
+                "shape is 'step'.")
+        .def_rw("following_mode",
+                &roadmaker::osc::TransitionDynamics::following_mode,
+                "'position' or 'follow'; empty means omitted.")
+        .def_rw("preserved",
+                &roadmaker::osc::TransitionDynamics::preserved,
+                "Unmodeled attributes and child elements, verbatim and in document "
+                "order. Populated by parse_xosc; re-emitted after the modeled "
+                "content, so nothing a foreign file carried is ever dropped.");
+
+    nb::class_<roadmaker::osc::SpeedAction>(osc, "SpeedAction")
+        .def(nb::init<>())
+        .def_rw("dynamics", &roadmaker::osc::SpeedAction::dynamics)
+        .def_rw("absolute_target",
+                &roadmaker::osc::SpeedAction::absolute_target,
+                "None when the target was a <RelativeTargetSpeed> this version does "
+                "not model — it then rides target_preserved whole.")
+        .def_rw("target_preserved",
+                &roadmaker::osc::SpeedAction::target_preserved,
+                "The <SpeedActionTarget> WRAPPER's own preserved tier, separate from "
+                "`preserved` because the two sit at different nesting levels: a "
+                "<RelativeTargetSpeed> must be re-emitted INSIDE the target.")
+        .def_rw("preserved",
+                &roadmaker::osc::SpeedAction::preserved,
+                "Unmodeled attributes and child elements, verbatim and in document "
+                "order. Populated by parse_xosc; re-emitted after the modeled "
+                "content, so nothing a foreign file carried is ever dropped.");
+
+    nb::class_<roadmaker::osc::LongitudinalAction>(osc, "LongitudinalAction")
+        .def(nb::init<>())
+        .def_rw("speed", &roadmaker::osc::LongitudinalAction::speed)
+        .def_rw("preserved",
+                &roadmaker::osc::LongitudinalAction::preserved,
                 "Unmodeled attributes and child elements, verbatim and in document "
                 "order. Populated by parse_xosc; re-emitted after the modeled "
                 "content, so nothing a foreign file carried is ever dropped.");
@@ -2831,6 +2955,12 @@ NB_MODULE(_roadmaker, m) {
     nb::class_<roadmaker::osc::PrivateAction>(osc, "PrivateAction")
         .def(nb::init<>())
         .def_rw("teleport", &roadmaker::osc::PrivateAction::teleport)
+        .def_rw("longitudinal",
+                &roadmaker::osc::PrivateAction::longitudinal,
+                "The initial-speed arm. <PrivateAction> is a per-element CHOICE, so "
+                "the writer emits ONE element per set arm and an action carrying both "
+                "becomes two — build one action per arm to match what the reader "
+                "would produce from the same file.")
         .def_rw("preserved",
                 &roadmaker::osc::PrivateAction::preserved,
                 "Unmodeled attributes and child elements, verbatim and in document "
@@ -3155,6 +3285,119 @@ NB_MODULE(_roadmaker, m) {
                  "position"_a,
                  "Places an actor via its <Init> <TeleportAction>, creating the "
                  "<Private> and the action if it has none.");
+
+    // --- p8-s2 (#246) ---
+
+    osc_edit.def("set_entity_init_pose",
+                 &roadmaker::osc::edit::set_entity_init_pose,
+                 "scenario"_a,
+                 "entity_name"_a,
+                 "position"_a,
+                 "The general form of set_entity_init_position: places an actor at a "
+                 "WorldPosition, RoadPosition or LanePosition. Retyping a position "
+                 "DROPS the old element's preserved tier and reports it through "
+                 "findings() — a <WorldPosition>'s foreign attributes name a "
+                 "different element and cannot ride onto a <LanePosition>. Refuses a "
+                 "road-relative position that names no road, a lane position that "
+                 "names no lane, or a negative s.");
+
+    osc_edit.def("place_scenario_object",
+                 &roadmaker::osc::edit::place_scenario_object,
+                 "scenario"_a,
+                 "object"_a,
+                 "position"_a,
+                 "Adds an actor AND places it, as ONE undoable command — what the "
+                 "editor's Actor tool pushes for a single click. Not add + set_pose: "
+                 "placing an actor is one gesture and must be one undo entry.");
+
+    osc_edit.def("set_entity_init_speed",
+                 &roadmaker::osc::edit::set_entity_init_speed,
+                 "scenario"_a,
+                 "entity_name"_a,
+                 "speed"_a,
+                 "Sets an actor's initial speed [m/s]. Appends a SECOND "
+                 "<PrivateAction> beside any teleport, because <PrivateAction> is a "
+                 "per-element choice. Refuses a negative speed (never clamps it), and "
+                 "refuses an actor whose speed comes from an unmodeled "
+                 "<RelativeTargetSpeed>.");
+
+    osc_edit.def("rename_scenario_object",
+                 &roadmaker::osc::edit::rename_scenario_object,
+                 "scenario"_a,
+                 "from"_a,
+                 "to"_a,
+                 "Renames an actor AND every entityRef that resolved through it. "
+                 "Renaming the entity alone would leave a dangling reference that "
+                 "write_xosc refuses, making the document unsavable.");
+
+    osc_edit.def("set_scenario_object_bounding_box",
+                 &roadmaker::osc::edit::set_scenario_object_bounding_box,
+                 "scenario"_a,
+                 "entity_name"_a,
+                 "box"_a,
+                 "Replaces an actor's <BoundingBox>, carrying over the element's own "
+                 "preserved tier. Refuses a non-positive dimension, and an entity "
+                 "that is neither a <Vehicle> nor a <Pedestrian>.");
+
+    // --- the actor catalogue (p8-s2, #246) ---
+    //
+    // Kernel-side on purpose: `python/CMakeLists.txt` links roadmaker::core
+    // ALONE, so a catalogue living in the editor could never be replayed
+    // headlessly — and a headless replay producing the same bytes the editor
+    // does is exactly what GW-6 fingerprints.
+
+    nb::enum_<roadmaker::osc::ActorKind>(osc, "ActorKind")
+        .value("Car", roadmaker::osc::ActorKind::Car)
+        .value("Truck", roadmaker::osc::ActorKind::Truck)
+        .value("Bus", roadmaker::osc::ActorKind::Bus)
+        .value("Motorbike", roadmaker::osc::ActorKind::Motorbike)
+        .value("Bicycle", roadmaker::osc::ActorKind::Bicycle)
+        .value("Pedestrian", roadmaker::osc::ActorKind::Pedestrian);
+
+    nb::class_<roadmaker::osc::ActorArchetype>(osc, "ActorArchetype")
+        .def_ro("kind", &roadmaker::osc::ActorArchetype::kind)
+        .def_ro("key",
+                &roadmaker::osc::ActorArchetype::key,
+                "Stable lowercase identifier ('car', 'pedestrian'). Reaches the .xosc "
+                "through the minted entity name, so it is never localized.")
+        .def_ro("label", &roadmaker::osc::ActorArchetype::label)
+        .def_ro("category",
+                &roadmaker::osc::ActorArchetype::category,
+                "Vehicle/@vehicleCategory or Pedestrian/@pedestrianCategory.")
+        .def_ro("pedestrian",
+                &roadmaker::osc::ActorArchetype::pedestrian,
+                "True when this builds a <Pedestrian>, which has no <Performance> and "
+                "no <Axles> in any revision.")
+        .def_ro("width", &roadmaker::osc::ActorArchetype::width)
+        .def_ro("length", &roadmaker::osc::ActorArchetype::length)
+        .def_ro("height", &roadmaker::osc::ActorArchetype::height)
+        .def_ro("mass", &roadmaker::osc::ActorArchetype::mass);
+
+    osc.def(
+        "actor_catalog",
+        []() {
+          const std::span<const roadmaker::osc::ActorArchetype> catalog =
+              roadmaker::osc::actor_catalog();
+          return std::vector<roadmaker::osc::ActorArchetype>(catalog.begin(), catalog.end());
+        },
+        "Every placeable actor archetype, in toolbar order. Dimensions are the "
+        "AASHTO design vehicles; see docs/domain/realism_defaults.md §1.8.");
+
+    osc.def("actor_archetype",
+            &roadmaker::osc::actor_archetype,
+            "kind"_a,
+            nb::rv_policy::reference,
+            "The archetype for `kind`. Every enumerator has exactly one row.");
+
+    osc.def("make_actor",
+            &roadmaker::osc::make_actor,
+            "kind"_a,
+            "name"_a,
+            "A complete <ScenarioObject> for `kind`: bounding box, <Performance> and "
+            "<Axles> for a vehicle, mass and bounding box for a pedestrian. "
+            "write_xosc accepts the result as-is, which is the point — <Performance> "
+            "and <Axles> are required children a caller assembling one by hand will "
+            "eventually forget.");
   }
 
   m.def("derive_surfaces",

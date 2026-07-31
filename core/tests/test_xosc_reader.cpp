@@ -417,15 +417,21 @@ TEST(XoscReader, ANonTeleportPrivateActionIsPreservedWhole) {
   EXPECT_TRUE(contains(written(scenario), "<LongitudinalAction>"));
 }
 
-TEST(XoscReader, ATeleportWhosePositionIsNotAWorldPositionIsPreservedWhole) {
-  // ★ THE TRAP THIS TEST EXISTS FOR. <Position> is a ten-way choice and the
-  // model holds only a WorldPosition. Reading the teleport anyway and leaving
-  // the position at its default would produce a file that parses, writes and
+TEST(XoscReader, ATeleportWhosePositionIsNotModeledIsPreservedWhole) {
+  // ★ THE TRAP THIS TEST EXISTS FOR. <Position> is an eleven-way choice and the
+  // model holds three of them. Reading the teleport anyway and leaving the
+  // position at its default would produce a file that parses, writes and
   // simulates — with the actor silently teleported to the origin instead of
   // onto the lane the author named.
-  const std::string document =
-      with_replacement(R"(<WorldPosition x="0" y="0" z="0" h="0"/>)",
-                       R"(<LanePosition roadId="1" laneId="-1" s="12.5" offset="0"/>)");
+  //
+  // p8-s2 (#246) modeled <LanePosition> and <RoadPosition>, so the fixture had
+  // to move to a position that is still unmodeled — <RelativeLanePosition>,
+  // which additionally references another entity and could not be flattened
+  // into this model even in principle. The trap is unchanged; only the example
+  // of it is.
+  const std::string document = with_replacement(
+      R"(<WorldPosition x="0" y="0" z="0" h="0"/>)",
+      R"(<RelativeLanePosition entityRef="Ego" dLane="-1" ds="12.5" offset="0"/>)");
   const osc::Scenario scenario = parsed(document).scenario;
 
   const osc::PrivateAction& action = scenario.storyboard.init.actions.privates[0].actions[0];
@@ -433,9 +439,160 @@ TEST(XoscReader, ATeleportWhosePositionIsNotAWorldPositionIsPreservedWhole) {
       << "the teleport was modeled without its position — the entity would move to the origin";
 
   const std::string text = written(scenario);
-  EXPECT_TRUE(contains(text, R"(<LanePosition roadId="1" laneId="-1" s="12.5")"));
+  EXPECT_TRUE(contains(text, R"(<RelativeLanePosition entityRef="Ego" dLane="-1" ds="12.5")"));
   EXPECT_FALSE(contains(text, "<WorldPosition"))
-      << "a world position was invented for a lane-positioned teleport";
+      << "a world position was invented for a relatively-positioned teleport";
+}
+
+// --- p8-s2 (#246): road- and lane-relative positions -------------------------
+
+TEST(XoscReader, ALanePositionIsModeledAndRoundTrips) {
+  const std::string document =
+      with_replacement(R"(<WorldPosition x="0" y="0" z="0" h="0"/>)",
+                       R"(<LanePosition roadId="7" laneId="-2" s="12.5" offset="0.25"/>)");
+  const osc::XoscParseResult parsed_document = parsed(document);
+  const osc::Scenario& scenario = parsed_document.scenario;
+
+  const osc::PrivateAction& action = scenario.storyboard.init.actions.privates[0].actions[0];
+  ASSERT_TRUE(action.teleport.has_value());
+  const auto* lane = std::get_if<osc::LanePosition>(&action.teleport->position);
+  ASSERT_NE(lane, nullptr) << "a <LanePosition> was read as some other alternative";
+  EXPECT_EQ(lane->road_id, "7");
+  EXPECT_EQ(lane->lane_id, "-2");
+  EXPECT_DOUBLE_EQ(lane->s, 12.5);
+  EXPECT_DOUBLE_EQ(lane->offset, 0.25);
+  EXPECT_FALSE(lane->orientation.has_value());
+
+  // The ids are STRINGS all the way through (ADR-0014 §5) — no id was parsed
+  // into an int and re-rendered, which is how a leading zero or a temporary
+  // lane-layer id would quietly change on a round trip.
+  const std::string text = written(scenario);
+  EXPECT_TRUE(contains(text, R"(<LanePosition roadId="7" laneId="-2" s="12.5" offset="0.25")"))
+      << text;
+  EXPECT_FALSE(contains(text, "<WorldPosition")) << text;
+
+  // No warning: a modeled position must not report itself as unmodeled.
+  for (const Diagnostic& finding : parsed_document.diagnostics) {
+    EXPECT_EQ(finding.message.find("LanePosition"), std::string::npos) << finding.message;
+  }
+}
+
+TEST(XoscReader, ARoadPositionIsModeledAndRoundTrips) {
+  const std::string document = with_replacement(R"(<WorldPosition x="0" y="0" z="0" h="0"/>)",
+                                                R"(<RoadPosition roadId="3" s="40" t="-1.75"/>)");
+  const osc::Scenario scenario = parsed(document).scenario;
+
+  const osc::PrivateAction& action = scenario.storyboard.init.actions.privates[0].actions[0];
+  ASSERT_TRUE(action.teleport.has_value());
+  const auto* road = std::get_if<osc::RoadPosition>(&action.teleport->position);
+  ASSERT_NE(road, nullptr);
+  EXPECT_EQ(road->road_id, "3");
+  EXPECT_DOUBLE_EQ(road->s, 40.0);
+  EXPECT_DOUBLE_EQ(road->t, -1.75);
+
+  EXPECT_TRUE(contains(written(scenario), R"(<RoadPosition roadId="3" s="40" t="-1.75")"));
+}
+
+TEST(XoscReader, ALanePositionsOrientationRoundTripsWithoutInventingAngles) {
+  // Every angle is optional and "missing h is interpreted as 0" — so an
+  // Orientation that carries only @h must NOT come back carrying p="0" r="0".
+  // Writing the interpretation rather than the content is how a round trip
+  // stops being byte-identical for everyone who omitted an angle.
+  const std::string document = with_replacement(
+      R"(<WorldPosition x="0" y="0" z="0" h="0"/>)",
+      R"(<LanePosition roadId="7" laneId="-1" s="5" offset="0"><Orientation h="1.5708" type="relative"/></LanePosition>)");
+  const osc::Scenario scenario = parsed(document).scenario;
+
+  const osc::PrivateAction& action = scenario.storyboard.init.actions.privates[0].actions[0];
+  ASSERT_TRUE(action.teleport.has_value());
+  const auto* lane = std::get_if<osc::LanePosition>(&action.teleport->position);
+  ASSERT_NE(lane, nullptr);
+  ASSERT_TRUE(lane->orientation.has_value());
+  ASSERT_TRUE(lane->orientation->h.has_value());
+  EXPECT_DOUBLE_EQ(*lane->orientation->h, 1.5708);
+  EXPECT_FALSE(lane->orientation->p.has_value());
+  EXPECT_FALSE(lane->orientation->r.has_value());
+  EXPECT_EQ(lane->orientation->type, "relative");
+
+  const std::string text = written(scenario);
+  EXPECT_TRUE(contains(text, R"(<Orientation h="1.5708" type="relative" />)")) << text;
+  EXPECT_FALSE(contains(text, R"(p="0")")) << "an omitted pitch was invented as 0";
+  EXPECT_FALSE(contains(text, R"(r="0")")) << "an omitted roll was invented as 0";
+}
+
+TEST(XoscReader, AnUnmodeledLanePositionAttributeIsPreservedNotDropped) {
+  // @layer was created in 1.4.0 and this build targets 1.2, so it is not
+  // modeled. It must still survive: a reader that dropped it would silently
+  // move an actor from the temporary lane layer onto the permanent one.
+  const std::string document = with_replacement(
+      R"(<WorldPosition x="0" y="0" z="0" h="0"/>)",
+      R"(<LanePosition roadId="7" laneId="-1" s="5" offset="0" layer="temporary"/>)");
+  const osc::Scenario scenario = parsed(document).scenario;
+
+  EXPECT_TRUE(contains(written(scenario), R"(layer="temporary")"));
+}
+
+TEST(XoscReader, AnInitialSpeedIsModeledAndRoundTrips) {
+  const std::string document = with_replacement(
+      "</Private>",
+      R"(<PrivateAction><LongitudinalAction><SpeedAction><SpeedActionDynamics dynamicsShape="step" value="0" dynamicsDimension="time"/><SpeedActionTarget><AbsoluteTargetSpeed value="13.89"/></SpeedActionTarget></SpeedAction></LongitudinalAction></PrivateAction></Private>)");
+  const osc::Scenario scenario = parsed(document).scenario;
+
+  const std::vector<osc::PrivateAction>& actions =
+      scenario.storyboard.init.actions.privates[0].actions;
+  ASSERT_EQ(actions.size(), 2U) << "the speed action landed in the teleport's element";
+  ASSERT_TRUE(actions[1].longitudinal.has_value());
+  ASSERT_TRUE(actions[1].longitudinal->speed.has_value());
+  ASSERT_TRUE(actions[1].longitudinal->speed->absolute_target.has_value());
+  EXPECT_DOUBLE_EQ(actions[1].longitudinal->speed->absolute_target->value, 13.89);
+  EXPECT_EQ(actions[1].longitudinal->speed->dynamics.dynamics_shape, "step");
+
+  const std::string text = written(scenario);
+  EXPECT_TRUE(contains(text, R"(<AbsoluteTargetSpeed value="13.89" />)")) << text;
+}
+
+TEST(XoscReader, ARelativeTargetSpeedIsPreservedInsideItsTarget) {
+  // <SpeedActionTarget> is a 1..1 union. A <RelativeTargetSpeed> must come back
+  // INSIDE the target and not as its sibling — the <Properties>/<File> lesson,
+  // met on a third element.
+  const std::string document = with_replacement(
+      "</Private>",
+      R"(<PrivateAction><LongitudinalAction><SpeedAction><SpeedActionDynamics dynamicsShape="step" value="0" dynamicsDimension="time"/><SpeedActionTarget><RelativeTargetSpeed entityRef="Ego" value="5" speedTargetValueType="delta"/></SpeedActionTarget></SpeedAction></LongitudinalAction></PrivateAction></Private>)");
+  const osc::Scenario scenario = parsed(document).scenario;
+
+  const std::vector<osc::PrivateAction>& actions =
+      scenario.storyboard.init.actions.privates[0].actions;
+  ASSERT_EQ(actions.size(), 2U);
+  ASSERT_TRUE(actions[1].longitudinal.has_value());
+  ASSERT_TRUE(actions[1].longitudinal->speed.has_value());
+  EXPECT_FALSE(actions[1].longitudinal->speed->absolute_target.has_value());
+
+  // The relative target must sit INSIDE <SpeedActionTarget>. Asserting on the
+  // nesting rather than on adjacent text, because pugixml pretty-prints and the
+  // two elements land on separate lines.
+  const std::string text = written(scenario);
+  const std::size_t target_at = text.find("<SpeedActionTarget>");
+  const std::size_t relative_at = text.find("<RelativeTargetSpeed");
+  const std::size_t close_at = text.find("</SpeedActionTarget>");
+  ASSERT_NE(target_at, std::string::npos) << text;
+  ASSERT_NE(relative_at, std::string::npos) << text;
+  ASSERT_NE(close_at, std::string::npos) << text;
+  EXPECT_LT(target_at, relative_at) << "the relative target was emitted before its wrapper";
+  EXPECT_LT(relative_at, close_at) << "the relative target was emitted OUTSIDE its wrapper";
+}
+
+TEST(XoscReader, ALongitudinalActionThatIsNotASpeedActionIsPreservedWhole) {
+  const std::string document = with_replacement(
+      "</Private>",
+      R"(<PrivateAction><LongitudinalAction><LongitudinalDistanceAction entityRef="Ego" distance="10"/></LongitudinalAction></PrivateAction></Private>)");
+  const osc::Scenario scenario = parsed(document).scenario;
+
+  const std::vector<osc::PrivateAction>& actions =
+      scenario.storyboard.init.actions.privates[0].actions;
+  ASSERT_EQ(actions.size(), 2U);
+  EXPECT_FALSE(actions[1].longitudinal.has_value())
+      << "a LongitudinalDistanceAction was modeled as a SpeedAction";
+  EXPECT_TRUE(contains(written(scenario), "<LongitudinalDistanceAction"));
 }
 
 TEST(XoscReader, ANonSimulationTimeConditionIsPreservedWhole) {

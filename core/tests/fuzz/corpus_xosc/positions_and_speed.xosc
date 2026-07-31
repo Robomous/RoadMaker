@@ -1,0 +1,22 @@
+<OpenSCENARIO><FileHeader revMajor="1" revMinor="2"/><CatalogLocations/>
+<RoadNetwork><LogicFile filepath="t.xodr"/></RoadNetwork>
+<Entities><ScenarioObject name="A"><Vehicle name="car" vehicleCategory="car" mass="1500">
+<BoundingBox><Center x="1.9" y="0" z="0.725"/><Dimensions width="2.13" length="5.79" height="1.45"/></BoundingBox>
+<Performance maxSpeed="69.4" maxAcceleration="5" maxDeceleration="10"/>
+<Axles><FrontAxle maxSteering="0.5" wheelDiameter="0.65" trackWidth="2.13" positionX="2.9" positionZ="0.325"/>
+<RearAxle maxSteering="0" wheelDiameter="0.65" trackWidth="2.13" positionX="0" positionZ="0.325"/></Axles>
+<Properties/></Vehicle></ScenarioObject>
+<ScenarioObject name="B"><Pedestrian name="p" mass="80" pedestrianCategory="pedestrian">
+<BoundingBox><Center x="0" y="0" z="0.875"/><Dimensions width="0.6" length="0.4" height="1.75"/></BoundingBox>
+<Properties/></Pedestrian></ScenarioObject></Entities>
+<Storyboard><Init><Actions>
+<Private entityRef="A">
+<PrivateAction><TeleportAction><Position><LanePosition roadId="3" laneId="-1" s="16" offset="0.25" layer="temporary"><Orientation h="1.5708" type="relative"/></LanePosition></Position></TeleportAction></PrivateAction>
+<PrivateAction><LongitudinalAction><SpeedAction><SpeedActionDynamics dynamicsShape="step" value="0" dynamicsDimension="time"/><SpeedActionTarget><AbsoluteTargetSpeed value="13.89"/></SpeedActionTarget></SpeedAction></LongitudinalAction></PrivateAction>
+</Private>
+<Private entityRef="B">
+<PrivateAction><TeleportAction><Position><RoadPosition roadId="3" s="20" t="-4.5"><Orientation h="0" p="0" r="0" type="absolute"/></RoadPosition></Position></TeleportAction></PrivateAction>
+<PrivateAction><LongitudinalAction><SpeedAction><SpeedActionDynamics dynamicsShape="linear" value="2.5" dynamicsDimension="time" followingMode="follow"/><SpeedActionTarget><RelativeTargetSpeed entityRef="A" value="-5" speedTargetValueType="delta"/></SpeedActionTarget></SpeedAction></LongitudinalAction></PrivateAction>
+</Private>
+</Actions></Init>
+<StopTrigger><ConditionGroup><Condition name="c" delay="0" conditionEdge="rising"><ByValueCondition><SimulationTimeCondition value="0.5" rule="greaterThan"/></ByValueCondition></Condition></ConditionGroup></StopTrigger></Storyboard></OpenSCENARIO>

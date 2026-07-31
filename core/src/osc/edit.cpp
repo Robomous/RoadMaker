@@ -35,7 +35,9 @@
 
 #include <algorithm>
 #include <optional>
+#include <type_traits>
 #include <utility>
+#include <variant>
 
 namespace roadmaker::osc::edit {
 
@@ -133,6 +135,53 @@ std::unique_ptr<Command> refuse(std::string_view label, std::string message, std
   return std::any_of(scenario.entities.scenario_objects.begin(),
                      scenario.entities.scenario_objects.end(),
                      [name](const ScenarioObject& object) { return object.name == name; });
+}
+
+/// Refuses a road-relative position that names nothing (p8-s2, issue #246).
+///
+/// The same checks `validate_scenario` makes, brought FORWARD to the factory on
+/// purpose: the writer's version fires when the user tries to save, by which
+/// point the actor has been on screen for an hour and the message is about a
+/// file rather than about the placement that caused it. A `<WorldPosition>` is
+/// exempt because it names no road.
+///
+/// Note this deliberately does NOT check the road or lane against a live
+/// `RoadNetwork`: an `osc::edit` command takes a `Scenario&` alone (ADR-0014's
+/// amendment), and the ids are OpenDRIVE strings that may legitimately name a
+/// network this process has not loaded.
+[[nodiscard]] Expected<void> check_position(const Position& position) {
+  const std::string* road_id = nullptr;
+  const std::string* lane_id = nullptr;
+  double station = 0.0;
+
+  if (const auto* road = std::get_if<RoadPosition>(&position)) {
+    road_id = &road->road_id;
+    station = road->s;
+  } else if (const auto* lane = std::get_if<LanePosition>(&position)) {
+    road_id = &lane->road_id;
+    lane_id = &lane->lane_id;
+    station = lane->s;
+  } else {
+    return {};
+  }
+
+  if (road_id->empty()) {
+    return make_error(ErrorCode::InvalidArgument,
+                      "a road-relative position names no road",
+                      "Storyboard/Init/Actions/Private/PrivateAction/TeleportAction/Position");
+  }
+  if (lane_id != nullptr && lane_id->empty()) {
+    return make_error(ErrorCode::InvalidArgument,
+                      "a lane position names no lane",
+                      "Storyboard/Init/Actions/Private/PrivateAction/TeleportAction/Position/"
+                      "LanePosition/@laneId");
+  }
+  if (station < 0.0) {
+    return make_error(ErrorCode::InvalidArgument,
+                      fmt::format("s-coordinate {} is negative", station),
+                      "Storyboard/Init/Actions/Private/PrivateAction/TeleportAction/Position");
+  }
+  return {};
 }
 
 // --- sync_traffic_signals ----------------------------------------------------
@@ -343,10 +392,36 @@ private:
 
 // --- set_entity_init_position ------------------------------------------------
 
+/// The `RawXml` a position carries, whichever alternative it is. Used to move a
+/// preserved tier across an in-place coordinate change, and to notice when one
+/// would be lost because the position TYPE changed.
+const RawXml& position_preserved(const Position& position) {
+  return std::visit([](const auto& pose) -> const RawXml& { return pose.preserved; }, position);
+}
+
+void set_position_preserved(Position& position, RawXml preserved) {
+  std::visit([&preserved](auto& pose) { pose.preserved = std::move(preserved); }, position);
+}
+
+const char* position_element(const Position& position) {
+  return std::visit(
+      [](const auto& pose) {
+        using T = std::decay_t<decltype(pose)>;
+        if constexpr (std::is_same_v<T, WorldPosition>) {
+          return "WorldPosition";
+        } else if constexpr (std::is_same_v<T, RoadPosition>) {
+          return "RoadPosition";
+        } else {
+          return "LanePosition";
+        }
+      },
+      position);
+}
+
 class SetEntityInitPositionCommand final : public Command {
 public:
-  SetEntityInitPositionCommand(std::string entity, WorldPosition position)
-      : entity_(std::move(entity)), position_(position) {}
+  SetEntityInitPositionCommand(std::string entity, Position position)
+      : entity_(std::move(entity)), position_(std::move(position)) {}
 
   Expected<void> apply(Scenario& scenario) override {
     if (!has_entity(scenario, entity_)) {
@@ -358,6 +433,7 @@ public:
     // One exact snapshot of the whole subtree; see osc/edit.hpp for why this
     // is deliberately coarser than the mutation.
     before_ = scenario.storyboard.init.actions;
+    findings_.clear();
 
     std::vector<Private>& privates = scenario.storyboard.init.actions.privates;
     auto owner = std::find_if(privates.begin(), privates.end(), [this](const Private& p) {
@@ -381,11 +457,35 @@ public:
       action.teleport = std::move(teleport);
       owner->actions.push_back(std::move(action));
     } else {
-      // Only the coordinates change: the action's and the position's own
-      // preserved tiers belong to the element, not to the value.
-      WorldPosition next = position_;
-      next.preserved = teleporting->teleport->position.preserved;
-      teleporting->teleport->position = std::move(next);
+      Position& current = teleporting->teleport->position;
+      Position next = position_;
+      if (current.index() == next.index()) {
+        // Only the coordinates change: the action's and the position's own
+        // preserved tiers belong to the element, not to the value.
+        set_position_preserved(next, position_preserved(current));
+      } else if (!position_preserved(current).attributes.empty() ||
+                 !position_preserved(current).children.empty()) {
+        // ★ RETYPING A POSITION DROPS ITS PRESERVED TIER, and says so. A
+        // <WorldPosition>'s foreign attributes are meaningless on a
+        // <LanePosition> — they name a different element — so carrying them
+        // across would emit them on a element that never had them. Dropping
+        // them silently is what the never-drop contract (ADR-0014 §6) exists to
+        // prevent, so it is reported instead.
+        findings_.push_back(
+            Diagnostic{.severity = Severity::Warning,
+                       .location = fmt::format("Storyboard/Init/Actions/Private[@entityRef='{}']"
+                                               "/PrivateAction/TeleportAction/Position",
+                                               entity_),
+                       .message = fmt::format("the entity's position changed from <{}> to <{}>, so "
+                                              "content preserved on the old element was dropped: "
+                                              "it does not belong to the new one",
+                                              position_element(current),
+                                              position_element(next)),
+                       .rule_id = {},
+                       .road = {},
+                       .lane = {}});
+      }
+      current = std::move(next);
     }
 
     applied_ = true;
@@ -403,10 +503,304 @@ public:
 
   [[nodiscard]] std::string_view name() const override { return "Place Actor"; }
 
+  [[nodiscard]] std::span<const Diagnostic> findings() const override { return findings_; }
+
 private:
   std::string entity_;
-  WorldPosition position_;
+  Position position_;
   InitActions before_;
+  std::vector<Diagnostic> findings_;
+  bool applied_ = false;
+};
+
+// --- set_entity_init_speed ---------------------------------------------------
+
+/// Gives an entity its `<Init>` initial speed.
+///
+/// APPENDS A SECOND `<PrivateAction>` rather than setting `longitudinal` on the
+/// teleport's: the schema's choice is per-element, so a file holds one action
+/// per arm, and building the model the READER would have produced from the same
+/// file is what keeps the round trip honest (osc/scenario.hpp, PrivateAction).
+class SetEntityInitSpeedCommand final : public Command {
+public:
+  SetEntityInitSpeedCommand(std::string entity, double speed)
+      : entity_(std::move(entity)), speed_(speed) {}
+
+  Expected<void> apply(Scenario& scenario) override {
+    if (!has_entity(scenario, entity_)) {
+      return make_error(ErrorCode::InvalidArgument,
+                        fmt::format("no entity named '{}'", entity_),
+                        "Storyboard/Init/Actions/Private/@entityRef");
+    }
+
+    before_ = scenario.storyboard.init.actions;
+
+    std::vector<Private>& privates = scenario.storyboard.init.actions.privates;
+    auto owner = std::find_if(privates.begin(), privates.end(), [this](const Private& p) {
+      return p.entity_ref == entity_;
+    });
+    if (owner == privates.end()) {
+      Private fresh;
+      fresh.entity_ref = entity_;
+      privates.push_back(std::move(fresh));
+      owner = std::prev(privates.end());
+    }
+
+    const auto existing =
+        std::find_if(owner->actions.begin(), owner->actions.end(), [](const PrivateAction& action) {
+          return action.longitudinal.has_value() && action.longitudinal->speed.has_value();
+        });
+    if (existing == owner->actions.end()) {
+      SpeedAction speed;
+      speed.absolute_target = AbsoluteTargetSpeed{.value = speed_, .preserved = {}};
+      LongitudinalAction longitudinal;
+      longitudinal.speed = std::move(speed);
+      PrivateAction action;
+      action.longitudinal = std::move(longitudinal);
+      owner->actions.push_back(std::move(action));
+    } else if (existing->longitudinal->speed->absolute_target.has_value()) {
+      // Only the value changes. The transition dynamics, the target's preserved
+      // tier and the action's own belong to the element, not to the number —
+      // overwriting a foreign file's `dynamicsShape="linear"` because the user
+      // nudged a speed spin box would be an edit nobody asked for.
+      existing->longitudinal->speed->absolute_target->value = speed_;
+    } else {
+      // ★ The entity's speed is set by a target this version does not model — a
+      // <RelativeTargetSpeed>, riding `target_preserved`. <SpeedActionTarget>
+      // is a 1..1 union, so writing an <AbsoluteTargetSpeed> beside it would
+      // emit BOTH and produce a file no parser accepts; silently deleting the
+      // relative one is the drop ADR-0014 §6 forbids. Refusing is the only
+      // honest third option, and the message says what to do about it.
+      //
+      // The document is untouched: this returns before any mutation the caller
+      // could see, and `before_` is restored to be certain of it.
+      scenario.storyboard.init.actions = before_;
+      return make_error(ErrorCode::InvalidArgument,
+                        fmt::format("entity '{}' takes its initial speed from a target this "
+                                    "version does not model (a <RelativeTargetSpeed>); remove it "
+                                    "in the source file before setting an absolute speed",
+                                    entity_),
+                        "Storyboard/Init/Actions/Private/PrivateAction/LongitudinalAction/"
+                        "SpeedAction/SpeedActionTarget");
+    }
+
+    applied_ = true;
+    return {};
+  }
+
+  Expected<void> revert(Scenario& scenario) override {
+    if (!applied_) {
+      return {};
+    }
+    scenario.storyboard.init.actions = before_;
+    applied_ = false;
+    return {};
+  }
+
+  [[nodiscard]] std::string_view name() const override { return "Set Actor Speed"; }
+
+private:
+  std::string entity_;
+  double speed_ = 0.0;
+  InitActions before_;
+  bool applied_ = false;
+};
+
+// --- place_scenario_object ---------------------------------------------------
+
+/// Adds an entity AND places it, as one undoable step.
+///
+/// ★ ONE COMMAND, NOT TWO PUSHED TOGETHER. Placing an actor is one gesture, so
+/// it must be one undo entry; and it has to be one KERNEL command rather than a
+/// QUndoCommand with two children, because GW-6's evidence is a headless Python
+/// replay and a two-call sequence is not the same thing to replay as one.
+///
+/// A partial apply is impossible by construction: both halves are validated
+/// before either mutates, and the revert unwinds in the reverse order.
+class PlaceScenarioObjectCommand final : public Command {
+public:
+  PlaceScenarioObjectCommand(ScenarioObject object, Position position)
+      : object_(std::move(object)), position_(std::move(position)) {}
+
+  Expected<void> apply(Scenario& scenario) override {
+    // Re-checked at apply for the AddScenarioObjectCommand reason: a redo runs
+    // against a document the intervening undos may have changed.
+    if (has_entity(scenario, object_.name)) {
+      return make_error(ErrorCode::InvalidArgument,
+                        fmt::format("an entity named '{}' already exists", object_.name),
+                        "Entities/ScenarioObject/@name");
+    }
+
+    init_before_ = scenario.storyboard.init.actions;
+    scenario.entities.scenario_objects.push_back(object_);
+
+    Private entry;
+    entry.entity_ref = object_.name;
+    PrivateAction action;
+    TeleportAction teleport;
+    teleport.position = position_;
+    action.teleport = std::move(teleport);
+    entry.actions.push_back(std::move(action));
+    scenario.storyboard.init.actions.privates.push_back(std::move(entry));
+
+    applied_ = true;
+    return {};
+  }
+
+  Expected<void> revert(Scenario& scenario) override {
+    if (!applied_) {
+      return {};
+    }
+    scenario.storyboard.init.actions = init_before_;
+    if (!scenario.entities.scenario_objects.empty()) {
+      scenario.entities.scenario_objects.pop_back();
+    }
+    applied_ = false;
+    return {};
+  }
+
+  [[nodiscard]] std::string_view name() const override { return "Place Actor"; }
+
+private:
+  ScenarioObject object_;
+  Position position_;
+  InitActions init_before_;
+  bool applied_ = false;
+};
+
+// --- rename_scenario_object --------------------------------------------------
+
+/// Renames an entity AND every `entityRef` that resolved through it.
+///
+/// ★ THE REFERENCES ARE THE WHOLE POINT. `@name` is the key `<Private>` resolves
+/// through, so renaming the entity alone leaves a dangling `entityRef` that
+/// `write_xosc` refuses — a rename that appeared to succeed would make the
+/// document unsavable. The `remove_scenario_object` lesson, met a second time.
+class RenameScenarioObjectCommand final : public Command {
+public:
+  RenameScenarioObjectCommand(std::string from, std::string to)
+      : from_(std::move(from)), to_(std::move(to)) {}
+
+  Expected<void> apply(Scenario& scenario) override {
+    std::vector<ScenarioObject>& objects = scenario.entities.scenario_objects;
+    const auto found = std::find_if(objects.begin(),
+                                    objects.end(),
+                                    [this](const ScenarioObject& o) { return o.name == from_; });
+    if (found == objects.end()) {
+      return make_error(ErrorCode::InvalidArgument,
+                        fmt::format("no entity named '{}'", from_),
+                        "Entities/ScenarioObject/@name");
+    }
+    if (has_entity(scenario, to_)) {
+      return make_error(ErrorCode::InvalidArgument,
+                        fmt::format("an entity named '{}' already exists", to_),
+                        "Entities/ScenarioObject/@name");
+    }
+
+    found->name = to_;
+    renamed_refs_.clear();
+    std::vector<Private>& privates = scenario.storyboard.init.actions.privates;
+    for (std::size_t index = 0; index < privates.size(); ++index) {
+      if (privates[index].entity_ref == from_) {
+        privates[index].entity_ref = to_;
+        renamed_refs_.push_back(index);
+      }
+    }
+
+    applied_ = true;
+    return {};
+  }
+
+  Expected<void> revert(Scenario& scenario) override {
+    if (!applied_) {
+      return {};
+    }
+    std::vector<ScenarioObject>& objects = scenario.entities.scenario_objects;
+    const auto found = std::find_if(
+        objects.begin(), objects.end(), [this](const ScenarioObject& o) { return o.name == to_; });
+    if (found != objects.end()) {
+      found->name = from_;
+    }
+    // Only the references this command changed, by INDEX: a blanket
+    // to_ -> from_ sweep would also rewrite a reference that already said `to_`
+    // before the rename, which this command never touched.
+    std::vector<Private>& privates = scenario.storyboard.init.actions.privates;
+    for (const std::size_t index : renamed_refs_) {
+      if (index < privates.size()) {
+        privates[index].entity_ref = from_;
+      }
+    }
+    applied_ = false;
+    return {};
+  }
+
+  [[nodiscard]] std::string_view name() const override { return "Rename Actor"; }
+
+private:
+  std::string from_;
+  std::string to_;
+  std::vector<std::size_t> renamed_refs_;
+  bool applied_ = false;
+};
+
+// --- set_scenario_object_bounding_box ----------------------------------------
+
+class SetBoundingBoxCommand final : public Command {
+public:
+  SetBoundingBoxCommand(std::string entity, BoundingBox box)
+      : entity_(std::move(entity)), box_(std::move(box)) {}
+
+  Expected<void> apply(Scenario& scenario) override {
+    BoundingBox* target = find_box(scenario);
+    if (target == nullptr) {
+      return make_error(ErrorCode::InvalidArgument,
+                        fmt::format("entity '{}' has no bounding box to set: it is neither a "
+                                    "<Vehicle> nor a <Pedestrian>",
+                                    entity_),
+                        "Entities/ScenarioObject/BoundingBox");
+    }
+    before_ = *target;
+    BoundingBox next = box_;
+    // The element's preserved tier belongs to the element, not to the numbers.
+    next.preserved = target->preserved;
+    *target = std::move(next);
+    applied_ = true;
+    return {};
+  }
+
+  Expected<void> revert(Scenario& scenario) override {
+    if (!applied_) {
+      return {};
+    }
+    if (BoundingBox* target = find_box(scenario)) {
+      *target = before_;
+    }
+    applied_ = false;
+    return {};
+  }
+
+  [[nodiscard]] std::string_view name() const override { return "Resize Actor"; }
+
+private:
+  BoundingBox* find_box(Scenario& scenario) {
+    for (ScenarioObject& object : scenario.entities.scenario_objects) {
+      if (object.name != entity_) {
+        continue;
+      }
+      if (auto* vehicle = std::get_if<Vehicle>(&object.entity_object)) {
+        return &vehicle->bounding_box;
+      }
+      if (auto* pedestrian = std::get_if<Pedestrian>(&object.entity_object)) {
+        return &pedestrian->bounding_box;
+      }
+      return nullptr;
+    }
+    return nullptr;
+  }
+
+  std::string entity_;
+  BoundingBox box_;
+  BoundingBox before_;
   bool applied_ = false;
 };
 
@@ -465,12 +859,91 @@ std::unique_ptr<Command> remove_scenario_object(const Scenario& scenario, std::s
 std::unique_ptr<Command> set_entity_init_position(const Scenario& scenario,
                                                   std::string_view entity_name,
                                                   WorldPosition position) {
+  return set_entity_init_pose(scenario, entity_name, Position{std::move(position)});
+}
+
+std::unique_ptr<Command>
+set_entity_init_pose(const Scenario& scenario, std::string_view entity_name, Position position) {
   if (!has_entity(scenario, entity_name)) {
     return refuse("Place Actor",
                   fmt::format("no entity named '{}'", entity_name),
                   "Storyboard/Init/Actions/Private/@entityRef");
   }
-  return std::make_unique<SetEntityInitPositionCommand>(std::string{entity_name}, position);
+  if (const Expected<void> valid = check_position(position); !valid) {
+    return refuse("Place Actor", valid.error().message, valid.error().context);
+  }
+  return std::make_unique<SetEntityInitPositionCommand>(std::string{entity_name},
+                                                        std::move(position));
+}
+
+std::unique_ptr<Command>
+place_scenario_object(const Scenario& scenario, ScenarioObject object, Position position) {
+  if (object.name.empty()) {
+    return refuse("Place Actor",
+                  "an entity needs a name: it is the key every entityRef resolves through",
+                  "Entities/ScenarioObject/@name");
+  }
+  if (has_entity(scenario, object.name)) {
+    return refuse("Place Actor",
+                  fmt::format("an entity named '{}' already exists", object.name),
+                  "Entities/ScenarioObject/@name");
+  }
+  if (const Expected<void> valid = check_position(position); !valid) {
+    return refuse("Place Actor", valid.error().message, valid.error().context);
+  }
+  return std::make_unique<PlaceScenarioObjectCommand>(std::move(object), std::move(position));
+}
+
+std::unique_ptr<Command>
+set_entity_init_speed(const Scenario& scenario, std::string_view entity_name, double speed) {
+  if (!has_entity(scenario, entity_name)) {
+    return refuse("Set Actor Speed",
+                  fmt::format("no entity named '{}'", entity_name),
+                  "Storyboard/Init/Actions/Private/@entityRef");
+  }
+  if (speed < 0.0) {
+    // Refused, never clamped: a negative initial speed is a data-entry slip,
+    // and silently turning it into 0 would hide the slip rather than report it.
+    return refuse("Set Actor Speed",
+                  fmt::format("an initial speed of {} m/s is negative", speed),
+                  "Storyboard/Init/Actions/Private/PrivateAction/LongitudinalAction/SpeedAction");
+  }
+  return std::make_unique<SetEntityInitSpeedCommand>(std::string{entity_name}, speed);
+}
+
+std::unique_ptr<Command>
+rename_scenario_object(const Scenario& scenario, std::string_view from, std::string to) {
+  if (!has_entity(scenario, from)) {
+    return refuse(
+        "Rename Actor", fmt::format("no entity named '{}'", from), "Entities/ScenarioObject/@name");
+  }
+  if (to.empty()) {
+    return refuse("Rename Actor",
+                  "an entity needs a name: it is the key every entityRef resolves through",
+                  "Entities/ScenarioObject/@name");
+  }
+  if (to != from && has_entity(scenario, to)) {
+    return refuse("Rename Actor",
+                  fmt::format("an entity named '{}' already exists", to),
+                  "Entities/ScenarioObject/@name");
+  }
+  return std::make_unique<RenameScenarioObjectCommand>(std::string{from}, std::move(to));
+}
+
+std::unique_ptr<Command> set_scenario_object_bounding_box(const Scenario& scenario,
+                                                          std::string_view entity_name,
+                                                          BoundingBox box) {
+  if (!has_entity(scenario, entity_name)) {
+    return refuse("Resize Actor",
+                  fmt::format("no entity named '{}'", entity_name),
+                  "Entities/ScenarioObject/@name");
+  }
+  if (box.width <= 0.0 || box.length <= 0.0 || box.height <= 0.0) {
+    return refuse("Resize Actor",
+                  "an actor's bounding box must have a positive width, length and height",
+                  "Entities/ScenarioObject/BoundingBox/Dimensions");
+  }
+  return std::make_unique<SetBoundingBoxCommand>(std::string{entity_name}, std::move(box));
 }
 
 } // namespace roadmaker::osc::edit
