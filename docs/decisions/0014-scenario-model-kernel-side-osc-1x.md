@@ -315,6 +315,36 @@ Two consequences worth stating rather than leaving to be discovered:
 ADR-0008's amendment repeats §1's original wording and is corrected in the same
 change.
 
+## Amendment (2026-07-31, `p8-s2` / #246)
+
+**§9 said teaching the project model about scenario files was `p8-s2`'s. It is
+done, and the shape is worth recording**: the `.xosc` is owned by the editor's
+`Document`, stem-matched from the open scene's path and derived on demand. It is
+deliberately **not** stored anywhere — a stored copy of a derivable path can only
+ever disagree with the scene it belongs to. `Project::scenes()` still globs
+`*.xodr` only; a scenario is found through its scene, never listed beside it.
+
+**Two model changes this record should not be read without.**
+
+`TeleportAction::position` became a `std::variant<WorldPosition, RoadPosition,
+LanePosition>` (aliased `osc::Position`). §5's "only `odr_id` may cross the file
+boundary" is what forced it: an actor has to name its road and lane, and it may
+only do so by their OpenDRIVE `@id` **strings**. `WorldPosition` stays
+alternative 0 so a default-constructed `TeleportAction` keeps the meaning every
+`p8-s1` caller gave it.
+
+`<PrivateAction>` gained a second modeled arm, `<LongitudinalAction>`. The
+schema's choice is **per element**, so the writer emits one `<PrivateAction>` per
+set arm and `set_entity_init_speed` appends a second action rather than sharing
+the teleport's — which is the model the reader would have produced from the same
+file, and therefore the one that keeps write → read → write idempotent.
+
+**One known asymmetry, recorded rather than hidden.** `LanePosition::offset` is a
+plain double, so a file that omitted `@offset` gains `offset="0"` on rewrite. The
+specification reads a missing value as 0, so this is a semantic no-op; making it
+optional would push the distinction into every consumer for no gain. It is the
+one place §6's never-drop discipline yields a byte the input did not have.
+
 ## References
 
 - [#245](https://github.com/Robomous/RoadMaker/issues/245) — `p8-s1`, the

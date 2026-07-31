@@ -94,6 +94,7 @@ enum class Id {
   ToolSurface,
   ToolTerrainBrush,
   ToolActorPlace,
+  ScenarioMode,
   LaneWidthEditor,
   SignalPhaseEditor,
   MergeRoads,

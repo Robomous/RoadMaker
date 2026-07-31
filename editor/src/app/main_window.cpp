@@ -613,6 +613,10 @@ MainWindow::MainWindow(QWidget* parent, bool restore_saved_layout)
   connect(actions_->tool_actor_place, &QAction::triggered, this, [this] {
     tool_manager_.set_active(ToolId::ActorPlace);
   });
+  connect(actions_->scenario_mode, &QAction::toggled, this, [this](bool on) {
+    mode_ = on ? EditorMode::Scenario : EditorMode::Map;
+    apply_editor_mode();
+  });
   connect(actions_->tool_maneuver, &QAction::triggered, this, [this] {
     tool_manager_.set_active(ToolId::Maneuver);
   });
@@ -1557,6 +1561,53 @@ void MainWindow::build_tool_options_bar() {
   update_tool_options();
 }
 
+void MainWindow::apply_editor_mode() {
+  const bool scenario = mode_ == EditorMode::Scenario;
+
+  // ★ GATED BY THE REGISTRY'S OWN CLASSIFICATION, not by a hand-written list.
+  // Every tool already declares its toolbar group, and toolbar_violations()
+  // fails the build for one that does not — so deriving the gate from
+  // toolbar_tab_of() means a tool added by a later pillar is gated correctly
+  // the day it lands, with nothing here to update.
+  //
+  // NOTE there is no tab to "switch to": #377 replaced the tabbed toolbar with
+  // one flat row, so the mode enables and disables actions in place. GW-6
+  // step 1's original wording described the removed UI and is amended.
+  for (int raw = 0; raw < static_cast<int>(shortcuts::Id::kIdCount); ++raw) {
+    const auto id = static_cast<shortcuts::Id>(raw);
+    if (shortcuts::entry(id).toolbar_group == nullptr) {
+      continue; // menu-only: File, Edit, View — available in both modes
+    }
+    const shortcuts::ToolbarTab tab = shortcuts::toolbar_tab_of(id);
+    if (tab == shortcuts::ToolbarTab::kCore) {
+      continue; // the persistent strip is never withheld
+    }
+    QAction* action = actions_->action(id);
+    if (action == nullptr) {
+      continue;
+    }
+    action->setEnabled(tab == shortcuts::ToolbarTab::kScenario ? scenario : !scenario);
+  }
+
+  // A tool that has just been disabled must not stay active — it would keep
+  // receiving viewport events through a greyed-out button.
+  if (const std::optional<ToolId> active = tool_manager_.active_id()) {
+    const bool actor_tool = *active == ToolId::ActorPlace;
+    if (actor_tool != scenario) {
+      tool_manager_.set_active(ToolId::Select);
+      actions_->tool_select->setChecked(true);
+    }
+  }
+
+  actions_->scenario_mode->setChecked(scenario);
+
+  // Layer 2: the mode rides the next save, like the camera. It is framing, not
+  // content, so switching mode does not make a scene need saving.
+  SceneState state = document_.scene_state();
+  state.mode = mode_;
+  document_.set_scene_state(state);
+}
+
 void MainWindow::update_tool_options() {
   const QAction* active = actions_->tool_group->checkedAction();
   const bool create_road = active == actions_->tool_create_road;
@@ -1625,6 +1676,16 @@ void MainWindow::load_file(const std::filesystem::path& path) {
 }
 
 void MainWindow::apply_scene_state() {
+  // The EDITING mode this scene was last in (p8-s2, #246). Absent means Map,
+  // which is what every scene written before p8-s2 means and what a plain .xodr
+  // wants. The signal is blocked so restoring it does not look like the user
+  // toggling it, which would immediately write it back as a fresh edit.
+  mode_ = document_.scene_state().mode.value_or(EditorMode::Map);
+  {
+    const QSignalBlocker blocker(actions_->scenario_mode);
+    apply_editor_mode();
+  }
+
   // The scene's stored mode wins for this scene; with none stored (a plain
   // .xodr, or File → New) the application default stands. Deliberately never
   // written back to QSettings: a per-scene override is not a preference.

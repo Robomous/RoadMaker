@@ -42,22 +42,35 @@ of every export step above it.
 
 ### Mode and actors (p8-s2)
 
-1. [ ] Open GW-2's scene and switch to **Scenario** mode. **Expected:** the
-   scenario toolbar tab activates; the road network stays visible and
-   selectable-for-reference but road editing tools are unavailable. The map
-   document is **not** closed — switching back to Map mode returns to it with
-   the undo history intact.
+1. [ ] Open GW-2's scene and switch to **Scenario** mode (View ▸ Scenario
+   Mode). **Expected:** the Actor tool becomes available and every road-editing
+   tool is disabled, while the road network stays visible and
+   selectable-for-reference. The map document is **not** closed — switching back
+   to Map mode returns to it with the undo history intact.
+   *Wording amended in `p8-s2`*: this step originally said "the scenario toolbar
+   tab activates". There are no toolbar tabs — [#377](https://github.com/Robomous/RoadMaker/issues/377)
+   replaced them with a single flat tool row — so the mode enables and disables
+   actions in place. The gate is derived from each tool's registry
+   classification, so a tool added by a later pillar is gated the day it lands.
 2. [ ] Place a **vehicle actor** on a driving lane. **Expected:** it snaps to
-   the lane and takes a road-relative pose (`s`/`t`/heading), the way props and
-   signals do; a drop with no road in reach is refused with a hint rather than
-   leaving a world-placed actor.
+   the lane centre and is stored as a `<LanePosition>` (roadId/laneId/s/offset),
+   so it follows the road through later edits; a drop that is not on a driving
+   lane is refused with a hint **while hovering**, not after the click. The two
+   refusals are distinct — *no road in reach* and *this road has no driving lane
+   here* are different problems.
 3. [ ] Place a second vehicle actor and a **pedestrian actor**. **Expected:**
-   the Attributes pane shows per-actor properties (name, category, bounding
-   box, initial speed) and the scene tree lists actors under a scenario branch,
-   distinct from props.
+   each is drawn as a box proxy sized from its `<BoundingBox>`, oriented along
+   its lane's direction of travel.
+   ⚠ *`p8-s2` did not deliver the Attributes pane rows or the scene-tree
+   scenario branch* — those are follow-up work, tracked on
+   [#246](https://github.com/Robomous/RoadMaker/issues/246). Note also that props
+   and signals are not in the scene tree at all today, so this step's original
+   "distinct from props" phrasing had nothing to contrast against.
 4. [ ] Select an actor and confirm the selection model treats it as its own
    entity kind. **Expected:** selecting an actor does not select the road
-   beneath it; **Delete** removes only the actor; undo restores it.
+   beneath it — an actor selection carries no road id at all. Clicking a placed
+   actor with the Actor tool selects rather than stacking a second one on it.
+   ⚠ *Viewport picking of actors and **Delete** routing are follow-up work.*
 
 ### Routes (p8-s3)
 

@@ -40,6 +40,7 @@
 #include "document/autosave.hpp"
 #include "document/diagnostics_model.hpp"
 #include "document/document.hpp"
+#include "document/editor_mode.hpp"
 #include "document/library_list_model.hpp"
 #include "document/project.hpp"
 #include "document/scene_tree_model.hpp"
@@ -123,6 +124,12 @@ private:
   void build_status_bar();
   /// Refreshes the contextual tool-options row for the active tool.
   void update_tool_options();
+
+  /// Applies `mode_` to the action set (p8-s2, #246): in Scenario mode every
+  /// tool outside the Scenario group is disabled, and in Map mode the Scenario
+  /// tools are. The network stays VISIBLE and PICKABLE either way — it is road
+  /// EDITING that is withheld, not the roads (GW-6 step 1).
+  void apply_editor_mode();
   /// Captures a small viewport render next to the recent-files entry so the
   /// welcome screen can show it (best effort — a null frame is skipped).
   void save_welcome_thumbnail();
@@ -331,6 +338,10 @@ private:
   /// switching to them never shifts the toolbar above (issue #332).
   class TerrainBrushTool* terrain_brush_tool_ = nullptr;
   QComboBox* brush_mode_combo_ = nullptr;
+
+  /// Which document is being authored. Persisted per-scene in the Layer-2
+  /// sidecar, not in QSettings: it describes the SCENE, not a preference.
+  EditorMode mode_ = EditorMode::Map;
   QDoubleSpinBox* brush_radius_spin_ = nullptr;
   QDoubleSpinBox* brush_strength_spin_ = nullptr;
   /// Last hover payload, kept so the status bar can re-render its formatted
