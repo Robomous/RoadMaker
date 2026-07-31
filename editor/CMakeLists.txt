@@ -77,6 +77,7 @@ add_library(roadmaker_editor_lib STATIC
   src/document/asset_import.cpp
   src/document/marking_curve_placement.cpp
   src/document/marking_item.cpp
+  src/document/actor_placement.cpp
   src/document/prop_placement.cpp
   src/document/signal_placement.cpp
   src/document/signal_phase_overlay.cpp
@@ -129,6 +130,7 @@ add_library(roadmaker_editor_lib STATIC
   src/tools/marking_point_tool.cpp
   src/tools/prop_curve_tool.cpp
   src/tools/prop_point_tool.cpp
+  src/tools/actor_tool.cpp
   src/tools/corner_tool.cpp
   src/tools/junction_span_tool.cpp
   src/tools/junction_surface_tool.cpp

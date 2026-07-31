@@ -86,6 +86,7 @@
 #include "panels/properties_panel.hpp"
 #include "panels/scene_tree_panel.hpp"
 #include "panels/unit_spin_box.hpp"
+#include "tools/actor_tool.hpp"
 #include "tools/corner_tool.hpp"
 #include "tools/create_junction_tool.hpp"
 #include "tools/create_road_tool.hpp"
@@ -584,6 +585,13 @@ MainWindow::MainWindow(QWidget* parent, bool restore_saved_layout)
   terrain_brush_tool_ = terrain_brush_tool.get();
   tool_manager_.register_tool(ToolId::TerrainBrush, std::move(terrain_brush_tool));
 
+  // Actor: place a scenario actor on a lane (p8-s2, #246). The first tool that
+  // mutates the SCENARIO rather than the network — it pushes through
+  // Document::push_scenario_command, onto the same undo stack as the roads.
+  auto actor_tool = std::make_unique<ActorTool>(document_, selection_);
+  wire_status(actor_tool.get());
+  tool_manager_.register_tool(ToolId::ActorPlace, std::move(actor_tool));
+
   connect(actions_->tool_corner, &QAction::triggered, this, [this] {
     tool_manager_.set_active(ToolId::Corner);
   });
@@ -601,6 +609,9 @@ MainWindow::MainWindow(QWidget* parent, bool restore_saved_layout)
   });
   connect(actions_->tool_terrain_brush, &QAction::triggered, this, [this] {
     tool_manager_.set_active(ToolId::TerrainBrush);
+  });
+  connect(actions_->tool_actor_place, &QAction::triggered, this, [this] {
+    tool_manager_.set_active(ToolId::ActorPlace);
   });
   connect(actions_->tool_maneuver, &QAction::triggered, this, [this] {
     tool_manager_.set_active(ToolId::Maneuver);

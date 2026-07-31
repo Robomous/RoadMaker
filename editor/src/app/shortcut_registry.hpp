@@ -93,6 +93,7 @@ enum class Id {
   ToolSign,
   ToolSurface,
   ToolTerrainBrush,
+  ToolActorPlace,
   LaneWidthEditor,
   SignalPhaseEditor,
   MergeRoads,

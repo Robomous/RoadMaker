@@ -176,6 +176,27 @@ Current version on `main`: **0.0.1**.
     generational id. Selecting one puts **no road in play** — the entry carries
     no road id at all, which is what keeps a click on an actor from also
     selecting the carriageway under it.
+- **An Actor tool that places scenario actors on lanes**
+  ([#246](https://github.com/Robomous/RoadMaker/issues/246), placement half):
+  click a driving lane to place an actor, drag a placed one to move it. Every
+  mutation goes through `Document::push_scenario_command`, so an actor lands on
+  the **same undo stack** as the roads beneath it, and one placement is **one**
+  undo entry.
+  - **A drop that is not on a driving lane is refused with a hint**, and the
+    hint appears while hovering rather than as a toast after a failed click.
+    The two refusals are kept distinct: *no road in reach* and *this road has no
+    driving lane here* are different problems, and saying the wrong one sends
+    the user looking in the wrong place.
+  - **The ghost and the committed actor share one projection**, so the preview
+    cannot drift from where the actor lands.
+  - **Heading follows the lane's direction of travel**, not the reference line —
+    an actor facing backwards down its lane renders convincingly and simulates
+    absurdly, and nothing downstream would flag it.
+  - **A click on a placed actor selects it** rather than stacking a second one
+    on top, and a click that jitters is still a click: a hand tremor must not
+    re-anchor an actor to where it already is.
+  - The reserved **Scenario** toolbar tab appears for the first time, now that
+    its pillar has landed a tool.
 - **The esmini CI pin is honoured by a bump**
   ([#506](https://github.com/Robomous/RoadMaker/issues/506)): the cache key
   repeated the version as a literal instead of deriving it from
