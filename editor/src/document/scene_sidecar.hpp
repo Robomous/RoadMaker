@@ -53,6 +53,9 @@
 // how a layer comes back as the wrong thing after a save.
 #include "document/reference_layers.hpp"
 
+// For EditorMode, on the same principle: one enum, persisted and live.
+#include "document/editor_mode.hpp"
+
 namespace roadmaker::editor {
 
 /// The camera pose a scene reopens at, in the kernel frame (right-handed,
@@ -126,6 +129,18 @@ struct SceneState {
   /// Per-scene render mode: true = daytime Textured, false = flat Sober.
   /// Overrides the application default for this scene only.
   std::optional<bool> textured;
+
+  /// The editing mode this scene was last in (p8-s2, #246): Map or Scenario.
+  ///
+  /// Layer 2 by ADR-0008 — it is which pane of the editor you were working in,
+  /// not content. Absent means Map, which is what every scene written before
+  /// p8-s2 means and what a plain `.xodr` wants.
+  ///
+  /// ★ THE ACTIVE SCENARIO FILE IS DELIBERATELY NOT STORED BESIDE IT. ADR-0014
+  /// §9 stem-matches `town.xosc` to `town.xodr`, so the path is derivable and a
+  /// stored copy could only ever disagree with it. That is the other half of
+  /// the question the #246 review comment posed.
+  std::optional<EditorMode> mode;
 
   /// The workspace box and the frame it was framed in (p7-s5, #324).
   std::optional<SceneWorkspaceState> workspace;

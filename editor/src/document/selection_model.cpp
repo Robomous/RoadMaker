@@ -77,8 +77,12 @@ std::vector<RoadId> SelectionModel::selected_roads() const {
   std::vector<RoadId> roads;
   for (const SelectionEntry& entry : entries_) {
     if (entry.object.is_valid() || entry.signal.is_valid() || entry.junction.is_valid() ||
-        entry.surface.is_valid()) {
-      continue; // a prop/signal/junction/surface selection puts no road in play
+        entry.surface.is_valid() || !entry.actor.empty()) {
+      // A prop/signal/junction/surface/ACTOR selection puts no road in play.
+      // The actor arm is GW-6 step 4: selecting an actor must not select the
+      // road beneath it, and an actor entry's `road` is default-constructed —
+      // so without this it would contribute an invalid RoadId to the list.
+      continue;
     }
     if (std::ranges::find(roads, entry.road) == roads.end()) {
       roads.push_back(entry.road);
@@ -95,6 +99,16 @@ std::vector<JunctionId> SelectionModel::selected_junctions() const {
     }
   }
   return junctions;
+}
+
+std::vector<std::string> SelectionModel::selected_actors() const {
+  std::vector<std::string> actors;
+  for (const SelectionEntry& entry : entries_) {
+    if (!entry.actor.empty()) {
+      actors.push_back(entry.actor);
+    }
+  }
+  return actors;
 }
 
 std::vector<SurfaceId> SelectionModel::selected_surfaces() const {
@@ -128,6 +142,15 @@ std::vector<SignalId> SelectionModel::selected_signals() const {
 }
 
 bool SelectionModel::is_live(const SelectionEntry& entry) const {
+  // An actor (p8-s2, #246) resolves against the SCENARIO, not the arena — it
+  // has no generational id, so `@name` is the only thing to check. Tested
+  // FIRST: an actor entry carries no valid road id, and falling through to the
+  // road check below would drop every actor as stale.
+  if (!entry.actor.empty()) {
+    const auto& objects = document_.scenario().entities.scenario_objects;
+    return std::ranges::any_of(
+        objects, [&entry](const osc::ScenarioObject& o) { return o.name == entry.actor; });
+  }
   if (entry.object.is_valid()) {
     return document_.network().object(entry.object) != nullptr;
   }

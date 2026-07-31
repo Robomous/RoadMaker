@@ -112,6 +112,7 @@ add_executable(roadmaker_editor_tests
   test_reference_layers.cpp
   test_scene_sidecar.cpp
   test_world_georeference.cpp
+  test_scenario_document.cpp
   test_scene_state.cpp
   test_scene_tree_model.cpp
   test_osc_header_qt_compat.cpp

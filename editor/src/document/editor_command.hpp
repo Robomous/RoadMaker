@@ -17,6 +17,7 @@
 #pragma once
 
 #include "roadmaker/edit/command.hpp"
+#include "roadmaker/osc/edit.hpp"
 
 #include <QString>
 #include <QUndoCommand>
@@ -79,6 +80,37 @@ private:
   // already-applied; flipped only on a SUCCESSFUL redo()/undo() (the failure
   // branches return early, leaving it correct).
   bool applied_ = true;
+};
+
+/// Bridges one kernel `osc::edit::Command` onto the SAME QUndoStack
+/// (p8-s2, #246) — the scenario twin of KernelEditorCommand, created only by
+/// Document::push_scenario_command.
+///
+/// ★ ONE STACK, NOT TWO. Map and scenario entries interleave on Document's
+/// QUndoStack, which is what makes "switching back to Map mode returns to it
+/// with the undo history intact" (GW-6 step 1) true by construction. The
+/// kernel's `osc::edit::ScenarioStack` is Python/headless parity ONLY and never
+/// drives this document.
+///
+/// TWO DIFFERENCES FROM ITS TWIN, both consequences of a scenario holding no
+/// arena content:
+///   * NO DESTRUCTOR. There are no reserved slots to release, because
+///     `osc::edit::Command` has no `discard()` — so the whole #271 hazard this
+///     class's sibling exists to handle simply does not arise here.
+///   * NO DIRTY SET AND NO RE-MESH. Nothing in a scenario is tessellated, so
+///     redo/undo emit `scenario_changed()` rather than driving
+///     `after_kernel_mutation`.
+class ScenarioEditorCommand final : public EditorCommand {
+public:
+  ScenarioEditorCommand(Document& document, std::unique_ptr<roadmaker::osc::edit::Command> command);
+
+protected:
+  void apply() override;
+  void revert() override;
+
+private:
+  Document& document_;
+  std::unique_ptr<roadmaker::osc::edit::Command> command_;
 };
 
 } // namespace roadmaker::editor
