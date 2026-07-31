@@ -197,6 +197,18 @@ Current version on `main`: **0.0.1**.
     re-anchor an actor to where it already is.
   - The reserved **Scenario** toolbar tab appears for the first time, now that
     its pillar has landed a tool.
+- **Placed actors are drawn in the viewport**
+  ([#246](https://github.com/Robomous/RoadMaker/issues/246)): each actor renders
+  as a box proxy sized from its `<BoundingBox>`, instanced through the same
+  batch path props and signals already use, so a scene with a hundred actors
+  costs one geometry upload.
+  - **The box sits in the actor's own frame** — length along its forward axis,
+    width across it, and the bounding box's centre offset **rotated** into that
+    frame. An entity's reference point is the centre of its rear axle, so the
+    body sits ahead of the anchor in whichever direction the actor faces.
+  - **An actor whose road no longer exists is skipped, not drawn at the
+    origin.** A `.xosc` references roads by string and can outlive them; "it is
+    not there" is honest, "it is silently somewhere wrong" is not.
 - **The esmini CI pin is honoured by a bump**
   ([#506](https://github.com/Robomous/RoadMaker/issues/506)): the cache key
   repeated the version as a literal instead of deriving it from

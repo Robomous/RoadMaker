@@ -118,6 +118,14 @@ ViewportWidget::ViewportWidget(Document& document,
     }
     update();
   });
+  // A scenario edit republishes the actors wholesale (p8-s2, #246). There is no
+  // dirty set to be incremental with — nothing in a scenario is tessellated, and
+  // the actor list is small enough that an incremental protocol would be
+  // machinery for a saving nobody can measure.
+  connect(&document_, &Document::scenario_changed, this, [this] {
+    scene_dirty_ = true;
+    update();
+  });
   connect(&selection_, &SelectionModel::selection_changed, this, [this] { update(); });
   connect(&tools_, &ToolManager::active_changed, this, &ViewportWidget::attach_active_tool);
   attach_active_tool();
@@ -238,6 +246,10 @@ void ViewportWidget::rebuild_scene() {
   preview_handles_.clear(); // clear_meshes() dropped them; re-uploaded this paint
 
   Scene scene = build_scene(document_.mesh(), &document_.network());
+  // Scenario actors (p8-s2, #246) are appended AFTER the network: they are
+  // .xosc content, not arena content, so they are never part of NetworkMesh and
+  // must not be faked into it. They ride the same instanced batch path as props.
+  append_scenario_actors(document_.scenario(), document_.network(), scene);
   items_.reserve(scene.items.size());
   for (const SceneItem& item : scene.items) {
     items_.push_back(UploadedItem{.handle = renderer_->upload(item.data),

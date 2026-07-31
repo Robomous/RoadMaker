@@ -23,6 +23,7 @@
 #include "roadmaker/gis/layer.hpp"
 #include "roadmaker/lidar/point_cloud.hpp"
 #include "roadmaker/mesh/mesh.hpp"
+#include "roadmaker/osc/scenario.hpp"
 
 #include <array>
 #include <span>
@@ -97,6 +98,16 @@ struct ScenePropInstance {
   RoadId road;
   ObjectId object;
   SignalId signal;
+
+  /// A scenario actor's `<ScenarioObject @name>` (p8-s2, #246); empty for a
+  /// prop or signal instance.
+  ///
+  /// ★ ITS OWN FIELD, NOT AN OVERLOADED ObjectId. An actor is not arena content
+  /// and has no generational handle, so there is nothing to overload it ONTO —
+  /// and aliasing one id for two entity kinds is how a pick resolves to the
+  /// wrong thing (the p6-s15 leaf-before-parent bug class).
+  std::string actor;
+
   InstanceData transform; ///< model-space -> world (column-major mat4)
 };
 
@@ -116,6 +127,27 @@ struct ScenePropBatch {
 /// scale 1 it matches the pre-instancing world-space bake exactly.
 [[nodiscard]] InstanceData
 prop_transform(const std::array<double, 3>& position, double heading, double scale = 1.0);
+
+/// Column-major model matrix for an ACTOR box at `position`, rotated by
+/// `heading` about +Z and scaled NON-UNIFORMLY to `box`'s dimensions
+/// (p8-s2, #246).
+///
+/// A separate function rather than a parameter on `prop_transform`, because the
+/// scale is genuinely different in kind: a prop scales uniformly by its
+/// declared height, while an actor is a rectangular box whose width, length and
+/// height are independent. Folding a 3-vector into the uniform path would make
+/// every existing caller carry a scale it does not have.
+///
+/// The unit cube it scales spans [-0.5, 0.5] on each axis, so a box of the
+/// declared dimensions comes out centred on the model origin; `box.center_*`
+/// then offsets it, which is what puts the body over the vehicle rather than
+/// over its rear axle (the OpenSCENARIO reference point).
+[[nodiscard]] InstanceData
+actor_transform(const std::array<double, 3>& position, double heading, const osc::BoundingBox& box);
+
+/// The shared unit-cube geometry every actor box instances, spanning
+/// [-0.5, 0.5] on each axis with flat per-face normals.
+[[nodiscard]] RenderMeshData actor_box_mesh();
 
 /// Axis-aligned bounds of the built scene (kernel frame, meters).
 struct SceneBounds {
@@ -236,6 +268,20 @@ void append_signal_items(const SignalInstance& instance, Scene& scene);
 /// non-null, each ground surface's stored material selects its render class
 /// (asphalt/concrete vs. the default grass); a null network keeps grass.
 [[nodiscard]] Scene build_scene(const NetworkMesh& mesh, const RoadNetwork* network = nullptr);
+
+/// Appends every PLACED actor in `scenario` to `scene` as instances of one
+/// shared box batch (p8-s2, #246).
+///
+/// Needs the network as well as the scenario because a `<LanePosition>` is
+/// resolved to a world pose through it — an actor whose road no longer exists
+/// is SKIPPED rather than drawn at the origin, which is the difference between
+/// "it is not there" and "it is silently somewhere wrong".
+///
+/// Actors are NOT part of `NetworkMesh` and must never be faked into it: they
+/// are `.xosc` content, and nothing about them is tessellated from the arena.
+void append_scenario_actors(const osc::Scenario& scenario,
+                            const RoadNetwork& network,
+                            Scene& scene);
 
 /// Scene fragment carrying ONLY the placed props/signals `roads` own — their
 /// batches and text-sign faces, no road items, no bounds beyond what they grow.
