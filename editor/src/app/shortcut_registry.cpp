@@ -372,6 +372,12 @@ constexpr std::array kTable{
     Entry{.id = Id::CenterWorldOrigin,
           .category = "View",
           .description = "Centre the view on the world origin (keeps the zoom)"},
+    // Scenario mode (p8-s2, #246). Menu-only and checkable: MainWindow owns the
+    // state, and it persists per-scene in the Layer-2 sidecar rather than in
+    // QSettings — it describes the SCENE you were working on, not a preference.
+    Entry{.id = Id::ScenarioMode,
+          .category = "View",
+          .description = "Switch between Map and Scenario editing (both documents stay open)"},
     Entry{.id = Id::ViewportHints,
           .category = "View",
           .description = "Show or hide the active tool's hint in the viewport corner",

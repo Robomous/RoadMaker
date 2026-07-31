@@ -435,6 +435,15 @@ Actions::Actions(QUndoStack& undo_stack, QObject* parent) : QObject(parent) {
       tr("Show the active tool's hint in the viewport corner (H) — the status bar keeps it "
          "either way"));
 
+  // View ▸ Scenario Mode (p8-s2, #246). Checkable and menu-only; MainWindow owns
+  // the state and persists it per-scene in the sidecar.
+  scenario_mode = new QAction(tr("&Scenario Mode"), this);
+  scenario_mode->setShortcuts(shortcuts::sequences(shortcuts::Id::ScenarioMode));
+  scenario_mode->setCheckable(true);
+  scenario_mode->setToolTip(
+      tr("Author the scenario that plays on this network. The roads stay visible and "
+         "selectable for reference, but road editing tools are unavailable"));
+
   merge_roads = new QAction(tr("&Merge Roads"), this);
   merge_roads->setShortcuts(shortcuts::sequences(shortcuts::Id::MergeRoads));
   merge_roads->setIconText(tr("Merge"));
@@ -592,6 +601,8 @@ QAction* Actions::action(shortcuts::Id id) const {
     return tool_surface;
   case Id::ToolActorPlace:
     return tool_actor_place;
+  case Id::ScenarioMode:
+    return scenario_mode;
   case Id::ToolTerrainBrush:
     return tool_terrain_brush;
   case Id::LaneWidthEditor:

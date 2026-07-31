@@ -95,6 +95,7 @@ public:
   QAction* tool_surface = nullptr;
   QAction* tool_terrain_brush = nullptr;
   QAction* tool_actor_place = nullptr;
+  QAction* scenario_mode = nullptr;
   QAction* tool_maneuver = nullptr;
   QAction* tool_signal = nullptr;
   QAction* tool_sign = nullptr;

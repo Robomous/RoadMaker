@@ -209,6 +209,17 @@ Current version on `main`: **0.0.1**.
   - **An actor whose road no longer exists is skipped, not drawn at the
     origin.** A `.xosc` references roads by string and can outlive them; "it is
     not there" is honest, "it is silently somewhere wrong" is not.
+- **Map ↔ Scenario mode** ([#246](https://github.com/Robomous/RoadMaker/issues/246)):
+  View ▸ Scenario Mode switches which document is being authored. Both stay
+  open — the roads remain visible and selectable for reference, and switching
+  back returns to the map with its undo history intact, because both documents
+  share one undo stack.
+  - **The gate is derived from each tool's registry classification**, not from a
+    hand-written list, so a tool added by a later pillar is gated correctly the
+    day it lands. The persistent core strip (Select, Move, Delete, file ops,
+    framing) is never withheld by either mode.
+  - The mode persists **per scene** in `<scene>.rmscene.json`, not in settings:
+    it describes the scene you were working on, not a preference.
 - **The esmini CI pin is honoured by a bump**
   ([#506](https://github.com/Robomous/RoadMaker/issues/506)): the cache key
   repeated the version as a literal instead of deriving it from
