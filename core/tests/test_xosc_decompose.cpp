@@ -349,19 +349,41 @@ TEST(XoscDecompose, TrafficSignalIdIsTheSignalOdrIdAndNeverAHandle) {
 }
 
 TEST(XoscDecompose, StatesWithinAPhaseAreSortedBySignalId) {
-  const SignalizedCross fixture;
+  SignalizedCross fixture;
+  // ★ THE CONTROL ORDER IS REVERSED FIRST, AND WITHOUT THAT THIS TEST IS
+  // VACUOUS. A sabotage run proved it: deleting the sort outright changed
+  // nothing, because `junction_phases` walks each controller's <control>
+  // children in order and the template happens to create them with ascending
+  // ids — so the states were already sorted by construction and the sort was
+  // never doing anything observable. Reversing the controls makes the natural
+  // order DESCENDING, so an unsorted decomposition emits them that way and two
+  // networks holding the same signals write two different files.
+  fixture.network.for_each_controller([](ControllerId, Controller& controller) {
+    std::reverse(controller.controls.begin(), controller.controls.end());
+  });
+
   const JunctionSignalDecomposition out =
       decompose_junction_signals(fixture.network, fixture.junction);
+  ASSERT_FALSE(out.controllers.empty());
+
+  std::size_t multi_head_phases = 0;
   for (const TrafficSignalController& controller : out.controllers) {
     for (const Phase& phase : controller.phases) {
+      if (phase.signal_states.size() > 1) {
+        ++multi_head_phases;
+      }
       EXPECT_TRUE(std::is_sorted(phase.signal_states.begin(),
                                  phase.signal_states.end(),
                                  [](const TrafficSignalState& a, const TrafficSignalState& b) {
                                    return a.traffic_signal_id < b.traffic_signal_id;
                                  }))
-          << controller.name;
+          << controller.name << " phase '" << phase.name << "'";
     }
   }
+  // Sortedness over a one-element list is a tautology; this is what makes the
+  // assertion above mean something.
+  EXPECT_GT(multi_head_phases, 0U)
+      << "no phase has two heads, so nothing above can be out of order";
 }
 
 TEST(XoscDecompose, AControllerOnlyCarriesItsOwnHeads) {
