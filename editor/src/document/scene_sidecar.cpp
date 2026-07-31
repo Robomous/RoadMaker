@@ -33,6 +33,7 @@ namespace {
 constexpr auto kVersionKey = "scene_version";
 constexpr auto kViewKey = "view";
 constexpr auto kTexturedKey = "textured";
+constexpr auto kModeKey = "mode";
 constexpr auto kWorkspaceKey = "workspace";
 constexpr auto kReferenceLayersKey = "reference_layers";
 constexpr auto kPathKey = "path";
@@ -386,6 +387,23 @@ Expected<SceneState> parse(const QByteArray& json) {
   } else if (!textured.isUndefined()) {
     spdlog::warn("scene sidecar: 'textured' is not a boolean — falling back to the app default");
   }
+
+  // The editing mode (p8-s2, #246). An unknown spelling degrades to Map with a
+  // warning rather than failing the load — a sidecar from a newer build must
+  // never cost a scene. Note the ACTIVE SCENARIO FILE is deliberately not
+  // stored: ADR-0014 §9 stem-matches `town.xosc` to `town.xodr`, so there is
+  // nothing to remember and nothing that can go stale.
+  const QJsonValue mode = root.value(QLatin1String(kModeKey));
+  if (mode.isString()) {
+    const std::string key = mode.toString().toStdString();
+    if (is_known_editor_mode_key(key)) {
+      state.mode = editor_mode_from_key(key);
+    } else {
+      spdlog::warn("scene sidecar: unknown mode '{}' — opening in Map mode", key);
+    }
+  } else if (!mode.isUndefined()) {
+    spdlog::warn("scene sidecar: 'mode' is not a string — opening in Map mode");
+  }
   state.workspace = parse_workspace(root.value(QLatin1String(kWorkspaceKey)));
   state.reference_layers = parse_reference_layers(root.value(QLatin1String(kReferenceLayersKey)));
   // The WHOLE root, not the leftovers: to_json() merges the owned keys over it,
@@ -429,6 +447,13 @@ QByteArray to_json(const SceneState& state) {
     root.insert(QLatin1String(kTexturedKey), *state.textured);
   } else {
     root.remove(QLatin1String(kTexturedKey));
+  }
+  if (state.mode) {
+    root.insert(QLatin1String(kModeKey),
+                QString::fromUtf8(editor_mode_key(*state.mode).data(),
+                                  static_cast<qsizetype>(editor_mode_key(*state.mode).size())));
+  } else {
+    root.remove(QLatin1String(kModeKey));
   }
   if (state.workspace) {
     root.insert(

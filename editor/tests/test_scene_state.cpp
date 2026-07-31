@@ -380,5 +380,76 @@ TEST(DocumentSceneState, MarkRecoveredOnANeverSavedDocumentKeepsDefaults) {
   EXPECT_FALSE(document.scene_state().view.has_value());
 }
 
+// --- the editing mode (p8-s2, #246) -----------------------------------------
+
+TEST(DocumentSceneState, ASceneWithNoStoredModeOpensInMapMode) {
+  // Every scene written before p8-s2 is this scene, and a plain .xodr always
+  // will be. Absent must mean Map, not "whatever the enum's zero happens to be
+  // today" — hence the optional.
+  Document document;
+  ASSERT_TRUE(document.load(kSample).has_value());
+  EXPECT_FALSE(document.scene_state().mode.has_value());
+}
+
+TEST(DocumentSceneState, TheModeRoundTripsThroughTheSidecar) {
+  QTemporaryDir dir;
+  ASSERT_TRUE(dir.isValid());
+  const std::filesystem::path scene =
+      std::filesystem::path(dir.path().toStdString()) / "modes.xodr";
+  std::filesystem::copy_file(kSample, scene);
+
+  Document writer;
+  ASSERT_TRUE(writer.load(scene).has_value());
+  SceneState state = writer.scene_state();
+  state.mode = EditorMode::Scenario;
+  writer.set_scene_state(state);
+  ASSERT_TRUE(writer.save(scene).has_value());
+
+  Document reader;
+  ASSERT_TRUE(reader.load(scene).has_value());
+  ASSERT_TRUE(reader.scene_state().mode.has_value());
+  EXPECT_EQ(*reader.scene_state().mode, EditorMode::Scenario);
+}
+
+TEST(SceneSidecar, AnUnknownModeSpellingDegradesToMapRatherThanFailing) {
+  // The fmt-s1 discipline: a sidecar from a NEWER build must never block a
+  // load. A third mode this build has never heard of opens in Map.
+  const auto parsed = scene_sidecar::parse(R"({"scene_version": 1, "mode": "storyboard"})");
+  ASSERT_TRUE(parsed.has_value());
+  EXPECT_FALSE(parsed->mode.has_value()) << "an unknown spelling was accepted as a known one";
+}
+
+TEST(SceneSidecar, AModeThatIsNotAStringDegradesRatherThanFailing) {
+  const auto parsed = scene_sidecar::parse(R"({"scene_version": 1, "mode": 7})");
+  ASSERT_TRUE(parsed.has_value());
+  EXPECT_FALSE(parsed->mode.has_value());
+}
+
+TEST(SceneSidecar, AnAbsentModeWritesNoKeyAtAll) {
+  // Absent and "present and equal to the default" are different things on
+  // disk: writing mode="map" into every sidecar would turn a clean two-key
+  // file into a gratuitous diff for every scene that never used the feature.
+  SceneState state;
+  EXPECT_EQ(scene_sidecar::to_json(state).indexOf("\"mode\""), -1);
+
+  // Asserted through a PARSE rather than against a spelling of the serialized
+  // form: to_json is indented, so a literal `"mode":"map"` would be testing
+  // QJsonDocument's whitespace rather than the round trip.
+  state.mode = EditorMode::Map;
+  const auto reparsed = scene_sidecar::parse(scene_sidecar::to_json(state));
+  ASSERT_TRUE(reparsed.has_value());
+  ASSERT_TRUE(reparsed->mode.has_value()) << "an explicit Map mode was not written";
+  EXPECT_EQ(*reparsed->mode, EditorMode::Map);
+}
+
+TEST(SceneSidecar, EveryModeSpellingRoundTripsThroughItsKey) {
+  for (const EditorMode mode : {EditorMode::Map, EditorMode::Scenario}) {
+    EXPECT_TRUE(is_known_editor_mode_key(editor_mode_key(mode)));
+    EXPECT_EQ(editor_mode_from_key(editor_mode_key(mode)), mode);
+  }
+  EXPECT_FALSE(is_known_editor_mode_key("storyboard"));
+  EXPECT_FALSE(is_known_editor_mode_key(""));
+}
+
 } // namespace
 } // namespace roadmaker::editor

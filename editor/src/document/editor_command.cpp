@@ -79,4 +79,34 @@ void KernelEditorCommand::revert() {
   document_.after_kernel_mutation(command_->dirty());
 }
 
+// --- the scenario twin (p8-s2, #246) ----------------------------------------
+
+ScenarioEditorCommand::ScenarioEditorCommand(Document& document,
+                                             std::unique_ptr<roadmaker::osc::edit::Command> command)
+    : EditorCommand(
+          QString::fromUtf8(command->name().data(), static_cast<qsizetype>(command->name().size())),
+          /*already_applied=*/true),
+      document_(document), command_(std::move(command)) {}
+
+void ScenarioEditorCommand::apply() {
+  // As in the twin: a failure here is a broken linear-history invariant, not a
+  // user error — push_scenario_command already vetted the first apply. Log, and
+  // leave the document untouched (the Command contract guarantees that).
+  if (auto applied = command_->apply(document_.scenario_); !applied.has_value()) {
+    spdlog::error("redo '{}' failed: {}", command_->name(), applied.error().message);
+    return;
+  }
+  spdlog::info("redo: {}", command_->name());
+  emit document_.scenario_changed();
+}
+
+void ScenarioEditorCommand::revert() {
+  if (auto reverted = command_->revert(document_.scenario_); !reverted.has_value()) {
+    spdlog::error("undo '{}' failed: {}", command_->name(), reverted.error().message);
+    return;
+  }
+  spdlog::info("undo: {}", command_->name());
+  emit document_.scenario_changed();
+}
+
 } // namespace roadmaker::editor

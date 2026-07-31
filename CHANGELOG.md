@@ -150,6 +150,32 @@ Current version on `main`: **0.0.1**.
     **is** resolved against the referenced `.xodr`: measured against the pinned
     v3.5.0, a dangling `roadId`, a dangling `laneId` and an `s` past the road
     end each fail the load. The speed is not checked; 500 m/s loads cleanly.
+- **The editor holds a scenario beside its scene**
+  ([#246](https://github.com/Robomous/RoadMaker/issues/246), editor half): the
+  `Document` now owns an `osc::Scenario` alongside its `RoadNetwork`, loads and
+  saves it as a **stem-matched `.xosc`** beside the `.xodr`
+  ([ADR-0014](docs/decisions/0014-scenario-model-kernel-side-osc-1x.md) §9), and
+  mutates it through the **same undo stack** as the map.
+  - **One stack, interleaved.** A scenario command and a road command land on
+    the same `QUndoStack`, so undoing past a placement reaches the road edit
+    beneath it. That is what "switching back to Map mode returns to it with the
+    undo history intact" has to mean when both documents are live at once; the
+    kernel's `osc::edit::ScenarioStack` stays Python/headless parity only.
+  - **A scene with no scenario writes no `.xosc` at all**, and a missing one
+    loads in silence — every project that predates this release is that scene,
+    and an empty file beside every `.xodr` would be a visible regression. A
+    malformed one warns and costs the actors, never the roads.
+  - **Save → reopen → save is byte-identical**, asserted on the file's bytes
+    rather than on the parsed model.
+  - **The editing mode is per-scene Layer-2 state**, stored as `mode` in
+    `<scene>.rmscene.json`. The active scenario *file* is deliberately not
+    stored: it is derivable from the scene's stem, and a stored copy could only
+    ever disagree with it. An unknown spelling degrades to Map with a warning.
+  - **Actors are selectable through the one `SelectionModel`**, keyed by
+    `<ScenarioObject @name>` because an actor is not arena content and has no
+    generational id. Selecting one puts **no road in play** — the entry carries
+    no road id at all, which is what keeps a click on an actor from also
+    selecting the carriageway under it.
 - **The esmini CI pin is honoured by a bump**
   ([#506](https://github.com/Robomous/RoadMaker/issues/506)): the cache key
   repeated the version as a literal instead of deriving it from

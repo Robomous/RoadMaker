@@ -23,6 +23,8 @@
 #include "roadmaker/edit/command.hpp"
 #include "roadmaker/error.hpp"
 #include "roadmaker/mesh/mesh.hpp"
+#include "roadmaker/osc/edit.hpp"
+#include "roadmaker/osc/scenario.hpp"
 #include "roadmaker/road/network.hpp"
 #include "roadmaker/xodr/diagnostic.hpp"
 
@@ -158,6 +160,41 @@ public:
   /// when the kernel was built with RM_BUILD_USD=ON.
   [[nodiscard]] Expected<void> export_usd(const std::filesystem::path& path) const;
 #endif
+
+  // --- the scenario (p8-s2, #246) -------------------------------------------
+  //
+  // A `.xosc` is a SECOND Layer-0 document, stem-matched beside the `.xodr`
+  // (ADR-0014 §9) — not session state, and never folded into the Layer-2
+  // sidecar. It lives on `Document` rather than in a sibling class so that
+  // stem-matching is automatic, so the ONE-undo-stack invariant stays trivially
+  // true, and so SelectionModel (which already holds a `const Document&`) can
+  // resolve an actor name with no new wiring.
+
+  [[nodiscard]] const osc::Scenario& scenario() const { return scenario_; }
+
+  /// Whether this scene has a scenario worth writing. An untouched scenario is
+  /// NOT saved: an ordinary road project must not sprout an empty `.xosc`
+  /// beside every `.xodr`.
+  [[nodiscard]] bool has_scenario() const;
+
+  /// The stem-matched `.xosc` path for the currently open scene, or empty when
+  /// nothing is open. Derived, never stored — a stored copy could only ever
+  /// disagree with the scene it belongs to.
+  [[nodiscard]] std::filesystem::path scenario_path() const;
+
+  /// The single entry point for scenario mutations, mirroring push_command:
+  /// applies the command and, on success, pushes it onto the SAME QUndoStack
+  /// (already applied) and emits scenario_changed(). A failed apply leaves the
+  /// scenario unchanged, appends a diagnostic, and is not pushed.
+  ///
+  /// ★ ONE STACK, INTERLEAVED WITH THE MAP'S. Map and scenario commands share
+  /// Document's QUndoStack, which is what makes "switching back to Map mode
+  /// returns to it with the undo history intact" (GW-6 step 1) true by
+  /// construction rather than by bookkeeping. The kernel's
+  /// `osc::edit::ScenarioStack` is Python/headless parity ONLY and must never
+  /// drive this document — a document driven by two stacks has no linear
+  /// history (docs/design/m2/01_editing_framework.md §1.2).
+  [[nodiscard]] Expected<void> push_scenario_command(std::unique_ptr<osc::edit::Command> command);
 
   [[nodiscard]] const RoadNetwork& network() const { return network_; }
 
@@ -315,10 +352,28 @@ signals:
   /// The viewport rebuilds its underlay geometry and textures from this.
   void reference_layers_changed();
 
+  /// The scenario changed — an actor was placed, moved, renamed or removed, or
+  /// a load replaced the whole document (p8-s2, #246).
+  ///
+  /// Deliberately NOT mesh_changed(): a scenario holds no arena content and
+  /// nothing in it is tessellated, so there is no dirty set and no re-mesh.
+  /// Consumers rebuild their actor view from scenario() wholesale — the list is
+  /// small, and an incremental protocol would be machinery for a saving nobody
+  /// can measure.
+  void scenario_changed();
+
 private:
   // The undo-stack bridge mutates the network on redo/undo; it is part of
   // Document's own mutation machinery, not an outside caller.
   friend class KernelEditorCommand;
+  // Its scenario twin, for the same reason (p8-s2, #246).
+  friend class ScenarioEditorCommand;
+
+  /// Best-effort read of the `.xosc` stem-matched to `scene`. Never fails a
+  /// caller: a missing file (every scene without a scenario) is silent, a
+  /// malformed one warns and leaves an empty scenario behind. The `.xodr` alone
+  /// is the scene — the same contract read_scene_sidecar keeps.
+  void read_scenario(const std::filesystem::path& scene);
 
   /// Re-mesh + signals after any kernel mutation (full re-mesh in phase 0;
   /// incremental re-mesh is issue #4).
@@ -352,6 +407,7 @@ private:
   void restore_reference_layers();
 
   RoadNetwork network_;
+  osc::Scenario scenario_;
   NetworkMesh mesh_;
   std::vector<Diagnostic> diagnostics_;
   QString file_path_;

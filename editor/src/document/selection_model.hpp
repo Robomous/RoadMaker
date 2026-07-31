@@ -24,6 +24,7 @@
 
 #include <QObject>
 #include <span>
+#include <string>
 #include <vector>
 
 #include "document/document.hpp"
@@ -32,7 +33,8 @@ namespace roadmaker::editor {
 
 /// One selected entity: a whole road (lane invalid), a lane on a road, a
 /// placed object/prop (`object` valid, `road` = its owning road, lane invalid),
-/// or a junction (`junction` valid, road/lane/object all invalid).
+/// a junction (`junction` valid, road/lane/object all invalid), or a scenario
+/// actor (`actor` non-empty, every id invalid).
 struct SelectionEntry {
   RoadId road;
   LaneId lane;         // invalid = road-level selection
@@ -40,6 +42,20 @@ struct SelectionEntry {
   SignalId signal;     // valid = a placed signal selection (road = its owning road)
   JunctionId junction; // valid = a junction floor selection (road invalid)
   SurfaceId surface;   // valid = an enclosed-area ground surface (road/lane invalid)
+
+  /// A scenario actor's `<ScenarioObject @name>` (p8-s2, #246); empty = not an
+  /// actor entry.
+  ///
+  /// ★ A STRING, NOT AN ID, AND THAT IS FORCED. An actor is not arena content —
+  /// it lives in the `.xosc`, and `@name` is the key every `entityRef` resolves
+  /// through (ADR-0014 §5). There is no generational handle to hold, so this is
+  /// the only thing that can identify one.
+  ///
+  /// It rides `SelectionEntry` rather than a parallel channel because CLAUDE.md
+  /// makes SelectionModel the single source of truth for the selection — a
+  /// second channel is how "selecting an actor also selected the road beneath
+  /// it" gets reintroduced.
+  std::string actor;
 
   friend bool operator==(const SelectionEntry&, const SelectionEntry&) = default;
 };
@@ -108,6 +124,12 @@ public:
   /// surface floor pick lands here; a surface is auto-managed by its enclosing
   /// road loop, so this never puts a road (or its lanes) in play.
   [[nodiscard]] std::vector<SurfaceId> selected_surfaces() const;
+
+  /// Scenario actors (p8-s2, #246) present in the selection, by
+  /// `<ScenarioObject @name>`, in selection order. Selecting an actor never
+  /// puts the road beneath it in play — that is GW-6 step 4, and it holds
+  /// because an actor entry carries no road id at all.
+  [[nodiscard]] std::vector<std::string> selected_actors() const;
 
 signals:
   /// Emitted only when the selection actually changes. Carries no payload —

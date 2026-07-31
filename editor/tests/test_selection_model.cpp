@@ -15,6 +15,8 @@
  */
 
 #include "roadmaker/edit/operations.hpp"
+#include "roadmaker/osc/catalog.hpp"
+#include "roadmaker/osc/edit.hpp"
 
 #include <gtest/gtest.h>
 
@@ -380,6 +382,104 @@ TEST(SelectionModel, StaleSurfaceEntryIsPrunedWhenItsLoopBreaks) {
   document.undo_stack()->undo(); // reverts road "d" — the loop opens
   EXPECT_EQ(document.network().surface(surface), nullptr);
   EXPECT_TRUE(selection.empty());
+}
+
+// --- scenario actors (p8-s2, #246) ------------------------------------------
+
+namespace {
+
+/// Places an actor through the document's command path and returns its name.
+std::string place_actor(Document& document, const char* name) {
+  osc::LanePosition lane;
+  lane.road_id = "1";
+  lane.lane_id = "-1";
+  lane.s = 10.0;
+  EXPECT_TRUE(
+      document.push_scenario_command(osc::edit::set_logic_file(document.scenario(), "s.xodr"))
+          .has_value());
+  EXPECT_TRUE(document
+                  .push_scenario_command(osc::edit::place_scenario_object(
+                      document.scenario(), osc::make_actor(osc::ActorKind::Car, name), lane))
+                  .has_value());
+  return name;
+}
+
+} // namespace
+
+TEST(SelectionModel, AnActorIsSelectableAndResolvesAgainstTheScenario) {
+  Document document;
+  ASSERT_TRUE(document.load(kSample).has_value());
+  const std::string actor = place_actor(document, "Car1");
+
+  SelectionModel selection(document);
+  selection.select(SelectionEntry{.actor = actor});
+
+  ASSERT_EQ(selection.entries().size(), 1U) << "a live actor was dropped as stale";
+  EXPECT_EQ(selection.selected_actors(), std::vector<std::string>{actor});
+}
+
+TEST(SelectionModel, SelectingAnActorPutsNoRoadInPlay) {
+  // ★ GW-6 step 4: selecting an actor must not select the road beneath it. An
+  // actor entry's `road` is default-constructed, so without the actor arm in
+  // selected_roads() it would contribute an INVALID RoadId to the list — which
+  // every downstream tool would then try to resolve.
+  Document document;
+  ASSERT_TRUE(document.load(kSample).has_value());
+  const std::string actor = place_actor(document, "Car1");
+
+  SelectionModel selection(document);
+  selection.select(SelectionEntry{.actor = actor});
+
+  EXPECT_TRUE(selection.selected_roads().empty());
+  EXPECT_TRUE(selection.selected_objects().empty());
+  EXPECT_TRUE(selection.selected_signals().empty());
+  EXPECT_TRUE(selection.selected_junctions().empty());
+  EXPECT_TRUE(selection.selected_surfaces().empty());
+}
+
+TEST(SelectionModel, AnActorNoScenarioCarriesIsDroppedAsStale) {
+  Document document;
+  ASSERT_TRUE(document.load(kSample).has_value());
+
+  SelectionModel selection(document);
+  selection.select(SelectionEntry{.actor = "Ghost"});
+  EXPECT_TRUE(selection.empty()) << "an actor that does not exist was selected";
+}
+
+TEST(SelectionModel, RemovingAnActorMakesItsSelectionStale) {
+  Document document;
+  ASSERT_TRUE(document.load(kSample).has_value());
+  const std::string actor = place_actor(document, "Car1");
+
+  SelectionModel selection(document);
+  selection.select(SelectionEntry{.actor = actor});
+  ASSERT_FALSE(selection.empty());
+
+  ASSERT_TRUE(
+      document.push_scenario_command(osc::edit::remove_scenario_object(document.scenario(), actor))
+          .has_value());
+  // Re-selecting is what re-runs is_live: the selection is view state, and
+  // (like a deleted road) an actor removal does not itself clear it.
+  selection.select(SelectionEntry{.actor = actor});
+  EXPECT_TRUE(selection.empty());
+}
+
+TEST(SelectionModel, AnActorAndARoadCoexistInOneSelection) {
+  // Multi-select across the two documents is legal — the Attributes pane picks
+  // by primary(), and nothing should refuse the combination.
+  Document document;
+  ASSERT_TRUE(document.load(kSample).has_value());
+  const std::string actor = place_actor(document, "Car1");
+  const RoadId road = all_roads(document).front();
+
+  SelectionModel selection(document);
+  selection.select(SelectionEntry{.road = road});
+  selection.select(SelectionEntry{.actor = actor}, SelectMode::Add);
+
+  EXPECT_EQ(selection.entries().size(), 2U);
+  EXPECT_EQ(selection.selected_roads(), std::vector<RoadId>{road});
+  EXPECT_EQ(selection.selected_actors(), std::vector<std::string>{actor});
+  EXPECT_EQ(selection.primary().actor, actor) << "the most recent entry is the actor";
 }
 
 } // namespace

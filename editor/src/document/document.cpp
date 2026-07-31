@@ -21,6 +21,8 @@
 #include "roadmaker/io/gltf_exporter.hpp"
 #include "roadmaker/io/usd_exporter.hpp"
 #include "roadmaker/mesh/mesh_builder.hpp"
+#include "roadmaker/osc/reader.hpp"
+#include "roadmaker/osc/writer.hpp"
 #include "roadmaker/road/surface_derivation.hpp"
 #include "roadmaker/xodr/reader.hpp"
 #include "roadmaker/xodr/rules.hpp"
@@ -101,6 +103,9 @@ Expected<void> Document::load(const std::filesystem::path& path) {
   // Layer 2 (fmt-s1, #325): comfort state, read AFTER the network is in place
   // and never able to fail the load — the .xodr alone is the scene.
   read_scene_sidecar(path);
+  // The second Layer-0 document (p8-s2, #246), on the same terms: a scene with
+  // no scenario is the common case and must load in silence.
+  read_scenario(path);
 
   spdlog::info("loaded {} ({} roads, {} diagnostics)",
                path.string(),
@@ -109,11 +114,72 @@ Expected<void> Document::load(const std::filesystem::path& path) {
 
   emit loaded();
   emit mesh_changed({});
+  emit scenario_changed();
   emit diagnostics_changed();
   // Last: loaded() arms the viewport's auto-framing, and a restored camera
   // has to overrule it.
   emit scene_state_loaded();
   return {};
+}
+
+std::filesystem::path Document::scenario_path() const {
+  if (file_path_.isEmpty()) {
+    return {};
+  }
+  // Concatenation rather than replace_extension, the scene_sidecar::path_for
+  // rule: a bare relative `scene.xodr` (empty parent path) must yield
+  // `scene.xosc` and not something absolute-looking.
+  std::filesystem::path scene(file_path_.toStdString());
+  scene.replace_extension(".xosc");
+  return scene;
+}
+
+bool Document::has_scenario() const {
+  // "Worth writing", not "non-default". An untouched Scenario still serializes
+  // to the always-present skeleton (ADR-0014), so comparing bytes against an
+  // empty one would call every scene a scenario. The question is whether the
+  // user authored anything: entities, controllers, init actions, a logic file,
+  // parameters, or preserved content read from a file that already existed.
+  const osc::Scenario& s = scenario_;
+  return !s.entities.scenario_objects.empty() ||
+         !s.road_network.traffic_signal_controllers.empty() ||
+         !s.storyboard.init.actions.privates.empty() || s.road_network.logic_file.has_value() ||
+         !s.parameter_declarations.empty() || !s.storyboard.preserved_stories.empty() ||
+         !s.storyboard.stop_trigger.condition_groups.empty() || !s.preserved.empty();
+}
+
+void Document::read_scenario(const std::filesystem::path& scene) {
+  scenario_ = osc::Scenario{};
+
+  std::filesystem::path path(scene);
+  path.replace_extension(".xosc");
+  std::error_code ec;
+  if (!std::filesystem::exists(path, ec)) {
+    return; // every scene without a scenario — silent, and the common case
+  }
+
+  auto parsed = osc::load_xosc(path);
+  if (!parsed) {
+    // Warned, never fatal: the `.xodr` alone is the scene. The diagnostic is
+    // published so the dock says WHY the actors are missing, rather than the
+    // scenario silently appearing empty.
+    spdlog::warn("scenario not read: {} ({})", parsed.error().message, parsed.error().context);
+    diagnostics_.push_back(Diagnostic{
+        .severity = Severity::Warning,
+        .location = path.filename().string(),
+        .message = "the scenario beside this scene could not be read: " + parsed.error().message,
+    });
+    return;
+  }
+
+  scenario_ = std::move(parsed->scenario);
+  // The reader's findings join the document's, so an unmodeled element a
+  // foreign scenario carried is visible rather than merely preserved.
+  diagnostics_.insert(diagnostics_.end(), parsed->diagnostics.begin(), parsed->diagnostics.end());
+  spdlog::info("loaded {} ({} actors, {} controllers)",
+               path.string(),
+               scenario_.entities.scenario_objects.size(),
+               scenario_.road_network.traffic_signal_controllers.size());
 }
 
 void Document::read_scene_sidecar(const std::filesystem::path& scene) {
@@ -285,6 +351,7 @@ void Document::reset() {
   // Clear the stack before replacing the network — see the note in load().
   undo_stack_.clear();
   network_ = RoadNetwork{};
+  scenario_ = osc::Scenario{};
   diagnostics_.clear();
   file_path_.clear();
   scene_state_ = SceneState{};
@@ -293,6 +360,7 @@ void Document::reset() {
 
   emit loaded();
   emit mesh_changed({});
+  emit scenario_changed();
   emit diagnostics_changed();
   // Emitted here too (unlike the recovery path): File → New must fall back to
   // the APPLICATION default render mode, not inherit the per-scene override of
@@ -341,6 +409,29 @@ Expected<void> Document::save(const std::filesystem::path& path) {
                   written_state.error().message,
                   written_state.error().context);
   }
+  // The second Layer-0 file (p8-s2, #246), stem-matched beside the .xodr per
+  // ADR-0014 §9.
+  //
+  // WRITTEN ONLY WHEN THERE IS A SCENARIO, so an ordinary road project does not
+  // sprout an empty .xosc beside every scene. And like the sidecar, a failure
+  // here NEVER fails a save that already wrote the .xodr: the roads are on
+  // disk, and reporting the scenario problem is more useful than pretending the
+  // whole save failed.
+  if (has_scenario()) {
+    const std::filesystem::path scenario_file = scenario_path();
+    if (const auto written_scenario = osc::save_xosc(scenario_, scenario_file); !written_scenario) {
+      spdlog::error("scenario not written: {} ({})",
+                    written_scenario.error().message,
+                    written_scenario.error().context);
+      diagnostics_.push_back(Diagnostic{
+          .severity = Severity::Error,
+          .location = scenario_file.filename().string(),
+          .message =
+              "the scene was saved but its scenario was not: " + written_scenario.error().message,
+      });
+    }
+  }
+
   undo_stack_.setClean();
   spdlog::info("saved {} ({} roads, {} diagnostics)",
                path.string(),
@@ -402,6 +493,51 @@ Expected<void> Document::push_command(std::unique_ptr<edit::Command> command) {
   // Already applied above — KernelEditorCommand skips the redo() that
   // QUndoStack fires on push.
   push_applied_with_regeneration(std::move(command), /*already_meshed=*/false);
+  return {};
+}
+
+Expected<void> Document::push_scenario_command(std::unique_ptr<osc::edit::Command> command) {
+  if (command == nullptr) {
+    return make_error(ErrorCode::InvalidArgument, "null scenario command");
+  }
+  // A preview session owns the network, not the scenario — but the two share
+  // ONE undo stack, and pushing a scenario entry mid-drag would land it between
+  // the drag's begin and its single commit. Refused for the same reason
+  // push_command is.
+  if (preview_active()) {
+    return make_error(ErrorCode::InvalidArgument,
+                      "push_scenario_command during a preview session (commit or cancel first)");
+  }
+
+  const std::string name(command->name());
+  if (auto applied = command->apply(scenario_); !applied.has_value()) {
+    diagnostics_.push_back(Diagnostic{
+        .severity = Severity::Error,
+        .location = applied.error().context,
+        .message = name + ": " + applied.error().message,
+    });
+    spdlog::error("{} failed: {}", name, applied.error().message);
+    emit diagnostics_changed();
+    return applied;
+  }
+
+  // What the command had to cope with — the osc::edit twin of follow_records().
+  // Surfaced rather than swallowed: a mutation that dropped a preserved tier
+  // must not leave that unsaid (ADR-0014 §6).
+  bool reported = false;
+  for (const Diagnostic& finding : command->findings()) {
+    diagnostics_.push_back(finding);
+    reported = true;
+  }
+
+  spdlog::info("scenario command: {}", name);
+  // Already applied — ScenarioEditorCommand skips the redo() QUndoStack fires
+  // on push, exactly as KernelEditorCommand does.
+  undo_stack_.push(new ScenarioEditorCommand(*this, std::move(command)));
+  emit scenario_changed();
+  if (reported) {
+    emit diagnostics_changed();
+  }
   return {};
 }
 
