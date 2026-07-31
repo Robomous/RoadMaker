@@ -526,7 +526,7 @@ jobs:
             authored.xodr
 
   fuzz-smoke:
-    name: xodr fuzz smoke (30 s)
+    name: xodr + xosc fuzz smoke (30 s each)
     needs: [changes, build-test-linux]
     if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
@@ -546,10 +546,15 @@ jobs:
           -DRM_BUILD_TESTS=ON -DRM_BUILD_FUZZERS=ON
           -DCMAKE_C_COMPILER_LAUNCHER=ccache
           -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
-      - name: Build fuzzer
-        run: cmake --build build --target roadmaker_fuzz_xodr
-      - name: Run 30 s smoke
+      - name: Build fuzzers
+        run: cmake --build build --target roadmaker_fuzz_xodr roadmaker_fuzz_xosc
+      - name: Run 30 s smoke (xodr)
         run: ./build/core/tests/fuzz/roadmaker_fuzz_xodr core/tests/fuzz/corpus -max_total_time=30 -print_final_stats=1
+      # Its own corpus (p8-s1, #245). Seeding a scenario parser with road
+      # networks spends the budget rediscovering that <OpenDRIVE> is not
+      # <OpenSCENARIO>.
+      - name: Run 30 s smoke (xosc)
+        run: ./build/core/tests/fuzz/roadmaker_fuzz_xosc core/tests/fuzz/corpus_xosc -max_total_time=30 -print_final_stats=1
 
   scale-bench:
     name: scale targets (1k roads / 50 km²)
@@ -695,7 +700,13 @@ jobs:
         uses: actions/cache@v4
         with:
           path: .esmini
-          key: esmini-${{ runner.os }}-v3.5.0
+          # The env var, NOT a repeated literal (#506). With a literal here the
+          # documented bump procedure — "edit ESMINI_VERSION" — updates the
+          # fetch URL and not the key, so the cache hits, the fetch step skips
+          # itself via its own `if:`, and the job silently keeps testing against
+          # the binary the bump was meant to replace. Green, with no fetch in
+          # the log unless someone looks.
+          key: esmini-${{ runner.os }}-${{ env.ESMINI_VERSION }}
       - name: Fetch pinned esmini release binary
         if: steps.esmini-cache.outputs.cache-hit != 'true'
         run: |
@@ -711,6 +722,23 @@ jobs:
         run: python3 scripts/esmini_smoke.py --esmini .esmini/esmini/bin/esmini assets/samples/*.xodr
       - name: Broken fixture must fail (guards the gate itself)
         run: python3 scripts/esmini_smoke.py --esmini .esmini/esmini/bin/esmini --expect-fail tests/esmini/broken.xodr
+      # From p8-s1 (#245): the first .xosc RoadMaker itself wrote that this job
+      # has ever seen. Everything above smokes a .xodr through a wrapper the
+      # SCRIPT synthesizes, so until now nothing here tested a scenario the
+      # product emits.
+      #
+      # What this proves is narrower than it looks, and the narrow claim is the
+      # honest one: esmini v3.5.0 rejects a truncated document, a duplicated
+      # element, an unresolvable <LogicFile> and a dangling entityRef — but
+      # accepts a dangling trafficSignalId, a garbage @state, a dangling
+      # controller reference and a nonexistent phase name IN SILENCE, with a
+      # byte-identical log (measured 2026-07-30; see scripts/esmini_smoke.py).
+      # So this step gates document structure and entity/network references,
+      # and says nothing at all about the traffic-signal half.
+      - name: Smoke-load the tracked .xosc scenario
+        run: python3 scripts/esmini_smoke.py --esmini .esmini/esmini/bin/esmini --xosc tests/esmini/signalized.xosc
+      - name: Broken scenario must fail (guards the .xosc path itself)
+        run: python3 scripts/esmini_smoke.py --esmini .esmini/esmini/bin/esmini --xosc --expect-fail tests/esmini/broken.xosc
 
   # Always runs, on every event — this is the gate a docs-only change most needs.
   docs:

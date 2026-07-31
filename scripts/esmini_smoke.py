@@ -14,7 +14,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""esmini round-trip smoke check for exported OpenDRIVE (issue #51).
+"""esmini smoke check for exported OpenDRIVE and OpenSCENARIO (issues #51, #245).
 
 The cross-cutting quality gate owned by M3a (docs/roadmap/roadmap.md,
 docs/design/m3a/05_editor_and_docs.md section 4): every golden .xodr must
@@ -23,14 +23,33 @@ a pinned release binary fetched in CI like a test fixture, never linked
 into any RoadMaker target and never redistributed (MPL-2.0, verified
 against docs/standards/dependencies.md 2026-07-11).
 
-For each .xodr the script generates a minimal OpenSCENARIO wrapper (esmini
-has no bare road-network mode — the scenario is the entry point), runs
-`esmini --headless` for half a simulated second, and fails on a non-zero
-exit or a load-error marker in the log. `--expect-fail` inverts the check
-for the deliberately-broken fixture that guards the gate itself.
+TWO MODES.
+
+* Default: each argument is a .xodr, and the script SYNTHESIZES the minimal
+  OpenSCENARIO wrapper below (esmini has no bare road-network mode — the
+  scenario is the entry point).
+* `--xosc`: each argument is a real, tracked .xosc, fed to esmini as-is.
+  Added by p8-s1 (#245), when RoadMaker first emitted scenarios of its own;
+  before that the only .xosc esmini ever saw was this file's template.
+
+Either way it runs `esmini --headless` for half a simulated second and fails
+on a non-zero exit or a load-error marker in the log. `--expect-fail` inverts
+the check for the deliberately-broken fixtures that guard the gate itself.
+
+★ WHAT THIS GATE DOES AND DOES NOT CATCH, measured against v3.5.0 on
+2026-07-30 rather than assumed. It REJECTS (exit 255): truncated XML, a
+duplicated element, a <LogicFile> that resolves to nothing, and a dangling
+entityRef. It ACCEPTS IN SILENCE, with a byte-identical log: a
+trafficSignalId naming no <signal>, a garbage @state token, a
+trafficSignalControllerRef naming no controller, a nonexistent phase name,
+and an undefined revMinor. So for the traffic-signal half the checker-rule
+UIDs in core/include/roadmaker/osc/rules.hpp are not "additive to esmini" —
+they are the only check that exists. Do not read a green run here as a
+statement about signal content.
 
 Usage:
     esmini_smoke.py --esmini <esmini-binary> [--expect-fail] <xodr> [...]
+    esmini_smoke.py --esmini <esmini-binary> --xosc [--expect-fail] <xosc> [...]
 """
 
 from __future__ import annotations
@@ -112,20 +131,19 @@ ERROR_MARKERS = (
 )
 
 
-def smoke_one(esmini: Path, xodr: Path) -> tuple[bool, str]:
-    """Returns (loaded_cleanly, combined_output)."""
-    with tempfile.TemporaryDirectory(prefix="esmini_smoke_") as tmp:
-        wrapper = Path(tmp) / f"{xodr.stem}_smoke.xosc"
-        wrapper.write_text(XOSC_TEMPLATE.format(xodr=xodr.resolve().as_posix()),
-                           encoding="utf-8")
-        result = subprocess.run(
-            [str(esmini), "--headless", "--osc", str(wrapper),
-             "--fixed_timestep", "0.05", "--disable_log"],
-            capture_output=True,
-            text=True,
-            timeout=120,
-        )
+def run_esmini(esmini: Path, scenario: Path) -> tuple[bool, str]:
+    """Runs one scenario. Returns (loaded_cleanly, combined_output)."""
+    result = subprocess.run(
+        [str(esmini), "--headless", "--osc", str(scenario),
+         "--fixed_timestep", "0.05", "--disable_log"],
+        capture_output=True,
+        text=True,
+        timeout=120,
+    )
     output = result.stdout + result.stderr
+    # The return code is checked FIRST and on its own: esmini exits 255 on a
+    # truncated document while printing none of the markers below, so a
+    # marker-only check would pass the most broken input there is.
     if result.returncode != 0:
         return False, output
     lowered = output.lower()
@@ -134,33 +152,46 @@ def smoke_one(esmini: Path, xodr: Path) -> tuple[bool, str]:
     return True, output
 
 
+def smoke_one(esmini: Path, xodr: Path) -> tuple[bool, str]:
+    """Smokes a .xodr through a synthesized wrapper scenario."""
+    with tempfile.TemporaryDirectory(prefix="esmini_smoke_") as tmp:
+        wrapper = Path(tmp) / f"{xodr.stem}_smoke.xosc"
+        wrapper.write_text(XOSC_TEMPLATE.format(xodr=xodr.resolve().as_posix()),
+                           encoding="utf-8")
+        return run_esmini(esmini, wrapper)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--esmini", required=True, type=Path,
                         help="path to the esmini binary")
     parser.add_argument("--expect-fail", action="store_true",
                         help="invert the check (broken-fixture guard)")
-    parser.add_argument("xodr", nargs="+", type=Path)
+    parser.add_argument("--xosc", action="store_true",
+                        help="the arguments are real .xosc scenarios, not .xodr "
+                             "networks to wrap")
+    parser.add_argument("paths", nargs="+", type=Path)
     args = parser.parse_args()
 
     failures = 0
-    for xodr in args.xodr:
-        if not xodr.is_file():
-            print(f"FAIL {xodr}: file not found")
+    for path in args.paths:
+        if not path.is_file():
+            print(f"FAIL {path}: file not found")
             failures += 1
             continue
-        ok, output = smoke_one(args.esmini, xodr)
+        ok, output = (run_esmini(args.esmini, path) if args.xosc
+                      else smoke_one(args.esmini, path))
         if args.expect_fail:
             if ok:
-                print(f"FAIL {xodr}: loaded cleanly but was expected to fail "
+                print(f"FAIL {path}: loaded cleanly but was expected to fail "
                       "(the broken-fixture guard no longer guards)")
                 failures += 1
             else:
-                print(f"OK   {xodr}: rejected as expected")
+                print(f"OK   {path}: rejected as expected")
         elif ok:
-            print(f"OK   {xodr}: loads cleanly in esmini")
+            print(f"OK   {path}: loads cleanly in esmini")
         else:
-            print(f"FAIL {xodr}: esmini could not load it\n--- esmini output ---")
+            print(f"FAIL {path}: esmini could not load it\n--- esmini output ---")
             print(output)
             failures += 1
     return 1 if failures else 0

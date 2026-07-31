@@ -195,6 +195,11 @@ def test_every_exported_rule_uid_is_an_openscenario_one() -> None:
         rm.osc.RULE_PHASE_DURATION_NON_NEGATIVE,
         rm.osc.RULE_TRAFFIC_SIGNAL_STATE_REFERENCES,
         rm.osc.RULE_TRAFFIC_SIGNAL_CONTROLLER_REFERENCES,
+        rm.osc.RULE_CONDITION_DELAY_NON_NEGATIVE,
+        rm.osc.RULE_ROAD_NETWORK_REFERENCE,
+        rm.osc.RULE_ROAD_NETWORK_AVAILABILITY,
+        rm.osc.RULE_FILE_ENDING,
+        rm.osc.RULE_VALID_SCHEMA,
     ]
     for uid in uids:
         emanating, standard, version, rule = uid.split(":")
@@ -204,3 +209,93 @@ def test_every_exported_rule_uid_is_an_openscenario_one() -> None:
         # writer's conservative 1.2 default forfeits no rule.
         assert version in {"1.0.0", "1.1.0", "1.2.0"}
         assert len(rule.split(".")) == 2
+
+
+# --- the reader (p8-s1 PR-C) -------------------------------------------------
+
+FOREIGN = """<?xml version="1.0" encoding="UTF-8"?>
+<OpenSCENARIO>
+  <FileHeader revMajor="1" revMinor="2" date="2026-01-01T00:00:00"
+              description="d" author="a" vendorTag="7"/>
+  <CatalogLocations/>
+  <RoadNetwork><LogicFile filepath="town.xodr"/></RoadNetwork>
+  <Entities><ScenarioObject name="Cone"><MiscObject name="c" mass="5"
+    miscObjectCategory="obstacle"/></ScenarioObject></Entities>
+  <Storyboard><Init><Actions/></Init><Story name="s"><Act name="a"/></Story>
+    <StopTrigger/></Storyboard>
+</OpenSCENARIO>
+"""
+
+
+def test_parse_records_the_revision_without_putting_it_on_the_model() -> None:
+    result = rm.osc.parse_xosc(FOREIGN)
+    assert (result.rev_major, result.rev_minor) == (1, 2)
+    # The writer re-derives revMajor/revMinor, so a preserved copy would emit
+    # each attribute twice — and a duplicate attribute is not well-formed XML.
+    assert [name for name, _ in result.scenario.header.preserved.attributes] == ["vendorTag"]
+
+
+def test_an_unmodeled_entity_object_reads_as_none_and_survives() -> None:
+    scenario = rm.osc.parse_xosc(FOREIGN).scenario
+    cone = scenario.entities.scenario_objects[0]
+    assert cone.entity_object is None
+    assert "<MiscObject" in rm.osc.write_xosc(scenario)
+
+
+def test_the_round_trip_from_the_written_form_is_byte_identical() -> None:
+    first = rm.osc.write_xosc(rm.osc.parse_xosc(FOREIGN).scenario)
+    assert rm.osc.write_xosc(rm.osc.parse_xosc(first).scenario) == first
+
+
+def test_a_structural_problem_raises_but_a_bad_number_does_not() -> None:
+    with pytest.raises(ValueError):
+        rm.osc.parse_xosc("<OpenSCENARIO><Entities>")
+    with pytest.raises(ValueError):
+        rm.osc.parse_xosc("<OpenDRIVE/>")
+
+    # The bad number has to be on a MODELED attribute. Corrupting the
+    # MiscObject's @mass proves nothing: the whole element rides the preserved
+    # tier unparsed, so no code ever looks at it — a test that would have
+    # passed for a reason unrelated to what it claims to cover.
+    lenient = rm.osc.parse_xosc(
+        '<OpenSCENARIO><RoadNetwork><LogicFile filepath="t.xodr"/><TrafficSignals>'
+        '<TrafficSignalController name="1"><Phase name="go" duration="soon"/>'
+        "</TrafficSignalController></TrafficSignals></RoadNetwork></OpenSCENARIO>"
+    )
+    assert any("soon" in d.message for d in lenient.diagnostics)
+    assert lenient.scenario.road_network.traffic_signal_controllers[0].phases[0].duration == 0.0
+
+
+def test_load_cites_the_two_rules_only_a_path_can_support(tmp_path) -> None:
+    path = tmp_path / "scene.xml"  # deliberately not .xosc, and no town.xodr
+    path.write_text(FOREIGN, encoding="utf-8")
+    cited = {d.rule_id for d in rm.osc.load_xosc(path).diagnostics}
+    assert rm.osc.RULE_FILE_ENDING in cited
+    assert rm.osc.RULE_ROAD_NETWORK_AVAILABILITY in cited
+
+    good = tmp_path / "scene.xosc"
+    good.write_text(FOREIGN, encoding="utf-8")
+    (tmp_path / "town.xodr").write_text("<OpenDRIVE/>", encoding="utf-8")
+    cleared = {d.rule_id for d in rm.osc.load_xosc(good).diagnostics}
+    assert rm.osc.RULE_FILE_ENDING not in cleared
+    assert rm.osc.RULE_ROAD_NETWORK_AVAILABILITY not in cleared
+
+
+def test_a_negative_condition_delay_is_refused_with_its_rule(
+    scenario: rm.osc.Scenario,
+) -> None:
+    condition = rm.osc.Condition()
+    condition.name = "end"
+    condition.delay = -1.0
+    group = rm.osc.ConditionGroup()
+    group.conditions = [condition]
+    storyboard = scenario.storyboard
+    stop = storyboard.stop_trigger
+    stop.condition_groups = [group]
+    storyboard.stop_trigger = stop
+    scenario.storyboard = storyboard
+
+    cited = {d.rule_id for d in rm.osc.validate_scenario(scenario)}
+    assert rm.osc.RULE_CONDITION_DELAY_NON_NEGATIVE in cited
+    with pytest.raises(ValueError):
+        rm.osc.write_xosc(scenario)

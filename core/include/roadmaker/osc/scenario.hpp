@@ -305,6 +305,18 @@ struct Vehicle {
   Performance performance;
   Axles axles;
   std::vector<Property> properties;
+
+  /// The `<Properties>` WRAPPER's own preserved tier, separate from
+  /// `preserved` because the two sit at different nesting levels.
+  ///
+  /// `<Properties>` holds `Property*` but also `File*` and `CustomContent*`,
+  /// and an esmini vehicle catalog routinely carries a `<File>` there.
+  /// Preserving it in `preserved` would re-emit it as a SIBLING of
+  /// `<Properties>` rather than inside it — the `InitActions` rationale below,
+  /// met a second time. A bare `RawXml` rather than a `Properties` struct keeps
+  /// `properties` a plain vector, which is what every call site already indexes.
+  RawXml properties_preserved;
+
   RawXml preserved;
 };
 
@@ -316,6 +328,10 @@ struct Pedestrian {
   std::string model3d;
   BoundingBox bounding_box;
   std::vector<Property> properties;
+
+  /// The `<Properties>` wrapper's own preserved tier; see `Vehicle`.
+  RawXml properties_preserved;
+
   RawXml preserved;
 };
 

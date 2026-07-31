@@ -1,0 +1,74 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  The guard for the SCENARIO half of the esmini gate (p8-s1, issue #245), the
+  twin of broken.xodr beside it. If this file ever loads cleanly, the gate has
+  stopped gating and every green run next to it means nothing.
+
+  THE BREAKAGE IS DELIBERATELY SCENARIO-LEVEL, NOT OPENDRIVE-LEVEL. broken.xodr
+  already proves esmini rejects a bad road network, and scripts/esmini_smoke.py's
+  ERROR_MARKERS are all OpenDRIVE-worded — so a network-level break here would
+  re-prove what is already proven and leave the .xosc path itself unguarded.
+  <Private entityRef="Nobody"> names an entity <Entities> does not declare:
+  measured against esmini v3.5.0, that is exit 255 with a logged error, and it is
+  reached only by parsing the storyboard.
+
+  HAND-AUTHORED ON PURPOSE, and it has to be: RoadMaker's own
+  osc::validate_scenario refuses a dangling entityRef as a Severity::Error, so
+  write_xosc cannot emit this file. scripts/gen_xosc_fixtures.py generates the
+  VALID fixture; this one is the counter-example that could not be generated.
+
+  Not every kind of breakage works here. esmini v3.5.0 accepts a dangling
+  trafficSignalId, a garbage @state, a dangling trafficSignalControllerRef and a
+  nonexistent phase name in silence — see the note in scripts/esmini_smoke.py.
+-->
+<OpenSCENARIO>
+  <FileHeader revMajor="1" revMinor="2" date="1970-01-01T00:00:00"
+              description="RoadMaker broken-scenario guard" author="RoadMaker"/>
+  <ParameterDeclarations/>
+  <CatalogLocations/>
+  <RoadNetwork>
+    <LogicFile filepath="signalized.xodr"/>
+  </RoadNetwork>
+  <Entities>
+    <ScenarioObject name="Ego">
+      <Vehicle name="car" vehicleCategory="car">
+        <Performance maxSpeed="70" maxAcceleration="5" maxDeceleration="10"/>
+        <BoundingBox>
+          <Center x="1.4" y="0" z="0.75"/>
+          <Dimensions width="2" length="5" height="1.5"/>
+        </BoundingBox>
+        <Axles>
+          <FrontAxle maxSteering="0.5" wheelDiameter="0.6" trackWidth="1.8"
+                     positionX="2.98" positionZ="0.3"/>
+          <RearAxle maxSteering="0" wheelDiameter="0.6" trackWidth="1.8"
+                    positionX="0" positionZ="0.3"/>
+        </Axles>
+        <Properties/>
+      </Vehicle>
+    </ScenarioObject>
+  </Entities>
+  <Storyboard>
+    <Init>
+      <Actions>
+        <Private entityRef="Nobody">
+          <PrivateAction>
+            <TeleportAction>
+              <Position>
+                <WorldPosition x="0" y="0" z="0" h="0"/>
+              </Position>
+            </TeleportAction>
+          </PrivateAction>
+        </Private>
+      </Actions>
+    </Init>
+    <StopTrigger>
+      <ConditionGroup>
+        <Condition name="end" delay="0" conditionEdge="rising">
+          <ByValueCondition>
+            <SimulationTimeCondition value="0.5" rule="greaterThan"/>
+          </ByValueCondition>
+        </Condition>
+      </ConditionGroup>
+    </StopTrigger>
+  </Storyboard>
+</OpenSCENARIO>

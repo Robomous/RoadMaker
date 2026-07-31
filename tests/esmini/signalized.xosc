@@ -1,0 +1,87 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<OpenSCENARIO>
+  <FileHeader revMajor="1" revMinor="2" date="1970-01-01T00:00:00" description="RoadMaker signalized-junction fixture" author="RoadMaker" />
+  <ParameterDeclarations />
+  <CatalogLocations />
+  <RoadNetwork>
+    <LogicFile filepath="signalized.xodr" />
+    <TrafficSignals>
+      <TrafficSignalController name="1">
+        <Phase name="axis0" duration="20">
+          <TrafficSignalState trafficSignalId="1" state="green" />
+          <TrafficSignalState trafficSignalId="3" state="green" />
+        </Phase>
+        <Phase name="axis0_clear" duration="3">
+          <TrafficSignalState trafficSignalId="1" state="yellow" />
+          <TrafficSignalState trafficSignalId="3" state="yellow" />
+        </Phase>
+        <Phase name="axis1" duration="20">
+          <TrafficSignalState trafficSignalId="1" state="red" />
+          <TrafficSignalState trafficSignalId="3" state="red" />
+        </Phase>
+        <Phase name="axis1_clear" duration="3">
+          <TrafficSignalState trafficSignalId="1" state="red" />
+          <TrafficSignalState trafficSignalId="3" state="red" />
+        </Phase>
+      </TrafficSignalController>
+      <TrafficSignalController name="2">
+        <Phase name="axis0" duration="20">
+          <TrafficSignalState trafficSignalId="2" state="red" />
+          <TrafficSignalState trafficSignalId="4" state="red" />
+        </Phase>
+        <Phase name="axis0_clear" duration="3">
+          <TrafficSignalState trafficSignalId="2" state="red" />
+          <TrafficSignalState trafficSignalId="4" state="red" />
+        </Phase>
+        <Phase name="axis1" duration="20">
+          <TrafficSignalState trafficSignalId="2" state="green" />
+          <TrafficSignalState trafficSignalId="4" state="green" />
+        </Phase>
+        <Phase name="axis1_clear" duration="3">
+          <TrafficSignalState trafficSignalId="2" state="yellow" />
+          <TrafficSignalState trafficSignalId="4" state="yellow" />
+        </Phase>
+      </TrafficSignalController>
+    </TrafficSignals>
+  </RoadNetwork>
+  <Entities>
+    <ScenarioObject name="Ego">
+      <Vehicle name="car" vehicleCategory="car">
+        <BoundingBox>
+          <Center x="1.4" y="0" z="0.75" />
+          <Dimensions width="2" length="5" height="1.5" />
+        </BoundingBox>
+        <Performance maxSpeed="70" maxAcceleration="5" maxDeceleration="10" />
+        <Axles>
+          <FrontAxle maxSteering="0.5" wheelDiameter="0.6" trackWidth="1.8" positionX="2.98" positionZ="0.3" />
+          <RearAxle maxSteering="0" wheelDiameter="0.6" trackWidth="1.8" positionX="0" positionZ="0.3" />
+        </Axles>
+        <Properties />
+      </Vehicle>
+    </ScenarioObject>
+  </Entities>
+  <Storyboard>
+    <Init>
+      <Actions>
+        <Private entityRef="Ego">
+          <PrivateAction>
+            <TeleportAction>
+              <Position>
+                <WorldPosition x="-40" y="-1.75" z="0" h="0" />
+              </Position>
+            </TeleportAction>
+          </PrivateAction>
+        </Private>
+      </Actions>
+    </Init>
+    <StopTrigger>
+      <ConditionGroup>
+        <Condition name="end" delay="0" conditionEdge="rising">
+          <ByValueCondition>
+            <SimulationTimeCondition value="0.5" rule="greaterThan" />
+          </ByValueCondition>
+        </Condition>
+      </ConditionGroup>
+    </StopTrigger>
+  </Storyboard>
+</OpenSCENARIO>

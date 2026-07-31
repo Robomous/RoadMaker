@@ -1,0 +1,11 @@
+<OpenSCENARIO><FileHeader revMajor="1" revMinor="2"/><CatalogLocations><VehicleCatalog><Directory path="."/></VehicleCatalog></CatalogLocations>
+<RoadNetwork><LogicFile filepath="t.xodr"/><UsedArea><Position/></UsedArea></RoadNetwork>
+<Entities><ScenarioObject name="A"><CatalogReference catalogName="c" entryName="e"/><ObjectController/></ScenarioObject>
+<ScenarioObject name="B"><Pedestrian name="p" mass="80" pedestrianCategory="pedestrian" model="old">
+<BoundingBox><Center x="0" y="0" z="1"/><Dimensions width="1" length="1" height="2"/></BoundingBox>
+<Properties><File filepath="p.osgb"/></Properties></Pedestrian></ScenarioObject><EntitySelection name="s"/></Entities>
+<Storyboard><Init><Actions><GlobalAction><EnvironmentAction/></GlobalAction><Private entityRef="A">
+<PrivateAction><LongitudinalAction/></PrivateAction>
+<PrivateAction><TeleportAction><Position><LanePosition roadId="1" laneId="-1" s="5"/></Position></TeleportAction></PrivateAction>
+</Private><UserDefinedAction/></Actions></Init>
+<StopTrigger><ConditionGroup><Condition name="c"><ByEntityCondition/></Condition></ConditionGroup></StopTrigger></Storyboard></OpenSCENARIO>
