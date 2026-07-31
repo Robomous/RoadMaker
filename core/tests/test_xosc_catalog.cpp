@@ -60,8 +60,24 @@ const std::vector<osc::ActorKind>& all_kinds() {
   return kinds;
 }
 
+/// Reads a committed Markdown page as TEXT, not as bytes.
+///
+/// ★ NO std::ios::binary, and that is the whole difference between this passing
+/// and failing on Windows. `realism_defaults.md` is a HUMAN-EDITED document, so
+/// a Windows checkout gives it CRLF line endings (autocrlf) while
+/// `actor_catalog_markdown()` renders '\n' — and a binary read leaves the '\r'
+/// in place, so the substring search fails on line endings alone. It failed
+/// exactly that way on the first push of p8-s2 (#246), green on macOS and Linux.
+///
+/// Text mode is the fix rather than a `.gitattributes` LF pin, and the
+/// distinction is worth keeping straight: the two existing pins
+/// (`editor/resources/help/help.css`, `tests/esmini/*.xosc`) are on GENERATED
+/// artifacts whose exact bytes ARE the contract. This document is prose a human
+/// edits, its line endings are not a contract, and `test_defaults_registry.cpp`
+/// — which compares the same file — already reads it in text mode for the same
+/// reason.
 std::string read_file(const std::filesystem::path& path) {
-  std::ifstream stream(path, std::ios::binary);
+  std::ifstream stream(path);
   return std::string(std::istreambuf_iterator<char>(stream), std::istreambuf_iterator<char>());
 }
 
