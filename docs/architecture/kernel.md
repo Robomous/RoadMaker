@@ -12,6 +12,7 @@ Public headers live under `core/include/roadmaker/`, implementation under
 | `road/` | `network.hpp`, `road.hpp`, `lane_section.hpp`, `lane.hpp`, `junction.hpp`, `id.hpp`, `arena.hpp`, `authoring.hpp` | Road-network data model + clothoid authoring API |
 | `geometry/` | `reference_line.hpp`, `poly3.hpp` | Plan-view primitives, evaluation, adaptive sampling |
 | `xodr/` | `reader.hpp`, `writer.hpp`, `diagnostic.hpp`, `rules.hpp` | OpenDRIVE parsing, validation, serialization |
+| `osc/` | `scenario.hpp`, `writer.hpp`, `rules.hpp` | The ASAM OpenSCENARIO scenario model and its serializer ([ADR-0014](../decisions/0014-scenario-model-kernel-side-osc-1x.md)): a second Layer-0 format, kernel-side so a scenario is replayable headlessly. Models the FILE, not the network — it includes nothing from `road/`, and every cross-reference is an OpenDRIVE `odr_id` string |
 | `mesh/` | `mesh.hpp`, `mesh_builder.hpp` | Tessellation of the network into render/export meshes |
 | `gis/` | `crs.hpp`, `layer.hpp`, `reproject.hpp` | Geospatial ingest: a bounded, closed-form CRS family ([ADR-0010](../decisions/0010-gis-ingest-bounded-crs.md)); GeoJSON, ESRI Shapefile, GeoTIFF and world-filed imagery; reprojection into the scene's world frame |
 | `lidar/` | `point_cloud.hpp` | Point-cloud ingest: ASPRS LAS/LAZ read in-house ([ADR-0011](../decisions/0011-lidar-ingest-in-house-las.md)), decimated for display and ground-fitted into a `HeightField`. Reprojects through `gis::CrsTransform` |
@@ -92,6 +93,41 @@ Output is deterministic (no timestamps).
 Round-trip tests hold load→save→load geometry equal within the named
 tolerances `tol::kRoundTripPosition` (1e-4 m) and `tol::kRoundTripHeading`
 (1e-6 rad) from `tol.hpp`.
+
+## OpenSCENARIO I/O
+
+`osc/scenario.hpp` models an OpenSCENARIO XML document — file header, road
+network reference, entities, storyboard and traffic-signal controllers — and
+`osc::write_xosc(scenario)` / `osc::save_xosc(scenario, path)` serialize it.
+A `.xosc` is a **second Layer-0 file**, stem-matched beside its `.xodr` at the
+top level of the project, never folded into the Layer-2 container
+([ADR-0014](../decisions/0014-scenario-model-kernel-side-osc-1x.md)).
+
+Four properties carry over deliberately from the OpenDRIVE writer:
+
+- **Deterministic, returning a string.** No clock, no locale-dependent
+  formatting, and no sort anywhere — every collection is emitted in vector
+  order — so two writes of one `Scenario` are byte-identical.
+- **Revision-targetable, defaulting to the older revision.** `OscVersion{v1_2,
+  v1_4}`, mirroring `XodrVersion`. 1.2 is the default because validation means
+  "esmini accepts the file" and CI pins that binary; targeting 1.2 forfeits no
+  citable rule, because every checker-rule id in the 1.4.0 catalogue first
+  appeared at 1.2.0 or earlier. The only content 1.4 adds is `Phase/@semantics`.
+- **Never silently drops input.** Unmodeled attributes and elements ride the
+  same `RawXml` preserved tier the OpenDRIVE reader uses, re-emitted after the
+  modeled content. A preserved fragment that is not well-formed XML is
+  *refused* rather than dropped — a deliberate strengthening of the OpenDRIVE
+  writer, which ignores that parse status.
+- **Findings cite normative rule ids.** `osc::validate_scenario` returns
+  `Diagnostic`s carrying `asam.net:xosc:` UIDs from `osc/rules.hpp`, in a
+  namespace separate from `roadmaker::rules` so that no call site is ambiguous
+  about which standard a rule belongs to.
+
+The model deliberately includes nothing from `road/`: it describes the file,
+not the network. Building a scenario from a live `RoadNetwork` — in particular
+decomposing one junction's phase timeline into one `TrafficSignalController`
+per OpenDRIVE `<controller>`, named by that controller's `@id` — belongs to the
+edit-command layer, not here.
 
 ## Meshing
 

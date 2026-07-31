@@ -114,6 +114,7 @@ add_executable(roadmaker_editor_tests
   test_world_georeference.cpp
   test_scene_state.cpp
   test_scene_tree_model.cpp
+  test_osc_header_qt_compat.cpp
   test_selection_model.cpp
   test_settings.cpp
   test_shortcut_registry.cpp

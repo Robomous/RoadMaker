@@ -35,6 +35,11 @@ add_library(roadmaker_core ${_rm_core_type}
   src/xodr/writer.cpp
   src/xodr/junction_export.cpp
   src/xodr/terrain_sidecar.cpp
+  # OpenSCENARIO scenario model and writer (p8-s1, #245). Unconditional, and
+  # the fourth consecutive record for which cmake/deps.cmake does not change:
+  # ADR-0014 takes the pugixml that already serves the OpenDRIVE writer, so
+  # there is no new dependency, no OFF-by-default gate and no runtime data.
+  src/osc/writer.cpp
   src/mesh/mesh_builder.cpp
   src/mesh/junction_corner_detail.cpp
   src/mesh/junction_corners.cpp

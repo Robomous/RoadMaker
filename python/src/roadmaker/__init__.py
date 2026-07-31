@@ -131,6 +131,9 @@ from ._roadmaker import (  # noqa: F401
     gis,
     # Lidar import (p7-s3, #243) — LAS/LAZ read in-house, no PDAL (ADR-0011).
     lidar,
+    # OpenSCENARIO scenarios (p8-s1, #245) — the model and a deterministic
+    # writer, kernel-side so a scenario is replayable headlessly (ADR-0014).
+    osc,
     # OSM import (p7-s4, #244) — .osm XML read in-house, no new dep (ADR-0012).
     osm,
     # Prop assets + glTF import (p6-s8, #322) — the bundled catalogue, a project
