@@ -282,6 +282,70 @@ TEST(RoundTrip, LaneDirectionSurvivesWriteParseWrite) {
   EXPECT_EQ(*xml, *again);
 }
 
+// --- the warned-and-dropped spec areas (fmt-f2, #539) ------------------------
+//
+// These were LOUD and lossy: one diagnostic, then permanent data loss. Worse
+// than a silent drop in one respect — the file looked like it had been
+// understood. None of them is modeled by this build; the bar is that they
+// round-trip byte-for-byte and that the diagnostic says so.
+
+TEST(RoundTrip, TheWarnedAndDroppedScopesNowSurviveWriteParseWrite) {
+  const std::filesystem::path sample =
+      std::filesystem::path(RM_FUZZ_CORPUS_DIR) / "preserved_sweep.xodr";
+  const auto loaded = roadmaker::load_xodr(sample);
+  ASSERT_TRUE(loaded.has_value()) << (loaded ? "" : loaded.error().message);
+
+  const auto written = roadmaker::write_xodr(loaded->network, "preserved_sweep");
+  ASSERT_TRUE(written.has_value());
+
+  for (const std::string_view marker : {
+           "<shape",         // 1. lateralProfile <shape> (§10.5.1)
+           "<crossfall",     // 1. the legacy <crossfall>
+           "<surface",       // 2. road <surface> (§10.6)
+           "<CRG",           // 2. its <CRG> child
+           "<junctionGroup", // 3. §12.16 — the roundabout grouping (#495)
+           "<railroad",      // 4. chapter 15, road child
+           "<station",       // 4. chapter 15, root child
+           "<include",       // 5. §7.1, outside <header>
+       }) {
+    EXPECT_NE(written->find(marker), std::string::npos) << "lost: " << marker;
+  }
+  // Content, not just the tag: a writer emitting an empty <shape/> would pass
+  // a tag-only check while still having flattened the carriageway.
+  EXPECT_NE(written->find(R"(file="pavement.crg")"), std::string::npos);
+  EXPECT_NE(written->find(R"(junction="101")"), std::string::npos);
+  EXPECT_NE(written->find(R"(file="extra_geometry.xodr")"), std::string::npos);
+
+  // Fixed point.
+  const auto reparsed = roadmaker::parse_xodr(*written, "preserved_sweep");
+  ASSERT_TRUE(reparsed.has_value());
+  const auto again = roadmaker::write_xodr(reparsed->network, "preserved_sweep");
+  ASSERT_TRUE(again.has_value());
+  EXPECT_EQ(*written, *again);
+  EXPECT_EQ(roadmaker::count_errors(loaded->diagnostics), 0U);
+}
+
+TEST(RoundTrip, TheSweptScopesSayPreservedRatherThanIgnored) {
+  // The diagnostic is half the fix. "not supported yet and was ignored" was
+  // TRUE before and is a lie now; what the user still needs to know is that the
+  // element has no effect, not that it was thrown away.
+  const auto loaded =
+      roadmaker::load_xodr(std::filesystem::path(RM_FUZZ_CORPUS_DIR) / "preserved_sweep.xodr");
+  ASSERT_TRUE(loaded.has_value());
+
+  const auto says = [&](std::string_view needle) {
+    return std::ranges::any_of(loaded->diagnostics, [&](const roadmaker::Diagnostic& d) {
+      return d.message.find(needle) != std::string::npos;
+    });
+  };
+  EXPECT_TRUE(says("<shape> is preserved verbatim but not modeled"));
+  EXPECT_TRUE(says("<junctionGroup> is preserved verbatim but not modeled"));
+  EXPECT_TRUE(says("<railroad> is preserved verbatim but not modeled"));
+  // And nothing claims to have ignored them any more.
+  EXPECT_FALSE(says("<shape> is not supported yet and was ignored"));
+  EXPECT_FALSE(says("<junctionGroup> is not supported yet and was ignored"));
+}
+
 // --- the remaining non-preserving parse scopes (fmt-f1, #453) ----------------
 //
 // Six scopes that each dropped unmodeled input in silence. They are asserted

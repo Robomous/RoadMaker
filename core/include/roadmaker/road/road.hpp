@@ -104,6 +104,17 @@ struct Road {
   /// #453). Held on the Road because `<lanes>` has no struct of its own.
   RawXml lanes_extras;
 
+  /// Unmodeled children of `<lateralProfile>` — `<shape>` (§10.5.1) and the
+  /// legacy `<crossfall>` — preserved verbatim (fmt-f2, #539). Both were warned
+  /// about and dropped, so a round trip FLATTENED a non-planar carriageway.
+  RawXml lateral_profile_extras;
+
+  /// Unmodeled children of `<road>` itself — `<surface>`/`<CRG>` (§10.6) and
+  /// `<railroad>` (chapter 15) — preserved verbatim (fmt-f2, #539). A
+  /// CRG-referencing file used to lose its surface detail, and a tram file its
+  /// rail layer, on the first save.
+  RawXml road_extras;
+
   /// Unmodeled children of `<elevationProfile>` — anything besides
   /// `<elevation>` — preserved verbatim (fmt-f1, #453). Same reason: the
   /// profile container has no struct of its own.

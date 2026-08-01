@@ -1363,9 +1363,13 @@ void write_road(pugi::xml_node root,
       append_fragment(profile, fragment);
     }
   }
-  if (!road.superelevation.empty()) {
-    write_poly3_list(
-        road_node.append_child("lateralProfile"), "superelevation", "s", road.superelevation);
+  if (!road.superelevation.empty() || !road.lateral_profile_extras.children.empty()) {
+    pugi::xml_node lateral = road_node.append_child("lateralProfile");
+    write_poly3_list(lateral, "superelevation", "s", road.superelevation);
+    // <shape>/<crossfall>, preserved rather than dropped (fmt-f2, #539).
+    for (const std::string& fragment : road.lateral_profile_extras.children) {
+      append_fragment(lateral, fragment);
+    }
   }
 
   pugi::xml_node lanes = road_node.append_child("lanes");
@@ -1415,6 +1419,12 @@ void write_road(pugi::xml_node root,
 
   // <signals> follows <objects> in the road element sequence (1.9.0 §10.1).
   write_signals(road_node, network, road_id, road, options);
+
+  // Road children RoadMaker does not model — <surface>/<CRG> (§10.6),
+  // <railroad> (chapter 15) — preserved rather than dropped (fmt-f2, #539).
+  for (const std::string& fragment : road.road_extras.children) {
+    append_fragment(road_node, fragment);
+  }
 
   // Authoring waypoints round-trip through the spec-sanctioned <userData>
   // extension (OpenDRIVE 1.9.0 §7.2: code required, value optional free
@@ -3025,6 +3035,13 @@ Expected<std::string> write_xodr(const RoadNetwork& network,
   // #326) — this scope used to lose them with no diagnostic at all. Emitted
   // last, after rm:surface/rm:terrain, in preserved document order.
   for (const std::string& fragment : network.preserved_user_data()) {
+    append_fragment(root, fragment);
+  }
+
+  // Root children RoadMaker does not model — <junctionGroup> (§12.16),
+  // <station> (chapter 15), an <include> outside <header> (§7.1) — preserved
+  // rather than dropped (fmt-f2, #539).
+  for (const std::string& fragment : network.preserved_root_children()) {
     append_fragment(root, fragment);
   }
 

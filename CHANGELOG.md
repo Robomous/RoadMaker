@@ -1345,6 +1345,27 @@ Current version on `main`: **0.0.1**.
   about silently never matched.
 
 ### Fixed
+- **Five spec areas that were warned about and then thrown away now round-trip**
+  ([#539](https://github.com/Robomous/RoadMaker/issues/539), fmt-f2):
+  `<lateralProfile><shape>` and the legacy `<crossfall>` (§10.5.1), road
+  `<surface>`/`<CRG>` (§10.6), `<junctionGroup>` (§12.16), `<railroad>` and root
+  `<station>` (chapter 15), and an `<include>` outside `<header>` (§7.1).
+
+  These were **loud and lossy** — one diagnostic, then permanent data loss,
+  which is worse than a silent drop in one respect: the file looked like it had
+  been understood. A round trip flattened a non-planar carriageway, dropped a
+  CRG-referenced surface, made the standard's own roundabout grouping
+  unrepresentable, and lost a tram file's rail layer.
+
+  All five now ride the preserved tier built for
+  [#453](https://github.com/Robomous/RoadMaker/issues/453) — reusing
+  `capture_unmodeled()` rather than adding five more walks — and the diagnostic
+  is downgraded from *"is not supported yet and was ignored"* (true before, a
+  lie now) to *"is preserved verbatim but not modeled; it round-trips unchanged
+  and has no effect in this build"*. Nothing here is modeled, and none of it
+  needs to be for v0.1.0; modeling stays with whoever owns the feature later
+  (`<junctionGroup>` with [#495](https://github.com/Robomous/RoadMaker/issues/495),
+  for instance).
 - **The last parse scopes that dropped unmodeled input in silence now preserve
   it** ([#453](https://github.com/Robomous/RoadMaker/issues/453), fmt-f1). The
   Preserved tier was established for signals, objects and controllers, but six

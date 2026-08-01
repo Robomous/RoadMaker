@@ -1,0 +1,93 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- VALID seed: the five spec areas that were warned-and-DROPPED (fmt-f2,
+     #539). One diagnostic, then permanent data loss — worse than a silent drop
+     in one respect, because the file looked like it had been understood.
+
+       1. <lateralProfile><shape> (§10.5.1) and the legacy <crossfall>:
+          parse_lateral_profile modeled <superelevation> only, so a round trip
+          FLATTENED a non-planar carriageway.
+       2. Road <surface>/<CRG> (§10.6): not in parse_road's child whitelist, so
+          a CRG-referencing file lost its surface detail on save.
+       3. <junctionGroup> (§12.16): the root sweep whitelisted
+          header/road/junction/controller/userData, so the standard's own
+          roundabout grouping was unrepresentable — directly relevant to #495.
+       4. <railroad> road child and root <station> (chapter 15): a tram file
+          lost its rail layer.
+       5. <include> outside <header> (§7.1): preserved INSIDE the header since
+          #326, warned-dropped anywhere else.
+
+     None of these is modeled by this build, and none needs to be for v0.1.0.
+     The bar is that they round-trip byte-for-byte and that the diagnostic says
+     "preserved, not modeled" rather than "ignored". Modeling stays with
+     whoever owns the feature later.
+
+     Apache-2.0. -->
+<OpenDRIVE>
+  <header revMajor="1" revMinor="8" name="preserved_sweep" vendor="RoadMaker" />
+  <road name="sweeping" length="100" id="1" junction="-1">
+    <planView>
+      <geometry s="0" x="0" y="0" hdg="0" length="100">
+        <line />
+      </geometry>
+    </planView>
+    <lateralProfile>
+      <superelevation s="0" a="0" b="0" c="0" d="0" />
+      <shape s="0" t="-3.5" a="0.02" b="0" c="0" d="0" />
+      <shape s="0" t="3.5" a="0.02" b="0" c="0" d="0" />
+      <crossfall side="both" s="0" a="0.015" b="0" c="0" d="0" />
+    </lateralProfile>
+    <lanes>
+      <laneSection s="0">
+        <center>
+          <lane id="0" type="none" level="false" />
+        </center>
+        <right>
+          <lane id="-1" type="driving" level="false">
+            <width sOffset="0" a="3.5" b="0" c="0" d="0" />
+          </lane>
+        </right>
+      </laneSection>
+    </lanes>
+    <surface>
+      <CRG file="pavement.crg" sStart="0" sEnd="100" orientation="same" mode="attached" />
+    </surface>
+    <railroad>
+      <switch name="north" id="7" position="dynamic">
+        <mainTrack id="1" s="40" dir="+" />
+        <sideTrack id="2" s="0" dir="+" />
+        <partner name="south" id="8" />
+      </switch>
+    </railroad>
+  </road>
+  <road name="ring" length="60" id="2" junction="-1">
+    <planView>
+      <geometry s="0" x="0" y="-40" hdg="0" length="60">
+        <line />
+      </geometry>
+    </planView>
+    <lanes>
+      <laneSection s="0">
+        <center>
+          <lane id="0" type="none" level="false" />
+        </center>
+        <right>
+          <lane id="-1" type="driving" level="false">
+            <width sOffset="0" a="3.5" b="0" c="0" d="0" />
+          </lane>
+        </right>
+      </laneSection>
+    </lanes>
+  </road>
+  <junction id="100" name="ring_a" />
+  <junction id="101" name="ring_b" />
+  <junctionGroup id="900" name="roundabout" type="roundabout">
+    <junctionReference junction="100" />
+    <junctionReference junction="101" />
+  </junctionGroup>
+  <station name="tram_stop" id="500" type="onLine">
+    <platform name="north" id="1">
+      <segment roadId="2" sStart="10" sEnd="40" side="right" />
+    </platform>
+  </station>
+  <include file="extra_geometry.xodr" />
+</OpenDRIVE>
