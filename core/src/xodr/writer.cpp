@@ -1553,6 +1553,51 @@ void write_junction(pugi::xml_node root,
     junction_node.append_attribute("orientation").set_value("none");
     set_num(junction_node, "sStart", main.s_start);
     set_num(junction_node, "sEnd", main.s_end);
+  } else if (!junction.type_str.empty() && junction.type_str != "default") {
+    // A type read from a file is re-emitted verbatim (#534). Without this a
+    // `direct` or `crossing` junction came back as a common one, and — since a
+    // direct junction's connections had also been skipped — as an EMPTY common
+    // one. `default` is what an absent @type means, so it stays absent and every
+    // existing fixture keeps its bytes.
+    junction_node.append_attribute("type").set_value(junction.type_str.c_str());
+  } else if (junction.type == JunctionType::Direct) {
+    junction_node.append_attribute("type").set_value("direct");
+  } else if (junction.type == JunctionType::Crossing) {
+    junction_node.append_attribute("type").set_value("crossing");
+  }
+
+  // A direct junction's connections (§12.4, Table 67): @linkedRoad in place of
+  // @connectingRoad, and `<laneLink>` children that may carry @overlapZone and
+  // the two layer attributes. @id is re-emitted verbatim rather than renumbered,
+  // because it is a string the file owns.
+  for (const DirectConnection& connection : junction.direct_connections) {
+    const Road* incoming = network.road(connection.incoming_road);
+    const Road* linked = network.road(connection.linked_road);
+    if (incoming == nullptr || linked == nullptr) {
+      continue; // stale references are not written
+    }
+    pugi::xml_node node = junction_node.append_child("connection");
+    node.append_attribute("id").set_value(connection.odr_id.c_str());
+    node.append_attribute("incomingRoad").set_value(incoming->odr_id.c_str());
+    node.append_attribute("linkedRoad").set_value(linked->odr_id.c_str());
+    if (connection.contact_point.has_value()) {
+      node.append_attribute("contactPoint")
+          .set_value(*connection.contact_point == ContactPoint::End ? "end" : "start");
+    }
+    for (const DirectLaneLink& link : connection.lane_links) {
+      pugi::xml_node node_link = node.append_child("laneLink");
+      node_link.append_attribute("from").set_value(link.from);
+      node_link.append_attribute("to").set_value(link.to);
+      if (!link.from_layer.empty()) {
+        node_link.append_attribute("fromLayer").set_value(link.from_layer.c_str());
+      }
+      if (!link.to_layer.empty()) {
+        node_link.append_attribute("toLayer").set_value(link.to_layer.c_str());
+      }
+      if (link.overlap_zone.has_value()) {
+        set_num(node_link, "overlapZone", *link.overlap_zone);
+      }
+    }
   }
 
   int connection_id = 0;

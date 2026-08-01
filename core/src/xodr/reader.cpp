@@ -2218,6 +2218,112 @@ private:
         network().create_junction(std::move(odr_id), junction_node.attribute("name").value());
     Junction& junction = *network().junction(junction_id);
 
+    // @type (e_junctionType, §12 Table 60). Read for EVERY kind since #534: it
+    // used to be consulted only to test == "virtual", so a direct or crossing
+    // junction lost its type and came back a common one. The verbatim spelling
+    // is kept for the same reason as Lane::type_str — the writer omits @type
+    // for Default, so an unknown spelling would be deleted, not defaulted.
+    const std::string type_name = junction_node.attribute("type").value();
+    junction.type_str = type_name;
+    if (type_name.empty() || type_name == "default") {
+      junction.type = JunctionType::Default;
+    } else if (type_name == "direct") {
+      junction.type = JunctionType::Direct;
+    } else if (type_name == "virtual") {
+      junction.type = JunctionType::Virtual;
+    } else if (type_name == "crossing") {
+      junction.type = JunctionType::Crossing;
+    } else {
+      junction.type = JunctionType::Default;
+      diag(Severity::Warning,
+           location,
+           fmt::format("unknown junction type '{}' mapped to 'default'", type_name));
+    }
+
+    // A DIRECT junction's connections have no @connectingRoad at all — they
+    // carry @linkedRoad instead (§12.4 Table 67, and
+    // asam.net:xodr:1.7.0:junctions.direct.connecting_road_attribute_usage
+    // forbids @connectingRoad there). Reading them through the common path is
+    // what produced "connection references unknown road ''" for every one of
+    // them and left the junction empty.
+    if (junction.type == JunctionType::Direct) {
+      parse_direct_connections(junction_node, junction, location);
+    } else {
+      parse_common_connections(junction_node, junction, location);
+    }
+    parse_junction_controllers(junction_node, junction, location);
+    parse_virtual_junction(junction_node, junction, location);
+    parse_junction_user_data(junction_node, junction, location);
+
+    // arms-xor-spans (p4-s4, issue #319): a span junction never cuts its main
+    // road, so it owns no arms and no connecting roads, and there is no
+    // automatic derivation for it to skip — it is locked by definition. A
+    // hand-written file that mixes the two is degraded here rather than loaded
+    // into a state the writer could not reproduce.
+    if (!junction.spans.empty()) {
+      if (!junction.arms.empty() || !junction.connections.empty()) {
+        diag(Severity::Warning,
+             location,
+             "virtual junction also declares connections or rm:arms; they were dropped",
+             rules::kJunctionVirtualAttributes);
+        junction.arms.clear();
+        junction.connections.clear();
+      }
+      junction.locked = true;
+    }
+  }
+
+  /// `<connection>` of a **direct** junction (§12.4, Table 67): @linkedRoad in
+  /// place of @connectingRoad, and `<laneLink>` children that additionally
+  /// carry @overlapZone and the two layer attributes (Table 68).
+  void parse_direct_connections(const pugi::xml_node& junction_node,
+                                Junction& junction,
+                                const std::string& location) {
+    for (const pugi::xml_node connection : junction_node.children("connection")) {
+      const std::string incoming = connection.attribute("incomingRoad").value();
+      const std::string linked = connection.attribute("linkedRoad").value();
+      const RoadId incoming_id = network().find_road(incoming);
+      const RoadId linked_id = network().find_road(linked);
+      if (!incoming_id.is_valid() || !linked_id.is_valid()) {
+        diag(Severity::Warning,
+             location,
+             fmt::format("direct-junction connection references unknown road '{}'; skipped",
+                         incoming_id.is_valid() ? linked : incoming),
+             rules::kOnlyRefDefinedIds);
+        continue;
+      }
+      DirectConnection result{
+          .odr_id = connection.attribute("id").value(),
+          .incoming_road = incoming_id,
+          .linked_road = linked_id,
+      };
+      // Optional in the schema, so an absent one stays absent rather than
+      // being materialised as "start".
+      if (const pugi::xml_attribute contact = connection.attribute("contactPoint")) {
+        result.contact_point =
+            std::string_view(contact.value()) == "end" ? ContactPoint::End : ContactPoint::Start;
+      }
+      for (const pugi::xml_node lane_link : connection.children("laneLink")) {
+        DirectLaneLink link{
+            .from = lane_link.attribute("from").as_int(),
+            .to = lane_link.attribute("to").as_int(),
+            .from_layer = lane_link.attribute("fromLayer").value(),
+            .to_layer = lane_link.attribute("toLayer").value(),
+        };
+        if (const pugi::xml_attribute overlap = lane_link.attribute("overlapZone")) {
+          link.overlap_zone = overlap.as_double();
+        }
+        result.lane_links.push_back(std::move(link));
+      }
+      junction.direct_connections.push_back(std::move(result));
+    }
+  }
+
+  /// `<connection>` of a common (default) or crossing junction (§12.3/§12.8,
+  /// Table 61) — both use @connectingRoad.
+  void parse_common_connections(const pugi::xml_node& junction_node,
+                                Junction& junction,
+                                const std::string& location) {
     for (const pugi::xml_node connection : junction_node.children("connection")) {
       const std::string incoming = connection.attribute("incomingRoad").value();
       const std::string connecting = connection.attribute("connectingRoad").value();
@@ -2243,26 +2349,6 @@ private:
                                        lane_link.attribute("to").as_int());
       }
       junction.connections.push_back(std::move(result));
-    }
-    parse_junction_controllers(junction_node, junction, location);
-    parse_virtual_junction(junction_node, junction, location);
-    parse_junction_user_data(junction_node, junction, location);
-
-    // arms-xor-spans (p4-s4, issue #319): a span junction never cuts its main
-    // road, so it owns no arms and no connecting roads, and there is no
-    // automatic derivation for it to skip — it is locked by definition. A
-    // hand-written file that mixes the two is degraded here rather than loaded
-    // into a state the writer could not reproduce.
-    if (!junction.spans.empty()) {
-      if (!junction.arms.empty() || !junction.connections.empty()) {
-        diag(Severity::Warning,
-             location,
-             "virtual junction also declares connections or rm:arms; they were dropped",
-             rules::kJunctionVirtualAttributes);
-        junction.arms.clear();
-        junction.connections.clear();
-      }
-      junction.locked = true;
     }
   }
 

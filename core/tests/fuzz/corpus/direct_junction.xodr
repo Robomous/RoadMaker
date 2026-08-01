@@ -1,0 +1,141 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- VALID seed: a direct junction and a crossing junction (#534).
+
+     A DIRECT junction (§12.4) splits or merges roads with no connecting road
+     at all: each <connection> carries @linkedRoad instead of @connectingRoad,
+     which asam.net:xodr:1.7.0:junctions.direct.connecting_road_attribute_usage
+     explicitly forbids there.
+
+     Before #534 this file was CORRUPTED on round trip, not merely degraded:
+       - @type was read only to test == "virtual", so `direct` and `crossing`
+         were dropped and the writer emitted a plain common junction;
+       - every <connection> was read expecting @connectingRoad, so find_road("")
+         failed and each was skipped with the misleading warning "connection
+         references unknown road ''";
+       - @linkedRoad and @overlapZone were never read anywhere.
+     The result was an EMPTY common junction — the topology destroyed.
+
+     Junction 100 is the direct one: road 1 splits into roads 2 and 3. The
+     second connection carries @overlapZone and both layer attributes, so the
+     three optional laneLink attributes of Table 68 are all exercised; the
+     first carries none of them, so "absent stays absent" is testable too.
+
+     Junction 200 is a crossing junction (§12.8), which uses @connectingRoad
+     like a common one — it is here so the fix cannot be mistaken for
+     "everything that is not default is direct".
+
+     Apache-2.0. -->
+<OpenDRIVE>
+  <header revMajor="1" revMinor="8" name="direct_junction" vendor="RoadMaker" />
+  <road name="trunk" length="100" id="1" junction="-1">
+    <planView>
+      <geometry s="0" x="0" y="0" hdg="0" length="100">
+        <line />
+      </geometry>
+    </planView>
+    <lanes>
+      <laneSection s="0">
+        <center>
+          <lane id="0" type="none" level="false" />
+        </center>
+        <right>
+          <lane id="-1" type="driving" level="false">
+            <width sOffset="0" a="3.5" b="0" c="0" d="0" />
+          </lane>
+          <lane id="-2" type="driving" level="false">
+            <width sOffset="0" a="3.5" b="0" c="0" d="0" />
+          </lane>
+        </right>
+      </laneSection>
+    </lanes>
+  </road>
+  <road name="mainline" length="80" id="2" junction="-1">
+    <planView>
+      <geometry s="0" x="100" y="0" hdg="0" length="80">
+        <line />
+      </geometry>
+    </planView>
+    <lanes>
+      <laneSection s="0">
+        <center>
+          <lane id="0" type="none" level="false" />
+        </center>
+        <right>
+          <lane id="-1" type="driving" level="false">
+            <width sOffset="0" a="3.5" b="0" c="0" d="0" />
+          </lane>
+        </right>
+      </laneSection>
+    </lanes>
+  </road>
+  <road name="offramp" length="60" id="3" junction="-1">
+    <planView>
+      <geometry s="0" x="100" y="-6" hdg="-0.15" length="60">
+        <line />
+      </geometry>
+    </planView>
+    <lanes>
+      <laneSection s="0">
+        <center>
+          <lane id="0" type="none" level="false" />
+        </center>
+        <right>
+          <lane id="-1" type="driving" level="false">
+            <width sOffset="0" a="3.5" b="0" c="0" d="0" />
+          </lane>
+        </right>
+      </laneSection>
+    </lanes>
+  </road>
+  <road name="crosser" length="70" id="4" junction="-1">
+    <planView>
+      <geometry s="0" x="0" y="-40" hdg="0" length="70">
+        <line />
+      </geometry>
+    </planView>
+    <lanes>
+      <laneSection s="0">
+        <center>
+          <lane id="0" type="none" level="false" />
+        </center>
+        <right>
+          <lane id="-1" type="driving" level="false">
+            <width sOffset="0" a="3.5" b="0" c="0" d="0" />
+          </lane>
+        </right>
+      </laneSection>
+    </lanes>
+  </road>
+  <road name="crossconnector" length="20" id="5" junction="200">
+    <planView>
+      <geometry s="0" x="70" y="-40" hdg="0" length="20">
+        <line />
+      </geometry>
+    </planView>
+    <lanes>
+      <laneSection s="0">
+        <center>
+          <lane id="0" type="none" level="false" />
+        </center>
+        <right>
+          <lane id="-1" type="driving" level="false">
+            <width sOffset="0" a="3.5" b="0" c="0" d="0" />
+          </lane>
+        </right>
+      </laneSection>
+    </lanes>
+  </road>
+  <junction id="100" name="split" type="direct">
+    <connection id="0" incomingRoad="1" linkedRoad="2" contactPoint="start">
+      <laneLink from="-1" to="-1" />
+    </connection>
+    <connection id="1" incomingRoad="1" linkedRoad="3" contactPoint="start">
+      <laneLink from="-2" to="-1" fromLayer="permanent" toLayer="permanent" overlapZone="45" />
+    </connection>
+  </junction>
+  <junction id="200" name="cross" type="crossing">
+    <connection id="0" incomingRoad="4" connectingRoad="5" contactPoint="start">
+      <laneLink from="-1" to="-1" />
+    </connection>
+  </junction>
+</OpenDRIVE>

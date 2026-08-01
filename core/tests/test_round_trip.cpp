@@ -282,6 +282,112 @@ TEST(RoundTrip, LaneDirectionSurvivesWriteParseWrite) {
   EXPECT_EQ(*xml, *again);
 }
 
+// --- direct and crossing junctions (#534) ------------------------------------
+//
+// A direct junction (§12.4) has NO connecting road: each <connection> carries
+// @linkedRoad. The reader read @type only to test == "virtual" and read every
+// connection expecting @connectingRoad, so `direct` was dropped AND every
+// connection was skipped as "unknown road ''" — the file came back an EMPTY
+// common junction. Destruction, not degradation.
+
+TEST(RoundTrip, DirectAndCrossingJunctionsSurviveWriteParseWrite) {
+  const std::filesystem::path sample =
+      std::filesystem::path(RM_FUZZ_CORPUS_DIR) / "direct_junction.xodr";
+  const auto loaded = roadmaker::load_xodr(sample);
+  ASSERT_TRUE(loaded.has_value()) << (loaded ? "" : loaded.error().message);
+  const RoadNetwork& network = loaded->network;
+
+  // 1. The types survived.
+  const roadmaker::Junction& direct = *network.junction(network.find_junction("100"));
+  EXPECT_EQ(direct.type, roadmaker::JunctionType::Direct);
+  const roadmaker::Junction& crossing = *network.junction(network.find_junction("200"));
+  EXPECT_EQ(crossing.type, roadmaker::JunctionType::Crossing);
+
+  // 2. The direct junction's connections exist, and are NOT in `connections` —
+  // they have no connecting road, so the derived machinery must see none.
+  EXPECT_TRUE(direct.connections.empty());
+  ASSERT_EQ(direct.direct_connections.size(), 2U) << "connections were skipped again";
+  EXPECT_EQ(direct.direct_connections[0].odr_id, "0");
+  EXPECT_EQ(network.road(direct.direct_connections[0].linked_road)->odr_id, "2");
+  EXPECT_EQ(network.road(direct.direct_connections[1].linked_road)->odr_id, "3");
+  EXPECT_EQ(direct.direct_connections[0].contact_point,
+            std::optional<roadmaker::ContactPoint>{roadmaker::ContactPoint::Start});
+
+  // 3. @overlapZone and the layer attributes — never read anywhere before.
+  ASSERT_EQ(direct.direct_connections[1].lane_links.size(), 1U);
+  const roadmaker::DirectLaneLink& link = direct.direct_connections[1].lane_links[0];
+  EXPECT_EQ(link.from, -2);
+  EXPECT_EQ(link.to, -1);
+  EXPECT_EQ(link.from_layer, "permanent");
+  ASSERT_TRUE(link.overlap_zone.has_value());
+  EXPECT_DOUBLE_EQ(*link.overlap_zone, 45.0);
+  // Absent stays absent: the spec's default of 100 is not materialised.
+  ASSERT_EQ(direct.direct_connections[0].lane_links.size(), 1U);
+  EXPECT_FALSE(direct.direct_connections[0].lane_links[0].overlap_zone.has_value());
+
+  // 4. A crossing junction uses @connectingRoad like a common one, so its
+  // connection must land in the ORDINARY list. This is what stops the fix
+  // meaning "anything that is not default is direct".
+  EXPECT_TRUE(crossing.direct_connections.empty());
+  EXPECT_EQ(crossing.connections.size(), 1U);
+
+  // 5. The bytes. A model-only assertion would pass on a writer that still
+  // emitted a common junction.
+  const auto written = roadmaker::write_xodr(loaded->network, "direct_junction");
+  ASSERT_TRUE(written.has_value());
+  EXPECT_NE(written->find(R"(type="direct")"), std::string::npos);
+  EXPECT_NE(written->find(R"(type="crossing")"), std::string::npos);
+  EXPECT_NE(written->find(R"(linkedRoad="2")"), std::string::npos);
+  EXPECT_NE(written->find(R"(linkedRoad="3")"), std::string::npos);
+  EXPECT_NE(written->find(R"(overlapZone="45")"), std::string::npos);
+
+  // 6. Fixed point, and the type is still Direct after the second trip rather
+  // than decaying to the default.
+  const auto reparsed = roadmaker::parse_xodr(*written, "direct_junction");
+  ASSERT_TRUE(reparsed.has_value());
+  EXPECT_EQ(reparsed->network.junction(reparsed->network.find_junction("100"))->type,
+            roadmaker::JunctionType::Direct);
+  const auto again = roadmaker::write_xodr(reparsed->network, "direct_junction");
+  ASSERT_TRUE(again.has_value());
+  EXPECT_EQ(*written, *again);
+}
+
+TEST(RoundTrip, ADirectJunctionRaisesNoUnknownRoadWarning) {
+  // The old failure mode was loud AND wrong: every connection produced
+  // "connection references unknown road ''" because @connectingRoad was absent
+  // by design. A diagnostic that misnames the problem is worse than none.
+  const auto loaded =
+      roadmaker::load_xodr(std::filesystem::path(RM_FUZZ_CORPUS_DIR) / "direct_junction.xodr");
+  ASSERT_TRUE(loaded.has_value());
+  EXPECT_FALSE(std::ranges::any_of(loaded->diagnostics, [](const roadmaker::Diagnostic& d) {
+    return d.message.find("unknown road ''") != std::string::npos;
+  }));
+  EXPECT_EQ(roadmaker::count_errors(loaded->diagnostics), 0U);
+}
+
+TEST(RoundTrip, AnAuthoredJunctionWritesNoTypeAttribute) {
+  // `default` is what an absent @type means, so authoring must not start
+  // stamping type="default" onto every junction in the suite.
+  RoadNetwork network;
+  const auto arm = [&](std::vector<Waypoint> waypoints, const char* id) {
+    return *roadmaker::author_clothoid_road(
+        network, waypoints, LaneProfile::two_lane_default(), "", id);
+  };
+  const RoadId west = arm({Waypoint{-40.0, 0.0}, Waypoint{-6.0, 0.0}}, "1");
+  const RoadId east = arm({Waypoint{40.0, 0.0}, Waypoint{6.0, 0.0}}, "2");
+  const RoadId south = arm({Waypoint{0.0, -40.0}, Waypoint{0.0, -6.0}}, "3");
+  const std::array<RoadEnd, 3> ends{RoadEnd{.road = west, .contact = ContactPoint::End},
+                                    RoadEnd{.road = east, .contact = ContactPoint::End},
+                                    RoadEnd{.road = south, .contact = ContactPoint::End}};
+  auto command = roadmaker::edit::create_junction(network, ends);
+  ASSERT_NE(command, nullptr);
+  ASSERT_TRUE(command->apply(network).has_value());
+
+  const auto written = roadmaker::write_xodr(network, "plain_junction");
+  ASSERT_TRUE(written.has_value());
+  EXPECT_EQ(written->find(R"(type="default")"), std::string::npos);
+}
+
 // --- lane <link> multiplicity (#536) -----------------------------------------
 //
 // <predecessor>/<successor> are 0..* and the standard MANDATES several where a

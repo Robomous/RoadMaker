@@ -1345,6 +1345,32 @@ Current version on `main`: **0.0.1**.
   about silently never matched.
 
 ### Fixed
+- **A direct junction is no longer destroyed on save**
+  ([#534](https://github.com/Robomous/RoadMaker/issues/534)). A direct junction
+  (§12.4) splits or merges roads with **no connecting road at all**: each
+  `<connection>` carries `@linkedRoad`, which
+  `asam.net:xodr:1.7.0:junctions.direct.connecting_road_attribute_usage`
+  explicitly forbids replacing with `@connectingRoad`.
+
+  Three faults compounded into destruction rather than degradation. `@type` was
+  read only to test `== "virtual"`, so `direct` and `crossing` were dropped.
+  Every `<connection>` was read expecting `@connectingRoad`, so `find_road("")`
+  failed and each was skipped — each with the misleading warning *"connection
+  references unknown road ''"*. And `@linkedRoad`/`@overlapZone` were never read
+  anywhere. Saving therefore produced a plain common junction with **zero
+  connections**: the topology gone, and the one diagnostic it did emit pointing
+  at the wrong thing.
+
+  `Junction::type` (plus the verbatim `type_str`) now round-trips for all four
+  kinds, and a direct junction's connections are modeled as
+  `Junction::direct_connections` — `@linkedRoad`, the optional `@contactPoint`,
+  and lane links carrying `@overlapZone` and both layer attributes. They live in
+  their own list precisely so the derived machinery — corners, floor, maneuvers,
+  all of which walk `connections` looking for connecting roads — correctly finds
+  nothing to build for a junction that has no connecting road. A crossing
+  junction uses `@connectingRoad` like a common one and keeps using the ordinary
+  path. `default` is what an absent `@type` means, so authored junctions still
+  write no `@type` and every existing fixture keeps its bytes.
 - **A lane that splits or merges no longer loses half its linkage**
   ([#536](https://github.com/Robomous/RoadMaker/issues/536)). `<link>`'s
   `<predecessor>`/`<successor>` are multiplicity **0..\***  (§11.6), and
