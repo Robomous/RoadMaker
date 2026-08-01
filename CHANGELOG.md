@@ -336,6 +336,23 @@ Current version on `main`: **0.0.1**.
     tool survives a mode switch is now derived from the same toolbar registry
     that enables and disables its button, so a core-strip tool is never kicked
     and a tab tool is kicked exactly when its tab was disabled.
+- **A routed esmini fixture, and what it measures**
+  ([#247](https://github.com/Robomous/RoadMaker/issues/247), validation half):
+  `tests/esmini/routed.{xodr,xosc}` — two roads joined by a plain weld and an
+  ego whose `<Route>` crosses it, generated end-to-end through the kernel's
+  command layer by `scripts/gen_xosc_fixtures.py`, byte-locked by its own
+  gtest, and fed to the pinned esmini in CI beside the signalized pair.
+  - **Measured (v3.5.0): a route waypoint's lane anchor IS resolved against
+    the `.xodr`.** A dangling `roadId`, a dangling `laneId` and an `s` past
+    the road's end inside `<AssignRouteAction>` each produce an `[error]` the
+    smoke gate fails on (esmini keeps exit 0 — the marker check is the gate),
+    the same way an Init teleport's anchor does. So the CI step genuinely
+    gates the route half of the scenario model.
+  - **The pair's route must resolve at generation time and at test time**: the
+    generator refuses to write a route the kernel resolver cannot drive, and
+    `XoscFixture.TheTrackedRouteResolvesCompletelyAgainstItsOwnNetwork` re-runs
+    the cross-document check on the tracked bytes — a fixture whose route did
+    not drive would make the CI step a measurement of a broken example.
 - **The esmini CI pin is honoured by a bump**
   ([#506](https://github.com/Robomous/RoadMaker/issues/506)): the cache key
   repeated the version as a literal instead of deriving it from

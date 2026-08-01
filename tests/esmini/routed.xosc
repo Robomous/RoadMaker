@@ -1,0 +1,77 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<OpenSCENARIO>
+  <FileHeader revMajor="1" revMinor="2" date="1970-01-01T00:00:00" description="RoadMaker routed fixture" author="RoadMaker" />
+  <ParameterDeclarations />
+  <CatalogLocations />
+  <RoadNetwork>
+    <LogicFile filepath="routed.xodr" />
+  </RoadNetwork>
+  <Entities>
+    <ScenarioObject name="Ego">
+      <Vehicle name="Car" vehicleCategory="car" mass="1500">
+        <BoundingBox>
+          <Center x="1.9" y="0" z="0.725" />
+          <Dimensions width="2.13" length="5.79" height="1.45" />
+        </BoundingBox>
+        <Performance maxSpeed="69.4" maxAcceleration="5" maxDeceleration="10" />
+        <Axles>
+          <FrontAxle maxSteering="0.5" wheelDiameter="0.65" trackWidth="2.13" positionX="2.9" positionZ="0.325" />
+          <RearAxle maxSteering="0" wheelDiameter="0.65" trackWidth="2.13" positionX="0" positionZ="0.325" />
+        </Axles>
+        <Properties />
+      </Vehicle>
+    </ScenarioObject>
+  </Entities>
+  <Storyboard>
+    <Init>
+      <Actions>
+        <Private entityRef="Ego">
+          <PrivateAction>
+            <TeleportAction>
+              <Position>
+                <LanePosition roadId="1" laneId="-1" s="10" offset="0" />
+              </Position>
+            </TeleportAction>
+          </PrivateAction>
+          <PrivateAction>
+            <LongitudinalAction>
+              <SpeedAction>
+                <SpeedActionDynamics dynamicsShape="step" value="0" dynamicsDimension="time" />
+                <SpeedActionTarget>
+                  <AbsoluteTargetSpeed value="13.89" />
+                </SpeedActionTarget>
+              </SpeedAction>
+            </LongitudinalAction>
+          </PrivateAction>
+          <PrivateAction>
+            <RoutingAction>
+              <AssignRouteAction>
+                <Route name="EgoRoute" closed="false">
+                  <Waypoint routeStrategy="shortest">
+                    <Position>
+                      <LanePosition roadId="1" laneId="-1" s="20" offset="0" />
+                    </Position>
+                  </Waypoint>
+                  <Waypoint routeStrategy="shortest">
+                    <Position>
+                      <LanePosition roadId="2" laneId="-1" s="80" offset="0" />
+                    </Position>
+                  </Waypoint>
+                </Route>
+              </AssignRouteAction>
+            </RoutingAction>
+          </PrivateAction>
+        </Private>
+      </Actions>
+    </Init>
+    <StopTrigger>
+      <ConditionGroup>
+        <Condition name="end" delay="0" conditionEdge="rising">
+          <ByValueCondition>
+            <SimulationTimeCondition value="0.5" rule="greaterThan" />
+          </ByValueCondition>
+        </Condition>
+      </ConditionGroup>
+    </StopTrigger>
+  </Storyboard>
+</OpenSCENARIO>

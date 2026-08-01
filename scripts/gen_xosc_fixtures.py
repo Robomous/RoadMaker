@@ -173,13 +173,127 @@ def build_scenario(
     return scenario
 
 
+def build_routed_network() -> rm.RoadNetwork:
+    """Two straight roads welded end-to-start along +x, 100 m each (p8-s3, #247).
+
+    Deliberately the SMALLEST network whose route resolution crosses a road
+    boundary: RoadMaker's own authoring never emits `<lane><link>` across a
+    plain weld (the resolver's documented same-`@id` fallback carries it), so
+    this pair is exactly the shape whose acceptance by a shipping simulator is
+    worth knowing — a junction would re-test what signalized.* already covers.
+    """
+    network = rm.RoadNetwork()
+    stack = rm.edit.EditStack()
+
+    profile = rm.LaneProfile.two_lane_default()
+    stack.push(network, rm.edit.create_road([(0.0, 0.0), (100.0, 0.0)], profile, "west"))
+    first = network.road_ids[0]
+    end = rm.RoadEnd()
+    end.road = first
+    end.contact = rm.ContactPoint.END
+    stack.push(
+        network,
+        rm.edit.create_linked_road(network, [(100.0, 0.0), (200.0, 0.0)], profile, "east", end),
+    )
+
+    assert not rm.validate_network(network), "the fixture network must itself be clean"
+    return network
+
+
+def _route_waypoint(road_odr_id: str, lane_odr_id: str, s: float) -> rm.osc.RouteWaypoint:
+    position = rm.osc.LanePosition()
+    position.road_id = road_odr_id
+    position.lane_id = lane_odr_id
+    position.s = s
+    waypoint = rm.osc.RouteWaypoint()
+    waypoint.route_strategy = "shortest"
+    waypoint.position = position
+    return waypoint
+
+
+def build_routed_scenario(network: rm.RoadNetwork, xodr_name: str) -> rm.osc.Scenario:
+    """An ego with a lane-anchored route across the weld, one command at a time."""
+    scenario = rm.osc.Scenario()
+    stack = rm.osc.edit.ScenarioStack()
+
+    header = scenario.header
+    header.description = "RoadMaker routed fixture"
+    scenario.header = header
+
+    stack.push(scenario, rm.osc.edit.set_logic_file(scenario, xodr_name))
+
+    roads = {network.road(i).name: network.road(i).odr_id for i in network.road_ids}
+
+    position = rm.osc.LanePosition()
+    position.road_id = roads["west"]
+    position.lane_id = "-1"
+    position.s = 10.0
+    position.offset = 0.0
+    stack.push(
+        scenario,
+        rm.osc.edit.place_scenario_object(
+            scenario, rm.osc.make_actor(rm.osc.ActorKind.Car, "Ego"), position
+        ),
+    )
+    stack.push(scenario, rm.osc.edit.set_entity_init_speed(scenario, "Ego", EGO_START_SPEED))
+
+    # The route: one waypoint per road, lane -1 both times, joined across the
+    # weld by the resolver. Authored through the same factory the editor's
+    # Route tool pushes.
+    route = rm.osc.Route()
+    route.name = "EgoRoute"
+    route.waypoints = [
+        _route_waypoint(roads["west"], "-1", 20.0),
+        _route_waypoint(roads["east"], "-1", 80.0),
+    ]
+    stack.push(scenario, rm.osc.edit.assign_route(scenario, "Ego", route))
+
+    # The same 0.5 s stop trigger signalized.xosc carries, for the same reason:
+    # a scenario with no stop trigger runs in esmini until something kills it,
+    # and a smoke gate that has to time out to pass is not a gate.
+    end = rm.osc.Condition()
+    end.name = "end"
+    timing = rm.osc.SimulationTimeCondition()
+    timing.value = 0.5
+    timing.rule = "greaterThan"
+    end.simulation_time = timing
+    group = rm.osc.ConditionGroup()
+    group.conditions = [end]
+    storyboard = scenario.storyboard
+    stop = storyboard.stop_trigger
+    stop.condition_groups = [group]
+    storyboard.stop_trigger = stop
+    scenario.storyboard = storyboard
+
+    # ★ The cross-document gate, run at generation time: the route must resolve
+    # COMPLETELY against the network the pair ships with. A fixture whose route
+    # did not drive would put a broken example in front of esmini and call
+    # whatever it says a measurement.
+    assert not rm.osc.validate_routes(network, scenario), "the fixture route must resolve"
+    resolved = rm.osc.resolve_route(network, route)
+    assert resolved.complete, [f.message for f in resolved.findings]
+    assert len(resolved.legs) >= 2, "the route must actually cross the weld"
+
+    full = rm.osc.write_xosc(scenario)
+    for _ in range(10):
+        while stack.can_undo:
+            stack.undo(scenario)
+        while stack.can_redo:
+            stack.redo(scenario)
+    assert rm.osc.write_xosc(scenario) == full, "undo x10 / redo x10 changed the document"
+
+    findings = rm.osc.validate_scenario(scenario)
+    assert not findings, [f.message for f in findings]
+    return scenario
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--out",
         type=Path,
         default=Path(__file__).resolve().parent.parent / "tests" / "esmini",
-        help="directory the pair is written to (default: tests/esmini)",
+        help="directory the pairs are written to (default: tests/esmini)",
     )
     args = parser.parse_args()
     args.out.mkdir(parents=True, exist_ok=True)
@@ -200,6 +314,17 @@ def main() -> int:
         f"{len(controllers[0].phases)} phases each, "
         f"{sum(len(p.signal_states) for p in controllers[0].phases)} signal states in the first"
     )
+
+    routed_network = build_routed_network()
+    routed_xodr = args.out / "routed.xodr"
+    routed_xosc = args.out / "routed.xosc"
+
+    rm.save_xodr(routed_network, routed_xodr)
+    routed = build_routed_scenario(routed_network, routed_xodr.name)
+    rm.osc.save_xosc(routed, routed_xosc)
+
+    print(f"wrote {routed_xodr}")
+    print(f"wrote {routed_xosc}")
     return 0
 
 
