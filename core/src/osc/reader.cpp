@@ -304,6 +304,45 @@ private:
     return fallback;
   }
 
+  /// Attribute as an XSD boolean (p8-s3, issue #247).
+  ///
+  /// Strict on purpose, and NOT `pugi::xml_attribute::as_bool`, which reads any
+  /// value beginning with `t`, `y` or `1` as true and EVERYTHING ELSE as false —
+  /// so a typo, an unresolved `$parameter` and a genuine `false` would all come
+  /// back the same, and only one of the three is what the file said.
+  /// `xsd:boolean` admits exactly `true`, `false`, `1` and `0`.
+  ///
+  /// A malformed value is reported and NOT captured into the preserved tier, for
+  /// the reason `attr_double` documents at length: the writer emits modeled
+  /// attributes and preserved attributes with no de-duplication, so preserving
+  /// the spelling would emit the attribute twice and produce ill-formed XML.
+  bool attr_bool(const pugi::xml_node& node,
+                 const char* name,
+                 const std::string& location,
+                 bool fallback = false) {
+    const pugi::xml_attribute attr = node.attribute(name);
+    if (!attr) {
+      diag(Severity::Warning,
+           location,
+           fmt::format("missing attribute '{}', using {}", name, fallback ? "true" : "false"));
+      return fallback;
+    }
+    const std::string_view value = attr.value();
+    if (value == "true" || value == "1") {
+      return true;
+    }
+    if (value == "false" || value == "0") {
+      return false;
+    }
+    diag(Severity::Warning,
+         location,
+         fmt::format("attribute '{}' is not a valid boolean ('{}'), using {}",
+                     name,
+                     attr.value(),
+                     fallback ? "true" : "false"));
+    return fallback;
+  }
+
   std::optional<double>
   attr_optional_double(const pugi::xml_node& node, const char* name, const std::string& location) {
     const pugi::xml_attribute attr = node.attribute(name);
@@ -989,6 +1028,152 @@ private:
   /// `TeleportAction::position` is a variant with no empty state precisely so
   /// this decision has to be made here. p8-s2 narrowed the branch from nine
   /// types to eight and did not weaken it.
+  /// `<Route>` — §7.7 (p8-s3, issue #247).
+  ///
+  /// The child order the writer emits is the XSD sequence; the READER does not
+  /// depend on it — a `<Waypoint>` before `<ParameterDeclarations>` is still
+  /// read, because refusing document order a schema validator would catch is
+  /// not this reader's job and would cost the round trip a file it could have
+  /// kept.
+  Route parse_route(const pugi::xml_node& node, const std::string& location) {
+    Route out;
+    std::size_t preserved_waypoints = 0;
+    out.name = attr_text(node, "name");
+    // Both attributes are `use="required"`, so a missing one is a finding rather
+    // than a silent default — attr_bool says so, and the empty name is caught
+    // here because attr_text cannot.
+    if (out.name.empty()) {
+      diag(Severity::Warning, location, "<Route> has no name, which the schema requires");
+    }
+    out.closed = attr_bool(node, "closed", location);
+    capture_attributes(node, out.preserved, {"name", "closed"}, location);
+
+    for (const pugi::xml_node child : node.children()) {
+      const std::string_view child_name = child.name();
+
+      if (child_name == "ParameterDeclarations") {
+        // A route's declarations belong to the ROUTE, unlike the document-level
+        // ones parse_parameter_declarations collects into the scenario. Sharing
+        // that function would move them up a level and change what they scope.
+        for (const pugi::xml_node parameter : child.children()) {
+          if (std::string_view(parameter.name()) != "ParameterDeclaration") {
+            preserve_child(parameter, out.preserved, location + "/ParameterDeclarations");
+            continue;
+          }
+          ParameterDeclaration declaration;
+          declaration.name = attr_text(parameter, "name");
+          declaration.parameter_type = attr_text(parameter, "parameterType");
+          declaration.value = attr_text(parameter, "value");
+          capture_attributes(parameter,
+                             declaration.preserved,
+                             {"name", "parameterType", "value"},
+                             location + "/ParameterDeclaration");
+          for (const pugi::xml_node grandchild : parameter.children()) {
+            preserve_child(grandchild, declaration.preserved, location + "/ParameterDeclaration");
+          }
+          out.parameter_declarations.push_back(std::move(declaration));
+        }
+        continue;
+      }
+
+      if (child_name == "Waypoint") {
+        const std::string waypoint_location =
+            fmt::format("{}/Waypoint[{}]", location, out.waypoints.size());
+        std::optional<Position> position =
+            parse_position(child.child("Position"), waypoint_location);
+        if (!position.has_value()) {
+          // The same call parse_private_action makes for a teleport, and for the
+          // same reason: the WAYPOINT is modeled, its position is one of eleven
+          // types and only three are. Preserving the whole waypoint keeps it in
+          // document order relative to its siblings — dropping it would shorten
+          // the route, which is a different route.
+          const pugi::xml_node position_node = child.child("Position").first_child();
+          diag(Severity::Warning,
+               waypoint_location,
+               fmt::format("<Waypoint> uses <{}>, and only <WorldPosition>, <RoadPosition> and "
+                           "<LanePosition> are modeled; the whole waypoint was preserved verbatim "
+                           "rather than dropped from the route",
+                           position_node ? position_node.name() : "Position"));
+          out.preserved.children.push_back(node_to_string(child));
+          ++preserved_waypoints;
+          continue;
+        }
+
+        RouteWaypoint waypoint;
+        waypoint.route_strategy = attr_text(child, "routeStrategy");
+        if (waypoint.route_strategy.empty()) {
+          diag(Severity::Warning,
+               waypoint_location,
+               "<Waypoint> has no routeStrategy, which the schema requires");
+        }
+        waypoint.position = std::move(*position);
+        capture_attributes(child, waypoint.preserved, {"routeStrategy"}, waypoint_location);
+        for (const pugi::xml_node grandchild : child.children()) {
+          if (std::string_view(grandchild.name()) != "Position") {
+            preserve_child(grandchild, waypoint.preserved, waypoint_location);
+          }
+        }
+        out.waypoints.push_back(std::move(waypoint));
+        continue;
+      }
+
+      preserve_child(child, out.preserved, location);
+    }
+
+    // "At least two waypoints are needed to define a route." Counts what the
+    // document CARRIES — a waypoint preserved whole (an unmodeled position) is
+    // still a waypoint of this route, and reporting otherwise would send a
+    // reader looking for a truncation that did not happen.
+    const std::size_t carried = out.waypoints.size() + preserved_waypoints;
+    if (carried < 2) {
+      // Reported, never padded: inventing the missing end is not a reader's
+      // call, and validate_scenario refuses it at save time.
+      diag(Severity::Warning,
+           location,
+           fmt::format("<Route> has {} waypoint(s); at least two are needed to define one",
+                       carried));
+    }
+    return out;
+  }
+
+  /// `<RoutingAction>` — §7.7. Returns nullopt when the action holds an arm this
+  /// version does not model (`<FollowTrajectoryAction>`,
+  /// `<AcquirePositionAction>`, `<RandomRouteAction>`,
+  /// `<PreferredLaneLayerAction>`), so the caller preserves the WHOLE action
+  /// rather than writing back an empty `<RoutingAction>` the file never had.
+  std::optional<RoutingAction> parse_routing_action(const pugi::xml_node& node,
+                                                    const std::string& location) {
+    const pugi::xml_node assign_node = node.child("AssignRouteAction");
+    if (!assign_node) {
+      return std::nullopt;
+    }
+
+    RoutingAction out;
+    capture_attributes(node, out.preserved, {}, location);
+
+    AssignRouteAction assign;
+    const std::string assign_location = location + "/AssignRouteAction";
+    capture_attributes(assign_node, assign.preserved, {}, assign_location);
+    for (const pugi::xml_node child : assign_node.children()) {
+      if (std::string_view(child.name()) == "Route") {
+        assign.route = parse_route(child, assign_location + "/Route");
+        continue;
+      }
+      // The <CatalogReference> arm, and anything else: preserved INSIDE
+      // <AssignRouteAction>, which is where it has to be re-emitted. `route`
+      // stays unset, and the writer then emits no <Route> at all.
+      preserve_child(child, assign.preserved, assign_location);
+    }
+    out.assign_route = std::move(assign);
+
+    for (const pugi::xml_node child : node.children()) {
+      if (std::string_view(child.name()) != "AssignRouteAction") {
+        preserve_child(child, out.preserved, location);
+      }
+    }
+    return out;
+  }
+
   PrivateAction parse_private_action(const pugi::xml_node& node, const std::string& location) {
     PrivateAction out;
     capture_attributes(node, out.preserved, {}, location);
@@ -1054,6 +1239,23 @@ private:
           }
         }
         out.longitudinal = std::move(longitudinal);
+        continue;
+      }
+
+      if (child_name == "RoutingAction") {
+        const std::string routing_location = location + "/RoutingAction";
+        std::optional<RoutingAction> routing = parse_routing_action(child, routing_location);
+        if (!routing.has_value()) {
+          const pugi::xml_node arm = child.first_child();
+          diag(Severity::Warning,
+               location,
+               fmt::format("<RoutingAction> uses <{}>, and only <AssignRouteAction> is modeled; "
+                           "the whole action was preserved verbatim",
+                           arm ? arm.name() : "RoutingAction"));
+          out.preserved.children.push_back(node_to_string(child));
+          continue;
+        }
+        out.routing = std::move(routing);
         continue;
       }
 
