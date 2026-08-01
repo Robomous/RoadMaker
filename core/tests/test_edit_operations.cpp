@@ -886,8 +886,8 @@ TEST(EditOperations, CreateJunctionGeneratesTJunctionAndRoundTrips) {
       const roadmaker::Lane& lane = *network.lane(lane_id);
       if (lane.odr_id == -1) {
         EXPECT_EQ(lane.type, LaneType::Driving);
-        EXPECT_EQ(lane.predecessor, -1);
-        EXPECT_EQ(lane.successor, 1);
+        EXPECT_EQ(lane.first_predecessor(), -1);
+        EXPECT_EQ(lane.first_successor(), 1);
         ASSERT_FALSE(lane.widths.empty());
         EXPECT_NEAR(lane.widths.front().a, roadmaker::defaults::kCollectorLaneWidth, 1e-9)
             << "source width";

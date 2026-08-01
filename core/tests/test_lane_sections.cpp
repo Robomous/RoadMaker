@@ -161,13 +161,13 @@ TEST(LaneSections, HandBuiltMultiSectionRoadSurvivesXodrRoundTrip) {
   // A lane widening 3.0 -> 4.5 m over the section: b != 0 is the thing no
   // authored road had ever carried.
   network.lane(driving)->widths = {Poly3{.s = 0.0, .a = 3.0, .b = 0.025}};
-  network.lane(driving)->predecessor = -1;
+  network.lane(driving)->set_predecessor(-1);
   // The first section's -1 continues into it, in both directions
   // (asam.net:xodr:1.4.0:road.lane.link.lanes_across_laneSections).
   const LaneSectionId first = network.road(road_id)->sections[0];
   for (const LaneId lane_id : network.lane_section(first)->lanes) {
     if (network.lane(lane_id)->odr_id == -1) {
-      network.lane(lane_id)->successor = -1;
+      network.lane(lane_id)->set_successor(-1);
     }
   }
 
@@ -189,7 +189,7 @@ TEST(LaneSections, HandBuiltMultiSectionRoadSurvivesXodrRoundTrip) {
   ASSERT_EQ(reloaded_lane->widths.size(), 1U);
   EXPECT_NEAR(reloaded_lane->widths[0].a, 3.0, 1e-9);
   EXPECT_NEAR(reloaded_lane->widths[0].b, 0.025, 1e-9);
-  EXPECT_EQ(reloaded_lane->predecessor, -1);
+  EXPECT_EQ(reloaded_lane->first_predecessor(), -1);
 
   // And the document is a fixed point: write -> parse -> write is stable.
   const auto rewritten = roadmaker::write_xodr(back, "multi");
@@ -223,14 +223,14 @@ TEST(LaneSections, WriterRejectsADanglingLaneLinkInEitherDirection) {
   }
 
   // Predecessor naming a lane that does not exist in the previous section.
-  network.lane(tail_id)->predecessor = -99;
+  network.lane(tail_id)->set_predecessor(-99);
   EXPECT_FALSE(roadmaker::write_xodr(network, "bad").has_value())
       << "a dangling predecessor must be refused";
-  network.lane(tail_id)->predecessor = -1;
+  network.lane(tail_id)->set_predecessor(-1);
   EXPECT_TRUE(roadmaker::write_xodr(network, "ok").has_value());
 
   // ...and the successor direction, which was already checked.
-  network.lane(head_id)->successor = -99;
+  network.lane(head_id)->set_successor(-99);
   EXPECT_FALSE(roadmaker::write_xodr(network, "bad").has_value())
       << "a dangling successor must be refused";
 }
@@ -397,10 +397,10 @@ TEST(LaneSections, SplitLinksContinuingLanesInBothDirections) {
   for (const LaneId lane_id : network.lane_section(sections[0])->lanes) {
     const Lane& lane = *network.lane(lane_id);
     SCOPED_TRACE("odr lane " + std::to_string(lane.odr_id));
-    EXPECT_EQ(lane.successor, lane.odr_id); // identity across the seam
+    EXPECT_EQ(lane.first_successor(), lane.odr_id); // identity across the seam
     const Lane* copy = lane_by_odr(network, sections[1], lane.odr_id);
     ASSERT_NE(copy, nullptr);
-    EXPECT_EQ(copy->predecessor, lane.odr_id);
+    EXPECT_EQ(copy->first_predecessor(), lane.odr_id);
     EXPECT_EQ(copy->type, lane.type);
   }
 }
@@ -575,8 +575,8 @@ TEST(LaneSections, SplitSurvivesAnXodrRoundTrip) {
   const Lane* tail = lane_by_odr(back, back.road(reloaded_road)->sections[1], -1);
   ASSERT_NE(head, nullptr);
   ASSERT_NE(tail, nullptr);
-  EXPECT_EQ(head->successor, -1);
-  EXPECT_EQ(tail->predecessor, -1);
+  EXPECT_EQ(head->first_successor(), -1);
+  EXPECT_EQ(tail->first_predecessor(), -1);
 
   const auto rewritten = roadmaker::write_xodr(back, "split");
   ASSERT_TRUE(rewritten.has_value()) << rewritten.error().message;
@@ -751,8 +751,8 @@ TEST(LaneSections, InsertLaneLeavesTheNewLaneUnlinkedAndRemapsNeighbourLinks) {
   const LaneSectionId tail = network.road(road_id)->sections[1];
 
   // Before: the head's -1 continues into the tail's -1, both ways.
-  ASSERT_EQ(lane_by_odr(network, head, -1)->successor, -1);
-  ASSERT_EQ(lane_by_odr(network, tail, -1)->predecessor, -1);
+  ASSERT_EQ(lane_by_odr(network, head, -1)->first_successor(), -1);
+  ASSERT_EQ(lane_by_odr(network, tail, -1)->first_predecessor(), -1);
 
   auto command = roadmaker::edit::insert_lane(network, head, -1, LaneType::Driving);
   expect_command_round_trip(network, *command);
@@ -760,14 +760,14 @@ TEST(LaneSections, InsertLaneLeavesTheNewLaneUnlinkedAndRemapsNeighbourLinks) {
 
   // The inserted lane appears mid-road: no continuation into either neighbour.
   const Lane* inserted = lane_by_odr(network, head, -1);
-  EXPECT_FALSE(inserted->predecessor.has_value());
-  EXPECT_FALSE(inserted->successor.has_value());
+  EXPECT_FALSE(inserted->first_predecessor().has_value());
+  EXPECT_FALSE(inserted->first_successor().has_value());
 
   // The lane that used to be -1 is now -2 and still continues into the tail's
   // -1 (the tail was not renumbered); the tail's predecessor link followed the
   // renumbering from -1 to -2.
-  EXPECT_EQ(lane_by_odr(network, head, -2)->successor, -1);
-  EXPECT_EQ(lane_by_odr(network, tail, -1)->predecessor, -2);
+  EXPECT_EQ(lane_by_odr(network, head, -2)->first_successor(), -1);
+  EXPECT_EQ(lane_by_odr(network, tail, -1)->first_predecessor(), -2);
 }
 
 TEST(LaneSections, InsertLaneRejectsBadPositions) {

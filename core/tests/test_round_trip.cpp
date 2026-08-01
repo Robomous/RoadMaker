@@ -282,6 +282,104 @@ TEST(RoundTrip, LaneDirectionSurvivesWriteParseWrite) {
   EXPECT_EQ(*xml, *again);
 }
 
+// --- lane <link> multiplicity (#536) -----------------------------------------
+//
+// <predecessor>/<successor> are 0..* and the standard MANDATES several where a
+// lane splits abruptly. The reader took the first child only, so a spec-required
+// split was halved on every round trip — with no diagnostic, because nothing
+// looked wrong about a lane having one successor.
+
+TEST(RoundTrip, MultipleLaneLinksSurviveWriteParseWrite) {
+  const std::filesystem::path sample =
+      std::filesystem::path(RM_FUZZ_CORPUS_DIR) / "lane_link_multi.xodr";
+  const auto loaded = roadmaker::load_xodr(sample);
+  ASSERT_TRUE(loaded.has_value()) << (loaded ? "" : loaded.error().message);
+  const RoadNetwork& network = loaded->network;
+
+  const roadmaker::Road& road = *network.road(network.find_road("1"));
+  ASSERT_EQ(road.sections.size(), 2U);
+  const auto lane_of = [&](std::size_t section, int odr_id) -> const roadmaker::Lane& {
+    for (const roadmaker::LaneId id : network.lane_section(road.sections[section])->lanes) {
+      if (network.lane(id)->odr_id == odr_id) {
+        return *network.lane(id);
+      }
+    }
+    throw std::runtime_error("lane missing from the corpus sample");
+  };
+
+  // 1. BOTH successors of the splitting lane survived. Before #536 this was 1.
+  const roadmaker::Lane& splitting = lane_of(0, -1);
+  ASSERT_EQ(splitting.successors.size(), 2U) << "the split was halved on read";
+  EXPECT_EQ(splitting.successors[0].id, -1);
+  EXPECT_EQ(splitting.successors[1].id, -2);
+  // The compatibility accessor still answers what the scalar field used to.
+  EXPECT_EQ(splitting.first_successor(), std::optional<int>{-1});
+
+  // 2. @layer travels with each entry, and an absent one stays absent.
+  const roadmaker::Lane& layered = lane_of(0, -3);
+  ASSERT_EQ(layered.successors.size(), 2U);
+  EXPECT_EQ(layered.successors[0].layer, "temporary");
+  EXPECT_EQ(layered.successors[1].layer, "permanent");
+  EXPECT_TRUE(splitting.successors[0].layer.empty()) << "an absent @layer was materialised";
+
+  // 3. The bytes. Asserting on the model alone would pass on a writer that
+  // still emitted one link per side.
+  std::ifstream file(sample);
+  ASSERT_TRUE(file.is_open());
+  const std::string source((std::istreambuf_iterator<char>(file)),
+                           std::istreambuf_iterator<char>());
+  const auto written = roadmaker::write_xodr(loaded->network, "lane_link_multi");
+  ASSERT_TRUE(written.has_value());
+
+  const auto count = [](const std::string& text, std::string_view needle) {
+    std::size_t n = 0;
+    for (std::size_t at = text.find(needle); at != std::string::npos;
+         at = text.find(needle, at + 1)) {
+      ++n;
+    }
+    return n;
+  };
+  // `<successor id=` rather than `<successor`: the seed's own comment block
+  // names the elements in prose, and a bare tag needle counts those too.
+  EXPECT_EQ(count(*written, "<successor id="), count(source, "<successor id="));
+  EXPECT_EQ(count(*written, "<predecessor id="), count(source, "<predecessor id="));
+  EXPECT_EQ(count(source, "<successor id="), 4U) << "the seed must still carry the split";
+  EXPECT_NE(written->find(R"(layer="temporary")"), std::string::npos);
+  EXPECT_NE(written->find(R"(layer="permanent")"), std::string::npos);
+
+  // 4. Fixed point.
+  const auto reparsed = roadmaker::parse_xodr(*written, "lane_link_multi");
+  ASSERT_TRUE(reparsed.has_value());
+  const auto again = roadmaker::write_xodr(reparsed->network, "lane_link_multi");
+  ASSERT_TRUE(again.has_value());
+  EXPECT_EQ(*written, *again);
+  EXPECT_EQ(roadmaker::count_errors(loaded->diagnostics), 0U);
+}
+
+TEST(RoundTrip, AnAuthoredLaneLinkIsASingleEntry) {
+  // RoadMaker's own commands link one lane into one lane, so a multi-link list
+  // only ever arrives from a file. This keeps every authored fixture's bytes.
+  RoadNetwork network;
+  const std::array<Waypoint, 2> waypoints{Waypoint{.x = 0.0, .y = 0.0},
+                                          Waypoint{.x = 120.0, .y = 0.0}};
+  const auto road_id = roadmaker::author_clothoid_road(
+      network, waypoints, LaneProfile::two_lane_default(), "Split", "1");
+  ASSERT_TRUE(road_id.has_value());
+  auto split = roadmaker::edit::split_lane_section(network, *road_id, 60.0);
+  ASSERT_NE(split, nullptr);
+  ASSERT_TRUE(split->apply(network).has_value());
+
+  const roadmaker::Road& road = *network.road(*road_id);
+  ASSERT_EQ(road.sections.size(), 2U);
+  for (const roadmaker::LaneId id : network.lane_section(road.sections.front())->lanes) {
+    const roadmaker::Lane& lane = *network.lane(id);
+    if (lane.odr_id != 0) {
+      EXPECT_EQ(lane.successors.size(), 1U) << "lane " << lane.odr_id;
+      EXPECT_TRUE(lane.successors[0].layer.empty()) << "an authored link invented a @layer";
+    }
+  }
+}
+
 // --- lane <border> (#538) ----------------------------------------------------
 //
 // The ALTERNATIVE encoding of lane geometry (§11.7.2): a border gives the
@@ -681,7 +779,7 @@ TEST(XodrWriter, RefusesDanglingLaneLinks) {
   const auto s1 = network.add_lane_section(road_id, 25.0);
   const auto lane = network.add_lane(s0, -1, roadmaker::LaneType::Driving);
   network.add_lane(s1, -1, roadmaker::LaneType::Driving);
-  network.lane(lane)->successor = -5; // does not exist in next section
+  network.lane(lane)->set_successor(-5); // does not exist in next section
 
   const auto result = roadmaker::write_xodr(network);
   ASSERT_FALSE(result.has_value());

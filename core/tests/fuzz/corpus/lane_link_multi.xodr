@@ -1,0 +1,90 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- VALID seed: lane links with multiplicity > 1, and @layer (#536).
+
+     <predecessor>/<successor> are Multiplicity 0..* (§11.6, Table 40), and
+     asam.net:xodr:1.4.0:road.lane.link.multiple_connections MANDATES several
+     where a lane splits or merges abruptly (§11.6, Figure 68). Before #536 the
+     reader took link.child("predecessor") — the FIRST element only — and the
+     rest vanished with no diagnostic, so a spec-mandated split was halved on
+     every round trip.
+
+     The second attribute went with them: @layer (e_layerType, permanent |
+     temporary) was never read at all. §11.6 names the temporary lane layer as
+     the very reason a permanent lane acquires extra links, so dropping it left
+     half the feature unreadable even where the ids survived.
+
+     Section 0 -> section 50: lane -1 SPLITS into lanes -1 and -2.
+       lane -1 of section 0 has TWO successors, -1 and -2
+       lane -1 of section 50 has one predecessor, -1
+       lane -2 of section 50 has one predecessor, -1  (the merge seen the
+                                                       other way round)
+
+     Lane -3 carries the @layer cases: a successor on the temporary layer and
+     one with an explicit permanent, so absent / "permanent" / "temporary" are
+     all exercised and an absent one must stay absent on write.
+
+     Apache-2.0. -->
+<OpenDRIVE>
+  <header revMajor="1" revMinor="8" name="lane_link_multi" vendor="RoadMaker" />
+  <road name="splitting" length="100" id="1" junction="-1">
+    <planView>
+      <geometry s="0" x="0" y="0" hdg="0" length="100">
+        <line />
+      </geometry>
+    </planView>
+    <lanes>
+      <laneSection s="0">
+        <center>
+          <lane id="0" type="none" level="false" />
+        </center>
+        <right>
+          <lane id="-1" type="driving" level="false">
+            <link>
+              <successor id="-1" />
+              <successor id="-2" />
+            </link>
+            <width sOffset="0" a="3.5" b="0" c="0" d="0" />
+          </lane>
+          <lane id="-3" type="driving" level="false">
+            <link>
+              <successor id="-3" layer="temporary" />
+              <successor id="-4" layer="permanent" />
+            </link>
+            <width sOffset="0" a="3.0" b="0" c="0" d="0" />
+          </lane>
+        </right>
+      </laneSection>
+      <laneSection s="50">
+        <center>
+          <lane id="0" type="none" level="false" />
+        </center>
+        <right>
+          <lane id="-1" type="driving" level="false">
+            <link>
+              <predecessor id="-1" />
+            </link>
+            <width sOffset="0" a="3.5" b="0" c="0" d="0" />
+          </lane>
+          <lane id="-2" type="driving" level="false">
+            <link>
+              <predecessor id="-1" />
+            </link>
+            <width sOffset="0" a="3.5" b="0" c="0" d="0" />
+          </lane>
+          <lane id="-3" type="driving" level="false">
+            <link>
+              <predecessor id="-3" layer="temporary" />
+            </link>
+            <width sOffset="0" a="3.0" b="0" c="0" d="0" />
+          </lane>
+          <lane id="-4" type="driving" level="false">
+            <link>
+              <predecessor id="-3" />
+            </link>
+            <width sOffset="0" a="3.0" b="0" c="0" d="0" />
+          </lane>
+        </right>
+      </laneSection>
+    </lanes>
+  </road>
+</OpenDRIVE>

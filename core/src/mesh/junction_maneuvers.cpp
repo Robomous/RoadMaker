@@ -55,8 +55,8 @@ int outgoing_lane_of(const RoadNetwork& network, const Road& road) {
   }
   for (const LaneId lane_id : network.lane_section(road.sections.front())->lanes) {
     const Lane& lane = *network.lane(lane_id);
-    if (lane.odr_id == -1 && lane.successor.has_value()) {
-      return *lane.successor;
+    if (lane.odr_id == -1 && lane.first_successor().has_value()) {
+      return *lane.first_successor();
     }
   }
   return 0;

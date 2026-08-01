@@ -1345,6 +1345,27 @@ Current version on `main`: **0.0.1**.
   about silently never matched.
 
 ### Fixed
+- **A lane that splits or merges no longer loses half its linkage**
+  ([#536](https://github.com/Robomous/RoadMaker/issues/536)). `<link>`'s
+  `<predecessor>`/`<successor>` are multiplicity **0..\***  (§11.6), and
+  `asam.net:xodr:1.4.0:road.lane.link.multiple_connections` *mandates* several
+  entries where a lane splits or merges abruptly. The reader took
+  `link.child("predecessor")` — the first element only — and the rest vanished
+  with **no diagnostic**, because a lane holding one successor looks perfectly
+  ordinary. Routing and topology data, silently halved on every round trip.
+
+  `Lane::predecessors`/`successors` are now lists, the writer emits every entry,
+  and the dangling-link check validates every entry rather than the first.
+  `Lane::first_predecessor()`/`first_successor()` return exactly what the old
+  scalar fields held, so consumers that only want "the lane that continues" read
+  unchanged; the route resolver now follows **all** onward links, which is what
+  a split lane means.
+
+  The same element's `@layer` (`permanent`/`temporary`) was being dropped too,
+  and is now carried verbatim — §11.6 names the temporary lane layer as the very
+  reason a permanent lane acquires extra predecessors, so half the feature was
+  unreadable even where the ids survived. RoadMaker's own commands still author
+  exactly one link per side, so authored files keep their bytes.
 - **A file whose lane geometry is authored with `<border>` no longer loses all
   of it** ([#538](https://github.com/Robomous/RoadMaker/issues/538)). `<border>`
   (§11.7.2) is OpenDRIVE's *alternative encoding* of the geometry RoadMaker

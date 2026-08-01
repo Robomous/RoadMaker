@@ -411,8 +411,8 @@ Expected<WeldReport> verify_junction_welds(const RoadNetwork& network, JunctionI
     int to_lane = 0;
     for (const LaneId lane_id : network.lane_section(road->sections.front())->lanes) {
       const Lane& lane = *network.lane(lane_id);
-      if (lane.odr_id == -1 && lane.successor.has_value()) {
-        to_lane = *lane.successor;
+      if (lane.odr_id == -1 && lane.first_successor().has_value()) {
+        to_lane = *lane.first_successor();
       }
     }
     // Start end touches the incoming arm (into_hdg = the connector's +s start).

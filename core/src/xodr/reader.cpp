@@ -1043,13 +1043,22 @@ private:
       lane.road_marks.push_back(std::move(mark));
     }
 
+    // <link> children are 0..* (§11.6), and
+    // asam.net:xodr:1.4.0:road.lane.link.multiple_connections MANDATES several
+    // where a lane splits or merges abruptly. Reading only the first child —
+    // which is what this did before #536 — halved a spec-mandated split with no
+    // diagnostic. @layer travels with each entry: §11.6 names the temporary
+    // lane layer as the very reason a lane acquires extra links, so dropping it
+    // would leave half the feature unreadable.
     if (const pugi::xml_node link = lane_node.child("link")) {
-      if (const pugi::xml_node pred = link.child("predecessor")) {
-        lane.predecessor = pred.attribute("id").as_int();
-      }
-      if (const pugi::xml_node succ = link.child("successor")) {
-        lane.successor = succ.attribute("id").as_int();
-      }
+      const auto read_lane_links = [&](const char* name, std::vector<LaneLink>& out) {
+        for (const pugi::xml_node node : link.children(name)) {
+          out.push_back(LaneLink{.id = node.attribute("id").as_int(),
+                                 .layer = node.attribute("layer").value()});
+        }
+      };
+      read_lane_links("predecessor", lane.predecessors);
+      read_lane_links("successor", lane.successors);
     }
 
     // <material> records (§11.8.2, Table 44). Promoted out of the Preserved

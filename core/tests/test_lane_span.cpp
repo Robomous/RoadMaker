@@ -221,8 +221,8 @@ TEST(LaneSpan, AddLaneSpanPocketHasNoCrossSectionLinks) {
   const LaneSectionId mid = section_at(network, road, 65.0);
   const Lane* pocket = lane_by_odr(network, mid, -3);
   ASSERT_NE(pocket, nullptr);
-  EXPECT_FALSE(pocket->predecessor.has_value());
-  EXPECT_FALSE(pocket->successor.has_value());
+  EXPECT_FALSE(pocket->first_predecessor().has_value());
+  EXPECT_FALSE(pocket->first_successor().has_value());
 
   // Nothing in the neighbouring sections links to -3 either.
   const auto& sections = network.road(road)->sections;
@@ -232,8 +232,8 @@ TEST(LaneSpan, AddLaneSpanPocketHasNoCrossSectionLinks) {
     }
     for (const LaneId lane_id : network.lane_section(section_id)->lanes) {
       const Lane& lane = *network.lane(lane_id);
-      EXPECT_NE(lane.predecessor, -3);
-      EXPECT_NE(lane.successor, -3);
+      EXPECT_NE(lane.first_predecessor(), -3);
+      EXPECT_NE(lane.first_successor(), -3);
     }
   }
 }
@@ -396,7 +396,8 @@ TEST(LaneSpan, FormLaneBackwardUnlinked) {
   const LaneSectionId last = network.road(road)->sections.back();
   const Lane* formed = lane_by_odr(network, last, -1);
   ASSERT_NE(formed, nullptr);
-  EXPECT_FALSE(formed->predecessor.has_value()) << "a formed lane appears mid-road, not linked";
+  EXPECT_FALSE(formed->first_predecessor().has_value())
+      << "a formed lane appears mid-road, not linked";
   // The writer accepts it: the lane is zero width at the seam, so no link is due.
   ASSERT_TRUE(roadmaker::write_xodr(network, "ok").has_value());
 }
@@ -419,8 +420,8 @@ TEST(LaneSpan, FormLaneAcrossOneSeamLinksMatchedPair) {
   const Lane* down = lane_by_odr(network, downstream, -1);
   ASSERT_NE(up, nullptr);
   ASSERT_NE(down, nullptr);
-  EXPECT_EQ(up->successor, -1); // matched pair, both ways
-  EXPECT_EQ(down->predecessor, -1);
+  EXPECT_EQ(up->first_successor(), -1); // matched pair, both ways
+  EXPECT_EQ(down->first_predecessor(), -1);
 
   ASSERT_TRUE(roadmaker::write_xodr(network, "ok").has_value());
   EXPECT_EQ(roadmaker::count_errors(roadmaker::validate_network(network)), 0U);
@@ -448,7 +449,7 @@ TEST(LaneSpan, FormLaneAcrossManySeamsRunsToRoadEnd) {
   EXPECT_NEAR(roadmaker::eval_profile(formed_last->widths, L),
               defaults::lane_width(LaneType::Driving),
               1e-6);
-  EXPECT_FALSE(formed_last->successor.has_value()); // road end: unlinked, legal
+  EXPECT_FALSE(formed_last->first_successor().has_value()); // road end: unlinked, legal
 
   ASSERT_TRUE(roadmaker::write_xodr(network, "ok").has_value());
   EXPECT_EQ(roadmaker::count_errors(roadmaker::validate_network(network)), 0U);
@@ -527,8 +528,8 @@ TEST(LaneSpan, FormLaneIntoNarrowerDownstreamSection) {
   EXPECT_NE(up_id, down_id);
   const Lane* up = network.lane(up_id);
   const Lane* down = network.lane(down_id);
-  EXPECT_EQ(up->successor, -2);
-  EXPECT_EQ(down->predecessor, -2);
+  EXPECT_EQ(up->first_successor(), -2);
+  EXPECT_EQ(down->first_predecessor(), -2);
   EXPECT_NEAR(roadmaker::eval_profile(down->widths, 0.0),
               defaults::lane_width(LaneType::Driving),
               1e-6); // appended at full width
@@ -665,8 +666,9 @@ TEST(LaneSpan, CarveLaneCarriagewayWidthContinuousAndNoDanglingLink) {
   const LaneSectionId last = network.road(road)->sections.back();
   const Lane* carved = lane_by_odr(network, last, -1);
   ASSERT_NE(carved, nullptr);
-  EXPECT_FALSE(carved->successor.has_value());
-  EXPECT_FALSE(carved->predecessor.has_value()) << "a carved lane appears mid-road, not linked";
+  EXPECT_FALSE(carved->first_successor().has_value());
+  EXPECT_FALSE(carved->first_predecessor().has_value())
+      << "a carved lane appears mid-road, not linked";
 }
 
 TEST(LaneSpan, CarveLaneIsIdempotentAtAnExistingBoundary) {
