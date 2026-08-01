@@ -37,6 +37,7 @@
 #include <limits>
 #include <optional>
 #include <set>
+#include <span>
 #include <sstream>
 #include <string>
 #include <string_view>
@@ -138,6 +139,37 @@ std::string node_to_string(const pugi::xml_node& node) {
   std::ostringstream out;
   node.print(out, "", pugi::format_raw);
   return out.str();
+}
+
+/// Capture everything about `node` that the caller does NOT model into `out` —
+/// the Preserved tier's one implementation (fmt-f1, #453).
+///
+/// `modeled_attrs` and `modeled_children` name what the caller has typed fields
+/// for; everything else is taken verbatim, in document order. The parser never
+/// silently drops input, and before #453 the several scopes listed on that issue
+/// each did — each in the same shape, and each needing the same six lines.
+/// Writing it once is what lets #539's sweep add a scope by naming its modeled
+/// members rather than by reimplementing the walk.
+///
+/// Children are captured even when the caller re-derives them; a caller that
+/// regenerates an element (a junction `<boundary>`, say) names it modeled so it
+/// is not emitted twice.
+void capture_unmodeled(const pugi::xml_node& node,
+                       std::span<const std::string_view> modeled_attrs,
+                       std::span<const std::string_view> modeled_children,
+                       RawXml& out) {
+  for (const pugi::xml_attribute attr : node.attributes()) {
+    const std::string_view name = attr.name();
+    if (std::ranges::find(modeled_attrs, name) == modeled_attrs.end()) {
+      out.attributes.emplace_back(std::string(name), attr.value());
+    }
+  }
+  for (const pugi::xml_node child : node.children()) {
+    const std::string_view name = child.name();
+    if (std::ranges::find(modeled_children, name) == modeled_children.end()) {
+      out.children.push_back(node_to_string(child));
+    }
+  }
 }
 
 class Parser {
@@ -746,6 +778,10 @@ private:
           read_poly3(elevation, fmt::format("{}/elevationProfile/elevation[{}]", location, index)));
       ++index;
     }
+    // Anything else under <elevationProfile> — <userData>, a later revision's
+    // element — used to be dropped in silence (fmt-f1, #453).
+    static constexpr std::string_view kElevationChildren[] = {"elevation"};
+    capture_unmodeled(profile, {}, kElevationChildren, road.elevation_profile_extras);
   }
 
   void
@@ -789,6 +825,10 @@ private:
       ++offset_index;
     }
 
+    // <lanes> itself: anything besides <laneOffset>/<laneSection> (fmt-f1, #453).
+    static constexpr std::string_view kLanesChildren[] = {"laneOffset", "laneSection"};
+    capture_unmodeled(lanes_node, {}, kLanesChildren, road.lanes_extras);
+
     std::size_t section_index = 0;
     for (const pugi::xml_node section_node : lanes_node.children("laneSection")) {
       const std::string section_location =
@@ -810,6 +850,14 @@ private:
         }
       }
       convert_borders_to_widths(road_id, section_location);
+      // The side-container walk above visits <left>/<center>/<right> only, so
+      // everything else — @singleSide, <userData>, any later element — used to
+      // be skipped in silence (fmt-f1, #453).
+      if (LaneSection* section = network().lane_section(section_id); section != nullptr) {
+        static constexpr std::string_view kSectionAttrs[] = {"s"};
+        static constexpr std::string_view kSectionChildren[] = {"left", "center", "right"};
+        capture_unmodeled(section_node, kSectionAttrs, kSectionChildren, section->preserved);
+      }
       ++section_index;
     }
     if (network().road(road_id)->sections.empty()) {
@@ -1040,6 +1088,13 @@ private:
           });
         }
       }
+      // roadMark's Preserved tier (fmt-f1, #453): @height/@lane_change/@weight
+      // and any later attribute, plus <sway>/<explicit>/<userData>, all of which
+      // used to vanish silently. <type> is modeled (it carries the <line> list).
+      static constexpr std::string_view kMarkAttrs[] = {
+          "sOffset", "type", "width", "color", "material"};
+      static constexpr std::string_view kMarkChildren[] = {"type"};
+      capture_unmodeled(mark_node, kMarkAttrs, kMarkChildren, mark.preserved);
       lane.road_marks.push_back(std::move(mark));
     }
 
@@ -1109,6 +1164,18 @@ private:
     // Preserved tier: unmodeled lane children (<speed>/<access>/<height>/
     // <rule>/<userData>/…) survive verbatim in document order — the parser
     // never silently drops input (the Object precedent, docs/design/m3a/01 §5).
+    // Unknown ATTRIBUTES of <lane> (fmt-f1, #453). The children below were
+    // already preserved; the attributes were not, unlike Signal/Object/Bridge
+    // which have preserved both since M3a. @advisory, @width and anything a
+    // later revision adds used to vanish.
+    static constexpr std::string_view kLaneAttrs[] = {"id", "type", "level", "direction"};
+    for (const pugi::xml_attribute attr : lane_node.attributes()) {
+      const std::string_view name = attr.name();
+      if (std::ranges::find(kLaneAttrs, name) == std::end(kLaneAttrs)) {
+        lane.preserved.attributes.emplace_back(std::string(name), attr.value());
+      }
+    }
+
     // <border> is excluded because it is MODELED, not unsupported: it is
     // converted to <width> records in convert_borders_to_widths (#538). Keeping
     // it here as well would re-emit it beside the widths it became, which
@@ -2254,6 +2321,17 @@ private:
     parse_junction_controllers(junction_node, junction, location);
     parse_virtual_junction(junction_node, junction, location);
     parse_junction_user_data(junction_node, junction, location);
+
+    // Unknown attributes and unmodeled non-<userData> children — <priority>
+    // (§12.9) above all (fmt-f1, #453). <userData> is named modeled because
+    // parse_junction_user_data already owns it and the writer emits it in its
+    // own place; the DERIVED children the writer regenerates are named modeled
+    // so they are not emitted twice.
+    static constexpr std::string_view kJunctionAttrs[] = {
+        "id", "name", "type", "mainRoad", "orientation", "sStart", "sEnd"};
+    static constexpr std::string_view kJunctionChildren[] = {
+        "connection", "controller", "userData", "boundary", "surface", "planView", "elevationGrid"};
+    capture_unmodeled(junction_node, kJunctionAttrs, kJunctionChildren, junction.preserved);
 
     // arms-xor-spans (p4-s4, issue #319): a span junction never cuts its main
     // road, so it owns no arms and no connecting roads, and there is no

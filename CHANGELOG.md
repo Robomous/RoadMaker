@@ -1345,6 +1345,29 @@ Current version on `main`: **0.0.1**.
   about silently never matched.
 
 ### Fixed
+- **The last parse scopes that dropped unmodeled input in silence now preserve
+  it** ([#453](https://github.com/Robomous/RoadMaker/issues/453), fmt-f1). The
+  Preserved tier was established for signals, objects and controllers, but six
+  scopes still had none, so anything they did not model vanished with no
+  diagnostic: `<roadMark>` unknown attributes and children, `<laneSection>`
+  unknown children (including `@singleSide`), `<lanes>` container children,
+  `<elevationProfile>` non-`<elevation>` children, `<junction>` non-`<userData>`
+  children (`<priority>`, §12.9), and unknown **attributes** on `<lane>` and
+  `<junction>` — the last two unlike `Signal`/`Object`/`Bridge`, which have
+  preserved attributes since M3a.
+
+  All six now route through one `capture_unmodeled()` helper, which takes the
+  caller's modeled attribute and child names and keeps everything else verbatim
+  in document order. Writing the walk once is what lets a new scope be added by
+  *naming what it models* rather than by reimplementing the sweep.
+
+  `<geoReference>` is listed on the issue but needed nothing: P7 modeled it in
+  [#324](https://github.com/Robomous/RoadMaker/issues/324), so it is covered by
+  the georeference tests rather than by preservation.
+
+  Note `@singleSide` is preserved rather than typed: RoadMaker's mesher does not
+  implement single-sided lane sections, and a typed field would claim a
+  behaviour the kernel does not have.
 - **A direct junction is no longer destroyed on save**
   ([#534](https://github.com/Robomous/RoadMaker/issues/534)). A direct junction
   (§12.4) splits or merges roads with **no connecting road at all**: each

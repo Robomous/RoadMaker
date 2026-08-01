@@ -192,6 +192,12 @@ struct RoadMark {
   /// renders as true dual geometry instead of one strip.
   std::vector<RoadMarkLine> lines;
 
+  /// Unknown attributes and unmodeled children (`<sway>`, `<explicit>`,
+  /// `<userData>`, …), preserved verbatim (fmt-f1, #453). #326's issue text
+  /// claimed roadMark already preserved; it never did — what preserves is
+  /// `ObjectMarking`, a different struct with a similar name.
+  RawXml preserved;
+
   friend bool operator==(const RoadMark&, const RoadMark&) = default;
 };
 

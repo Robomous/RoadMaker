@@ -17,6 +17,7 @@
 #pragma once
 
 #include "roadmaker/road/id.hpp"
+#include "roadmaker/xodr/raw_xml.hpp"
 
 #include <vector>
 
@@ -34,6 +35,16 @@ struct LaneSection {
   /// DESCENDING: leftmost lane first, then down to the rightmost. Maintained
   /// by RoadNetwork::add_lane — do not reorder by hand.
   std::vector<LaneId> lanes;
+
+  /// Unknown attributes and unmodeled children of `<laneSection>` — anything
+  /// besides `<left>`/`<center>`/`<right>`, including `<userData>` — preserved
+  /// verbatim (fmt-f1, #453). The side-container walk visited only the three
+  /// sides, so everything else was silently skipped.
+  ///
+  /// `@singleSide` rides here rather than as a typed field: RoadMaker's mesher
+  /// does not implement single-sided sections, so a typed bool would claim a
+  /// behaviour the kernel does not have.
+  RawXml preserved;
 };
 
 } // namespace roadmaker

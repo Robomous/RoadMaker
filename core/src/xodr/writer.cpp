@@ -414,6 +414,13 @@ void write_lane(pugi::xml_node side, const Lane& lane) {
   } else if (lane.direction != LaneDirection::Standard) {
     lane_node.append_attribute("direction").set_value(lane_direction_name(lane.direction));
   }
+  // Unknown attributes of <lane> (fmt-f1, #453) — after the modeled ones, the
+  // Object/Signal precedent. Emitted before the children so the element reads
+  // attributes-then-content like every other.
+  for (const auto& [name, value] : lane.preserved.attributes) {
+    lane_node.append_attribute(name.c_str()).set_value(value.c_str());
+  }
+
   // Every link, in the order it was read (§11.6, multiplicity 0..*). @layer is
   // re-emitted only when the source spelled it: absent means "permanent", so
   // materialising it would change bytes without changing meaning.
@@ -476,6 +483,16 @@ void write_lane(pugi::xml_node side, const Lane& lane) {
         set_num(line_node, "sOffset", line.s_offset);
         set_num(line_node, "width", line.width);
       }
+    }
+    // roadMark's Preserved tier (fmt-f1, #453): unknown attributes first, then
+    // the unmodeled children, after the modeled <type>/<line> block.
+    for (const auto& [name, value] : mark.preserved.attributes) {
+      mark_node.append_attribute(name.c_str()).set_value(value.c_str());
+    }
+    for (const std::string& fragment : mark.preserved.children) {
+      // append_fragment is defined below this function, so inlined here — the
+      // same accommodation write_lane already makes for its own preserved tier.
+      mark_node.append_buffer(fragment.data(), fragment.size());
     }
   }
   // <material> records (§11.8.2) — XSD sequence puts them after <roadMark>
@@ -1339,8 +1356,12 @@ void write_road(pugi::xml_node root,
         record.shape);
   }
 
-  if (!road.elevation.empty()) {
-    write_poly3_list(road_node.append_child("elevationProfile"), "elevation", "s", road.elevation);
+  if (!road.elevation.empty() || !road.elevation_profile_extras.children.empty()) {
+    pugi::xml_node profile = road_node.append_child("elevationProfile");
+    write_poly3_list(profile, "elevation", "s", road.elevation);
+    for (const std::string& fragment : road.elevation_profile_extras.children) {
+      append_fragment(profile, fragment);
+    }
   }
   if (!road.superelevation.empty()) {
     write_poly3_list(
@@ -1376,6 +1397,17 @@ void write_road(pugi::xml_node root,
         write_lane(right, lane);
       }
     }
+    // The section's Preserved tier (fmt-f1, #453) — @singleSide and any
+    // unmodeled child, after the three side containers.
+    for (const auto& [name, value] : section.preserved.attributes) {
+      section_node.append_attribute(name.c_str()).set_value(value.c_str());
+    }
+    for (const std::string& fragment : section.preserved.children) {
+      append_fragment(section_node, fragment);
+    }
+  }
+  for (const std::string& fragment : road.lanes_extras.children) {
+    append_fragment(lanes, fragment);
   }
 
   // <objects> follows <lanes> in the road element sequence (1.9.0 §10.1).
@@ -2110,6 +2142,15 @@ void write_junction(pugi::xml_node root,
   // (fmt-s2, #326). After the junction's own rm: blocks, whose relative order
   // is load-bearing and pinned by the persistence tests.
   for (const std::string& fragment : junction.preserved_user_data) {
+    append_fragment(junction_node, fragment);
+  }
+
+  // The junction's own Preserved tier (fmt-f1, #453): unknown attributes, and
+  // unmodeled non-<userData> children such as <priority> (§12.9).
+  for (const auto& [name, value] : junction.preserved.attributes) {
+    junction_node.append_attribute(name.c_str()).set_value(value.c_str());
+  }
+  for (const std::string& fragment : junction.preserved.children) {
     append_fragment(junction_node, fragment);
   }
 }

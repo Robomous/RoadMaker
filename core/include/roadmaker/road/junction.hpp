@@ -619,6 +619,17 @@ struct Junction {
   /// appear at any element). The writer re-emits them after the junction's own
   /// rm: blocks — fmt-s2, #326.
   std::vector<std::string> preserved_user_data;
+
+  /// Unknown ATTRIBUTES of `<junction>`, and unmodeled non-`<userData>`
+  /// children — `<priority>` (§12.9) above all, plus anything a later revision
+  /// adds — preserved verbatim (fmt-f1, #453).
+  ///
+  /// Distinct from `preserved_user_data`, which #326 built for the enumerated
+  /// `<userData code=...>` scope and which the writer emits in its own place.
+  /// The modeled children (`<connection>`, `<controller>`) and the DERIVED ones
+  /// the writer regenerates (`<boundary>`, `<surface>`, `<planView>`,
+  /// `<elevationGrid>`) are named modeled so they are not emitted twice.
+  RawXml preserved;
 };
 
 } // namespace roadmaker
