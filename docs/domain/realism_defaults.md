@@ -182,6 +182,18 @@ revision-conditional.
 | collector | `townCollector` |
 | local | `townLocal` |
 
+Authoring applies this binding: a road created from one of the four
+templates (`LaneProfile::freeway()` and friends) is stamped with its
+class's `<type>` at `s = 0`, and `edit::apply_road_style` rewrites that
+`@type` when a class-bearing style is applied. A profile or style
+assembled by hand carries no class and stamps nothing — a bespoke cross
+section is not entitled to claim it is a `motorway`.
+
+Because the record carries more than the class, a restyle **keeps** the
+old record's `@country`, its `<speed>` and any preserved extras and
+changes only `@type`. That follows directly from the paragraph below: if
+no class supplies a speed, no class may take one away either.
+
 **There is deliberately no per-class default speed.** A speed limit is a
 fact about a particular road, not about its class, and `<speed>` is
 optional (multiplicity 0..1) precisely so a file can decline to claim

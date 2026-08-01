@@ -101,6 +101,44 @@ def main() -> None:
     # those literals. There is deliberately no companion default SPEED: a limit
     # is a fact about a road, not about its class, and inventing one would be a
     # guess where the honest answer is silence.
+    print("\nRoad class -> @type (realism_defaults.md §1.7):")
+    for road_class in (
+        rm.RoadClass.FREEWAY,
+        rm.RoadClass.ARTERIAL,
+        rm.RoadClass.COLLECTOR,
+        rm.RoadClass.LOCAL,
+    ):
+        print(f"  {str(road_class):<24} -> {rm.road_type_name(road_class)}")
+
+    # Authoring applies that binding (#454). A road built from one of the four
+    # templates carries its class's <type>; one built from a hand-assembled
+    # profile carries none, because a bespoke cross section is not entitled to
+    # claim it is a motorway.
+    network = rm.RoadNetwork()
+    rm.author_clothoid_road(
+        network, [(0.0, 0.0), (200.0, 0.0)], rm.LaneProfile.freeway(), "Autobahn", "1"
+    )
+    bespoke = rm.LaneProfile()
+    bespoke.right = [rm.LaneSpec()]
+    assert bespoke.road_class is None
+    rm.author_clothoid_road(network, [(0.0, 40.0), (200.0, 40.0)], bespoke, "Bespoke", "2")
+
+    written = rm.write_xodr(network, "authored")
+    assert 'type="motorway"' in written, "the freeway did not declare itself one"
+    assert written.count("<type") == 1, "the hand-built road claimed a class it never had"
+    print("\nAuthored a freeway and a bespoke road: only the freeway declares a <type>.")
+
+    # Restyling rewrites the class but keeps what the road itself knew. A speed
+    # limit survives a restyle for the same reason no class supplies one.
+    road_id = next(r for r in network.road_ids if network.road(r).odr_id == "1")
+    stack = rm.edit.EditStack()
+    stack.push(network, rm.edit.apply_road_style(network, road_id, rm.RoadStyle.local_road()))
+    assert network.road(road_id).types[0].type == "townLocal"
+    print("Restyled it as a local street: @type followed the class.")
+
+    stack.undo(network)
+    assert network.road(road_id).types[0].type == "motorway"
+    print("Undid the restyle: @type came back with it.")
 
 
 if __name__ == "__main__":

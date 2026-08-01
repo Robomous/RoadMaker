@@ -17,6 +17,7 @@
 #pragma once
 
 #include "roadmaker/export.hpp"
+#include "roadmaker/road/defaults.hpp"
 #include "roadmaker/xodr/raw_xml.hpp"
 
 #include <optional>
@@ -91,6 +92,26 @@ struct RoadTypeRecord {
 
   friend bool operator==(const RoadTypeRecord&, const RoadTypeRecord&) = default;
 };
+
+/// The single `<type>` record a road of `road_class` should carry (#454).
+///
+/// `defaults::road_type_name` supplies the `@type` spelling from
+/// `docs/domain/realism_defaults.md` §1.7, which is where the class→type
+/// binding is governed; this wraps it into the record the model stores so the
+/// creation path and the restyle path cannot drift apart.
+///
+/// **`carry_over` is what keeps this from destroying data.** A road being
+/// restyled already has type records, and those records may carry a `<speed>`,
+/// an `@country` and preserved extras. §1.7 is explicit that there is
+/// deliberately **no per-class default speed** — "a speed limit is a fact about
+/// a particular road, not about its class" — so a restyle changes the `@type`
+/// and keeps everything else the old record said. Pass the record covering
+/// s = 0, or nullptr when the road has none.
+///
+/// The result always sits at `s = 0`: a class is a property of the whole road,
+/// and every caller applies a uniform cross section.
+[[nodiscard]] RM_API RoadTypeRecord road_type_for_class(defaults::RoadClass road_class,
+                                                        const RoadTypeRecord* carry_over = nullptr);
 
 /// The 13 `e_roadType` literals (§16 A.6.2). Exposed so a validator, a
 /// mapping table or a UI can ask whether a spelling is one the standard

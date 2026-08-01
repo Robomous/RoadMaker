@@ -33,7 +33,10 @@
 // #390 / #324 vacuity trap for the third time; see CommittedFixtures at the
 // bottom, which is the part that makes the rest load-bearing.
 
+#include "roadmaker/edit/operations.hpp"
+#include "roadmaker/road/authoring.hpp"
 #include "roadmaker/road/defaults.hpp"
+#include "roadmaker/road/road_style.hpp"
 #include "roadmaker/road/road_type.hpp"
 #include "roadmaker/xodr/reader.hpp"
 #include "roadmaker/xodr/rules.hpp"
@@ -46,6 +49,7 @@
 #include <filesystem>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 using roadmaker::Road;
@@ -284,6 +288,138 @@ TEST(RoadType, EveryRoadClassNamesAStandardRoadType) {
   EXPECT_STREQ(roadmaker::defaults::road_type_name(RoadClass::Arterial), "townArterial");
   EXPECT_STREQ(roadmaker::defaults::road_type_name(RoadClass::Collector), "townCollector");
   EXPECT_STREQ(roadmaker::defaults::road_type_name(RoadClass::Local), "townLocal");
+}
+
+// --- authoring the type from the road class (#454's second half) ------------
+//
+// The mapping above existed since p7-s4 but had exactly two callers: the OSM
+// importer and the doc generator. A road authored INTERACTIVELY still exported
+// with no <type> at all, which is the "a freeway exports indistinguishable from
+// a local street" symptom the issue opens with.
+
+namespace {
+
+roadmaker::RoadId author_with(roadmaker::RoadNetwork& network,
+                              const roadmaker::LaneProfile& profile,
+                              const char* odr_id) {
+  const std::vector<roadmaker::Waypoint> waypoints{roadmaker::Waypoint{.x = 0.0, .y = 0.0},
+                                                   roadmaker::Waypoint{.x = 100.0, .y = 0.0}};
+  auto road = roadmaker::author_clothoid_road(network, waypoints, profile, "", odr_id);
+  EXPECT_TRUE(road.has_value());
+  return road.value_or(roadmaker::RoadId{});
+}
+
+} // namespace
+
+TEST(RoadTypeAuthoring, EachTemplateStampsItsClassesType) {
+  using roadmaker::defaults::RoadClass;
+  const std::vector<std::pair<roadmaker::LaneProfile, const char*>> cases{
+      {roadmaker::LaneProfile::freeway(), "motorway"},
+      {roadmaker::LaneProfile::arterial(), "townArterial"},
+      {roadmaker::LaneProfile::collector(), "townCollector"},
+      {roadmaker::LaneProfile::local_road(), "townLocal"},
+  };
+  int index = 0;
+  for (const auto& [profile, expected] : cases) {
+    roadmaker::RoadNetwork network;
+    const roadmaker::RoadId road = author_with(network, profile, std::to_string(++index).c_str());
+    ASSERT_TRUE(road.is_valid());
+    ASSERT_EQ(network.road(road)->types.size(), 1U) << expected;
+    EXPECT_EQ(network.road(road)->types[0].type, expected);
+    EXPECT_DOUBLE_EQ(network.road(road)->types[0].s, 0.0);
+    // §1.7: no per-class default speed. Inventing one would be a guess where
+    // the honest answer is silence.
+    EXPECT_FALSE(network.road(road)->types[0].speed.has_value());
+    // And it reaches the FILE, not only the model.
+    const auto written = roadmaker::write_xodr(network, "authored");
+    ASSERT_TRUE(written.has_value());
+    EXPECT_NE(written->find(std::string(R"(type=")") + expected + R"(")"), std::string::npos);
+  }
+}
+
+TEST(RoadTypeAuthoring, AHandBuiltProfileClaimsNoClassAndStampsNothing) {
+  // A LaneProfile is caller-assemblable, and a hand-built cross section is not
+  // entitled to claim it is a motorway. This is also what keeps every existing
+  // hand-built fixture byte-identical.
+  roadmaker::LaneProfile bespoke;
+  bespoke.right.push_back(roadmaker::LaneSpec{.type = roadmaker::LaneType::Driving, .width = 3.0});
+  EXPECT_FALSE(bespoke.road_class.has_value());
+
+  roadmaker::RoadNetwork network;
+  const roadmaker::RoadId road = author_with(network, bespoke, "1");
+  ASSERT_TRUE(road.is_valid());
+  EXPECT_TRUE(network.road(road)->types.empty());
+
+  const auto written = roadmaker::write_xodr(network, "bespoke");
+  ASSERT_TRUE(written.has_value());
+  EXPECT_EQ(written->find("<type"), std::string::npos);
+}
+
+TEST(RoadTypeAuthoring, RestylingARoadRewritesItsTypeAndUndoRestoresIt) {
+  roadmaker::RoadNetwork network;
+  const roadmaker::RoadId road = author_with(network, roadmaker::LaneProfile::local_road(), "1");
+  ASSERT_TRUE(road.is_valid());
+  ASSERT_EQ(network.road(road)->types.size(), 1U);
+  ASSERT_EQ(network.road(road)->types[0].type, "townLocal");
+
+  auto command = roadmaker::edit::apply_road_style(network, road, roadmaker::RoadStyle::freeway());
+  ASSERT_NE(command, nullptr);
+  ASSERT_TRUE(command->apply(network).has_value());
+  ASSERT_EQ(network.road(road)->types.size(), 1U);
+  EXPECT_EQ(network.road(road)->types[0].type, "motorway")
+      << "restyling changed the cross section but not what the file says the road IS";
+
+  ASSERT_TRUE(command->revert(network).has_value());
+  ASSERT_EQ(network.road(road)->types.size(), 1U);
+  EXPECT_EQ(network.road(road)->types[0].type, "townLocal") << "undo did not restore the type";
+}
+
+TEST(RoadTypeAuthoring, RestylingKeepsTheSpeedTheRoadAlreadyDeclared) {
+  // ★ The data loss this fix would otherwise introduce. §1.7: a speed limit is
+  // a fact about a particular road, not about its class — so the class may be
+  // rewritten while @country, the <speed> and any preserved extras must not be.
+  roadmaker::RoadNetwork network;
+  const roadmaker::RoadId road = author_with(network, roadmaker::LaneProfile::local_road(), "1");
+  ASSERT_TRUE(road.is_valid());
+  network.road(road)->types[0].country = "DE";
+  network.road(road)->types[0].speed =
+      roadmaker::RoadSpeed{.max_str = "50", .max = 50.0, .unit = "km/h"};
+
+  auto command = roadmaker::edit::apply_road_style(network, road, roadmaker::RoadStyle::arterial());
+  ASSERT_NE(command, nullptr);
+  ASSERT_TRUE(command->apply(network).has_value());
+
+  ASSERT_EQ(network.road(road)->types.size(), 1U);
+  const RoadTypeRecord& record = network.road(road)->types[0];
+  EXPECT_EQ(record.type, "townArterial") << "the class did not follow the style";
+  EXPECT_EQ(record.country, "DE") << "the country was invented away";
+  ASSERT_TRUE(record.speed.has_value()) << "the posted limit was destroyed by a restyle";
+  EXPECT_EQ(record.speed->max_str, "50");
+  EXPECT_EQ(record.speed->unit, "km/h");
+}
+
+TEST(RoadTypeAuthoring, AStyleWithNoClassLeavesAForeignRoadsTypesAlone) {
+  // A hand-built style must not silently erase the s-varying type records of an
+  // imported road just because it was applied to it.
+  const auto parsed = roadmaker::load_xodr(corpus("road_type_speed.xodr"));
+  ASSERT_TRUE(parsed.has_value());
+  roadmaker::RoadNetwork network = std::move(parsed->network);
+
+  const Road* mixed = road_named(network, "Mixed");
+  ASSERT_NE(mixed, nullptr);
+  const std::vector<RoadTypeRecord> before = mixed->types;
+  ASSERT_GT(before.size(), 1U)
+      << "the fixture must carry an s-varying road for this to mean anything";
+  const roadmaker::RoadId road = network.find_road(mixed->odr_id);
+
+  roadmaker::RoadStyle bespoke;
+  bespoke.right.push_back(roadmaker::StyleLane{});
+  ASSERT_FALSE(bespoke.road_class.has_value());
+
+  auto command = roadmaker::edit::apply_road_style(network, road, bespoke);
+  ASSERT_NE(command, nullptr);
+  ASSERT_TRUE(command->apply(network).has_value());
+  EXPECT_EQ(network.road(road)->types, before) << "a classless style rewrote the road's types";
 }
 
 // --- the vacuity guards -----------------------------------------------------

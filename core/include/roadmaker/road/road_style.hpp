@@ -64,6 +64,17 @@ struct RoadStyle {
   /// Mark on lane 0 (the center line). nullopt paints nothing.
   std::optional<RoadMark> center_mark;
 
+  /// Which of the four road classes this style represents, when it is one of
+  /// them (#454). `edit::apply_road_style` stamps the road's `<type>` from it
+  /// via `defaults::road_type_name`, so restyling a street as a freeway changes
+  /// what the exported file *says* the road is, not only how wide it is.
+  ///
+  /// Optional on purpose: a `RoadStyle` is a caller-assemblable value, and a
+  /// hand-built cross section is not entitled to claim it is a `motorway`. Only
+  /// the named factories below set it; a style without one leaves the road's
+  /// existing `<type>` records untouched.
+  std::optional<defaults::RoadClass> road_class;
+
   // Starter styles the Library ships — the four road classes of
   // docs/domain/realism_defaults.md §1.2/§1.3, deriving every width and mark
   // from the defaults registry (#413). Contents are content-tested —
