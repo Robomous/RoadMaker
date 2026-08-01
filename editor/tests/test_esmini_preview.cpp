@@ -39,6 +39,7 @@
 #include <gtest/gtest.h>
 
 #include <QFile>
+#include <QFileInfo>
 #include <QTemporaryDir>
 #include <filesystem>
 #include <string>
@@ -185,7 +186,9 @@ TEST(EsminiPreview, ResolutionPrefersTheSettingThenTheEnvironmentThenPath) {
 
   // A file that exists but is not executable must NOT resolve — otherwise the
   // launch fails later with a message about the process rather than about the
-  // path the user chose.
+  // path the user chose. An extensionless file is non-executable on Windows by
+  // construction, and non-executable on POSIX because nothing chmods it, so
+  // this half needs no platform split.
   const QString plain = directory.filePath(QStringLiteral("not-executable"));
   {
     QFile file(plain);
@@ -194,14 +197,32 @@ TEST(EsminiPreview, ResolutionPrefersTheSettingThenTheEnvironmentThenPath) {
   }
   EXPECT_NE(resolve_esmini(plain), plain);
 
-  const QString runnable = directory.filePath(QStringLiteral("fake-esmini"));
+  // ★ THE STAND-IN NEEDS A .bat ON WINDOWS, and the reason is a real difference
+  // rather than test scaffolding: `QFileInfo::isExecutable()` is a PERMISSION
+  // BIT on POSIX and a FILE EXTENSION on Windows (PATHEXT — exe/com/bat/cmd).
+  // An extensionless file with the +x bit set therefore resolves on macOS and
+  // Linux and never on Windows, which is what this test caught. The product is
+  // unaffected — a real `esmini.exe` satisfies the Windows rule — so the fix
+  // belongs in the fixture, not in `resolve_esmini`.
+#ifdef _WIN32
+  const QString name = QStringLiteral("fake-esmini.bat");
+  const char* body = "@echo off\n";
+#else
+  const QString name = QStringLiteral("fake-esmini");
+  const char* body = "#!/bin/sh\n";
+#endif
+  const QString runnable = directory.filePath(name);
   {
     QFile file(runnable);
     ASSERT_TRUE(file.open(QIODevice::WriteOnly));
-    file.write("#!/bin/sh\n");
+    file.write(body);
     file.close();
+    // A no-op on Windows, where the extension above is what counts.
     ASSERT_TRUE(file.setPermissions(QFile::ReadOwner | QFile::WriteOwner | QFile::ExeOwner));
   }
+  ASSERT_TRUE(QFileInfo(runnable).isExecutable())
+      << "the stand-in is not executable by this platform's rule, so the rest of this "
+         "test would assert nothing";
   EXPECT_EQ(resolve_esmini(runnable), runnable);
 
   // With nothing configured, the environment wins over PATH.
