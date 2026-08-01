@@ -206,7 +206,7 @@ public:
     parse_surfaces(root);
     parse_terrain_reference(root);
     parse_root_user_data(root);
-    warn_unsupported_root_children(root);
+    preserve_unmodeled_root_children(root);
 
     return std::move(result_);
   }
@@ -251,6 +251,22 @@ private:
   }
 
   /// Unsupported-element warnings are emitted once per element name.
+  /// The "preserved, not modeled" note (fmt-f2, #539) — the downgrade from
+  /// `warn_unsupported`, which said "ignored" because the element really was
+  /// dropped. These elements now survive a round trip byte-for-byte; what the
+  /// user still needs to know is that this build assigns them no meaning, so a
+  /// `<shape>` will not bend the carriageway and a `<junctionGroup>` will not
+  /// group anything. Once per element name, like warn_unsupported.
+  void note_preserved(const std::string& element, const std::string& location) {
+    if (warned_elements_.insert("preserved:" + element).second) {
+      diag(Severity::Warning,
+           location,
+           fmt::format("element <{}> is preserved verbatim but not modeled; it round-trips "
+                       "unchanged and has no effect in this build",
+                       element));
+    }
+  }
+
   void warn_unsupported(const std::string& element, const std::string& location) {
     if (warned_elements_.insert(element).second) {
       diag(Severity::Warning,
@@ -542,12 +558,23 @@ private:
     }
     pending_refs_.push_back(std::move(pending));
 
+    // <surface>/<CRG> (§10.6) and <railroad> (chapter 15) used to be warned
+    // about and DROPPED (fmt-f2, #539). Preserved verbatim now — a
+    // CRG-referencing file kept its surface detail, a tram file its rail layer.
+    static constexpr std::string_view kRoadChildren[] = {"planView",
+                                                         "elevationProfile",
+                                                         "lateralProfile",
+                                                         "lanes",
+                                                         "link",
+                                                         "type",
+                                                         "userData",
+                                                         "objects",
+                                                         "signals"};
+    capture_unmodeled(road_node, {}, kRoadChildren, network().road(road_id)->road_extras);
     for (const pugi::xml_node child : road_node.children()) {
-      const std::string name = child.name();
-      if (name != "planView" && name != "elevationProfile" && name != "lateralProfile" &&
-          name != "lanes" && name != "link" && name != "type" && name != "userData" &&
-          name != "objects" && name != "signals") {
-        warn_unsupported(name, location);
+      const std::string_view name = child.name();
+      if (std::ranges::find(kRoadChildren, name) == std::end(kRoadChildren)) {
+        note_preserved(std::string(name), location);
       }
     }
     current_road_ = {};
@@ -792,9 +819,15 @@ private:
           superelevation, fmt::format("{}/lateralProfile/superelevation[{}]", location, index)));
       ++index;
     }
+    // <shape> (§10.5.1) and the legacy <crossfall> used to be warned about and
+    // DROPPED, which flattened a non-planar carriageway on the first save
+    // (fmt-f2, #539). They are preserved verbatim instead; modeling stays with
+    // whoever owns road shape later.
+    static constexpr std::string_view kLateralChildren[] = {"superelevation"};
+    capture_unmodeled(profile, {}, kLateralChildren, road.lateral_profile_extras);
     for (const pugi::xml_node child : profile.children()) {
       if (std::string_view(child.name()) != "superelevation") {
-        warn_unsupported(child.name(), location + "/lateralProfile");
+        note_preserved(child.name(), location + "/lateralProfile");
       }
     }
   }
@@ -3534,18 +3567,26 @@ private:
     return link;
   }
 
-  void warn_unsupported_root_children(const pugi::xml_node& root) {
+  /// Root children RoadMaker does not model — `<junctionGroup>` (§12.16),
+  /// `<station>` (chapter 15) and an `<include>` outside `<header>` (§7.1) —
+  /// are PRESERVED rather than warned-and-dropped (fmt-f2, #539). A legal file
+  /// used to lose its roundabout grouping or rail layer on the first save.
+  ///
+  /// Root `<userData>` carries RoadMaker extensions (rm:surface, rm:terrain);
+  /// they are parsed by parse_surfaces/parse_terrain_reference, and every other
+  /// code is preserved by parse_root_user_data (fmt-s2, #326) — so it is named
+  /// modeled here and never lands in this list.
+  void preserve_unmodeled_root_children(const pugi::xml_node& root) {
+    std::vector<std::string> fragments;
     for (const pugi::xml_node child : root.children()) {
       const std::string_view name = child.name();
-      // Root <userData> carries RoadMaker extensions (rm:surface, rm:terrain);
-      // they are parsed by parse_surfaces/parse_terrain_reference, and every
-      // other code is preserved verbatim by parse_root_user_data (fmt-s2,
-      // #326) — none of it is unsupported.
       if (name != "header" && name != "road" && name != "junction" && name != "controller" &&
           name != "userData") {
-        warn_unsupported(std::string(name), "OpenDRIVE");
+        fragments.push_back(node_to_string(child));
+        note_preserved(std::string(name), "OpenDRIVE");
       }
     }
+    network().set_preserved_root_children(std::move(fragments));
   }
 
   RoadNetwork& network() { return result_.network; }

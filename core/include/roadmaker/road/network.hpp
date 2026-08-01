@@ -373,6 +373,22 @@ public:
     preserved_user_data_ = std::move(fragments);
   }
 
+  /// Root-level `<OpenDRIVE>` children RoadMaker does not model —
+  /// `<junctionGroup>` (§12.16), `<station>` (chapter 15), and an `<include>`
+  /// outside `<header>` (§7.1) — preserved as verbatim XML fragments in
+  /// document order (fmt-f2, #539). All three were warned about and then
+  /// DROPPED, so a legal file lost a roundabout grouping or a rail layer on its
+  /// first save. Sibling of `preserved_user_data_`, separate because the writer
+  /// emits the two in different places.
+  [[nodiscard]] const std::vector<std::string>& preserved_root_children() const {
+    return preserved_root_children_;
+  }
+
+  /// Replaces the preserved root children wholesale. Parser-only, as above.
+  void set_preserved_root_children(std::vector<std::string> fragments) {
+    preserved_root_children_ = std::move(fragments);
+  }
+
 private:
   Arena<Road, RoadId> roads_;
   Arena<LaneSection, LaneSectionId> sections_;
@@ -386,6 +402,7 @@ private:
   GeoReference georeference_;
   RawXml preserved_header_;
   std::vector<std::string> preserved_user_data_;
+  std::vector<std::string> preserved_root_children_;
 };
 
 /// Plan-view bounding box of the whole network as {lo_x, lo_y, hi_x, hi_y},
