@@ -2722,7 +2722,7 @@ std::unique_ptr<Command> split_road(const RoadNetwork& network, RoadId road_id, 
     for (const LaneId lane_id : target.lane_section(spanning_id)->lanes) {
       Lane& lane = *target.lane(lane_id);
       if (lane.odr_id != 0) {
-        lane.successor = lane.odr_id; // identity link into the duplicate
+        lane.set_successor(lane.odr_id); // identity link into the duplicate
       }
     }
     if (far_neighbor.has_value()) {
@@ -3089,7 +3089,7 @@ std::unique_ptr<Command> merge_roads(const RoadNetwork& network, RoadId a_id, Ro
         // The first copied section is the seam continuation: identity link back
         // into a's original last section (mirror of split's stitching).
         if (blueprint.first && lane.odr_id != 0) {
-          lane.predecessor = lane.odr_id;
+          lane.set_predecessor(lane.odr_id);
         }
         created.lanes.emplace_back(lane_id, Lane{});
       }
@@ -3105,7 +3105,7 @@ std::unique_ptr<Command> merge_roads(const RoadNetwork& network, RoadId a_id, Ro
     for (const LaneId lane_id : target.lane_section(a_seam_section)->lanes) {
       Lane& lane = *target.lane(lane_id);
       if (lane.odr_id != 0) {
-        lane.successor = lane.odr_id; // identity link into the first copied section
+        lane.set_successor(lane.odr_id); // identity link into the first copied section
       }
     }
 
@@ -3417,8 +3417,8 @@ JunctionConnection materialize_connection(RoadNetwork& target,
   const double length = target.road(road_id)->length;
   Lane& lane = *target.lane(drive);
   lane.widths.push_back(connecting_lane_width(cp, length));
-  lane.predecessor = cp.from_lane;
-  lane.successor = cp.to_lane;
+  lane.set_predecessor(cp.from_lane);
+  lane.set_successor(cp.to_lane);
 
   return JunctionConnection{.incoming_road = cp.from.road,
                             .connecting_road = road_id,
@@ -4157,8 +4157,8 @@ retarget_junction(const RoadNetwork& network,
     int to_lane = 0;
     for (const LaneId lane_id : network.lane_section(road->sections.front())->lanes) {
       const Lane& lane = *network.lane(lane_id);
-      if (lane.odr_id == -1 && lane.successor.has_value()) {
-        to_lane = *lane.successor;
+      if (lane.odr_id == -1 && lane.first_successor().has_value()) {
+        to_lane = *lane.first_successor();
       }
     }
     return TurnKey{.from_road = *from_road,
@@ -6623,12 +6623,12 @@ std::unique_ptr<Command> remove_lane(const RoadNetwork& network, LaneId lane_id)
   const auto clear_links = [&](LaneSectionId neighbor_id, bool forward) {
     for (const LaneId neighbor_lane_id : network.lane_section(neighbor_id)->lanes) {
       const Lane& lane = *network.lane(neighbor_lane_id);
-      const std::optional<int>& link = forward ? lane.successor : lane.predecessor;
+      const std::optional<int> link = forward ? lane.first_successor() : lane.first_predecessor();
       if (link != odr_id) {
         continue;
       }
       Lane after = lane;
-      (forward ? after.successor : after.predecessor).reset();
+      (forward ? after.successors : after.predecessors).clear();
       command->before.lanes.emplace_back(neighbor_lane_id, lane);
       command->after.lanes.emplace_back(neighbor_lane_id, std::move(after));
     }
@@ -6701,8 +6701,8 @@ insert_lane(const RoadNetwork& network, LaneSectionId section_id, int at_odr_id,
   const auto capture_neighbor = [&](LaneSectionId neighbor_id, bool forward) {
     for (const LaneId neighbor_lane_id : network.lane_section(neighbor_id)->lanes) {
       const Lane& lane = *network.lane(neighbor_lane_id);
-      const std::optional<int>& link = forward ? lane.successor : lane.predecessor;
-      if (link.has_value() && shifted(*link)) {
+      const std::vector<LaneLink>& links = forward ? lane.successors : lane.predecessors;
+      if (std::ranges::any_of(links, [&](const LaneLink& l) { return shifted(l.id); })) {
         command->before.lanes.emplace_back(neighbor_lane_id, lane);
       }
     }
@@ -6759,9 +6759,10 @@ insert_lane(const RoadNetwork& network, LaneSectionId section_id, int at_odr_id,
     const auto remap_neighbor = [&](LaneSectionId neighbor_id, bool forward) {
       for (const LaneId neighbor_lane_id : target.lane_section(neighbor_id)->lanes) {
         Lane& neighbor = *target.lane(neighbor_lane_id);
-        std::optional<int>& link = forward ? neighbor.successor : neighbor.predecessor;
-        if (link.has_value()) {
-          *link = shift(*link);
+        // EVERY link is remapped, not only the first: a split lane names two
+        // downstream lanes and both ids shift (#536).
+        for (LaneLink& link : (forward ? neighbor.successors : neighbor.predecessors)) {
+          link.id = shift(link.id);
         }
       }
     };
@@ -7022,8 +7023,15 @@ std::unique_ptr<Command> split_lane_section(const RoadNetwork& network, RoadId r
     LaneDirection direction = LaneDirection::Standard;
     std::vector<Poly3> widths;
     std::vector<RoadMark> marks;
-    std::optional<int> predecessor; // unset when the lane does not continue
-    std::optional<int> successor;   // the original's successor moves here
+    std::vector<LaneLink> predecessors; // empty when the lane does not continue
+    std::vector<LaneLink> successors;   // the original's successors move here
+  };
+
+  /// The seam link as a list — one authored link, or none where the lane does
+  /// not continue across the split.
+  const auto seam_links = [](const std::optional<int>& seam) {
+    return seam.has_value() ? std::vector<LaneLink>{LaneLink{.id = *seam}}
+                            : std::vector<LaneLink>{};
   };
 
   std::vector<LaneCopy> copies;
@@ -7055,13 +7063,13 @@ std::unique_ptr<Command> split_lane_section(const RoadNetwork& network, RoadId r
                               .direction = lane.direction,
                               .widths = rebase_profile(lane.widths, local),
                               .marks = rebase_marks(lane.road_marks, local),
-                              .predecessor = seam,
-                              .successor = lane.successor});
+                              .predecessors = seam_links(seam),
+                              .successors = lane.successors});
 
     Lane truncated = lane;
     truncated.widths = truncate_profile(lane.widths, local);
     truncated.road_marks = truncate_marks(lane.road_marks, local);
-    truncated.successor = seam;
+    truncated.successors = seam_links(seam);
     command->before.lanes.emplace_back(lane_id, lane);
     truncated_originals.emplace_back(lane_id, std::move(truncated));
   }
@@ -7086,8 +7094,8 @@ std::unique_ptr<Command> split_lane_section(const RoadNetwork& network, RoadId r
       value.direction = copy.direction;
       value.widths = copy.widths;
       value.road_marks = copy.marks;
-      value.predecessor = copy.predecessor;
-      value.successor = copy.successor;
+      value.predecessors = copy.predecessors;
+      value.successors = copy.successors;
       created.lanes.emplace_back(new_lane, Lane{});
     }
     for (const auto& [lane_id, value] : truncated_originals) {
@@ -7404,9 +7412,9 @@ std::unique_ptr<Command> link_lane_across_seam(const RoadNetwork& network,
   // The matched pair the writer's dangling-link detector requires (§11.6): the
   // upstream lane continues into `downstream_odr` and vice versa.
   Lane upstream_after = *network.lane(upstream_lane);
-  upstream_after.successor = downstream_odr;
+  upstream_after.set_successor(downstream_odr);
   Lane downstream_after = *network.lane(downstream_lane);
-  downstream_after.predecessor = upstream_odr;
+  downstream_after.set_predecessor(upstream_odr);
 
   auto command = std::make_unique<GenericCommand>(
       std::string(kName), DirtySet{.roads = {upstream->road}, .topology = true});

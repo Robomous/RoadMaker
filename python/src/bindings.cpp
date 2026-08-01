@@ -502,6 +502,18 @@ NB_MODULE(_roadmaker, m) {
 
   // --- domain objects (arena-backed; references tied to the network) -------
 
+  nb::class_<roadmaker::LaneLink>(m, "LaneLink")
+      .def(nb::init<>())
+      .def_rw("id", &roadmaker::LaneLink::id, "@id of the linked lane.")
+      .def_rw("layer",
+              &roadmaker::LaneLink::layer,
+              "@layer verbatim — 'permanent' | 'temporary'; empty when absent, "
+              "which §11.6 says means permanent.")
+      .def("__repr__", [](const roadmaker::LaneLink& link) {
+        return "LaneLink(id=" + std::to_string(link.id) +
+               (link.layer.empty() ? "" : ", layer='" + link.layer + "'") + ")";
+      });
+
   nb::class_<roadmaker::Lane>(m, "Lane")
       .def_ro("odr_id", &roadmaker::Lane::odr_id)
       .def_rw("type", &roadmaker::Lane::type)
@@ -534,8 +546,20 @@ NB_MODULE(_roadmaker, m) {
               &roadmaker::Lane::materials,
               "<material> records (§11.8.2), ascending s_offset; edit via "
               "rm.edit.set_lane_material. Empty for the center lane.")
-      .def_ro("predecessor", &roadmaker::Lane::predecessor)
-      .def_ro("successor", &roadmaker::Lane::successor)
+      .def_ro("predecessors",
+              &roadmaker::Lane::predecessors,
+              "<link><predecessor> entries (§11.6, multiplicity 0..*). A list "
+              "because a lane split abruptly names several — see "
+              "road.lane.link.multiple_connections.")
+      .def_ro("successors",
+              &roadmaker::Lane::successors,
+              "<link><successor> entries (§11.6, multiplicity 0..*).")
+      .def_prop_ro("predecessor",
+                   &roadmaker::Lane::first_predecessor,
+                   "The first predecessor's id, or None. What the scalar field "
+                   "held before #536; read `predecessors` to see a split.")
+      .def_prop_ro(
+          "successor", &roadmaker::Lane::first_successor, "The first successor's id, or None.")
       .def("__repr__", [](const roadmaker::Lane& lane) {
         return "Lane(odr_id=" + std::to_string(lane.odr_id) + ")";
       });

@@ -40,11 +40,13 @@
 #include "roadmaker/road/lane_section.hpp"
 #include "roadmaker/road/network.hpp"
 #include "roadmaker/road/road.hpp"
+#include "roadmaker/xodr/reader.hpp"
 
 #include <gtest/gtest.h>
 
 #include <algorithm>
 #include <cstddef>
+#include <filesystem>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -353,6 +355,33 @@ TEST(XoscRoute, UnderLeftHandTrafficTheReversedRouteIsTheDrivableOne) {
   // emitted in the direction of travel, so an LHT right-hand lane runs -s.
   for (const osc::RouteLeg& leg : resolved.legs) {
     EXPECT_GT(leg.s_start, leg.s_end) << "an LHT right-hand lane leg ran forwards";
+  }
+}
+
+// --- an abruptly splitting lane (#536) ---------------------------------------
+//
+// §11.6 mandates several <successor> entries where a lane splits abruptly, and
+// the resolver walks those records. Reading only the first — which is what it
+// did before #536 — makes the second branch of every split UNREACHABLE, and the
+// route is reported as having no drivable path when one plainly exists.
+
+TEST(XoscRoute, ARouteDownEitherBranchOfASplitResolves) {
+  const auto loaded =
+      roadmaker::load_xodr(std::filesystem::path(RM_FUZZ_CORPUS_DIR) / "lane_link_multi.xodr");
+  ASSERT_TRUE(loaded.has_value()) << (loaded ? "" : loaded.error().message);
+
+  // Lane -1 of the first section lists successors -1 AND -2. Both branches must
+  // be drivable; the SECOND is the one a first-child-only reader loses.
+  for (const char* branch : {"-1", "-2"}) {
+    osc::Route route;
+    route.name = std::string("Branch") + branch;
+    route.waypoints.push_back(waypoint_on("1", "-1", 10.0));
+    route.waypoints.push_back(waypoint_on("1", branch, 90.0));
+
+    const osc::ResolvedRoute resolved = osc::resolve_route(loaded->network, route);
+    EXPECT_TRUE(resolved.complete)
+        << "branch " << branch << ": "
+        << (resolved.findings.empty() ? "no finding" : resolved.findings[0].message);
   }
 }
 

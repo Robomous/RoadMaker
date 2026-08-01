@@ -91,6 +91,26 @@ lane_travels_with_s(int lane_odr_id, LaneDirection direction, TrafficRule rule) 
   return direction == LaneDirection::Reversed ? !by_side : by_side;
 }
 
+/// One entry of a lane's `<link>` — a `<predecessor>` or `<successor>`
+/// (§11.6, Table 40). Multiplicity is 0..*, so a lane holds a list of these.
+struct LaneLink {
+  /// @id — the preceding/succeeding lane's OpenDRIVE id. Required.
+  int id = 0;
+
+  /// @layer — `e_layerType`, `"permanent"` or `"temporary"`, kept verbatim.
+  ///
+  /// Empty when the attribute was absent, and §11.6 says *"omitting @layer
+  /// shall default to @layer='permanent'"* — so absent and explicit-permanent
+  /// mean the same thing, and keeping the spelling is what lets the writer
+  /// re-emit each as it found it. The temporary lane layer is precisely what
+  /// §11.6 gives as the reason a permanent lane ends up with more than one
+  /// predecessor, so dropping it alongside the extra links would have left
+  /// half the feature unreadable.
+  std::string layer;
+
+  friend bool operator==(const LaneLink&, const LaneLink&) = default;
+};
+
 /// Lane marking types RoadMaker renders in M1; exotic ones map to Other
 /// (with a diagnostic).
 enum class RoadMarkType {
@@ -274,10 +294,41 @@ struct Lane {
   /// asam.net:xodr:1.4.0:road.lane.material.center_lane_no_material).
   std::vector<LaneMaterial> materials;
 
-  /// OpenDRIVE lane ids of the linked lanes in the previous/next lane
-  /// section (or road, across road boundaries).
-  std::optional<int> predecessor;
-  std::optional<int> successor;
+  /// `<link><predecessor>` / `<link><successor>` — the linked lanes in the
+  /// previous/next lane section, or across a road boundary (§11.6).
+  ///
+  /// **Lists, because the multiplicity is 0..\*** and
+  /// `asam.net:xodr:1.4.0:road.lane.link.multiple_connections` *mandates*
+  /// several entries where a lane splits or merges abruptly. Before #536 these
+  /// were scalar `optional<int>`, the reader took `link.child("predecessor")`
+  /// — the first element only — and the rest vanished with no diagnostic: a
+  /// spec-mandated split was silently halved on every round trip.
+  ///
+  /// Order is document order, which is the order the writer re-emits.
+  std::vector<LaneLink> predecessors;
+  std::vector<LaneLink> successors;
+
+  /// The first predecessor/successor id, or nullopt when the lane has none.
+  ///
+  /// Exactly what the scalar fields used to hold, so every consumer that only
+  /// wants "the lane that continues" reads unchanged. Callers that must handle
+  /// a split — the writer's dangling-link check and the route resolver — walk
+  /// the vectors instead, and are the reason this is spelled `first_` rather
+  /// than `the_`.
+  [[nodiscard]] std::optional<int> first_predecessor() const {
+    return predecessors.empty() ? std::nullopt : std::optional<int>{predecessors.front().id};
+  }
+
+  [[nodiscard]] std::optional<int> first_successor() const {
+    return successors.empty() ? std::nullopt : std::optional<int>{successors.front().id};
+  }
+
+  /// Replace the link list with a single permanent-layer link. What every
+  /// AUTHORED link is: RoadMaker's own commands create one lane continuing into
+  /// one lane, so a multi-link list only ever arrives from a file.
+  void set_predecessor(int id) { predecessors.assign(1, LaneLink{.id = id}); }
+
+  void set_successor(int id) { successors.assign(1, LaneLink{.id = id}); }
 
   /// Preserved tier: unmodeled lane children (<speed>/<access>/<height>/
   /// <rule>/<userData>/…) captured verbatim in document order and re-emitted

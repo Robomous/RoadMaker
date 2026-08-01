@@ -113,7 +113,7 @@ TEST(LaneFormTool, LaneFormClickGrowsInteriorLane) {
   // the old -1 (now pushed out to -2), and it is backward-unlinked.
   const Lane* formed = scene.lane_in_last_section(-1);
   ASSERT_NE(formed, nullptr);
-  EXPECT_FALSE(formed->predecessor.has_value());
+  EXPECT_FALSE(formed->first_predecessor().has_value());
   EXPECT_NE(scene.lane_in_last_section(-2), nullptr); // the displaced original
 
   scene.document.undo_stack()->undo();
@@ -140,7 +140,8 @@ TEST(LaneFormTool, LaneFormAcrossDownstreamSeamCommitsOneUndoStep) {
   // The carried lane reaches the final section past the 90 seam.
   const Lane* formed = scene.lane_in_last_section(-1);
   ASSERT_NE(formed, nullptr);
-  EXPECT_TRUE(formed->predecessor.has_value()) << "the lane is linked across the carried seam";
+  EXPECT_TRUE(formed->first_predecessor().has_value())
+      << "the lane is linked across the carried seam";
 
   scene.document.undo_stack()->undo();
 }

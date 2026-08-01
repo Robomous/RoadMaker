@@ -132,7 +132,14 @@ std::vector<LaneId> onward_lanes(const RoadNetwork& network, LaneId from) {
   }
 
   const bool forward = travels_forward(*lane, road->rule);
-  const std::optional<int> linked = forward ? lane->successor : lane->predecessor;
+  // ALL the links, not the first: §11.6 mandates several where a lane splits
+  // abruptly, and a route across a split genuinely has more than one onward
+  // lane. `onward_lanes` already returns a vector, so this is the shape it
+  // always wanted (#536).
+  const std::vector<LaneLink>& linked = forward ? lane->successors : lane->predecessors;
+  const auto links_to = [&linked](int odr_id) {
+    return std::ranges::any_of(linked, [odr_id](const LaneLink& l) { return l.id == odr_id; });
+  };
 
   // 1. Another section of the SAME road, when one lies ahead.
   const auto position = std::ranges::find(road->sections, lane->section);
@@ -145,10 +152,10 @@ std::vector<LaneId> onward_lanes(const RoadNetwork& network, LaneId from) {
       // Within a road the kernel DOES author the lane link on every section
       // split (`edit::split_lane_section`), so requiring it here is not the
       // trap it is at a road boundary.
-      if (next != nullptr && linked.has_value()) {
+      if (next != nullptr && !linked.empty()) {
         for (const LaneId candidate : next->lanes) {
           const Lane* other = network.lane(candidate);
-          if (other != nullptr && other->odr_id == *linked) {
+          if (other != nullptr && links_to(other->odr_id)) {
             out.push_back(candidate);
           }
         }
@@ -193,10 +200,17 @@ std::vector<LaneId> onward_lanes(const RoadNetwork& network, LaneId from) {
     // because a foreign file may renumber across the joint and only the file
     // knows that. Tracked as a follow-up on the authoring side; the fallback is
     // not a substitute for emitting the records.
-    const int arriving_id = linked.value_or(lane->odr_id);
     for (const LaneId candidate : arrival_section->lanes) {
       const Lane* neighbour = network.lane(candidate);
-      if (neighbour != nullptr && neighbour->odr_id == arriving_id) {
+      if (neighbour == nullptr) {
+        continue;
+      }
+      // The records win when present — a foreign file may renumber across the
+      // joint and only the file knows that — and a lane with several of them
+      // reaches every one. Only a lane with NO record falls back to same-id.
+      const bool reached =
+          linked.empty() ? neighbour->odr_id == lane->odr_id : links_to(neighbour->odr_id);
+      if (reached) {
         out.push_back(candidate);
       }
     }

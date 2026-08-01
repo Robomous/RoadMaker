@@ -435,8 +435,8 @@ QualityMetrics compute_metrics(const Tee& tee, const NetworkMesh& mesh) {
       for (const auto lane_id : section.lanes) {
         const auto& lane = *tee.network.lane(lane_id);
         if (lane.odr_id == -1) {
-          from_lane = lane.predecessor.value_or(0);
-          to_lane = lane.successor.value_or(0);
+          from_lane = lane.first_predecessor().value_or(0);
+          to_lane = lane.first_successor().value_or(0);
         }
       }
     }

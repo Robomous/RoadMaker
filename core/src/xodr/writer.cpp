@@ -271,18 +271,22 @@ void check_road_structure(const RoadNetwork& network,
       }
       return false;
     };
+    // EVERY link is checked, not just the first: a split lane's second
+    // successor is exactly as danglable as its first (#536).
     for (const LaneId lane_id : here.lanes) {
       const Lane& lane = *network.lane(lane_id);
-      if (lane.successor && !lane_exists(next, *lane.successor)) {
-        findings.push_back(Diagnostic{
-            .severity = Severity::Error,
-            .location = location,
-            .message = fmt::format(
-                "lane {} successor {} missing in next section", lane.odr_id, *lane.successor),
-            .rule_id = std::string(rules::kOnlyRefDefinedIds),
-            .road = road_id,
-            .lane = lane_id});
-        return;
+      for (const LaneLink& link : lane.successors) {
+        if (!lane_exists(next, link.id)) {
+          findings.push_back(Diagnostic{
+              .severity = Severity::Error,
+              .location = location,
+              .message =
+                  fmt::format("lane {} successor {} missing in next section", lane.odr_id, link.id),
+              .rule_id = std::string(rules::kOnlyRefDefinedIds),
+              .road = road_id,
+              .lane = lane_id});
+          return;
+        }
       }
     }
     // The mirror direction. A lane continuing across sections is linked both
@@ -293,17 +297,18 @@ void check_road_structure(const RoadNetwork& network,
     // wrong file.
     for (const LaneId lane_id : next.lanes) {
       const Lane& lane = *network.lane(lane_id);
-      if (lane.predecessor && !lane_exists(here, *lane.predecessor)) {
-        findings.push_back(
-            Diagnostic{.severity = Severity::Error,
-                       .location = location,
-                       .message = fmt::format("lane {} predecessor {} missing in previous section",
-                                              lane.odr_id,
-                                              *lane.predecessor),
-                       .rule_id = std::string(rules::kOnlyRefDefinedIds),
-                       .road = road_id,
-                       .lane = lane_id});
-        return;
+      for (const LaneLink& link : lane.predecessors) {
+        if (!lane_exists(here, link.id)) {
+          findings.push_back(Diagnostic{
+              .severity = Severity::Error,
+              .location = location,
+              .message = fmt::format(
+                  "lane {} predecessor {} missing in previous section", lane.odr_id, link.id),
+              .rule_id = std::string(rules::kOnlyRefDefinedIds),
+              .road = road_id,
+              .lane = lane_id});
+          return;
+        }
       }
     }
   }
@@ -409,14 +414,22 @@ void write_lane(pugi::xml_node side, const Lane& lane) {
   } else if (lane.direction != LaneDirection::Standard) {
     lane_node.append_attribute("direction").set_value(lane_direction_name(lane.direction));
   }
-  if (lane.predecessor || lane.successor) {
+  // Every link, in the order it was read (§11.6, multiplicity 0..*). @layer is
+  // re-emitted only when the source spelled it: absent means "permanent", so
+  // materialising it would change bytes without changing meaning.
+  if (!lane.predecessors.empty() || !lane.successors.empty()) {
     pugi::xml_node link = lane_node.append_child("link");
-    if (lane.predecessor) {
-      link.append_child("predecessor").append_attribute("id").set_value(*lane.predecessor);
-    }
-    if (lane.successor) {
-      link.append_child("successor").append_attribute("id").set_value(*lane.successor);
-    }
+    const auto write_lane_links = [&link](const char* name, const std::vector<LaneLink>& links) {
+      for (const LaneLink& entry : links) {
+        pugi::xml_node node = link.append_child(name);
+        node.append_attribute("id").set_value(entry.id);
+        if (!entry.layer.empty()) {
+          node.append_attribute("layer").set_value(entry.layer.c_str());
+        }
+      }
+    };
+    write_lane_links("predecessor", lane.predecessors);
+    write_lane_links("successor", lane.successors);
   }
   for (const Poly3& width : lane.widths) {
     pugi::xml_node width_node = lane_node.append_child("width");
