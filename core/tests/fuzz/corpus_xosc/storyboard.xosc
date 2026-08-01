@@ -1,0 +1,48 @@
+<OpenSCENARIO><FileHeader revMajor="1" revMinor="2" date="1970-01-01T00:00:00" description="d" author="a"/>
+<ParameterDeclarations/><CatalogLocations/>
+<RoadNetwork><LogicFile filepath="t.xodr"/><TrafficSignals>
+<TrafficSignalController name="1"><Phase name="" duration="20"><TrafficSignalState trafficSignalId="7" state="green"/></Phase>
+<Phase duration="3" semantics="stop"><TrafficSignalState trafficSignalId="7" state="red"/></Phase></TrafficSignalController>
+</TrafficSignals></RoadNetwork>
+<Entities><ScenarioObject name="Ego"><Vehicle name="c" vehicleCategory="car">
+<BoundingBox><Center x="1" y="0" z="1"/><Dimensions width="2" length="4" height="1.5"/></BoundingBox>
+<Performance maxSpeed="70" maxAcceleration="5" maxDeceleration="10"/>
+<Axles><FrontAxle maxSteering="0.5" wheelDiameter="0.6" trackWidth="1.8" positionX="3" positionZ="0.3"/>
+<RearAxle maxSteering="0" wheelDiameter="0.6" trackWidth="1.8" positionX="0" positionZ="0.3"/></Axles>
+<Properties/></Vehicle></ScenarioObject>
+<ScenarioObject name="Target"><Vehicle name="c" vehicleCategory="car">
+<BoundingBox><Center x="1" y="0" z="1"/><Dimensions width="2" length="4" height="1.5"/></BoundingBox>
+<Performance maxSpeed="70" maxAcceleration="5" maxDeceleration="10"/>
+<Axles><FrontAxle maxSteering="0.5" wheelDiameter="0.6" trackWidth="1.8" positionX="3" positionZ="0.3"/>
+<RearAxle maxSteering="0" wheelDiameter="0.6" trackWidth="1.8" positionX="0" positionZ="0.3"/></Axles>
+<Properties/></Vehicle></ScenarioObject></Entities>
+<Storyboard><Init><Actions><Private entityRef="Ego"><PrivateAction><TeleportAction><Position>
+<LanePosition roadId="1" laneId="-1" s="20"/></Position></TeleportAction></PrivateAction></Private></Actions></Init>
+<Story name="s"><ParameterDeclarations><ParameterDeclaration name="p" parameterType="double" value="1"/></ParameterDeclarations>
+<Act name="a"><ManeuverGroup maximumExecutionCount="1" name="g">
+<Actors selectTriggeringEntities="true"><EntityRef entityRef="Target"/></Actors>
+<CatalogReference catalogName="ManeuverCatalog" entryName="Overtake"/>
+<Maneuver name="m"><ParameterDeclarations/><Event name="e" priority="overwrite" maximumExecutionCount="2">
+<Action name="cut_in"><PrivateAction><LateralAction><LaneChangeAction targetLaneOffset="0.2">
+<LaneChangeActionDynamics dynamicsShape="linear" value="2" dynamicsDimension="time"/>
+<LaneChangeTarget><RelativeTargetLane entityRef="Target" value="1"/></LaneChangeTarget>
+</LaneChangeAction></LateralAction></PrivateAction></Action>
+<Action name="hold"><GlobalAction><InfrastructureAction><TrafficSignalAction>
+<TrafficSignalControllerAction trafficSignalControllerRef="1" phase="phase"/>
+</TrafficSignalAction></InfrastructureAction></GlobalAction></Action>
+<Action name="custom"><UserDefinedAction><CustomCommandAction type="x">y</CustomCommandAction></UserDefinedAction></Action>
+<StartTrigger><ConditionGroup>
+<Condition name="close" delay="0" conditionEdge="rising"><ByEntityCondition>
+<TriggeringEntities triggeringEntitiesRule="any"><EntityRef entityRef="Target"/></TriggeringEntities>
+<EntityCondition><RelativeDistanceCondition entityRef="Ego" freespace="true" relativeDistanceType="longitudinal" rule="lessThan" value="12"/></EntityCondition>
+</ByEntityCondition></Condition>
+<Condition name="fast" delay="0" conditionEdge="rising"><ByEntityCondition>
+<TriggeringEntities triggeringEntitiesRule="all"><EntityRef entityRef="Ego"/></TriggeringEntities>
+<EntityCondition><StandStillCondition duration="3"/></EntityCondition>
+</ByEntityCondition></Condition></ConditionGroup></StartTrigger></Event></Maneuver></ManeuverGroup>
+<StartTrigger><ConditionGroup><Condition name="go" delay="0" conditionEdge="rising"><ByValueCondition>
+<TrafficSignalControllerCondition trafficSignalControllerRef="1" phase="phase"/></ByValueCondition></Condition></ConditionGroup></StartTrigger>
+<StopTrigger/></Act></Story>
+<StopTrigger><ConditionGroup><Condition name="done" delay="0" conditionEdge="rising"><ByValueCondition>
+<StoryboardElementStateCondition storyboardElementRef="e" state="completeState" storyboardElementType="event"/>
+</ByValueCondition></Condition></ConditionGroup></StopTrigger></Storyboard></OpenSCENARIO>

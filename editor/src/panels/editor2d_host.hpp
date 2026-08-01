@@ -32,6 +32,7 @@
 
 #include "panels/phase_panel.hpp"
 #include "panels/profile_panel.hpp"
+#include "panels/storyboard_panel.hpp"
 #include "panels/width_panel.hpp"
 
 namespace roadmaker::editor {
@@ -122,6 +123,28 @@ public:
 private:
   Document& document_;
   PhasePanel* panel_;
+};
+
+/// Hosts a StoryboardPanel — the storyboard / condition editor (p8-s4, #248,
+/// GW-6). Relevant when the scenario has anything to author: an actor selected
+/// (the actor a story is about to be written for) or a story already present.
+/// Unlike its neighbours the page is NOT about the selected entity — a
+/// storyboard is a document-level structure — so it keeps showing the whole
+/// tree whatever is selected.
+class StoryboardEditorPage : public Editor2DPage {
+public:
+  StoryboardEditorPage(Document& document, SelectionModel& selection, QWidget* parent = nullptr);
+
+  [[nodiscard]] QString title() const override;
+  [[nodiscard]] QWidget* widget() override;
+
+  [[nodiscard]] bool relevant(const SelectionModel& selection) const override;
+
+  [[nodiscard]] StoryboardPanel* panel() { return panel_; }
+
+private:
+  Document& document_;
+  StoryboardPanel* panel_;
 };
 
 /// Tabbed container for Editor2DPages.

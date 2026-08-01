@@ -597,16 +597,22 @@ TEST(XoscReader, ALongitudinalActionThatIsNotASpeedActionIsPreservedWhole) {
   EXPECT_TRUE(contains(written(scenario), "<LongitudinalDistanceAction"));
 }
 
-TEST(XoscReader, ANonSimulationTimeConditionIsPreservedWhole) {
-  const std::string document =
-      with_replacement(R"(<SimulationTimeCondition value="0.5" rule="greaterThan"/>)",
-                       R"(<StoryboardElementStateCondition state="completeState"/>)");
+TEST(XoscReader, AnUnmodeledValueConditionIsPreservedWhole) {
+  // <TimeOfDayCondition>, not <StoryboardElementStateCondition>: the latter was
+  // this test's example until p8-s4 (#248) MODELED it, at which point the test
+  // was asserting the preserved path over an arm that no longer takes it. The
+  // needle has to be an arm this version genuinely does not model, or the test
+  // silently stops testing anything.
+  const std::string document = with_replacement(
+      R"(<SimulationTimeCondition value="0.5" rule="greaterThan"/>)",
+      R"(<TimeOfDayCondition rule="greaterThan" dateTime="2026-01-01T00:00:00"/>)");
   const osc::Scenario scenario = parsed(document).scenario;
 
   const osc::Condition& condition =
       scenario.storyboard.stop_trigger.condition_groups[0].conditions[0];
   EXPECT_FALSE(condition.simulation_time.has_value());
-  EXPECT_TRUE(contains(written(scenario), "<StoryboardElementStateCondition"));
+  EXPECT_FALSE(condition.by_entity.has_value());
+  EXPECT_TRUE(contains(written(scenario), "<TimeOfDayCondition"));
 }
 
 TEST(XoscReader, AFileInsidePropertiesIsReEmittedInsideProperties) {
@@ -669,12 +675,23 @@ TEST(XoscReader, AnUnknownPhaseSemanticIsPreservedRatherThanDropped) {
   EXPECT_EQ(text.find("semantics=", first + 1), std::string::npos);
 }
 
-TEST(XoscReader, AStoryIsPreservedInItsSchemaSlotNotAfterTheStopTrigger) {
-  const std::string document =
-      with_replacement("<StopTrigger>", R"(<Story name="s"><Act name="a"/></Story><StopTrigger>)");
+TEST(XoscReader, AStoryIsReadIntoItsSchemaSlotNotAfterTheStopTrigger) {
+  // Modeled since p8-s4 (#248) rather than carried as a fragment; the slot
+  // assertion is what this test was always about and it still holds.
+  const std::string document = with_replacement(
+      "<StopTrigger>",
+      R"(<Story name="s"><Act name="a"><ManeuverGroup maximumExecutionCount="1" name="g">)"
+      R"(<Actors selectTriggeringEntities="false"><EntityRef entityRef="Ego"/></Actors>)"
+      R"(<Maneuver name="m"><Event name="e" priority="overwrite">)"
+      R"(<Action name="act"><PrivateAction><LongitudinalAction><SpeedAction>)"
+      R"(<SpeedActionDynamics dynamicsShape="step" value="0" dynamicsDimension="time"/>)"
+      R"(<SpeedActionTarget><AbsoluteTargetSpeed value="10"/></SpeedActionTarget>)"
+      R"(</SpeedAction></LongitudinalAction></PrivateAction></Action>)"
+      R"(</Event></Maneuver></ManeuverGroup></Act></Story><StopTrigger>)");
   const osc::Scenario scenario = parsed(document).scenario;
 
-  ASSERT_EQ(scenario.storyboard.preserved_stories.size(), 1U);
+  ASSERT_EQ(scenario.storyboard.stories.size(), 1U);
+  EXPECT_EQ(scenario.storyboard.stories[0].name, "s");
   EXPECT_TRUE(scenario.storyboard.preserved.children.empty())
       << "the story landed on the generic tier and will be emitted after <StopTrigger>";
 
@@ -929,6 +946,79 @@ TEST(XoscFixture, TheTrackedRoutedScenarioIsExactlyWhatTheWriterEmitsToday) {
   const auto result = osc::load_xosc(fixture);
   ASSERT_TRUE(result.has_value()) << (result ? "" : result.error().message);
   EXPECT_EQ(written(result->scenario), tracked);
+}
+
+TEST(XoscFixture, TheTrackedCutInScenarioIsExactlyWhatTheWriterEmitsToday) {
+  // Same drift guard, third instance (p8-s4, #248): tests/esmini/cutin.xosc is
+  // what the CI esmini job feeds to a shipping simulator to prove a
+  // RoadMaker-authored <Story> is accepted. Regeneration is
+  // scripts/gen_xosc_fixtures.py, deliberately, with this test red in front.
+  const std::filesystem::path fixture =
+      std::filesystem::path(RM_ESMINI_FIXTURES_DIR) / "cutin.xosc";
+  ASSERT_TRUE(std::filesystem::exists(fixture)) << fixture;
+
+  const std::string tracked = read_file(fixture);
+  const auto result = osc::load_xosc(fixture);
+  ASSERT_TRUE(result.has_value()) << (result ? "" : result.error().message);
+  EXPECT_EQ(written(result->scenario), tracked);
+}
+
+TEST(XoscFixture, TheTrackedCutInCarriesBothHalvesOfTheAcceptance) {
+  // The fixture's reason for existing: #248's acceptance is "a cut-in /
+  // traffic-light scenario is authorable end to end", and esmini was MEASURED
+  // to gate only the first half (it accepts a dangling @phase and a dangling
+  // controller ref in silence — 2026-08-01, recorded in .github/workflows/ci.yml).
+  // A fixture that quietly lost either half would still load in esmini and
+  // prove nothing, so both are asserted here.
+  const std::filesystem::path fixture =
+      std::filesystem::path(RM_ESMINI_FIXTURES_DIR) / "cutin.xosc";
+  const auto result = osc::load_xosc(fixture);
+  ASSERT_TRUE(result.has_value());
+  const osc::Scenario& scenario = result->scenario;
+
+  ASSERT_EQ(scenario.storyboard.stories.size(), 1U);
+  ASSERT_EQ(scenario.storyboard.stories[0].acts.size(), 1U);
+  const osc::Act& act = scenario.storyboard.stories[0].acts[0];
+  ASSERT_EQ(act.maneuver_groups.size(), 2U) << "the cut-in group and the infrastructure group";
+
+  bool saw_lane_change = false;
+  bool saw_relative_distance = false;
+  bool saw_controller_action = false;
+  for (const osc::ManeuverGroup& group : act.maneuver_groups) {
+    for (const osc::StoryManeuver& maneuver : group.maneuvers) {
+      for (const osc::Event& event : maneuver.events) {
+        if (event.start_trigger.has_value()) {
+          for (const osc::ConditionGroup& conditions : event.start_trigger->condition_groups) {
+            for (const osc::Condition& condition : conditions.conditions) {
+              saw_relative_distance =
+                  saw_relative_distance || (condition.by_entity.has_value() &&
+                                            std::holds_alternative<osc::RelativeDistanceCondition>(
+                                                condition.by_entity->entity_condition));
+            }
+          }
+        }
+        for (const osc::Action& action : event.actions) {
+          if (const auto* entry = std::get_if<osc::PrivateAction>(&action.action)) {
+            saw_lane_change = saw_lane_change || (entry->lateral.has_value() &&
+                                                  entry->lateral->lane_change.has_value());
+          } else if (const auto* global = std::get_if<osc::GlobalAction>(&action.action)) {
+            saw_controller_action = saw_controller_action ||
+                                    (global->infrastructure.has_value() &&
+                                     std::holds_alternative<osc::TrafficSignalControllerAction>(
+                                         global->infrastructure->traffic_signal.action));
+          }
+        }
+      }
+    }
+  }
+  EXPECT_TRUE(saw_lane_change) << "the cut-in half";
+  EXPECT_TRUE(saw_relative_distance) << "what triggers the cut-in";
+  EXPECT_TRUE(saw_controller_action) << "the traffic-light half";
+
+  // ★ AND THE @phase RESOLVES. This is the check esmini was measured NOT to
+  // make, so it is the whole reason the fixture is worth more than its smoke
+  // step: an empty finding list here is the traffic-light half's acceptance.
+  EXPECT_TRUE(osc::validate_scenario(scenario).empty());
 }
 
 TEST(XoscFixture, TheTrackedRouteResolvesCompletelyAgainstItsOwnNetwork) {

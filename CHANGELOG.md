@@ -353,6 +353,83 @@ Current version on `main`: **0.0.1**.
     `XoscFixture.TheTrackedRouteResolvesCompletelyAgainstItsOwnNetwork` re-runs
     the cross-document check on the tracked bytes — a fixture whose route did
     not drive would make the CI step a measurement of a broken example.
+- **The storyboard is modeled, not preserved**
+  ([#248](https://github.com/Robomous/RoadMaker/issues/248), kernel half): a
+  `<Story>` used to ride the scenario as a raw XML fragment — round-tripped, and
+  uneditable. It is now `Story ▸ Act ▸ ManeuverGroup ▸ Maneuver ▸ Event ▸
+  Action` in full, with the `<Action>` palette a cut-in and a traffic-light
+  scenario need (`<LaneChangeAction>`, `<SpeedAction>`,
+  `<TrafficSignalStateAction>`, `<TrafficSignalControllerAction>`) and the
+  `<Condition>` palette their triggers need (`<SimulationTimeCondition>`,
+  `<RelativeDistanceCondition>`, `<SpeedCondition>`,
+  `<TrafficSignalCondition>`, `<TrafficSignalControllerCondition>`,
+  `<StoryboardElementStateCondition>`). The modeled subset is documented in
+  [docs/domain/openscenario.md](docs/domain/openscenario.md).
+  - **★ The phase-name trap is closed by one function, `osc::phase_names()`.**
+    `Phase::name` may legally be empty, and the writer synthesizes and
+    de-duplicates names **into the output only** — so a
+    `TrafficSignalControllerCondition/@phase` built from the model matches
+    nothing in the file it is written into. Everything that authors or checks a
+    `@phase` — the writer, the validator, the editor's phase combo, the Python
+    example — now resolves through that one function, and
+    `validate_scenario` **refuses** a `@phase` that names no phase the writer
+    will emit. Measured: esmini v3.5.0 accepts that dangling reference, and a
+    dangling `trafficSignalControllerRef`, in complete silence.
+  - **Schema-shape findings are warnings; reference findings are errors.** A
+    foreign `.xosc` carrying an `<Act>` with no `<ManeuverGroup>` was readable
+    before this version modeled `<Story>`, and refusing to write it back would
+    mean a document RoadMaker just loaded can no longer be saved. Authoring is
+    guarded a layer up instead: `osc::edit::set_story` refuses a story with no
+    act, an empty or duplicate name, and an index past the end.
+  - **A story `<Action>` wraps exactly one arm**, unlike an `<Init>` one which
+    legally expands into several `<PrivateAction>` elements — the validator
+    reports a story action carrying two rather than emitting two siblings inside
+    one `<Action>`.
+  - **`Event/@priority` defaults to `overwrite`, the 1.0 spelling**, because the
+    writer targets revision 1.2 by default and `override` does not exist there.
+    Measured: esmini rejects a spelling outside its enumeration, so the default
+    had to be one the pinned validator accepts.
+  - **`<CatalogReference>` inside a `<ManeuverGroup>` keeps its schema slot.**
+    It sits between `<Actors>` and `<Maneuver>*`, and the generic preserved tier
+    is re-emitted last — so it rides its own verbatim list instead, the same
+    mechanism `<Story>` itself used before it was modeled.
+  - Two new commands, `set_story` and `remove_story`, plus `set_stop_trigger`,
+    author the storyboard on the same undo stack as everything else and are
+    byte-identical across undo/redo. All of it is reachable from Python, and
+    `python/examples/scenario_storyboard.py` authors the whole cut-in /
+    traffic-light scenario headlessly.
+- **A Storyboard editor in the 2D Editor pane**
+  ([#248](https://github.com/Robomous/RoadMaker/issues/248), editor half): a new
+  page beside the Signal Phase Editor showing the storyboard as a tree with a
+  form for the selected node — add and remove stories, acts, maneuver groups,
+  maneuvers, events and actions; retype an action; pick what starts an event and
+  fill its condition. Every gesture is ONE kernel command through `Document`.
+  - **Add creates a COMPLETE subtree**, not a bare element: an act needs a
+    maneuver group, which needs a maneuver, which needs an event, which needs an
+    action. Remove cascades exactly as far as the schema requires and no further
+    — a `<ManeuverGroup>` may legally hold no maneuver, so deleting one action
+    never silently deletes the story.
+  - **Every default is writable.** Picking "Traffic signal phase" from the combo
+    seeds a live controller and a live phase name rather than empty strings, so
+    a retype cannot leave a document that refuses to save.
+  - **The phase combo offers only names the file will carry**, repopulated
+    whenever the controller changes — a stale list from the previous controller
+    is exactly the dangling `@phase` this sprint exists to prevent.
+- **A cut-in / traffic-light esmini fixture, and what it measures**
+  ([#248](https://github.com/Robomous/RoadMaker/issues/248), validation half):
+  `tests/esmini/cutin.{xodr,xosc}` — a signalized crossing with two-lane
+  approaches, an ego and a target, a `<LaneChangeAction>` triggered by a
+  `<RelativeDistanceCondition>`, and a `<TrafficSignalControllerAction>` — all
+  generated through the kernel's command layer, byte-locked by its own gtest,
+  and fed to the pinned esmini in CI.
+  - **Measured (v3.5.0): the cut-in half IS gated, the traffic-light half is
+    not.** A dangling `Actors/EntityRef`, `RelativeTargetLane/@entityRef` or
+    `RelativeDistanceCondition/@entityRef` fails the load; so do an invalid
+    `Event/@priority` and an invalid `@dynamicsShape`. A
+    `TrafficSignalControllerAction` naming a nonexistent phase, or a nonexistent
+    controller, loads with exit 0 and no error at all — which is why #248's
+    acceptance splits the two and the signal half is gated by
+    `validate_scenario` instead.
 - **The esmini CI pin is honoured by a bump**
   ([#506](https://github.com/Robomous/RoadMaker/issues/506)): the cache key
   repeated the version as a literal instead of deriving it from

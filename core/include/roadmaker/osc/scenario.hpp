@@ -628,9 +628,74 @@ struct RoutingAction {
   RawXml preserved;
 };
 
-/// `<PrivateAction>` — §7.5, a ten-way choice of which this version models three
+/// `<AbsoluteTargetLane>` — §7.4.1, a `<LaneChangeTarget>` arm.
+///
+/// `@value` is a STRING and not an int, exactly as `LanePosition::lane_id` is
+/// and for the same reason: the schema types it `string` so a temporary lane
+/// layer's id can be spelled.
+struct AbsoluteTargetLane {
+  std::string value;
+  RawXml preserved;
+};
+
+/// `<RelativeTargetLane>` — §7.4.1, a `<LaneChangeTarget>` arm, and THE cut-in
+/// spelling (p8-s4, issue #248): "target lane defined as difference compared to
+/// the reference entity's current lane".
+///
+/// `@value` IS AN INT here, unlike `AbsoluteTargetLane`'s string — the schema
+/// types it `Int`, because a difference has no lane-layer spelling to preserve.
+struct RelativeTargetLane {
+  /// `@entityRef` — the entity whose current lane the offset is relative to.
+  /// Usually the actor itself, which is what "move one lane left" means.
+  std::string entity_ref;
+  int value = 0;
+  RawXml preserved;
+};
+
+/// `<LaneChangeAction>` — §7.4.1, inside `<LateralAction>`, and the action the
+/// acceptance's cut-in IS (p8-s4, issue #248).
+///
+/// `<LaneChangeActionDynamics>` is a `TransitionDynamics` — the same type
+/// `<SpeedActionDynamics>` uses — but its DEFAULT here is deliberately not the
+/// same: a lane change is a manoeuvre with a duration, so `"step"` (jump) would
+/// author a teleport sideways. `kDefaultLaneChangeDynamics` spells the honest
+/// default and the writer emits whatever the model holds.
+struct LaneChangeAction {
+  TransitionDynamics dynamics;
+
+  /// The `<LaneChangeTarget>` choice. `std::monostate` means the arm rode
+  /// `target_preserved` whole; the writer then emits no modeled arm.
+  std::variant<std::monostate, AbsoluteTargetLane, RelativeTargetLane> target;
+
+  /// `@targetLaneOffset` — optional, "the lateral offset to the center line of
+  /// the target lane"; omitted stays omitted, per the byte-identity contract.
+  std::optional<double> target_lane_offset;
+
+  /// The `<LaneChangeTarget>` WRAPPER's own preserved tier — the
+  /// `SpeedAction::target_preserved` rationale exactly.
+  RawXml target_preserved;
+
+  RawXml preserved;
+};
+
+/// The `<LaneChangeActionDynamics>` RoadMaker authors: a two-second linear
+/// lane change. `"step"` — the `TransitionDynamics` default, correct for an
+/// INITIAL speed — would author an instantaneous sideways teleport.
+inline constexpr std::string_view kDefaultLaneChangeShape = "linear";
+inline constexpr double kDefaultLaneChangeDuration = 2.0;
+
+/// `<LateralAction>` — §7.4.1, a three-way choice whose modeled arm is
+/// `<LaneChangeAction>`. `<LaneOffsetAction>` and `<LateralDistanceAction>`
+/// ride `preserved`.
+struct LateralAction {
+  std::optional<LaneChangeAction> lane_change;
+  RawXml preserved;
+};
+
+/// `<PrivateAction>` — §7.5, a ten-way choice of which this version models four
 /// arms: the teleport that places an entity, the longitudinal action that gives
-/// it an initial speed, and the routing action that gives it a route.
+/// it an initial speed, the routing action that gives it a route, and the
+/// lateral action that changes its lane.
 ///
 /// ★ ONE ELEMENT PER SET ARM. The schema's choice is per-`<PrivateAction>`, so
 /// the writer emits one `<PrivateAction>` per arm that is set: teleport-only and
@@ -651,6 +716,14 @@ struct PrivateAction {
   /// The routing arm (p8-s3, issue #247). Emitted AFTER the other two, matching
   /// the order an actor is authored: placed, given a speed, then given a route.
   std::optional<RoutingAction> routing;
+
+  /// The lateral arm (p8-s4, issue #248). Emitted LAST, which keeps the element
+  /// order of every scenario written before this arm existed unchanged — the
+  /// byte-identity contract is measured across versions of this writer too.
+  ///
+  /// Never authored into `<Init>`: an entity cannot change lane before the
+  /// scenario starts. It is a story action, reached through `Action`.
+  std::optional<LateralAction> lateral;
 
   RawXml preserved;
 };
@@ -688,14 +761,171 @@ struct SimulationTimeCondition {
   RawXml preserved;
 };
 
-/// `<Condition>` — §7.9.
+/// `<TrafficSignalCondition>` — §7.6.5, a `<ByValueCondition>` arm (p8-s4,
+/// issue #248): "true if a referenced signal reaches a specific state".
+struct TrafficSignalCondition {
+  /// `@name` — THE OPENDRIVE `<signal @id>` STRING, the same reference
+  /// `TrafficSignalState::traffic_signal_id` carries and named `@name` only
+  /// because the schema calls it that. ADR-0014 §5: never a runtime handle.
+  std::string name;
+
+  /// `@state` — a free string, for the reason `TrafficSignalState::state`
+  /// documents: §10.10 makes the range wider than a colour enum can hold.
+  std::string state;
+
+  RawXml preserved;
+};
+
+/// `<TrafficSignalControllerCondition>` — §7.6.5, a `<ByValueCondition>` arm
+/// (p8-s4, issue #248): true while a controller is in a named phase.
+///
+/// ★ THE PHASE-NAME TRAP (#248). `@phase` names a phase of the referenced
+/// controller AS THE FILE SPELLS IT, and `Phase::name` may legally be empty —
+/// the writer synthesizes and de-duplicates names into the OUTPUT only and
+/// never writes them back (`Phase::name`'s note). So an author who reads
+/// `Phase::name` to fill this field produces a reference that matches nothing
+/// in the file it is written into. Everything that authors or checks a
+/// `@phase` therefore goes through `osc::phase_names()`
+/// (`roadmaker/osc/writer.hpp`), which IS the writer's synthesis — one
+/// function, so the two can never drift.
+struct TrafficSignalControllerCondition {
+  /// `@trafficSignalControllerRef` — a `TrafficSignalController::name` in THIS
+  /// document, which is itself the OpenDRIVE `<controller @id>` (§10.10).
+  std::string traffic_signal_controller_ref;
+
+  /// `@phase` — a SYNTHESIZED phase name; see this struct's note.
+  std::string phase;
+
+  RawXml preserved;
+};
+
+/// `<StoryboardElementStateCondition>` — §7.6.5, a `<ByValueCondition>` arm
+/// (p8-s4, issue #248): true when a named storyboard element reaches a state.
+///
+/// This is how a scenario ends on its own content rather than on a wall-clock
+/// timeout — the `<Storyboard><StopTrigger>` an authored cut-in wants.
+struct StoryboardElementStateCondition {
+  /// `@storyboardElementRef` — the `@name` of a `<Story>`, `<Act>`,
+  /// `<ManeuverGroup>`, `<Maneuver>`, `<Event>` or `<Action>`.
+  std::string storyboard_element_ref;
+
+  /// `@state` (`StoryboardElementState`) and `@storyboardElementType`
+  /// (`StoryboardElementType`) — free strings, per this file's rule for closed
+  /// enumerations whose unmodeled spellings must still round-trip.
+  std::string state = "completeState";
+  std::string storyboard_element_type = "event";
+
+  RawXml preserved;
+};
+
+/// `<SpeedCondition>` — §7.6.5, an `<EntityCondition>` arm (p8-s4).
+struct SpeedCondition {
+  /// `@rule` — a free string, as everywhere else in this file.
+  std::string rule = "greaterThan";
+  /// `@value` [m/s], the kernel frame's unit.
+  double value = 0.0;
+  RawXml preserved;
+};
+
+/// `<RelativeDistanceCondition>` — §7.6.5, an `<EntityCondition>` arm and THE
+/// cut-in trigger (p8-s4, issue #248): "the distance to a reference entity".
+struct RelativeDistanceCondition {
+  /// `@entityRef` — must name a `<ScenarioObject>`; the writer refuses a
+  /// dangling one, exactly as it does for `Private::entity_ref`.
+  std::string entity_ref;
+
+  /// `@freespace` — required. "true: distance is measured between closest
+  /// bounding box points; false: reference points are used." True is the
+  /// reading a cut-in means.
+  bool freespace = true;
+
+  /// `@relativeDistanceType` and `@rule` — free strings, per this file's rule.
+  std::string relative_distance_type = "longitudinal";
+  std::string rule = "lessThan";
+
+  /// `@value` [m].
+  double value = 0.0;
+
+  RawXml preserved;
+};
+
+/// `<EntityRef>` — §7.3.1, "explicitly couples an existing entity to an actor".
+///
+/// A struct rather than a bare string because the element carries its own
+/// preserved tier: a foreign `<EntityRef>` attribute must round-trip, and a
+/// `std::vector<std::string>` has nowhere to put one.
+struct EntityRef {
+  /// `@entityRef` — must name a `<ScenarioObject>`.
+  std::string entity_ref;
+  RawXml preserved;
+};
+
+/// `<TriggeringEntities>` — §7.6.5, the entities a `<ByEntityCondition>` is
+/// evaluated over.
+struct TriggeringEntities {
+  /// `@triggeringEntitiesRule` (`TriggeringEntitiesRule`) — "any" or "all"; a
+  /// free string, per this file's rule.
+  std::string rule = "any";
+
+  /// `maxOccurs="unbounded"`, `minOccurs` 1 — the writer refuses an empty list
+  /// rather than emitting a `<TriggeringEntities>` no schema-aware reader
+  /// accepts.
+  std::vector<EntityRef> entity_refs;
+
+  RawXml preserved;
+};
+
+/// `<ByEntityCondition>` — §7.6.5.
+struct ByEntityCondition {
+  TriggeringEntities triggering_entities;
+
+  /// The `<EntityCondition>` choice — sixteen arms in 1.4.0, of which this
+  /// version models two. `std::monostate` means the arm rode
+  /// `entity_condition_preserved` whole, which is how the other fourteen
+  /// survive a round trip; the writer then emits no modeled arm.
+  ///
+  /// A VARIANT rather than optionals, for the reason
+  /// `ScenarioObject::entity_object` is one.
+  std::variant<std::monostate, SpeedCondition, RelativeDistanceCondition> entity_condition;
+
+  /// The `<EntityCondition>` WRAPPER's own preserved tier, separate from
+  /// `preserved` because the two sit at different nesting levels — the
+  /// `Vehicle::properties_preserved` rationale, met again. An unmodeled
+  /// `<TimeToCollisionCondition>` must be re-emitted INSIDE
+  /// `<EntityCondition>`, not beside it.
+  RawXml entity_condition_preserved;
+
+  RawXml preserved;
+};
+
+/// `<Condition>` — §7.9 / §7.6.
+///
+/// ★ THE ARMS ARE MUTUALLY EXCLUSIVE and the writer refuses more than one set
+/// (`asam.net:xosc:1.0.0:xml.valid_schema`): `<Condition>` is an XSD `choice`
+/// of `<ByEntityCondition>` and `<ByValueCondition>`, and `<ByValueCondition>`
+/// is itself a choice of eight. They are optionals rather than one variant
+/// only because `simulation_time` predates them (p8-s1) and is read by name in
+/// the editor, in Python and in ~20 tests; a variant here would be a source
+/// break for no behavioural gain the validator does not already provide.
+///
+/// ALL UNSET is legal and means the condition's arm rode `preserved` — how a
+/// `<TimeOfDayCondition>` survives a round trip untouched.
 struct Condition {
   std::string name;
   /// `@delay` [s]. "The condition delay shall be non negative"
   /// (asam.net:xosc:1.0.0:data_type.condition_delay_not_negative).
   double delay = 0.0;
   std::string condition_edge = "rising";
+
+  // --- <ByValueCondition> arms ---
   std::optional<SimulationTimeCondition> simulation_time;
+  std::optional<TrafficSignalCondition> traffic_signal;
+  std::optional<TrafficSignalControllerCondition> traffic_signal_controller;
+  std::optional<StoryboardElementStateCondition> storyboard_element_state;
+
+  // --- the <ByEntityCondition> arm ---
+  std::optional<ByEntityCondition> by_entity;
+
   RawXml preserved;
 };
 
@@ -711,14 +941,206 @@ struct Trigger {
   RawXml preserved;
 };
 
+// --- the storyboard proper (p8-s4, issue #248) --------------------------------
+//
+// Story ▸ Act ▸ ManeuverGroup ▸ Maneuver ▸ Event ▸ Action, §7.2.1 and §7.3.
+// Before this sprint a `<Story>` rode `Storyboard::preserved_stories` as a raw
+// fragment, which round-tripped it and made it uneditable. Modelling it is what
+// makes the storyboard editable at all; a *foreign* construct inside one still
+// rides the same tiered `RawXml preserved` every other element here uses, so
+// nothing regressed on the never-drop contract.
+
+/// `<TrafficSignalStateAction>` — §7.4.2, "sets a specific state of a traffic
+/// signal".
+struct TrafficSignalStateAction {
+  /// `@name` — the OpenDRIVE `<signal @id>` STRING (ADR-0014 §5), named
+  /// `@name` only because the schema calls it that.
+  std::string name;
+  /// `@state` — free, per `TrafficSignalState::state`'s note.
+  std::string state;
+  RawXml preserved;
+};
+
+/// `<TrafficSignalControllerAction>` — §7.4.2, "sets a specific phase of a
+/// traffic signal controller".
+///
+/// `@phase` carries the phase-name trap in full; see
+/// `TrafficSignalControllerCondition`.
+struct TrafficSignalControllerAction {
+  std::string traffic_signal_controller_ref;
+  std::string phase;
+  RawXml preserved;
+};
+
+/// `<TrafficSignalAction>` — §7.4.2, a two-way choice.
+struct TrafficSignalAction {
+  /// `std::monostate` means the arm rode `preserved` whole.
+  std::variant<std::monostate, TrafficSignalStateAction, TrafficSignalControllerAction> action;
+  RawXml preserved;
+};
+
+/// `<InfrastructureAction>` — §7.4.2. An `xsd:all` with one required child, so
+/// `traffic_signal` is a VALUE and not an optional: an `<InfrastructureAction>`
+/// without it does not validate and could not be authored at all.
+struct InfrastructureAction {
+  TrafficSignalAction traffic_signal;
+  RawXml preserved;
+};
+
+/// `<GlobalAction>` — §7.4.2, a seven-way choice whose modeled arm is
+/// `<InfrastructureAction>`. `<EnvironmentAction>`, `<EntityAction>`,
+/// `<TrafficAction>`, `<VariableAction>` and `<SetMonitorAction>` ride
+/// `preserved`.
+struct GlobalAction {
+  std::optional<InfrastructureAction> infrastructure;
+  RawXml preserved;
+};
+
+/// `<Action>` — §7.3.2, the wrapper every storyboard action sits in.
+///
+/// ★ `<UserDefinedAction>` IS THE THIRD ARM and is deliberately not modeled:
+/// its content is by definition tool-specific, so `std::monostate` plus the
+/// preserved tier is not a shortcut here, it is the correct representation.
+struct Action {
+  /// `@name` — required and unique among the event's actions
+  /// (asam.net:xosc:1.0.0:naming.unique_element_names_on_same_level).
+  std::string name;
+
+  /// The `<GlobalAction>` / `<UserDefinedAction>` / `<PrivateAction>` choice.
+  /// `std::monostate` means the arm rode `preserved` whole.
+  std::variant<std::monostate, GlobalAction, PrivateAction> action;
+
+  RawXml preserved;
+};
+
+/// The `Event/@priority` RoadMaker authors — see `Event::priority`.
+inline constexpr std::string_view kDefaultEventPriority = "overwrite";
+
+/// `<Event>` — §7.3.2, "a container for actions" plus the trigger that starts
+/// them.
+struct Event {
+  /// `@name` — required and unique among the maneuver's events.
+  std::string name;
+
+  /// `@priority` — REQUIRED, and a free string for the round-trip reason every
+  /// other closed enumeration in this file is one.
+  ///
+  /// ★ THE DEFAULT IS THE 1.0 SPELLING, `"overwrite"`, and that is a version
+  /// choice rather than an oversight: `WriteOptions::target_version` defaults
+  /// to 1.2 (`osc/writer.hpp`), where `"override"` does not exist. The 1.4.0
+  /// catalogue deprecates `"overwrite"` but still declares it, and the
+  /// specification's own worked examples (§6) write it — so this spelling is
+  /// legal in every revision this writer can target and `"override"` is not.
+  /// An author targeting 1.4 sets it explicitly.
+  std::string priority{kDefaultEventPriority};
+
+  /// `@maximumExecutionCount` — optional ("Default value if omitted: 1"), so an
+  /// omitted one stays omitted.
+  std::optional<unsigned> maximum_execution_count;
+
+  /// `minOccurs` 1: an event with no action does nothing, and the schema says
+  /// so. The writer refuses an empty one.
+  std::vector<Action> actions;
+
+  /// `<StartTrigger>` — 0..1. "If no trigger is defined, the event starts when
+  /// the act enters runningState"; an ABSENT trigger and an EMPTY one mean the
+  /// same thing to a simulator but not to the byte-identity contract, which is
+  /// why this is an optional and `Storyboard::stop_trigger` is not.
+  std::optional<Trigger> start_trigger;
+
+  RawXml preserved;
+};
+
+/// `<Maneuver>` — §7.3.3, "groups events creating a scope where the events can
+/// interact with each other using the event priority rules".
+///
+/// ★ THE STRUCT IS `StoryManeuver`, NEVER `Maneuver`. `roadmaker::Maneuver` is
+/// the junction turn-path type (`road/junction.hpp`), and an unqualified
+/// `Maneuver` declared inside `roadmaker::osc` would shadow it in exactly the
+/// translation units that need both — the network-aware scenario cross-checker
+/// most of all. This is the fourth name in this header the surrounding tree has
+/// already taken, after `signals` (a Qt macro), `RoadNetwork` and `Waypoint`;
+/// the rule those established is that the ELEMENT keeps its schema name and the
+/// STRUCT gets an unambiguous one.
+struct StoryManeuver {
+  std::string name;
+  std::vector<ParameterDeclaration> parameter_declarations;
+
+  /// `minOccurs` 1 — the writer refuses a maneuver with no events.
+  std::vector<Event> events;
+
+  RawXml preserved;
+};
+
+/// `<ManeuverGroup>` — §7.3.1, which "singles out the instances of Entity that
+/// may be actuated ... by the maneuvers in that group".
+struct ManeuverGroup {
+  std::string name;
+
+  /// `@maximumExecutionCount` — REQUIRED (`use="required"`), so a plain value.
+  unsigned maximum_execution_count = 1;
+
+  /// `<Actors>` — 1..1. `@selectTriggeringEntities` is required; the entity
+  /// list may legally be EMPTY ("this is allowed for situations where the
+  /// maneuvers ... are not related to instances of Entity"), which is exactly
+  /// the traffic-light half of the acceptance: an infrastructure action has no
+  /// actor.
+  bool select_triggering_entities = false;
+  std::vector<EntityRef> actors;
+
+  /// The `<Actors>` element's own preserved tier, separate from `preserved`
+  /// because the two sit at different nesting levels — the
+  /// `Vehicle::properties_preserved` rationale.
+  RawXml actors_preserved;
+
+  /// `<CatalogReference>`* sits BETWEEN `<Actors>` and `<Maneuver>`* in the
+  /// sequence, so it cannot ride `preserved.children` — those are re-emitted
+  /// LAST and a catalog reference would land after the maneuvers, out of its
+  /// schema slot. Verbatim fragments in their own vector, the mechanism
+  /// `Storyboard`'s stories used before they were modeled.
+  std::vector<std::string> preserved_catalog_references;
+
+  std::vector<StoryManeuver> maneuvers;
+
+  RawXml preserved;
+};
+
+/// `<Act>` — §7.2.1, "a container for maneuver groups" that "focuses on
+/// answering the question when".
+struct Act {
+  std::string name;
+
+  /// `maxOccurs="unbounded"`, `minOccurs` 1 — the writer refuses an act with no
+  /// maneuver groups.
+  std::vector<ManeuverGroup> maneuver_groups;
+
+  /// Both 0..1, and optional for the reason `Event::start_trigger` is.
+  std::optional<Trigger> start_trigger;
+  std::optional<Trigger> stop_trigger;
+
+  RawXml preserved;
+};
+
+/// `<Story>` — §7.2.1, the top-level grouping "so scenario authors can group
+/// different scenario aspects into a higher-level hierarchy".
+struct Story {
+  std::string name;
+  std::vector<ParameterDeclaration> parameter_declarations;
+
+  /// `maxOccurs="unbounded"`, `minOccurs` 1 — the writer refuses a story with
+  /// no acts.
+  std::vector<Act> acts;
+
+  RawXml preserved;
+};
+
 /// `<Storyboard>` — §7.3.
 struct Storyboard {
   Init init;
 
-  /// `<Story>` fragments, verbatim. p8-s4 owns the storyboard editor and will
-  /// model acts, events, triggers and actions; until then a story authored
-  /// elsewhere survives a round trip untouched rather than being dropped.
-  std::vector<std::string> preserved_stories;
+  /// `<Story>`* — modeled since p8-s4 (issue #248). Emitted in vector order,
+  /// in the schema slot between `<Init>` and `<StopTrigger>`.
+  std::vector<Story> stories;
 
   /// `<StopTrigger>` is ALWAYS emitted, empty if it has no condition groups —
   /// see `Scenario`'s note on the always-present skeleton.

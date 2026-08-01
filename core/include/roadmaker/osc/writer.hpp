@@ -58,6 +58,28 @@ struct WriteOptions {
   OscVersion target_version = OscVersion::v1_2;
 };
 
+/// The `<Phase @name>`s `write_xosc` WILL EMIT for `controller`, in phase
+/// order — the writer's own synthesis, exposed (p8-s4, issue #248).
+///
+/// ★ THIS EXISTS BECAUSE THE MODEL AND THE FILE DISAGREE, by design.
+/// `Phase::name` may legally be empty, since `roadmaker::SignalPhase::name` is
+/// (`road/junction.hpp`), so the writer synthesizes a name — the semantic
+/// token, else the literal "phase" — and de-duplicates it per controller,
+/// INTO THE OUTPUT ONLY. It never writes the result back, so that two writes of
+/// one `Scenario` stay byte-identical.
+///
+/// The consequence is the trap #248 was filed with: a
+/// `TrafficSignalControllerCondition/@phase` or
+/// `TrafficSignalControllerAction/@phase` authored from `Phase::name` matches
+/// nothing in the file it is written into. Every author and every checker of a
+/// `@phase` therefore resolves through this function, and it is the same code
+/// `write_xosc` runs — one implementation, so the two cannot drift.
+///
+/// Returns one name per phase, in order; an empty vector for a controller with
+/// no phases.
+[[nodiscard]] RM_API std::vector<std::string>
+phase_names(const TrafficSignalController& controller);
+
 /// Checker-rule validation against the OpenSCENARIO catalogue.
 ///
 /// Every finding cites the normative rule UID (`roadmaker/osc/rules.hpp`) when

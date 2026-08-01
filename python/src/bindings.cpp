@@ -3029,6 +3029,64 @@ NB_MODULE(_roadmaker, m) {
                 "order. Populated by parse_xosc; re-emitted after the modeled "
                 "content, so nothing a foreign file carried is ever dropped.");
 
+    nb::class_<roadmaker::osc::AbsoluteTargetLane>(osc, "AbsoluteTargetLane")
+        .def(nb::init<>())
+        .def_rw("value",
+                &roadmaker::osc::AbsoluteTargetLane::value,
+                "The target lane id, a STRING like LanePosition.lane_id — the schema "
+                "types it string so a temporary lane layer's id can be spelled.")
+        .def_rw("preserved",
+                &roadmaker::osc::AbsoluteTargetLane::preserved,
+                "Unmodeled attributes and child elements, verbatim and in document "
+                "order. Populated by parse_xosc; re-emitted after the modeled "
+                "content, so nothing a foreign file carried is ever dropped.");
+
+    nb::class_<roadmaker::osc::RelativeTargetLane>(osc, "RelativeTargetLane")
+        .def(nb::init<>())
+        .def_rw("entity_ref", &roadmaker::osc::RelativeTargetLane::entity_ref)
+        .def_rw("value",
+                &roadmaker::osc::RelativeTargetLane::value,
+                "Lanes to move, relative to entity_ref's current lane. An INT here, "
+                "unlike AbsoluteTargetLane.value: a difference has no lane-layer "
+                "spelling to preserve.")
+        .def_rw("preserved",
+                &roadmaker::osc::RelativeTargetLane::preserved,
+                "Unmodeled attributes and child elements, verbatim and in document "
+                "order. Populated by parse_xosc; re-emitted after the modeled "
+                "content, so nothing a foreign file carried is ever dropped.");
+
+    nb::class_<roadmaker::osc::LaneChangeAction>(osc, "LaneChangeAction")
+        .def(nb::init<>())
+        .def_rw("dynamics",
+                &roadmaker::osc::LaneChangeAction::dynamics,
+                "<LaneChangeActionDynamics>. Leave the TransitionDynamics default "
+                "('step') alone at your peril — it authors an instantaneous sideways "
+                "teleport. Use DEFAULT_LANE_CHANGE_SHAPE / "
+                "DEFAULT_LANE_CHANGE_DURATION for a real manoeuvre.")
+        .def_rw("target",
+                &roadmaker::osc::LaneChangeAction::target,
+                "An AbsoluteTargetLane or a RelativeTargetLane; None means the arm "
+                "rode target_preserved whole.")
+        .def_rw("target_lane_offset", &roadmaker::osc::LaneChangeAction::target_lane_offset)
+        .def_rw("target_preserved",
+                &roadmaker::osc::LaneChangeAction::target_preserved,
+                "The <LaneChangeTarget> WRAPPER's own preserved tier — a foreign arm "
+                "must be re-emitted inside it, not beside it.")
+        .def_rw("preserved",
+                &roadmaker::osc::LaneChangeAction::preserved,
+                "Unmodeled attributes and child elements, verbatim and in document "
+                "order. Populated by parse_xosc; re-emitted after the modeled "
+                "content, so nothing a foreign file carried is ever dropped.");
+
+    nb::class_<roadmaker::osc::LateralAction>(osc, "LateralAction")
+        .def(nb::init<>())
+        .def_rw("lane_change", &roadmaker::osc::LateralAction::lane_change)
+        .def_rw("preserved",
+                &roadmaker::osc::LateralAction::preserved,
+                "Unmodeled attributes and child elements, verbatim and in document "
+                "order. Populated by parse_xosc; re-emitted after the modeled "
+                "content, so nothing a foreign file carried is ever dropped.");
+
     nb::class_<roadmaker::osc::PrivateAction>(osc, "PrivateAction")
         .def(nb::init<>())
         .def_rw("teleport", &roadmaker::osc::PrivateAction::teleport)
@@ -3038,6 +3096,12 @@ NB_MODULE(_roadmaker, m) {
                 "the writer emits ONE element per set arm and an action carrying both "
                 "becomes two — build one action per arm to match what the reader "
                 "would produce from the same file.")
+        .def_rw("routing", &roadmaker::osc::PrivateAction::routing)
+        .def_rw("lateral",
+                &roadmaker::osc::PrivateAction::lateral,
+                "The lane-change arm. Never authored into <Init> — an entity cannot "
+                "change lane before the scenario starts; it belongs to a story Action. "
+                "A story Action wraps EXACTLY ONE arm, so set only this one there.")
         .def_rw("preserved",
                 &roadmaker::osc::PrivateAction::preserved,
                 "Unmodeled attributes and child elements, verbatim and in document "
@@ -3082,12 +3146,126 @@ NB_MODULE(_roadmaker, m) {
                 "order. Populated by parse_xosc; re-emitted after the modeled "
                 "content, so nothing a foreign file carried is ever dropped.");
 
+    nb::class_<roadmaker::osc::TrafficSignalCondition>(osc, "TrafficSignalCondition")
+        .def(nb::init<>())
+        .def_rw("name",
+                &roadmaker::osc::TrafficSignalCondition::name,
+                "The OpenDRIVE <signal @id> STRING, named @name only because the "
+                "schema calls it that.")
+        .def_rw("state", &roadmaker::osc::TrafficSignalCondition::state)
+        .def_rw("preserved",
+                &roadmaker::osc::TrafficSignalCondition::preserved,
+                "Unmodeled attributes and child elements, verbatim and in document "
+                "order. Populated by parse_xosc; re-emitted after the modeled "
+                "content, so nothing a foreign file carried is ever dropped.");
+
+    nb::class_<roadmaker::osc::TrafficSignalControllerCondition>(osc,
+                                                                 "TrafficSignalControllerCondition")
+        .def(nb::init<>())
+        .def_rw("traffic_signal_controller_ref",
+                &roadmaker::osc::TrafficSignalControllerCondition::traffic_signal_controller_ref)
+        .def_rw("phase",
+                &roadmaker::osc::TrafficSignalControllerCondition::phase,
+                "A SYNTHESIZED phase name — take it from phase_names(controller), NOT "
+                "from Phase.name. Phase.name may legally be empty and the writer "
+                "synthesizes into the OUTPUT only, so a @phase built from the model "
+                "matches nothing in the file it is written into.")
+        .def_rw("preserved",
+                &roadmaker::osc::TrafficSignalControllerCondition::preserved,
+                "Unmodeled attributes and child elements, verbatim and in document "
+                "order. Populated by parse_xosc; re-emitted after the modeled "
+                "content, so nothing a foreign file carried is ever dropped.");
+
+    nb::class_<roadmaker::osc::StoryboardElementStateCondition>(osc,
+                                                                "StoryboardElementStateCondition")
+        .def(nb::init<>())
+        .def_rw("storyboard_element_ref",
+                &roadmaker::osc::StoryboardElementStateCondition::storyboard_element_ref)
+        .def_rw("state", &roadmaker::osc::StoryboardElementStateCondition::state)
+        .def_rw("storyboard_element_type",
+                &roadmaker::osc::StoryboardElementStateCondition::storyboard_element_type)
+        .def_rw("preserved",
+                &roadmaker::osc::StoryboardElementStateCondition::preserved,
+                "Unmodeled attributes and child elements, verbatim and in document "
+                "order. Populated by parse_xosc; re-emitted after the modeled "
+                "content, so nothing a foreign file carried is ever dropped.");
+
+    nb::class_<roadmaker::osc::SpeedCondition>(osc, "SpeedCondition")
+        .def(nb::init<>())
+        .def_rw("rule", &roadmaker::osc::SpeedCondition::rule)
+        .def_rw("value", &roadmaker::osc::SpeedCondition::value, "[m/s].")
+        .def_rw("preserved",
+                &roadmaker::osc::SpeedCondition::preserved,
+                "Unmodeled attributes and child elements, verbatim and in document "
+                "order. Populated by parse_xosc; re-emitted after the modeled "
+                "content, so nothing a foreign file carried is ever dropped.");
+
+    nb::class_<roadmaker::osc::RelativeDistanceCondition>(osc, "RelativeDistanceCondition")
+        .def(nb::init<>())
+        .def_rw("entity_ref", &roadmaker::osc::RelativeDistanceCondition::entity_ref)
+        .def_rw("freespace", &roadmaker::osc::RelativeDistanceCondition::freespace)
+        .def_rw("relative_distance_type",
+                &roadmaker::osc::RelativeDistanceCondition::relative_distance_type)
+        .def_rw("rule", &roadmaker::osc::RelativeDistanceCondition::rule)
+        .def_rw("value", &roadmaker::osc::RelativeDistanceCondition::value, "[m].")
+        .def_rw("preserved",
+                &roadmaker::osc::RelativeDistanceCondition::preserved,
+                "Unmodeled attributes and child elements, verbatim and in document "
+                "order. Populated by parse_xosc; re-emitted after the modeled "
+                "content, so nothing a foreign file carried is ever dropped.");
+
+    nb::class_<roadmaker::osc::EntityRef>(osc, "EntityRef")
+        .def(nb::init<>())
+        .def_rw("entity_ref", &roadmaker::osc::EntityRef::entity_ref)
+        .def_rw("preserved",
+                &roadmaker::osc::EntityRef::preserved,
+                "Unmodeled attributes and child elements, verbatim and in document "
+                "order. Populated by parse_xosc; re-emitted after the modeled "
+                "content, so nothing a foreign file carried is ever dropped.");
+
+    nb::class_<roadmaker::osc::TriggeringEntities>(osc, "TriggeringEntities")
+        .def(nb::init<>())
+        .def_rw("rule",
+                &roadmaker::osc::TriggeringEntities::rule,
+                "@triggeringEntitiesRule — 'any' or 'all'.")
+        .def_rw("entity_refs", &roadmaker::osc::TriggeringEntities::entity_refs)
+        .def_rw("preserved",
+                &roadmaker::osc::TriggeringEntities::preserved,
+                "Unmodeled attributes and child elements, verbatim and in document "
+                "order. Populated by parse_xosc; re-emitted after the modeled "
+                "content, so nothing a foreign file carried is ever dropped.");
+
+    nb::class_<roadmaker::osc::ByEntityCondition>(osc, "ByEntityCondition")
+        .def(nb::init<>())
+        .def_rw("triggering_entities", &roadmaker::osc::ByEntityCondition::triggering_entities)
+        .def_rw("entity_condition",
+                &roadmaker::osc::ByEntityCondition::entity_condition,
+                "A SpeedCondition or a RelativeDistanceCondition; None means the arm "
+                "rode entity_condition_preserved whole.")
+        .def_rw("entity_condition_preserved",
+                &roadmaker::osc::ByEntityCondition::entity_condition_preserved,
+                "The <EntityCondition> WRAPPER's own preserved tier — one of the "
+                "fourteen unmodeled arms must be re-emitted inside it, not beside it.")
+        .def_rw("preserved",
+                &roadmaker::osc::ByEntityCondition::preserved,
+                "Unmodeled attributes and child elements, verbatim and in document "
+                "order. Populated by parse_xosc; re-emitted after the modeled "
+                "content, so nothing a foreign file carried is ever dropped.");
+
     nb::class_<roadmaker::osc::Condition>(osc, "Condition")
         .def(nb::init<>())
         .def_rw("name", &roadmaker::osc::Condition::name)
         .def_rw("delay", &roadmaker::osc::Condition::delay)
         .def_rw("condition_edge", &roadmaker::osc::Condition::condition_edge)
         .def_rw("simulation_time", &roadmaker::osc::Condition::simulation_time)
+        .def_rw("traffic_signal", &roadmaker::osc::Condition::traffic_signal)
+        .def_rw("traffic_signal_controller", &roadmaker::osc::Condition::traffic_signal_controller)
+        .def_rw("storyboard_element_state", &roadmaker::osc::Condition::storyboard_element_state)
+        .def_rw("by_entity",
+                &roadmaker::osc::Condition::by_entity,
+                "The <ByEntityCondition> arm. AT MOST ONE arm may be set — <Condition> "
+                "is a schema choice, and validate_scenario refuses a condition "
+                "carrying more than one.")
         .def_rw("preserved",
                 &roadmaker::osc::Condition::preserved,
                 "Unmodeled attributes and child elements, verbatim and in document "
@@ -3112,12 +3290,156 @@ NB_MODULE(_roadmaker, m) {
                 "order. Populated by parse_xosc; re-emitted after the modeled "
                 "content, so nothing a foreign file carried is ever dropped.");
 
+    nb::class_<roadmaker::osc::TrafficSignalStateAction>(osc, "TrafficSignalStateAction")
+        .def(nb::init<>())
+        .def_rw("name",
+                &roadmaker::osc::TrafficSignalStateAction::name,
+                "The OpenDRIVE <signal @id> STRING.")
+        .def_rw("state", &roadmaker::osc::TrafficSignalStateAction::state)
+        .def_rw("preserved",
+                &roadmaker::osc::TrafficSignalStateAction::preserved,
+                "Unmodeled attributes and child elements, verbatim and in document "
+                "order. Populated by parse_xosc; re-emitted after the modeled "
+                "content, so nothing a foreign file carried is ever dropped.");
+
+    nb::class_<roadmaker::osc::TrafficSignalControllerAction>(osc, "TrafficSignalControllerAction")
+        .def(nb::init<>())
+        .def_rw("traffic_signal_controller_ref",
+                &roadmaker::osc::TrafficSignalControllerAction::traffic_signal_controller_ref)
+        .def_rw("phase",
+                &roadmaker::osc::TrafficSignalControllerAction::phase,
+                "A SYNTHESIZED phase name — take it from phase_names(controller), NOT "
+                "from Phase.name.")
+        .def_rw("preserved",
+                &roadmaker::osc::TrafficSignalControllerAction::preserved,
+                "Unmodeled attributes and child elements, verbatim and in document "
+                "order. Populated by parse_xosc; re-emitted after the modeled "
+                "content, so nothing a foreign file carried is ever dropped.");
+
+    nb::class_<roadmaker::osc::TrafficSignalAction>(osc, "TrafficSignalAction")
+        .def(nb::init<>())
+        .def_rw("action",
+                &roadmaker::osc::TrafficSignalAction::action,
+                "A TrafficSignalStateAction or a TrafficSignalControllerAction; None "
+                "means the arm rode preserved whole.")
+        .def_rw("preserved",
+                &roadmaker::osc::TrafficSignalAction::preserved,
+                "Unmodeled attributes and child elements, verbatim and in document "
+                "order. Populated by parse_xosc; re-emitted after the modeled "
+                "content, so nothing a foreign file carried is ever dropped.");
+
+    nb::class_<roadmaker::osc::InfrastructureAction>(osc, "InfrastructureAction")
+        .def(nb::init<>())
+        .def_rw("traffic_signal", &roadmaker::osc::InfrastructureAction::traffic_signal)
+        .def_rw("preserved",
+                &roadmaker::osc::InfrastructureAction::preserved,
+                "Unmodeled attributes and child elements, verbatim and in document "
+                "order. Populated by parse_xosc; re-emitted after the modeled "
+                "content, so nothing a foreign file carried is ever dropped.");
+
+    nb::class_<roadmaker::osc::GlobalAction>(osc, "GlobalAction")
+        .def(nb::init<>())
+        .def_rw("infrastructure", &roadmaker::osc::GlobalAction::infrastructure)
+        .def_rw("preserved",
+                &roadmaker::osc::GlobalAction::preserved,
+                "Unmodeled attributes and child elements, verbatim and in document "
+                "order. Populated by parse_xosc; re-emitted after the modeled "
+                "content, so nothing a foreign file carried is ever dropped.");
+
+    nb::class_<roadmaker::osc::Action>(osc, "Action")
+        .def(nb::init<>())
+        .def_rw("name", &roadmaker::osc::Action::name)
+        .def_rw("action",
+                &roadmaker::osc::Action::action,
+                "A GlobalAction or a PrivateAction; None means the arm — a "
+                "<UserDefinedAction>, say — rode preserved whole. A PrivateAction here "
+                "must carry EXACTLY ONE arm: <Action> wraps a single choice, so two "
+                "arms belong in two <Action> elements.")
+        .def_rw("preserved",
+                &roadmaker::osc::Action::preserved,
+                "Unmodeled attributes and child elements, verbatim and in document "
+                "order. Populated by parse_xosc; re-emitted after the modeled "
+                "content, so nothing a foreign file carried is ever dropped.");
+
+    nb::class_<roadmaker::osc::Event>(osc, "Event")
+        .def(nb::init<>())
+        .def_rw("name", &roadmaker::osc::Event::name)
+        .def_rw("priority",
+                &roadmaker::osc::Event::priority,
+                "Defaults to 'overwrite', the 1.0 spelling: the writer targets 1.2 by "
+                "default and 'override' does not exist there. Set it explicitly when "
+                "targeting 1.4.")
+        .def_rw("maximum_execution_count", &roadmaker::osc::Event::maximum_execution_count)
+        .def_rw("actions", &roadmaker::osc::Event::actions)
+        .def_rw("start_trigger", &roadmaker::osc::Event::start_trigger)
+        .def_rw("preserved",
+                &roadmaker::osc::Event::preserved,
+                "Unmodeled attributes and child elements, verbatim and in document "
+                "order. Populated by parse_xosc; re-emitted after the modeled "
+                "content, so nothing a foreign file carried is ever dropped.");
+
+    nb::class_<roadmaker::osc::StoryManeuver>(osc, "StoryManeuver")
+        .def(nb::init<>())
+        .def_rw("name", &roadmaker::osc::StoryManeuver::name)
+        .def_rw("parameter_declarations", &roadmaker::osc::StoryManeuver::parameter_declarations)
+        .def_rw("events", &roadmaker::osc::StoryManeuver::events)
+        .def_rw("preserved",
+                &roadmaker::osc::StoryManeuver::preserved,
+                "Unmodeled attributes and child elements, verbatim and in document "
+                "order. Populated by parse_xosc; re-emitted after the modeled "
+                "content, so nothing a foreign file carried is ever dropped.");
+
+    nb::class_<roadmaker::osc::ManeuverGroup>(osc, "ManeuverGroup")
+        .def(nb::init<>())
+        .def_rw("name", &roadmaker::osc::ManeuverGroup::name)
+        .def_rw("maximum_execution_count", &roadmaker::osc::ManeuverGroup::maximum_execution_count)
+        .def_rw("select_triggering_entities",
+                &roadmaker::osc::ManeuverGroup::select_triggering_entities)
+        .def_rw("actors",
+                &roadmaker::osc::ManeuverGroup::actors,
+                "May legally be EMPTY — an infrastructure-only group has no actor.")
+        .def_rw("actors_preserved", &roadmaker::osc::ManeuverGroup::actors_preserved)
+        .def_rw("preserved_catalog_references",
+                &roadmaker::osc::ManeuverGroup::preserved_catalog_references,
+                "<CatalogReference> fragments, kept out of `preserved` because they "
+                "sit between <Actors> and <Maneuver>* in the schema sequence.")
+        .def_rw("maneuvers", &roadmaker::osc::ManeuverGroup::maneuvers)
+        .def_rw("preserved",
+                &roadmaker::osc::ManeuverGroup::preserved,
+                "Unmodeled attributes and child elements, verbatim and in document "
+                "order. Populated by parse_xosc; re-emitted after the modeled "
+                "content, so nothing a foreign file carried is ever dropped.");
+
+    nb::class_<roadmaker::osc::Act>(osc, "Act")
+        .def(nb::init<>())
+        .def_rw("name", &roadmaker::osc::Act::name)
+        .def_rw("maneuver_groups", &roadmaker::osc::Act::maneuver_groups)
+        .def_rw("start_trigger", &roadmaker::osc::Act::start_trigger)
+        .def_rw("stop_trigger", &roadmaker::osc::Act::stop_trigger)
+        .def_rw("preserved",
+                &roadmaker::osc::Act::preserved,
+                "Unmodeled attributes and child elements, verbatim and in document "
+                "order. Populated by parse_xosc; re-emitted after the modeled "
+                "content, so nothing a foreign file carried is ever dropped.");
+
+    nb::class_<roadmaker::osc::Story>(osc, "Story")
+        .def(nb::init<>())
+        .def_rw("name", &roadmaker::osc::Story::name)
+        .def_rw("parameter_declarations", &roadmaker::osc::Story::parameter_declarations)
+        .def_rw("acts", &roadmaker::osc::Story::acts)
+        .def_rw("preserved",
+                &roadmaker::osc::Story::preserved,
+                "Unmodeled attributes and child elements, verbatim and in document "
+                "order. Populated by parse_xosc; re-emitted after the modeled "
+                "content, so nothing a foreign file carried is ever dropped.");
+
     nb::class_<roadmaker::osc::Storyboard>(osc, "Storyboard")
         .def(nb::init<>())
         .def_rw("init", &roadmaker::osc::Storyboard::init)
-        .def_rw("preserved_stories",
-                &roadmaker::osc::Storyboard::preserved_stories,
-                "<Story> fragments carried verbatim until p8-s4 models them.")
+        .def_rw("stories",
+                &roadmaker::osc::Storyboard::stories,
+                "Modeled <Story> elements (p8-s4). Emitted in list order, between "
+                "<Init> and <StopTrigger>.")
         .def_rw("stop_trigger", &roadmaker::osc::Storyboard::stop_trigger)
         .def_rw("preserved",
                 &roadmaker::osc::Storyboard::preserved,
@@ -3165,6 +3487,15 @@ NB_MODULE(_roadmaker, m) {
         "path"_a,
         "target_version"_a = roadmaker::osc::OscVersion::v1_2,
         "write_xosc + save to disk. Writes nothing when the scenario is refused.");
+
+    osc.def("phase_names",
+            &roadmaker::osc::phase_names,
+            "controller"_a,
+            "The <Phase @name>s write_xosc WILL EMIT for this controller, in phase "
+            "order — the writer's own synthesis. Phase.name may legally be empty and "
+            "the writer synthesizes into the OUTPUT only, so a "
+            "TrafficSignalControllerCondition/@phase built from Phase.name matches "
+            "nothing in the file. Author every @phase from this list.");
 
     osc.def(
         "validate_scenario",
@@ -3486,6 +3817,40 @@ NB_MODULE(_roadmaker, m) {
                  "Replaces an actor's <BoundingBox>, carrying over the element's own "
                  "preserved tier. Refuses a non-positive dimension, and an entity "
                  "that is neither a <Vehicle> nor a <Pedestrian>.");
+
+    // --- the storyboard (p8-s4, #248) ---
+    //
+    // Whole-Story commands, deliberately coarser than the gestures the editor
+    // makes on one: a storyboard is a six-level tree, so a per-node API would be
+    // thirty factories carrying a five-deep index path. Build the modified Story
+    // value and push one command — which is also what makes a headless replay
+    // produce the same bytes the editor does.
+
+    osc_edit.def("set_story",
+                 &roadmaker::osc::edit::set_story,
+                 "scenario"_a,
+                 "index"_a,
+                 "story"_a,
+                 "Replaces <Storyboard><Story> at `index`, or APPENDS when `index` "
+                 "equals the story count. Refuses an empty or duplicate @name, a story "
+                 "with no <Act>, and an index past the end. Deeper checks — dangling "
+                 "entityRefs, a @phase naming no synthesized phase — belong to "
+                 "validate_scenario, which sees the whole document.");
+
+    osc_edit.def("remove_story",
+                 &roadmaker::osc::edit::remove_story,
+                 "scenario"_a,
+                 "index"_a,
+                 "Removes the <Story> at `index`. Refuses an index the storyboard does "
+                 "not have.");
+
+    osc_edit.def("set_stop_trigger",
+                 &roadmaker::osc::edit::set_stop_trigger,
+                 "scenario"_a,
+                 "trigger"_a,
+                 "Replaces <Storyboard><StopTrigger> — what ends the scenario. Always a "
+                 "replace and never an add/remove pair: an empty trigger is the legal "
+                 "'never stops' state the schema skeleton emits.");
 
     // --- the actor catalogue (p8-s2, #246) ---
     //

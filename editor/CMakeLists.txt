@@ -109,6 +109,7 @@ add_library(roadmaker_editor_lib STATIC
   src/panels/properties_panel.cpp
   src/panels/scene_tree_panel.cpp
   src/panels/scrub_label.cpp
+  src/panels/storyboard_panel.cpp
   src/panels/slot_widget.cpp
   src/panels/unit_spin_box.cpp
   src/panels/width_panel.cpp

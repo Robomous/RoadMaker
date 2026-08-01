@@ -745,6 +745,138 @@ private:
 
 // --- set_scenario_object_bounding_box ----------------------------------------
 
+// --- the storyboard (p8-s4, issue #248) --------------------------------------
+
+/// Replaces the story at `index`, or appends when `index == stories.size()`.
+///
+/// ★ THE INSERT AND THE REPLACE ARE ONE COMMAND, and the revert distinguishes
+/// them by what `apply` recorded — `inserted_` — rather than by re-deriving it
+/// from the document at revert time. Re-deriving is what breaks when another
+/// command lands between the apply and the undo: the story count has changed
+/// and "was this an append?" gets a different answer than it did.
+class SetStoryCommand final : public Command {
+public:
+  SetStoryCommand(std::size_t index, Story story) : index_(index), story_(std::move(story)) {}
+
+  Expected<void> apply(Scenario& scenario) override {
+    std::vector<Story>& stories = scenario.storyboard.stories;
+    if (index_ > stories.size()) {
+      return make_error(ErrorCode::InvalidArgument,
+                        fmt::format("the storyboard has {} story/stories; index {} is past the end",
+                                    stories.size(),
+                                    index_),
+                        "Storyboard/Story");
+    }
+    inserted_ = index_ == stories.size();
+    if (inserted_) {
+      stories.push_back(story_);
+    } else {
+      before_ = stories[index_];
+      stories[index_] = story_;
+    }
+    applied_ = true;
+    return {};
+  }
+
+  Expected<void> revert(Scenario& scenario) override {
+    if (!applied_) {
+      return {};
+    }
+    std::vector<Story>& stories = scenario.storyboard.stories;
+    if (index_ >= stories.size()) {
+      return make_error(
+          ErrorCode::InvalidArgument, "the story this command wrote is gone", "Storyboard/Story");
+    }
+    if (inserted_) {
+      stories.erase(stories.begin() + static_cast<std::ptrdiff_t>(index_));
+    } else {
+      stories[index_] = before_;
+    }
+    applied_ = false;
+    return {};
+  }
+
+  [[nodiscard]] std::string_view name() const override { return "Edit Story"; }
+
+private:
+  std::size_t index_;
+  Story story_;
+  Story before_;
+  bool inserted_ = false;
+  bool applied_ = false;
+};
+
+class RemoveStoryCommand final : public Command {
+public:
+  explicit RemoveStoryCommand(std::size_t index) : index_(index) {}
+
+  Expected<void> apply(Scenario& scenario) override {
+    std::vector<Story>& stories = scenario.storyboard.stories;
+    if (index_ >= stories.size()) {
+      return make_error(
+          ErrorCode::InvalidArgument,
+          fmt::format("the storyboard has {} story/stories; there is none at index {}",
+                      stories.size(),
+                      index_),
+          "Storyboard/Story");
+    }
+    before_ = stories[index_];
+    stories.erase(stories.begin() + static_cast<std::ptrdiff_t>(index_));
+    applied_ = true;
+    return {};
+  }
+
+  Expected<void> revert(Scenario& scenario) override {
+    if (!applied_) {
+      return {};
+    }
+    std::vector<Story>& stories = scenario.storyboard.stories;
+    if (index_ > stories.size()) {
+      return make_error(ErrorCode::InvalidArgument,
+                        "the storyboard is shorter than it was when this story was removed",
+                        "Storyboard/Story");
+    }
+    stories.insert(stories.begin() + static_cast<std::ptrdiff_t>(index_), before_);
+    applied_ = false;
+    return {};
+  }
+
+  [[nodiscard]] std::string_view name() const override { return "Remove Story"; }
+
+private:
+  std::size_t index_;
+  Story before_;
+  bool applied_ = false;
+};
+
+class SetStopTriggerCommand final : public Command {
+public:
+  explicit SetStopTriggerCommand(Trigger trigger) : trigger_(std::move(trigger)) {}
+
+  Expected<void> apply(Scenario& scenario) override {
+    before_ = scenario.storyboard.stop_trigger;
+    scenario.storyboard.stop_trigger = trigger_;
+    applied_ = true;
+    return {};
+  }
+
+  Expected<void> revert(Scenario& scenario) override {
+    if (!applied_) {
+      return {};
+    }
+    scenario.storyboard.stop_trigger = before_;
+    applied_ = false;
+    return {};
+  }
+
+  [[nodiscard]] std::string_view name() const override { return "Edit Stop Trigger"; }
+
+private:
+  Trigger trigger_;
+  Trigger before_;
+  bool applied_ = false;
+};
+
 class SetBoundingBoxCommand final : public Command {
 public:
   SetBoundingBoxCommand(std::string entity, BoundingBox box)
@@ -1290,6 +1422,51 @@ remove_route_waypoint(const Scenario& scenario, std::string_view entity_name, st
                   "RoutingAction/AssignRouteAction/Route/Waypoint");
   }
   return std::make_unique<RemoveRouteWaypointCommand>(std::string{entity_name}, index);
+}
+
+std::unique_ptr<Command> set_story(const Scenario& scenario, std::size_t index, Story story) {
+  const std::vector<Story>& stories = scenario.storyboard.stories;
+  if (index > stories.size()) {
+    return refuse("Edit Story",
+                  fmt::format("the storyboard has {} story/stories; index {} is past the end",
+                              stories.size(),
+                              index),
+                  "Storyboard/Story");
+  }
+  if (story.name.empty()) {
+    return refuse(
+        "Edit Story", "a story needs a name, which the schema requires", "Storyboard/Story/@name");
+  }
+  for (std::size_t other = 0; other < stories.size(); ++other) {
+    if (other != index && stories[other].name == story.name) {
+      return refuse("Edit Story",
+                    fmt::format("a story named '{}' is already declared", story.name),
+                    "Storyboard/Story/@name");
+    }
+  }
+  // "minOccurs 1" on <Act>: a story with no act is an element no schema-aware
+  // reader accepts, so the document would become unsavable by an edit that
+  // appeared to succeed — the `remove_route_waypoint` refusal, met again.
+  if (story.acts.empty()) {
+    return refuse("Edit Story", "a story needs at least one act", "Storyboard/Story/Act");
+  }
+  return std::make_unique<SetStoryCommand>(index, std::move(story));
+}
+
+std::unique_ptr<Command> remove_story(const Scenario& scenario, std::size_t index) {
+  if (index >= scenario.storyboard.stories.size()) {
+    return refuse("Remove Story",
+                  fmt::format("the storyboard has {} story/stories; there is none at index {}",
+                              scenario.storyboard.stories.size(),
+                              index),
+                  "Storyboard/Story");
+  }
+  return std::make_unique<RemoveStoryCommand>(index);
+}
+
+std::unique_ptr<Command> set_stop_trigger(const Scenario& scenario, Trigger trigger) {
+  (void)scenario; // Always present; there is no state that makes this invalid.
+  return std::make_unique<SetStopTriggerCommand>(std::move(trigger));
 }
 
 std::unique_ptr<Command> set_scenario_object_bounding_box(const Scenario& scenario,

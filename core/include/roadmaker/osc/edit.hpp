@@ -338,6 +338,51 @@ assign_route(const Scenario& scenario, std::string_view entity_name, Route route
 [[nodiscard]] RM_API std::unique_ptr<Command>
 remove_route_waypoint(const Scenario& scenario, std::string_view entity_name, std::size_t index);
 
+// --- the storyboard (p8-s4, issue #248) --------------------------------------
+//
+// ★ TWO FACTORIES, EACH TAKING A WHOLE `<Story>` — deliberately coarser than
+// the gestures the editor makes on it, which is the call
+// `set_entity_init_position` already documents: "one exact value snapshot is
+// one code path where undoing each separately is" a dozen. A storyboard is a
+// six-level tree (Story ▸ Act ▸ ManeuverGroup ▸ Maneuver ▸ Event ▸ Action), so
+// a per-node API would be thirty factories carrying a five-deep index path, and
+// every one of them a place for the byte-identity contract to break.
+//
+// The panel builds the modified `Story` VALUE and commits one command per
+// gesture; the undo entry is exact because the snapshot is the story it
+// replaced. A `Story` is also plain data with no handles in it, so a Python
+// caller builds one and replays the same command headlessly — which is what
+// GW-6's evidence is.
+
+/// Replaces `<Storyboard><Story>` at `index`, or APPENDS when `index` equals
+/// the story count.
+///
+/// Refuses an empty or duplicate `@name` (`<Story>` names are unique among
+/// siblings, and a `StoryboardElementStateCondition` resolves through one), a
+/// story with no `<Act>`, and an index past the end — never clamps, because a
+/// clamped index rewrites a story the caller did not name.
+///
+/// ★ DOES NOT VALIDATE THE STORY'S CONTENTS BEYOND THAT. The deeper checks —
+/// dangling `entityRef`s, a `@phase` that names no synthesized phase, an event
+/// with no action — belong to `validate_scenario`, which sees the whole
+/// document; a factory that duplicated them would be a second implementation
+/// drifting from the first. Push, then read `validate_scenario`.
+[[nodiscard]] RM_API std::unique_ptr<Command>
+set_story(const Scenario& scenario, std::size_t index, Story story);
+
+/// Removes the `<Story>` at `index`. Refuses an index the storyboard does not
+/// have.
+[[nodiscard]] RM_API std::unique_ptr<Command> remove_story(const Scenario& scenario,
+                                                           std::size_t index);
+
+/// Replaces `<Storyboard><StopTrigger>` — what ends the scenario.
+///
+/// ALWAYS PRESENT in the model (`Storyboard::stop_trigger` is a value, not an
+/// optional), so this is a replace and never an add/remove pair; an empty
+/// trigger is the legal "never stops" state the schema skeleton emits.
+[[nodiscard]] RM_API std::unique_ptr<Command> set_stop_trigger(const Scenario& scenario,
+                                                               Trigger trigger);
+
 /// Replaces `entity_name`'s `<BoundingBox>`, carrying over the element's own
 /// preserved tier (which belongs to the element, not to the numbers).
 ///

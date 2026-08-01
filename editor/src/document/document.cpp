@@ -164,7 +164,7 @@ bool Document::has_scenario() const {
   return !s.entities.scenario_objects.empty() ||
          !s.road_network.traffic_signal_controllers.empty() ||
          !s.storyboard.init.actions.privates.empty() || s.road_network.logic_file.has_value() ||
-         !s.parameter_declarations.empty() || !s.storyboard.preserved_stories.empty() ||
+         !s.parameter_declarations.empty() || !s.storyboard.stories.empty() ||
          !s.storyboard.stop_trigger.condition_groups.empty() || !s.preserved.empty();
 }
 

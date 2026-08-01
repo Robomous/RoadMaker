@@ -101,6 +101,7 @@ add_executable(roadmaker_editor_tests
   test_picking.cpp
   test_preview_session.cpp
   test_phase_panel.cpp
+  test_storyboard_panel.cpp
   test_profile_panel.cpp
   test_project.cpp
   test_project_files_model.cpp
