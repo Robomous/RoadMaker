@@ -727,6 +727,15 @@ jobs:
       # what happens to be on the runner image.
       - name: esmini runtime deps
         run: sudo apt-get update && sudo apt-get install -y libgl1 libx11-6 libxrandr2 libxinerama1
+      # ★ THE WRAPPER SCENARIO IS NOW WRITTEN BY THE KERNEL (p8-s5, #249), so
+      # this job needs the bindings. It used to be a hardcoded string inside
+      # esmini_smoke.py, which proved that a human can write valid
+      # OpenSCENARIO — a fact never in doubt — and said nothing about what
+      # RoadMaker emits. The script FAILS LOUDLY without the module rather than
+      # falling back to a literal: a silent fallback is how a gate keeps passing
+      # on the path a change was meant to replace (#506).
+      - name: Build the Python bindings (the wrapper scenario comes from the kernel)
+        run: python3 -m pip install --upgrade pip && python3 -m pip install ./python
       - name: Smoke-load every tracked .xodr
         run: python3 scripts/esmini_smoke.py --esmini .esmini/esmini/bin/esmini assets/samples/*.xodr
       - name: Broken fixture must fail (guards the gate itself)

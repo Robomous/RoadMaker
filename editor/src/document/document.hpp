@@ -202,17 +202,25 @@ public:
 
   [[nodiscard]] const std::vector<Diagnostic>& diagnostics() const { return diagnostics_; }
 
-  /// Live route findings (p8-s3, #247): `osc::validate_routes` re-run against
-  /// the CURRENT network whenever the topology or the scenario changes — which
-  /// is what makes GW-6 step 8 true in the editor: delete a lane a route
-  /// traverses and the route is REPORTED, not silently dropped or re-routed.
+  /// Live CROSS-DOCUMENT findings: `osc::validate_scenario_against_network`
+  /// re-run against the CURRENT network whenever the topology or the scenario
+  /// changes.
+  ///
+  /// ★ NAMED FOR THE SCENARIO, NOT FOR ROUTES, since #533. It began as the
+  /// route half alone (p8-s3, #247) and now carries every reference whose other
+  /// end is in the `.xodr` — signal ids, controller ids, lane anchors and the
+  /// upper s-bound as well as routes. That is what makes GW-6 step 8 true in
+  /// the editor (delete a lane a route traverses and the route is REPORTED, not
+  /// silently dropped or re-routed) AND what closes the hole #533 was filed
+  /// for: esmini accepts a dangling signal reference in silence, so this dock
+  /// is the only place a user ever learns about one.
   ///
   /// Held apart from diagnostics() on purpose: that vector is a validation
   /// PASS (replaced by refresh_diagnostics/save, appended by command
   /// findings), this one is derived state that must not clobber it and must
   /// not be clobbered by it. DiagnosticsModel presents the two as one table.
-  [[nodiscard]] const std::vector<Diagnostic>& route_diagnostics() const {
-    return route_diagnostics_;
+  [[nodiscard]] const std::vector<Diagnostic>& scenario_diagnostics() const {
+    return scenario_diagnostics_;
   }
 
   /// Path of the loaded/saved file; empty until the first successful
@@ -424,15 +432,15 @@ private:
   NetworkMesh mesh_;
   std::vector<Diagnostic> diagnostics_;
 
-  /// Recomputes route_diagnostics_ from the live network and scenario, and
+  /// Recomputes scenario_diagnostics_ from the live network and scenario, and
   /// emits diagnostics_changed() so the panel re-reads the merged table.
   /// Connected (in the constructor) to topology_changed and scenario_changed —
   /// the two events that can invalidate a route. A plain MOVE fires neither
   /// consequence for routes: a waypoint names a lane, not a point in space,
   /// which is GW-6 step 7 holding by construction.
-  void refresh_route_diagnostics();
+  void refresh_scenario_diagnostics();
 
-  std::vector<Diagnostic> route_diagnostics_;
+  std::vector<Diagnostic> scenario_diagnostics_;
   QString file_path_;
   SceneState scene_state_;
   /// Whether scene_state_ came off disk (rather than being the empty default).

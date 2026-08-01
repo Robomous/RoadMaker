@@ -49,6 +49,7 @@
 #include "roadmaker/osc/catalog.hpp"
 #include "roadmaker/osc/decompose.hpp"
 #include "roadmaker/osc/edit.hpp"
+#include "roadmaker/osc/network_validation.hpp"
 #include "roadmaker/osc/reader.hpp"
 #include "roadmaker/osc/route.hpp"
 #include "roadmaker/osc/rules.hpp"
@@ -3516,6 +3517,20 @@ NB_MODULE(_roadmaker, m) {
             "what went wrong if it no longer does. NEVER mutates and NEVER re-routes "
             "— an unresolvable waypoint or an unreachable gap is reported and leaves "
             "`complete` False.");
+
+    osc.def("validate_scenario_against_network",
+            &roadmaker::osc::validate_scenario_against_network,
+            "scenario"_a,
+            "network"_a,
+            "Every reference in the scenario whose other end lives in the road "
+            "network, checked (#533) — signal ids, controller ids, road/lane "
+            "anchors, the UPPER s-bound, and every assigned route. THIS IS THE "
+            "ONLY CHECK THE SIGNAL HALF HAS: validate_scenario sees no network, "
+            "and esmini v3.5.0 was measured to accept a dangling "
+            "trafficSignalId, a dangling trafficSignalControllerRef and a "
+            "nonexistent @phase with exit 0 and no error line. Nothing here "
+            "blocks a write — write_xosc takes no network — so a caller reads "
+            "the list and decides.");
 
     osc.def("validate_routes",
             &roadmaker::osc::validate_routes,

@@ -61,6 +61,16 @@ public:
   /// scene is precisely the value.
   QAction* export_preview_scene = nullptr;
   QAction* export_preview_xodr = nullptr;
+
+  /// File ▸ Preview Scenario in esmini… (p8-s5, #249, GW-6 step 14). Menu-only
+  /// (no registry id, so no shortcut): a preview is an occasional gesture, and
+  /// keeping it out of the registry keeps the generated shortcuts page — and
+  /// its CI enforcer — untouched.
+  ///
+  /// ★ esmini is launched as a SUBPROCESS and never linked or bundled, which is
+  /// what keeps it inside its MPL-2.0 external-tool entry
+  /// (docs/standards/dependencies.md).
+  QAction* preview_esmini = nullptr;
   QAction* quit = nullptr;
 
   QAction* undo = nullptr;

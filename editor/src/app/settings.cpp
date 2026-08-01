@@ -141,6 +141,17 @@ void Settings::set_theme_name(const QString& name) {
   settings_.setValue(QStringLiteral("ui/theme"), name);
 }
 
+QString Settings::esmini_path() const {
+  return settings_.value(QStringLiteral("tools/esmini_path")).toString();
+}
+
+void Settings::set_esmini_path(const QString& path) {
+  if (read_only()) {
+    return;
+  }
+  settings_.setValue(QStringLiteral("tools/esmini_path"), path);
+}
+
 bool Settings::autosave_enabled() const {
   return settings_.value(QStringLiteral("autosave/enabled"), true).toBool();
 }

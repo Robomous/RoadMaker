@@ -66,6 +66,7 @@ add_library(roadmaker_editor_lib STATIC
   src/document/stencil_placement.cpp
   src/document/crosswalk_placement.cpp
   src/document/diagnostics_model.cpp
+  src/document/esmini_preview.cpp
   src/document/export_preview_state.cpp
   src/document/export_preview_models.cpp
   src/document/document.cpp

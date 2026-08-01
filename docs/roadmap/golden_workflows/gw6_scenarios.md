@@ -5,13 +5,15 @@ Scenario mode and actor placement (p8-s2), lane-anchored routes (p8-s3), the
 storyboard/condition editor (p8-s4), esmini preview (p8-s5), and the
 export-only OpenSCENARIO 2.x subset (p8-s6).*
 
-**Status: draft, written before the pillar starts** — steps are refined as the
-owning sprints land. It exists early on purpose: GW-1…GW-5 give their pillars an
-acceptance target to build against, and without this document #248's headline
-acceptance (*"a traffic-light scenario is authorable end-to-end"*) would ship
-before the workflow that verifies it. Drafted as part of the
+**Status: refined against what shipped (p8-s5, 2026-08-01); hand-runs
+outstanding.** It was drafted before the pillar started — GW-1…GW-5 give their
+pillars an acceptance target to build against, and without this document #248's
+headline acceptance (*"a traffic-light scenario is authorable end-to-end"*)
+would have shipped before the workflow that verifies it. Drafted as part of the
 [P8 discovery](../pillars/p8_discovery.md) planning step (§7), which the
-maintainer ruled on 2026-07-30.
+maintainer ruled on 2026-07-30; p8-s1…p8-s5 have landed and every step below now
+names the thing that actually exists. p8-s6 (step 16) is the one step whose
+sprint has not landed.
 
 ## Purpose
 
@@ -20,11 +22,34 @@ actors placed, routes anchored to lanes, a storyboard with triggers — that it
 survives edits to the network beneath it, that it round-trips through the
 project container, and that an external simulator accepts the exported file.
 
-**Validation note.** RoadMaker does not validate `.xosc` against an XSD: the
-schema ships only in ASAM's gated bundle and cannot be carried in CI. By
+**Validation note — and the correction measurement forced on it.** RoadMaker
+does not validate `.xosc` against an XSD: the schema ships only in ASAM's gated
+bundle and cannot be carried in CI. By
 [maintainer ruling](https://github.com/Robomous/RoadMaker/issues/257) esmini's
-parser **is** the validator — so step 12 is not a nicety, it is the acceptance
-of every export step above it.
+parser **is** the validator.
+
+★ THAT RULING HOLDS FOR HALF OF A SCENARIO, AND THE OTHER HALF HAS ITS OWN
+CHECKER. Measured on the pinned esmini v3.5.0 (2026-07-30 and 2026-08-01, one
+mutation at a time on the tracked fixtures, recorded in
+`.github/workflows/ci.yml`):
+
+| reference | esmini |
+|---|---|
+| a dangling `roadId` / `laneId`, an `s` past the road end | **fails the load** |
+| a dangling `entityRef` (actor, triggering entity, relative target lane) | **fails the load** |
+| an invalid `Event/@priority`, an invalid `@dynamicsShape` | **fails the load** |
+| a dangling `trafficSignalId` | *loads, exit 0, no error* |
+| a dangling `trafficSignalControllerRef` | *loads, exit 0, no error* |
+| a `@phase` naming no phase | *loads, exit 0, no error* |
+| a garbage `TrafficSignalState/@state` | *loads, exit 0, no error* |
+
+So **step 14 accepts the lane-anchored half** — the cut-in, the routes, the
+placements — and says nothing at all about the traffic-light half. The
+traffic-light half is accepted by RoadMaker's own
+`osc::validate_scenario_against_network`
+([#533](https://github.com/Robomous/RoadMaker/issues/533)), surfaced live in the
+Diagnostics dock, and step 11a below is where a runner reads it. Neither check
+replaces the other and neither alone discharges this workflow.
 
 ## Preconditions
 
@@ -34,9 +59,12 @@ of every export step above it.
   road-authoring failure.
 - A junction in that scene that is **dynamically signalized** (GW-4 step 2), so
   the traffic-light half of step 8 has something to reference.
-- `esmini` available on `PATH` (external tool, launched as a subprocess — never
-  linked or bundled; see
-  [dependencies](../../standards/dependencies.md)).
+- `esmini` available on `PATH`, or its path set once through the file dialog
+  **File ▸ Preview Scenario in esmini…** offers when it cannot find one
+  (external tool, launched as a subprocess — never linked or bundled; see
+  [dependencies](../../standards/dependencies.md)). `$ESMINI_PATH` also
+  resolves, which is how a CI-like machine points at a fetched binary without
+  touching user settings.
 
 ## Steps
 
@@ -99,9 +127,15 @@ of every export step above it.
 
 ### Storyboard (p8-s4)
 
-9. [ ] Open the **storyboard editor** in the 2D Editor pane. **Expected:** it
-   hosts as a page beside the Signal Phase Editor and the profile editors, with
-   the scenario's acts/events listed.
+9. [ ] Open the **Storyboard** page in the 2D Editor pane. **Expected:** it
+   hosts beside the Signal Phase Editor and the profile editors, showing the
+   scenario as a tree — Story ▸ Act ▸ ManeuverGroup ▸ Maneuver ▸ Event ▸ Action
+   — with a form for whatever is selected. **Add** creates a COMPLETE subtree
+   (an act needs a maneuver group, which needs a maneuver, which needs an event,
+   which needs an action), so the scenario is savable after every click;
+   **Remove** cascades exactly as far as the schema requires and no further.
+   *Landed in `p8-s4`*: every gesture is one command on the document's single
+   undo stack.
 10. [ ] Author a **cut-in**: give actor 2 an event that changes lane in front of
     actor 1, triggered by a relative-distance condition. **Expected:** the
     condition's parameters are editable and the event appears on the storyboard
@@ -117,6 +151,19 @@ of every export step above it.
     `osc::edit::sync_traffic_signals` (`rm.osc.edit.*`) produce exactly that
     list, so this step's UI has one source to bind to and the Red-fill is not
     re-implemented in a widget.
+    ★ *And the phase list is the SYNTHESIZED one (`p8-s4`)*: `Phase::name` may
+    legally be empty and the writer synthesizes names into the output only, so
+    a combo populated from the model would offer a label that matches nothing
+    in the saved file. Every label the phase combo shows must appear verbatim
+    as a `<Phase @name>` in the exported `.xosc` — check one.
+11a. [ ] Look at the **Diagnostics** dock. **Expected:** it is EMPTY for the
+    scenario just authored. Now break the traffic-light condition on purpose —
+    retype the controller, then delete the signalized junction in Map mode — and
+    the dock names the dangling reference, live, without a save.
+    ★ This step exists because esmini cannot do it (`#533`): a dangling signal
+    or controller reference loads with exit 0 and no error, so step 14 passing
+    is not evidence the traffic-light half is right. Undo restores both the
+    junction and an empty dock.
 
 ### Round trip and export (p8-s1, p8-s5, p8-s6)
 
@@ -129,10 +176,17 @@ of every export step above it.
     trajectories, the storyboard as acts/events with their triggers, and the
     signal condition references the controller by its OpenDRIVE id. The
     referenced road network is the scene's `.xodr` via `<LogicFile>`.
-14. [ ] **Preview in esmini** from the editor. **Expected:** esmini launches as
-    an external process, loads the exported scenario **without parser errors**,
-    and the actors move along their routes; the cut-in happens; actor 1 waits
-    for green. Closing esmini leaves the editor untouched.
+14. [ ] **File ▸ Preview Scenario in esmini…**. **Expected:** the scene and its
+    scenario are exported to a throwaway folder — **including edits made since
+    the last save**, and without writing anything into the project — and esmini
+    launches as an external process, loads them **without parser errors**, and
+    the actors move along their routes; the cut-in happens; actor 1 waits for
+    green. Closing esmini leaves the editor untouched.
+    *Landed in `p8-s5`*: the exported scenario's `<LogicFile>` is rewritten to
+    the exported network's filename, so the preview shows what is on screen
+    rather than the last save (or nothing, for a scene never saved). When the
+    Diagnostics dock is non-empty the status bar says so **before** the launch —
+    esmini will not.
 15. [ ] Re-import / re-open the saved project and confirm nothing was lost in
     the `.xosc` round trip that the project container should have preserved.
     **Expected:** anything RoadMaker cannot express in 1.x is still carried in
@@ -147,13 +201,26 @@ of every export step above it.
 - **A route survives an edit to the road beneath it** (step 7) and is
   *diagnosed*, never silently mutated, when genuinely invalidated (step 8).
 - **esmini loads the exported `.xosc` without parser errors** (step 14) — the
-  standing substitute for schema validation.
+  standing substitute for schema validation, *for the lane-anchored half only*;
+  see the validation note above.
 - Save → reopen → save is byte-identical (step 12).
 - A traffic-light condition exported from RoadMaker references a controller
-  that exists in the exported `.xodr`, by the same id.
+  that exists in the exported `.xodr`, by the same id — **discharged by an
+  automated check** (`osc::validate_scenario_against_network`, surfaced in the
+  Diagnostics dock) rather than by a human reading the file, which is what
+  step 11a exercises.
 
 ## Results
 
+Three platform runs are required, one per supported OS. The rows are here
+ready to fill; a run is recorded by the person who performed it.
+
 | Date | OS | Commit | Result | Notes |
 |---|---|---|---|---|
-| — | — | — | — | no runs yet |
+| — | macOS | — | — | not yet run |
+| — | Linux | — | — | not yet run |
+| — | Windows | — | — | not yet run |
+
+**Step 16 is gated on p8-s6** ([#327](https://github.com/Robomous/RoadMaker/issues/327)),
+which has not landed. A run before it ships records steps 1–15 and marks step 16
+blocked rather than failed.
