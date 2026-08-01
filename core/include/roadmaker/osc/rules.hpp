@@ -203,6 +203,27 @@ inline constexpr std::string_view kRoadLaneExists =
 inline constexpr std::string_view kRoadLaneOffsetInBounds =
     "asam.net:xosc:1.0.0:positioning.road_lane_offset_in_bounds";
 
+/// "When a `Waypoint` of a `Route` is ambiguous then the `Waypoint` can be
+/// defined in `Road` or `Lane` position types to be unambiguous."
+///
+/// Cited as a WARNING on a `<WorldPosition>` route waypoint (p8-s3, issue
+/// #247). Legal, and reported anyway: a world point where several lanes meet
+/// does not say which lane the route takes, so the same file routes differently
+/// in two simulators. RoadMaker itself only ever authors `<LanePosition>`
+/// waypoints, which is what makes a route survive an edit to the road beneath
+/// it — so this fires on foreign input, never on our own output.
+inline constexpr std::string_view kAmbiguousRouteWaypoints =
+    "asam.net:xosc:1.0.0:routing.ambiguous_route_waypoints";
+
+// `asam.net:xosc:1.0.0:routing.route_waypoints_locations` ("route waypoints
+// should not be located in junctions to avoid ambiguity") is deliberately NOT
+// declared here yet. It is not reachable from `validate_scenario` at all —
+// whether a road belongs to a junction is a fact about the `.xodr`, and a
+// `Scenario` holds only the roadId STRING (ADR-0014 §5) — so it belongs with
+// the network-aware checker in `osc/route.hpp`. Declaring it before something
+// cites it is exactly the decoration this file's header rules out, and
+// `XoscRules.EveryRuleConstantIsCitedBySomeFinding` enforces that.
+
 /// "Based on the determined version of the checked file (Element `FileHeader`,
 /// attributes `revMajor` and `revMinor`), it shall comply with the schema of
 /// the detected version."

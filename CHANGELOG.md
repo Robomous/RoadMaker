@@ -239,6 +239,27 @@ Current version on `main`: **0.0.1**.
     a scenario that gained a `<LongitudinalAction>` from merely being looked at
     would no longer re-save byte-identically. A speed defined relative to
     another entity is shown disabled rather than silently overwritten.
+- **Routes in the scenario model**
+  ([#247](https://github.com/Robomous/RoadMaker/issues/247), model + writer): the
+  kernel can hold and serialize `<RoutingAction><AssignRouteAction><Route>` with
+  its `<Waypoint>` list, so an actor can be given a path through the network
+  rather than only a starting pose. RoadMaker authors `<LanePosition>`
+  waypoints, which is what makes a route follow the roads beneath it through
+  later edits instead of staying behind in world space.
+  - **A `<CatalogReference>` route is kept, not replaced.** The inline `<Route>`
+    is an optional arm; an `<AssignRouteAction>` whose content this version does
+    not model rides the preserved tier whole, and no empty `<Route>` is invented
+    for it.
+  - **Refusals mirror the schema**: fewer than two waypoints ("at least two
+    waypoints are needed to define a route"), a nameless route, a duplicate
+    route name (citing `naming.unique_element_names_on_same_level`), a waypoint
+    with no `routeStrategy`. A waypoint's position is held to the **same**
+    road-relative checks an init teleport is, so a route cannot smuggle past
+    them a reference the placement layer would have refused.
+  - **A world-position waypoint warns rather than blocks**, citing
+    `routing.ambiguous_route_waypoints`: it is legal, and it does not say which
+    lane the route takes where several meet — so the same file routes
+    differently in two simulators.
 - **The esmini CI pin is honoured by a bump**
   ([#506](https://github.com/Robomous/RoadMaker/issues/506)): the cache key
   repeated the version as a literal instead of deriving it from

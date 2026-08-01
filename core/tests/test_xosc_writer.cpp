@@ -149,6 +149,37 @@ std::string written(const osc::Scenario& scenario, const osc::WriteOptions& opti
   return text ? *text : std::string{};
 }
 
+/// `minimal_scenario()` with a two-waypoint lane-anchored route assigned to
+/// Ego — the shape the editor authors (p8-s3, #247).
+osc::Scenario routed_scenario() {
+  osc::Scenario scenario = minimal_scenario();
+  osc::Route route;
+  route.name = "EgoRoute";
+  route.waypoints.push_back(
+      osc::RouteWaypoint{.route_strategy = std::string(osc::kDefaultRouteStrategy),
+                         .position = osc::LanePosition{.road_id = "1",
+                                                       .lane_id = "-1",
+                                                       .s = 5.0,
+                                                       .offset = 0.0,
+                                                       .orientation = std::nullopt,
+                                                       .preserved = {}},
+                         .preserved = {}});
+  route.waypoints.push_back(
+      osc::RouteWaypoint{.route_strategy = std::string(osc::kDefaultRouteStrategy),
+                         .position = osc::LanePosition{.road_id = "2",
+                                                       .lane_id = "-1",
+                                                       .s = 40.0,
+                                                       .offset = 0.0,
+                                                       .orientation = std::nullopt,
+                                                       .preserved = {}},
+                         .preserved = {}});
+  osc::PrivateAction routing;
+  routing.routing = osc::RoutingAction{
+      .assign_route = osc::AssignRouteAction{.route = route, .preserved = {}}, .preserved = {}};
+  scenario.storyboard.init.actions.privates[0].actions.push_back(routing);
+  return scenario;
+}
+
 } // namespace
 
 // --- the revision conditional ------------------------------------------------
@@ -638,6 +669,240 @@ TEST(XoscWriter, ANegativeTargetSpeedIsRefused) {
 
 // --- the rule catalogue ------------------------------------------------------
 
+// --- routes (p8-s3, #247) -----------------------------------------------------
+
+TEST(XoscWriter, ARouteIsEmittedInsideItsRoutingAction) {
+  const std::string text = written(routed_scenario());
+  const std::string_view routing = element_slice(text, "<RoutingAction>", "</RoutingAction>");
+  ASSERT_FALSE(routing.empty()) << text;
+
+  // NESTING, not mere presence: RoutingAction > AssignRouteAction > Route, each
+  // sliced inside the last. A flat search would pass on siblings.
+  const std::string routing_text{routing};
+  const std::string_view assign =
+      element_slice(routing_text, "<AssignRouteAction>", "</AssignRouteAction>");
+  ASSERT_FALSE(assign.empty()) << routing;
+  const std::string assign_text{assign};
+  const std::string_view route = element_slice(assign_text, "<Route ", "</Route>");
+  ASSERT_FALSE(route.empty()) << assign;
+
+  EXPECT_TRUE(contains(route, R"(name="EgoRoute")")) << route;
+  // @closed is REQUIRED with no default, so it is always emitted.
+  EXPECT_TRUE(contains(route, R"(closed="false")")) << route;
+}
+
+TEST(XoscWriter, EachWaypointCarriesItsStrategyAndItsPositionWrapper) {
+  const std::string text = written(routed_scenario());
+  const std::string_view route = element_slice(text, "<Route ", "</Route>");
+  ASSERT_FALSE(route.empty()) << text;
+  const std::string route_text{route};
+
+  const std::string_view first = element_slice(route_text, "<Waypoint ", "</Waypoint>");
+  ASSERT_FALSE(first.empty()) << route;
+  EXPECT_TRUE(contains(first, R"(routeStrategy="shortest")")) << first;
+  // The <Position> wrapper is not optional between a waypoint and its position:
+  // dropping it would emit a <LanePosition> the schema does not allow there.
+  const std::string first_text{first};
+  const std::string_view position = element_slice(first_text, "<Position>", "</Position>");
+  ASSERT_FALSE(position.empty()) << first;
+  EXPECT_TRUE(contains(position, R"(<LanePosition roadId="1" laneId="-1")")) << position;
+
+  // Both waypoints are emitted, IN ORDER. The second one starts after the
+  // first's close tag — searching from index 1 would re-find the first, which
+  // is a comparison that passes on a document holding only one waypoint.
+  const std::size_t first_start = route_text.find("<Waypoint ");
+  ASSERT_NE(first_start, std::string::npos) << route;
+  const std::size_t first_end = route_text.find("</Waypoint>", first_start);
+  ASSERT_NE(first_end, std::string::npos) << route;
+  const std::size_t second_start = route_text.find("<Waypoint ", first_end);
+  ASSERT_NE(second_start, std::string::npos) << route << "\nonly one waypoint was emitted";
+  EXPECT_LT(route_text.find(R"(roadId="1")"), second_start) << route;
+  EXPECT_GT(route_text.find(R"(roadId="2")"), second_start) << route;
+}
+
+// The XSD sequence is ParameterDeclarations? then Waypoint{2,}. A route that
+// declares parameters must emit them BEFORE its waypoints, or no schema-aware
+// reader accepts the document.
+TEST(XoscWriter, RouteParameterDeclarationsPrecedeTheWaypoints) {
+  osc::Scenario scenario = routed_scenario();
+  osc::Route& route =
+      *scenario.storyboard.init.actions.privates[0].actions[1].routing->assign_route->route;
+  route.parameter_declarations.push_back(osc::ParameterDeclaration{
+      .name = "Speed", .parameter_type = "double", .value = "13.9", .preserved = {}});
+
+  const std::string text = written(scenario);
+  const std::string_view route_slice = element_slice(text, "<Route ", "</Route>");
+  ASSERT_FALSE(route_slice.empty()) << text;
+  const std::string route_text{route_slice};
+  const std::size_t parameters = route_text.find("<ParameterDeclarations>");
+  const std::size_t waypoint = route_text.find("<Waypoint ");
+  ASSERT_NE(parameters, std::string::npos) << route_text;
+  ASSERT_NE(waypoint, std::string::npos) << route_text;
+  EXPECT_LT(parameters, waypoint) << route_text;
+}
+
+// ...and a route WITHOUT parameters emits no wrapper at all. The element is
+// 0..1, and an empty one is a child the input did not have — which is how a
+// round trip stops being a fixed point in bytes.
+TEST(XoscWriter, ARouteWithNoParametersEmitsNoParameterDeclarations) {
+  const std::string text = written(routed_scenario());
+  const std::string_view route = element_slice(text, "<Route ", "</Route>");
+  ASSERT_FALSE(route.empty()) << text;
+  EXPECT_FALSE(contains(route, "<ParameterDeclarations")) << route;
+}
+
+// The routing arm gets its OWN <PrivateAction> element, like the other two: the
+// schema's choice is per-element, so ONE action carrying all three arms becomes
+// three elements rather than one invalid one.
+//
+// ★ THE THREE ARMS ARE ON A SINGLE `PrivateAction` HERE, DELIBERATELY. Building
+// them as three separate actions would produce three elements no matter what
+// the writer did with the arms, so the assertion would hold on a writer that
+// nested routing inside the teleport's element — the exact defect it exists to
+// catch. A both-arms action is also unreachable from parsing (each
+// `<PrivateAction>` in a file holds exactly one child), so this writer test is
+// its ONLY guard.
+TEST(XoscWriter, TheRoutingArmGetsItsOwnPrivateActionElement) {
+  osc::Scenario scenario = routed_scenario();
+  osc::Private& ego = scenario.storyboard.init.actions.privates[0];
+  osc::PrivateAction all_three = ego.actions[0]; // the teleport
+  all_three.longitudinal = osc::LongitudinalAction{
+      .speed = osc::SpeedAction{.dynamics = {},
+                                .absolute_target =
+                                    osc::AbsoluteTargetSpeed{.value = 10.0, .preserved = {}},
+                                .target_preserved = {},
+                                .preserved = {}},
+      .preserved = {}};
+  all_three.routing = ego.actions[1].routing;
+  ego.actions.clear();
+  ego.actions.push_back(all_three);
+
+  const std::string text = written(scenario);
+  const std::string_view init = element_slice(text, "<Private ", "</Private>");
+  ASSERT_FALSE(init.empty()) << text;
+  const std::string init_text{init};
+  std::size_t count = 0;
+  for (std::size_t at = init_text.find("<PrivateAction>"); at != std::string::npos;
+       at = init_text.find("<PrivateAction>", at + 1)) {
+    ++count;
+  }
+  EXPECT_EQ(count, 3U) << init_text;
+  // ...and the routing is not nested inside the teleport's element.
+  const std::string_view first = element_slice(init_text, "<PrivateAction>", "</PrivateAction>");
+  ASSERT_FALSE(first.empty()) << init_text;
+  EXPECT_FALSE(contains(first, "<RoutingAction")) << first;
+}
+
+// ★ An <AssignRouteAction> whose content is a <CatalogReference> keeps it. The
+// route arm is an OPTIONAL, and emitting an empty <Route> for an unset one
+// would replace a legal catalog reference with an invalid element.
+TEST(XoscWriter, AnAssignRouteActionWithNoInlineRouteEmitsNoRoute) {
+  osc::Scenario scenario = minimal_scenario();
+  osc::AssignRouteAction assign;
+  assign.preserved.children.push_back(R"(<CatalogReference catalogName="Routes" entryName="R1"/>)");
+  osc::PrivateAction routing;
+  routing.routing = osc::RoutingAction{.assign_route = assign, .preserved = {}};
+  scenario.storyboard.init.actions.privates[0].actions.push_back(routing);
+
+  const std::string text = written(scenario);
+  const std::string_view action =
+      element_slice(text, "<AssignRouteAction>", "</AssignRouteAction>");
+  ASSERT_FALSE(action.empty()) << text;
+  EXPECT_FALSE(contains(action, "<Route")) << action;
+  EXPECT_TRUE(contains(action, R"(<CatalogReference catalogName="Routes")")) << action;
+}
+
+TEST(XoscWriter, ARouteWithFewerThanTwoWaypointsIsRefused) {
+  osc::Scenario scenario = routed_scenario();
+  osc::Route& route =
+      *scenario.storyboard.init.actions.privates[0].actions[1].routing->assign_route->route;
+  route.waypoints.pop_back();
+
+  const auto text = osc::write_xosc(scenario);
+  ASSERT_FALSE(text.has_value());
+  EXPECT_NE(text.error().message.find("at least two"), std::string::npos) << text.error().message;
+}
+
+TEST(XoscWriter, ARouteWithNoNameIsRefused) {
+  osc::Scenario scenario = routed_scenario();
+  scenario.storyboard.init.actions.privates[0]
+      .actions[1]
+      .routing->assign_route->route->name.clear();
+
+  const auto text = osc::write_xosc(scenario);
+  ASSERT_FALSE(text.has_value());
+  EXPECT_NE(text.error().message.find("no name"), std::string::npos) << text.error().message;
+}
+
+TEST(XoscWriter, TwoRoutesWithTheSameNameAreRefused) {
+  osc::Scenario scenario = routed_scenario();
+  // A second entity, routed under the SAME route name. Route names are siblings
+  // once flattened, and a simulator resolves a route by name.
+  osc::ScenarioObject other = scenario.entities.scenario_objects[0];
+  other.name = "Other";
+  scenario.entities.scenario_objects.push_back(other);
+  osc::Private other_init;
+  other_init.entity_ref = "Other";
+  other_init.actions.push_back(scenario.storyboard.init.actions.privates[0].actions[1]);
+  scenario.storyboard.init.actions.privates.push_back(other_init);
+
+  const auto text = osc::write_xosc(scenario);
+  ASSERT_FALSE(text.has_value());
+  EXPECT_NE(text.error().message.find("already declared"), std::string::npos)
+      << text.error().message;
+}
+
+TEST(XoscWriter, AWaypointWithNoRouteStrategyIsRefused) {
+  osc::Scenario scenario = routed_scenario();
+  scenario.storyboard.init.actions.privates[0]
+      .actions[1]
+      .routing->assign_route->route->waypoints[0]
+      .route_strategy.clear();
+
+  const auto text = osc::write_xosc(scenario);
+  ASSERT_FALSE(text.has_value());
+  EXPECT_NE(text.error().message.find("routeStrategy"), std::string::npos) << text.error().message;
+}
+
+// A waypoint's position is held to the SAME road-relative rules an init
+// teleport is: the check is shared, so a route cannot smuggle past it a
+// reference the placement layer would have refused.
+TEST(XoscWriter, ARouteWaypointWithNoRoadIdIsRefused) {
+  osc::Scenario scenario = routed_scenario();
+  std::get<osc::LanePosition>(scenario.storyboard.init.actions.privates[0]
+                                  .actions[1]
+                                  .routing->assign_route->route->waypoints[0]
+                                  .position)
+      .road_id.clear();
+
+  const auto text = osc::write_xosc(scenario);
+  ASSERT_FALSE(text.has_value());
+  EXPECT_NE(text.error().message.find("names no road"), std::string::npos) << text.error().message;
+}
+
+// A world-position waypoint is LEGAL and reported anyway: it does not say which
+// lane the route takes where several meet, so the same file routes differently
+// in two simulators. A warning, never a refusal.
+TEST(XoscWriter, AWorldPositionWaypointWarnsWithoutBlockingTheWrite) {
+  osc::Scenario scenario = routed_scenario();
+  scenario.storyboard.init.actions.privates[0]
+      .actions[1]
+      .routing->assign_route->route->waypoints[0]
+      .position = osc::WorldPosition{};
+
+  const std::vector<Diagnostic> findings = osc::validate_scenario(scenario);
+  const std::vector<Diagnostic> ambiguous =
+      findings_with_rule(findings, osc::rules::kAmbiguousRouteWaypoints);
+  ASSERT_EQ(ambiguous.size(), 1U) << findings.size();
+  EXPECT_EQ(ambiguous[0].severity, Severity::Warning);
+  EXPECT_TRUE(osc::write_xosc(scenario).has_value()) << "a warning must not block the write";
+}
+
+TEST(XoscWriter, WritingARouteIsDeterministic) {
+  const osc::Scenario scenario = routed_scenario();
+  EXPECT_EQ(written(scenario), written(scenario));
+}
+
 namespace {
 
 struct NamedRule {
@@ -663,6 +928,8 @@ constexpr NamedRule kRules[] = {
     {"kInvalidElementsIfNoRoadNetwork", osc::rules::kInvalidElementsIfNoRoadNetwork},
     {"kRoadLaneExists", osc::rules::kRoadLaneExists},
     {"kRoadLaneOffsetInBounds", osc::rules::kRoadLaneOffsetInBounds},
+    // p8-s3 (#247).
+    {"kAmbiguousRouteWaypoints", osc::rules::kAmbiguousRouteWaypoints},
 };
 
 std::vector<std::string_view> split(std::string_view text, char separator) {
@@ -783,6 +1050,24 @@ TEST(XoscRules, EveryRuleConstantIsCitedBySomeFinding) {
   stranded_lane.storyboard.init.actions.privates[0].actions[0].teleport->position =
       osc::LanePosition{.road_id = {}, .lane_id = {}, .s = -1.0, .offset = 0.0};
   provoking.push_back(stranded_lane);
+
+  // p8-s3 (#247): a route whose waypoints are world positions is the ambiguous
+  // case the routing rule names.
+  osc::Scenario ambiguous_route = minimal_scenario();
+  {
+    osc::Route route;
+    route.name = "AmbiguousRoute";
+    route.waypoints.push_back(
+        osc::RouteWaypoint{.route_strategy = std::string(osc::kDefaultRouteStrategy),
+                           .position = osc::WorldPosition{},
+                           .preserved = {}});
+    route.waypoints.push_back(route.waypoints.front());
+    osc::PrivateAction routing;
+    routing.routing = osc::RoutingAction{
+        .assign_route = osc::AssignRouteAction{.route = route, .preserved = {}}, .preserved = {}};
+    ambiguous_route.storyboard.init.actions.privates[0].actions.push_back(routing);
+  }
+  provoking.push_back(ambiguous_route);
 
   for (const osc::Scenario& scenario : provoking) {
     sweep(osc::validate_scenario(scenario));

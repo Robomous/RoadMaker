@@ -543,9 +543,94 @@ struct LongitudinalAction {
   RawXml preserved;
 };
 
-/// `<PrivateAction>` — §7.5, a ten-way choice of which this version models two
-/// arms: the teleport that places an entity and the longitudinal action that
-/// gives it an initial speed.
+/// `<Waypoint>` — §7.7, "reference position used to form a route" (p8-s3,
+/// issue #247).
+///
+/// ★ THE STRUCT IS `RouteWaypoint`, NEVER `Waypoint`, and that is forced rather
+/// than stylistic. `roadmaker::Waypoint` is the road-authoring node type
+/// (`road/authoring.hpp`), and an unqualified `Waypoint` declared inside
+/// `roadmaker::osc` would shadow it in exactly the translation unit that needs
+/// both — `osc/route.cpp`, which walks a route's waypoints across a network
+/// whose roads are shaped by authoring waypoints. This is the third name in
+/// this header the surrounding tree has already taken, after `signals` (a Qt
+/// macro) and `RoadNetwork` (the kernel's most central type); the rule those
+/// two established is that the ELEMENT keeps its schema name and the STRUCT
+/// gets an unambiguous one.
+struct RouteWaypoint {
+  /// `@routeStrategy` — REQUIRED (`use="required"`, no default), so this is a
+  /// plain value and not an optional. A free string for the reason
+  /// `Vehicle::category` and `TrafficSignalState::state` are: the enumeration is
+  /// {fastest, shortest, random, leastIntersections} today, and an unmodeled
+  /// spelling must round-trip rather than be rewritten into the nearest one this
+  /// build knows — the class of corruption #476 found in the OpenDRIVE writer.
+  ///
+  /// `kDefaultRouteStrategy` is what RoadMaker authors; nothing here narrows
+  /// what can be read.
+  std::string route_strategy;
+
+  /// `<Position>` — 1..1. The waypoints RoadMaker authors are
+  /// `<LanePosition>`s, which is what makes a route lane-anchored: the roads
+  /// beneath it can move and the route follows, because it names the lane rather
+  /// than a point in space (GW-6 step 7).
+  Position position;
+
+  RawXml preserved;
+};
+
+/// The `@routeStrategy` RoadMaker authors.
+///
+/// "shortest" rather than "fastest": a RoadMaker route names every lane it
+/// passes through, so there is nothing for a simulator to optimize between
+/// consecutive waypoints and the cheapest reading is the least surprising one.
+inline constexpr std::string_view kDefaultRouteStrategy = "shortest";
+
+/// `<Route>` — §7.7, "a continuous path throughout the road network, defined by
+/// a series of waypoints".
+struct Route {
+  /// `@name` — REQUIRED. "Required in catalogs", and required by the schema
+  /// everywhere else too (`use="required"`).
+  std::string name;
+
+  /// `@closed` — REQUIRED. "In a closed route, the last waypoint is followed by
+  /// the first waypoint to create a closed route."
+  bool closed = false;
+
+  std::vector<ParameterDeclaration> parameter_declarations;
+
+  /// `minOccurs="2"`: "at least two waypoints are needed to define a route."
+  /// The writer refuses a shorter one rather than emitting a `<Route>` no
+  /// schema-aware reader will accept.
+  std::vector<RouteWaypoint> waypoints;
+
+  RawXml preserved;
+};
+
+/// `<AssignRouteAction>` — §7.7, "controls an entity to follow a route using
+/// waypoints on the road network".
+///
+/// A choice of `<Route>` XOR `<CatalogReference>`. Only the inline route is
+/// modeled; a catalog reference rides `preserved.children` whole, exactly as an
+/// unmodeled entity object does. `route` is therefore an OPTIONAL rather than a
+/// value: unset means the action's content is entirely preserved, and the
+/// writer emits no `<Route>` for it — emitting an empty one would turn a legal
+/// catalog reference into an invalid document.
+struct AssignRouteAction {
+  std::optional<Route> route;
+  RawXml preserved;
+};
+
+/// `<RoutingAction>` — §7.7, a five-way choice of which this version models one
+/// arm: `<AssignRouteAction>`. `<FollowTrajectoryAction>`,
+/// `<AcquirePositionAction>`, `<RandomRouteAction>` and
+/// `<PreferredLaneLayerAction>` ride `preserved.children`.
+struct RoutingAction {
+  std::optional<AssignRouteAction> assign_route;
+  RawXml preserved;
+};
+
+/// `<PrivateAction>` — §7.5, a ten-way choice of which this version models three
+/// arms: the teleport that places an entity, the longitudinal action that gives
+/// it an initial speed, and the routing action that gives it a route.
 ///
 /// ★ ONE ELEMENT PER SET ARM. The schema's choice is per-`<PrivateAction>`, so
 /// the writer emits one `<PrivateAction>` per arm that is set: teleport-only and
@@ -562,6 +647,11 @@ struct LongitudinalAction {
 struct PrivateAction {
   std::optional<TeleportAction> teleport;
   std::optional<LongitudinalAction> longitudinal;
+
+  /// The routing arm (p8-s3, issue #247). Emitted AFTER the other two, matching
+  /// the order an actor is authored: placed, given a speed, then given a route.
+  std::optional<RoutingAction> routing;
+
   RawXml preserved;
 };
 

@@ -458,6 +458,58 @@ void write_longitudinal(pugi::xml_node action_node, const LongitudinalAction& lo
   write_preserved_children(node, longitudinal.preserved);
 }
 
+/// `<RoutingAction>` — p8-s3, issue #247.
+///
+/// The `<Route>` child order is the XSD sequence exactly:
+/// `<ParameterDeclarations>` (0..1) then `<Waypoint>` (2..*). Unlike the
+/// scenario-level `<ParameterDeclarations>`, which is part of the always-present
+/// skeleton, a route's is OPTIONAL — so it is emitted only when it has content.
+/// An empty one would be a child a foreign input did not have, and this writer's
+/// round trip is a fixed point measured in bytes.
+void write_routing(pugi::xml_node action_node, const RoutingAction& routing) {
+  pugi::xml_node node = action_node.append_child("RoutingAction");
+  write_preserved_attributes(node, routing.preserved);
+
+  if (routing.assign_route.has_value()) {
+    const AssignRouteAction& assign = *routing.assign_route;
+    pugi::xml_node assign_node = node.append_child("AssignRouteAction");
+    write_preserved_attributes(assign_node, assign.preserved);
+    // Unset `route` means the action's content is a <CatalogReference> riding
+    // the preserved tier. Emitting an empty <Route> here would replace a legal
+    // catalog reference with an invalid element.
+    if (assign.route.has_value()) {
+      const Route& route = *assign.route;
+      pugi::xml_node route_node = assign_node.append_child("Route");
+      route_node.append_attribute("name").set_value(route.name.c_str());
+      route_node.append_attribute("closed").set_value(route.closed);
+      write_preserved_attributes(route_node, route.preserved);
+      if (!route.parameter_declarations.empty()) {
+        pugi::xml_node parameters = route_node.append_child("ParameterDeclarations");
+        for (const ParameterDeclaration& parameter : route.parameter_declarations) {
+          pugi::xml_node parameter_node = parameters.append_child("ParameterDeclaration");
+          parameter_node.append_attribute("name").set_value(parameter.name.c_str());
+          parameter_node.append_attribute("parameterType")
+              .set_value(parameter.parameter_type.c_str());
+          parameter_node.append_attribute("value").set_value(parameter.value.c_str());
+          write_preserved_attributes(parameter_node, parameter.preserved);
+          write_preserved_children(parameter_node, parameter.preserved);
+        }
+      }
+      for (const RouteWaypoint& waypoint : route.waypoints) {
+        pugi::xml_node waypoint_node = route_node.append_child("Waypoint");
+        waypoint_node.append_attribute("routeStrategy").set_value(waypoint.route_strategy.c_str());
+        write_preserved_attributes(waypoint_node, waypoint.preserved);
+        write_position(waypoint_node, waypoint.position);
+        write_preserved_children(waypoint_node, waypoint.preserved);
+      }
+      write_preserved_children(route_node, route.preserved);
+    }
+    write_preserved_children(assign_node, assign.preserved);
+  }
+
+  write_preserved_children(node, routing.preserved);
+}
+
 /// One `PrivateAction` — ONE `<PrivateAction>` ELEMENT PER SET ARM.
 ///
 /// The schema's choice is per-element, so an action carrying both a teleport
@@ -490,6 +542,12 @@ void write_private_action(pugi::xml_node private_node, const PrivateAction& acti
     pugi::xml_node node;
     open(node);
     write_longitudinal(node, *action.longitudinal);
+    close(node);
+  }
+  if (action.routing.has_value()) {
+    pugi::xml_node node;
+    open(node);
+    write_routing(node, *action.routing);
     close(node);
   }
   if (!preserved_written) {
@@ -756,6 +814,61 @@ void check_road_relative_position(std::vector<Diagnostic>& findings,
   }
 }
 
+/// One `<Route>` (p8-s3, issue #247), and the route names already seen in this
+/// document — `@name` must be unique among siblings, and every route this
+/// version writes is a sibling of every other because they all hang off
+/// `<Init>`.
+void check_route(std::vector<Diagnostic>& findings,
+                 std::set<std::string>& route_names,
+                 const Route& route,
+                 bool has_logic_file,
+                 const std::string& location) {
+  // No rule id for the missing name: `use="required"` is a schema constraint,
+  // not one of Annex C's checker rules, and citing a UID that does not cover it
+  // would be worse than citing none.
+  if (route.name.empty()) {
+    findings.push_back(error(location, "<Route> has no name, which the schema requires"));
+  } else if (!route_names.insert(route.name).second) {
+    findings.push_back(error(location,
+                             fmt::format("a route named '{}' is already declared", route.name),
+                             rules::kUniqueElementNames));
+  }
+  if (route.waypoints.size() < 2) {
+    // minOccurs="2": "at least two waypoints are needed to define a route".
+    // Refused rather than padded — a one-waypoint route names a destination and
+    // no origin, and inventing the missing end is not this writer's call.
+    findings.push_back(
+        error(location,
+              fmt::format("<Route> has {} waypoint(s); at least two are needed to define one",
+                          route.waypoints.size())));
+  }
+  for (std::size_t index = 0; index < route.waypoints.size(); ++index) {
+    const RouteWaypoint& waypoint = route.waypoints[index];
+    const std::string waypoint_location = fmt::format("{}/Waypoint[{}]", location, index);
+    if (waypoint.route_strategy.empty()) {
+      findings.push_back(
+          error(waypoint_location, "<Waypoint> has no routeStrategy, which the schema requires"));
+    }
+    // "When a Waypoint of a Route is ambiguous then the Waypoint can be defined
+    // in Road or Lane position types to be unambiguous." A <WorldPosition>
+    // waypoint is the ambiguous case the rule names — a WARNING, not an error:
+    // it is legal, it is merely how a route stops being reproducible.
+    if (std::holds_alternative<WorldPosition>(waypoint.position)) {
+      findings.push_back(
+          Diagnostic{.severity = Severity::Warning,
+                     .location = waypoint_location + "/Position/WorldPosition",
+                     .message = "a route waypoint given as a world position is ambiguous where "
+                                "several lanes meet; a <RoadPosition> or <LanePosition> names "
+                                "which one",
+                     .rule_id = std::string(rules::kAmbiguousRouteWaypoints),
+                     .road = {},
+                     .lane = {}});
+    }
+    check_road_relative_position(
+        findings, waypoint.position, has_logic_file, waypoint_location + "/Position");
+  }
+}
+
 void check_storyboard(std::vector<Diagnostic>& findings, const Scenario& scenario) {
   std::set<std::string> entity_names;
   for (const ScenarioObject& object : scenario.entities.scenario_objects) {
@@ -763,6 +876,9 @@ void check_storyboard(std::vector<Diagnostic>& findings, const Scenario& scenari
   }
 
   const bool has_logic_file = scenario.road_network.logic_file.has_value();
+  // Route names are unique across the whole init block, not per entity: they
+  // are siblings once flattened, and a simulator resolves a route by name.
+  std::set<std::string> route_names;
   const auto& privates = scenario.storyboard.init.actions.privates;
   for (std::size_t index = 0; index < privates.size(); ++index) {
     const std::string location = fmt::format("Storyboard/Init/Actions/Private[{}]", index);
@@ -791,6 +907,14 @@ void check_storyboard(std::vector<Diagnostic>& findings, const Scenario& scenari
                                     "AbsoluteTargetSpeed",
                   fmt::format("target speed {} is negative",
                               num(action.longitudinal->speed->absolute_target->value))));
+      }
+      if (action.routing.has_value() && action.routing->assign_route.has_value() &&
+          action.routing->assign_route->route.has_value()) {
+        check_route(findings,
+                    route_names,
+                    *action.routing->assign_route->route,
+                    has_logic_file,
+                    action_location + "/RoutingAction/AssignRouteAction/Route");
       }
     }
 
