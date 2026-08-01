@@ -23,6 +23,8 @@
 #include "roadmaker/edit/connection.hpp"
 #include "roadmaker/edit/operations.hpp"
 #include "roadmaker/edit/snap.hpp"
+#include "roadmaker/osc/catalog.hpp"
+#include "roadmaker/osc/edit.hpp"
 #include "roadmaker/road/object.hpp"
 #include "roadmaker/tol.hpp"
 #include "roadmaker/xodr/writer.hpp"
@@ -50,6 +52,7 @@ using roadmaker::editor::Document;
 using roadmaker::editor::PickHit;
 using roadmaker::editor::SelectionEntry;
 using roadmaker::editor::SelectionModel;
+using roadmaker::editor::SelectMode;
 using roadmaker::editor::SelectTool;
 using roadmaker::editor::ToolEvent;
 
@@ -398,7 +401,7 @@ TEST(SelectTool, PreviewShowsHandlesForSelectedRoads) {
 
   // A lane entry of the other road adds ITS road's handles once.
   scene.selection.select({.road = scene.other, .lane = scene.hit(scene.other).lane},
-                         roadmaker::editor::SelectMode::Add);
+                         SelectMode::Add);
   EXPECT_EQ(tool.preview().handles.size(), 5U); // 3 + 2 waypoints
 }
 
@@ -522,8 +525,7 @@ TEST(SelectTool, BodyDragMovesEverySelectedRoadTogether) {
   Scene scene;
   SelectTool tool(scene.document, scene.selection);
   scene.selection.select({.road = scene.dragged, .lane = LaneId{}});
-  scene.selection.select({.road = scene.other, .lane = LaneId{}},
-                         roadmaker::editor::SelectMode::Add);
+  scene.selection.select({.road = scene.other, .lane = LaneId{}}, SelectMode::Add);
   const Waypoint dragged_before = node(scene.document, scene.dragged, 0);
   const Waypoint other_before = node(scene.document, scene.other, 0);
 
@@ -856,4 +858,107 @@ TEST(SelectTool, DoubleClickOnBodyInsertsABendAndRequestsEditNodes) {
   EXPECT_EQ(emitted, 1);
   EXPECT_EQ(requested_road, scene.dragged);
   EXPECT_LT(requested_index, before + 1);
+}
+
+// --- Delete routing for scenario actors (#246, GW-6 step 4) ------------------
+//
+// An actor is not arena content: it lives in the `.xosc` and is keyed by
+// `<ScenarioObject @name>`. Delete must therefore reach a SECOND command layer
+// (osc::edit) that shares the same undo stack — which is what makes a mixed
+// road+actor selection one undo step rather than two.
+
+namespace {
+
+/// Places `name` on `road`'s lane -1, as ONE scenario command — exactly what
+/// the Actor tool pushes for a single click.
+void place_actor(Document& document, RoadId road, const std::string& name) {
+  const roadmaker::Road* road_ptr = document.network().road(road);
+  ASSERT_NE(road_ptr, nullptr);
+  roadmaker::osc::LanePosition lane;
+  lane.road_id = road_ptr->odr_id;
+  lane.lane_id = "-1";
+  lane.s = 10.0;
+  ASSERT_TRUE(document
+                  .push_scenario_command(roadmaker::osc::edit::place_scenario_object(
+                      document.scenario(),
+                      roadmaker::osc::make_actor(roadmaker::osc::ActorKind::Car, name),
+                      roadmaker::osc::Position{lane}))
+                  .has_value());
+}
+
+[[nodiscard]] bool has_actor(const Document& document, const std::string& name) {
+  for (const roadmaker::osc::ScenarioObject& object :
+       document.scenario().entities.scenario_objects) {
+    if (object.name == name) {
+      return true;
+    }
+  }
+  return false;
+}
+
+} // namespace
+
+TEST(SelectTool, DeleteRemovesASelectedActorAndUndoRestoresIt) {
+  Scene scene;
+  place_actor(scene.document, scene.dragged, "Car1");
+  const int after_place = scene.document.undo_stack()->count();
+  SelectTool tool(scene.document, scene.selection);
+  scene.selection.select(SelectionEntry{.actor = "Car1"});
+
+  ASSERT_TRUE(tool.key_press(Qt::Key_Delete, Qt::NoModifier));
+  EXPECT_FALSE(has_actor(scene.document, "Car1"));
+  // The <Private> went with it — leaving it would be a dangling entityRef that
+  // write_xosc refuses, i.e. a removal that made the document unsavable.
+  EXPECT_TRUE(scene.document.scenario().storyboard.init.actions.privates.empty());
+  EXPECT_EQ(scene.document.undo_stack()->count(), after_place + 1);
+
+  scene.document.undo_stack()->undo();
+  EXPECT_TRUE(has_actor(scene.document, "Car1"));
+  EXPECT_EQ(scene.document.scenario().storyboard.init.actions.privates.size(), 1U);
+}
+
+// ★ Deleting an actor must not touch the road it stands on. The two are
+// different documents; a Delete that cascaded from one to the other would be
+// the same conflation GW-6 step 4 rules out for selection.
+TEST(SelectTool, DeletingAnActorLeavesTheRoadBeneathItAlone) {
+  Scene scene;
+  place_actor(scene.document, scene.dragged, "Car1");
+  SelectTool tool(scene.document, scene.selection);
+  scene.selection.select(SelectionEntry{.actor = "Car1"});
+
+  ASSERT_TRUE(tool.key_press(Qt::Key_Delete, Qt::NoModifier));
+  EXPECT_EQ(xodr(scene.document), scene.base_xodr);
+}
+
+// A mixed selection is ONE macro: one Ctrl+Z restores both halves, even though
+// they are pushed through two different command layers.
+TEST(SelectTool, DeletingARoadAndAnActorTogetherIsOneUndoStep) {
+  Scene scene;
+  place_actor(scene.document, scene.dragged, "Car1");
+  const int after_place = scene.document.undo_stack()->count();
+  SelectTool tool(scene.document, scene.selection);
+  scene.selection.select(SelectionEntry{.road = scene.other});
+  scene.selection.select(SelectionEntry{.actor = "Car1"}, SelectMode::Add);
+
+  ASSERT_TRUE(tool.key_press(Qt::Key_Delete, Qt::NoModifier));
+  EXPECT_FALSE(has_actor(scene.document, "Car1"));
+  EXPECT_EQ(scene.document.network().road(scene.other), nullptr);
+  EXPECT_EQ(scene.document.undo_stack()->count(), after_place + 1) << "not one macro";
+
+  scene.document.undo_stack()->undo();
+  EXPECT_TRUE(has_actor(scene.document, "Car1"));
+  EXPECT_NE(scene.document.network().road(scene.other), nullptr);
+}
+
+// An empty selection still deletes nothing — the guard that keeps Delete inert
+// rather than throwing on a selection that carries neither ids nor a name.
+TEST(SelectTool, DeleteWithNothingSelectedPushesNothing) {
+  Scene scene;
+  place_actor(scene.document, scene.dragged, "Car1");
+  const int after_place = scene.document.undo_stack()->count();
+  SelectTool tool(scene.document, scene.selection);
+
+  EXPECT_FALSE(tool.key_press(Qt::Key_Delete, Qt::NoModifier));
+  EXPECT_EQ(scene.document.undo_stack()->count(), after_place);
+  EXPECT_TRUE(has_actor(scene.document, "Car1"));
 }
