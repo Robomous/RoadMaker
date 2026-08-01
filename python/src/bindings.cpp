@@ -700,6 +700,35 @@ NB_MODULE(_roadmaker, m) {
                ", length=" + std::to_string(bridge.length) + ")";
       });
 
+  // Direct junctions (§12.4, #534). A direct junction has NO connecting road:
+  // each connection carries a linked road instead, so these ride their own list
+  // and `Junction.connections` stays empty for them.
+  nb::enum_<roadmaker::JunctionType>(m, "JunctionType")
+      .value("DEFAULT", roadmaker::JunctionType::Default)
+      .value("DIRECT", roadmaker::JunctionType::Direct)
+      .value("VIRTUAL", roadmaker::JunctionType::Virtual)
+      .value("CROSSING", roadmaker::JunctionType::Crossing);
+
+  nb::class_<roadmaker::DirectLaneLink>(m, "DirectLaneLink")
+      .def_ro("from_lane", &roadmaker::DirectLaneLink::from, "@from — the incoming lane id.")
+      .def_ro("to_lane", &roadmaker::DirectLaneLink::to, "@to — the linked lane id.")
+      .def_ro("from_layer", &roadmaker::DirectLaneLink::from_layer, "@fromLayer, verbatim.")
+      .def_ro("to_layer", &roadmaker::DirectLaneLink::to_layer, "@toLayer, verbatim.")
+      .def_ro("overlap_zone",
+              &roadmaker::DirectLaneLink::overlap_zone,
+              "@overlapZone [m] — where the two merging lanes share space. None "
+              "when absent; the spec's default of 100 is not materialised.");
+
+  nb::class_<roadmaker::DirectConnection>(m, "DirectConnection")
+      .def_ro("odr_id", &roadmaker::DirectConnection::odr_id)
+      .def_ro("incoming_road", &roadmaker::DirectConnection::incoming_road)
+      .def_ro("linked_road",
+              &roadmaker::DirectConnection::linked_road,
+              "@linkedRoad — a direct junction links roads straight to each "
+              "other, with no connecting road in between.")
+      .def_ro("contact_point", &roadmaker::DirectConnection::contact_point)
+      .def_ro("lane_links", &roadmaker::DirectConnection::lane_links);
+
   nb::class_<roadmaker::JunctionConnection>(m, "JunctionConnection")
       .def_ro("incoming_road", &roadmaker::JunctionConnection::incoming_road)
       .def_ro("connecting_road", &roadmaker::JunctionConnection::connecting_road)
@@ -906,6 +935,17 @@ NB_MODULE(_roadmaker, m) {
       .def_ro("odr_id", &roadmaker::Junction::odr_id)
       .def_ro("name", &roadmaker::Junction::name)
       .def_ro("connections", &roadmaker::Junction::connections)
+      .def_ro("type",
+              &roadmaker::Junction::type,
+              "@type (§12). DEFAULT when the attribute is absent, which is what "
+              "the spec says it means.")
+      .def_ro("type_str",
+              &roadmaker::Junction::type_str,
+              "@type exactly as spelled; empty when absent.")
+      .def_ro("direct_connections",
+              &roadmaker::Junction::direct_connections,
+              "<connection> elements of a DIRECT junction (§12.4). Empty for "
+              "every other type; `connections` is empty for a direct one.")
       .def_ro("arms", &roadmaker::Junction::arms)
       .def_ro("corners",
               &roadmaker::Junction::corners,

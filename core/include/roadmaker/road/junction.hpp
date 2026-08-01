@@ -31,6 +31,78 @@ namespace roadmaker {
 
 /// One allowed route through a junction: an incoming road continues onto a
 /// connecting road, with per-lane linkage.
+/// `e_junctionType` (§12, Table 60) — what kind of junction this is.
+///
+/// `Default` is what an absent `@type` means, which is why it is the default
+/// here and why the writer omits the attribute for it. RoadMaker AUTHORS only
+/// `Default` and `Virtual`; `Direct` and `Crossing` arrive from files and are
+/// carried faithfully rather than rewritten (#534).
+enum class JunctionType {
+  Default,
+  Direct,
+  Virtual,
+  Crossing,
+};
+
+/// One `<laneLink>` of a direct junction's `<connection>` (§12.4, Table 68).
+///
+/// Separate from the common junction's plain `{from, to}` pair because a direct
+/// junction's lane links carry three more attributes, one of which —
+/// `@overlapZone` — is the whole point of the element: it is where traffic from
+/// the two merging lanes shares space.
+struct DirectLaneLink {
+  int from = 0;
+  int to = 0;
+
+  /// `@fromLayer` / `@toLayer` (`e_layerType`) verbatim; empty when absent,
+  /// which §12 makes `permanent`.
+  std::string from_layer;
+  std::string to_layer;
+
+  /// `@overlapZone` [m] — the length over which the two lanes share space
+  /// (§12.4 Table 68, introduced 1.8.0). Unset when absent; the spec's stated
+  /// default of 100 is deliberately NOT materialised, so an absent attribute
+  /// round-trips absent. `junctions.common.direct_junction_attributes` makes it
+  /// direct-only.
+  std::optional<double> overlap_zone;
+
+  friend bool operator==(const DirectLaneLink&, const DirectLaneLink&) = default;
+};
+
+/// One `<connection>` of a **direct** junction (§12.4, Table 67).
+///
+/// A direct junction splits or merges roads with no connecting road at all: the
+/// incoming road links straight to `@linkedRoad`. That is why these cannot ride
+/// `JunctionConnection`, whose `connecting_road` is the thing a direct junction
+/// does not have — and why the reader used to skip every one of them with the
+/// misleading warning *"connection references unknown road ''"*, leaving a
+/// plain common junction with zero connections on save (#534).
+///
+/// Held in their own list so the derived machinery — corners, floor, maneuvers,
+/// all of which walk `connections` looking for connecting roads — sees a direct
+/// junction as having none, which is exactly right: there is no connecting road
+/// to fillet, pave or turn along.
+struct DirectConnection {
+  /// `@id` — unique within the junction, kept verbatim (it is a string, and
+  /// RoadMaker does not renumber a foreign file's connections).
+  std::string odr_id;
+
+  /// `@incomingRoad`. Optional in the schema but required for every junction
+  /// type except virtual.
+  RoadId incoming_road;
+
+  /// `@linkedRoad` — the directly linked road. Required for a direct junction
+  /// and forbidden anywhere else
+  /// (`asam.net:xodr:1.7.0:junctions.direct.correct_type_linked_road_usage`).
+  RoadId linked_road;
+
+  /// `@contactPoint` on the linked road. Optional in the schema; unset when the
+  /// file omitted it, so it round-trips absent.
+  std::optional<ContactPoint> contact_point;
+
+  std::vector<DirectLaneLink> lane_links;
+};
+
 struct JunctionConnection {
   RoadId incoming_road;
 
@@ -399,6 +471,32 @@ struct Junction {
   std::string name;
 
   std::vector<JunctionConnection> connections;
+
+  /// `@type` (§12, Table 60). Read and written for every kind (#534).
+  ///
+  /// Before #534 the reader consulted `@type` only to test `== "virtual"`, so a
+  /// `direct` or `crossing` junction lost its type silently and was written back
+  /// as a common junction — which, for a direct junction whose connections had
+  /// also been skipped, meant an EMPTY common junction: its topology destroyed,
+  /// not merely degraded.
+  ///
+  /// Note this does not replace the derived-state rules below; it is orthogonal.
+  /// `Virtual` is still recognised by `!spans.empty()`, and this field agrees
+  /// with it.
+  JunctionType type = JunctionType::Default;
+
+  /// `@type` exactly as spelled; empty when absent or when RoadMaker authored
+  /// the junction. Same contract as `Lane::type_str` (#476): an unknown
+  /// spelling parses to `Default`, and the writer omits `@type` for `Default` —
+  /// so without the verbatim string the attribute would be DELETED rather than
+  /// merely defaulted.
+  std::string type_str;
+
+  /// `<connection>` elements of a **direct** junction (§12.4). Non-empty only
+  /// when `type == JunctionType::Direct`; a direct junction's connections have
+  /// no connecting road, so they cannot live in `connections` and the derived
+  /// machinery correctly finds nothing to build.
+  std::vector<DirectConnection> direct_connections;
 
   /// The road ends this junction was generated from, in selection order —
   /// the deterministic input the connecting-road generator re-runs from on
