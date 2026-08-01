@@ -1323,6 +1323,29 @@ Current version on `main`: **0.0.1**.
   about silently never matched.
 
 ### Fixed
+- **A file whose lane geometry is authored with `<border>` no longer loses all
+  of it** ([#538](https://github.com/Robomous/RoadMaker/issues/538)). `<border>`
+  (§11.7.2) is OpenDRIVE's *alternative encoding* of the geometry RoadMaker
+  already models — the lane's outer `t`-limit instead of its width. The reader
+  warned about it once and dropped it, and the lane preserved tier excluded it
+  as well, so a border-authored lane arrived with **no widths at all**: it hit
+  the "non-center lane without `<width>`" warning, meshed at zero width, and was
+  written back width-less. Whole-carriageway geometry loss, not markup loss.
+
+  Borders are now **converted to widths on read**. A lane's width is the gap
+  between its own border and that of the next lane inward, and the conversion is
+  exact rather than sampled: a difference of two cubics is a cubic, so the result
+  breaks at the *union* of both profiles' `sOffset` stations with each operand
+  re-based onto that segment's own origin. That union matters — a lane whose own
+  border never breaks still has to break where its inner neighbour's does, or it
+  will not narrow as the lane beside it widens.
+
+  Consequences worth knowing: a border-authored file is written back using
+  `<width>`, so the geometry is identical but the encoding is not — the two are
+  mutually exclusive under §11.7.2 and cannot both be emitted. Where a file
+  declares both for one lane, the `<width>` wins (as §11.7.2 requires) and the
+  ignored border is reported. Combining `<border>` with `<laneOffset>`, which the
+  standard forbids, is diagnosed instead of being silently reinterpreted.
 - **A left-hand-traffic network no longer becomes right-hand traffic on save**
   ([#535](https://github.com/Robomous/RoadMaker/issues/535)). `<road @rule>`
   (§10.2) was read nowhere: the parser had no attribute sweep on `<road>` at

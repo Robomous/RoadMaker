@@ -102,9 +102,19 @@ branch on the primitive type. Clothoid evaluation and continuity rules:
 - The t coordinate of lane boundary *k* is:
   `t_k(s) = laneOffset(s) ± Σ widths of lanes between 0 and k` — summed
   outward and signed by side (+ left, − right).
-- The `<border>` alternative to `<width>` is **not supported yet**: the
-  parser emits a warn-once diagnostic and ignores the element — never a
-  silent drop.
+- `<border>` (§11.7.2) is the **alternative encoding** of the same geometry:
+  it gives a lane's *outer* t-limit rather than its width, so the width is
+  the gap between a lane's border and that of the next lane inward (`|id|`
+  one smaller; the centre for `|id| == 1`). The two are mutually exclusive,
+  and where a file declares both, §11.7.2 says `<width>` wins.
+  - The reader **converts borders to widths on load**, so the model holds one
+    encoding only. The conversion is exact: a difference of two cubics is a
+    cubic, and the result breaks at the union of both profiles' `sOffset`
+    stations with each operand re-based onto the segment's own origin.
+  - This means a border-authored file is written back using `<width>` — the
+    geometry is identical, the encoding is not.
+  - `<border>` also excludes `<laneOffset>`; a file that combines them is
+    diagnosed rather than silently reinterpreted.
 
 ## Road marks
 

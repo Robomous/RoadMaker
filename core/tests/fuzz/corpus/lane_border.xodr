@@ -1,0 +1,94 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- VALID seed: lane geometry authored with <border> instead of <width> (#538).
+
+     §11.7.2 makes <border> the alternative encoding of lane geometry: it gives
+     the lane's OUTER t-limit rather than its width, so a lane's width is the
+     gap between its own border and the next lane inward's. The two encodings
+     are mutually exclusive.
+
+     Before #538 the reader warned once and dropped every <border>, and the
+     lane preserved tier explicitly excluded them too — so a border-authored
+     lane ended up with NO widths at all: it meshed at zero width and was
+     written back width-less. That is geometry loss, not markup loss.
+
+     Road 1, left side — the plain case:
+       lane  1: border  3.5           -> width 3.5
+       lane  2: border  7.0           -> width 3.5  (7.0 - 3.5)
+
+     Road 1, right side — the case that needs the UNION of breakpoints:
+       lane -1: border -3.5, one record             -> width 3.5
+       lane -2: border -7.0, TWO records; constant
+                until s=50, then widening           -> 3.5, then 3.5 + 0.02*ds
+       lane -3: border -9.0, ONE record, constant   -> 2.0, then 2.0 - 0.02*ds
+
+     Lane -3 is the point. Its own border never breaks, but its INNER
+     neighbour's does, so its width must break at s=50 too and start narrowing
+     as lane -2 widens beneath it. A conversion that only honoured the lane's
+     own breakpoints would emit one constant 2.0 record and be wrong over the
+     whole second half.
+
+     Road 2 is the precedence case: one lane carries BOTH <width> and <border>.
+     §11.7.2 — "the application shall use the information from the <width>
+     elements" — so the width wins and the border is reported as ignored. The
+     border is absurd (-99) precisely so a build that used it could not pass.
+
+     Apache-2.0. -->
+<OpenDRIVE>
+  <header revMajor="1" revMinor="8" name="lane_border" vendor="RoadMaker" />
+  <road name="bordered" length="100" id="1" junction="-1">
+    <planView>
+      <geometry s="0" x="0" y="0" hdg="0" length="100">
+        <line />
+      </geometry>
+    </planView>
+    <lanes>
+      <laneSection s="0">
+        <left>
+          <lane id="2" type="driving" level="false">
+            <border sOffset="0" a="7.0" b="0" c="0" d="0" />
+          </lane>
+          <lane id="1" type="driving" level="false">
+            <border sOffset="0" a="3.5" b="0" c="0" d="0" />
+          </lane>
+        </left>
+        <center>
+          <lane id="0" type="none" level="false">
+            <roadMark sOffset="0" type="broken" color="white" width="0.15" />
+          </lane>
+        </center>
+        <right>
+          <lane id="-1" type="driving" level="false">
+            <border sOffset="0" a="-3.5" b="0" c="0" d="0" />
+          </lane>
+          <lane id="-2" type="driving" level="false">
+            <border sOffset="0" a="-7.0" b="0" c="0" d="0" />
+            <border sOffset="50" a="-7.0" b="-0.02" c="0" d="0" />
+          </lane>
+          <lane id="-3" type="shoulder" level="false">
+            <border sOffset="0" a="-9.0" b="0" c="0" d="0" />
+          </lane>
+        </right>
+      </laneSection>
+    </lanes>
+  </road>
+  <road name="both_encodings" length="80" id="2" junction="-1">
+    <planView>
+      <geometry s="0" x="0" y="40" hdg="0" length="80">
+        <line />
+      </geometry>
+    </planView>
+    <lanes>
+      <laneSection s="0">
+        <center>
+          <lane id="0" type="none" level="false" />
+        </center>
+        <right>
+          <lane id="-1" type="driving" level="false">
+            <width sOffset="0" a="3.0" b="0" c="0" d="0" />
+            <border sOffset="0" a="-99.0" b="0" c="0" d="0" />
+          </lane>
+        </right>
+      </laneSection>
+    </lanes>
+  </road>
+</OpenDRIVE>
