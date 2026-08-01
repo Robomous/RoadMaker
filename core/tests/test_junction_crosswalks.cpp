@@ -351,7 +351,13 @@ TEST(JunctionCenterMarks, PushedThroughSetRoadMarkTheyReachTheFileAndUndoCleanly
   EXPECT_NE(written->find("type=\"solid solid\""), std::string::npos);
   EXPECT_NE(written->find("color=\"yellow\""), std::string::npos);
   // Bare mark: the compact single-@width form, no <type>/<line> block.
-  EXPECT_EQ(written->find("<type"), std::string::npos);
+  //
+  // Matched on `<type name=`, NOT on a bare `<type` — since #454 a road also
+  // carries a `<type s= type=>` record stamped from its class, and a substring
+  // search for `<type` finds that instead. The roadMark's own block is the one
+  // with @name (§11.9.1 Table 49), which the road-level record never has.
+  // (`<line` is no good either: every planView geometry emits one.)
+  EXPECT_EQ(written->find("<type name="), std::string::npos);
 
   // Undo is byte-identical, reverting in reverse push order.
   for (auto& command : std::ranges::reverse_view(pushed)) {

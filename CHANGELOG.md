@@ -19,6 +19,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 Current version on `main`: **0.0.1**.
 
 ### Added
+- **An authored road now says what kind of road it is**
+  ([#454](https://github.com/Robomous/RoadMaker/issues/454)). The model, reader
+  and writer for OpenDRIVE `<type>`/`<speed>` landed earlier, and
+  `realism_defaults.md` §1.7 already bound each road class to an `e_roadType`
+  literal — but nothing applied that binding at authoring time, so the mapping
+  had exactly two callers (the OSM importer and the doc generator) and a road
+  drawn as a freeway exported indistinguishable from a local street.
+
+  `LaneProfile` and `RoadStyle` now carry the road class they represent, so
+  `author_clothoid_road` stamps the road's `<type>` at `s = 0` and
+  `edit::apply_road_style` rewrites it when the road is restyled. The class tag
+  is **optional**: only the four named templates set it, and a profile or style
+  assembled by hand stamps nothing — a bespoke cross section is not entitled to
+  claim it is a `motorway`, and this is also what keeps every hand-built fixture
+  byte-identical.
+
+  A restyle changes `@type` and **nothing else**: the old record's `@country`,
+  its `<speed>` and any preserved extras are carried across. That follows from
+  §1.7's standing decision that there is deliberately no per-class default
+  speed — if no class supplies a limit, no class may destroy one either. No new
+  default values were introduced, so the realism-defaults divergence test is
+  unchanged.
 - **An OpenSCENARIO scenario model, reader and writer**
   ([#245](https://github.com/Robomous/RoadMaker/issues/245), kernel half): the
   kernel can hold a `.xosc` document — file header, road-network reference,

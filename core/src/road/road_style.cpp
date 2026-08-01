@@ -67,7 +67,10 @@ RoadStyle RoadStyle::freeway() {
         driving(lane, solid_white()),
         plain(LaneType::Shoulder, defaults::kFreewayRightShoulderWidth)};
   };
-  return RoadStyle{.left = side(), .right = side(), .center_mark = std::nullopt};
+  return RoadStyle{.left = side(),
+                   .right = side(),
+                   .center_mark = std::nullopt,
+                   .road_class = defaults::RoadClass::Freeway};
 }
 
 RoadStyle RoadStyle::arterial() {
@@ -81,6 +84,7 @@ RoadStyle RoadStyle::arterial() {
       .left = side(),
       .right = side(),
       .center_mark = RoadMark{.type = RoadMarkType::SolidSolid, .color = RoadMarkColor::Yellow},
+      .road_class = defaults::RoadClass::Arterial,
   };
 }
 
@@ -90,6 +94,7 @@ RoadStyle RoadStyle::collector() {
       .left = {driving(lane, solid_white())},
       .right = {driving(lane, solid_white()), plain(LaneType::Shoulder, defaults::kShoulderWidth)},
       .center_mark = broken_yellow(),
+      .road_class = defaults::RoadClass::Collector,
   };
 }
 
@@ -99,7 +104,10 @@ RoadStyle RoadStyle::local_road() {
     return std::vector<StyleLane>{driving(lane, std::nullopt),
                                   plain(LaneType::Sidewalk, defaults::kSidewalkWidth)};
   };
-  return RoadStyle{.left = side(), .right = side(), .center_mark = std::nullopt};
+  return RoadStyle{.left = side(),
+                   .right = side(),
+                   .center_mark = std::nullopt,
+                   .road_class = defaults::RoadClass::Local};
 }
 
 RoadStyle RoadStyle::urban_two_lane() {

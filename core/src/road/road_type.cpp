@@ -54,4 +54,15 @@ bool is_known_speed_unit(std::string_view unit) {
   return std::ranges::find(kSpeedUnits, unit) != kSpeedUnits.end();
 }
 
+RoadTypeRecord road_type_for_class(defaults::RoadClass road_class,
+                                   const RoadTypeRecord* carry_over) {
+  // Start from what the road already said, so a restyle rewrites only the one
+  // thing the class actually determines. `@country`, the `<speed>` and any
+  // preserved extras are facts about THIS ROAD that no class knows.
+  RoadTypeRecord record = carry_over != nullptr ? *carry_over : RoadTypeRecord{};
+  record.s = 0.0;
+  record.type = defaults::road_type_name(road_class);
+  return record;
+}
+
 } // namespace roadmaker

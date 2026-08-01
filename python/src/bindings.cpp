@@ -4689,11 +4689,32 @@ NB_MODULE(_roadmaker, m) {
       .def_rw("width", &roadmaker::LaneSpec::width)
       .def_rw("outer_marking", &roadmaker::LaneSpec::outer_marking);
 
+  // The four road classes of realism_defaults.md §1.2/§1.7. Exposed because a
+  // profile or style now carries one, and it is what decides the road's
+  // OpenDRIVE <type> (#454).
+  nb::enum_<roadmaker::defaults::RoadClass>(m, "RoadClass")
+      .value("FREEWAY", roadmaker::defaults::RoadClass::Freeway)
+      .value("ARTERIAL", roadmaker::defaults::RoadClass::Arterial)
+      .value("COLLECTOR", roadmaker::defaults::RoadClass::Collector)
+      .value("LOCAL", roadmaker::defaults::RoadClass::Local);
+
+  m.def("road_type_name",
+        &roadmaker::defaults::road_type_name,
+        "road_class"_a,
+        "The OpenDRIVE <type> spelling bound to a road class by "
+        "realism_defaults.md §1.7 — 'motorway' | 'townArterial' | "
+        "'townCollector' | 'townLocal'. Always an e_roadType literal.");
+
   nb::class_<roadmaker::LaneProfile>(m, "LaneProfile")
       .def(nb::init<>())
       .def_rw("left", &roadmaker::LaneProfile::left)
       .def_rw("right", &roadmaker::LaneProfile::right)
       .def_rw("center_marking", &roadmaker::LaneProfile::center_marking)
+      .def_rw("road_class",
+              &roadmaker::LaneProfile::road_class,
+              "Which road class this template is, or None for a hand-built cross "
+              "section. author_clothoid_road stamps the road's <type> from it; a "
+              "profile without one authors a road that declares no <type>.")
       .def_static("freeway",
                   &roadmaker::LaneProfile::freeway,
                   "Two driving lanes each way between left and right shoulders, no "
@@ -4743,6 +4764,12 @@ NB_MODULE(_roadmaker, m) {
       .def_rw("left", &roadmaker::RoadStyle::left)
       .def_rw("right", &roadmaker::RoadStyle::right)
       .def_rw("center_mark", &roadmaker::RoadStyle::center_mark)
+      .def_rw("road_class",
+              &roadmaker::RoadStyle::road_class,
+              "Which road class this style is, or None for a hand-built cross "
+              "section. apply_road_style rewrites the road's <type> from it, "
+              "carrying over the old record's <speed>/@country; a style without "
+              "one leaves the existing <type> records alone.")
       .def_static("freeway",
                   &roadmaker::RoadStyle::freeway,
                   "Two driving lanes each way between shoulders, yellow left edge "

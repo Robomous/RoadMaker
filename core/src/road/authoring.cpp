@@ -43,7 +43,10 @@ LaneProfile LaneProfile::freeway() {
         LaneSpec{.type = LaneType::Driving, .width = lane, .outer_marking = true},
         LaneSpec{.type = LaneType::Shoulder, .width = defaults::kFreewayRightShoulderWidth}};
   };
-  return LaneProfile{.left = side(), .right = side(), .center_marking = false};
+  return LaneProfile{.left = side(),
+                     .right = side(),
+                     .center_marking = false,
+                     .road_class = defaults::RoadClass::Freeway};
 }
 
 LaneProfile LaneProfile::arterial() {
@@ -54,7 +57,10 @@ LaneProfile LaneProfile::arterial() {
         LaneSpec{.type = LaneType::Driving, .width = lane, .outer_marking = true},
         LaneSpec{.type = LaneType::Sidewalk, .width = defaults::kSidewalkWidth}};
   };
-  return LaneProfile{.left = side(), .right = side(), .center_marking = true};
+  return LaneProfile{.left = side(),
+                     .right = side(),
+                     .center_marking = true,
+                     .road_class = defaults::RoadClass::Arterial};
 }
 
 LaneProfile LaneProfile::collector() {
@@ -64,6 +70,7 @@ LaneProfile LaneProfile::collector() {
       .right = {LaneSpec{.type = LaneType::Driving, .width = lane, .outer_marking = true},
                 LaneSpec{.type = LaneType::Shoulder, .width = defaults::kShoulderWidth}},
       .center_marking = true,
+      .road_class = defaults::RoadClass::Collector,
   };
 }
 
@@ -74,7 +81,10 @@ LaneProfile LaneProfile::local_road() {
         LaneSpec{.type = LaneType::Driving, .width = lane},
         LaneSpec{.type = LaneType::Sidewalk, .width = defaults::kSidewalkWidth}};
   };
-  return LaneProfile{.left = side(), .right = side(), .center_marking = false};
+  return LaneProfile{.left = side(),
+                     .right = side(),
+                     .center_marking = false,
+                     .road_class = defaults::RoadClass::Local};
 }
 
 LaneProfile LaneProfile::two_lane_rural() {
@@ -343,6 +353,15 @@ Expected<RoadId> author_clothoid_road(RoadNetwork& network,
   road.plan_view = std::move(*line);
   road.length = road.plan_view.length();
   road.authoring_waypoints.emplace(waypoints.begin(), waypoints.end());
+
+  // <type> from the template's road class (#454). A road authored as a freeway
+  // used to export indistinguishable from a local street at the Layer-0 level,
+  // because nothing carried the class across into the standard's own field for
+  // it. A hand-built profile has no class and so stamps nothing — the road then
+  // declares no <type>, which is legal and is what every profile did before.
+  if (profile.road_class.has_value()) {
+    road.types.push_back(road_type_for_class(*profile.road_class));
+  }
 
   const LaneSectionId section = network.add_lane_section(road_id, 0.0);
   const LaneId center = network.add_lane(section, 0, LaneType::None);

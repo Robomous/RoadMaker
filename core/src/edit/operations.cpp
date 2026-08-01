@@ -7582,7 +7582,7 @@ apply_road_style(const RoadNetwork& network, RoadId road_id, const RoadStyle& st
 
   // Stage 1 — erase every section and lane and clear road.sections. Undo
   // restores them in place (same ids), so links into these lanes survive.
-  builders.push_back([road_id](RoadNetwork& net) -> std::unique_ptr<Command> {
+  builders.push_back([road_id, style](RoadNetwork& net) -> std::unique_ptr<Command> {
     const Road* target = net.road(road_id);
     if (target == nullptr) {
       return invalid_command(std::string(kName),
@@ -7591,6 +7591,22 @@ apply_road_style(const RoadNetwork& network, RoadId road_id, const RoadStyle& st
     auto strip = std::make_unique<GenericCommand>(std::string(kName), DirtySet{.roads = {road_id}});
     Road after = *target;
     after.sections.clear();
+    // <type> follows the class the style names (#454). The road is being given
+    // a UNIFORM cross section — every section is about to collapse into one —
+    // so a uniform single <type> at s=0 is consistent rather than lossy. What
+    // would be lossy is discarding the old record's <speed>/@country/extras, so
+    // road_type_for_class carries them over: realism_defaults.md §1.7 is
+    // explicit that a speed limit is a fact about the road, not its class.
+    // A style with no class leaves the road's existing records alone.
+    if (style.road_class.has_value()) {
+      const RoadTypeRecord* covering = nullptr;
+      for (const RoadTypeRecord& record : target->types) {
+        if (record.s <= tol::kLength) {
+          covering = &record;
+        }
+      }
+      after.types = {road_type_for_class(*style.road_class, covering)};
+    }
     strip->before.roads.emplace_back(road_id, *target);
     strip->after.roads.emplace_back(road_id, std::move(after));
     for (const LaneSectionId section_id : target->sections) {

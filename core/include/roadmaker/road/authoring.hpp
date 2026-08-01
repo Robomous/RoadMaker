@@ -22,6 +22,7 @@
 #include "roadmaker/road/lane.hpp"
 #include "roadmaker/road/network.hpp"
 
+#include <optional>
 #include <span>
 #include <string>
 #include <vector>
@@ -50,6 +51,17 @@ struct LaneProfile {
 
   /// Paint a broken center-line marking on lane 0.
   bool center_marking = true;
+
+  /// Which of the four road classes this template represents, when it is one of
+  /// them (#454). `author_clothoid_road` stamps the road's `<type>` from it via
+  /// `defaults::road_type_name`, so a freeway stops exporting indistinguishable
+  /// from a local street at the Layer-0 level.
+  ///
+  /// Optional on purpose: a caller may assemble a `LaneProfile` by hand, and a
+  /// hand-built cross section is not entitled to claim it is a `motorway`. Only
+  /// the named factories below set it, and a profile without one authors a road
+  /// with no `<type>` — exactly the behaviour every profile had before #454.
+  std::optional<defaults::RoadClass> road_class;
 
   // Cross-section templates the Create Road tool offers — the four road
   // classes of docs/domain/realism_defaults.md §1.2, deriving every width
