@@ -78,10 +78,6 @@ private:
   /// mouse-move would fill the undo stack with the path of the cursor.
   void commit_move(const std::string& actor, const LaneAnchor& anchor);
 
-  /// Where `name` currently stands, or nullopt when it has been declared but
-  /// never placed (no `<Private>`), or its position is not a lane position.
-  [[nodiscard]] std::optional<ActorPose> actor_pose_of(const std::string& name) const;
-
   Document& document_;
   SelectionModel& selection_;
   osc::ActorKind kind_ = osc::ActorKind::Car;

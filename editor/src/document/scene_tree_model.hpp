@@ -26,6 +26,8 @@
 #include <QAbstractItemModel>
 #include <QString>
 #include <cstdint>
+#include <string>
+#include <string_view>
 #include <unordered_map>
 #include <vector>
 
@@ -54,6 +56,11 @@ public:
     RoadId road;
     LaneId lane;
     JunctionId junction;
+
+    /// A scenario actor's `<ScenarioObject @name>` (#246); empty = not an actor
+    /// row. A STRING and not an id for the reason `SelectionEntry::actor` is
+    /// one: an actor is not arena content and has no generational handle.
+    std::string actor;
   };
 
   [[nodiscard]] Target target_for(const QModelIndex& index) const;
@@ -63,9 +70,23 @@ public:
   [[nodiscard]] QModelIndex index_for_road(RoadId road) const;
   [[nodiscard]] QModelIndex index_for_lane(LaneId lane) const;
   [[nodiscard]] QModelIndex index_for_junction(JunctionId junction) const;
+  [[nodiscard]] QModelIndex index_for_actor(std::string_view actor) const;
 
 private:
-  enum class Kind : std::uint8_t { RoadsGroup, JunctionsGroup, Road, LaneSection, Lane, Junction };
+  enum class Kind : std::uint8_t {
+    RoadsGroup,
+    JunctionsGroup,
+    /// The scenario branch (#246). A PERMANENT third top-level group beside the
+    /// other two, present even when the scene carries no scenario — the two
+    /// existing groups are unconditional, and a group that came and went would
+    /// make every top-level row index depend on document state.
+    ScenarioGroup,
+    Road,
+    LaneSection,
+    Lane,
+    Junction,
+    Actor,
+  };
 
   struct Node {
     Kind kind = Kind::RoadsGroup;
@@ -75,6 +96,7 @@ private:
     RoadId road;
     LaneId lane;
     JunctionId junction;
+    std::string actor;
     QString label;
   };
 
@@ -83,10 +105,14 @@ private:
   [[nodiscard]] QModelIndex index_for_node(int node) const;
 
   const Document& document_;
-  std::vector<Node> nodes_; // nodes_[0] = Roads group, nodes_[1] = Junctions group
+  /// nodes_[0] = Roads, nodes_[1] = Junctions, nodes_[2] = Scenario. The three
+  /// group nodes are at indices 0..2 AND at rows 0..2, which `index()` relies on
+  /// for a top-level row (it uses the row itself as the node id).
+  std::vector<Node> nodes_;
   std::unordered_map<RoadId, int> road_nodes_;
   std::unordered_map<LaneId, int> lane_nodes_;
   std::unordered_map<JunctionId, int> junction_nodes_;
+  std::unordered_map<std::string, int> actor_nodes_;
 };
 
 } // namespace roadmaker::editor

@@ -20,6 +20,7 @@
 
 #include <QString>
 #include <cmath>
+#include <string>
 #include <utility>
 
 #include "document/document.hpp"
@@ -27,14 +28,6 @@
 
 namespace roadmaker::editor {
 namespace {
-
-/// How near the cursor must be to a placed actor's anchor for a press to grab
-/// it rather than place a new one [m].
-///
-/// Deliberately generous — an actor is metres long and a grab that only works
-/// on its exact anchor point feels broken. Placement is still the default: a
-/// press anywhere else on the lane places.
-constexpr double kGrabRadius = 3.0;
 
 /// A drag has to move this far before it stops being a click [m]. Without it,
 /// the hand tremor in a click would re-anchor the actor to where it already is
@@ -65,20 +58,15 @@ bool ActorTool::mouse_press(const ToolEvent& event) {
   PressState state{.world_x = event.world_x, .world_y = event.world_y};
 
   // An actor already under the cursor is grabbed rather than stacked on. The
-  // nearest one wins, and only within kGrabRadius — otherwise a click on the
-  // far side of the same lane would move an actor instead of placing one.
-  double best = kGrabRadius;
-  for (const osc::ScenarioObject& object : document_.scenario().entities.scenario_objects) {
-    const std::optional<ActorPose> pose = actor_pose_of(object.name);
-    if (!pose.has_value()) {
-      continue;
-    }
-    const double distance =
-        std::hypot(pose->position[0] - event.world_x, pose->position[1] - event.world_y);
-    if (distance < best) {
-      best = distance;
-      state.actor = object.name;
-    }
+  // nearest one wins, and only within kActorGrabRadius — otherwise a click on
+  // the far side of the same lane would move an actor instead of placing one.
+  //
+  // Shares `actor_at` with the Select tool: two hit tests would eventually
+  // disagree about what is under the cursor, and the disagreement would only
+  // ever show up as "clicking the actor did something else".
+  if (const std::optional<std::string> hit =
+          actor_at(document_.scenario(), document_.network(), event.world_x, event.world_y)) {
+    state.actor = *hit;
   }
 
   press_ = state;
@@ -170,25 +158,6 @@ void ActorTool::commit_move(const std::string& actor, const LaneAnchor& anchor) 
   if (!moved.has_value()) {
     emit toast_requested(QString::fromStdString(moved.error().message), ToastSeverity::Error);
   }
-}
-
-std::optional<ActorPose> ActorTool::actor_pose_of(const std::string& name) const {
-  // The actor's placement lives in <Init>, not on the entity — an entity with
-  // no <Private> has been declared but never placed, and cannot be grabbed.
-  for (const osc::Private& entry : document_.scenario().storyboard.init.actions.privates) {
-    if (entry.entity_ref != name) {
-      continue;
-    }
-    for (const osc::PrivateAction& action : entry.actions) {
-      if (!action.teleport.has_value()) {
-        continue;
-      }
-      if (const auto* lane = std::get_if<osc::LanePosition>(&action.teleport->position)) {
-        return actor_world_pose(document_.network(), *lane);
-      }
-    }
-  }
-  return std::nullopt;
 }
 
 PreviewGeometry ActorTool::preview() const {

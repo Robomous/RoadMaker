@@ -29,6 +29,7 @@
 
 #include <functional>
 #include <optional>
+#include <string>
 #include <vector>
 
 #include "tools/node_drag.hpp"
@@ -104,6 +105,12 @@ private:
     std::optional<RoadId> road;     // the road under the press, for auto-select
     std::optional<ObjectId> object; // the prop under the press, for a prop move
     RoadId object_road;             // owning road of that prop (project target)
+
+    /// The scenario actor under the press (#246), by `<ScenarioObject @name>`.
+    /// Non-empty suppresses every other arm: an actor is a leaf like a signal,
+    /// so a press on one selects on release and never starts a body move of the
+    /// road beneath it.
+    std::string actor;
   };
 
   /// An in-flight whole-road move: the set being translated together, the press

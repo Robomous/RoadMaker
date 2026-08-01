@@ -24,13 +24,19 @@ namespace roadmaker::editor {
 namespace {
 
 SelectionEntry entry_for(const SceneTreeModel::Target& target) {
+  // ★ AN ACTOR ROW YIELDS AN ENTRY WITH NO IDS AT ALL, which is the whole point:
+  // selecting an actor in the tree must not select the road beneath it (GW-6
+  // step 4), and an actor row carries no road to leak in the first place.
+  if (!target.actor.empty()) {
+    return {.actor = target.actor};
+  }
   return {.road = target.road, .lane = target.lane, .junction = target.junction};
 }
 
-/// A tree row resolves to an entity when it names a road or a junction — group
-/// headers carry neither.
+/// A tree row resolves to an entity when it names a road, a junction or an
+/// actor — group headers carry none of the three.
 bool resolves(const SelectionEntry& entry) {
-  return entry.road.is_valid() || entry.junction.is_valid();
+  return entry.road.is_valid() || entry.junction.is_valid() || !entry.actor.empty();
 }
 
 } // namespace
@@ -98,9 +104,11 @@ void SceneTreePanel::on_model_selection() {
   QItemSelection view_selection;
   QModelIndex primary_index;
   for (const SelectionEntry& entry : selection_.entries()) {
-    const QModelIndex index = entry.junction.is_valid() ? model_.index_for_junction(entry.junction)
-                              : entry.lane.is_valid()   ? model_.index_for_lane(entry.lane)
-                                                        : model_.index_for_road(entry.road);
+    const QModelIndex index = !entry.actor.empty() ? model_.index_for_actor(entry.actor)
+                              : entry.junction.is_valid()
+                                  ? model_.index_for_junction(entry.junction)
+                              : entry.lane.is_valid() ? model_.index_for_lane(entry.lane)
+                                                      : model_.index_for_road(entry.road);
     if (!index.isValid()) {
       continue;
     }

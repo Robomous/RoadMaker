@@ -39,8 +39,10 @@
 #include <optional>
 #include <stdexcept>
 #include <string>
+#include <variant>
 #include <vector>
 
+#include "document/actor_placement.hpp"
 #include "document/document.hpp"
 #include "document/selection_model.hpp"
 #include "tools/select_tool.hpp"
@@ -961,4 +963,94 @@ TEST(SelectTool, DeleteWithNothingSelectedPushesNothing) {
   EXPECT_FALSE(tool.key_press(Qt::Key_Delete, Qt::NoModifier));
   EXPECT_EQ(scene.document.undo_stack()->count(), after_place);
   EXPECT_TRUE(has_actor(scene.document, "Car1"));
+}
+
+// --- viewport picking of actors (#246, GW-6 step 4) --------------------------
+//
+// ★ Actors are NOT in the NetworkMesh, so pick() ray-casts straight past them
+// to the road underneath and reports THAT. Every test here supplies a REAL road
+// PickHit alongside the actor's position — the situation the viewport actually
+// delivers — because a test that passed no pick would pass on a Select tool
+// that never consulted actor_at at all.
+
+TEST(SelectTool, AClickOnAPlacedActorSelectsItAndNotTheRoadBeneathIt) {
+  Scene scene;
+  place_actor(scene.document, scene.dragged, "Car1");
+  SelectTool tool(scene.document, scene.selection);
+
+  const roadmaker::osc::LanePosition* lane = nullptr;
+  for (const roadmaker::osc::Private& entry :
+       scene.document.scenario().storyboard.init.actions.privates) {
+    if (entry.entity_ref == "Car1") {
+      lane = std::get_if<roadmaker::osc::LanePosition>(&entry.actions[0].teleport->position);
+    }
+  }
+  ASSERT_NE(lane, nullptr);
+  const auto pose = roadmaker::editor::actor_world_pose(scene.document.network(), *lane);
+  ASSERT_TRUE(pose.has_value());
+
+  const PickHit hit = scene.hit(scene.dragged);
+  ASSERT_TRUE(tool.mouse_press(
+      at(pose->position[0], pose->position[1], Qt::LeftButton, Qt::NoModifier, hit)));
+  ASSERT_TRUE(tool.mouse_release(
+      at(pose->position[0], pose->position[1], Qt::NoButton, Qt::NoModifier, hit)));
+
+  ASSERT_EQ(scene.selection.entries().size(), 1U);
+  EXPECT_EQ(scene.selection.primary().actor, "Car1");
+  // The claim GW-6 step 4 makes, stated as an assertion: no road came with it.
+  EXPECT_FALSE(scene.selection.primary().road.is_valid());
+  EXPECT_TRUE(scene.selection.selected_roads().empty());
+  EXPECT_EQ(scene.selection.selected_actors(), std::vector<std::string>{"Car1"});
+}
+
+// ...and a click on the same road AWAY from the actor still selects the road.
+// Without this the previous test would pass on a tool that had stopped
+// selecting roads entirely.
+TEST(SelectTool, AClickAwayFromAnyActorStillSelectsTheRoad) {
+  Scene scene;
+  place_actor(scene.document, scene.dragged, "Car1");
+  SelectTool tool(scene.document, scene.selection);
+
+  const PickHit hit = scene.hit(scene.dragged);
+  ASSERT_TRUE(tool.mouse_press(at(50.0, 8.0, Qt::LeftButton, Qt::NoModifier, hit)));
+  ASSERT_TRUE(tool.mouse_release(at(50.0, 8.0, Qt::NoButton, Qt::NoModifier, hit)));
+
+  ASSERT_EQ(scene.selection.entries().size(), 1U);
+  EXPECT_TRUE(scene.selection.primary().actor.empty());
+  EXPECT_EQ(scene.selection.primary().road, scene.dragged);
+}
+
+// A press on an actor is a LEAF press: it must not drag the road under it, and
+// it must not rubber-band either — an actor press carries no road id and no
+// object id, so "empty space" is what the band branch would otherwise conclude.
+TEST(SelectTool, DraggingFromAnActorMovesNothingAndBandsNothing) {
+  Scene scene;
+  place_actor(scene.document, scene.dragged, "Car1");
+  SelectTool tool(scene.document, scene.selection);
+
+  const roadmaker::osc::LanePosition* lane = nullptr;
+  for (const roadmaker::osc::Private& entry :
+       scene.document.scenario().storyboard.init.actions.privates) {
+    if (entry.entity_ref == "Car1") {
+      lane = std::get_if<roadmaker::osc::LanePosition>(&entry.actions[0].teleport->position);
+    }
+  }
+  ASSERT_NE(lane, nullptr);
+  const auto pose = roadmaker::editor::actor_world_pose(scene.document.network(), *lane);
+  ASSERT_TRUE(pose.has_value());
+
+  const PickHit hit = scene.hit(scene.dragged);
+  const int before = scene.document.undo_stack()->count();
+  ASSERT_TRUE(tool.mouse_press(
+      at(pose->position[0], pose->position[1], Qt::LeftButton, Qt::NoModifier, hit)));
+  (void)tool.mouse_move(
+      at(pose->position[0] + 25.0, pose->position[1] + 25.0, Qt::LeftButton, Qt::NoModifier, hit));
+  ASSERT_TRUE(tool.mouse_release(
+      at(pose->position[0] + 25.0, pose->position[1] + 25.0, Qt::NoButton, Qt::NoModifier, hit)));
+
+  EXPECT_EQ(scene.document.undo_stack()->count(), before) << "the drag moved something";
+  EXPECT_EQ(xodr(scene.document), scene.base_xodr);
+  EXPECT_TRUE(tool.preview().line_positions.empty()) << "a rubber band was drawn from the actor";
+  // The press still resolves to the actor on release.
+  EXPECT_EQ(scene.selection.primary().actor, "Car1");
 }
