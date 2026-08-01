@@ -101,14 +101,28 @@ set(FMT_DOC OFF)
   which is far weaker than the linking test the allowed-licence list exists for
   — but the tool still gets pinned to an exact version and its licence recorded
   at the call site.
-  - **esmini** ([#51](https://github.com/Robomous/RoadMaker/issues/51)) — the
-    OpenDRIVE round-trip gate. **MPL-2.0** (allowed above; verified against the
-    upstream repository at close-out, 2026-07-15). Pinned `v3.5.0` in the
-    `esmini-roundtrip` job, fetched as `esmini-bin_Linux.zip` from the GitHub
-    release like a test fixture, cached, run `--headless`. It is never linked
-    into any RoadMaker target and never redistributed. If it ever needed to be
-    linked or shipped, MPL-2.0's file-level copyleft would apply and this entry
-    would not cover it.
+  - **esmini** ([#51](https://github.com/Robomous/RoadMaker/issues/51),
+    [#249](https://github.com/Robomous/RoadMaker/issues/249)) — the OpenDRIVE
+    and OpenSCENARIO round-trip gate, **and** the editor's scenario preview.
+    **MPL-2.0** (allowed above; verified against the upstream repository at
+    close-out, 2026-07-15). Pinned `v3.5.0` in the `esmini-roundtrip` job,
+    fetched as `esmini-bin_Linux.zip` from the GitHub release like a test
+    fixture, cached, run `--headless`. It is never linked into any RoadMaker
+    target and never redistributed. If it ever needed to be linked or shipped,
+    MPL-2.0's file-level copyleft would apply and this entry would not cover it.
+    - **The editor's `File ▸ Preview Scenario in esmini…` stays inside this
+      entry, and the boundary is exact** (p8-s5, #249): RoadMaker exports the
+      pair to a throwaway folder and starts a **detached subprocess** on a
+      binary the user already has — resolved from a settings path, then
+      `$ESMINI_PATH`, then `PATH`. There is no esmini header in this tree, no
+      esmini target in any `CMakeLists.txt`, and nothing esmini-shaped in any
+      installer or wheel. Bundling the binary with a release, or linking
+      `esminiLib`, would be a *different* question with a different answer, and
+      would need this entry rewritten first.
+    - **It is also not a build or runtime dependency.** Every RoadMaker target
+      builds, tests and runs without esmini present; the preview action reports
+      that it could not find one and offers a file dialog, and the CI job that
+      uses it is the only thing that fetches it.
 - Approved per-case exceptions are recorded in `THIRD_PARTY_LICENSES.md`
   and/or an ADR — e.g., tinyusdz's vendored ISC/Unlicense components are
   covered by [ADR 0005](../decisions/0005-tinyusdz-usda.md), and libtiff's

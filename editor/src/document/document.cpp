@@ -21,6 +21,7 @@
 #include "roadmaker/io/gltf_exporter.hpp"
 #include "roadmaker/io/usd_exporter.hpp"
 #include "roadmaker/mesh/mesh_builder.hpp"
+#include "roadmaker/osc/network_validation.hpp"
 #include "roadmaker/osc/reader.hpp"
 #include "roadmaker/osc/route.hpp"
 #include "roadmaker/osc/writer.hpp"
@@ -80,17 +81,23 @@ Document::Document(QObject* parent) : QObject(parent) {
   // change (a road or lane the route traverses is gone or re-linked) and a
   // scenario change (the routes themselves moved). Wired as connections rather
   // than sprinkled through the emit sites so no future emitter can forget it.
-  connect(this, &Document::topology_changed, this, &Document::refresh_route_diagnostics);
-  connect(this, &Document::scenario_changed, this, &Document::refresh_route_diagnostics);
+  connect(this, &Document::topology_changed, this, &Document::refresh_scenario_diagnostics);
+  connect(this, &Document::scenario_changed, this, &Document::refresh_scenario_diagnostics);
 }
 
-void Document::refresh_route_diagnostics() {
-  // Cheap by design — the BFS is bounded and a scenario holds few routes — so
-  // it can afford to run on every qualifying edit, unlike validate_network.
-  std::vector<Diagnostic> findings = osc::validate_routes(network_, scenario_);
-  const bool was_empty = route_diagnostics_.empty();
-  route_diagnostics_ = std::move(findings);
-  if (!was_empty || !route_diagnostics_.empty()) {
+void Document::refresh_scenario_diagnostics() {
+  // Cheap by design — the reference lookups are a map probe each and the route
+  // BFS is bounded — so it can afford to run on every qualifying edit, unlike
+  // validate_network.
+  //
+  // ★ THE WHOLE CROSS-DOCUMENT CHECK, not just routes (#533). Every reference
+  // whose other end is in the `.xodr` is resolved here, because esmini accepts
+  // a dangling signal or controller reference in complete silence and this dock
+  // is therefore the only place a user ever learns about one.
+  std::vector<Diagnostic> findings = osc::validate_scenario_against_network(scenario_, network_);
+  const bool was_empty = scenario_diagnostics_.empty();
+  scenario_diagnostics_ = std::move(findings);
+  if (!was_empty || !scenario_diagnostics_.empty()) {
     emit diagnostics_changed();
   }
 }

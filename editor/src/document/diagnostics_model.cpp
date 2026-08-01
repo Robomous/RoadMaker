@@ -59,7 +59,7 @@ DiagnosticsModel::DiagnosticsModel(const Document& document, QObject* parent)
 int DiagnosticsModel::rowCount(const QModelIndex& parent) const {
   return parent.isValid() ? 0
                           : static_cast<int>(document_.diagnostics().size() +
-                                             document_.route_diagnostics().size());
+                                             document_.scenario_diagnostics().size());
 }
 
 int DiagnosticsModel::columnCount(const QModelIndex& parent) const {
@@ -111,15 +111,16 @@ QVariant DiagnosticsModel::headerData(int section, Qt::Orientation orientation, 
 
 const Diagnostic* DiagnosticsModel::diagnostic_at(int row) const {
   // One table over two vectors: the validation-pass findings first, then the
-  // live route findings (p8-s3, #247) — Document keeps them apart so neither
-  // refresh clobbers the other, and the seam lives here alone.
+  // live cross-document findings (p8-s3 #247, widened to the whole scenario by
+  // #533) — Document keeps them apart so neither refresh clobbers the other,
+  // and the seam lives here alone.
   const auto& diagnostics = document_.diagnostics();
-  const auto& routes = document_.route_diagnostics();
-  if (row < 0 || static_cast<std::size_t>(row) >= diagnostics.size() + routes.size()) {
+  const auto& scenario = document_.scenario_diagnostics();
+  if (row < 0 || static_cast<std::size_t>(row) >= diagnostics.size() + scenario.size()) {
     return nullptr;
   }
   const auto index = static_cast<std::size_t>(row);
-  return index < diagnostics.size() ? &diagnostics[index] : &routes[index - diagnostics.size()];
+  return index < diagnostics.size() ? &diagnostics[index] : &scenario[index - diagnostics.size()];
 }
 
 } // namespace roadmaker::editor

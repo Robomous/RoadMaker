@@ -430,6 +430,68 @@ Current version on `main`: **0.0.1**.
     controller, loads with exit 0 and no error at all — which is why #248's
     acceptance splits the two and the signal half is gated by
     `validate_scenario` instead.
+- **The scenario half esmini cannot check now has a checker**
+  ([#533](https://github.com/Robomous/RoadMaker/issues/533)):
+  `osc::validate_scenario_against_network` resolves every reference whose other
+  end lives in the `.xodr` — signal ids, controller ids, road and lane anchors,
+  the **upper** s-bound, and every assigned route — and it is the only thing in
+  the toolchain that does.
+  - **★ MEASURED: a dangling `trafficSignalId`, a dangling
+    `trafficSignalControllerRef`, a `@phase` naming no phase and a garbage
+    `@state` all load in esmini v3.5.0 with exit 0 and no error line.**
+    `validate_scenario` cannot see them either — it takes a `Scenario` alone,
+    and `rules.hpp` said so twice. A scenario whose traffic-light half
+    referenced nothing exported clean, loaded clean, and was wrong.
+  - **The upper s-bound is the position check's point.** A negative `s` the
+    document validator already refuses; a road's length lives in the `.xodr`
+    and nowhere else, and esmini truncates rather than refuses it.
+  - **One mistake, one line.** An EMPTY reference stays the document
+    validator's finding, a dangling road short-circuits the lane and bound
+    checks beneath it, and route waypoints are checked once — by
+    `validate_routes`, which resolves them as a drivable path rather than as
+    isolated anchors. One call is the whole cross-document check.
+  - **Live in the Diagnostics dock.** `Document::route_diagnostics()` became
+    `scenario_diagnostics()` and now carries all of it, re-run on every
+    topology or scenario change — so a dangling signal reference is reported
+    while the user is still looking at what caused it, not at save time.
+  - Reachable from Python, and `python/examples/scenario_validate.py` is its
+    acceptance: it breaks five references one at a time and prints what each
+    validator says about each, exiting non-zero if any goes unreported.
+- **Preview a scenario in esmini, from the editor**
+  ([#249](https://github.com/Robomous/RoadMaker/issues/249),
+  [GW-6](docs/roadmap/golden_workflows/gw6_scenarios.md) step 14): **File ▸
+  Preview Scenario in esmini…** exports the scene and its scenario to a
+  throwaway folder and opens them in esmini.
+  - **The preview is of what is on screen, not of the last save.** The exported
+    scenario's `<LogicFile>` is rewritten to the exported network's filename —
+    without that, a preview resolves the previous save, or nothing at all for a
+    scene that has never been saved. Nothing is written into the user's project.
+  - **esmini stays an external tool.** It is started as a DETACHED SUBPROCESS
+    on a binary the user already has, resolved from a settings path, then
+    `$ESMINI_PATH`, then `PATH`. No esmini header, no esmini target, nothing
+    esmini-shaped in any installer — which is exactly what keeps it inside its
+    MPL-2.0 entry in [dependencies](docs/standards/dependencies.md), now
+    restated to say so.
+  - **The unresolved references are named before the launch**, because esmini
+    will not name them: a clean load is not evidence the traffic-light half is
+    right.
+- **The esmini smoke gate stopped testing a hand-written file**
+  ([#249](https://github.com/Robomous/RoadMaker/issues/249)):
+  `scripts/esmini_smoke.py` held a hardcoded OpenSCENARIO 1.2 wrapper, so what
+  the gate proved was that a human can write valid OpenSCENARIO — a fact never
+  in doubt. Every wrapper is now `rm.osc.write_xosc` output, authored through
+  the same commands the editor pushes, and the job installs the bindings to get
+  it. **There is no fallback to the literal**: a silent one is how a gate keeps
+  passing on the path a change was meant to replace ([#506](https://github.com/Robomous/RoadMaker/issues/506)).
+  The error markers gained the scenario-worded entries the P8 discovery asked
+  for, though the measurements show it is the generic `[error]` and the return
+  code that were already doing the work.
+- **GW-6 refined against what shipped**
+  ([#249](https://github.com/Robomous/RoadMaker/issues/249)): every step now
+  names the thing that exists, the validation note carries the **measured**
+  table of what esmini does and does not reject, a new step 11a reads the
+  Diagnostics dock for the half it cannot, and the three platform hand-run rows
+  are ready to fill.
 - **The esmini CI pin is honoured by a bump**
   ([#506](https://github.com/Robomous/RoadMaker/issues/506)): the cache key
   repeated the version as a literal instead of deriving it from

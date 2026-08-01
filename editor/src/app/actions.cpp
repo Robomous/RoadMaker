@@ -61,6 +61,10 @@ Actions::Actions(QUndoStack& undo_stack, QObject* parent) : QObject(parent) {
   export_preview_xodr->setShortcuts(shortcuts::sequences(shortcuts::Id::ExportPreviewXodr));
   export_preview_xodr->setToolTip(tr("Preview the OpenDRIVE that would be written"));
 
+  preview_esmini = new QAction(tr("Preview Scenario in &esmini…"), this);
+  preview_esmini->setToolTip(
+      tr("Export the scene and its scenario to a temporary folder and open them in esmini"));
+
   quit = new QAction(tr("&Quit"), this);
   quit->setShortcuts(shortcuts::sequences(shortcuts::Id::Quit));
   quit->setMenuRole(QAction::QuitRole);

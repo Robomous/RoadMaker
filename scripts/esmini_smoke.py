@@ -25,19 +25,25 @@ against docs/standards/dependencies.md 2026-07-11).
 
 TWO MODES.
 
-* Default: each argument is a .xodr, and the script SYNTHESIZES the minimal
-  OpenSCENARIO wrapper below (esmini has no bare road-network mode — the
-  scenario is the entry point).
+* Default: each argument is a .xodr, and the script builds a minimal wrapper
+  scenario for it (esmini has no bare road-network mode — the scenario is the
+  entry point). ★ THAT WRAPPER IS WRITTEN BY THE KERNEL since p8-s5 (#249):
+  `rm.osc.write_xosc`, authored through the same `rm.osc.edit` commands the
+  editor pushes. It used to be a hardcoded string in this file, which proved
+  that a human can write valid OpenSCENARIO and nothing about what RoadMaker
+  emits. The mode therefore needs the Python bindings installed
+  (`pip install ./python`) and fails loudly without them rather than falling
+  back to a literal nobody would notice.
 * `--xosc`: each argument is a real, tracked .xosc, fed to esmini as-is.
-  Added by p8-s1 (#245), when RoadMaker first emitted scenarios of its own;
-  before that the only .xosc esmini ever saw was this file's template.
+  Added by p8-s1 (#245), when RoadMaker first emitted scenarios of its own.
+  Needs no bindings — there is no wrapper to build.
 
 Either way it runs `esmini --headless` for half a simulated second and fails
 on a non-zero exit or a load-error marker in the log. `--expect-fail` inverts
 the check for the deliberately-broken fixtures that guard the gate itself.
 
 ★ WHAT THIS GATE DOES AND DOES NOT CATCH, measured against v3.5.0 on
-2026-07-30 rather than assumed. It REJECTS (exit 255): truncated XML, a
+2026-07-30 and 2026-08-01 rather than assumed. It REJECTS (exit 255): truncated XML, a
 duplicated element, a <LogicFile> that resolves to nothing, and a dangling
 entityRef. It ACCEPTS IN SILENCE, with a byte-identical log: a
 trafficSignalId naming no <signal>, a garbage @state token, a
@@ -46,6 +52,12 @@ and an undefined revMinor. So for the traffic-signal half the checker-rule
 UIDs in core/include/roadmaker/osc/rules.hpp are not "additive to esmini" —
 they are the only check that exists. Do not read a green run here as a
 statement about signal content.
+
+THE OTHER HALF OF THAT SENTENCE NOW HAS AN OWNER (#533):
+`osc::validate_scenario_against_network` resolves every signal id, controller
+id and lane anchor against the .xodr, which is exactly what this gate cannot
+do. A green run here plus an empty finding list there is the whole check;
+neither alone is.
 
 Usage:
     esmini_smoke.py --esmini <esmini-binary> [--expect-fail] <xodr> [...]
@@ -60,74 +72,100 @@ import sys
 import tempfile
 from pathlib import Path
 
-# Minimal but complete OpenSCENARIO 1.2 wrapper: one ego teleported to a
-# world position (no road references — the wrapper must work for ANY road
-# network) and a plain half-second stop trigger. esmini still parses and
-# builds the full OpenDRIVE network at init, which is exactly the smoke
-# we want.
-XOSC_TEMPLATE = """<?xml version="1.0" encoding="UTF-8"?>
-<OpenSCENARIO>
-  <FileHeader revMajor="1" revMinor="2" date="2026-01-01T00:00:00"
-              description="RoadMaker esmini smoke wrapper" author="RoadMaker CI"/>
-  <ParameterDeclarations/>
-  <CatalogLocations/>
-  <RoadNetwork>
-    <LogicFile filepath="{xodr}"/>
-  </RoadNetwork>
-  <Entities>
-    <ScenarioObject name="Ego">
-      <Vehicle name="car" vehicleCategory="car">
-        <ParameterDeclarations/>
-        <Performance maxSpeed="70" maxAcceleration="5" maxDeceleration="10"/>
-        <BoundingBox>
-          <Center x="1.4" y="0.0" z="0.75"/>
-          <Dimensions width="2.0" length="5.0" height="1.5"/>
-        </BoundingBox>
-        <Axles>
-          <FrontAxle maxSteering="0.5" wheelDiameter="0.6" trackWidth="1.8"
-                     positionX="2.98" positionZ="0.3"/>
-          <RearAxle maxSteering="0.0" wheelDiameter="0.6" trackWidth="1.8"
-                    positionX="0.0" positionZ="0.3"/>
-        </Axles>
-        <Properties/>
-      </Vehicle>
-    </ScenarioObject>
-  </Entities>
-  <Storyboard>
-    <Init>
-      <Actions>
-        <Private entityRef="Ego">
-          <PrivateAction>
-            <TeleportAction>
-              <Position>
-                <WorldPosition x="0.0" y="0.0" z="0.0" h="0.0"/>
-              </Position>
-            </TeleportAction>
-          </PrivateAction>
-        </Private>
-      </Actions>
-    </Init>
-    <StopTrigger>
-      <ConditionGroup>
-        <Condition name="end" delay="0.0" conditionEdge="rising">
-          <ByValueCondition>
-            <SimulationTimeCondition value="0.5" rule="greaterThan"/>
-          </ByValueCondition>
-        </Condition>
-      </ConditionGroup>
-    </StopTrigger>
-  </Storyboard>
-</OpenSCENARIO>
-"""
+# ★ THE WRAPPER IS WRITTEN BY THE KERNEL, NOT BY THIS FILE (p8-s5, #249).
+#
+# It used to be a hardcoded OpenSCENARIO 1.2 string living here — which meant
+# the gate proved that a HUMAN can write valid OpenSCENARIO, a fact never in
+# doubt, and said nothing about what RoadMaker emits. Every wrapper is now
+# `rm.osc.write_xosc` output, authored through the same `rm.osc.edit` commands
+# the editor pushes, so the file esmini parses is a file the product wrote.
+#
+# NO FALLBACK TO A LITERAL. A silent fallback would let CI keep passing on the
+# old path with nobody looking — the #506 failure mode exactly (a cache key that
+# skipped a fetch and tested the binary the bump was meant to replace). If
+# `roadmaker` is not importable, the wrapper mode fails loudly and says how to
+# install it. The `--xosc` mode needs no wrapper and therefore no import.
+_IMPORT_ERROR: str | None = None
+try:
+    import roadmaker as rm
+except ImportError as exc:  # pragma: no cover - exercised only by a broken env
+    rm = None
+    _IMPORT_ERROR = str(exc)
+
+
+def build_wrapper(xodr: Path) -> str:
+    """A minimal scenario for `xodr`, written by the kernel.
+
+    One ego at the world origin (no road references — the wrapper must work for
+    ANY road network) and a half-second stop trigger, so the gate measures the
+    OpenDRIVE build rather than waiting out a simulation.
+    """
+    if rm is None:
+        raise SystemExit(
+            "esmini_smoke.py needs the roadmaker Python bindings to build its wrapper "
+            f"scenario (`pip install ./python`): {_IMPORT_ERROR}"
+        )
+
+    scenario = rm.osc.Scenario()
+    stack = rm.osc.edit.ScenarioStack()
+
+    header = scenario.header
+    header.description = "RoadMaker esmini smoke wrapper"
+    scenario.header = header
+
+    stack.push(scenario, rm.osc.edit.set_logic_file(scenario, xodr.resolve().as_posix()))
+    stack.push(
+        scenario,
+        rm.osc.edit.place_scenario_object(
+            scenario, rm.osc.make_actor(rm.osc.ActorKind.Car, "Ego"), rm.osc.WorldPosition()
+        ),
+    )
+
+    end = rm.osc.Condition()
+    end.name = "end"
+    timing = rm.osc.SimulationTimeCondition()
+    timing.value = 0.5
+    timing.rule = "greaterThan"
+    end.simulation_time = timing
+    group = rm.osc.ConditionGroup()
+    group.conditions = [end]
+    stop = rm.osc.Trigger()
+    stop.condition_groups = [group]
+    stack.push(scenario, rm.osc.edit.set_stop_trigger(scenario, stop))
+
+    # A wrapper the kernel itself refuses would make every failure below
+    # ambiguous — is the .xodr bad, or the wrapper? Say which, here.
+    findings = rm.osc.validate_scenario(scenario)
+    blocking = [f for f in findings if f.severity == rm.Severity.ERROR]
+    if blocking:
+        raise SystemExit(
+            "the generated wrapper scenario does not validate: "
+            + "; ".join(f.message for f in blocking)
+        )
+    return rm.osc.write_xosc(scenario)
+
 
 # esmini exits 0 for some recoverable problems it merely logs; any of these
-# markers in the output means the road network did NOT load cleanly.
+# markers in the output means the document did NOT load cleanly.
+#
+# ★ THE FIRST FOUR ARE ALL OPENDRIVE-WORDED, which the P8 discovery flagged
+# (#505 §2) as a hole: a scenario-level failure would have slipped through them.
+# It does not, and the reason is the LAST two rather than the first four —
+# `[error]` is generic, and the return code is checked before any marker. That
+# was measured rather than assumed across p8-s2, p8-s3 and p8-s4: a dangling
+# entityRef, a dangling lane anchor, an invalid `Event/@priority` and an invalid
+# `@dynamicsShape` are each caught by one or the other. The scenario-worded
+# entries below are kept anyway, because a marker that never fires costs
+# nothing and a missing one costs a false green.
 ERROR_MARKERS = (
     "Failed to load OpenDRIVE",
     "Failed to parse OpenDRIVE",
     "Failed to load road network",
     "Invalid OpenDRIVE",
+    "Failed to load OpenSCENARIO",
+    "Failed to parse OpenSCENARIO",
     "[error]",
+    "Exception",
 )
 
 
@@ -153,11 +191,10 @@ def run_esmini(esmini: Path, scenario: Path) -> tuple[bool, str]:
 
 
 def smoke_one(esmini: Path, xodr: Path) -> tuple[bool, str]:
-    """Smokes a .xodr through a synthesized wrapper scenario."""
+    """Smokes a .xodr through a wrapper scenario the KERNEL writes."""
     with tempfile.TemporaryDirectory(prefix="esmini_smoke_") as tmp:
         wrapper = Path(tmp) / f"{xodr.stem}_smoke.xosc"
-        wrapper.write_text(XOSC_TEMPLATE.format(xodr=xodr.resolve().as_posix()),
-                           encoding="utf-8")
+        wrapper.write_text(build_wrapper(xodr), encoding="utf-8")
         return run_esmini(esmini, wrapper)
 
 

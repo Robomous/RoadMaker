@@ -72,6 +72,7 @@
 #include "app/tour_overlay.hpp"
 #include "document/asset_import.hpp"
 #include "document/crosswalk_item.hpp"
+#include "document/esmini_preview.hpp"
 #include "document/library_drop.hpp"
 #include "document/library_manifest.hpp"
 #include "document/signal_phase_overlay.hpp"
@@ -184,6 +185,7 @@ MainWindow::MainWindow(QWidget* parent, bool restore_saved_layout)
   connect(actions_->export_preview_scene, &QAction::triggered, this, [this] {
     show_export_preview(ExportPreviewWindow::Page::Scene);
   });
+  connect(actions_->preview_esmini, &QAction::triggered, this, [this] { preview_in_esmini(); });
   connect(actions_->export_preview_xodr, &QAction::triggered, this, [this] {
     show_export_preview(ExportPreviewWindow::Page::OpenDrive);
   });
@@ -1254,6 +1256,7 @@ void MainWindow::build_menus() {
 #endif
   file_menu->addAction(actions_->export_preview_scene);
   file_menu->addAction(actions_->export_preview_xodr);
+  file_menu->addAction(actions_->preview_esmini);
   file_menu->addSeparator();
   // GIS import (p7-s2, #242). The two REFERENCE imports live here; the
   // elevation raster lives under Edit ▸ Terrain, because it becomes scene
@@ -2863,6 +2866,71 @@ void MainWindow::show_export_preview(ExportPreviewWindow::Page page) {
     export_preview_ = new ExportPreviewWindow(document_, this);
   }
   export_preview_->show_page(page);
+}
+
+void MainWindow::preview_in_esmini() {
+  const QString binary = resolve_esmini(settings_.esmini_path());
+  if (binary.isEmpty()) {
+    // Offered rather than refused: the one thing missing is a path, and a
+    // dialog that only says "not found" leaves the user with nothing to do.
+    const QString chosen = QFileDialog::getOpenFileName(
+        this, tr("Locate the esmini executable"), QString(), tr("All files (*)"));
+    if (chosen.isEmpty()) {
+      return;
+    }
+    settings_.set_esmini_path(chosen);
+    if (resolve_esmini(chosen).isEmpty()) {
+      QMessageBox::warning(
+          this, tr("Preview in esmini"), tr("'%1' is not an executable file.").arg(chosen));
+      return;
+    }
+  }
+
+  // The export directory outlives this function AND the launched process, so it
+  // is not a QTemporaryDir on the stack: esmini reads the pair after we return,
+  // and a scoped temporary would delete it out from under a process that had
+  // not opened it yet. Qt removes the directory when the editor exits.
+  auto* directory = new QTemporaryDir;
+  directory->setAutoRemove(true);
+  if (!directory->isValid()) {
+    QMessageBox::warning(
+        this, tr("Preview in esmini"), tr("Could not create a temporary export folder."));
+    delete directory;
+    return;
+  }
+  esmini_export_dirs_.emplace_back(directory);
+
+  const auto preview =
+      prepare_preview(document_, std::filesystem::path(directory->path().toStdString()));
+  if (!preview) {
+    QMessageBox::warning(
+        this, tr("Preview in esmini"), QString::fromStdString(preview.error().message));
+    return;
+  }
+
+  // ★ SAY WHAT THE SIMULATOR WILL NOT. esmini accepts a dangling signal or
+  // controller reference in complete silence (#533, measured on v3.5.0), so a
+  // clean load proves nothing about the traffic-light half. The findings are
+  // shown BEFORE the launch, and the launch still proceeds — they are the
+  // author's to judge, and blocking a preview on them would make the dock's
+  // advice unusable.
+  const std::size_t findings = document_.scenario_diagnostics().size();
+  if (findings != 0) {
+    statusBar()->showMessage(
+        tr("Previewing with %n unresolved scenario reference(s) — see Diagnostics; esmini "
+           "does not check these.",
+           nullptr,
+           static_cast<int>(findings)),
+        8000);
+  }
+
+  const QString resolved = resolve_esmini(settings_.esmini_path());
+  if (const auto started = launch_preview(resolved, *preview); !started) {
+    QMessageBox::warning(
+        this, tr("Preview in esmini"), QString::fromStdString(started.error().message));
+    return;
+  }
+  statusBar()->showMessage(tr("esmini launched with the exported scenario."), 5000);
 }
 
 QString MainWindow::help_context_dock() const {

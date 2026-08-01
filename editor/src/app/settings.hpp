@@ -104,6 +104,17 @@ public:
   [[nodiscard]] bool autosave_enabled() const;
   void set_autosave_enabled(bool enabled);
 
+  /// Absolute path to the esmini executable used by File ▸ Preview Scenario in
+  /// esmini (p8-s5, #249). Empty until the user points at one; `resolve_esmini`
+  /// then falls through to `$ESMINI_PATH` and `PATH`.
+  ///
+  /// A SETTING RATHER THAN A BUNDLED BINARY: esmini is MPL-2.0 and admitted
+  /// only as an external tool — never linked, never redistributed
+  /// (docs/standards/dependencies.md) — so the editor can hold a path to one
+  /// the user installed and nothing more.
+  [[nodiscard]] QString esmini_path() const;
+  void set_esmini_path(const QString& path);
+
   /// Whether the first-run guided tour has already been shown (or skipped).
   /// Persisted so the tour never re-appears; no telemetry.
   [[nodiscard]] bool tour_seen() const;

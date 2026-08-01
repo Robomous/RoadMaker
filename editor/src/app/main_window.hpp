@@ -27,9 +27,11 @@
 #include <QMainWindow>
 #include <QPointer>
 #include <QStackedWidget>
+#include <QTemporaryDir>
 #include <QToolBar>
 #include <QToolButton>
 #include <filesystem>
+#include <memory>
 #include <optional>
 #include <vector>
 
@@ -237,6 +239,16 @@ private:
   /// way show_help() builds the user guide.
   void show_export_preview(ExportPreviewWindow::Page page);
 
+  /// Exports the scene and its scenario to a throwaway directory and opens
+  /// them in esmini (p8-s5, #249, GW-6 step 14).
+  ///
+  /// ★ THE CROSS-DOCUMENT FINDINGS ARE SHOWN BEFORE THE LAUNCH, not after.
+  /// esmini was measured to accept a dangling signal or controller reference in
+  /// silence, so "it loaded" is not evidence the scenario is right — a preview
+  /// that started without mentioning them would teach exactly the wrong lesson
+  /// (#533).
+  void preview_in_esmini();
+
   /// Brings up the World Georeference tool, building it lazily (p7-s5, #324).
   /// Same QPointer-held tool-window shape as the export preview and the help
   /// viewer — the window deletes itself on close and the pointer goes null.
@@ -356,6 +368,15 @@ private:
   class Editor2DHost* editor2d_host_ = nullptr;
   class SignalPhaseEditorPage* phase_page_ = nullptr;
   QMenu* recent_menu_ = nullptr;
+
+  /// Export directories handed to esmini, kept alive for the session.
+  ///
+  /// ★ THEY OUTLIVE THE FUNCTION THAT MADE THEM. esmini reads the pair
+  /// asynchronously after `preview_in_esmini` returns, so a scoped
+  /// QTemporaryDir would delete the scenario out from under a process that had
+  /// not opened it yet. Qt removes each on destruction, i.e. when the editor
+  /// exits.
+  std::vector<std::unique_ptr<QTemporaryDir>> esmini_export_dirs_;
   QLabel* status_hover_;
   /// Persistent per-tool instruction line (what click/drag/modifiers do right
   /// now). Distinct from the transient status_message channel, which keeps its

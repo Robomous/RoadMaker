@@ -311,7 +311,7 @@ TEST(RouteTool, BreakingTheNetworkUnderARouteSurfacesInTheDiagnosticsTable) {
   click(tool, 50.0, -1.75);
   click(tool, 60.0, -1.75);
   click(tool, 80.0, -1.75);
-  EXPECT_TRUE(document.route_diagnostics().empty()) << "an intact route has nothing to report";
+  EXPECT_TRUE(document.scenario_diagnostics().empty()) << "an intact route has nothing to report";
 
   RoadId road;
   document.network().for_each_road([&](RoadId id, const Road&) { road = id; });
@@ -319,10 +319,10 @@ TEST(RouteTool, BreakingTheNetworkUnderARouteSurfacesInTheDiagnosticsTable) {
   ASSERT_TRUE(resets.isValid());
   ASSERT_TRUE(document.push_command(edit::delete_road(document.network(), road)).has_value());
 
-  ASSERT_FALSE(document.route_diagnostics().empty())
+  ASSERT_FALSE(document.scenario_diagnostics().empty())
       << "deleting the routed road must be REPORTED, not absorbed";
   EXPECT_GE(resets.count(), 1) << "the diagnostics table never learned of the finding";
-  EXPECT_GE(model.rowCount(), static_cast<int>(document.route_diagnostics().size()))
+  EXPECT_GE(model.rowCount(), static_cast<int>(document.scenario_diagnostics().size()))
       << "the model does not present the route findings";
 
   // The route itself is untouched — the network broke, not the document.

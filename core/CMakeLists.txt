@@ -48,6 +48,7 @@ add_library(roadmaker_core ${_rm_core_type}
   src/osc/decompose.cpp
   src/osc/edit.cpp
   src/osc/route.cpp
+  src/osc/network_validation.cpp
   src/mesh/mesh_builder.cpp
   src/mesh/junction_corner_detail.cpp
   src/mesh/junction_corners.cpp
