@@ -33,6 +33,8 @@ add_executable(roadmaker_editor_tests
   test_actor_placement.cpp
   test_actor_rendering.cpp
   test_actor_tool.cpp
+  test_route_preview.cpp
+  test_route_tool.cpp
   test_autosave.cpp
   test_camera.cpp
   test_crash_handler.cpp

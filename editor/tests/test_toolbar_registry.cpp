@@ -191,11 +191,12 @@ TEST(ToolbarRegistry, LayoutMatchesTheIssue) {
             (std::vector{Id::ToolSignal, Id::SignalPhaseEditor, Id::ToolSign}));
 
   // Terrain stopped being reserved-empty when p5-s1 (#231) landed the Surface
-  // tool in it; Scenario stopped when p8-s2 (#246) landed the Actor tool.
+  // tool in it; Scenario stopped when p8-s2 (#246) landed the Actor tool, and
+  // p8-s3 (#247) seated the Route tool beside it.
   EXPECT_EQ(ids_of(shortcuts::toolbar_layout(ToolbarTab::kTerrain), "Terrain & Structures"),
             (std::vector{Id::ToolSurface, Id::ToolTerrainBrush}));
   EXPECT_EQ(ids_of(shortcuts::toolbar_layout(ToolbarTab::kScenario), "Scenario"),
-            (std::vector{Id::ToolActorPlace}));
+            (std::vector{Id::ToolActorPlace, Id::ToolRoute}));
 }
 
 // The tabs actually shown skip the core strip AND any empty reserved tab.

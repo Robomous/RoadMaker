@@ -22,6 +22,7 @@
 #include "roadmaker/io/usd_exporter.hpp"
 #include "roadmaker/mesh/mesh_builder.hpp"
 #include "roadmaker/osc/reader.hpp"
+#include "roadmaker/osc/route.hpp"
 #include "roadmaker/osc/writer.hpp"
 #include "roadmaker/road/surface_derivation.hpp"
 #include "roadmaker/xodr/reader.hpp"
@@ -73,7 +74,26 @@ std::string describe_dirty(const edit::DirtySet& dirty) {
 
 } // namespace
 
-Document::Document(QObject* parent) : QObject(parent) {}
+Document::Document(QObject* parent) : QObject(parent) {
+  // Routes are validated against the LIVE network (p8-s3, #247). The two
+  // triggers are exactly the two events that can invalidate one: a topology
+  // change (a road or lane the route traverses is gone or re-linked) and a
+  // scenario change (the routes themselves moved). Wired as connections rather
+  // than sprinkled through the emit sites so no future emitter can forget it.
+  connect(this, &Document::topology_changed, this, &Document::refresh_route_diagnostics);
+  connect(this, &Document::scenario_changed, this, &Document::refresh_route_diagnostics);
+}
+
+void Document::refresh_route_diagnostics() {
+  // Cheap by design — the BFS is bounded and a scenario holds few routes — so
+  // it can afford to run on every qualifying edit, unlike validate_network.
+  std::vector<Diagnostic> findings = osc::validate_routes(network_, scenario_);
+  const bool was_empty = route_diagnostics_.empty();
+  route_diagnostics_ = std::move(findings);
+  if (!was_empty || !route_diagnostics_.empty()) {
+    emit diagnostics_changed();
+  }
+}
 
 Expected<void> Document::load(const std::filesystem::path& path) {
   // Initiating a load ends any drag mid-flight; the revert happens against

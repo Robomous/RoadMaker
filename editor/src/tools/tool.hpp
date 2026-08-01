@@ -62,6 +62,7 @@ enum class ToolId {
   Surface,
   TerrainBrush,
   ActorPlace,
+  Route,
 };
 
 struct ToolEvent {
