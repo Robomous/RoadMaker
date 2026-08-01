@@ -16,6 +16,8 @@
 
 #include "document/scene_tree_model.hpp"
 
+#include <string>
+
 #include "document/units.hpp"
 
 namespace roadmaker::editor {
@@ -34,6 +36,14 @@ SceneTreeModel::SceneTreeModel(const Document& document, QObject* parent)
     rebuild();
     endResetModel();
   });
+  // The scenario branch follows its own document (#246). A scenario command
+  // touches no arena and emits no mesh change, so without this an actor placed,
+  // renamed or removed would never reach the tree.
+  connect(&document_, &Document::scenario_changed, this, [this] {
+    beginResetModel();
+    rebuild();
+    endResetModel();
+  });
   // Section labels carry formatted lengths — rebuild them on a display-unit
   // flip (#412).
   connect(&units::Notifier::instance(), &units::Notifier::changed, this, [this] {
@@ -48,9 +58,11 @@ void SceneTreeModel::rebuild() {
   road_nodes_.clear();
   lane_nodes_.clear();
   junction_nodes_.clear();
+  actor_nodes_.clear();
 
   nodes_.push_back(Node{.kind = Kind::RoadsGroup, .row = 0, .label = tr("Roads")});
   nodes_.push_back(Node{.kind = Kind::JunctionsGroup, .row = 1, .label = tr("Junctions")});
+  nodes_.push_back(Node{.kind = Kind::ScenarioGroup, .row = 2, .label = tr("Scenario")});
 
   const RoadNetwork& network = document_.network();
 
@@ -113,6 +125,24 @@ void SceneTreeModel::rebuild() {
     junction_nodes_[junction_id] = junction_node;
     nodes_[1].children.push_back(junction_node);
   });
+
+  // Scenario actors (#246). Read straight off the `.xosc` document rather than
+  // the arena: an actor is a `<ScenarioObject @name>` and the name is the only
+  // identity it has.
+  for (const osc::ScenarioObject& object : document_.scenario().entities.scenario_objects) {
+    const int actor_node = static_cast<int>(nodes_.size());
+    nodes_.push_back(Node{.kind = Kind::Actor,
+                          .parent = 2,
+                          .row = static_cast<int>(nodes_[2].children.size()),
+                          .actor = object.name,
+                          .label = QString::fromStdString(object.name)});
+    // ★ INSERTED, NOT ASSIGNED. `@name` is unique in a document the writer will
+    // accept, but a scenario mid-edit can hold a duplicate, and overwriting the
+    // map entry would leave the first row unreachable from index_for_actor
+    // while it is still displayed — a row the selection could never mirror to.
+    actor_nodes_.emplace(object.name, actor_node);
+    nodes_[2].children.push_back(actor_node);
+  }
 }
 
 const SceneTreeModel::Node* SceneTreeModel::node_for(const QModelIndex& index) const {
@@ -155,7 +185,7 @@ QModelIndex SceneTreeModel::parent(const QModelIndex& child) const {
 
 int SceneTreeModel::rowCount(const QModelIndex& parent) const {
   if (!parent.isValid()) {
-    return 2; // Roads, Junctions
+    return 3; // Roads, Junctions, Scenario
   }
   if (parent.column() != 0) {
     return 0;
@@ -188,7 +218,8 @@ SceneTreeModel::Target SceneTreeModel::target_for(const QModelIndex& index) cons
   if (node == nullptr) {
     return {};
   }
-  return Target{.road = node->road, .lane = node->lane, .junction = node->junction};
+  return Target{
+      .road = node->road, .lane = node->lane, .junction = node->junction, .actor = node->actor};
 }
 
 QModelIndex SceneTreeModel::index_for_road(RoadId road) const {
@@ -204,6 +235,11 @@ QModelIndex SceneTreeModel::index_for_lane(LaneId lane) const {
 QModelIndex SceneTreeModel::index_for_junction(JunctionId junction) const {
   const auto it = junction_nodes_.find(junction);
   return it == junction_nodes_.end() ? QModelIndex{} : index_for_node(it->second);
+}
+
+QModelIndex SceneTreeModel::index_for_actor(std::string_view actor) const {
+  const auto it = actor_nodes_.find(std::string(actor));
+  return it == actor_nodes_.end() ? QModelIndex{} : index_for_node(it->second);
 }
 
 } // namespace roadmaker::editor

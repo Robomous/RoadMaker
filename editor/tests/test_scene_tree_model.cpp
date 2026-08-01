@@ -14,9 +14,15 @@
  * limitations under the License.
  */
 
+#include "roadmaker/osc/catalog.hpp"
+#include "roadmaker/osc/edit.hpp"
+
 #include <gtest/gtest.h>
 
 #include <QAbstractItemModelTester>
+#include <QSignalSpy>
+#include <QUndoStack>
+#include <string>
 
 #include "document/document.hpp"
 #include "document/scene_tree_model.hpp"
@@ -26,12 +32,33 @@ namespace {
 
 const std::filesystem::path kSample = std::filesystem::path(RM_SAMPLES_DIR) / "t_junction.xodr";
 
+/// Places `name` on the first road's lane -1 as ONE scenario command — what the
+/// Actor tool pushes for a single click.
+void place_actor(Document& document, const std::string& name) {
+  std::string road_odr_id;
+  document.network().for_each_road([&](RoadId, const Road& road) {
+    if (road_odr_id.empty()) {
+      road_odr_id = road.odr_id;
+    }
+  });
+  ASSERT_FALSE(road_odr_id.empty());
+  osc::LanePosition lane;
+  lane.road_id = road_odr_id;
+  lane.lane_id = "-1";
+  lane.s = 5.0;
+  ASSERT_TRUE(
+      document
+          .push_scenario_command(osc::edit::place_scenario_object(
+              document.scenario(), osc::make_actor(osc::ActorKind::Car, name), osc::Position{lane}))
+          .has_value());
+}
+
 TEST(SceneTreeModel, PassesQtModelSanityChecksEmpty) {
   Document document;
   SceneTreeModel model(document);
   // Fatal mode: any index/parent/rowCount contract violation aborts the test.
   QAbstractItemModelTester tester(&model, QAbstractItemModelTester::FailureReportingMode::Fatal);
-  EXPECT_EQ(model.rowCount(), 2); // Roads + Junctions groups
+  EXPECT_EQ(model.rowCount(), 3); // Roads + Junctions + Scenario groups
   EXPECT_EQ(model.rowCount(model.index(0, 0)), 0);
 }
 
@@ -112,8 +139,106 @@ TEST(SceneTreeModel, LabelsAreHumanReadable) {
 
   EXPECT_EQ(model.index(0, 0).data(Qt::DisplayRole).toString(), QStringLiteral("Roads"));
   EXPECT_EQ(model.index(1, 0).data(Qt::DisplayRole).toString(), QStringLiteral("Junctions"));
+  EXPECT_EQ(model.index(2, 0).data(Qt::DisplayRole).toString(), QStringLiteral("Scenario"));
   const QModelIndex first_road = model.index(0, 0, model.index(0, 0));
   EXPECT_FALSE(first_road.data(Qt::DisplayRole).toString().isEmpty());
+}
+
+// --- the Scenario branch (#246, GW-6 step 3) ---------------------------------
+
+// ★ THE TESTER RUNS ACROSS THE SCENARIO MUTATIONS, not merely before and after
+// them. rebuild() is a full reset, and a reset emitted without its
+// begin/endResetModel pair is exactly the contract violation
+// QAbstractItemModelTester exists to catch — it cannot be caught by inspecting
+// the finished model.
+TEST(SceneTreeModel, PassesQtModelSanityChecksAcrossScenarioEdits) {
+  Document document;
+  ASSERT_TRUE(document.load(kSample).has_value());
+  SceneTreeModel model(document);
+  QAbstractItemModelTester tester(&model, QAbstractItemModelTester::FailureReportingMode::Fatal);
+
+  const QModelIndex scenario_group = model.index(2, 0);
+  ASSERT_TRUE(scenario_group.isValid());
+  EXPECT_EQ(model.rowCount(scenario_group), 0);
+
+  place_actor(document, "Car1");
+  place_actor(document, "Car2");
+  EXPECT_EQ(model.rowCount(model.index(2, 0)), 2);
+
+  ASSERT_TRUE(
+      document.push_scenario_command(osc::edit::remove_scenario_object(document.scenario(), "Car1"))
+          .has_value());
+  EXPECT_EQ(model.rowCount(model.index(2, 0)), 1);
+
+  // An undo runs the reset path again, from the other direction.
+  document.undo_stack()->undo();
+  EXPECT_EQ(model.rowCount(model.index(2, 0)), 2);
+}
+
+// ★ THE RESET SIGNAL IS ITS OWN GATE, because QAbstractItemModelTester cannot
+// be one here. The tester only observes SIGNALS; a rebuild() that clears and
+// repopulates `nodes_` while emitting nothing is invisible to it, and every
+// rowCount assertion still reads the correct new value. What breaks is the
+// VIEW, which keeps QModelIndexes whose internalId now names a different node.
+// Measured: dropping the begin/endResetModel pair leaves every other test in
+// this file green.
+TEST(SceneTreeModel, AScenarioEditEmitsExactlyOneModelReset) {
+  Document document;
+  ASSERT_TRUE(document.load(kSample).has_value());
+  SceneTreeModel model(document);
+  QSignalSpy resets(&model, &QAbstractItemModel::modelReset);
+
+  place_actor(document, "Car1");
+  EXPECT_EQ(resets.count(), 1) << "the scenario branch changed without a model reset";
+
+  ASSERT_TRUE(
+      document.push_scenario_command(osc::edit::remove_scenario_object(document.scenario(), "Car1"))
+          .has_value());
+  EXPECT_EQ(resets.count(), 2);
+
+  document.undo_stack()->undo();
+  EXPECT_EQ(resets.count(), 3);
+}
+
+TEST(SceneTreeModel, AnActorRowCarriesItsNameAndNoIdsAtAll) {
+  Document document;
+  ASSERT_TRUE(document.load(kSample).has_value());
+  place_actor(document, "Car1");
+  SceneTreeModel model(document);
+
+  const QModelIndex index = model.index_for_actor("Car1");
+  ASSERT_TRUE(index.isValid());
+  const SceneTreeModel::Target target = model.target_for(index);
+  EXPECT_EQ(target.actor, "Car1");
+  // ★ GW-6 step 4, at the model layer: an actor row names no road, so a tree
+  // click on it cannot select the road it stands on however the panel maps it.
+  EXPECT_FALSE(target.road.is_valid());
+  EXPECT_FALSE(target.lane.is_valid());
+  EXPECT_FALSE(target.junction.is_valid());
+  EXPECT_EQ(index.data(Qt::DisplayRole).toString(), QStringLiteral("Car1"));
+}
+
+TEST(SceneTreeModel, TheScenarioBranchIsPresentOnASceneWithNoScenario) {
+  // The two existing groups are unconditional; a third that came and went would
+  // make every top-level row index depend on document state.
+  Document document;
+  ASSERT_TRUE(document.load(kSample).has_value());
+  SceneTreeModel model(document);
+
+  ASSERT_EQ(model.rowCount(), 3);
+  EXPECT_EQ(model.rowCount(model.index(2, 0)), 0);
+  const SceneTreeModel::Target group = model.target_for(model.index(2, 0));
+  EXPECT_TRUE(group.actor.empty()) << "the group header resolved to an entity";
+}
+
+TEST(SceneTreeModel, AnUnknownActorNameYieldsNoIndex) {
+  Document document;
+  ASSERT_TRUE(document.load(kSample).has_value());
+  place_actor(document, "Car1");
+  SceneTreeModel model(document);
+
+  EXPECT_FALSE(model.index_for_actor("NoSuchActor").isValid());
+  EXPECT_FALSE(model.index_for_actor("").isValid());
 }
 
 } // namespace

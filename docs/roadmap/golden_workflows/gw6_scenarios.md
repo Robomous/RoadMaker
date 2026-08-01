@@ -60,17 +60,25 @@ of every export step above it.
    here* are different problems.
 3. [ ] Place a second vehicle actor and a **pedestrian actor**. **Expected:**
    each is drawn as a box proxy sized from its `<BoundingBox>`, oriented along
-   its lane's direction of travel.
-   ⚠ *`p8-s2` did not deliver the Attributes pane rows or the scene-tree
-   scenario branch* — those are follow-up work, tracked on
-   [#246](https://github.com/Robomous/RoadMaker/issues/246). Note also that props
-   and signals are not in the scene tree at all today, so this step's original
-   "distinct from props" phrasing had nothing to contrast against.
+   its lane's direction of travel. Each also appears under the scene tree's
+   **Scenario** branch, and selecting one fills the Attributes pane with its
+   name, category, lane anchor (road / lane / s / offset), bounding box and
+   initial speed — every field editable, each edit one undo step.
+   *Note*: props and signals are not in the scene tree at all today, so this
+   step's original "distinct from props" phrasing had nothing to contrast
+   against; the Scenario branch is the contrast it was reaching for.
 4. [ ] Select an actor and confirm the selection model treats it as its own
    entity kind. **Expected:** selecting an actor does not select the road
-   beneath it — an actor selection carries no road id at all. Clicking a placed
-   actor with the Actor tool selects rather than stacking a second one on it.
-   ⚠ *Viewport picking of actors and **Delete** routing are follow-up work.*
+   beneath it — an actor selection carries no road id at all. This holds through
+   all three routes to a selection: the **Select tool** in the viewport, the
+   **scene tree**, and the **Actor tool** (which selects a placed actor rather
+   than stacking a second one on it). **Delete** on an actor selection removes
+   it and its `<Init>` entry as one undo step, and a mixed road+actor selection
+   deletes as one step too.
+   *Note*: actors are not in the `NetworkMesh`, so the viewport's ray-cast pick
+   passes straight through them to the road below. The Select tool consults the
+   actor hit test **first** — the same one the Actor tool grabs with, so the two
+   can never disagree about what is under the cursor.
 
 ### Routes (p8-s3)
 

@@ -239,6 +239,13 @@ Current version on `main`: **0.0.1**.
     a scenario that gained a `<LongitudinalAction>` from merely being looked at
     would no longer re-save byte-identically. A speed defined relative to
     another entity is shown disabled rather than silently overwritten.
+  - **Actors are in the scene tree and pickable in the viewport.** A permanent
+    **Scenario** branch lists them, and the Select tool picks one where it
+    stands. Selecting an actor never selects the road beneath it — through the
+    viewport, the tree or the Actor tool alike — because an actor selection
+    carries no road id at all. Actors are not in the tessellated mesh, so the
+    viewport's ray-cast pick passes straight through them; the Select tool
+    consults the **same** hit test the Actor tool grabs with, first.
 - **Routes in the scenario model**
   ([#247](https://github.com/Robomous/RoadMaker/issues/247), model + writer): the
   kernel can hold and serialize `<RoutingAction><AssignRouteAction><Route>` with

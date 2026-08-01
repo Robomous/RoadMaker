@@ -193,6 +193,44 @@ TEST(SceneTreePanel, ViewMultiSelectDrivesSelectionModel) {
   EXPECT_EQ(h.selection.primary().road, roads[1]);
 }
 
+// --- the Scenario branch, panel side (#246, GW-6 steps 3-4) -----------------
+
+TEST(SceneTreePanel, ClickingAnActorRowSelectsTheActorAndNoRoad) {
+  Harness h;
+  ASSERT_TRUE(h.document.load(kSample).has_value());
+  {
+    const Road* road = h.document.network().road(all_roads(h.document).front());
+    ASSERT_NE(road, nullptr);
+    osc::LanePosition lane;
+    lane.road_id = road->odr_id;
+    lane.lane_id = "-1";
+    lane.s = 5.0;
+    ASSERT_TRUE(h.document
+                    .push_scenario_command(osc::edit::place_scenario_object(
+                        h.document.scenario(),
+                        osc::make_actor(osc::ActorKind::Car, "Car1"),
+                        osc::Position{lane}))
+                    .has_value());
+  }
+  SceneTreePanel panel(h.scene_tree_model, h.selection);
+
+  const QModelIndex actor_index = h.scene_tree_model.index_for_actor("Car1");
+  ASSERT_TRUE(actor_index.isValid());
+  panel.view()->setCurrentIndex(actor_index);
+
+  EXPECT_EQ(h.selection.primary().actor, "Car1");
+  // ★ GW-6 step 4 through the tree: no road came with it, and the row is not
+  // treated as a group header either (which would clear the selection).
+  EXPECT_FALSE(h.selection.primary().road.is_valid());
+  EXPECT_TRUE(h.selection.selected_roads().empty());
+  EXPECT_FALSE(h.selection.empty());
+
+  // ...and the mirror runs the other way too.
+  h.selection.clear();
+  h.selection.select({.actor = "Car1"});
+  EXPECT_EQ(panel.view()->currentIndex(), actor_index);
+}
+
 TEST(PropertiesPanel, ConstructsAndFollowsSelection) {
   Harness h;
   ASSERT_TRUE(h.document.load(kSample).has_value());

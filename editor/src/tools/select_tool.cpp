@@ -26,6 +26,7 @@
 #include <variant>
 #include <vector>
 
+#include "document/actor_placement.hpp"
 #include "document/document.hpp"
 #include "document/prop_placement.hpp"
 #include "document/selection_model.hpp"
@@ -106,22 +107,34 @@ bool SelectTool::mouse_press(const ToolEvent& event) {
     emit preview_changed();
     return true;
   }
+  // ★ AN ACTOR IS TESTED BEFORE `event.pick`, and it has to be: actors are not
+  // in the NetworkMesh at all, so `pick()` ray-casts straight past them to the
+  // road underneath and reports THAT. Checking the pick first would mean a click
+  // on an actor always selected the road it stands on — the exact conflation
+  // GW-6 step 4 rules out. `actor_at` is the same hit test the Actor tool grabs
+  // with, so the two can never disagree about what is under the cursor.
+  const std::optional<std::string> actor =
+      actor_at(document_.scenario(), document_.network(), cursor.x, cursor.y);
+
   // A prop hit also carries its owning road; record it as a prop press so a
   // drag moves the PROP, not the road under it. A junction-floor pick carries no
   // road, so it never starts a body move (it only selects on release).
-  const bool on_object = event.pick.has_value() && event.pick->object.is_valid();
+  const bool on_object =
+      !actor.has_value() && event.pick.has_value() && event.pick->object.is_valid();
   // A signal pick carries its owning road, but a signal is a leaf like a prop —
   // a press on it must not start a body-move of the road under it. It only
   // selects on release (signal drag-move is the gizmo's job, not the body drag).
-  const bool on_signal = event.pick.has_value() && event.pick->signal.is_valid();
-  const bool on_road =
-      event.pick.has_value() && event.pick->road.is_valid() && !on_object && !on_signal;
+  const bool on_signal =
+      !actor.has_value() && event.pick.has_value() && event.pick->signal.is_valid();
+  const bool on_road = !actor.has_value() && event.pick.has_value() &&
+                       event.pick->road.is_valid() && !on_object && !on_signal;
   press_ =
       PressState{.world = cursor,
                  .on_geometry = on_road,
                  .road = on_road ? std::optional<RoadId>(event.pick->road) : std::nullopt,
                  .object = on_object ? std::optional<ObjectId>(event.pick->object) : std::nullopt,
-                 .object_road = on_object ? event.pick->road : RoadId{}};
+                 .object_road = on_object ? event.pick->road : RoadId{},
+                 .actor = actor.value_or(std::string{})};
   return true;
 }
 
@@ -170,6 +183,14 @@ bool SelectTool::mouse_move(const ToolEvent& event) {
           emit preview_changed();
         }
       }
+      return true;
+    }
+    if (!press_->actor.empty()) {
+      // An actor press is a leaf press like a signal's: it selects on release
+      // and does nothing in between. Without this it would fall through to the
+      // rubber band below — a press on an actor carries no road id and no
+      // object id, so every arm above is false and "empty space" is exactly
+      // what the band branch would conclude.
       return true;
     }
     if (!move_mode_ && (band_current_.has_value() || beyond_tolerance)) {
@@ -228,7 +249,12 @@ bool SelectTool::mouse_release(const ToolEvent& event) {
       // Zero-area band (never left the click tolerance) degenerates to a
       // click-pick; a miss clears unless a modifier asks to keep.
       const SelectMode mode = mode_from(event.modifiers);
-      if (event.pick.has_value()) {
+      if (!press_->actor.empty()) {
+        // ★ NO IDS. An actor entry carries no road, which is what makes
+        // "selecting an actor does not select the road beneath it" structural
+        // rather than a rule someone has to remember (GW-6 step 4).
+        selection_.select({.actor = press_->actor}, mode);
+      } else if (event.pick.has_value()) {
         selection_.select({.road = event.pick->road,
                            .lane = event.pick->lane,
                            .object = event.pick->object,

@@ -279,6 +279,43 @@ std::optional<ActorPose> actor_world_pose(const RoadNetwork& network, const Lane
   return actor_world_pose(network, to_lane_position(anchor));
 }
 
+std::optional<std::string> actor_at(
+    const osc::Scenario& scenario, const RoadNetwork& network, double x, double y, double radius) {
+  std::optional<std::string> best;
+  double best_distance = radius;
+  for (const osc::ScenarioObject& object : scenario.entities.scenario_objects) {
+    // An entity's placement lives in <Init>, not on the entity: one that has
+    // been declared but never placed — or placed with a position this version
+    // does not draw — resolves to no pose and is therefore not pickable. What is
+    // not drawn must not be selectable.
+    std::optional<ActorPose> pose;
+    for (const osc::Private& entry : scenario.storyboard.init.actions.privates) {
+      if (entry.entity_ref != object.name) {
+        continue;
+      }
+      for (const osc::PrivateAction& action : entry.actions) {
+        if (!action.teleport.has_value()) {
+          continue;
+        }
+        if (const auto* lane = std::get_if<osc::LanePosition>(&action.teleport->position)) {
+          pose = actor_world_pose(network, *lane);
+        }
+        break;
+      }
+      break;
+    }
+    if (!pose.has_value()) {
+      continue;
+    }
+    const double distance = std::hypot(pose->position[0] - x, pose->position[1] - y);
+    if (distance < best_distance) {
+      best_distance = distance;
+      best = object.name;
+    }
+  }
+  return best;
+}
+
 osc::LanePosition to_lane_position(const LaneAnchor& anchor) {
   osc::LanePosition position;
   position.road_id = anchor.road_odr_id;
