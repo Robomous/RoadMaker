@@ -26,6 +26,8 @@
 #include "roadmaker/osc/osc2.hpp"
 #include "roadmaker/osc/writer.hpp"
 
+#include <fmt/format.h>
+
 #include <gtest/gtest.h>
 
 #include <cstddef>
@@ -34,6 +36,7 @@
 #include <sstream>
 #include <string>
 #include <string_view>
+#include <system_error>
 #include <variant>
 #include <vector>
 
@@ -218,17 +221,38 @@ TEST(Osc2Writer, APedestrianIsAPedestrianAndAnUnmodeledEntityIsATrafficParticipa
 
 TEST(Osc2Writer, SaveWritesTheFileWithTheDslExtensionsBytes) {
   osc::Scenario scenario = base_scenario();
-  const std::filesystem::path path =
-      std::filesystem::temp_directory_path() / "roadmaker_osc2_test.osc";
-  std::filesystem::remove(path);
+
+  // ★ A PER-TEST DIRECTORY, not a fixed name in the shared temp directory.
+  // ctest runs cases concurrently and two jobs on one machine share
+  // `temp_directory_path()`, so a fixed name is a collision waiting for a busy
+  // runner — the per-test temp-dir contract the suite already holds itself to.
+  const std::filesystem::path directory =
+      std::filesystem::temp_directory_path() /
+      fmt::format("roadmaker_osc2_{}",
+                  testing::UnitTest::GetInstance()->current_test_info()->name());
+  std::error_code ec;
+  std::filesystem::remove_all(directory, ec);
+  ASSERT_TRUE(std::filesystem::create_directories(directory, ec)) << ec.message();
+  const std::filesystem::path path = directory / "scenario.osc";
+
   ASSERT_TRUE(osc::save_osc2(scenario, path).has_value());
 
-  std::ifstream file(path, std::ios::binary);
-  ASSERT_TRUE(file.is_open());
-  std::stringstream buffer;
-  buffer << file.rdbuf();
-  EXPECT_EQ(buffer.str(), written(scenario));
-  std::filesystem::remove(path);
+  // ★ THE STREAM IS SCOPED SO THE HANDLE IS CLOSED BEFORE THE CLEANUP.
+  // POSIX unlinks a file that is still open; Windows refuses with "the process
+  // cannot access the file because it is being used by another process", which
+  // is a test that fails on one platform for a reason that has nothing to do
+  // with what it is testing.
+  std::string contents;
+  {
+    std::ifstream file(path, std::ios::binary);
+    ASSERT_TRUE(file.is_open());
+    std::stringstream buffer;
+    buffer << file.rdbuf();
+    contents = buffer.str();
+  }
+  EXPECT_EQ(contents, written(scenario));
+
+  std::filesystem::remove_all(directory, ec);
 }
 
 // --- what is NOT exported, and that it says so --------------------------------
