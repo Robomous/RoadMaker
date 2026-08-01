@@ -430,6 +430,43 @@ Current version on `main`: **0.0.1**.
     controller, loads with exit 0 and no error at all — which is why #248's
     acceptance splits the two and the signal half is gated by
     `validate_scenario` instead.
+- **An OpenSCENARIO 2.x export, honest about its own edges**
+  ([#327](https://github.com/Robomous/RoadMaker/issues/327)): the same internal
+  model that writes `.xosc` now also emits a documented **concrete-scenario
+  subset** of **ASAM OpenSCENARIO DSL v2.2.0** — a hand-rolled emitter, no
+  parser, no new dependency. **File ▸ Export OpenSCENARIO 2.x…**,
+  `osc::write_osc2`, `rm.osc.write_osc2`.
+  - **★ The edition is NAMED, not "2.x".** It matters more for the DSL than for
+    the XML standard, because the language itself changed between 2.0, 2.1 and
+    2.2 — "OpenSCENARIO 2.x export" without a version is not a claim anyone can
+    check.
+  - **It is a different LANGUAGE, not another serialization.** 1.x is XML; 2.x
+    is a Python-style DSL with significant indentation, `#` comments and the
+    `.osc` extension. Nothing about the `.xosc` writer carries over but the
+    model it reads.
+  - **★ Anything outside the subset is reported before the file is written.**
+    `osc::validate_osc2_subset` names every story, trigger, route, controller
+    and lane-relative placement the subset cannot carry, and the editor's export
+    lists them and asks. A lossy view is acceptable; a silent one is not.
+  - **The documented subset is gated, not hand-reviewed.** The tables in
+    [docs/domain/openscenario.md](docs/domain/openscenario.md) mirror
+    `osc::osc2_supported()` / `osc2_unsupported()`, and
+    `Osc2Subset.TheCommittedDocMatchesTheRegistry` fails CI when they drift —
+    the `test_defaults_registry.cpp` mechanism applied to a second document.
+    Nothing else checks this output: there is no schema in the tree, no parser
+    and no simulator in CI, so "a documented subset" is the only promise made
+    about it and the promise is now enforced.
+  - **The subset is narrow on purpose**, and every construct in it appears in
+    the specification's own normative text — which corrected four things a
+    from-memory emitter would have got wrong: the standard-library import is
+    `osc.standard.all` (there is no `basic.osc`), the vehicle parameter is
+    `vehicle_category` and not `category`, `mps` is a normative speed unit so
+    the kernel's m/s needs no conversion, and the map binding is
+    `map.set_map_file(...)`.
+  - **Export-only, and asserted as such**: there is no `.osc` reader, the
+    Python surface has no `parse_osc2`, and a test asserts its absence so a
+    future addition is deliberate. A parser dependency goes through the
+    dependency policy's stop-and-ask first.
 - **The scenario half esmini cannot check now has a checker**
   ([#533](https://github.com/Robomous/RoadMaker/issues/533)):
   `osc::validate_scenario_against_network` resolves every reference whose other

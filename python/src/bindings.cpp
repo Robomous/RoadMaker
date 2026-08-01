@@ -50,6 +50,7 @@
 #include "roadmaker/osc/decompose.hpp"
 #include "roadmaker/osc/edit.hpp"
 #include "roadmaker/osc/network_validation.hpp"
+#include "roadmaker/osc/osc2.hpp"
 #include "roadmaker/osc/reader.hpp"
 #include "roadmaker/osc/route.hpp"
 #include "roadmaker/osc/rules.hpp"
@@ -3517,6 +3518,72 @@ NB_MODULE(_roadmaker, m) {
             "what went wrong if it no longer does. NEVER mutates and NEVER re-routes "
             "— an unresolvable waypoint or an unreachable gap is reported and leaves "
             "`complete` False.");
+
+    // --- OpenSCENARIO DSL 2.x export (p8-s6, #327) ---
+
+    osc.attr("OSC2_VERSION") = std::string(roadmaker::osc::kOsc2Version);
+    osc.attr("OSC2_EXTENSION") = std::string(roadmaker::osc::kOsc2Extension);
+
+    nb::class_<roadmaker::osc::Osc2SubsetRow>(osc, "Osc2SubsetRow")
+        .def_ro("construct", &roadmaker::osc::Osc2SubsetRow::construct)
+        .def_ro("source", &roadmaker::osc::Osc2SubsetRow::source);
+
+    nb::class_<roadmaker::osc::Osc2WriteOptions>(osc, "Osc2WriteOptions")
+        .def(nb::init<>())
+        .def_rw("scenario_name", &roadmaker::osc::Osc2WriteOptions::scenario_name);
+
+    osc.def(
+        "osc2_supported",
+        [] {
+          const auto rows = roadmaker::osc::osc2_supported();
+          return std::vector<roadmaker::osc::Osc2SubsetRow>(rows.begin(), rows.end());
+        },
+        "The DSL constructs the 2.x exporter writes, in emission order. THE doc's "
+        "table mirrors this; a gtest fails CI when the two drift.");
+
+    osc.def(
+        "osc2_unsupported",
+        [] {
+          const auto rows = roadmaker::osc::osc2_unsupported();
+          return std::vector<roadmaker::osc::Osc2SubsetRow>(rows.begin(), rows.end());
+        },
+        "What the 2.x exporter deliberately does not write, each with its reason.");
+
+    osc.def(
+        "write_osc2",
+        [](const roadmaker::osc::Scenario& scenario, std::string scenario_name) {
+          return unwrap(
+              roadmaker::osc::write_osc2(scenario, {.scenario_name = std::move(scenario_name)}));
+        },
+        "scenario"_a,
+        "scenario_name"_a = "top",
+        "Emits the ASAM OpenSCENARIO DSL v2.2.0 concrete-scenario subset as text. "
+        "EXPORT-ONLY: there is no .osc reader and no parser dependency, so the "
+        "round trip is via the internal model, never via re-importing 2.x. "
+        "Deterministic. Raises ValueError for a scenario with no actor, or two "
+        "actors whose names collapse to one DSL identifier.");
+
+    osc.def(
+        "save_osc2",
+        [](const roadmaker::osc::Scenario& scenario,
+           const std::filesystem::path& path,
+           std::string scenario_name) {
+          unwrap(roadmaker::osc::save_osc2(
+              scenario, path, {.scenario_name = std::move(scenario_name)}));
+        },
+        "scenario"_a,
+        "path"_a,
+        "scenario_name"_a = "top",
+        "write_osc2 + save to disk. Binary mode: indentation is SYNTAX in this "
+        "language, so a CRLF rewrite is a structural change rather than a cosmetic "
+        "one.");
+
+    osc.def("validate_osc2_subset",
+            &roadmaker::osc::validate_osc2_subset,
+            "scenario"_a,
+            "Everything in the scenario the documented 2.x subset cannot express, "
+            "reported rather than silently omitted. Warnings, never errors: a 2.x "
+            "file is a lossy export-only view by definition.");
 
     osc.def("validate_scenario_against_network",
             &roadmaker::osc::validate_scenario_against_network,

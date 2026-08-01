@@ -239,6 +239,15 @@ private:
   /// way show_help() builds the user guide.
   void show_export_preview(ExportPreviewWindow::Page page);
 
+  /// Writes the scenario's OpenSCENARIO DSL concrete-scenario subset (p8-s6,
+  /// #327, GW-6 step 16).
+  ///
+  /// ★ WHAT THE SUBSET DROPS IS SHOWN BEFORE THE FILE IS WRITTEN, not after.
+  /// A 2.x file is a lossy view by design, and an export that said nothing
+  /// would leave the user to discover the difference by diffing two files in
+  /// two different languages.
+  void export_osc2_dialog();
+
   /// Exports the scene and its scenario to a throwaway directory and opens
   /// them in esmini (p8-s5, #249, GW-6 step 14).
   ///

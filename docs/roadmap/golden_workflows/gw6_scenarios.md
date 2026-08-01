@@ -5,15 +5,14 @@ Scenario mode and actor placement (p8-s2), lane-anchored routes (p8-s3), the
 storyboard/condition editor (p8-s4), esmini preview (p8-s5), and the
 export-only OpenSCENARIO 2.x subset (p8-s6).*
 
-**Status: refined against what shipped (p8-s5, 2026-08-01); hand-runs
+**Status: refined against what shipped (p8-s5 and p8-s6, 2026-08-01); hand-runs
 outstanding.** It was drafted before the pillar started — GW-1…GW-5 give their
 pillars an acceptance target to build against, and without this document #248's
 headline acceptance (*"a traffic-light scenario is authorable end-to-end"*)
 would have shipped before the workflow that verifies it. Drafted as part of the
 [P8 discovery](../pillars/p8_discovery.md) planning step (§7), which the
-maintainer ruled on 2026-07-30; p8-s1…p8-s5 have landed and every step below now
-names the thing that actually exists. p8-s6 (step 16) is the one step whose
-sprint has not landed.
+maintainer ruled on 2026-07-30; **p8-s1…p8-s6 have all landed** and every step
+below now names the thing that actually exists.
 
 ## Purpose
 
@@ -191,15 +190,26 @@ replaces the other and neither alone discharges this workflow.
     the `.xosc` round trip that the project container should have preserved.
     **Expected:** anything RoadMaker cannot express in 1.x is still carried in
     the project's own layer rather than dropped (ADR-0008 Layer 2).
-16. [ ] Export the **OpenSCENARIO 2.x** concrete-scenario subset (p8-s6).
-    **Expected:** the documented subset emits; anything outside it is reported
-    rather than silently omitted. *(Export-only — there is no 2.x import.)*
+16. [ ] **File ▸ Export OpenSCENARIO 2.x…** (p8-s6). **Expected:** the
+    documented subset emits as an `.osc` file, and anything outside it is
+    **reported before the file is written** rather than silently omitted — the
+    dialog lists what the subset cannot carry and the export continues only if
+    you say so. *(Export-only — there is no 2.x import, and the File menu has no
+    Import twin for it.)*
+    *Landed in `p8-s6`*: the target is ASAM OpenSCENARIO **DSL v2.2.0**, a
+    different LANGUAGE from the 1.x XML rather than another serialization of it.
+    Read the result against the table in
+    [docs/domain/openscenario.md](../../domain/openscenario.md) — that table is
+    the acceptance, and a gtest keeps it in step with the emitter, so reviewing
+    against it is reviewing against what the code actually does.
 
 ## Pass criteria
 
 - Every step's expected result holds; zero crashes.
 - **A route survives an edit to the road beneath it** (step 7) and is
   *diagnosed*, never silently mutated, when genuinely invalidated (step 8).
+- **The 2.x export names what it cannot carry** (step 16) — a lossy view is
+  acceptable, a silent one is not.
 - **esmini loads the exported `.xosc` without parser errors** (step 14) — the
   standing substitute for schema validation, *for the lane-anchored half only*;
   see the validation note above.
@@ -221,6 +231,4 @@ ready to fill; a run is recorded by the person who performed it.
 | — | Linux | — | — | not yet run |
 | — | Windows | — | — | not yet run |
 
-**Step 16 is gated on p8-s6** ([#327](https://github.com/Robomous/RoadMaker/issues/327)),
-which has not landed. A run before it ships records steps 1–15 and marks step 16
-blocked rather than failed.
+Every step's sprint has now landed, so a run records all sixteen.
