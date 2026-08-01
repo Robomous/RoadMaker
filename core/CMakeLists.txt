@@ -32,7 +32,6 @@ add_library(roadmaker_core ${_rm_core_type}
   src/edit/operations.cpp
   src/edit/snap.cpp
   src/xodr/reader.cpp
-  src/xodr/lane_border.cpp
   src/xodr/writer.cpp
   src/xodr/junction_export.cpp
   src/xodr/terrain_sidecar.cpp

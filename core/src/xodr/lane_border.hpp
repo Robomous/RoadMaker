@@ -17,7 +17,10 @@
 #pragma once
 
 #include "roadmaker/geometry/poly3.hpp"
+#include "roadmaker/tol.hpp"
 
+#include <algorithm>
+#include <cmath>
 #include <span>
 #include <vector>
 
@@ -25,8 +28,14 @@
 ///
 /// Internal to the reader: RoadMaker's model stores lane geometry as widths, so
 /// borders are converted on read rather than carried as a second encoding.
-/// Header lives under core/src so the exactness of the arithmetic can be tested
-/// directly (core/tests has core/src on its include path).
+///
+/// The header lives under core/src and is entirely `inline`, so a test TU can
+/// include it and pin the arithmetic directly (core/tests has core/src on its
+/// include path). Being header-only is also what keeps it working under
+/// RM_BUILD_SHARED: only RM_API symbols leave the shared kernel, and an
+/// internal helper has no business being one — so it must not need to cross the
+/// library boundary at all. Same shape, and the same reason, as
+/// mesh/fill_backend.hpp.
 namespace roadmaker::xodr {
 
 /// Shift a cubic to a new origin, exactly.
@@ -46,6 +55,24 @@ namespace roadmaker::xodr {
       .d = poly.d,
   };
 }
+
+namespace detail {
+
+/// The record covering `s` — the last one starting at or before it, and the
+/// first record for a query ahead of the profile. Deliberately the same rule
+/// `eval_profile` uses, so a converted width evaluates to the border value at
+/// every station rather than only inside the records' own spans.
+[[nodiscard]] inline const Poly3* covering_record(std::span<const Poly3> profile, double s) {
+  const Poly3* found = &profile.front();
+  for (const Poly3& poly : profile) {
+    if (poly.s <= s + tol::kLength) {
+      found = &poly;
+    }
+  }
+  return found;
+}
+
+} // namespace detail
 
 /// The width profile equivalent to a lane's border profile.
 ///
@@ -73,7 +100,50 @@ namespace roadmaker::xodr {
 /// requires and a gap at the section head would violate.
 ///
 /// Returns empty for an empty `outer` (the lane declared no borders).
-[[nodiscard]] std::vector<Poly3>
-widths_from_borders(std::span<const Poly3> outer, std::span<const Poly3> inner, int lane_odr_id);
+[[nodiscard]] inline std::vector<Poly3>
+widths_from_borders(std::span<const Poly3> outer, std::span<const Poly3> inner, int lane_odr_id) {
+  if (outer.empty()) {
+    return {};
+  }
+
+  // Break where EITHER profile breaks: a segment is only exactly a cubic while
+  // both operands stay on one record. Station 0 is always a break so the width
+  // covers the section from its start.
+  std::vector<double> stations{0.0};
+  for (const Poly3& poly : outer) {
+    stations.push_back(poly.s);
+  }
+  for (const Poly3& poly : inner) {
+    stations.push_back(poly.s);
+  }
+  std::ranges::sort(stations);
+  const auto duplicates = std::ranges::unique(
+      stations, [](double lhs, double rhs) { return std::abs(lhs - rhs) <= tol::kLength; });
+  stations.erase(duplicates.begin(), duplicates.end());
+
+  // t grows to the LEFT, so a left lane's width is outer − inner and a right
+  // lane's is the reverse; both borders are negative on the right.
+  const double sign = lane_odr_id > 0 ? 1.0 : -1.0;
+
+  std::vector<Poly3> widths;
+  widths.reserve(stations.size());
+  for (const double station : stations) {
+    if (station < -tol::kLength) {
+      continue; // a negative @sOffset is not a legal t_grEqZero; ignore it
+    }
+    const Poly3 far = rebase_poly3(*detail::covering_record(outer, station), station);
+    const Poly3 near = inner.empty()
+                           ? Poly3{.s = station}
+                           : rebase_poly3(*detail::covering_record(inner, station), station);
+    widths.push_back(Poly3{
+        .s = station,
+        .a = sign * (far.a - near.a),
+        .b = sign * (far.b - near.b),
+        .c = sign * (far.c - near.c),
+        .d = sign * (far.d - near.d),
+    });
+  }
+  return widths;
+}
 
 } // namespace roadmaker::xodr
