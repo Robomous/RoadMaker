@@ -1323,6 +1323,32 @@ Current version on `main`: **0.0.1**.
   about silently never matched.
 
 ### Fixed
+- **A left-hand-traffic network no longer becomes right-hand traffic on save**
+  ([#535](https://github.com/Robomous/RoadMaker/issues/535)). `<road @rule>`
+  (§10.2) was read nowhere: the parser had no attribute sweep on `<road>` at
+  all, `Road` had no field for it, and the writer never emitted it. Because
+  §10.2 says *"when this attribute is missing, RHT is assumed"*, the loss was
+  invisible — the saved file was well-formed and simply asserted the opposite
+  of what the source said about which way traffic runs.
+
+  The rule is now modeled, round-tripped, and **threaded to the places that
+  derive travel direction from a lane's side**, which is what makes it more
+  than a label: §11 defines a lane's standard direction as a function of the
+  rule *and* its `<left>`/`<right>` grouping, so under LHT the route resolver
+  walks lane links the other way, signal facing picks the opposite
+  `@orientation`, and junction-arm lane selection swaps which side leads in.
+  `lane_travels_with_s` (`road/lane.hpp`, exposed to Python) is now the single
+  definition of that composition — `@direction` still overrides whatever the
+  rule gives, and the two flips compose. Nothing authors LHT yet: faithful
+  round-trip is the bar #454 set, so every RHT network behaves exactly as
+  before.
+
+  As with #476, the verbatim spelling travels beside the enum. The writer omits
+  `@rule` for RHT (an absent attribute already means RHT, so stamping it would
+  churn every fixture), which on its own would have **deleted** an unknown
+  spelling and normalized away an explicit `rule="RHT"` — the same class of
+  silent rewrite by another route. An unrecognised spelling resolves to RHT,
+  warns, and keeps its bytes.
 - **Opening and saving someone else's file no longer rewrites what its lanes and
   markings mean** ([#476](https://github.com/Robomous/RoadMaker/issues/476)). The
   kernel models a subset of OpenDRIVE's `e_laneType`, `e_roadMarkType` and

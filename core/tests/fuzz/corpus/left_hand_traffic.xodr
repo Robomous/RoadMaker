@@ -1,0 +1,86 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- VALID seed: a left-hand-traffic network (#535).
+
+     `<road @rule>` (§10.2, Table 23) is optional and "when this attribute is
+     missing, RHT is assumed" — so before #535, which read it nowhere, this
+     file's LHT roads came back as RIGHT-hand traffic on the first save, with
+     no diagnostic. Nothing about the geometry changes; what changes is which
+     way traffic runs, because §11 makes the standard travel direction of a
+     lane a function of @rule and the lane's <left>/<right> grouping:
+
+       RHT -> <right> lanes (negative @id) run with +s, <left> against it
+       LHT -> <left>  lanes (positive @id) run with +s, <right> against it
+
+     Road 1 is the LHT carriageway. Road 2 spells @rule="RHT" explicitly: the
+     writer omits @rule for RHT, so an explicit one used to be deleted too, and
+     its absence means RHT by another route. Road 3 carries a bogus spelling,
+     which warns and resolves to RHT while keeping its bytes.
+
+     Apache-2.0. -->
+<OpenDRIVE>
+  <header revMajor="1" revMinor="8" name="left_hand_traffic" vendor="RoadMaker" />
+  <road name="lht" length="100" id="1" junction="-1" rule="LHT">
+    <planView>
+      <geometry s="0" x="0" y="0" hdg="0" length="100">
+        <line />
+      </geometry>
+    </planView>
+    <lanes>
+      <laneSection s="0">
+        <left>
+          <lane id="1" type="driving" level="false">
+            <width sOffset="0" a="3.5" b="0" c="0" d="0" />
+          </lane>
+        </left>
+        <center>
+          <lane id="0" type="none" level="false">
+            <roadMark sOffset="0" type="broken" color="white" width="0.15" />
+          </lane>
+        </center>
+        <right>
+          <lane id="-1" type="driving" level="false">
+            <width sOffset="0" a="3.5" b="0" c="0" d="0" />
+          </lane>
+        </right>
+      </laneSection>
+    </lanes>
+  </road>
+  <road name="explicit_rht" length="80" id="2" junction="-1" rule="RHT">
+    <planView>
+      <geometry s="0" x="0" y="40" hdg="0" length="80">
+        <line />
+      </geometry>
+    </planView>
+    <lanes>
+      <laneSection s="0">
+        <center>
+          <lane id="0" type="none" level="false" />
+        </center>
+        <right>
+          <lane id="-1" type="driving" level="false">
+            <width sOffset="0" a="3.5" b="0" c="0" d="0" />
+          </lane>
+        </right>
+      </laneSection>
+    </lanes>
+  </road>
+  <road name="bogus_rule" length="60" id="3" junction="-1" rule="left">
+    <planView>
+      <geometry s="0" x="0" y="80" hdg="0" length="60">
+        <line />
+      </geometry>
+    </planView>
+    <lanes>
+      <laneSection s="0">
+        <center>
+          <lane id="0" type="none" level="false" />
+        </center>
+        <right>
+          <lane id="-1" type="driving" level="false">
+            <width sOffset="0" a="3.5" b="0" c="0" d="0" />
+          </lane>
+        </right>
+      </laneSection>
+    </lanes>
+  </road>
+</OpenDRIVE>

@@ -34,18 +34,20 @@ namespace roadmaker {
 
 namespace {
 
-/// Right-hand traffic: a lane RIGHT of the reference line (negative id) runs
-/// toward +s, a lane LEFT of it runs toward -s. `@direction=reversed` flips
-/// that; `both` keeps the grouping's answer, since a bidirectional lane gives
-/// a sign no reason to prefer either approach.
+/// Which way traffic runs on a lane, per §11: under RHT a lane RIGHT of the
+/// reference line (negative id) runs toward +s and a lane LEFT of it toward -s;
+/// under LHT the two swap. `@direction=reversed` flips the result; `both` keeps
+/// the grouping's answer, since a bidirectional lane gives a sign no reason to
+/// prefer either approach.
 ///
-/// RoadMaker does not model <road @rule>, so RHT is the standing assumption
-/// here as it is in the junction-approach helpers (see edit::driving_lanes_at
-/// and mesh::approach_orientation, which encode the same convention).
-TravelDirection lane_travel(int odr_id, LaneDirection direction) {
-  const bool toward_plus_s = odr_id < 0;
-  const bool flipped = direction == LaneDirection::Reversed;
-  return (toward_plus_s != flipped) ? TravelDirection::Forward : TravelDirection::Backward;
+/// The rule itself lives in `lane_travels_with_s` (road/lane.hpp) so the route
+/// resolver and edit::driving_lanes_at answer identically (#535). Note that
+/// mesh::approach_orientation does NOT belong to that set: it reads the road
+/// END a driver arrives at, and traffic reaching a road's End runs toward +s
+/// under either rule.
+TravelDirection lane_travel(int odr_id, LaneDirection direction, TrafficRule rule) {
+  return lane_travels_with_s(odr_id, direction, rule) ? TravelDirection::Forward
+                                                      : TravelDirection::Backward;
 }
 
 /// Distance from `t` to the closed interval [lo, hi]; zero when inside.
@@ -162,7 +164,7 @@ signal_approach(const RoadNetwork& network, RoadId road_id, double s, double t) 
           std::abs(distance - best_distance) <= tol::kLength && same_side && !best_same_side;
       if (!best_travel.has_value() || closer || tied_and_better_side) {
         best_distance = distance;
-        best_travel = lane_travel(lane->odr_id, lane->direction);
+        best_travel = lane_travel(lane->odr_id, lane->direction, road->rule);
         best_side = lane_side;
         best_same_side = same_side;
       }
@@ -172,8 +174,11 @@ signal_approach(const RoadNetwork& network, RoadId road_id, double s, double t) 
   if (!best_travel.has_value()) {
     // No driving lane in this cross section (a sidewalk-only stretch, or a
     // road still being authored). The side convention alone still yields the
-    // facing a reader expects: a sign on the right governs +s traffic.
-    return SignalApproach{.travel = t > 0.0 ? TravelDirection::Backward : TravelDirection::Forward,
+    // facing a reader expects: under RHT a sign on the right governs +s
+    // traffic, and under LHT one on the left does. Asking the shared helper
+    // about a notional lane on t's side keeps that flip in one place.
+    return SignalApproach{.travel =
+                              lane_travel(t > 0.0 ? 1 : -1, LaneDirection::Standard, road->rule),
                           .side = t > 0.0 ? 1.0 : -1.0,
                           .from_junction_approach = false,
                           .has_driving_lane = false};

@@ -213,7 +213,13 @@ std::vector<ContactLane> driving_lanes_at(const RoadNetwork& network,
                                           bool incoming) {
   const Road& road = *network.road(end.road);
   const LaneSection& section = *network.lane_section(contact.section);
-  const bool positive_leads_in = end.contact == ContactPoint::Start;
+
+  // Which side leads INTO a junction sitting at this end. Under RHT the
+  // positive (left) lanes run toward -s, so they leave the road at its Start;
+  // under LHT they run toward +s and leave at its End (§11). Asking the shared
+  // helper about a notional left lane keeps the flip in one place (#535).
+  const bool positive_leads_in = lane_travels_with_s(1, LaneDirection::Standard, road.rule) ==
+                                 (end.contact == ContactPoint::End);
   const bool want_positive = incoming ? positive_leads_in : !positive_leads_in;
   const double center_t = eval_profile(road.lane_offset, contact.station);
   std::vector<ContactLane> lanes;
