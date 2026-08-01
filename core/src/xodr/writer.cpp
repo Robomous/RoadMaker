@@ -1230,6 +1230,17 @@ void write_road(pugi::xml_node root,
   road_node.append_attribute("junction")
       .set_value(junction != nullptr ? junction->odr_id.c_str() : "-1");
 
+  // @rule (§10.2 Table 23). Absent means RHT, so an authored right-hand road
+  // writes nothing and every existing fixture keeps its bytes. A road read from
+  // a file re-emits its VERBATIM spelling, which is what makes an explicit
+  // rule="RHT" — and an unknown spelling the reader warned about — survive the
+  // save instead of being silently normalized away (#535, #476's idiom).
+  if (!road.rule_str.empty()) {
+    road_node.append_attribute("rule").set_value(road.rule_str.c_str());
+  } else if (road.rule == TrafficRule::LeftHandTraffic) {
+    road_node.append_attribute("rule").set_value("LHT");
+  }
+
   // Resolve both ends before opening <link>: a link whose target was erased is
   // dropped (link_target_odr_id), and a <link> with no surviving child would be
   // an empty element rather than an absent one.

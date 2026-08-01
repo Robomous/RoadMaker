@@ -73,12 +73,22 @@ LaneId lane_at(const RoadNetwork& network, RoadId road, int lane_odr_id, double 
 /// True when travelling this lane advances `s`.
 ///
 /// The OpenDRIVE convention, and the same one `actor_world_pose` uses to aim an
-/// actor: a right-hand lane (negative `@id`) travels with +s, a left-hand lane
-/// against it. `LaneDirection::Reversed` flips that — it exists precisely to
-/// describe a lane whose traffic runs the other way (a contraflow bus lane).
-bool travels_forward(const Lane& lane) {
-  const bool by_side = lane.odr_id < 0;
-  return lane.direction == LaneDirection::Reversed ? !by_side : by_side;
+/// actor: under RHT a right-hand lane (negative `@id`) travels with +s and a
+/// left-hand lane against it, and under LHT the two swap (§11; the road's
+/// `@rule` is what says which). `LaneDirection::Reversed` flips the answer —
+/// it exists precisely to describe a lane whose traffic runs the other way (a
+/// contraflow bus lane). `lane_travels_with_s` holds the whole convention so
+/// signal facing and junction-arm selection cannot drift from it (#535).
+bool travels_forward(const Lane& lane, TrafficRule rule) {
+  return lane_travels_with_s(lane.odr_id, lane.direction, rule);
+}
+
+/// `travels_forward` for a lane reached through the network, so callers that
+/// already hold the lane but not its road do not have to walk back up.
+bool travels_forward(const RoadNetwork& network, const Lane& lane) {
+  const LaneSection* section = network.lane_section(lane.section);
+  const Road* road = section != nullptr ? network.road(section->road) : nullptr;
+  return travels_forward(lane, road != nullptr ? road->rule : TrafficRule::RightHandTraffic);
 }
 
 /// The s-interval of `lane`'s section within its road: {s0, s_end}.
@@ -121,7 +131,7 @@ std::vector<LaneId> onward_lanes(const RoadNetwork& network, LaneId from) {
     return out;
   }
 
-  const bool forward = travels_forward(*lane);
+  const bool forward = travels_forward(*lane, road->rule);
   const std::optional<int> linked = forward ? lane->successor : lane->predecessor;
 
   // 1. Another section of the SAME road, when one lies ahead.
@@ -425,7 +435,7 @@ ResolvedRoute resolve_route(const RoadNetwork& network, const Route& route) {
       if (!span.has_value()) {
         continue;
       }
-      const bool forward = travels_forward(*lane);
+      const bool forward = travels_forward(network, *lane);
       // The first leg starts at the origin waypoint's own station and the last
       // ends at the destination's; everything between spans its whole section,
       // in the direction of travel.

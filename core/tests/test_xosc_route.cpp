@@ -305,6 +305,57 @@ TEST(XoscRoute, ARouteThatWouldRunAgainstTheTrafficIsUnreachable) {
   EXPECT_TRUE(any_message_contains(resolved.findings, "no drivable path"));
 }
 
+// --- left-hand traffic (#535) ------------------------------------------------
+//
+// The resolver walks lane links in the lane's DIRECTION OF TRAVEL, and §11
+// makes that direction a function of the road's @rule as well as the lane's
+// side. So flipping both roads to LHT — touching no geometry, no link and no
+// @direction — must swap which of the two routes above is drivable. A resolver
+// that read @rule but did not thread it would keep answering RHT and fail both
+// halves; one that ignored travel direction entirely would pass neither.
+
+namespace {
+
+/// `TwoRoads`, with both roads declared left-hand traffic.
+TwoRoads left_hand_scene() {
+  TwoRoads scene;
+  scene.network.road(scene.first)->rule = roadmaker::TrafficRule::LeftHandTraffic;
+  scene.network.road(scene.second)->rule = roadmaker::TrafficRule::LeftHandTraffic;
+  return scene;
+}
+
+} // namespace
+
+TEST(XoscRoute, UnderLeftHandTrafficTheRightHandRouteRunsAgainstTheTraffic) {
+  const TwoRoads scene = left_hand_scene();
+  const osc::ResolvedRoute resolved = osc::resolve_route(scene.network, two_road_route());
+
+  // The very route that resolves completely under RHT is now backwards: under
+  // LHT lane -1 runs toward -s, so road 1 -> road 2 is against the traffic.
+  EXPECT_FALSE(resolved.complete);
+  EXPECT_TRUE(any_message_contains(resolved.findings, "no drivable path"));
+}
+
+TEST(XoscRoute, UnderLeftHandTrafficTheReversedRouteIsTheDrivableOne) {
+  const TwoRoads scene = left_hand_scene();
+  osc::Route backwards;
+  backwards.name = "Backwards";
+  backwards.waypoints.push_back(waypoint_on("2", "-1", 90.0));
+  backwards.waypoints.push_back(waypoint_on("1", "-1", 10.0));
+
+  const osc::ResolvedRoute resolved = osc::resolve_route(scene.network, backwards);
+  EXPECT_TRUE(resolved.complete) << (resolved.findings.empty() ? "" : resolved.findings[0].message);
+  ASSERT_GE(resolved.legs.size(), 2U);
+  EXPECT_EQ(resolved.legs.front().road, scene.second);
+  EXPECT_EQ(resolved.legs.back().road, scene.first);
+
+  // And every leg DESCENDS, which is the other half of the claim: the legs are
+  // emitted in the direction of travel, so an LHT right-hand lane runs -s.
+  for (const osc::RouteLeg& leg : resolved.legs) {
+    EXPECT_GT(leg.s_start, leg.s_end) << "an LHT right-hand lane leg ran forwards";
+  }
+}
+
 // --- waypoints that name no lane ---------------------------------------------
 
 TEST(XoscRoute, AWorldPositionWaypointIsReportedAsAmbiguous) {

@@ -21,6 +21,7 @@
 #include "roadmaker/road/bridge.hpp"
 #include "roadmaker/road/id.hpp"
 #include "roadmaker/road/road_type.hpp"
+#include "roadmaker/road/traffic_rule.hpp"
 
 #include <optional>
 #include <string>
@@ -79,6 +80,37 @@ struct Road {
 
   /// Set iff this is a connecting road inside a junction.
   JunctionId junction;
+
+  /// `<road @rule>` — right- or left-hand traffic (§10.2, Table 23). Optional
+  /// in the file and RHT when absent, so this defaults to RHT and the writer
+  /// emits the attribute only for LHT (a byte-stable default, as with
+  /// `Lane::direction`).
+  ///
+  /// It is not decoration: §11 makes the *standard* travel direction of a lane
+  /// a function of the rule and the lane's `<left>`/`<right>` grouping, which
+  /// is why `lane_travels_with_s` (lane.hpp) takes it and why the route
+  /// resolver, signal facing and junction-arm lane selection all consult it.
+  /// Before #535 nothing read the attribute at all, so a left-hand-traffic
+  /// network became right-hand traffic on its first save, silently.
+  ///
+  /// RoadMaker does not yet *author* LHT — no road class and no edit command
+  /// sets it (#454 put full LHT support out of scope). Round-tripping a
+  /// foreign LHT file faithfully is the bar.
+  TrafficRule rule = TrafficRule::RightHandTraffic;
+
+  /// `@rule` exactly as spelled; empty when the attribute was absent or the
+  /// road was authored.
+  ///
+  /// Same contract as `Lane::type_str` / `Lane::direction_str` and for the same
+  /// reason (#476): an unknown spelling parses to RHT, and the writer omits
+  /// `@rule` for RHT — so without the verbatim string the attribute would
+  /// *vanish*, and its absence means RHT per §10.2, which is the same wrong
+  /// claim by another route. Keeping it also lets an explicitly-written
+  /// `rule="RHT"` survive a save unchanged.
+  ///
+  /// ★ ANY COMMAND THAT CHANGES `rule` MUST CLEAR THIS, or the file keeps the
+  /// spelling of a rule the road no longer has.
+  std::string rule_str;
 
   /// `<type>` records — the road's main purpose over an s-range and the speed
   /// limit that goes with it (§10.4), ascending by `s`

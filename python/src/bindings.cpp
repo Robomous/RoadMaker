@@ -236,6 +236,10 @@ NB_MODULE(_roadmaker, m) {
       .value("REVERSED", roadmaker::LaneDirection::Reversed)
       .value("BOTH", roadmaker::LaneDirection::Both);
 
+  nb::enum_<roadmaker::TrafficRule>(m, "TrafficRule")
+      .value("RIGHT_HAND_TRAFFIC", roadmaker::TrafficRule::RightHandTraffic)
+      .value("LEFT_HAND_TRAFFIC", roadmaker::TrafficRule::LeftHandTraffic);
+
   nb::enum_<roadmaker::ContactPoint>(m, "ContactPoint")
       .value("START", roadmaker::ContactPoint::Start)
       .value("END", roadmaker::ContactPoint::End);
@@ -590,6 +594,16 @@ NB_MODULE(_roadmaker, m) {
               "<type> records: the road's purpose over an s-range and the speed "
               "limit that goes with it (§10.4). Empty on a road that declares no "
               "type, which is legal.")
+      .def_ro("rule",
+              &roadmaker::Road::rule,
+              "@rule — right- or left-hand traffic (§10.2). RIGHT_HAND_TRAFFIC "
+              "when the file omits the attribute, which is what the spec says it "
+              "means. Decides the standard travel direction of every lane on the "
+              "road (see rm.lane_travels_with_s).")
+      .def_ro("rule_str",
+              &roadmaker::Road::rule_str,
+              "@rule exactly as spelled in the file; empty when the attribute was "
+              "absent or the road was authored. Re-emitted verbatim on write.")
       .def("__repr__", [](const roadmaker::Road& road) {
         return "Road(odr_id='" + road.odr_id + "', name='" + road.name +
                "', length=" + std::to_string(road.length) + ")";
@@ -636,6 +650,17 @@ NB_MODULE(_roadmaker, m) {
         &roadmaker::is_known_speed_unit,
         "unit"_a,
         "Whether the spelling is one of e_unitSpeed's three literals (§16 A.1.5).");
+
+  m.def("lane_travels_with_s",
+        &roadmaker::lane_travels_with_s,
+        "lane_odr_id"_a,
+        "direction"_a,
+        "rule"_a,
+        "Whether traffic on the lane travels toward increasing s (§11). Under "
+        "RIGHT_HAND_TRAFFIC a negative lane id runs with +s and a positive one "
+        "against it; LEFT_HAND_TRAFFIC swaps them, and LaneDirection.REVERSED "
+        "flips whichever answer the rule gives. This is the kernel's single "
+        "definition of the convention (#535).");
 
   // A <bridge> span (p5-s3, #233). Read-only: authoring goes through the
   // author_bridge / set_bridge_span / remove_bridge commands.

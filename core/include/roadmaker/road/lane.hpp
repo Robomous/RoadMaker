@@ -19,6 +19,7 @@
 #include "roadmaker/geometry/poly3.hpp"
 #include "roadmaker/road/defaults.hpp"
 #include "roadmaker/road/id.hpp"
+#include "roadmaker/road/traffic_rule.hpp"
 #include "roadmaker/xodr/raw_xml.hpp"
 
 #include <optional>
@@ -57,6 +58,38 @@ enum class LaneDirection {
   Reversed,
   Both,
 };
+
+/// True when traffic on this lane travels toward increasing `s`.
+///
+/// **The one place the RHT/LHT flip is written down.** OpenDRIVE 1.9.0 §11
+/// states the default driving direction normatively:
+///
+/// > For a road with the @rule="RHT" attribute, the default driving direction
+/// > would be in positive direction of the road reference line for all
+/// > `<right>` element lanes with negative @id attribute and against the road
+/// > reference line for lanes in the `<left>` element with positive @id
+/// > attribute. If the road has the @rule="LHT" attribute, the default driving
+/// > direction would be in positive direction of the road reference line for
+/// > all `<left>` element lanes with positive @id attribute and against the
+/// > road reference line for all `<right>` element lanes with negative @id
+/// > attribute.
+///
+/// So the rule flips the side test outright, and `@direction` then overrides
+/// the result: `Reversed` inverts it, `Standard` leaves it alone (§11 — *"If
+/// the @direction attribute is not specified or has a value of
+/// @direction='standard', the default driving direction is not changed"*).
+///
+/// `Both` answers the grouping's default, because a bidirectional lane gives a
+/// caller no reason to prefer either sense; callers that must distinguish a
+/// contraflow-capable lane read `Lane::direction` themselves.
+///
+/// The center lane (`@id` 0) carries no traffic; it answers as a left lane and
+/// callers are expected to have excluded it already.
+[[nodiscard]] constexpr bool
+lane_travels_with_s(int lane_odr_id, LaneDirection direction, TrafficRule rule) {
+  const bool by_side = rule == TrafficRule::LeftHandTraffic ? lane_odr_id > 0 : lane_odr_id < 0;
+  return direction == LaneDirection::Reversed ? !by_side : by_side;
+}
 
 /// Lane marking types RoadMaker renders in M1; exotic ones map to Other
 /// (with a diagnostic).

@@ -459,6 +459,23 @@ private:
 
     const double declared_length = attr_double(road_node, "length", location);
 
+    // @rule (e_trafficRule, §10.2 Table 23). Absent -> RHT, which the spec
+    // supplies; unknown spelling -> RHT + a Warning, mirroring @direction on a
+    // lane. The spelling is kept either way: the writer omits @rule for RHT, so
+    // without it an unknown value would be DELETED rather than defaulted, and
+    // an absent @rule means RHT — the same wrong claim by another route (#476).
+    const std::string rule_name = road_node.attribute("rule").value();
+    road.rule_str = rule_name;
+    if (const auto rule = traffic_rule_from_string(rule_name)) {
+      road.rule = *rule;
+    } else {
+      diag(Severity::Warning,
+           location,
+           fmt::format("unknown road rule '{}' mapped to 'RHT'; lane travel directions are "
+                       "resolved as right-hand traffic",
+                       rule_name));
+    }
+
     parse_plan_view(road_node.child("planView"), road, location);
     if (road.plan_view.empty()) {
       diag(
@@ -1046,6 +1063,18 @@ private:
     if (name == "orange")
       return RoadMarkColor::Orange;
     return RoadMarkColor::Other;
+  }
+
+  /// e_trafficRule (§10.2 Table 23). Empty/absent -> RHT, which the spec
+  /// mandates ("when this attribute is missing, RHT is assumed"); an unknown
+  /// spelling -> nullopt so the caller can default to RHT AND warn (never
+  /// dropped). The verbatim spelling is kept by the caller either way.
+  static std::optional<TrafficRule> traffic_rule_from_string(std::string_view name) {
+    if (name == "RHT" || name.empty())
+      return TrafficRule::RightHandTraffic;
+    if (name == "LHT")
+      return TrafficRule::LeftHandTraffic;
+    return std::nullopt;
   }
 
   /// e_lane_direction (1.8.1 Annex A.3.10 Table 173 / 1.9.0 Annex A.3.11

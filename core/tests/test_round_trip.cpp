@@ -282,6 +282,120 @@ TEST(RoundTrip, LaneDirectionSurvivesWriteParseWrite) {
   EXPECT_EQ(*xml, *again);
 }
 
+// --- road @rule, LHT/RHT (#535) ---------------------------------------------
+//
+// Read nowhere before #535, so a left-hand-traffic network became right-hand
+// traffic on its first save. Like #476 that is a REWRITE rather than a drop:
+// the output makes an affirmative wrong claim about which way traffic runs,
+// and §10.2 makes the absent attribute mean RHT, so nothing looks amiss.
+
+namespace {
+
+/// The `<road ...>` opening tags of an .xodr, trimmed — the granularity the
+/// defect lives at, since @rule is a road attribute and the geometry below it
+/// is unaffected either way.
+std::vector<std::string> road_lines(const std::string& xml) {
+  std::vector<std::string> out;
+  std::istringstream stream(xml);
+  std::string line;
+  while (std::getline(stream, line)) {
+    const std::size_t first = line.find_first_not_of(" \t");
+    if (first == std::string::npos) {
+      continue;
+    }
+    const std::string trimmed = line.substr(first);
+    if (trimmed.starts_with("<road ")) {
+      out.push_back(trimmed);
+    }
+  }
+  return out;
+}
+
+} // namespace
+
+TEST(RoundTrip, RoadRuleSurvivesWriteParseWrite) {
+  const std::filesystem::path sample =
+      std::filesystem::path(RM_FUZZ_CORPUS_DIR) / "left_hand_traffic.xodr";
+  auto loaded = roadmaker::load_xodr(sample);
+  ASSERT_TRUE(loaded.has_value()) << (loaded ? "" : loaded.error().message);
+
+  // 1. The MODEL carries the rule, so behaviour downstream can consult it.
+  const RoadNetwork& network = loaded->network;
+  EXPECT_EQ(network.road(network.find_road("1"))->rule, roadmaker::TrafficRule::LeftHandTraffic);
+  EXPECT_EQ(network.road(network.find_road("2"))->rule, roadmaker::TrafficRule::RightHandTraffic);
+  // A spelling outside e_trafficRule resolves to the spec default, never to a
+  // third state, and the reader says so (asserted in RoadRuleUnknownStillWarns).
+  EXPECT_EQ(network.road(network.find_road("3"))->rule, roadmaker::TrafficRule::RightHandTraffic);
+
+  // 2. The BYTES survive. Asserting on the parsed model alone would pass on a
+  // writer that drops @rule entirely, because road 2's and road 3's values both
+  // resolve to the same enum the default gives.
+  std::ifstream file(sample);
+  ASSERT_TRUE(file.is_open());
+  const std::string source((std::istreambuf_iterator<char>(file)),
+                           std::istreambuf_iterator<char>());
+  const auto written = roadmaker::write_xodr(loaded->network, "left_hand_traffic");
+  ASSERT_TRUE(written.has_value());
+
+  const std::vector<std::string> before = road_lines(source);
+  const std::vector<std::string> after = road_lines(*written);
+  ASSERT_EQ(before.size(), 3U) << "the sample must still carry all three cases";
+  ASSERT_EQ(after.size(), before.size());
+  for (std::size_t i = 0; i < before.size(); ++i) {
+    EXPECT_EQ(before[i], after[i]) << "road line " << i << " changed on write";
+  }
+  EXPECT_NE(written->find("rule=\"LHT\""), std::string::npos);
+  EXPECT_NE(written->find("rule=\"RHT\""), std::string::npos);
+  EXPECT_NE(written->find("rule=\"left\""), std::string::npos);
+
+  // 3. Fixed point: write -> parse -> write reproduces the same bytes, and the
+  // rule is still LHT after the second trip rather than decaying to the default.
+  const auto reparsed = roadmaker::parse_xodr(*written, "left_hand_traffic");
+  ASSERT_TRUE(reparsed.has_value());
+  EXPECT_EQ(reparsed->network.road(reparsed->network.find_road("1"))->rule,
+            roadmaker::TrafficRule::LeftHandTraffic);
+  const auto again = roadmaker::write_xodr(reparsed->network, "left_hand_traffic");
+  ASSERT_TRUE(again.has_value());
+  EXPECT_EQ(*written, *again);
+}
+
+TEST(RoundTrip, RoadRuleUnknownStillWarns) {
+  // Preserving the spelling must not silence the parser: a caller reading
+  // `rule="left"` gets RHT semantics, and the never-drop contract is
+  // diagnose-AND-keep, not keep-quietly.
+  const auto loaded =
+      roadmaker::load_xodr(std::filesystem::path(RM_FUZZ_CORPUS_DIR) / "left_hand_traffic.xodr");
+  ASSERT_TRUE(loaded.has_value());
+  EXPECT_TRUE(std::ranges::any_of(loaded->diagnostics, [](const roadmaker::Diagnostic& d) {
+    return d.severity == roadmaker::Severity::Warning &&
+           d.message.find("unknown road rule 'left'") != std::string::npos;
+  }));
+  // The two legal spellings must NOT warn, or the diagnostic is noise.
+  EXPECT_FALSE(std::ranges::any_of(loaded->diagnostics, [](const roadmaker::Diagnostic& d) {
+    return d.message.find("unknown road rule 'LHT'") != std::string::npos ||
+           d.message.find("unknown road rule 'RHT'") != std::string::npos;
+  }));
+  EXPECT_EQ(roadmaker::count_errors(loaded->diagnostics), 0U) << "warnings, never errors";
+}
+
+TEST(RoundTrip, AuthoredRoadWritesNoRuleAttribute) {
+  // The other half of the byte-stability claim: RHT is what an absent @rule
+  // means, so a road RoadMaker authored must not start stamping rule="RHT"
+  // onto every file in the suite.
+  RoadNetwork network;
+  const std::array<Waypoint, 2> waypoints{Waypoint{.x = 0.0, .y = 0.0},
+                                          Waypoint{.x = 100.0, .y = 0.0}};
+  const auto road_id = roadmaker::author_clothoid_road(
+      network, waypoints, LaneProfile::two_lane_default(), "Plain", "1");
+  ASSERT_TRUE(road_id.has_value());
+  EXPECT_EQ(network.road(*road_id)->rule, roadmaker::TrafficRule::RightHandTraffic);
+  EXPECT_TRUE(network.road(*road_id)->rule_str.empty());
+
+  const auto written = roadmaker::write_xodr(network, "plain");
+  ASSERT_TRUE(written.has_value());
+  EXPECT_EQ(written->find("rule="), std::string::npos);
+}
+
 // --- foreign enum spellings (#476) ------------------------------------------
 //
 // The one place the kernel used to REWRITE foreign data into different

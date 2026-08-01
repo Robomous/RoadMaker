@@ -152,6 +152,108 @@ TEST(SignalFacing, LeftSideReversedTravelFlipsBothOrientationAndToeOut) {
   EXPECT_DOUBLE_EQ(facing->h_offset, -kToe);
 }
 
+// --- left-hand traffic (#535) ------------------------------------------------
+//
+// @rule is not decoration: §11 makes the standard travel direction of a lane a
+// function of the rule and the <left>/<right> grouping, so an LHT road inverts
+// both of the standard cases above WITHOUT any lane carrying @direction. The
+// four cases are spelled out for the same reason as the RHT ones — a rule that
+// is read but not threaded answers two of them correctly by coincidence.
+
+TEST(SignalFacing, LeftHandTrafficInvertsTheStandardSideConvention) {
+  RoadNetwork network;
+  const RoadId road = author_street(network);
+  network.road(road)->rule = TrafficRule::LeftHandTraffic;
+
+  EXPECT_TRUE(governed_by_a_lane(network, road, -5.0));
+  const Expected<SignalFacing> right = auto_signal_facing(network, road, 60.0, -5.0);
+  ASSERT_TRUE(right.has_value()) << right.error().message;
+  EXPECT_EQ(right->orientation, ObjectOrientation::Minus)
+      << "under LHT the right-hand lane runs AGAINST +s, so a right-side sign governs '-'";
+  EXPECT_DOUBLE_EQ(right->h_offset, -kToe);
+
+  EXPECT_TRUE(governed_by_a_lane(network, road, 5.0));
+  const Expected<SignalFacing> left = auto_signal_facing(network, road, 60.0, 5.0);
+  ASSERT_TRUE(left.has_value()) << left.error().message;
+  EXPECT_EQ(left->orientation, ObjectOrientation::Plus) << "and the left-hand lane runs WITH +s";
+  EXPECT_DOUBLE_EQ(left->h_offset, -kToe);
+}
+
+TEST(SignalFacing, LaneDirectionStillOverridesTheRule) {
+  // §11: @direction overrides whatever the rule/grouping default says, so
+  // reversing every lane on an LHT road lands back on the RHT answers. This is
+  // what pins the two flips as INDEPENDENT rather than one being the other.
+  RoadNetwork network;
+  const RoadId road = author_street(network);
+  network.road(road)->rule = TrafficRule::LeftHandTraffic;
+  ASSERT_GT(reverse_every_driving_lane(network, road), 0U);
+
+  const Expected<SignalFacing> right = auto_signal_facing(network, road, 60.0, -5.0);
+  ASSERT_TRUE(right.has_value()) << right.error().message;
+  EXPECT_EQ(right->orientation, ObjectOrientation::Plus);
+  EXPECT_DOUBLE_EQ(right->h_offset, kToe);
+}
+
+TEST(SignalFacing, TheRuleAlsoDrivesTheNoDrivingLaneFallback) {
+  // A sidewalk-only cross section has no lane to ask, and the side convention
+  // it falls back on is exactly the one @rule flips. Left unthreaded, this is
+  // the branch that would keep answering RHT after everything else moved.
+  RoadNetwork network;
+  const RoadId road = author_street(network);
+  network.road(road)->rule = TrafficRule::LeftHandTraffic;
+  for (const LaneSectionId section_id : network.road(road)->sections) {
+    const LaneSection* section = network.lane_section(section_id);
+    ASSERT_NE(section, nullptr);
+    for (const LaneId lane_id : section->lanes) {
+      if (network.lane(lane_id)->odr_id != 0) {
+        network.lane(lane_id)->type = LaneType::Sidewalk;
+      }
+    }
+  }
+  ASSERT_FALSE(governed_by_a_lane(network, road, -5.0)) << "the fallback must be the branch taken";
+
+  const Expected<SignalApproach> approach = signal_approach(network, road, 60.0, -5.0);
+  ASSERT_TRUE(approach.has_value());
+  EXPECT_EQ(approach->travel, TravelDirection::Backward)
+      << "under LHT a sign on the right governs traffic running toward -s";
+}
+
+// --- the convention itself ---------------------------------------------------
+
+TEST(SignalFacing, LaneTravelsWithSIsTheSingleDefinitionOfTheConvention) {
+  // The helper every consumer routes through (signal facing, the route
+  // resolver, junction-arm lane selection). Sixteen combinations, so a change
+  // to one of them cannot pass by matching only the case a caller happens to
+  // exercise.
+  constexpr TrafficRule kRht = TrafficRule::RightHandTraffic;
+  constexpr TrafficRule kLht = TrafficRule::LeftHandTraffic;
+
+  // Standard: the rule decides, and it decides oppositely on the two sides.
+  EXPECT_TRUE(lane_travels_with_s(-1, LaneDirection::Standard, kRht));
+  EXPECT_FALSE(lane_travels_with_s(1, LaneDirection::Standard, kRht));
+  EXPECT_FALSE(lane_travels_with_s(-1, LaneDirection::Standard, kLht));
+  EXPECT_TRUE(lane_travels_with_s(1, LaneDirection::Standard, kLht));
+
+  // Reversed inverts whichever answer the rule gave.
+  EXPECT_FALSE(lane_travels_with_s(-1, LaneDirection::Reversed, kRht));
+  EXPECT_TRUE(lane_travels_with_s(1, LaneDirection::Reversed, kRht));
+  EXPECT_TRUE(lane_travels_with_s(-1, LaneDirection::Reversed, kLht));
+  EXPECT_FALSE(lane_travels_with_s(1, LaneDirection::Reversed, kLht));
+
+  // Both answers the grouping default, exactly as Standard does — a
+  // bidirectional lane gives a caller no reason to prefer either sense.
+  EXPECT_TRUE(lane_travels_with_s(-1, LaneDirection::Both, kRht));
+  EXPECT_FALSE(lane_travels_with_s(1, LaneDirection::Both, kRht));
+  EXPECT_FALSE(lane_travels_with_s(-1, LaneDirection::Both, kLht));
+  EXPECT_TRUE(lane_travels_with_s(1, LaneDirection::Both, kLht));
+
+  // Outer lanes answer like their side, not like lane +/-1 specifically.
+  EXPECT_TRUE(lane_travels_with_s(-4, LaneDirection::Standard, kRht));
+  EXPECT_TRUE(lane_travels_with_s(4, LaneDirection::Standard, kLht));
+  EXPECT_FALSE(lane_travels_with_s(4, LaneDirection::Standard, kRht));
+  EXPECT_FALSE(lane_travels_with_s(-4, LaneDirection::Standard, kLht));
+}
+
 // --- what the cant actually does in world terms ------------------------------
 
 TEST(SignalFacing, TheCantLeansAwayFromTheRoadwayOnBothSides) {

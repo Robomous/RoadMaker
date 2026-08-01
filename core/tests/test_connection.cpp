@@ -120,6 +120,39 @@ TEST(Connection, ContactStateStartAndEndSignConventions) {
   EXPECT_NEAR(end_sloped->grade, 0.01, 1e-6);
 }
 
+TEST(Connection, DrivingLanesAtFollowsTheRoadRule) {
+  // Which lanes lead INTO a junction at a given end is a travel-direction
+  // question, so §11's @rule flips it (#535). Nothing else about the road
+  // changes: same geometry, same lanes, no @direction anywhere.
+  RoadNetwork network;
+  const RoadId road =
+      author(network, {Waypoint{.x = 0.0, .y = 0.0}, Waypoint{.x = 120.0, .y = 0.0}}, "1");
+  const auto end = roadmaker::edit::contact_state(network, RoadEnd{road, ContactPoint::End});
+  ASSERT_TRUE(end.has_value());
+
+  const auto ids = [](const std::vector<roadmaker::edit::ContactLane>& lanes) {
+    std::vector<int> out;
+    for (const roadmaker::edit::ContactLane& lane : lanes) {
+      out.push_back(lane.odr_id);
+    }
+    return out;
+  };
+
+  // RHT: at the road's End, the negative (right) lanes run toward +s and so
+  // lead INTO a junction there; the positive ones lead out.
+  EXPECT_EQ(ids(roadmaker::edit::driving_lanes_at(network, {road, ContactPoint::End}, *end, true)),
+            (std::vector<int>{-1}));
+  EXPECT_EQ(ids(roadmaker::edit::driving_lanes_at(network, {road, ContactPoint::End}, *end, false)),
+            (std::vector<int>{1}));
+
+  // LHT: exactly swapped.
+  network.road(road)->rule = roadmaker::TrafficRule::LeftHandTraffic;
+  EXPECT_EQ(ids(roadmaker::edit::driving_lanes_at(network, {road, ContactPoint::End}, *end, true)),
+            (std::vector<int>{1}));
+  EXPECT_EQ(ids(roadmaker::edit::driving_lanes_at(network, {road, ContactPoint::End}, *end, false)),
+            (std::vector<int>{-1}));
+}
+
 TEST(Connection, AlignedPoseFollowsTangentAndSide) {
   RoadNetwork network;
   const RoadId road =
