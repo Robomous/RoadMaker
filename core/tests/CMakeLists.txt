@@ -103,6 +103,7 @@ add_executable(roadmaker_core_tests
   test_xosc_writer.cpp
   test_xosc_signals.cpp
   test_xosc_reader.cpp
+  test_xosc_route.cpp
   test_xosc_decompose.cpp
   test_xosc_edit.cpp
 )

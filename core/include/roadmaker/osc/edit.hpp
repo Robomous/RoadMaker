@@ -279,6 +279,65 @@ set_entity_init_speed(const Scenario& scenario, std::string_view entity_name, do
 [[nodiscard]] RM_API std::unique_ptr<Command>
 rename_scenario_object(const Scenario& scenario, std::string_view from, std::string to);
 
+// --- routes (p8-s3, issue #247) ----------------------------------------------
+//
+// A route is authored ONE waypoint at a time, so the factories are the ones a
+// tool needs for a click, a drag and a Delete — not one all-at-once setter. The
+// coarse alternative (replace the whole route on every gesture) would make a
+// single dragged waypoint an undo entry that also silently re-writes the ones
+// the user did not touch.
+
+/// Assigns `route` to `entity_name`, replacing any route it already has.
+///
+/// Creates the entity's `<Private>` and its `<RoutingAction>` if it has none;
+/// the routing action is APPENDED as its own `<PrivateAction>`, the same shape
+/// `set_entity_init_speed` uses, because `<PrivateAction>` is a per-element
+/// choice and that is the model the reader would have produced from the file.
+///
+/// Refuses an entity no `<ScenarioObject>` carries, an empty route name, and a
+/// route with fewer than two waypoints — the schema's own minimum, brought
+/// forward from save time so a tool cannot build a document it then cannot
+/// write.
+[[nodiscard]] RM_API std::unique_ptr<Command>
+assign_route(const Scenario& scenario, std::string_view entity_name, Route route);
+
+/// Removes `entity_name`'s `<RoutingAction>` entirely.
+///
+/// The whole action rather than its waypoints: a route with no waypoints is not
+/// a shorter route, it is an invalid element. Refuses an entity with no route.
+[[nodiscard]] RM_API std::unique_ptr<Command> clear_route(const Scenario& scenario,
+                                                          std::string_view entity_name);
+
+/// Moves `entity_name`'s route waypoint at `index` to `position`.
+///
+/// The drag commit. Carries the waypoint's `@routeStrategy` and its preserved
+/// tier through untouched — neither belongs to the position being moved.
+///
+/// Refuses an entity with no route and an index the route does not have; never
+/// clamps, because a clamped index writes a waypoint the caller did not name.
+[[nodiscard]] RM_API std::unique_ptr<Command> set_route_waypoint(const Scenario& scenario,
+                                                                 std::string_view entity_name,
+                                                                 std::size_t index,
+                                                                 Position position);
+
+/// Inserts a waypoint at `index` (which may be the route's size, to append).
+///
+/// Refuses an entity with no route and an index past the end.
+[[nodiscard]] RM_API std::unique_ptr<Command> insert_route_waypoint(const Scenario& scenario,
+                                                                    std::string_view entity_name,
+                                                                    std::size_t index,
+                                                                    RouteWaypoint waypoint);
+
+/// Removes the waypoint at `index`.
+///
+/// ★ REFUSES WHEN IT WOULD LEAVE FEWER THAN TWO. "At least two waypoints are
+/// needed to define a route", so removing the second-to-last one would produce
+/// a document `write_xosc` refuses — a deletion that appeared to succeed and
+/// then made the scenario unsavable. Delete the whole route instead
+/// (`clear_route`), which is what the user meant.
+[[nodiscard]] RM_API std::unique_ptr<Command>
+remove_route_waypoint(const Scenario& scenario, std::string_view entity_name, std::size_t index);
+
 /// Replaces `entity_name`'s `<BoundingBox>`, carrying over the element's own
 /// preserved tier (which belongs to the element, not to the numbers).
 ///

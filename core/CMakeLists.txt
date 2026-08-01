@@ -42,10 +42,12 @@ add_library(roadmaker_core ${_rm_core_type}
   src/osc/catalog.cpp
   src/osc/reader.cpp
   src/osc/writer.cpp
-  # PR-D: building a scenario FROM a network, and mutating one undoably.
-  # decompose.cpp is the only osc/ unit that reaches into road/ and mesh/.
+  # Building a scenario FROM a network, mutating one undoably, and resolving a
+  # route against one — the osc/ units that reach into road/ and mesh/. Every
+  # unit above this line reads and writes the FILE and nothing else.
   src/osc/decompose.cpp
   src/osc/edit.cpp
+  src/osc/route.cpp
   src/mesh/mesh_builder.cpp
   src/mesh/junction_corner_detail.cpp
   src/mesh/junction_corners.cpp

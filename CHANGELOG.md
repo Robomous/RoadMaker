@@ -281,6 +281,37 @@ Current version on `main`: **0.0.1**.
     The lax reading treats every other spelling as `false`, so a typo, an
     unresolved `$parameter` and a genuine `false` would all come back
     identical — and only one of the three is what the file said.
+- **Routes resolve against the road network, and are edited undoably**
+  ([#247](https://github.com/Robomous/RoadMaker/issues/247), resolver +
+  commands): `osc::resolve_route` turns a route's waypoints into the ordered
+  lane legs a car would actually drive — joined by a breadth-first search over
+  lane links, road links and `JunctionConnection` lane links, directed by each
+  lane's own direction of travel — and `osc::validate_routes` re-checks every
+  assigned route in a scenario against the network, which is what lets a route
+  survive an edit to the road beneath it and be **diagnosed, never silently
+  dropped or re-routed**, when the edit genuinely broke it
+  ([GW-6](docs/roadmap/golden_workflows/gw6_scenarios.md) steps 7 and 8).
+  - **The resolver reports, and does nothing else.** A waypoint whose road or
+    lane is gone, a pair with no drivable path, a waypoint sitting on a
+    junction's connecting road (citing `routing.route_waypoints_locations`) —
+    each is a `Diagnostic` naming the entity, the route and the waypoint index,
+    and the legs that *did* resolve are still returned so a caller can draw
+    what it knows and mark the gap. An incomplete resolution always says why.
+  - **A leg is a LANE, not a road**, so it pins the cross-section too — and
+    `s_end < s_start` when the lane travels against +s, which a left-hand lane
+    always does. A route that could only be driven against its lanes' direction
+    of travel is reported as unreachable rather than solved.
+  - **Five new commands** — `assign_route`, `clear_route`,
+    `set_route_waypoint`, `insert_route_waypoint`, `remove_route_waypoint` —
+    author a route one gesture at a time on the same undo stack as everything
+    else, byte-identical across undo/redo. Removing a waypoint that would
+    leave fewer than two is **refused** (that deletion would make the scenario
+    unsavable); an out-of-range index is refused rather than clamped.
+  - All of it is reachable from Python (`rm.osc.resolve_route`,
+    `rm.osc.validate_routes`, the route model types), and
+    `python/examples/scenario_routes.py` replays GW-6 steps 7 and 8 headlessly:
+    move a road the route runs along and it still resolves; delete a lane it
+    traverses and the route is reported as invalidated.
 - **The esmini CI pin is honoured by a bump**
   ([#506](https://github.com/Robomous/RoadMaker/issues/506)): the cache key
   repeated the version as a literal instead of deriving it from

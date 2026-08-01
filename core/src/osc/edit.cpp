@@ -804,6 +804,257 @@ private:
   bool applied_ = false;
 };
 
+// --- routes (p8-s3, issue #247) ----------------------------------------------
+
+/// Finds `entity`'s `<RoutingAction>` in `<Init>`, or nullptr.
+RoutingAction* find_routing(Scenario& scenario, const std::string& entity) {
+  for (Private& entry : scenario.storyboard.init.actions.privates) {
+    if (entry.entity_ref != entity) {
+      continue;
+    }
+    for (PrivateAction& action : entry.actions) {
+      if (action.routing.has_value()) {
+        return &*action.routing;
+      }
+    }
+  }
+  return nullptr;
+}
+
+const Route* find_route(const Scenario& scenario, std::string_view entity) {
+  for (const Private& entry : scenario.storyboard.init.actions.privates) {
+    if (entry.entity_ref != entity) {
+      continue;
+    }
+    for (const PrivateAction& action : entry.actions) {
+      if (action.routing.has_value() && action.routing->assign_route.has_value() &&
+          action.routing->assign_route->route.has_value()) {
+        return &*action.routing->assign_route->route;
+      }
+    }
+  }
+  return nullptr;
+}
+
+/// Every route command snapshots the whole `<Init><Actions>` subtree and
+/// restores it wholesale.
+///
+/// Deliberately coarser than each mutation, and for the reason
+/// SetEntityInitPositionCommand states: a route edit can create a `<Private>`,
+/// create a `<PrivateAction>`, replace a `<Route>` or move one waypoint, and
+/// ONE exact value snapshot is one code path where undoing each separately is
+/// four. An init block is small, and byte-identity after apply->revert is the
+/// property this is measured on — not how little was copied.
+class RouteCommand : public Command {
+public:
+  RouteCommand(std::string_view label, std::string entity)
+      : label_(label), entity_(std::move(entity)) {}
+
+  Expected<void> apply(Scenario& scenario) override {
+    InitActions before = scenario.storyboard.init.actions;
+    if (const Expected<void> mutated = mutate(scenario); !mutated) {
+      scenario.storyboard.init.actions = std::move(before); // untouched on failure
+      return mutated;
+    }
+    before_ = std::move(before);
+    applied_ = true;
+    return {};
+  }
+
+  Expected<void> revert(Scenario& scenario) override {
+    if (applied_) {
+      scenario.storyboard.init.actions = before_;
+      applied_ = false;
+    }
+    return {};
+  }
+
+  [[nodiscard]] std::string_view name() const override { return label_; }
+
+protected:
+  virtual Expected<void> mutate(Scenario& scenario) = 0;
+
+  [[nodiscard]] const std::string& entity() const { return entity_; }
+
+private:
+  std::string_view label_;
+  std::string entity_;
+  InitActions before_;
+  bool applied_ = false;
+};
+
+class AssignRouteCommand final : public RouteCommand {
+public:
+  AssignRouteCommand(std::string entity, Route route)
+      : RouteCommand("Assign Route", std::move(entity)), route_(std::move(route)) {}
+
+protected:
+  Expected<void> mutate(Scenario& scenario) override {
+    if (RoutingAction* existing = find_routing(scenario, entity())) {
+      existing->assign_route = AssignRouteAction{.route = route_, .preserved = {}};
+      return {};
+    }
+    std::vector<Private>& privates = scenario.storyboard.init.actions.privates;
+    auto owner = std::find_if(privates.begin(), privates.end(), [this](const Private& p) {
+      return p.entity_ref == entity();
+    });
+    if (owner == privates.end()) {
+      Private fresh;
+      fresh.entity_ref = entity();
+      privates.push_back(std::move(fresh));
+      owner = std::prev(privates.end());
+    }
+    PrivateAction action;
+    action.routing = RoutingAction{
+        .assign_route = AssignRouteAction{.route = route_, .preserved = {}}, .preserved = {}};
+    owner->actions.push_back(std::move(action));
+    return {};
+  }
+
+private:
+  Route route_;
+};
+
+class ClearRouteCommand final : public RouteCommand {
+public:
+  explicit ClearRouteCommand(std::string entity) : RouteCommand("Clear Route", std::move(entity)) {}
+
+protected:
+  Expected<void> mutate(Scenario& scenario) override {
+    for (Private& entry : scenario.storyboard.init.actions.privates) {
+      if (entry.entity_ref != entity()) {
+        continue;
+      }
+      // Erase the whole <PrivateAction> when routing was its only arm, and only
+      // the arm otherwise — leaving an armless action behind would emit an empty
+      // <PrivateAction>, which no schema accepts.
+      for (auto action = entry.actions.begin(); action != entry.actions.end(); ++action) {
+        if (!action->routing.has_value()) {
+          continue;
+        }
+        if (action->teleport.has_value() || action->longitudinal.has_value()) {
+          action->routing.reset();
+        } else {
+          entry.actions.erase(action);
+        }
+        return {};
+      }
+    }
+    return make_error(ErrorCode::InvalidArgument,
+                      fmt::format("entity '{}' has no route to clear", entity()),
+                      "Storyboard/Init/Actions/Private/PrivateAction/RoutingAction");
+  }
+};
+
+class SetRouteWaypointCommand final : public RouteCommand {
+public:
+  SetRouteWaypointCommand(std::string entity, std::size_t index, Position position)
+      : RouteCommand("Move Route Waypoint", std::move(entity)), index_(index),
+        position_(std::move(position)) {}
+
+protected:
+  Expected<void> mutate(Scenario& scenario) override {
+    RoutingAction* routing = find_routing(scenario, entity());
+    if (routing == nullptr || !routing->assign_route.has_value() ||
+        !routing->assign_route->route.has_value()) {
+      return make_error(ErrorCode::InvalidArgument,
+                        fmt::format("entity '{}' has no route", entity()),
+                        "Storyboard/Init/Actions/Private/PrivateAction/RoutingAction");
+    }
+    Route& route = *routing->assign_route->route;
+    if (index_ >= route.waypoints.size()) {
+      return make_error(
+          ErrorCode::InvalidArgument,
+          fmt::format("the route has {} waypoint(s); there is none at index {}",
+                      route.waypoints.size(),
+                      index_),
+          "Storyboard/Init/Actions/Private/PrivateAction/RoutingAction/AssignRouteAction/Route");
+    }
+    // @routeStrategy and the preserved tier belong to the WAYPOINT, not to the
+    // position being moved.
+    route.waypoints[index_].position = position_;
+    return {};
+  }
+
+private:
+  std::size_t index_;
+  Position position_;
+};
+
+class InsertRouteWaypointCommand final : public RouteCommand {
+public:
+  InsertRouteWaypointCommand(std::string entity, std::size_t index, RouteWaypoint waypoint)
+      : RouteCommand("Insert Route Waypoint", std::move(entity)), index_(index),
+        waypoint_(std::move(waypoint)) {}
+
+protected:
+  Expected<void> mutate(Scenario& scenario) override {
+    RoutingAction* routing = find_routing(scenario, entity());
+    if (routing == nullptr || !routing->assign_route.has_value() ||
+        !routing->assign_route->route.has_value()) {
+      return make_error(ErrorCode::InvalidArgument,
+                        fmt::format("entity '{}' has no route", entity()),
+                        "Storyboard/Init/Actions/Private/PrivateAction/RoutingAction");
+    }
+    Route& route = *routing->assign_route->route;
+    if (index_ > route.waypoints.size()) {
+      return make_error(
+          ErrorCode::InvalidArgument,
+          fmt::format("the route has {} waypoint(s); index {} is past the end",
+                      route.waypoints.size(),
+                      index_),
+          "Storyboard/Init/Actions/Private/PrivateAction/RoutingAction/AssignRouteAction/Route");
+    }
+    route.waypoints.insert(route.waypoints.begin() + static_cast<std::ptrdiff_t>(index_),
+                           waypoint_);
+    return {};
+  }
+
+private:
+  std::size_t index_;
+  RouteWaypoint waypoint_;
+};
+
+class RemoveRouteWaypointCommand final : public RouteCommand {
+public:
+  RemoveRouteWaypointCommand(std::string entity, std::size_t index)
+      : RouteCommand("Remove Route Waypoint", std::move(entity)), index_(index) {}
+
+protected:
+  Expected<void> mutate(Scenario& scenario) override {
+    RoutingAction* routing = find_routing(scenario, entity());
+    if (routing == nullptr || !routing->assign_route.has_value() ||
+        !routing->assign_route->route.has_value()) {
+      return make_error(ErrorCode::InvalidArgument,
+                        fmt::format("entity '{}' has no route", entity()),
+                        "Storyboard/Init/Actions/Private/PrivateAction/RoutingAction");
+    }
+    Route& route = *routing->assign_route->route;
+    if (index_ >= route.waypoints.size()) {
+      return make_error(
+          ErrorCode::InvalidArgument,
+          fmt::format("the route has {} waypoint(s); there is none at index {}",
+                      route.waypoints.size(),
+                      index_),
+          "Storyboard/Init/Actions/Private/PrivateAction/RoutingAction/AssignRouteAction/Route");
+    }
+    if (route.waypoints.size() <= 2) {
+      // ★ Refused, not performed. "At least two waypoints are needed to define
+      // a route", so this would produce a document write_xosc refuses — a
+      // deletion that appeared to succeed and then made the scenario unsavable.
+      return make_error(
+          ErrorCode::InvalidArgument,
+          "a route needs at least two waypoints; remove the whole route instead",
+          "Storyboard/Init/Actions/Private/PrivateAction/RoutingAction/AssignRouteAction/Route");
+    }
+    route.waypoints.erase(route.waypoints.begin() + static_cast<std::ptrdiff_t>(index_));
+    return {};
+  }
+
+private:
+  std::size_t index_;
+};
+
 } // namespace
 
 // --- factories ---------------------------------------------------------------
@@ -928,6 +1179,117 @@ rename_scenario_object(const Scenario& scenario, std::string_view from, std::str
                   "Entities/ScenarioObject/@name");
   }
   return std::make_unique<RenameScenarioObjectCommand>(std::string{from}, std::move(to));
+}
+
+// --- routes (p8-s3, issue #247) ----------------------------------------------
+
+std::unique_ptr<Command>
+assign_route(const Scenario& scenario, std::string_view entity_name, Route route) {
+  if (!has_entity(scenario, entity_name)) {
+    return refuse("Assign Route",
+                  fmt::format("no entity named '{}'", entity_name),
+                  "Storyboard/Init/Actions/Private/@entityRef");
+  }
+  if (route.name.empty()) {
+    return refuse("Assign Route",
+                  "a route needs a name: the schema requires it and a simulator resolves a route "
+                  "by it",
+                  "RoutingAction/AssignRouteAction/Route/@name");
+  }
+  if (route.waypoints.size() < 2) {
+    // Brought forward from save time: a tool must not be able to build a
+    // document it then cannot write.
+    return refuse("Assign Route",
+                  fmt::format("a route needs at least two waypoints; this one has {}",
+                              route.waypoints.size()),
+                  "RoutingAction/AssignRouteAction/Route/Waypoint");
+  }
+  return std::make_unique<AssignRouteCommand>(std::string{entity_name}, std::move(route));
+}
+
+std::unique_ptr<Command> clear_route(const Scenario& scenario, std::string_view entity_name) {
+  if (find_route(scenario, entity_name) == nullptr) {
+    return refuse("Clear Route",
+                  fmt::format("entity '{}' has no route to clear", entity_name),
+                  "RoutingAction/AssignRouteAction/Route");
+  }
+  return std::make_unique<ClearRouteCommand>(std::string{entity_name});
+}
+
+std::unique_ptr<Command> set_route_waypoint(const Scenario& scenario,
+                                            std::string_view entity_name,
+                                            std::size_t index,
+                                            Position position) {
+  const Route* route = find_route(scenario, entity_name);
+  if (route == nullptr) {
+    return refuse("Move Route Waypoint",
+                  fmt::format("entity '{}' has no route", entity_name),
+                  "RoutingAction/AssignRouteAction/Route");
+  }
+  if (index >= route->waypoints.size()) {
+    return refuse("Move Route Waypoint",
+                  fmt::format("the route has {} waypoint(s); there is none at index {}",
+                              route->waypoints.size(),
+                              index),
+                  "RoutingAction/AssignRouteAction/Route/Waypoint");
+  }
+  if (const Expected<void> valid = check_position(position); !valid) {
+    return refuse("Move Route Waypoint", valid.error().message, valid.error().context);
+  }
+  return std::make_unique<SetRouteWaypointCommand>(
+      std::string{entity_name}, index, std::move(position));
+}
+
+std::unique_ptr<Command> insert_route_waypoint(const Scenario& scenario,
+                                               std::string_view entity_name,
+                                               std::size_t index,
+                                               RouteWaypoint waypoint) {
+  const Route* route = find_route(scenario, entity_name);
+  if (route == nullptr) {
+    return refuse("Insert Route Waypoint",
+                  fmt::format("entity '{}' has no route", entity_name),
+                  "RoutingAction/AssignRouteAction/Route");
+  }
+  if (index > route->waypoints.size()) {
+    return refuse("Insert Route Waypoint",
+                  fmt::format("the route has {} waypoint(s); index {} is past the end",
+                              route->waypoints.size(),
+                              index),
+                  "RoutingAction/AssignRouteAction/Route/Waypoint");
+  }
+  if (waypoint.route_strategy.empty()) {
+    return refuse("Insert Route Waypoint",
+                  "a waypoint needs a routeStrategy, which the schema requires",
+                  "RoutingAction/AssignRouteAction/Route/Waypoint/@routeStrategy");
+  }
+  if (const Expected<void> valid = check_position(waypoint.position); !valid) {
+    return refuse("Insert Route Waypoint", valid.error().message, valid.error().context);
+  }
+  return std::make_unique<InsertRouteWaypointCommand>(
+      std::string{entity_name}, index, std::move(waypoint));
+}
+
+std::unique_ptr<Command>
+remove_route_waypoint(const Scenario& scenario, std::string_view entity_name, std::size_t index) {
+  const Route* route = find_route(scenario, entity_name);
+  if (route == nullptr) {
+    return refuse("Remove Route Waypoint",
+                  fmt::format("entity '{}' has no route", entity_name),
+                  "RoutingAction/AssignRouteAction/Route");
+  }
+  if (index >= route->waypoints.size()) {
+    return refuse("Remove Route Waypoint",
+                  fmt::format("the route has {} waypoint(s); there is none at index {}",
+                              route->waypoints.size(),
+                              index),
+                  "RoutingAction/AssignRouteAction/Route/Waypoint");
+  }
+  if (route->waypoints.size() <= 2) {
+    return refuse("Remove Route Waypoint",
+                  "a route needs at least two waypoints; remove the whole route instead",
+                  "RoutingAction/AssignRouteAction/Route/Waypoint");
+  }
+  return std::make_unique<RemoveRouteWaypointCommand>(std::string{entity_name}, index);
 }
 
 std::unique_ptr<Command> set_scenario_object_bounding_box(const Scenario& scenario,
