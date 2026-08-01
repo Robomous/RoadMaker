@@ -27,8 +27,10 @@
 // against the canonical form rather than pretending otherwise.
 
 #include "roadmaker/osc/reader.hpp"
+#include "roadmaker/osc/route.hpp"
 #include "roadmaker/osc/rules.hpp"
 #include "roadmaker/osc/writer.hpp"
+#include "roadmaker/xodr/reader.hpp"
 
 #include <gtest/gtest.h>
 
@@ -911,6 +913,44 @@ TEST(XoscFixture, TheTrackedScenarioCarriesTrafficSignalsWithResolvableIds) {
     }
   }
   EXPECT_TRUE(osc::validate_scenario(result->scenario).empty());
+}
+
+TEST(XoscFixture, TheTrackedRoutedScenarioIsExactlyWhatTheWriterEmitsToday) {
+  // Same drift guard as signalized.xosc, second instance (p8-s3, #247):
+  // tests/esmini/routed.xosc is what the CI esmini job feeds to a shipping
+  // simulator to prove a RoadMaker-authored <Route> is accepted, so it must be
+  // exactly what this build writes. Regeneration is scripts/gen_xosc_fixtures.py,
+  // deliberately, with this test red in front of it.
+  const std::filesystem::path fixture =
+      std::filesystem::path(RM_ESMINI_FIXTURES_DIR) / "routed.xosc";
+  ASSERT_TRUE(std::filesystem::exists(fixture)) << fixture;
+
+  const std::string tracked = read_file(fixture);
+  const auto result = osc::load_xosc(fixture);
+  ASSERT_TRUE(result.has_value()) << (result ? "" : result.error().message);
+  EXPECT_EQ(written(result->scenario), tracked);
+}
+
+TEST(XoscFixture, TheTrackedRouteResolvesCompletelyAgainstItsOwnNetwork) {
+  // ★ THE CROSS-DOCUMENT HALF, at the fixture level: the pair ships together,
+  // so the route must actually DRIVE on the .xodr beside it — across the road
+  // weld, which is the resolver case worth putting in front of esmini. A
+  // fixture whose route did not resolve would make the CI step a measurement
+  // of a broken example.
+  const std::filesystem::path dir(RM_ESMINI_FIXTURES_DIR);
+  const auto network = roadmaker::load_xodr(dir / "routed.xodr");
+  ASSERT_TRUE(network.has_value());
+  const auto scenario = osc::load_xosc(dir / "routed.xosc");
+  ASSERT_TRUE(scenario.has_value());
+
+  EXPECT_TRUE(osc::validate_routes(network->network, scenario->scenario).empty());
+
+  const std::vector<osc::AssignedRoute> assigned = osc::assigned_routes(scenario->scenario);
+  ASSERT_EQ(assigned.size(), 1U);
+  EXPECT_EQ(assigned[0].entity_ref, "Ego");
+  const osc::ResolvedRoute resolved = osc::resolve_route(network->network, *assigned[0].route);
+  EXPECT_TRUE(resolved.complete);
+  EXPECT_GE(resolved.legs.size(), 2U) << "the route must cross the weld, not sit on one road";
 }
 
 // --- the fuzz corpus ---------------------------------------------------------

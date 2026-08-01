@@ -762,6 +762,26 @@ jobs:
         run: python3 scripts/esmini_smoke.py --esmini .esmini/esmini/bin/esmini --xosc tests/esmini/signalized.xosc
       - name: Broken scenario must fail (guards the .xosc path itself)
         run: python3 scripts/esmini_smoke.py --esmini .esmini/esmini/bin/esmini --xosc --expect-fail tests/esmini/broken.xosc
+      # From p8-s3 (#247): the first RoadMaker-authored <Route> this job has
+      # ever seen — an AssignRouteAction whose two <LanePosition> waypoints sit
+      # on DIFFERENT roads joined by a plain weld, the resolver case the editor
+      # authors most.
+      #
+      # Measured 2026-08-01 against the same pinned v3.5.0 (macOS binary, each
+      # mutation applied to the tracked fixture, judged by run_esmini's own
+      # criterion — esmini keeps exit 0 for these and the [error] marker is
+      # what fails the gate; a dangling TELEPORT anchor was run as the control
+      # and fails the same way):
+      #
+      #   route waypoint roadId="2" -> "999"   [error] Failed to find road 999                     gate FAILS
+      #   route waypoint laneId="-1" -> "-99"  [error] Lane id -99 does not exist on road 2 ...    gate FAILS
+      #   route waypoint s="80" -> "9999"      [error] Invalid s value ... truncating to 100.00    gate FAILS
+      #
+      # So a ROUTE waypoint's lane anchor is resolved against the .xodr exactly
+      # as an Init teleport's is (the 2026-07-31 measurement above), and this
+      # step genuinely gates the route half of the scenario model.
+      - name: Smoke-load the tracked routed scenario
+        run: python3 scripts/esmini_smoke.py --esmini .esmini/esmini/bin/esmini --xosc tests/esmini/routed.xosc
 
   # Always runs, on every event — this is the gate a docs-only change most needs.
   docs:
