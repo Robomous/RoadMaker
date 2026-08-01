@@ -41,6 +41,7 @@
 #include <utility>
 #include <variant>
 
+#include "document/actor_placement.hpp"
 #include "document/crosswalk_item.hpp"
 #include "document/library_drop.hpp"
 #include "document/library_list_model.hpp"
@@ -366,6 +367,12 @@ PropertiesPanel::PropertiesPanel(Document& document,
       signal_face_width_spin_(new UnitSpinBox), signal_face_length_spin_(new UnitSpinBox),
       signal_kind_label_(new QLabel(this)), signal_text_edit_(new QPlainTextEdit),
       signal_value_spin_(new QSpinBox), signal_value_label_(new QLabel(tr("Speed limit"), this)),
+      actor_group_(new QGroupBox(tr("Actor"), this)), actor_name_edit_(new QLineEdit),
+      actor_kind_label_(new QLabel(this)), actor_road_edit_(new QLineEdit),
+      actor_lane_edit_(new QLineEdit), actor_s_spin_(new UnitSpinBox),
+      actor_offset_spin_(new UnitSpinBox), actor_box_width_spin_(new UnitSpinBox),
+      actor_box_length_spin_(new UnitSpinBox), actor_box_height_spin_(new UnitSpinBox),
+      actor_speed_spin_(new QDoubleSpinBox), actor_position_hint_(new QLabel(this)),
       object_group_(new QGroupBox(tr("Prop"), this)), object_kind_label_(new QLabel(this)),
       model_slot_(new SlotWidget(QStringLiteral("Props"), this)),
       instance_material_slot_(new SlotWidget(QStringLiteral("Materials"), this)),
@@ -1379,6 +1386,80 @@ PropertiesPanel::PropertiesPanel(Document& document,
     commit_prop_asset_edit();
   });
 
+  // --- Actor section (p8-s2 follow-up, #246; GW-6 step 3) --------------------
+  //
+  // Every row commits ONE osc::edit command on editingFinished, skipping a
+  // value that did not change — the same re-entrancy guard the rest of this
+  // panel uses, and the reason refresh_actor can re-seed freely.
+  actor_name_edit_->setObjectName(QStringLiteral("actor_name_edit"));
+  actor_name_edit_->setToolTip(
+      tr("The entity's name. Every reference to this actor is renamed with it — a name is the "
+         "key an OpenSCENARIO entityRef resolves through."));
+  actor_road_edit_->setObjectName(QStringLiteral("actor_road_edit"));
+  actor_road_edit_->setToolTip(tr("OpenDRIVE id of the road this actor stands on."));
+  actor_lane_edit_->setObjectName(QStringLiteral("actor_lane_edit"));
+  actor_lane_edit_->setToolTip(
+      tr("OpenDRIVE id of the lane this actor stands on. Negative is right of the reference "
+         "line, positive is left."));
+  actor_s_spin_->setObjectName(QStringLiteral("actor_s_spin"));
+  actor_s_spin_->setRange(0.0, 100000.0);
+  actor_s_spin_->setDecimals(2);
+  actor_s_spin_->setSingleStep(0.5);
+  actor_s_spin_->setToolTip(tr("Distance along the road's reference line."));
+  actor_offset_spin_->setObjectName(QStringLiteral("actor_offset_spin"));
+  actor_offset_spin_->setRange(-20.0, 20.0);
+  actor_offset_spin_->setDecimals(2);
+  actor_offset_spin_->setSingleStep(0.1);
+  actor_offset_spin_->setToolTip(tr("Lateral offset from the lane's centre line; 0 is centred."));
+  // Dimensions are strictly positive — set_scenario_object_bounding_box refuses
+  // a non-positive one, so the widget's minimum states the same rule rather
+  // than letting the pane offer a value the kernel will reject.
+  for (UnitSpinBox* spin :
+       {actor_box_width_spin_, actor_box_length_spin_, actor_box_height_spin_}) {
+    spin->setRange(0.01, 100.0);
+    spin->setDecimals(2);
+    spin->setSingleStep(0.1);
+  }
+  actor_box_width_spin_->setObjectName(QStringLiteral("actor_box_width_spin"));
+  actor_box_length_spin_->setObjectName(QStringLiteral("actor_box_length_spin"));
+  actor_box_height_spin_->setObjectName(QStringLiteral("actor_box_height_spin"));
+  actor_speed_spin_->setObjectName(QStringLiteral("actor_speed_spin"));
+  actor_speed_spin_->setRange(0.0, 200.0);
+  actor_speed_spin_->setDecimals(2);
+  actor_speed_spin_->setSingleStep(1.0);
+  actor_speed_spin_->setSuffix(tr(" m/s"));
+  actor_speed_spin_->setToolTip(
+      tr("Speed this actor starts the scenario at. Metres per second — OpenSCENARIO's own unit, "
+         "so it is not converted for display."));
+  actor_position_hint_->setWordWrap(true);
+  actor_position_hint_->setStyleSheet(QStringLiteral("color: palette(mid);"));
+  actor_form_ = new QFormLayout(actor_group_);
+  actor_form_->addRow(actor_kind_label_);
+  actor_form_->addRow(tr("Name"), actor_name_edit_);
+  actor_form_->addRow(tr("Road"), actor_road_edit_);
+  actor_form_->addRow(tr("Lane"), actor_lane_edit_);
+  actor_form_->addRow(tr("s"), actor_s_spin_);
+  actor_form_->addRow(tr("Lane offset"), actor_offset_spin_);
+  actor_form_->addRow(actor_position_hint_);
+  actor_form_->addRow(tr("Width"), actor_box_width_spin_);
+  actor_form_->addRow(tr("Length"), actor_box_length_spin_);
+  actor_form_->addRow(tr("Height"), actor_box_height_spin_);
+  actor_form_->addRow(tr("Initial speed"), actor_speed_spin_);
+  actor_group_->hide();
+  connect(actor_name_edit_, &QLineEdit::editingFinished, this, [this] { push_actor_name(); });
+  for (QLineEdit* edit : {actor_road_edit_, actor_lane_edit_}) {
+    connect(edit, &QLineEdit::editingFinished, this, [this] { push_actor_pose(); });
+  }
+  for (UnitSpinBox* spin : {actor_s_spin_, actor_offset_spin_}) {
+    connect(spin, &QDoubleSpinBox::editingFinished, this, [this] { push_actor_pose(); });
+  }
+  for (UnitSpinBox* spin :
+       {actor_box_width_spin_, actor_box_length_spin_, actor_box_height_spin_}) {
+    connect(spin, &QDoubleSpinBox::editingFinished, this, [this] { push_actor_box(); });
+  }
+  connect(
+      actor_speed_spin_, &QDoubleSpinBox::editingFinished, this, [this] { push_actor_speed(); });
+
   auto* layout = new QVBoxLayout(this);
   layout->addWidget(placeholder_);
   layout->addWidget(name_row_);
@@ -1392,6 +1473,7 @@ PropertiesPanel::PropertiesPanel(Document& document,
   layout->addWidget(signalization_group_);
   layout->addWidget(junction_group_);
   layout->addWidget(signal_group_);
+  layout->addWidget(actor_group_);
   layout->addWidget(object_group_);
   layout->addWidget(style_group_);
   layout->addWidget(surface_group_);
@@ -1616,6 +1698,11 @@ PropertiesPanel::PropertiesPanel(Document& document,
   // Commands and undo/redo change lane values without touching the
   // selection — re-sync the editors from the network.
   connect(&document_, &Document::mesh_changed, this, &PropertiesPanel::refresh);
+  // The scenario's twin of the line above (#246). A scenario command changes no
+  // mesh and emits no mesh_changed, so without this an actor renamed from this
+  // very pane — or one moved by the Actor tool, or restored by Ctrl+Z — would
+  // leave the rows showing the value it no longer has.
+  connect(&document_, &Document::scenario_changed, this, &PropertiesPanel::refresh);
   refresh();
 }
 
@@ -1650,6 +1737,28 @@ void PropertiesPanel::refresh() {
 
   // The primary entry (most recently selected) drives the panel.
   const SelectionEntry primary = selection_.primary();
+
+  // ★ THE ACTOR PATH GOES FIRST, and the reason is the `hide()` below it rather
+  // than the `show()` above (#246). An actor entry carries no arena ids AT ALL —
+  // that is what makes "selecting an actor does not select the road beneath it"
+  // (GW-6 step 4) structural — so every id-based test further down is false for
+  // one and the dispatch would still be REACHED from inside the no-road branch.
+  // What would not be reached is `actor_group_->hide()`: nested in that branch
+  // it never runs for a road, a lane, a prop or a signal, and the actor rows
+  // would stay on screen under the next selection. Deciding it here puts the
+  // hide on the path EVERY selection takes. (Measured: relocating this block
+  // into the no-road branch leaves the show working and breaks exactly that.)
+  if (const osc::ScenarioObject* actor = primary_actor()) {
+    name_row_->hide();
+    lane_group_->hide();
+    elevation_group_->hide();
+    object_group_->hide();
+    signal_group_->hide();
+    placeholder_->hide();
+    refresh_actor(*actor);
+    return;
+  }
+  actor_group_->hide();
 
   // A signal entry carries its owning road, so check it BEFORE the road path:
   // a selected signal shows its own pose section, not the road under it.
@@ -2426,6 +2535,254 @@ void PropertiesPanel::refresh_signal(const Signal& signal) {
     signal_value_spin_->setValue(int(std::lround(signal.value.value_or(*def->default_value))));
   }
   signal_group_->show();
+}
+
+// --- the Actor section (p8-s2 follow-up, #246) --------------------------------
+
+const osc::ScenarioObject* PropertiesPanel::primary_actor() const {
+  const std::string& name = selection_.primary().actor;
+  if (name.empty()) {
+    return nullptr;
+  }
+  for (const osc::ScenarioObject& object : document_.scenario().entities.scenario_objects) {
+    if (object.name == name) {
+      return &object;
+    }
+  }
+  // A selection naming an entity the scenario no longer carries (a removal the
+  // selection has not been pruned for yet): show nothing rather than the road
+  // underneath, which is the failure GW-6 step 4 exists to rule out.
+  return nullptr;
+}
+
+const osc::BoundingBox* PropertiesPanel::actor_bounding_box(const osc::ScenarioObject& object) {
+  if (const auto* vehicle = std::get_if<osc::Vehicle>(&object.entity_object)) {
+    return &vehicle->bounding_box;
+  }
+  if (const auto* pedestrian = std::get_if<osc::Pedestrian>(&object.entity_object)) {
+    return &pedestrian->bounding_box;
+  }
+  return nullptr;
+}
+
+const osc::Position* PropertiesPanel::actor_position(std::string_view name) const {
+  // The placement lives in <Init>, not on the entity: an entity with no
+  // <Private> has been declared but never placed.
+  for (const osc::Private& entry : document_.scenario().storyboard.init.actions.privates) {
+    if (entry.entity_ref != name) {
+      continue;
+    }
+    for (const osc::PrivateAction& action : entry.actions) {
+      if (action.teleport.has_value()) {
+        return &action.teleport->position;
+      }
+    }
+  }
+  return nullptr;
+}
+
+const osc::SpeedAction* PropertiesPanel::actor_speed_action(std::string_view name) const {
+  for (const osc::Private& entry : document_.scenario().storyboard.init.actions.privates) {
+    if (entry.entity_ref != name) {
+      continue;
+    }
+    for (const osc::PrivateAction& action : entry.actions) {
+      if (action.longitudinal.has_value() && action.longitudinal->speed.has_value()) {
+        return &*action.longitudinal->speed;
+      }
+    }
+  }
+  return nullptr;
+}
+
+void PropertiesPanel::refresh_actor(const osc::ScenarioObject& object) {
+  // WHAT KIND OF ENTITY THIS IS, IN THE FILE'S OWN WORDS. `@vehicleCategory` and
+  // `@pedestrianCategory` are free strings in the model precisely so a foreign
+  // spelling round-trips (osc/scenario.hpp), so this reports them rather than
+  // mapping them onto RoadMaker's six placeable archetypes — a label that
+  // renamed a category it cannot author would misreport the file.
+  if (const auto* vehicle = std::get_if<osc::Vehicle>(&object.entity_object)) {
+    actor_kind_label_->setText(tr("Vehicle — %1").arg(QString::fromStdString(vehicle->category)));
+  } else if (const auto* pedestrian = std::get_if<osc::Pedestrian>(&object.entity_object)) {
+    actor_kind_label_->setText(
+        tr("Pedestrian — %1").arg(QString::fromStdString(pedestrian->category)));
+  } else {
+    actor_kind_label_->setText(tr("Catalog reference or unmodeled entity"));
+  }
+
+  {
+    const QSignalBlocker block_name(actor_name_edit_);
+    actor_name_edit_->setText(QString::fromStdString(object.name));
+  }
+
+  const osc::Position* position = actor_position(object.name);
+  const auto* lane = position == nullptr ? nullptr : std::get_if<osc::LanePosition>(position);
+  const bool anchored = lane != nullptr;
+
+  // The anchor rows exist only for a <LanePosition>. Editing them for a world or
+  // road position would RETYPE it, and set_entity_init_pose drops the old
+  // element's preserved tier when it does — so the pane never offers the edit;
+  // it says what the position is instead.
+  actor_form_->setRowVisible(actor_road_edit_, anchored);
+  actor_form_->setRowVisible(actor_lane_edit_, anchored);
+  actor_form_->setRowVisible(actor_s_spin_, anchored);
+  actor_form_->setRowVisible(actor_offset_spin_, anchored);
+  actor_form_->setRowVisible(actor_position_hint_, !anchored);
+  {
+    const QSignalBlocker block_road(actor_road_edit_);
+    const QSignalBlocker block_lane(actor_lane_edit_);
+    const QSignalBlocker block_s(actor_s_spin_);
+    const QSignalBlocker block_offset(actor_offset_spin_);
+    actor_road_edit_->setText(anchored ? QString::fromStdString(lane->road_id) : QString());
+    actor_lane_edit_->setText(anchored ? QString::fromStdString(lane->lane_id) : QString());
+    actor_s_spin_->setValue(anchored ? lane->s : 0.0);
+    actor_offset_spin_->setValue(anchored ? lane->offset : 0.0);
+  }
+  if (position == nullptr) {
+    actor_position_hint_->setText(
+        tr("Declared but not placed — this entity has no initial position."));
+  } else if (const auto* road = std::get_if<osc::RoadPosition>(position)) {
+    actor_position_hint_->setText(tr("Placed on road %1 at s %2 without naming a lane.")
+                                      .arg(QString::fromStdString(road->road_id))
+                                      .arg(units::format_length(road->s, 2)));
+  } else if (!anchored) {
+    actor_position_hint_->setText(
+        tr("Placed at a fixed world position, which does not follow the road beneath it. "
+           "Re-place it with the Actor tool to anchor it to a lane."));
+  }
+
+  // Where the anchor actually resolves to. A read-only row, and the one place a
+  // lane anchor naming a road that is gone becomes visible rather than merely
+  // making the box vanish from the viewport.
+  if (anchored) {
+    if (const std::optional<ActorPose> pose = actor_world_pose(document_.network(), *lane)) {
+      add_world_row(pose->position);
+    } else {
+      add_row(tr("World"), tr("unresolved — no such road or lane in this network"))
+          ->setObjectName(QStringLiteral("actor_world_value"));
+    }
+  }
+
+  const osc::BoundingBox* box = actor_bounding_box(object);
+  const bool sized = box != nullptr;
+  actor_form_->setRowVisible(actor_box_width_spin_, sized);
+  actor_form_->setRowVisible(actor_box_length_spin_, sized);
+  actor_form_->setRowVisible(actor_box_height_spin_, sized);
+  if (sized) {
+    const QSignalBlocker block_w(actor_box_width_spin_);
+    const QSignalBlocker block_l(actor_box_length_spin_);
+    const QSignalBlocker block_h(actor_box_height_spin_);
+    actor_box_width_spin_->setValue(box->width);
+    actor_box_length_spin_->setValue(box->length);
+    actor_box_height_spin_->setValue(box->height);
+  }
+
+  // An entity whose speed comes from a <RelativeTargetSpeed> this version does
+  // not model: set_entity_init_speed REFUSES to overwrite it rather than drop
+  // the preserved target, so the spin is disabled rather than offering an edit
+  // the kernel will reject.
+  const osc::SpeedAction* speed = actor_speed_action(object.name);
+  const bool speed_editable = speed == nullptr || speed->absolute_target.has_value();
+  actor_speed_spin_->setEnabled(speed_editable);
+  actor_speed_spin_->setToolTip(
+      speed_editable
+          ? tr("Speed this actor starts the scenario at. Metres per second — OpenSCENARIO's own "
+               "unit, so it is not converted for display.")
+          : tr("This actor's initial speed is relative to another entity, which this version "
+               "does not model. Editing it here would discard that target."));
+  {
+    const QSignalBlocker block_speed(actor_speed_spin_);
+    actor_speed_spin_->setValue(speed != nullptr && speed->absolute_target.has_value()
+                                    ? speed->absolute_target->value
+                                    : 0.0);
+  }
+
+  actor_group_->show();
+}
+
+void PropertiesPanel::push_actor_name() {
+  const osc::ScenarioObject* object = primary_actor();
+  if (object == nullptr) {
+    return;
+  }
+  const std::string next = actor_name_edit_->text().toStdString();
+  if (next == object->name) {
+    return; // no-op: the re-entrancy guard (a refresh re-seed must not commit)
+  }
+  push_scenario(osc::edit::rename_scenario_object(document_.scenario(), object->name, next));
+}
+
+void PropertiesPanel::push_actor_pose() {
+  const osc::ScenarioObject* object = primary_actor();
+  if (object == nullptr) {
+    return;
+  }
+  const osc::Position* current = actor_position(object->name);
+  const auto* lane = current == nullptr ? nullptr : std::get_if<osc::LanePosition>(current);
+  if (lane == nullptr) {
+    // The rows are hidden for a world/road position; a stray commit must never
+    // retype one, which would drop that element's preserved tier.
+    return;
+  }
+  // Copied, not built fresh: `orientation` is not part of the anchor and the
+  // command does not carry it, so a rebuilt LanePosition would silently discard
+  // an authored <Orientation>.
+  osc::LanePosition next = *lane;
+  next.road_id = actor_road_edit_->text().toStdString();
+  next.lane_id = actor_lane_edit_->text().toStdString();
+  next.s = actor_s_spin_->value();
+  next.offset = actor_offset_spin_->value();
+  if (next.road_id == lane->road_id && next.lane_id == lane->lane_id && next.s == lane->s &&
+      next.offset == lane->offset) {
+    return; // no-op: the re-entrancy guard
+  }
+  push_scenario(osc::edit::set_entity_init_pose(
+      document_.scenario(), object->name, osc::Position{std::move(next)}));
+}
+
+void PropertiesPanel::push_actor_box() {
+  const osc::ScenarioObject* object = primary_actor();
+  if (object == nullptr) {
+    return;
+  }
+  const osc::BoundingBox* box = actor_bounding_box(*object);
+  if (box == nullptr) {
+    return; // no box to set; the rows are hidden
+  }
+  // The CENTRE travels through untouched: resizing a body must not move it
+  // relative to the entity's reference point (the centre of the rear axle for a
+  // vehicle), which is what would make the drawn box straddle the wrong end.
+  osc::BoundingBox next = *box;
+  next.width = actor_box_width_spin_->value();
+  next.length = actor_box_length_spin_->value();
+  next.height = actor_box_height_spin_->value();
+  if (next.width == box->width && next.length == box->length && next.height == box->height) {
+    return; // no-op: the re-entrancy guard
+  }
+  push_scenario(osc::edit::set_scenario_object_bounding_box(
+      document_.scenario(), object->name, std::move(next)));
+}
+
+void PropertiesPanel::push_actor_speed() {
+  const osc::ScenarioObject* object = primary_actor();
+  if (object == nullptr) {
+    return;
+  }
+  const osc::SpeedAction* speed = actor_speed_action(object->name);
+  if (speed != nullptr && !speed->absolute_target.has_value()) {
+    return; // an unmodeled relative target; the spin is disabled
+  }
+  const double value = actor_speed_spin_->value();
+  if (speed != nullptr && speed->absolute_target->value == value) {
+    return; // no-op: the re-entrancy guard
+  }
+  if (speed == nullptr && value == 0.0) {
+    // An actor with no <SpeedAction> shows 0; committing that 0 would MATERIALIZE
+    // an action the file never had, and a scenario that gained a
+    // <LongitudinalAction> from merely being looked at is not byte-identical.
+    return;
+  }
+  push_scenario(osc::edit::set_entity_init_speed(document_.scenario(), object->name, value));
 }
 
 void PropertiesPanel::push_signal_text() {
@@ -3284,6 +3641,13 @@ void PropertiesPanel::push(std::unique_ptr<edit::Command> command) {
   static_cast<void>(document_.push_command(std::move(command)));
 }
 
+void PropertiesPanel::push_scenario(std::unique_ptr<osc::edit::Command> command) {
+  // Same contract as push(): a refused command appends a document diagnostic
+  // (push_scenario_command's contract), leaves the scenario untouched, and the
+  // panel re-syncs from it — there is nothing to handle here.
+  static_cast<void>(document_.push_scenario_command(std::move(command)));
+}
+
 const Lane* PropertiesPanel::primary_lane() const {
   return document_.network().lane(selection_.primary().lane);
 }
@@ -3432,6 +3796,7 @@ void PropertiesPanel::edit_asset(const QString& key, bool editable) {
   lane_group_->hide();
   elevation_group_->hide();
   signal_group_->hide();
+  actor_group_->hide();
   object_group_->hide();
   style_group_->hide();
   surface_group_->hide();
@@ -3567,6 +3932,7 @@ void PropertiesPanel::edit_prop_set_asset(const LibraryItem& item, bool editable
   lane_group_->hide();
   elevation_group_->hide();
   signal_group_->hide();
+  actor_group_->hide();
   object_group_->hide();
   style_group_->hide();
   surface_group_->hide();
@@ -3617,6 +3983,7 @@ void PropertiesPanel::edit_prop_asset(const LibraryItem& item, bool editable) {
   lane_group_->hide();
   elevation_group_->hide();
   signal_group_->hide();
+  actor_group_->hide();
   object_group_->hide();
   style_group_->hide();
   surface_group_->hide();

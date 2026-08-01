@@ -220,6 +220,25 @@ Current version on `main`: **0.0.1**.
     framing) is never withheld by either mode.
   - The mode persists **per scene** in `<scene>.rmscene.json`, not in settings:
     it describes the scene you were working on, not a preference.
+- **A selected actor is editable and deletable**
+  ([#246](https://github.com/Robomous/RoadMaker/issues/246), GW-6 steps 3–4):
+  the Attributes pane gains an Actor section — name, category, lane anchor
+  (road / lane / s / offset), bounding box and initial speed — and **Delete**
+  now removes a selected actor, taking its `<Init>` entry with it. Every edit is
+  one `osc::edit` command on the same undo stack as the roads beneath it, so
+  Ctrl+Z crosses freely between the two documents and a mixed road+actor
+  deletion is one undo step.
+  - **The anchor rows appear only for a `<LanePosition>`.** Retyping a position
+    drops the old element's preserved tier, so the pane never converts a world
+    or road position implicitly — it reports what the position is instead. An
+    anchor edit carries the position's `<Orientation>` through untouched, and a
+    resize carries the bounding box's centre through, because neither belongs to
+    the value being edited.
+  - **The initial-speed row does not materialize what it is showing.** An actor
+    with no `<SpeedAction>` displays 0, and committing that 0 pushes nothing —
+    a scenario that gained a `<LongitudinalAction>` from merely being looked at
+    would no longer re-save byte-identically. A speed defined relative to
+    another entity is shown disabled rather than silently overwritten.
 - **The esmini CI pin is honoured by a bump**
   ([#506](https://github.com/Robomous/RoadMaker/issues/506)): the cache key
   repeated the version as a literal instead of deriving it from

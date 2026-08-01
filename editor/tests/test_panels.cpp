@@ -25,6 +25,8 @@
 #include "roadmaker/mesh/junction_signals.hpp"
 #include "roadmaker/mesh/junction_stoplines.hpp"
 #include "roadmaker/mesh/junction_surface_spans.hpp"
+#include "roadmaker/osc/catalog.hpp"
+#include "roadmaker/osc/edit.hpp"
 #include "roadmaker/road/authoring.hpp"
 #include "roadmaker/road/junction.hpp"
 #include "roadmaker/road/surface_derivation.hpp"
@@ -56,6 +58,7 @@
 #include <ranges>
 #include <stdexcept>
 #include <string>
+#include <variant>
 #include <vector>
 
 #include "document/diagnostics_model.hpp"
@@ -3234,6 +3237,275 @@ TEST(PropertiesPanel, MaterialSpinsAreDisabledOnTheCentreLaneAndReseedsPushNothi
   emit roughness->editingFinished();
   EXPECT_EQ(scene.h.document.undo_stack()->count(), after_edit)
       << "re-seeded values commit nothing";
+}
+
+// --- the Actor section (#246, GW-6 step 3) -----------------------------------
+//
+// An actor selection carries NO arena ids at all, which is what makes GW-6
+// step 4 structural — and is also exactly why the pane's dispatch for it has to
+// come first. These tests pin both halves: the rows appear for an actor and
+// never for a road, and each editor commits ONE osc::edit command.
+
+namespace {
+
+/// Places `name` on `road`'s lane -1 as ONE scenario command — what the Actor
+/// tool pushes for a single click.
+void place_actor(Document& document, RoadId road, const std::string& name, double s = 5.0) {
+  const Road* road_ptr = document.network().road(road);
+  ASSERT_NE(road_ptr, nullptr);
+  osc::LanePosition lane;
+  lane.road_id = road_ptr->odr_id;
+  lane.lane_id = "-1";
+  lane.s = s;
+  ASSERT_TRUE(
+      document
+          .push_scenario_command(osc::edit::place_scenario_object(
+              document.scenario(), osc::make_actor(osc::ActorKind::Car, name), osc::Position{lane}))
+          .has_value());
+}
+
+/// The `<LanePosition>` `name` currently stands on, or nullptr.
+[[nodiscard]] const osc::LanePosition* actor_lane(const Document& document,
+                                                  const std::string& name) {
+  for (const osc::Private& entry : document.scenario().storyboard.init.actions.privates) {
+    if (entry.entity_ref != name) {
+      continue;
+    }
+    for (const osc::PrivateAction& action : entry.actions) {
+      if (action.teleport.has_value()) {
+        return std::get_if<osc::LanePosition>(&action.teleport->position);
+      }
+    }
+  }
+  return nullptr;
+}
+
+[[nodiscard]] const osc::BoundingBox* actor_box(const Document& document, const std::string& name) {
+  for (const osc::ScenarioObject& object : document.scenario().entities.scenario_objects) {
+    if (object.name != name) {
+      continue;
+    }
+    if (const auto* vehicle = std::get_if<osc::Vehicle>(&object.entity_object)) {
+      return &vehicle->bounding_box;
+    }
+  }
+  return nullptr;
+}
+
+} // namespace
+
+TEST(PropertiesPanel, ActorSelectionShowsTheActorRowsAndNotTheRoadBeneathIt) {
+  Harness h;
+  ASSERT_TRUE(h.document.load(kSample).has_value());
+  const RoadId road = all_roads(h.document).front();
+  place_actor(h.document, road, "Car1", 5.0);
+  PropertiesPanel panel(h.document, h.selection);
+
+  auto* name_edit = panel.findChild<QLineEdit*>(QStringLiteral("actor_name_edit"));
+  auto* road_edit = panel.findChild<QLineEdit*>(QStringLiteral("actor_road_edit"));
+  auto* lane_edit = panel.findChild<QLineEdit*>(QStringLiteral("actor_lane_edit"));
+  auto* s_spin = panel.findChild<QDoubleSpinBox*>(QStringLiteral("actor_s_spin"));
+  auto* road_name = panel.findChild<QLineEdit*>(QStringLiteral("road_name_edit"));
+  ASSERT_NE(name_edit, nullptr);
+  ASSERT_NE(road_edit, nullptr);
+  ASSERT_NE(lane_edit, nullptr);
+  ASSERT_NE(s_spin, nullptr);
+  ASSERT_NE(road_name, nullptr);
+  EXPECT_FALSE(name_edit->isVisibleTo(&panel)); // nothing selected yet
+
+  h.selection.select({.actor = "Car1"});
+  ASSERT_TRUE(name_edit->isVisibleTo(&panel));
+  EXPECT_EQ(name_edit->text(), QStringLiteral("Car1"));
+  EXPECT_EQ(lane_edit->text(), QStringLiteral("-1"));
+  EXPECT_EQ(road_edit->text(), QString::fromStdString(h.document.network().road(road)->odr_id));
+  EXPECT_DOUBLE_EQ(s_spin->value(), 5.0);
+  // ★ The ROAD's own editor stays hidden: an actor entry carries no road id, so
+  // nothing about the road under it may appear here (GW-6 step 4).
+  EXPECT_FALSE(road_name->isVisibleTo(&panel));
+
+  // ...and selecting a road puts the actor rows away again.
+  h.selection.select({.road = road});
+  EXPECT_FALSE(name_edit->isVisibleTo(&panel));
+  EXPECT_TRUE(road_name->isVisibleTo(&panel));
+}
+
+TEST(PropertiesPanel, ActorNameEditCommitsOneRenameAndUndoRestores) {
+  Harness h;
+  ASSERT_TRUE(h.document.load(kSample).has_value());
+  place_actor(h.document, all_roads(h.document).front(), "Car1");
+  PropertiesPanel panel(h.document, h.selection);
+  h.selection.select({.actor = "Car1"});
+  auto* name_edit = panel.findChild<QLineEdit*>(QStringLiteral("actor_name_edit"));
+  ASSERT_NE(name_edit, nullptr);
+
+  const int base = h.document.undo_stack()->count();
+  name_edit->setText(QStringLiteral("Ego"));
+  emit name_edit->editingFinished();
+  EXPECT_EQ(h.document.undo_stack()->count(), base + 1);
+  EXPECT_EQ(h.document.scenario().entities.scenario_objects.front().name, "Ego");
+  // ★ THE REFERENCES MOVED WITH IT. A rename that left the <Private> behind
+  // would make the document unwritable, so this is the assertion that matters.
+  ASSERT_EQ(h.document.scenario().storyboard.init.actions.privates.size(), 1U);
+  EXPECT_EQ(h.document.scenario().storyboard.init.actions.privates.front().entity_ref, "Ego");
+
+  // A focus-out with no change pushes nothing (the re-entrancy guard).
+  emit name_edit->editingFinished();
+  EXPECT_EQ(h.document.undo_stack()->count(), base + 1);
+
+  h.document.undo_stack()->undo();
+  EXPECT_EQ(h.document.scenario().entities.scenario_objects.front().name, "Car1");
+}
+
+TEST(PropertiesPanel, EditingTheActorAnchorCommitsOneSetPose) {
+  Harness h;
+  ASSERT_TRUE(h.document.load(kSample).has_value());
+  const RoadId road = all_roads(h.document).front();
+  place_actor(h.document, road, "Car1", 5.0);
+  PropertiesPanel panel(h.document, h.selection);
+  h.selection.select({.actor = "Car1"});
+  auto* s_spin = panel.findChild<QDoubleSpinBox*>(QStringLiteral("actor_s_spin"));
+  auto* offset_spin = panel.findChild<QDoubleSpinBox*>(QStringLiteral("actor_offset_spin"));
+  ASSERT_NE(s_spin, nullptr);
+  ASSERT_NE(offset_spin, nullptr);
+
+  const int base = h.document.undo_stack()->count();
+  s_spin->setValue(9.0);
+  emit s_spin->editingFinished();
+  EXPECT_EQ(h.document.undo_stack()->count(), base + 1);
+  ASSERT_NE(actor_lane(h.document, "Car1"), nullptr);
+  EXPECT_DOUBLE_EQ(actor_lane(h.document, "Car1")->s, 9.0);
+  // The lane it stands on is untouched by an s edit — the four fields are one
+  // command, but each carries the other three's current values.
+  EXPECT_EQ(actor_lane(h.document, "Car1")->lane_id, "-1");
+
+  emit s_spin->editingFinished();
+  EXPECT_EQ(h.document.undo_stack()->count(), base + 1) << "a no-op focus-out pushed a command";
+
+  offset_spin->setValue(0.4);
+  emit offset_spin->editingFinished();
+  EXPECT_EQ(h.document.undo_stack()->count(), base + 2);
+  EXPECT_DOUBLE_EQ(actor_lane(h.document, "Car1")->offset, 0.4);
+  EXPECT_DOUBLE_EQ(actor_lane(h.document, "Car1")->s, 9.0);
+}
+
+// ★ An anchor edit must carry the position's <Orientation> through. The four
+// widgets author roadId/laneId/s/offset and nothing else, so the command has to
+// be built from the position that is THERE — a freshly constructed
+// <LanePosition> would drop an authored heading, and nothing in the round trip
+// would report it. RoadMaker does not author an <Orientation> today, which is
+// exactly why this needs a test rather than a habit.
+TEST(PropertiesPanel, EditingTheAnchorKeepsAnAuthoredOrientation) {
+  Harness h;
+  ASSERT_TRUE(h.document.load(kSample).has_value());
+  place_actor(h.document, all_roads(h.document).front(), "Car1", 5.0);
+  {
+    osc::LanePosition aimed = *actor_lane(h.document, "Car1");
+    aimed.orientation = osc::Orientation{.h = 0.25};
+    ASSERT_TRUE(h.document
+                    .push_scenario_command(osc::edit::set_entity_init_pose(
+                        h.document.scenario(), "Car1", osc::Position{aimed}))
+                    .has_value());
+  }
+  PropertiesPanel panel(h.document, h.selection);
+  h.selection.select({.actor = "Car1"});
+  auto* s_spin = panel.findChild<QDoubleSpinBox*>(QStringLiteral("actor_s_spin"));
+  ASSERT_NE(s_spin, nullptr);
+
+  s_spin->setValue(31.0);
+  emit s_spin->editingFinished();
+
+  const osc::LanePosition* moved = actor_lane(h.document, "Car1");
+  ASSERT_NE(moved, nullptr);
+  EXPECT_DOUBLE_EQ(moved->s, 31.0);
+  ASSERT_TRUE(moved->orientation.has_value()) << "the pane dropped the authored orientation";
+  ASSERT_TRUE(moved->orientation->h.has_value());
+  EXPECT_DOUBLE_EQ(*moved->orientation->h, 0.25);
+}
+
+// ★ A resize must not move the body relative to the entity's reference point,
+// which for a vehicle is the centre of the rear axle and NOT the centre of the
+// body. Getting this wrong renders convincingly and simulates wrong.
+TEST(PropertiesPanel, ResizingTheActorBoxKeepsItsCentre) {
+  Harness h;
+  ASSERT_TRUE(h.document.load(kSample).has_value());
+  place_actor(h.document, all_roads(h.document).front(), "Car1");
+  PropertiesPanel panel(h.document, h.selection);
+  h.selection.select({.actor = "Car1"});
+  auto* width = panel.findChild<QDoubleSpinBox*>(QStringLiteral("actor_box_width_spin"));
+  ASSERT_NE(width, nullptr);
+  ASSERT_NE(actor_box(h.document, "Car1"), nullptr);
+  const osc::BoundingBox before = *actor_box(h.document, "Car1");
+  ASSERT_TRUE(width->isVisibleTo(&panel));
+  EXPECT_DOUBLE_EQ(width->value(), before.width);
+
+  const int base = h.document.undo_stack()->count();
+  width->setValue(before.width + 0.5);
+  emit width->editingFinished();
+  EXPECT_EQ(h.document.undo_stack()->count(), base + 1);
+  const osc::BoundingBox* after = actor_box(h.document, "Car1");
+  ASSERT_NE(after, nullptr);
+  EXPECT_DOUBLE_EQ(after->width, before.width + 0.5);
+  EXPECT_DOUBLE_EQ(after->length, before.length);
+  EXPECT_DOUBLE_EQ(after->center_x, before.center_x);
+  EXPECT_DOUBLE_EQ(after->center_z, before.center_z);
+}
+
+TEST(PropertiesPanel, ActorInitialSpeedCommitsOneCommandAndAnUnsetZeroPushesNothing) {
+  Harness h;
+  ASSERT_TRUE(h.document.load(kSample).has_value());
+  place_actor(h.document, all_roads(h.document).front(), "Car1");
+  PropertiesPanel panel(h.document, h.selection);
+  h.selection.select({.actor = "Car1"});
+  auto* speed = panel.findChild<QDoubleSpinBox*>(QStringLiteral("actor_speed_spin"));
+  ASSERT_NE(speed, nullptr);
+  EXPECT_DOUBLE_EQ(speed->value(), 0.0) << "a freshly placed actor has no speed action";
+
+  // ★ Committing the displayed 0 on an actor that has NO <SpeedAction> would
+  // materialize one, and a scenario that grew an element from merely being
+  // looked at is no longer byte-identical on re-save.
+  const int base = h.document.undo_stack()->count();
+  emit speed->editingFinished();
+  EXPECT_EQ(h.document.undo_stack()->count(), base);
+  EXPECT_EQ(h.document.scenario().storyboard.init.actions.privates.front().actions.size(), 1U);
+
+  speed->setValue(13.5);
+  emit speed->editingFinished();
+  EXPECT_EQ(h.document.undo_stack()->count(), base + 1);
+  const std::vector<osc::PrivateAction>& actions =
+      h.document.scenario().storyboard.init.actions.privates.front().actions;
+  ASSERT_EQ(actions.size(), 2U) << "the speed rode the teleport's PrivateAction";
+  ASSERT_TRUE(actions[1].longitudinal.has_value());
+  ASSERT_TRUE(actions[1].longitudinal->speed.has_value());
+  ASSERT_TRUE(actions[1].longitudinal->speed->absolute_target.has_value());
+  EXPECT_DOUBLE_EQ(actions[1].longitudinal->speed->absolute_target->value, 13.5);
+
+  emit speed->editingFinished();
+  EXPECT_EQ(h.document.undo_stack()->count(), base + 1);
+}
+
+// The pane follows the scenario without a selection change: the Actor tool
+// moving an actor, or a Ctrl+Z, must re-seed these rows. Before #246 the panel
+// listened to mesh_changed only, and a scenario command emits no mesh change.
+TEST(PropertiesPanel, ScenarioChangesReSeedTheActorRowsWithoutASelectionChange) {
+  Harness h;
+  ASSERT_TRUE(h.document.load(kSample).has_value());
+  place_actor(h.document, all_roads(h.document).front(), "Car1", 5.0);
+  PropertiesPanel panel(h.document, h.selection);
+  h.selection.select({.actor = "Car1"});
+  auto* s_spin = panel.findChild<QDoubleSpinBox*>(QStringLiteral("actor_s_spin"));
+  ASSERT_NE(s_spin, nullptr);
+  ASSERT_DOUBLE_EQ(s_spin->value(), 5.0);
+
+  osc::LanePosition moved = *actor_lane(h.document, "Car1");
+  moved.s = 22.0;
+  ASSERT_TRUE(h.document
+                  .push_scenario_command(osc::edit::set_entity_init_pose(
+                      h.document.scenario(), "Car1", osc::Position{moved}))
+                  .has_value());
+  EXPECT_DOUBLE_EQ(s_spin->value(), 22.0) << "the pane did not follow the scenario";
+
+  h.document.undo_stack()->undo();
+  EXPECT_DOUBLE_EQ(s_spin->value(), 5.0) << "the pane did not follow an undo";
 }
 
 } // namespace roadmaker::editor

@@ -22,6 +22,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <string>
 #include <variant>
 #include <vector>
 
@@ -329,7 +330,20 @@ bool SelectTool::delete_selection() {
       doomed_signals.push_back(signal_id);
     }
   }
-  const std::size_t total = doomed_roads.size() + doomed_objects.size() + doomed_signals.size();
+  // Scenario actors (#246, GW-6 step 4). Liveness is checked against the
+  // SCENARIO, not the arena: an actor is a `<ScenarioObject @name>` and has no
+  // generational handle to go stale (selection_model.hpp).
+  std::vector<std::string> doomed_actors;
+  for (const std::string& actor : selection_.selected_actors()) {
+    const auto& objects = document_.scenario().entities.scenario_objects;
+    if (std::ranges::any_of(objects, [&actor](const osc::ScenarioObject& object) {
+          return object.name == actor;
+        })) {
+      doomed_actors.push_back(actor);
+    }
+  }
+  const std::size_t total =
+      doomed_roads.size() + doomed_objects.size() + doomed_signals.size() + doomed_actors.size();
   if (total == 0) {
     return false;
   }
@@ -343,6 +357,17 @@ bool SelectTool::delete_selection() {
   const bool macro = total > 1;
   if (macro) {
     document_.undo_stack()->beginMacro(tr("Delete %1 Items").arg(total));
+  }
+  // Actors first, and they are wholly independent of the arena: a scenario
+  // command touches no road, and remove_scenario_object already cascades the
+  // entity's <Private> out of <Init> (leaving it would produce a dangling
+  // entityRef the writer refuses, making the document unsavable by a removal
+  // that appeared to succeed). It rides the SAME macro as the road deletions
+  // because Document pushes both onto one QUndoStack — which is what makes a
+  // mixed selection one undo step rather than two.
+  for (const std::string& actor : doomed_actors) {
+    (void)document_.push_scenario_command(
+        osc::edit::remove_scenario_object(document_.scenario(), actor));
   }
   for (const ObjectId object_id : doomed_objects) {
     if (document_.network().object(object_id) != nullptr) {
@@ -368,10 +393,15 @@ bool SelectTool::delete_selection() {
   }
   const auto deleted_objects = doomed_objects.size();
   const auto deleted_signals = doomed_signals.size();
-  const int kinds =
-      (deleted_roads > 0 ? 1 : 0) + (deleted_objects > 0 ? 1 : 0) + (deleted_signals > 0 ? 1 : 0);
+  const auto deleted_actors = doomed_actors.size();
+  const int kinds = (deleted_roads > 0 ? 1 : 0) + (deleted_objects > 0 ? 1 : 0) +
+                    (deleted_signals > 0 ? 1 : 0) + (deleted_actors > 0 ? 1 : 0);
   if (kinds > 1) {
     emit status_message(tr("Deleted selection — Ctrl+Z restores"));
+  } else if (deleted_actors > 0) {
+    emit status_message(deleted_actors == 1
+                            ? tr("Deleted 1 actor — Ctrl+Z restores")
+                            : tr("Deleted %1 actors — Ctrl+Z restores").arg(deleted_actors));
   } else if (deleted_signals > 0) {
     emit status_message(deleted_signals == 1
                             ? tr("Deleted 1 signal — Ctrl+Z restores")

@@ -46,6 +46,7 @@
 #include <array>
 #include <functional>
 #include <optional>
+#include <string_view>
 #include <vector>
 
 #include "document/document.hpp"
@@ -268,6 +269,13 @@ private:
   /// — refresh() re-syncs from the network afterwards either way.
   void push(std::unique_ptr<edit::Command> command);
 
+  /// The scenario twin of push(): one `osc::edit` command through
+  /// Document::push_scenario_command, so an actor edit lands on the SAME undo
+  /// stack as the roads beneath it. A refused command appends a document
+  /// diagnostic and leaves the scenario untouched, and the panel re-syncs from
+  /// it through scenario_changed — nothing further to do here either.
+  void push_scenario(std::unique_ptr<osc::edit::Command> command);
+
   /// The primary selection's lane (invalid id when road-level or empty).
   [[nodiscard]] const Lane* primary_lane() const;
 
@@ -448,6 +456,48 @@ private:
   /// way back to the derived facing.
   QPushButton* signal_auto_facing_button_;
 
+  /// Actor section (p8-s2 follow-up, #246): the rows for a selected scenario
+  /// `<ScenarioObject>` — GW-6 step 3, which p8-s2 shipped ⚠-marked.
+  ///
+  /// ★ AN ACTOR SELECTION ENTRY CARRIES NO ARENA IDS AT ALL
+  /// (`selection_model.hpp`) — a non-empty `SelectionEntry::actor` is the only
+  /// discriminator there is — so refresh() dispatches this section BEFORE the
+  /// signal / object / road paths. Not because a later dispatch could not SHOW
+  /// the rows (it could), but because the matching `actor_group_->hide()` has to
+  /// sit on the path every OTHER selection takes, or the rows survive into the
+  /// next one.
+  ///
+  /// Every editor here pushes exactly ONE `osc::edit` command through
+  /// push_scenario(). Deliberately NO ScrubLabel bindings: install_scrub drives
+  /// a `RoadNetwork` preview session (Document::update_preview), and a scenario
+  /// holds no arena for one to preview — the editors commit on
+  /// editingFinished, which is the same single-undo contract by a shorter road.
+  QGroupBox* actor_group_;
+  QLineEdit* actor_name_edit_;
+  QLabel* actor_kind_label_;
+  /// The `<LanePosition>` anchor's ids, as LINE EDITS rather than spin boxes.
+  /// `@laneId` is typed `string` in the schema — "if a temporary lane layer is
+  /// present, this shall be interpreted as the ID on the temporary lane layer"
+  /// — and `@roadId` likewise; a numeric widget could not represent either.
+  QLineEdit* actor_road_edit_;
+  QLineEdit* actor_lane_edit_;
+  UnitSpinBox* actor_s_spin_;
+  UnitSpinBox* actor_offset_spin_;
+  UnitSpinBox* actor_box_width_spin_;
+  UnitSpinBox* actor_box_length_spin_;
+  UnitSpinBox* actor_box_height_spin_;
+  /// Initial speed. Deliberately a plain QDoubleSpinBox and not a UnitSpinBox:
+  /// a speed is not a length, so it never passes through the display-unit layer
+  /// (#412's rule cuts on lengths only) — the same call signal_value_spin_ makes.
+  QDoubleSpinBox* actor_speed_spin_;
+  /// Shown INSTEAD of the anchor rows when the actor is placed by a world or
+  /// road position: retyping a position drops the old element's preserved tier
+  /// (set_entity_init_pose's contract), so this pane never converts one
+  /// implicitly — it says what the position is and leaves it alone.
+  QLabel* actor_position_hint_;
+  /// The actor form, kept so refresh_actor can setRowVisible the anchor rows.
+  QFormLayout* actor_form_ = nullptr;
+
   /// Object section: a selected <object>. A prop shows the Model slot; a marking
   /// instance (crosswalk / stencil / marking-curve) shows the Material slot
   /// instead — refresh_object toggles the two rows and the group title.
@@ -604,6 +654,48 @@ private:
   /// Filters the Text editor: commit on focus-out, restore on Escape. QText
   /// editors have no editingFinished, and Enter must stay a newline.
   [[nodiscard]] bool eventFilter(QObject* watched, QEvent* event) override;
+
+  /// Populates the Actor section from the primary selection's scenario actor
+  /// and shows it (p8-s2 follow-up, #246 — GW-6 step 3).
+  void refresh_actor(const osc::ScenarioObject& object);
+
+  /// The primary selection's `<ScenarioObject>`, or nullptr when the primary
+  /// entry is not an actor (or names one the scenario no longer carries).
+  [[nodiscard]] const osc::ScenarioObject* primary_actor() const;
+
+  /// `object`'s `<BoundingBox>`, or nullptr when its entity object is neither a
+  /// `<Vehicle>` nor a `<Pedestrian>` — a `std::monostate` entity is a catalog
+  /// reference or a `MiscObject` riding the preserved tier and has no box this
+  /// version can reach, exactly as set_scenario_object_bounding_box refuses.
+  [[nodiscard]] static const osc::BoundingBox*
+  actor_bounding_box(const osc::ScenarioObject& object);
+
+  /// Where `name` is placed by its `<Init>` `<TeleportAction>`, or nullptr when
+  /// it has been declared but never placed.
+  [[nodiscard]] const osc::Position* actor_position(std::string_view name) const;
+
+  /// `name`'s `<Init>` `<SpeedAction>`, or nullptr when it has none.
+  ///
+  /// The ACTION rather than a bare speed, because "has no speed" and "has a
+  /// `<RelativeTargetSpeed>` this version does not model" are different states
+  /// and only the first may be edited — set_entity_init_speed refuses the
+  /// second rather than discard the preserved target.
+  [[nodiscard]] const osc::SpeedAction* actor_speed_action(std::string_view name) const;
+
+  /// Commits the four lane-anchor editors as ONE set_entity_init_pose, skipping
+  /// a pose that did not change (the re-entrancy guard every editor here shares:
+  /// refresh_actor re-seeds the widgets and must never echo a command back).
+  void push_actor_pose();
+  /// Commits the three dimension spins as ONE set_scenario_object_bounding_box,
+  /// carrying the box's centre through untouched — a resize must not move the
+  /// body relative to the entity's reference point.
+  void push_actor_box();
+  /// Commits the speed spin as ONE set_entity_init_speed, skipping a no-op.
+  void push_actor_speed();
+  /// Commits the name editor as ONE rename_scenario_object, skipping a no-op.
+  /// The command rewrites every `entityRef` with it — renaming the entity alone
+  /// would leave a dangling reference the writer refuses.
+  void push_actor_name();
 
   /// Commits a move_signal from the spinbox values for the primary signal.
   void push_signal_move();
