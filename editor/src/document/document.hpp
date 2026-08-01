@@ -202,6 +202,19 @@ public:
 
   [[nodiscard]] const std::vector<Diagnostic>& diagnostics() const { return diagnostics_; }
 
+  /// Live route findings (p8-s3, #247): `osc::validate_routes` re-run against
+  /// the CURRENT network whenever the topology or the scenario changes — which
+  /// is what makes GW-6 step 8 true in the editor: delete a lane a route
+  /// traverses and the route is REPORTED, not silently dropped or re-routed.
+  ///
+  /// Held apart from diagnostics() on purpose: that vector is a validation
+  /// PASS (replaced by refresh_diagnostics/save, appended by command
+  /// findings), this one is derived state that must not clobber it and must
+  /// not be clobbered by it. DiagnosticsModel presents the two as one table.
+  [[nodiscard]] const std::vector<Diagnostic>& route_diagnostics() const {
+    return route_diagnostics_;
+  }
+
   /// Path of the loaded/saved file; empty until the first successful
   /// load() or save() (and again after reset()).
   [[nodiscard]] QString file_path() const { return file_path_; }
@@ -410,6 +423,16 @@ private:
   osc::Scenario scenario_;
   NetworkMesh mesh_;
   std::vector<Diagnostic> diagnostics_;
+
+  /// Recomputes route_diagnostics_ from the live network and scenario, and
+  /// emits diagnostics_changed() so the panel re-reads the merged table.
+  /// Connected (in the constructor) to topology_changed and scenario_changed —
+  /// the two events that can invalidate a route. A plain MOVE fires neither
+  /// consequence for routes: a waypoint names a lane, not a point in space,
+  /// which is GW-6 step 7 holding by construction.
+  void refresh_route_diagnostics();
+
+  std::vector<Diagnostic> route_diagnostics_;
   QString file_path_;
   SceneState scene_state_;
   /// Whether scene_state_ came off disk (rather than being the empty default).

@@ -312,6 +312,30 @@ Current version on `main`: **0.0.1**.
     `python/examples/scenario_routes.py` replays GW-6 steps 7 and 8 headlessly:
     move a road the route runs along and it still resolves; delete a lane it
     traverses and the route is reported as invalidated.
+- **A Route tool in the editor**
+  ([#247](https://github.com/Robomous/RoadMaker/issues/247), editor half):
+  click an actor, then click driving lanes to lay its waypoints — each gesture
+  ONE command on the document's single undo stack. The first click commits
+  nothing (the schema needs two waypoints, so the document never holds a
+  one-waypoint route it could not save); the second is one `assign_route`,
+  each further click one appended waypoint, a drag of a laid waypoint one
+  move. Backspace removes the last waypoint and is **refused below two** —
+  the command layer's own rule, surfaced as a toast.
+  - **The viewport overlay draws the RESOLVED route, not the clicks**: solid
+    legs are what `resolve_route` solved against the live network right now,
+    sampled along each lane's centre line in its direction of travel; wherever
+    resolution falls short, the waypoint sequence draws dashed instead — so a
+    broken stretch is visibly broken rather than the route just looking
+    shorter.
+  - **Route findings live in the Diagnostics panel**: the document re-runs
+    `validate_routes` whenever the topology or the scenario changes, and the
+    findings join the same table as the network checker's — delete a road a
+    route traverses and the panel says so, while the route itself stays
+    untouched (GW-6 step 8, in the editor).
+  - **The Map ↔ Scenario mode gate lost its last hardcoded tool check**: which
+    tool survives a mode switch is now derived from the same toolbar registry
+    that enables and disables its button, so a core-strip tool is never kicked
+    and a tab tool is kicked exactly when its tab was disabled.
 - **The esmini CI pin is honoured by a bump**
   ([#506](https://github.com/Robomous/RoadMaker/issues/506)): the cache key
   repeated the version as a literal instead of deriving it from

@@ -327,6 +327,12 @@ constexpr std::array kTable{
           .description = "Actor tool (place a scenario actor on a lane)",
           .toolbar_group = "Scenario",
           .toolbar_order = 10},
+    // Toolbar-only for the same reason as the Actor tool above (p8-s3, #247).
+    Entry{.id = Id::ToolRoute,
+          .category = "Tools",
+          .description = "Route tool (lay lane-anchored waypoints for a scenario actor)",
+          .toolbar_group = "Scenario",
+          .toolbar_order = 20},
     // Toolbar-only: enabled only for a mergeable two-road selection.
     Entry{.id = Id::MergeRoads,
           .category = "Tools",

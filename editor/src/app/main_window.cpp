@@ -107,6 +107,7 @@
 #include "tools/prop_point_tool.hpp"
 #include "tools/prop_polygon_tool.hpp"
 #include "tools/prop_span_tool.hpp"
+#include "tools/route_tool.hpp"
 #include "tools/select_tool.hpp"
 #include "tools/sign_tool.hpp"
 #include "tools/signal_tool.hpp"
@@ -592,6 +593,11 @@ MainWindow::MainWindow(QWidget* parent, bool restore_saved_layout)
   wire_status(actor_tool.get());
   tool_manager_.register_tool(ToolId::ActorPlace, std::move(actor_tool));
 
+  // Route: lay lane-anchored waypoints for a scenario actor (p8-s3, #247).
+  auto route_tool = std::make_unique<RouteTool>(document_, selection_);
+  wire_status(route_tool.get());
+  tool_manager_.register_tool(ToolId::Route, std::move(route_tool));
+
   connect(actions_->tool_corner, &QAction::triggered, this, [this] {
     tool_manager_.set_active(ToolId::Corner);
   });
@@ -612,6 +618,9 @@ MainWindow::MainWindow(QWidget* parent, bool restore_saved_layout)
   });
   connect(actions_->tool_actor_place, &QAction::triggered, this, [this] {
     tool_manager_.set_active(ToolId::ActorPlace);
+  });
+  connect(actions_->tool_route, &QAction::triggered, this, [this] {
+    tool_manager_.set_active(ToolId::Route);
   });
   connect(actions_->scenario_mode, &QAction::toggled, this, [this](bool on) {
     mode_ = on ? EditorMode::Scenario : EditorMode::Map;
@@ -1561,6 +1570,77 @@ void MainWindow::build_tool_options_bar() {
   update_tool_options();
 }
 
+/// The registry row a tool activates through — the link that lets
+/// apply_editor_mode() classify the ACTIVE tool with the same taxonomy that
+/// enables and disables its button. An exhaustive switch on purpose: -Werror
+/// turns a ToolId added without a row here into a build failure rather than a
+/// tool the mode switch silently cannot classify.
+static shortcuts::Id shortcut_for_tool(ToolId tool) {
+  switch (tool) {
+  case ToolId::Select:
+    return shortcuts::Id::ToolSelect;
+  case ToolId::Move:
+    return shortcuts::Id::ToolMove;
+  case ToolId::CreateRoad:
+    return shortcuts::Id::ToolCreateRoad;
+  case ToolId::EditNodes:
+    return shortcuts::Id::ToolEditNodes;
+  case ToolId::LaneProfile:
+    return shortcuts::Id::ToolLaneProfile;
+  case ToolId::Elevation:
+    return shortcuts::Id::ToolElevation;
+  case ToolId::CreateJunction:
+    return shortcuts::Id::ToolCreateJunction;
+  case ToolId::Split:
+    return shortcuts::Id::ToolSplit;
+  case ToolId::Delete:
+    return shortcuts::Id::ToolDelete;
+  case ToolId::LaneAdd:
+    return shortcuts::Id::ToolLaneAdd;
+  case ToolId::LaneForm:
+    return shortcuts::Id::ToolLaneForm;
+  case ToolId::LaneCarve:
+    return shortcuts::Id::ToolLaneCarve;
+  case ToolId::Crosswalk:
+    return shortcuts::Id::ToolCrosswalk;
+  case ToolId::MarkingPoint:
+    return shortcuts::Id::ToolMarkingPoint;
+  case ToolId::MarkingCurve:
+    return shortcuts::Id::ToolMarkingCurve;
+  case ToolId::PropPoint:
+    return shortcuts::Id::ToolPropPoint;
+  case ToolId::PropCurve:
+    return shortcuts::Id::ToolPropCurve;
+  case ToolId::PropSpan:
+    return shortcuts::Id::ToolPropSpan;
+  case ToolId::PropPolygon:
+    return shortcuts::Id::ToolPropPolygon;
+  case ToolId::Corner:
+    return shortcuts::Id::ToolCorner;
+  case ToolId::StopLine:
+    return shortcuts::Id::ToolStopLine;
+  case ToolId::JunctionSpan:
+    return shortcuts::Id::ToolJunctionSpan;
+  case ToolId::JunctionSurface:
+    return shortcuts::Id::ToolJunctionSurface;
+  case ToolId::Maneuver:
+    return shortcuts::Id::ToolManeuver;
+  case ToolId::Signal:
+    return shortcuts::Id::ToolSignal;
+  case ToolId::Sign:
+    return shortcuts::Id::ToolSign;
+  case ToolId::Surface:
+    return shortcuts::Id::ToolSurface;
+  case ToolId::TerrainBrush:
+    return shortcuts::Id::ToolTerrainBrush;
+  case ToolId::ActorPlace:
+    return shortcuts::Id::ToolActorPlace;
+  case ToolId::Route:
+    return shortcuts::Id::ToolRoute;
+  }
+  return shortcuts::Id::ToolSelect; // unreachable; keeps -Wreturn-type quiet
+}
+
 void MainWindow::apply_editor_mode() {
   const bool scenario = mode_ == EditorMode::Scenario;
 
@@ -1590,10 +1670,17 @@ void MainWindow::apply_editor_mode() {
   }
 
   // A tool that has just been disabled must not stay active — it would keep
-  // receiving viewport events through a greyed-out button.
+  // receiving viewport events through a greyed-out button. Classified through
+  // the SAME registry mapping the enable/disable walk above uses (was a
+  // hardcoded `== ToolId::ActorPlace` while the Actor tool was the only
+  // scenario tool — wrong in both directions the day a second one landed): a
+  // core-strip tool is never kicked, a tab tool is kicked exactly when its tab
+  // was just disabled.
   if (const std::optional<ToolId> active = tool_manager_.active_id()) {
-    const bool actor_tool = *active == ToolId::ActorPlace;
-    if (actor_tool != scenario) {
+    const shortcuts::ToolbarTab tab = shortcuts::toolbar_tab_of(shortcut_for_tool(*active));
+    const bool allowed = tab == shortcuts::ToolbarTab::kCore ||
+                         (tab == shortcuts::ToolbarTab::kScenario) == scenario;
+    if (!allowed) {
       tool_manager_.set_active(ToolId::Select);
       actions_->tool_select->setChecked(true);
     }

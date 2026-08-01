@@ -297,6 +297,16 @@ Actions::Actions(QUndoStack& undo_stack, QObject* parent) : QObject(parent) {
          "move it. Actors anchor to the lane, so they follow the road when it moves"));
   tool_group->addAction(tool_actor_place);
 
+  // p8-s3 (#247). Toolbar-only, like the Actor tool.
+  tool_route = new QAction(tr("&Route"), this);
+  tool_route->setCheckable(true);
+  tool_route->setShortcuts(shortcuts::sequences(shortcuts::Id::ToolRoute));
+  tool_route->setIconText(tr("Route"));
+  tool_route->setToolTip(
+      tr("Route — click an actor, then click driving lanes to lay its waypoints. The route "
+         "anchors to lanes, so it follows the roads when they move"));
+  tool_group->addAction(tool_route);
+
   tool_maneuver = new QAction(tr("&Maneuver"), this);
   tool_maneuver->setCheckable(true);
   tool_maneuver->setShortcuts(shortcuts::sequences(shortcuts::Id::ToolManeuver));
@@ -601,6 +611,8 @@ QAction* Actions::action(shortcuts::Id id) const {
     return tool_surface;
   case Id::ToolActorPlace:
     return tool_actor_place;
+  case Id::ToolRoute:
+    return tool_route;
   case Id::ScenarioMode:
     return scenario_mode;
   case Id::ToolTerrainBrush:
