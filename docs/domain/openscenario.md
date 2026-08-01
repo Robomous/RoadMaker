@@ -191,6 +191,103 @@ treating a schema-shape problem (an `<Act>` with no `<ManeuverGroup>`) as a
 refusing to write it back would mean a document just loaded can no longer be
 saved.
 
+## OpenSCENARIO 2.x — the export-only concrete-scenario subset
+
+RoadMaker also emits **ASAM OpenSCENARIO DSL v2.2.0** (`.osc`) from the same
+internal model that writes 1.x. Two things about it are load-bearing and easy to
+miss:
+
+- **It is a different language, not a different serialization.** OpenSCENARIO
+  XML 1.x is XML. OpenSCENARIO DSL 2.x is a Python-style textual DSL with
+  significant indentation, `#` comments and the `.osc` extension. Nothing about
+  the `.xosc` writer carries over except the model it reads.
+- **It is export-only, and it always will be at v0.1.0.** There is no `.osc`
+  reader, no grammar and no parser dependency. The round trip is via the
+  internal model and the project container
+  ([ADR-0008](../decisions/0008-persistence-layers-asam-first.md)) — never via
+  re-importing 2.x. A future parser dependency goes through the
+  [dependency policy](../standards/dependencies.md)'s stop-and-ask *before* it
+  is prototyped.
+
+**Layer 0, like the `.xodr` and the `.xosc`.** No RoadMaker-specific enrichment
+may leak into the `.osc`: anything the standard cannot express belongs in the
+project's own Layer-2 container, not in a vendor extension to this file.
+
+### Why "concrete"
+
+The standard defines a concrete scenario as *"a scenario for which the exact
+evaluation of any of its parameters are completely determined to a fixed value
+for any point in time"* (DSL v2.2.0 §6.3.1.2.1). RoadMaker's model holds exactly
+that — a named map, named actors, fixed speeds — and holds nothing that could
+express a parameter range or a constraint space, so the level is a consequence
+of the model rather than a choice between levels.
+
+### What is exported
+
+★ **This table is generated-adjacent, not decorative.** It mirrors
+`osc::osc2_supported()` in `roadmaker/osc/osc2.hpp`, and
+`Osc2Subset.TheCommittedDocMatchesTheRegistry` fails CI if the two drift. There
+is no schema, no parser and no simulator in CI to check this output — "a
+documented subset" is the only promise made about it, so the promise is gated.
+
+| DSL construct | Produced by |
+|---|---|
+| `import osc.standard.all` | always emitted (§7.7.5.2) |
+| `scenario <name>:` | `Osc2WriteOptions::scenario_name` |
+| `map.set_map_file("...")` | `<RoadNetwork><LogicFile @filepath>` |
+| `<actor>: vehicle` | `<ScenarioObject>` holding a `<Vehicle>` |
+| `<actor>: pedestrian` | `<ScenarioObject>` holding a `<Pedestrian>` |
+| `keep(it.vehicle_category == ...)` | `<Vehicle @vehicleCategory>` |
+| `do parallel:` | the `<Init>` actions, which all start together |
+| `<actor>.drive()` | an entity with any `<Init>` action |
+| `speed(<v>mps)` | `<SpeedAction><AbsoluteTargetSpeed @value>` |
+
+Three details worth knowing:
+
+- **`mps` is a normative speed unit**, so the kernel's m/s needs no conversion.
+  A `kph` conversion would put a rounding error into a file nothing in CI can
+  check.
+- **`vehicle_category` is the domain model's name** (§8.7.7), not `category` —
+  which appears only in a loose conceptual example. The DSL and XML
+  enumerations are also *not* the same list: a bicycle is `vru_vehicle` in the
+  DSL. A category with no DSL spelling omits the `keep` rather than inventing
+  one.
+- **Entity names are rewritten to DSL identifiers.** `ScenarioObject/@name` is
+  an XML string and routinely holds spaces or dashes; `Lead Vehicle-2` becomes
+  `lead_vehicle_2`. Two names that would collapse to one identifier are
+  **refused**, because two actors merged into one is a scenario that describes
+  something else.
+
+### What is not exported at v0.1.0
+
+Everything here is **reported** by `osc::validate_osc2_subset` rather than
+silently omitted — as a warning, since a 2.x file is a lossy export-only view by
+definition and refusing to write one because it is lossy would make the feature
+unusable.
+
+| Not exported | Why |
+|---|---|
+| `<Story> / <Act> / <Event> / <Action>` | the storyboard's phase structure has no faithful concrete-subset spelling here; emitting a guess would be worse than reporting it |
+| `<Trigger> / <Condition>` | conditions are modifiers and constraints in the DSL, not triggers; the mapping is not one-to-one |
+| `<Route> / <Waypoint>` | a DSL route comes from `map.create_route(get_odr_points(...))`, an external method this exporter cannot synthesize |
+| `<TrafficSignalController> / <Phase>` | traffic lights are domain-model actors with their own behaviour; the 1.x controller decomposition does not carry over |
+| `<LanePosition> / <RoadPosition>` | placement is a `position()`/`lane()` modifier relative to a route, and there is no route to relate it to (see above) |
+| `OpenSCENARIO 2.x import` | export-only at v0.1.0; a parser dependency goes through the dependency policy's stop-and-ask first |
+| `abstract and logical scenarios` | the internal model holds fixed values only, so it cannot express a parameter range or a constraint space |
+
+**The subset is narrow on purpose.** Every construct emitted appears in the
+specification's own normative text. A wider emitter that guessed at modifier
+signatures would be worse than a small correct one, precisely because nothing
+downstream would contradict it.
+
+### How it is checked
+
+Not by a schema — there is none in this repository and none can be tracked. The
+2.x file is **reviewed against the table above**, and that review is made
+possible by the doc↔code gate rather than by memory. The 1.x file emitted from
+the same scenario is checked by esmini, as described above; the two exports have
+different acceptance criteria and neither substitutes for the other.
+
 ## Not supported
 
 - **OpenSCENARIO catalogs.** A `<Catalog>` document is refused by name at parse
@@ -202,6 +299,5 @@ saved.
 - **Simulation.** Previewing a scenario is
   [#249](https://github.com/Robomous/RoadMaker/issues/249)'s, through esmini as
   an external process.
-- **OpenSCENARIO 2.x import.** Export of a documented 2.x subset is
-  [#327](https://github.com/Robomous/RoadMaker/issues/327); there is no parser
-  and no plan for one.
+- **OpenSCENARIO 2.x import.** The 2.x *export* is described above; there is no
+  parser and no plan for one.

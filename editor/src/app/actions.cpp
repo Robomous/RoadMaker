@@ -61,6 +61,10 @@ Actions::Actions(QUndoStack& undo_stack, QObject* parent) : QObject(parent) {
   export_preview_xodr->setShortcuts(shortcuts::sequences(shortcuts::Id::ExportPreviewXodr));
   export_preview_xodr->setToolTip(tr("Preview the OpenDRIVE that would be written"));
 
+  export_osc2 = new QAction(tr("Export OpenSCENARIO &2.x…"), this);
+  export_osc2->setToolTip(
+      tr("Write the scenario's concrete-scenario subset as an OpenSCENARIO DSL .osc file"));
+
   preview_esmini = new QAction(tr("Preview Scenario in &esmini…"), this);
   preview_esmini->setToolTip(
       tr("Export the scene and its scenario to a temporary folder and open them in esmini"));

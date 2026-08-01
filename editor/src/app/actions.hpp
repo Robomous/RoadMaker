@@ -62,6 +62,15 @@ public:
   QAction* export_preview_scene = nullptr;
   QAction* export_preview_xodr = nullptr;
 
+  /// File ▸ Export OpenSCENARIO 2.x… (p8-s6, #327, GW-6 step 16). Menu-only,
+  /// like the preview below: an occasional gesture, and keeping it out of the
+  /// registry keeps the generated shortcuts page — and its CI enforcer —
+  /// untouched.
+  ///
+  /// EXPORT-ONLY, and the menu says so by having no Import twin: there is no
+  /// `.osc` reader anywhere in this tree.
+  QAction* export_osc2 = nullptr;
+
   /// File ▸ Preview Scenario in esmini… (p8-s5, #249, GW-6 step 14). Menu-only
   /// (no registry id, so no shortcut): a preview is an occasional gesture, and
   /// keeping it out of the registry keeps the generated shortcuts page — and

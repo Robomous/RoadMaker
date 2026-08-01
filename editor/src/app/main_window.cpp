@@ -22,6 +22,7 @@
 #include "roadmaker/gis/layer.hpp"
 #include "roadmaker/gis/reproject.hpp"
 #include "roadmaker/mesh/junction_stoplines.hpp"
+#include "roadmaker/osc/osc2.hpp"
 #include "roadmaker/osm/import.hpp"
 #include "roadmaker/road/bridge.hpp"
 #include "roadmaker/road/grade_separation.hpp"
@@ -185,6 +186,7 @@ MainWindow::MainWindow(QWidget* parent, bool restore_saved_layout)
   connect(actions_->export_preview_scene, &QAction::triggered, this, [this] {
     show_export_preview(ExportPreviewWindow::Page::Scene);
   });
+  connect(actions_->export_osc2, &QAction::triggered, this, [this] { export_osc2_dialog(); });
   connect(actions_->preview_esmini, &QAction::triggered, this, [this] { preview_in_esmini(); });
   connect(actions_->export_preview_xodr, &QAction::triggered, this, [this] {
     show_export_preview(ExportPreviewWindow::Page::OpenDrive);
@@ -1256,6 +1258,7 @@ void MainWindow::build_menus() {
 #endif
   file_menu->addAction(actions_->export_preview_scene);
   file_menu->addAction(actions_->export_preview_xodr);
+  file_menu->addAction(actions_->export_osc2);
   file_menu->addAction(actions_->preview_esmini);
   file_menu->addSeparator();
   // GIS import (p7-s2, #242). The two REFERENCE imports live here; the
@@ -2866,6 +2869,63 @@ void MainWindow::show_export_preview(ExportPreviewWindow::Page page) {
     export_preview_ = new ExportPreviewWindow(document_, this);
   }
   export_preview_->show_page(page);
+}
+
+void MainWindow::export_osc2_dialog() {
+  if (!document_.has_scenario()) {
+    QMessageBox::warning(this,
+                         tr("Export OpenSCENARIO 2.x"),
+                         tr("This scene has no scenario to export — place an actor first."));
+    return;
+  }
+
+  // ★ SAY WHAT THE SUBSET DROPS BEFORE WRITING IT, not after. A 2.x file is a
+  // lossy view by design; an export that said nothing would leave the user to
+  // discover the difference by diffing two files in two different languages.
+  const std::vector<Diagnostic> dropped = osc::validate_osc2_subset(document_.scenario());
+  if (!dropped.empty()) {
+    QString detail;
+    for (const Diagnostic& finding : dropped) {
+      detail += QStringLiteral("• %1\n").arg(QString::fromStdString(finding.message));
+    }
+    const auto choice = QMessageBox::question(
+        this,
+        tr("Export OpenSCENARIO 2.x"),
+        tr("The OpenSCENARIO %1 concrete-scenario subset cannot carry everything in this "
+           "scenario. The .xosc export carries all of it.\n\n%2\nExport anyway?")
+            .arg(QString::fromStdString(std::string(osc::kOsc2Version)), detail),
+        QMessageBox::Yes | QMessageBox::No,
+        QMessageBox::Yes);
+    if (choice != QMessageBox::Yes) {
+      return;
+    }
+  }
+
+  QString suggested = document_.file_path();
+  if (suggested.isEmpty()) {
+    suggested = QStringLiteral("scenario");
+  }
+  std::filesystem::path stem(suggested.toStdString());
+  stem.replace_extension(std::string(osc::kOsc2Extension));
+
+  const QString path = QFileDialog::getSaveFileName(this,
+                                                    tr("Export OpenSCENARIO 2.x"),
+                                                    QString::fromStdString(stem.string()),
+                                                    tr("OpenSCENARIO DSL (*.osc)"));
+  if (path.isEmpty()) {
+    return;
+  }
+
+  const auto written =
+      osc::save_osc2(document_.scenario(), std::filesystem::path(path.toStdString()));
+  if (!written) {
+    QMessageBox::warning(
+        this, tr("Export OpenSCENARIO 2.x"), QString::fromStdString(written.error().message));
+    return;
+  }
+  statusBar()->showMessage(tr("Exported the OpenSCENARIO %1 subset to %2.")
+                               .arg(QString::fromStdString(std::string(osc::kOsc2Version)), path),
+                           5000);
 }
 
 void MainWindow::preview_in_esmini() {
