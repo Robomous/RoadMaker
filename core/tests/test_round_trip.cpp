@@ -282,6 +282,119 @@ TEST(RoundTrip, LaneDirectionSurvivesWriteParseWrite) {
   EXPECT_EQ(*xml, *again);
 }
 
+// --- lane <border> (#538) ----------------------------------------------------
+//
+// The ALTERNATIVE encoding of lane geometry (§11.7.2): a border gives the
+// lane's outer t-limit, not its width. It used to be warned about once and
+// dropped, and the lane preserved tier excluded it too — so a border-authored
+// lane came back with NO widths at all, meshed at zero width, and was written
+// back width-less. Geometry loss, not markup loss.
+
+namespace {
+
+const roadmaker::Lane&
+lane_by_odr_id(const RoadNetwork& network, const char* road_odr_id, int lane_odr_id) {
+  const roadmaker::Road& road = *network.road(network.find_road(road_odr_id));
+  const roadmaker::LaneSection& section = *network.lane_section(road.sections.front());
+  for (const roadmaker::LaneId lane_id : section.lanes) {
+    const roadmaker::Lane& lane = *network.lane(lane_id);
+    if (lane.odr_id == lane_odr_id) {
+      return lane;
+    }
+  }
+  throw std::runtime_error("lane not found in the corpus sample");
+}
+
+} // namespace
+
+TEST(RoundTrip, BorderAuthoredLanesKeepTheirGeometry) {
+  const auto loaded =
+      roadmaker::load_xodr(std::filesystem::path(RM_FUZZ_CORPUS_DIR) / "lane_border.xodr");
+  ASSERT_TRUE(loaded.has_value()) << (loaded ? "" : loaded.error().message);
+  const RoadNetwork& network = loaded->network;
+
+  // 1. Every bordered lane has geometry. Before the fix all five were empty.
+  for (const int odr_id : {2, 1, -1, -2, -3}) {
+    EXPECT_FALSE(lane_by_odr_id(network, "1", odr_id).widths.empty())
+        << "lane " << odr_id << " lost its geometry";
+  }
+
+  // 2. The widths are the ones the borders imply, not merely non-empty.
+  const roadmaker::Lane& inner_left = lane_by_odr_id(network, "1", 1);
+  EXPECT_DOUBLE_EQ(roadmaker::eval_profile(inner_left.widths, 0.0), 3.5);
+  const roadmaker::Lane& outer_left = lane_by_odr_id(network, "1", 2);
+  EXPECT_DOUBLE_EQ(roadmaker::eval_profile(outer_left.widths, 0.0), 3.5)
+      << "the outer lane's width is its border MINUS the inner lane's, not its border";
+
+  // 3. ★ The lane whose own border never breaks, but whose inner neighbour's
+  // does. It must narrow past s=50 as lane -2 widens beneath it; a conversion
+  // that walked only each lane's own records would hold it at 2.0 forever.
+  const roadmaker::Lane& shoulder = lane_by_odr_id(network, "1", -3);
+  EXPECT_DOUBLE_EQ(roadmaker::eval_profile(shoulder.widths, 0.0), 2.0);
+  EXPECT_DOUBLE_EQ(roadmaker::eval_profile(shoulder.widths, 50.0), 2.0);
+  EXPECT_NEAR(roadmaker::eval_profile(shoulder.widths, 100.0), 1.0, 1e-9)
+      << "the shoulder did not narrow as the lane inside it widened";
+  const roadmaker::Lane& widening = lane_by_odr_id(network, "1", -2);
+  EXPECT_NEAR(roadmaker::eval_profile(widening.widths, 100.0), 4.5, 1e-9);
+
+  // 4. §11.7.2: where a lane declares both encodings, <width> wins.
+  const roadmaker::Lane& both = lane_by_odr_id(network, "2", -1);
+  EXPECT_DOUBLE_EQ(roadmaker::eval_profile(both.widths, 0.0), 3.0)
+      << "the absurd border was used instead of the width";
+}
+
+TEST(RoundTrip, BorderAuthoredLanesSurviveWriteParseWrite) {
+  const auto loaded =
+      roadmaker::load_xodr(std::filesystem::path(RM_FUZZ_CORPUS_DIR) / "lane_border.xodr");
+  ASSERT_TRUE(loaded.has_value());
+
+  const auto written = roadmaker::write_xodr(loaded->network, "lane_border");
+  ASSERT_TRUE(written.has_value());
+
+  // The file changes ENCODING — borders become widths, which is what §11.7.2
+  // sanctions and what the conversion is for — so the assertion is that the
+  // geometry survives and that no <border> is re-emitted beside the <width>
+  // it became (the two are mutually exclusive).
+  EXPECT_NE(written->find("<width"), std::string::npos);
+  EXPECT_EQ(written->find("<border"), std::string::npos)
+      << "a border was re-emitted alongside the width it converted to";
+
+  const auto reparsed = roadmaker::parse_xodr(*written, "lane_border");
+  ASSERT_TRUE(reparsed.has_value());
+  for (const int odr_id : {2, 1, -1, -2, -3}) {
+    const roadmaker::Lane& before = lane_by_odr_id(loaded->network, "1", odr_id);
+    const roadmaker::Lane& after = lane_by_odr_id(reparsed->network, "1", odr_id);
+    for (double s = 0.0; s <= 100.0; s += 5.0) {
+      EXPECT_NEAR(
+          roadmaker::eval_profile(after.widths, s), roadmaker::eval_profile(before.widths, s), 1e-9)
+          << "lane " << odr_id << " changed width at s = " << s;
+    }
+  }
+
+  // And the second pass is a fixed point: once converted, nothing drifts.
+  const auto again = roadmaker::write_xodr(reparsed->network, "lane_border");
+  ASSERT_TRUE(again.has_value());
+  EXPECT_EQ(*written, *again);
+}
+
+TEST(RoundTrip, BorderDiagnosticsSayWhatHappened) {
+  const auto loaded =
+      roadmaker::load_xodr(std::filesystem::path(RM_FUZZ_CORPUS_DIR) / "lane_border.xodr");
+  ASSERT_TRUE(loaded.has_value());
+
+  const auto mentions = [&](std::string_view needle) {
+    return std::ranges::any_of(loaded->diagnostics, [&](const roadmaker::Diagnostic& d) {
+      return d.message.find(needle) != std::string::npos;
+    });
+  };
+  // The lane carrying both encodings is told its border was ignored...
+  EXPECT_TRUE(mentions("declares both <width> and <border>"));
+  // ...and the converted lanes are NOT reported as missing geometry, which is
+  // the warning they used to draw on the way to being emptied.
+  EXPECT_FALSE(mentions("non-center lane without <width> records"));
+  EXPECT_EQ(roadmaker::count_errors(loaded->diagnostics), 0U) << "warnings, never errors";
+}
+
 // --- road @rule, LHT/RHT (#535) ---------------------------------------------
 //
 // Read nowhere before #535, so a left-hand-traffic network became right-hand

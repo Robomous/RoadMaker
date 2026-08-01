@@ -44,6 +44,8 @@
 #include <utility>
 #include <vector>
 
+#include "lane_border.hpp"
+
 namespace roadmaker {
 
 namespace {
@@ -801,16 +803,109 @@ private:
         ++section_index;
         continue;
       }
+      pending_borders_.clear();
       for (const char* side : {"left", "center", "right"}) {
         for (const pugi::xml_node lane_node : section_node.child(side).children("lane")) {
           parse_lane(lane_node, section_id, section_location);
         }
       }
+      convert_borders_to_widths(road_id, section_location);
       ++section_index;
     }
     if (network().road(road_id)->sections.empty()) {
       diag(Severity::Warning, location, "road has no lane sections", rules::kLaneSectionRequired);
     }
+  }
+
+  /// One lane's `<border>` records, awaiting the section-wide conversion.
+  struct PendingBorder {
+    LaneId lane;
+    int odr_id = 0;
+    std::vector<Poly3> borders;
+  };
+
+  /// Turn this section's `<border>` profiles into the equivalent `<width>`
+  /// profiles (§11.7.2, #538).
+  ///
+  /// Borders are RoadMaker's only *alternative encoding* of geometry it already
+  /// models, so they are converted rather than carried: a lane's width is the
+  /// gap between its own border and the next lane inward's, and the conversion
+  /// is exact (see widths_from_borders). Before #538 the reader warned once and
+  /// dropped them, leaving a border-authored lane with no widths at all — it
+  /// meshed at zero width and was written back width-less, losing the file's
+  /// entire lane geometry.
+  ///
+  /// The two encodings are mutually exclusive, and §11.7.2 is explicit about
+  /// which wins: *"If both width and lane border elements are present for a lane
+  /// section … the application shall use the information from the `<width>`
+  /// elements."* So a lane carrying both keeps its widths and its borders are
+  /// reported as ignored — never silently.
+  void convert_borders_to_widths(RoadId road_id, const std::string& section_location) {
+    if (pending_borders_.empty()) {
+      return;
+    }
+    // §11.7.2 forbids <laneOffset> alongside borders. If a file breaks that, the
+    // centre is no longer at t = 0 and every |id| == 1 width would be off by the
+    // offset — so say so rather than emit quietly-wrong geometry.
+    if (const Road* road = network().road(road_id); road != nullptr && !road->lane_offset.empty()) {
+      diag(Severity::Warning,
+           section_location,
+           "<border> lanes on a road that also declares <laneOffset>; the offset is ignored when "
+           "converting borders to widths",
+           rules::kBorderExclusiveOffset);
+    }
+
+    // Inward-out per side. Not a data dependency — a lane's inner neighbour is
+    // read from its RAW borders, which are absolute t-limits and need no
+    // conversion first — but it makes the diagnostics come out in a stable
+    // order regardless of how the file grouped its <left>/<right> elements.
+    std::ranges::sort(pending_borders_, [](const PendingBorder& lhs, const PendingBorder& rhs) {
+      return std::abs(lhs.odr_id) < std::abs(rhs.odr_id);
+    });
+
+    for (const PendingBorder& pending : pending_borders_) {
+      Lane* lane = network().lane(pending.lane);
+      if (lane == nullptr) {
+        continue;
+      }
+      const std::string location = fmt::format("{}/lane[{}]", section_location, pending.odr_id);
+      if (!lane->widths.empty()) {
+        diag(Severity::Warning,
+             location,
+             "lane declares both <width> and <border>; the <width> records were used and the "
+             "<border> records ignored (§11.7.2)",
+             rules::kNoWidthWithBorder);
+        continue;
+      }
+      const std::vector<Poly3>* inner = inner_borders(pending.odr_id);
+      lane->widths = xodr::widths_from_borders(pending.borders,
+                                               inner != nullptr ? std::span<const Poly3>(*inner)
+                                                                : std::span<const Poly3>{},
+                                               pending.odr_id);
+      if (lane->widths.empty()) {
+        diag(Severity::Warning,
+             location,
+             "non-center lane without <width> records",
+             rules::kWidthDefinedWholeSection);
+      }
+    }
+  }
+
+  /// The border profile of the lane one step INWARD from `odr_id` — same sign,
+  /// absolute value one smaller. Null for |id| == 1, whose inner limit is the
+  /// centre, and for a gap in the numbering (an inner lane that declared no
+  /// border), where the honest answer is "no inner border" rather than a guess.
+  const std::vector<Poly3>* inner_borders(int odr_id) const {
+    if (std::abs(odr_id) <= 1) {
+      return nullptr;
+    }
+    const int wanted = odr_id > 0 ? odr_id - 1 : odr_id + 1;
+    for (const PendingBorder& candidate : pending_borders_) {
+      if (candidate.odr_id == wanted) {
+        return &candidate.borders;
+      }
+    }
+    return nullptr;
   }
 
   void parse_lane(const pugi::xml_node& lane_node,
@@ -872,10 +967,28 @@ private:
           read_poly3(width, fmt::format("{}/width[{}]", location, width_index), "sOffset"));
       ++width_index;
     }
-    if (lane_node.child("border")) {
-      warn_unsupported("border", location);
+    // <border> (§11.7.2) is the ALTERNATIVE encoding of the same geometry: it
+    // gives the lane's outer t-limit rather than its width. It cannot be
+    // converted here because the width depends on the NEXT LANE INWARD, which
+    // may not be parsed yet — so the records are stashed and the whole section
+    // is converted in convert_borders_to_widths() once its lanes exist.
+    std::size_t border_index = 0;
+    std::vector<Poly3> borders;
+    for (const pugi::xml_node border : lane_node.children("border")) {
+      borders.push_back(
+          read_poly3(border, fmt::format("{}/border[{}]", location, border_index), "sOffset"));
+      ++border_index;
     }
-    if (odr_lane_id != 0 && lane.widths.empty()) {
+    if (!borders.empty()) {
+      std::ranges::sort(borders, {}, &Poly3::s);
+      pending_borders_.push_back(
+          PendingBorder{.lane = lane_id, .odr_id = odr_lane_id, .borders = std::move(borders)});
+    }
+
+    // Only a lane with NEITHER encoding has no geometry. Before #538 a
+    // border-only lane fell through to this warning and then meshed at zero
+    // width, which is the geometry loss the issue is about.
+    if (odr_lane_id != 0 && lane.widths.empty() && border_index == 0) {
       diag(Severity::Warning,
            location,
            "non-center lane without <width> records",
@@ -987,7 +1100,10 @@ private:
     // Preserved tier: unmodeled lane children (<speed>/<access>/<height>/
     // <rule>/<userData>/…) survive verbatim in document order — the parser
     // never silently drops input (the Object precedent, docs/design/m3a/01 §5).
-    // <border> keeps its own warn-and-skip above; modeled children are excluded.
+    // <border> is excluded because it is MODELED, not unsupported: it is
+    // converted to <width> records in convert_borders_to_widths (#538). Keeping
+    // it here as well would re-emit it beside the widths it became, which
+    // §11.7.2 forbids ("mutually exclusive within the same lane group").
     for (const pugi::xml_node child : lane_node.children()) {
       const std::string_view name = child.name();
       if (name != "link" && name != "width" && name != "border" && name != "roadMark" &&
@@ -3265,6 +3381,11 @@ private:
   XodrParseResult result_;
   std::vector<PendingRoadRefs> pending_refs_;
   std::vector<PendingStopLine> pending_stoplines_;
+  /// `<border>` records held between parsing a lane and converting its whole
+  /// section (#538) — a lane's width needs the next lane inward, which may not
+  /// exist yet when the lane itself is read. Filled by parse_lane and drained by
+  /// convert_borders_to_widths at the end of the same section.
+  std::vector<PendingBorder> pending_borders_;
   std::set<std::string> warned_elements_;
   /// Entity context stamped onto diagnostics by diag(). Set once the entity
   /// exists in the arena, reset when its scope ends; single-pass parsing

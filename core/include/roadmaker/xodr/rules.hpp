@@ -95,6 +95,18 @@ inline constexpr std::string_view kLaneSectionValidLength =
 inline constexpr std::string_view kWidthDefinedWholeSection =
     "asam.net:xodr:1.7.0:road.lane.width.width_defined_whole_section";
 
+/// "`<width>` elements shall not be used together with `<border>` elements in
+/// the same lane group." (§11.7.2 rules.) §11.7.2 also says which wins when a
+/// file breaks the rule anyway: the `<width>` elements.
+inline constexpr std::string_view kNoWidthWithBorder =
+    "asam.net:xodr:1.9.0:road.lane.width.no_width_with_border";
+
+/// "`<border>` elements shall not be used together with `<laneOffset>`."
+/// (§11.7.2 rules.) A border is an absolute t-limit, so a lane offset would
+/// move the centre out from under the |id| == 1 lanes' inner edge.
+inline constexpr std::string_view kBorderExclusiveOffset =
+    "asam.net:xodr:1.4.0:road.lane.border.exclusive_offset_border";
+
 /// "The center lane shall have no material elements." (§11.8.2 rules.)
 /// Identical in 1.8.1 §11.7.2 and 1.9.0 §11.8.2, so no version gating.
 inline constexpr std::string_view kMaterialCenterLaneNone =

@@ -94,6 +94,7 @@ add_executable(roadmaker_core_tests
   test_edit_snap.cpp
   test_remesh_budget.cpp
   test_fill_predicates.cpp
+  test_lane_border.cpp
   test_gis_crs.cpp
   test_gis_import.cpp
   test_lidar_import.cpp
