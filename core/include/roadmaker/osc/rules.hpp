@@ -215,14 +215,18 @@ inline constexpr std::string_view kRoadLaneOffsetInBounds =
 inline constexpr std::string_view kAmbiguousRouteWaypoints =
     "asam.net:xosc:1.0.0:routing.ambiguous_route_waypoints";
 
-// `asam.net:xosc:1.0.0:routing.route_waypoints_locations` ("route waypoints
-// should not be located in junctions to avoid ambiguity") is deliberately NOT
-// declared here yet. It is not reachable from `validate_scenario` at all —
-// whether a road belongs to a junction is a fact about the `.xodr`, and a
-// `Scenario` holds only the roadId STRING (ADR-0014 §5) — so it belongs with
-// the network-aware checker in `osc/route.hpp`. Declaring it before something
-// cites it is exactly the decoration this file's header rules out, and
-// `XoscRules.EveryRuleConstantIsCitedBySomeFinding` enforces that.
+/// "Route waypoints should not be located in junctions to avoid ambiguity."
+///
+/// ★ NOT REACHABLE FROM `validate_scenario`, and that is structural rather than
+/// an omission: whether a road belongs to a junction is a fact about the
+/// `.xodr`, and a `Scenario` holds only the roadId STRING (ADR-0014 §5). It is
+/// cited by `osc::validate_routes` (`osc/route.hpp`), which takes the network —
+/// the same split `kRoadLaneExists` documents for the half of its own rule the
+/// writer cannot check. Declared only now, with the checker that cites it,
+/// because `XoscRules.EveryRuleConstantIsCitedBySomeFinding` fails on a
+/// constant nothing cites.
+inline constexpr std::string_view kRouteWaypointsLocations =
+    "asam.net:xosc:1.0.0:routing.route_waypoints_locations";
 
 /// "Based on the determined version of the checked file (Element `FileHeader`,
 /// attributes `revMajor` and `revMinor`), it shall comply with the schema of

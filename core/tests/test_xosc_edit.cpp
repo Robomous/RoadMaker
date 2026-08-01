@@ -44,7 +44,9 @@
 #include <memory>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 #include <utility>
+#include <variant>
 #include <vector>
 
 using roadmaker::ContactPoint;
@@ -65,6 +67,7 @@ using roadmaker::osc::Phase;
 using roadmaker::osc::Position;
 using roadmaker::osc::Private;
 using roadmaker::osc::PrivateAction;
+using roadmaker::osc::RouteWaypoint;
 using roadmaker::osc::Scenario;
 using roadmaker::osc::ScenarioObject;
 using roadmaker::osc::SpeedAction;
@@ -75,8 +78,12 @@ using roadmaker::osc::Vehicle;
 using roadmaker::osc::WorldPosition;
 using roadmaker::osc::write_xosc;
 using roadmaker::osc::edit::add_scenario_object;
+using roadmaker::osc::edit::assign_route;
+using roadmaker::osc::edit::clear_route;
 using roadmaker::osc::edit::Command;
+using roadmaker::osc::edit::insert_route_waypoint;
 using roadmaker::osc::edit::place_scenario_object;
+using roadmaker::osc::edit::remove_route_waypoint;
 using roadmaker::osc::edit::remove_scenario_object;
 using roadmaker::osc::edit::rename_scenario_object;
 using roadmaker::osc::edit::ScenarioStack;
@@ -84,6 +91,7 @@ using roadmaker::osc::edit::set_entity_init_pose;
 using roadmaker::osc::edit::set_entity_init_position;
 using roadmaker::osc::edit::set_entity_init_speed;
 using roadmaker::osc::edit::set_logic_file;
+using roadmaker::osc::edit::set_route_waypoint;
 using roadmaker::osc::edit::set_scenario_object_bounding_box;
 using roadmaker::osc::edit::sync_traffic_signals;
 
@@ -867,4 +875,234 @@ TEST(XoscEdit, AnActorFromTheCatalogPlacesOnALaneAndWrites) {
   ASSERT_TRUE(stack.undo(scenario).has_value());
   ASSERT_TRUE(stack.undo(scenario).has_value());
   EXPECT_EQ(fingerprint(scenario), empty);
+}
+
+// --- routes (p8-s3, #247) -----------------------------------------------------
+
+namespace {
+
+RouteWaypoint waypoint_at(double s) {
+  return RouteWaypoint{.route_strategy = std::string(roadmaker::osc::kDefaultRouteStrategy),
+                       .position = Position{lane_at(s)},
+                       .preserved = {}};
+}
+
+roadmaker::osc::Route route_named(std::string name, std::size_t waypoints) {
+  roadmaker::osc::Route route;
+  route.name = std::move(name);
+  for (std::size_t index = 0; index < waypoints; ++index) {
+    route.waypoints.push_back(waypoint_at(10.0 * static_cast<double>(index + 1)));
+  }
+  return route;
+}
+
+const roadmaker::osc::Route* route_of(const Scenario& scenario, std::string_view entity) {
+  for (const Private& entry : scenario.storyboard.init.actions.privates) {
+    if (entry.entity_ref != entity) {
+      continue;
+    }
+    for (const PrivateAction& action : entry.actions) {
+      if (action.routing.has_value() && action.routing->assign_route.has_value() &&
+          action.routing->assign_route->route.has_value()) {
+        return &*action.routing->assign_route->route;
+      }
+    }
+  }
+  return nullptr;
+}
+
+const roadmaker::osc::Route* route_of(Scenario&&, std::string_view) = delete;
+
+} // namespace
+
+TEST(XoscEdit, AssignRouteCreatesThePrivateAndTheAction) {
+  Scenario scenario = one_actor_on_a_network();
+  const std::string before = fingerprint(scenario);
+  ScenarioStack stack;
+
+  ASSERT_TRUE(stack.push(scenario, assign_route(scenario, "Ego", route_named("R", 2))).has_value());
+  const roadmaker::osc::Route* route = route_of(scenario, "Ego");
+  ASSERT_NE(route, nullptr);
+  EXPECT_EQ(route->name, "R");
+  EXPECT_EQ(route->waypoints.size(), 2U);
+
+  ASSERT_TRUE(stack.undo(scenario).has_value());
+  EXPECT_EQ(fingerprint(scenario), before);
+}
+
+// The routing arm is its OWN <PrivateAction>, beside the teleport rather than
+// on it — the model the reader would have produced from the same file.
+TEST(XoscEdit, AssignRouteAppendsASecondPrivateActionBesideTheTeleport) {
+  Scenario scenario = one_actor_on_a_network();
+  ScenarioStack stack;
+  ASSERT_TRUE(stack.push(scenario, set_entity_init_pose(scenario, "Ego", Position{lane_at(5.0)}))
+                  .has_value());
+  ASSERT_TRUE(stack.push(scenario, assign_route(scenario, "Ego", route_named("R", 2))).has_value());
+
+  ASSERT_EQ(scenario.storyboard.init.actions.privates.size(), 1U);
+  const std::vector<PrivateAction>& actions = scenario.storyboard.init.actions.privates[0].actions;
+  ASSERT_EQ(actions.size(), 2U);
+  EXPECT_TRUE(actions[0].teleport.has_value());
+  EXPECT_FALSE(actions[0].routing.has_value()) << "the route rode the teleport's action";
+  EXPECT_TRUE(actions[1].routing.has_value());
+}
+
+TEST(XoscEdit, AssignRouteReplacesAnExistingOneRatherThanStackingASecond) {
+  Scenario scenario = one_actor_on_a_network();
+  ScenarioStack stack;
+  ASSERT_TRUE(stack.push(scenario, assign_route(scenario, "Ego", route_named("A", 2))).has_value());
+  const std::string one_route = fingerprint(scenario);
+  ASSERT_TRUE(stack.push(scenario, assign_route(scenario, "Ego", route_named("B", 3))).has_value());
+
+  ASSERT_EQ(scenario.storyboard.init.actions.privates[0].actions.size(), 1U)
+      << "a second RoutingAction was stacked on";
+  EXPECT_EQ(route_of(scenario, "Ego")->name, "B");
+
+  ASSERT_TRUE(stack.undo(scenario).has_value());
+  EXPECT_EQ(fingerprint(scenario), one_route);
+}
+
+TEST(XoscEdit, AssignRouteRefusesAnUnknownEntityAnEmptyNameAndAShortRoute) {
+  const Scenario scenario = one_actor_on_a_network();
+  Scenario target = scenario;
+  ScenarioStack stack;
+
+  EXPECT_FALSE(
+      stack.push(target, assign_route(scenario, "Nobody", route_named("R", 2))).has_value());
+  EXPECT_FALSE(stack.push(target, assign_route(scenario, "Ego", route_named("", 2))).has_value());
+  EXPECT_FALSE(stack.push(target, assign_route(scenario, "Ego", route_named("R", 1))).has_value());
+  // Every refusal left the document untouched and pushed nothing.
+  EXPECT_EQ(fingerprint(target), fingerprint(scenario));
+  EXPECT_EQ(stack.size(), 0U);
+}
+
+TEST(XoscEdit, MovingAWaypointKeepsItsStrategyAndIsOneUndo) {
+  Scenario scenario = one_actor_on_a_network();
+  ScenarioStack stack;
+  ASSERT_TRUE(stack.push(scenario, assign_route(scenario, "Ego", route_named("R", 3))).has_value());
+  const std::string before = fingerprint(scenario);
+
+  ASSERT_TRUE(stack.push(scenario, set_route_waypoint(scenario, "Ego", 1, Position{lane_at(77.0)}))
+                  .has_value());
+  const roadmaker::osc::Route* route = route_of(scenario, "Ego");
+  ASSERT_NE(route, nullptr);
+  ASSERT_EQ(route->waypoints.size(), 3U) << "moving a waypoint changed how many there are";
+  EXPECT_DOUBLE_EQ(std::get<LanePosition>(route->waypoints[1].position).s, 77.0);
+  // @routeStrategy belongs to the waypoint, not to the position being moved.
+  EXPECT_EQ(route->waypoints[1].route_strategy, std::string(roadmaker::osc::kDefaultRouteStrategy));
+  // ...and its siblings did not move.
+  EXPECT_DOUBLE_EQ(std::get<LanePosition>(route->waypoints[0].position).s, 10.0);
+  EXPECT_DOUBLE_EQ(std::get<LanePosition>(route->waypoints[2].position).s, 30.0);
+
+  ASSERT_TRUE(stack.undo(scenario).has_value());
+  EXPECT_EQ(fingerprint(scenario), before);
+}
+
+TEST(XoscEdit, InsertingAndRemovingWaypointsAreEachOneUndo) {
+  Scenario scenario = one_actor_on_a_network();
+  ScenarioStack stack;
+  ASSERT_TRUE(stack.push(scenario, assign_route(scenario, "Ego", route_named("R", 2))).has_value());
+  const std::string two = fingerprint(scenario);
+
+  ASSERT_TRUE(stack.push(scenario, insert_route_waypoint(scenario, "Ego", 1, waypoint_at(15.0)))
+                  .has_value());
+  ASSERT_EQ(route_of(scenario, "Ego")->waypoints.size(), 3U);
+  EXPECT_DOUBLE_EQ(std::get<LanePosition>(route_of(scenario, "Ego")->waypoints[1].position).s,
+                   15.0);
+
+  ASSERT_TRUE(stack.push(scenario, remove_route_waypoint(scenario, "Ego", 1)).has_value());
+  EXPECT_EQ(fingerprint(scenario), two);
+
+  ASSERT_TRUE(stack.undo(scenario).has_value());
+  ASSERT_EQ(route_of(scenario, "Ego")->waypoints.size(), 3U);
+  ASSERT_TRUE(stack.undo(scenario).has_value());
+  EXPECT_EQ(fingerprint(scenario), two);
+}
+
+// ★ Removing the second-to-last waypoint would leave a route the writer
+// refuses — a deletion that appeared to succeed and then made the scenario
+// unsavable. Refused instead.
+TEST(XoscEdit, RemovingAWaypointFromATwoWaypointRouteIsRefused) {
+  Scenario scenario = one_actor_on_a_network();
+  ScenarioStack stack;
+  ASSERT_TRUE(stack.push(scenario, assign_route(scenario, "Ego", route_named("R", 2))).has_value());
+  const std::string before = fingerprint(scenario);
+  const std::size_t pushed = stack.size();
+
+  EXPECT_FALSE(stack.push(scenario, remove_route_waypoint(scenario, "Ego", 0)).has_value());
+  EXPECT_EQ(fingerprint(scenario), before);
+  EXPECT_EQ(stack.size(), pushed);
+  // ...and the document is still writable, which is the point of the refusal.
+  EXPECT_TRUE(write_xosc(scenario).has_value());
+}
+
+TEST(XoscEdit, AnOutOfRangeWaypointIndexIsRefusedRatherThanClamped) {
+  Scenario scenario = one_actor_on_a_network();
+  ScenarioStack stack;
+  ASSERT_TRUE(stack.push(scenario, assign_route(scenario, "Ego", route_named("R", 3))).has_value());
+  const std::string before = fingerprint(scenario);
+
+  EXPECT_FALSE(stack.push(scenario, set_route_waypoint(scenario, "Ego", 3, Position{lane_at(1.0)}))
+                   .has_value());
+  EXPECT_FALSE(stack.push(scenario, insert_route_waypoint(scenario, "Ego", 4, waypoint_at(1.0)))
+                   .has_value());
+  EXPECT_FALSE(stack.push(scenario, remove_route_waypoint(scenario, "Ego", 3)).has_value());
+  // A clamp would have written waypoint 2, which the caller did not name.
+  EXPECT_EQ(fingerprint(scenario), before);
+}
+
+TEST(XoscEdit, ClearRouteRemovesTheWholeActionAndUndoRestoresIt) {
+  Scenario scenario = one_actor_on_a_network();
+  ScenarioStack stack;
+  ASSERT_TRUE(stack.push(scenario, set_entity_init_pose(scenario, "Ego", Position{lane_at(5.0)}))
+                  .has_value());
+  const std::string placed_only = fingerprint(scenario);
+  ASSERT_TRUE(stack.push(scenario, assign_route(scenario, "Ego", route_named("R", 2))).has_value());
+  const std::string routed = fingerprint(scenario);
+
+  ASSERT_TRUE(stack.push(scenario, clear_route(scenario, "Ego")).has_value());
+  EXPECT_EQ(route_of(scenario, "Ego"), nullptr);
+  // The teleport survived, and the emptied PrivateAction did not.
+  EXPECT_EQ(fingerprint(scenario), placed_only);
+
+  ASSERT_TRUE(stack.undo(scenario).has_value());
+  EXPECT_EQ(fingerprint(scenario), routed);
+}
+
+TEST(XoscEdit, ClearRouteRefusesAnEntityWithNoRoute) {
+  const Scenario scenario = one_actor_on_a_network();
+  Scenario target = scenario;
+  ScenarioStack stack;
+  EXPECT_FALSE(stack.push(target, clear_route(scenario, "Ego")).has_value());
+  EXPECT_EQ(fingerprint(target), fingerprint(scenario));
+}
+
+// The strongest form of the byte-identity contract, applied to the route
+// commands as a group: ten mutations, ten undos, ten redos.
+TEST(XoscEdit, RouteCommandsSurviveUndoRedoByteIdentically) {
+  Scenario scenario = one_actor_on_a_network();
+  const std::string empty = fingerprint(scenario);
+  ScenarioStack stack;
+
+  ASSERT_TRUE(stack.push(scenario, assign_route(scenario, "Ego", route_named("R", 2))).has_value());
+  for (std::size_t index = 0; index < 4; ++index) {
+    ASSERT_TRUE(stack.push(scenario, insert_route_waypoint(scenario, "Ego", 1, waypoint_at(20.0)))
+                    .has_value());
+  }
+  for (std::size_t index = 0; index < 4; ++index) {
+    ASSERT_TRUE(
+        stack.push(scenario, set_route_waypoint(scenario, "Ego", index, Position{lane_at(3.0)}))
+            .has_value());
+  }
+  ASSERT_TRUE(stack.push(scenario, remove_route_waypoint(scenario, "Ego", 2)).has_value());
+  const std::string applied = fingerprint(scenario);
+
+  while (stack.can_undo()) {
+    ASSERT_TRUE(stack.undo(scenario).has_value());
+  }
+  EXPECT_EQ(fingerprint(scenario), empty);
+  while (stack.can_redo()) {
+    ASSERT_TRUE(stack.redo(scenario).has_value());
+  }
+  EXPECT_EQ(fingerprint(scenario), applied);
 }

@@ -50,6 +50,7 @@
 #include "roadmaker/osc/decompose.hpp"
 #include "roadmaker/osc/edit.hpp"
 #include "roadmaker/osc/reader.hpp"
+#include "roadmaker/osc/route.hpp"
 #include "roadmaker/osc/rules.hpp"
 #include "roadmaker/osc/writer.hpp"
 #include "roadmaker/osm/graph.hpp"
@@ -2894,6 +2895,82 @@ NB_MODULE(_roadmaker, m) {
                 "order. Populated by parse_xosc; re-emitted after the modeled "
                 "content, so nothing a foreign file carried is ever dropped.");
 
+    // --- routes (p8-s3, #247) ---
+
+    nb::class_<roadmaker::osc::RouteWaypoint>(osc, "RouteWaypoint")
+        .def(nb::init<>())
+        .def_rw("route_strategy",
+                &roadmaker::osc::RouteWaypoint::route_strategy,
+                "@routeStrategy — 'fastest', 'shortest', 'random' or "
+                "'leastIntersections'. REQUIRED by the schema, and a free string here "
+                "so an unmodeled spelling round-trips rather than being rewritten "
+                "into the nearest one this build knows.")
+        .def_rw("position",
+                &roadmaker::osc::RouteWaypoint::position,
+                "A WorldPosition, RoadPosition or LanePosition. RoadMaker authors "
+                "LanePositions, which is what makes a route follow the roads beneath "
+                "it instead of staying behind in world space.")
+        .def_rw("preserved", &roadmaker::osc::RouteWaypoint::preserved);
+
+    nb::class_<roadmaker::osc::Route>(osc, "Route")
+        .def(nb::init<>())
+        .def_rw("name",
+                &roadmaker::osc::Route::name,
+                "@name — REQUIRED, and how a simulator resolves the route.")
+        .def_rw("closed",
+                &roadmaker::osc::Route::closed,
+                "@closed — REQUIRED. In a closed route the last waypoint is followed "
+                "by the first.")
+        .def_rw("parameter_declarations", &roadmaker::osc::Route::parameter_declarations)
+        .def_rw("waypoints",
+                &roadmaker::osc::Route::waypoints,
+                "At least two are needed to define a route; write_xosc refuses fewer. "
+                "NOTE this returns a COPY — mutate a local list and assign it back.")
+        .def_rw("preserved", &roadmaker::osc::Route::preserved);
+
+    nb::class_<roadmaker::osc::AssignRouteAction>(osc, "AssignRouteAction")
+        .def(nb::init<>())
+        .def_rw("route",
+                &roadmaker::osc::AssignRouteAction::route,
+                "The inline route, or None when the action's content is a "
+                "<CatalogReference> riding the preserved tier. None emits no <Route> "
+                "at all rather than an empty one.")
+        .def_rw("preserved", &roadmaker::osc::AssignRouteAction::preserved);
+
+    nb::class_<roadmaker::osc::RoutingAction>(osc, "RoutingAction")
+        .def(nb::init<>())
+        .def_rw("assign_route", &roadmaker::osc::RoutingAction::assign_route)
+        .def_rw("preserved", &roadmaker::osc::RoutingAction::preserved);
+
+    nb::class_<roadmaker::osc::RouteLeg>(osc, "RouteLeg")
+        .def_ro("road", &roadmaker::osc::RouteLeg::road)
+        .def_ro("lane", &roadmaker::osc::RouteLeg::lane)
+        .def_ro("lane_odr_id", &roadmaker::osc::RouteLeg::lane_odr_id)
+        .def_ro("s_start", &roadmaker::osc::RouteLeg::s_start)
+        .def_ro("s_end",
+                &roadmaker::osc::RouteLeg::s_end,
+                "May be LESS than s_start: a left-hand lane travels against +s, and "
+                "assuming an ascending interval draws such a route backwards.");
+
+    nb::class_<roadmaker::osc::ResolvedRoute>(osc, "ResolvedRoute")
+        .def_ro("legs",
+                &roadmaker::osc::ResolvedRoute::legs,
+                "The lanes traversed, in travel order. PARTIAL when complete is "
+                "False — what resolved is still here, so a caller can show it and "
+                "mark the gap.")
+        .def_ro("findings",
+                &roadmaker::osc::ResolvedRoute::findings,
+                "Never empty when complete is False. An incomplete resolution that "
+                "said nothing would be the silent failure this module prevents.")
+        .def_ro("complete", &roadmaker::osc::ResolvedRoute::complete);
+
+    nb::class_<roadmaker::osc::AssignedRoute>(osc, "AssignedRoute")
+        .def_ro("entity_ref", &roadmaker::osc::AssignedRoute::entity_ref)
+        .def_prop_ro(
+            "route",
+            [](const roadmaker::osc::AssignedRoute& assigned) { return *assigned.route; },
+            "A COPY of the route, so mutating it does not touch the scenario.");
+
     nb::class_<roadmaker::osc::AbsoluteTargetSpeed>(osc, "AbsoluteTargetSpeed")
         .def(nb::init<>())
         .def_rw("value", &roadmaker::osc::AbsoluteTargetSpeed::value, "Target speed [m/s].")
@@ -3099,6 +3176,30 @@ NB_MODULE(_roadmaker, m) {
         "Checker-rule validation. Returns a list of Diagnostic citing "
         "asam.net:xosc: rule UIDs; an empty rule_id marks a RoadMaker-side "
         "structural limitation with no normative rule behind it.");
+
+    osc.def("resolve_route",
+            &roadmaker::osc::resolve_route,
+            "network"_a,
+            "route"_a,
+            "Resolves a route against a live network: which lanes it traverses, and "
+            "what went wrong if it no longer does. NEVER mutates and NEVER re-routes "
+            "— an unresolvable waypoint or an unreachable gap is reported and leaves "
+            "`complete` False.");
+
+    osc.def("validate_routes",
+            &roadmaker::osc::validate_routes,
+            "network"_a,
+            "scenario"_a,
+            "Every route in the scenario, checked against the network. The "
+            "cross-document half of validate_scenario, which cannot see a network at "
+            "all. Empty when every route resolves; re-run it whenever the network "
+            "changes.");
+
+    osc.def("assigned_routes",
+            &roadmaker::osc::assigned_routes,
+            "scenario"_a,
+            "Every <Route> the scenario assigns, paired with the entity it belongs "
+            "to, in document order.");
 
     nb::class_<roadmaker::osc::XoscParseResult>(osc, "XoscParseResult")
         .def_ro("scenario", &roadmaker::osc::XoscParseResult::scenario)
@@ -3329,6 +3430,53 @@ NB_MODULE(_roadmaker, m) {
                  "Renames an actor AND every entityRef that resolved through it. "
                  "Renaming the entity alone would leave a dangling reference that "
                  "write_xosc refuses, making the document unsavable.");
+
+    osc_edit.def("assign_route",
+                 &roadmaker::osc::edit::assign_route,
+                 "scenario"_a,
+                 "entity_name"_a,
+                 "route"_a,
+                 "Assigns a route to an actor, replacing any it already has. The "
+                 "routing action is APPENDED as its own <PrivateAction> beside the "
+                 "teleport, because <PrivateAction> is a per-element choice. Refuses "
+                 "an unknown entity, an empty route name, and fewer than two "
+                 "waypoints.");
+
+    osc_edit.def("clear_route",
+                 &roadmaker::osc::edit::clear_route,
+                 "scenario"_a,
+                 "entity_name"_a,
+                 "Removes an actor's <RoutingAction> entirely. A route with no "
+                 "waypoints is not a shorter route, it is an invalid element.");
+
+    osc_edit.def("set_route_waypoint",
+                 &roadmaker::osc::edit::set_route_waypoint,
+                 "scenario"_a,
+                 "entity_name"_a,
+                 "index"_a,
+                 "position"_a,
+                 "Moves one waypoint. Carries its @routeStrategy and preserved tier "
+                 "through untouched. Refuses an index the route does not have — "
+                 "never clamps, because a clamp writes a waypoint the caller did not "
+                 "name.");
+
+    osc_edit.def("insert_route_waypoint",
+                 &roadmaker::osc::edit::insert_route_waypoint,
+                 "scenario"_a,
+                 "entity_name"_a,
+                 "index"_a,
+                 "waypoint"_a,
+                 "Inserts a waypoint at `index` (== len appends).");
+
+    osc_edit.def("remove_route_waypoint",
+                 &roadmaker::osc::edit::remove_route_waypoint,
+                 "scenario"_a,
+                 "entity_name"_a,
+                 "index"_a,
+                 "Removes a waypoint. REFUSES when it would leave fewer than two: "
+                 "that would produce a document write_xosc refuses, i.e. a deletion "
+                 "that appeared to succeed and then made the scenario unsavable. "
+                 "Use clear_route instead.");
 
     osc_edit.def("set_scenario_object_bounding_box",
                  &roadmaker::osc::edit::set_scenario_object_bounding_box,
