@@ -1,0 +1,82 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- VALID seed: the parse scopes that still dropped data silently (fmt-f1,
+     #453). Every marker below is `acme:` or an element RoadMaker does not
+     model, so a build that loses one loses something a diff can name.
+
+     Six scopes, one per row of the issue:
+
+       1. <roadMark> unknown attributes and children — the loop read
+          sOffset/type/width/color/material and <type>/<line>, and RoadMark had
+          no RawXml at all. (#326's text claimed roadMark preserved; it never
+          did — what preserves is ObjectMarking, a different struct.)
+       2. <laneSection> unknown children — the side walk visited only
+          <left>/<center>/<right>, so everything else was skipped in silence.
+          @singleSide rides the preserved tier rather than a typed field:
+          RoadMaker's mesher does not implement single-sided sections, so a
+          typed bool would claim a behaviour the kernel does not have.
+       3. <lanes> children other than <laneOffset>/<laneSection>.
+       4. <elevationProfile> children other than <elevation>.
+       5. <junction> non-<userData> children — <priority> (§12.9) above all.
+       6. Unknown ATTRIBUTES on <lane> and on <junction>, neither of which had
+          an attribute catch-all, unlike Signal/Object/Bridge since M3a.
+
+     <geoReference> is deliberately NOT here: P7 (#324) modeled it, so it is
+     covered by the georeference tests rather than by preservation.
+
+     Apache-2.0. -->
+<OpenDRIVE>
+  <header revMajor="1" revMinor="8" name="preserved_scopes" vendor="RoadMaker" />
+  <road name="preserving" length="100" id="1" junction="-1">
+    <planView>
+      <geometry s="0" x="0" y="0" hdg="0" length="100">
+        <line />
+      </geometry>
+    </planView>
+    <elevationProfile>
+      <elevation s="0" a="0" b="0" c="0" d="0" />
+      <userData code="acme:elevationNote" value="kept" />
+    </elevationProfile>
+    <lanes>
+      <laneOffset s="0" a="0" b="0" c="0" d="0" />
+      <userData code="acme:lanesNote" value="kept" />
+      <laneSection s="0" singleSide="false">
+        <center>
+          <lane id="0" type="none" level="false">
+            <roadMark sOffset="0" type="broken" color="white" width="0.15" acme:paint="thermo">
+              <userData code="acme:markNote" value="kept" />
+            </roadMark>
+          </lane>
+        </center>
+        <right>
+          <lane id="-1" type="driving" level="false" acme:surveyId="L-7">
+            <width sOffset="0" a="3.5" b="0" c="0" d="0" />
+          </lane>
+        </right>
+        <userData code="acme:sectionNote" value="kept" />
+      </laneSection>
+    </lanes>
+  </road>
+  <road name="arm" length="60" id="2" junction="-1">
+    <planView>
+      <geometry s="0" x="0" y="-40" hdg="0" length="60">
+        <line />
+      </geometry>
+    </planView>
+    <lanes>
+      <laneSection s="0">
+        <center>
+          <lane id="0" type="none" level="false" />
+        </center>
+        <right>
+          <lane id="-1" type="driving" level="false">
+            <width sOffset="0" a="3.5" b="0" c="0" d="0" />
+          </lane>
+        </right>
+      </laneSection>
+    </lanes>
+  </road>
+  <junction id="100" name="preserving" acme:surveyId="J-3">
+    <priority high="1" low="2" />
+    <userData code="acme:junctionNote" value="kept" />
+  </junction>
+</OpenDRIVE>

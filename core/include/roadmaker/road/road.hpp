@@ -22,6 +22,7 @@
 #include "roadmaker/road/id.hpp"
 #include "roadmaker/road/road_type.hpp"
 #include "roadmaker/road/traffic_rule.hpp"
+#include "roadmaker/xodr/raw_xml.hpp"
 
 #include <optional>
 #include <string>
@@ -97,6 +98,16 @@ struct Road {
   /// sets it (#454 put full LHT support out of scope). Round-tripping a
   /// foreign LHT file faithfully is the bar.
   TrafficRule rule = TrafficRule::RightHandTraffic;
+
+  /// Unmodeled children of `<lanes>` — anything besides `<laneOffset>` and
+  /// `<laneSection>`, including `<userData>` — preserved verbatim (fmt-f1,
+  /// #453). Held on the Road because `<lanes>` has no struct of its own.
+  RawXml lanes_extras;
+
+  /// Unmodeled children of `<elevationProfile>` — anything besides
+  /// `<elevation>` — preserved verbatim (fmt-f1, #453). Same reason: the
+  /// profile container has no struct of its own.
+  RawXml elevation_profile_extras;
 
   /// `@rule` exactly as spelled; empty when the attribute was absent or the
   /// road was authored.

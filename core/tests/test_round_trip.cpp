@@ -282,6 +282,76 @@ TEST(RoundTrip, LaneDirectionSurvivesWriteParseWrite) {
   EXPECT_EQ(*xml, *again);
 }
 
+// --- the remaining non-preserving parse scopes (fmt-f1, #453) ----------------
+//
+// Six scopes that each dropped unmodeled input in silence. They are asserted
+// TOGETHER against one fixture because the failure mode is uniform — a scope
+// with no preserved tier loses everything it does not model — and because a
+// per-scope test would not catch a seventh scope being added without one.
+
+TEST(RoundTrip, EveryPreservedScopeSurvivesWriteParseWrite) {
+  const std::filesystem::path sample =
+      std::filesystem::path(RM_FUZZ_CORPUS_DIR) / "preserved_scopes.xodr";
+  const auto loaded = roadmaker::load_xodr(sample);
+  ASSERT_TRUE(loaded.has_value()) << (loaded ? "" : loaded.error().message);
+
+  const auto written = roadmaker::write_xodr(loaded->network, "preserved_scopes");
+  ASSERT_TRUE(written.has_value());
+
+  // Every marker the fixture plants, one per scope. Asserted on the BYTES:
+  // a model-level check would need six different accessors and would still
+  // miss a writer that read the field and emitted nothing.
+  for (const std::string_view marker : {
+           "acme:paint",         // 1. roadMark unknown attribute
+           "acme:markNote",      // 1. roadMark unmodeled child
+           "acme:sectionNote",   // 2. laneSection unmodeled child
+           "singleSide",         // 2. laneSection unknown attribute
+           "acme:lanesNote",     // 3. <lanes> container child
+           "acme:elevationNote", // 4. <elevationProfile> child
+           "<priority",          // 5. junction non-userData child (§12.9)
+           "acme:surveyId",      // 6. unknown attributes on <lane> and <junction>
+       }) {
+    EXPECT_NE(written->find(marker), std::string::npos) << "lost: " << marker;
+  }
+  // Both @acme:surveyId values, not just one of the two scopes that carry it.
+  EXPECT_NE(written->find(R"(acme:surveyId="L-7")"), std::string::npos) << "lane attribute lost";
+  EXPECT_NE(written->find(R"(acme:surveyId="J-3")"), std::string::npos)
+      << "junction attribute lost";
+
+  // Fixed point: preserved content must not accumulate or reorder on re-save.
+  const auto reparsed = roadmaker::parse_xodr(*written, "preserved_scopes");
+  ASSERT_TRUE(reparsed.has_value());
+  const auto again = roadmaker::write_xodr(reparsed->network, "preserved_scopes");
+  ASSERT_TRUE(again.has_value());
+  EXPECT_EQ(*written, *again);
+  EXPECT_EQ(roadmaker::count_errors(loaded->diagnostics), 0U);
+}
+
+TEST(RoundTrip, PreservationDoesNotDuplicateModeledOrDerivedContent) {
+  // The trap on the other side of this fix: name too few children "modeled"
+  // and the writer emits them twice — once from the model, once from the
+  // preserved tier. Counting is the only way to see it.
+  const auto loaded =
+      roadmaker::load_xodr(std::filesystem::path(RM_FUZZ_CORPUS_DIR) / "preserved_scopes.xodr");
+  ASSERT_TRUE(loaded.has_value());
+  const auto written = roadmaker::write_xodr(loaded->network, "preserved_scopes");
+  ASSERT_TRUE(written.has_value());
+
+  const auto count = [&](std::string_view needle) {
+    std::size_t n = 0;
+    for (std::size_t at = written->find(needle); at != std::string::npos;
+         at = written->find(needle, at + 1)) {
+      ++n;
+    }
+    return n;
+  };
+  EXPECT_EQ(count("<laneSection"), 2U) << "one per road";
+  EXPECT_EQ(count("<elevationProfile"), 1U);
+  EXPECT_EQ(count("<priority"), 1U);
+  EXPECT_EQ(count("acme:markNote"), 1U);
+  EXPECT_EQ(count("<roadMark"), 1U);
+}
+
 // --- direct and crossing junctions (#534) ------------------------------------
 //
 // A direct junction (§12.4) has NO connecting road: each <connection> carries
