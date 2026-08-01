@@ -267,6 +267,20 @@ Current version on `main`: **0.0.1**.
     `routing.ambiguous_route_waypoints`: it is legal, and it does not say which
     lane the route takes where several meet — so the same file routes
     differently in two simulators.
+  - **A foreign route survives whole.** A `<CatalogReference>` route, a
+    `<FollowTrajectoryAction>`, and a waypoint whose position is one of the
+    eight types this version does not model each come back out verbatim rather
+    than being dropped or replaced by an empty modeled element — a waypoint in
+    particular, because dropping one shortens the route, which is a *different*
+    route rather than a lossy copy of the same one.
+  - **The two-waypoint minimum counts what is EMITTED, not what is modeled.**
+    A preserved waypoint is still written out, so a route carrying one modeled
+    and one preserved waypoint is a valid two-waypoint route. Counting only the
+    modeled ones made `write_xosc` refuse a file `parse_xosc` had just accepted.
+  - **`@closed` is parsed as a strict `xsd:boolean`** (`true`/`false`/`1`/`0`).
+    The lax reading treats every other spelling as `false`, so a typo, an
+    unresolved `$parameter` and a genuine `false` would all come back
+    identical — and only one of the three is what the file said.
 - **The esmini CI pin is honoured by a bump**
   ([#506](https://github.com/Robomous/RoadMaker/issues/506)): the cache key
   repeated the version as a literal instead of deriving it from

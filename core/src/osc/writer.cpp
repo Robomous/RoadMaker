@@ -117,6 +117,36 @@ bool fragment_is_well_formed(const std::string& fragment) {
   return result.status == pugi::status_ok;
 }
 
+/// How many preserved fragments of `preserved` are `<element>` elements.
+///
+/// ★ EXISTS BECAUSE A CARDINALITY RULE COUNTS WHAT IS EMITTED, NOT WHAT IS
+/// MODELED (p8-s3, issue #247). A `<Waypoint>` whose position is one of the
+/// eight types this version does not model rides the preserved tier whole, and
+/// the writer emits it verbatim — so the document really does carry it. Counting
+/// only the modeled ones made `write_xosc` REFUSE a file `parse_xosc` had just
+/// accepted, which is the round trip failing in the one direction the never-drop
+/// contract exists to protect (ADR-0014 §6).
+///
+/// Parses each fragment rather than sniffing its prefix: `<WaypointGroup>` also
+/// starts with `<Waypoint`.
+std::size_t preserved_element_count(const RawXml& preserved, std::string_view element) {
+  std::size_t count = 0;
+  for (const std::string& fragment : preserved.children) {
+    pugi::xml_document scratch;
+    const pugi::xml_parse_result result = scratch.load_buffer(
+        fragment.data(), fragment.size(), pugi::parse_default | pugi::parse_fragment);
+    if (result.status != pugi::status_ok) {
+      continue; // reported separately by check_preserved_fragments
+    }
+    for (const pugi::xml_node child : scratch.children()) {
+      if (std::string_view(child.name()) == element) {
+        ++count;
+      }
+    }
+  }
+  return count;
+}
+
 void append_fragment(pugi::xml_node parent, const std::string& fragment) {
   parent.append_buffer(
       fragment.data(), fragment.size(), pugi::parse_default | pugi::parse_fragment);
@@ -833,14 +863,22 @@ void check_route(std::vector<Diagnostic>& findings,
                              fmt::format("a route named '{}' is already declared", route.name),
                              rules::kUniqueElementNames));
   }
-  if (route.waypoints.size() < 2) {
-    // minOccurs="2": "at least two waypoints are needed to define a route".
+  // minOccurs="2": "at least two waypoints are needed to define a route".
+  //
+  // ★ COUNTS WHAT IS EMITTED, not what is modeled. A waypoint whose position
+  // this version does not model rides the preserved tier and is written out
+  // verbatim, so it is a `<Waypoint>` in the document exactly like a modeled
+  // one. Counting only `route.waypoints` made the writer refuse a file the
+  // reader had just accepted — see preserved_element_count.
+  const std::size_t emitted_waypoints =
+      route.waypoints.size() + preserved_element_count(route.preserved, "Waypoint");
+  if (emitted_waypoints < 2) {
     // Refused rather than padded — a one-waypoint route names a destination and
     // no origin, and inventing the missing end is not this writer's call.
     findings.push_back(
         error(location,
               fmt::format("<Route> has {} waypoint(s); at least two are needed to define one",
-                          route.waypoints.size())));
+                          emitted_waypoints)));
   }
   for (std::size_t index = 0; index < route.waypoints.size(); ++index) {
     const RouteWaypoint& waypoint = route.waypoints[index];

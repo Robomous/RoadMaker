@@ -915,6 +915,297 @@ TEST(XoscFixture, TheTrackedScenarioCarriesTrafficSignalsWithResolvableIds) {
 
 // --- the fuzz corpus ---------------------------------------------------------
 
+// --- routes (p8-s3, #247) -----------------------------------------------------
+
+namespace {
+
+/// A two-waypoint lane-anchored route, spliced in as a second `<PrivateAction>`
+/// of Ego's `<Private>`.
+constexpr std::string_view kRouteAction = R"(          <PrivateAction>
+            <RoutingAction>
+              <AssignRouteAction>
+                <Route name="EgoRoute" closed="false">
+                  <Waypoint routeStrategy="shortest">
+                    <Position><LanePosition roadId="1" laneId="-1" s="5" offset="0"/></Position>
+                  </Waypoint>
+                  <Waypoint routeStrategy="shortest">
+                    <Position><LanePosition roadId="2" laneId="-1" s="40" offset="0"/></Position>
+                  </Waypoint>
+                </Route>
+              </AssignRouteAction>
+            </RoutingAction>
+          </PrivateAction>
+)";
+
+/// `kMinimalDocument` with `extra` appended after Ego's teleport action.
+std::string with_extra_private_action(std::string_view extra) {
+  return with_replacement("        </Private>", std::string(extra) + "        </Private>");
+}
+
+/// The first route assigned in `scenario`'s `<Init>`, or nullptr.
+///
+/// ★ THE RETURNED POINTER BORROWS `scenario`, so `scenario` MUST OUTLIVE IT.
+/// The rvalue overload below is deleted to make that a compile error rather
+/// than a use-after-free: `ego_route(parsed(doc).scenario)` borrows into a
+/// temporary that dies at the end of the full expression. That exact mistake
+/// reached this file while it was being written, and the symptom was a route
+/// that read back with zero waypoints — plausible enough to have been
+/// investigated as a parser bug. Same discipline `element_slice` states in
+/// test_xosc_writer.cpp, met a second time.
+const osc::Route* ego_route(const osc::Scenario& scenario) {
+  for (const osc::Private& entry : scenario.storyboard.init.actions.privates) {
+    for (const osc::PrivateAction& action : entry.actions) {
+      if (action.routing.has_value() && action.routing->assign_route.has_value() &&
+          action.routing->assign_route->route.has_value()) {
+        return &*action.routing->assign_route->route;
+      }
+    }
+  }
+  return nullptr;
+}
+
+const osc::Route* ego_route(osc::Scenario&&) = delete;
+
+} // namespace
+
+TEST(XoscReader, ARouteIsReadWithItsWaypointsInOrder) {
+  const osc::Scenario scenario = parsed(with_extra_private_action(kRouteAction)).scenario;
+  const osc::Route* route = ego_route(scenario);
+  ASSERT_NE(route, nullptr);
+
+  EXPECT_EQ(route->name, "EgoRoute");
+  EXPECT_FALSE(route->closed);
+  ASSERT_EQ(route->waypoints.size(), 2U);
+  EXPECT_EQ(route->waypoints[0].route_strategy, "shortest");
+
+  // ORDER is part of what a route is: waypoints[0] is where it starts.
+  const auto* first = std::get_if<osc::LanePosition>(&route->waypoints[0].position);
+  const auto* second = std::get_if<osc::LanePosition>(&route->waypoints[1].position);
+  ASSERT_NE(first, nullptr);
+  ASSERT_NE(second, nullptr);
+  EXPECT_EQ(first->road_id, "1");
+  EXPECT_DOUBLE_EQ(first->s, 5.0);
+  EXPECT_EQ(second->road_id, "2");
+  EXPECT_DOUBLE_EQ(second->s, 40.0);
+}
+
+TEST(XoscReader, ARouteRoundTripsByteForByte) {
+  const std::string document = with_extra_private_action(kRouteAction);
+  const osc::Scenario scenario = parsed(document).scenario;
+  const std::string once = written(scenario);
+  const std::string twice = written(parsed(once).scenario);
+  EXPECT_EQ(once, twice);
+  // ...and the route really is in the emitted text, so the equality above is
+  // not two copies of a document that lost it.
+  EXPECT_TRUE(contains(once, R"(<Route name="EgoRoute")")) << once;
+}
+
+TEST(XoscReader, AClosedRouteKeepsItsFlag) {
+  const std::string document = with_extra_private_action(kRouteAction);
+  std::string closed = document;
+  const std::size_t at = closed.find(R"(closed="false")");
+  ASSERT_NE(at, std::string::npos);
+  closed.replace(at, std::string(R"(closed="false")").size(), R"(closed="true")");
+
+  const osc::XoscParseResult result = parsed(closed);
+  const osc::Route* route = ego_route(result.scenario);
+  ASSERT_NE(route, nullptr);
+  EXPECT_TRUE(route->closed);
+}
+
+// ★ `@closed` is xsd:boolean, which admits exactly true/false/1/0. pugixml's
+// as_bool() would read ANY other spelling as false, so a typo, an unresolved
+// $parameter and a genuine `false` would come back identical — and only one of
+// the three is what the file said.
+TEST(XoscReader, AMalformedClosedFlagIsReportedRatherThanQuietlyFalse) {
+  std::string document = with_extra_private_action(kRouteAction);
+  const std::size_t at = document.find(R"(closed="false")");
+  ASSERT_NE(at, std::string::npos);
+  document.replace(at, std::string(R"(closed="false")").size(), R"(closed="tru")");
+
+  const osc::XoscParseResult result = parsed(document);
+  EXPECT_TRUE(any_message_contains(result.diagnostics, "not a valid boolean"))
+      << "a malformed boolean was read as false in silence";
+
+  // ...and it is NOT captured into the preserved tier, which would emit @closed
+  // twice and produce ill-formed XML.
+  const osc::Route* route = ego_route(result.scenario);
+  ASSERT_NE(route, nullptr);
+  for (const auto& [name, value] : route->preserved.attributes) {
+    EXPECT_NE(name, "closed") << name << "=" << value;
+  }
+  EXPECT_TRUE(osc::write_xosc(result.scenario).has_value());
+}
+
+TEST(XoscReader, A1And0AreValidBooleansToo) {
+  std::string document = with_extra_private_action(kRouteAction);
+  const std::size_t at = document.find(R"(closed="false")");
+  ASSERT_NE(at, std::string::npos);
+  document.replace(at, std::string(R"(closed="false")").size(), R"(closed="1")");
+
+  const osc::XoscParseResult result = parsed(document);
+  EXPECT_FALSE(any_message_contains(result.diagnostics, "not a valid boolean"));
+  const osc::Route* route = ego_route(result.scenario);
+  ASSERT_NE(route, nullptr);
+  EXPECT_TRUE(route->closed);
+}
+
+TEST(XoscReader, ARouteCarriesItsOwnParameterDeclarations) {
+  // A route's declarations scope to the ROUTE. Folding them into the document's
+  // would move them up a level and change what they scope.
+  const std::string document = with_extra_private_action(R"(          <PrivateAction>
+            <RoutingAction>
+              <AssignRouteAction>
+                <Route name="EgoRoute" closed="false">
+                  <ParameterDeclarations>
+                    <ParameterDeclaration name="Speed" parameterType="double" value="13.9"/>
+                  </ParameterDeclarations>
+                  <Waypoint routeStrategy="shortest">
+                    <Position><LanePosition roadId="1" laneId="-1" s="5" offset="0"/></Position>
+                  </Waypoint>
+                  <Waypoint routeStrategy="shortest">
+                    <Position><LanePosition roadId="2" laneId="-1" s="40" offset="0"/></Position>
+                  </Waypoint>
+                </Route>
+              </AssignRouteAction>
+            </RoutingAction>
+          </PrivateAction>
+)");
+  const osc::XoscParseResult result = parsed(document);
+  const osc::Route* route = ego_route(result.scenario);
+  ASSERT_NE(route, nullptr);
+  ASSERT_EQ(route->parameter_declarations.size(), 1U);
+  EXPECT_EQ(route->parameter_declarations[0].name, "Speed");
+  // ...and it did NOT land on the document.
+  EXPECT_TRUE(result.scenario.parameter_declarations.empty());
+  EXPECT_EQ(written(result.scenario), written(parsed(written(result.scenario)).scenario));
+}
+
+// ★ TWO unmodeled children, not one. Every preserved-tier test in the p8-s1
+// suite had exactly one, which is the hole a sabotage found there (#245 PR-C) —
+// a reader that keeps the LAST fragment it sees passes them all.
+TEST(XoscReader, ACatalogReferenceRouteAndItsSiblingsAreBothPreserved) {
+  const std::string document = with_extra_private_action(R"(          <PrivateAction>
+            <RoutingAction>
+              <AssignRouteAction>
+                <CatalogReference catalogName="Routes" entryName="R1"/>
+                <FutureRouteThing note="two"/>
+              </AssignRouteAction>
+            </RoutingAction>
+          </PrivateAction>
+)");
+  const osc::XoscParseResult result = parsed(document);
+  ASSERT_EQ(ego_route(result.scenario), nullptr) << "a catalog reference became an inline route";
+
+  const std::string text = written(result.scenario);
+  EXPECT_TRUE(contains(text, R"(<CatalogReference catalogName="Routes" entryName="R1")")) << text;
+  EXPECT_TRUE(contains(text, "<FutureRouteThing")) << text;
+  EXPECT_FALSE(contains(text, "<Route ")) << "an empty <Route> was invented\n" << text;
+  EXPECT_EQ(text, written(parsed(text).scenario));
+}
+
+// A <RoutingAction> arm this version does not model preserves the WHOLE action,
+// rather than writing back an empty <RoutingAction> the file never had.
+TEST(XoscReader, AnUnmodeledRoutingArmPreservesTheWholeAction) {
+  const std::string document = with_extra_private_action(R"(          <PrivateAction>
+            <RoutingAction>
+              <FollowTrajectoryAction/>
+            </RoutingAction>
+          </PrivateAction>
+)");
+  const osc::XoscParseResult result = parsed(document);
+  EXPECT_TRUE(any_message_contains(result.diagnostics, "FollowTrajectoryAction"));
+
+  const std::string text = written(result.scenario);
+  EXPECT_TRUE(contains(text, "<FollowTrajectoryAction")) << text;
+  EXPECT_EQ(text, written(parsed(text).scenario));
+}
+
+// A waypoint whose position is one of the eight types this version does not
+// model preserves the WHOLE waypoint. Dropping it would shorten the route —
+// which is a different route, not a lossy copy of the same one.
+TEST(XoscReader, AWaypointWithAnUnmodeledPositionIsPreservedRatherThanDropped) {
+  const std::string document = with_extra_private_action(R"(          <PrivateAction>
+            <RoutingAction>
+              <AssignRouteAction>
+                <Route name="EgoRoute" closed="false">
+                  <Waypoint routeStrategy="shortest">
+                    <Position><LanePosition roadId="1" laneId="-1" s="5" offset="0"/></Position>
+                  </Waypoint>
+                  <Waypoint routeStrategy="shortest">
+                    <Position><RelativeLanePosition entityRef="Ego" dLane="1" ds="20"/></Position>
+                  </Waypoint>
+                </Route>
+              </AssignRouteAction>
+            </RoutingAction>
+          </PrivateAction>
+)");
+  const osc::XoscParseResult result = parsed(document);
+  EXPECT_TRUE(any_message_contains(result.diagnostics, "RelativeLanePosition"));
+
+  const osc::Route* route = ego_route(result.scenario);
+  ASSERT_NE(route, nullptr);
+  EXPECT_EQ(route->waypoints.size(), 1U) << "the unmodeled waypoint became a modeled one";
+
+  const std::string text = written(result.scenario);
+  EXPECT_TRUE(contains(text, "<RelativeLanePosition")) << text;
+  EXPECT_EQ(text, written(parsed(text).scenario));
+}
+
+// A one-waypoint route is REPORTED and kept as read. Padding it would invent an
+// end the file never named; dropping it would lose content. validate_scenario
+// refuses it at save time, which is where the refusal belongs.
+TEST(XoscReader, AOneWaypointRouteIsReportedAndKept) {
+  const std::string document = with_extra_private_action(R"(          <PrivateAction>
+            <RoutingAction>
+              <AssignRouteAction>
+                <Route name="Stub" closed="false">
+                  <Waypoint routeStrategy="shortest">
+                    <Position><LanePosition roadId="1" laneId="-1" s="5" offset="0"/></Position>
+                  </Waypoint>
+                </Route>
+              </AssignRouteAction>
+            </RoutingAction>
+          </PrivateAction>
+)");
+  const osc::XoscParseResult result = parsed(document);
+  EXPECT_TRUE(any_message_contains(result.diagnostics, "at least two"));
+  const osc::Route* route = ego_route(result.scenario);
+  ASSERT_NE(route, nullptr);
+  EXPECT_EQ(route->waypoints.size(), 1U);
+  EXPECT_FALSE(osc::write_xosc(result.scenario).has_value())
+      << "the writer accepted a one-waypoint route";
+}
+
+// The reader does not depend on the XSD's child order. Refusing document order
+// a schema validator would catch is not a reader's job, and it would cost the
+// round trip a file it could have kept.
+TEST(XoscReader, AWaypointBeforeTheParameterDeclarationsIsStillRead) {
+  const std::string document = with_extra_private_action(R"(          <PrivateAction>
+            <RoutingAction>
+              <AssignRouteAction>
+                <Route name="EgoRoute" closed="false">
+                  <Waypoint routeStrategy="shortest">
+                    <Position><LanePosition roadId="1" laneId="-1" s="5" offset="0"/></Position>
+                  </Waypoint>
+                  <ParameterDeclarations>
+                    <ParameterDeclaration name="Speed" parameterType="double" value="13.9"/>
+                  </ParameterDeclarations>
+                  <Waypoint routeStrategy="shortest">
+                    <Position><LanePosition roadId="2" laneId="-1" s="40" offset="0"/></Position>
+                  </Waypoint>
+                </Route>
+              </AssignRouteAction>
+            </RoutingAction>
+          </PrivateAction>
+)");
+  const osc::XoscParseResult result = parsed(document);
+  const osc::Route* route = ego_route(result.scenario);
+  ASSERT_NE(route, nullptr);
+  EXPECT_EQ(route->waypoints.size(), 2U);
+  EXPECT_EQ(route->parameter_declarations.size(), 1U);
+}
+
 TEST(XoscFuzzCorpus, EverySeedParsesOrFailsWithoutCrashing) {
   // The fuzz TARGET is Linux-only — AppleClang ships no libFuzzer runtime, so
   // core/tests/fuzz is skipped on the development platform and the corpus would
