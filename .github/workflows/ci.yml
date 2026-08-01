@@ -782,6 +782,36 @@ jobs:
       # step genuinely gates the route half of the scenario model.
       - name: Smoke-load the tracked routed scenario
         run: python3 scripts/esmini_smoke.py --esmini .esmini/esmini/bin/esmini --xosc tests/esmini/routed.xosc
+      # From p8-s4 (#248): the first RoadMaker-authored <Story> this job has
+      # ever seen — a cut-in (a <LaneChangeAction> triggered by a
+      # <RelativeDistanceCondition>) and a traffic-light story
+      # (<TrafficSignalControllerAction>) on one signalized, two-lane approach.
+      #
+      # Measured 2026-08-01 against the same pinned v3.5.0 (macOS binary, one
+      # mutation at a time on the tracked fixture, judged by run_esmini's own
+      # criterion — a nonzero exit OR an [error] marker fails the gate):
+      #
+      #   Actors/EntityRef @entityRef -> "Ghost"          [error] Failed to find object Ghost      exit 255
+      #   RelativeTargetLane @entityRef -> "Ghost"        [error] Failed to find object Ghost      exit 255
+      #   RelativeDistanceCondition @entityRef -> "Ghost" [error] Failed to find object Ghost      exit 255
+      #   Event @priority -> "bogus"                      [error] Invalid priority: bogus          exit 0
+      #   @dynamicsShape -> "bogus"                       [error] Dynamics shape bogus unexpected  exit 255
+      #   (control) teleport laneId -1 -> -99             [error] Lane id -99 does not exist       exit 0
+      #
+      # So this step genuinely gates the CUT-IN half: entity references, the
+      # priority enumeration, the transition shape and the lane anchor.
+      #
+      # ★ AND IT IS BLIND TO THE TRAFFIC-LIGHT HALF, measured the same way:
+      #
+      #   TrafficSignalControllerAction @phase -> nonexistent   exit 0, no [error]
+      #   TrafficSignalControllerAction @trafficSignalControllerRef -> "999"  exit 0, no [error]
+      #
+      # Both pass in silence, which is why #248's acceptance splits the two and
+      # why the signal half is gated by RoadMaker's own validator instead —
+      # osc::validate_scenario resolves a @phase through osc::phase_names (the
+      # writer's synthesis), covered by core/tests/test_xosc_storyboard.cpp.
+      - name: Smoke-load the tracked cut-in scenario
+        run: python3 scripts/esmini_smoke.py --esmini .esmini/esmini/bin/esmini --xosc tests/esmini/cutin.xosc
 
   # Always runs, on every event — this is the gate a docs-only change most needs.
   docs:

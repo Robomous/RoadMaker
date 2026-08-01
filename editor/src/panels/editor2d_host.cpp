@@ -84,6 +84,27 @@ bool SignalPhaseEditorPage::relevant(const SelectionModel& selection) const {
   return false;
 }
 
+StoryboardEditorPage::StoryboardEditorPage(Document& document,
+                                           SelectionModel& selection,
+                                           QWidget* parent)
+    : document_(document), panel_(new StoryboardPanel(document, selection, parent)) {}
+
+QString StoryboardEditorPage::title() const {
+  return QObject::tr("Storyboard");
+}
+
+QWidget* StoryboardEditorPage::widget() {
+  return panel_;
+}
+
+bool StoryboardEditorPage::relevant(const SelectionModel& selection) const {
+  // A storyboard is a DOCUMENT-level structure, not a per-entity one, so this
+  // is a "is there scenario work to do here" test rather than "does the
+  // selection have a storyboard". An actor selected means the user is authoring
+  // a scenario; a story already present means one exists to edit.
+  return !document_.scenario().storyboard.stories.empty() || !selection.selected_actors().empty();
+}
+
 Editor2DHost::Editor2DHost(const SelectionModel& selection, QWidget* parent)
     : QWidget(parent), selection_(selection), tabs_(new QTabWidget(this)) {
   setObjectName(QStringLiteral("editor2d_host"));

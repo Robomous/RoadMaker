@@ -1,0 +1,185 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<OpenSCENARIO>
+  <FileHeader revMajor="1" revMinor="2" date="1970-01-01T00:00:00" description="RoadMaker cut-in and traffic-light fixture" author="RoadMaker" />
+  <ParameterDeclarations />
+  <CatalogLocations />
+  <RoadNetwork>
+    <LogicFile filepath="cutin.xodr" />
+    <TrafficSignals>
+      <TrafficSignalController name="1">
+        <Phase name="axis0" duration="20">
+          <TrafficSignalState trafficSignalId="1" state="green" />
+          <TrafficSignalState trafficSignalId="3" state="green" />
+        </Phase>
+        <Phase name="axis0_clear" duration="3">
+          <TrafficSignalState trafficSignalId="1" state="yellow" />
+          <TrafficSignalState trafficSignalId="3" state="yellow" />
+        </Phase>
+        <Phase name="axis1" duration="20">
+          <TrafficSignalState trafficSignalId="1" state="red" />
+          <TrafficSignalState trafficSignalId="3" state="red" />
+        </Phase>
+        <Phase name="axis1_clear" duration="3">
+          <TrafficSignalState trafficSignalId="1" state="red" />
+          <TrafficSignalState trafficSignalId="3" state="red" />
+        </Phase>
+      </TrafficSignalController>
+      <TrafficSignalController name="2">
+        <Phase name="axis0" duration="20">
+          <TrafficSignalState trafficSignalId="2" state="red" />
+          <TrafficSignalState trafficSignalId="4" state="red" />
+        </Phase>
+        <Phase name="axis0_clear" duration="3">
+          <TrafficSignalState trafficSignalId="2" state="red" />
+          <TrafficSignalState trafficSignalId="4" state="red" />
+        </Phase>
+        <Phase name="axis1" duration="20">
+          <TrafficSignalState trafficSignalId="2" state="green" />
+          <TrafficSignalState trafficSignalId="4" state="green" />
+        </Phase>
+        <Phase name="axis1_clear" duration="3">
+          <TrafficSignalState trafficSignalId="2" state="yellow" />
+          <TrafficSignalState trafficSignalId="4" state="yellow" />
+        </Phase>
+      </TrafficSignalController>
+    </TrafficSignals>
+  </RoadNetwork>
+  <Entities>
+    <ScenarioObject name="Ego">
+      <Vehicle name="Car" vehicleCategory="car" mass="1500">
+        <BoundingBox>
+          <Center x="1.9" y="0" z="0.725" />
+          <Dimensions width="2.13" length="5.79" height="1.45" />
+        </BoundingBox>
+        <Performance maxSpeed="69.4" maxAcceleration="5" maxDeceleration="10" />
+        <Axles>
+          <FrontAxle maxSteering="0.5" wheelDiameter="0.65" trackWidth="2.13" positionX="2.9" positionZ="0.325" />
+          <RearAxle maxSteering="0" wheelDiameter="0.65" trackWidth="2.13" positionX="0" positionZ="0.325" />
+        </Axles>
+        <Properties />
+      </Vehicle>
+    </ScenarioObject>
+    <ScenarioObject name="Target">
+      <Vehicle name="Car" vehicleCategory="car" mass="1500">
+        <BoundingBox>
+          <Center x="1.9" y="0" z="0.725" />
+          <Dimensions width="2.13" length="5.79" height="1.45" />
+        </BoundingBox>
+        <Performance maxSpeed="69.4" maxAcceleration="5" maxDeceleration="10" />
+        <Axles>
+          <FrontAxle maxSteering="0.5" wheelDiameter="0.65" trackWidth="2.13" positionX="2.9" positionZ="0.325" />
+          <RearAxle maxSteering="0" wheelDiameter="0.65" trackWidth="2.13" positionX="0" positionZ="0.325" />
+        </Axles>
+        <Properties />
+      </Vehicle>
+    </ScenarioObject>
+  </Entities>
+  <Storyboard>
+    <Init>
+      <Actions>
+        <Private entityRef="Ego">
+          <PrivateAction>
+            <TeleportAction>
+              <Position>
+                <LanePosition roadId="3" laneId="-1" s="20" offset="0" />
+              </Position>
+            </TeleportAction>
+          </PrivateAction>
+          <PrivateAction>
+            <LongitudinalAction>
+              <SpeedAction>
+                <SpeedActionDynamics dynamicsShape="step" value="0" dynamicsDimension="time" />
+                <SpeedActionTarget>
+                  <AbsoluteTargetSpeed value="13.89" />
+                </SpeedActionTarget>
+              </SpeedAction>
+            </LongitudinalAction>
+          </PrivateAction>
+        </Private>
+        <Private entityRef="Target">
+          <PrivateAction>
+            <TeleportAction>
+              <Position>
+                <LanePosition roadId="3" laneId="-2" s="10" offset="0" />
+              </Position>
+            </TeleportAction>
+          </PrivateAction>
+          <PrivateAction>
+            <LongitudinalAction>
+              <SpeedAction>
+                <SpeedActionDynamics dynamicsShape="step" value="0" dynamicsDimension="time" />
+                <SpeedActionTarget>
+                  <AbsoluteTargetSpeed value="13.89" />
+                </SpeedActionTarget>
+              </SpeedAction>
+            </LongitudinalAction>
+          </PrivateAction>
+        </Private>
+      </Actions>
+    </Init>
+    <Story name="cut_in_story">
+      <Act name="act">
+        <ManeuverGroup maximumExecutionCount="1" name="target_group">
+          <Actors selectTriggeringEntities="false">
+            <EntityRef entityRef="Target" />
+          </Actors>
+          <Maneuver name="cut_in_maneuver">
+            <Event name="cut_in_event" priority="overwrite">
+              <Action name="cut_in">
+                <PrivateAction>
+                  <LateralAction>
+                    <LaneChangeAction>
+                      <LaneChangeActionDynamics dynamicsShape="linear" value="2" dynamicsDimension="time" />
+                      <LaneChangeTarget>
+                        <RelativeTargetLane entityRef="Target" value="1" />
+                      </LaneChangeTarget>
+                    </LaneChangeAction>
+                  </LateralAction>
+                </PrivateAction>
+              </Action>
+              <StartTrigger>
+                <ConditionGroup>
+                  <Condition name="close_enough" delay="0" conditionEdge="rising">
+                    <ByEntityCondition>
+                      <TriggeringEntities triggeringEntitiesRule="any">
+                        <EntityRef entityRef="Target" />
+                      </TriggeringEntities>
+                      <EntityCondition>
+                        <RelativeDistanceCondition entityRef="Ego" freespace="true" relativeDistanceType="longitudinal" rule="lessThan" value="12" />
+                      </EntityCondition>
+                    </ByEntityCondition>
+                  </Condition>
+                </ConditionGroup>
+              </StartTrigger>
+            </Event>
+          </Maneuver>
+        </ManeuverGroup>
+        <ManeuverGroup maximumExecutionCount="1" name="infrastructure_group">
+          <Actors selectTriggeringEntities="false" />
+          <Maneuver name="light_maneuver">
+            <Event name="light_event" priority="overwrite">
+              <Action name="hold_green">
+                <GlobalAction>
+                  <InfrastructureAction>
+                    <TrafficSignalAction>
+                      <TrafficSignalControllerAction trafficSignalControllerRef="1" phase="axis0" />
+                    </TrafficSignalAction>
+                  </InfrastructureAction>
+                </GlobalAction>
+              </Action>
+            </Event>
+          </Maneuver>
+        </ManeuverGroup>
+      </Act>
+    </Story>
+    <StopTrigger>
+      <ConditionGroup>
+        <Condition name="end" delay="0" conditionEdge="rising">
+          <ByValueCondition>
+            <SimulationTimeCondition value="0.5" rule="greaterThan" />
+          </ByValueCondition>
+        </Condition>
+      </ConditionGroup>
+    </StopTrigger>
+  </Storyboard>
+</OpenSCENARIO>

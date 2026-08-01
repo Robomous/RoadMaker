@@ -106,6 +106,7 @@ add_executable(roadmaker_core_tests
   test_xosc_route.cpp
   test_xosc_decompose.cpp
   test_xosc_edit.cpp
+  test_xosc_storyboard.cpp
 )
 
 # test_fill_predicates.cpp pins the surface-fill point-in-polygon predicate

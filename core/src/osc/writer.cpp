@@ -40,6 +40,7 @@
 
 #include <cstddef>
 #include <fstream>
+#include <map>
 #include <optional>
 #include <set>
 #include <sstream>
@@ -191,25 +192,22 @@ void write_preserved_children(pugi::xml_node node, const RawXml& preserved) {
 /// Terminating: `used` grows by one per phase, so the probe runs at most
 /// `phases.size()` times. `std::set` rather than `std::unordered_set` because
 /// a later refactor that iterates it must not become nondeterministic.
+///
+/// ★ THE BODY MOVED TO THE PUBLIC `osc::phase_names()` (p8-s4, issue #248) and
+/// this function now CALLS it rather than reimplementing it. A second copy is
+/// exactly how the file and a `@phase` reference authored against it drift —
+/// the trap #248 was filed with — and a copy stays green under every test that
+/// only reads one of the two.
 void write_phases(pugi::xml_node controller_node,
                   const TrafficSignalController& controller,
                   const WriteOptions& options) {
-  std::set<std::string> used;
+  const std::vector<std::string> names = phase_names(controller);
 
-  for (const Phase& phase : controller.phases) {
-    std::string base = phase.name;
-    if (base.empty()) {
-      base = phase.semantics.has_value() ? semantics_name(*phase.semantics) : "phase";
-    }
-
-    std::string candidate = base;
-    for (unsigned suffix = 1; used.count(candidate) != 0; ++suffix) {
-      candidate = fmt::format("{}_{}", base, suffix);
-    }
-    used.insert(candidate);
+  for (std::size_t index = 0; index < controller.phases.size(); ++index) {
+    const Phase& phase = controller.phases[index];
 
     pugi::xml_node node = controller_node.append_child("Phase");
-    node.append_attribute("name").set_value(candidate.c_str());
+    node.append_attribute("name").set_value(names[index].c_str());
     set_num(node, "duration", phase.duration);
 
     // The ONLY content-level version conditional in this writer: @semantics
@@ -540,6 +538,58 @@ void write_routing(pugi::xml_node action_node, const RoutingAction& routing) {
   write_preserved_children(node, routing.preserved);
 }
 
+/// `<LateralAction>` — p8-s4, issue #248. The `<LaneChangeAction>` child order
+/// is the XSD `all` group in its declared order: `<LaneChangeActionDynamics>`
+/// then `<LaneChangeTarget>`.
+void write_lateral(pugi::xml_node action_node, const LateralAction& lateral) {
+  pugi::xml_node node = action_node.append_child("LateralAction");
+  write_preserved_attributes(node, lateral.preserved);
+
+  if (lateral.lane_change.has_value()) {
+    const LaneChangeAction& change = *lateral.lane_change;
+    pugi::xml_node change_node = node.append_child("LaneChangeAction");
+    set_optional_num(change_node, "targetLaneOffset", change.target_lane_offset);
+    write_preserved_attributes(change_node, change.preserved);
+
+    pugi::xml_node dynamics = change_node.append_child("LaneChangeActionDynamics");
+    dynamics.append_attribute("dynamicsShape").set_value(change.dynamics.dynamics_shape.c_str());
+    set_num(dynamics, "value", change.dynamics.value);
+    dynamics.append_attribute("dynamicsDimension")
+        .set_value(change.dynamics.dynamics_dimension.c_str());
+    set_optional_text(dynamics, "followingMode", change.dynamics.following_mode);
+    write_preserved_attributes(dynamics, change.dynamics.preserved);
+    write_preserved_children(dynamics, change.dynamics.preserved);
+
+    // <LaneChangeTarget> is flattened into LaneChangeAction, so its own
+    // preserved tier is written here — the SpeedActionTarget rationale exactly.
+    pugi::xml_node target = change_node.append_child("LaneChangeTarget");
+    write_preserved_attributes(target, change.target_preserved);
+    std::visit(
+        [&target](const auto& arm) {
+          using T = std::decay_t<decltype(arm)>;
+          if constexpr (std::is_same_v<T, AbsoluteTargetLane>) {
+            pugi::xml_node absolute = target.append_child("AbsoluteTargetLane");
+            absolute.append_attribute("value").set_value(arm.value.c_str());
+            write_preserved_attributes(absolute, arm.preserved);
+            write_preserved_children(absolute, arm.preserved);
+          } else if constexpr (std::is_same_v<T, RelativeTargetLane>) {
+            pugi::xml_node relative = target.append_child("RelativeTargetLane");
+            relative.append_attribute("entityRef").set_value(arm.entity_ref.c_str());
+            relative.append_attribute("value").set_value(arm.value);
+            write_preserved_attributes(relative, arm.preserved);
+            write_preserved_children(relative, arm.preserved);
+          }
+          // std::monostate: the arm rode target_preserved whole.
+        },
+        change.target);
+    write_preserved_children(target, change.target_preserved);
+
+    write_preserved_children(change_node, change.preserved);
+  }
+
+  write_preserved_children(node, lateral.preserved);
+}
+
 /// One `PrivateAction` — ONE `<PrivateAction>` ELEMENT PER SET ARM.
 ///
 /// The schema's choice is per-element, so an action carrying both a teleport
@@ -580,11 +630,126 @@ void write_private_action(pugi::xml_node private_node, const PrivateAction& acti
     write_routing(node, *action.routing);
     close(node);
   }
+  if (action.lateral.has_value()) {
+    pugi::xml_node node;
+    open(node);
+    write_lateral(node, *action.lateral);
+    close(node);
+  }
   if (!preserved_written) {
     pugi::xml_node node;
     open(node);
     close(node);
   }
+}
+
+/// `<EntityRef>`* — the shape `<Actors>` and `<TriggeringEntities>` share.
+void write_entity_refs(pugi::xml_node parent, const std::vector<EntityRef>& refs) {
+  for (const EntityRef& ref : refs) {
+    pugi::xml_node node = parent.append_child("EntityRef");
+    node.append_attribute("entityRef").set_value(ref.entity_ref.c_str());
+    write_preserved_attributes(node, ref.preserved);
+    write_preserved_children(node, ref.preserved);
+  }
+}
+
+/// The `<ByEntityCondition>` arm — p8-s4, issue #248.
+void write_by_entity_condition(pugi::xml_node condition_node, const ByEntityCondition& by_entity) {
+  pugi::xml_node node = condition_node.append_child("ByEntityCondition");
+  write_preserved_attributes(node, by_entity.preserved);
+
+  pugi::xml_node triggering = node.append_child("TriggeringEntities");
+  triggering.append_attribute("triggeringEntitiesRule")
+      .set_value(by_entity.triggering_entities.rule.c_str());
+  write_preserved_attributes(triggering, by_entity.triggering_entities.preserved);
+  write_entity_refs(triggering, by_entity.triggering_entities.entity_refs);
+  write_preserved_children(triggering, by_entity.triggering_entities.preserved);
+
+  pugi::xml_node entity = node.append_child("EntityCondition");
+  write_preserved_attributes(entity, by_entity.entity_condition_preserved);
+  std::visit(
+      [&entity](const auto& arm) {
+        using T = std::decay_t<decltype(arm)>;
+        if constexpr (std::is_same_v<T, SpeedCondition>) {
+          pugi::xml_node speed = entity.append_child("SpeedCondition");
+          speed.append_attribute("rule").set_value(arm.rule.c_str());
+          set_num(speed, "value", arm.value);
+          write_preserved_attributes(speed, arm.preserved);
+          write_preserved_children(speed, arm.preserved);
+        } else if constexpr (std::is_same_v<T, RelativeDistanceCondition>) {
+          pugi::xml_node distance = entity.append_child("RelativeDistanceCondition");
+          distance.append_attribute("entityRef").set_value(arm.entity_ref.c_str());
+          distance.append_attribute("freespace").set_value(arm.freespace);
+          distance.append_attribute("relativeDistanceType")
+              .set_value(arm.relative_distance_type.c_str());
+          distance.append_attribute("rule").set_value(arm.rule.c_str());
+          set_num(distance, "value", arm.value);
+          write_preserved_attributes(distance, arm.preserved);
+          write_preserved_children(distance, arm.preserved);
+        }
+        // std::monostate: the arm rode entity_condition_preserved whole.
+      },
+      by_entity.entity_condition);
+  write_preserved_children(entity, by_entity.entity_condition_preserved);
+
+  write_preserved_children(node, by_entity.preserved);
+}
+
+/// One `<Condition>`.
+///
+/// ★ AT MOST ONE ARM IS EMITTED, and the model can hold more than one — the
+/// arms are optionals rather than a variant for source-compatibility reasons
+/// (`osc/scenario.hpp`, `Condition`). `validate_scenario` refuses a
+/// multiply-armed condition BEFORE the writer runs, so the order the checks sit
+/// in here is unreachable in a written document; it is written most-specific
+/// first anyway, so that a model built by hand in a test still produces a
+/// schema-valid element rather than two sibling choice arms.
+void write_condition(pugi::xml_node group_node, const Condition& condition) {
+  pugi::xml_node node = group_node.append_child("Condition");
+  node.append_attribute("name").set_value(condition.name.c_str());
+  set_num(node, "delay", condition.delay);
+  node.append_attribute("conditionEdge").set_value(condition.condition_edge.c_str());
+  write_preserved_attributes(node, condition.preserved);
+
+  if (condition.by_entity.has_value()) {
+    write_by_entity_condition(node, *condition.by_entity);
+  } else if (condition.simulation_time.has_value()) {
+    pugi::xml_node by_value = node.append_child("ByValueCondition");
+    pugi::xml_node time_node = by_value.append_child("SimulationTimeCondition");
+    set_num(time_node, "value", condition.simulation_time->value);
+    time_node.append_attribute("rule").set_value(condition.simulation_time->rule.c_str());
+    write_preserved_attributes(time_node, condition.simulation_time->preserved);
+    write_preserved_children(time_node, condition.simulation_time->preserved);
+  } else if (condition.traffic_signal.has_value()) {
+    pugi::xml_node by_value = node.append_child("ByValueCondition");
+    pugi::xml_node signal = by_value.append_child("TrafficSignalCondition");
+    signal.append_attribute("name").set_value(condition.traffic_signal->name.c_str());
+    signal.append_attribute("state").set_value(condition.traffic_signal->state.c_str());
+    write_preserved_attributes(signal, condition.traffic_signal->preserved);
+    write_preserved_children(signal, condition.traffic_signal->preserved);
+  } else if (condition.traffic_signal_controller.has_value()) {
+    pugi::xml_node by_value = node.append_child("ByValueCondition");
+    pugi::xml_node controller = by_value.append_child("TrafficSignalControllerCondition");
+    controller.append_attribute("trafficSignalControllerRef")
+        .set_value(condition.traffic_signal_controller->traffic_signal_controller_ref.c_str());
+    controller.append_attribute("phase").set_value(
+        condition.traffic_signal_controller->phase.c_str());
+    write_preserved_attributes(controller, condition.traffic_signal_controller->preserved);
+    write_preserved_children(controller, condition.traffic_signal_controller->preserved);
+  } else if (condition.storyboard_element_state.has_value()) {
+    const StoryboardElementStateCondition& state = *condition.storyboard_element_state;
+    pugi::xml_node by_value = node.append_child("ByValueCondition");
+    pugi::xml_node element = by_value.append_child("StoryboardElementStateCondition");
+    element.append_attribute("storyboardElementRef")
+        .set_value(state.storyboard_element_ref.c_str());
+    element.append_attribute("state").set_value(state.state.c_str());
+    element.append_attribute("storyboardElementType")
+        .set_value(state.storyboard_element_type.c_str());
+    write_preserved_attributes(element, state.preserved);
+    write_preserved_children(element, state.preserved);
+  }
+
+  write_preserved_children(node, condition.preserved);
 }
 
 void write_trigger(pugi::xml_node parent, const char* element, const Trigger& trigger) {
@@ -596,28 +761,196 @@ void write_trigger(pugi::xml_node parent, const char* element, const Trigger& tr
     write_preserved_attributes(group_node, group.preserved);
 
     for (const Condition& condition : group.conditions) {
-      pugi::xml_node condition_node = group_node.append_child("Condition");
-      condition_node.append_attribute("name").set_value(condition.name.c_str());
-      set_num(condition_node, "delay", condition.delay);
-      condition_node.append_attribute("conditionEdge").set_value(condition.condition_edge.c_str());
-      write_preserved_attributes(condition_node, condition.preserved);
-
-      if (condition.simulation_time.has_value()) {
-        pugi::xml_node by_value = condition_node.append_child("ByValueCondition");
-        pugi::xml_node time_node = by_value.append_child("SimulationTimeCondition");
-        set_num(time_node, "value", condition.simulation_time->value);
-        time_node.append_attribute("rule").set_value(condition.simulation_time->rule.c_str());
-        write_preserved_attributes(time_node, condition.simulation_time->preserved);
-        write_preserved_children(time_node, condition.simulation_time->preserved);
-      }
-
-      write_preserved_children(condition_node, condition.preserved);
+      write_condition(group_node, condition);
     }
 
     write_preserved_children(group_node, group.preserved);
   }
 
   write_preserved_children(node, trigger.preserved);
+}
+
+/// An OPTIONAL `<StartTrigger>`/`<StopTrigger>` — absent stays absent, which is
+/// what keeps a foreign document's byte identity (`Event::start_trigger`).
+void write_optional_trigger(pugi::xml_node parent,
+                            const char* element,
+                            const std::optional<Trigger>& trigger) {
+  if (trigger.has_value()) {
+    write_trigger(parent, element, *trigger);
+  }
+}
+
+/// A `<ParameterDeclarations>` wrapper that is OPTIONAL in its parent — emitted
+/// only when it has content, unlike the scenario-level one which is part of the
+/// always-present skeleton. An empty one is a child a foreign input did not
+/// have, and this writer's round trip is a fixed point measured in bytes.
+void write_optional_parameter_declarations(pugi::xml_node parent,
+                                           const std::vector<ParameterDeclaration>& declarations) {
+  if (declarations.empty()) {
+    return;
+  }
+  pugi::xml_node node = parent.append_child("ParameterDeclarations");
+  for (const ParameterDeclaration& parameter : declarations) {
+    pugi::xml_node parameter_node = node.append_child("ParameterDeclaration");
+    parameter_node.append_attribute("name").set_value(parameter.name.c_str());
+    parameter_node.append_attribute("parameterType").set_value(parameter.parameter_type.c_str());
+    parameter_node.append_attribute("value").set_value(parameter.value.c_str());
+    write_preserved_attributes(parameter_node, parameter.preserved);
+    write_preserved_children(parameter_node, parameter.preserved);
+  }
+}
+
+/// `<GlobalAction>` — p8-s4, issue #248. Only the `<InfrastructureAction>` arm
+/// is modeled; every other one rides `preserved` whole.
+void write_global_action(pugi::xml_node action_node, const GlobalAction& global) {
+  pugi::xml_node node = action_node.append_child("GlobalAction");
+  write_preserved_attributes(node, global.preserved);
+
+  if (global.infrastructure.has_value()) {
+    pugi::xml_node infrastructure = node.append_child("InfrastructureAction");
+    write_preserved_attributes(infrastructure, global.infrastructure->preserved);
+
+    const TrafficSignalAction& signal_action = global.infrastructure->traffic_signal;
+    pugi::xml_node signal = infrastructure.append_child("TrafficSignalAction");
+    write_preserved_attributes(signal, signal_action.preserved);
+    std::visit(
+        [&signal](const auto& arm) {
+          using T = std::decay_t<decltype(arm)>;
+          if constexpr (std::is_same_v<T, TrafficSignalStateAction>) {
+            pugi::xml_node state = signal.append_child("TrafficSignalStateAction");
+            state.append_attribute("name").set_value(arm.name.c_str());
+            state.append_attribute("state").set_value(arm.state.c_str());
+            write_preserved_attributes(state, arm.preserved);
+            write_preserved_children(state, arm.preserved);
+          } else if constexpr (std::is_same_v<T, TrafficSignalControllerAction>) {
+            pugi::xml_node controller = signal.append_child("TrafficSignalControllerAction");
+            controller.append_attribute("trafficSignalControllerRef")
+                .set_value(arm.traffic_signal_controller_ref.c_str());
+            controller.append_attribute("phase").set_value(arm.phase.c_str());
+            write_preserved_attributes(controller, arm.preserved);
+            write_preserved_children(controller, arm.preserved);
+          }
+          // std::monostate: the arm rode `preserved` whole.
+        },
+        signal_action.action);
+    write_preserved_children(signal, signal_action.preserved);
+
+    write_preserved_children(infrastructure, global.infrastructure->preserved);
+  }
+
+  write_preserved_children(node, global.preserved);
+}
+
+/// One `<Action>` — p8-s4, issue #248.
+///
+/// ★ A STORY `<Action>` HOLDS EXACTLY ONE `<PrivateAction>`, unlike an `<Init>`
+/// one which may emit several elements from a multi-armed `PrivateAction`.
+/// `Action` wraps a single choice arm, so the multi-element expansion
+/// `write_private_action` performs would produce an invalid `<Action>`; this
+/// writes each set arm as its own `<PrivateAction>` INSIDE the action, which is
+/// what the schema's `maxOccurs="unbounded"` on `<Action>` means an author
+/// should have split into two actions. Refused before it gets here:
+/// `validate_scenario` reports a story action carrying more than one arm.
+void write_action(pugi::xml_node event_node, const Action& action) {
+  pugi::xml_node node = event_node.append_child("Action");
+  node.append_attribute("name").set_value(action.name.c_str());
+  write_preserved_attributes(node, action.preserved);
+
+  std::visit(
+      [&node](const auto& arm) {
+        using T = std::decay_t<decltype(arm)>;
+        if constexpr (std::is_same_v<T, GlobalAction>) {
+          write_global_action(node, arm);
+        } else if constexpr (std::is_same_v<T, PrivateAction>) {
+          write_private_action(node, arm);
+        }
+        // std::monostate: a <UserDefinedAction>, or an arm this version does
+        // not model, riding `preserved` whole.
+      },
+      action.action);
+
+  write_preserved_children(node, action.preserved);
+}
+
+void write_event(pugi::xml_node maneuver_node, const Event& event) {
+  pugi::xml_node node = maneuver_node.append_child("Event");
+  if (event.maximum_execution_count.has_value()) {
+    node.append_attribute("maximumExecutionCount").set_value(*event.maximum_execution_count);
+  }
+  node.append_attribute("name").set_value(event.name.c_str());
+  node.append_attribute("priority").set_value(event.priority.c_str());
+  write_preserved_attributes(node, event.preserved);
+
+  for (const Action& action : event.actions) {
+    write_action(node, action);
+  }
+  write_optional_trigger(node, "StartTrigger", event.start_trigger);
+
+  write_preserved_children(node, event.preserved);
+}
+
+void write_maneuver(pugi::xml_node group_node, const StoryManeuver& maneuver) {
+  pugi::xml_node node = group_node.append_child("Maneuver");
+  node.append_attribute("name").set_value(maneuver.name.c_str());
+  write_preserved_attributes(node, maneuver.preserved);
+
+  write_optional_parameter_declarations(node, maneuver.parameter_declarations);
+  for (const Event& event : maneuver.events) {
+    write_event(node, event);
+  }
+
+  write_preserved_children(node, maneuver.preserved);
+}
+
+void write_maneuver_group(pugi::xml_node act_node, const ManeuverGroup& group) {
+  pugi::xml_node node = act_node.append_child("ManeuverGroup");
+  node.append_attribute("maximumExecutionCount").set_value(group.maximum_execution_count);
+  node.append_attribute("name").set_value(group.name.c_str());
+  write_preserved_attributes(node, group.preserved);
+
+  pugi::xml_node actors = node.append_child("Actors");
+  actors.append_attribute("selectTriggeringEntities").set_value(group.select_triggering_entities);
+  write_preserved_attributes(actors, group.actors_preserved);
+  write_entity_refs(actors, group.actors);
+  write_preserved_children(actors, group.actors_preserved);
+
+  // <CatalogReference>* sits between <Actors> and <Maneuver>* in the sequence,
+  // which is why these are their own vector and not `preserved.children`.
+  for (const std::string& fragment : group.preserved_catalog_references) {
+    append_fragment(node, fragment);
+  }
+  for (const StoryManeuver& maneuver : group.maneuvers) {
+    write_maneuver(node, maneuver);
+  }
+
+  write_preserved_children(node, group.preserved);
+}
+
+void write_act(pugi::xml_node story_node, const Act& act) {
+  pugi::xml_node node = story_node.append_child("Act");
+  node.append_attribute("name").set_value(act.name.c_str());
+  write_preserved_attributes(node, act.preserved);
+
+  for (const ManeuverGroup& group : act.maneuver_groups) {
+    write_maneuver_group(node, group);
+  }
+  write_optional_trigger(node, "StartTrigger", act.start_trigger);
+  write_optional_trigger(node, "StopTrigger", act.stop_trigger);
+
+  write_preserved_children(node, act.preserved);
+}
+
+void write_story(pugi::xml_node storyboard_node, const Story& story) {
+  pugi::xml_node node = storyboard_node.append_child("Story");
+  node.append_attribute("name").set_value(story.name.c_str());
+  write_preserved_attributes(node, story.preserved);
+
+  write_optional_parameter_declarations(node, story.parameter_declarations);
+  for (const Act& act : story.acts) {
+    write_act(node, act);
+  }
+
+  write_preserved_children(node, story.preserved);
 }
 
 void write_storyboard(pugi::xml_node root, const Storyboard& storyboard) {
@@ -644,8 +977,8 @@ void write_storyboard(pugi::xml_node root, const Storyboard& storyboard) {
   write_preserved_children(init, storyboard.init.preserved);
 
   // <Story>* sits between <Init> and <StopTrigger> in the Storyboard sequence.
-  for (const std::string& story : storyboard.preserved_stories) {
-    append_fragment(node, story);
+  for (const Story& story : storyboard.stories) {
+    write_story(node, story);
   }
 
   // Always emitted, empty if it has no condition groups.
@@ -655,6 +988,30 @@ void write_storyboard(pugi::xml_node root, const Storyboard& storyboard) {
 }
 
 // --- validation -------------------------------------------------------------
+
+/// A finding that does NOT block the write.
+///
+/// ★ THE STORYBOARD'S SCHEMA-SHAPE FINDINGS ARE WARNINGS, and that split is
+/// load-bearing rather than cosmetic (p8-s4, issue #248). A foreign `.xosc`
+/// carrying an `<Act>` with no `<ManeuverGroup>` was READABLE before this
+/// version modeled `<Story>`, and refusing to write it back would mean a
+/// document RoadMaker just loaded can no longer be saved — the never-drop
+/// contract inverted (ADR-0014 §6). The shape came from the file; re-emitting
+/// it loses nothing and reports it in full.
+///
+/// REFERENCE findings stay errors, because those are the ADR-0014 §5 failure
+/// the format exists to prevent — a file that looks entirely right and points
+/// at nothing — and because they are what an AUTHOR can create. Authoring is
+/// additionally guarded one layer up: `osc::edit::set_story` refuses a story
+/// with no act, so the editor cannot produce the shape this tier tolerates.
+Diagnostic warning(std::string location, std::string message, std::string_view rule = {}) {
+  return Diagnostic{.severity = Severity::Warning,
+                    .location = std::move(location),
+                    .message = std::move(message),
+                    .rule_id = std::string(rule),
+                    .road = {},
+                    .lane = {}};
+}
 
 Diagnostic error(std::string location, std::string message, std::string_view rule = {}) {
   return Diagnostic{.severity = Severity::Error,
@@ -760,6 +1117,86 @@ void check_traffic_signals(std::vector<Diagnostic>& findings, const RoadNetworkR
   }
 }
 
+/// What a `<Condition>`, a `<ManeuverGroup>` and a story action all need: the
+/// entity names this scenario declares, and the controllers it declares with
+/// the phase names each will actually be written with.
+///
+/// Built once per `validate_scenario` and threaded down, rather than rebuilt at
+/// every reference — a scenario with a hundred conditions would otherwise walk
+/// the entity list a hundred times, and more importantly the PHASE NAMES would
+/// be synthesized repeatedly, which is exactly the kind of duplicated synthesis
+/// `osc::phase_names` exists to prevent.
+struct DocumentIndex {
+  std::set<std::string> entity_names;
+  /// controller `@name` -> the phase names `write_xosc` will emit for it.
+  std::map<std::string, std::set<std::string>> controller_phases;
+};
+
+/// One `@entityRef`. Rule-less on purpose — see `check_storyboard`'s note on
+/// `general.references_to_scenario_object`, which looks like the fit and is not.
+void check_entity_ref(std::vector<Diagnostic>& findings,
+                      const DocumentIndex& index,
+                      const std::string& entity_ref,
+                      const std::string& what,
+                      const std::string& location) {
+  if (entity_ref.empty()) {
+    findings.push_back(error(location, fmt::format("{} names no entity", what)));
+    return;
+  }
+  if (index.entity_names.count(entity_ref) == 0) {
+    findings.push_back(error(
+        location,
+        fmt::format(
+            "{} references entity '{}', which this scenario does not declare", what, entity_ref)));
+  }
+}
+
+/// A `@trafficSignalControllerRef` + `@phase` pair, wherever it appears — a
+/// `<TrafficSignalControllerCondition>` or a `<TrafficSignalControllerAction>`.
+///
+/// ★ THIS IS THE CHECK #248 WAS FILED FOR. The phase name is compared against
+/// what `write_xosc` WILL EMIT (`osc::phase_names`), never against
+/// `Phase::name` — which may legally be empty, and which the writer
+/// deliberately never rewrites. Comparing against the model instead would pass
+/// a reference that matches nothing in the file, in silence, which is precisely
+/// the failure esmini was measured not to catch either (#257, #533).
+void check_controller_phase_ref(std::vector<Diagnostic>& findings,
+                                const DocumentIndex& index,
+                                const std::string& controller_ref,
+                                const std::string& phase,
+                                const std::string& location) {
+  if (controller_ref.empty()) {
+    findings.push_back(error(location,
+                             "traffic signal controller reference names no controller",
+                             rules::kTrafficSignalControllerReferences));
+    return;
+  }
+  const auto entry = index.controller_phases.find(controller_ref);
+  if (entry == index.controller_phases.end()) {
+    findings.push_back(
+        error(location,
+              fmt::format("references traffic signal controller '{}', which is not a controller "
+                          "in this scenario",
+                          controller_ref),
+              rules::kTrafficSignalControllerReferences));
+    return;
+  }
+  if (phase.empty()) {
+    findings.push_back(error(location, "traffic signal controller reference names no phase"));
+    return;
+  }
+  if (entry->second.count(phase) == 0) {
+    findings.push_back(
+        error(location,
+              fmt::format("references phase '{}' of traffic signal controller '{}', which has no "
+                          "phase of that name; the written names are the ones write_xosc "
+                          "synthesizes, which are not necessarily Phase::name",
+                          phase,
+                          controller_ref),
+              rules::kTrafficSignalControllerReferences));
+  }
+}
+
 /// Conditions inside one trigger.
 ///
 /// The delay check is the gap PR-B left: `osc/scenario.hpp` cited
@@ -768,14 +1205,16 @@ void check_traffic_signals(std::vector<Diagnostic>& findings, const RoadNetworkR
 /// built by test code, reachable the moment a reader could take one from a
 /// file.
 void check_triggers(std::vector<Diagnostic>& findings,
+                    const DocumentIndex& index,
                     const Trigger& trigger,
                     const std::string& location) {
   for (std::size_t group_index = 0; group_index < trigger.condition_groups.size(); ++group_index) {
     const ConditionGroup& group = trigger.condition_groups[group_index];
-    for (std::size_t index = 0; index < group.conditions.size(); ++index) {
-      const Condition& condition = group.conditions[index];
-      const std::string condition_location =
-          fmt::format("{}/ConditionGroup[{}]/Condition[{}]", location, group_index, index);
+    for (std::size_t condition_index = 0; condition_index < group.conditions.size();
+         ++condition_index) {
+      const Condition& condition = group.conditions[condition_index];
+      const std::string condition_location = fmt::format(
+          "{}/ConditionGroup[{}]/Condition[{}]", location, group_index, condition_index);
 
       if (condition.delay < 0.0) {
         findings.push_back(
@@ -784,6 +1223,302 @@ void check_triggers(std::vector<Diagnostic>& findings,
                   rules::kConditionDelayNonNegative));
       }
       check_no_double_colon(findings, condition.name, condition_location);
+
+      // ★ THE ARMS ARE AN XSD `choice`, so more than one set is not a document
+      // this writer can emit — it would produce two sibling arms inside one
+      // <Condition>. Refused rather than silently dropped: `write_condition`
+      // emits the first arm it finds, and a model that carries two is an
+      // authoring slip whose second arm would vanish without a word.
+      const int armed = static_cast<int>(condition.by_entity.has_value()) +
+                        static_cast<int>(condition.simulation_time.has_value()) +
+                        static_cast<int>(condition.traffic_signal.has_value()) +
+                        static_cast<int>(condition.traffic_signal_controller.has_value()) +
+                        static_cast<int>(condition.storyboard_element_state.has_value());
+      if (armed > 1) {
+        findings.push_back(error(condition_location,
+                                 fmt::format("<Condition> carries {} condition arms; the schema's "
+                                             "choice admits exactly one",
+                                             armed),
+                                 rules::kValidSchema));
+      }
+
+      if (condition.traffic_signal.has_value() && condition.traffic_signal->name.empty()) {
+        findings.push_back(error(condition_location + "/ByValueCondition/TrafficSignalCondition",
+                                 "traffic signal condition names no signal",
+                                 rules::kTrafficSignalStateReferences));
+      }
+      if (condition.traffic_signal_controller.has_value()) {
+        check_controller_phase_ref(
+            findings,
+            index,
+            condition.traffic_signal_controller->traffic_signal_controller_ref,
+            condition.traffic_signal_controller->phase,
+            condition_location + "/ByValueCondition/TrafficSignalControllerCondition");
+      }
+      if (condition.storyboard_element_state.has_value() &&
+          condition.storyboard_element_state->storyboard_element_ref.empty()) {
+        findings.push_back(
+            error(condition_location + "/ByValueCondition/StoryboardElementStateCondition",
+                  "storyboard element state condition names no element"));
+      }
+
+      if (condition.by_entity.has_value()) {
+        const ByEntityCondition& by_entity = *condition.by_entity;
+        const std::string by_entity_location = condition_location + "/ByEntityCondition";
+        // `minOccurs` 1 on <EntityRef> inside <TriggeringEntities>: an empty
+        // list is an element no schema-aware reader accepts.
+        if (by_entity.triggering_entities.entity_refs.empty()) {
+          findings.push_back(warning(by_entity_location + "/TriggeringEntities",
+                                     "<TriggeringEntities> names no entity; the schema requires at "
+                                     "least one <EntityRef>",
+                                     rules::kValidSchema));
+        }
+        for (std::size_t ref_index = 0;
+             ref_index < by_entity.triggering_entities.entity_refs.size();
+             ++ref_index) {
+          check_entity_ref(
+              findings,
+              index,
+              by_entity.triggering_entities.entity_refs[ref_index].entity_ref,
+              "triggering entity",
+              fmt::format("{}/TriggeringEntities/EntityRef[{}]", by_entity_location, ref_index));
+        }
+        if (const auto* distance =
+                std::get_if<RelativeDistanceCondition>(&by_entity.entity_condition)) {
+          check_entity_ref(findings,
+                           index,
+                           distance->entity_ref,
+                           "relative distance condition",
+                           by_entity_location + "/EntityCondition/RelativeDistanceCondition");
+        }
+      }
+    }
+  }
+}
+
+void check_optional_trigger(std::vector<Diagnostic>& findings,
+                            const DocumentIndex& index,
+                            const std::optional<Trigger>& trigger,
+                            const std::string& location) {
+  if (trigger.has_value()) {
+    check_triggers(findings, index, *trigger, location);
+  }
+}
+
+/// A name that is required, non-empty and unique among its siblings.
+void check_sibling_name(std::vector<Diagnostic>& findings,
+                        std::set<std::string>& seen,
+                        const std::string& name,
+                        const char* element,
+                        const std::string& location) {
+  if (name.empty()) {
+    // No rule id: `use="required"` is a schema constraint, not one of Annex C's
+    // checker rules, and citing a UID that does not cover it would be worse
+    // than citing none — the `check_route` call.
+    findings.push_back(
+        warning(location, fmt::format("<{}> has no name, which the schema requires", element)));
+    return;
+  }
+  check_no_double_colon(findings, name, location);
+  if (!seen.insert(name).second) {
+    findings.push_back(
+        warning(location,
+                fmt::format("a <{}> named '{}' is already declared at this level", element, name),
+                rules::kUniqueElementNames));
+  }
+}
+
+/// Forward-declared because the storyboard checks below sit ABOVE the position
+/// check they share with `<Init>` — the alternative is moving a function the
+/// init-action checks read from its own section, which reads worse than four
+/// lines here.
+void check_road_relative_position(std::vector<Diagnostic>& findings,
+                                  const Position& position,
+                                  bool has_logic_file,
+                                  const std::string& location);
+
+/// One story `<Action>` — p8-s4, issue #248.
+void check_action(std::vector<Diagnostic>& findings,
+                  const DocumentIndex& index,
+                  const Action& action,
+                  bool has_logic_file,
+                  const std::string& location) {
+  if (const auto* global = std::get_if<GlobalAction>(&action.action)) {
+    if (!global->infrastructure.has_value()) {
+      return; // The arm rode the preserved tier whole.
+    }
+    const std::string signal_location =
+        location + "/GlobalAction/InfrastructureAction/TrafficSignalAction";
+    const auto& arm = global->infrastructure->traffic_signal.action;
+    if (const auto* state = std::get_if<TrafficSignalStateAction>(&arm)) {
+      if (state->name.empty()) {
+        findings.push_back(error(signal_location + "/TrafficSignalStateAction",
+                                 "traffic signal state action names no signal",
+                                 rules::kTrafficSignalStateReferences));
+      }
+    } else if (const auto* controller = std::get_if<TrafficSignalControllerAction>(&arm)) {
+      check_controller_phase_ref(findings,
+                                 index,
+                                 controller->traffic_signal_controller_ref,
+                                 controller->phase,
+                                 signal_location + "/TrafficSignalControllerAction");
+    }
+    return;
+  }
+
+  const auto* entry = std::get_if<PrivateAction>(&action.action);
+  if (entry == nullptr) {
+    return; // <UserDefinedAction> or an unmodeled arm, riding `preserved`.
+  }
+
+  // ★ ONE ARM PER STORY ACTION. `<Action>` wraps a single choice, so a
+  // `PrivateAction` carrying two arms would expand into two `<PrivateAction>`
+  // siblings inside one `<Action>` — invalid. In `<Init>` the same struct
+  // legally expands, because `<Private>` admits `<PrivateAction>*`.
+  const int armed = static_cast<int>(entry->teleport.has_value()) +
+                    static_cast<int>(entry->longitudinal.has_value()) +
+                    static_cast<int>(entry->routing.has_value()) +
+                    static_cast<int>(entry->lateral.has_value());
+  if (armed > 1) {
+    findings.push_back(error(location + "/PrivateAction",
+                             fmt::format("a story <Action> carries {} private-action arms; each "
+                                         "<Action> wraps exactly one, so these belong in "
+                                         "separate <Action> elements",
+                                         armed),
+                             rules::kValidSchema));
+  }
+
+  if (entry->teleport.has_value()) {
+    check_road_relative_position(findings,
+                                 entry->teleport->position,
+                                 has_logic_file,
+                                 location + "/PrivateAction/TeleportAction/Position");
+  }
+  if (entry->lateral.has_value() && entry->lateral->lane_change.has_value()) {
+    const LaneChangeAction& change = *entry->lateral->lane_change;
+    const std::string change_location = location + "/PrivateAction/LateralAction/LaneChangeAction";
+    // "If no road network (logicFile) is defined ... the scenario shall not use
+    // ... LaneChangeAction". Checkable in full: both ends are in this document.
+    if (!has_logic_file) {
+      findings.push_back(error(change_location,
+                               "<LaneChangeAction> names a lane, but the scenario links no "
+                               "<LogicFile> for it to be resolved against",
+                               rules::kInvalidElementsIfNoRoadNetwork));
+    }
+    if (const auto* relative = std::get_if<RelativeTargetLane>(&change.target)) {
+      check_entity_ref(findings,
+                       index,
+                       relative->entity_ref,
+                       "relative target lane",
+                       change_location + "/LaneChangeTarget/RelativeTargetLane");
+    } else if (const auto* absolute = std::get_if<AbsoluteTargetLane>(&change.target)) {
+      if (absolute->value.empty()) {
+        findings.push_back(error(change_location + "/LaneChangeTarget/AbsoluteTargetLane",
+                                 "<AbsoluteTargetLane> names no lane",
+                                 rules::kRoadLaneExists));
+      }
+    }
+  }
+}
+
+/// The modeled `<Story>` tree — p8-s4, issue #248.
+///
+/// Every level checks the same two things the schema asks of it: a unique,
+/// non-empty `@name` among its siblings, and at least one of whatever its
+/// `minOccurs` requires. Refused rather than reported, because each produces a
+/// document a schema-aware reader rejects, and the writer's contract is that
+/// what it emits loads.
+void check_stories(std::vector<Diagnostic>& findings,
+                   const DocumentIndex& index,
+                   const Storyboard& storyboard,
+                   bool has_logic_file) {
+  std::set<std::string> story_names;
+  for (std::size_t story_index = 0; story_index < storyboard.stories.size(); ++story_index) {
+    const Story& story = storyboard.stories[story_index];
+    const std::string story_location = fmt::format("Storyboard/Story[{}]", story_index);
+    check_sibling_name(findings, story_names, story.name, "Story", story_location);
+    if (story.acts.empty()) {
+      findings.push_back(warning(story_location,
+                                 "<Story> has no <Act>; the schema requires at "
+                                 "least one"));
+    }
+
+    std::set<std::string> act_names;
+    for (std::size_t act_index = 0; act_index < story.acts.size(); ++act_index) {
+      const Act& act = story.acts[act_index];
+      const std::string act_location = fmt::format("{}/Act[{}]", story_location, act_index);
+      check_sibling_name(findings, act_names, act.name, "Act", act_location);
+      if (act.maneuver_groups.empty()) {
+        findings.push_back(warning(
+            act_location, "<Act> has no <ManeuverGroup>; the schema requires at least one"));
+      }
+      check_optional_trigger(findings, index, act.start_trigger, act_location + "/StartTrigger");
+      check_optional_trigger(findings, index, act.stop_trigger, act_location + "/StopTrigger");
+
+      std::set<std::string> group_names;
+      for (std::size_t group_index = 0; group_index < act.maneuver_groups.size(); ++group_index) {
+        const ManeuverGroup& group = act.maneuver_groups[group_index];
+        const std::string group_location =
+            fmt::format("{}/ManeuverGroup[{}]", act_location, group_index);
+        check_sibling_name(findings, group_names, group.name, "ManeuverGroup", group_location);
+        // An EMPTY actor list is legal — "allowed for situations where the
+        // maneuvers ... are not related to instances of Entity" (§7.3.1), which
+        // is what an infrastructure-only group is. Only the refs themselves are
+        // checked.
+        for (std::size_t ref_index = 0; ref_index < group.actors.size(); ++ref_index) {
+          check_entity_ref(findings,
+                           index,
+                           group.actors[ref_index].entity_ref,
+                           "actor",
+                           fmt::format("{}/Actors/EntityRef[{}]", group_location, ref_index));
+        }
+
+        std::set<std::string> maneuver_names;
+        for (std::size_t maneuver_index = 0; maneuver_index < group.maneuvers.size();
+             ++maneuver_index) {
+          const StoryManeuver& maneuver = group.maneuvers[maneuver_index];
+          const std::string maneuver_location =
+              fmt::format("{}/Maneuver[{}]", group_location, maneuver_index);
+          check_sibling_name(
+              findings, maneuver_names, maneuver.name, "Maneuver", maneuver_location);
+          if (maneuver.events.empty()) {
+            findings.push_back(warning(
+                maneuver_location, "<Maneuver> has no <Event>; the schema requires at least one"));
+          }
+
+          std::set<std::string> event_names;
+          for (std::size_t event_index = 0; event_index < maneuver.events.size(); ++event_index) {
+            const Event& event = maneuver.events[event_index];
+            const std::string event_location =
+                fmt::format("{}/Event[{}]", maneuver_location, event_index);
+            check_sibling_name(findings, event_names, event.name, "Event", event_location);
+            if (event.priority.empty()) {
+              findings.push_back(
+                  warning(event_location, "<Event> has no priority, which the schema requires"));
+            }
+            if (event.actions.empty()) {
+              findings.push_back(warning(
+                  event_location, "<Event> has no <Action>; the schema requires at least one"));
+            }
+            check_optional_trigger(
+                findings, index, event.start_trigger, event_location + "/StartTrigger");
+
+            std::set<std::string> action_names;
+            for (std::size_t action_index = 0; action_index < event.actions.size();
+                 ++action_index) {
+              const std::string action_location =
+                  fmt::format("{}/Action[{}]", event_location, action_index);
+              check_sibling_name(findings,
+                                 action_names,
+                                 event.actions[action_index].name,
+                                 "Action",
+                                 action_location);
+              check_action(
+                  findings, index, event.actions[action_index], has_logic_file, action_location);
+            }
+          }
+        }
+      }
     }
   }
 }
@@ -908,10 +1643,18 @@ void check_route(std::vector<Diagnostic>& findings,
 }
 
 void check_storyboard(std::vector<Diagnostic>& findings, const Scenario& scenario) {
-  std::set<std::string> entity_names;
+  DocumentIndex document;
   for (const ScenarioObject& object : scenario.entities.scenario_objects) {
-    entity_names.insert(object.name);
+    document.entity_names.insert(object.name);
   }
+  // The phase names as WRITTEN, not as modeled — the #248 trap, resolved once
+  // for the whole document. See `check_controller_phase_ref`.
+  for (const TrafficSignalController& controller :
+       scenario.road_network.traffic_signal_controllers) {
+    const std::vector<std::string> names = phase_names(controller);
+    document.controller_phases[controller.name].insert(names.begin(), names.end());
+  }
+  const std::set<std::string>& entity_names = document.entity_names;
 
   const bool has_logic_file = scenario.road_network.logic_file.has_value();
   // Route names are unique across the whole init block, not per entity: they
@@ -971,7 +1714,8 @@ void check_storyboard(std::vector<Diagnostic>& findings, const Scenario& scenari
     }
   }
 
-  check_triggers(findings, scenario.storyboard.stop_trigger, "Storyboard/StopTrigger");
+  check_triggers(findings, document, scenario.storyboard.stop_trigger, "Storyboard/StopTrigger");
+  check_stories(findings, document, scenario.storyboard, has_logic_file);
 }
 
 /// Walks every preserved fragment in the document and reports any that is not
@@ -1026,16 +1770,94 @@ void check_preserved_fragments(std::vector<Diagnostic>& findings, const Scenario
             fmt::format("{}/Phase[{}]", location, phase_index));
     }
   }
-  for (std::size_t index = 0; index < scenario.storyboard.preserved_stories.size(); ++index) {
-    if (!fragment_is_well_formed(scenario.storyboard.preserved_stories[index])) {
-      findings.push_back(error(fmt::format("Storyboard/Story[{}]", index),
-                               "preserved story fragment is not well-formed XML and would be "
-                               "dropped by re-emission"));
+  // The modeled story tree (p8-s4, issue #248). Every level carries a preserved
+  // tier, and `<ManeuverGroup>` carries a SECOND fragment store for the catalog
+  // references that must be re-emitted before its maneuvers — both are walked,
+  // or a corrupt fragment is dropped in exactly the silence this function
+  // exists to prevent.
+  for (std::size_t story_index = 0; story_index < scenario.storyboard.stories.size();
+       ++story_index) {
+    const Story& story = scenario.storyboard.stories[story_index];
+    const std::string story_location = fmt::format("Storyboard/Story[{}]", story_index);
+    check(story.preserved, story_location);
+    for (std::size_t act_index = 0; act_index < story.acts.size(); ++act_index) {
+      const Act& act = story.acts[act_index];
+      const std::string act_location = fmt::format("{}/Act[{}]", story_location, act_index);
+      check(act.preserved, act_location);
+      for (std::size_t group_index = 0; group_index < act.maneuver_groups.size(); ++group_index) {
+        const ManeuverGroup& group = act.maneuver_groups[group_index];
+        const std::string group_location =
+            fmt::format("{}/ManeuverGroup[{}]", act_location, group_index);
+        check(group.preserved, group_location);
+        check(group.actors_preserved, group_location + "/Actors");
+        for (std::size_t catalog_index = 0;
+             catalog_index < group.preserved_catalog_references.size();
+             ++catalog_index) {
+          if (!fragment_is_well_formed(group.preserved_catalog_references[catalog_index])) {
+            findings.push_back(
+                error(fmt::format("{}/CatalogReference[{}]", group_location, catalog_index),
+                      "preserved catalog reference is not well-formed XML and would be dropped "
+                      "by re-emission"));
+          }
+        }
+        for (std::size_t maneuver_index = 0; maneuver_index < group.maneuvers.size();
+             ++maneuver_index) {
+          const StoryManeuver& maneuver = group.maneuvers[maneuver_index];
+          const std::string maneuver_location =
+              fmt::format("{}/Maneuver[{}]", group_location, maneuver_index);
+          check(maneuver.preserved, maneuver_location);
+          for (std::size_t event_index = 0; event_index < maneuver.events.size(); ++event_index) {
+            const Event& event = maneuver.events[event_index];
+            const std::string event_location =
+                fmt::format("{}/Event[{}]", maneuver_location, event_index);
+            check(event.preserved, event_location);
+            for (std::size_t action_index = 0; action_index < event.actions.size();
+                 ++action_index) {
+              check(event.actions[action_index].preserved,
+                    fmt::format("{}/Action[{}]", event_location, action_index));
+            }
+          }
+        }
+      }
     }
   }
 }
 
 } // namespace
+
+std::vector<std::string> phase_names(const TrafficSignalController& controller) {
+  // ★ `used` IS PER CONTROLLER. Uniqueness is required within a controller, and
+  // hoisting the set across controllers would rename the second one's phases to
+  // "go_1"/"stop_1" — breaking the invariant that every controller decomposed
+  // from ONE junction timeline carries the SAME phase names, which is exactly
+  // what a traffic-signal condition references. The output stays schema-valid
+  // and a simulator loads it happily, so nothing but a dedicated test catches
+  // it. `std::set` rather than `std::unordered_set` because a later refactor
+  // that iterates it must not become nondeterministic.
+  std::set<std::string> used;
+  std::vector<std::string> names;
+  names.reserve(controller.phases.size());
+
+  for (const Phase& phase : controller.phases) {
+    // A non-empty authored name wins, and still joins the de-dup pool, so an
+    // author who writes "go" on phase 0 pushes a synthesized "go" on phase 3 to
+    // "go_1" and never the reverse.
+    std::string base = phase.name;
+    if (base.empty()) {
+      base = phase.semantics.has_value() ? semantics_name(*phase.semantics) : "phase";
+    }
+
+    // Terminating: `used` grows by one per phase, so the probe runs at most
+    // `phases.size()` times.
+    std::string candidate = base;
+    for (unsigned suffix = 1; used.count(candidate) != 0; ++suffix) {
+      candidate = fmt::format("{}_{}", base, suffix);
+    }
+    used.insert(candidate);
+    names.push_back(std::move(candidate));
+  }
+  return names;
+}
 
 std::vector<Diagnostic> validate_scenario(const Scenario& scenario, const WriteOptions& options) {
   (void)options; // No revision-specific rule exists: every citable UID is <= 1.2.0.

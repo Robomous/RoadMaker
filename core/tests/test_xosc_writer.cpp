@@ -307,7 +307,28 @@ TEST(XoscWriter, AStoryElementIsEmittedOnlyWhenTheScenarioHasOne) {
   EXPECT_EQ(bare.find("<Story "), std::string::npos) << bare;
 
   osc::Scenario scenario = minimal_scenario();
-  scenario.storyboard.preserved_stories.push_back(R"(<Story name="s"><Act name="a"/></Story>)");
+  // Modeled since p8-s4 (#248), and the smallest story the schema admits: an
+  // act needs a maneuver group, a maneuver needs an event, an event needs an
+  // action. validate_scenario refuses anything shorter, so this shape is not
+  // padding — it is the minimum a <Story> can be.
+  osc::Action action;
+  action.name = "a";
+  osc::Event event;
+  event.name = "e";
+  event.actions.push_back(action);
+  osc::StoryManeuver maneuver;
+  maneuver.name = "m";
+  maneuver.events.push_back(event);
+  osc::ManeuverGroup group;
+  group.name = "g";
+  group.maneuvers.push_back(maneuver);
+  osc::Act act;
+  act.name = "a";
+  act.maneuver_groups.push_back(group);
+  osc::Story story;
+  story.name = "s";
+  story.acts.push_back(act);
+  scenario.storyboard.stories.push_back(story);
   const std::string text = written(scenario);
   EXPECT_NE(text.find("<Story "), std::string::npos) << text;
   // And it sits between <Init> and <StopTrigger>, per the Storyboard sequence.

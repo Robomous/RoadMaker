@@ -960,6 +960,27 @@ private:
   /// not model (`<LongitudinalDistanceAction>`, `<SpeedProfileAction>`), so the
   /// caller preserves the whole action rather than writing back a
   /// `<SpeedAction>` the file never had.
+  /// A `<TransitionDynamics>`-typed element — `<SpeedActionDynamics>` and
+  /// `<LaneChangeActionDynamics>` are the same complex type under two names, so
+  /// they parse through one function (p8-s4, issue #248). A second copy is how
+  /// one of them quietly stops preserving `@followingMode`.
+  TransitionDynamics parse_transition_dynamics(const pugi::xml_node& node,
+                                               const std::string& location) {
+    TransitionDynamics out;
+    out.dynamics_shape = attr_text(node, "dynamicsShape");
+    out.dynamics_dimension = attr_text(node, "dynamicsDimension");
+    out.value = attr_double(node, "value", location);
+    out.following_mode = attr_text(node, "followingMode");
+    capture_attributes(node,
+                       out.preserved,
+                       {"dynamicsShape", "dynamicsDimension", "value", "followingMode"},
+                       location);
+    for (const pugi::xml_node child : node.children()) {
+      preserve_child(child, out.preserved, location);
+    }
+    return out;
+  }
+
   std::optional<SpeedAction> parse_speed_action(const pugi::xml_node& node,
                                                 const std::string& location) {
     SpeedAction out;
@@ -971,18 +992,7 @@ private:
       const std::string_view name = child.name();
       if (name == "SpeedActionDynamics") {
         saw_dynamics = true;
-        const std::string dynamics_location = location + "/SpeedActionDynamics";
-        out.dynamics.dynamics_shape = attr_text(child, "dynamicsShape");
-        out.dynamics.dynamics_dimension = attr_text(child, "dynamicsDimension");
-        out.dynamics.value = attr_double(child, "value", dynamics_location);
-        out.dynamics.following_mode = attr_text(child, "followingMode");
-        capture_attributes(child,
-                           out.dynamics.preserved,
-                           {"dynamicsShape", "dynamicsDimension", "value", "followingMode"},
-                           dynamics_location);
-        for (const pugi::xml_node grandchild : child.children()) {
-          preserve_child(grandchild, out.dynamics.preserved, dynamics_location);
-        }
+        out.dynamics = parse_transition_dynamics(child, location + "/SpeedActionDynamics");
       } else if (name == "SpeedActionTarget") {
         saw_target = true;
         const std::string target_location = location + "/SpeedActionTarget";
@@ -1174,6 +1184,81 @@ private:
     return out;
   }
 
+  /// `<LateralAction>` — §7.4.1 (p8-s4, issue #248). Returns nullopt when the
+  /// action holds an arm this version does not model (`<LaneOffsetAction>`,
+  /// `<LateralDistanceAction>`), so the caller preserves the WHOLE action
+  /// rather than writing back an empty `<LateralAction>` the file never had —
+  /// the `parse_routing_action` shape exactly.
+  std::optional<LateralAction> parse_lateral_action(const pugi::xml_node& node,
+                                                    const std::string& location) {
+    const pugi::xml_node change_node = node.child("LaneChangeAction");
+    if (!change_node) {
+      return std::nullopt;
+    }
+
+    LateralAction out;
+    capture_attributes(node, out.preserved, {}, location);
+
+    LaneChangeAction change;
+    const std::string change_location = location + "/LaneChangeAction";
+    change.target_lane_offset =
+        attr_optional_double(change_node, "targetLaneOffset", change_location);
+    capture_attributes(change_node, change.preserved, {"targetLaneOffset"}, change_location);
+
+    for (const pugi::xml_node child : change_node.children()) {
+      const std::string_view child_name = child.name();
+      if (child_name == "LaneChangeActionDynamics") {
+        change.dynamics = parse_transition_dynamics(child, change_location + "/Dynamics");
+        continue;
+      }
+      if (child_name == "LaneChangeTarget") {
+        const std::string target_location = change_location + "/LaneChangeTarget";
+        capture_attributes(child, change.target_preserved, {}, target_location);
+        for (const pugi::xml_node arm : child.children()) {
+          const std::string_view arm_name = arm.name();
+          if (arm_name == "AbsoluteTargetLane") {
+            AbsoluteTargetLane absolute;
+            absolute.value = attr_text(arm, "value");
+            capture_attributes(arm, absolute.preserved, {"value"}, target_location);
+            for (const pugi::xml_node grandchild : arm.children()) {
+              preserve_child(grandchild, absolute.preserved, target_location);
+            }
+            change.target = std::move(absolute);
+            continue;
+          }
+          if (arm_name == "RelativeTargetLane") {
+            RelativeTargetLane relative;
+            relative.entity_ref = attr_text(arm, "entityRef");
+            // @value is an Int here, not a Double — read through the double
+            // path and rounded, so "1.0" from a generator still parses and a
+            // malformed spelling takes the reported-not-preserved path
+            // `attr_double` documents.
+            relative.value = static_cast<int>(
+                std::lround(attr_double(arm, "value", target_location, 0.0, true)));
+            capture_attributes(arm, relative.preserved, {"entityRef", "value"}, target_location);
+            for (const pugi::xml_node grandchild : arm.children()) {
+              preserve_child(grandchild, relative.preserved, target_location);
+            }
+            change.target = std::move(relative);
+            continue;
+          }
+          preserve_child(arm, change.target_preserved, target_location);
+        }
+        continue;
+      }
+      preserve_child(child, change.preserved, change_location);
+    }
+
+    out.lane_change = std::move(change);
+
+    for (const pugi::xml_node child : node.children()) {
+      if (std::string_view(child.name()) != "LaneChangeAction") {
+        preserve_child(child, out.preserved, location);
+      }
+    }
+    return out;
+  }
+
   PrivateAction parse_private_action(const pugi::xml_node& node, const std::string& location) {
     PrivateAction out;
     capture_attributes(node, out.preserved, {}, location);
@@ -1259,6 +1344,23 @@ private:
         continue;
       }
 
+      if (child_name == "LateralAction") {
+        const std::string lateral_location = location + "/LateralAction";
+        std::optional<LateralAction> lateral = parse_lateral_action(child, lateral_location);
+        if (!lateral.has_value()) {
+          const pugi::xml_node arm = child.first_child();
+          diag(Severity::Warning,
+               location,
+               fmt::format("<LateralAction> uses <{}>, and only <LaneChangeAction> is modeled; "
+                           "the whole action was preserved verbatim",
+                           arm ? arm.name() : "LateralAction"));
+          out.preserved.children.push_back(node_to_string(child));
+          continue;
+        }
+        out.lateral = std::move(lateral);
+        continue;
+      }
+
       preserve_child(child, out.preserved, location);
     }
     return out;
@@ -1311,6 +1413,146 @@ private:
     }
   }
 
+  /// `<EntityRef>`* under `<Actors>` or `<TriggeringEntities>` (p8-s4).
+  std::vector<EntityRef>
+  parse_entity_refs(const pugi::xml_node& parent, RawXml& preserved, const std::string& location) {
+    std::vector<EntityRef> refs;
+    for (const pugi::xml_node child : parent.children()) {
+      if (std::string_view(child.name()) != "EntityRef") {
+        preserve_child(child, preserved, location);
+        continue;
+      }
+      EntityRef ref;
+      ref.entity_ref = attr_text(child, "entityRef");
+      capture_attributes(child, ref.preserved, {"entityRef"}, location);
+      for (const pugi::xml_node grandchild : child.children()) {
+        preserve_child(grandchild, ref.preserved, location);
+      }
+      refs.push_back(std::move(ref));
+    }
+    return refs;
+  }
+
+  /// The `<ByValueCondition>` arms this version models (p8-s4, issue #248).
+  /// Returns false when the wrapper holds one it does not, so the caller
+  /// preserves the WHOLE wrapper rather than writing back an empty one.
+  bool parse_by_value_condition(const pugi::xml_node& node,
+                                Condition& out,
+                                const std::string& location) {
+    if (const pugi::xml_node arm = node.child("SimulationTimeCondition")) {
+      SimulationTimeCondition timing;
+      timing.value = attr_double(arm, "value", location);
+      timing.rule = attr_text(arm, "rule");
+      capture_attributes(arm, timing.preserved, {"value", "rule"}, location);
+      out.simulation_time = std::move(timing);
+      return true;
+    }
+    if (const pugi::xml_node arm = node.child("TrafficSignalCondition")) {
+      TrafficSignalCondition signal;
+      signal.name = attr_text(arm, "name");
+      signal.state = attr_text(arm, "state");
+      capture_attributes(arm, signal.preserved, {"name", "state"}, location);
+      out.traffic_signal = std::move(signal);
+      return true;
+    }
+    if (const pugi::xml_node arm = node.child("TrafficSignalControllerCondition")) {
+      TrafficSignalControllerCondition controller;
+      controller.traffic_signal_controller_ref = attr_text(arm, "trafficSignalControllerRef");
+      controller.phase = attr_text(arm, "phase");
+      capture_attributes(
+          arm, controller.preserved, {"trafficSignalControllerRef", "phase"}, location);
+      out.traffic_signal_controller = std::move(controller);
+      return true;
+    }
+    if (const pugi::xml_node arm = node.child("StoryboardElementStateCondition")) {
+      StoryboardElementStateCondition element;
+      element.storyboard_element_ref = attr_text(arm, "storyboardElementRef");
+      element.state = attr_text(arm, "state");
+      element.storyboard_element_type = attr_text(arm, "storyboardElementType");
+      capture_attributes(arm,
+                         element.preserved,
+                         {"storyboardElementRef", "state", "storyboardElementType"},
+                         location);
+      out.storyboard_element_state = std::move(element);
+      return true;
+    }
+    return false;
+  }
+
+  /// `<ByEntityCondition>` — §7.6.5 (p8-s4, issue #248). Returns nullopt when
+  /// the required `<TriggeringEntities>` is absent, which is schema-invalid
+  /// input; modeling it would let the writer emit a default in place of content
+  /// the file did not have, the substitution `parse_speed_action` refuses.
+  ///
+  /// An `<EntityCondition>` arm this version does not model is NOT a reason to
+  /// give up on the whole condition: it rides `entity_condition_preserved` and
+  /// is re-emitted inside `<EntityCondition>`, so the triggering entities stay
+  /// editable around it.
+  std::optional<ByEntityCondition> parse_by_entity_condition(const pugi::xml_node& node,
+                                                             const std::string& location) {
+    const pugi::xml_node triggering_node = node.child("TriggeringEntities");
+    if (!triggering_node) {
+      return std::nullopt;
+    }
+
+    ByEntityCondition out;
+    capture_attributes(node, out.preserved, {}, location);
+
+    const std::string triggering_location = location + "/TriggeringEntities";
+    out.triggering_entities.rule = attr_text(triggering_node, "triggeringEntitiesRule");
+    capture_attributes(triggering_node,
+                       out.triggering_entities.preserved,
+                       {"triggeringEntitiesRule"},
+                       triggering_location);
+    out.triggering_entities.entity_refs =
+        parse_entity_refs(triggering_node, out.triggering_entities.preserved, triggering_location);
+
+    if (const pugi::xml_node entity_node = node.child("EntityCondition")) {
+      const std::string entity_location = location + "/EntityCondition";
+      capture_attributes(entity_node, out.entity_condition_preserved, {}, entity_location);
+      for (const pugi::xml_node arm : entity_node.children()) {
+        const std::string_view arm_name = arm.name();
+        if (arm_name == "SpeedCondition") {
+          SpeedCondition speed;
+          speed.rule = attr_text(arm, "rule");
+          speed.value = attr_double(arm, "value", entity_location);
+          capture_attributes(arm, speed.preserved, {"rule", "value"}, entity_location);
+          for (const pugi::xml_node child : arm.children()) {
+            preserve_child(child, speed.preserved, entity_location);
+          }
+          out.entity_condition = std::move(speed);
+          continue;
+        }
+        if (arm_name == "RelativeDistanceCondition") {
+          RelativeDistanceCondition distance;
+          distance.entity_ref = attr_text(arm, "entityRef");
+          distance.freespace = attr_bool(arm, "freespace", entity_location, true);
+          distance.relative_distance_type = attr_text(arm, "relativeDistanceType");
+          distance.rule = attr_text(arm, "rule");
+          distance.value = attr_double(arm, "value", entity_location);
+          capture_attributes(arm,
+                             distance.preserved,
+                             {"entityRef", "freespace", "relativeDistanceType", "rule", "value"},
+                             entity_location);
+          for (const pugi::xml_node child : arm.children()) {
+            preserve_child(child, distance.preserved, entity_location);
+          }
+          out.entity_condition = std::move(distance);
+          continue;
+        }
+        preserve_child(arm, out.entity_condition_preserved, entity_location);
+      }
+    }
+
+    for (const pugi::xml_node child : node.children()) {
+      const std::string_view name = child.name();
+      if (name != "TriggeringEntities" && name != "EntityCondition") {
+        preserve_child(child, out.preserved, location);
+      }
+    }
+    return out;
+  }
+
   void parse_trigger(const pugi::xml_node& node, Trigger& out, const std::string& location) {
     capture_attributes(node, out.preserved, {}, location);
 
@@ -1335,27 +1577,306 @@ private:
             condition_node, condition.preserved, {"name", "delay", "conditionEdge"}, location);
 
         for (const pugi::xml_node child : condition_node.children()) {
-          const pugi::xml_node simulation_time =
-              std::string_view(child.name()) == "ByValueCondition"
-                  ? child.child("SimulationTimeCondition")
-                  : pugi::xml_node{};
-          if (!simulation_time) {
-            // A <ByEntityCondition>, or a <ByValueCondition> holding one of the
-            // other value conditions. Preserved whole at the <Condition> level,
-            // which is where the wrapper actually sits, so no fragment moves.
-            preserve_child(child, condition.preserved, location);
+          const std::string_view wrapper = child.name();
+          if (wrapper == "ByValueCondition" &&
+              parse_by_value_condition(child, condition, location)) {
             continue;
           }
-          SimulationTimeCondition timing;
-          timing.value = attr_double(simulation_time, "value", location);
-          timing.rule = attr_text(simulation_time, "rule");
-          capture_attributes(simulation_time, timing.preserved, {"value", "rule"}, location);
-          condition.simulation_time = std::move(timing);
+          if (wrapper == "ByEntityCondition") {
+            if (std::optional<ByEntityCondition> by_entity =
+                    parse_by_entity_condition(child, location)) {
+              condition.by_entity = std::move(by_entity);
+              continue;
+            }
+          }
+          // A <ByValueCondition> holding one of the value conditions this
+          // version does not model, or a <ByEntityCondition> with no
+          // <TriggeringEntities>. Preserved whole at the <Condition> level,
+          // which is where the wrapper actually sits, so no fragment moves.
+          preserve_child(child, condition.preserved, location);
         }
         group.conditions.push_back(std::move(condition));
       }
       out.condition_groups.push_back(std::move(group));
     }
+  }
+
+  /// An OPTIONAL `<ParameterDeclarations>` wrapper inside `<Story>` or
+  /// `<Maneuver>` — modeled rather than preserved because it sits BEFORE its
+  /// siblings in the sequence, and a preserved child is re-emitted last.
+  std::vector<ParameterDeclaration> parse_nested_parameter_declarations(
+      const pugi::xml_node& node, RawXml& preserved, const std::string& location) {
+    std::vector<ParameterDeclaration> out;
+    for (const pugi::xml_node child : node.children()) {
+      if (std::string_view(child.name()) != "ParameterDeclaration") {
+        preserve_child(child, preserved, location);
+        continue;
+      }
+      ParameterDeclaration parameter;
+      parameter.name = attr_text(child, "name");
+      parameter.parameter_type = attr_text(child, "parameterType");
+      parameter.value = attr_text(child, "value");
+      capture_attributes(child, parameter.preserved, {"name", "parameterType", "value"}, location);
+      for (const pugi::xml_node grandchild : child.children()) {
+        preserve_child(grandchild, parameter.preserved, location);
+      }
+      out.push_back(std::move(parameter));
+    }
+    return out;
+  }
+
+  /// An `@maximumExecutionCount` — `UnsignedInt`. Read through the double path
+  /// and clamped at zero, so a negative or malformed spelling is reported and
+  /// falls back rather than wrapping around into a huge unsigned.
+  unsigned parse_execution_count(const pugi::xml_node& node,
+                                 const char* name,
+                                 const std::string& location,
+                                 unsigned fallback) {
+    const double value =
+        attr_double(node, name, location, static_cast<double>(fallback), /*required=*/false);
+    if (value < 0.0) {
+      diag(Severity::Warning,
+           location,
+           fmt::format("attribute '{}' is negative ({}), using {}", name, value, fallback));
+      return fallback;
+    }
+    return static_cast<unsigned>(std::lround(value));
+  }
+
+  /// `<Action>` — §7.3.2 (p8-s4, issue #248).
+  Action parse_action(const pugi::xml_node& node, const std::string& location) {
+    Action out;
+    out.name = attr_text(node, "name");
+    capture_attributes(node, out.preserved, {"name"}, location);
+
+    for (const pugi::xml_node child : node.children()) {
+      const std::string_view child_name = child.name();
+      if (child_name == "PrivateAction") {
+        out.action = parse_private_action(child, location + "/PrivateAction");
+        continue;
+      }
+      if (child_name == "GlobalAction") {
+        if (std::optional<GlobalAction> global =
+                parse_global_action(child, location + "/GlobalAction")) {
+          out.action = std::move(*global);
+          continue;
+        }
+        // An arm this version does not model — preserved WHOLE at the <Action>
+        // level, which is where <GlobalAction> sits, so no fragment moves.
+        preserve_child(child, out.preserved, location);
+        continue;
+      }
+      // <UserDefinedAction>, deliberately never modeled: its content is by
+      // definition tool-specific.
+      preserve_child(child, out.preserved, location);
+    }
+    return out;
+  }
+
+  /// `<GlobalAction>` — §7.4.2. Returns nullopt when the action holds an arm
+  /// this version does not model, so the caller preserves it whole.
+  std::optional<GlobalAction> parse_global_action(const pugi::xml_node& node,
+                                                  const std::string& location) {
+    const pugi::xml_node infrastructure_node = node.child("InfrastructureAction");
+    if (!infrastructure_node) {
+      return std::nullopt;
+    }
+    const pugi::xml_node signal_node = infrastructure_node.child("TrafficSignalAction");
+    if (!signal_node) {
+      // <InfrastructureAction> is an xsd:all with ONE required child; without it
+      // there is nothing to model and substituting a default would invent
+      // content the file did not have.
+      return std::nullopt;
+    }
+
+    GlobalAction out;
+    capture_attributes(node, out.preserved, {}, location);
+
+    InfrastructureAction infrastructure;
+    const std::string infrastructure_location = location + "/InfrastructureAction";
+    capture_attributes(infrastructure_node, infrastructure.preserved, {}, infrastructure_location);
+
+    const std::string signal_location = infrastructure_location + "/TrafficSignalAction";
+    capture_attributes(signal_node, infrastructure.traffic_signal.preserved, {}, signal_location);
+    for (const pugi::xml_node arm : signal_node.children()) {
+      const std::string_view arm_name = arm.name();
+      if (arm_name == "TrafficSignalStateAction") {
+        TrafficSignalStateAction state;
+        state.name = attr_text(arm, "name");
+        state.state = attr_text(arm, "state");
+        capture_attributes(arm, state.preserved, {"name", "state"}, signal_location);
+        for (const pugi::xml_node child : arm.children()) {
+          preserve_child(child, state.preserved, signal_location);
+        }
+        infrastructure.traffic_signal.action = std::move(state);
+        continue;
+      }
+      if (arm_name == "TrafficSignalControllerAction") {
+        TrafficSignalControllerAction controller;
+        controller.traffic_signal_controller_ref = attr_text(arm, "trafficSignalControllerRef");
+        controller.phase = attr_text(arm, "phase");
+        capture_attributes(
+            arm, controller.preserved, {"trafficSignalControllerRef", "phase"}, signal_location);
+        for (const pugi::xml_node child : arm.children()) {
+          preserve_child(child, controller.preserved, signal_location);
+        }
+        infrastructure.traffic_signal.action = std::move(controller);
+        continue;
+      }
+      preserve_child(arm, infrastructure.traffic_signal.preserved, signal_location);
+    }
+
+    for (const pugi::xml_node child : infrastructure_node.children()) {
+      if (std::string_view(child.name()) != "TrafficSignalAction") {
+        preserve_child(child, infrastructure.preserved, infrastructure_location);
+      }
+    }
+    out.infrastructure = std::move(infrastructure);
+
+    for (const pugi::xml_node child : node.children()) {
+      if (std::string_view(child.name()) != "InfrastructureAction") {
+        preserve_child(child, out.preserved, location);
+      }
+    }
+    return out;
+  }
+
+  Event parse_event(const pugi::xml_node& node, const std::string& location) {
+    Event out;
+    out.name = attr_text(node, "name");
+    out.priority = attr_text(node, "priority");
+    if (node.attribute("maximumExecutionCount")) {
+      out.maximum_execution_count =
+          parse_execution_count(node, "maximumExecutionCount", location, 1);
+    }
+    capture_attributes(
+        node, out.preserved, {"name", "priority", "maximumExecutionCount"}, location);
+
+    std::size_t action_index = 0;
+    for (const pugi::xml_node child : node.children()) {
+      const std::string_view child_name = child.name();
+      if (child_name == "Action") {
+        out.actions.push_back(
+            parse_action(child, fmt::format("{}/Action[{}]", location, action_index++)));
+        continue;
+      }
+      if (child_name == "StartTrigger") {
+        Trigger trigger;
+        parse_trigger(child, trigger, location + "/StartTrigger");
+        out.start_trigger = std::move(trigger);
+        continue;
+      }
+      preserve_child(child, out.preserved, location);
+    }
+    return out;
+  }
+
+  StoryManeuver parse_maneuver(const pugi::xml_node& node, const std::string& location) {
+    StoryManeuver out;
+    out.name = attr_text(node, "name");
+    capture_attributes(node, out.preserved, {"name"}, location);
+
+    std::size_t event_index = 0;
+    for (const pugi::xml_node child : node.children()) {
+      const std::string_view child_name = child.name();
+      if (child_name == "ParameterDeclarations") {
+        out.parameter_declarations = parse_nested_parameter_declarations(
+            child, out.preserved, location + "/ParameterDeclarations");
+        continue;
+      }
+      if (child_name == "Event") {
+        out.events.push_back(
+            parse_event(child, fmt::format("{}/Event[{}]", location, event_index++)));
+        continue;
+      }
+      preserve_child(child, out.preserved, location);
+    }
+    return out;
+  }
+
+  ManeuverGroup parse_maneuver_group(const pugi::xml_node& node, const std::string& location) {
+    ManeuverGroup out;
+    out.name = attr_text(node, "name");
+    out.maximum_execution_count = parse_execution_count(node, "maximumExecutionCount", location, 1);
+    capture_attributes(node, out.preserved, {"name", "maximumExecutionCount"}, location);
+
+    std::size_t maneuver_index = 0;
+    for (const pugi::xml_node child : node.children()) {
+      const std::string_view child_name = child.name();
+      if (child_name == "Actors") {
+        const std::string actors_location = location + "/Actors";
+        out.select_triggering_entities =
+            attr_bool(child, "selectTriggeringEntities", actors_location, false);
+        capture_attributes(
+            child, out.actors_preserved, {"selectTriggeringEntities"}, actors_location);
+        out.actors = parse_entity_refs(child, out.actors_preserved, actors_location);
+        continue;
+      }
+      if (child_name == "CatalogReference") {
+        // Its own vector rather than the generic preserved tier: a catalog
+        // reference sits BETWEEN <Actors> and <Maneuver>* in the sequence, and
+        // a preserved child is re-emitted after the maneuvers.
+        out.preserved_catalog_references.push_back(node_to_string(child));
+        continue;
+      }
+      if (child_name == "Maneuver") {
+        out.maneuvers.push_back(
+            parse_maneuver(child, fmt::format("{}/Maneuver[{}]", location, maneuver_index++)));
+        continue;
+      }
+      preserve_child(child, out.preserved, location);
+    }
+    return out;
+  }
+
+  Act parse_act(const pugi::xml_node& node, const std::string& location) {
+    Act out;
+    out.name = attr_text(node, "name");
+    capture_attributes(node, out.preserved, {"name"}, location);
+
+    std::size_t group_index = 0;
+    for (const pugi::xml_node child : node.children()) {
+      const std::string_view child_name = child.name();
+      if (child_name == "ManeuverGroup") {
+        out.maneuver_groups.push_back(parse_maneuver_group(
+            child, fmt::format("{}/ManeuverGroup[{}]", location, group_index++)));
+        continue;
+      }
+      if (child_name == "StartTrigger" || child_name == "StopTrigger") {
+        Trigger trigger;
+        parse_trigger(child, trigger, fmt::format("{}/{}", location, child_name));
+        if (child_name == "StartTrigger") {
+          out.start_trigger = std::move(trigger);
+        } else {
+          out.stop_trigger = std::move(trigger);
+        }
+        continue;
+      }
+      preserve_child(child, out.preserved, location);
+    }
+    return out;
+  }
+
+  Story parse_story(const pugi::xml_node& node, const std::string& location) {
+    Story out;
+    out.name = attr_text(node, "name");
+    capture_attributes(node, out.preserved, {"name"}, location);
+
+    std::size_t act_index = 0;
+    for (const pugi::xml_node child : node.children()) {
+      const std::string_view child_name = child.name();
+      if (child_name == "ParameterDeclarations") {
+        out.parameter_declarations = parse_nested_parameter_declarations(
+            child, out.preserved, location + "/ParameterDeclarations");
+        continue;
+      }
+      if (child_name == "Act") {
+        out.acts.push_back(parse_act(child, fmt::format("{}/Act[{}]", location, act_index++)));
+        continue;
+      }
+      preserve_child(child, out.preserved, location);
+    }
+    return out;
   }
 
   void parse_storyboard(const pugi::xml_node& storyboard) {
@@ -1367,16 +1888,15 @@ private:
     capture_attributes(storyboard, out.preserved, {}, "Storyboard");
 
     bool saw_init = false;
+    std::size_t story_index = 0;
     for (const pugi::xml_node child : storyboard.children()) {
       const std::string_view name = child.name();
       if (name == "Init") {
         saw_init = true;
         parse_init(child, out.init);
       } else if (name == "Story") {
-        // Its own vector rather than the generic preserved tier, so the writer
-        // re-emits it in its schema slot between <Init> and <StopTrigger>
-        // (core/src/osc/writer.cpp:424-427) instead of after the stop trigger.
-        out.preserved_stories.push_back(node_to_string(child));
+        out.stories.push_back(
+            parse_story(child, fmt::format("Storyboard/Story[{}]", story_index++)));
       } else if (name == "StopTrigger") {
         parse_trigger(child, out.stop_trigger, "Storyboard/StopTrigger");
       } else {

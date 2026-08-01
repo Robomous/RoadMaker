@@ -57,6 +57,7 @@ OpenDRIVE scene in the editor: [Create Road](user-guide/create-road.md),
 5. [Persistence layers](architecture/persistence.md) — what lives in the
    `.xodr`, what lives beside it, and why.
 6. Domain background: [OpenDRIVE conventions](domain/opendrive.md) ·
+   [OpenSCENARIO scenarios](domain/openscenario.md) ·
    [Geometry & meshing](domain/geometry.md) ·
    [Realism defaults](domain/realism_defaults.md) ·
    [GIS import](domain/gis.md) ·

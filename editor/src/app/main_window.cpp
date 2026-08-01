@@ -1197,6 +1197,10 @@ void MainWindow::build_docks() {
     phase_page_ = phase_page.get();
     editor2d_host_->register_page(std::move(phase_page));
   }
+  // The storyboard / condition editor (p8-s4, #248, GW-6), last so the pages
+  // that follow the selected ROAD keep the tab positions users already know.
+  editor2d_host_->register_page(
+      std::make_unique<StoryboardEditorPage>(document_, selection_, editor2d_host_));
   editor2d_dock_->setWidget(editor2d_host_);
   addDockWidget(Qt::BottomDockWidgetArea, editor2d_dock_);
   editor2d_dock_->hide(); // opt-in via the View menu — 2D editing is occasional
