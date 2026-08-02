@@ -1202,6 +1202,11 @@ using CanonTriangle = std::array<double, 9>;
 /// guarantee (the determinism tests only pin it within one run), so a golden
 /// that pins it is asserting something the mesher does not promise. Geometry
 /// and connectivity are what must not move, and both are pinned here.
+///
+/// Sorting canonicalises WITHIN a triangle (corners are metres apart, so no
+/// rounding can reorder them). Across triangles the caller matches with a
+/// tolerance instead — see the comment there for why sorting fails at that
+/// level.
 std::map<std::string, std::vector<CanonTriangle>> parse_floor_dump(const std::string& text) {
   std::map<std::string, std::vector<CanonTriangle>> out;
   std::istringstream stream(text);
@@ -1265,11 +1270,44 @@ TEST(TJunctionStraightIdentity, StraightApproachFloorsMatchTheGolden) {
   for (const auto& [name, want] : expected) {
     const std::vector<CanonTriangle>& got = actual.at(name);
     ASSERT_EQ(got.size(), want.size()) << name << ": triangle count changed";
-    for (std::size_t t = 0; t < want.size(); ++t) {
-      for (std::size_t k = 0; k < 9; ++k) {
-        EXPECT_NEAR(got[t][k], want[t][k], 1e-6) << name << ": triangle " << t << " coord " << k;
+
+    // Match as a multiset with a tolerance rather than comparing the sorted
+    // lists pairwise. Floor coordinates carry float32-precision noise — about
+    // 2e-6 m at these magnitudes, one float ULP — and a single ULP is enough to
+    // swap two neighbours in the sort, which then reports every later triangle
+    // as a metres-wide mismatch. Matching is immune to that; sorting is not.
+    // kTol is 20x above that noise and 50x below kBoundarySimplify, so it
+    // cannot hide a real change (the kFootprintWeld sabotage moves 2e-3).
+    constexpr double kTol = 1e-4;
+    std::vector<bool> taken(got.size(), false);
+    std::size_t unmatched = 0;
+    for (const CanonTriangle& expect : want) {
+      bool found = false;
+      for (std::size_t j = 0; j < got.size() && !found; ++j) {
+        if (taken[j]) {
+          continue;
+        }
+        bool same = true;
+        for (std::size_t k = 0; k < 9 && same; ++k) {
+          same = std::abs(got[j][k] - expect[k]) <= kTol;
+        }
+        if (same) {
+          taken[j] = true;
+          found = true;
+        }
+      }
+      if (!found) {
+        ++unmatched;
+        if (unmatched <= 3) {
+          ADD_FAILURE() << name << ": no triangle within " << kTol << " m of the golden's ("
+                        << expect[0] << ", " << expect[1] << ") (" << expect[3] << ", " << expect[4]
+                        << ") (" << expect[6] << ", " << expect[7] << ")";
+        }
       }
     }
+    EXPECT_EQ(unmatched, 0U) << name << ": " << unmatched << " of " << want.size()
+                             << " golden triangles have no counterpart — straight-approach "
+                                "junction geometry moved";
   }
 }
 
