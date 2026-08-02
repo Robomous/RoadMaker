@@ -48,22 +48,17 @@ jobs:
       - name: Licence gate
         run: npm run licenses
 
-      - name: Theme tokens (from theme.cpp)
-        run: npm run theme
-
-      - name: Adapt docs/user-guide
-        run: npm run adapt
-
-      # Every F1-reachable page must exist on the site too, so a page can never
-      # be reachable in-app but missing here.
-      - name: F1 coverage
-        run: npm run check
-
       - name: Script tests
         run: npm test
 
-      - name: Build
-        run: npx astro build
+      # Built under a version segment rather than at the root, because that is
+      # how it is actually published and because a root build cannot exercise
+      # the base at all: Astro prefixes the links IT generates, so a missing
+      # prefix on the links written in the guide's Markdown is invisible until
+      # something is served from `/dev/`. build:web runs theme -> adapt -> F1
+      # coverage -> astro build -> the base check, in that order.
+      - name: Build (under a version segment, as published)
+        run: npm run build:web -- --base=/dev/
 
       - uses: actions/upload-artifact@v4
         with:

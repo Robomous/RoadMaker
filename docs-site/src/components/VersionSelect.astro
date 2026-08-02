@@ -1,0 +1,104 @@
+---
+// The header's version dropdown (ADR-0009 / docs-s3).
+//
+// It overrides Starlight's LanguageSelect, which the site's own Header renders
+// unconditionally but which stays empty for a single-language site — so this is
+// the one header slot already shaped for "pick a variant of this site", and
+// using it needs no layout surgery. Select.astro is Starlight's own control, so
+// the dropdown matches the theme selector beside it.
+//
+// The manifest lives at the PUBLISH ROOT, one level above this version's base,
+// and both paths are known at build time — the component never has to guess
+// where it is.
+import Select from '@astrojs/starlight/components/Select.astro';
+
+const base = import.meta.env.BASE_URL;
+// `/dev/` -> `/`; `/_dryrun/v9.9.9/` -> `/_dryrun/`. A build served from the
+// domain root has no version segment and therefore no sibling versions.
+const root = base.replace(/[^/]+\/$/, '');
+const versioned = base !== '/';
+---
+
+{
+  versioned && (
+    <starlight-version-select data-base={base} data-root={root}>
+      <Select
+        icon="seti:config"
+        label="Select documentation version"
+        value=""
+        options={[{ value: '', selected: true, label: '…' }]}
+        width="10em"
+      />
+    </starlight-version-select>
+  )
+}
+
+<script>
+  class StarlightVersionSelect extends HTMLElement {
+    connectedCallback() {
+      const select = this.querySelector('select');
+      const base = this.dataset.base ?? '/';
+      const root = this.dataset.root ?? '/';
+      if (!select) return;
+
+      // The page the reader is on, relative to this version — what we try to
+      // carry across. `/dev/reference/junction/` -> `reference/junction/`.
+      const here = location.pathname.startsWith(base)
+        ? location.pathname.slice(base.length)
+        : '';
+
+      const target = (version: {path: string; pages?: string[]}) => {
+        const pages = version.pages ?? [];
+        // Match the built filename for both output formats: a directory URL
+        // (`reference/junction/` -> `reference/junction/index.html`) and a file
+        // one (`reference/junction.html`).
+        const candidates = [
+          here,
+          here.endsWith('/') ? `${here}index.html` : '',
+          here.replace(/\/$/, '.html'),
+        ].filter(Boolean);
+        const hit = candidates.find((c) => pages.includes(c));
+        // Falls back to the version's landing page: a page added after v0.1.0
+        // simply does not exist in v0.1.0, and a 404 would be a worse answer
+        // than the front page.
+        return hit ? `${root}${version.path}/${here}` : `${root}${version.path}/`;
+      };
+
+      fetch(`${root}versions.json`)
+        .then((response) => (response.ok ? response.json() : Promise.reject(response.status)))
+        .then((manifest) => {
+          const versions = manifest.versions ?? [];
+          if (versions.length < 2) {
+            // One version is not a choice. Say nothing rather than show a
+            // dropdown that cannot go anywhere.
+            this.hidden = true;
+            return;
+          }
+          const current = base.slice(root.length).replace(/\/$/, '');
+          select.replaceChildren(
+            ...versions.map((version: {id: string; path: string; label: string}) => {
+              const option = document.createElement('option');
+              option.value = target(version);
+              option.textContent = version.label;
+              option.selected = version.path === current;
+              return option;
+            }),
+          );
+        })
+        .catch(() => {
+          // No manifest — an unassembled preview, or a build opened directly.
+          // The control has nothing to offer, so it should not be there.
+          this.hidden = true;
+        });
+
+      select.addEventListener('change', (event) => {
+        const target = event.currentTarget;
+        if (target instanceof HTMLSelectElement && target.value) {
+          location.assign(target.value);
+        }
+      });
+    }
+  }
+
+  customElements.define('starlight-version-select', StarlightVersionSelect);
+</script>

@@ -42,6 +42,15 @@ const WEB_DOCS = 'https://github.com/Robomous/RoadMaker/tree/main/docs/user-guid
 /// Everything else about the two builds is identical.
 const target = process.env.RM_DOCS_TARGET === 'local' ? 'local' : 'web';
 
+/// The version segment the site is published under (docs-s3), e.g. `/dev/`.
+///
+/// Astro applies `base` to the links IT generates — the sidebar, the nav, asset
+/// URLs — but a link written in the guide's Markdown is content, and content is
+/// passed through untouched. So the prefix has to be applied HERE, or every
+/// in-content cross-page link 404s on the published site while the sidebar works
+/// perfectly, which is the sort of breakage nobody notices from the front page.
+const base = target === 'local' ? '/' : (process.env.RM_DOCS_BASE ?? '/');
+
 /// Said once, on the landing page, so a reader who reaches for search learns
 /// where it lives instead of finding a box that does nothing.
 const LOCAL_SEARCH_NOTE = [
@@ -143,7 +152,7 @@ for (const rel of pages) {
       }
       // Starlight routes on the slug: drop the extension, index -> the root.
       const slug = target_rel.replace(/\.md$/, '').replace(/(^|\/)index$/, '');
-      return `](/${slug}${anchor})`;
+      return `](${base}${slug}${anchor})`;
     }
     return whole;
   });

@@ -13,6 +13,8 @@
     "theme": "node scripts/theme-css.mjs",
     "build": "npm run theme && npm run adapt && node scripts/check-f1-coverage.mjs && astro build",
     "build:local": "node scripts/build-local.mjs",
+    "build:web": "node scripts/build-web.mjs",
+    "assemble": "node scripts/assemble.mjs",
     "dev": "npm run theme && npm run adapt && astro dev",
     "licenses": "node scripts/licenses.mjs",
     "check": "node scripts/check-f1-coverage.mjs",
