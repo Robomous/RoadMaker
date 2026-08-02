@@ -70,6 +70,15 @@ inline constexpr double kMinFilletRadius = 0.05;
 /// Smallest authored tangent-leg setback [m].
 inline constexpr double kMinFilletExtent = 0.05;
 
+/// Below this curvature [1/m] an arm's edge is treated as straight, so the
+/// straight-arm corner solve stays exactly the line-line one it always was
+/// (2 km radius — far beyond any junction-scale corner).
+inline constexpr double kThroughEdgeMinCurvature = 5e-4;
+
+/// How closely two arms' facing edges must share an osculating circle [m] to
+/// count as one pavement edge running through the junction.
+inline constexpr double kThroughEdgeTolerance = 1.5;
+
 /// Connecting roads of this junction, in connection order, de-duplicated.
 [[nodiscard]] std::vector<RoadId> connecting_roads(const Junction& junction);
 
@@ -105,6 +114,11 @@ struct CornerFace {
   double ix = 0.0;
   double iy = 0.0;
   RoadEnd arm;
+  /// Signed plan curvature [1/m] of the `left`/`right` pavement edge at the
+  /// face, traversed INTO the junction (left-positive). Zero for a straight
+  /// arm, which is what makes the straight-arm corner solve bit-identical.
+  double kappa_left = 0.0;
+  double kappa_right = 0.0;
 };
 
 /// The arm faces of `junction`, INTO the junction, sorted CCW around their
@@ -130,6 +144,18 @@ struct CornerSolution {
   bool valid = false;
   bool parallel_edges = false;
   bool corner_exists = false;
+
+  /// The two faces' edges are the SAME pavement edge curving through the
+  /// junction (a curved road split by it) — the curved analogue of
+  /// `parallel_edges`. There is no corner to fillet; the mesher paves the
+  /// arc corridor described by `arc_center` / `arc_radius`.
+  bool through_edge = false;
+  std::array<double, 2> arc_center{};
+  /// SIGNED radius [m] of that arc: positive when the centre lies on the
+  /// pavement side of the edge (a convex through-arm), negative when the
+  /// pavement is on the far side (a concave one). The magnitude is the radius;
+  /// the sign is which way "one strip width inward" points.
+  double arc_radius = 0.0;
 
   /// Edge-line intersection: A's right edge meeting B's left edge.
   std::array<double, 2> corner{};

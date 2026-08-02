@@ -164,6 +164,20 @@ std::vector<CornerFace> corner_faces(const RoadNetwork& network, const Junction&
     // frame is flipped relative to the entering direction, so its road-left
     // corner is the entering-right one.
     const bool flipped = arm.contact == ContactPoint::Start;
+    // True pavement-edge curvature at the face. The centerline curvature is
+    // left-positive along +s; an edge offset t metres left of it rides a
+    // radius (1/kappa - t), and traversing the arm backwards (a Start contact
+    // enters the junction along -s) negates the signed curvature.
+    const double kappa_c = road->plan_view.evaluate(station).curvature;
+    const auto edge_kappa = [&](double t) {
+      const double denom = 1.0 - (kappa_c * t);
+      if (std::abs(denom) < tol::kLength) {
+        return 0.0;
+      }
+      return sign * kappa_c / denom;
+    };
+    const double k_front = edge_kappa(offsets.front());
+    const double k_back = edge_kappa(offsets.back());
     faces.push_back(CornerFace{
         .left = flipped ? std::array<double, 2>{right[0], right[1]}
                         : std::array<double, 2>{left[0], left[1]},
@@ -172,6 +186,8 @@ std::vector<CornerFace> corner_faces(const RoadNetwork& network, const Junction&
         .ix = ix,
         .iy = iy,
         .arm = arm,
+        .kappa_left = flipped ? k_back : k_front,
+        .kappa_right = flipped ? k_front : k_back,
     });
   }
   if (faces.size() < 2) {
@@ -253,6 +269,44 @@ CornerSolution solve_corner(const RoadNetwork& network,
   if (std::abs(cross) < 1e-6) {
     solution.parallel_edges = true;
     return solution;
+  }
+  // A curved road split by the junction presents its two halves as two arms
+  // whose facing edges are one continuous pavement edge. Straight rays from
+  // the two faces meet at a fabricated apex metres outside the pavement, and
+  // filleting it paves a spike that belongs to no road (#356). Detect it the
+  // way `parallel_edges` detects the straight case — by the edges being the
+  // same curve — and report the arc instead of a corner.
+  if (std::abs(a.kappa_right) > kThroughEdgeMinCurvature &&
+      std::abs(b.kappa_left) > kThroughEdgeMinCurvature) {
+    // Osculating circle of each edge: centre one signed radius to the left.
+    const double ra = 1.0 / a.kappa_right;
+    const double rb = 1.0 / b.kappa_left;
+    const std::array<double, 2> ca{pa[0] - (ra * a.iy), pa[1] + (ra * a.ix)};
+    const std::array<double, 2> cb{pb[0] - (rb * b.iy), pb[1] + (rb * b.ix)};
+    // Traversed in opposing directions, one continuous edge has curvatures of
+    // OPPOSITE sign, so compare |r| and the centres.
+    if (std::hypot(ca[0] - cb[0], ca[1] - cb[1]) < kThroughEdgeTolerance &&
+        std::abs(std::abs(ra) - std::abs(rb)) < kThroughEdgeTolerance) {
+      // Pave the arc THROUGH both face corners rather than either osculating
+      // circle. The arms are clothoid-fitted, so their two osculating circles
+      // differ by centimetres; an arc anchored to one of them misses the other
+      // arm's face and leaves exactly the sliver this fix exists to remove.
+      // Tangent to A's edge at pa and passing through pb:
+      //   centre = pa + t * normal(A),  t = |chord|^2 / (2 * normal . chord)
+      const std::array<double, 2> normal{-a.iy, a.ix};
+      const std::array<double, 2> chord{pb[0] - pa[0], pb[1] - pa[1]};
+      const double denom = 2.0 * ((normal[0] * chord[0]) + (normal[1] * chord[1]));
+      if (std::abs(denom) > tol::kLength) {
+        const double t = ((chord[0] * chord[0]) + (chord[1] * chord[1])) / denom;
+        solution.through_edge = true;
+        solution.arc_center = {pa[0] + (t * normal[0]), pa[1] + (t * normal[1])};
+        // `normal` is the interior side (the same one the straight strips use),
+        // so the sign of t already says which side of the edge the pavement is
+        // on: keep it rather than take the magnitude.
+        solution.arc_radius = t;
+        return solution;
+      }
+    }
   }
   // Edge-line intersection pa + ta·A_dir = pb + tb·B_dir.
   const double dx = pb[0] - pa[0];

@@ -41,6 +41,7 @@
 #include "roadmaker/edit/operations.hpp"
 #include "roadmaker/geometry/poly3.hpp"
 #include "roadmaker/io/gltf_exporter.hpp"
+#include "roadmaker/mesh/junction_corners.hpp"
 #include "roadmaker/mesh/junction_surface_spans.hpp"
 #include "roadmaker/mesh/mesh_builder.hpp"
 #include "roadmaker/road/authoring.hpp"
@@ -68,6 +69,7 @@
 #include <numbers>
 #include <optional>
 #include <set>
+#include <sstream>
 #include <stdexcept>
 #include <string>
 #include <utility>
@@ -1009,54 +1011,316 @@ TEST_P(TJunctionQuality, SurfaceNormalsAreSmoothAndWelded) {
   }
 }
 
-// Standing reproduction of issue #356 — a curved approach meeting a junction of
-// sidewalked roads, attached on the CONCAVE side. DISABLED because it fails:
-// it is the bug, not a regression guard, and it is enabled by whoever fixes it.
+// --- Issue #356: a road curving THROUGH a junction ---------------------------
 //
-// Run it with (no line continuation — a trailing backslash would make this a
-// multi-line comment, which GCC rejects under -Werror=comment):
-//   roadmaker_core_tests --gtest_also_run_disabled_tests
-//       --gtest_filter='*DISABLED_CurvedInsideApproachWithSidewalks*'
+// A road split by a junction presents its two halves as two arms whose facing
+// edges are ONE continuous pavement edge. Extrapolating each as an infinite
+// straight ray from its single end station makes them meet at an apex metres
+// outside the pavement, and filleting that apex paved a spike belonging to no
+// road. Straight arms are the case that always worked, because two collinear
+// edges never meet (`parallel_edges`); the curved case is its exact analogue
+// and was the bug.
 //
-// Measured on 7ac3c75, against the same curve WITHOUT sidewalks in parentheses:
+// The failure was measured on `9e9bce2` for r = 30 m attached on the concave
+// side with sidewalks, against the same curve WITHOUT sidewalks in parentheses:
 //
 //   worst triangle angle   0.51 deg  (6.62 deg)
 //   sliver triangles       4         (0),        budget 2
 //   max concave turn      88.2 deg   (passes),   gate < 20 deg
 //
-// The 88 degree re-entrant corner is the visible artifact. `corner_faces`
-// samples each arm at ONE end station and treats its outer edge as an infinite
-// straight ray (junction_corner_detail.cpp:141-197); `solve_corner` intersects
-// those rays (:250-265). On a curved arm the true pavement edge peels away from
-// its own tangent, so the rays meet at a fabricated apex metres outside the
-// pavement and `append_corner_fillets` (junction_surface.cpp:135-209) paves a
-// wedge all the way out to it. Both curved cases show that wedge in the
-// viewport; adding the sidewalk band wraps it and turns the far end into a
-// needle sharp enough to trip the gates.
+// Note what the no-sidewalk column says: the spike was there too and every gate
+// passed it, because a spike is a CONVEX corner and the fillet gate exempts
+// those. The sidewalk band wrapped the spike, pulled its far end into a needle
+// and turned the artifact concave, which is the only reason the matrix could
+// see it at all. That is why the gates below are geometric — they pin the
+// pavement to the curve rather than waiting for a sliver to appear.
+
+struct ThroughEdgeCase {
+  std::string_view name;
+  double radius;
+  LaneProfile profile;
+};
+
+class TJunctionCurvedThrough : public ::testing::TestWithParam<ThroughEdgeCase> {};
+
+// The junction floor must stay on the pavement the curve actually describes.
+// `setup_curved` centres the target's arc at (0, radius) with the branch on the
+// concave side, so the floor's southernmost point IS the through-edge at its
+// extreme: it must land on the outer pavement edge, at y = -half_width.
 //
-// Two things the 2026-07-22 investigation comment on #356 says are NOT true
-// here, both re-checked while writing this:
-//   - It does reproduce in the headless harness. That pass looked at
-//     watertightness and floor-vs-arm plan overlap, which still hold
-//     (boundary_crossings = 0). The fillet and sliver gates are what expose it.
-//   - `FloorCarriesDrivingMaterial` does NOT need relaxing for a sidewalked
-//     profile. `build_one_junction_floor` keeps the bands in JunctionFloor
-//     ::details and leaves .mesh as the carriageway, so it passes unchanged
-//     (mesh_builder.cpp:1039-1046). That comment predates #402 / PR #441.
-TEST(TJunctionQualityRepro, DISABLED_CurvedInsideApproachWithSidewalksFailsTheFilletGate) {
-  Tee tee = attach(setup_curved(30.0, true, LaneProfile::urban_sidewalk()));
+// This is the assertion that fails hardest on the old solver. The straight rays
+// met at a fabricated apex 7.18 m beyond the true edge, and the fillet it
+// carried dipped to y = -8.88 against a true -4.80. The bound below is -4.85.
+//
+// The second bound is the opposite failure: a corridor that under-covers would
+// leave the floor short of the pavement and open a gap at the mouth.
+TEST_P(TJunctionCurvedThrough, FloorStaysOnTheTruePavementEdge) {
+  const ThroughEdgeCase& through = GetParam();
+  Tee tee = attach(setup_curved(through.radius, true, through.profile));
   const NetworkMesh mesh = roadmaker::build_network_mesh(tee.network);
   ASSERT_FALSE(mesh.junction_floors.empty());
 
-  const QualityMetrics metrics = compute_metrics(tee, mesh);
-  EXPECT_LE(metrics.slivers, kSliverBudget) << format_metrics(metrics);
-  EXPECT_GE(metrics.min_angle_deg, kMinTriangleAngleDeg) << format_metrics(metrics);
+  double half_width = 0.0;
+  for (const LaneSpec& lane : through.profile.right) {
+    half_width += lane.width;
+  }
+  ASSERT_GT(half_width, 0.0);
 
-  const std::vector<std::array<double, 2>> loop =
-      ccw_boundary_loop(mesh.junction_floors.front().mesh);
-  ASSERT_GE(loop.size(), 8U);
-  EXPECT_LT(std::ranges::max(concave_turns_deg(loop)), 20.0)
-      << "re-entrant corner without a fillet arc";
+  double southernmost = std::numeric_limits<double>::max();
+  for (const roadmaker::JunctionFloor& floor : mesh.junction_floors) {
+    for (std::size_t i = 0; i + 2 < floor.mesh.positions.size(); i += 3) {
+      southernmost = std::min(southernmost, floor.mesh.positions[i + 1]);
+    }
+  }
+
+  EXPECT_GE(southernmost, -half_width - 0.05)
+      << "junction floor paves " << (-half_width - southernmost)
+      << " m beyond the pavement edge the curve describes — fabricated corner apex";
+  EXPECT_LE(southernmost, -half_width + 0.25)
+      << "junction floor stops short of the pavement edge — gap at the mouth";
+}
+
+// The corner that is not there: a curved road running through the junction must
+// report no corner between its own two halves, exactly as a straight one does.
+// `junction_corners()` already drops the pairs it cannot fillet, so the Corner
+// tool needs no change — but it MUST agree with the floor, or the tool would
+// offer a handle sitting on pavement that no longer exists (issue #225).
+TEST_P(TJunctionCurvedThrough, NoCornerIsReportedForTheRoadRunningThrough) {
+  const ThroughEdgeCase& through = GetParam();
+  // Both orientations: `inside` puts the branch on the concave side of the
+  // curve, so the through-edge is the convex one, and `outside` is its mirror.
+  // The detection has to hold for both — the two differ in the sign of the
+  // edge curvature, which is exactly what the solve keys on.
+  for (const bool inside : {true, false}) {
+    Tee tee = attach(setup_curved(through.radius, inside, through.profile));
+    const std::vector<roadmaker::JunctionCornerInfo> corners =
+        roadmaker::junction_corners(tee.network, tee.junction);
+    const roadmaker::Junction* junction = tee.network.junction(tee.junction);
+    ASSERT_NE(junction, nullptr);
+    ASSERT_EQ(junction->arms.size(), 3U);
+
+    // A tee has three arm pairs; the two halves of the split target are the
+    // pair that is NOT the branch, so exactly two corners survive.
+    EXPECT_EQ(corners.size(), 2U)
+        << "inside=" << inside
+        << ": the road running through the junction still reports a corner "
+           "between its own two halves";
+    for (const roadmaker::JunctionCornerInfo& corner : corners) {
+      EXPECT_NE(corner.arm_a.road, corner.arm_b.road)
+          << "inside=" << inside << ": a corner was reported between two ends of the same road";
+    }
+  }
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    Through,
+    TJunctionCurvedThrough,
+    ::testing::Values(ThroughEdgeCase{"r30_sidewalk", 30.0, LaneProfile::urban_sidewalk()},
+                      ThroughEdgeCase{"r30_rural", 30.0, LaneProfile::two_lane_rural()},
+                      ThroughEdgeCase{"r100_rural", 100.0, LaneProfile::two_lane_rural()}),
+    [](const ::testing::TestParamInfo<ThroughEdgeCase>& through) {
+      return std::string(through.param.name);
+    });
+
+// --- Straight-approach identity (#356 acceptance) ----------------------------
+//
+// The through-edge corridor may only ever fire on a CURVED arm: a straight one
+// has zero edge curvature, so the corner solve stays exactly the line-line one
+// it has always been and every straight-approach junction must mesh unchanged.
+// The golden below was generated on `9e9bce2` — BEFORE the fix — and the fix
+// reproduces all seven cases exactly.
+//
+// Positions compare to 1e-6 m rather than bitwise: this is ONE committed file
+// checked on three platforms, and clothoid/Clipper2/CDT arithmetic is not
+// required to agree to the last ULP across them. A micron is three orders of
+// magnitude below kBoundarySimplify, so nothing a corner change can do hides
+// under it. Triangle indices compare exactly, so any change in triangulation
+// fails loudly.
+
+/// The fixtures whose arms are all straight — the ones the corner solve must
+/// treat identically forever.
+const std::vector<TeeCase>& straight_cases() {
+  static const std::vector<TeeCase> cases{
+      TeeCase{"perp", setup_perp},
+      TeeCase{"deg45", setup_deg45},
+      TeeCase{"deg135", setup_deg135},
+      TeeCase{"asymmetric", setup_asymmetric},
+      TeeCase{"start_contact", setup_start_contact},
+      TeeCase{"graded", setup_graded},
+      TeeCase{"multilane", setup_multilane},
+  };
+  return cases;
+}
+
+std::filesystem::path straight_golden_path() {
+  return std::filesystem::path(RM_CORE_TESTS_DIR) / "data" / "junction" /
+         "straight_floor_golden.txt";
+}
+
+/// Serialises every straight fixture's junction floors, one line per vertex and
+/// per triangle. `{:.17g}` round-trips a double exactly, so the file records
+/// what was generated rather than a rounding of it.
+std::string straight_floor_dump() {
+  std::string out;
+  for (const TeeCase& straight : straight_cases()) {
+    Tee tee = attach(straight.setup());
+    const NetworkMesh mesh = roadmaker::build_network_mesh(tee.network);
+    for (std::size_t f = 0; f < mesh.junction_floors.size(); ++f) {
+      const SubMesh& floor = mesh.junction_floors[f].mesh;
+      fmt::format_to(std::back_inserter(out), "# {} floor{}\n", straight.name, f);
+      for (std::size_t i = 0; i + 2 < floor.positions.size(); i += 3) {
+        fmt::format_to(std::back_inserter(out),
+                       "v {:.17g} {:.17g} {:.17g}\n",
+                       floor.positions[i],
+                       floor.positions[i + 1],
+                       floor.positions[i + 2]);
+      }
+      for (std::size_t i = 0; i + 2 < floor.indices.size(); i += 3) {
+        fmt::format_to(std::back_inserter(out),
+                       "f {} {} {}\n",
+                       floor.indices[i],
+                       floor.indices[i + 1],
+                       floor.indices[i + 2]);
+      }
+    }
+  }
+  return out;
+}
+
+/// One triangle as nine coordinates, its three corners sorted so the same
+/// triangle canonicalises identically however it was wound or indexed.
+using CanonTriangle = std::array<double, 9>;
+
+/// Parses a dump into `case name -> canonical triangle list`, resolving each
+/// index triple to coordinates and sorting so the result is invariant to
+/// vertex numbering and triangle order.
+///
+/// It has to be: the mesh's vertex ORDER is not stable across architectures.
+/// The first version of this gate compared the dump line by line and failed on
+/// macOS arm64 while passing on x86_64 Linux, Windows and macOS — with the
+/// same vertices in a different sequence. Vertex order has never been a kernel
+/// guarantee (the determinism tests only pin it within one run), so a golden
+/// that pins it is asserting something the mesher does not promise. Geometry
+/// and connectivity are what must not move, and both are pinned here.
+///
+/// Sorting canonicalises WITHIN a triangle (corners are metres apart, so no
+/// rounding can reorder them). Across triangles the caller matches with a
+/// tolerance instead — see the comment there for why sorting fails at that
+/// level.
+std::map<std::string, std::vector<CanonTriangle>> parse_floor_dump(const std::string& text) {
+  std::map<std::string, std::vector<CanonTriangle>> out;
+  std::istringstream stream(text);
+  std::string key;
+  std::vector<std::array<double, 3>> verts;
+  for (std::string line; std::getline(stream, line);) {
+    if (!line.empty() && line.back() == '\r') {
+      line.pop_back(); // the file is pinned eol=lf, but never trust a checkout
+    }
+    if (line.starts_with("# ")) {
+      key = line.substr(2);
+      verts.clear();
+    } else if (line.starts_with("v ")) {
+      std::array<double, 3> p{};
+      std::istringstream(line.substr(2)) >> p[0] >> p[1] >> p[2];
+      verts.push_back(p);
+    } else if (line.starts_with("f ")) {
+      std::array<std::size_t, 3> idx{};
+      std::istringstream(line.substr(2)) >> idx[0] >> idx[1] >> idx[2];
+      if (idx[0] >= verts.size() || idx[1] >= verts.size() || idx[2] >= verts.size()) {
+        continue;
+      }
+      std::array<std::array<double, 3>, 3> corners{verts[idx[0]], verts[idx[1]], verts[idx[2]]};
+      std::ranges::sort(corners);
+      CanonTriangle tri{};
+      for (std::size_t c = 0; c < 3; ++c) {
+        for (std::size_t k = 0; k < 3; ++k) {
+          tri[(c * 3) + k] = corners[c][k];
+        }
+      }
+      out[key].push_back(tri);
+    }
+  }
+  for (auto& [name, tris] : out) {
+    std::ranges::sort(tris);
+  }
+  return out;
+}
+
+TEST(TJunctionStraightIdentity, StraightApproachFloorsMatchTheGolden) {
+  std::ifstream golden(straight_golden_path(), std::ios::binary);
+  ASSERT_TRUE(golden.is_open()) << "missing golden " << straight_golden_path();
+  const std::string golden_text{std::istreambuf_iterator<char>(golden),
+                                std::istreambuf_iterator<char>()};
+
+  const std::map<std::string, std::vector<CanonTriangle>> expected = parse_floor_dump(golden_text);
+  const std::map<std::string, std::vector<CanonTriangle>> actual =
+      parse_floor_dump(straight_floor_dump());
+  ASSERT_FALSE(expected.empty());
+
+  std::vector<std::string> expected_keys;
+  std::vector<std::string> actual_keys;
+  for (const auto& [name, tris] : expected) {
+    expected_keys.push_back(name);
+  }
+  for (const auto& [name, tris] : actual) {
+    actual_keys.push_back(name);
+  }
+  ASSERT_EQ(actual_keys, expected_keys) << "a straight fixture gained or lost a junction floor";
+
+  for (const auto& [name, want] : expected) {
+    const std::vector<CanonTriangle>& got = actual.at(name);
+    ASSERT_EQ(got.size(), want.size()) << name << ": triangle count changed";
+
+    // Match as a multiset with a tolerance rather than comparing the sorted
+    // lists pairwise. Floor coordinates carry float32-precision noise — about
+    // 2e-6 m at these magnitudes, one float ULP — and a single ULP is enough to
+    // swap two neighbours in the sort, which then reports every later triangle
+    // as a metres-wide mismatch. Matching is immune to that; sorting is not.
+    // kTol is 20x above that noise and 50x below kBoundarySimplify, so it
+    // cannot hide a real change (the kFootprintWeld sabotage moves 2e-3).
+    constexpr double kTol = 1e-4;
+    std::vector<bool> taken(got.size(), false);
+    std::size_t unmatched = 0;
+    for (const CanonTriangle& expect : want) {
+      bool found = false;
+      for (std::size_t j = 0; j < got.size() && !found; ++j) {
+        if (taken[j]) {
+          continue;
+        }
+        bool same = true;
+        for (std::size_t k = 0; k < 9 && same; ++k) {
+          same = std::abs(got[j][k] - expect[k]) <= kTol;
+        }
+        if (same) {
+          taken[j] = true;
+          found = true;
+        }
+      }
+      if (!found) {
+        ++unmatched;
+        if (unmatched <= 3) {
+          ADD_FAILURE() << name << ": no triangle within " << kTol << " m of the golden's ("
+                        << expect[0] << ", " << expect[1] << ") (" << expect[3] << ", " << expect[4]
+                        << ") (" << expect[6] << ", " << expect[7] << ")";
+        }
+      }
+    }
+    EXPECT_EQ(unmatched, 0U) << name << ": " << unmatched << " of " << want.size()
+                             << " golden triangles have no counterpart — straight-approach "
+                                "junction geometry moved";
+  }
+}
+
+// Regenerates the straight-approach golden. Run manually, and only with a
+// reviewed reason — a diff here means straight junctions moved:
+//   roadmaker_core_tests --gtest_also_run_disabled_tests
+//     --gtest_filter='*DISABLED_WriteStraightFloorGolden'
+TEST(TJunctionQualityTools, DISABLED_WriteStraightFloorGolden) {
+  const std::string dump = straight_floor_dump();
+  std::ofstream out(straight_golden_path(), std::ios::binary);
+  ASSERT_TRUE(out.is_open());
+  out.write(dump.data(), static_cast<std::streamsize>(dump.size()));
+  ASSERT_TRUE(out.good());
 }
 
 // Regenerates the committed tee golden (assets/samples + fuzz corpus per the
@@ -1077,32 +1341,27 @@ TEST(TJunctionQualityTools, DISABLED_WriteTeeSample) {
 INSTANTIATE_TEST_SUITE_P(
     Matrix,
     TJunctionQuality,
-    ::testing::Values(TeeCase{"perp", setup_perp},
-                      TeeCase{"deg45", setup_deg45},
-                      TeeCase{"deg135", setup_deg135},
-                      TeeCase{"r100_outside", [] { return setup_curved(100.0, false); }},
-                      TeeCase{"r100_inside", [] { return setup_curved(100.0, true); }},
-                      TeeCase{"r30_outside", [] { return setup_curved(30.0, false); }},
-                      TeeCase{"r30_inside", [] { return setup_curved(30.0, true); }},
-                      // Issue #356: a curved approach meeting a junction of
-                      // SIDEWALKED roads — the scenario the field report shows
-                      // and the one thing this matrix never covered. Only the
-                      // convex side is in the matrix; the concave side does not
-                      // pass today, and is the DISABLED reproduction below.
-                      //
-                      // NOTE this case clears the sliver budget EXACTLY (2 of 2)
-                      // with a 1.54 deg worst triangle, against 6.62 deg for the
-                      // same curve without sidewalks. It is deliberately left
-                      // that tight: it is the early-warning sibling of the
-                      // reproduction, and anything that costs it one more sliver
-                      // should fail loudly rather than drift.
-                      TeeCase{
-                          "r30_sidewalk_outside",
-                          [] { return setup_curved(30.0, false, LaneProfile::urban_sidewalk()); }},
-                      TeeCase{"asymmetric", setup_asymmetric},
-                      TeeCase{"start_contact", setup_start_contact},
-                      TeeCase{"graded", setup_graded},
-                      TeeCase{"multilane", setup_multilane}),
+    ::testing::Values(
+        TeeCase{"perp", setup_perp},
+        TeeCase{"deg45", setup_deg45},
+        TeeCase{"deg135", setup_deg135},
+        TeeCase{"r100_outside", [] { return setup_curved(100.0, false); }},
+        TeeCase{"r100_inside", [] { return setup_curved(100.0, true); }},
+        TeeCase{"r30_outside", [] { return setup_curved(30.0, false); }},
+        TeeCase{"r30_inside", [] { return setup_curved(30.0, true); }},
+        // Issue #356: a curved approach meeting a junction of
+        // SIDEWALKED roads — the scenario the field report shows
+        // and the one thing this matrix never covered. BOTH sides
+        // run now; the concave one was the reproduction until the
+        // through-edge corridor replaced the fabricated apex.
+        TeeCase{"r30_sidewalk_outside",
+                [] { return setup_curved(30.0, false, LaneProfile::urban_sidewalk()); }},
+        TeeCase{"r30_sidewalk_inside",
+                [] { return setup_curved(30.0, true, LaneProfile::urban_sidewalk()); }},
+        TeeCase{"asymmetric", setup_asymmetric},
+        TeeCase{"start_contact", setup_start_contact},
+        TeeCase{"graded", setup_graded},
+        TeeCase{"multilane", setup_multilane}),
     // `tee_case`, not `info` — GCC -Wshadow flags the gtest macro's internal
     // parameter of the same name.
     [](const ::testing::TestParamInfo<TeeCase>& tee_case) {

@@ -1370,6 +1370,41 @@ Current version on `main`: **0.0.1**.
   about silently never matched.
 
 ### Fixed
+- **A road curving through a junction no longer paves a spike of pavement that
+  belongs to no road** ([#356](https://github.com/Robomous/RoadMaker/issues/356)).
+  A junction splits its through road into two arms, and the corner solver
+  extrapolated each arm's facing edge as an infinite **straight ray** from a
+  single end station. Two collinear edges never meet, so straight roads were
+  always fine — but on a curve the rays met at a fabricated apex metres outside
+  the pavement, and the fillet built there paved out to it. For a 30 m radius
+  the apex sat **7.18 m** past the true edge and the fillet dipped 4.08 m past
+  it.
+
+  The curved case is now detected the way the straight one always was: when the
+  two arms' facing edges share an osculating circle they are one pavement edge
+  running through the junction, so there is no corner to fillet and the mesher
+  paves the arc corridor the edge itself describes. The corridor is anchored to
+  an arc through **both** face corners rather than to either arm's osculating
+  circle — the arms are clothoid-fitted, so those two circles differ by
+  centimetres, and anchoring to one leaves a sliver at the other. The floor's
+  southernmost point now lands on the true pavement edge to the millimetre.
+
+  A straight arm has zero edge curvature, so the solve stays exactly the
+  line-line one it has always been: all seven straight-approach fixtures mesh
+  **bit-identically**, measured by a before/after differential of every fixture.
+  The committed golden that guards it from here on compares geometry and
+  connectivity *canonically* rather than line by line — mesh vertex ORDER turns
+  out to differ between x86_64 and arm64, and it has never been a kernel
+  guarantee (the determinism tests pin it only within a single run), so a golden
+  asserting it would be asserting something the mesher does not promise. `#356`'s
+  reproduction is no longer disabled — it is a matrix case, and three new
+  geometric gates assert the floor stays on the pavement the curve describes and
+  that no corner is reported between a road and itself.
+
+  Worth recording, because it is why this survived so long: without sidewalks
+  the spike was there too and **every gate passed it**, since a spike is a convex
+  corner and the fillet gate exempts those. Only the sidewalk band wrapped it
+  into a concave needle the matrix could see.
 - **Virtual-junction linkage and connection internals round-trip**
   ([#537](https://github.com/Robomous/RoadMaker/issues/537)). Three holes, all
   in modeled scopes that #453's preservation sweep deliberately does not cover:
