@@ -114,6 +114,18 @@ struct JunctionConnection {
 
   /// Pairs of {incoming lane odr_id, connecting lane odr_id}.
   std::vector<std::pair<int, int>> lane_links;
+
+  /// `@type` — `"default"` or `"virtual"` on a connection (§12.3, Table 61),
+  /// kept verbatim. Empty ⇒ absent. Dropped before #537: `@id` regeneration is
+  /// benign because the writer renumbers deterministically, but `@type` carries
+  /// meaning the file owns.
+  std::string type_str;
+
+  /// Unknown attributes and unmodeled children of `<connection>` — anything
+  /// besides `<laneLink>` — preserved verbatim (#537). The reader iterated
+  /// `children("laneLink")` only, so a `<predecessor>`/`<successor>` on a
+  /// virtual-junction connection, or any later addition, vanished silently.
+  RawXml preserved;
 };
 
 /// An authored override for the pavement fillet at one junction corner — the
@@ -491,6 +503,16 @@ struct Junction {
   /// so without the verbatim string the attribute would be DELETED rather than
   /// merely defaulted.
   std::string type_str;
+
+  /// Connections a VIRTUAL junction declared (§12.7), held aside rather than
+  /// deleted (#537).
+  ///
+  /// arms-xor-spans still holds for GENERATION: a span junction never cuts its
+  /// main road, so there is nothing to derive and these must stay out of
+  /// `connections` or the mesher would try. But a virtual junction may legally
+  /// declare them, and clearing the list destroyed a conformant file's data.
+  /// The writer re-emits these verbatim.
+  std::vector<JunctionConnection> preserved_connections;
 
   /// `<connection>` elements of a **direct** junction (§12.4). Non-empty only
   /// when `type == JunctionType::Direct`; a direct junction's connections have

@@ -2375,8 +2375,19 @@ private:
       if (!junction.arms.empty() || !junction.connections.empty()) {
         diag(Severity::Warning,
              location,
-             "virtual junction also declares connections or rm:arms; they were dropped",
+             "virtual junction also declares connections or rm:arms; RoadMaker "
+             "generates no geometry for them, but they are preserved and "
+             "re-emitted unchanged",
              rules::kJunctionVirtualAttributes);
+        // arms-xor-spans still holds for GENERATION — a span junction never
+        // cuts its main road, so there is nothing to derive. But a virtual
+        // junction may legally declare connections (§12.7), and deleting them
+        // destroyed a conformant file's data (#537). They are moved to the
+        // preserved tier instead: absent from `connections` so nothing tries to
+        // build geometry from them, and re-emitted verbatim on write.
+        for (const JunctionConnection& connection : junction.connections) {
+          junction.preserved_connections.push_back(connection);
+        }
         junction.arms.clear();
         junction.connections.clear();
       }
@@ -2459,6 +2470,14 @@ private:
         result.lane_links.emplace_back(lane_link.attribute("from").as_int(),
                                        lane_link.attribute("to").as_int());
       }
+      // @type carries meaning the file owns (§12.3 Table 61); @id does not,
+      // because the writer renumbers connections deterministically. Unknown
+      // attributes and non-<laneLink> children ride the preserved tier (#537).
+      result.type_str = connection.attribute("type").value();
+      static constexpr std::string_view kConnectionAttrs[] = {
+          "id", "incomingRoad", "connectingRoad", "contactPoint", "type"};
+      static constexpr std::string_view kConnectionChildren[] = {"laneLink"};
+      capture_unmodeled(connection, kConnectionAttrs, kConnectionChildren, result.preserved);
       junction.connections.push_back(std::move(result));
     }
   }
@@ -3480,7 +3499,9 @@ private:
   struct PendingLink {
     std::string element_type; // "road" | "junction"
     std::string element_id;
-    std::string contact_point; // "start" | "end" (roads only)
+    std::string contact_point;       // "start" | "end" (roads only)
+    std::optional<double> element_s; // virtual junctions only (§10)
+    std::string element_dir;         // "+" | "-", virtual junctions only
     bool present = false;
   };
 
@@ -3495,12 +3516,21 @@ private:
     if (!node) {
       return {};
     }
-    return PendingLink{
+    PendingLink link{
         .element_type = node.attribute("elementType").value(),
         .element_id = node.attribute("elementId").value(),
         .contact_point = node.attribute("contactPoint").value(),
+        .element_dir = node.attribute("elementDir").value(),
         .present = true,
     };
+    // @elementS/@elementDir are REQUIRED when the link points at a virtual
+    // junction (asam.net:xodr:1.7.0:road.linkage.virtjunc_link_attribute_usage)
+    // and were read nowhere before #537, so a conformant file lost its
+    // virtual-junction linkage on save with no diagnostic.
+    if (const pugi::xml_attribute element_s = node.attribute("elementS")) {
+      link.element_s = element_s.as_double();
+    }
+    return link;
   }
 
   void resolve_references() {
@@ -3564,6 +3594,11 @@ private:
            rules::kRoadLinkAttributeUsage);
       return std::nullopt;
     }
+    // Carried for every link kind, though only a virtual junction may legally
+    // use them: preserving what the file wrote beats silently normalising it,
+    // and the writer emits them iff they were present (#537).
+    link.element_s = pending.element_s;
+    link.element_dir = pending.element_dir;
     return link;
   }
 

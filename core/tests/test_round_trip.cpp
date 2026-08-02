@@ -416,6 +416,81 @@ TEST(RoundTrip, PreservationDoesNotDuplicateModeledOrDerivedContent) {
   EXPECT_EQ(count("<roadMark"), 1U);
 }
 
+// --- virtual-junction fidelity (#537) ----------------------------------------
+//
+// Built on #534's junction scaffolding. Three holes in MODELED scopes that
+// #453's preservation sweep deliberately does not cover.
+
+TEST(RoundTrip, VirtualJunctionLinkageAndConnectionsSurviveWriteParseWrite) {
+  const std::filesystem::path sample =
+      std::filesystem::path(RM_FUZZ_CORPUS_DIR) / "virtual_junction_links.xodr";
+  const auto loaded = roadmaker::load_xodr(sample);
+  ASSERT_TRUE(loaded.has_value()) << (loaded ? "" : loaded.error().message);
+  const RoadNetwork& network = loaded->network;
+
+  // 1. @elementS/@elementDir reached the model. Required for a virtual-junction
+  // link (road.linkage.virtjunc_link_attribute_usage) and read nowhere before.
+  const roadmaker::Road& main = *network.road(network.find_road("1"));
+  ASSERT_TRUE(main.predecessor.has_value());
+  ASSERT_TRUE(main.predecessor->element_s.has_value());
+  EXPECT_DOUBLE_EQ(*main.predecessor->element_s, 0.0);
+  EXPECT_EQ(main.predecessor->element_dir, "+");
+  ASSERT_TRUE(main.successor.has_value());
+  ASSERT_TRUE(main.successor->element_s.has_value());
+  EXPECT_DOUBLE_EQ(*main.successor->element_s, 200.0);
+  EXPECT_EQ(main.successor->element_dir, "-");
+
+  // 2. The virtual junction's connection was PRESERVED, not deleted — and is
+  // held out of `connections` so nothing tries to build geometry from it.
+  const roadmaker::Junction& junction = *network.junction(network.find_junction("100"));
+  EXPECT_TRUE(junction.connections.empty()) << "a span junction generates nothing";
+  ASSERT_EQ(junction.preserved_connections.size(), 1U) << "the connection was destroyed again";
+
+  // 3. @type and the unmodeled child rode along.
+  EXPECT_EQ(junction.preserved_connections[0].type_str, "virtual");
+  EXPECT_FALSE(junction.preserved_connections[0].preserved.children.empty());
+
+  // The bytes. A model-only assertion would pass on a writer that emits none
+  // of it.
+  const auto written = roadmaker::write_xodr(loaded->network, "virtual_junction_links");
+  ASSERT_TRUE(written.has_value());
+  EXPECT_NE(written->find(R"(elementS="0")"), std::string::npos);
+  EXPECT_NE(written->find(R"(elementS="200")"), std::string::npos);
+  EXPECT_NE(written->find(R"(elementDir="+")"), std::string::npos);
+  EXPECT_NE(written->find(R"(elementDir="-")"), std::string::npos);
+  EXPECT_NE(written->find(R"(type="virtual")"), std::string::npos);
+  EXPECT_NE(written->find("acme:connectionNote"), std::string::npos);
+
+  // Fixed point, and the linkage is still there after the second trip.
+  const auto reparsed = roadmaker::parse_xodr(*written, "virtual_junction_links");
+  ASSERT_TRUE(reparsed.has_value());
+  const roadmaker::Road& round = *reparsed->network.road(reparsed->network.find_road("1"));
+  ASSERT_TRUE(round.predecessor.has_value());
+  EXPECT_EQ(round.predecessor->element_dir, "+");
+  const auto again = roadmaker::write_xodr(reparsed->network, "virtual_junction_links");
+  ASSERT_TRUE(again.has_value());
+  EXPECT_EQ(*written, *again);
+  EXPECT_EQ(roadmaker::count_errors(loaded->diagnostics), 0U);
+}
+
+TEST(RoundTrip, AnOrdinaryRoadLinkWritesNoElementSOrDir) {
+  // @elementS/@elementDir are virtual-junction-only, so an ordinary link must
+  // not start emitting them — that would churn every fixture in the suite and
+  // assert something the standard forbids there.
+  RoadNetwork network;
+  const auto road = roadmaker::author_clothoid_road(
+      network,
+      std::array<Waypoint, 2>{Waypoint{.x = 0.0, .y = 0.0}, Waypoint{.x = 100.0, .y = 0.0}},
+      LaneProfile::two_lane_default(),
+      "Plain",
+      "1");
+  ASSERT_TRUE(road.has_value());
+  const auto written = roadmaker::write_xodr(network, "plain");
+  ASSERT_TRUE(written.has_value());
+  EXPECT_EQ(written->find("elementS="), std::string::npos);
+  EXPECT_EQ(written->find("elementDir="), std::string::npos);
+}
+
 // --- direct and crossing junctions (#534) ------------------------------------
 //
 // A direct junction (§12.4) has NO connecting road: each <connection> carries
