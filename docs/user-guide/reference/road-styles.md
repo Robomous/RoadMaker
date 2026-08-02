@@ -52,3 +52,7 @@ bridge and the trees stay put — only the lanes and their markings change.
 [Library](library.md) for the drag-and-drop model and the
 [P2 discovery report](../../roadmap/pillars/p2_discovery.md) for the road-style
 preservation contract.
+
+## Full guide
+
+[Working with road styles](../tutorials/working-with-road-styles.md) — restyle a whole road from the Library, end to end.

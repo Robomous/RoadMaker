@@ -98,6 +98,7 @@ add_executable(roadmaker_editor_tests
   test_help_registry.cpp
   test_help_style.cpp
   test_help_viewer.cpp
+  test_manual_bridge.cpp
   test_picking.cpp
   test_preview_session.cpp
   test_phase_panel.cpp

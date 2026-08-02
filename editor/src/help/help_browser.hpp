@@ -17,9 +17,12 @@
 #pragma once
 
 // The rich-text pane of the help window. Resolves qthelp:// resources (pages,
-// stylesheet, images) out of the QHelpEngine, and hands http(s) links to the
-// system browser instead of trying to render them.
+// stylesheet, images) out of the QHelpEngine, hands http(s) links to the system
+// browser instead of trying to render them, and resolves the `rmmanual:` bridge
+// links the help compiler emits (helpc::kManualScheme) against the packaged HTML
+// manual — also in the system browser, per ADR-0009.
 
+#include <QString>
 #include <QTextBrowser>
 #include <QUrl>
 #include <QVariant>
@@ -36,6 +39,11 @@ public:
 
   /// Public seam over the protected loadResource override (tested directly).
   [[nodiscard]] QVariant resource(int type, const QUrl& name);
+
+  /// Open one page of the packaged manual in the system browser. False when no
+  /// manual shipped with this build, which is what selects the pointer at the
+  /// online docs. Public so the decision is testable without a click.
+  [[nodiscard]] bool open_manual_page(const QString& slug);
 
 protected:
   QVariant loadResource(int type, const QUrl& name) override;

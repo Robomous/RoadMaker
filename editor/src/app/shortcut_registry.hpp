@@ -118,6 +118,7 @@ enum class Id {
   ViewportHints,
   // Help
   Help,
+  OpenManual,
 
   /// Count sentinel — always last. Iterating `[0, kIdCount)` is what the tests
   /// use to prove the table and the Id→QAction map cover every value.

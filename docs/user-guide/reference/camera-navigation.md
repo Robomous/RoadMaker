@@ -154,3 +154,7 @@ click.
 - [Right-click menus](context-menus.md) — the menu the short right-click opens
 - [Moving and transforming](moving-and-transforming.md) — moving *content*,
   as opposed to moving the camera
+
+## Full guide
+
+[Getting around](../tutorials/getting-around.md) — orbit, frame and switch views on a real scene.

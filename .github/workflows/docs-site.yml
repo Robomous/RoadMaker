@@ -59,11 +59,46 @@ jobs:
       - name: F1 coverage
         run: npm run check
 
+      - name: Script tests
+        run: npm test
+
       - name: Build
         run: npx astro build
 
       - uses: actions/upload-artifact@v4
         with:
           name: docs-site
+          path: docs-site/dist
+          retention-days: 7
+
+  # The offline reader that ships inside a release (ADR-0009 / docs-s2). Built
+  # separately from the web site because the two differ in output format and in
+  # whether search exists, so one build cannot prove the other works.
+  local:
+    name: build local reader
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: docs-site
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: docs-site/.nvmrc
+          cache: npm
+          cache-dependency-path: docs-site/package-lock.json
+
+      - name: Install
+        run: npm ci
+
+      # build:local ends in check-local-build.mjs, which fails on any surviving
+      # root-absolute href/src — the one thing that makes a build openable from
+      # a disc rather than only from a server.
+      - name: Build the local reader
+        run: npm run build:local
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: docs-manual-local
           path: docs-site/dist
           retention-days: 7

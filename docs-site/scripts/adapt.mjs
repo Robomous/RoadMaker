@@ -35,6 +35,24 @@ const guide = join(repo, 'docs', 'user-guide');
 const outDir = join(here, '..', 'src', 'content', 'docs');
 
 const REPO_BLOB = 'https://github.com/Robomous/RoadMaker/blob/main';
+const WEB_DOCS = 'https://github.com/Robomous/RoadMaker/tree/main/docs/user-guide';
+
+/// `local` builds the offline reader that ships in a release (ADR-0009): it opens
+/// from file://, so Pagefind cannot index it and the search UI is switched off.
+/// Everything else about the two builds is identical.
+const target = process.env.RM_DOCS_TARGET === 'local' ? 'local' : 'web';
+
+/// Said once, on the landing page, so a reader who reaches for search learns
+/// where it lives instead of finding a box that does nothing.
+const LOCAL_SEARCH_NOTE = [
+  ':::note[Offline copy]',
+  'This is the manual bundled with your copy of RoadMaker, opened straight from',
+  `disk. Full-text search needs a web server, so it is available on the [online`,
+  `documentation](${WEB_DOCS}) instead. Every page is here; only the search box`,
+  'is missing.',
+  ':::',
+  '',
+].join('\n');
 
 const errors = [];
 
@@ -92,9 +110,14 @@ for (const rel of pages) {
     const [path, anchor = ''] = target.split(/(#.*)/);
     if (!path) return whole;
 
-    // Leaves the guide -> the repo on GitHub, as the Qt Help renderer does.
-    if (path.startsWith('../')) {
-      const absolute = resolve(dirname(srcPath), path);
+    // `../` means "up one directory" — NOT "out of the guide". Since docs-s1 the
+    // guide has subdirectories, so `reference/x.md` -> `../tutorials/y.md` lands
+    // back INSIDE it and is an ordinary in-guide link. Resolve first, then decide.
+    const absolute = resolve(dirname(srcPath), path);
+    const insideGuide = !relative(guide, absolute).startsWith('..');
+
+    // Genuinely leaves the guide -> the repo on GitHub, as the Qt renderer does.
+    if (path.startsWith('../') && !insideGuide) {
       const resolved = relative(repo, absolute).split('\\').join('/');
       if (!existsSync(absolute)) {
         errors.push(`${rel}: broken link to '${target}' (resolved to ${resolved})`);
@@ -114,7 +137,7 @@ for (const rel of pages) {
     }
 
     if (path.endsWith('.md')) {
-      const target_rel = relative(guide, resolve(dirname(srcPath), path)).split('\\').join('/');
+      const target_rel = relative(guide, absolute).split('\\').join('/');
       if (!pageSet.has(target_rel)) {
         errors.push(`${rel}: broken link to '${target}' (no page ${target_rel})`);
       }
@@ -141,9 +164,11 @@ for (const rel of pages) {
     '',
   ].join('\n');
 
+  const note = target === 'local' && rel === 'index.md' ? LOCAL_SEARCH_NOTE : '';
+
   const dest = join(outDir, rel);
   mkdirSync(dirname(dest), { recursive: true });
-  writeFileSync(dest, frontmatter + body.trimStart());
+  writeFileSync(dest, frontmatter + note + body.trimStart());
 }
 
 // Image folders ride along so the pages' relative srcs resolve.
@@ -152,9 +177,19 @@ for (const rel of ['reference/img', 'tutorials/img']) {
   if (existsSync(src)) cpSync(src, join(outDir, rel), { recursive: true });
 }
 
+// The tab icon, taken from the app's own icon set rather than drawn again, so
+// the site and the editor cannot show different marks. Starlight links a favicon
+// unconditionally; without the file the reference dangles, which is invisible on
+// a server (a 404 in the console) and a real broken reference under file://.
+const publicDir = join(here, '..', 'public');
+mkdirSync(publicDir, { recursive: true });
+cpSync(join(repo, 'editor', 'resources', 'branding', 'icon_64.png'), join(publicDir, 'favicon.png'));
+
 if (errors.length > 0) {
   console.error(`adapt: ${errors.length} problem(s)`);
   for (const e of errors) console.error(`  ${e}`);
   process.exit(1);
 }
-console.log(`adapt: ${pages.length} pages, ${order.length} ordered from index.md`);
+console.log(
+  `adapt: ${pages.length} pages, ${order.length} ordered from index.md (${target} build)`,
+);

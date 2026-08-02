@@ -63,8 +63,26 @@ jobs:
           path: build/*/_deps/*-subbuild/*-populate-prefix/src/*.tar.gz
           key: deps-${{ matrix.os }}-${{ hashFiles('cmake/deps.cmake') }}
 
+      # The offline manual (ADR-0009 / docs-s2). Built with Node HERE and handed
+      # to CMake as a finished directory below — CMake never invokes npm, so a
+      # developer build stays Node-free.
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: docs-site/.nvmrc
+          cache: npm
+          cache-dependency-path: docs-site/package-lock.json
+
+      - name: Build the offline manual
+        working-directory: docs-site
+        run: |
+          npm ci
+          npm run build:local
+
       - name: Configure
-        run: cmake --preset ${{ matrix.preset }}
+        run: >
+          cmake --preset ${{ matrix.preset }}
+          -DROADMAKER_BUNDLE_MANUAL=ON
+          -DROADMAKER_MANUAL_DIR=${{ github.workspace }}/docs-site/dist
 
       - name: Build
         run: cmake --build --preset ${{ matrix.preset }}
@@ -128,7 +146,7 @@ jobs:
           # above must match cmake/QtVersion.cmake's pin.
           NO_STRIP: "1"
 
-      - name: Smoke test packaged binary (--version + bundled help)
+      - name: Smoke test packaged binary (--version + bundled help + manual)
         shell: bash
         env:
           QT_QPA_PLATFORM: offscreen
@@ -138,6 +156,12 @@ jobs:
           # its qsqlite driver (QHelpEngine is SQLite-backed). macdeployqt /
           # windeployqt / linuxdeploy pull QtSql in via Qt6::Help; assert every
           # piece actually shipped in the packaged artifact.
+          #
+          # The manual is asserted alongside it, at the layout manual_locator.cpp
+          # resolves for this platform — the two must agree or Help ▸ Open Manual
+          # silently falls back to the online pointer in a build that HAS one.
+          # A page under it is checked too: an empty manual/ directory would pass
+          # an index-only check while opening to nothing.
           case "${{ runner.os }}" in
             macOS)
               hdiutil attach dist/roadmaker-*-Darwin-*.dmg -mountpoint /tmp/rmdmg -nobrowse
@@ -147,6 +171,8 @@ jobs:
               test -f "$app/Contents/Resources/help/roadmaker.qhc"
               test -e "$app/Contents/Frameworks/QtSql.framework"
               ls "$app/Contents/PlugIns/sqldrivers/"libqsqlite*.dylib
+              test -f "$app/Contents/Resources/manual/index.html"
+              test -f "$app/Contents/Resources/manual/tutorials/getting-around.html"
               hdiutil detach /tmp/rmdmg
               ;;
             Linux)
@@ -157,6 +183,8 @@ jobs:
               test -f "$root/usr/bin/help/roadmaker.qhc"
               ls "$root"/usr/lib/libQt6Sql.so*
               ls "$root"/usr/plugins/sqldrivers/libqsqlite.so
+              test -f "$root/usr/share/roadmaker/manual/index.html"
+              test -f "$root/usr/share/roadmaker/manual/tutorials/getting-around.html"
               ;;
             Windows)
               7z x dist/roadmaker-*-Windows-*.zip -osmoke -y > /dev/null
@@ -166,6 +194,8 @@ jobs:
               test -f "$root/help/roadmaker.qhc"
               ls "$root"/Qt6Sql.dll
               ls "$root"/sqldrivers/qsqlite.dll
+              test -f "$root/manual/index.html"
+              test -f "$root/manual/tutorials/getting-around.html"
               ;;
           esac
 

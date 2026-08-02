@@ -119,6 +119,7 @@ int main(int argc, char** argv) {
   for (const roadmaker::helpc::TocEntry& page : roadmaker::helpc::all_pages(toc)) {
     roadmaker::helpc::RenderOptions opts;
     opts.title = page.title;
+    opts.page_rel = page.rel_path;
     opts.guide_dir = guide;
     opts.img_out_dir = img_dir;
     const std::string html = roadmaker::helpc::render_page(read_file(guide / page.rel_path), opts);

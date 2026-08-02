@@ -12,9 +12,12 @@
     "adapt": "node scripts/adapt.mjs",
     "theme": "node scripts/theme-css.mjs",
     "build": "npm run theme && npm run adapt && node scripts/check-f1-coverage.mjs && astro build",
+    "build:local": "node scripts/build-local.mjs",
     "dev": "npm run theme && npm run adapt && astro dev",
     "licenses": "node scripts/licenses.mjs",
-    "check": "node scripts/check-f1-coverage.mjs"
+    "check": "node scripts/check-f1-coverage.mjs",
+    "check:local": "node scripts/check-local-build.mjs",
+    "test": "node --test \"test/**/*.test.mjs\""
   },
   "dependencies": {
     "@astrojs/starlight": "0.36.0",

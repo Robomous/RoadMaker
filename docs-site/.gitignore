@@ -2,6 +2,7 @@
 # hand-edited. Same for the theme CSS, which is derived from theme.cpp.
 src/content/docs/
 src/styles/theme.css
+public/
 node_modules/
 dist/
 .astro/

@@ -532,6 +532,10 @@ Actions::Actions(QUndoStack& undo_stack, QObject* parent) : QObject(parent) {
   help_contents->setShortcuts(shortcuts::sequences(shortcuts::Id::Help));
   help_contents->setToolTip(tr("Open the RoadMaker user guide (F1)"));
 
+  open_manual = new QAction(tr("Open &Manual in Browser"), this);
+  open_manual->setShortcuts(shortcuts::sequences(shortcuts::Id::OpenManual));
+  open_manual->setToolTip(tr("Open the full illustrated manual in your web browser"));
+
   about = new QAction(tr("&About RoadMaker"), this);
   about->setMenuRole(QAction::AboutRole);
 
@@ -665,6 +669,8 @@ QAction* Actions::action(shortcuts::Id id) const {
     return viewport_hints;
   case Id::Help:
     return help_contents;
+  case Id::OpenManual:
+    return open_manual;
   case Id::kIdCount:
     break; // the sentinel names no action
   }
