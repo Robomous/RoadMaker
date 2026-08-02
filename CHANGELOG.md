@@ -1391,7 +1391,12 @@ Current version on `main`: **0.0.1**.
 
   A straight arm has zero edge curvature, so the solve stays exactly the
   line-line one it has always been: all seven straight-approach fixtures mesh
-  **bit-identically**, pinned from here on by a committed golden. `#356`'s
+  **bit-identically**, measured by a before/after differential of every fixture.
+  The committed golden that guards it from here on compares geometry and
+  connectivity *canonically* rather than line by line — mesh vertex ORDER turns
+  out to differ between x86_64 and arm64, and it has never been a kernel
+  guarantee (the determinism tests pin it only within a single run), so a golden
+  asserting it would be asserting something the mesher does not promise. `#356`'s
   reproduction is no longer disabled — it is a matrix case, and three new
   geometric gates assert the floor stays on the pavement the curve describes and
   that no corner is reported between a road and itself.
