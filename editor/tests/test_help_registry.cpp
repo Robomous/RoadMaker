@@ -127,7 +127,8 @@ TEST(HelpRegistry, ContextPrefersFocusedDockOverActiveTool) {
   EXPECT_EQ(help::context_page(ToolId::CreateRoad, QStringLiteral("dock.diagnostics")),
             QStringLiteral("reference/diagnostics"));
   // No dock focus -> the active tool's page.
-  EXPECT_EQ(help::context_page(ToolId::CreateRoad, QString()), QStringLiteral("reference/create-road"));
+  EXPECT_EQ(help::context_page(ToolId::CreateRoad, QString()),
+            QStringLiteral("reference/create-road"));
   // Neither -> the index.
   EXPECT_EQ(help::context_page(std::nullopt, QString()), QStringLiteral("index"));
   // An unknown dock name is treated as no dock focus.

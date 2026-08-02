@@ -1742,7 +1742,7 @@ Grouped with the two sub-sections below, which were also never released.
   Baselines are captured from the branch's own CI artifact — macOS has no
   offscreen GL context, so a dev machine cannot produce one.
 - **Textured-rendering user guide** ([#52](https://github.com/Robomous/RoadMaker/issues/52)):
-  `docs/user-guide/textured-rendering.md` documents the
+  `docs/user-guide/reference/textured-rendering.md` documents the
   `View ▸ Textured Rendering` toggle — what Sober and Textured are each for,
   why Sober is the default, and what "textured" deliberately does not include
   (no shadows, no IBL). The mode shipped in 0.5.0 and CI renders with it, but
@@ -2005,7 +2005,7 @@ is headless-testable.
   Road's tangent-continuation snap now produces a genuinely *linked* road, not
   merely an adjacent one. Named fixture `CloseGapNoCurvatureKinkWhenArcStartsAtJoint`
   proves the connector's curvature meets each neighbour within `tol::kWeldCurvature`.
-  Python `edit.create_linked_road`. Docs: `docs/user-guide/context-menus.md`.
+  Python `edit.create_linked_road`. Docs: `docs/user-guide/reference/context-menus.md`.
 - **Drop a T/X intersection ONTO a road** (gate finding 1): dragging a T or X
   assembly from the Library onto an existing road now tees/crosses INTO it,
   aligned to the road tangent, instead of dropping a superimposed floating
@@ -2050,7 +2050,7 @@ is headless-testable.
   still reachable. Removal is one undoable `edit::remove_lane` command that
   restores the exact lane on undo; a success toast surfaces via the panel's new
   `status_message` signal. Behaviour and tests:
-  `docs/user-guide/lane-profile.md`, `docs/user-guide/context-menus.md`.
+  `docs/user-guide/reference/lane-profile.md`, `docs/user-guide/reference/context-menus.md`.
 - **First-run guided tour** (UI revamp Phase 4): a 5-step, skippable coach-mark
   tour runs once on a first launch — draw a road → drag in an intersection →
   plant a tree → shape the elevation → export — dimming the app and ringing the
@@ -2339,7 +2339,7 @@ is headless-testable.
   README hero + drag-and-drop workflow GIF, the committed **golden-look**
   baseline (`docs/standards/golden-look.png`, from the new
   `assets/samples/golden_scene.xodr` T-junction-with-props scene) wired into the
-  UI-design standard, a new [Library](docs/user-guide/library.md) user-guide
+  UI-design standard, a new [Library](docs/user-guide/reference/library.md) user-guide
   page, themed screenshots on the Create Road / Junction / Elevation / Objects
   pages, and a refreshed in-editor props story on the Objects page. The M3a UI
   revamp epic is complete; remaining standards-track work (junction boundary,
@@ -2422,7 +2422,7 @@ GW-1 + GW-2 executed by the maintainer.
   the projected station, dashed ghost line from the selected end, and the
   highlighted `[s−gap, s+gap]` span the junction will replace; the status
   text also appears as a viewport-corner hint for every tool; new
-  [T-junction user-guide page](docs/user-guide/t-junction.md); kernel
+  [T-junction user-guide page](docs/user-guide/reference/t-junction.md); kernel
   `edit::t_attach_gap` (bound in Python) exposes the auto-gap the preview
   and the command share; committed tee sample `assets/samples/t_attach.xodr`.
 

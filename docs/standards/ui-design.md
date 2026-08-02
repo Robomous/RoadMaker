@@ -107,7 +107,7 @@ Before adding a tool, decide which it is:
   form a junction, scatter along a curve) — live on the toolbar. They may read
   the current Library asset but they are not redundant with it.
 
-The user-facing contract is [tools and the Library](../user-guide/tools-and-library.md).
+The user-facing contract is [tools and the Library](../user-guide/reference/tools-and-library.md).
 
 ## Toolbar structure (two plain grouped rows)
 

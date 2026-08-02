@@ -30,9 +30,9 @@ namespace roadmaker::helpc {
 
 /// One guide page in the table of contents.
 struct TocEntry {
-  std::string rel_path;  ///< path relative to the guide dir, e.g. "create-road.md"
-  std::string slug;      ///< rel_path minus ".md" — the help-s2 keyword id contract
-  std::string title;     ///< the page's H1
+  std::string rel_path; ///< path relative to the guide dir, e.g. "create-road.md"
+  std::string slug;     ///< rel_path minus ".md" — the help-s2 keyword id contract
+  std::string title;    ///< the page's H1
 };
 
 /// The whole guide: the index page plus every page it links, in link order.
