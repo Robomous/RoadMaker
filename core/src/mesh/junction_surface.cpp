@@ -171,6 +171,44 @@ void append_corner_fillets(const RoadNetwork& network,
       }
       continue;
     }
+    if (solution.through_edge) {
+      // One pavement edge curving through the junction: pave the corridor the
+      // edge itself describes, sampled at the fillet sagitta, rather than the
+      // straight-ray corner it has no business having (#356).
+      const std::array<double, 2>& c = solution.arc_center;
+      const double r = std::abs(solution.arc_radius);
+      const double ang_a = std::atan2(pa[1] - c[1], pa[0] - c[0]);
+      double ang_b = std::atan2(pb[1] - c[1], pb[0] - c[0]);
+      while (ang_b - ang_a > std::numbers::pi) {
+        ang_b -= 2.0 * std::numbers::pi;
+      }
+      while (ang_a - ang_b > std::numbers::pi) {
+        ang_b += 2.0 * std::numbers::pi;
+      }
+      const double sweep = ang_b - ang_a;
+      const double step =
+          2.0 *
+          std::acos(std::clamp(1.0 - (junction_corner_detail::kFilletArcSagitta / r), 0.0, 1.0));
+      const int steps =
+          std::max(4, static_cast<int>(std::ceil(std::abs(sweep) / std::max(step, 1e-3))));
+      // One strip width INWARD, exactly as the straight strips run. Inward is
+      // toward the arc centre only for a convex through-arm; for a concave one
+      // (the arms meeting on the inside of the curve) the pavement is on the
+      // far side, so the strip has to widen the radius instead. The sign of
+      // `arc_radius` carries that.
+      const double r_in = std::max(r - std::copysign(kEdgeStripWidth, solution.arc_radius), 0.0);
+      Clipper2Lib::PathD corridor;
+      for (int k = 0; k <= steps; ++k) {
+        const double ang = ang_a + (sweep * static_cast<double>(k) / steps);
+        corridor.emplace_back(c[0] + (r * std::cos(ang)), c[1] + (r * std::sin(ang)));
+      }
+      for (int k = steps; k >= 0; --k) {
+        const double ang = ang_a + (sweep * static_cast<double>(k) / steps);
+        corridor.emplace_back(c[0] + (r_in * std::cos(ang)), c[1] + (r_in * std::sin(ang)));
+      }
+      push_ccw(std::move(corridor));
+      continue;
+    }
     if (!solution.valid) {
       continue;
     }
