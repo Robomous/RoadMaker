@@ -19,6 +19,48 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 Current version on `main`: **0.0.1**.
 
 ### Added
+- **The documentation site publishes itself, versioned**
+  ([#347](https://github.com/Robomous/RoadMaker/issues/347), docs-s3 —
+  [ADR-0009](docs/decisions/0009-documentation-site-tiered-docs.md)). GitHub
+  Actions assembles a published tree — `dev/` from `main`, `vX.Y.Z/` from each
+  release tag, a `latest/` copy of the highest version, a root redirect and a
+  `versions.json` — onto a `docs-published` branch that the hosting app serves
+  prebuilt. Runbook:
+  [Publishing the documentation site](docs/contributing/docs-site-publishing.md).
+
+  **Nothing added here creates a tag or a release.** The workflow reacts to a tag
+  the maintainer has already pushed; publishing stays their decision
+  ([release philosophy](docs/roadmap/README.md#release-philosophy)).
+
+  `latest/` follows the **highest semver, not the most recent tag**, so patching
+  an old line after a newer minor exists does not drag `latest` backwards.
+  Assembly is idempotent and replaces one version directory at a time,
+  recomputing the derived files from whatever is on the branch — a version an
+  individual run knows nothing about survives it.
+
+  The whole pipeline works with `dev/` alone, which is today's state: `latest` is
+  `null`, the root redirect points at `dev/`, and the version dropdown hides
+  itself rather than offering a choice of one.
+
+  A `workflow_dispatch` **dry run** rehearses the tag-driven path into a scratch
+  prefix before any real tag exists. It cannot damage the live tree two ways
+  over: the assembler is handed the scratch directory as its root, so the real
+  `dev/`, `latest/`, `versions.json` and redirect are not addressable from
+  inside it; and a following step asks git what changed and fails if anything
+  outside the prefix did.
+
+  The version dropdown preserves the reader's current page where the target
+  version has it and falls back to that version's landing page where it does
+  not. It reads each version's page list out of `versions.json` rather than
+  probing the server, because a host that answers a missing file with a 200
+  fallback would make a broken switch look like a working one.
+
+  One defect fixed on the way: Astro applies its `base` to the links it
+  generates, but a link written in the guide's Markdown is content and passed
+  through untouched — so under a version segment the sidebar and nav worked
+  while every in-content cross-page link 404ed. The adapter now applies the same
+  prefix, and `check-web-build.mjs` fails a build where any root-absolute
+  reference is missing it.
 - **The manual ships with the app, and reference pages bridge into it**
   ([#346](https://github.com/Robomous/RoadMaker/issues/346), docs-s2 —
   [ADR-0009](docs/decisions/0009-documentation-site-tiered-docs.md)). Every

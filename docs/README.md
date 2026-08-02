@@ -37,7 +37,10 @@ OpenDRIVE scene in the editor: [Create Road](user-guide/reference/create-road.md
 3. [Testing](contributing/testing.md) — GoogleTest/pytest doctrine, headless
    Qt tests, sanitizers, fuzzing.
 4. [CI](contributing/ci.md) — what each gate checks.
-5. The standards your change must meet:
+5. [Publishing the documentation site](contributing/docs-site-publishing.md) —
+   how a merged docs change reaches a live page, and the maintainer runbook for
+   the hosting app.
+6. The standards your change must meet:
    [C++ style](standards/cpp-style.md) ·
    [Cross-platform](standards/cross-platform.md) ·
    [Dependencies & licensing](standards/dependencies.md) ·

@@ -1,0 +1,26 @@
+# Serve-prebuilt configuration for the published documentation tree.
+#
+# This file rides ON the publishing branch (scripts/assemble.mjs copies it into
+# the assembled root), because that is the branch the hosting app is connected
+# to and where it looks for its build settings.
+#
+# THERE IS NO BUILD PHASE, AND THAT IS THE DESIGN (ADR-0009). The tree is
+# assembled by GitHub Actions — several versions, a computed `latest/`, a root
+# redirect and a versions manifest — and the host only serves the result.
+# Building from source here would move that multi-version logic into a console
+# UI where it could not be reviewed, tested, or rolled back with the code.
+#
+# `baseDirectory: /` therefore means "publish the branch as it stands".
+version: 1
+frontend:
+  phases:
+    preBuild:
+      commands: []
+    build:
+      commands: []
+  artifacts:
+    baseDirectory: /
+    files:
+      - '**/*'
+  cache:
+    paths: []

@@ -35,6 +35,7 @@ Tiers ([ADR-0009](../docs/decisions/0009-documentation-site-tiered-docs.md)):
 npm ci
 npm run build            # theme -> adapt -> F1 coverage -> astro build
 npm run build:local      # the offline reader that ships in a release
+npm run build:web -- --base=/dev/   # the published site, for one version
 npm run dev              # same as build, then a dev server
 npm run licenses         # licence gate over the installed tree
 npm test                 # script tests (node:test)
@@ -47,7 +48,7 @@ target.
 
 | Build | Output | Search | Links |
 |---|---|---|---|
-| `build` (web) | directory URLs | Pagefind | root-absolute |
+| `build:web` | directory URLs, under `--base` | Pagefind | root-absolute, segment-prefixed |
 | `build:local` | `format: 'file'` | **off** | fully relative |
 
 `build:local` produces the copy bundled in every release, which a reader opens
@@ -72,6 +73,33 @@ it twice and comparing bytes rather than by asserting it in a comment.
 A maintained relative-links integration was considered and rejected: every npm
 package here is a permanent obligation under the licence gate, and this transform
 is string work over a directory of HTML.
+
+## Versioned publishing
+
+`build:web` takes a `--base=/<segment>/`, because each published version is a
+path segment (`/dev/`, `/v0.1.0/`). The base reaches **two** consumers through
+one environment variable, and that is not incidental: Astro prefixes the links
+*it* generates — sidebar, nav, assets — but a link written in the guide's
+Markdown is content and passes through untouched, so `adapt.mjs` has to apply
+the same prefix. Getting that wrong leaves the sidebar working perfectly and
+every in-content link dead, which is why `check-web-build.mjs` gates it.
+
+`scripts/assemble.mjs` builds the published tree — version directories, a
+`latest/` copy of the **highest semver** (not the most recent tag), a root
+redirect, and the `versions.json` the header dropdown reads. It is idempotent
+and non-destructive: it replaces one segment and recomputes the derived files
+from whatever is on disk, so a version it knows nothing about survives.
+
+`versions.json` carries each version's **page list**, so the dropdown preserves
+the reader's current page without probing the server — a host that answers a
+missing file with a 200 fallback would otherwise make a broken switch look fine.
+
+The whole thing works with `dev/` alone, which is today's state: `latest` is
+`null`, the root redirect points at `dev/`, and the dropdown hides itself rather
+than offering a choice of one.
+
+Maintainer runbook, including the dry run:
+[Publishing the documentation site](../docs/contributing/docs-site-publishing.md).
 
 ## The reference → guide bridge
 

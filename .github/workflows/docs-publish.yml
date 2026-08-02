@@ -1,0 +1,190 @@
+# Assembles the published documentation tree onto the `docs-published` branch
+# (ADR-0009 / docs-s3). Linux-only and Node-only, like docs-site.yml; nothing
+# here touches the C++/CMake matrix.
+#
+# THIS WORKFLOW NEVER CREATES A TAG OR A RELEASE.
+# Read the triggers: a push to main, a push of a tag that ALREADY EXISTS, and a
+# manual dry run. There is no `gh release create`, no `git tag`, no tag push, no
+# release action. Only the maintainer publishes (docs/roadmap/README.md, release
+# philosophy §4) and this only ever reacts.
+#
+# Hosting is the maintainer's: the app is connected to `docs-published` and
+# serves it prebuilt. See docs/contributing/docs-site-publishing.md.
+name: docs publish
+
+on:
+  push:
+    # No `paths` filter, deliberately. A push filter applies to tag pushes too,
+    # so filtering on docs paths would skip publishing a release whose tag
+    # happens to carry no documentation change — the one case that must never be
+    # skipped. Rebuilding `dev` on every push to main is the cheaper mistake:
+    # the assembler writes only changed bytes and the commit step exits early
+    # when the tree is identical.
+    branches: [main]
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'DRY RUN ONLY — version segment to rehearse, e.g. v0.1.0'
+        required: true
+        default: 'v0.1.0'
+
+permissions:
+  contents: write
+
+concurrency:
+  # One writer at a time. Two runs assembling the same branch would race on the
+  # push and the loser's version directory would vanish without a failure.
+  group: docs-publish
+  cancel-in-progress: false
+
+jobs:
+  assemble:
+    name: >-
+      ${{ github.event_name == 'workflow_dispatch'
+          && format('DRY RUN {0} — scratch prefix, publishes nothing', inputs.version)
+          || (startsWith(github.ref, 'refs/tags/')
+              && format('publish {0}', github.ref_name)
+              || 'publish dev') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Decide the segment and where it goes
+        id: plan
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            # A dry run assembles a COMPLETE tree of its own under a scratch
+            # prefix — its own versions.json, latest/ and root redirect. It
+            # cannot reach the real ones because from inside the scratch root
+            # they are not addressable: containment by construction rather than
+            # by remembering to be careful.
+            segment='${{ inputs.version }}'
+            scratch='_dryrun'
+            base="/$scratch/$segment/"
+          else
+            if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
+              segment="${GITHUB_REF_NAME}"
+            else
+              segment='dev'
+            fi
+            scratch=''
+            base="/$segment/"
+          fi
+
+          if [[ ! "$segment" =~ ^(dev|v[0-9]+\.[0-9]+\.[0-9]+)$ ]]; then
+            echo "::error::'$segment' is neither 'dev' nor vMAJOR.MINOR.PATCH"
+            exit 1
+          fi
+
+          {
+            echo "segment=$segment"
+            echo "scratch=$scratch"
+            echo "base=$base"
+          } >> "$GITHUB_OUTPUT"
+
+          {
+            if [[ -n "$scratch" ]]; then
+              echo "### DRY RUN — rehearsing \`$segment\`"
+              echo ""
+              echo "Writes **only** under \`$scratch/\`. The live \`dev/\`, \`latest/\`,"
+              echo "\`versions.json\` and root redirect are untouched, and a step below"
+              echo "proves that against git rather than trusting it."
+            else
+              echo "### Publishing \`$segment\`"
+            fi
+            echo ""
+            echo "- base: \`$base\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: docs-site/.nvmrc
+          cache: npm
+          cache-dependency-path: docs-site/package-lock.json
+
+      - name: Install
+        working-directory: docs-site
+        run: npm ci
+
+      - name: Licence gate
+        working-directory: docs-site
+        run: npm run licenses
+
+      # Ends in check-web-build.mjs, which fails if any root-absolute reference
+      # is missing the segment prefix — the failure that leaves the sidebar
+      # working and every in-content link dead.
+      - name: Build the site for this segment
+        working-directory: docs-site
+        run: npm run build:web -- --base=${{ steps.plan.outputs.base }}
+
+      # A second checkout so the publishing branch never shares a working tree
+      # with the source. actions/checkout persists the token, which is what lets
+      # the push at the end authenticate.
+      - uses: actions/checkout@v4
+        with:
+          path: published
+
+      - name: Prepare the publishing branch
+        working-directory: published
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email 'github-actions[bot]@users.noreply.github.com'
+          if git ls-remote --exit-code --heads origin docs-published > /dev/null 2>&1; then
+            git fetch --depth 1 origin docs-published
+            git checkout -B docs-published origin/docs-published
+          else
+            # First run: start the branch with no history of the source tree.
+            echo "docs-published does not exist yet — creating it"
+            git checkout --orphan docs-published
+            git rm -rq --cached . || true
+            find . -mindepth 1 -maxdepth 1 -not -name .git -exec rm -rf {} +
+          fi
+
+      - name: Assemble
+        run: |
+          set -euo pipefail
+          node docs-site/scripts/assemble.mjs \
+            --root=published \
+            --segment='${{ steps.plan.outputs.segment }}' \
+            --build=docs-site/dist \
+            --scratch='${{ steps.plan.outputs.scratch }}' | tee assemble.log
+          {
+            echo ''
+            echo '```'
+            cat assemble.log
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Verify the dry run stayed inside its scratch prefix
+        if: github.event_name == 'workflow_dispatch'
+        working-directory: published
+        run: |
+          set -euo pipefail
+          # Independent of the assembler's own containment: ask git what actually
+          # changed. A dry run that quietly republished dev/ would otherwise look
+          # exactly like a pass.
+          outside=$(git status --porcelain -- . ':(exclude)_dryrun' || true)
+          if [[ -n "$outside" ]]; then
+            echo '::error::the dry run modified paths outside _dryrun/:'
+            echo "$outside"
+            exit 1
+          fi
+          echo 'dry run touched only _dryrun/ — verified against git, not assumed'
+
+      - name: Commit and push
+        working-directory: published
+        run: |
+          set -euo pipefail
+          git add -A
+          if git diff --cached --quiet; then
+            echo 'nothing to publish — the assembled tree is byte-identical'
+            exit 0
+          fi
+          kind='publish'
+          if [[ -n '${{ steps.plan.outputs.scratch }}' ]]; then kind='dry run'; fi
+          git commit -m "docs: $kind ${{ steps.plan.outputs.segment }} (${GITHUB_SHA:0:7})"
+          git push origin HEAD:docs-published
