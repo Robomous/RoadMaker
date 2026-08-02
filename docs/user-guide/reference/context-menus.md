@@ -52,5 +52,5 @@ thing everywhere.
 
 ## Reference
 
-[M3a topology editing](../design/m3a/06_topology_editing.md) — the
+[M3a topology editing](../../design/m3a/06_topology_editing.md) — the
 `context_menu` builder and the per-context item matrix.

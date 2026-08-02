@@ -10,7 +10,7 @@ editor](img/working-with-road-styles.png)
 
 Open a scene with a road you want to restyle — the road from
 [Your first road network](first-road-network.md) is a good candidate. Open the
-**Library** panel ([Library](../library.md)); the styles live under the **Road
+**Library** panel ([Library](../reference/library.md)); the styles live under the **Road
 styles** group.
 
 ## 1. Pick a style
@@ -25,14 +25,14 @@ what you want the road to become.
 Drag the style out of the Library and drop it onto the target road in the
 viewport. The whole road takes on the new cross-section in a single undoable
 step: its lanes are rebuilt to match the style and the road is flattened to one
-lane section. See [Road Styles](../road-styles.md) for exactly what the apply
+lane section. See [Road Styles](../reference/road-styles.md) for exactly what the apply
 does and its limits (it refuses connecting roads inside a junction).
 
 ## 3. Adjust from there
 
 The restyle is a starting point, not a lock. Once applied, you can still shape
-individual lanes with the [Lane](../lane-profile.md) and
-[Lane Width](../lane-width.md) tools, exactly as in
+individual lanes with the [Lane](../reference/lane-profile.md) and
+[Lane Width](../reference/lane-width.md) tools, exactly as in
 [Shaping lanes](shaping-lanes.md). Undo with <kbd>Ctrl</kbd>+<kbd>Z</kbd> if the
 style is not what you wanted and try another.
 

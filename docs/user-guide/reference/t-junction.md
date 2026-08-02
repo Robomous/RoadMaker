@@ -53,6 +53,6 @@ If the side road is too short to reach, the attach reports an error instead.
 
 ## Reference
 
-[T-junction design](../design/hardening/t_junction.md) — the split/attach
+[T-junction design](../../design/hardening/t_junction.md) — the split/attach
 composition, the gap formula, and the connecting-road conventions with their
 OpenDRIVE rule citations.

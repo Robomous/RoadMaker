@@ -34,6 +34,6 @@ whole operation is a single undoable command.
 
 ## Reference
 
-[M2 editing tools §4](../design/m2/02_editing_tools.md) and the
-[P2 discovery report](../roadmap/pillars/p2_discovery.md). Lane linking and
-sections: [OpenDRIVE conventions](../domain/opendrive.md).
+[M2 editing tools §4](../../design/m2/02_editing_tools.md) and the
+[P2 discovery report](../../roadmap/pillars/p2_discovery.md). Lane linking and
+sections: [OpenDRIVE conventions](../../domain/opendrive.md).

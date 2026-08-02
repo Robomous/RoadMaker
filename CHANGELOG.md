@@ -19,6 +19,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 Current version on `main`: **0.0.1**.
 
 ### Added
+- **The user guide is split into tiers, and a documentation site is scaffolded**
+  ([#345](https://github.com/Robomous/RoadMaker/issues/345), docs-s1 —
+  [ADR-0009](docs/decisions/0009-documentation-site-tiered-docs.md)). The
+  per-tool and per-panel pages moved to `docs/user-guide/reference/` (dual
+  source: shipped in the in-app Qt Help book **and** on the site); tutorials and
+  guides are site-only. `docs/user-guide/index.md` stays the ordering manifest
+  for **both** pipelines, which is what stops the two outputs drifting.
+
+  The Qt Help generator is narrowed to the reference tier, and what became dead
+  is deleted rather than left inert: the `TocEntry::tutorial` flag, the synthetic
+  "Tutorials" TOC node, and the `tutorials/` `<files>` patterns.
+
+  New `docs-site/`: pinned Astro Starlight on Node LTS with a committed
+  lockfile, a Node adapter that synthesizes Starlight frontmatter from each
+  page's first H1 and **fails the build on a broken link**, and a Linux-only CI
+  workflow that builds the site as an artifact. No CMake target invokes npm and
+  nothing in the site build needs a C++ toolchain — the graphite-amber palette
+  reaches the site by *parsing* `theme.cpp`, so `theme::graphite_amber()` stays
+  the single source of truth without coupling the two builds. The committed
+  in-app `help.css` is untouched.
+
+  A licence gate over the npm tree runs in CI. It caught Astro's optional
+  `sharp` dependency, whose prebuilt libvips binaries are **LGPL-3.0-or-later** —
+  Qt is this project's only sanctioned LGPL dependency, so `sharp` is overridden
+  to a local no-op stub and Astro uses its passthrough image service instead.
 - **An authored road now says what kind of road it is**
   ([#454](https://github.com/Robomous/RoadMaker/issues/454)). The model, reader
   and writer for OpenDRIVE `<type>`/`<speed>` landed earlier, and

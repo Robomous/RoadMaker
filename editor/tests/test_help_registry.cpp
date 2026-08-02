@@ -125,14 +125,14 @@ TEST(HelpRegistry, EveryPageResolvesToACommittedGuidePage) {
 TEST(HelpRegistry, ContextPrefersFocusedDockOverActiveTool) {
   // Focus in a dock wins over the armed tool.
   EXPECT_EQ(help::context_page(ToolId::CreateRoad, QStringLiteral("dock.diagnostics")),
-            QStringLiteral("diagnostics"));
+            QStringLiteral("reference/diagnostics"));
   // No dock focus -> the active tool's page.
-  EXPECT_EQ(help::context_page(ToolId::CreateRoad, QString()), QStringLiteral("create-road"));
+  EXPECT_EQ(help::context_page(ToolId::CreateRoad, QString()), QStringLiteral("reference/create-road"));
   // Neither -> the index.
   EXPECT_EQ(help::context_page(std::nullopt, QString()), QStringLiteral("index"));
   // An unknown dock name is treated as no dock focus.
   EXPECT_EQ(help::context_page(ToolId::LaneCarve, QStringLiteral("dock.nope")),
-            QStringLiteral("lane-carve"));
+            QStringLiteral("reference/lane-carve"));
 }
 
 } // namespace

@@ -213,10 +213,10 @@ models, fonts, images). Policy — see [`docs/standards/assets.md`](docs/standar
 | `assets/signs/us/W11-2.svg` | original work (this repository), drawn after the public-domain US federal sign specifications (MUTCD); no third-party artwork file was copied. Embedded as SVG text by `scripts/gen_sign_symbols.py` | RoadMaker contributors | Apache-2.0 | 2026-07-25 |
 | `assets/signs/us/W3-1.svg` | original work (this repository), drawn after the public-domain US federal sign specifications (MUTCD); no third-party artwork file was copied. Embedded as SVG text by `scripts/gen_sign_symbols.py` | RoadMaker contributors | Apache-2.0 | 2026-07-25 |
 | `docs/standards/golden-look.png` | original work (this repository), editor screenshot | RoadMaker contributors | Apache-2.0 | 2026-07-13 |
-| `docs/user-guide/img/create-road.png` | original work (this repository), editor screenshot | RoadMaker contributors | Apache-2.0 | 2026-07-13 |
-| `docs/user-guide/img/junction.png` | original work (this repository), editor screenshot | RoadMaker contributors | Apache-2.0 | 2026-07-13 |
-| `docs/user-guide/img/elevation.png` | original work (this repository), editor screenshot | RoadMaker contributors | Apache-2.0 | 2026-07-13 |
-| `docs/user-guide/img/library.png` | original work (this repository), editor screenshot | RoadMaker contributors | Apache-2.0 | 2026-07-13 |
-| `docs/user-guide/img/workflow.gif` | original work (this repository), scripted frame sequence via `scripts/editor_screenshot.py` (`--drag-ghost`/`--drop-library`) | RoadMaker contributors | Apache-2.0 | 2026-07-21 |
-| `docs/user-guide/img/gs1_hero.png` | original work (this repository), editor screenshot via `scripts/editor_screenshot.py` (same command as CI `visual-artifacts`) | RoadMaker contributors | Apache-2.0 | 2026-07-21 |
+| `docs/user-guide/reference/img/create-road.png` | original work (this repository), editor screenshot | RoadMaker contributors | Apache-2.0 | 2026-07-13 |
+| `docs/user-guide/reference/img/junction.png` | original work (this repository), editor screenshot | RoadMaker contributors | Apache-2.0 | 2026-07-13 |
+| `docs/user-guide/reference/img/elevation.png` | original work (this repository), editor screenshot | RoadMaker contributors | Apache-2.0 | 2026-07-13 |
+| `docs/user-guide/reference/img/library.png` | original work (this repository), editor screenshot | RoadMaker contributors | Apache-2.0 | 2026-07-13 |
+| `docs/user-guide/reference/img/workflow.gif` | original work (this repository), scripted frame sequence via `scripts/editor_screenshot.py` (`--drag-ghost`/`--drop-library`) | RoadMaker contributors | Apache-2.0 | 2026-07-21 |
+| `docs/user-guide/reference/img/gs1_hero.png` | original work (this repository), editor screenshot via `scripts/editor_screenshot.py` (same command as CI `visual-artifacts`) | RoadMaker contributors | Apache-2.0 | 2026-07-21 |
 | `docs/roadmap/archive/2026-07-pre-reset/golden_scenes/img/gs1_baseline_v0.6.0.png` | original work (this repository), viewport render from the GS-1 fixed camera, rendered by CI (`visual-artifacts`) | RoadMaker contributors | Apache-2.0 | 2026-07-15 |

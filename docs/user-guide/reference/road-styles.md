@@ -50,5 +50,5 @@ bridge and the trees stay put — only the lanes and their markings change.
 ## Reference
 
 [Library](library.md) for the drag-and-drop model and the
-[P2 discovery report](../roadmap/pillars/p2_discovery.md) for the road-style
+[P2 discovery report](../../roadmap/pillars/p2_discovery.md) for the road-style
 preservation contract.

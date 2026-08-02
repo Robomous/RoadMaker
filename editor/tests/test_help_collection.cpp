@@ -83,7 +83,7 @@ QByteArray served(QHelpEngineCore& engine, const std::string& rel) {
 
 // Data-driven off the committed guide: every TOC page's rendered HTML must be
 // servable from the collection. qhelpgenerator's <file> wildcards do not
-// recurse, so tutorials/ pages regress silently without their own pattern
+// recurse, so reference/ pages regress silently without their own pattern
 // (#292) — a keyword can exist while its file blob is missing.
 TEST(HelpCollection, EveryTocPageIsServed) {
   QTemporaryDir dir;
@@ -104,7 +104,7 @@ TEST(HelpCollection, EveryTocPageIsServed) {
 
 // Every image a guide page references must exist in the docs tree AND be
 // servable from the collection at the location the page's relative src
-// resolves to (tutorials/ pages resolve img/foo.png as tutorials/img/foo.png,
+// resolves to (reference/ pages resolve img/foo.png as reference/img/foo.png,
 // so the shipped layout must preserve that structure) (#292).
 TEST(HelpCollection, EveryReferencedImageIsServed) {
   QTemporaryDir dir;

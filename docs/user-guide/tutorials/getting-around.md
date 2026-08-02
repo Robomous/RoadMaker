@@ -22,13 +22,13 @@ scene:
 - **Pan** — drag to slide the pivot across the ground plane.
 
 The full mouse and modifier map is on the
-[Camera & navigation](../camera-navigation.md) page.
+[Camera & navigation](../reference/camera-navigation.md) page.
 
 ## 2. Frame what matters
 
 You rarely want to fly the camera by hand. Instead:
 
-- Select a road (in the viewport or the [Scene tree](../scene-tree.md)) and press
+- Select a road (in the viewport or the [Scene tree](../reference/scene-tree.md)) and press
   **Frame Selection** (<kbd>F</kbd>) to fit it to the view.
 - Press **Frame on Cursor** (<kbd>V</kbd>) to recentre the pivot under the cursor
   without changing the framing.
@@ -41,7 +41,7 @@ you are working on.
 For precise work, switch to a fixed camera: **Top**, the cardinal directions
 (North / South / East / West), and **Perspective** vs **Orthographic** all have
 menu entries and shortcuts (the numpad digits, with numpad-less alternates). The
-[keyboard shortcuts](../shortcuts.md) page lists every binding, generated from the
+[keyboard shortcuts](../reference/shortcuts.md) page lists every binding, generated from the
 editor's own table.
 
 ## 4. Make it a habit

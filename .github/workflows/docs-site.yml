@@ -1,0 +1,69 @@
+# Documentation site (ADR-0009). Linux-only, Node-only, and deliberately
+# INDEPENDENT of the C++/CMake matrix in ci.yml: no CMake target invokes npm and
+# no job here needs a C++ toolchain, so a developer build never requires Node.
+name: docs site
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'docs/user-guide/**'
+      - 'docs-site/**'
+      - 'editor/src/theme/theme.cpp'
+      - 'editor/src/help/help_registry.cpp'
+      - '.github/workflows/docs-site.yml'
+  pull_request:
+    paths:
+      - 'docs/user-guide/**'
+      - 'docs-site/**'
+      - 'editor/src/theme/theme.cpp'
+      - 'editor/src/help/help_registry.cpp'
+      - '.github/workflows/docs-site.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: build docs site
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: docs-site
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: docs-site/.nvmrc
+          cache: npm
+          cache-dependency-path: docs-site/package-lock.json
+
+      # sharp is kept out by package.json's `overrides` (see stubs/sharp):
+      # its libvips binaries are LGPL-3.0-or-later and Qt is this project's only
+      # sanctioned LGPL dependency. `--omit=optional` was NOT usable here — it
+      # would also drop rollup's required native binary.
+      - name: Install
+        run: npm ci
+
+      - name: Licence gate
+        run: npm run licenses
+
+      - name: Theme tokens (from theme.cpp)
+        run: npm run theme
+
+      - name: Adapt docs/user-guide
+        run: npm run adapt
+
+      # Every F1-reachable page must exist on the site too, so a page can never
+      # be reachable in-app but missing here.
+      - name: F1 coverage
+        run: npm run check
+
+      - name: Build
+        run: npx astro build
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: docs-site
+          path: docs-site/dist
+          retention-days: 7

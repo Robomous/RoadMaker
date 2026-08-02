@@ -53,6 +53,6 @@ junctions are updated. Removing a lane and undoing restores the very same lane
 
 ## Reference
 
-[M2 editing tools §4 (Lane Profile)](../design/m2/02_editing_tools.md) and the
-[P2 discovery report](../roadmap/pillars/p2_discovery.md) for the lane-editing
+[M2 editing tools §4 (Lane Profile)](../../design/m2/02_editing_tools.md) and the
+[P2 discovery report](../../roadmap/pillars/p2_discovery.md) for the lane-editing
 tools added in the P2 pillar.

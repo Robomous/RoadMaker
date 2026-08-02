@@ -1,0 +1,26 @@
+{
+  "name": "roadmaker-docs-site",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "license": "Apache-2.0",
+  "description": "RoadMaker documentation site (Astro Starlight). Content is adapted from docs/user-guide at build time and is never hand-edited here.",
+  "engines": {
+    "node": "24.x"
+  },
+  "scripts": {
+    "adapt": "node scripts/adapt.mjs",
+    "theme": "node scripts/theme-css.mjs",
+    "build": "npm run theme && npm run adapt && node scripts/check-f1-coverage.mjs && astro build",
+    "dev": "npm run theme && npm run adapt && astro dev",
+    "licenses": "node scripts/licenses.mjs",
+    "check": "node scripts/check-f1-coverage.mjs"
+  },
+  "dependencies": {
+    "@astrojs/starlight": "0.36.0",
+    "astro": "5.14.1"
+  },
+  "overrides": {
+    "sharp": "file:./stubs/sharp"
+  }
+}

@@ -62,29 +62,13 @@ std::string build_qhp(const Toc& toc, const QhpOptions& opts) {
   out += "  <virtualFolder>" + xml_escape(opts.folder) + "</virtualFolder>\n";
   out += "  <filterSection>\n";
 
-  // TOC tree: the index page is the root, its non-tutorial pages are direct
-  // children, and tutorial pages nest under a synthetic "Tutorials" node.
+  // TOC tree: the index page is the root and every reference page is a direct
+  // child. The synthetic "Tutorials" node is gone with docs-s1 — tutorials are
+  // Starlight-only now (ADR-0009), so build_toc never yields one.
   out += "    <toc>\n";
   out += "      <section title=\"" + xml_escape(toc.index.title) + "\" ref=\"index.html\">\n";
-  const TocEntry* first_tutorial = nullptr;
   for (const TocEntry& page : toc.pages) {
-    if (page.tutorial) {
-      if (first_tutorial == nullptr) {
-        first_tutorial = &page;
-      }
-      continue;
-    }
     out += section(page, "        ");
-  }
-  if (first_tutorial != nullptr) {
-    out += "        <section title=\"Tutorials\" ref=\"" + xml_escape(first_tutorial->slug) +
-           ".html\">\n";
-    for (const TocEntry& page : toc.pages) {
-      if (page.tutorial) {
-        out += section(page, "          ");
-      }
-    }
-    out += "        </section>\n";
   }
   out += "      </section>\n";
   out += "    </toc>\n";
@@ -98,18 +82,20 @@ std::string build_qhp(const Toc& toc, const QhpOptions& opts) {
   out += "    </keywords>\n";
 
   // qhelpgenerator expands <file> wildcards per directory, never recursively:
-  // tutorials/ pages render under tutorials/ (their slug keeps the subdir), so
-  // both the pages and their img/ assets need their own patterns (#292).
+  // reference/ pages render under reference/ (their slug keeps the subdir), so
+  // both the pages and their img/ assets need their own patterns (#292 — the
+  // bug this shape exists to prevent, and the reason a NEW tier folder must
+  // never be added without adding its patterns here).
   out += "    <files>\n";
   out += "      <file>*.html</file>\n";
   out += "      <file>help.css</file>\n";
   out += "      <file>img/*.png</file>\n";
   out += "      <file>img/*.gif</file>\n";
   out += "      <file>img/*.jpg</file>\n";
-  out += "      <file>tutorials/*.html</file>\n";
-  out += "      <file>tutorials/img/*.png</file>\n";
-  out += "      <file>tutorials/img/*.gif</file>\n";
-  out += "      <file>tutorials/img/*.jpg</file>\n";
+  out += "      <file>reference/*.html</file>\n";
+  out += "      <file>reference/img/*.png</file>\n";
+  out += "      <file>reference/img/*.gif</file>\n";
+  out += "      <file>reference/img/*.jpg</file>\n";
   out += "    </files>\n";
 
   out += "  </filterSection>\n";

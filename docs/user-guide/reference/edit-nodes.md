@@ -27,6 +27,6 @@ session that commits one command on release.
 
 ## Reference
 
-[M2 editing tools §3 (Edit Nodes)](../design/m2/02_editing_tools.md) — insert /
+[M2 editing tools §3 (Edit Nodes)](../../design/m2/02_editing_tools.md) — insert /
 delete / drag semantics and the `edit::insert_waypoint` /
 `edit::delete_waypoint` kernel API.

@@ -15,7 +15,7 @@
  */
 
 // The shortcut map is a single source of truth: Actions binds from it and
-// docs/user-guide/shortcuts.md is rendered from it. These tests are what keeps
+// docs/user-guide/reference/shortcuts.md is rendered from it. These tests are what keeps
 // those three in step — before P1, key letters were hand-copied into tooltips
 // and nothing noticed when they drifted.
 
@@ -143,7 +143,7 @@ TEST(ShortcutRegistry, ViewportHintsIsACheckableBoundViewRow) {
 // RM_DOCS_DIR is a compile define (editor/tests/CMakeLists.txt).
 TEST(ShortcutRegistry, MarkdownMatchesCommittedShortcutsPage) {
   const std::filesystem::path page =
-      std::filesystem::path(RM_DOCS_DIR) / "user-guide" / "shortcuts.md";
+      std::filesystem::path(RM_DOCS_DIR) / "user-guide" / "reference" / "shortcuts.md";
   std::ifstream file(page);
   ASSERT_TRUE(file.is_open()) << "missing " << page.string();
   std::stringstream buffer;
@@ -152,7 +152,7 @@ TEST(ShortcutRegistry, MarkdownMatchesCommittedShortcutsPage) {
 
   const QString generated = shortcuts::markdown();
   EXPECT_TRUE(committed.contains(generated))
-      << "docs/user-guide/shortcuts.md is out of date with the shortcut table.\n"
+      << "docs/user-guide/reference/shortcuts.md is out of date with the shortcut table.\n"
          "Regenerate its tables from shortcuts::markdown():\n\n"
       << generated.toStdString();
 }

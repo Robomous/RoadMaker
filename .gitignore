@@ -66,3 +66,6 @@ gw2_replay_out/
 
 # The scale bench writes its measurements beside the binary it runs from.
 scale-metrics.json
+docs-site/dist/
+docs-site/node_modules/
+docs-site/.astro/

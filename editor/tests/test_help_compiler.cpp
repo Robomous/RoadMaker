@@ -121,18 +121,22 @@ TEST_F(HelpCompiler, ExtractImageLinksFindsTargets) {
 }
 
 // qhelpgenerator expands <file> wildcards per directory (never recursively),
-// so tutorials/ pages and their tutorials/img/ assets each need their own
-// pattern or the in-app viewer cannot serve them (#292).
-TEST_F(HelpCompiler, QhpRegistersTutorialPagesAndImages) {
+// so reference/ pages and their reference/img/ assets each need their own
+// pattern or the in-app viewer cannot serve them (#292). Since docs-s1 the
+// reference tier is the ONLY tier this pipeline serves — tutorials moved to
+// Starlight (ADR-0009) — so the tutorials patterns are gone with them.
+TEST_F(HelpCompiler, QhpRegistersReferencePagesAndImages) {
   Toc toc;
   toc.index.slug = "index";
   toc.index.title = "Guide";
 
   const std::string qhp = build_qhp(toc, {});
-  EXPECT_NE(qhp.find("<file>tutorials/*.html</file>"), std::string::npos) << qhp;
-  EXPECT_NE(qhp.find("<file>tutorials/img/*.png</file>"), std::string::npos) << qhp;
-  EXPECT_NE(qhp.find("<file>tutorials/img/*.gif</file>"), std::string::npos) << qhp;
-  EXPECT_NE(qhp.find("<file>tutorials/img/*.jpg</file>"), std::string::npos) << qhp;
+  EXPECT_NE(qhp.find("<file>reference/*.html</file>"), std::string::npos) << qhp;
+  EXPECT_NE(qhp.find("<file>reference/img/*.png</file>"), std::string::npos) << qhp;
+  EXPECT_NE(qhp.find("<file>reference/img/*.gif</file>"), std::string::npos) << qhp;
+  EXPECT_NE(qhp.find("<file>reference/img/*.jpg</file>"), std::string::npos) << qhp;
+  EXPECT_EQ(qhp.find("tutorials/"), std::string::npos)
+      << "the Qt Help pipeline no longer serves the tutorials tier";
 }
 
 TEST_F(HelpCompiler, QhpEscapesXmlSpecials) {

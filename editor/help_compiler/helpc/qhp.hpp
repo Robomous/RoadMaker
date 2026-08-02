@@ -35,7 +35,7 @@ struct QhpOptions {
 /// Escape the five XML metacharacters (`&` first).
 [[nodiscard]] std::string xml_escape(const std::string& text);
 
-/// The .qhp: a TOC tree (index → pages, tutorials nested) plus exactly one
+/// The .qhp: a TOC tree (index → reference pages) plus exactly one
 /// `<keyword>` per page — `id` is the slug (help-s2 contract) — and the file
 /// manifest qhelpgenerator bundles.
 [[nodiscard]] std::string build_qhp(const Toc& toc, const QhpOptions& opts);

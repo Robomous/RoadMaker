@@ -215,17 +215,17 @@ inspected but not signalized until you recreate it — the same rule as maneuver
   regenerate until recreated.
 - The sample `assets/samples/t_junction.xodr` is a ready-made three-road
   junction to open and inspect
-  ([Running → Sample files](../getting-started/running.md#sample-files)).
+  ([Running → Sample files](../../getting-started/running.md#sample-files)).
 
 ## Reference
 
-[M2 editing tools §6 (Create Junction)](../design/m2/02_editing_tools.md) and
-[junction blending](../design/m2/03_junction_blending.md) — connecting-road
+[M2 editing tools §6 (Create Junction)](../../design/m2/02_editing_tools.md) and
+[junction blending](../../design/m2/03_junction_blending.md) — connecting-road
 generation, the blended surface, and the exported reference line / elevation
-grid / boundary. [§6c (Maneuver)](../design/m2/02_editing_tools.md) covers the
+grid / boundary. [§6c (Maneuver)](../../design/m2/02_editing_tools.md) covers the
 maneuver query, the six commands and the regeneration guard; and
-[§6d (Signal)](../design/m2/02_editing_tools.md) covers the controller layer,
+[§6d (Signal)](../../design/m2/02_editing_tools.md) covers the controller layer,
 the `junction_signals()` query, the four templates and the two signalization
 commands. The `rm:maneuver`, `rm:signal` and `rm:signalmount` payloads are
 registered in
-[ADR-0008](../decisions/0008-persistence-layers-asam-first.md).
+[ADR-0008](../../decisions/0008-persistence-layers-asam-first.md).

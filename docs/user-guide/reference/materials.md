@@ -12,7 +12,7 @@ and painted surfaces.
 
 Materials are project assets — the textures live in the app, not in your scene.
 The `.xodr` records only the *assignment* (which lane got which material),
-following the OpenDRIVE `<material>` element ([§11.8.2](../domain/opendrive.md)).
+following the OpenDRIVE `<material>` element ([§11.8.2](../../domain/opendrive.md)).
 
 ## Applying a material to a lane
 
