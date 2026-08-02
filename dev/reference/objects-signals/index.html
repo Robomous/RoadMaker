@@ -1,0 +1,381 @@
+<!DOCTYPE html><html lang="en" dir="ltr" data-theme="dark" data-has-toc data-has-sidebar class="astro-bguv2lll"> <head><meta charset="utf-8"/><meta name="viewport" content="width=device-width, initial-scale=1"/><title>Objects & signals | RoadMaker</title><link rel="canonical"/><link rel="shortcut icon" href="/dev/favicon.png" type="image/png"/><meta name="generator" content="Astro v5.14.1"/><meta name="generator" content="Starlight v0.36.0"/><meta property="og:title" content="Objects &#38; signals"/><meta property="og:type" content="article"/><meta property="og:url"/><meta property="og:locale" content="en"/><meta property="og:description" content="Open-source ASAM OpenDRIVE road authoring — user guide, tutorials and tool reference."/><meta property="og:site_name" content="RoadMaker"/><meta name="twitter:card" content="summary_large_image"/><meta name="description" content="Open-source ASAM OpenDRIVE road authoring — user guide, tutorials and tool reference."/><script>
+	window.StarlightThemeProvider = (() => {
+		const storedTheme =
+			typeof localStorage !== 'undefined' && localStorage.getItem('starlight-theme');
+		const theme =
+			storedTheme ||
+			(window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+		document.documentElement.dataset.theme = theme === 'light' ? 'light' : 'dark';
+		return {
+			updatePickers(theme = storedTheme || 'auto') {
+				document.querySelectorAll('starlight-theme-select').forEach((picker) => {
+					const select = picker.querySelector('select');
+					if (select) select.value = theme;
+					/** @type {HTMLTemplateElement | null} */
+					const tmpl = document.querySelector(`#theme-icons`);
+					const newIcon = tmpl && tmpl.content.querySelector('.' + theme);
+					if (newIcon) {
+						const oldIcon = picker.querySelector('svg.label-icon');
+						if (oldIcon) {
+							oldIcon.replaceChildren(...newIcon.cloneNode(true).childNodes);
+						}
+					}
+				});
+			},
+		};
+	})();
+</script><template id="theme-icons"><svg aria-hidden="true" class="light astro-c6vsoqas" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="--sl-icon-size: 1em;"><path d="M5 12a1 1 0 0 0-1-1H3a1 1 0 0 0 0 2h1a1 1 0 0 0 1-1Zm.64 5-.71.71a1 1 0 0 0 0 1.41 1 1 0 0 0 1.41 0l.71-.71A1 1 0 0 0 5.64 17ZM12 5a1 1 0 0 0 1-1V3a1 1 0 0 0-2 0v1a1 1 0 0 0 1 1Zm5.66 2.34a1 1 0 0 0 .7-.29l.71-.71a1 1 0 1 0-1.41-1.41l-.66.71a1 1 0 0 0 0 1.41 1 1 0 0 0 .66.29Zm-12-.29a1 1 0 0 0 1.41 0 1 1 0 0 0 0-1.41l-.71-.71a1.004 1.004 0 1 0-1.43 1.41l.73.71ZM21 11h-1a1 1 0 0 0 0 2h1a1 1 0 0 0 0-2Zm-2.64 6A1 1 0 0 0 17 18.36l.71.71a1 1 0 0 0 1.41 0 1 1 0 0 0 0-1.41l-.76-.66ZM12 6.5a5.5 5.5 0 1 0 5.5 5.5A5.51 5.51 0 0 0 12 6.5Zm0 9a3.5 3.5 0 1 1 0-7 3.5 3.5 0 0 1 0 7Zm0 3.5a1 1 0 0 0-1 1v1a1 1 0 0 0 2 0v-1a1 1 0 0 0-1-1Z"/></svg><svg aria-hidden="true" class="dark astro-c6vsoqas" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="--sl-icon-size: 1em;"><path d="M21.64 13a1 1 0 0 0-1.05-.14 8.049 8.049 0 0 1-3.37.73 8.15 8.15 0 0 1-8.14-8.1 8.59 8.59 0 0 1 .25-2A1 1 0 0 0 8 2.36a10.14 10.14 0 1 0 14 11.69 1 1 0 0 0-.36-1.05Zm-9.5 6.69A8.14 8.14 0 0 1 7.08 5.22v.27a10.15 10.15 0 0 0 10.14 10.14 9.784 9.784 0 0 0 2.1-.22 8.11 8.11 0 0 1-7.18 4.32v-.04Z"/></svg><svg aria-hidden="true" class="auto astro-c6vsoqas" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="--sl-icon-size: 1em;"><path d="M21 14h-1V7a3 3 0 0 0-3-3H7a3 3 0 0 0-3 3v7H3a1 1 0 0 0-1 1v2a3 3 0 0 0 3 3h14a3 3 0 0 0 3-3v-2a1 1 0 0 0-1-1ZM6 7a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v7H6V7Zm14 10a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1v-1h16v1Z"/></svg></template><link rel="stylesheet" href="/dev/_astro/print.DNXP8c50.css" media="print"><link rel="stylesheet" href="/dev/_astro/index.Dm1oK2CJ.css"><script type="module" src="/dev/_astro/page.7qqag-5g.js"></script></head> <body class="astro-bguv2lll"> <a href="#_top" class="astro-7q3lir66">Skip to content</a>  <div class="page sl-flex astro-vrdttmbt"> <header class="header astro-vrdttmbt"><div class="header astro-kmkmnagf"> <div class="title-wrapper sl-flex astro-kmkmnagf"> <a href="/dev/" class="site-title sl-flex astro-m46x6ez3">  <span class="astro-m46x6ez3" translate="no"> RoadMaker </span> </a>  </div> <div class="sl-flex print:hidden astro-kmkmnagf"> <site-search class="astro-kmkmnagf astro-v37mnknz" data-translations="{&#34;placeholder&#34;:&#34;Search&#34;}"> <button data-open-modal disabled aria-label="Search" aria-keyshortcuts="Control+K" class="astro-v37mnknz"> <svg aria-hidden="true" class="astro-v37mnknz astro-c6vsoqas" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="--sl-icon-size: 1em;"><path d="M21.71 20.29 18 16.61A9 9 0 1 0 16.61 18l3.68 3.68a.999.999 0 0 0 1.42 0 1 1 0 0 0 0-1.39ZM11 18a7 7 0 1 1 0-14 7 7 0 0 1 0 14Z"/></svg> <span class="sl-hidden md:sl-block astro-v37mnknz" aria-hidden="true">Search</span> <kbd class="sl-hidden md:sl-flex astro-v37mnknz" style="display: none;"> <kbd class="astro-v37mnknz">Ctrl</kbd><kbd class="astro-v37mnknz">K</kbd> </kbd> </button> <dialog style="padding:0" aria-label="Search" class="astro-v37mnknz"> <div class="dialog-frame sl-flex astro-v37mnknz">  <button data-close-modal class="sl-flex md:sl-hidden astro-v37mnknz"> Cancel </button> <div class="search-container astro-v37mnknz"> <div id="starlight__search" class="astro-v37mnknz"></div> </div> </div> </dialog> </site-search>  <script>
+	(() => {
+		const openBtn = document.querySelector('button[data-open-modal]');
+		const shortcut = openBtn?.querySelector('kbd');
+		if (!openBtn || !(shortcut instanceof HTMLElement)) return;
+		const platformKey = shortcut.querySelector('kbd');
+		if (platformKey && /(Mac|iPhone|iPod|iPad)/i.test(navigator.platform)) {
+			platformKey.textContent = '⌘';
+			openBtn.setAttribute('aria-keyshortcuts', 'Meta+K');
+		}
+		shortcut.style.display = '';
+	})();
+</script> <script type="module" src="/dev/_astro/Search.astro_astro_type_script_index_0_lang.CjVG9RO4.js"></script>   </div> <div class="sl-hidden md:sl-flex print:hidden right-group astro-kmkmnagf"> <div class="sl-flex social-icons astro-kmkmnagf">  </div> <starlight-theme-select>  <label style="--sl-select-width: 6.25em" class="astro-4yphtoen"> <span class="sr-only astro-4yphtoen">Select theme</span> <svg aria-hidden="true" class="icon label-icon astro-4yphtoen astro-c6vsoqas" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="--sl-icon-size: 1em;"><path d="M21 14h-1V7a3 3 0 0 0-3-3H7a3 3 0 0 0-3 3v7H3a1 1 0 0 0-1 1v2a3 3 0 0 0 3 3h14a3 3 0 0 0 3-3v-2a1 1 0 0 0-1-1ZM6 7a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v7H6V7Zm14 10a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1v-1h16v1Z"/></svg> <select autocomplete="off" class="astro-4yphtoen"> <option value="dark" class="astro-4yphtoen">Dark</option><option value="light" class="astro-4yphtoen">Light</option><option value="auto" selected class="astro-4yphtoen">Auto</option> </select> <svg aria-hidden="true" class="icon caret astro-4yphtoen astro-c6vsoqas" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="--sl-icon-size: 1em;"><path d="M17 9.17a1 1 0 0 0-1.41 0L12 12.71 8.46 9.17a1 1 0 1 0-1.41 1.42l4.24 4.24a1.002 1.002 0 0 0 1.42 0L17 10.59a1.002 1.002 0 0 0 0-1.42Z"/></svg> </label>  </starlight-theme-select>  <script>
+	StarlightThemeProvider.updatePickers();
+</script> <script type="module">const r="starlight-theme",o=e=>e==="auto"||e==="dark"||e==="light"?e:"auto",c=()=>o(typeof localStorage<"u"&&localStorage.getItem(r));function n(e){typeof localStorage<"u"&&localStorage.setItem(r,e==="light"||e==="dark"?e:"")}const l=()=>matchMedia("(prefers-color-scheme: light)").matches?"light":"dark";function t(e){StarlightThemeProvider.updatePickers(e),document.documentElement.dataset.theme=e==="auto"?l():e,n(e)}matchMedia("(prefers-color-scheme: light)").addEventListener("change",()=>{c()==="auto"&&t("auto")});class s extends HTMLElement{constructor(){super(),t(c()),this.querySelector("select")?.addEventListener("change",a=>{a.currentTarget instanceof HTMLSelectElement&&t(o(a.currentTarget.value))})}}customElements.define("starlight-theme-select",s);</script> <starlight-version-select data-base="/dev/" data-root="/"><label style="--sl-select-width: 10em" class="astro-4yphtoen"> <span class="sr-only astro-4yphtoen">Select documentation version</span> <svg aria-hidden="true" class="icon label-icon astro-4yphtoen astro-c6vsoqas" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="--sl-icon-size: 1em;"><path d="M23.165 13.645L23.165 13.645Q22.829 13.561 22.199 13.309L22.199 13.309L21.695 13.099Q21.695 12.637 21.632 11.797Q21.569 10.957 21.569 10.495L21.569 10.495Q21.569 10.411 21.632 10.348Q21.695 10.285 21.695 10.201L21.695 10.201L23.165 9.571Q23.543 9.361 23.669 9.004Q23.795 8.647 23.669 8.269L23.669 8.269L22.493 5.623Q22.283 5.203 21.926 5.056Q21.569 4.909 21.191 5.119L21.191 5.119L19.721 5.749Q19.469 5.749 19.469 5.623L19.469 5.623Q19.301 5.371 18.839 4.951L18.839 4.951L18.545 4.699Q18.419 4.573 18.104 4.300Q17.789 4.027 17.621 3.901L17.621 3.901Q17.789 3.649 17.978 3.124Q18.167 2.599 18.293 2.347L18.293 2.347Q18.503 1.843 18.314 1.465Q18.125 1.087 17.621 0.919L17.621 0.919Q17.075 0.793 15.815 0.373L15.815 0.373L15.143 0.121Q14.639-0.089 14.261 0.100Q13.883 0.289 13.715 0.751L13.715 0.751Q13.631 1.087 13.379 1.717L13.379 1.717L13.169 2.221Q12.707 2.221 11.867 2.284Q11.027 2.347 10.565 2.347L10.565 2.347Q10.481 2.347 10.418 2.284Q10.355 2.221 10.271 2.221L10.271 2.221L9.641 0.751Q9.431 0.373 9.074 0.247Q8.717 0.121 8.339 0.247L8.339 0.247L5.693 1.423Q5.273 1.633 5.126 1.990Q4.979 2.347 5.189 2.725L5.189 2.725L5.819 4.195Q5.819 4.447 5.693 4.447L5.693 4.447L5.399 4.699Q5.105 4.909 5.021 5.077L5.021 5.077Q4.853 5.287 4.517 5.686Q4.181 6.085 3.971 6.295L3.971 6.295Q3.677 6.211 3.047 5.959L3.047 5.959L2.543 5.749Q2.039 5.539 1.661 5.728Q1.283 5.917 1.115 6.421L1.115 6.421L0.905 6.925Q0.401 8.185 0.191 8.773Q-0.019 9.361 0.128 9.697Q0.275 10.033 0.821 10.201L0.821 10.201Q1.157 10.285 1.787 10.537L1.787 10.537L2.291 10.747Q2.291 11.209 2.354 12.049Q2.417 12.889 2.417 13.351L2.417 13.351Q2.417 13.435 2.354 13.498Q2.291 13.561 2.291 13.645L2.291 13.645L0.821 14.275Q0.443 14.485 0.317 14.842Q0.191 15.199 0.317 15.577L0.317 15.577L1.493 18.223Q1.703 18.643 2.060 18.790Q2.417 18.937 2.795 18.727L2.795 18.727L4.265 18.097Q4.517 18.097 4.517 18.223L4.517 18.223Q4.685 18.475 5.147 18.895L5.147 18.895L5.441 19.147Q5.567 19.273 5.882 19.525Q6.197 19.777 6.365 19.945L6.365 19.945Q6.239 20.197 6.029 20.722Q5.819 21.247 5.693 21.499L5.693 21.499Q5.483 22.003 5.672 22.381Q5.861 22.759 6.365 22.969L6.365 22.969Q6.659 23.053 7.331 23.305L7.331 23.305Q8.297 23.725 8.864 23.893Q9.431 24.061 9.767 23.935Q10.103 23.809 10.271 23.221L10.271 23.221Q10.355 22.885 10.607 22.255L10.607 22.255L10.817 21.751Q11.279 21.751 12.119 21.688Q12.959 21.625 13.421 21.625L13.421 21.625Q13.505 21.625 13.568 21.688Q13.631 21.751 13.715 21.751L13.715 21.751L14.345 23.221Q14.555 23.599 14.912 23.725Q15.269 23.851 15.647 23.725L15.647 23.725L18.293 22.549Q18.713 22.339 18.860 21.982Q19.007 21.625 18.797 21.247L18.797 21.247L18.167 19.819Q18.167 19.525 18.293 19.525L18.293 19.525Q18.545 19.357 18.965 18.895L18.965 18.895L19.217 18.601Q19.343 18.475 19.595 18.160Q19.847 17.845 20.015 17.719L20.015 17.719Q20.309 17.761 20.939 18.055L20.939 18.055L21.443 18.223Q21.947 18.433 22.325 18.244Q22.703 18.055 22.871 17.551L22.871 17.551Q22.997 17.257 23.249 16.585L23.249 16.585Q23.669 15.619 23.795 15.073L23.795 15.073Q24.257 13.981 23.165 13.645ZM13.967 16.375L13.967 16.375Q12.077 17.173 10.250 16.459Q8.423 15.745 7.541 13.897L7.541 13.897Q6.743 12.007 7.457 10.180Q8.171 8.353 10.019 7.471L10.019 7.471Q11.909 6.673 13.736 7.387Q15.563 8.101 16.445 9.949L16.445 9.949Q17.243 11.839 16.529 13.666Q15.815 15.493 13.967 16.375Z"/></svg> <select autocomplete="off" class="astro-4yphtoen"> <option value selected class="astro-4yphtoen">…</option> </select> <svg aria-hidden="true" class="icon caret astro-4yphtoen astro-c6vsoqas" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="--sl-icon-size: 1em;"><path d="M17 9.17a1 1 0 0 0-1.41 0L12 12.71 8.46 9.17a1 1 0 1 0-1.41 1.42l4.24 4.24a1.002 1.002 0 0 0 1.42 0L17 10.59a1.002 1.002 0 0 0 0-1.42Z"/></svg> </label> </starlight-version-select><script type="module">class h extends HTMLElement{connectedCallback(){const l=this.querySelector("select"),o=this.dataset.base??"/",a=this.dataset.root??"/";if(!l)return;const s=location.pathname.startsWith(o)?location.pathname.slice(o.length):"",r=t=>{const e=t.pages??[];return[s,s.endsWith("/")?`${s}index.html`:"",s.replace(/\/$/,".html")].filter(Boolean).find(n=>e.includes(n))?`${a}${t.path}/${s}`:`${a}${t.path}/`};fetch(`${a}versions.json`).then(t=>t.ok?t.json():Promise.reject(t.status)).then(t=>{const e=t.versions??[];if(e.length<2){this.hidden=!0;return}const i=o.slice(a.length).replace(/\/$/,"");l.replaceChildren(...e.map(c=>{const n=document.createElement("option");return n.value=r(c),n.textContent=c.label,n.selected=c.path===i,n}))}).catch(()=>{this.hidden=!0}),l.addEventListener("change",t=>{const e=t.currentTarget;e instanceof HTMLSelectElement&&e.value&&location.assign(e.value)})}}customElements.define("starlight-version-select",h);</script> </div> </div> </header> <nav class="sidebar print:hidden astro-vrdttmbt" aria-label="Main"> <starlight-menu-button class="print:hidden astro-jif73yzw"> <button aria-expanded="false" aria-label="Menu" aria-controls="starlight__sidebar" class="sl-flex md:sl-hidden astro-jif73yzw"> <svg aria-hidden="true" class="open-menu astro-jif73yzw astro-c6vsoqas" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="--sl-icon-size: 1em;"><path d="M3 8h18a1 1 0 1 0 0-2H3a1 1 0 0 0 0 2Zm18 8H3a1 1 0 0 0 0 2h18a1 1 0 0 0 0-2Zm0-5H3a1 1 0 0 0 0 2h18a1 1 0 0 0 0-2Z"/></svg> <svg aria-hidden="true" class="close-menu astro-jif73yzw astro-c6vsoqas" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="--sl-icon-size: 1em;"><path d="m13.41 12 6.3-6.29a1.004 1.004 0 1 0-1.42-1.42L12 10.59l-6.29-6.3a1.004 1.004 0 0 0-1.42 1.42l6.3 6.29-6.3 6.29a1 1 0 0 0 0 1.42.998.998 0 0 0 1.42 0l6.29-6.3 6.29 6.3a.999.999 0 0 0 1.42 0 1 1 0 0 0 0-1.42L13.41 12Z"/></svg> </button> </starlight-menu-button> <script type="module">class s extends HTMLElement{constructor(){super(),this.btn=this.querySelector("button"),this.btn.addEventListener("click",()=>this.toggleExpanded());const t=this.closest("nav");t&&t.addEventListener("keyup",e=>this.closeOnEscape(e))}setExpanded(t){this.setAttribute("aria-expanded",String(t)),document.body.toggleAttribute("data-mobile-menu-expanded",t)}toggleExpanded(){this.setExpanded(this.getAttribute("aria-expanded")!=="true")}closeOnEscape(t){t.code==="Escape"&&(this.setExpanded(!1),this.btn.focus())}}customElements.define("starlight-menu-button",s);</script>   <div id="starlight__sidebar" class="sidebar-pane astro-vrdttmbt"> <div class="sidebar-content sl-flex astro-vrdttmbt"> <sl-sidebar-state-persist data-hash="1c85a4z" class="astro-kku4brbg"> <script aria-hidden="true">
+		(() => {
+			try {
+				if (!matchMedia('(min-width: 50em)').matches) return;
+				/** @type {HTMLElement | null} */
+				const target = document.querySelector('sl-sidebar-state-persist');
+				const state = JSON.parse(sessionStorage.getItem('sl-sidebar-state') || '0');
+				if (!target || !state || target.dataset.hash !== state.hash) return;
+				window._starlightScrollRestore = state.scroll;
+				customElements.define(
+					'sl-sidebar-restore',
+					class SidebarRestore extends HTMLElement {
+						connectedCallback() {
+							try {
+								const idx = parseInt(this.dataset.index || '');
+								const details = this.closest('details');
+								if (details && typeof state.open[idx] === 'boolean') details.open = state.open[idx];
+							} catch {}
+						}
+					}
+				);
+			} catch {}
+		})();
+	</script>  <ul class="top-level astro-3ii7xxms"> <li class="astro-3ii7xxms"> <a href="/dev/" aria-current="false" class="large astro-3ii7xxms"> <span class="astro-3ii7xxms">Guide</span>  </a> </li><li class="astro-3ii7xxms"> <details open class="astro-3ii7xxms"> <summary class="astro-3ii7xxms"> <span class="group-label astro-3ii7xxms"> <span class="large astro-3ii7xxms">Reference</span>  </span> <svg aria-hidden="true" class="caret astro-3ii7xxms astro-c6vsoqas" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="--sl-icon-size: 1.25rem;"><path d="m14.83 11.29-4.24-4.24a1 1 0 1 0-1.42 1.41L12.71 12l-3.54 3.54a1 1 0 0 0 0 1.41 1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.24-4.24a1.002 1.002 0 0 0 0-1.42Z"/></svg> </summary> <sl-sidebar-restore data-index="0"></sl-sidebar-restore> <ul class="astro-3ii7xxms"> <li class="astro-3ii7xxms"> <a href="/dev/reference/camera-navigation/" aria-current="false" class="astro-3ii7xxms"> <span class="astro-3ii7xxms">Camera &amp; navigation</span>  </a> </li><li class="astro-3ii7xxms"> <a href="/dev/reference/shortcuts/" aria-current="false" class="astro-3ii7xxms"> <span class="astro-3ii7xxms">Keyboard shortcuts</span>  </a> </li><li class="astro-3ii7xxms"> <a href="/dev/reference/attributes/" aria-current="false" class="astro-3ii7xxms"> <span class="astro-3ii7xxms">Editing attributes</span>  </a> </li><li class="astro-3ii7xxms"> <a href="/dev/reference/scene-tree/" aria-current="false" class="astro-3ii7xxms"> <span class="astro-3ii7xxms">Scene tree</span>  </a> </li><li class="astro-3ii7xxms"> <a href="/dev/reference/diagnostics/" aria-current="false" class="astro-3ii7xxms"> <span class="astro-3ii7xxms">Diagnostics</span>  </a> </li><li class="astro-3ii7xxms"> <a href="/dev/reference/library/" aria-current="false" class="astro-3ii7xxms"> <span class="astro-3ii7xxms">Library</span>  </a> </li><li class="astro-3ii7xxms"> <a href="/dev/reference/tools-and-library/" aria-current="false" class="astro-3ii7xxms"> <span class="astro-3ii7xxms">Tools and the Library — how they work together</span>  </a> </li><li class="astro-3ii7xxms"> <a href="/dev/reference/projects/" aria-current="false" class="astro-3ii7xxms"> <span class="astro-3ii7xxms">Projects</span>  </a> </li><li class="astro-3ii7xxms"> <a href="/dev/reference/create-road/" aria-current="false" class="astro-3ii7xxms"> <span class="astro-3ii7xxms">Create Road</span>  </a> </li><li class="astro-3ii7xxms"> <a href="/dev/reference/moving-and-transforming/" aria-current="false" class="astro-3ii7xxms"> <span class="astro-3ii7xxms">Moving and transforming</span>  </a> </li><li class="astro-3ii7xxms"> <a href="/dev/reference/edit-nodes/" aria-current="false" class="astro-3ii7xxms"> <span class="astro-3ii7xxms">Edit Nodes</span>  </a> </li><li class="astro-3ii7xxms"> <a href="/dev/reference/bend-points/" aria-current="false" class="astro-3ii7xxms"> <span class="astro-3ii7xxms">Bend Points</span>  </a> </li><li class="astro-3ii7xxms"> <a href="/dev/reference/merge-split/" aria-current="false" class="astro-3ii7xxms"> <span class="astro-3ii7xxms">Merge &amp; Split Roads</span>  </a> </li><li class="astro-3ii7xxms"> <a href="/dev/reference/context-menus/" aria-current="false" class="astro-3ii7xxms"> <span class="astro-3ii7xxms">Right-Click Menus</span>  </a> </li><li class="astro-3ii7xxms"> <a href="/dev/reference/lane-profile/" aria-current="false" class="astro-3ii7xxms"> <span class="astro-3ii7xxms">Lane</span>  </a> </li><li class="astro-3ii7xxms"> <a href="/dev/reference/lane-width/" aria-current="false" class="astro-3ii7xxms"> <span class="astro-3ii7xxms">Lane Width</span>  </a> </li><li class="astro-3ii7xxms"> <a href="/dev/reference/lane-add/" aria-current="false" class="astro-3ii7xxms"> <span class="astro-3ii7xxms">Lane Add</span>  </a> </li><li class="astro-3ii7xxms"> <a href="/dev/reference/lane-form/" aria-current="false" class="astro-3ii7xxms"> <span class="astro-3ii7xxms">Lane Form</span>  </a> </li><li class="astro-3ii7xxms"> <a href="/dev/reference/lane-carve/" aria-current="false" class="astro-3ii7xxms"> <span class="astro-3ii7xxms">Lane Carve</span>  </a> </li><li class="astro-3ii7xxms"> <a href="/dev/reference/road-styles/" aria-current="false" class="astro-3ii7xxms"> <span class="astro-3ii7xxms">Road Styles</span>  </a> </li><li class="astro-3ii7xxms"> <a href="/dev/reference/elevation/" aria-current="false" class="astro-3ii7xxms"> <span class="astro-3ii7xxms">Elevation</span>  </a> </li><li class="astro-3ii7xxms"> <a href="/dev/reference/junction/" aria-current="false" class="astro-3ii7xxms"> <span class="astro-3ii7xxms">Junction</span>  </a> </li><li class="astro-3ii7xxms"> <a href="/dev/reference/t-junction/" aria-current="false" class="astro-3ii7xxms"> <span class="astro-3ii7xxms">T-junction (tee into a road body)</span>  </a> </li><li class="astro-3ii7xxms"> <a href="/dev/reference/objects-signals/" aria-current="page" class="astro-3ii7xxms"> <span class="astro-3ii7xxms">Objects &amp; signals</span>  </a> </li><li class="astro-3ii7xxms"> <a href="/dev/reference/ground-surfaces/" aria-current="false" class="astro-3ii7xxms"> <span class="astro-3ii7xxms">Ground Surfaces</span>  </a> </li><li class="astro-3ii7xxms"> <a href="/dev/reference/terrain/" aria-current="false" class="astro-3ii7xxms"> <span class="astro-3ii7xxms">Terrain</span>  </a> </li><li class="astro-3ii7xxms"> <a href="/dev/reference/terrain-brush/" aria-current="false" class="astro-3ii7xxms"> <span class="astro-3ii7xxms">Terrain Brush</span>  </a> </li><li class="astro-3ii7xxms"> <a href="/dev/reference/bridges/" aria-current="false" class="astro-3ii7xxms"> <span class="astro-3ii7xxms">Bridges</span>  </a> </li><li class="astro-3ii7xxms"> <a href="/dev/reference/markings/" aria-current="false" class="astro-3ii7xxms"> <span class="astro-3ii7xxms">Road markings: stencils and curves</span>  </a> </li><li class="astro-3ii7xxms"> <a href="/dev/reference/materials/" aria-current="false" class="astro-3ii7xxms"> <span class="astro-3ii7xxms">Materials</span>  </a> </li><li class="astro-3ii7xxms"> <a href="/dev/reference/textured-rendering/" aria-current="false" class="astro-3ii7xxms"> <span class="astro-3ii7xxms">Textured rendering</span>  </a> </li><li class="astro-3ii7xxms"> <a href="/dev/reference/viewport-hints/" aria-current="false" class="astro-3ii7xxms"> <span class="astro-3ii7xxms">Viewport hints</span>  </a> </li><li class="astro-3ii7xxms"> <a href="/dev/reference/save-export/" aria-current="false" class="astro-3ii7xxms"> <span class="astro-3ii7xxms">Save &amp; export</span>  </a> </li><li class="astro-3ii7xxms"> <a href="/dev/reference/export-preview/" aria-current="false" class="astro-3ii7xxms"> <span class="astro-3ii7xxms">Export previews</span>  </a> </li> </ul>  </details> </li><li class="astro-3ii7xxms"> <details open class="astro-3ii7xxms"> <summary class="astro-3ii7xxms"> <span class="group-label astro-3ii7xxms"> <span class="large astro-3ii7xxms">Tutorials</span>  </span> <svg aria-hidden="true" class="caret astro-3ii7xxms astro-c6vsoqas" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="--sl-icon-size: 1.25rem;"><path d="m14.83 11.29-4.24-4.24a1 1 0 1 0-1.42 1.41L12.71 12l-3.54 3.54a1 1 0 0 0 0 1.41 1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.24-4.24a1.002 1.002 0 0 0 0-1.42Z"/></svg> </summary> <sl-sidebar-restore data-index="1"></sl-sidebar-restore> <ul class="astro-3ii7xxms"> <li class="astro-3ii7xxms"> <a href="/dev/tutorials/first-road-network/" aria-current="false" class="astro-3ii7xxms"> <span class="astro-3ii7xxms">Your first road network</span>  </a> </li><li class="astro-3ii7xxms"> <a href="/dev/tutorials/getting-around/" aria-current="false" class="astro-3ii7xxms"> <span class="astro-3ii7xxms">Getting around</span>  </a> </li><li class="astro-3ii7xxms"> <a href="/dev/tutorials/shaping-lanes/" aria-current="false" class="astro-3ii7xxms"> <span class="astro-3ii7xxms">Shaping lanes</span>  </a> </li><li class="astro-3ii7xxms"> <a href="/dev/tutorials/working-with-road-styles/" aria-current="false" class="astro-3ii7xxms"> <span class="astro-3ii7xxms">Working with road styles</span>  </a> </li> </ul>  </details> </li> </ul>   <script aria-hidden="true">
+		(() => {
+			const scroller = document.getElementById('starlight__sidebar');
+			if (!window._starlightScrollRestore || !scroller) return;
+			scroller.scrollTop = window._starlightScrollRestore;
+			delete window._starlightScrollRestore;
+		})();
+	</script> </sl-sidebar-state-persist>  <div class="md:sl-hidden"> <div class="mobile-preferences sl-flex astro-wu23bvmt"> <div class="social-icons astro-wu23bvmt">  </div> <starlight-theme-select>  <label style="--sl-select-width: 6.25em" class="astro-4yphtoen"> <span class="sr-only astro-4yphtoen">Select theme</span> <svg aria-hidden="true" class="icon label-icon astro-4yphtoen astro-c6vsoqas" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="--sl-icon-size: 1em;"><path d="M21 14h-1V7a3 3 0 0 0-3-3H7a3 3 0 0 0-3 3v7H3a1 1 0 0 0-1 1v2a3 3 0 0 0 3 3h14a3 3 0 0 0 3-3v-2a1 1 0 0 0-1-1ZM6 7a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v7H6V7Zm14 10a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1v-1h16v1Z"/></svg> <select autocomplete="off" class="astro-4yphtoen"> <option value="dark" class="astro-4yphtoen">Dark</option><option value="light" class="astro-4yphtoen">Light</option><option value="auto" selected class="astro-4yphtoen">Auto</option> </select> <svg aria-hidden="true" class="icon caret astro-4yphtoen astro-c6vsoqas" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="--sl-icon-size: 1em;"><path d="M17 9.17a1 1 0 0 0-1.41 0L12 12.71 8.46 9.17a1 1 0 1 0-1.41 1.42l4.24 4.24a1.002 1.002 0 0 0 1.42 0L17 10.59a1.002 1.002 0 0 0 0-1.42Z"/></svg> </label>  </starlight-theme-select>  <script>
+	StarlightThemeProvider.updatePickers();
+</script>  <starlight-version-select data-base="/dev/" data-root="/"><label style="--sl-select-width: 10em" class="astro-4yphtoen"> <span class="sr-only astro-4yphtoen">Select documentation version</span> <svg aria-hidden="true" class="icon label-icon astro-4yphtoen astro-c6vsoqas" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="--sl-icon-size: 1em;"><path d="M23.165 13.645L23.165 13.645Q22.829 13.561 22.199 13.309L22.199 13.309L21.695 13.099Q21.695 12.637 21.632 11.797Q21.569 10.957 21.569 10.495L21.569 10.495Q21.569 10.411 21.632 10.348Q21.695 10.285 21.695 10.201L21.695 10.201L23.165 9.571Q23.543 9.361 23.669 9.004Q23.795 8.647 23.669 8.269L23.669 8.269L22.493 5.623Q22.283 5.203 21.926 5.056Q21.569 4.909 21.191 5.119L21.191 5.119L19.721 5.749Q19.469 5.749 19.469 5.623L19.469 5.623Q19.301 5.371 18.839 4.951L18.839 4.951L18.545 4.699Q18.419 4.573 18.104 4.300Q17.789 4.027 17.621 3.901L17.621 3.901Q17.789 3.649 17.978 3.124Q18.167 2.599 18.293 2.347L18.293 2.347Q18.503 1.843 18.314 1.465Q18.125 1.087 17.621 0.919L17.621 0.919Q17.075 0.793 15.815 0.373L15.815 0.373L15.143 0.121Q14.639-0.089 14.261 0.100Q13.883 0.289 13.715 0.751L13.715 0.751Q13.631 1.087 13.379 1.717L13.379 1.717L13.169 2.221Q12.707 2.221 11.867 2.284Q11.027 2.347 10.565 2.347L10.565 2.347Q10.481 2.347 10.418 2.284Q10.355 2.221 10.271 2.221L10.271 2.221L9.641 0.751Q9.431 0.373 9.074 0.247Q8.717 0.121 8.339 0.247L8.339 0.247L5.693 1.423Q5.273 1.633 5.126 1.990Q4.979 2.347 5.189 2.725L5.189 2.725L5.819 4.195Q5.819 4.447 5.693 4.447L5.693 4.447L5.399 4.699Q5.105 4.909 5.021 5.077L5.021 5.077Q4.853 5.287 4.517 5.686Q4.181 6.085 3.971 6.295L3.971 6.295Q3.677 6.211 3.047 5.959L3.047 5.959L2.543 5.749Q2.039 5.539 1.661 5.728Q1.283 5.917 1.115 6.421L1.115 6.421L0.905 6.925Q0.401 8.185 0.191 8.773Q-0.019 9.361 0.128 9.697Q0.275 10.033 0.821 10.201L0.821 10.201Q1.157 10.285 1.787 10.537L1.787 10.537L2.291 10.747Q2.291 11.209 2.354 12.049Q2.417 12.889 2.417 13.351L2.417 13.351Q2.417 13.435 2.354 13.498Q2.291 13.561 2.291 13.645L2.291 13.645L0.821 14.275Q0.443 14.485 0.317 14.842Q0.191 15.199 0.317 15.577L0.317 15.577L1.493 18.223Q1.703 18.643 2.060 18.790Q2.417 18.937 2.795 18.727L2.795 18.727L4.265 18.097Q4.517 18.097 4.517 18.223L4.517 18.223Q4.685 18.475 5.147 18.895L5.147 18.895L5.441 19.147Q5.567 19.273 5.882 19.525Q6.197 19.777 6.365 19.945L6.365 19.945Q6.239 20.197 6.029 20.722Q5.819 21.247 5.693 21.499L5.693 21.499Q5.483 22.003 5.672 22.381Q5.861 22.759 6.365 22.969L6.365 22.969Q6.659 23.053 7.331 23.305L7.331 23.305Q8.297 23.725 8.864 23.893Q9.431 24.061 9.767 23.935Q10.103 23.809 10.271 23.221L10.271 23.221Q10.355 22.885 10.607 22.255L10.607 22.255L10.817 21.751Q11.279 21.751 12.119 21.688Q12.959 21.625 13.421 21.625L13.421 21.625Q13.505 21.625 13.568 21.688Q13.631 21.751 13.715 21.751L13.715 21.751L14.345 23.221Q14.555 23.599 14.912 23.725Q15.269 23.851 15.647 23.725L15.647 23.725L18.293 22.549Q18.713 22.339 18.860 21.982Q19.007 21.625 18.797 21.247L18.797 21.247L18.167 19.819Q18.167 19.525 18.293 19.525L18.293 19.525Q18.545 19.357 18.965 18.895L18.965 18.895L19.217 18.601Q19.343 18.475 19.595 18.160Q19.847 17.845 20.015 17.719L20.015 17.719Q20.309 17.761 20.939 18.055L20.939 18.055L21.443 18.223Q21.947 18.433 22.325 18.244Q22.703 18.055 22.871 17.551L22.871 17.551Q22.997 17.257 23.249 16.585L23.249 16.585Q23.669 15.619 23.795 15.073L23.795 15.073Q24.257 13.981 23.165 13.645ZM13.967 16.375L13.967 16.375Q12.077 17.173 10.250 16.459Q8.423 15.745 7.541 13.897L7.541 13.897Q6.743 12.007 7.457 10.180Q8.171 8.353 10.019 7.471L10.019 7.471Q11.909 6.673 13.736 7.387Q15.563 8.101 16.445 9.949L16.445 9.949Q17.243 11.839 16.529 13.666Q15.815 15.493 13.967 16.375Z"/></svg> <select autocomplete="off" class="astro-4yphtoen"> <option value selected class="astro-4yphtoen">…</option> </select> <svg aria-hidden="true" class="icon caret astro-4yphtoen astro-c6vsoqas" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="--sl-icon-size: 1em;"><path d="M17 9.17a1 1 0 0 0-1.41 0L12 12.71 8.46 9.17a1 1 0 1 0-1.41 1.42l4.24 4.24a1.002 1.002 0 0 0 1.42 0L17 10.59a1.002 1.002 0 0 0 0-1.42Z"/></svg> </label> </starlight-version-select> </div>  </div> </div> </div> </nav> <div class="main-frame astro-vrdttmbt">  <script type="module">const a=document.getElementById("starlight__sidebar"),n=a?.querySelector("sl-sidebar-state-persist"),o="sl-sidebar-state",i=()=>{let t=[];const e=n?.dataset.hash||"";try{const s=sessionStorage.getItem(o),r=JSON.parse(s||"{}");Array.isArray(r.open)&&r.hash===e&&(t=r.open)}catch{}return{hash:e,open:t,scroll:a?.scrollTop||0}},c=t=>{try{sessionStorage.setItem(o,JSON.stringify(t))}catch{}},d=()=>c(i()),l=(t,e)=>{const s=i();s.open[e]=t,c(s)};n?.addEventListener("click",t=>{if(!(t.target instanceof Element))return;const e=t.target.closest("summary")?.closest("details");if(!e)return;const s=e.querySelector("sl-sidebar-restore"),r=parseInt(s?.dataset.index||"");isNaN(r)||l(!e.open,r)});addEventListener("visibilitychange",()=>{document.visibilityState==="hidden"&&d()});addEventListener("pageHide",d);</script> <div class="lg:sl-flex astro-67yu43on"> <aside class="right-sidebar-container print:hidden astro-67yu43on"> <div class="right-sidebar astro-67yu43on"> <div class="lg:sl-hidden astro-pb3aqygn"><mobile-starlight-toc data-min-h="2" data-max-h="3" class="astro-doynk5tl"><nav aria-labelledby="starlight__on-this-page--mobile" class="astro-doynk5tl"><details id="starlight__mobile-toc" class="astro-doynk5tl"><summary id="starlight__on-this-page--mobile" class="sl-flex astro-doynk5tl"><span class="toggle sl-flex astro-doynk5tl">On this page<svg aria-hidden="true" class="caret astro-doynk5tl astro-c6vsoqas" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="--sl-icon-size: 1rem;"><path d="m14.83 11.29-4.24-4.24a1 1 0 1 0-1.42 1.41L12.71 12l-3.54 3.54a1 1 0 0 0 0 1.41 1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.24-4.24a1.002 1.002 0 0 0 0-1.42Z"/></svg></span><span class="display-current astro-doynk5tl"></span></summary><div class="dropdown astro-doynk5tl"><ul class="isMobile astro-g2bywc46" style="--depth: 0;"> <li class="astro-g2bywc46" style="--depth: 0;"> <a href="#_top" class="astro-g2bywc46" style="--depth: 0;"> <span class="astro-g2bywc46" style="--depth: 0;">Overview</span> </a>  </li><li class="astro-g2bywc46" style="--depth: 0;"> <a href="#authoring-today-kernel--python" class="astro-g2bywc46" style="--depth: 0;"> <span class="astro-g2bywc46" style="--depth: 0;">Authoring today (kernel &amp; Python)</span> </a>  </li><li class="astro-g2bywc46" style="--depth: 0;"> <a href="#in-the-editor" class="astro-g2bywc46" style="--depth: 0;"> <span class="astro-g2bywc46" style="--depth: 0;">In the editor</span> </a> <ul class="isMobile astro-g2bywc46" style="--depth: 1;"> <li class="astro-g2bywc46" style="--depth: 1;"> <a href="#signs-face-their-traffic-automatically" class="astro-g2bywc46" style="--depth: 1;"> <span class="astro-g2bywc46" style="--depth: 1;">Signs face their traffic automatically</span> </a>  </li><li class="astro-g2bywc46" style="--depth: 1;"> <a href="#how-high-a-sign-sits" class="astro-g2bywc46" style="--depth: 1;"> <span class="astro-g2bywc46" style="--depth: 1;">How high a sign sits</span> </a>  </li><li class="astro-g2bywc46" style="--depth: 1;"> <a href="#changing-what-a-sign-is" class="astro-g2bywc46" style="--depth: 1;"> <span class="astro-g2bywc46" style="--depth: 1;">Changing what a sign is</span> </a>  </li><li class="astro-g2bywc46" style="--depth: 1;"> <a href="#a-signs-face-size" class="astro-g2bywc46" style="--depth: 1;"> <span class="astro-g2bywc46" style="--depth: 1;">A sign’s face size</span> </a>  </li><li class="astro-g2bywc46" style="--depth: 1;"> <a href="#placing-props-prop-point--prop-curve" class="astro-g2bywc46" style="--depth: 1;"> <span class="astro-g2bywc46" style="--depth: 1;">Placing props: Prop Point &amp; Prop Curve</span> </a>  </li><li class="astro-g2bywc46" style="--depth: 1;"> <a href="#prop-sets" class="astro-g2bywc46" style="--depth: 1;"> <span class="astro-g2bywc46" style="--depth: 1;">Prop sets</span> </a>  </li><li class="astro-g2bywc46" style="--depth: 1;"> <a href="#resizing-props" class="astro-g2bywc46" style="--depth: 1;"> <span class="astro-g2bywc46" style="--depth: 1;">Resizing props</span> </a>  </li><li class="astro-g2bywc46" style="--depth: 1;"> <a href="#moving-a-prop-by-the-numbers" class="astro-g2bywc46" style="--depth: 1;"> <span class="astro-g2bywc46" style="--depth: 1;">Moving a prop by the numbers</span> </a>  </li><li class="astro-g2bywc46" style="--depth: 1;"> <a href="#placing-signs-the-sign-tool" class="astro-g2bywc46" style="--depth: 1;"> <span class="astro-g2bywc46" style="--depth: 1;">Placing signs: the Sign tool</span> </a>  </li><li class="astro-g2bywc46" style="--depth: 1;"> <a href="#junction-markings" class="astro-g2bywc46" style="--depth: 1;"> <span class="astro-g2bywc46" style="--depth: 1;">Junction markings</span> </a>  </li> </ul>  </li><li class="astro-g2bywc46" style="--depth: 0;"> <a href="#reference" class="astro-g2bywc46" style="--depth: 0;"> <span class="astro-g2bywc46" style="--depth: 0;">Reference</span> </a>  </li> </ul> </div></details></nav></mobile-starlight-toc><script type="module" src="/dev/_astro/MobileTableOfContents.astro_astro_type_script_index_0_lang.C181hMzK.js"></script></div><div class="right-sidebar-panel sl-hidden lg:sl-block astro-pb3aqygn"><div class="sl-container astro-pb3aqygn"><starlight-toc data-min-h="2" data-max-h="3"><nav aria-labelledby="starlight__on-this-page"><h2 id="starlight__on-this-page">On this page</h2><ul class="astro-g2bywc46" style="--depth: 0;"> <li class="astro-g2bywc46" style="--depth: 0;"> <a href="#_top" class="astro-g2bywc46" style="--depth: 0;"> <span class="astro-g2bywc46" style="--depth: 0;">Overview</span> </a>  </li><li class="astro-g2bywc46" style="--depth: 0;"> <a href="#authoring-today-kernel--python" class="astro-g2bywc46" style="--depth: 0;"> <span class="astro-g2bywc46" style="--depth: 0;">Authoring today (kernel &amp; Python)</span> </a>  </li><li class="astro-g2bywc46" style="--depth: 0;"> <a href="#in-the-editor" class="astro-g2bywc46" style="--depth: 0;"> <span class="astro-g2bywc46" style="--depth: 0;">In the editor</span> </a> <ul class="astro-g2bywc46" style="--depth: 1;"> <li class="astro-g2bywc46" style="--depth: 1;"> <a href="#signs-face-their-traffic-automatically" class="astro-g2bywc46" style="--depth: 1;"> <span class="astro-g2bywc46" style="--depth: 1;">Signs face their traffic automatically</span> </a>  </li><li class="astro-g2bywc46" style="--depth: 1;"> <a href="#how-high-a-sign-sits" class="astro-g2bywc46" style="--depth: 1;"> <span class="astro-g2bywc46" style="--depth: 1;">How high a sign sits</span> </a>  </li><li class="astro-g2bywc46" style="--depth: 1;"> <a href="#changing-what-a-sign-is" class="astro-g2bywc46" style="--depth: 1;"> <span class="astro-g2bywc46" style="--depth: 1;">Changing what a sign is</span> </a>  </li><li class="astro-g2bywc46" style="--depth: 1;"> <a href="#a-signs-face-size" class="astro-g2bywc46" style="--depth: 1;"> <span class="astro-g2bywc46" style="--depth: 1;">A sign’s face size</span> </a>  </li><li class="astro-g2bywc46" style="--depth: 1;"> <a href="#placing-props-prop-point--prop-curve" class="astro-g2bywc46" style="--depth: 1;"> <span class="astro-g2bywc46" style="--depth: 1;">Placing props: Prop Point &amp; Prop Curve</span> </a>  </li><li class="astro-g2bywc46" style="--depth: 1;"> <a href="#prop-sets" class="astro-g2bywc46" style="--depth: 1;"> <span class="astro-g2bywc46" style="--depth: 1;">Prop sets</span> </a>  </li><li class="astro-g2bywc46" style="--depth: 1;"> <a href="#resizing-props" class="astro-g2bywc46" style="--depth: 1;"> <span class="astro-g2bywc46" style="--depth: 1;">Resizing props</span> </a>  </li><li class="astro-g2bywc46" style="--depth: 1;"> <a href="#moving-a-prop-by-the-numbers" class="astro-g2bywc46" style="--depth: 1;"> <span class="astro-g2bywc46" style="--depth: 1;">Moving a prop by the numbers</span> </a>  </li><li class="astro-g2bywc46" style="--depth: 1;"> <a href="#placing-signs-the-sign-tool" class="astro-g2bywc46" style="--depth: 1;"> <span class="astro-g2bywc46" style="--depth: 1;">Placing signs: the Sign tool</span> </a>  </li><li class="astro-g2bywc46" style="--depth: 1;"> <a href="#junction-markings" class="astro-g2bywc46" style="--depth: 1;"> <span class="astro-g2bywc46" style="--depth: 1;">Junction markings</span> </a>  </li> </ul>  </li><li class="astro-g2bywc46" style="--depth: 0;"> <a href="#reference" class="astro-g2bywc46" style="--depth: 0;"> <span class="astro-g2bywc46" style="--depth: 0;">Reference</span> </a>  </li> </ul> </nav></starlight-toc><script type="module" src="/dev/_astro/TableOfContents.astro_astro_type_script_index_0_lang.CKWWgpjV.js"></script></div></div> </div> </aside> <div class="main-pane astro-67yu43on">  <main data-pagefind-body class="astro-bguv2lll" lang="en" dir="ltr">    <div class="content-panel astro-7nkwcw3z"> <div class="sl-container astro-7nkwcw3z"> <h1 id="_top" class="astro-j6tvhyss">Objects &amp; signals</h1>  </div> </div>  <div class="content-panel astro-7nkwcw3z"> <div class="sl-container astro-7nkwcw3z"> <div class="sl-markdown-content"> <p><em>Add the scene furniture that makes a road network legible and simulator-ready:
+crosswalks, props, lane arrows, stop lines, traffic lights, and signs.</em></p>
+<p>RoadMaker follows the ASAM OpenDRIVE split:</p>
+<ul>
+<li><strong>Objects</strong> (<code dir="auto">&#x3C;object></code>) — crosswalks, trees and other props, poles, and
+painted road markings that are not mandatory control signals (lane arrows,
+stop lines, zebra crossings).</li>
+<li><strong>Signals</strong> (<code dir="auto">&#x3C;signal></code>) — traffic-control signs and lights: traffic lights,
+speed limits, pedestrian-crossing warnings.</li>
+</ul>
+<p>Each is placed in road <code dir="auto">s</code>/<code dir="auto">t</code>/<code dir="auto">zOffset</code> coordinates and validated against the
+relevant ASAM rules, so an exported <code dir="auto">.xodr</code> carries real semantics — not just
+geometry.</p>
+<div class="sl-heading-wrapper level-h2"><h2 id="authoring-today-kernel--python">Authoring today (kernel &#x26; Python)</h2><a class="sl-anchor-link" href="#authoring-today-kernel--python"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24"><path fill="currentcolor" d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 0 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 1 0-1.42-1.42Zm8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 0 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 1 0 1.42 1.42l3.88-3.89a4.49 4.49 0 0 0 0-6.33ZM8.83 15.17a1 1 0 0 0 1.1.22 1 1 0 0 0 .32-.22l4.92-4.92a1 1 0 0 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42Z"></path></svg></span><span class="sr-only">Section titled “Authoring today (kernel &#x26; Python)”</span></a></div>
+<p>The kernel represents, validates, writes, and meshes the full GS-1 object and
+signal set, and you can author it from the Python package now:</p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>Example</th><th>What it authors</th></tr></thead><tbody><tr><td><a href="https://github.com/Robomous/RoadMaker/blob/main/python/examples/place_objects.py"><code dir="auto">place_objects.py</code></a></td><td>A crosswalk, a pole, and a tree line (<code dir="auto">&#x3C;repeat></code>)</td></tr><tr><td><a href="https://github.com/Robomous/RoadMaker/blob/main/python/examples/place_signals.py"><code dir="auto">place_signals.py</code></a></td><td>A traffic light, a speed-limit sign, a pedestrian-crossing sign</td></tr><tr><td><a href="https://github.com/Robomous/RoadMaker/blob/main/python/examples/road_marks.py"><code dir="auto">road_marks.py</code></a></td><td>A true double-yellow centre line and dashed white edge lines</td></tr></tbody></table>
+<div class="expressive-code"><link rel="stylesheet" href="/dev/_astro/ec.v4551.css"><script type="module" src="/dev/_astro/ec.0vx5m.js"></script><figure class="frame is-terminal not-content"><figcaption class="header"><span class="title"></span><span class="sr-only">Terminal window</span></figcaption><pre data-language="sh"><code><div class="ec-line"><div class="code"><span style="--0:#82AAFF;--1:#3B61B0">python</span><span style="--0:#D6DEEB;--1:#403F53"> </span><span style="--0:#ECC48D;--1:#3B61B0">python/examples/place_signals.py</span><span style="--0:#D6DEEB;--1:#403F53"> </span><span style="--0:#ECC48D;--1:#3B61B0">signals.xodr</span></div></div></code></pre><div class="copy"><div aria-live="polite"></div><button title="Copy to clipboard" data-copied="Copied!" data-code="python python/examples/place_signals.py signals.xodr"><div></div></button></div></figure></div>
+<p>Painted markings that are objects — <strong>crosswalks</strong> (zebra), <strong>stop lines</strong>, and
+<strong>lane arrows</strong> (left / straight / right) — mesh as generated paint geometry
+(no asset needed), and multi-line lane marks such as <code dir="auto">solid solid</code> render as
+true dual stripes.</p>
+<div class="sl-heading-wrapper level-h2"><h2 id="in-the-editor">In the editor</h2><a class="sl-anchor-link" href="#in-the-editor"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24"><path fill="currentcolor" d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 0 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 1 0-1.42-1.42Zm8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 0 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 1 0 1.42 1.42l3.88-3.89a4.49 4.49 0 0 0 0-6.33ZM8.83 15.17a1 1 0 0 0 1.1.22 1 1 0 0 0 .32-.22l4.92-4.92a1 1 0 0 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42Z"></path></svg></span><span class="sr-only">Section titled “In the editor”</span></a></div>
+<p><strong>Props and signals</strong> place directly in the editor: drag one from the
+<a href="/dev/reference/library"><strong>Library</strong></a> onto a road and RoadMaker adds it, snapped to the
+nearest road in <code dir="auto">s</code>/<code dir="auto">t</code>:</p>
+<ul>
+<li><strong>Props</strong> become an <code dir="auto">&#x3C;object></code> typed by what they are — vegetation (trees,
+shrub) as <code dir="auto">type="tree"</code>, streetlights as <code dir="auto">type="pole"</code>, buildings as
+<code dir="auto">type="building"</code>.</li>
+<li><strong>Traffic lights</strong> become a dynamic <code dir="auto">&#x3C;signal></code>; <strong>traffic signs</strong> (generic,
+stop, yield) a static one.</li>
+</ul>
+<p><img alt="Trees placed along a road, with the Library catalogue open" loading="lazy" decoding="async" fetchpriority="auto" width="1600" height="1000" src="/dev/_astro/library.Cdbg9_jU_d8EdN.webp" ></p>
+<p>Placed props and signals select, move, delete, duplicate, and round-trip
+through save/reload and the glTF / USD exports. Select a signal and its
+properties panel shows the kind (dynamic light or static sign), its
+type / subtype and country, and lets you nudge its road-relative pose —
+<code dir="auto">s</code> along the road, <code dir="auto">t</code> across it, and the heading offset — each edit an
+undoable command.</p>
+<div class="sl-heading-wrapper level-h3"><h3 id="signs-face-their-traffic-automatically">Signs face their traffic automatically</h3><a class="sl-anchor-link" href="#signs-face-their-traffic-automatically"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24"><path fill="currentcolor" d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 0 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 1 0-1.42-1.42Zm8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 0 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 1 0 1.42 1.42l3.88-3.89a4.49 4.49 0 0 0 0-6.33ZM8.83 15.17a1 1 0 0 0 1.1.22 1 1 0 0 0 .32-.22l4.92-4.92a1 1 0 0 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42Z"></path></svg></span><span class="sr-only">Section titled “Signs face their traffic automatically”</span></a></div>
+<p>A sign or signal is aimed when you place it: RoadMaker reads the road heading
+where it landed, which side of the reference line it sits on, and which way the
+nearest driving lane runs, then points the face <strong>against</strong> that traffic and
+cants it a few degrees away from the roadway so headlights do not reflect
+straight back. Drop the same sign on the opposite side of a two-way street and
+it turns to meet the traffic on that side instead.</p>
+<p>The facing is stored the ASAM way: <code dir="auto">orientation</code> records whose traffic the sign
+applies to (<code dir="auto">+</code> for traffic running with the road, <code dir="auto">−</code> for traffic running
+against it) and a heading offset holds the cant.</p>
+<p><strong>A heading you set by hand wins and stays.</strong> Editing <strong>Heading offset</strong> makes
+that heading yours, and nothing recomputes it afterwards — not moving the sign,
+not raising it, not editing anything else about it. The one way back to the
+automatic facing is the <strong>Auto facing</strong> button in the properties panel, which is
+an ordinary undoable edit like any other.</p>
+<p>Which traffic a sign applies to is reported separately, on the <strong>Applies to</strong>
+row: <em>traffic travelling along +s</em>, <em>along −s</em>, or <em>both directions</em>. Turning a
+sign never changes it — aiming the face and declaring what the sign governs are
+two different things, and only placement or <strong>Auto facing</strong> decides the second.</p>
+<div class="sl-heading-wrapper level-h3"><h3 id="how-high-a-sign-sits">How high a sign sits</h3><a class="sl-anchor-link" href="#how-high-a-sign-sits"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24"><path fill="currentcolor" d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 0 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 1 0-1.42-1.42Zm8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 0 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 1 0 1.42 1.42l3.88-3.89a4.49 4.49 0 0 0 0-6.33ZM8.83 15.17a1 1 0 0 0 1.1.22 1 1 0 0 0 .32-.22l4.92-4.92a1 1 0 0 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42Z"></path></svg></span><span class="sr-only">Section titled “How high a sign sits”</span></a></div>
+<p>A selected sign shows a <strong>Mounting height</strong>: how far its origin sits above the
+road’s surface at that point. Drag the label or type a value; either is one undo
+step, and neither re-aims the sign. Signs from the shipped US pack are placed at
+the standard mounting height already, so this is for the exceptions — a blade
+hung over a lane, or a sign fixed low on a barrier. Negative values are allowed,
+for anything mounted below the road’s reference line.</p>
+<div class="sl-heading-wrapper level-h3"><h3 id="changing-what-a-sign-is">Changing what a sign is</h3><a class="sl-anchor-link" href="#changing-what-a-sign-is"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24"><path fill="currentcolor" d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 0 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 1 0-1.42-1.42Zm8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 0 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 1 0 1.42 1.42l3.88-3.89a4.49 4.49 0 0 0 0-6.33ZM8.83 15.17a1 1 0 0 0 1.1.22 1 1 0 0 0 .32-.22l4.92-4.92a1 1 0 0 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42Z"></path></svg></span><span class="sr-only">Section titled “Changing what a sign is”</span></a></div>
+<p>A selected sign’s <strong>Designation</strong> is a list of every sign the shipped pack
+carries. Pick another one and the sign becomes it, in one undo step, without
+moving: its position, mounting height, facing and text are all untouched, and
+the model in the viewport changes to match.</p>
+<p>What <em>does</em> change is everything the designation itself decides. A stop sign is
+0.75 m across and posts no speed, so retyping a 25 mph plate into one takes the
+octagon’s face size and drops the <strong>Speed limit</strong> row along with the posted
+value — a stop sign reading 25 mph would not be a stop sign. Retyping into a
+street-name blade likewise leaves its width undeclared, because a blade’s length
+follows its legend. Undo puts all of it back together.</p>
+<p>A sign whose designation this build does not ship — one imported from a file
+written against another catalogue — shows its raw type, subtype and country in
+the list instead of a name. Leaving it selected changes nothing; picking a real
+designation converts it.</p>
+<div class="sl-heading-wrapper level-h3"><h3 id="a-signs-face-size">A sign’s face size</h3><a class="sl-anchor-link" href="#a-signs-face-size"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24"><path fill="currentcolor" d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 0 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 1 0-1.42-1.42Zm8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 0 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 1 0 1.42 1.42l3.88-3.89a4.49 4.49 0 0 0 0-6.33ZM8.83 15.17a1 1 0 0 0 1.1.22 1 1 0 0 0 .32-.22l4.92-4.92a1 1 0 0 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42Z"></path></svg></span><span class="sr-only">Section titled “A sign’s face size”</span></a></div>
+<p><strong>Face height</strong>, <strong>Face width</strong> and <strong>Face length</strong> are the sign’s bounding box.
+Drag a label or type a value, as anywhere else in the pane. They exist mainly for
+signs that arrive from elsewhere with the wrong dimensions or none at all —
+signs you place are already sized from the pack.</p>
+<p>All three are optional in OpenDRIVE, and “undeclared” is a real state, distinct
+from zero: step a spin below its minimum and it reads <strong>not set</strong>, which removes
+the attribute from the saved file rather than writing a zero into it. Editing one
+dimension never invents the other two.</p>
+<div class="sl-heading-wrapper level-h3"><h3 id="placing-props-prop-point--prop-curve">Placing props: Prop Point &#x26; Prop Curve</h3><a class="sl-anchor-link" href="#placing-props-prop-point--prop-curve"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24"><path fill="currentcolor" d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 0 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 1 0-1.42-1.42Zm8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 0 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 1 0 1.42 1.42l3.88-3.89a4.49 4.49 0 0 0 0-6.33ZM8.83 15.17a1 1 0 0 0 1.1.22 1 1 0 0 0 .32-.22l4.92-4.92a1 1 0 0 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42Z"></path></svg></span><span class="sr-only">Section titled “Placing props: Prop Point &#x26; Prop Curve”</span></a></div>
+<p>Two tools place the selected <a href="/dev/reference/library"><strong>Library</strong></a> prop (a tree or shrub)
+without leaving the viewport. Both snap to the nearest road in <code dir="auto">s</code>/<code dir="auto">t</code> — props
+are road-relative, so a click in open space, away from any road, is rejected
+with a hint rather than placed at a floating world position.</p>
+<p><strong>Prop Point</strong> (<code dir="auto">T</code>) places one prop per click:</p>
+<ul>
+<li>Click on or beside a road and the prop lands under the cursor, snapped to the
+road (the verge is fine — any <code dir="auto">t</code> within reach). It is a single undo step.</li>
+<li>A ghost circle of the model’s footprint previews where the click will land.</li>
+<li>Drag a prop already in the scene to move it along its road; the whole drag
+commits as exactly <strong>one</strong> <code dir="auto">move</code> on release, and <code dir="auto">Esc</code> cancels it cleanly.</li>
+</ul>
+<p><strong>Prop Curve</strong> (<code dir="auto">⇧T</code>) distributes a run of props along a path:</p>
+<ul>
+<li>Click waypoints along a road — the first click anchors the run to the road
+under it. A live preview fits a smooth curve through the points and shows one
+ghost per prop at the current spacing.</li>
+<li><code dir="auto">[</code> and <code dir="auto">]</code> adjust the spacing (default 5 m) in half-metre steps; the current
+value is shown in the status bar.</li>
+<li><code dir="auto">Enter</code> or a double-click <strong>bakes</strong> the run: every previewed prop becomes an
+individual <code dir="auto">&#x3C;object></code>, added as a <strong>single</strong> undo step. Samples that would
+leave the anchor road are skipped (the toast reports how many). <code dir="auto">Backspace</code>
+removes the last point; <code dir="auto">Esc</code> cancels before the bake.</li>
+<li>Because the bake produces plain props, each one afterwards selects, moves, and
+deletes on its own — there is no group to break apart.</li>
+</ul>
+<p><strong>Prop Span</strong> (<code dir="auto">⇧S</code>) places a repeating run of one prop as a single object:</p>
+<ul>
+<li>Click two stations on the <strong>same</strong> road — the first anchors the span and pins
+its lateral offset, the second sets the far end (a click that leaves the anchor
+road is ignored). A live preview shows one ghost per instance.</li>
+<li><code dir="auto">[</code> and <code dir="auto">]</code> adjust the spacing between instances (default 5 m) in half-metre
+steps.</li>
+<li><code dir="auto">Enter</code> or a double-click commits the span as <strong>one</strong> <code dir="auto">&#x3C;object></code> carrying one
+<code dir="auto">&#x3C;repeat></code> — a single undo step. The kernel expands the repeat when it meshes
+and exports, so the file stays compact.</li>
+<li>A span carries exactly <strong>one model</strong>: a <a href="#prop-sets">prop set</a> is resolved to a
+single tree or shrub for the whole run (a <code dir="auto">&#x3C;repeat></code> cannot mix models). Use
+Prop Curve or Prop Polygon to scatter a mix.</li>
+<li><strong>Known limitation:</strong> a committed span cannot be dragged to a new position yet
+— moving its object relocates the object’s own origin, not the repeat. To
+reposition a span, delete it and draw a new one. A span editor is planned.</li>
+</ul>
+<p><strong>Prop Polygon</strong> (<code dir="auto">⇧P</code>) scatters props to fill a region:</p>
+<ul>
+<li>Click three or more vertices to outline a region; the interior may sit well off
+the road (a park, a wide verge). Each scattered prop still anchors to the
+nearest road within reach, so the region need not hug the carriageway.</li>
+<li><code dir="auto">[</code> and <code dir="auto">]</code> adjust the density (props per 100 m²); <code dir="auto">R</code> re-scatters with a fresh
+random layout at the same density. The preview updates in place.</li>
+<li><code dir="auto">Enter</code> or a double-click <strong>bakes</strong> the scatter: every previewed prop becomes an
+individual <code dir="auto">&#x3C;object></code>, added as a <strong>single</strong> undo step. Samples with no road in
+reach are skipped (the toast reports how many). <code dir="auto">Backspace</code> removes the last
+vertex; <code dir="auto">Esc</code> cancels before the bake.</li>
+<li>A <a href="#prop-sets">prop set</a> scatters a <strong>mix</strong> — one model is drawn per instance by
+the set’s portions.</li>
+</ul>
+<div class="sl-heading-wrapper level-h3"><h3 id="prop-sets">Prop sets</h3><a class="sl-anchor-link" href="#prop-sets"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24"><path fill="currentcolor" d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 0 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 1 0-1.42-1.42Zm8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 0 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 1 0 1.42 1.42l3.88-3.89a4.49 4.49 0 0 0 0-6.33ZM8.83 15.17a1 1 0 0 0 1.1.22 1 1 0 0 0 .32-.22l4.92-4.92a1 1 0 0 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42Z"></path></svg></span><span class="sr-only">Section titled “Prop sets”</span></a></div>
+<p>A <strong>prop set</strong> is a Library asset that names several tree/shrub models with
+relative <em>portions</em> (for example three pines to one birch). Placing a set draws
+a model from those weighted portions:</p>
+<ul>
+<li><strong>Prop Point</strong> draws one model per click; <strong>Prop Curve</strong> and <strong>Prop Polygon</strong>
+draw one per placed instance, so a run or region shows the mix.</li>
+<li><strong>Prop Span</strong> draws <strong>once</strong> for the whole span — a repeating run is a single
+object with a single model.</li>
+</ul>
+<p>Create or edit a set from the Library (right-click → <em>New prop set…</em>); the baked
+props are plain objects and never reference the set, so editing the set later
+does not disturb props already placed.</p>
+<div class="sl-heading-wrapper level-h3"><h3 id="resizing-props">Resizing props</h3><a class="sl-anchor-link" href="#resizing-props"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24"><path fill="currentcolor" d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 0 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 1 0-1.42-1.42Zm8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 0 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 1 0 1.42 1.42l3.88-3.89a4.49 4.49 0 0 0 0-6.33ZM8.83 15.17a1 1 0 0 0 1.1.22 1 1 0 0 0 .32-.22l4.92-4.92a1 1 0 0 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42Z"></path></svg></span><span class="sr-only">Section titled “Resizing props”</span></a></div>
+<p>A placed prop draws at the size its <code dir="auto">&#x3C;object></code> declares, so a prop is not stuck
+at whatever size its model happens to be.</p>
+<ul>
+<li>Select a prop and the Attributes pane shows a <strong>Height</strong> row. Drag the word
+<em>Height</em> to resize it live, or type a height to set it exactly. Either way the
+whole gesture is a <strong>single</strong> undo step.</li>
+<li><strong>Select several props and they all resize together.</strong> Dragging scales every
+selected prop by the same factor, so a group keeps its relative sizes; typing
+a height makes them all exactly that tall. A prop that declared no height of
+its own starts from its model’s height.</li>
+<li>Resizing is uniform: the prop’s width, radius and length follow its height, so
+a tree never stretches or squashes.</li>
+</ul>
+<p>The size is stored as the plain OpenDRIVE <code dir="auto">@height</code> / <code dir="auto">@width</code> / <code dir="auto">@radius</code> /
+<code dir="auto">@length</code> attributes on the <code dir="auto">&#x3C;object></code> — no RoadMaker-specific extension — so
+another tool reads it back as an ordinary sized object, and a <code dir="auto">.xodr</code> authored
+elsewhere that declares a 10 m tree draws a 10 m tree here. Exports match the
+viewport: the glTF instance node carries the scale and the USD stage bakes it
+into the geometry.</p>
+<p>Signals are placed from their own models and are not resizable.</p>
+<div class="sl-heading-wrapper level-h3"><h3 id="moving-a-prop-by-the-numbers">Moving a prop by the numbers</h3><a class="sl-anchor-link" href="#moving-a-prop-by-the-numbers"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24"><path fill="currentcolor" d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 0 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 1 0-1.42-1.42Zm8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 0 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 1 0 1.42 1.42l3.88-3.89a4.49 4.49 0 0 0 0-6.33ZM8.83 15.17a1 1 0 0 0 1.1.22 1 1 0 0 0 .32-.22l4.92-4.92a1 1 0 0 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42Z"></path></svg></span><span class="sr-only">Section titled “Moving a prop by the numbers”</span></a></div>
+<p>The Attributes pane also carries a prop’s full placement: <strong>s</strong> and <strong>t</strong> along
+and across its road, a <strong>Heading</strong> about the vertical axis, and a <strong>Z offset</strong>
+above the road surface. These are the same values the transform gizmo writes, so
+you can nudge a prop precisely by typing where dragging is fiddly — and the
+Heading row steps in the same 15° increments the gizmo’s yaw ring snaps to.
+Underneath, a read-only <strong>World</strong> row reports where the prop actually ends up
+once the road’s curve and elevation are applied.</p>
+<p>Unlike <strong>Height</strong>, these rows act on the primary selection only.</p>
+<div class="sl-heading-wrapper level-h3"><h3 id="placing-signs-the-sign-tool">Placing signs: the Sign tool</h3><a class="sl-anchor-link" href="#placing-signs-the-sign-tool"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24"><path fill="currentcolor" d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 0 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 1 0-1.42-1.42Zm8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 0 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 1 0 1.42 1.42l3.88-3.89a4.49 4.49 0 0 0 0-6.33ZM8.83 15.17a1 1 0 0 0 1.1.22 1 1 0 0 0 .32-.22l4.92-4.92a1 1 0 0 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42Z"></path></svg></span><span class="sr-only">Section titled “Placing signs: the Sign tool”</span></a></div>
+<p>The <strong>Sign tool</strong> (<code dir="auto">B</code>) places a single road sign on a click, or on a drag that
+slides it along the nearest road and drops on release — the same snapping as the
+Signal tool, so a sign always lands on a road, never in open space. With a sign
+selected in the Library it places that sign; otherwise it defaults to a
+<strong>street-name blade</strong> (<code dir="auto">D3-1</code>), so the tool is usable the moment you pick it.
+Each placement is one undo step, and the placed sign is selected.</p>
+<p>The signs RoadMaker ships are the <strong>US pack</strong>: the MUTCD set listed in the
+<a href="https://github.com/Robomous/RoadMaker/blob/main/docs/domain/realism_defaults.md#14-signs-mutcd-conventional-road-sizes">realism defaults</a>,
+each with its designation, face size and mounting height. A placement writes
+that identity straight into the <code dir="auto">.xodr</code> — <code dir="auto">country="US"</code> with the designation as
+<code dir="auto">@type</code> (for example <code dir="auto">R1-1</code> for a stop sign), plus the face size in
+<code dir="auto">@height</code>/<code dir="auto">@width</code>. A sign’s definition is <strong>data, not code</strong>, so a future
+country pack is another data set rather than a new build.</p>
+<p>A sign’s legend is <strong>editable</strong>, in one of two ways depending on the sign.</p>
+<ul>
+<li><strong>Text.</strong> Select the sign and use the <strong>Text</strong> row in the Attributes pane — a
+small multi-line box, so a street name can wrap (<code dir="auto">MAIN ST</code> over <code dir="auto">W 4TH</code>). The
+edit commits when the box loses focus and is a <strong>single undo step</strong>; Escape
+discards it. The text is written as the standard OpenDRIVE <code dir="auto">@text</code> (§14,
+Table 122), so it round-trips through save and reload — newlines included —
+and any other OpenDRIVE tool reads it back.</li>
+<li><strong>Speed limit.</strong> A speed-limit sign (<code dir="auto">R2-1</code>) shows a <strong>Speed limit</strong> row
+instead of a fixed number baked into its type. The posted speed is stored as
+OpenDRIVE <code dir="auto">@value</code> with the <code dir="auto">@unit</code> the spec requires alongside it, so a
+simulator reads the limit rather than having to recognise the sign. The face
+is always drawn in <strong>mph</strong>, whichever display units the editor is set to —
+that is what a US sign reads.</li>
+</ul>
+<p>Each sign’s face is a texture the kernel bakes: its <strong>artwork</strong> — the Do Not
+Enter roundel, the ONE WAY arrow, the turn prohibitions, the warning and school
+figures, all drawn in-repo after the public-domain US federal sign
+specifications — plus the sign’s fixed wording and whatever legend you typed,
+set in a highway typeface. So a sign shows its real face in the 3D viewport and
+in <strong>exported glTF</strong> (<code dir="auto">.glb</code>). USD export keeps the flat plate (single-file USDA
+cannot embed an image), but the <code dir="auto">@text</code> is still written to the stage’s <code dir="auto">.xodr</code>
+companion. The Text row is available for any static sign (text is legal on all
+of them) and is disabled for dynamic traffic lights.</p>
+<p>The sign itself is built to the spec too: its own silhouette — octagon,
+triangle, diamond, pentagon, disc — at the standard face size, on a breakaway
+post, with the face’s bottom edge at the standard mounting height. Placing a
+sign therefore gets you something a reviewer recognises at a glance, not a
+generic plate.</p>
+<p>A <code dir="auto">.xodr</code> authored against another country’s sign catalogue still opens: its
+signals round-trip untouched, and any identity this build does not ship simply
+draws on the generic silhouette.</p>
+<div class="sl-heading-wrapper level-h3"><h3 id="junction-markings">Junction markings</h3><a class="sl-anchor-link" href="#junction-markings"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24"><path fill="currentcolor" d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 0 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 1 0-1.42-1.42Zm8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 0 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 1 0 1.42 1.42l3.88-3.89a4.49 4.49 0 0 0 0-6.33ZM8.83 15.17a1 1 0 0 0 1.1.22 1 1 0 0 0 .32-.22l4.92-4.92a1 1 0 0 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42Z"></path></svg></span><span class="sr-only">Section titled “Junction markings”</span></a></div>
+<p>The painted markings a junction needs on every arm author in one action each.
+Right-click the <strong>junction floor</strong> — the blended surface in the middle, between
+the arms — and pick from:</p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>Action</th><th>Authors</th></tr></thead><tbody><tr><td><strong>Add crosswalks to all arms</strong></td><td>one zebra <code dir="auto">&#x3C;object type="crosswalk"></code> per arm, spanning its driving lanes just inside the junction</td></tr><tr><td><strong>Add stop lines to all arms</strong></td><td>a solid <code dir="auto">&#x3C;object type="roadMark" subtype="signalLines"></code> across each arm’s approach lanes, set back behind the crosswalk</td></tr><tr><td><strong>Add lane arrows to all arms</strong></td><td>a straight arrow on each approach lane, pointing into the junction and set back behind the stop line</td></tr><tr><td><strong>Add centre lines to all arms</strong></td><td>a double-yellow centre line (<code dir="auto">roadMark</code> <code dir="auto">solid solid</code>, yellow) on lane 0 of each arm, replacing the one the road template laid down</td></tr></tbody></table>
+<p>Each action covers <strong>every arm at once and is a single undo step</strong> — Ctrl+Z
+takes the whole batch back. An action is greyed out when the junction has no
+arms it can resolve (a junction read from another tool’s file, say), so it
+never silently does nothing.</p>
+<p>The two-way arms of a plain crossing get a stop line and an arrow <strong>per
+approach</strong> — one for each direction of travel — since each side approaches the
+junction on its own lanes.</p>
+<blockquote>
+<p><strong>Turn arrows.</strong> The editor authors the straight glyph. The <code dir="auto">arrowLeft</code> and
+<code dir="auto">arrowRight</code> variants are modelled and render, but choosing which lane gets
+which is Python-side for now — <code dir="auto">edit.junction_lane_arrows(network, junction, glyph)</code> takes a callable that picks the subtype per approach lane.</p>
+</blockquote>
+<p><strong>Poles</strong> still author from the Python package (above) or another OpenDRIVE
+tool; open the result in the editor to inspect it.</p>
+<div class="sl-heading-wrapper level-h2"><h2 id="reference">Reference</h2><a class="sl-anchor-link" href="#reference"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24"><path fill="currentcolor" d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 0 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 1 0-1.42-1.42Zm8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 0 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 1 0 1.42 1.42l3.88-3.89a4.49 4.49 0 0 0 0-6.33ZM8.83 15.17a1 1 0 0 0 1.1.22 1 1 0 0 0 .32-.22l4.92-4.92a1 1 0 0 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42Z"></path></svg></span><span class="sr-only">Section titled “Reference”</span></a></div>
+<ul>
+<li><a href="https://github.com/Robomous/RoadMaker/blob/main/docs/design/m3a/01_kernel_objects_signals.md">M3a kernel — objects &#x26; signals</a>
+— the data model, the authored (GS-1) set, and the validation rules.</li>
+<li><a href="https://github.com/Robomous/RoadMaker/blob/main/docs/design/m3a/02_road_marks.md">M3a road-mark completions</a> — colour,
+multi-line geometry, and object-based crosswalks / stop lines / arrows.</li>
+</ul> </div> <footer class="sl-flex astro-3yyafb3n"> <div class="meta sl-flex astro-3yyafb3n">   </div> <div class="pagination-links print:hidden astro-u2l5gyhi" dir="ltr"> <a href="/dev/reference/t-junction/" rel="prev" class="astro-u2l5gyhi"> <svg aria-hidden="true" class="astro-u2l5gyhi astro-c6vsoqas" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="--sl-icon-size: 1.5rem;"><path d="M17 11H9.41l3.3-3.29a1.004 1.004 0 1 0-1.42-1.42l-5 5a1 1 0 0 0-.21.33 1 1 0 0 0 0 .76 1 1 0 0 0 .21.33l5 5a1.002 1.002 0 0 0 1.639-.325 1 1 0 0 0-.219-1.095L9.41 13H17a1 1 0 0 0 0-2Z"/></svg> <span class="astro-u2l5gyhi"> Previous <br class="astro-u2l5gyhi"> <span class="link-title astro-u2l5gyhi">T-junction (tee into a road body)</span> </span> </a> <a href="/dev/reference/ground-surfaces/" rel="next" class="astro-u2l5gyhi"> <svg aria-hidden="true" class="astro-u2l5gyhi astro-c6vsoqas" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="--sl-icon-size: 1.5rem;"><path d="M17.92 11.62a1.001 1.001 0 0 0-.21-.33l-5-5a1.003 1.003 0 1 0-1.42 1.42l3.3 3.29H7a1 1 0 0 0 0 2h7.59l-3.3 3.29a1.002 1.002 0 0 0 .325 1.639 1 1 0 0 0 1.095-.219l5-5a1 1 0 0 0 .21-.33 1 1 0 0 0 0-.76Z"/></svg> <span class="astro-u2l5gyhi"> Next <br class="astro-u2l5gyhi"> <span class="link-title astro-u2l5gyhi">Ground Surfaces</span> </span> </a> </div>   </footer>  </div> </div>   </main> </div> </div>  </div> </div>  </body></html>
