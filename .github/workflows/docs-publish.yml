@@ -159,6 +159,13 @@ jobs:
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
 
+      # The whole assembled tree, not just the version just built: dev/, every
+      # version directory still being served, and latest/. A version published
+      # months ago is still a page a reader can open, and nothing else re-checks
+      # it.
+      - name: Internal links across the assembled tree
+        run: node docs-site/scripts/check-links.mjs published${{ steps.plan.outputs.scratch && '/_dryrun' || '' }}
+
       - name: Verify the dry run stayed inside its scratch prefix
         if: github.event_name == 'workflow_dispatch'
         working-directory: published

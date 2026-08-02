@@ -259,8 +259,9 @@ model shrinks the dual-source surface to the reference pages alone.
 - `docs/user-guide/index.md` is already the `.qhp` pipeline's **ordering
   manifest** — the generator ingests exactly the pages that page links, in
   link order — so it keeps that role for the reference tier and the adapter
-  reads the same order. Guides order by folder structure plus an optional
-  `_order` manifest the `.qhp` generator ignores.
+  reads the same order. Guides order by folder structure (Starlight's
+  `autogenerate`); the `_order` manifest sketched during planning was not
+  needed and was not built.
 - Astro Starlight lives in a new top-level `docs-site/` folder. `docs/`
   remains the public contributor source of truth; `docs-site/` is tooling.
   Node LTS pinned (`engines` + `.nvmrc`), `package-lock.json` committed,

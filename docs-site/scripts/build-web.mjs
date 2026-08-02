@@ -21,6 +21,7 @@
 // Markdown — content Astro passes through untouched). Passing it through one
 // environment variable is what keeps those two from disagreeing.
 import { spawnSync } from 'node:child_process';
+import { writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -59,6 +60,18 @@ step('theme tokens', [join(here, 'theme-css.mjs')]);
 step('adapt docs/user-guide', [join(here, 'adapt.mjs')]);
 step('F1 coverage', [join(here, 'check-f1-coverage.mjs')]);
 step('astro build', [join(root, 'node_modules', 'astro', 'astro.js'), 'build']);
+
+// Record the base in the output. check-links.mjs runs in its own shell — in CI
+// and on a contributor's machine — where this environment variable no longer
+// exists, and a link checker that assumes the wrong base reports every link in
+// the build as broken. The stamp rides along into the published tree, so a
+// version directory (and the `latest/` copy of one) stays self-describing.
+writeFileSync(
+  join(root, 'dist', '.rm-docs-build.json'),
+  `${JSON.stringify({ target: 'web', base }, null, 2)}\n`,
+);
+
 step('verify the base', [join(here, 'check-web-build.mjs')]);
+step('internal links', [join(here, 'check-links.mjs')]);
 
 console.log(`\nbuild:web: dist/ is ready to publish under ${base}`);

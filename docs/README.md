@@ -37,10 +37,12 @@ OpenDRIVE scene in the editor: [Create Road](user-guide/reference/create-road.md
 3. [Testing](contributing/testing.md) — GoogleTest/pytest doctrine, headless
    Qt tests, sanitizers, fuzzing.
 4. [CI](contributing/ci.md) — what each gate checks.
-5. [Publishing the documentation site](contributing/docs-site-publishing.md) —
+5. [Writing user documentation](contributing/documentation.md) — which tier a
+   page belongs to, and what syntax each one allows.
+6. [Publishing the documentation site](contributing/docs-site-publishing.md) —
    how a merged docs change reaches a live page, and the maintainer runbook for
    the hosting app.
-6. The standards your change must meet:
+7. The standards your change must meet:
    [C++ style](standards/cpp-style.md) ·
    [Cross-platform](standards/cross-platform.md) ·
    [Dependencies & licensing](standards/dependencies.md) ·
@@ -102,5 +104,9 @@ editing docs:
 - No page over ~300 lines — split instead.
 - Diagrams are Mermaid, inline in the page.
 
-The tree is plain Markdown, structured so a static-site generator (e.g.
-MkDocs) could be adopted later without moving files.
+The tree is plain Markdown. `docs/user-guide/` is additionally the authored
+source for two generated outputs — the in-app help book and the documentation
+site ([ADR-0009](decisions/0009-documentation-site-tiered-docs.md)) — which
+constrains what may be written there; see
+[Writing user documentation](contributing/documentation.md). The rest of `docs/`
+has no pipeline and no syntax budget.
