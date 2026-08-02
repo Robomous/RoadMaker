@@ -19,6 +19,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 Current version on `main`: **0.0.1**.
 
 ### Added
+- **The documentation workstream is closed out: an authoring guide, link
+  hardening, and dependency hygiene**
+  ([#348](https://github.com/Robomous/RoadMaker/issues/348), docs-s4 —
+  [ADR-0009](docs/decisions/0009-documentation-site-tiered-docs.md)).
+  [Writing user documentation](docs/contributing/documentation.md) answers
+  "I want to document a thing — where does it go, and what may I write?" without
+  reading a generator: the two tiers and how to choose, the exact syntax budget
+  the in-app renderer supports, the bridge convention, image placement, and the
+  `index.md` manifest rule.
+
+  The syntax budget is stated from what the renderer actually does rather than
+  from convention — no footnotes, no front matter, no admonitions, no code-fence
+  transforms, and **no heading anchors**, so `page.md#section` lands at the top
+  of the page in the app while working on the site. The `<kbd>` inconsistency is
+  settled in favour of backticks, with the reasoning; applying it to the seven
+  pages that use `<kbd>` stays a separate change.
+
+  `check:links` verifies every internal link and image in a **built** tree —
+  each version directory, `dev/`, and `latest/`, each against the base it was
+  built with. That is a different check from the adapter's: the adapter reads
+  source and cannot see a reference that only breaks once pages are emitted.
+  Outbound links get a **non-blocking report** instead; link rot in a third
+  party's URL is not a reason a contributor's merge cannot happen.
+
+  npm dependency policy, absent until now, is written down: scoped to
+  `docs-site/`, `npm ci` against a committed lockfile, the licence gate, a
+  documented **monthly** cadence, and an explicit rule that no npm automation may
+  open pull requests or fail a job for the C++ side. The site's build tools and
+  the deliberately stubbed `sharp` are recorded in `THIRD_PARTY_LICENSES.md`.
+
+  Drift fixed: `docs/README.md` no longer says the tree is arranged so a
+  static-site generator "could be adopted later", and the roadmap no longer
+  describes an `_order` manifest for guides that was sketched during planning
+  and never built.
 - **The documentation site publishes itself, versioned**
   ([#347](https://github.com/Robomous/RoadMaker/issues/347), docs-s3 —
   [ADR-0009](docs/decisions/0009-documentation-site-tiered-docs.md)). GitHub

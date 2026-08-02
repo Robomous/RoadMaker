@@ -35,6 +35,34 @@ BSL-1.0, Unlicense/CC0. License files verified in each upstream archive.
 | {fmt} | 12.2.0 | MIT | https://github.com/fmtlib/fmt | Formatting (kernel-wide, no iostream) |
 | spdlog | 1.17.0 | MIT | https://github.com/gabime/spdlog | Logging (built against external fmt) |
 
+## Documentation-site build tools (npm, `docs-site/` only)
+
+Build-time only, on Linux CI and on a contributor's machine. **Nothing here is
+compiled into, linked by, or shipped inside any RoadMaker artifact** — the
+kernel, the Python wheels, and the editor never see them, and CMake never
+invokes npm. What ships from this tree is the generated HTML, which is
+RoadMaker's own content.
+
+Direct dependencies only; the full installed tree (374 packages at the time of
+writing, all MIT/ISC/Apache-2.0/BSD/BlueOak/Python-2.0) is verified on every CI
+run by `npm run licenses`, which fails on anything outside the permitted set.
+Policy and the monthly update cadence:
+[dependencies — npm](docs/standards/dependencies.md).
+
+| What | Version | License | Where | Notes |
+|---|---|---|---|---|
+| Astro | 5.14.1 | MIT | https://github.com/withastro/astro | Static site generator for the documentation site |
+| Starlight | 0.36.0 | MIT | https://github.com/withastro/starlight | Documentation theme built on Astro |
+| Node.js | 24.x (pinned by `.nvmrc` + `engines`) | MIT | https://nodejs.org | Runtime for the adapter, build and check scripts |
+
+**`sharp` is deliberately stubbed out.** Astro lists it as an optional
+dependency for its default image service, and its prebuilt libvips binaries are
+**LGPL-3.0-or-later**. Qt is this project's only sanctioned LGPL dependency, so
+`docs-site/package.json` overrides `sharp` to a local no-op that throws if
+anything imports it, and `astro.config.mjs` uses the passthrough image service
+instead. `--omit=optional` was not usable — it would also drop a required
+native binary. No libvips binary is ever downloaded, built, or shipped.
+
 ## Bundled documentation (not dependencies)
 
 Third-party copyrighted material that lives in the repository but is **not**

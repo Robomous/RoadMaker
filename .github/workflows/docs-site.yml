@@ -60,6 +60,19 @@ jobs:
       - name: Build (under a version segment, as published)
         run: npm run build:web -- --base=/dev/
 
+      # Every internal link and image in the built output, checked against the
+      # base it was built with. The adapter's own check runs on SOURCE, so it
+      # cannot see a reference that only breaks once the pages are emitted.
+      - name: Internal links
+        run: npm run check:links
+
+      # Report only, on purpose: link rot in a third party's URL is not a reason
+      # a contributor's merge cannot happen. `continue-on-error` as well as the
+      # script's own exit 0, so a crash in the reporter cannot block either.
+      - name: Outbound link report (never blocks)
+        continue-on-error: true
+        run: npm run report:external
+
       - uses: actions/upload-artifact@v4
         with:
           name: docs-site
@@ -91,6 +104,11 @@ jobs:
       # a disc rather than only from a server.
       - name: Build the local reader
         run: npm run build:local
+
+      # The offline reader's links are relative rather than base-prefixed, so
+      # this is a genuinely different resolution path from the web build's.
+      - name: Internal links
+        run: npm run check:links
 
       - uses: actions/upload-artifact@v4
         with:

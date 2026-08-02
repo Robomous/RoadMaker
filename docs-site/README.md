@@ -38,8 +38,16 @@ npm run build:local      # the offline reader that ships in a release
 npm run build:web -- --base=/dev/   # the published site, for one version
 npm run dev              # same as build, then a dev server
 npm run licenses         # licence gate over the installed tree
+npm run check:links      # internal links, over a build or a whole publish tree
+npm run report:external  # outbound links — a report, never a failure
 npm test                 # script tests (node:test)
 ```
+
+Both builds end with `check:links`, so a broken reference fails the build that
+produced it. Each build also writes a `.rm-docs-build.json` stamp recording the
+base it used: the checker runs in its own shell, where the build's environment
+is long gone, and a checker that assumed the wrong base would report every link
+in the build as broken.
 
 The adapter **fails the build** on a broken link, naming the source page and the
 target.

@@ -56,6 +56,60 @@ replacements. Do not "helpfully" add the forbidden one:
 | 2D triangulation / plan-view ops | CDT (MPL-2.0) + Clipper2 (BSL-1.0) | CGAL; Triangle (non-commercial-only!) |
 | Scene export | glTF via tinygltf, later OpenUSD | FBX SDK (proprietary; FBX may become an out-of-tree plugin built against the user's own SDK) |
 
+## npm dependencies (`docs-site/` only)
+
+The documentation site is the one part of this repository with an npm tree
+([ADR-0009](../decisions/0009-documentation-site-tiered-docs.md)). The same
+licence rules apply, with three additions:
+
+- **It is scoped to `docs-site/`.** Nothing else in the repository has a
+  `package.json`, and **CMake never invokes npm** — a developer build of the
+  kernel or the editor needs no Node at all.
+- **`package-lock.json` is committed and CI runs `npm ci`**, so what CI resolves
+  is exactly what a contributor resolved.
+- **`npm run licenses` is a gate.** It reads every *installed* package's own
+  `package.json` — the lockfile does not record licences — and fails on anything
+  outside the permitted set. A package that ships a LICENSE file and declares
+  nothing in `package.json` is read from the file rather than failed, because
+  the file is still the grant. **Extend that fallback for a similar case; never
+  weaken the gate.** If a dependency resolves non-permissive and no permissive
+  alternative exists, stop and ask the maintainer.
+
+`sharp` is the standing example of the policy biting: the site's framework
+lists it as an optional dependency for image processing, and its prebuilt
+libvips binaries are **LGPL-3.0-or-later**. Qt is this project's only sanctioned
+LGPL dependency, so `package.json` overrides `sharp` to a local no-op stub that
+throws if anything imports it, and the site uses a passthrough image service.
+`--omit=optional` was not usable — it would also drop a required native binary.
+
+### Update cadence: monthly
+
+Once a month, and otherwise only when something needs it:
+
+```sh
+cd docs-site
+npm outdated                 # what has moved
+npm update                   # within the declared ranges
+npm install <pkg>@<version>  # for a major, deliberately
+npm run licenses             # the gate, before anything else
+npm test && npm run build:web -- --base=/dev/ && npm run build:local
+```
+
+Commit the updated `package-lock.json` with the change. Record any new direct
+dependency in `THIRD_PARTY_LICENSES.md`.
+
+**No npm automation may open pull requests against this repository or fail a job
+for the C++ side.** Dependency bots and advisory scanners are deliberately not
+enabled here: a docs-site advisory that cannot affect the kernel must never
+appear as a red check on a kernel change. That is why the cadence is a documented
+human task rather than a robot.
+
+Judge an advisory by whether it can reach *this* deployment. The site is
+statically prerendered with no adapter and no server, so advisories confined to a
+dev server, SSR, middleware, server islands, or an image endpoint do not apply to
+what is published — note the assessment in the update commit rather than
+silently ignoring it.
+
 ## Adding a dependency (checklist — all steps, one commit)
 
 1. **Verify the license file in the upstream repository**, not just the

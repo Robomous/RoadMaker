@@ -19,7 +19,9 @@
     "licenses": "node scripts/licenses.mjs",
     "check": "node scripts/check-f1-coverage.mjs",
     "check:local": "node scripts/check-local-build.mjs",
-    "test": "node --test \"test/**/*.test.mjs\""
+    "test": "node --test \"test/**/*.test.mjs\"",
+    "check:links": "node scripts/check-links.mjs",
+    "report:external": "node scripts/report-external-links.mjs"
   },
   "dependencies": {
     "@astrojs/starlight": "0.36.0",
