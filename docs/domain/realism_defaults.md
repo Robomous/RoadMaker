@@ -272,7 +272,7 @@ The values in the `rm-defaults`-marked tables above are mirrored by **one
 machine-readable code table** from which the authoring templates, road
 styles, marking constants, and prop/sign dimensions derive. A CI test
 asserts this document's marked tables match the code table exactly — the
-same mechanism that keeps `docs/user-guide/shortcuts.md` honest against
+same mechanism that keeps `docs/user-guide/reference/shortcuts.md` honest against
 `shortcut_registry` (`editor/tests/test_shortcut_registry.cpp`).
 Divergence fails CI, not review. The registry and test land with
 [#413](https://github.com/Robomous/RoadMaker/issues/413) (cross-section +
@@ -477,7 +477,7 @@ street.
 | Item | Old | New |
 |---|---|---|
 | Sign/signal facing | none (always along +s) | auto-orientation section |
-| Prop Z-rotation snapping | 15° on the drag *delta*, props only | absolute 15° from the road, props **and** signs (orientation table); suppression modifier in [Moving & transforming](../user-guide/moving-and-transforming.md) |
+| Prop Z-rotation snapping | 15° on the drag *delta*, props only | absolute 15° from the road, props **and** signs (orientation table); suppression modifier in [Moving & transforming](../user-guide/reference/moving-and-transforming.md) |
 
 *(The "Old" column here was audited at `e18592b` as "none (free ring)". The
 detent and its Shift suppression had in fact shipped with the gizmo in #188;

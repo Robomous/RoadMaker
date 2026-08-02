@@ -66,5 +66,5 @@ is its own data) while a derived one disappears with the loop.
 
 ## Reference
 
-[P5 discovery report](../roadmap/pillars/p5_discovery.md) and
-[GW-2 step 6](../roadmap/golden_workflows/gw2_simple_scene.md).
+[P5 discovery report](../../roadmap/pillars/p5_discovery.md) and
+[GW-2 step 6](../../roadmap/golden_workflows/gw2_simple_scene.md).

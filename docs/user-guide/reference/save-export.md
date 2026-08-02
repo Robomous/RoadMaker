@@ -30,7 +30,7 @@ From the Python package you can export the tessellated network:
 
 - **glTF** (`.glb`) — `rm.export_glb(network, "road.glb")`
 - **OpenUSD** (`.usda`) — the USD exporter (see
-  [USD export design](../design/m2/04_usd_export.md))
+  [USD export design](../../design/m2/04_usd_export.md))
 
 ```python
 import roadmaker as rm
@@ -44,7 +44,7 @@ network model itself stays right-handed and Z-up.
 
 ## Reference
 
-- [Running → Python package](../getting-started/running.md#python-package) —
+- [Running → Python package](../../getting-started/running.md#python-package) —
   load / author / export from code.
-- [OpenDRIVE conventions](../domain/opendrive.md) — what the writer emits and
+- [OpenDRIVE conventions](../../domain/opendrive.md) — what the writer emits and
   the coordinate frame it uses.

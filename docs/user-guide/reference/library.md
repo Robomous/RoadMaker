@@ -29,7 +29,7 @@ text sign the Sign tool, and a prop set the Prop Curve tool. See
 | **Prop assemblies** | Traffic signal, mast arm | several props placed as **one unit** — see [composite props](#composite-props-place-as-one-unit) below |
 | **Buildings** | Low block, Mid-rise, Tower | an OpenDRIVE `<object>` (typed `building`) on the nearest road |
 | **Props** | Pine / Oak / Birch / Poplar tree, Shrub, Streetlight (single / double), City block set | an OpenDRIVE `<object>` on the nearest road — trees are typed `tree`, streetlights `pole`; the set scatters a mix of buildings |
-| **Signals** | Traffic light plus the US sign pack (Stop, Yield, Speed limit, Do not enter, One way, turn restrictions, Keep right, warning diamonds, School, Street name) | an OpenDRIVE `<signal>` on the nearest road — the light is a dynamic control, the signs are static and carry their MUTCD designation as `@type` with `country="US"` (see the [realism defaults](../domain/realism_defaults.md#14-signs-mutcd-conventional-road-sizes)) |
+| **Signals** | Traffic light plus the US sign pack (Stop, Yield, Speed limit, Do not enter, One way, turn restrictions, Keep right, warning diamonds, School, Street name) | an OpenDRIVE `<signal>` on the nearest road — the light is a dynamic control, the signs are static and carry their MUTCD designation as `@type` with `country="US"` (see the [realism defaults](../../domain/realism_defaults.md#14-signs-mutcd-conventional-road-sizes)) |
 | **Markings** | Solid single white, Double yellow, Dashed white / yellow, Double white, Solid–broken / Broken–solid yellow, Double dashed yellow, Wide edge white | a `<roadMark>` on the lane boundary you drop it on |
 | **Materials** | Asphalt, Asphalt (worn), Concrete, Paint (white / yellow) | a `<material>` on the lane (or ground surface) you drop it on ([materials](materials.md)) |
 
@@ -131,7 +131,7 @@ selected lane's road mark without aiming in the viewport — see
 
 ## Materials drop on a surface slot
 
-A **material** re-textures a [ground surface](../user-guide/attributes.md). It
+A **material** re-textures a [ground surface](attributes.md). It
 has no world point to snap to, so it is dropped onto the **Materials** slot in
 the Attributes pane of a selected surface (dropping one on the viewport hints
 you there). See [attributes](attributes.md#ground-surface-material).
@@ -165,5 +165,5 @@ out before you let go rather than after.
 
 - [Objects & signals](objects-signals.md) — the full object/signal model props
   belong to.
-- [UI revamp — Library dock](../design/ui-revamp/phase2_library.md) and
-  [props](../design/ui-revamp/phase3_props.md) — the design specs.
+- [UI revamp — Library dock](../../design/ui-revamp/phase2_library.md) and
+  [props](../../design/ui-revamp/phase3_props.md) — the design specs.

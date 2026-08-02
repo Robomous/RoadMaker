@@ -41,42 +41,42 @@ not undoable.
 
 | Tool | Task |
 |---|---|
-| [Camera & navigation](camera-navigation.md) | Orbit, zoom, and pan the viewport around its pivot |
-| [Keyboard shortcuts](shortcuts.md) | Every binding, generated from the editor's own table |
-| [Editing attributes](attributes.md) | Scrub numeric fields by dragging their name; drop assets into slots |
-| [Scene tree](scene-tree.md) | Find and select any road, lane, or junction from the structural list |
-| [Diagnostics](diagnostics.md) | Read parser and validator findings, each citing its ASAM rule |
-| [Library](library.md) | Drag ready-made roads, intersections, and props into the scene |
-| [Tools and the Library](tools-and-library.md) | How toolbar tools (modes) and Library assets (content) work together |
-| [Projects](projects.md) | Group scenes and shared Library assets in a project folder |
-| [Create Road](create-road.md) | Lay a new clothoid road through waypoints with a lane template |
-| [Moving and transforming](moving-and-transforming.md) | Move and rotate roads and props with the Move tool and its 3D transform gizmo |
-| [Edit Nodes](edit-nodes.md) | Reshape a road by moving, inserting, and deleting its waypoints |
-| [Bend Points](bend-points.md) | Double-click a road to add a bend node without reshaping it |
-| [Merge & Split](merge-split.md) | Cut a road in two, or weld two adjacent roads into one |
-| [Right-Click Menus](context-menus.md) | The context actions for roads, nodes, junctions, and empty space |
-| [Lane](lane-profile.md) | Add, remove, and retype lanes and set travel direction across a road's cross-section |
-| [Lane Width](lane-width.md) | Shape a lane's width along the road as a 2D curve |
-| [Lane Add](lane-add.md) | Drop a self-contained pocket lane into the middle of a road |
-| [Lane Form](lane-form.md) | Grow a new lane from a point to the road's end, linked across seams |
-| [Lane Carve](lane-carve.md) | Carve a tapering turn lane on a junction approach |
-| [Road Styles](road-styles.md) | Restyle a whole road by dropping a style from the Library |
-| [Elevation](elevation.md) | Give a road a vertical profile |
-| [Junction](junction.md) | Connect road ends into a junction with generated turning lanes |
-| [Maneuvers](junction.md#maneuvers) | Reshape a junction's turns, lock them, label them, and add U-turns |
-| [Signalization](junction.md#signalization) | Auto-signalize a junction with traffic-light or stop-sign templates |
-| [T-junction](t-junction.md) | Tee a road's end into another road's body |
-| [Objects & signals](objects-signals.md) | Add crosswalks, props, traffic lights, and signs |
-| [Ground surfaces](ground-surfaces.md) | Reshape the ground a loop of roads encloses as a node graph |
-| [Terrain](terrain.md) | Give the scene a ground height field the roads shape |
-| [Terrain brush](terrain-brush.md) | Sculpt the ground by hand and import a DEM |
-| [Bridges](bridges.md) | Turn a road raised over a crossing into a bridge structure |
-| [Road markings](markings.md) | Place arrow stencils on a lane and draw free-form line markings and crossings |
-| [Materials](materials.md) | Pave a lane or surface with asphalt or concrete, textured and saved into the file |
-| [Textured rendering](textured-rendering.md) | Switch the viewport between the Sober working look and the daytime textured look |
-| [Viewport hints](viewport-hints.md) | Show or hide the active tool's hint card in the viewport corner |
-| [Save & export](save-export.md) | Write OpenDRIVE and export meshes (glTF, USD) |
-| [Export previews](export-preview.md) | See what an export will contain — and what it will leave behind — before writing it |
+| [Camera & navigation](reference/camera-navigation.md) | Orbit, zoom, and pan the viewport around its pivot |
+| [Keyboard shortcuts](reference/shortcuts.md) | Every binding, generated from the editor's own table |
+| [Editing attributes](reference/attributes.md) | Scrub numeric fields by dragging their name; drop assets into slots |
+| [Scene tree](reference/scene-tree.md) | Find and select any road, lane, or junction from the structural list |
+| [Diagnostics](reference/diagnostics.md) | Read parser and validator findings, each citing its ASAM rule |
+| [Library](reference/library.md) | Drag ready-made roads, intersections, and props into the scene |
+| [Tools and the Library](reference/tools-and-library.md) | How toolbar tools (modes) and Library assets (content) work together |
+| [Projects](reference/projects.md) | Group scenes and shared Library assets in a project folder |
+| [Create Road](reference/create-road.md) | Lay a new clothoid road through waypoints with a lane template |
+| [Moving and transforming](reference/moving-and-transforming.md) | Move and rotate roads and props with the Move tool and its 3D transform gizmo |
+| [Edit Nodes](reference/edit-nodes.md) | Reshape a road by moving, inserting, and deleting its waypoints |
+| [Bend Points](reference/bend-points.md) | Double-click a road to add a bend node without reshaping it |
+| [Merge & Split](reference/merge-split.md) | Cut a road in two, or weld two adjacent roads into one |
+| [Right-Click Menus](reference/context-menus.md) | The context actions for roads, nodes, junctions, and empty space |
+| [Lane](reference/lane-profile.md) | Add, remove, and retype lanes and set travel direction across a road's cross-section |
+| [Lane Width](reference/lane-width.md) | Shape a lane's width along the road as a 2D curve |
+| [Lane Add](reference/lane-add.md) | Drop a self-contained pocket lane into the middle of a road |
+| [Lane Form](reference/lane-form.md) | Grow a new lane from a point to the road's end, linked across seams |
+| [Lane Carve](reference/lane-carve.md) | Carve a tapering turn lane on a junction approach |
+| [Road Styles](reference/road-styles.md) | Restyle a whole road by dropping a style from the Library |
+| [Elevation](reference/elevation.md) | Give a road a vertical profile |
+| [Junction](reference/junction.md) | Connect road ends into a junction with generated turning lanes |
+| [Maneuvers](reference/junction.md#maneuvers) | Reshape a junction's turns, lock them, label them, and add U-turns |
+| [Signalization](reference/junction.md#signalization) | Auto-signalize a junction with traffic-light or stop-sign templates |
+| [T-junction](reference/t-junction.md) | Tee a road's end into another road's body |
+| [Objects & signals](reference/objects-signals.md) | Add crosswalks, props, traffic lights, and signs |
+| [Ground surfaces](reference/ground-surfaces.md) | Reshape the ground a loop of roads encloses as a node graph |
+| [Terrain](reference/terrain.md) | Give the scene a ground height field the roads shape |
+| [Terrain brush](reference/terrain-brush.md) | Sculpt the ground by hand and import a DEM |
+| [Bridges](reference/bridges.md) | Turn a road raised over a crossing into a bridge structure |
+| [Road markings](reference/markings.md) | Place arrow stencils on a lane and draw free-form line markings and crossings |
+| [Materials](reference/materials.md) | Pave a lane or surface with asphalt or concrete, textured and saved into the file |
+| [Textured rendering](reference/textured-rendering.md) | Switch the viewport between the Sober working look and the daytime textured look |
+| [Viewport hints](reference/viewport-hints.md) | Show or hide the active tool's hint card in the viewport corner |
+| [Save & export](reference/save-export.md) | Write OpenDRIVE and export meshes (glTF, USD) |
+| [Export previews](reference/export-preview.md) | See what an export will contain — and what it will leave behind — before writing it |
 
 ## Tutorials
 

@@ -158,4 +158,4 @@ byte-identical.
 - [ADR-0008 — persistence layers, ASAM first](../decisions/0008-persistence-layers-asam-first.md)
 - [Editor architecture](editor.md) · [Kernel architecture](kernel.md)
 - [OpenDRIVE domain notes](../domain/opendrive.md)
-- User-facing: [Projects](../user-guide/projects.md)
+- User-facing: [Projects](../user-guide/reference/projects.md)

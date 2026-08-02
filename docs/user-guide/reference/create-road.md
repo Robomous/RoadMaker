@@ -10,7 +10,7 @@ clothoid reference line and applies a lane template.*
 1. Select the **Create Road** tool from the toolbar.
 2. Pick a **lane template** from the toolbar dropdown (the kernel `LaneProfile`
    presets — the four road classes of the
-   [realism defaults](../domain/realism_defaults.md): freeway, arterial,
+   [realism defaults](../../domain/realism_defaults.md): freeway, arterial,
    collector, or the default **local street** with sidewalks). New roads use
    the local-street template unless you pick another.
 3. Click in the viewport to drop **waypoints** along the path you want. A live
@@ -28,12 +28,12 @@ reshape it later without re-deriving them.
 - The reference line is arc length `s` in metres, right-handed and Z-up.
   Lane ids follow OpenDRIVE: negative to the right of the reference line,
   positive to the left, `0` the centre line — see
-  [OpenDRIVE conventions](../domain/opendrive.md).
+  [OpenDRIVE conventions](../../domain/opendrive.md).
 - Prefer to author from code? `python/examples/author_road.py` builds the same
   clothoid road through waypoints and writes OpenDRIVE + glTF
-  ([Running → Runnable examples](../getting-started/running.md#runnable-examples)).
+  ([Running → Runnable examples](../../getting-started/running.md#runnable-examples)).
 
 ## Reference
 
 Precise interaction, preview, and undo semantics:
-[M2 editing tools §2 (Create Road)](../design/m2/02_editing_tools.md).
+[M2 editing tools §2 (Create Road)](../../design/m2/02_editing_tools.md).

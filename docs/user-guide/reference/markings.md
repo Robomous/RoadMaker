@@ -40,7 +40,7 @@ road.*
 
 A marking asset paints a solid or dashed line of the asset's width along the
 curve; a crosswalk asset paints a striped band — this is the curved crossing of
-[GW-5 step 6](../roadmap/golden_workflows/gw5_crosswalk_assets.md).
+[GW-5 step 6](../../roadmap/golden_workflows/gw5_crosswalk_assets.md).
 
 All points of one curve must lie on the anchor road; a click that leaves it is
 rejected with a status-bar message.
@@ -69,5 +69,5 @@ gentler curve, add intermediate points, or reduce the marking width.
 
 ## Reference
 
-[M3a road marks](../design/m3a/02_road_marks.md) and the
-[GW-5 crosswalk-assets workflow](../roadmap/golden_workflows/gw5_crosswalk_assets.md).
+[M3a road marks](../../design/m3a/02_road_marks.md) and the
+[GW-5 crosswalk-assets workflow](../../roadmap/golden_workflows/gw5_crosswalk_assets.md).

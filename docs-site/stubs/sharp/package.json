@@ -1,0 +1,8 @@
+{
+  "name": "sharp",
+  "version": "0.34.4",
+  "private": true,
+  "license": "Apache-2.0",
+  "description": "Deliberate no-op stub. RoadMaker does not take sharp: its prebuilt libvips binaries are LGPL-3.0-or-later, and Qt is this project's only sanctioned LGPL dependency.",
+  "main": "index.js"
+}

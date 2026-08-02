@@ -25,6 +25,6 @@ Edits are undoable commands; a drag commits one command on release.
 
 ## Reference
 
-[M2 editing tools §5 (Elevation)](../design/m2/02_editing_tools.md) and
-[junction blending](../design/m2/03_junction_blending.md) for the surface
+[M2 editing tools §5 (Elevation)](../../design/m2/02_editing_tools.md) and
+[junction blending](../../design/m2/03_junction_blending.md) for the surface
 between graded arms.

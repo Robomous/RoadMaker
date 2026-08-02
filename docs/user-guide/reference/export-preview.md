@@ -73,7 +73,7 @@ produced, so it describes the file rather than an idea of it. Below it:
 
 - **RoadMaker extensions carried in the file** — the `rm:` records that travel
   inside `<userData>`. They are the ASAM-adjacent layer described in
-  [ADR-0008](../decisions/0008-persistence-layers-asam-first.md): another tool
+  [ADR-0008](../../decisions/0008-persistence-layers-asam-first.md): another tool
   ignores them and still reads the file. Your camera and render mode are *not*
   here, and never will be — those live in the scene's `.rmscene.json`
   companion.

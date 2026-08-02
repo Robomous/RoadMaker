@@ -22,9 +22,9 @@ signal set, and you can author it from the Python package now:
 
 | Example | What it authors |
 |---|---|
-| [`place_objects.py`](../../python/examples/place_objects.py) | A crosswalk, a pole, and a tree line (`<repeat>`) |
-| [`place_signals.py`](../../python/examples/place_signals.py) | A traffic light, a speed-limit sign, a pedestrian-crossing sign |
-| [`road_marks.py`](../../python/examples/road_marks.py) | A true double-yellow centre line and dashed white edge lines |
+| [`place_objects.py`](../../../python/examples/place_objects.py) | A crosswalk, a pole, and a tree line (`<repeat>`) |
+| [`place_signals.py`](../../../python/examples/place_signals.py) | A traffic light, a speed-limit sign, a pedestrian-crossing sign |
+| [`road_marks.py`](../../../python/examples/road_marks.py) | A true double-yellow centre line and dashed white edge lines |
 
 ```sh
 python python/examples/place_signals.py signals.xodr
@@ -241,7 +241,7 @@ selected in the Library it places that sign; otherwise it defaults to a
 Each placement is one undo step, and the placed sign is selected.
 
 The signs RoadMaker ships are the **US pack**: the MUTCD set listed in the
-[realism defaults](../domain/realism_defaults.md#14-signs-mutcd-conventional-road-sizes),
+[realism defaults](../../domain/realism_defaults.md#14-signs-mutcd-conventional-road-sizes),
 each with its designation, face size and mounting height. A placement writes
 that identity straight into the `.xodr` — `country="US"` with the designation as
 `@type` (for example `R1-1` for a stop sign), plus the face size in
@@ -315,7 +315,7 @@ tool; open the result in the editor to inspect it.
 
 ## Reference
 
-- [M3a kernel — objects & signals](../design/m3a/01_kernel_objects_signals.md)
+- [M3a kernel — objects & signals](../../design/m3a/01_kernel_objects_signals.md)
   — the data model, the authored (GS-1) set, and the validation rules.
-- [M3a road-mark completions](../design/m3a/02_road_marks.md) — colour,
+- [M3a road-mark completions](../../design/m3a/02_road_marks.md) — colour,
   multi-line geometry, and object-based crosswalks / stop lines / arrows.

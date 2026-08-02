@@ -21,12 +21,12 @@ package sit on top ([architecture](docs/architecture/overview.md)).
 ![The RoadMaker editor: an urban intersection — a signalized four-arm
 junction with crosswalks, stop lines, lane arrows, traffic lights, and street
 trees — in the graphite-amber theme with the Library catalogue
-open](docs/user-guide/img/gs1_hero.png)
+open](docs/user-guide/reference/img/gs1_hero.png)
 
 Drag a road assembly, an intersection, or a prop straight from the **Library**
 onto the scene — every drop is one undoable edit:
 
-![Placing trees along a junction by dragging them from the Library](docs/user-guide/img/workflow.gif)
+![Placing trees along a junction by dragging them from the Library](docs/user-guide/reference/img/workflow.gif)
 
 Prebuilt editor packages (DMG / NSIS installer / AppImage) and Python wheels
 will ship with the first release, **v0.1.0** — published when the

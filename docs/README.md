@@ -21,12 +21,12 @@ architecture, domain conventions, and roadmap.
 ## I want to author a network
 
 The [user guide](user-guide/index.md) is task-by-task guidance for building an
-OpenDRIVE scene in the editor: [Create Road](user-guide/create-road.md),
-[Edit Nodes](user-guide/edit-nodes.md),
-[Lane Profile](user-guide/lane-profile.md),
-[Elevation](user-guide/elevation.md), [Junction](user-guide/junction.md),
-[Objects & signals](user-guide/objects-signals.md), and
-[Save & export](user-guide/save-export.md).
+OpenDRIVE scene in the editor: [Create Road](user-guide/reference/create-road.md),
+[Edit Nodes](user-guide/reference/edit-nodes.md),
+[Lane Profile](user-guide/reference/lane-profile.md),
+[Elevation](user-guide/reference/elevation.md), [Junction](user-guide/reference/junction.md),
+[Objects & signals](user-guide/reference/objects-signals.md), and
+[Save & export](user-guide/reference/save-export.md).
 
 ## I want to contribute
 

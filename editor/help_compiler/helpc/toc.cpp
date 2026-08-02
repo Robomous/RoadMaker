@@ -122,7 +122,6 @@ Toc build_toc(const std::filesystem::path& guide_dir) {
   toc.index.rel_path = "index.md";
   toc.index.slug = "index";
   toc.index.title = first_h1(index_md);
-  toc.index.tutorial = false;
 
   std::unordered_set<std::string> seen;
   for (const std::string& raw : extract_links(index_md)) {
@@ -136,6 +135,9 @@ Toc build_toc(const std::filesystem::path& guide_dir) {
     if (path.size() < 3 || path.substr(path.size() - 3) != ".md") {
       continue;
     }
+    if (path.rfind("tutorials/", 0) == 0) {
+      continue; // Starlight-only tier since docs-s1 (ADR-0009)
+    }
     if (!std::filesystem::exists(guide_dir / path)) {
       continue;
     }
@@ -146,7 +148,6 @@ Toc build_toc(const std::filesystem::path& guide_dir) {
     entry.rel_path = path;
     entry.slug = path.substr(0, path.size() - 3);
     entry.title = first_h1(read_file(guide_dir / path));
-    entry.tutorial = path.rfind("tutorials/", 0) == 0;
     toc.pages.push_back(std::move(entry));
   }
   return toc;

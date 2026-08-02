@@ -30,10 +30,9 @@ namespace roadmaker::helpc {
 
 /// One guide page in the table of contents.
 struct TocEntry {
-  std::string rel_path;  ///< path relative to the guide dir, e.g. "create-road.md"
-  std::string slug;      ///< rel_path minus ".md" — the help-s2 keyword id contract
-  std::string title;     ///< the page's H1
-  bool tutorial = false; ///< true when it nests under the synthetic "Tutorials" node
+  std::string rel_path; ///< path relative to the guide dir, e.g. "create-road.md"
+  std::string slug;     ///< rel_path minus ".md" — the help-s2 keyword id contract
+  std::string title;    ///< the page's H1
 };
 
 /// The whole guide: the index page plus every page it links, in link order.
@@ -47,7 +46,8 @@ struct Toc {
 /// Follows the order of index.md's markdown links; drops links that are
 /// external, that escape the guide directory (a `../` prefix), that are not
 /// `.md`, or whose target file does not exist. Each page's title is its H1;
-/// `tutorials/` pages are flagged for the synthetic Tutorials node.
+/// `tutorials/` links are SKIPPED: since docs-s1 the Qt Help pipeline serves the
+/// reference tier only, and tutorials are Starlight-only (ADR-0009).
 [[nodiscard]] Toc build_toc(const std::filesystem::path& guide_dir);
 
 /// The index page followed by every linked page — the iteration order for

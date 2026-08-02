@@ -61,7 +61,7 @@ by dragging from the Library Browser onto Attributes-pane slots.
     names the asset; a new row appears in the Library's **Materials** category
     with the image itself as its thumbnail.
 14. [ ] Drag that row onto a lane. **Expected:** the lane re-textures in
-    [textured mode](../../user-guide/textured-rendering.md) exactly as a bundled
+    [textured mode](../../user-guide/reference/textured-rendering.md) exactly as a bundled
     material does — the imported image is sampled, not a flat colour.
 15. [ ] Save the scene and inspect the `.xodr`. **Expected:** the lane carries
     `<material surface="rm:<slug>" …>` (Layer 0, ASAM §11.8.2) and **no texture
