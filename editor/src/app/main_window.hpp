@@ -264,6 +264,12 @@ private:
   void show_world_georeference();
 
   void show_help(const QString& slug = QStringLiteral("index"));
+
+  /// Help ▸ Open Manual in Browser. Opens the packaged HTML manual in the system
+  /// browser (ADR-0009 rejects embedding a web view), or points at the online
+  /// docs when this build did not bundle one — the normal developer case, since
+  /// bundling is opt-in and needs Node.
+  void open_manual();
   /// The objectName of the QDockWidget that owns the keyboard focus, or an
   /// empty string when focus is not inside a dock. F1 feeds this to
   /// help::context_page so the focused panel's page wins over the active tool.

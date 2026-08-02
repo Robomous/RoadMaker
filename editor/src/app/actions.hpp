@@ -222,6 +222,10 @@ public:
 
   /// Opens the in-app user guide (Help menu, F1).
   QAction* help_contents = nullptr;
+
+  /// Opens the packaged HTML manual in the system browser (Help menu). Unbound
+  /// — F1 belongs to the in-app viewer.
+  QAction* open_manual = nullptr;
   QAction* about = nullptr;
 };
 

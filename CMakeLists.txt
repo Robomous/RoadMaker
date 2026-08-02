@@ -18,6 +18,12 @@ option(RM_BUILD_SHARED "Build roadmaker_core as a shared library" OFF)
 # Stub until M2 phase 5 — the exporter lands per docs/design/m2/04_usd_export.md.
 option(RM_BUILD_USD "Build the OpenUSD exporter" OFF)
 option(RM_INSTALL "Generate install rules for the kernel" ${PROJECT_IS_TOP_LEVEL})
+# The offline HTML manual (ADR-0009). OFF so a developer build never needs Node;
+# the release packaging job builds it and passes ROADMAKER_MANUAL_DIR. No CMake
+# target ever invokes npm.
+option(ROADMAKER_BUNDLE_MANUAL "Install the prebuilt offline manual with the editor" OFF)
+set(ROADMAKER_MANUAL_DIR "" CACHE PATH
+  "Prebuilt manual directory (docs-site/dist) — required when ROADMAKER_BUNDLE_MANUAL is ON")
 
 if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
   set(CMAKE_BUILD_TYPE RelWithDebInfo CACHE STRING "Build type" FORCE)

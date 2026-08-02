@@ -432,6 +432,13 @@ constexpr std::array kTable{
           .description = "Open the user guide",
           .standard = QKeySequence::HelpContents,
           .documented = "F1"},
+    // Menu-only and unbound (docs-s2, #346): no .primary and no .documented, so
+    // it renders nothing on the shortcuts page. F1 keeps the in-app viewer; this
+    // opens the packaged HTML manual in the system browser, and taking a second
+    // binding for it would spend a key on something the menu already offers.
+    Entry{.id = Id::OpenManual,
+          .category = "Help",
+          .description = "Open the full manual in a browser"},
 };
 
 /// PortableText so the page is platform-stable; the StandardKey rows still

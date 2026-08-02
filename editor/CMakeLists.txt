@@ -97,6 +97,7 @@ add_library(roadmaker_editor_lib STATIC
   src/help/help_locator.cpp
   src/help/help_registry.cpp
   src/help/help_viewer.cpp
+  src/help/manual_locator.cpp
   src/panels/diagnostics_panel.cpp
   src/panels/export_preview_window.cpp
   src/panels/world_georeference_window.cpp
@@ -253,11 +254,15 @@ set(_rm_help_out ${CMAKE_BINARY_DIR}/help)
 set(_rm_guide_dir ${CMAKE_SOURCE_DIR}/docs/user-guide)
 set(_rm_help_css ${CMAKE_CURRENT_SOURCE_DIR}/resources/help/help.css)
 
+# The .qhp pipeline reads index.md plus the reference/ tier; docs-s1 took
+# tutorials/ out of it (helpc::build_toc skips them — Starlight serves that tier).
+# Watch exactly what rm_helpc reads, or editing a reference page leaves the
+# shipped collection stale.
 file(GLOB _rm_help_inputs CONFIGURE_DEPENDS
   ${_rm_guide_dir}/*.md
-  ${_rm_guide_dir}/tutorials/*.md
+  ${_rm_guide_dir}/reference/*.md
   ${_rm_guide_dir}/img/*
-  ${_rm_guide_dir}/tutorials/img/*)
+  ${_rm_guide_dir}/reference/img/*)
 
 set(_rm_qhp ${_rm_help_out}/html/roadmaker.qhp)
 set(_rm_qhcp ${_rm_help_out}/roadmaker.qhcp)
@@ -334,6 +339,34 @@ if(RM_INSTALL)
   # above, which `BUNDLE DESTINATION .` copies wholesale.
   if(NOT APPLE)
     install(FILES ${_rm_qch} ${_rm_qhc} DESTINATION bin/help)
+  endif()
+
+  # The offline HTML manual (ADR-0009 / docs-s2), opt-in so a developer build
+  # never needs Node. CMAKE NEVER INVOKES NPM: the packaging job runs
+  # `npm run build:local` first and passes the finished directory in as
+  # ROADMAKER_MANUAL_DIR. Layout per ADR-0009 — inside the bundle on macOS,
+  # share/ on Linux, beside the exe on Windows.
+  if(ROADMAKER_BUNDLE_MANUAL)
+    if(NOT ROADMAKER_MANUAL_DIR)
+      message(FATAL_ERROR
+        "ROADMAKER_BUNDLE_MANUAL is ON but ROADMAKER_MANUAL_DIR is unset. Build the "
+        "manual first (cd docs-site && npm ci && npm run build:local) and pass "
+        "-DROADMAKER_MANUAL_DIR=<path to docs-site/dist>.")
+    endif()
+    if(NOT EXISTS ${ROADMAKER_MANUAL_DIR}/index.html)
+      message(FATAL_ERROR
+        "ROADMAKER_MANUAL_DIR=${ROADMAKER_MANUAL_DIR} has no index.html — that is not a "
+        "built manual.")
+    endif()
+    if(APPLE)
+      set(_rm_manual_dest roadmaker-editor.app/Contents/Resources)
+    elseif(WIN32)
+      set(_rm_manual_dest ${CMAKE_INSTALL_BINDIR})
+    else()
+      set(_rm_manual_dest ${CMAKE_INSTALL_DATADIR}/roadmaker)
+    endif()
+    install(DIRECTORY ${ROADMAKER_MANUAL_DIR}/ DESTINATION ${_rm_manual_dest}/manual)
+    message(STATUS "Bundling the offline manual from ${ROADMAKER_MANUAL_DIR}")
   endif()
 
   # Linux desktop integration: the .desktop entry (app menu / launcher) plus

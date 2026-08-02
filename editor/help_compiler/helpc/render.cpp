@@ -54,7 +54,75 @@ std::pair<std::string, std::string> split_anchor(const std::string& target) {
   return {target.substr(0, hash), target.substr(hash)};
 }
 
+/// The span of the `## Full guide` section, or npos when the page has none.
+/// The heading must be alone on its line; the section runs to the next H2.
+std::pair<std::size_t, std::size_t> bridge_span(const std::string& markdown) {
+  const std::string heading = kBridgeHeading;
+  std::size_t at = 0;
+  while ((at = markdown.find(heading, at)) != std::string::npos) {
+    const bool line_start = at == 0 || markdown[at - 1] == '\n';
+    const std::size_t after = at + heading.size();
+    const bool line_end =
+        after >= markdown.size() || markdown[after] == '\n' || markdown[after] == '\r';
+    if (line_start && line_end) {
+      const std::size_t next = markdown.find("\n## ", after);
+      return {after, next == std::string::npos ? markdown.size() : next};
+    }
+    at = after;
+  }
+  return {std::string::npos, std::string::npos};
+}
+
 } // namespace
+
+std::optional<BridgeLink> bridge_link(const std::string& markdown, const std::string& page_rel) {
+  const auto [begin, end] = bridge_span(markdown);
+  if (begin == std::string::npos) {
+    return std::nullopt;
+  }
+
+  // The FIRST markdown link in the section is the bridge; anything after it is
+  // ordinary prose.
+  const std::size_t open = markdown.find('[', begin);
+  if (open == std::string::npos || open >= end) {
+    return std::nullopt;
+  }
+  const std::size_t close = markdown.find("](", open);
+  if (close == std::string::npos || close >= end) {
+    return std::nullopt;
+  }
+  const std::size_t paren = markdown.find(')', close + 2);
+  if (paren == std::string::npos || paren >= end) {
+    return std::nullopt;
+  }
+
+  BridgeLink link;
+  link.text = markdown.substr(open + 1, close - (open + 1));
+  link.target_begin = close + 2;
+  link.target_end = paren;
+  link.target = markdown.substr(link.target_begin, link.target_end - link.target_begin);
+
+  std::string path = link.target;
+  if (const auto hash = path.find('#'); hash != std::string::npos) {
+    link.anchor = path.substr(hash);
+    path = path.substr(0, hash);
+  }
+  if (path.empty() || is_absolute_link(path)) {
+    return std::nullopt;
+  }
+
+  // Resolve against the PAGE's directory, which is what turns a reference page's
+  // `../tutorials/x.md` into the guide-relative `tutorials/x`.
+  std::filesystem::path resolved =
+      std::filesystem::path(page_rel).parent_path() / std::filesystem::path(path);
+  resolved = resolved.lexically_normal();
+  std::string slug = resolved.generic_string();
+  if (slug.size() >= 3 && slug.substr(slug.size() - 3) == ".md") {
+    slug = slug.substr(0, slug.size() - 3);
+  }
+  link.slug = slug;
+  return link;
+}
 
 std::string rewrite_target(const std::string& target,
                            const RenderOptions& opts,
@@ -89,7 +157,17 @@ std::string rewrite_target(const std::string& target,
 }
 
 std::string render_page(const std::string& markdown, const RenderOptions& opts) {
-  std::string body = md_to_html(markdown);
+  std::string source = markdown;
+
+  // Retarget the bridge link BEFORE the Markdown is rendered, so the generic
+  // href rewriting below never sees it. `rmmanual:` reaches the viewer intact.
+  if (const std::optional<BridgeLink> bridge = bridge_link(source, opts.page_rel)) {
+    source.replace(bridge->target_begin,
+                   bridge->target_end - bridge->target_begin,
+                   std::string(kManualScheme) + bridge->slug + bridge->anchor);
+  }
+
+  std::string body = md_to_html(source);
 
   const auto rewrite_attr = [&](const std::string& attr, bool is_image) {
     const std::regex pattern(attr + R"rx(="([^"]*)")rx");

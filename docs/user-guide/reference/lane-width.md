@@ -38,3 +38,7 @@ in or out of existence (the basis for [Lane Add](lane-add.md),
 [M2 editing tools §4](../../design/m2/02_editing_tools.md) and the
 [P2 discovery report](../../roadmap/pillars/p2_discovery.md). Width semantics and
 the zero-width rule: [OpenDRIVE conventions](../../domain/opendrive.md).
+
+## Full guide
+
+[Shaping lanes](../tutorials/shaping-lanes.md) — shape one lane's width as part of a full cross-section pass.

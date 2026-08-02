@@ -31,3 +31,7 @@ you add, split, merge, or delete objects.
 The tree is backed by a `QAbstractItemModel` over the road network; the model
 and its update rules are covered in the editor architecture notes
 (`docs/architecture/editor.md`).
+
+## Full guide
+
+[Getting around](../tutorials/getting-around.md) — find and frame things in a scene you did not build.

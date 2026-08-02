@@ -34,12 +34,61 @@ Tiers ([ADR-0009](../docs/decisions/0009-documentation-site-tiered-docs.md)):
 ```sh
 npm ci
 npm run build            # theme -> adapt -> F1 coverage -> astro build
-npm run dev              # same, then a dev server
+npm run build:local      # the offline reader that ships in a release
+npm run dev              # same as build, then a dev server
 npm run licenses         # licence gate over the installed tree
+npm test                 # script tests (node:test)
 ```
 
 The adapter **fails the build** on a broken link, naming the source page and the
 target.
+
+## Two builds, one source
+
+| Build | Output | Search | Links |
+|---|---|---|---|
+| `build` (web) | directory URLs | Pagefind | root-absolute |
+| `build:local` | `format: 'file'` | **off** | fully relative |
+
+`build:local` produces the copy bundled in every release, which a reader opens
+straight from disk. Three things follow from `file://`, and each is enforced
+rather than assumed:
+
+- **`format: 'file'`** — a browser will not serve `index.html` for a bare
+  directory over `file://`, so pages are `<slug>.html`.
+- **Relative references** — a root-absolute `/…` resolves against the filesystem
+  root and 404s. `scripts/relativize.mjs` rewrites them, and
+  `scripts/check-local-build.mjs` then verifies the OUTPUT, so the gate still
+  fails if the transform were removed or skipped.
+- **No search** — Pagefind fetches its index over XHR, which `file://` blocks.
+  Switching it off removes the UI too: never ship a search box that does nothing.
+  The landing page says where search lives instead.
+
+`relativize.mjs` treats a reference matching no file in the build as an **error**,
+not something to rewrite quietly — that is what catches a link to a page that was
+renamed. It is idempotent, and `test/relativize.test.mjs` proves that by running
+it twice and comparing bytes rather than by asserting it in a comment.
+
+A maintained relative-links integration was considered and rejected: every npm
+package here is a permanent obligation under the licence gate, and this transform
+is string work over a directory of HTML.
+
+## The reference → guide bridge
+
+A reference page may end with a section under the exact heading `## Full guide`
+whose first link points at its tutorial. The **heading** is the marker, so the
+authored link stays an ordinary relative Markdown link that renders correctly on
+GitHub. Each pipeline then retargets it:
+
+- **this site** — an ordinary site link, via the adapter;
+- **the `.qch`** — `rmmanual:<slug>`, which the in-app viewer resolves against the
+  packaged manual at runtime and opens in the system browser (ADR-0009 rejects
+  embedding a web view). The path is only knowable at runtime, which is why the
+  compiler emits a scheme rather than a URL.
+
+Two independent gates keep it honest: `HelpBridge.EveryBridgeTargetIsAPageThatExists`
+(C++, over `docs/user-guide`) and the adapter's own broken-link failure. Renaming
+a tutorial fails both.
 
 ## Licences
 

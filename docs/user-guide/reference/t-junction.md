@@ -56,3 +56,7 @@ If the side road is too short to reach, the attach reports an error instead.
 [T-junction design](../../design/hardening/t_junction.md) — the split/attach
 composition, the gap formula, and the connecting-road conventions with their
 OpenDRIVE rule citations.
+
+## Full guide
+
+[Your first road network](../tutorials/first-road-network.md) — tee a second road into the first, step by step.

@@ -79,8 +79,10 @@
 #include "document/signal_phase_overlay.hpp"
 #include "document/signal_placement.hpp"
 #include "document/units.hpp"
+#include "help/help_locator.hpp"
 #include "help/help_registry.hpp"
 #include "help/help_viewer.hpp"
+#include "help/manual_locator.hpp"
 #include "panels/asset_import_dialog.hpp"
 #include "panels/diagnostics_panel.hpp"
 #include "panels/editor2d_host.hpp"
@@ -1389,6 +1391,8 @@ void MainWindow::build_menus() {
   connect(actions_->help_contents, &QAction::triggered, this, [this] {
     show_help(help::context_page(tool_manager_.active_id(), help_context_dock()));
   });
+  help_menu->addAction(actions_->open_manual);
+  connect(actions_->open_manual, &QAction::triggered, this, &MainWindow::open_manual);
   QAction* tour_action = help_menu->addAction(tr("&Guided Tour"));
   tour_action->setToolTip(tr("Replay the 5-step first-run tour"));
   connect(tour_action, &QAction::triggered, this, &MainWindow::start_tour);
@@ -2852,6 +2856,37 @@ void MainWindow::show_help(const QString& slug) {
   help_viewer_->show();
   help_viewer_->raise();
   help_viewer_->activateWindow();
+}
+
+void MainWindow::open_manual() {
+  // The whole decision is "did a manual ship with this build?" — help::manual_index()
+  // answers it and is unit-tested; everything here is the two consequences.
+  if (const std::optional<std::filesystem::path> index = help::manual_index()) {
+    if (QDesktopServices::openUrl(QUrl::fromLocalFile(QString::fromStdString(index->string())))) {
+      return;
+    }
+    QMessageBox::warning(this,
+                         tr("Open Manual"),
+                         tr("The manual is installed at %1, but no browser could be "
+                            "launched to open it.")
+                             .arg(QString::fromStdString(index->string())));
+    return;
+  }
+
+  // Not an error: bundling the manual is opt-in (ROADMAKER_BUNDLE_MANUAL) so a
+  // developer build never has one. Say where it is instead of failing.
+  auto* box = new QMessageBox(QMessageBox::Information,
+                              tr("Manual Not Bundled"),
+                              tr("This build does not include the offline manual — release "
+                                 "builds do.<br><br>The full guide is online at:"
+                                 "<br><a href=\"%1\">%1</a><br><br>"
+                                 "The in-app user guide is always available with F1.")
+                                  .arg(QLatin1String(help::kGithubUserGuideUrl)),
+                              QMessageBox::Ok,
+                              this);
+  box->setTextFormat(Qt::RichText);
+  box->setAttribute(Qt::WA_DeleteOnClose);
+  box->open(); // non-blocking: never stalls a headless run
 }
 
 void MainWindow::show_world_georeference() {

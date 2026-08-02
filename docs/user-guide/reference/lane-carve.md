@@ -34,3 +34,7 @@ held-full tail into a connecting lane.
 
 [M2 editing tools §4](../../design/m2/02_editing_tools.md) and the
 [P2 discovery report](../../roadmap/pillars/p2_discovery.md).
+
+## Full guide
+
+[Shaping lanes](../tutorials/shaping-lanes.md) — carve a turn lane on a junction approach.

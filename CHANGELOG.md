@@ -19,6 +19,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 Current version on `main`: **0.0.1**.
 
 ### Added
+- **The manual ships with the app, and reference pages bridge into it**
+  ([#346](https://github.com/Robomous/RoadMaker/issues/346), docs-s2 —
+  [ADR-0009](docs/decisions/0009-documentation-site-tiered-docs.md)). Every
+  release now carries a browser-openable copy of the full illustrated manual,
+  reachable from **Help ▸ Open Manual in Browser**, alongside the in-app `F1`
+  book it already had. `F1` and the `.qch` pipeline are behaviourally unchanged.
+
+  `npm run build:local` produces the offline reader. Opening from `file://`
+  forces three things, each enforced rather than assumed: pages are emitted as
+  `<slug>.html` (a browser will not serve `index.html` for a bare directory over
+  `file://`), every reference is rewritten relative (a root-absolute `/…`
+  resolves against the filesystem root), and search is **off** — Pagefind fetches
+  its index over XHR, which `file://` blocks, so the search UI is removed with it
+  and the landing page says where search lives. `check-local-build.mjs` verifies
+  the built output rather than the transform, so the gate still fails if the
+  rewriting step were dropped from the build.
+
+  Packaging is opt-in (`ROADMAKER_BUNDLE_MANUAL`, default `OFF`) and **CMake
+  never invokes npm**: the release job builds the manual with Node and passes the
+  finished directory in as `ROADMAKER_MANUAL_DIR`, so a developer build still
+  needs no Node. The release smoke test asserts the manual on all three
+  platforms, at the same layout the app's own resolver computes.
+
+  A reference page may end with a `## Full guide` section linking its tutorial.
+  The heading is the marker, so the authored link stays ordinary Markdown that
+  renders on GitHub; the site emits a normal link and the help compiler emits
+  `rmmanual:<slug>`, which the viewer resolves against the packaged manual at
+  runtime and opens externally (ADR-0009 rejects embedding a web view). Applied
+  to the 13 reference pages that have a matching tutorial, and gated from both
+  sides — renaming a tutorial fails the C++ bridge gate and the site adapter.
+
+  Two defects surfaced on the way and are fixed here. The adapter treated any
+  `../`-prefixed link as leaving the guide, so since the tier split every
+  tutorial's link to a reference page left the site for GitHub; it now resolves
+  the target first. And the help build's dependency glob still watched
+  `tutorials/` while missing `reference/`, so editing a reference page left the
+  shipped collection stale. ([#297](https://github.com/Robomous/RoadMaker/issues/297)
+  is the help compiler's own `../` rewriting and is untouched.)
 - **The user guide is split into tiers, and a documentation site is scaffolded**
   ([#345](https://github.com/Robomous/RoadMaker/issues/345), docs-s1 —
   [ADR-0009](docs/decisions/0009-documentation-site-tiered-docs.md)). The
