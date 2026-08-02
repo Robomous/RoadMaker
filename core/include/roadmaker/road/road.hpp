@@ -42,6 +42,19 @@ enum class ContactPoint {
 struct RoadLink {
   std::variant<RoadId, JunctionId> target;
   ContactPoint contact = ContactPoint::Start;
+
+  /// `@elementS` — where on the linked element the connection sits [m].
+  /// Required alongside `@elementDir` when the link points at a **virtual**
+  /// junction (`asam.net:xodr:1.7.0:road.linkage.virtjunc_link_attribute_usage`,
+  /// §10 road linkage) and absent otherwise. Unset ⇒ the attribute was absent,
+  /// so it round-trips absent (#537).
+  std::optional<double> element_s;
+
+  /// `@elementDir` — `"+"` or `"-"`, the direction along the linked element.
+  /// Kept verbatim: it is a two-value enumeration whose spelling is the whole
+  /// content, and an unknown value must survive rather than be normalised.
+  /// Empty ⇒ absent.
+  std::string element_dir;
 };
 
 /// Plan-view waypoint [m] for clothoid path fitting (authoring API and the

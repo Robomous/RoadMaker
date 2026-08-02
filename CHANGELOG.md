@@ -1370,6 +1370,25 @@ Current version on `main`: **0.0.1**.
   about silently never matched.
 
 ### Fixed
+- **Virtual-junction linkage and connection internals round-trip**
+  ([#537](https://github.com/Robomous/RoadMaker/issues/537)). Three holes, all
+  in modeled scopes that #453's preservation sweep deliberately does not cover:
+
+  - **`@elementS`/`@elementDir` were read nowhere.**
+    `asam.net:xodr:1.7.0:road.linkage.virtjunc_link_attribute_usage` *requires*
+    both on a `<link>` pointing at a virtual junction, and `read_link` took only
+    `elementType`/`elementId`/`contactPoint` — with no diagnostic. A conformant
+    file lost its virtual-junction linkage on the first save. They are carried
+    on `RoadLink` now and written back only when the source had them, so an
+    ordinary road link stays byte-identical.
+  - **A virtual junction's own `<connection>`s were deleted.** §12.7 permits
+    them, but the arms-xor-spans policy cleared the list — warned, then
+    destroyed. They are preserved instead: held out of `connections` so nothing
+    tries to build geometry from them (arms-xor-spans still holds for
+    *generation*), and re-emitted unchanged.
+  - **`<connection>` `@type` and non-`<laneLink>` children were dropped.**
+    `@id` regeneration is benign because the writer renumbers deterministically;
+    `@type` carries meaning the file owns.
 - **Five spec areas that were warned about and then thrown away now round-trip**
   ([#539](https://github.com/Robomous/RoadMaker/issues/539), fmt-f2):
   `<lateralProfile><shape>` and the legacy `<crossfall>` (§10.5.1), road

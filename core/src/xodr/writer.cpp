@@ -390,6 +390,15 @@ void write_link_element(pugi::xml_node link,
     node.append_attribute("elementType").set_value("junction");
     node.append_attribute("elementId").set_value(element_id.c_str());
   }
+  // @elementS/@elementDir: required for a link into a VIRTUAL junction
+  // (asam.net:xodr:1.7.0:road.linkage.virtjunc_link_attribute_usage) and absent
+  // otherwise, so they are written iff the source carried them (#537).
+  if (road_link.element_s.has_value()) {
+    set_num(node, "elementS", *road_link.element_s);
+  }
+  if (!road_link.element_dir.empty()) {
+    node.append_attribute("elementDir").set_value(road_link.element_dir.c_str());
+  }
 }
 
 void write_lane(pugi::xml_node side, const Lane& lane) {
@@ -1658,10 +1667,49 @@ void write_junction(pugi::xml_node root,
     node.append_attribute("connectingRoad").set_value(connecting->odr_id.c_str());
     node.append_attribute("contactPoint")
         .set_value(connection.contact_point == ContactPoint::End ? "end" : "start");
+    if (!connection.type_str.empty()) {
+      node.append_attribute("type").set_value(connection.type_str.c_str());
+    }
+    for (const auto& [name, value] : connection.preserved.attributes) {
+      node.append_attribute(name.c_str()).set_value(value.c_str());
+    }
     for (const auto& [from, to] : connection.lane_links) {
       pugi::xml_node link = node.append_child("laneLink");
       link.append_attribute("from").set_value(from);
       link.append_attribute("to").set_value(to);
+    }
+    for (const std::string& fragment : connection.preserved.children) {
+      append_fragment(node, fragment);
+    }
+  }
+
+  // A virtual junction's own connections (§12.7): held aside by the reader so
+  // nothing tries to build geometry from them, re-emitted here unchanged (#537).
+  for (const JunctionConnection& connection : junction.preserved_connections) {
+    const Road* incoming = network.road(connection.incoming_road);
+    const Road* connecting = network.road(connection.connecting_road);
+    if (incoming == nullptr || connecting == nullptr) {
+      continue;
+    }
+    pugi::xml_node node = junction_node.append_child("connection");
+    node.append_attribute("id").set_value(connection_id++);
+    node.append_attribute("incomingRoad").set_value(incoming->odr_id.c_str());
+    node.append_attribute("connectingRoad").set_value(connecting->odr_id.c_str());
+    node.append_attribute("contactPoint")
+        .set_value(connection.contact_point == ContactPoint::End ? "end" : "start");
+    if (!connection.type_str.empty()) {
+      node.append_attribute("type").set_value(connection.type_str.c_str());
+    }
+    for (const auto& [name, value] : connection.preserved.attributes) {
+      node.append_attribute(name.c_str()).set_value(value.c_str());
+    }
+    for (const auto& [from, to] : connection.lane_links) {
+      pugi::xml_node link = node.append_child("laneLink");
+      link.append_attribute("from").set_value(from);
+      link.append_attribute("to").set_value(to);
+    }
+    for (const std::string& fragment : connection.preserved.children) {
+      append_fragment(node, fragment);
     }
   }
 
