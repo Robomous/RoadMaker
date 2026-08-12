@@ -278,9 +278,24 @@ Pass criteria · Results table**, macOS shortcut with Linux/Windows in
 parentheses, RoadMaker/ASAM vocabulary only, and a new doc lands with a
 `no runs yet` Results row.
 
-The migration inventory records that GW-6's three hand-run issues (one per
-platform) are **"Blocked by #249"**
-(`docs/roadmap/_migration/00-inventory.md:110,144,186`).
+The consolidation plan records that GW-6's three hand-run issues (one per
+platform) are to be created in a v0.1.0 gate milestone, **"Blocked by #249"**.
+
+> **Amendment, 2026-08-12.** Both halves of this have moved on, and the source
+> is gone. **GW-6 now exists** — [`gw6_scenarios.md`](../golden_workflows/gw6_scenarios.md),
+> drafted ahead of the pillar in #521, and `golden_workflows/README.md:29` is no
+> longer an unlinked row. **#249 is closed** (p8-s5, merged in the P8 run that
+> took the pillar to 6/6), so nothing is blocked by it any more. What has *not*
+> happened is the issue creation itself: the three GW-6 hand-run issues and the
+> v0.1.0 gate milestone that would hold them still do not exist, which is why
+> epic [#257](https://github.com/Robomous/RoadMaker/issues/257) stays open on
+> the GW hand-runs alone. That gap is tracked on the epic, not here.
+>
+> The original citation pointed into `docs/roadmap/_migration/00-inventory.md`,
+> a Phase 0 scratch inventory that declared itself deleted at Phase 4 and was
+> removed on 2026-08-12 (#563). Its live conclusions had already been absorbed
+> into issues and ADRs; this paragraph is restated from the epic rather than
+> from that file.
 
 **Open question the roadmap does not resolve**, already flagged on epic
 [#257](https://github.com/Robomous/RoadMaker/issues/257) and unresolved here:
@@ -384,8 +399,8 @@ a document and unblocks three gate issues from the fifth sprint.
 | References untracked; whitelist inert | `.gitignore:49-56` |
 | OSC 1.4.0 spec chapters | `third_party/asam/openscenario-xml-1.4.0/` (fetched on demand — not committed) (07 storyboard, 06 §6.8/6.9 routes+trajectories, 06 §6.11 signals, 12 Annex A actions / Annex C checker rules) |
 | Golden-workflow doc convention | `docs/roadmap/golden_workflows/README.md:31-46` |
-| GW-6 unlinked row | `docs/roadmap/golden_workflows/README.md:29` |
-| GW-6 hand-runs blocked by #249 | `docs/roadmap/_migration/00-inventory.md:110,144,186` |
+| GW-6 unlinked row (linked since #521) | `docs/roadmap/golden_workflows/README.md:29` |
+| GW-6 hand-runs still uncreated | epic [#257](https://github.com/Robomous/RoadMaker/issues/257) (was `docs/roadmap/_migration/00-inventory.md`, removed in #563) |
 | Replay pattern (per-step, non-aborting) | `scripts/gw2_replay.py:743-760` |
 | Python links kernel only | `python/CMakeLists.txt:12,36` |
 | Reserved Scenario toolbar tab | `editor/src/app/shortcut_registry.hpp:136` |
