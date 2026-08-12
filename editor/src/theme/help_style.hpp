@@ -33,4 +33,17 @@ namespace roadmaker::editor::help_style {
 /// header comment (so the committed file is byte-for-byte this string).
 [[nodiscard]] QString css(const Theme& theme);
 
+/// The documentation site's Starlight custom-property block for `theme`, same
+/// contract as `css()` above: the committed docs-site/src/styles/theme.css is
+/// byte-for-byte this string, and a gtest keeps them in step (#563).
+///
+/// It lives here rather than in the site build because the site must not need a
+/// C++ toolchain (ADR-0009 puts site CI on Linux-only Node runners). The
+/// previous arrangement had docs-site/scripts/theme-css.mjs LOCATE
+/// `graphite_amber()` in theme.cpp with `indexOf` and regex the `QColor(0x..)`
+/// literals back out — a JavaScript parser of C++ source that any reformat
+/// breaks. Generating here and byte-gating the committed file is the same shape
+/// help.css has always used, and it keeps the two builds unrelated.
+[[nodiscard]] QString starlight_css(const Theme& theme);
+
 } // namespace roadmaker::editor::help_style

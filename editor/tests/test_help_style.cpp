@@ -59,5 +59,42 @@ TEST(HelpStyle, CssUsesDefaultThemeAccent) {
       << "the default accent " << t.accent.name().toStdString() << " must drive link colour";
 }
 
+// The same tie for the documentation site's palette (#563). It replaced
+// docs-site/scripts/theme-css.mjs, which parsed theme.cpp with `indexOf` and a
+// `QColor(0x..)` regex — this gate is what lets the site read a committed file
+// instead, without putting a C++ toolchain on the Node-only site build.
+//
+// docs-site/src/styles/theme.css is pinned `text eol=lf` in .gitattributes: the
+// generator emits '\n' and this reads in binary, so without the pin the Windows
+// runner's autocrlf checkout fails on line endings alone — invisible on macOS
+// and Linux, and this repository has been bitten by it three times already.
+TEST(HelpStyle, StarlightCssMatchesCommittedThemeCss) {
+  const std::filesystem::path path =
+      std::filesystem::path(RM_REPO_ROOT_DIR) / "docs-site" / "src" / "styles" / "theme.css";
+  std::ifstream file(path, std::ios::binary);
+  ASSERT_TRUE(file.is_open()) << "missing " << path.string();
+  std::stringstream buffer;
+  buffer << file.rdbuf();
+  const QString committed = QString::fromStdString(buffer.str());
+
+  // graphite_amber, not default_theme(): the site ships one palette, and it is
+  // named explicitly so renaming the default cannot silently repaint the site.
+  const QString generated = help_style::starlight_css(theme::graphite_amber());
+  EXPECT_EQ(committed, generated)
+      << "docs-site/src/styles/theme.css is out of date with "
+         "help_style::starlight_css().\nReplace the committed file with:\n\n"
+      << generated.toStdString();
+}
+
+TEST(HelpStyle, StarlightCssSubstitutesEveryPlaceholder) {
+  // A leftover %1..%9 means an .arg() was dropped and the site would ship the
+  // placeholder as a colour value.
+  const QString css = help_style::starlight_css(theme::graphite_amber());
+  for (int i = 1; i <= 9; ++i) {
+    EXPECT_FALSE(css.contains(QStringLiteral("%%%1").arg(i)))
+        << "placeholder %" << i << " survived substitution";
+  }
+}
+
 } // namespace
 } // namespace roadmaker::editor

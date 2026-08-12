@@ -16,3 +16,10 @@ tests/esmini/*.xosc text eol=lf
 # reads in binary, so without this the Windows runner's autocrlf checkout would
 # fail the gate on line endings alone.
 core/tests/data/junction/straight_floor_golden.txt text eol=lf
+
+# Fourth instance (#563): the site's Starlight palette is what
+# help_style::starlight_css() emits, compared byte for byte by
+# StarlightCssMatchesCommittedThemeCss. The generator writes '\n' and the test
+# reads in binary, so without this the Windows runner's autocrlf checkout fails
+# the gate on line endings alone.
+docs-site/src/styles/theme.css text eol=lf

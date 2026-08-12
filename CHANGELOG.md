@@ -1483,6 +1483,22 @@ Current version on `main`: **0.0.1**.
   `append_fragment` was NOT shared despite the identical name and shape — the
   OpenSCENARIO writer passes `pugi::parse_fragment` and the OpenDRIVE one does
   not, so that pair is a real divergence and stays per-format.
+- **The documentation site stops parsing C++ source, and outbound links move to
+  lychee** ([#563](https://github.com/Robomous/RoadMaker/issues/563)).
+  `docs-site/scripts/theme-css.mjs` located `graphite_amber()` inside
+  `theme.cpp` with `indexOf` and regexed the `QColor(0x..)` literals back out —
+  a JavaScript parser of C++ source that any reformat of `theme.cpp` breaks. The
+  palette is now emitted by `help_style::starlight_css()`, beside the in-app
+  `help.css` generator it copies, and `docs-site/src/styles/theme.css` is
+  committed and byte-gated by a gtest. Every colour is unchanged. The site build
+  still needs nothing but Node (ADR-0009): the gate runs in the C++ matrix and
+  the site just reads a committed file.
+
+  `docs-site/scripts/report-external-links.mjs` is gone too — 125 lines of
+  hand-rolled `fetch`, concurrency and timeout handling for a report that always
+  exited 0, when lychee was already a CI dependency. A weekly non-blocking
+  `external-links` workflow replaces it; it stays off the PR path, so a third
+  party's outage still cannot block a merge.
 - **New roads default to the urban-with-sidewalks template**
   ([#355](https://github.com/Robomous/RoadMaker/issues/355)): the Create Road
   tool, its toolbar dropdown, and the Library fallback now start from

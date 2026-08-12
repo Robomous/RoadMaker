@@ -1,0 +1,16 @@
+/* GENERATED from theme::graphite_amber() by help_style::starlight_css()
+   (editor/src/theme/help_style.cpp). Do not edit: the
+   StarlightCssMatchesCommittedThemeCss gate regenerates it. */
+:root[data-theme='dark'] {
+  --sl-color-accent-low: #22252a;
+  --sl-color-accent: #f5a623;
+  --sl-color-accent-high: #e8eaed;
+  --sl-color-white: #e8eaed;
+  --sl-color-gray-1: #e8eaed;
+  --sl-color-gray-2: #a7adb5;
+  --sl-color-gray-3: #434951;
+  --sl-color-gray-4: #2e3238;
+  --sl-color-gray-5: #22252a;
+  --sl-color-gray-6: #1b1d21;
+  --sl-color-black: #131417;
+}

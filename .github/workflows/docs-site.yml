@@ -66,13 +66,6 @@ jobs:
       - name: Internal links
         run: npm run check:links
 
-      # Report only, on purpose: link rot in a third party's URL is not a reason
-      # a contributor's merge cannot happen. `continue-on-error` as well as the
-      # script's own exit 0, so a crash in the reporter cannot block either.
-      - name: Outbound link report (never blocks)
-        continue-on-error: true
-        run: npm run report:external
-
       - uses: actions/upload-artifact@v4
         with:
           name: docs-site

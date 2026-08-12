@@ -81,4 +81,36 @@ td { color: @text; border: 1px solid @border; padding: 4px 8px; }
   return sheet;
 }
 
+QString starlight_css(const Theme& t) {
+  // Starlight reads its palette from these ten custom properties; the mapping
+  // from RoadMaker's tokens to them is the whole file. `QColor::name()` gives
+  // lower-case #rrggbb, which is what the previous generator emitted too.
+  return QStringLiteral(
+             R"css(/* GENERATED from theme::graphite_amber() by help_style::starlight_css()
+   (editor/src/theme/help_style.cpp). Do not edit: the
+   StarlightCssMatchesCommittedThemeCss gate regenerates it. */
+:root[data-theme='dark'] {
+  --sl-color-accent-low: %1;
+  --sl-color-accent: %2;
+  --sl-color-accent-high: %3;
+  --sl-color-white: %3;
+  --sl-color-gray-1: %3;
+  --sl-color-gray-2: %4;
+  --sl-color-gray-3: %5;
+  --sl-color-gray-4: %6;
+  --sl-color-gray-5: %1;
+  --sl-color-gray-6: %7;
+  --sl-color-black: %8;
+}
+)css")
+      .arg(t.bg2.name(),
+           t.accent.name(),
+           t.text_primary.name(),
+           t.text_secondary.name(),
+           t.border_strong.name(),
+           t.border.name(),
+           t.bg1.name(),
+           t.bg0.name());
+}
+
 } // namespace roadmaker::editor::help_style

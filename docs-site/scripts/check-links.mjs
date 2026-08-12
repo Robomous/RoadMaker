@@ -21,8 +21,8 @@
 // version directory that was published months ago and is still being served.
 //
 // EXTERNAL LINKS ARE NOT FETCHED HERE. Link rot in somebody else's URL is not a
-// reason a merge cannot happen; report-external-links.mjs reports on those
-// without failing anything.
+// reason a merge cannot happen; the weekly `external-links` job in ci.yml
+// reports on those without failing anything.
 import { readFileSync, existsSync, statSync } from 'node:fs';
 import { join, posix, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
