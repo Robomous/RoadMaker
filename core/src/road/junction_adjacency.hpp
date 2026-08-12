@@ -80,4 +80,21 @@ touched_junctions(const RoadNetwork& network, RoadId id, const Road& road) {
   return false;
 }
 
+/// The road end a link names, or nullopt when the link is absent or points at a
+/// junction rather than a road.
+///
+/// One definition, shared by the command layer and the junction mesher (#563):
+/// both need to ask "which road end is on the other side of this link?", and
+/// both used to answer it with their own byte-identical copy.
+[[nodiscard]] inline std::optional<RoadEnd> linked_end(const std::optional<RoadLink>& link) {
+  if (!link.has_value()) {
+    return std::nullopt;
+  }
+  const RoadId* road = std::get_if<RoadId>(&link->target);
+  if (road == nullptr) {
+    return std::nullopt;
+  }
+  return RoadEnd{.road = *road, .contact = link->contact};
+}
+
 } // namespace roadmaker::road_detail

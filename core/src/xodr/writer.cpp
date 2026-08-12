@@ -43,20 +43,24 @@
 #include <variant>
 #include <vector>
 
+#include "../xml/xml_common.hpp"
+#include "enum_names.hpp"
 #include "junction_export.hpp"
 
 namespace roadmaker {
 
 namespace {
 
-/// Shortest-precision round-trippable formatting; locale-independent.
-std::string num(double value) {
-  std::string text = fmt::format("{}", value);
-  return text == "-0" ? "0" : text;
-}
+using xml_common::num;
+using xml_common::set_num;
+using xml_common::set_optional_num;
 
-void set_num(pugi::xml_node node, const char* name, double value) {
-  node.append_attribute(name).set_value(num(value).c_str());
+/// Appends a preserved fragment verbatim. NOT the OpenSCENARIO writer's
+/// `append_fragment` despite the shared name: that one passes
+/// `pugi::parse_fragment`, this one takes pugixml's defaults, and the two are
+/// not interchangeable — which is why they are not shared (#563).
+void append_fragment(pugi::xml_node parent, const std::string& fragment) {
+  parent.append_buffer(fragment.data(), fragment.size());
 }
 
 /// The sidecar name a field is referenced by and written to (p5-s2, #232).
@@ -97,125 +101,34 @@ char state_char(SignalState state) {
   return 'r';
 }
 
+// The spellings live in ONE table per enum, shared with the reader
+// (xodr/enum_names.hpp) so the two directions cannot drift apart (#476, #563).
+// What each wrapper still owns is the FALLBACK for a value the format cannot
+// spell faithfully — always an `*::Other` parsed from an exotic input, whose
+// real spelling the Preserved tier is holding in the matching `*_str` field.
+
 const char* lane_type_name(LaneType type) {
-  switch (type) {
-  case LaneType::Driving:
-    return "driving";
-  case LaneType::Stop:
-    return "stop";
-  case LaneType::Shoulder:
-    return "shoulder";
-  case LaneType::Biking:
-    return "biking";
-  case LaneType::Sidewalk:
-    return "sidewalk";
-  case LaneType::Border:
-    return "border";
-  case LaneType::Restricted:
-    return "restricted";
-  case LaneType::Parking:
-    return "parking";
-  case LaneType::Median:
-    return "median";
-  case LaneType::Curb:
-    return "curb";
-  case LaneType::None:
-    return "none";
-  case LaneType::Other:
-    return "none"; // parsed-as-other exotic types have no faithful name
-  }
-  return "none";
+  return xodr_names::name_of(xodr_names::kLaneType, type, "none");
 }
 
 const char* lane_direction_name(LaneDirection direction) {
-  switch (direction) {
-  case LaneDirection::Standard:
-    return "standard";
-  case LaneDirection::Reversed:
-    return "reversed";
-  case LaneDirection::Both:
-    return "both";
-  }
-  return "standard";
+  return xodr_names::name_of(xodr_names::kLaneDirection, direction, "standard");
 }
 
 const char* object_type_name(ObjectType type) {
-  switch (type) {
-  case ObjectType::Crosswalk:
-    return "crosswalk";
-  case ObjectType::Tree:
-    return "tree";
-  case ObjectType::Vegetation:
-    return "vegetation";
-  case ObjectType::Pole:
-    return "pole";
-  case ObjectType::Barrier:
-    return "barrier";
-  case ObjectType::Building:
-    return "building";
-  case ObjectType::Obstacle:
-    return "obstacle";
-  case ObjectType::None:
-  case ObjectType::Other: // Other always carries its spelling in type_str
-    return "none";
-  }
-  return "none";
+  return xodr_names::name_of(xodr_names::kObjectType, type, "none");
 }
 
 const char* orientation_name(ObjectOrientation orientation) {
-  switch (orientation) {
-  case ObjectOrientation::Plus:
-    return "+";
-  case ObjectOrientation::Minus:
-    return "-";
-  case ObjectOrientation::None:
-    return "none";
-  }
-  return "none";
+  return xodr_names::name_of(xodr_names::kObjectOrientation, orientation, "none");
 }
 
 const char* road_mark_name(RoadMarkType type) {
-  switch (type) {
-  case RoadMarkType::None:
-    return "none";
-  case RoadMarkType::Solid:
-    return "solid";
-  case RoadMarkType::Broken:
-    return "broken";
-  case RoadMarkType::SolidSolid:
-    return "solid solid";
-  case RoadMarkType::SolidBroken:
-    return "solid broken";
-  case RoadMarkType::BrokenSolid:
-    return "broken solid";
-  case RoadMarkType::BrokenBroken:
-    return "broken broken";
-  case RoadMarkType::Other:
-    return "solid";
-  }
-  return "none";
+  return xodr_names::name_of(xodr_names::kRoadMarkType, type, "solid");
 }
 
 const char* road_mark_color_name(RoadMarkColor color) {
-  switch (color) {
-  case RoadMarkColor::Standard:
-    return "standard";
-  case RoadMarkColor::White:
-    return "white";
-  case RoadMarkColor::Yellow:
-    return "yellow";
-  case RoadMarkColor::Red:
-    return "red";
-  case RoadMarkColor::Blue:
-    return "blue";
-  case RoadMarkColor::Green:
-    return "green";
-  case RoadMarkColor::Orange:
-    return "orange";
-  case RoadMarkColor::Other:
-    return "standard"; // parsed-as-other exotic colors have no faithful name
-  }
-  return "standard";
+  return xodr_names::name_of(xodr_names::kRoadMarkColor, color, "standard");
 }
 
 /// Structural defects the writer refuses to serialize. Findings are
@@ -499,26 +412,19 @@ void write_lane(pugi::xml_node side, const Lane& lane) {
       mark_node.append_attribute(name.c_str()).set_value(value.c_str());
     }
     for (const std::string& fragment : mark.preserved.children) {
-      // append_fragment is defined below this function, so inlined here — the
-      // same accommodation write_lane already makes for its own preserved tier.
-      mark_node.append_buffer(fragment.data(), fragment.size());
+      append_fragment(mark_node, fragment);
     }
   }
   // <material> records (§11.8.2) — XSD sequence puts them after <roadMark>
   // and before the g_additionalData (speed/access/…/userData) group. Canonical
   // attr order sOffset, friction?, roughness?, surface?, then preserved attrs;
   // optionals omit when unset so a foreign file that lacked @friction stays
-  // byte-identical. (set_optional_num/append_fragment are defined below this
-  // function, so the optional writes are inlined here.)
+  // byte-identical.
   for (const LaneMaterial& material : lane.materials) {
     pugi::xml_node material_node = lane_node.append_child("material");
     set_num(material_node, "sOffset", material.s_offset);
-    if (material.friction.has_value()) {
-      set_num(material_node, "friction", *material.friction);
-    }
-    if (material.roughness.has_value()) {
-      set_num(material_node, "roughness", *material.roughness);
-    }
+    set_optional_num(material_node, "friction", material.friction);
+    set_optional_num(material_node, "roughness", material.roughness);
     if (material.surface.has_value()) {
       material_node.append_attribute("surface").set_value(material.surface->c_str());
     }
@@ -531,13 +437,7 @@ void write_lane(pugi::xml_node side, const Lane& lane) {
   // preceded <material> re-canonicalizes to this order — the accepted
   // limitation shared by every modeled element.
   for (const std::string& fragment : lane.preserved.children) {
-    lane_node.append_buffer(fragment.data(), fragment.size());
-  }
-}
-
-void set_optional_num(pugi::xml_node node, const char* name, std::optional<double> value) {
-  if (value.has_value()) {
-    set_num(node, name, *value);
+    append_fragment(lane_node, fragment);
   }
 }
 
@@ -572,10 +472,6 @@ void write_repeat(pugi::xml_node object_node,
     set_optional_num(node, "cT", repeat.c_t);
     set_optional_num(node, "dT", repeat.d_t);
   }
-}
-
-void append_fragment(pugi::xml_node parent, const std::string& fragment) {
-  parent.append_buffer(fragment.data(), fragment.size());
 }
 
 /// One <marking> line (§13.8, Table 99). Canonical attribute order is fixed so

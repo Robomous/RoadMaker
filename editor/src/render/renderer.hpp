@@ -174,7 +174,6 @@ struct Environment {
   std::array<float, 3> ground_color{0.4F, 0.38F, 0.35F}; ///< hemisphere down
   float sun_intensity = 1.0F;
   float ambient = 0.35F;
-  bool procedural_sky = true; ///< false → sampled HDRI (later render polish)
 };
 
 /// The daytime "Textured" render mode: hemisphere sky/ground + a warm sun.
@@ -194,7 +193,6 @@ struct Environment {
   env.ground_color = {1.0F, 1.0F, 1.0F}; // ambient term, so no hemisphere tint
   env.sun_intensity = 0.65F;
   env.ambient = 0.35F;
-  env.procedural_sky = false;
   return env;
 }
 

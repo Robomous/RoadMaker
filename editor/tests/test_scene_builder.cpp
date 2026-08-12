@@ -294,7 +294,6 @@ TEST(Lighting, SoberPresetReproducesFlatM2Shading) {
   EXPECT_FLOAT_EQ(sober.ambient, 0.35F);
   EXPECT_FLOAT_EQ(sober.sun_color[0], 1.0F);
   EXPECT_FLOAT_EQ(sober.sun_intensity, 0.65F);
-  EXPECT_FALSE(sober.procedural_sky);
   // Same sun direction the pre-Environment shader hardcoded.
   EXPECT_FLOAT_EQ(sober.sun_dir[0], 0.35F);
   EXPECT_FLOAT_EQ(sober.sun_dir[1], 0.25F);
@@ -305,7 +304,6 @@ TEST(Lighting, TexturedPresetIsTheDaytimeDefault) {
   const Environment textured = textured_lighting();
   const Environment defaults; // struct defaults == the textured preset
   EXPECT_EQ(textured.sky_color, defaults.sky_color);
-  EXPECT_TRUE(textured.procedural_sky);
   // Textured sky is a tinted hemisphere, unlike Sober's flat white.
   EXPECT_NE(textured.sky_color, sober_lighting().sky_color);
 }

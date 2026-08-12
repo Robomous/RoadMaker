@@ -60,6 +60,7 @@
 
 #include "../mesh/junction_stoplines_detail.hpp"
 #include "../mesh/object_placement.hpp"
+#include "../road/junction_adjacency.hpp"
 
 namespace roadmaker::edit {
 
@@ -991,18 +992,7 @@ std::unique_ptr<Command> junction_stage(const RoadNetwork& network,
                                         std::span<const JunctionId> carried,
                                         TurnSetPolicy policy);
 
-/// The road end a link names, or nullopt when the link is absent or points at a
-/// junction rather than a road.
-std::optional<RoadEnd> linked_end(const std::optional<RoadLink>& link) {
-  if (!link.has_value()) {
-    return std::nullopt;
-  }
-  const RoadId* road = std::get_if<RoadId>(&link->target);
-  if (road == nullptr) {
-    return std::nullopt;
-  }
-  return RoadEnd{.road = *road, .contact = link->contact};
-}
+using road_detail::linked_end;
 
 /// The link slot a contact owns: predecessor at a Start, successor at an End.
 std::optional<RoadLink>& link_slot(Road& road, ContactPoint contact) {
