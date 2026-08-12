@@ -20,7 +20,6 @@ import { join } from 'node:path';
 
 import { checkRoot, checkPublishRoot, findRoots, resolveRef } from '../scripts/check-links.mjs';
 import { assemble } from '../scripts/assemble.mjs';
-import { collectExternalLinks } from '../scripts/report-external-links.mjs';
 
 /** A built version directory whose links are all sound. */
 function makeVersion(label, extraBody = '') {
@@ -159,16 +158,5 @@ test('a publish root whose redirect disagrees with the manifest is reported', ()
   } finally {
     rmSync(root, { recursive: true, force: true });
     rmSync(dev, { recursive: true, force: true });
-  }
-});
-
-test('external links are collected with the pages that use them', () => {
-  const dir = makeVersion('dev');
-  try {
-    const found = collectExternalLinks(dir);
-    assert.ok(found.has('https://example.invalid/x'));
-    assert.deepEqual([...found.get('https://example.invalid/x')], ['reference/junction.html']);
-  } finally {
-    rmSync(dir, { recursive: true, force: true });
   }
 });

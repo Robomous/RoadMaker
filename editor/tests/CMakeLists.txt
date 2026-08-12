@@ -152,6 +152,10 @@ target_compile_definitions(roadmaker_editor_tests
           # The help-style gate compares the committed help.css to the
           # generator (test_help_style.cpp).
           RM_EDITOR_RESOURCES_DIR="${CMAKE_SOURCE_DIR}/editor/resources"
+          # Same gate, second file: docs-site/src/styles/theme.css is generated
+          # by help_style::starlight_css() and committed (#563), and it lives
+          # outside editor/ — so the gate needs the repo root.
+          RM_REPO_ROOT_DIR="${CMAKE_SOURCE_DIR}"
           # Where the build stages the compiled .qch/.qhc collection
           # (test_help_collection.cpp / test_help_viewer.cpp).
           RM_HELP_STAGE_DIR="${CMAKE_BINARY_DIR}/help")

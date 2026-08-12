@@ -56,7 +56,6 @@ function step(label, args) {
   }
 }
 
-step('theme tokens', [join(here, 'theme-css.mjs')]);
 step('adapt docs/user-guide', [join(here, 'adapt.mjs')]);
 step('F1 coverage', [join(here, 'check-f1-coverage.mjs')]);
 step('astro build', [join(root, 'node_modules', 'astro', 'astro.js'), 'build']);

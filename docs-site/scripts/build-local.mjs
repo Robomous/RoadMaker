@@ -47,7 +47,6 @@ function step(label, command, args) {
 const node = process.execPath;
 const astro = join(root, 'node_modules', 'astro', 'astro.js');
 
-step('theme tokens', node, [join(here, 'theme-css.mjs')]);
 step('adapt docs/user-guide', node, [join(here, 'adapt.mjs')]);
 step('F1 coverage', node, [join(here, 'check-f1-coverage.mjs')]);
 step('astro build (file format, search off)', node, [astro, 'build']);
