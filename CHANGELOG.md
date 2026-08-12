@@ -1465,6 +1465,24 @@ Current version on `main`: **0.0.1**.
     same undo macro, instead of creating a second object.
 
 ### Changed
+- **The persistence layer keeps one table per OpenDRIVE enum instead of two**
+  ([#563](https://github.com/Robomous/RoadMaker/issues/563)). Six enums —
+  `e_laneType`, `e_roadMarkType`, `e_roadMarkColor`, `e_lane_direction`,
+  `e_objectType` and `@orientation` — were spelled out twice: an `if`-chain in
+  `xodr/reader.cpp` and a `switch` in `xodr/writer.cpp`, in different files,
+  with nothing tying the two directions together. That is the shape
+  [#476](https://github.com/Robomous/RoadMaker/issues/476) came in: the writer
+  re-spelled parsed enums into different semantics on save. They now share one
+  `constexpr` table each (`core/src/xodr/enum_names.hpp`), so a read and a write
+  cannot disagree. Five pugixml scalar helpers the two formats each kept a
+  private copy of (`to_double`, `num`, `set_num`, `set_optional_num`,
+  `node_to_string`) collapse into `core/src/xml/xml_common.hpp` the same way.
+  No behaviour change: re-emitting all 143 tracked `.xodr`/`.xosc` fixtures is
+  byte-identical, diagnostics included.
+
+  `append_fragment` was NOT shared despite the identical name and shape — the
+  OpenSCENARIO writer passes `pugi::parse_fragment` and the OpenDRIVE one does
+  not, so that pair is a real divergence and stays per-format.
 - **New roads default to the urban-with-sidewalks template**
   ([#355](https://github.com/Robomous/RoadMaker/issues/355)): the Create Road
   tool, its toolbar dropdown, and the Library fallback now start from
@@ -1876,6 +1894,12 @@ Current version on `main`: **0.0.1**.
   `asam.net:xodr:1.4.0:ids.only_ref_defined_ids` so the drop is never silent.
 
 ### Removed
+- `Environment::procedural_sky` (editor renderer)
+  ([#563](https://github.com/Robomous/RoadMaker/issues/563)). Set by
+  `sober_lighting()` and asserted by two scene-builder tests, but never read by
+  `GLRenderer` — a dead flag with a passing test and a "later render polish"
+  promise attached. The sampled-HDRI path it stood for will need its own field
+  if it is ever built.
 - `edit::junction_stop_lines` and `StopLineParams`, superseded by the derived
   stop-line entity above; the "Add stop lines to all arms" junction context
   action goes with them, since every arm already has one.

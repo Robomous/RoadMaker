@@ -29,22 +29,13 @@
 #include <variant>
 #include <vector>
 
+#include "../road/junction_adjacency.hpp"
+
 namespace roadmaker {
 
 namespace {
 
-/// The road end a connecting road's link names, or nullopt when the link is
-/// absent or points at a junction rather than a road.
-std::optional<RoadEnd> linked_end(const std::optional<RoadLink>& link) {
-  if (!link.has_value()) {
-    return std::nullopt;
-  }
-  const RoadId* road = std::get_if<RoadId>(&link->target);
-  if (road == nullptr) {
-    return std::nullopt;
-  }
-  return RoadEnd{.road = *road, .contact = link->contact};
-}
+using road_detail::linked_end;
 
 /// The outgoing lane id a connecting road links to — the successor of its
 /// single right-hand driving lane. Mirrors retarget_junction's TurnKey read so

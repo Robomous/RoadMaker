@@ -53,8 +53,7 @@
 #include <fmt/format.h>
 #include <pugixml.hpp>
 
-#include <fast_float/fast_float.h>
-
+#include <algorithm>
 #include <cmath>
 #include <cstddef>
 #include <fstream>
@@ -69,39 +68,18 @@
 #include <variant>
 #include <vector>
 
+#include "../xml/xml_common.hpp"
+
 namespace roadmaker::osc {
 namespace {
 
 // --- scalars ----------------------------------------------------------------
 
-/// Locale-independent `double` parsing; rejects trailing garbage and
-/// non-finite results.
-///
-/// Copied from core/src/xodr/reader.cpp:53-71 rather than shared, for the same
-/// reason `num()` is copied in this format's writer (osc/writer.cpp:59-63): the
-/// two standards' scalar policies are independent and either may need to
-/// diverge. OpenSCENARIO additionally admits `$parameter` expressions in
-/// numeric attributes (§9), which this reader does NOT evaluate — such a value
-/// fails here and takes the preserve-the-spelling path below, which is the
-/// correct outcome for a value whose meaning is only known at runtime.
-std::optional<double> to_double(std::string_view text) {
-  const char* first = text.data();
-  const char* last = text.data() + text.size();
-  double value{};
-  const auto result = fast_float::from_chars(first, last, value);
-  if (result.ec != std::errc{}) {
-    return std::nullopt;
-  }
-  for (const char* p = result.ptr; p != last; ++p) {
-    if (*p != ' ' && *p != '\t' && *p != '\r' && *p != '\n') {
-      return std::nullopt;
-    }
-  }
-  if (!std::isfinite(value)) {
-    return std::nullopt;
-  }
-  return value;
-}
+/// A numeric attribute this rejects is never dropped: it takes the
+/// preserve-the-spelling path below. That is the correct outcome for
+/// OpenSCENARIO's `$parameter` expressions (§9), which this reader does not
+/// evaluate because their meaning is only known at runtime.
+using xml_common::to_double;
 
 /// Strict non-negative integer parsing for `@revMajor` / `@revMinor`.
 std::optional<int> to_revision(std::string_view text) {
@@ -118,25 +96,10 @@ std::optional<int> to_revision(std::string_view text) {
   return value;
 }
 
-/// Serializes a node as a self-contained XML fragment, for the preserved tier.
-///
-/// `pugi::format_raw` drops the indentation the source document happened to
-/// carry, which is why a preserved fragment comes back re-canonicalized rather
-/// than byte-identical — fmt-s2's caveat (#326), stated here because this is
-/// where it originates.
-std::string node_to_string(const pugi::xml_node& node) {
-  std::ostringstream out;
-  node.print(out, "", pugi::format_raw);
-  return out.str();
-}
+using xml_common::node_to_string;
 
 bool is_one_of(std::string_view name, std::initializer_list<std::string_view> known) {
-  for (const std::string_view candidate : known) {
-    if (name == candidate) {
-      return true;
-    }
-  }
-  return false;
+  return std::ranges::find(known, name) != known.end();
 }
 
 std::optional<PhaseSemantics> to_semantics(std::string_view text) {

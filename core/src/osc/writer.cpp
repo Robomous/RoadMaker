@@ -51,32 +51,16 @@
 #include <variant>
 #include <vector>
 
+#include "../xml/xml_common.hpp"
+
 namespace roadmaker::osc {
 namespace {
 
 // --- formatting -------------------------------------------------------------
 
-/// Shortest-precision round-trippable formatting; locale-independent.
-///
-/// Copied deliberately from core/src/xodr/writer.cpp:52-60 rather than shared:
-/// the two formats' number policies are independent and either may need to
-/// diverge. The "-0" normalization is load-bearing — without it a negative
-/// zero reaches the file and no round trip normalizes it away — and it has its
-/// own test here, because the OpenDRIVE suite does not cover this copy.
-std::string num(double value) {
-  std::string text = fmt::format("{}", value);
-  return text == "-0" ? "0" : text;
-}
-
-void set_num(pugi::xml_node node, const char* name, double value) {
-  node.append_attribute(name).set_value(num(value).c_str());
-}
-
-void set_optional_num(pugi::xml_node node, const char* name, const std::optional<double>& value) {
-  if (value.has_value()) {
-    set_num(node, name, *value);
-  }
-}
+using xml_common::num;
+using xml_common::set_num;
+using xml_common::set_optional_num;
 
 /// Sets an attribute only when the string is non-empty. Optional OpenSCENARIO
 /// attributes are omitted, never written empty: `reference=""` names a
@@ -148,6 +132,10 @@ std::size_t preserved_element_count(const RawXml& preserved, std::string_view el
   return count;
 }
 
+/// Appends a preserved fragment verbatim. NOT shareable with the OpenDRIVE
+/// writer's same-named helper despite the identical body shape: this one adds
+/// `pugi::parse_fragment` and that one takes pugixml's defaults. A REAL
+/// divergence, unlike the scalar helpers those two writers used to copy (#563).
 void append_fragment(pugi::xml_node parent, const std::string& fragment) {
   parent.append_buffer(
       fragment.data(), fragment.size(), pugi::parse_default | pugi::parse_fragment);

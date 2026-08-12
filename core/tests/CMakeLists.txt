@@ -51,6 +51,7 @@ add_executable(roadmaker_core_tests
   test_gltf.cpp
   test_export_preview.cpp
   test_round_trip.cpp
+  test_enum_names.cpp
   test_corner_persistence.cpp
   test_stopline_persistence.cpp
   test_junction_lock_persistence.cpp
@@ -236,3 +237,4 @@ target_link_libraries(roadmaker_scale_bench PRIVATE
 target_include_directories(roadmaker_scale_bench PRIVATE
   ${CMAKE_CURRENT_SOURCE_DIR}/scale
   ${CMAKE_SOURCE_DIR}/core/src)
+

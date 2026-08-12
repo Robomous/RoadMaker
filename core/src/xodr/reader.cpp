@@ -28,8 +28,6 @@
 #include <fmt/format.h>
 #include <pugixml.hpp>
 
-#include <fast_float/fast_float.h>
-
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -45,32 +43,15 @@
 #include <utility>
 #include <vector>
 
+#include "../xml/xml_common.hpp"
+#include "enum_names.hpp"
 #include "lane_border.hpp"
 
 namespace roadmaker {
 
 namespace {
 
-/// Locale-independent double parsing; rejects trailing garbage (whitespace
-/// is tolerated). std::stod is locale-dependent — never use it for xodr IO.
-std::optional<double> to_double(std::string_view text) {
-  const char* first = text.data();
-  const char* last = text.data() + text.size();
-  double value{};
-  const auto result = fast_float::from_chars(first, last, value);
-  if (result.ec != std::errc{}) {
-    return std::nullopt;
-  }
-  for (const char* p = result.ptr; p != last; ++p) {
-    if (*p != ' ' && *p != '\t' && *p != '\r' && *p != '\n') {
-      return std::nullopt;
-    }
-  }
-  if (!std::isfinite(value)) {
-    return std::nullopt;
-  }
-  return value;
-}
+using xml_common::to_double;
 
 /// Strict decimal integer parsing for the rm:floor sort index (p4-s5, issue
 /// #320): no whitespace, no sign but a leading '-', no leading zeros, and the
@@ -133,13 +114,7 @@ std::string_view trimmed(std::string_view text) {
   return text.substr(first, text.find_last_not_of(kSpace) - first + 1);
 }
 
-/// Serializes a node as a self-contained XML fragment (no indentation), for
-/// the verbatim-preservation tier (roadmaker/xodr/raw_xml.hpp).
-std::string node_to_string(const pugi::xml_node& node) {
-  std::ostringstream out;
-  node.print(out, "", pugi::format_raw);
-  return out.str();
-}
+using xml_common::node_to_string;
 
 /// Capture everything about `node` that the caller does NOT model into `out` —
 /// the Preserved tier's one implementation (fmt-f1, #453).
@@ -1226,68 +1201,36 @@ private:
     current_lane_ = {};
   }
 
+  // The spellings themselves live in ONE table per enum, shared with the
+  // writer (xodr/enum_names.hpp). What stays here is the per-attribute POLICY
+  // the spec assigns to an absent or unrecognised value — deliberately not
+  // folded into the tables, because it differs attribute by attribute and each
+  // rule cites a different paragraph.
+
+  /// e_laneType (§11.7, Table 43). Empty/absent -> None; an unknown spelling ->
+  /// Other, whose verbatim text `Lane::type_str` keeps.
   static LaneType lane_type_from_string(std::string_view name) {
-    if (name == "driving")
-      return LaneType::Driving;
-    if (name == "stop")
-      return LaneType::Stop;
-    if (name == "shoulder")
-      return LaneType::Shoulder;
-    if (name == "biking")
-      return LaneType::Biking;
-    if (name == "sidewalk" || name == "walking")
-      return LaneType::Sidewalk;
-    if (name == "border")
-      return LaneType::Border;
-    if (name == "restricted")
-      return LaneType::Restricted;
-    if (name == "parking")
-      return LaneType::Parking;
-    if (name == "median")
-      return LaneType::Median;
-    if (name == "curb")
-      return LaneType::Curb;
-    if (name == "none" || name.empty())
+    if (name.empty()) {
       return LaneType::None;
-    return LaneType::Other;
+    }
+    return xodr_names::value_of(xodr_names::kLaneType, name).value_or(LaneType::Other);
   }
 
+  /// e_roadMarkType (§11.9, Table 47). Empty/absent -> None; unknown -> Other.
   static RoadMarkType road_mark_type_from_string(std::string_view name) {
-    if (name == "none" || name.empty())
+    if (name.empty()) {
       return RoadMarkType::None;
-    if (name == "solid")
-      return RoadMarkType::Solid;
-    if (name == "broken")
-      return RoadMarkType::Broken;
-    if (name == "solid solid")
-      return RoadMarkType::SolidSolid;
-    if (name == "solid broken")
-      return RoadMarkType::SolidBroken;
-    if (name == "broken solid")
-      return RoadMarkType::BrokenSolid;
-    if (name == "broken broken")
-      return RoadMarkType::BrokenBroken;
-    return RoadMarkType::Other;
+    }
+    return xodr_names::value_of(xodr_names::kRoadMarkType, name).value_or(RoadMarkType::Other);
   }
 
   /// e_roadMarkColor (§11.9, Table 48). Empty/absent -> Standard; unknown ->
   /// Other with a diagnostic at the call site (never dropped).
   static RoadMarkColor road_mark_color_from_string(std::string_view name) {
-    if (name == "standard" || name.empty())
+    if (name.empty()) {
       return RoadMarkColor::Standard;
-    if (name == "white")
-      return RoadMarkColor::White;
-    if (name == "yellow")
-      return RoadMarkColor::Yellow;
-    if (name == "red")
-      return RoadMarkColor::Red;
-    if (name == "blue")
-      return RoadMarkColor::Blue;
-    if (name == "green")
-      return RoadMarkColor::Green;
-    if (name == "orange")
-      return RoadMarkColor::Orange;
-    return RoadMarkColor::Other;
+    }
+    return xodr_names::value_of(xodr_names::kRoadMarkColor, name).value_or(RoadMarkColor::Other);
   }
 
   /// e_trafficRule (§10.2 Table 23). Empty/absent -> RHT, which the spec
@@ -1295,46 +1238,31 @@ private:
   /// spelling -> nullopt so the caller can default to RHT AND warn (never
   /// dropped). The verbatim spelling is kept by the caller either way.
   static std::optional<TrafficRule> traffic_rule_from_string(std::string_view name) {
-    if (name == "RHT" || name.empty())
+    if (name.empty()) {
       return TrafficRule::RightHandTraffic;
-    if (name == "LHT")
-      return TrafficRule::LeftHandTraffic;
-    return std::nullopt;
+    }
+    return xodr_names::value_of(xodr_names::kTrafficRule, name);
   }
 
   /// e_lane_direction (1.8.1 Annex A.3.10 Table 173 / 1.9.0 Annex A.3.11
   /// Table 180). Empty/absent -> Standard; an unknown spelling -> nullopt so
   /// the caller can default to Standard AND warn (never dropped).
   static std::optional<LaneDirection> lane_direction_from_string(std::string_view name) {
-    if (name == "standard" || name.empty())
+    if (name.empty()) {
       return LaneDirection::Standard;
-    if (name == "reversed")
-      return LaneDirection::Reversed;
-    if (name == "both")
-      return LaneDirection::Both;
-    return std::nullopt;
+    }
+    return xodr_names::value_of(xodr_names::kLaneDirection, name);
   }
 
   // --- objects (OpenDRIVE §13) ----------------------------------------------
 
+  /// e_objectType (§13.2, Table 92). Empty/absent -> None; an unknown spelling
+  /// -> Other, and it survives verbatim in `Object::type_str`.
   static ObjectType object_type_from_string(std::string_view name) {
-    if (name == "crosswalk")
-      return ObjectType::Crosswalk;
-    if (name == "tree")
-      return ObjectType::Tree;
-    if (name == "vegetation")
-      return ObjectType::Vegetation;
-    if (name == "pole")
-      return ObjectType::Pole;
-    if (name == "barrier")
-      return ObjectType::Barrier;
-    if (name == "building")
-      return ObjectType::Building;
-    if (name == "obstacle")
-      return ObjectType::Obstacle;
-    if (name == "none" || name.empty())
+    if (name.empty()) {
       return ObjectType::None;
-    return ObjectType::Other; // spelling survives in Object::type_str
+    }
+    return xodr_names::value_of(xodr_names::kObjectType, name).value_or(ObjectType::Other);
   }
 
   void
@@ -1448,18 +1376,14 @@ private:
            rules::kObjectOrientation);
     }
     const std::string_view orientation_value = orientation.value();
-    if (orientation_value == "+") {
-      object.orientation = ObjectOrientation::Plus;
-    } else if (orientation_value == "-") {
-      object.orientation = ObjectOrientation::Minus;
-    } else {
-      if (!orientation_value.empty() && orientation_value != "none") {
-        diag(Severity::Warning,
-             location,
-             fmt::format("unknown orientation '{}' mapped to 'none'", orientation_value));
-      }
-      object.orientation = ObjectOrientation::None;
+    const auto object_orientation =
+        xodr_names::value_of(xodr_names::kObjectOrientation, orientation_value);
+    if (!object_orientation.has_value() && !orientation_value.empty()) {
+      diag(Severity::Warning,
+           location,
+           fmt::format("unknown orientation '{}' mapped to 'none'", orientation_value));
     }
+    object.orientation = object_orientation.value_or(ObjectOrientation::None);
 
     // Set by the rm:stopline branch of the child loop below: when present this
     // object is absorbed into a junction record instead of the arena.
@@ -2124,18 +2048,14 @@ private:
            rules::kObjectOrientation);
     }
     const std::string_view orientation_value = orientation.value();
-    if (orientation_value == "+") {
-      signal.orientation = ObjectOrientation::Plus;
-    } else if (orientation_value == "-") {
-      signal.orientation = ObjectOrientation::Minus;
-    } else {
-      if (!orientation_value.empty() && orientation_value != "none") {
-        diag(Severity::Warning,
-             location,
-             fmt::format("unknown orientation '{}' mapped to 'none'", orientation_value));
-      }
-      signal.orientation = ObjectOrientation::None;
+    const auto signal_orientation =
+        xodr_names::value_of(xodr_names::kObjectOrientation, orientation_value);
+    if (!signal_orientation.has_value() && !orientation_value.empty()) {
+      diag(Severity::Warning,
+           location,
+           fmt::format("unknown orientation '{}' mapped to 'none'", orientation_value));
     }
+    signal.orientation = signal_orientation.value_or(ObjectOrientation::None);
 
     signal.type = node.attribute("type").value();
     signal.subtype = node.attribute("subtype").value();
